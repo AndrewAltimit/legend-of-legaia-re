@@ -76,6 +76,7 @@ pub mod minigame_fx;
 pub mod move_strip;
 pub mod other_game_hud;
 pub mod pause_menu;
+pub mod prim_near_reject;
 pub mod ringside_backdrop;
 pub mod scene_lighting;
 pub mod screen_prim;

@@ -236,7 +236,9 @@ pub enum FrameEntry<'a> {
 /// resume - and captures at [`CAPTURE_TICK`]. `hud_countdown` is retail's
 /// field party HUD countdown in the state (`_DAT_801F348C`), handed to the
 /// child as `LEGAIA_HUD_COUNTDOWN` so the idle readout's phase matches the
-/// retail instant rather than the settle window's length.
+/// retail instant rather than the settle window's length. `camera_block` is
+/// the state's camera parameter block, handed over as
+/// `LEGAIA_SEAT_CAMERA_BLOCK` so the seat's snap composes from it.
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame(
     exe: &Path,
@@ -248,10 +250,17 @@ pub fn engine_frame(
     label: &str,
     save: &legaia_save::SaveFile,
     hud_countdown: Option<i16>,
+    camera_block: Option<&legaia_engine_core::camera_zone::CameraZoneConfig>,
 ) -> Result<Frame> {
     let env: Vec<(&str, String)> = hud_countdown
         .map(|n| ("LEGAIA_HUD_COUNTDOWN", n.to_string()))
         .into_iter()
+        .chain(camera_block.map(|b| {
+            (
+                "LEGAIA_SEAT_CAMERA_BLOCK",
+                crate::retail_compare::camera_block_env(b),
+            )
+        }))
         .collect();
     engine_frame_with(
         exe,
@@ -292,9 +301,12 @@ pub fn engine_frame_with(
     // The window's interactive default frames the field further out than
     // retail (`CameraDistance::Far`); the comparand is retail's own frame,
     // so the child reads a scratch options file pinning the retail vantage.
+    // `reduce_flashing` is the photosensitivity slew on the ambient CLUT
+    // cyclers, on by default and not retail: the comparand is retail's own
+    // palette step.
     std::fs::write(
         work.join("legaia-options.toml"),
-        "camera_distance = \"retail\"\n",
+        "camera_distance = \"retail\"\nreduce_flashing = false\n",
     )?;
     let shot = work.join(format!("{label}.png"));
     let _ = std::fs::remove_file(&shot);
@@ -307,13 +319,18 @@ pub fn engine_frame_with(
     for (k, v) in env {
         cmd.env(k, v);
     }
-    // The comparison is against retail: the volumetric ground fog and
-    // enhanced lighting (both default on in the window) stay off.
+    // The comparison is against retail: every presentation enhancement the
+    // window defaults on stays off - the volumetric ground fog, enhanced
+    // lighting, the camera-occlusion fade (which dissolves the walls around
+    // a hidden player that retail draws opaque) and the scene-entry VDF
+    // pulse retail never arms.
     cmd.args([
         "play-window",
         "--no-audio",
         "--no-volumetric-fog",
         "--no-dynamic-lighting",
+        "--no-occlusion-fade",
+        "--no-entry-pulse",
         "--scene",
         scene,
     ])

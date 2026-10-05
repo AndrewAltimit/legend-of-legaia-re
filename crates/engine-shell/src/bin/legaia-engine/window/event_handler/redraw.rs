@@ -1005,6 +1005,19 @@ impl PlayWindowApp {
             // this frame's camera - the same kernel the browser play page
             // stages `u_curve` from.
             r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
+            // Retail's per-primitive near reject (`camera_view::prim_near_cut`):
+            // a primitive whose mean corner depth sits near or behind the eye
+            // is not drawn, where a per-pixel clip would paint it across the
+            // frame. Only under a retail camera - the field debug orbit and
+            // the stage-less battle framing are vantages retail never had.
+            let retail_camera = match self.session.host.world.mode {
+                SceneMode::Battle => self.battle_stage_mesh.is_some(),
+                _ => !self.field_debug_camera,
+            } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
+            r.set_prim_near_reject(legaia_engine_core::camera_view::prim_near_cut(
+                self.session.host.world.mode,
+                retail_camera,
+            ));
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
             }
@@ -1808,7 +1821,23 @@ impl PlayWindowApp {
                     // from the ground cell it was supposed to be on. One
                     // scale for every battle draw class is what makes the
                     // arena a backdrop and the grid a floor.
-                    if let Some(stage_idx) = self.battle_stage_mesh
+                    // The backdrop pair's own depth cue (`FUN_80050120`'s
+                    // `+0x78` ramp): pulled toward black through a summon
+                    // close-up, and off the draw entirely at full weight -
+                    // a cast module that wants the stage gone (PROT 0903's
+                    // fire tunnel) drives it there.
+                    let backdrop_cue = self.session.host.world.battle_backdrop_cue();
+                    let stage_cue =
+                        backdrop_cue
+                            .filter(|&w| w > 0.0)
+                            .map(|w| legaia_engine_render::DrawCue {
+                                far: [0.0; 3],
+                                near_z: -1.0,
+                                far_z: 0.0,
+                                max_ir0: w,
+                            });
+                    if backdrop_cue.is_some()
+                        && let Some(stage_idx) = self.battle_stage_mesh
                         && let Some(mesh) = self.meshes.get(stage_idx)
                     {
                         let flip = Self::battle_stage_model();
@@ -1816,7 +1845,7 @@ impl PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * flip,
-                            cue: None,
+                            cue: stage_cue,
                         });
                     }
                     // ...and the shell's untextured `F*`/`G*` half on the
@@ -1824,13 +1853,14 @@ impl PlayWindowApp {
                     // walks one primitive list, so these panels (sky band,
                     // painted wall faces, flat water) belong to the same
                     // backdrop draw; without them the shell has holes.
-                    if let Some(cidx) = self.battle_stage_color_mesh
+                    if backdrop_cue.is_some()
+                        && let Some(cidx) = self.battle_stage_color_mesh
                         && let Some(cmesh) = self.color_meshes.get(cidx)
                     {
                         color_draws.push(ColorSceneDraw {
                             mesh: cmesh,
                             mvp: cam * Self::battle_stage_model(),
-                            cue: None,
+                            cue: stage_cue,
                         });
                     }
                 } else {
@@ -3252,8 +3282,15 @@ impl PlayWindowApp {
                 );
             }
         }
+        let battle = self.session.host.world.mode == SceneMode::Battle;
         for s in sprites.iter().take(4) {
-            let p = cam * glam::Vec4::new(s.world_pos[0], s.world_pos[1], s.world_pos[2], 1.0);
+            // The same centre the billboard builder draws around.
+            let c = if battle {
+                legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos)
+            } else {
+                s.world_pos
+            };
+            let p = cam * glam::Vec4::new(c[0], c[1], c[2], 1.0);
             let ndc = if p.w.abs() > 1e-6 {
                 [p.x / p.w, p.y / p.w, p.z / p.w]
             } else {

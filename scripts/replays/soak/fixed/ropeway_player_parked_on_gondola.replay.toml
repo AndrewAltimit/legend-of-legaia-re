@@ -4,11 +4,15 @@
 # soak-signature = "softlock|ropeway|free-roam:immobile@tile(36,31)"
 # detail: no progress for 1800 frames under 61 distinct pad masks
 # soak-min-distinct = 1
+# re-timed: the walk-off at the end starts at frame 10600, after P2[6] ends
+# with its NPC clip-end waits (AD <id> 08); it holds up, right, down, left
+# (60/60/90/90 frames). Fixed, the player leaves tile (36,31); boxed in
+# again, it stays there through the neutral tail and the signature returns.
 # reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 4274860479
-frames = 13021
+frames = 14000
 
 [[event]]
 frame = 0
@@ -10228,4 +10232,36 @@ pad = 144
 
 [[event]]
 frame = 9768
+pad = 0
+
+[[event]]
+frame = 10600
+pad = 16
+
+[[event]]
+frame = 10660
+pad = 0
+
+[[event]]
+frame = 10670
+pad = 32
+
+[[event]]
+frame = 10730
+pad = 0
+
+[[event]]
+frame = 10740
+pad = 64
+
+[[event]]
+frame = 10830
+pad = 0
+
+[[event]]
+frame = 10840
+pad = 128
+
+[[event]]
+frame = 10930
 pad = 0

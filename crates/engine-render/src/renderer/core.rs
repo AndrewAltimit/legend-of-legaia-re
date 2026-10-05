@@ -462,6 +462,11 @@ impl Renderer {
                     shader_location: 6,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                // Retail's per-primitive near reject: the primitive's corners.
+                prim_ref_attributes(68)[0],
+                prim_ref_attributes(68)[1],
+                prim_ref_attributes(68)[2],
+                prim_ref_attributes(68)[3],
             ],
         };
         let vram_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -657,7 +662,8 @@ impl Renderer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    // The vertex stage reads the per-primitive near reject.
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -801,7 +807,10 @@ impl Renderer {
             "legaia shadow pipeline (vram mesh)",
             crate::renderer::VRAM_VERTEX_STRIDE,
         );
-        let shadow_color_pipeline = make_shadow_pipeline("legaia shadow pipeline (color mesh)", 20);
+        let shadow_color_pipeline = make_shadow_pipeline(
+            "legaia shadow pipeline (color mesh)",
+            crate::renderer::COLOR_VERTEX_STRIDE,
+        );
 
         // Glow sprites (enhanced lighting's halos + light shafts): position
         // (12) + falloff uv (8) + additive colour/kind (16) = 36 bytes, one
@@ -1109,9 +1118,13 @@ impl Renderer {
                 shader_location: 2,
                 format: wgpu::VertexFormat::Uint32,
             },
+            prim_ref_attributes(20)[0],
+            prim_ref_attributes(20)[1],
+            prim_ref_attributes(20)[2],
+            prim_ref_attributes(20)[3],
         ];
         let color_mesh_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: 20,
+            array_stride: crate::renderer::COLOR_VERTEX_STRIDE,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &color_mesh_attributes,
         };
@@ -1510,6 +1523,7 @@ impl Renderer {
             palette_grade: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             backface_cull: std::cell::Cell::new(0.0),
             overworld_curve: std::cell::Cell::new(0.0),
+            prim_near: std::cell::Cell::new([0.0; 4]),
             // Semi-transparency (ABE) blending on by default: retail's GPU
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.

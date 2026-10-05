@@ -141,3 +141,71 @@ fn static_story_evaluation_matches_the_live_world() {
         );
     }
 }
+
+/// Thawed Buma (`bubu1`) and its Nilboa twin (`nilboa2`) are only entered
+/// after the Karisto thaw: `map03`'s doors pick them while `0x378` is set,
+/// and the thaw event sets `0x51F` - the flag the Mist's fog-pool regions in
+/// both scenes key on. A staged picker entry must come up with those regions
+/// disabled; `bubu1` (whose regions all key on it) then draws no pool and no
+/// volumetric bank, which follows the live pool. The frozen twins `bubu2` /
+/// `nilboa` keep their Mist, and a later frozen pick does not inherit the
+/// thaw. (`nilboa2` also carries a small region keyed on `0x007`, a flag the
+/// town cupboards share - player state, not story, so staging leaves it.)
+#[test]
+fn thawed_karisto_twins_stage_without_the_mist() {
+    let Some(mut host) = open_host() else {
+        eprintln!("skip: LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const THAW: u16 = 0x51F;
+    let thaw_regions = |host: &SceneHost| {
+        host.world
+            .fog
+            .regions
+            .iter()
+            .filter(|r| r.flag_index == THAW)
+            .map(|r| r.enabled)
+            .collect::<Vec<_>>()
+    };
+    let enter = |host: &mut SceneHost, scene: &str| {
+        host.world.seed_free_roam_story_baseline(scene);
+        host.enter_field_scene(scene, 0).expect("enter");
+        for _ in 0..60 {
+            let _ = host.world.tick();
+        }
+        assert!(
+            host.world.fog.gate,
+            "{scene}: the entry script raises the gate"
+        );
+    };
+    for scene in ["bubu1", "nilboa2"] {
+        enter(&mut host, scene);
+        let thaw = thaw_regions(&host);
+        assert!(!thaw.is_empty(), "{scene}: a fog region keys on 0x51F");
+        assert!(
+            thaw.iter().all(|e| !e),
+            "{scene}: staged thawed twin keeps the frozen town's Mist: {:?}",
+            host.world.fog.regions
+        );
+    }
+    enter(&mut host, "bubu1");
+    assert!(
+        host.world.fog.regions.iter().all(|r| !r.enabled),
+        "bubu1: every region is off: {:?}",
+        host.world.fog.regions
+    );
+    assert_eq!(
+        host.world.fog_volume_style(),
+        None,
+        "bubu1: the volumetric bank follows the dead pool"
+    );
+    for scene in ["bubu2", "nilboa"] {
+        enter(&mut host, scene);
+        let thaw = thaw_regions(&host);
+        assert!(
+            !thaw.is_empty() && thaw.iter().all(|e| *e),
+            "{scene}: the frozen twin keeps its Mist after a thawed pick: {:?}",
+            host.world.fog.regions
+        );
+    }
+}

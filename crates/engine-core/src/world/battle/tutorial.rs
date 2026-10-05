@@ -193,11 +193,21 @@ impl World {
         else {
             return false;
         };
+        self.replay_field_bgm_words(&words);
+        true
+    }
+
+    /// Run op-`0x35` BGM words through the field VM's own handler, in order -
+    /// the track word, the battle sound set and the host's BGM events end up
+    /// where a record executing those ops would have left them. The replay
+    /// primitive behind [`Self::replay_scripted_battle_score`] and the retail
+    /// comparison's resume of a spawned record
+    /// ([`crate::man_field_scripts::SpawnScore`]).
+    pub fn replay_field_bgm_words(&mut self, words: &[(u16, u8)]) {
         let mut host = crate::world::vm_hosts::FieldHostImpl { world: self };
-        for (text_id, sub_op) in words {
+        for &(text_id, sub_op) in words {
             legaia_engine_vm::field::FieldHost::bgm(&mut host, text_id, sub_op);
         }
-        true
     }
 
     /// The lesson the sparring fight is currently teaching, when armed.

@@ -64,6 +64,9 @@ struct RecHost {
     monster_tags: std::collections::HashMap<u8, Vec<u8>>,
     /// `_DAT_8007BAC0` as `special_battle_word` reports it.
     special_word: u32,
+    /// The strike queue `begin_counterattack` stages on the counterer
+    /// (`None` = the host cannot stage a counter).
+    counter_queue: Option<Vec<u8>>,
 }
 
 impl RecHost {
@@ -100,6 +103,18 @@ impl BattleActionHost for RecHost {
     }
     fn ui_element(&mut self, effect_id: u8, mode: u8) {
         self.record(Event::Ui(effect_id, mode));
+    }
+    fn begin_counterattack(&mut self, counterer: u8, _attacker: u8) -> bool {
+        let Some(q) = self.counter_queue.clone() else {
+            return false;
+        };
+        self.record(Event::Ui(0x66, 0));
+        let c = &mut self.actors[counterer as usize];
+        c.params = [0; ACTION_PARAM_BYTES];
+        c.params[..q.len()].copy_from_slice(&q);
+        c.strike_index = 0;
+        c.action_category = ActionCategory::Attack.as_byte();
+        true
     }
     fn range_check(&self, a: u8, t: u8) -> u16 {
         self.ranges.get(&(a, t)).copied().unwrap_or(0)
@@ -1066,6 +1081,52 @@ fn without_the_war_god_bit_the_stream_is_not_replayed() {
     assert_eq!(host.actors[1].params[0], 0x1A, "the queue is untouched");
 }
 
+/// The strike loop's counter head (`0x801E35F0..0x801E36E0`): a monster's
+/// first strike frame with the latch armed on a party target that committed
+/// an attack hands the loop to the counterer - it aims at the monster, its
+/// initiative key is spent, the turn cursor steps, and its own first byte is
+/// the one staged. The monster never swings.
+#[test]
+fn a_counter_latch_hands_the_strike_loop_to_the_counterer() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[3].params[0] = 0x05;
+    host.actors[3].active_target = 0;
+    host.actors[0].action_category = ActionCategory::Attack.as_byte();
+    host.actors[0].init_key = 40;
+    host.counter_queue = Some(vec![0x0F, 0x0E, 0x00]);
+    ctx.counter_pending = 1;
+    let cursor = ctx.turn_cursor;
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(ctx.active_actor, 0, "the counterer acts");
+    assert_eq!(ctx.counter_pending, 0, "the latch is consumed");
+    assert_eq!(ctx.turn_cursor, cursor.wrapping_add(1));
+    assert_eq!(host.actors[0].active_target, 3, "aimed back at the monster");
+    assert_eq!(host.actors[0].init_key, 0, "its turn is spent");
+    assert_eq!(host.actors[0].queued_anim, 0x0F, "its own first swing");
+    assert_eq!(host.actors[3].queued_anim, 0, "the monster never swings");
+    assert!(host.take().contains(&Event::Ui(0x66, 0)));
+}
+
+/// A target that did not commit an attack takes no counter: the latch drops
+/// and the monster swings.
+#[test]
+fn a_counter_latch_without_a_committed_attack_drops() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[3].params[0] = 0x05;
+    host.actors[3].active_target = 0;
+    host.actors[0].action_category = ActionCategory::Magic.as_byte();
+    host.counter_queue = Some(vec![0x0F, 0x00]);
+    ctx.counter_pending = 1;
+
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.active_actor, 3);
+    assert_eq!(ctx.counter_pending, 0);
+    assert_eq!(host.actors[3].queued_anim, 0x05, "the monster swings");
+}
+
 #[test]
 fn attack_chain_walks_param_stream_until_terminator() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
@@ -1303,8 +1364,10 @@ fn done_cleanup_sets_recoil_per_category() {
     let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 1);
     ctx.action_state = ActionState::DoneCleanup.as_byte();
     step(&mut host, &mut ctx);
-    // Spirit category → recoil = 0x20.
-    assert_eq!(host.actors[1].action_recoil, 0x20);
+    // Spirit category → the accumulator is `0x20`, paid into the Spirit
+    // gauge and then zeroed (`sb zero,0x224(s3)` at `0x801E5E70`).
+    assert_eq!(host.actors[1].spirit_gauge, 0x20);
+    assert_eq!(host.actors[1].action_recoil, 0);
     assert!(host.actors[1].flag_bits.has(ActorFlags::EXIT));
     assert_eq!(ctx.frame_timer, 0x3C);
 }
@@ -2508,8 +2571,10 @@ fn full_magic_flow_round_trips() {
 
     // Set spell ID + MP cost so MagicCastBegin doesn't crash on division.
     host.actors[1].params[0] = 0x10;
+    // One `(clip, shot)` pair, as every retail stream carries them.
     host.actors[1].params[1] = 0x21; // first chain anim
-    host.actors[1].params[2] = 0xFF; // chain terminator
+    host.actors[1].params[2] = 0x07; // its shot
+    host.actors[1].params[3] = 0xFF; // chain terminator
     host.actors[1].mp = 100;
     host.spell_costs.insert(0x10, 20);
     host.actors[1].sub_route = 0; // not summon
@@ -2537,8 +2602,8 @@ fn full_magic_flow_round_trips() {
     assert_eq!(host.actors[1].queued_anim, 0x21, "0x29 stages params[1]");
     assert_eq!(host.actors[1].strike_index, 2);
 
-    // MagicAnimChain reads `params[strike_index]`: the terminator, so the
-    // chain transitions on its first step.
+    // MagicAnimChain looks one past the cursor (`params[3]`): the
+    // terminator, so the chain transitions on its first step.
     step(&mut host, &mut ctx);
     assert_eq!(ctx.action_state, ActionState::MagicSustain.as_byte());
 
@@ -3568,6 +3633,90 @@ fn the_spirit_band_holds_its_clip_and_both_timers() {
         step(&mut host, &mut ctx);
     }
     assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
+/// A Spirit turn's whole presentation, seed to Done: the seed raises the AP
+/// bar (`0x0F`) and plate (`0x52`) sized off the live AGL, `0x46` pulls the
+/// camera in to `0x800` and stages the extended gauge and the `+0x20` Spirit
+/// target, the sustain grows the bar one step a frame to the extended gauge
+/// less 6, the plate climbs onto its target, and the Done band pays the
+/// `+0x20` into the gauge. The live values are a retail capture's: Noa at a
+/// 194 AGL reads a 188-wide bar under a `ctx[+0x6DC]` of 279.
+#[test]
+fn a_spirit_turn_grows_the_ap_bar_and_climbs_the_plate() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].agl = 194;
+    host.actors[0].agl_base = 194;
+    host.actors[0].spirit_gauge = 40;
+    host.actors[0].queued_anim_b = 0x10;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::SpiritArtsEntry.as_byte());
+    let ui = host.take();
+    assert!(ui.contains(&Event::Ui(0x0F, 0)), "the AP bar is raised");
+    assert!(ui.contains(&Event::Ui(0x52, 0)), "the AP plate is raised");
+    assert_eq!(ctx.spirit_bar_width, 188, "AGL less 6");
+    assert_eq!(ctx.spirit_plate_value, 40, "the plate opens on the gauge");
+
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_frame_height, 0x800, "the Spirit close-up");
+    assert_eq!(ctx.damage_target, 279, "194 * 7 / 5 + 8");
+    assert_eq!(ctx.hp_bar_target, 40 + 0x20);
+
+    host.actors[0].current_anim = 0x10;
+    let mut widths = vec![ctx.spirit_bar_width];
+    let mut steps = 0;
+    while ctx.action_state != ActionState::DoneCleanup.as_byte() && steps < 2000 {
+        if steps == 150 {
+            host.actors[0].flag_bits = ActorFlags(0);
+            host.actors[0].current_anim = 0;
+        }
+        step(&mut host, &mut ctx);
+        widths.push(ctx.spirit_bar_width);
+        steps += 1;
+    }
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+    assert_eq!(ctx.spirit_bar_width, 279 - 6, "grown to the extended gauge");
+    assert!(
+        widths.windows(2).all(|w| w[1] >= w[0]),
+        "the bar only grows"
+    );
+    assert_eq!(
+        ctx.spirit_plate_value,
+        40 + 0x20,
+        "the plate sits on target"
+    );
+
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        host.actors[0].spirit_gauge,
+        40 + 0x20,
+        "Done pays the +0x20"
+    );
+}
+
+/// Every action ends `+8` Spirit through the Done accumulator, with the two
+/// "spirit gain up" passives on top for a party seat, capped at 100.
+#[test]
+fn the_done_band_pays_the_accumulator_into_the_spirit_gauge() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.actors[0].spirit_gauge = 10;
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].spirit_gauge, 18);
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].spirit_gauge = 10;
+    host.ability_bits_high.insert(0, 0x300);
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].spirit_gauge, 10 + 8 + 3 + 0x20);
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].spirit_gauge = 90;
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].spirit_gauge, 100);
 }
 
 /// Nothing in the dispatcher clears `ctx[+0x19]`, so it is a per-battle latch

@@ -1203,7 +1203,7 @@ pub trait FieldHost {
     /// Op 0x4C outer-nibble-4 sub-5 - actor-field block (immediate write path).
     ///
     /// 11-byte instruction `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi,
-    /// w98_lo, w98_hi, ticks_lo, ticks_hi]`. The original at `0x801E1E14+`
+    /// w98_lo, w98_hi, ticks_lo, ticks_hi]`. The original at `0x801E12A4+`
     /// reads four sub-fields and writes them to the actor's `+0x44` pointer
     /// (the per-actor primary structure, typically the rendered object pool):
     /// - `b1` (u8) → `actor[+0x44][+0x9a]` (a control byte; mode select).
@@ -1240,9 +1240,9 @@ pub trait FieldHost {
     /// once per `[4C, 0x45]` ramp instruction with the full target tuple +
     /// ticks. Default impl is a no-op.
     ///
-    /// The VM surfaces a `Yield { resume_pc: pc }` after this hook fires -
-    /// the script halts until the host's STATE_RESUME layer signals
-    /// completion.
+    /// The VM advances past the 11-byte instruction after this hook fires:
+    /// the ramp runs as a scheduled actor (`0x801E12A4..0x801E138C`), and
+    /// the script does not wait on it.
     fn op4c_n4_sub5_ramp(
         &mut self,
         ctx: &mut FieldCtx,

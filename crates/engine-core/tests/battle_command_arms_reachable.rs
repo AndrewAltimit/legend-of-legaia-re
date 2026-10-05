@@ -236,8 +236,19 @@ fn magic_and_item_arms_each_open_their_own_surface() {
         let mut w = build_world();
         enter_battle(&mut w);
         let hp_before = monster_hp_total(&w);
+        // A Spirit turn's staged clip (`+0x1E7 = 0x10`) left on the member:
+        // the arm must overwrite it with its own (`9`, `FUN_801D0748`
+        // `0x801D13E8` / `0x801D14C0`), or action state `0x3C` replays the
+        // Spirit clip - and its cue track - as the item / cast pose.
+        let member = w.battle.command.as_ref().map(|s| s.actor).unwrap_or(0) as usize;
+        w.actors[member].battle.queued_anim_b = 0x10;
 
         pick_command(&mut w, command);
+
+        assert_eq!(
+            w.actors[member].battle.queued_anim_b, 9,
+            "{command:?} stages the cast clip 9"
+        );
 
         assert_eq!(
             open_surfaces(&w),

@@ -441,6 +441,10 @@ pub struct SummonPartRuntime {
     pub state: ActorState,
     /// `true` once the part's program halted or ran off its buffer.
     pub finished: bool,
+    /// The point this part's translation glide is anchored on, when it is
+    /// not the scene's [`SummonScene::origin`] - a part seated later than
+    /// the scene's first, on its own spawn position ([`SummonScene::push_parts`]).
+    pub origin: Option<[i16; 3]>,
 }
 
 /// A running summon: every spawned part plus the model-library base the parts'
@@ -465,6 +469,15 @@ pub struct SummonScene {
     /// Defaults to [`RETAIL_CHANNEL_DELTA`]; the world re-stamps it from its
     /// live frame step before each tick.
     pub channel_delta: u16,
+    /// Whether the parts' wait timers drain at retail's own rate - the
+    /// [`Self::channel_delta`] product, which is what `FUN_80021DF4` takes
+    /// off `+0x54` every frame (`0x80021E2C..0x80021E4C`) - rather than at
+    /// `tick`'s `frame_delta`. Set for parts a cast module seats arm by arm
+    /// ([`Self::push_parts`]), whose programs have to outlive the module's
+    /// own countdown-paced arms: PROT 0903's fire tunnel, seated in arm 6,
+    /// is still mid-program when the creature walks in (arm 11), and drained
+    /// at `frame_delta` it would be gone within a few frames.
+    pub retail_wait_drain: bool,
 }
 
 /// `DAT_1F800393 * DAT_1F80037D` at one vsync per frame and the rate byte's
@@ -486,6 +499,100 @@ pub struct SummonPartDraw {
     /// through retail's camera-relative rotation `FUN_8001CF50`; a host
     /// resolves them with `legaia_engine_ui::gte::camera_relative_model_prefix`.
     pub flags_52: u16,
+    /// The part's armed VDF morph lanes - `(sub_entry_index, weight)` per
+    /// lane op `0x0A` set up, while the envelope bit `0x1000` is raised.
+    /// Empty (`count == 0`) for a part that draws its rest mesh. A host
+    /// resolves the morphed mesh with
+    /// [`crate::world::World::morphed_part_tmd`].
+    pub morph: PartMorph,
+    /// The part's render scale `+0x72` (`0x1000` = unit). The model draw at
+    /// `0x8001B160` scales the mesh by `+0x72 / 0x1000` when it is not
+    /// `0x1000` (`0x8001B240..0x8001B2C4`).
+    pub scale: u16,
+    /// The colour word `+0x74` and depth-cue level `+0x78` the model draw
+    /// hands the prim dispatcher `FUN_80043390`: ABE / ABR ORed into every
+    /// packet, each packet colour cued toward the word's far colour by the
+    /// level. A black far colour under an additive ABR is how a part fades:
+    /// the Spirit aura's op `0x0D` ramps the level from `0x1000` (black) to
+    /// `0` and back.
+    pub colour: crate::baka_impact_fx::ColourWord,
+}
+
+impl SummonPartDraw {
+    /// Whether the draw renders its pool mesh untouched: no morph lane, unit
+    /// scale and a colour word that changes no packet. A host that keeps the
+    /// pool meshes resident can draw such a part by index; any other part
+    /// needs [`crate::world::World::part_draw_vram_mesh`].
+    pub fn draws_rest_mesh(&self) -> bool {
+        self.morph.count == 0
+            && self.scale == SPAWN_RENDER_SCALE
+            && !self.colour.semi
+            && self.colour.abr == 0
+            && self.colour.ir0 == 0
+    }
+
+    /// Apply the model draw's per-part render state to a local-space mesh:
+    /// the render scale, then each packet's colour through the colour word's
+    /// depth cue with its ABE / ABR ORed into the TSB (the dispatcher ORs
+    /// both into the packets it writes, `0x80043504..0x80043510`).
+    pub fn apply_render_state(&self, mesh: &mut legaia_tmd::mesh::VramMesh) {
+        if self.scale != SPAWN_RENDER_SCALE {
+            let k = f32::from(self.scale) / 4096.0;
+            for p in &mut mesh.positions {
+                *p = p.map(|v| v * k);
+            }
+        }
+        if self.colour.ir0 != 0 {
+            for c in &mut mesh.colors {
+                *c = self.colour.cue(*c);
+            }
+        }
+        let abr = u16::from(self.colour.abr) << 5;
+        let semi = if self.colour.semi {
+            legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT
+        } else {
+            0
+        };
+        if abr | semi != 0 {
+            for ct in &mut mesh.cba_tsb {
+                ct[1] |= abr | semi;
+            }
+        }
+    }
+}
+
+/// A part's live morph lanes, carried by value on [`SummonPartDraw`] (the
+/// retail arrays op `0x0A` writes: `+0x6C` count, `+0xB0 + lane` index byte,
+/// `+0xA0 + lane*2` weight - [`legaia_engine_vm::vdf_morph::actor_morph_lanes`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PartMorph {
+    pub lanes: [(u8, u16); legaia_engine_vm::vdf_morph::ACTOR_MORPH_LANES],
+    pub count: u8,
+}
+
+impl PartMorph {
+    /// The armed lanes of a part state, or the empty morph when its envelope
+    /// bit is clear.
+    pub fn of(state: &ActorState) -> Self {
+        let mut out = Self::default();
+        if state.flags & legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE == 0 {
+            return out;
+        }
+        for (i, lane) in legaia_engine_vm::vdf_morph::actor_morph_lanes(state)
+            .into_iter()
+            .take(out.lanes.len())
+            .enumerate()
+        {
+            out.lanes[i] = lane;
+            out.count = i as u8 + 1;
+        }
+        out
+    }
+
+    /// The armed lanes.
+    pub fn lanes(&self) -> &[(u8, u16)] {
+        &self.lanes[..usize::from(self.count)]
+    }
 }
 
 impl SummonScene {
@@ -527,7 +634,33 @@ impl SummonScene {
             origin,
             frame: 0,
             channel_delta: RETAIL_CHANNEL_DELTA,
+            retail_wait_drain: false,
         }
+    }
+
+    /// Seat more parts into a running scene - one `FUN_80021B04(pos, rot,
+    /// record, 0x1000)` call per part, made on a later frame than the scene's
+    /// first. `pos` seeds `+0x14..+0x18` and `rot` the render banks
+    /// `+0x24..+0x28`, as the spawn copies its first two arguments. The
+    /// record bytes may come from another image than the scene's first parts
+    /// (a slot-B module spawning a battle-overlay prototype): each part keeps
+    /// its own buffer.
+    pub fn push_parts(
+        &mut self,
+        parts: &[SummonPart],
+        record_bytes: &[u8],
+        pos: [i16; 3],
+        rot: [i16; 3],
+    ) {
+        self.retail_wait_drain = true;
+        self.parts.extend(parts.iter().filter_map(|p| {
+            let mut part = seed_part(p, record_bytes, pos)?;
+            part.origin = Some(pos);
+            part.state.render_24 = rot[0];
+            part.state.render_26 = rot[1];
+            part.state.render_28 = rot[2];
+            Some(part)
+        }));
     }
 
     /// Advance every live part one frame through the move VM. `frame_delta` is
@@ -557,7 +690,12 @@ impl SummonScene {
             if part.finished {
                 continue;
             }
-            move_vm::decrement_wait_timer(&mut part.state, frame_delta);
+            let drain = if self.retail_wait_drain {
+                self.channel_delta
+            } else {
+                frame_delta
+            };
+            move_vm::decrement_wait_timer(&mut part.state, drain);
             // The mode-2/6 channel block runs next in retail's part tick,
             // ahead of the move-VM call (`0x80021E78` vs `jal 0x80023070` at
             // `0x80022BA4`); it is what grows a ribbon node's `+0xC8` total.
@@ -568,6 +706,11 @@ impl SummonScene {
                 // the VM call: `+0x3C..+0x40` are velocities integrated into
                 // `+0x14..+0x18`, never offsets from a spawn origin.
                 crate::part_motion::motion_block(&mut part.state, self.channel_delta);
+            } else if crate::part_motion::runs_motion_block(&part.state) {
+                // The block's rotation / scale / level channels run for
+                // every part; only the position terms stay with the glide
+                // below.
+                crate::part_motion::level_block(&mut part.state, self.channel_delta);
             }
             match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
                 ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
@@ -586,7 +729,12 @@ impl SummonScene {
                 // offset.
                 crate::part_motion::clamp_levels(&mut part.state);
             } else {
-                apply_translation_update(&mut part.state, self.origin, frame_delta);
+                crate::part_motion::clamp_levels(&mut part.state);
+                apply_translation_update(
+                    &mut part.state,
+                    part.origin.unwrap_or(self.origin),
+                    frame_delta,
+                );
             }
         }
     }
@@ -616,6 +764,9 @@ impl SummonScene {
                         (s.render_28 as f32) * A,
                     ],
                     flags_52: s.field_52,
+                    morph: PartMorph::of(s),
+                    scale: s.field_72,
+                    colour: crate::baka_impact_fx::ColourWord::of(s),
                 }
             })
             .collect()
@@ -745,6 +896,7 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
         buf,
         state,
         finished: false,
+        origin: None,
     })
 }
 

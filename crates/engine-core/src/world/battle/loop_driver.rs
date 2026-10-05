@@ -269,6 +269,7 @@ impl World {
         // The commit log's launch glide runs every battle frame, whichever
         // surface owns the pad (`FUN_801D9BBC` is not gated on the flow).
         self.step_commit_log_launch();
+        self.step_action_plate_glides();
         self.step_battle_intro_names();
 
         // A message box on screen parks the entire battle - retail's
@@ -593,10 +594,29 @@ impl World {
         // stopped dead, which is most real encounters. Retire it on the frame
         // the state is reached, exactly as the recovery edge above retires
         // `ADVANCE_DONE`.
-        if self.battle_ctx.action_state == ActionState::MagicSustain.as_byte() {
+        //
+        // Retail's counter-down is the anim commit `FUN_8004AD80`
+        // (`0x8004B06C..0x8004B07C`, `+0x1FA -= 1` when non-zero), which runs
+        // at a clip boundary: the latch `0x2A` raises drops when the cast
+        // clip it staged re-commits at its end, so `0x2B` lasts the clip and
+        // the cast-effect driver films it all that while
+        // (`battle_gimard_tail_fire_a` is parked there). The retire waits for
+        // that boundary: no one-shot clip still in flight on the caster.
+        // `MagicAnimChain` (`0x2A`) takes its next `(clip, shot)` pair only
+        // once the same latch is down, so a chain longer than one pair
+        // parks there the same way.
+        if self.battle_ctx.action_state == ActionState::MagicSustain.as_byte()
+            || self.battle_ctx.action_state == ActionState::MagicAnimChain.as_byte()
+        {
             let caster = self.battle_ctx.active_actor as usize;
             if let Some(a) = self.actors.get_mut(caster) {
-                a.battle.spell_iter = 0;
+                let clip_in_flight = a
+                    .battle_animation
+                    .as_ref()
+                    .is_some_and(|p| !p.finished() && !p.is_looping());
+                if !clip_in_flight {
+                    a.battle.spell_iter = 0;
+                }
             }
         }
 
@@ -1074,6 +1094,9 @@ impl World {
     /// `0x380` re-target for a delegated one)
     fn dispatch_battle_turn(&mut self, next: u8) {
         let party_count = self.party.party_count.max(1);
+        // The turn picker's head drops any counter latch the last pick left
+        // unconsumed (`sw zero,0x6970(v0)` at `0x801DABB4`).
+        self.battle_ctx.counter_pending = 0;
         // Start-of-turn: age this actor's buffs / debuffs, reverting any
         // that expire this turn.
         self.tick_battle_buffs_on_turn(next);

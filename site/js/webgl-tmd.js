@@ -105,6 +105,21 @@ function buildSemiTail(indices, cbaTsb) {
   return { indices: out, ranges };
 }
 
+/* Enhanced lighting's shadow maps - the native renderer's constants
+ * (engine-render helpers.rs SHADOW_MAP_DIM / SHADOW_COMPARE_BIAS and
+ * scene_lights.rs SHADOW_FOV / SHADOW_NEAR_FRAC / SHADOW_NEAR_MIN). */
+const SHADOW_MAP_DIM = 512;
+const SHADOW_COMPARE_BIAS = 0.0015;
+const SHADOW_FOV = 2.1;
+const SHADOW_NEAR_FRAC = 0.04;
+const SHADOW_NEAR_MIN = 24.0;
+/* The texture unit the shadow array lives on for the program's life. */
+const SHADOW_TEX_UNIT = 4;
+/* Words of mood at the head of the engine's lighting packet
+ * (`play_lighting_frame`): the three `LightingMood::uniforms` words, then
+ * `window_word` (the window glow). The light and glow counts follow. */
+const MOOD_WORDS = 16;
+
 class TmdRenderer {
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
@@ -142,6 +157,7 @@ class TmdRenderer {
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
     this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
+    this.locPrimNear = gl.getUniformLocation(this.program, 'u_prim_near');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
@@ -154,18 +170,20 @@ class TmdRenderer {
     this.lastLogDepth = false;
     this.locDynColor = gl.getUniformLocation(this.program, 'u_dyn_color');
     this.locDynAmbient = gl.getUniformLocation(this.program, 'u_dyn_ambient');
+    this.locDynWindow = gl.getUniformLocation(this.program, 'u_dyn_window');
     this.locLightCount = gl.getUniformLocation(this.program, 'u_light_count');
     this.locLightPr  = gl.getUniformLocation(this.program, 'u_light_pr');
     this.locLightCol = gl.getUniformLocation(this.program, 'u_light_col');
     /* Enhanced lighting's per-frame state, staged by the play page through
      * `lightingProvider(right, up)` (which asks the engine's
-     * `play_lighting_frame`): the mood's three shader words, the picked
+     * `play_lighting_frame`): the mood's four shader words, the picked
      * point lights in this page's frame, and the glow-sprite quads. null on
      * every other page - and the enable word stays 0, the identity. */
     this.lightingProvider = null;
     this.lightFrame = null;
     this.glowProgram = compileProgram(gl, GLOW_VS_SRC, GLOW_FS_SRC);
     this.locGlowMvp = gl.getUniformLocation(this.glowProgram, 'u_mvp');
+    this.locGlowLogDepth = gl.getUniformLocation(this.glowProgram, 'u_log_depth_on');
     this.glowVao = gl.createVertexArray();
     this.glowBuf = gl.createBuffer();
     gl.bindVertexArray(this.glowVao);
@@ -183,6 +201,56 @@ class TmdRenderer {
       gl.vertexAttribPointer(lc, 4, gl.FLOAT, false, stride, 20);
     }
     gl.bindVertexArray(null);
+    /* Enhanced lighting's point-light shadow maps (the native renderer's
+     * scene-light shadow array + depth-only pass). The array texture is
+     * created here, at 1x1 until a frame needs real layers, and stays bound
+     * on its own unit for the program's life: a sampler2DArrayShadow left on
+     * unit 0 would share it with the VRAM TEXTURE_2D, which WebGL rejects at
+     * every draw. */
+    this.locShadowMaps = gl.getUniformLocation(this.program, 'u_shadow_maps');
+    this.locLightVp = gl.getUniformLocation(this.program, 'u_light_vp');
+    this.locShadow = gl.getUniformLocation(this.program, 'u_shadow');
+    this.dynShadows = true;
+    this.shadowDim = 0;
+    this.shadowTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + SHADOW_TEX_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.shadowTex);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.DEPTH_COMPONENT24, 1, 1, 1, 0,
+      gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.useProgram(this.program);
+    gl.uniform1i(this.locShadowMaps, SHADOW_TEX_UNIT);
+    gl.useProgram(null);
+    this.shadowFbo = gl.createFramebuffer();
+    {
+      /* Bound at the main program's a_position slot so every mesh VAO
+       * (built against the main program) feeds the shadow pass as is. */
+      const posLoc = gl.getAttribLocation(this.program, 'a_position');
+      const vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs, SHADOW_VS_SRC);
+      gl.compileShader(vs);
+      const fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, SHADOW_FS_SRC);
+      gl.compileShader(fs);
+      const prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.bindAttribLocation(prog, posLoc >= 0 ? posLoc : 0, 'a_position');
+      gl.linkProgram(prog);
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
+      this.shadowProgram = gl.getProgramParameter(prog, gl.LINK_STATUS) ? prog : null;
+      this.locShadowMvp = this.shadowProgram
+        ? gl.getUniformLocation(this.shadowProgram, 'u_mvp') : null;
+    }
+    this.lightVps = new Float32Array(16 * 8);
+    this.shadowCount = 0;
     /* The two native-only render toggles, both OFF by default and both the
      * identity when off (see setPsxMode / setDynamicLighting). */
     this.psxMode = false;
@@ -207,6 +275,14 @@ class TmdRenderer {
      * sides, the default every other page keeps. */
     this.nclipCull = 0;
     this.overworldCurve = 0;
+    /* Retail's per-primitive near reject for the assembled scene pass:
+     * [enable, sz_per_w, ot_shift, near_otz] (setPrimNear), and the hook
+     * that builds a mesh's per-vertex primitive-corner stream
+     * (positions, indices) -> Float32Array of 13 floats per vertex - the
+     * play page points it at the engine's prim_corner_refs. Off / null on
+     * every other page. */
+    this.primNear = [0, 0, 0, 0];
+    this.primRefsFn = null;
     /* Camera-occlusion fade focus: the player's WORLD-space body centre
      * (draw frame, i.e. the Y-flipped coords every placement uses), staged
      * per frame by the play page via setOcclusionFocus / cleared with
@@ -226,6 +302,10 @@ class TmdRenderer {
     this.locGroundRefY  = gl.getAttribLocation(this.program, 'a_ground_ref_y');
     /* Smoothed normals for the dynamic light; -1 if the driver dropped it. */
     this.locNormal = gl.getAttribLocation(this.program, 'a_normal');
+    /* Retail's per-primitive near reject: each vertex's primitive corners
+     * (see primNearRejected in webgl-shaders.js); -1 where dropped. */
+    this.locPrimC = ['a_prim_c0', 'a_prim_c1', 'a_prim_c2', 'a_prim_c3']
+      .map(n => gl.getAttribLocation(this.program, n));
 
     /* Field-character hybrid mode: when set, draws bind the per-vertex
      * a_flat_rgba colours and the FS uses them for untextured prims. Off for
@@ -518,6 +598,45 @@ class TmdRenderer {
     this.overworldCurve = scale > 0 ? +scale : 0;
   }
 
+  /* Retail's per-primitive near reject for the assembled scene pass: the
+   * [enable, sz_per_w, ot_shift, near_otz] word from the shared
+   * `camera_view::prim_near_cut` kernel (the native renderer's
+   * `set_prim_near_reject`). null / all-zero never rejects. */
+  setPrimNear(params) {
+    this.primNear = (params && params.length === 4)
+      ? [+params[0], +params[1], +params[2], +params[3]] : [0, 0, 0, 0];
+  }
+
+  /* (Re)build and bind a scene mesh's primitive-corner stream into its VAO
+   * (which must be bound). Without a hook, or when the hook declines, the
+   * attributes stay disabled and read the generic default - count 0, never
+   * rejected. */
+  _bindPrimRefs(m, positions, indices) {
+    const gl = this.gl;
+    const locs = this.locPrimC || [];
+    let refs = null;
+    if (this.primRefsFn && positions && indices && locs[0] >= 0) {
+      try { refs = this.primRefsFn(positions, indices); } catch (_) { refs = null; }
+      if (refs && refs.length !== (positions.length / 3) * 13) refs = null;
+    }
+    m.hasPrimRefs = !!refs;
+    if (!refs) {
+      for (const l of locs) if (l >= 0) gl.disableVertexAttribArray(l);
+      return;
+    }
+    if (!m.primRefBuf) m.primRefBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.primRefBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, refs instanceof Float32Array ? refs : new Float32Array(refs),
+      gl.DYNAMIC_DRAW);
+    const sizes = [4, 3, 3, 3];
+    const offs = [0, 16, 28, 40];
+    for (let k = 0; k < 4; k++) {
+      if (locs[k] < 0) continue;
+      gl.enableVertexAttribArray(locs[k]);
+      gl.vertexAttribPointer(locs[k], sizes[k], gl.FLOAT, false, 52, offs[k]);
+    }
+  }
+
   /* PSX rasterisation (the native renderer's `set_psx_mode`, which the
    * native window turns on with LEGAIA_PSX_RENDER): vertex positions snap to
    * the framebuffer's integer pixel grid and every shaded fragment takes the
@@ -544,6 +663,13 @@ class TmdRenderer {
     this.dynLighting = !!on;
   }
 
+  /* The point lights' shadow sub-layer (the native window's `Y` /
+   * `--no-dyn-shadows`). On by default, inert while dynamic lighting is off
+   * or a frame picks no lights. */
+  setDynShadows(on) {
+    this.dynShadows = !!on;
+  }
+
   /* Stage the two toggles on the bound main program for a `w` x `h` frame.
    * The framebuffer size goes up regardless: it is the light pool's
    * viewport too, and the native `psx_params.xy` carries it the same way. */
@@ -562,14 +688,22 @@ class TmdRenderer {
         gl.uniform4f(this.locDynDir, m[0], m[1], m[2], 1);
         gl.uniform4f(this.locDynColor, m[4], m[5], m[6], m[7]);
         gl.uniform4f(this.locDynAmbient, m[8], m[9], m[10], m[11]);
+        if (this.locDynWindow) gl.uniform1f(this.locDynWindow, m[12] || 0);
         gl.uniform1i(this.locLightCount, f.count);
         if (f.count > 0) {
           gl.uniform4fv(this.locLightPr, f.pr);
           gl.uniform4fv(this.locLightCol, f.col);
         }
+        const sh = this.shadowCount > 0 && this.shadowDim > 0;
+        if (this.locShadow) {
+          gl.uniform4f(this.locShadow, sh ? 1 : 0, sh ? 1 / this.shadowDim : 0,
+            SHADOW_COMPARE_BIAS, 0);
+        }
+        if (sh && this.locLightVp) gl.uniformMatrix4fv(this.locLightVp, false, this.lightVps);
       } else {
         gl.uniform4f(this.locDynDir, 0, 0, 0, 0);
         gl.uniform1i(this.locLightCount, 0);
+        if (this.locShadow) gl.uniform4f(this.locShadow, 0, 0, 0, 0);
       }
     }
   }
@@ -593,20 +727,102 @@ class TmdRenderer {
     let pkt;
     try { pkt = this.lightingProvider([r[0], -r[1], r[2]], [u[0], -u[1], u[2]]); }
     catch (_) { pkt = null; }
-    if (!pkt || pkt.length < 14) return;
-    const mood = pkt.slice(0, 12);
-    const n = pkt[12] | 0;
-    const nv = pkt[13] | 0;
+    if (!pkt || pkt.length < MOOD_WORDS + 2) return;
+    const mood = pkt.slice(0, MOOD_WORDS);
+    const n = pkt[MOOD_WORDS] | 0;
+    const nv = pkt[MOOD_WORDS + 1] | 0;
     const pr = new Float32Array(32);
     const col = new Float32Array(32);
-    let o = 14;
+    let o = MOOD_WORDS + 2;
     for (let i = 0; i < n && i < 8; i++, o += 7) {
       pr.set([pkt[o], -pkt[o + 1], pkt[o + 2], pkt[o + 3]], i * 4);
       col.set([pkt[o + 4], pkt[o + 5], pkt[o + 6], 0], i * 4);
     }
-    o = 14 + n * 7;
+    o = MOOD_WORDS + 2 + n * 7;
     const glow = nv > 0 ? Float32Array.from(pkt.slice(o, o + nv * 9)) : null;
     this.lightFrame = { mood, count: Math.min(n, 8), pr, col, glow, glowCount: nv };
+  }
+
+  /* Render one shadow-map layer per staged point light over this frame's
+   * geometry (the ground + every placement, full index range) - the twin of
+   * engine-render's stage_scene_lights_and_shadows. Each light looks
+   * straight down a wide cone (retail field space is Y-down; this page's
+   * frame is (x, -y, z), so down is -Y here). The projection is GL-style:
+   * its window depth equals the native 0..1 depth for the same near / far,
+   * so SHADOW_COMPARE_BIAS and the polygon offset carry over unchanged.
+   * Restores the caller's framebuffer and viewport (the VR path renders
+   * into its own). */
+  _renderLightShadows(placements) {
+    this.shadowCount = 0;
+    const f = this.lightFrame;
+    if (!this.dynLighting || !this.dynShadows || !f || f.count === 0 || !this.shadowProgram) return;
+    const gl = this.gl;
+    const n = f.count;
+    if (this.shadowDim !== SHADOW_MAP_DIM) {
+      gl.activeTexture(gl.TEXTURE0 + SHADOW_TEX_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.shadowTex);
+      gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.DEPTH_COMPONENT24, SHADOW_MAP_DIM,
+        SHADOW_MAP_DIM, 8, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+      gl.activeTexture(gl.TEXTURE0);
+      this.shadowDim = SHADOW_MAP_DIM;
+    }
+    const g = 1 / Math.tan(SHADOW_FOV / 2);
+    for (let i = 0; i < n; i++) {
+      const ex = f.pr[i * 4], ey = f.pr[i * 4 + 1], ez = f.pr[i * 4 + 2];
+      const r = f.pr[i * 4 + 3];
+      const near = Math.max(r * SHADOW_NEAR_FRAC, SHADOW_NEAR_MIN);
+      const far = Math.max(r, near * 2);
+      const a = (far + near) / (near - far);
+      const b = (2 * far * near) / (near - far);
+      /* Column-major. View: x' = X - ex, y' = Z - ez, z' = Y - ey (the
+       * native look_at_rh(eye, eye + down, +Z) in this frame); then a GL
+       * perspective, so clip.w = ey - Y - positive below the light. */
+      const m = this.lightVps.subarray(i * 16, i * 16 + 16);
+      m.fill(0);
+      m[0] = g; m[12] = -g * ex;
+      m[9] = g; m[13] = -g * ez;
+      m[6] = a; m[14] = -a * ey + b;
+      m[7] = -1; m[15] = ey;
+    }
+    const prevFb = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    const prevVp = gl.getParameter(gl.VIEWPORT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFbo);
+    gl.drawBuffers([gl.NONE]);
+    gl.readBuffer(gl.NONE);
+    gl.viewport(0, 0, SHADOW_MAP_DIM, SHADOW_MAP_DIM);
+    gl.useProgram(this.shadowProgram);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LESS);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(2, 2);
+    const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const ground = this.groundEnable && this.ground && this.ground.indexCount > 0 ? this.ground : null;
+    for (let li = 0; li < n; li++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, this.shadowTex, 0, li);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      const lvp = this.lightVps.subarray(li * 16, li * 16 + 16);
+      if (ground) {
+        gl.uniformMatrix4fv(this.locShadowMvp, false, mulMat4(lvp, flipY));
+        gl.bindVertexArray(ground.vao);
+        gl.drawElements(gl.TRIANGLES, ground.indexCount, gl.UNSIGNED_INT, 0);
+      }
+      for (const p of placements) {
+        const mesh = this.sceneMeshes.get(p.meshId);
+        if (!mesh || mesh.indexCount === 0) continue;
+        gl.uniformMatrix4fv(this.locShadowMvp, false, mulMat4(lvp, this._placementModel(p, mesh)));
+        gl.bindVertexArray(mesh.vao);
+        gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_INT, 0);
+      }
+    }
+    gl.bindVertexArray(null);
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, null, 0, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.depthFunc(gl.LEQUAL);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFb);
+    gl.viewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+    this.shadowCount = n;
   }
 
   /* Draw the staged glow quads: additive, depth-tested against the scene,
@@ -620,6 +836,8 @@ class TmdRenderer {
     const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
     gl.useProgram(this.glowProgram);
     gl.uniformMatrix4fv(this.locGlowMvp, false, mulMat4(vp, flipY));
+    /* Same depth space as the scene the halos are tested against. */
+    if (this.locGlowLogDepth) gl.uniform1i(this.locGlowLogDepth, this.lastLogDepth ? 1 : 0);
     gl.bindVertexArray(this.glowVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.glowBuf);
     gl.bufferData(gl.ARRAY_BUFFER, f.glow, gl.DYNAMIC_DRAW);
@@ -1038,6 +1256,8 @@ class TmdRenderer {
     /* The single-mesh viewer never bends (the curve is an overworld
      * scene-pass term, staged by renderAssembled). */
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
+    /* Nor near-reject: another scene-pass word on the shared program. */
+    if (this.locPrimNear) gl.uniform4f(this.locPrimNear, 0, 0, 0, 0);
     /* Nor does it NCLIP-reject: `u_nclip_cull` is a scene-pass word too
      * (renderAssembled stages `nclipCull`), and the uniform persists on the
      * shared program. Left at the field's `2`, the play page's in-world
@@ -1208,6 +1428,7 @@ class TmdRenderer {
     m.indexCount = indices.length;
     /* Kept so a CBA/TSB re-upload can rebuild the semi tail. */
     m.baseIndices = indices;
+    this._bindPrimRefs(m, positions, indices);
     gl.bindVertexArray(null);
     /* The dynamic light's normal source (computed lazily, see
      * _ensureNormals); the semi tail repeats triangles, so the base list. */
@@ -1253,6 +1474,12 @@ class TmdRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
     m.aabb = computeAabb(positions);
+    /* The primitive corners move with the pose. */
+    if (m.hasPrimRefs) {
+      gl.bindVertexArray(m.vao);
+      this._bindPrimRefs(m, positions, m.baseIndices);
+      gl.bindVertexArray(null);
+    }
     /* A posed mesh re-derives its normals, as native's posed VRAM mesh
      * build does - lazily, and only while dynamic lighting is on. */
     m.cpuPositions = positions;
@@ -1280,6 +1507,7 @@ class TmdRenderer {
       gl.deleteBuffer(m.uvBuf);
       gl.deleteBuffer(m.ctBuf);
       if (m.flatBuf) gl.deleteBuffer(m.flatBuf);
+      if (m.primRefBuf) gl.deleteBuffer(m.primRefBuf);
       gl.deleteBuffer(m.idxBuf);
       if (m.normBuf) gl.deleteBuffer(m.normBuf);
     }
@@ -1428,6 +1656,7 @@ class TmdRenderer {
     this.lastLogDepth = !!(this.logDepth && cam && cam.yaw != null);
     /* Enhanced lighting (identity unless the play page opted in). */
     this._stageLighting(vp);
+    this._renderLightShadows(placements);
 
     /* Advance the water CLUT animation on wall-clock time, regardless
      * of whether the backdrop plane is enabled - the frame write also
@@ -1527,6 +1756,8 @@ class TmdRenderer {
     if (this.locNclipCull) gl.uniform1i(this.locNclipCull, this.nclipCull);
     /* Overworld curvature (0 = flat unless the play page staged a scale). */
     if (this.locCurve) gl.uniform1f(this.locCurve, this.overworldCurve);
+    /* Retail's per-primitive near reject (off unless the play page staged it). */
+    if (this.locPrimNear) gl.uniform4fv(this.locPrimNear, this.primNear);
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();

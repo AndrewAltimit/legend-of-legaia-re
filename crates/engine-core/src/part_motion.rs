@@ -54,9 +54,6 @@ pub fn runs_motion_block(st: &ActorState) -> bool {
 pub fn motion_block(st: &mut ActorState, delta: u16) {
     let d = i32::from(delta);
     st.tween_scale_x = st.tween_scale_x.wrapping_add(step(st.tween_scale_z, delta));
-    st.render_24 = st.render_24.wrapping_add(step(st.anim_80, delta));
-    st.render_26 = st.render_26.wrapping_add(step(st.anim_82, delta));
-    st.render_28 = st.render_28.wrapping_add(step(st.anim_84, delta));
     let lut = retail_rotation_lut();
     let heading = i32::from(st.tween_scale_x) & 0xFFF;
     let speed = i32::from(st.tween_scale_y);
@@ -72,6 +69,25 @@ pub fn motion_block(st: &mut ActorState, delta: u16) {
     st.world_y = st.world_y.wrapping_add(dy);
     st.world_y_mirror = st.world_y_mirror.wrapping_add(dy);
     st.world_z = st.world_z.wrapping_add(along(lut.a(heading), st.anim_40));
+    level_block(st, delta);
+}
+
+/// The motion block's non-positional half: the rotation banks
+/// `+0x24/+0x26/+0x28 += +0x80/+0x82/+0x84`, the render scale
+/// `+0x72 += +0x92`, `+0x7A += +0x94` (a negative result zeroed) and the
+/// depth-cue level `+0x78 += +0x90`, each `(rate * delta) >> 6`
+/// (`0x800228B8..0x800228F8`, `0x80022B18..0x80022B7C`). None of these
+/// channels reads another, so they split cleanly from the position terms.
+///
+/// The summon scenes run this alone for a part that is not camera-locked,
+/// whose position the engine still resolves through the anim-bank glide
+/// ([`crate::summon::SummonScene::tick`]): it is what spins the Spirit
+/// charge's aura cones (op `0x04`'s `+0x82` rate) and fades them in and out
+/// (op `0x0D`'s `+0x90` rate on the level `+0x78`).
+pub fn level_block(st: &mut ActorState, delta: u16) {
+    st.render_24 = st.render_24.wrapping_add(step(st.anim_80, delta));
+    st.render_26 = st.render_26.wrapping_add(step(st.anim_82, delta));
+    st.render_28 = st.render_28.wrapping_add(step(st.anim_84, delta));
     st.field_72 = st.field_72.wrapping_add(step(st.tween_src_y, delta) as u16);
     st.field_7a = st.field_7a.wrapping_add(step(st.tween_src_z, delta) as u16);
     st.field_78 = st.field_78.wrapping_add(step(st.tween_src_x, delta) as u16);

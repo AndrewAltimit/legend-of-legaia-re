@@ -208,3 +208,77 @@ fn guilty_cross_cuts_from_caster_to_victim() {
         32
     );
 }
+
+/// Big Wave runs on past its pan: arm 5 hands to arm 6's cut (pitch
+/// `0x180`, yaw `0xF00 - facing`, `TR.z = 3z/2`), arms 7 and 8 spin the yaw
+/// a quarter scalar a vsync through their gates, and arm 8 finishes.
+#[test]
+fn big_wave_arms_6_to_8_cut_spin_and_finish() {
+    let mut st = ModuleCamState::default();
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 0,
+            y: 0,
+            z: 813,
+            facing: 0x800,
+        },
+        action: 0x56,
+        depth_raw: 0xA80,
+        ..Default::default()
+    };
+    st.countdown.0 = 1;
+    let a5 = wave_camera(&mut st, 5, seats);
+    assert_eq!((a5.hold, a5.next), (false, Some(6)));
+    assert_eq!(
+        st.countdown.0,
+        1 - MODULE_DRAIN_PER_TICK + SPEED_SCALAR * 0xC0
+    );
+    st.countdown.0 = 1;
+    let a6 = wave_camera(&mut st, 6, seats);
+    assert_eq!(a6.next, Some(7));
+    let shot = a6.shot.expect("arm 6 cuts");
+    assert_eq!(shot.angles, [0x180, 0x700, 0]);
+    assert_eq!(shot.tr, [0, 0x600, 0xA80 * 3 / 2]);
+    let a7 = wave_camera(&mut st, 7, seats);
+    assert!(a7.hold);
+    assert_eq!(a7.drift.unwrap().yaw, (SPEED_SCALAR / 4) as i16);
+    st.countdown.0 = 1;
+    assert_eq!(wave_camera(&mut st, 7, seats).next, Some(8));
+    st.countdown.0 = 1;
+    let a8 = wave_camera(&mut st, 8, seats);
+    assert_eq!((a8.hold, a8.next), (false, None));
+    assert!(a8.drift.is_some());
+}
+
+/// PROT 0903 reports its own calls on the arms that make them: the creature
+/// spawns in arm 3, the spell name in 5, the tunnel and the attack name in
+/// 6, the breath and its CLUT move in 8 - and nothing else anywhere.
+#[test]
+fn gimard_reports_its_spawns_and_captions_on_their_arms() {
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut seen = Vec::new();
+    for _ in 0..4000u32 {
+        let d = gimard_direct(&mut st, phase, seats());
+        if !d.spawns.is_empty() || d.caption.is_some() || d.vram_move.is_some() {
+            seen.push((phase, d.spawns.len(), d.caption, d.vram_move.is_some()));
+        }
+        if !d.hold {
+            phase += 1;
+            if phase > 10 {
+                break;
+            }
+        }
+    }
+    assert_eq!(
+        seen,
+        vec![
+            (3, 3, None, false),
+            (5, 0, Some(ModuleCaption::SpellName), false),
+            (6, 3, Some(ModuleCaption::AttackName), false),
+            (8, 1, None, true),
+        ]
+    );
+    assert!(module_profile(903).is_some_and(|p| p.stages_spawns));
+    assert!(!module_profile(905).is_some_and(|p| p.stages_spawns));
+}

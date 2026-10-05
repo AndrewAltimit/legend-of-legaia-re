@@ -89,9 +89,11 @@ system rasterises opaque. Flame CLUT row 474 is a fire ramp whose hot end (`0xC7
 `(248, 200, 136)`) is a pale tan; drawn additively those texels are a glow over a dark
 arena, and drawn opaque they are solid tan blobs. Index `0` is `0x0000` and discards
 either way, so the blobs keep a puff-shaped silhouette - which is what made them read as
-stray geometry rather than as mis-blended sprites. Port: `effect_sprite_tsb` in the
-native window's `geometry.rs`, pinned by
-`every_effect_billboard_corner_is_semi_transparent`.
+stray geometry rather than as mis-blended sprites. Port: `EffectSprite::packet_tsb` in
+`engine-core` (`world/types.rs`), which the native window's billboard builder and the
+play page's battle and field FX builders all call, pinned by
+`packet_tsb_forces_the_prim_semi_enable` and a `SIM_PAIRS` row in
+`check-ui-host-drift.py`.
 
 ### The three render-mode-4 emitters, and which one the disc uses
 
@@ -350,6 +352,20 @@ The two gates are host-shaped, because a WASM module has no process environment 
 | browser play page | `play_battle_fx` outline strips (hybrid-flat quads) | `LegaiaRuntime::set_battle_fx_outline(true)` | off |
 
 This is a worked example of the drift shape in [`tooling/host-drift.md`](../tooling/host-drift.md): the native gate landed on its own, the browser twin kept drawing, and a diff of the gating commit reads as complete because the file it touched is complete. The pairing to check is "does the other host reach the same builder under the same condition", not "was the builder edited".
+
+#### A battle billboard's centre is Y-flipped
+
+The pool integrates in raw PSX units, **Y down**: a spark climbing off the floor runs negative. The battle view-projection both hosts share (`battle_cam_script::battle_vp`) carries a trailing `scale(1, -1, 1)` that cancels the per-model Y-flip every mesh draw carries, so it consumes Y-up input. A billboard has no model matrix, so its centre is flipped before the corners are built (`engine-vm::effect_billboard::battle_billboard_centre`, called by both hosts). Fed the raw position, a spark rising past an actor's head projected the same height below its feet - the Spirit charge's sparkles drew entirely off the bottom of the frame. Dust at `y = 0` reads the same either way, which is how the inversion survived. The field cameras compose the world flip themselves and take the raw position.
+
+#### Battle effect parts morph through `vdf.dat`
+
+The effect-script **table form** (`0x801F6324` prototypes, `World::spawn_action_table_effect`) stages move-VM parts like any other scene-graph. Two things decide whether they show:
+
+- **Their wait timers drain at retail's per-frame rate.** `FUN_80021DF4` subtracts `DAT_1F800393 * DAT_1F80037D` from `+0x54` per frame, so `WAIT_SET v` holds `v` frames. The scene-graph step `0x400` the summon scenes tick with expired every wait under 128 frames in one tick, so a `0x4F`-frame hold lived three ticks. The table-form scenes tick their waits with the channel delta instead.
+- **A part with op `0x0A` lanes draws morphed.** The lanes index the battle VDF pack `vdf.dat` (PROT 0872): battle init rebuilds the sub-entry table `0x80083E58` from index 0 (a mid-Spirit capture reads the append counter `0x8007B7EC` at the pack's 32 entries and table entry 12 equal to the pack's entry 12). The engine runs the ramp envelope `FUN_80020740` on these parts and both hosts draw `World::morphed_part_tmd` - the Spirit charge's prototypes `0x07` / `0x08` are small rest meshes that entry 12 grows into the aura cone.
+- **The lanes grow at `authored * DAT_1F80037D / 8` per frame.** Op `0x0A` scales each velocity by the rate byte `DAT_1F80037D` (`8`, planted by SCUS at boot), and the envelope adds it times the frame byte `DAT_1F800393` alone. The envelope runs from the part tick's tail (`FUN_800204F8`, `jal` at `0x80022EF4`), which the spawn's own first VM step does not reach, so a lane grows from the frame after the spawn. Both mid-Spirit captures that hold the aura read the lane at exactly `0x66` per elapsed frame (`0x2CA` seven frames in, `0xB28` at twenty-eight), so the cone takes `0x28` frames to open - a capture early in the charge shows it well short of full width.
+- **The model draw applies the part's render scale and colour word.** The draw at `0x8001B160` scales the mesh by `+0x72 / 0x1000` and hands the prim dispatcher the colour word `+0x74` and level `+0x78` (ABE / ABR ORed into every packet, each colour cued toward the word's far colour). The aura's op `0x0C` writes the additive word `0xC9000000` (far colour black) at level `0x1000`, and op `0x0D`'s level rate takes it to `0` over `0x20` frames and back to `0x1000` over the last `0x0B` - a fade in and a fade out.
+  The rates integrate in the part tick's motion block, whose rotation, scale and level channels the engine runs for every summon / move-FX part (`part_motion::level_block`; that is also what spins the cones at op `0x04`'s `0x222` a frame). Both hosts draw every part that is not a plain rest mesh through `World::part_draw_vram_mesh`.
 
 #### The quad half-extent is a view-space quantity, so the battle camera scale must be divided back out
 

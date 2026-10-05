@@ -155,6 +155,19 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Depth space of the page's fragment shaders. The play page's scene writes
+# log2(w) to gl_FragDepth; a depth-tested program that keeps the rasterised
+# depth fails LEQUAL almost everywhere - the lamp halos vanished that way.
+# See docs/tooling/host-drift.md.
+if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-js-depth-space.py" ]]; then
+    printf '[pre-commit] play page fragment depth space\n'
+    if ! python3 scripts/ci/check-js-depth-space.py --quiet; then
+        printf '[pre-commit] write gl_FragDepth through logDepthOfW, or waive the shader in WAIVED (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Generated-page staleness. The link gate above proves every reference RESOLVES;
 # it cannot see a reference that is absent. Editing a _content fragment to pull
 # in a new asset and not re-running site/_gen.py leaves the served page loading

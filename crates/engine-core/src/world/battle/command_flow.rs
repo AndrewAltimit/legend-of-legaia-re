@@ -38,6 +38,16 @@ pub(crate) fn ring_arm_refused(status: u16, arm: crate::battle_input::BattleComm
 /// `li v0,0x10` at `0x801D16A8`); the item commit's is `9`.
 pub(crate) const SPIRIT_COMMIT_CLIP: u8 = 0x10;
 
+/// The clip the ring's **Item** and **Magic** arms stage behind the action
+/// (`+0x1E7`): `li v0,0x9` / `sb v0,0x1e7(v1)` at `0x801D13E4..0x801D13E8`
+/// (Item, beside `+0x1DE = 1`) and `0x801D14BC..0x801D14C0` (Magic, beside
+/// `+0x1DE = 2`). Action state `0x3C` stages whatever the byte holds as the
+/// queued clip (`lbu v0,0x1e7(s3)` / `sb v0,0x1da(s3)` at
+/// `0x801E3B4C..0x801E3B54`), and nothing between a Spirit turn and the next
+/// commit clears it - so an arm that does not write its own value inherits
+/// the Spirit clip and the Spirit clip's cue track.
+pub(crate) const CAST_COMMIT_CLIP: u8 = 9;
+
 /// The entry command a saved swing byte stands for: `0x0C..=0x0F` are Left,
 /// Right, Down, Up (`legaia_art::Command::as_action`), anything else ends
 /// the string.
@@ -282,6 +292,7 @@ impl World {
                 // pattern as Item). `tick_battle_spell_menu` drives until the
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
+                self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
                 match self.build_battle_spell_session(session.actor) {
                     Some(menu) => {
                         self.battle.spell_menu = Some(menu);
@@ -299,6 +310,7 @@ impl World {
                 // uses an item (turn cycles via EndOfAction) or backs out
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
+                self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
                 self.battle.item_menu = Some(self.build_battle_item_session());
                 self.sync_battle_flow(None);
             }
@@ -316,8 +328,8 @@ impl World {
                 // action SM's spirit band stages at `0x46`.
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 4;
-                    a.battle.queued_anim_b = SPIRIT_COMMIT_CLIP;
                 }
+                self.stamp_commit_clip(actor, SPIRIT_COMMIT_CLIP);
                 if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
@@ -663,6 +675,65 @@ impl World {
         })
     }
 
+    /// The **Spirit turn's** AP bar + AP plate, as the same view the
+    /// arts-entry chrome draws from, or `None` outside a party member's
+    /// Spirit action.
+    ///
+    /// Retail's Spirit dispatch arm raises the arts screen's own two gauge
+    /// elements - placement records `0x0F` (the AP bar) and `0x52` (the AP
+    /// plate) - and the spirit band then grows the bar to the extended gauge
+    /// the next turn's entry pool will have, and climbs the plate by the
+    /// Spirit the turn earns (`legaia_engine_vm::battle_action`'s spirit
+    /// band, [`vm::battle_action::BattleActionCtx::spirit_bar_width`] /
+    /// `spirit_plate_value`). The Done band's tail unloads both. So the view
+    /// is up from the band's entry (`0x46`) until the `0x51` fade-down's
+    /// once-only UI teardown runs (the retail `0x51` captures of a Spirit turn
+    /// still carry both), with no pennants and no chips (the entry-only half), the bar sized by
+    /// the live width (`width + 6` is the gauge value the arts bar scales
+    /// off) and the plate reading the live ramp.
+    ///
+    /// Both hosts draw it through the arts-entry chrome builders when no
+    /// entry session is open ([`Self::arts_input_view`] takes precedence).
+    pub fn spirit_gauge_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'static>> {
+        use crate::arts_command_input::{ArtsInputScreen, ArtsInputView};
+        if self.mode != crate::world::SceneMode::Battle || self.battle.arts_input.is_some() {
+            return None;
+        }
+        use vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        let up = (S::SpiritArtsEntry.as_byte()..=S::DoneCleanup.as_byte()).contains(&state)
+            || (state == S::DoneFadeDown.as_byte() && self.battle_ctx.done_ui_torn_down == 0);
+        if !up {
+            return None;
+        }
+        let slot = self.battle_ctx.active_actor;
+        if usize::from(slot) >= usize::from(self.party.party_count.max(1)) {
+            return None;
+        }
+        let actor = self.actors.get(usize::from(slot))?;
+        if actor.battle.action_category != vm::battle_action::ActionCategory::Spirit.as_byte() {
+            return None;
+        }
+        let width = self.battle_ctx.spirit_bar_width;
+        Some(ArtsInputView {
+            buffer: &[],
+            spent: &[],
+            pennants: &[],
+            pennant_spent: &[],
+            pool: 0,
+            pool_max: width
+                .saturating_add(vm::battle_action::SPIRIT_BAR_WIDTH_BIAS)
+                .max(0) as u16,
+            costs: [crate::arts_command_input::FAVORED_COST; 4],
+            chip_icons: [0x0F, 0x0E, 0x11, 0x10],
+            plate_value: self.battle_ctx.spirit_plate_value.clamp(0, 100) as u8,
+            list_page: None,
+            list_pages: 0,
+            phase: ArtsInputScreen::Review,
+            status: 0,
+        })
+    }
+
     /// The `+0x16E` status word of the member the command ring is open for,
     /// `None` without a command session. The ring's Rot / Curse marks read
     /// it (`crate::battle_hud::battle_ring_marks`), as its refusals do
@@ -677,13 +748,24 @@ impl World {
             ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, DEFAULT_POOL, FAVORED_COST,
         };
         let char_slot = self.party_roster_slot(actor as usize) as u8;
+        // The pool is the battle actor's **live** gauge `+0x154`
+        // (`801d4e10 lhu v0,0x154(v0)`), not the record's AGL: after a Spirit
+        // turn the round boundary has extended it, and that longer gauge is
+        // the whole point of the command. A battle actor the setup never
+        // seeded (a synthetic fight) falls back to the record.
         let pool = self
-            .party
-            .roster
-            .members
-            .get(char_slot as usize)
-            .map(|r| r.live_stats().agl)
+            .actors
+            .get(actor as usize)
+            .map(|a| a.battle.agl)
             .filter(|&a| a > 0)
+            .or_else(|| {
+                self.party
+                    .roster
+                    .members
+                    .get(char_slot as usize)
+                    .map(|r| r.live_stats().agl)
+                    .filter(|&a| a > 0)
+            })
             .unwrap_or(DEFAULT_POOL);
         // Cost order = Command byte order (Left, Right, Down, Up) = the
         // runtime action slots `0xC..=0xF` the disc bytes are keyed by.
@@ -1715,6 +1797,10 @@ impl World {
                         a.battle.action_category =
                             vm::battle_action::ActionCategory::Item.as_byte();
                     }
+                    // The ring's Item arm wrote this already; restating it at
+                    // the window's commit keeps an item window reached by any
+                    // other door on the item clip rather than a stale one.
+                    self.stamp_commit_clip(actor, CAST_COMMIT_CLIP);
                     self.commit_party_command(
                         actor,
                         crate::battle_round::PendingPartyAction::Item {
@@ -1797,6 +1883,17 @@ impl World {
             if *qty == 0 {
                 self.party.inventory.remove(&item_id);
             }
+        }
+    }
+
+    /// Write the clip a ring commit stages behind the action
+    /// (`actor[+0x1E7]`): [`CAST_COMMIT_CLIP`] for Item / Magic,
+    /// [`SPIRIT_COMMIT_CLIP`] for Spirit.
+    ///
+    /// PORT: FUN_801D0748 (`sb v0,0x1e7(v1)` at `0x801D13E8` / `0x801D14C0` / `0x801D16B0`)
+    pub(in crate::world) fn stamp_commit_clip(&mut self, actor: u8, clip: u8) {
+        if let Some(a) = self.actors.get_mut(actor as usize) {
+            a.battle.queued_anim_b = clip;
         }
     }
 

@@ -189,10 +189,11 @@ impl LegaiaRuntime {
     /// The walk-ground heightfield's flat bucket-depth references, flattened
     /// eight floats per drawn vertex (`[x0, z0, x1, z1, y00, y10, y01,
     /// y11]` of its cell) - the shared
-    /// [`legaia_engine_core::overworld_draw_order::ground_flat_refs`] over
+    /// [`legaia_engine_core::field_ground::flat_refs`] over
     /// the same drawn positions `field_ground_positions` returns, so the
     /// page's ground draws each overworld cell at its ordering-table
-    /// bucket's depth exactly as the native window's does. Empty with no
+    /// bucket's depth, and each sloped far-bucket field cell under every
+    /// other draw, exactly as the native window's does. Empty with no
     /// ground.
     pub fn field_ground_flat_refs(&self) -> Vec<f32> {
         let Some(f) = self.field.as_ref() else {
@@ -207,7 +208,7 @@ impl LegaiaRuntime {
             Some(lut) => legaia_engine_core::field_ground::live_render_positions(hf, lut),
             None => legaia_engine_core::field_ground::render_positions(hf),
         };
-        legaia_engine_core::overworld_draw_order::ground_flat_refs(&positions)
+        legaia_engine_core::field_ground::flat_refs(hf, &positions)
             .into_iter()
             .flatten()
             .collect()

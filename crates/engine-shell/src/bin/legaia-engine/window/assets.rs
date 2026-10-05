@@ -452,8 +452,10 @@ impl PlayWindowApp {
                 // overworld draws the cell at its ordering-table bucket's
                 // depth (`overworld_draw_order`; the browser play page
                 // uploads the same refs through `field_ground_flat_refs`).
-                let flat_refs =
-                    legaia_engine_core::overworld_draw_order::ground_flat_refs(&vmesh.positions);
+                // A sloped far-bucket field cell carries the marker that draws
+                // it under everything, as retail's ground pass does
+                // (`field_ground::flat_refs`).
+                let flat_refs = legaia_engine_core::field_ground::flat_refs(&hf, &vmesh.positions);
                 match r.upload_vram_mesh_with_flat_refs(
                     &vmesh.positions,
                     &vmesh.uvs,

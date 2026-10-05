@@ -221,6 +221,68 @@ pub struct ArmDirection {
     /// `true` on an arm a camera-only director does not cover: the module
     /// phase stays where it is and the camera keeps the last framing.
     pub park: bool,
+    /// The `FUN_80021B04` calls the arm made on this pass, in call order.
+    pub spawns: &'static [ModuleSpawn],
+    /// The `MoveImage` (`FUN_80058490`) the arm issued on this pass, if any.
+    pub vram_move: Option<ModuleVramMove>,
+    /// The text the arm put up on this pass (`FUN_8003541C`), if any.
+    pub caption: Option<ModuleCaption>,
+}
+
+/// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
+/// 0x96, 0, 0, 0)`: a frameless text actor at `y = 150`, centred by its
+/// measured width (`FUN_80035F04`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleCaption {
+    /// The cast's spell name, the spell table's `+8` pointer for the
+    /// caster's `+0x1DF`.
+    SpellName,
+    /// The cast's attack name, the streamed actor record's `rec[0]` string
+    /// (`*(0x801C9348 + 0x10)`), after `FUN_800319A8(0)` has cleared the
+    /// spell name.
+    AttackName,
+}
+
+/// Where one module spawn call seats its record (`a0` / `a1` of
+/// `FUN_80021B04(pos, rot, record, 0x1000)`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpawnAnchor {
+    /// The creature seat `actor_table[7]`: `a0 = creature + 0x34`,
+    /// `a1 = creature + 0x44`.
+    Creature,
+    /// The arm's own shot trios: `a0 = sp+0x30` (the negated focus),
+    /// `a1 = sp+0x20` (the shot angles). Every record a module spawns this
+    /// way is camera-relative (`+0x52 & 0x780`), so its program's own
+    /// `WORLD_SET` places it and the anchor is only its seed.
+    ShotFocus,
+}
+
+/// Which record one module spawn call hands `FUN_80021B04` as `a2`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpawnRecord {
+    /// A record in the module's own image, by slot-B VA (`lui`/`addiu`).
+    Module(u32),
+    /// A record the battle overlay (PROT 0898, slot A) points at: `a2` is
+    /// loaded from the pointer word at this VA (`lw a2, lo(hi)`), an entry of
+    /// the effect-prototype table `0x801F6324`.
+    BattleProto(u32),
+}
+
+/// One `FUN_80021B04` call out of a module arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleSpawn {
+    pub record: SpawnRecord,
+    pub anchor: SpawnAnchor,
+}
+
+/// One `FUN_80058490(&rect, dst_x, dst_y)` - a VRAM-to-VRAM `MoveImage` - out
+/// of a module arm. The rect is the four halfwords the arm builds in the
+/// packet buffer `*(0x1F8003A0)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleVramMove {
+    pub src: (u16, u16),
+    pub size: (u16, u16),
+    pub dst: (u16, u16),
 }
 
 /// A module arm's direct writes into the live camera globals - pitch
@@ -241,6 +303,9 @@ impl ArmDirection {
         follow: None,
         nudge: None,
         park: false,
+        spawns: &[],
+        vram_move: None,
+        caption: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -248,6 +313,9 @@ impl ArmDirection {
         follow: None,
         nudge: None,
         park: false,
+        spawns: &[],
+        vram_move: None,
+        caption: None,
     };
     pub(super) const PARK: Self = Self {
         hold: true,
@@ -255,6 +323,9 @@ impl ArmDirection {
         follow: None,
         nudge: None,
         park: true,
+        spawns: &[],
+        vram_move: None,
+        caption: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
@@ -332,6 +403,11 @@ pub struct ModuleProfile {
     /// ([`ModuleProfile::camera_beside`]): it reads the phase the body is
     /// about to run, never holds it, and only arms the camera.
     pub owns_phase: bool,
+    /// Whether the director reports the module's own spawn calls per arm
+    /// ([`ArmDirection::spawns`]). The host then seats each record on the
+    /// pass its arm makes the call, instead of seating the module's whole
+    /// record set on the stager's first tick.
+    pub stages_spawns: bool,
 }
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
@@ -344,18 +420,21 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             hit_arm: Some(GIMARD_WALK_ARM),
             walk_arm: Some(GIMARD_WALK_ARM),
             owns_phase: true,
+            stages_spawns: true,
         }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
             hit_arm: Some(VERA_RESTORE_ARM),
             walk_arm: None,
             owns_phase: true,
+            stages_spawns: false,
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
             hit_arm: Some(ZENOIR_FINISH_ARM),
             walk_arm: None,
             owns_phase: true,
+            stages_spawns: false,
         }),
         914 => Some(ModuleProfile::camera_only(gola_gola_direct)),
         915 => Some(ModuleProfile::camera_only(mushura_direct)),
@@ -377,6 +456,7 @@ impl ModuleProfile {
             hit_arm: None,
             walk_arm: None,
             owns_phase: true,
+            stages_spawns: false,
         }
     }
 
@@ -386,6 +466,7 @@ impl ModuleProfile {
             hit_arm: None,
             walk_arm: None,
             owns_phase: false,
+            stages_spawns: false,
         }
     }
 

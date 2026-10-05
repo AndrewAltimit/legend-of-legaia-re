@@ -225,6 +225,41 @@ impl LegaiaRuntime {
         camera_view::nclip_cull_mode(self.cutscene_owns_frame(), mode)
     }
 
+    /// This frame's retail per-primitive near reject for the scene pass -
+    /// the `[enable, sz_per_w, ot_shift, near_otz]` word the page hands
+    /// `TmdRenderer.setPrimNear` (the GLSL `u_prim_near`), from the shared
+    /// [`camera_view::prim_near_cut`] the native window's
+    /// `Renderer::set_prim_near_reject` call also reads. `retail_camera` is
+    /// `false` under the page's debug camera, which retail never had.
+    pub fn play_render_prim_near(&self, retail_camera: bool) -> Vec<f32> {
+        let mode = self
+            .scene_host
+            .as_ref()
+            .map_or(SceneMode::Title, |h| h.world.mode);
+        legaia_engine_ui::prim_near_reject::shader_params(camera_view::prim_near_cut(
+            mode,
+            retail_camera,
+        ))
+        .to_vec()
+    }
+
+    /// Per-vertex primitive-corner records for a triangle mesh - the stream
+    /// the page binds as `a_prim_c0..a_prim_c3`, from the same
+    /// [`legaia_engine_ui::prim_near_reject::prim_corner_refs`] the native
+    /// renderer's mesh upload packs. `positions` is `x, y, z` per vertex;
+    /// the result is 13 floats per vertex.
+    pub fn prim_corner_refs(&self, positions: &[f32], indices: &[u32]) -> Vec<f32> {
+        let pos: Vec<[f32; 3]> = positions.as_chunks::<3>().0.to_vec();
+        let n = pos.len() as u32;
+        if indices.iter().any(|&i| i >= n) {
+            return Vec::new();
+        }
+        legaia_engine_ui::prim_near_reject::prim_corner_refs(&pos, indices)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
     /// This frame's overworld-curvature scale for the scene pass - the
     /// `clip.w`-to-`SZ` factor the page hands `TmdRenderer.setOverworldCurve`
     /// (the GLSL `u_curve`), from the shared

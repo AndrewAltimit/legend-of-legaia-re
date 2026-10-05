@@ -68,12 +68,17 @@ pub const BAR_Y: i32 = 188;
 /// Stage `x` the input bar starts at.
 pub const BAR_X: i32 = 0;
 /// Captured bar length, in stage px, for the reference pool
-/// [`BAR_REFERENCE_POOL`].
+/// [`BAR_REFERENCE_POOL`]: the `94`-wide record body between the two end
+/// pieces ([`BAR_ENDS_W`]).
 pub const BAR_W_AT_REFERENCE_POOL: i32 = 128;
 /// AP pool the captured bar length was measured at.
 pub const BAR_REFERENCE_POOL: u16 = 100;
-/// Shortest bar drawn, so a tiny pool still reads as a bar.
-pub const BAR_W_MIN: i32 = 48;
+/// Combined width of the bar's two end pieces - the 16-wide pointed left
+/// end and the 18-wide arrow - which frame the record body on either side.
+pub const BAR_ENDS_W: i32 = title_pak::OVERLAY_SYSTEM_UI_ARTS_BAR_END_L.2 as i32
+    + title_pak::OVERLAY_SYSTEM_UI_ARTS_BAR_ARROW.2 as i32;
+/// Shortest bar drawn: the two end pieces with no body.
+pub const BAR_W_MIN: i32 = BAR_ENDS_W;
 
 /// Stage `x` the **pennant anchor** of slot 0 sits at - the cursor
 /// `ctx[+0x6D8]`, seeded to 16 on the gauge build (`0x801D3A3C` /
@@ -355,12 +360,19 @@ impl ArtsInputFrame<'_> {
         self.phase == ArtsInputScreen::Entering
     }
 
-    /// Length of the input bar in stage px, scaled off the reference
-    /// capture (`BAR_W_AT_REFERENCE_POOL` at `BAR_REFERENCE_POOL` AP).
+    /// Length of the input bar in stage px: the end pieces plus a body as
+    /// wide as the pool less [`COST_WIDTH_BIAS`].
+    ///
+    /// The body is placement record `0x0F`'s width, which every writer sets
+    /// to the gauge value less 6 - the entry build off the actor's AGL
+    /// (`0x801D3A38`), the Spirit arm off the same AGL (`0x801E2F70`), and
+    /// the Spirit band's grow toward the extended gauge less 6
+    /// (`0x801E547C`). One pixel per AP: retail Spirit captures read a
+    /// `188`-wide body under a `194` AGL and `199` under `205`, and the
+    /// 100-AP entry capture's 128 px is `94 + 34`. (An earlier form scaled
+    /// the capture linearly, `128 * pool / 100`, which only agreed at 100.)
     pub fn bar_width(&self) -> i32 {
-        let scaled = (BAR_W_AT_REFERENCE_POOL as i64 * self.pool_max.max(1) as i64
-            / BAR_REFERENCE_POOL as i64) as i32;
-        scaled.max(BAR_W_MIN)
+        (self.pool_max as i32 - COST_WIDTH_BIAS).max(0) + BAR_ENDS_W
     }
 
     /// Stage `x` of committed pennant `slot`'s **drawn left edge** - the
@@ -904,13 +916,20 @@ mod tests {
     }
 
     #[test]
-    fn bar_scales_off_the_reference_capture_and_floors() {
+    fn bar_is_one_pixel_per_ap_between_its_end_pieces() {
         let mut f = frame(&[], &[]);
-        assert_eq!(f.bar_width(), 128, "the captured 100-AP bar");
-        f.pool_max = 50;
-        assert_eq!(f.bar_width(), 64);
+        assert_eq!(
+            f.bar_width(),
+            BAR_W_AT_REFERENCE_POOL,
+            "the captured 100-AP bar"
+        );
+        // The retail Spirit captures: record 0x0F's body is AGL - 6.
+        f.pool_max = 194;
+        assert_eq!(f.bar_width(), 188 + BAR_ENDS_W);
+        f.pool_max = 205;
+        assert_eq!(f.bar_width(), 199 + BAR_ENDS_W);
         f.pool_max = 4;
-        assert_eq!(f.bar_width(), BAR_W_MIN, "floors so it still reads");
+        assert_eq!(f.bar_width(), BAR_W_MIN, "no body below the bias");
     }
 
     #[test]

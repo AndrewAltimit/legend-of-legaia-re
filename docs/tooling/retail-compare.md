@@ -126,6 +126,22 @@ it is a warp landing and re-centres the region box and the windowed
 static-object list on the seat), the zone camera's arrival snap is re-armed,
 and the session ticks a fixed settle window with no input.
 
+The snap composes from the state's own camera parameter block
+(`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
+takes it as `LEGAIA_SEAT_CAMERA_BLOCK`) rather than from a tile re-query.
+The block holds whichever camera-region record a script or a walk-on loader
+last installed, and that is walk history: `kor5`'s `P2[0]` / `P2[1]` are
+one-op loaders on the walk-on band at tile X `28` / `26`, and the room's
+camera (pitch `700`, `H` `400` against the re-query's `340` / `448`) is the
+one the player last crossed into. The composer, the edge clamp and the ease
+stay the engine's. The block is taken only when retail's camera has composed
+from it - a staging descriptor (`0x801F3580`, the follow ease's, or
+`0x801C6EA8`, op `0x45` APPLY's) carries its `H` - because a loader that runs
+after the last compose leaves the live camera on the previous block until
+the player moves: `kor5_field_card_boot` arrives on `P2[0]`'s tile, so its
+block already reads `700` while the camera still shows the `340` shot the
+re-query reproduces.
+
 The seat is a player **standing** on the tile, not one crossing onto it: the
 walk-on dispatcher's last-tile pair (`FUN_801D1EC4`) is stamped with the seat
 tile, because a retail capture of a player stood on a trigger tile holds that
@@ -179,7 +195,11 @@ engine verdict:
   `LEGAIA_HUD_COUNTDOWN`; the window rearms the HUD until the countdown lands
   on that value at the capture tick
   (`world_map_panel_host::hud_phase_hold`). A state whose countdown has
-  expired (`0`) scores the readout on both sides.
+  expired (`0`) scores the readout on both sides. The overworld runs the same
+  HUD on its far idle (`0xA0` frames), longer than the run before the capture,
+  so there the running countdown is also clamped to what it may still hold
+  (`hud_countdown_cap`); without the clamp no overworld capture drew the
+  readout retail's frame shows.
 
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter
 through `enter_scene_live` directly (no resume landing, no saved seat),
@@ -214,7 +234,19 @@ sampled the settle window instead. The run has a deadline of 9000 ticks; a gate 
 meets keeps the settle-window sample, and the `script` detail says which
 it was.
 
-Two drives get the engine there without changing the retail state it
+A capture parked on the PC right after a record's `0x3F` scene change is
+inside the departing scene's transition hold: the record spins on its
+`26 FF FF` tail while the streaming actor (`FUN_8001FD44`) holds the old
+scene. The engine retires the record on the tick it executes the `0x3F`, so
+that PC is never one it holds; the gate is met once the record's context has
+retired into a held transition, and then once the camera glide has no more
+left than retail's. `son_arrival_from_doman` is such a capture: `map03`
+`P2[13]`, the `son` portal cutscene, stages its shots with op `0x45`
+configures (the last a 299-frame glide to pitch `814`, `H` `252`), and the
+state is caught on its tail with that glide almost landed - the overworld's
+"entry" camera there is that record's, not the zone camera's.
+
+Three drives get the engine there without changing the retail state it
 started from:
 
 - **Resume.** A record the card-load entry does not start - its one-shot
@@ -222,7 +254,33 @@ started from:
   seat does not cross - is installed from its first opcode at the settle
   tick, ungated, as the modal timeline (a concurrent context when another
   timeline holds that slot). The record replays its own staging: its
-  `MoveTo`s, camera beats and pokes run from the top.
+  `MoveTo`s, camera beats and pokes run from the top. The system flags
+  the record set in the straight-line run that ends on the gate PC (from
+  its last jump, picker or flag test) are cleared first: retail executed
+  that run to stand where it was captured, so its latches are already in
+  the state, and a replay that tests them takes the other arm. `town0c`
+  `P1[21]` sets `0x5C1` at `+0x7A` and tests it at `+0x76`; replayed with it
+  up, the record went straight to the Queen Bee fight, past the shot
+  `rim_elm_queen_bee_battle` is captured on. Engagement clears the same
+  latches. A record the scene's
+  own script **spawns** (op `0x44`) may be scored by the spawning arm rather
+  than by itself: `rikuroa`'s `P1[0]` starts `2025` and spawns `44 5C`
+  (`P2[50]`, the post-Caruban record) behind its `0x289` test, a marker
+  `P2[50]` clears, so a card load takes the entry's other arm. The resume
+  replays that arm's op-`0x35` words first
+  (`man_field_scripts::walk_spawn_scores`: the last start within eight
+  instructions of the `44`, through `World::replay_field_bgm_words`).
+- **Engagement.** A capture inside a conversation holds the talked-to
+  placement's own context, engaged. The engine keeps a placement's idle body
+  on a channel and runs a talk on its inline runner, so a record the engine
+  finds only on its idle channel is engaged at the settle tick through the
+  interaction probe's own dispatch (`World::trigger_field_interact`), on the
+  placement whose interaction record carries the capture's head bytes. The
+  runner holds its PC on a segment's start while the box is up - the PC
+  retail's `+0x9E` holds - and the gate reads it like a timeline. The
+  headless seed runs talks on the inline runner as both play hosts do
+  (`WorldToggles::use_vm_dialogue`); without it the record never left its
+  idle channel and the innkeeper states were sampled with no box on screen.
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
   the player made to page the conversation to where it was captured.
@@ -323,6 +381,21 @@ tick for tick, and three things used to put it on another one:
   bars it seeded reach the child on the same first battle tick
   (`LEGAIA_BATTLE_BARS`).
 
+**Where the combatants stand.** Retail walks nobody home after an action
+([battle-action.md](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)),
+so a capture of a running fight stands its combatants wherever earlier rounds
+left them: `zora_glare_petrify_pre`'s Zora casts from `(649, -47)`, beside the
+party, and the Delilas duels' monsters stand at the party's row. Every framing
+case aims at those positions - case 6 on a caster, case 0 on a member, case
+9's formation box - so a seed on the authored seats framed the cast at the
+far end of the stage. The first battle tick therefore also places every
+combatant on its captured live pair `+0x34` / `+0x38`
+(`RetailBattle::seeded_ground`, carried as the `:x:z` tail of each
+`LEGAIA_BATTLE_BARS` entry), on every plan but an opening capture, which is
+sampled before any round ran. The acting seat is placed too, even on a
+captured Attack whose pair is a point on the walk the drive replays: the walk
+ends at its target whatever it starts from.
+
 A settled field also carries its script state into the fight. In `nilboa`
 the settle leaves the Nivora duel's dialogue parked on a text page when the
 encounter is forced. Retail cannot show that box over a fight: its pager
@@ -399,6 +472,15 @@ say so, since what the patch writes into a combatant is not retail behaviour.
 The three `shiny_refactor_gimard_*` states read `enemy_hp` `0.5` for exactly
 that reason: their monster's maxima are the shiny-Seru boost's `x135/100`
 (`133` over the disc's `99`, `27` over `20`).
+
+A state whose capture probe wrote into a combatant **after** battle init names
+those fields in the manifest's `ram_injected` (`p0.mp_max`), and the battle
+channels leave them unscored, with both values in the detail. Battle init
+copies each party record's maxima into its actor once (`FUN_80053CB8`), so a
+record poked later carries the probe's value while the actor keeps the copy:
+`evolved_0x90_midcast` / `_0x91_midcast` (`autorun_evolved_cast.lua`) grant
+`999` MP into Vahn's record (`+0x108` / `+0x10A` / `+0x11E`) over an actor whose
+`+0x152` still reads `27`, and the engine, seeded from the record, reads `999`.
 
 `scene`, `mode` (engine `Battle`), `camera`, `flags`, `inventory` and `image`
 keep their field meaning. HP / MP current values are seeded, so their misses
@@ -575,6 +657,15 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   target at all, the auto-target picks the next standing monster, and the
   run held the right state against the wrong body; the search moves on to
   the `1`-HP re-run that makes the kill.
+- **A counterattack's HUD.** A capture whose timed message is up (HUD
+  element `0x66`, hold `0x801F6964` non-zero) carries the overlay string its
+  content word points at and the hold left; one whose target plaque's
+  content word is zero carries that too (the strike loop's counter swap
+  clears it). The drive reaches a counterer's strike loop through the
+  member's own turn, not through the monster's strike the counter answered,
+  so it raises both on the engine when it holds the capture's state
+  (`ActionSteer::message` / `plate_cleared`). The text itself is read off the
+  engine's own PROT 0898 image. `battle_vahn_tri_somersault_super` is one.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 
@@ -618,8 +709,11 @@ vsync, before the commit. A capture inside PROT 0903's walk arm (`11`) is
 placed by the yaw base `ctx[+0x6DA]` the arm swings `6 * scalar` a vsync
 from `0x200` (the `y<yaw>` suffix), since the phase byte only names the
 arm's entry; an engine walk that arrives sooner leaves the arm first, and
-its exit is then the frame taken. The headless seed seats no creature, so
-its walk arm passes at once.
+its exit is then the frame taken. The headless seed seats the creature
+unrendered (`World::seat_summon_creature_unrendered`, from the session's frame
+tail): with no creature seated the walk arm passed on its first tick and
+folded the hit there, so a capture mid-walk (`gimard_burning_attack`, victim
+still at full HP) read the victim dead.
 
 The frame and the RAM are not the same instant. Retail double-buffers its
 packet pools, so while the CPU builds frame `N` the display scans out
@@ -816,6 +910,12 @@ directory whose options file pins `camera_distance = "retail"`. The window's
 interactive default frames the field further out than retail, and a frame
 compared at that distance scores the zoom rather than the scene.
 
+Every presentation enhancement the window defaults on is turned off in the
+child: enhanced lighting, the volumetric ground fog, the camera-occlusion
+fade (it dissolves the walls around a hidden player that retail draws
+opaque), the scene-entry VDF pulse, and the photosensitivity slew on the
+ambient CLUT cyclers (`reduce_flashing = false` in the options file).
+
 A `--screenshot` child is tick-locked - exactly one world tick per redraw,
 whatever the wall clock did - because the draw pass feeds the simulation (the
 fog step above). A wall-paced capture ran fogged scenes on a stream that
@@ -903,9 +1003,9 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
-| player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
+| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a probe-poked capture: the focus stays where the player stood before the poke ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
-| retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
+| retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 
@@ -972,7 +1072,11 @@ trio match while the frame looks at a different part of the room; only the
 `camera` channel's focus part misses. Seated at the
 arrival point instead, the engine frames the counter, the walkway and the void
 below it the way retail's frame does. The `image` miss on these two states is
-the capture method, not the camera.
+the capture method, not the camera; the innkeeper's box over the room is the
+[engagement](#mid-script-states) drive's. `kor5_post_43a_checkpoint` is the
+same capture shape by its route: the player was poked onto `(32, 41)`, and
+the focus Z reads `11840` (tile `92`, near the room's south end the route
+started from) while the angles, `H` and eye trio match the seat's snap.
 
 ### Arrival states are captured before the town runs
 

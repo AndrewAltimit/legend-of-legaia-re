@@ -650,11 +650,11 @@ impl PlayWindowApp {
             );
             return;
         }
-        // `Y`: toggle the shadow-casting per-scene point-light sub-layer of
-        // the dynamic-lighting enhancement (the `--no-dyn-shadows` flag's
-        // runtime twin). Only visible while dynamic lighting (`I`) is on -
-        // the layer stages a zero light count otherwise. Pure renderer
-        // state, like `I`.
+        // `Y`: toggle the shadows the dynamic-lighting enhancement's point
+        // lights cast (the `--no-dyn-shadows` flag's runtime twin). Shadows
+        // only - the lamps keep lighting the scene, unshadowed, which is
+        // what the play page's "Lamp shadows" box does too. Only visible
+        // while dynamic lighting (`I`) is on. Pure renderer state, like `I`.
         if matches!(code, KeyCode::KeyY) && state == ElementState::Pressed {
             self.dyn_shadows = !self.dyn_shadows;
             if let Some(r) = self.win.renderer.as_ref() {

@@ -863,6 +863,15 @@ Three traps, each of which cost a run:
   surfaces match: both hosts read the same
   `options_state.camera_distance` (`window/run.rs`, `runtime.rs`), so that
   knob is not the difference.
+- **The same knob is not the same value.** Each host *persists* the
+  camera-distance preset on its own: the window in `legaia-options.toml` in
+  its working directory (a `T` in one run's `--key-script` is still in force
+  in the next), the page in `localStorage`. Pin it on both before a pair -
+  on the overworld it decides how much of the far continent sits inside the
+  white haze. A "the page washes the castle and far mountains out, the
+  window draws them" report on `map01` dissolved this way: with the preset
+  and the tick pinned, the two hosts' frames match, haze included, through
+  hundreds of idle ticks while the haze builds.
 
 ### What the pairs showed
 
@@ -1272,7 +1281,6 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| point-light shadow maps | Enhanced lighting reaches both hosts from one kernel; only its shadow maps are native. See [below](#enhanced-lightings-shadow-maps-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; two residues differ in override keying and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-two-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 
@@ -1325,7 +1333,7 @@ only when a card is inserted. Closing it means giving the page a port backed
 by its stored sessions (the rack snapshot, the block read, the Save write and
 the export path), which is storage work rather than wiring.
 
-### Enhanced lighting's shadow maps are native-only
+### Enhanced lighting, shadow maps included, on both hosts
 
 Enhanced lighting is one engine-side source of truth,
 `legaia_engine_ui::scene_lighting`, on both hosts: the emissive tags are set
@@ -1338,12 +1346,27 @@ glow quads are the same `glow_vertices`. The page asks for all of it per
 frame through `play_lighting_frame`, against the camera basis of the VP it
 draws with; the moods are not constants on the page at all.
 
-What the page lacks is the PCF **shadow** term: native renders one depth layer
-per picked light, and the page's GLSL point lights attenuate and wrap
-identically but cast no shadow. Blocking capability: a depth-array render
-pass in [`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js). It buys no retail
-fidelity - this is the one row here where the *native* host runs the richer
-non-retail path - so it is a feature gap rather than a correctness gap.
+The PCF **shadow** term is per host by necessity - it is GPU work over each
+host's own draw list. Native renders one depth layer per picked light
+(`stage_scene_lights_and_shadows`); the page does the same in
+`TmdRenderer._renderLightShadows` ([`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js)):
+a `DEPTH_COMPONENT24` texture array, one downward cone per light rebuilt in
+the page's `(x, -y, z)` frame, the ground and every placement drawn depth-only
+through a position-only program bound at the main program's `a_position`
+slot, and a 3x3 hardware-compared PCF in the main shader. The cone uses a
+GL-style projection, whose window depth equals the native 0..1 depth for the
+same near and far, so the compare bias and the polygon offset carry over
+unchanged; the five constants are paired by `check-ui-host-drift.py`. The
+page's "Lamp shadows" box is the native `Y`, and both mean **shadows only**:
+off, the lamps keep lighting the scene unshadowed and no shadow map is drawn
+(native stages each light's `color.w = 0` and skips the pass; the page leaves `u_shadow.x`
+at 0). Turning the lamps themselves off is the enhanced-lighting toggle (`I`,
+the page's lighting box), which is the one knob both hosts read for that.
+
+The shadow array sits on its own texture unit for the program's life. A
+`sampler2DArrayShadow` left at the default unit 0 shares it with the VRAM
+`TEXTURE_2D`, which WebGL rejects at every draw of every page that builds a
+`TmdRenderer` - not only the play page.
 
 ### A battle body's blend mode reaches both hosts, with two residues
 
@@ -3702,8 +3725,8 @@ that could drift; none is gated.
   mesh drew (the native drained spawn slots, the page's player rig), and the
   native boot-panel gate has no page twin because no page boot panel draws
   over a world-map frame.
-- **The render toggles** - PSX rasterisation and enhanced lighting - reach
-  the page; only enhanced lighting's shadow maps stay native-only. See
+- **The render toggles** - PSX rasterisation and enhanced lighting, its
+  shadow maps included - reach the page. See
   [the render toggles on the page](#the-two-opt-in-render-toggles-on-the-page).
 - **The fishing wander readout (native only), left as a debug aid.** A
   dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
@@ -3753,7 +3776,9 @@ pixels against the pre-lighting shaders on the same bundle).
   screen-centred pool, capped at 1.3x over the baked shading, plus up to eight
   point lights (half-Lambert wrap, `(1 - (d/r)^2)^2` attenuation) up to 1.9x,
   applied after the texel modulate and before the grade and cue; an emissive
-  prim (TSB / blend bit 13) draws at the emissive gain plus its light.
+  prim (TSB / blend bit 13) draws at the emissive gain plus its light, and a
+  lit-window prim (TSB bit 12) turns its glass texels to lamp light by the
+  mood's window glow (`dyn_window`, after `dyn_light` on both hosts).
   Textured prims light off smoothed per-vertex normals that
   `computeSmoothNormals` (`webgl-math.js`, the twin of
   `legaia_tmd::mesh::compute_smooth_normals`) derives on the CPU - only while
@@ -3766,8 +3791,8 @@ pixels against the pre-lighting shaders on the same bundle).
   engine per frame, in the retail frame, and the page flips Y into its own.
   The glow quads draw in a second small program, additive, depth-tested.
 
-What stays native-only is
-[enhanced lighting's shadow maps](#enhanced-lightings-shadow-maps-are-native-only).
+The point lights' shadow maps reach the page too - see
+[enhanced lighting on both hosts](#enhanced-lighting-shadow-maps-included-on-both-hosts).
 Native has no in-game PSX toggle - the `LEGAIA_PSX_RENDER` environment
 variable is its whole switch - so the page's checkbox is the one interactive
 control for it.
@@ -3846,6 +3871,40 @@ asked it, but one host asked on one branch. No Rust tier can see it, so
 every play-page call of one must sit in `_stageFrameState` unless the setter
 is classified as branch-owned with a reason. It runs in the pre-commit hook
 when `site/` is touched and in CI.
+
+### A second program in the scene's depth buffer, in another depth space
+
+The page's mesh program writes `log2(w) / LOG_DEPTH_RANGE` to `gl_FragDepth`
+on its perspective frames (`LOG_DEPTH_GLSL` in
+[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js)), because WebGL2
+cannot select the native renderer's float reversed-Z buffer. The
+enhanced-lighting glow program - the lamp halos and light shafts - is drawn
+into the same buffer with the depth test on, and kept the rasterised
+`gl_FragCoord.z`: about 0.99 at field distances against a scene written near
+0.4, so LEQUAL rejected nearly every halo fragment. The night Genesis Tree
+bloomed on the native window and barely glowed on the page; nothing failed,
+the shader compiled, linked and drew into a test it lost. The glow program
+now writes the same log depth under the same flag.
+
+[`scripts/ci/check-js-depth-space.py`](../../scripts/ci/check-js-depth-space.py)
+reads every GLSL fragment source under `site/js/` and requires a
+`gl_FragDepth` write, unless the shader is waived with the reason its depth
+never meets the log buffer (the overworld sea backdrop, which draws first; a
+replay script no page loads). It runs in the pre-commit hook when `site/` is
+touched and in CI.
+
+### An effect billboard's semi-transparency enable
+
+Retail sends every effect-pool child as prim code `0x2E`, a textured quad
+with the GP0 semi-transparency bit set; the atlas entry stores only a
+one-byte page, so the port's prim-ABE enable (TSB bit 15) has to be forced on
+by whoever builds the quad. The native builder did; the page's battle and
+field FX builders pushed the bare page, so no billboard triangle reached the
+page's blend pass and every effect texel drew opaque - the battle's landing
+dust (ABR 3, `B + F/4` at the envelope's low brightness, a faint haze on the
+native window) sat on the floor as dark solid puffs. All three builders now
+take `EffectSprite::packet_tsb`, and a `SIM_PAIRS` row in
+`check-ui-host-drift.py` pins the call at each.
 
 ### The intro emitter stepped per draw
 

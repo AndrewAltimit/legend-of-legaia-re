@@ -203,6 +203,14 @@ const DYN_LAMBERT_FALLBACK = 0.6;
 const DYN_POOL_CENTER = [0.5, 0.45];
 const DYN_POOL_INNER = 0.15;
 const DYN_POOL_OUTER = 0.75;
+/* Lit windows (scene_lighting::LIT_WINDOWS / shade_window): a prim tagged
+ * TSB bit 12 samples a curated window art; its glass texels (blue clearly
+ * above red and dominant, or near-black) blend toward a warm lamp colour by
+ * the mood's window glow (u_dyn_window, from the engine's lighting packet). */
+const DYN_WIN_GLASS_MIN_BLUE = 0.19;
+const DYN_WIN_GLASS_BLACK_MAX = 0.1;
+const DYN_WIN_RGB = [1.0, 0.72, 0.4];
+const DYN_WIN_FLOOR = 0.6;
 
 /* The PSX GPU's signed 4x4 ordered-dither offsets, row-major (row = pixel
  * y & 3) - paired with engine-render's psx_dither::DITHER_MATRIX. */
@@ -266,6 +274,40 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
  * 0.0 - every page but the play page on an overworld - is the identity. */
 uniform float u_curve;
 
+/* Retail's per-primitive near reject - the GLSL twin of engine-render's
+ * PRIM_NEAR_WGSL (legaia_engine_ui::prim_near_reject). Every TMD prim
+ * handler behind FUN_80043390 drops a primitive whose OTZ (AVSZ3 / AVSZ4 of
+ * the corners' saturated SZ, ZSF = 0x555 / 0x400 >> the OT shift) is below
+ * the scratch floor 0x1F80037E; there is no near-plane clip on that path.
+ * u_prim_near = (enable, sz_per_w, ot_shift, near_otz) from the shared
+ * camera_view::prim_near_cut (play_render_prim_near -> setPrimNear); all
+ * zeros - the GL default, and every page but the play page - never rejects.
+ * a_prim_c0.w is the primitive's corner count (0 = no single owner, never
+ * rejected); unbound, the attributes read the generic default (0,0,0,1). */
+uniform vec4 u_prim_near;
+in vec4 a_prim_c0;
+in vec3 a_prim_c1;
+in vec3 a_prim_c2;
+in vec3 a_prim_c3;
+
+int primSz(mat4 m, vec3 c, float szPerW) {
+  float w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
+  return clamp(int(floor(w * szPerW)), 0, 0xFFFF);
+}
+
+bool primNearRejected(mat4 m) {
+  if (u_prim_near.x < 0.5 || a_prim_c0.w < 2.5) return false;
+  int shift = int(u_prim_near.z);
+  int sum = primSz(m, a_prim_c0.xyz, u_prim_near.y) + primSz(m, a_prim_c1, u_prim_near.y)
+    + primSz(m, a_prim_c2, u_prim_near.y);
+  int zsf = 0x555 >> shift;
+  if (a_prim_c0.w > 3.5) {
+    sum += primSz(m, a_prim_c3, u_prim_near.y);
+    zsf = 0x400 >> shift;
+  }
+  return ((zsf * sum) >> 12) < int(u_prim_near.w);
+}
+
 /* PSX rasterisation (opt-in, NON-default - the GLSL twin of the native
  * renderer's psx_params, Renderer::set_psx_mode / LEGAIA_PSX_RENDER):
  * x, y = framebuffer width and height in pixels (staged on every draw, since
@@ -322,6 +364,16 @@ float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
   float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
   int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * u_curve + 0.5)), 0, 0xFFFF);
   return (float((sz >> 5) + 14) * 32.0 + 32.0) / u_curve;
+}
+
+/* The field ground pass's far bucket - the GLSL twin of engine-render's
+ * field_far_bucket_depth (legaia_engine_core::field_ground::flat_refs).
+ * Retail links a field ground cell without the object-grid sort bit 0x8000
+ * into the ordering table's fixed far bucket, so every other primitive
+ * paints over it; a sloped such cell carries a swapped x pair (fa.x > fa.z).
+ * Off the overworld only (u_curve 0); the FS moves the marked depth. */
+bool fieldFarBucket(vec4 fa) {
+  return u_curve <= 0.0 && fa.x > fa.z;
 }
 
 vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
@@ -394,6 +446,8 @@ out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out vec4 v_flat_rgba;
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 out float v_depth_w;   /* the w the log-depth write keys on */
+/* 1 on a sloped far-bucket field ground cell (fieldFarBucket), else 0. */
+flat out float v_far_bucket;
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
 out vec3 v_world;      /* page-frame world position (enhanced lighting's point lights) */
@@ -428,12 +482,16 @@ void main() {
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
+  /* A rejected primitive parks every corner on one point outside the clip
+   * volume: no area, nothing rasterised. */
+  if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   v_view_z = gl_Position.w;
   /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
    * representative w on a continent cell, the vertex's own clip w elsewhere.
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
+  v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0 : 0.0;
   v_normal = a_normal;
   v_obj_pos = a_position;
 }
@@ -556,13 +614,25 @@ uniform vec4 u_psx;
  * (ambient rgb, emissive gain). enable 0 - the GL default - is the identity.
  * The point lights are the engine's nearest-to-player pick, in this page's
  * world frame (x, -y, z): xyz = position, w = radius; colour rgb carries the
- * mood's lamp strength. No shadow maps on this host. */
+ * mood's lamp strength. */
 uniform vec4 u_dyn_dir;
 uniform vec4 u_dyn_color;
 uniform vec4 u_dyn_ambient;
+/* The mood's window glow (LightingMood::window_word.x); 0 - the GL default
+ * - leaves every window as painted. */
+uniform float u_dyn_window;
 uniform int u_light_count;
 uniform vec4 u_light_pr[8];
 uniform vec4 u_light_col[8];
+/* The point lights' shadow maps (the GLSL twin of the native scene-lights
+ * group's t_shadow / s_shadow): one depth layer per picked light, rendered
+ * by TmdRenderer._renderLightShadows from a downward cone, compared through
+ * the hardware filter. u_light_vp[i] maps this page's world frame into
+ * light i's clip space; u_shadow = (on, texel size, compare bias, -). x = 0
+ * (the GL default) skips every lookup - unshadowed lights. */
+uniform highp sampler2DArrayShadow u_shadow_maps;
+uniform mat4 u_light_vp[8];
+uniform vec4 u_shadow;
 
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
@@ -570,6 +640,7 @@ in float v_fog_t;
 in vec4 v_flat_rgba;
 in float v_view_z;
 in float v_depth_w;
+flat in float v_far_bucket;
 in vec3 v_normal;
 in vec3 v_obj_pos;
 in vec3 v_world;
@@ -614,11 +685,39 @@ const float DYN_LAMBERT_FALLBACK = ${glslFloat(DYN_LAMBERT_FALLBACK)};
 const vec2 DYN_POOL_CENTER = vec2(${glslFloat(DYN_POOL_CENTER[0])}, ${glslFloat(DYN_POOL_CENTER[1])});
 const float DYN_POOL_INNER = ${glslFloat(DYN_POOL_INNER)};
 const float DYN_POOL_OUTER = ${glslFloat(DYN_POOL_OUTER)};
+const float DYN_WIN_GLASS_MIN_BLUE = ${glslFloat(DYN_WIN_GLASS_MIN_BLUE)};
+const float DYN_WIN_GLASS_BLACK_MAX = ${glslFloat(DYN_WIN_GLASS_BLACK_MAX)};
+const vec3 DYN_WIN_RGB = vec3(${DYN_WIN_RGB.map(glslFloat).join(', ')});
+const float DYN_WIN_FLOOR = ${glslFloat(DYN_WIN_FLOOR)};
 
-/* Twin of engine-render's scene_point_gain without the shadow term:
- * attenuation (1 - (d/r)^2)^2 and the half-Lambert wrap off the same normal
- * the native shader hands it (the smoothed vertex normal, else the facet
- * normal). */
+/* Twin of engine-render's scene_light_shadow: 3x3 PCF visibility of the
+ * fragment from light i (0 = fully shadowed, 1 = lit). Out-of-cone and
+ * behind-the-light fragments return 1.0 - distance attenuation still bounds
+ * them. GL window depth for a GL-style projection equals the native 0..1
+ * depth for the same near / far, so the compare bias carries over as is.
+ * textureGrad with zero gradients: the lookup sits in non-uniform control
+ * flow, and the depth layers carry one mip. */
+float light_shadow(int i, vec3 wp) {
+  if (u_shadow.x < 0.5) return 1.0;
+  vec4 clip = u_light_vp[i] * vec4(wp, 1.0);
+  if (clip.w <= 0.0) return 1.0;
+  vec3 ndc = clip.xyz / clip.w;
+  if (abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0 || ndc.z <= -1.0 || ndc.z >= 1.0) return 1.0;
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  float ref = ndc.z * 0.5 + 0.5 - u_shadow.z;
+  float sum = 0.0;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      vec2 o = vec2(float(dx), float(dy)) * u_shadow.y;
+      sum += textureGrad(u_shadow_maps, vec4(uv + o, float(i), ref), vec2(0.0), vec2(0.0));
+    }
+  }
+  return sum / 9.0;
+}
+
+/* Twin of engine-render's scene_point_gain: attenuation (1 - (d/r)^2)^2,
+ * the half-Lambert wrap off the same normal the native shader hands it (the
+ * smoothed vertex normal, else the facet normal) and the per-light shadow. */
 vec3 point_gain(vec3 n) {
   vec3 g = vec3(0.0);
   float n_len = length(n);
@@ -632,7 +731,7 @@ vec3 point_gain(vec3 n) {
     att = att * att;
     float lam = DYN_LAMBERT_FALLBACK;
     if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l / d)) * 0.5 + 0.5;
-    g += u_light_col[i].rgb * att * lam;
+    g += u_light_col[i].rgb * (att * lam * light_shadow(i, v_world));
   }
   return g;
 }
@@ -671,6 +770,19 @@ vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn, bool emissive) {
   vec3 base = u_dyn_ambient.rgb + (DYN_DIFFUSE * lambert + u_dyn_color.w * pool) * u_dyn_color.rgb;
   return clamp(rgb * min(min(base, vec3(DYN_MAX_GAIN)) + pg, vec3(DYN_TOTAL_MAX_GAIN)),
                vec3(0.0), vec3(1.0));
+}
+
+/* Twin of engine-render's dyn_window: a window prim's (TSB bit 12) glass
+ * texel - saturated blue, or near-black - turns toward lamp light by
+ * the mood's window glow. texel = the raw decoded texel. Identity while the
+ * enhancement is off or the glow is 0. */
+vec3 dyn_window(vec3 lit, vec3 texel, bool window) {
+  if (u_dyn_dir.w < 0.5 || !window || u_dyn_window <= 0.0) return lit;
+  bool blue = texel.b - texel.r >= DYN_WIN_GLASS_MIN_BLUE && texel.b >= texel.g;
+  bool black = max(texel.r, max(texel.g, texel.b)) <= DYN_WIN_GLASS_BLACK_MAX;
+  if (!blue && !black) return lit;
+  vec3 pane = DYN_WIN_RGB * (DYN_WIN_FLOOR + (1.0 - DYN_WIN_FLOOR) * texel.b);
+  return clamp(mix(lit, pane, clamp(u_dyn_window, 0.0, 1.0)), vec3(0.0), vec3(1.0));
 }
 
 /* Decode BGR555 R/G/B in 0..1 linear. Used for VRAM texture samples. */
@@ -822,7 +934,14 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
-  gl_FragDepth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
+  float far_bucket_depth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
+  /* A sloped far-bucket field ground cell draws under everything, as
+   * retail's far bucket does: its depth goes into the thin slice in front of
+   * the clear value, keeping its own per-pixel order inside the slice
+   * (FIELD_FAR_BUCKET_DEPTH_SCALE in engine-render - same scale, mirrored for
+   * this page's forward depth). */
+  if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
+  gl_FragDepth = far_bucket_depth;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the
    * framebuffer's Y direction, which the light's abs() makes irrelevant. */
@@ -985,7 +1104,8 @@ void main() {
                    vec3(0.0), vec3(1.0));
   /* Opt-in dynamic light over the baked shading (identity when off), at
    * native's point in the chain: after the modulate, before grade and cue. */
-  lit = dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u);
+  lit = dyn_window(dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u),
+                   color.rgb, (tsb & 0x1000u) != 0u);
 
   lit = apply_distance_fog(lit);
 
@@ -1039,10 +1159,12 @@ in vec2 a_uv;
 in vec4 a_color;
 out vec2 v_uv;
 out vec4 v_color;
+out float v_depth_w;
 void main() {
   gl_Position = u_mvp * vec4(a_position, 1.0);
   v_uv = a_uv;
   v_color = a_color;
+  v_depth_w = gl_Position.w;
 }
 `;
 
@@ -1050,8 +1172,17 @@ const GLOW_FS_SRC = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 in vec4 v_color;
+in float v_depth_w;
 out vec4 o_color;
+/* The glow is depth-tested against the scene, so it must compare in the
+ * scene's depth space: the play page's mesh program writes log2(w)
+ * (LOG_DEPTH_GLSL) on its perspective frames, and a halo that wrote the
+ * rasterised gl_FragCoord.z (~0.99 at field distances) against a log
+ * buffer (~0.4) failed LEQUAL almost everywhere - the halos vanished. */
+uniform int u_log_depth_on;
+${LOG_DEPTH_GLSL}
 void main() {
+  gl_FragDepth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
   float f;
   if (v_color.w > 0.5) {
     float x = clamp(1.0 - v_uv.x * v_uv.x, 0.0, 1.0);
@@ -1062,4 +1193,25 @@ void main() {
   }
   o_color = vec4(v_color.rgb * f, 1.0);
 }
+`;
+
+/* Depth-only shadow pass for the enhanced-lighting point lights - the GLSL
+ * twin of engine-render's SHADOW_MESH_SHADER_SRC. Position only, bound at the
+ * main program's a_position location so every mesh VAO draws through it
+ * unchanged; u_mvp = light view-projection * the draw's model matrix. The
+ * fragment stage writes nothing: the target is the light's own depth layer,
+ * never the scene's buffer, and cutout texels shadow as solid (the native
+ * pass's accepted approximation too). */
+const SHADOW_VS_SRC = `#version 300 es
+precision highp float;
+uniform mat4 u_mvp;
+in vec3 a_position;
+void main() {
+  gl_Position = u_mvp * vec4(a_position, 1.0);
+}
+`;
+
+const SHADOW_FS_SRC = `#version 300 es
+precision highp float;
+void main() {}
 `;

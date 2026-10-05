@@ -275,6 +275,21 @@ impl SceneHost {
         }
         self.world
             .install_cast_effect_pool(std::sync::Arc::new(pool));
+        // The attack names the summon modules' caption arms print: each
+        // player cast's `summon.dat` actor record `rec[0]` string.
+        if let Ok(summon_dat) = self
+            .index
+            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
+        {
+            let names: std::collections::BTreeMap<u8, String> =
+                legaia_asset::summon_readef::PLAYER_CAST_IDS
+                    .filter_map(|id| {
+                        let cast = legaia_asset::summon_readef::parse_cast(&summon_dat, id).ok()?;
+                        Some((id, cast.attack_name?))
+                    })
+                    .collect();
+            self.world.tables.summon_attack_names = std::sync::Arc::new(names);
+        }
     }
 
     /// Re-read the party's per-equipment battle inputs - the swing costs and
@@ -1373,6 +1388,14 @@ impl SceneHost {
             && let Err(err) = seed_effect_model_library_from_etmd(&self.index, &mut self.world)
         {
             eprintln!("[scene] effect-model library (PROT 0871) load skipped: {err:#}");
+        }
+        // The battle VDF morph pack (PROT 0872, `vdf.dat`), loaded beside the
+        // effect-model library for the same reason: effect parts' morph lanes
+        // index it. Idempotent; soft-fails to rest meshes.
+        if self.world.tables.battle_vdf.is_none()
+            && let Err(err) = seed_battle_vdf(&self.index, &mut self.world)
+        {
+            eprintln!("[scene] battle VDF (PROT 0872) load skipped: {err:#}");
         }
         // Load the runtime effect-script catalog from PROT 0873 (`efect.dat`)
         // so the battle-action SM's `ui_element` spawns resolve to real

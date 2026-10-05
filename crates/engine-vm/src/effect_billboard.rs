@@ -54,9 +54,56 @@ pub fn world_half_extents(size: [f32; 2], view_scale: f32) -> (f32, f32) {
     (size[0] * 0.5 / s, size[1] * 0.5 / s)
 }
 
+/// The centre a **battle** billboard is built around: the pool's raw retail
+/// position with its Y negated.
+///
+/// The effect pool integrates in raw PSX battle units - **Y down**, so a
+/// child climbing off the floor runs negative (`FUN_801E0088`'s pass-1
+/// integrator, seeded at the effect script's spawn point, which is the
+/// acting actor's live trio less its raised `+0x04` offset). The battle
+/// view-projection both hosts draw with (`battle_cam_script::battle_vp`,
+/// `psx_camera::psx_camera_vp`) carries a trailing `scale(1, -1, 1)` that
+/// cancels the per-model Y-flip every mesh draw carries - so it consumes
+/// **Y-up** input. A billboard has no model matrix to carry that flip, so its
+/// centre has to arrive already flipped; fed the raw position, a spark that
+/// rises past an actor's head projects the same height *below* its feet (the
+/// Spirit charge's sparkles land off the bottom of the frame). The field
+/// cameras compose the world flip themselves and take the raw position.
+pub fn battle_billboard_centre(raw: [f32; 3]) -> [f32; 3] {
+    [raw[0], -raw[1], raw[2]]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::world_half_extents;
+    use super::{battle_billboard_centre, world_half_extents};
+
+    /// A spark above an actor's feet projects above them: the battle
+    /// view-projection sees the flipped centre at the same screen point a
+    /// model's flipped vertex lands on.
+    #[test]
+    fn a_rising_spark_projects_above_the_feet() {
+        use crate::battle_cam_script::{BattleCamPose, battle_vp};
+        let pose = BattleCamPose {
+            pitch: 128.0,
+            yaw: 2048.0,
+            tr: [0.0, 1024.0, 3276.0],
+            focus: [0.0, 0.0, -800.0],
+        };
+        let vp = battle_vp(&pose, 4.0, 4.0 / 3.0);
+        // The hosts draw under `vp * scale(4)` (the battle stage's base matrix).
+        let ndc_y = |p: [f32; 3]| {
+            let p = p.map(|v| v * 4.0);
+            let c = |r: usize| vp[r] * p[0] + vp[4 + r] * p[1] + vp[8 + r] * p[2] + vp[12 + r];
+            c(1) / c(3)
+        };
+        let feet = ndc_y(battle_billboard_centre([0.0, 0.0, -800.0]));
+        let spark = ndc_y(battle_billboard_centre([0.0, -392.0, -800.0]));
+        assert!(
+            spark > feet,
+            "a Y-down rise is screen-up: {spark} vs {feet}"
+        );
+        assert!(ndc_y([0.0, -392.0, -800.0]) < feet, "the raw centre sinks");
+    }
 
     /// The field case is the identity: no camera scale, so the pass-2 size is
     /// already the world size.

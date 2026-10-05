@@ -1263,10 +1263,11 @@ struct PlayWindowApp {
     /// the HUD status line. Default `false` = the faithful pixel-identical
     /// render.
     dynamic_lighting: bool,
-    /// Shadow-casting per-scene **point-light sub-layer** of the
-    /// dynamic-lighting enhancement: candle / wall-light sources derived
-    /// from the scene's emissive prims ([`legaia_engine_render::scene_lights`])
-    /// with per-light PCF shadow maps. Default `true`, but only effective
+    /// **Shadows** of the dynamic-lighting enhancement's per-scene point
+    /// lights (candle / wall-light sources derived from the scene's emissive
+    /// prims, [`legaia_engine_render::scene_lights`]): per-light PCF shadow
+    /// maps. Off leaves the lamps lighting the scene, unshadowed - the play
+    /// page's "Lamp shadows" box means the same. Default `true`, but only effective
     /// while `dynamic_lighting` is on; disable with `--no-dyn-shadows`, or
     /// toggle at runtime with the `Y` key. Mirrored into the renderer via
     /// [`legaia_engine_render::Renderer::set_dyn_shadows`].

@@ -1075,9 +1075,10 @@ pub(crate) enum Cmd {
         /// (`retail-compare`) pass this.
         #[arg(long, default_value_t = false)]
         no_dynamic_lighting: bool,
-        /// Disable the shadow-casting per-scene point-light sub-layer of
-        /// `--dynamic-lighting` (candle / wall-light sources derived from the
-        /// scene's emissive prims, each with a PCF-filtered shadow map). On
+        /// Disable the shadows of `--dynamic-lighting`'s per-scene point
+        /// lights (candle / wall-light sources derived from the scene's
+        /// emissive prims, each with a PCF-filtered shadow map). The lamps
+        /// keep lighting the scene, unshadowed. On
         /// by default whenever `--dynamic-lighting` is on; irrelevant (and
         /// costless) without it. Toggle at runtime with the `Y` key.
         #[arg(long, default_value_t = false)]

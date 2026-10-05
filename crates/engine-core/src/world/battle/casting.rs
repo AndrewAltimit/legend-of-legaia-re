@@ -287,6 +287,12 @@ impl World {
             // the `+0x12`/`+0x16` `0x801f6324` prototype records the retail
             // strike setup (`FUN_801e09f8`) spawns on the launch / on-contact
             // transitions. No-op when the move has no FX entries.
+            //
+            // A caster whose committed effect script still has its
+            // terminator ahead hands the lists to the homing flight that
+            // terminator seeds instead (`World::seed_homing_slots`), which
+            // spawns them along the way and on landing, as retail does.
+            self.casting.homing_takes_lists = self.effect_script_terminates(caster as usize);
             self.request_move_fx_spawn(def.id, fx_origin);
         }
         true

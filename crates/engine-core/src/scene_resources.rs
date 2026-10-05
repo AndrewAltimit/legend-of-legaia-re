@@ -778,10 +778,10 @@ impl SceneResources {
                 if !walked && !skip_scene_tmd_stream {
                     // Fallback sweep, for blocks the descriptor walk cannot
                     // enumerate: scan raw bytes AND any LZS-decompressed
-                    // sections. The v12-family dungeons (`rikuroa`, `dolk2`)
-                    // ship their environment geometry as a standalone
-                    // `lzs_container` with no descriptor table over it, so a
-                    // magic sweep is the only reader they have.
+                    // sections. The count-4 tables of the v12-family and
+                    // chapter-2 dungeons are walked like any other (see
+                    // `scene_asset_table::mesh_pool`), so this only serves a
+                    // block with no walkable table at all.
                     //
                     // This is a heuristic and it over-collects when a block
                     // *does* have a table - which is why it is off whenever

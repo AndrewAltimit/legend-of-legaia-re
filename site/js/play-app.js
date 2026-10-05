@@ -529,6 +529,11 @@ void main() {
       adoptPadBindings(runtime);
       this.canvas = canvas;
       this.renderer = new window.TmdRenderer(canvas);
+      /* Every scene mesh carries its primitives' corners for retail's
+       * per-primitive near reject, built by the engine's kernel (read
+       * through this.rt so a recovered runtime keeps serving it). */
+      this.renderer.primRefsFn = (p, i) => (this.rt && typeof this.rt.prim_corner_refs === 'function'
+        ? this.rt.prim_corner_refs(p, i) : null);
       this.opts = opts || {};
       this.raf = 0;
       this.paused = false;
@@ -2930,7 +2935,24 @@ void main() {
        * at raw battle world coordinates; actors compose the retail 4x world
        * scale (base matrix 0x8007BF10), pre-scaled here because the page's
        * per-draw `scale` only scales the mesh, not its translation. */
-      if (b.backdrop) draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
+      /* The backdrop pair's own depth cue (`FUN_80050120`'s `+0x78` ramp):
+       * pulled toward black through a summon close-up, off the draw at full
+       * weight (PROT 0903's fire tunnel). Guarded against a cached WASM
+       * without the export. */
+      let backdropCue = null;
+      let backdropHidden = false;
+      if (typeof rt.play_battle_backdrop_cue_json === 'function') {
+        try {
+          const c = JSON.parse(rt.play_battle_backdrop_cue_json());
+          if (c && c.hidden) backdropHidden = true;
+          else if (c && c.far) {
+            backdropCue = { far: c.far, nearZ: c.near_z, farZ: c.far_z, maxIr0: c.max_ir0 };
+          }
+        } catch (e) { /* draw uncued */ }
+      }
+      if (b.backdrop && !backdropHidden) {
+        draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue });
+      }
       /* The grid rides the stage's own GTE depth cue (`DAT_80078C1C` outdoor
        * table / indoor grey), as a PER-DRAW cue - nothing else in the frame
        * fogs. The engine resolved the far colour + ramp window at battle
@@ -3112,6 +3134,7 @@ void main() {
        * checkbox state. Both off unless the player ticked them. */
       if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
       if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
+      if (this.renderer.setDynShadows) this.renderer.setDynShadows(this.dynShadows !== false);
       /* Log-of-w depth on every branch's perspective frames (webgl-shaders.js
        * LOG_DEPTH_GLSL): the resolution the native float reversed-Z buffer
        * has and a 24-bit one lacks. */
@@ -3163,6 +3186,15 @@ void main() {
         let scale = 0;
         try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
         this.renderer.setOverworldCurve(scale);
+      }
+      /* Retail's per-primitive near reject (camera_view::prim_near_cut): a
+       * primitive whose mean corner depth sits near or behind the eye is not
+       * drawn, where a per-pixel clip paints it across the frame. Only under
+       * the engine's retail camera - never the debug orbit. */
+      if (this.renderer.setPrimNear && typeof rt.play_render_prim_near === 'function') {
+        let p = null;
+        try { p = rt.play_render_prim_near(!this.debugCamera); } catch (_) { p = null; }
+        this.renderer.setPrimNear(p);
       }
     }
 
@@ -3460,6 +3492,12 @@ void main() {
 
     setDynamicLighting(on) {
       this.dynLighting = !!on;
+    }
+
+    /* The point lights' shadow sub-layer (the native window's `Y`); on
+     * unless the "Lamp shadows" box is cleared. */
+    setDynShadows(on) {
+      this.dynShadows = !!on;
     }
 
     /* Stage this frame's camera.

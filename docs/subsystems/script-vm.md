@@ -742,7 +742,7 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x37 / 0x41 / 0x47 | `YIELD` family (**motion ops**) | `[op, b0, b1]` (resume pc+3); `[47, xb, zb, b2]` (pc+4) | Park the script and hand the op to the walk kernel. [Detail](#0x37--0x41--0x47-yield-family-motion-ops). |
-| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Actor facing. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved actor's `+0x26` (`0xF8` = the player; port hook `FieldHost::face_compass`). Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player), yield with `resume_pc = pc + 3`; on fail fall through to dispatcher default. |
+| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Actor facing. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved actor's `+0x26` (`0xF8` = the player; port hook `FieldHost::face_compass`). Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player) and advance by 3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) - only a player target parks the record; an NPC turns while the record runs on. On fail the PC stays on the op. |
 | 0x39 | `GIVE_ITEM` | `[39, item_id]` | Adds one inline item `item_id` to the inventory; the **treasure-chest item-give** path (the granted item is this single operand byte, **not** a per-scene table). Full behaviour in [§ 0x39 GIVE_ITEM](#0x39-give_item) below. |
 | 0x3A | `ADD_MONEY` | `[3A, b0, b1, b2]` | 24-bit signed delta: `_DAT_8008459C += sext24(operand)`. Clamp to `[0, 9999999]`. |
 | 0x3B | `SET_ITEM_COUNT` | `[3B, slot, count]` | Set inventory entry: `*(byte*)(0x80084340 + (slot & 0xF) + (slot >> 4) * 0x414) = count`, then `func_0x80042558()` to refresh inventory display. Inventory pages of 0x414 bytes. |
@@ -1334,7 +1334,10 @@ The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 
 ##### The name-entry screen (op-`0x49` `49 03 <char>`)
 
-The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
+Retail's handler table maps sub `03` to the name-entry handler `FUN_801F03F0`
+with no test of how the record was reached, and the port opens the screen
+wherever the sub executes - the opening install and a replay of the record
+(a card load, the comparison corpus's resume) alike. The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
 `03` sub, `00` = Vahn); the field overlay's SM runs the screen and writes
 the typed name **live** into the character record's name field at `+0x2A7`
 (record base `0x80084708 + n*0x414`). Renderer `FUN_801E6B34`

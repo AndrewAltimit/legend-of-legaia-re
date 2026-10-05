@@ -977,6 +977,19 @@ pub struct BattleActionCtx {
     /// `0x801E5574`, after `+0x287` and `DAT_8007BD0D`). Cleared by the Done
     /// band's menu arm (`sb zero,0x288(v1)` at `0x801E6114`).
     pub counter_attack: u8,
+    /// The **counterattack latch** `0x801F6970` - the countering party
+    /// seat plus one, `0` for none. It is a battle-overlay global rather than
+    /// a `ctx` byte; the port keeps it here for the same reason as
+    /// [`Self::message_id`]'s follow-up latch.
+    ///
+    /// The turn picker `FUN_801DABA4` arms it right after a monster's pick
+    /// (`sw v1,0x6970(a0)` at `0x801DB050`): a physical strike (`+0x1DE == 3`)
+    /// on a party seat, a coin (`rand & 1`), a monster free of the `0x380`
+    /// status bits, a target still holding its initiative key (`+0x16C != 0`)
+    /// and wearing the Counterattack passive (character `+0xF4` bit
+    /// `0x8000`). The strike loop consumes it on the attacker's first frame
+    /// (`0x801E35F0..0x801E36E0`, [`crate::battle_action`]'s attack band).
+    pub counter_pending: u8,
     /// `[+0x290]` - the formation advantage the battle-setup roll
     /// (`FUN_80051D84`) wrote: `1` back attack, `2` pre-emptive strike. `Begin`
     /// **latches** it into [`Self::formation_latched`] and then clears it, so
@@ -1155,6 +1168,24 @@ pub struct BattleActionCtx {
     /// wherever it changes, so a host that draws a camera sees the ramp and
     /// not only the seed.
     pub camera_frame_height: i16,
+    /// The Spirit band's **AP bar** widget width - placement record `0x0F`
+    /// (`0x80076D78`, its `+6` width halfword `0x80076D7E`), the widget whose
+    /// handle `ctx[+0x1074]` the sustain state ramps through its `+0x0E`.
+    ///
+    /// Seeded by the Spirit dispatch arm (`0x801E2F64..0x801E2FB0`: the
+    /// acting actor's live AGL `+0x154` less 6, or the extended gauge when
+    /// the `+0x1F9` charge byte is up), raised as element `0x0F`, then grown
+    /// toward `ctx[+0x6DC] - 6` by state `0x47` one frame step at a time
+    /// (`0x801E5468..0x801E54A8`) - the visible "the AP gauge extends" of a
+    /// Spirit turn. The same `-6` law sizes the arts-entry bar off the pool.
+    pub spirit_bar_width: i16,
+    /// The Spirit band's **AP plate** value - the `+0x10` halfword of the
+    /// element-`0x52` widget whose handle the dispatch arm parks at
+    /// `0x801F6968` (`sw v0,0x6968(v1)` at `0x801E2FEC`). Seeded with the
+    /// actor's Spirit gauge `+0x170` (the element's own read) and ramped
+    /// toward `ctx[+0x6DE]` by states `0x47` / `0x48`
+    /// (`0x801E5400..0x801E5454`, `0x801E56D0..0x801E5728`).
+    pub spirit_plate_value: i16,
     /// `[+0x26]` - the **level-up banner** UI element id, or `0` when no
     /// banner is up.
     ///

@@ -33,13 +33,16 @@
 //!
 //! # Where it runs
 //!
-//! Every retail caller uses the centroid for one thing only: it feeds the two
-//! negated components straight into the 12-bit bearing helper `FUN_80019B28`
-//! and stores the result in the acting actor's facing halfword `+0x46`. That
-//! is the shape at all three call sites - the battle-action SM's cast-begin
-//! state (`overlay_0898_801e295c.txt` `0x801E4370..0x801E43A4`),
-//! `FUN_801DC0A0` `0x801DC39C` and `0x801DC51C` - and none of them reads the
-//! extent output back at all.
+//! Two kinds of caller. The battle-action SM's cast-begin state
+//! (`overlay_0898_801e295c.txt` `0x801E4370..0x801E43A4`) feeds the two
+//! negated components into the 12-bit bearing helper `FUN_80019B28` and
+//! stores the result in the acting actor's facing halfword `+0x46`, and reads
+//! no extent. The cast-effect driver's camera script `FUN_801DC0A0` (group
+//! arms of cases `2`, `4`, `9` and `0xB`: `0x801DC39C`, `0x801DC51C`,
+//! `0x801DC83C`, `0x801DC908`) aims the camera at the centroid, turns the same
+//! bearing into the shot's yaw, and **does** read the extent back
+//! (`lh a0,0x1c(sp)`): its eye depth is `28 * extent / 10 + 0x800`
+//! ([`crate::battle_cam_script::spell_cam_case`]).
 //!
 //! The port runs the SM's copy:
 //! [`magic_cast_begin`](crate::battle_action) assembles the eight

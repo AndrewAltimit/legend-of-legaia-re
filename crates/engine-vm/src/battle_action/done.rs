@@ -21,9 +21,34 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     } else {
         8
     };
+    // The accumulator then pays into the Spirit gauge `+0x170`
+    // (`0x801E5D8C..0x801E5E8C`): a party seat first takes the two "spirit
+    // gain up" passives on record `+0xF8` (`0x200`: `+ acc / 4`, `0x100`:
+    // `+ acc / 10`, both when both are worn), then every actor takes the
+    // accumulator itself, capped at `100`, and the accumulator is zeroed. So
+    // every action ends `+8` Spirit and a Spirit turn `+0x20` - the climb the
+    // Spirit band's AP plate shows. (The `+0x170 -= +0x224` that opens the
+    // block is the arts-body spend; the port charges that at the commit,
+    // `World::charge_art_spirit`, so the accumulator enters here empty.)
+    let bits = if slot < host.party_count() {
+        host.character_ability_bits_high(slot)
+    } else {
+        0
+    };
     if let Some(actor) = host.actor_mut(slot) {
         actor.action_recoil = recoil;
         actor.flag_bits.set(ActorFlags::EXIT);
+        let acc = u16::from(recoil);
+        let mut spirit = actor.spirit_gauge;
+        if bits & 0x200 != 0 {
+            spirit = spirit.wrapping_add(acc >> 2);
+        }
+        if bits & 0x100 != 0 {
+            spirit = spirit.wrapping_add(acc / 10);
+        }
+        spirit = spirit.wrapping_add(acc);
+        actor.spirit_gauge = spirit.min(DONE_SPIRIT_CAP);
+        actor.action_recoil = 0;
     }
     // The Done band's own countdown. All three of retail's `0x50` paths
     // converge on `li v0,0x3c` / `sh v0,0x2(s7)` (`0x801E5EE8` / `0x801E5EFC`
@@ -269,6 +294,10 @@ pub const DONE_PAIRED_ELEMENT: u8 = 6;
 pub const DONE_PAIRED_ELEMENT_A: u8 = 0x4E;
 /// Second of the pair (`li a0,0x4f` at `0x801E61A8`).
 pub const DONE_PAIRED_ELEMENT_B: u8 = 0x4F;
+/// Ceiling of the Spirit gauge the Done band's accrual clamps to
+/// (`sltiu v0,v0,0x65` / `li v0,0x64` at `0x801E5E7C..0x801E5E88`).
+pub const DONE_SPIRIT_CAP: u16 = 100;
+
 /// First of the Spirit pair the `ctx[+0x19]` latch drops (`li a0,0xf` at
 /// `0x801E61D8`).
 pub const DONE_SPIRIT_ELEMENT_A: u8 = 0x0F;

@@ -107,6 +107,12 @@ impl MovePowerCatalog {
         move_power::record_for_move_id(&self.table, &self.id_index_map, move_id)
     }
 
+    /// The power record at table index `idx` - the index the effect
+    /// script's terminator stages (`ctx[+0x1014]` = table base + `idx * 26`).
+    pub fn record_at_index(&self, idx: usize) -> Option<&MoveRecord> {
+        self.table.get(idx)
+    }
+
     /// The roll-modulus base power `FUN_801dd0ac` derives from a move id's
     /// record (`(i16)power >> 2`), or `None` when the id has no record. This is
     /// the `power` fed to [`legaia_engine_vm::battle_formulas::arts_physical_predamage`].

@@ -321,6 +321,15 @@ pub struct CutsceneTimeline {
     /// that actor waits for the leg to land (the halted-target refusal).
     // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
     pub npc_walks: Vec<u8>,
+    /// Budgeted **NPC rotate legs** this context armed (`B8 <id> <dir>
+    /// <budget>` against a placement channel), stepped once per tick. The
+    /// op-`0x38` budget arm advances the record by 3 for every target - the
+    /// `li s7,3` at `0x801DEEFC` sits in a delay slot - and parks the caller
+    /// only for a **player** target (`0x801DEF04..0x801DEF14`), so a beat
+    /// that turns an NPC runs on while the turn plays out; its next
+    /// cross-context op on that NPC waits for the ramp to snap.
+    // REF: FUN_801DE840 (0x801DEE58..0x801DEF24), FUN_8003774C (case 0x38)
+    pub npc_facings: Vec<TimelineFacing>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
@@ -336,6 +345,14 @@ pub struct CutsceneTimeline {
     /// stepped past by this width, when the countdown drains.
     // REF: FUN_800204F8 (the latch), FUN_80039B7C (the per-frame re-entry)
     pub player_clip_wait: Option<usize>,
+    /// Consecutive frames the record has spun on an **NPC** end latch
+    /// (`AD <id> 08` against a placement whose clip cursor the world owns).
+    /// The spin re-tests each frame until the actor's clip tick
+    /// (`FUN_800204F8`) latches `+0x62 & 0x100`; past
+    /// [`crate::world::NPC_CLIP_SPIN_TIMEOUT`] frames (a held clip never
+    /// latches) the record steps past by width instead.
+    // REF: FUN_800204F8 (the latch), FUN_801DE840 (op 0x2D)
+    pub npc_clip_spin_frames: u32,
     /// `true` once the context has taken its first frame slice. A spawned
     /// helper holds the pad from then on (retail's engaged bit is raised by
     /// the script runner's step, not by the spawn); see
@@ -447,6 +464,7 @@ impl CutsceneTimeline {
             .flatten()
             .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
             .chain(self.npc_walks.iter().map(|&s| Some(s)))
+            .chain(self.npc_facings.iter().map(|f| f.slot))
             .filter(move |_| live)
     }
 
@@ -486,8 +504,10 @@ impl CutsceneTimeline {
             player_glide: None,
             npc_glides: Vec::new(),
             npc_walks: Vec::new(),
+            npc_facings: Vec::new(),
             player_clip_ticks: 0,
             player_clip_wait: None,
+            npc_clip_spin_frames: 0,
             stepped: false,
             interaction_slot: None,
         }

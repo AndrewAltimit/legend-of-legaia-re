@@ -377,7 +377,12 @@ impl LegaiaRuntime {
                 f.cba_tsb.extend_from_slice(&ct);
                 f.flat.extend_from_slice(&flat);
             };
-        for sprite in world.active_effect_sprites() {
+        for mut sprite in world.active_effect_sprites() {
+            // The battle camera consumes Y-up input; the pool is raw Y-down,
+            // and a billboard has no model matrix to carry the flip - the
+            // native window builds around the same flipped centre.
+            sprite.world_pos =
+                legaia_engine_vm::effect_billboard::battle_billboard_centre(sprite.world_pos);
             let [u0, v0] = sprite.uv;
             let u1 = u0
                 .saturating_add(sprite.uv_size[0].saturating_sub(1))
@@ -396,7 +401,10 @@ impl LegaiaRuntime {
             }
             let corners = sprite_corners(&sprite, right, up);
             let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-            let ct = [sprite.clut, sprite.page];
+            // The prim-ABE enable rides bit 15 (`EffectSprite::packet_tsb`,
+            // retail's semi-transparent prim code `0x2E`); the bare page drew
+            // every effect texel opaque.
+            let ct = [sprite.clut, sprite.packet_tsb()];
             // The retail pass-2 brightness envelope writes `r = g = b =
             // brightness` on the GPU packet, and the page's textured branch
             // now applies retail's `texel * colour / 128`, so the envelope
@@ -553,6 +561,31 @@ impl LegaiaRuntime {
                     ),
                 ),
             );
+            // A part with armed VDF morph lanes, a render scale or a colour
+            // word (the Spirit aura's cones grow, spin and fade) draws
+            // `World::part_draw_vram_mesh` - the mesh the native part pass
+            // uploads. The page's model list addresses pool meshes by
+            // index, so a per-frame mesh is baked into the billboard stream
+            // instead, like the draw-kind-4 meshes below.
+            if !sp.draws_rest_mesh()
+                && let Some(m) = world.part_draw_vram_mesh(&sp)
+            {
+                let base = (frame.positions.len() / 3) as u32;
+                for (i, p) in m.positions.iter().enumerate() {
+                    let w = [
+                        model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+                        model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+                        model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+                    ];
+                    frame.positions.extend_from_slice(&w);
+                    frame.uvs.extend_from_slice(&m.uvs[i]);
+                    frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
+                    let c = m.colors[i];
+                    frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+                }
+                frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+                continue;
+            }
             frame.models.push(FxModelDraw {
                 tmd_index: sp.model_index,
                 source: FxModelSource::GlobalPool,
@@ -681,7 +714,10 @@ impl LegaiaRuntime {
                 }
             }
             let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-            let ct = [sprite.clut, sprite.page];
+            // The prim-ABE enable rides bit 15 (`EffectSprite::packet_tsb`,
+            // retail's semi-transparent prim code `0x2E`); the bare page drew
+            // every effect texel opaque.
+            let ct = [sprite.clut, sprite.packet_tsb()];
             let base = (frame.positions.len() / 3) as u32;
             let b = sprite.brightness;
             for (corner, uv) in corners.iter().zip(corner_uv) {
@@ -793,10 +829,32 @@ impl LegaiaRuntime {
             if world.global_tmd(sp.model_index as i16).is_none() {
                 continue;
             }
+            let model = part_model(sp.flags_52, sp.world_pos, sp.rot);
+            // A morphed / scaled / colour-worded part bakes its per-frame
+            // mesh (`World::part_draw_vram_mesh`), as the battle frame does.
+            if !sp.draws_rest_mesh()
+                && let Some(m) = world.part_draw_vram_mesh(&sp)
+            {
+                let base = (frame.positions.len() / 3) as u32;
+                for (i, p) in m.positions.iter().enumerate() {
+                    let w = [
+                        model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+                        model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+                        model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+                    ];
+                    frame.positions.extend_from_slice(&w);
+                    frame.uvs.extend_from_slice(&m.uvs[i]);
+                    frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
+                    let c = m.colors[i];
+                    frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+                }
+                frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+                continue;
+            }
             frame.models.push(FxModelDraw {
                 tmd_index: sp.model_index,
                 source: FxModelSource::GlobalPool,
-                model: part_model(sp.flags_52, sp.world_pos, sp.rot),
+                model,
             });
         }
         // Field move-VM stager parts resolve against the SCENE's TMD pack

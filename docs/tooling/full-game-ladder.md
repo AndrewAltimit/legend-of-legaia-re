@@ -217,12 +217,23 @@ map as its street:
   over the teleport when its box centre lies within the tile's half-tile
   margin or its anchor tile is one step from it - `dolk`'s inn stair door
   is anchored at (76, 121) in front of the (76, 122) teleport, its box
-  centre short of the margin.
+  centre short of the margin. A touch-class door whose touch reaches `31 00`
+  opens itself wherever it stands, so it counts open too: `jiji` P0[0], the
+  door across the corridor to the `map02` mouth at (66, 96), stands over no
+  teleport. The touch is read from the record's resume point (past its first
+  `21`) with story-flag tests followed against the live flags; a door whose
+  opening sits behind a box test of the player opens only from a cell inside
+  that box (`ropeway` P0[2], the Octam station door, opens for a player on
+  tiles (27..30, 33..34) and is a wall from the corridor south of it).
 - an **object door** - a walk-touch placement whose record, resolved against
   the live flags, moves the player - is an edge wherever the leading actor
   probe points reach its contact box, including through the wall the door is
   set in. A second door leaf beside the contact counts as open for the same
-  reason.
+  reason. A lift ride lands on the partner's platform under the engine's
+  arrival bracket (see [`field-locomotion.md`](../subsystems/field-locomotion.md#the-arrival-bracket)),
+  so its edge ends not on the landing but on each cell just out of the
+  platform's reach that the landing's pocket opens onto; a plan that starts
+  under a live bracket walks the platform freely.
 - a **ledge hop** - a gate-1 walk-on tile whose partition-2 record the live
   flags let spawn and whose body arcs the player to one landing tile (op
   `0x43` sub-0/1/A/B on the `0xF8` channel) - is an edge like a teleport. A
@@ -242,6 +253,16 @@ with nothing to say) - leaves the route as it was rather than re-planning the
 walk component. Walks avoid the live
 walk-on bands (a band whose record's story gates shut it is walkable) unless
 one is the only way through.
+
+A door tile whose centre is wall is aimed at through its open sub-cell, which
+says the side a player steps in from (`teien`'s way down at (42..43, 29) is
+entered from the corridor above). A walk-on band whose record clears a C1
+latch of the target door's own record is the way in rather than a beat to
+step around, and the hand crosses it first (`ropeway` P2[25] clears `0x514`,
+the latch of the gate to `ropeway2`, and re-opens the door frame in front of
+it). Standing on a door band whose crossing was consumed - the dispatch drops
+a tile change made while a script holds the player - the hand steps off and
+back on from each side.
 
 The pad hand's beats are the seated tier's, played as a player plays them:
 
@@ -277,7 +298,14 @@ walk component a plan failed inside (`o` reached, `A` avoided door tile, `b`
 actor box, `G` the goal) with the overworld's installed entities, and a
 sub-cell flood of the wall bits alone beside it (when that flood stops short
 too, the gap is a join the walls do not show - a script, a story gate - not
-the planner). `LEGAIA_FGL_POS_TRACE` prints every tick of a scripted run that
+the planner). The component map also lists the live NPCs, the solid props with their
+bind records, and the self-opening doors. `LEGAIA_FGL_JUMP_DEBUG` prints every
+pad-walk frame that moves the player more than 64 units (a door or lift
+ride) with the live arrival bracket, and
+`LEGAIA_FGL_PROBE_AT=<scene>:<x>,<z>;U;R;...` seats the player at the start
+of the first pad hop in that scene and holds each listed direction for 40
+frames, printing where it went - the way to ask the engine, rather than the
+lattice, whether a spot can be walked off. `LEGAIA_FGL_POS_TRACE` prints every tick of a scripted run that
 moves the player or changes the pad holder's park site, and the trace prints
 the seated tier's trail on success, so a pad stall can be read against the
 route the seated tier took.

@@ -140,8 +140,13 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         (s, c)
     }
     fn keyframe_curve_multiplier(&self) -> u8 {
-        // Default mirrors retail's startup-time write of `DAT_1F80037D`.
-        0x10
+        // `DAT_1F80037D`, the game-speed rate byte op `0x0A` scales its
+        // lane velocities by. SCUS plants `8` at boot (`addiu v0,zero,8` /
+        // `sb v0,0x37d(at)`, `0x80055FB4` / `0x80055FBC`); only the Baka
+        // Fighter and DEBUG MODE overlays write another value
+        // (`docs/subsystems/move-vm.md`). Mid-Spirit captures confirm it on
+        // the aura lane: authored `0x66`, gaining `0x66` a frame.
+        crate::summon::RETAIL_CHANNEL_DELTA as u8
     }
     fn ext_rand16(&mut self) -> u16 {
         // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand` thunk
@@ -972,6 +977,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // consumer takes over the frame).
         if sub_op == 5 {
             self.world.try_install_tile_board(instr);
+        }
+        // Sub-3 is the name-entry hand-off wherever it executes: retail's
+        // handler table maps it to `FUN_801F03F0` unconditionally, with no
+        // test of how the record was reached. The opening install raises
+        // the pending flag up front; a record reached any other way (a card
+        // load replaying `town01` P2[3], the comparison corpus's resume)
+        // raises it here, so `op49_invoke_setup` opens the screen on the
+        // same Idle->arm edge.
+        if sub_op == 3 {
+            self.world.cutscene.prologue_naming_pending = true;
         }
         // Sub-7 is the casino prize-exchange counter (menu-overlay
         // sub-screen 0x20); the byte after the sub-op selects the prize
@@ -2413,7 +2428,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         })
     }
 
-    fn exec_move(&mut self, _ctx: &mut FieldCtx, move_id: u8) {
+    fn exec_move(&mut self, ctx: &mut FieldCtx, move_id: u8) {
         // A cross-context ExecMove against an NPC channel (`A2 <id>
         // <move_id>`): retail is `FUN_80024E08(actor, id)` - the id lands in
         // the actor's anim slot and the anim-clock (`FUN_800204F8`) plays the
@@ -2428,6 +2443,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 .npcs
                 .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
+            let party_bank = ctx.flags & vm::field_player_clip::PARTY_BANK_FLAG != 0;
+            self.world.bind_npc_scene_clip(
+                slot,
+                move_id,
+                party_bank,
+                ctx.local_flags,
+                ctx.field_6a,
+            );
         }
         self.world
             .pending_field_events
@@ -3114,6 +3137,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         //
         // The two message elements keep their line on the world here.
         self.world.message_banner_ui_element(effect_id, mode);
+        // The actor / target plates the seed raises glide in from off
+        // screen.
+        self.world.note_action_plate_raise(effect_id, mode);
+    }
+    fn counter_ready(&self, slot: u8) -> bool {
+        self.world.committed_attack(slot)
+    }
+    fn begin_counterattack(&mut self, counterer: u8, attacker: u8) -> bool {
+        self.world.begin_counterattack(counterer, attacker)
     }
     fn camera_bounds(&mut self) {
         self.world
@@ -3147,6 +3179,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .monster_catalog
             .get(id)
             .map_or(0, |def| def.size_class)
+    }
+    fn summon_band_exit(&mut self) {
+        self.world.casting.module_ctx_278 = 0;
+        self.world.casting.module_caption = None;
     }
     fn camera_frame_height(&mut self, height: i16) {
         self.world.battle.camera_frame_height = height;
@@ -3306,10 +3342,37 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()
     }
+    /// `FUN_801DC0A0(actor, case)`: the cast-effect driver's camera script.
+    /// The case's shot goes to the battle camera when the magic band's
+    /// `0x2A..=0x2D` arms made the call (they arm no `FUN_801D5854` case),
+    /// and its hand-off is written back over the queue byte under the cursor
+    /// (`s3 = actor + 0x1DF + ctx[+0x15]`), which the next pass reads.
+    ///
+    /// Not modelled: case `1`'s `ctx[+0x24C] = 0xFD` (a host cannot write
+    /// the context the step writes back) and case `0x13`'s `+0x21C` /
+    /// `+0x21F` render stores.
+    ///
+    /// REF: FUN_801DC0A0
     fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
         self.world
             .pending_battle_events
             .push(BattleEvent::SpellAnimSustain { actor_id, anim_id });
+        let inputs = crate::battle_cam_inputs::spell_cam_inputs(self.world, actor_id, anim_id);
+        let step = vm::battle_cam_script::spell_cam_case(&inputs);
+        if let Some(a) = self.world.actors.get_mut(usize::from(actor_id)) {
+            if let Some(next) = step.next_case {
+                let i = usize::from(a.battle.strike_index);
+                if let Some(b) = a.battle.params.get_mut(i) {
+                    *b = next;
+                }
+            }
+            if step.clear_hit_bound {
+                a.battle.hit_count_bound = 0;
+            }
+        }
+        if vm::battle_cam_script::SPELL_CAM_STATES.contains(&self.world.battle_ctx.action_state) {
+            self.world.battle.spell_cam = Some(inputs);
+        }
     }
     fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
         self.world
@@ -3407,17 +3470,48 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             }
         }
     }
-    /// The cast-start one-shot (`FUN_8004FCC8`). Routed into the same
-    /// `battle_sfx_cues` queue both hosts drain.
+    /// The cast-start one-shot (`FUN_8004FCC8`), run through the
+    /// dispatcher's own split.
     ///
-    /// The two id spaces meet at that queue and the port does not reconcile
-    /// them: a cast cue is a *dispatch* id the host would have to push through
-    /// `legaia_engine_audio::classify_cue` first, and both hosts play the
-    /// queue's ids straight. Every cast cue is `>= 0xF8` and the per-character
-    /// band runs to `0x20E`, so in practice these miss the scene bank and are
-    /// silent rather than wrong - the id reaches the scheduler, the runtime
-    /// bank behind it has no engine model. See `docs/formats/sfx-table.md`.
+    /// Every id the cast-cue band produces on the party leg is
+    /// `roster_id * 0x10 + 0xF8..0xFC` with a 1-based roster id, so `>= 0x108`:
+    /// a **CD-XA** clip, not an SPU descriptor (`sltiu v0,s0,0x100` at the
+    /// dispatcher's head). It is the character's voice on an ordinary item
+    /// use - `0x0108` for Vahn's Healing Leaf - and was measured starting a
+    /// clip through `FUN_8003D53C` on every driven item action
+    /// (`docs/subsystems/battle-action.md`, "The one caller is state `0x3D`").
+    /// So the id goes through [`vm::battle_cast_cue::admit_voice_cue`] (the
+    /// busy-drive gate, the slot remap, the span table) onto
+    /// [`crate::world::AudioState::battle_xa_cues`], the `(clip, channel,
+    /// dur)` channel both hosts play through their XA lane. Pushing the raw id
+    /// onto the SFX queue instead had both hosts classify it as a voice and
+    /// decline it, so an item turn was silent apart from whatever clip it
+    /// staged.
+    ///
+    /// An id below `0x100` keeps the SFX queue.
     fn one_shot_sfx(&mut self, cue_id: u16) {
+        if cue_id >= 0x100 {
+            let raw = self
+                .world
+                .audio
+                .xa_cue_durations
+                .as_deref()
+                .and_then(|t| t.get(usize::from(cue_id - 0x100)).copied());
+            let gates = vm::battle_cast_cue::VoiceCueGates {
+                side_band_stage: 0,
+                clip_span_left: self.world.audio.battle_xa_busy_frames,
+            };
+            if let vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
+                vm::battle_cast_cue::admit_voice_cue(cue_id, gates, raw)
+            {
+                self.world.push_battle_xa_cue(crate::sfx_cue::XaVoiceClip {
+                    clip: req.clip_slot,
+                    channel: req.channel,
+                    duration_sectors: req.duration_sectors,
+                });
+            }
+            return;
+        }
         let slot = self.world.battle_ctx.active_actor;
         self.world
             .audio

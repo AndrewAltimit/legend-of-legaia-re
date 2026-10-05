@@ -181,12 +181,18 @@ impl World {
         // The action gauge `+0x154`, read the way the Arts command input
         // reads it, so the two paths price a round identically.
         let gauge = self
-            .party
-            .roster
-            .members
-            .get(roster)
-            .map(|r| r.live_stats().agl)
+            .actors
+            .get(usize::from(seat))
+            .map(|a| a.battle.agl)
             .filter(|&a| a > 0)
+            .or_else(|| {
+                self.party
+                    .roster
+                    .members
+                    .get(roster)
+                    .map(|r| r.live_stats().agl)
+                    .filter(|&a| a > 0)
+            })
             .unwrap_or(DEFAULT_POOL);
         let spent = {
             let mut rng = || self.next_rand() as i32;

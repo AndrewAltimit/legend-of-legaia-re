@@ -56,6 +56,10 @@ use wasm_bindgen::prelude::*;
 const STATUS_PEN: (i32, i32) = (8, 62);
 /// Second status row (the native window's `(8, 80)` hint line).
 const HINT_PEN: (i32, i32) = (8, 80);
+/// Third row: the session affordances (menu / quit / prizes), the native
+/// window's `(8, 98)` line. Its own row because the reel hint plus the
+/// affordances overrun the 320-pixel stage on one line.
+const KEYS_PEN: (i32, i32) = (8, 98);
 
 /// The empty payload. Kept as one literal so every early return agrees.
 const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[],"bars":[]}"#;
@@ -178,18 +182,34 @@ impl LegaiaRuntime {
     /// The phase / prompt status rows the native window prints above the retail
     /// HUD, so a player can tell which phase the session is in before the
     /// sprite page exists. The text is the engine's (`PondSession::status_rows`);
-    /// the key names are this page's default bindings for Circle / Cross /
-    /// Square.
+    /// the key names are read from the page's **live** binding table
+    /// ([`crate::pad_bindings::live_mapping`]), so a rebind shows here. The
+    /// trailing affordances are the ones the native window lists (menu, quit,
+    /// prizes): Triangle opens the venue hub, Start is the engine's minigame
+    /// escape, and the prize exchange is this page's button beside the frame
+    /// (the native window's `P` key).
     fn fishing_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(s) = self.fishing_session() else {
             return Vec::new();
         };
         let white = [1.0, 1.0, 1.0, 1.0];
         let dim = [0.65, 0.72, 0.8, 1.0];
-        let (line, hint) = s.status_rows("X", "Z", "V");
-        let hint = format!("{hint}  (Triangle = menu)");
+        let mapping = crate::pad_bindings::live_mapping();
+        let key = |button: &'static str| -> String {
+            mapping
+                .key_label_for_button(button)
+                .unwrap_or(button)
+                .to_string()
+        };
+        let (line, hint) = s.status_rows(&key("Circle"), &key("Cross"), &key("Square"));
+        let keys = format!(
+            "{} = menu, {} = quit, Prize exchange button = prizes",
+            key("Triangle"),
+            key("Start")
+        );
         let mut out = ui::text_draws_for(&font.layout_ascii(&line), STATUS_PEN, white);
         out.extend(ui::text_draws_for(&font.layout_ascii(&hint), HINT_PEN, dim));
+        out.extend(ui::text_draws_for(&font.layout_ascii(&keys), KEYS_PEN, dim));
         out
     }
 
@@ -562,7 +582,10 @@ impl LegaiaRuntime {
         fx::exchange_screen_draws_for(
             font,
             &view,
-            "   (Enter = trade, Left/Right = venue, P = close)",
+            // The page drives this screen from its click panel (Buy, the
+            // venue tabs, Close) - it binds no key to it, so the footer
+            // names the panel rather than the native window's keys.
+            "   (Buy / venue tabs / Close in the panel)",
             pen,
             [1.0, 1.0, 1.0, 1.0],
             [0.65, 0.72, 0.8, 1.0],

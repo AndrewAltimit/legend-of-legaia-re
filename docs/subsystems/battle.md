@@ -1120,7 +1120,15 @@ colour the grid from `World::battle_ambient_base`: the native window
 re-uploads the grid mesh when the ambient moves and re-derives the cue's far
 colour every frame; the play page re-reads the packet colours and the cue on
 the `play_battle_ground_ambient_key` change key. The backdrop pair's `+0x78`
-ramp is not modelled - the port's backdrop draws uncued through a cast.
+ramp is `battle_ground_grid::backdrop_cue_step`, stepped beside the ambient in
+`World::tick_battle_ambient` over the same two bytes, with the stage's
+outdoor-table membership (`BattleState::stage_outdoor`, set by the host that
+resolved the stage) picking the ceiling. Both hosts read it through
+`World::battle_backdrop_cue`: a flat per-draw cue toward black on the stage
+draw, and no stage draw at all at full weight. A summon module drives it
+there by storing `2` or `3` into `ctx+0x278` - PROT 0903's arms 4 and 6, so
+Gimard's attack plays inside its fire tunnel with nothing of the stage behind
+it (`gimard_burning_attack` reads both records at `+0x78 = 0x1000`).
 
 `IR0` is `SZ >> 2` on the vertex's own screen depth, with no scale of the
 battle world folded in. The `map01` Gobu Gobu capture's grid packets
@@ -3771,6 +3779,16 @@ The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 
 
 Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
 
+### What a Spirit turn does to the gauge, and what it draws
+
+The gauge the arts entry actually spends is the battle actor's action gauge `+0x154` / `+0x156` ([`arts-command-gauge.md`](arts-command-gauge.md#where-the-gauge-pool-comes-from)), seeded at battle setup from the character's live AGL. A Spirit turn extends it three ways, all read off `FUN_801E295C`:
+
+- **The seed arm** (`0x801E2F54..0x801E3024`) sends category `4` straight to `0x46` - never through the `0x3C` item pre-arm, so it raises no readout bar (record 7). It sizes placement record `0x0F` (the AP bar) to `+0x154 - 6` and raises it with the AP plate `0x52`, parking the plate's handle at `0x801F6968`.
+- **The band** (`0x46..0x48`): `0x46` writes the camera depth `ctx[+0x6D0] = 0x800` (the Spirit close-up), stages the extended gauge `min(+0x156 * 7 / 5 + 8, 0x120)` and the Spirit target `+0x170 + 0x20` (`+0x28` / `+0x23` under the `+0xF8` passives `0x200` / `0x100`); `0x47` grows the bar one frame step at a time to the extended gauge less 6 and climbs the plate; `0x48` finishes the plate. The `0x51` teardown unloads both.
+- **The Done band** pays the per-action accumulator `+0x224` into Spirit: `8` for every action, `0x20` for a Spirit turn, plus the two passives, capped at 100. The round boundary then restores a Spirit-charged actor's `+0x154` to the extended gauge, which is the pool the next arts entry opens on.
+
+Retail captures of the band agree (`ctx[+0x6D0] = 0x800`, a 188-wide bar under a 194 AGL, `+0x154` already extended on the following turn). The engine draws the pair through the arts-entry chrome builders on both hosts (`World::spirit_gauge_view`), so the bar is the arts bar: one pixel per AP between its end pieces. The aura the clip's effect script spawns (prototypes `0x07` / `0x08`) is a VDF-morphed mesh on `vdf.dat` entry 12 - see [`effect-vm.md`](effect-vm.md#battle-effect-parts-morph-through-vdfdat).
+
 ## Battle stat aggregator
 
 From-scratch port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
@@ -4139,6 +4157,19 @@ for `CheDelilas`, 63 for `Gimard` behind its badge - while its live seat stays
 the screen, and the record's `+0x14` points at the name scratch buffer the
 string was measured out of (a party-name buffer for a member, a monster-name
 buffer for an enemy).
+
+**When it slides.** An action's plaque and its target plaque (record 81) are
+both opened by the action seed: every category arm of state `0x0C` ends at
+`jal 0x801E6D84` (`0x801E3028`), which measures the acting actor's name and
+raises `FUN_801D8DE8(0x44, 0)` - plus `(0x51, 0)` for a single monster target.
+Mode `0` spawns each at seat A and `FUN_801D9BBC` glides it to seat B over
+`ctx[+0x1C] = 0x10` frames, the same tracked-widget step as the commit log's
+launch. So a frame taken the step the seed ran shows neither plate: the
+`super_queue_replace_*` captures, saved on the seed's frame with `ctx[+0x07]`
+already `0x14`, hold record 68 at `(16, -24)` and record 81 at `y = 236`.
+Both hosts draw the two plates on that glide
+(`battle_hud::battle_action_plaque_dy` / `battle_target_plaque_dy`, raised from
+the seed's own `ui_element` calls).
 
 The per-member roster panel is the exception that proves the rule: it is a
 fixed 102x48 sprite rather than a plate run, so its own record (`w = 88`,

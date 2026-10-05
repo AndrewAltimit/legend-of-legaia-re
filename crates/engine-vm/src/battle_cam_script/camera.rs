@@ -183,6 +183,9 @@ pub struct BattleCamera {
     /// The acting actor's body pair `+0x3C` / `+0x40` (live pair plus the
     /// facing-rotated pose centroid), which the summon close-up focuses.
     pub(super) acting_body: Option<[f32; 2]>,
+    /// This frame's call of the cast-effect driver, when the magic band made
+    /// one ([`BattleCamInputs::spell_cam`]).
+    pub(super) spell_cam: Option<SpellCamInputs>,
     /// The last [`BattleCamInputs::swing_reseed`] count seen; `None` until
     /// the first drive.
     pub(super) last_swing_seeds: Option<u32>,
@@ -384,6 +387,12 @@ pub struct BattleCamInputs {
     /// [`BattleCamPhase::TargetEnemy`] / [`BattleCamPhase::TargetAlly`]
     /// framings. `None` when no single-target cursor is live.
     pub cursor: Option<CursorFraming>,
+    /// The cast-effect driver `FUN_801DC0A0`'s call this frame - the case
+    /// byte and what it reads - when the magic band's `0x2A..=0x2D` arms
+    /// made one ([`SPELL_CAM_STATES`]). Those arms call no `FUN_801D5854`
+    /// case, so the driver's shot is the camera. `accum`, `live_yaw` and
+    /// `frame_step` are the camera's own and are overwritten.
+    pub spell_cam: Option<SpellCamInputs>,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -448,6 +457,7 @@ pub fn drive_on_stream(
         cam.set_actor(actor);
     }
     cam.acting_body = inputs.acting_body;
+    cam.spell_cam = inputs.spell_cam;
     cam.set_post_action_target(inputs.target);
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);

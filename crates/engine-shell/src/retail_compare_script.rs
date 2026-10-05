@@ -141,6 +141,10 @@ pub enum EngineContextKind {
     Helper(usize),
     /// A placement channel (`FieldVmState::channels`).
     Channel(usize),
+    /// The talk runner (`DialogState::inline`): a placement's interaction
+    /// body the player engaged, the engine's twin of retail's engaged
+    /// placement context.
+    Inline,
 }
 
 /// One engine field context: where it lives, its record head and its PC.
@@ -181,6 +185,21 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
             wait: h.ctx.wait_accum,
             done: h.done,
             dialog_open: h.dialog.is_some(),
+        });
+    }
+    if let Some(id) = world
+        .dialog
+        .inline
+        .as_ref()
+        .filter(|id| id.prop_anchor.is_none())
+    {
+        out.push(EngineContext {
+            kind: EngineContextKind::Inline,
+            head: head_of(&id.bytecode),
+            pc: id.pc,
+            wait: id.ctx.wait_accum,
+            done: id.done,
+            dialog_open: id.panel.is_some(),
         });
     }
     if let Some(man) = world.field_vm.channels_man.as_deref() {
@@ -233,6 +252,12 @@ pub struct ScriptGate {
     /// a capture parked on the PC while the shot moves (a `4C CD` wait, a
     /// beat's `0x4A`) is met once the engine's glide has as little left.
     pub glide_left: Option<i32>,
+    /// Kept by [`Self::met`]: `.0` while the engine's context for the record
+    /// still runs and reaches the gate PC in straight-line code, `.1` once
+    /// that context retired. The engine retires a record the tick its tail
+    /// runs, so a park retail holds on that tail is never a PC the engine
+    /// holds.
+    pub retire_watch: std::cell::Cell<(bool, bool)>,
 }
 
 impl ScriptGate {
@@ -245,6 +270,7 @@ impl ScriptGate {
             wait: s.wait.max(0),
             op: s.op,
             glide_left: scripts.glide_left,
+            retire_watch: std::cell::Cell::new((false, false)),
         })
     }
 
@@ -285,6 +311,7 @@ impl ScriptGate {
             wait,
             op,
             glide_left,
+            retire_watch: std::cell::Cell::new((false, false)),
         })
     }
 
@@ -302,7 +329,31 @@ impl ScriptGate {
     /// engine can clear the same op inside one slice where retail held it
     /// across frames (a channel flag already up, a walk already at its
     /// tile), so the first tick past it is the nearest the engine comes.
+    ///
+    /// A capture parked on the record's tail - the PC right after a `0x3F`
+    /// scene change (the departing scene held behind the streaming actor
+    /// `FUN_8001FD44`, the record spinning on its `26 FF FF`), or a fade op
+    /// before the record's terminal park - is a PC the engine runs through
+    /// in the slice that retires the record, dropping its context. Such a
+    /// gate is met once a context that reached the gate PC in straight-line
+    /// code (no jump between its PC and the gate's) has retired, and then
+    /// held while the camera glide still has more left than retail's.
+    /// `map03 P2[13]` (the `son` portal cutscene, `son_arrival_from_doman`)
+    /// and `kor5 P2[5]` (`kor5_post_436_organic`, on its `36` fades) end
+    /// this way.
     pub fn met(&self, world: &legaia_engine_core::world::World) -> bool {
+        let retired = self.context(world).is_none_or(|c| c.done);
+        let (armed, passed) = self.retire_watch.get();
+        let passed = passed || (armed && retired);
+        self.retire_watch
+            .set((self.straight_to_gate(world), passed));
+        if passed
+            && self
+                .glide_left
+                .is_none_or(|g| world.camera.state.glide_frames <= g)
+        {
+            return true;
+        }
         let text = self.op & 0x7F < 0x20;
         let glide_landed = self
             .glide_left
@@ -320,6 +371,20 @@ impl ScriptGate {
         {
             return true;
         }
+        // An engaged placement: the engine runs the talk on its inline
+        // runner, which holds the PC on a segment's start while its box is
+        // up - the same PC retail's `+0x9E` holds.
+        if world.dialog.inline.as_ref().is_some_and(|id| {
+            id.prop_anchor.is_none()
+                && !id.done
+                && head_of(&id.bytecode) == self.head
+                && ((id.pc == self.pc
+                    && id.ctx.wait_accum >= self.wait
+                    && (!text || id.panel.as_ref().is_some_and(Self::page_up)))
+                    || (id.pc != self.pc && id.visited.get(self.pc).copied().unwrap_or(false)))
+        }) {
+            return true;
+        }
         engine_contexts(world).iter().any(|c| {
             matches!(c.kind, EngineContextKind::Channel(_))
                 && c.head == self.head
@@ -327,6 +392,58 @@ impl ScriptGate {
                 && c.pc == self.pc
                 && c.wait >= self.wait
         })
+    }
+
+    /// The engine runs the gate's record on the timeline or a concurrent
+    /// context whose PC reaches the gate PC in straight-line code: every
+    /// instruction from it decodes, none is a jump or a text segment, and
+    /// one ends exactly on the gate PC.
+    fn straight_to_gate(&self, world: &legaia_engine_core::world::World) -> bool {
+        use legaia_asset::field_disasm::{InsnInfo, decode};
+        let reaches = |bc: &[u8], mut pc: usize| {
+            if head_of(bc) != self.head {
+                return false;
+            }
+            for _ in 0..128 {
+                if pc == self.pc {
+                    return true;
+                }
+                if pc > self.pc {
+                    return false;
+                }
+                let Ok(i) = decode(bc, pc) else {
+                    return false;
+                };
+                if i.size == 0
+                    || matches!(
+                        i.info,
+                        InsnInfo::JmpRel { .. }
+                            | InsnInfo::CondJmp { .. }
+                            | InsnInfo::TextSegment { .. }
+                            | InsnInfo::Picker { .. }
+                    )
+                {
+                    return false;
+                }
+                pc += i.size;
+            }
+            false
+        };
+        world
+            .cutscene
+            .timeline
+            .iter()
+            .filter(|tl| !tl.done)
+            .map(|tl| (tl.bytecode.as_slice(), tl.pc))
+            .chain(
+                world
+                    .field_vm
+                    .helper_contexts
+                    .iter()
+                    .filter(|h| !h.done)
+                    .map(|h| (h.bytecode.as_slice(), h.pc)),
+            )
+            .any(|(bc, pc)| reaches(bc, pc))
     }
 
     /// The pad word a gated seed holds on `tick`: from
@@ -368,17 +485,35 @@ impl ScriptGate {
             .player_actor_slot
             .and_then(|p| world.actors.get(usize::from(p)))
             .map(|a| (a.move_state.world_x, a.move_state.world_z));
+        let inline = world.dialog.inline.as_ref().map(|id| {
+            (
+                id.pc,
+                id.done,
+                id.panel.is_some(),
+                id.npc_slot,
+                head_of(&id.bytecode) == self.head,
+            )
+        });
         format!(
-            "{c:?} mode={:?} glide={} player={player:?} {parks:?}",
-            world.mode, world.camera.state.glide_frames
+            "{c:?} mode={:?} glide={} player={player:?} {parks:?} inline={inline:?} cur={}",
+            world.mode,
+            world.camera.state.glide_frames,
+            world.dialog.current.is_some()
         )
     }
 
-    /// The engine context running the gate's record, if one is live.
+    /// The engine context running the gate's record, if one is live. An
+    /// engaged talk (the inline runner) is preferred over the placement's
+    /// idle channel on the same record.
     pub fn context(&self, world: &legaia_engine_core::world::World) -> Option<EngineContext> {
-        engine_contexts(world)
-            .into_iter()
-            .find(|c| c.head == self.head)
+        let all = engine_contexts(world);
+        let inline = all
+            .iter()
+            .position(|c| c.kind == EngineContextKind::Inline && c.head == self.head);
+        match inline {
+            Some(i) => all.into_iter().nth(i),
+            None => all.into_iter().find(|c| c.head == self.head),
+        }
     }
 }
 
@@ -395,11 +530,16 @@ pub const SCRIPT_RESUME_TICK: u64 = crate::retail_compare::SETTLE_TICKS;
 /// reaches the phase. The record is resolved by the flat index and checked
 /// against the capture's own head bytes, installed ungated (its gate flags
 /// are the ones it has already latched) as the modal cutscene timeline, or
-/// as a concurrent context when another timeline holds that slot. Returns
-/// `true` when a context was installed.
+/// as a concurrent context when another timeline holds that slot. The
+/// op-`0x35` words of the arm that spawns the record, when that arm scored it
+/// ([`legaia_engine_core::man_field_scripts::walk_spawn_scores`]), are
+/// replayed first. Returns `true` when a context was installed.
 pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &ScriptGate) -> bool {
-    if gate.context(&host.world).is_some() {
-        return false;
+    if let Some(c) = gate.context(&host.world) {
+        return match c.kind {
+            EngineContextKind::Channel(_) => engage_placement(&mut host.world, gate),
+            _ => false,
+        };
     }
     let Some(Ok(Some(man))) = host
         .scene
@@ -427,6 +567,15 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     {
         return false;
     }
+    // The arm that spawns the record may have scored it: replay that arm's
+    // track words first, since the resume starts the record without it.
+    roll_back_run_latches(&mut host.world, &man[start..start + len], gate.pc);
+    if let Some(score) = legaia_engine_core::man_field_scripts::walk_spawn_scores(&mf, &man)
+        .into_iter()
+        .find(|s| u16::from(s.global_index) == gate.flat_index)
+    {
+        host.world.replay_field_bgm_words(&score.words);
+    }
     let world = &mut host.world;
     if world.cutscene_timeline_active() {
         world.field_vm.helper_contexts.push(
@@ -441,9 +590,115 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     }
 }
 
+/// Engage the placement whose interaction record is the gate's: the talk
+/// the retail player opened. Retail's capture holds a placement context with
+/// the engaged bit up (`+0x10 & 0x100`, raised only by a touch); the engine
+/// keeps the placement's idle body on a channel and runs a talk on its
+/// inline runner, opened by the interaction probe's own dispatch
+/// ([`legaia_engine_core::world::World::trigger_field_interact`]). Without
+/// this the gate's record sits on its idle channel for the whole deadline
+/// and the frame shows the room with no conversation in it.
+fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptGate) -> bool {
+    if world.dialog.inline.is_some() || world.dialog.current.is_some() {
+        return false;
+    }
+    let mut slots: Vec<u8> = world
+        .npcs
+        .dialog_prologue
+        .iter()
+        .filter(|(_, rec)| head_of(&rec.body) == gate.head)
+        .map(|(slot, _)| *slot)
+        .collect();
+    slots.sort_unstable();
+    let Some(&slot) = slots.first() else {
+        return false;
+    };
+    if let Some(body) = world
+        .npcs
+        .dialog_prologue
+        .iter()
+        .find(|(s, _)| **s == slot)
+        .map(|(_, rec)| rec.body.to_vec())
+    {
+        roll_back_run_latches(world, &body, gate.pc);
+    }
+    world.trigger_field_interact(0, slot);
+    true
+}
+
+/// The system flags a record set on its way to `gate_pc`: every `0x5x` SET
+/// in the straight-line run that ends on the gate PC, from the last
+/// branching instruction before it (a jump, a picker, a system-flag test).
+/// Retail executed that run to stand where it was captured, so those
+/// latches are the record's own and are already in the state's flags. A
+/// replay from the first opcode tests them and takes the other arm:
+/// `town0c` P1[21] (Nene's "Bees!" beat before the Queen Bee ambush) sets
+/// `0x5C1` at `+0x7A`, and with it already up the replay branched at
+/// `+0x76` straight to the battle, past the shot `rim_elm_queen_bee_battle`
+/// is captured on. `body` is in the gate's frame (the record's script
+/// start at offset 0).
+pub fn run_latches(body: &[u8], gate_pc: usize) -> Vec<u16> {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    for start in 0..gate_pc.min(64) {
+        let mut pc = start;
+        let mut run: Vec<u16> = Vec::new();
+        let mut ok = false;
+        while pc < gate_pc {
+            let Ok(i) = decode(body, pc) else { break };
+            if i.size == 0 {
+                break;
+            }
+            match i.info {
+                InsnInfo::JmpRel { .. }
+                | InsnInfo::CondJmp { .. }
+                | InsnInfo::Picker { .. }
+                | InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                } => run.clear(),
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Set,
+                    idx,
+                    ..
+                } => run.push(idx),
+                _ => {}
+            }
+            pc += i.size;
+            ok = pc == gate_pc;
+        }
+        if ok {
+            return run;
+        }
+    }
+    Vec::new()
+}
+
+/// Clear [`run_latches`] before a record is replayed toward the gate.
+fn roll_back_run_latches(
+    world: &mut legaia_engine_core::world::World,
+    body: &[u8],
+    gate_pc: usize,
+) {
+    for idx in run_latches(body, gate_pc) {
+        world.system_flag_clear(idx);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_latches_are_the_sets_after_the_last_branch() {
+        // 75 C1 05 00 (test 0x5C1 -> +5), 55 C2 (set 0x5C2, behind the
+        // test), 26 02 00 (jump), 55 C1 (set 0x5C1), 4A 10 00 (wait), gate.
+        let body = [
+            0x75, 0xC1, 0x05, 0x00, 0x55, 0xC2, 0x26, 0x02, 0x00, 0x55, 0xC1, 0x4A, 0x10, 0x00,
+        ];
+        assert_eq!(run_latches(&body, 14), vec![0x5C1]);
+        assert_eq!(run_latches(&body, 11), vec![0x5C1]);
+        assert!(run_latches(&body, 9).is_empty());
+    }
 
     #[test]
     fn a_script_gate_round_trips_through_its_env_form() {
@@ -454,6 +709,7 @@ mod tests {
             wait: 48,
             op: 0x4A,
             glide_left: None,
+            retire_watch: std::cell::Cell::new((false, false)),
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {

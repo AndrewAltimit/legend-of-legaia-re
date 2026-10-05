@@ -693,6 +693,7 @@ impl World {
             self.field_vm.object_channel_binds = binds;
             self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
             self.npcs.clip_cursors.clear();
+            self.npcs.clip_rate_live.clear();
             self.npcs.clip_bones.clear();
         }
         self.npcs.anim_cues.clear();
@@ -1301,6 +1302,28 @@ impl World {
                 tl.npc_walks.push(slot);
             }
         }
+        // NPC rotate legs (`B8 <id> <dir> <budget>`): the same in-place
+        // `0x38` RotateToAngle kernel the player park runs, stepped here
+        // while the record runs on; the actor stays held for the script
+        // until the ramp snaps, and on the snap frame.
+        // REF: FUN_801DE840 (0x801DEE90..0x801DEF24), FUN_8003774C (case 0x38)
+        for mut fw in std::mem::take(&mut tl.npc_facings) {
+            if let Some(slot) = fw.slot {
+                npc_glide_hold.push(slot);
+            }
+            fw.frames += 1;
+            let r = vm::motion_vm::step(
+                &mut fw.state,
+                vm::motion_vm::MotionTarget::default(),
+                &fw.program,
+            );
+            if fw.state.yaw_written {
+                self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
+            }
+            if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
+                tl.npc_facings.push(fw);
+            }
+        }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
         // the record poked onto the player is still playing; retail's clip
         // tick latches `+0x62 & 0x100` on its last frame and the spin falls
@@ -1370,8 +1393,8 @@ impl World {
                 // authored waits, leaving no room for a serialized roller.)
                 // If a prior roller is still scrolling when a block is
                 // reached, hold (don't stack rollers) until it drains, then
-                // re-enter to open this one. The final pages are protected by
-                // the terminal-SceneChange hold below, not by a park here.
+                // re-enter to open this one. Nothing holds the final pages:
+                // the record's terminal SceneChange runs on under them.
                 //
                 // Title card (`op0 0x89`): the pages show simultaneously
                 // while the parent CONTINUES; a card whose pages are blank
@@ -1458,16 +1481,28 @@ impl World {
                     continue;
                 }
                 let opcode_byte = tl.bytecode.get(pc).copied().unwrap_or(0);
-                // Terminal SceneChange (`0x3F`) while a narration roller is
-                // still scrolling: HOLD at the op until the pages drain, so
-                // the final crawl finishes before the scene transition -
-                // retail's parent blocks before the record's terminal
-                // SceneChange, not at the crawl block itself (the between-op
-                // waits play under the scroll; see the crawl-open branch
-                // above). The hold is real playout progress, so keep it off
-                // the anti-hang frame cap, like the walk parks.
-                // REF: FUN_80037174
-                if opcode_byte & 0x7F == 0x3F && host.world.cutscene_narration_active() {
+                // A terminal SceneChange (`0x3F`) does NOT wait for a roller
+                // still scrolling: the op's arm only builds the scene-change
+                // packet (`FUN_8001FD44`), and a per-vsync capture of the
+                // zero-input `opdeene` leg has the record execute its `3F`
+                // with the 8-page Seru-history roller (`FUN_80037174`) three
+                // pages short of retiring; the departing scene tears the
+                // roller down with everything else.
+                // A crawl's roller holds the player's halt bit for its whole
+                // run: the `CC F8 80 N` spawn is a halt-acquire on its target
+                // (`ori v0,v0,0x400` into the player's `+0x10` at
+                // `0x801E1F24`), and the roller clears its parent's `0x400`
+                // as it retires the last page. So `B3 F8 0A` - the halt-bit
+                // test on the player - is how a record waits for its crawl:
+                // `opurud`'s record sits on one before its `3F` until the
+                // last page retires (per-vsync capture), while `opdeene`'s
+                // carries none and changes scene under its roller.
+                // REF: FUN_801DE840 (0x801E1ECC..0x801E1F58), FUN_80037174
+                if opcode_byte == 0xB3
+                    && tl.bytecode.get(pc + 1) == Some(&0xF8)
+                    && tl.bytecode.get(pc + 2) == Some(&0x0A)
+                    && host.world.cutscene_narration_active()
+                {
                     tl.frames = tl.frames.saturating_sub(1);
                     break;
                 }
@@ -1686,6 +1721,28 @@ impl World {
                         break;
                     }
                 }
+                // Halt clear on an NPC (`B2 <id> 0A`, op 0x32 bit 10): the
+                // actor tick runs the walk kernel only while `+0x10 & 0x400`
+                // is up (`FUN_8003BC08`), so clearing the bit ends whatever
+                // leg this context armed on it, where it stands. `opdeene`
+                // cuts the two Seru's `C1` legs this way before their next
+                // beat; leaving them running held every later op on both
+                // actors for the rest of the legs.
+                // REF: FUN_8003BC08, FUN_8003774C
+                if opcode_byte == 0xB2
+                    && tl.bytecode.get(pc + 2) == Some(&0x0A)
+                    && let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                {
+                    let slot = channels[ci].placement_index as u8;
+                    tl.npc_glides.retain(|g| g.slot != slot);
+                    tl.npc_facings.retain(|f| f.slot != Some(slot));
+                    if tl.npc_walks.contains(&slot) {
+                        tl.npc_walks.retain(|&w| w != slot);
+                        host.world.npcs.motions.remove(&slot);
+                    }
+                    npc_glide_hold.retain(|&s| s != slot);
+                }
                 // Cross-context compass walk on an NPC (`B7 <id> <b0> <b1>` /
                 // `C1 <id> ..` = op 0x37 / 0x41 against a placement channel):
                 // retail's arm seats the op on the target's `+0x94`, raises
@@ -1709,6 +1766,15 @@ impl World {
                         tl.visited[pc] = true;
                     }
                     host.world.npcs.motions.remove(&slot);
+                    // An actor nothing has moved yet stands where its context
+                    // was seated (retail's kernel walks the live `+0x14` /
+                    // `+0x18`, which the spawn wrote). Without the seat the
+                    // leg had no start and was dropped: `opdeene`'s vignette
+                    // actor `0x05` never took its `C1 05 00 C4` step.
+                    host.world.npcs.positions.entry(slot).or_insert((
+                        channels[ci].ctx.world_x as i16,
+                        channels[ci].ctx.world_z as i16,
+                    ));
                     let mut glide = crate::cutscene_timeline::TimelineNpcGlide {
                         slot,
                         state: vm::motion_vm::MotionState {
@@ -1782,7 +1848,7 @@ impl World {
                     // live `+0x26`); a never-posed NPC stands at the retail
                     // spawn default 0 = engine 0x800.
                     let cur = host.world.timeline_facing(slot).unwrap_or(0x800);
-                    tl.facing_wait = Some(crate::cutscene_timeline::TimelineFacing {
+                    let leg = crate::cutscene_timeline::TimelineFacing {
                         slot,
                         state: vm::motion_vm::MotionState {
                             yaw: (cur as u16) & 0x0FFF,
@@ -1796,7 +1862,17 @@ impl World {
                         program: [0x38, op0, op1],
                         resume_pc: pc + 4,
                         frames: 0,
-                    });
+                    };
+                    // Only a player target parks the caller; an NPC's turn
+                    // plays out while the record runs on (`li s7,3` in the
+                    // delay slot at `0x801DEEFC`).
+                    if slot.is_some() {
+                        tl.npc_facings.retain(|f| f.slot != slot);
+                        tl.npc_facings.push(leg);
+                        tl.pc = pc + 4;
+                        continue;
+                    }
+                    tl.facing_wait = Some(leg);
                     break;
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
@@ -2106,6 +2182,32 @@ impl World {
                 // flight (the VM advances it otherwise), so its park is a
                 // timed wait to hold, not a handshake to step past.
                 let glide_wait = op == 0x4C && tl.bytecode.get(pc + 1) == Some(&0xCD);
+                // NPC end-latch spin (`AD <id> 08`): the record re-tests the
+                // poked actor's `+0x62 & 0x100` every frame until its clip
+                // tick latches it - the clip's remaining length for a
+                // clamped clip, the time to the next wrap for a looping one.
+                // Held only where the world owns that actor's clip cursor
+                // (the `0x22` poke binds one); a held clip, which never
+                // latches, falls back to the step-past after
+                // [`NPC_CLIP_SPIN_TIMEOUT`] frames.
+                // REF: FUN_800204F8 (0x800206E4..0x8002072C), FUN_801DE840 (op 0x2D)
+                let npc_clip_spin = op == 0x2D
+                    && opcode_byte & 0x80 != 0
+                    && tl.bytecode.get(pc + 2) == Some(&8)
+                    && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                    && next_pc == pc
+                    && target.is_some_and(|(_, ci)| {
+                        !channels[ci].object_bind
+                            && host
+                                .world
+                                .npc_clip_cursor_bound(channels[ci].placement_index as u8)
+                    });
+                if npc_clip_spin && tl.npc_clip_spin_frames < NPC_CLIP_SPIN_TIMEOUT {
+                    tl.npc_clip_spin_frames += 1;
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
+                tl.npc_clip_spin_frames = 0;
                 let is_flag_test_handshake = matches!(op, 0x2D | 0x30 | 0x33)
                     || (op == 0x4C && target.is_none() && !glide_wait);
                 if matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
@@ -2324,6 +2426,19 @@ impl World {
         };
         if tl.frames >= cap {
             tl.done = true;
+        }
+        // A record that ends while an NPC turn it armed is still ramping:
+        // retail's turn belongs to the NPC's own walk kernel and finishes
+        // without the record, so land it on its compass entry here rather
+        // than leave the actor frozen mid-ramp.
+        if tl.done {
+            for fw in std::mem::take(&mut tl.npc_facings) {
+                if let Some(h) =
+                    crate::man_field_scripts::facing_index_to_engine_heading(fw.program[1] & 0xF)
+                {
+                    self.set_timeline_facing(fw.slot, h);
+                }
+            }
         }
         if tl.arms_prologue_handoff {
             // Safety net: if the record terminated without executing its
@@ -2906,6 +3021,7 @@ impl World {
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
         self.npcs.clip_cursors.clear();
+        self.npcs.clip_rate_live.clear();
         self.npcs.clip_bones.clear();
     }
 
@@ -4047,29 +4163,36 @@ mod tests {
     /// the retail rotate leg: a **linear ramp at the op's own `arc / budget`
     /// rate**, holding raw pre-unwrap headings across the `0x1000` wrap, and
     /// snapping exactly onto the compass entry on the terminal frame - one
-    /// parked tick per budget frame (the Mei dinner beat's `B8 46 <dir>
-    /// <budget>` turns, runtime-pinned frame-exact off the static recomp).
+    /// tick per budget frame (the Mei dinner beat's `B8 46 <dir> <budget>`
+    /// turns, runtime-pinned frame-exact off the static recomp).
+    ///
+    /// The record does **not** wait for it: the arm advances by 3 for every
+    /// target (`li s7,3` in the delay slot at `0x801DEEFC`) and parks the
+    /// caller only for the player, so the record is already on its next op
+    /// while the NPC turns.
     #[test]
     fn cutscene_timeline_npc_facing_ramp_plays_out_linearly() {
         // LUT index 6 (engine 0x400) over budget 0x12 = 18 frames, from
         // engine 0xE00: arc = 0x600, increasing, crossing the wrap.
         let mut w = timeline_with_npc_facing_op(0x06, 0x12, 0xE00);
-        w.step_cutscene_timeline(); // reaches the op, arms the rotate park
-        assert!(
-            w.cutscene
-                .timeline
-                .as_ref()
-                .is_some_and(|tl| tl.facing_wait.is_some()),
-            "budgeted facing op parks the timeline on the rotate leg"
-        );
+        w.step_cutscene_timeline(); // reaches the op, arms the rotate leg
+        {
+            let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+            assert!(
+                tl.facing_wait.is_none(),
+                "an NPC turn never parks the record"
+            );
+            assert_eq!(tl.npc_facings.len(), 1, "the turn runs as an NPC leg");
+            assert_eq!(tl.pc, 4, "the record ran on to the op after the turn");
+        }
         let mut headings = Vec::new();
         for _ in 0..18 {
             assert!(
                 w.cutscene
                     .timeline
                     .as_ref()
-                    .is_some_and(|tl| tl.facing_wait.is_some()),
-                "the park holds for the op's whole frame budget"
+                    .is_some_and(|tl| !tl.npc_facings.is_empty()),
+                "the leg runs for the op's whole frame budget"
             );
             w.step_cutscene_timeline();
             headings.push(*w.npcs.headings.get(&5).expect("heading written"));
@@ -4088,8 +4211,7 @@ mod tests {
             "terminal frame snaps exactly onto the compass entry"
         );
         let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
-        assert!(tl.facing_wait.is_none(), "ramp done: park released");
-        assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
+        assert!(tl.npc_facings.is_empty(), "ramp done: leg released");
     }
 
     /// The simple path (`op1 & 0x7F == 0`) is retail's instant compass write

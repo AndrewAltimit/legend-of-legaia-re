@@ -1154,7 +1154,7 @@ impl World {
             return true;
         }
         self.props.colliders.iter().any(|c| {
-            if !c.solid {
+            if !c.solid || self.collider_arrival_exempt(c) {
                 return false;
             }
             let ((cx, cz), half) = if c.moving_box {
@@ -1211,7 +1211,7 @@ impl World {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
             for c in &self.props.colliders {
-                if !c.solid {
+                if !c.solid || self.collider_arrival_exempt(c) {
                     continue;
                 }
                 let ((cx, cz), half) = if c.moving_box {
@@ -2310,6 +2310,9 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return;
         }
+        if !self.props.arrival_exempt.is_empty() && self.dialog.inline.is_none() {
+            self.walk_off_sealed_arrival(slot);
+        }
         let (px, pz) = {
             let ms = &self.actors[slot].move_state;
             (ms.world_x, ms.world_z)
@@ -2326,10 +2329,31 @@ impl World {
                 points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
             }
         }
+        // The arrival bracket lifts once the player is off the platform: no
+        // probe point in any direction reaches the partner's contact box.
+        // Not while the ride's own record is still running it: a lift parks
+        // the player on tile (0, 0) and tours the floors before the arrival
+        // `MoveTo`, and retail's `B2` comes only after the walk-off.
+        if !self.props.arrival_exempt.is_empty() && self.dialog.inline.is_none() {
+            let reach: Vec<(i32, i32)> =
+                std::iter::once((px as i32, pz as i32))
+                    .chain(FIELD_ACTOR_PROBES.iter().flatten().map(|&(dx, dz)| {
+                        (px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32)
+                    }))
+                    .collect();
+            self.props.arrival_exempt.retain(|&(_, (wx, wz))| {
+                reach.iter().any(|&(qx, qz)| {
+                    (qx - wx as i32).abs() < FIELD_PROP_BOX_HALF
+                        && (qz - wz as i32).abs() < FIELD_PROP_BOX_HALF
+                })
+            });
+        }
+        let exempt = &self.props.arrival_exempt;
         let hit = self
             .props
             .walk_touch
             .iter()
+            .filter(|(s, _)| !exempt.iter().any(|(e, _)| e == *s))
             .find(|(_, ((wx, wz), _))| {
                 points.iter().any(|&(qx, qz)| {
                     (qx - *wx as i32).abs() < FIELD_PROP_BOX_HALF
@@ -2350,9 +2374,12 @@ impl World {
         // interior vs. spawn the story beat). Retail resumes the record on
         // contact, so the arm is chosen against the *live* flags - re-resolve
         // here rather than reusing the load-time structural decode. Falls back
-        // to that decode when the record can't be re-walked.
+        // to that decode only when the record can't be re-walked: a record
+        // walked to its idle loop with no teleport on the taken arm (the
+        // `tower` rapid elevator while its switch `0x1C6` is off) moves
+        // nobody - its static first `MoveTo` belongs to the other arm.
         // REF: FUN_801d5b5c (contact resumes the object's script)
-        let event = self
+        let resolved = self
             .props
             .walk_touch_records
             .get(&touch_slot)
@@ -2365,11 +2392,14 @@ impl World {
                     let byte = usize::from(idx >> 3);
                     byte < flags.len() && flags[byte] & (0x80u8 >> (idx & 7)) != 0
                 };
-                crate::man_field_scripts::resolve_walk_touch_event(&man_file, &man, record, &test)
+                crate::man_field_scripts::resolve_walk_touch_arm(&man_file, &man, record, &test)
             })
-            .unwrap_or(event);
+            .unwrap_or(Some(event));
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
+        let Some(event) = resolved else {
+            return;
+        };
         match event {
             // A `Warp` event is, by construction, **only** ever a mode-24
             // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
@@ -2427,6 +2457,7 @@ impl World {
                     world_z: world_z as u16,
                     is_player: true,
                 });
+                self.arm_arrival_bracket(touch_slot);
             }
             // Boss-stager contact: the `trigger_field_interact` call above
             // already ran the placement's record ([`crate::world::World::
@@ -2443,6 +2474,127 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Arm the arrival bracket for a teleport the walk-touch bind `slot`'s
+    /// record just made: every bind whose record the teleporting record
+    /// names in a cross-context `B1 <obj> 00`
+    /// ([`crate::man_field_scripts::record_exempted_objects`]) is skipped by
+    /// the touch dispatch and the collision probe until the player is off
+    /// its contact box. The engine moves the player by the record's
+    /// `MoveTo` alone (the ride's `A2 F8` walk-off clip is not run), so the
+    /// player steps off the platform themselves; the bracket keeps that step
+    /// from re-firing the partner, as retail's exemption does across the
+    /// scripted walk-off.
+    ///
+    /// REF: FUN_801CF754, FUN_801CF9F4, FUN_801d5b5c
+    fn arm_arrival_bracket(&mut self, slot: u8) {
+        let Some(&record) = self.props.walk_touch_records.get(&slot) else {
+            return;
+        };
+        let Some(man) = self.field_vm.channels_man.clone() else {
+            return;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return;
+        };
+        let targets = crate::man_field_scripts::record_exempted_objects(&man_file, &man, record);
+        if targets.is_empty() {
+            return;
+        }
+        let partners: Vec<(u8, (i16, i16))> = self
+            .props
+            .walk_touch_records
+            .iter()
+            .filter(|&(&s, &r)| s != slot && targets.iter().any(|&t| usize::from(t) == r))
+            .filter_map(|(&s, _)| self.props.walk_touch.get(&s).map(|&(pos, _)| (s, pos)))
+            .collect();
+        for p in partners {
+            if !self.props.arrival_exempt.contains(&p) {
+                self.props.arrival_exempt.push(p);
+            }
+        }
+    }
+
+    /// The ride's walk-off, for an arrival the walls seal. A lift record's
+    /// tail turns the player (`B8 F8 80 00`) and plays the walk-off clips
+    /// (`A2 F8 01`, `A2 F8 02`) across the bracketed platform before its
+    /// `B2`; the engine runs neither clip as motion, so a landing set in the
+    /// wall niche behind a platform - `tower`'s rapid lift down arrives at
+    /// (1856, 9280), walled on every side but its own lift - would hold the
+    /// player for good. When every direction from the player reads wall and
+    /// the ride's own record has finished, carry the player straight through
+    /// the nearest bracketed platform to the first open spot past its reach,
+    /// which is where the scripted walk-off leaves it.
+    ///
+    /// REF: FUN_801DE840 (cross-context `0x22` ExecMove into the player)
+    fn walk_off_sealed_arrival(&mut self, slot: usize) {
+        let (px, pz) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
+        let Some(&(_, platform)) = self
+            .props
+            .arrival_exempt
+            .iter()
+            .min_by_key(|&&(_, (x, z))| {
+                (i32::from(x) - i32::from(px)).abs() + (i32::from(z) - i32::from(pz)).abs()
+            })
+        else {
+            return;
+        };
+        let Some((x, z)) = self.sealed_arrival_walk_off((px, pz), platform) else {
+            return;
+        };
+        let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+        let ms = &mut self.actors[slot].move_state;
+        ms.world_x = x;
+        ms.world_z = z;
+        ms.world_y = y;
+    }
+
+    /// Where [`Self::walk_off_sealed_arrival`] carries a player standing at
+    /// `from` across the bracketed platform centred on `platform`: `None`
+    /// when `from` has an open side (the player steps off by itself) or no
+    /// open spot lies within 384 units past the platform's centre.
+    pub fn sealed_arrival_walk_off(
+        &self,
+        from: (i16, i16),
+        platform: (i16, i16),
+    ) -> Option<(i16, i16)> {
+        let (px, pz) = from;
+        if !(0..4).all(|d| self.field_dir_blocked(px, pz, d)) {
+            return None;
+        }
+        let (dx, dz) = (
+            i32::from(platform.0) - i32::from(px),
+            i32::from(platform.1) - i32::from(pz),
+        );
+        let len = dx.abs().max(dz.abs());
+        if len == 0 {
+            return None;
+        }
+        // Past the platform's centre, in 16-unit steps, to the first spot
+        // the walls leave open on some side.
+        (1..=24).find_map(|k| {
+            let t = len + 16 * k;
+            let x = i16::try_from(i32::from(px) + dx * t / len).ok()?;
+            let z = i16::try_from(i32::from(pz) + dz * t / len).ok()?;
+            (!self.field_tile_is_wall(x, z) && (0..4).any(|d| !self.field_dir_blocked(x, z, d)))
+                .then_some((x, z))
+        })
+    }
+
+    /// Whether a prop collider is under the arrival bracket
+    /// ([`crate::world::FieldPropState::arrival_exempt`]): its static
+    /// contact centre is a bracketed bind's.
+    pub(crate) fn collider_arrival_exempt(&self, c: &FieldPropCollider) -> bool {
+        !c.moving_box
+            && self
+                .props
+                .arrival_exempt
+                .iter()
+                .any(|&(_, (x, z))| (i32::from(x), i32::from(z)) == c.center)
     }
 
     /// Post a player-NPC contact into the motion VM's one-slot touch mailbox

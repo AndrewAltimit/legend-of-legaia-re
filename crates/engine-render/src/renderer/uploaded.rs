@@ -139,7 +139,7 @@ pub(super) const MODEL_ROWS_IDENTITY: [[f32; 4]; 3] = [
 pub(super) struct ScenePointLightUniform {
     /// xyz = world position, w = influence radius.
     pub(super) pos_radius: [f32; 4],
-    /// rgb = gain colour, w unused.
+    /// rgb = gain colour, w = shadows on (1) / off (0, the `Y` toggle).
     pub(super) color: [f32; 4],
     /// The light's shadow view-projection ([`crate::scene_lights::light_view_proj`]).
     pub(super) viewproj: [[f32; 4]; 4],
@@ -154,7 +154,8 @@ pub(super) struct ScenePointLightUniform {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct SceneLightsUniform {
     /// x = active light count, y = shadow-map texel size, z = compare
-    /// bias, w reserved.
+    /// bias, w = the enhanced-lighting mood's window glow
+    /// (`scene_lighting::LightingMood::window_word`).
     pub(super) params: [f32; 4],
     /// Camera-occlusion fade (see [`crate::occlusion_fade`]): `[0..2]` =
     /// the player's projected framebuffer pixel, `[2]` = the player's
@@ -172,6 +173,10 @@ pub(super) struct SceneLightsUniform {
     /// emissive_gain)` - the third word of
     /// [`crate::scene_lighting::LightingMood::uniforms`].
     pub(super) ambient: [f32; 4],
+    /// Retail's per-primitive near reject, read by the mesh vertex stages:
+    /// [`legaia_engine_ui::prim_near_reject::shader_params`]. All-zero (the
+    /// `Zeroable` default) never rejects.
+    pub(super) prim_near: [f32; 4],
     pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
 }
 

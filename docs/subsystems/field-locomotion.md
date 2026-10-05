@@ -1019,7 +1019,7 @@ The remaining derived bits have one writer, the grid-prep refresh **`FUN_80017be
 
 One more cell bit belongs to the renderer rather than to locomotion:
 **`0x8000` is a per-tile depth-sort flag** on the ground quad. PROT 0900's
-ground pass buckets the tile by its own minimum projected `Z` when the bit is
+ground pass buckets the tile by its own farthest projected `Z` when the bit is
 set, and drops it into a fixed far bucket when it is clear (`0x801F6F94` /
 `0x801F6FEC`). In `teien` 297 of 451 non-zero cells carry it. The ground pass
 itself - and the fact that **no** draw channel anywhere reads cell bit
@@ -1843,6 +1843,46 @@ reaches is the door's landing; a `0x44` SPAWN_RECORD it reaches instead makes
 the touch spawn that record as a field-VM context
 (`WalkTouchEvent::SpawnRecord`), which is how a door that leads into a cutscene
 works.
+
+A walk that reaches the idle park with neither is an answer too: the taken arm
+moves nobody, and the contact only runs the record. The record's *structural*
+decode (its first teleport, regardless of branch) stands in only when the
+record cannot be walked at all
+(`man_field_scripts::resolve_walk_touch_arm` tells the two apart). `tower`'s
+rapid lift (P0[4] / P0[5]) is the case that needs it: its first op tests the
+switch flag `0x1C6`; clear, the arm types "Out of service" and loops, set, it
+parks the player on tile (0, 0) for the ride (`A3 F8 00 00`) before the arrival
+`MoveTo`. Read through the structural fallback, the out-of-service arm dropped
+the player into the void corner of the map.
+
+### The arrival bracket
+
+A lift ride lands the player on the partner lift's platform, and the riding
+record brackets that arrival: a cross-context `B1 <obj> 00` sets bit 0 of the
+partner's `+0x10` (the `flags & 3` filter `FUN_801CF754` / `FUN_801CF9F4`
+apply, so it neither blocks nor posts a touch) before the scripted walk-off
+(`A2 F8 02`) and `B2 <obj> 00` clears it after. `tower` P0[2] brackets P0[3]
+this way, and every lift pair of the tower does the same. The landing is
+wedged between two walls and the platform, so without the bracket the first
+step off it re-fires the partner and rides straight back.
+
+A bracketed record also moves the player more than once: onto tile (0, 0)
+while the car travels, and on the rapid lift through each floor of a camera
+tour. Its landing is the last player `MoveTo` before the `B1`, so the resolver
+keeps walking a bracketed record to that point instead of stopping at its
+first move.
+
+The engine does not run the walk-off clips as motion, so it keeps the
+bracket's effect instead: `World::arm_arrival_bracket` reads the partners off
+the teleporting record (`man_field_scripts::record_exempted_objects`) into
+`FieldPropState::arrival_exempt`, the touch dispatch and the prop collision
+probe skip them, and an entry clears once no probe point of the player reaches
+its contact box - never while the ride's own record is still running. A
+landing the walls seal on every side (the rapid lift down sets the player at
+(1856, 9280), in the wall niche behind its platform) is what the scripted
+walk-off exists for: `World::sealed_arrival_walk_off` carries the player
+straight through the platform to the first open spot past it. Disc-gated
+coverage: `crates/engine-shell/tests/tower_lift_arrival_disc.rs`.
 
 ### The pairing convention
 

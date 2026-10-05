@@ -137,6 +137,18 @@ pub struct CastFxState {
     /// [`crate::world::CastFxState::move_fx_streak`]; the render layer projects the afterimage
     /// streak's billboard from its launch point + half-width.
     pub move_fx_streak: crate::action_effect_script::MoveFxStreak,
+    /// The four homing slots the same terminator seeds and
+    /// `World::tick_homing_slots` flies (`ctx[+0x24E..]` / `+0x252..` /
+    /// `+0x1144..`; [`crate::action_effect_script::HomingSlots`]).
+    pub homing: crate::action_effect_script::HomingSlots,
+    /// Set by a cast's fold when it leaves the move's effect lists to the
+    /// homing flight its caster's terminator is about to seed; taken by that
+    /// seed (`World::seed_homing_slots`).
+    pub homing_takes_lists: bool,
+    /// The text a directed summon module's arm last put up
+    /// ([`legaia_engine_vm::cast_module_camera::ModuleCaption`]), cleared at
+    /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
+    pub module_caption: Option<legaia_engine_vm::cast_module_camera::ModuleCaption>,
     /// Pending move-FX sound cue id (`+0x0d`), set by [`crate::world::World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`crate::world::World::take_pending_move_fx_cue`] and routes it through
@@ -170,6 +182,9 @@ impl CastFxState {
             active_action_fx: Vec::new(),
             move_fx_trail_texpage: None,
             move_fx_streak: Default::default(),
+            homing: Default::default(),
+            homing_takes_lists: false,
+            module_caption: None,
             pending_move_fx_cue: None,
         }
     }

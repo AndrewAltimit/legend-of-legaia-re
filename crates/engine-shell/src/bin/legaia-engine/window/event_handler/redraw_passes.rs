@@ -430,7 +430,18 @@ impl PlayWindowApp {
         if self.boot_ui.is_active() {
             (None, None)
         } else {
-            let sprites = self.session.host.world.active_effect_sprites();
+            let mut sprites = self.session.host.world.active_effect_sprites();
+            // The battle camera consumes Y-up input (its trailing flip
+            // cancels the per-model one a billboard does not have), so a
+            // battle billboard is built around the flipped centre; the field
+            // cameras compose the world flip themselves. The play page makes
+            // the same call.
+            if self.session.host.world.mode == SceneMode::Battle {
+                for s in &mut sprites {
+                    s.world_pos =
+                        legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos);
+                }
+            }
             if sprites.is_empty() {
                 (None, None)
             } else {
@@ -601,16 +612,13 @@ impl PlayWindowApp {
                 .into_iter()
                 .chain(self.session.host.world.active_move_fx_part_draws());
             for sp in part_draws {
-                let Some(gtmd) = self
-                    .session
-                    .host
-                    .world
-                    .global_tmd(sp.model_index as i16)
-                    .map(std::sync::Arc::clone)
-                else {
+                // The part's morphed or rest mesh with its render scale and
+                // colour word applied (`World::part_draw_vram_mesh` - the
+                // Spirit aura's cones grow, spin and fade through it); the
+                // browser play page draws the same kernel.
+                let Some(vmesh) = self.session.host.world.part_draw_vram_mesh(&sp) else {
                     continue;
                 };
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
                 if vmesh.indices.is_empty() {
                     continue;
                 }

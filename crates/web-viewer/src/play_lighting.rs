@@ -21,8 +21,10 @@
 //!   ([`crate::field_actors`]), instanced through the same
 //!   [`scene_lighting::placement_model`] / live-anchor kernels.
 //!
-//! Shadow maps are native-only: the page's GLSL point lights attenuate and
-//! wrap like native's but cast no shadow (see `docs/tooling/host-drift.md`).
+//! The point lights' shadow maps are GPU work over each host's own draw
+//! list: the page renders them in `site/js/webgl-tmd.js`
+//! (`_renderLightShadows`) from the light positions this packet carries (see
+//! `docs/tooling/host-drift.md`).
 //!
 //! [`OptionsState::lighting_time_of_day`]: legaia_engine_core::options::OptionsState::lighting_time_of_day
 
@@ -157,7 +159,8 @@ impl LegaiaRuntime {
     ///
     /// * `[0..12]` - the mood's three shader words
     ///   ([`sl::LightingMood::uniforms`], enable = 1);
-    /// * `[12..]` - [`sl::frame_packet`]: the picked lights (nearest the
+    /// * `[12..16]` - [`sl::LightingMood::window_word`] (the window glow);
+    /// * `[16..]` - [`sl::frame_packet`]: the picked lights (nearest the
     ///   player, mood lamp strength folded in) and the glow-sprite quads.
     ///
     /// Lights and glow only on a field frame (not the world map), as the
@@ -174,6 +177,7 @@ impl LegaiaRuntime {
     ) -> Vec<f32> {
         let mood = self.lighting_mood();
         let mut out: Vec<f32> = mood.uniforms(true).iter().flatten().copied().collect();
+        out.extend_from_slice(&mood.window_word());
         let field = self.scene_host.as_ref().is_some_and(|h| {
             h.world.mode == SceneMode::Field
                 && !h
@@ -222,14 +226,14 @@ impl LegaiaRuntime {
 mod tests {
     use super::*;
 
-    /// The packet layout the page parses: twelve mood words, then the two
+    /// The packet layout the page parses: sixteen mood words, then the two
     /// counts. A host with no scene answers the mood and zero lights.
     #[test]
     fn frame_layout_without_a_scene() {
         let mut rt = LegaiaRuntime::new();
         let f = rt.play_lighting_frame(1.0, 0.0, 0.0, 0.0, -1.0, 0.0);
-        assert_eq!(f.len(), 14);
+        assert_eq!(f.len(), 18);
         assert_eq!(f[3], 1.0, "enable word");
-        assert_eq!(&f[12..], &[0.0, 0.0]);
+        assert_eq!(&f[16..], &[0.0, 0.0]);
     }
 }

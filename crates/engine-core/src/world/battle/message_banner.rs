@@ -22,6 +22,15 @@
 //! * `0x65`: `FUN_801F452C` composes `<spell>'s magic level increased.`
 //!   before the raise ([`crate::magic_xp::magic_level_increased_message`]).
 //!
+//! A third element shares the widget: `0x66`, the **timed** message. Its
+//! raisers point record `0x66`'s content word (`0x800775B4`) at a fixed
+//! string in the battle overlay's own data - the counterattack swap of the
+//! strike loop at `s_Counterattack_successful_801CED18`, the "No effect."
+//! pass `FUN_801F3C34` at `0x801CFA20` - set the hold `0x801F6964`, and raise
+//! it with `FUN_801D8DE8(0x66, 0)`. The battle frame driver `FUN_80046A20`
+//! counts the hold down by the frame byte after every action-SM step and
+//! unloads the element when it runs out (`0x80047058..0x80047098`).
+//!
 //! The port keeps the composed line on [`crate::world::BattleState::message_banner`]
 //! from the raise to the matching unload, and both hosts draw it through
 //! [`crate::battle_hud::battle_banner_message`] into the top banner widget.
@@ -34,14 +43,33 @@ pub const ABSORB_BANNER_ELEMENT: u8 = 0x59;
 /// Screen element of the magic-level-increased banner.
 pub const MAGIC_LEVEL_BANNER_ELEMENT: u8 = 0x65;
 
+/// Screen element of the timed message (the counterattack line, "No
+/// effect.").
+pub const TIMED_MESSAGE_ELEMENT: u8 = 0x66;
+
+/// The battle overlay's (PROT 0898) load base: a timed message's content word
+/// is a pointer into its data.
+const BATTLE_OVERLAY_BASE: u32 = 0x801C_E818;
+
+/// The counterattack line, `s_Counterattack_successful_801CED18`.
+pub const COUNTER_MESSAGE_VA: u32 = 0x801C_ED18;
+
+/// The hold the counterattack swap seeds (`li v0,0x78` / `sw v0,0x6964` at
+/// `0x801E3650` / `0x801E3658`).
+pub const COUNTER_MESSAGE_HOLD: i32 = 0x78;
+
 /// One raised message banner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BattleMessageBanner {
-    /// The screen element that raised it (`0x59` / `0x65`) - the unload that
-    /// retires it names the same id.
+    /// The screen element that raised it (`0x59` / `0x65` / `0x66`) - the
+    /// unload that retires it names the same id.
     pub element: u8,
-    /// The composed line (retail's `ctx + 0x1F9` buffer).
+    /// The composed line (retail's `ctx + 0x1F9` buffer, or the overlay
+    /// string a timed message points at).
     pub text: String,
+    /// The timed message's remaining hold `0x801F6964`, in frames; `0` for
+    /// the two elements that stay until their own unload.
+    pub hold: i32,
 }
 
 impl World {
@@ -50,7 +78,10 @@ impl World {
     ///
     /// REF: FUN_801D8DE8 (`0x801D9154..0x801D91D0`, the `0x59` compose arm)
     pub(in crate::world) fn message_banner_ui_element(&mut self, element: u8, mode: u8) {
-        if element != ABSORB_BANNER_ELEMENT && element != MAGIC_LEVEL_BANNER_ELEMENT {
+        if element != ABSORB_BANNER_ELEMENT
+            && element != MAGIC_LEVEL_BANNER_ELEMENT
+            && element != TIMED_MESSAGE_ELEMENT
+        {
             return;
         }
         if mode & 1 != 0 {
@@ -67,7 +98,11 @@ impl World {
         if element == ABSORB_BANNER_ELEMENT
             && let Some(text) = self.absorb_banner_text()
         {
-            self.battle.message_banner = Some(BattleMessageBanner { element, text });
+            self.battle.message_banner = Some(BattleMessageBanner {
+                element,
+                text,
+                hold: 0,
+            });
         }
     }
 
@@ -77,7 +112,55 @@ impl World {
         self.battle.message_banner = Some(BattleMessageBanner {
             element: MAGIC_LEVEL_BANNER_ELEMENT,
             text,
+            hold: 0,
         });
+    }
+
+    /// Raise the timed message: record `0x66`'s content word pointed at the
+    /// battle-overlay string `va`, the hold `0x801F6964 = hold`, and the
+    /// element raised. The text is read off the loaded PROT 0898 image (the
+    /// string is game text, so the port never carries it); without the
+    /// image, or for a pointer outside it, nothing is raised.
+    pub fn raise_timed_message(&mut self, va: u32, hold: i32) -> bool {
+        let Some(text) = self.battle_overlay_string(va) else {
+            return false;
+        };
+        self.battle.message_banner = Some(BattleMessageBanner {
+            element: TIMED_MESSAGE_ELEMENT,
+            text,
+            hold,
+        });
+        true
+    }
+
+    /// The NUL-terminated string at `va` in the battle overlay image.
+    fn battle_overlay_string(&self, va: u32) -> Option<String> {
+        let off = va.checked_sub(BATTLE_OVERLAY_BASE)? as usize;
+        let bytes = self.tables.move_power_overlay.as_deref()?.get(off..)?;
+        let end = bytes.iter().position(|&b| b == 0)?;
+        let s = bytes.get(..end)?;
+        (!s.is_empty() && s.iter().all(|b| b.is_ascii() && !b.is_ascii_control()))
+            .then(|| String::from_utf8_lossy(s).into_owned())
+    }
+
+    /// The battle frame driver's hold countdown for the timed message
+    /// (`FUN_80046A20`, `0x80047058..0x80047098`): run after the action-SM
+    /// step, `hold -= DAT_1F800393` while it is positive, and the element is
+    /// unloaded (`FUN_801D8DE8(0x66, 1)`) once it reaches `0`.
+    ///
+    /// PORT: FUN_80046A20 (`0x80047058..0x80047098`, the `0x801F6964` hold)
+    pub(in crate::world) fn tick_timed_message(&mut self) {
+        let step = i32::from(self.clock.frame_step.max(1));
+        let Some(b) = self.battle.message_banner.as_mut() else {
+            return;
+        };
+        if b.element != TIMED_MESSAGE_ELEMENT || b.hold <= 0 {
+            return;
+        }
+        b.hold -= step;
+        if b.hold <= 0 {
+            self.battle.message_banner = None;
+        }
     }
 
     /// The `0x59` line for the Seru staged in `ctx[+0x269]` (the engine's

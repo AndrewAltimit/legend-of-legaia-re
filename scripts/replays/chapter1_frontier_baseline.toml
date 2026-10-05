@@ -150,6 +150,21 @@
 # The settle now pulses Cross while a dialogue owns input, as a player
 # pages text, so a dialogue that opens on entry is not scored as a stall.
 
+#
+# WHY THE NUMBERS WENT UP: 410 -> 411, full ladder 56 -> 57
+#
+# `tower` clears its walk on locomotion now. Its spawn faces the rapid
+# elevator (P0[4]), whose record tests switch `0x1C6` first: clear, it types
+# "Out of service" and loops back. The engine used to fall back to the
+# record's static decode on that arm and take the ride's tile-(0, 0) parking
+# `MoveTo` for the destination, so the first Up dropped the player into the
+# void corner - the "walked 70 tile(s)" the ladder credited was the Chebyshev
+# distance from (13, 70) to (0, 0), not a walk. With the arm honoured the
+# contact moves nobody and opens the text box, and the walk probe now pages a
+# dialogue the walk opens (Cross pulses while it owns input, as the settle
+# does) instead of standing in it for the remaining cardinals. The scene
+# walks three tiles under pad and leaves for `geremi`.
+
 scenes = 74
-rung_total = 410
-full_ladder = 56
+rung_total = 411
+full_ladder = 57

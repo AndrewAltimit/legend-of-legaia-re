@@ -164,6 +164,12 @@ pub(super) fn summon_fade_in<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    // Every pass stores framing style `1` ahead of the close-up call
+    // (`li v1,0x1; sb v1,0xd(v0)` at `0x801E4A3C..0x801E4A40`). Nothing in
+    // `0x34` / `0x35` / `0x36` rewrites it, so it is the style a module's
+    // case-6 walk-in (PROT 0903 arm 11) frames with: half a turn on the yaw,
+    // the creature seen from in front.
+    ctx.camera_variant = 1;
     summon_close_up(host, ctx, slot);
     let cued = host.actor(slot).map(|a| a.anim_cue != 0).unwrap_or(false);
     if !cued {
@@ -297,6 +303,14 @@ pub(super) fn summon_return<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::SummonVerifyAlive)
 }
 
+/// The framing depth `ctx[+0x6D0]` the summon band's `0x37` exit stores
+/// (`li v0,0x800` at `0x801E4E6C`).
+pub const SUMMON_EXIT_FRAME_HEIGHT: i16 = 0x800;
+
+/// The framing depth the pre-cast wait stores when it routes a cast to the
+/// summon band (`li v0,0x600` / `sh v0,0x6d0(v1)` at `0x801E45F8..0x801E4604`).
+pub const SUMMON_ROUTE_FRAME_HEIGHT: i16 = 0x600;
+
 pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -310,7 +324,16 @@ pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     // floor, so the battle ambient climbs back from dark.
     ctx.gauge_rearm_latch = 0;
     ctx.summon_staging_a = 0;
+    host.summon_band_exit();
     ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
+    // Every pass stores style `1` before its case-6 call (`sb v1,0xd(v0)` at
+    // `0x801E4D5C`), and the exit sets the framing depth back to the near
+    // `0x800` (`0x801E4E6C..0x801E4E70`): the Done band after a summon frames
+    // the caster there (`shiny_refactor_gimard_levelup` reads
+    // `ctx[+0x6D0] = 0x800` in `0x51`).
+    ctx.camera_variant = 1;
+    ctx.camera_frame_height = SUMMON_EXIT_FRAME_HEIGHT;
+    host.camera_frame_height(SUMMON_EXIT_FRAME_HEIGHT);
     transition(ctx, ActionState::SummonDone)
 }
 

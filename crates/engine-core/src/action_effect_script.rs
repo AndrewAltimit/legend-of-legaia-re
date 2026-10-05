@@ -626,6 +626,231 @@ impl MoveFxStreak {
     }
 }
 
+/// The number of homing slots the terminator seeds (`ctx[+0x24E..=+0x251]`).
+pub const HOMING_SLOTS: usize = 4;
+
+/// The flight arm's arrival radius: a slot within `|dx| + |dz| <= 0x100` of
+/// its target lands (`slti v0,v0,0x101` at `0x801E1334`).
+pub const HOMING_ARRIVAL: i32 = 0x100;
+
+/// One homing slot: `ctx[+0x24E + i]` (phase), `ctx[+0x252 + i]` (the target
+/// seat plus one, `0` = none), `ctx[+0x1144 + i*8]` (position),
+/// `ctx[+0x1166 + i*8]` (heading) and the per-slot counter
+/// `ctx[+0x6C6 + i*2]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HomingSlot {
+    /// `0` idle, `1` streaking, `2` in flight, `3` landed.
+    pub phase: u8,
+    /// The target's engine actor index plus one; `0` for no target.
+    pub child: u8,
+    pub pos: [i32; 3],
+    pub heading: u16,
+    pub counter: i16,
+}
+
+/// One effect-list spawn the flight made: the list byte (bit 7 = the 2D pool
+/// form, `0xFF` = a ribbon the port does not stage), where, and the heading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HomingSpawn {
+    pub effect: u8,
+    pub at: [i32; 3],
+    pub heading: u16,
+}
+
+/// The four homing slots a move's projectile flies on - the per-slot half of
+/// `FUN_801E09F8`'s effect-child driver, from the terminator's seed through
+/// the flight to the landing.
+///
+/// The terminator (`FUN_801DEA50`, `0x801DF298..0x801DF3DC`) seeds every
+/// slot at the launch point in phase `1`, and gives slot `i` of the target
+/// band the band's `i`-th seat as its child when that seat is alive and not
+/// the caster. Phase `1` waits out the streak counter (slot `0`'s word, the
+/// [`MoveFxStreak`] walk); then every slot takes phase `2` when the record's
+/// `+0x12` list is non-empty, else `3` (`0x801E0CF8..0x801E0D34`). Phase `2`
+/// turns onto the target, advances `record[+0x08]` units a frame along that
+/// heading (`0x801E0FE8..0x801E10B0`), spawns the `+0x12` list every time its
+/// counter runs out and re-arms it to `0x40 - record[+0x08]`
+/// (`0x801E1144..0x801E1280`), and lands inside [`HOMING_ARRIVAL`] of the
+/// target: phase `3`, counter `record[+0x06]`, the position snapped onto the
+/// target raised by `record[+0x02]`, and the `+0x16` list spawned there
+/// (`0x801E1334..0x801E1430`). Phase `3` counts down and then hits and frees
+/// the slot (`0x801E178C..0x801E1A68`).
+///
+/// The hit itself stays with the engine's cast fold; this carries the
+/// flight - the position the camera's projectile shot (`FUN_801DC0A0` case
+/// `8`) frames, the child count its case `7` hands on at, and the spawns.
+///
+/// PORT: FUN_801E09F8 (the per-slot phases 1..3: seed, flight, landing, free)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HomingSlots {
+    pub slots: [HomingSlot; HOMING_SLOTS],
+    /// The staged move-power record's table index (`ctx[+0x1014]`).
+    pub record: Option<usize>,
+    /// Whether the world routes this flight's list spawns. See
+    /// `World::seed_homing_slots`.
+    pub emits: bool,
+}
+
+impl HomingSlots {
+    /// The terminator's seed: every slot at `launch` in phase `1`, and slot
+    /// `i` aimed at `seats[i]` when the closure finds it alive and not the
+    /// caster.
+    pub fn seed(
+        &mut self,
+        record: Option<usize>,
+        launch: (i32, i32, i32),
+        seats: &[Option<[i32; 3]>],
+        child_of: impl Fn(usize) -> u8,
+    ) {
+        self.record = record;
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            *s = HomingSlot {
+                phase: 1,
+                child: 0,
+                pos: [launch.0, launch.1, launch.2],
+                heading: 0,
+                counter: 0,
+            };
+            if let Some(Some(t)) = seats.get(i) {
+                s.child = child_of(i);
+                s.heading = heading_to(s.pos, *t);
+            }
+        }
+    }
+
+    /// The census's child count `ctx[+0x24D]`: children of a seeded block.
+    pub fn children(&self) -> u8 {
+        if self.slots.iter().all(|s| s.phase == 0) {
+            return 0;
+        }
+        self.slots.iter().filter(|s| s.child != 0).count() as u8
+    }
+
+    /// Slot `0`'s position, the point case `8` frames, once seeded.
+    pub fn lead(&self) -> Option<[i32; 3]> {
+        self.record.map(|_| self.slots[0].pos)
+    }
+
+    /// One frame. `record` is the staged move-power record's raw bytes,
+    /// `streak_counter` slot `0`'s phase-`1` word, `target` the live position
+    /// of a child's actor (by child byte). Returns the list spawns made.
+    pub fn step(
+        &mut self,
+        record: &[u8],
+        streak_counter: u16,
+        target: impl Fn(u8) -> Option<[i32; 3]>,
+    ) -> Vec<HomingSpawn> {
+        let mut out = Vec::new();
+        let byte = |o: usize| record.get(o).copied().unwrap_or(0);
+        let speed = i32::from(byte(0x08));
+        let list = |base: usize| -> Vec<u8> {
+            (0..4)
+                .map(|k| byte(base + k))
+                .take_while(|&b| b != 0)
+                .collect()
+        };
+        if self.slots[0].phase == 1 {
+            if streak_counter != 0 {
+                return out;
+            }
+            let next = if byte(0x12) != 0 { 2 } else { 3 };
+            for s in self.slots.iter_mut() {
+                s.phase = next;
+                if next == 3
+                    && s.child != 0
+                    && let Some(t) = target(s.child)
+                {
+                    land(s, t, record, &list, &mut out);
+                }
+            }
+        }
+        for s in self.slots.iter_mut() {
+            if s.child == 0 {
+                continue;
+            }
+            let Some(t) = target(s.child) else {
+                continue;
+            };
+            match s.phase {
+                2 => {
+                    s.heading = heading_to(s.pos, t);
+                    let (sin, cos) = legaia_engine_vm::battle_action::motion::trig12(s.heading);
+                    // `(lut * speed * delta) << 3 >> 15`, delta one vsync.
+                    s.pos[2] += (i32::from(cos) * speed * 8) >> 15;
+                    s.pos[0] += (i32::from(sin) * speed * 8) >> 15;
+                    if s.counter != 0 {
+                        s.counter = (s.counter - 4).max(0);
+                    } else {
+                        for e in list(0x12) {
+                            if e != 0xFF {
+                                out.push(HomingSpawn {
+                                    effect: e,
+                                    at: s.pos,
+                                    heading: s.heading,
+                                });
+                            }
+                        }
+                        s.counter = (0x40 - speed) as i16;
+                    }
+                    if (s.pos[0] - t[0]).abs() + (s.pos[2] - t[2]).abs() <= HOMING_ARRIVAL {
+                        land(s, t, record, &list, &mut out);
+                    }
+                }
+                3 => {
+                    if s.counter != 0 {
+                        s.counter = (s.counter - 4).max(0);
+                    } else {
+                        s.phase = 0;
+                        s.child = 0;
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+}
+
+/// `FUN_80019B28(a.z, a.x, b.z, b.x)`.
+fn heading_to(a: [i32; 3], b: [i32; 3]) -> u16 {
+    legaia_engine_vm::battle_action::bearing_12bit_approx(
+        a[2] as i16,
+        a[0] as i16,
+        b[2] as i16,
+        b[0] as i16,
+    )
+}
+
+/// The landing (`0x801E1340..0x801E1430`): phase `3`, counter
+/// `record[+0x06]`, the slot on its target raised by `record[+0x02]`, and the
+/// `+0x16` list spawned there.
+fn land(
+    s: &mut HomingSlot,
+    t: [i32; 3],
+    record: &[u8],
+    list: &impl Fn(usize) -> Vec<u8>,
+    out: &mut Vec<HomingSpawn>,
+) {
+    let half = |o: usize| {
+        i16::from_le_bytes([
+            record.get(o).copied().unwrap_or(0),
+            record.get(o + 1).copied().unwrap_or(0),
+        ])
+    };
+    s.phase = 3;
+    s.counter = half(0x06);
+    s.pos = [t[0], t[1] - i32::from(half(0x02)), t[2]];
+    for e in list(0x16) {
+        if e != 0xFF {
+            out.push(HomingSpawn {
+                effect: e,
+                at: s.pos,
+                heading: s.heading,
+            });
+        }
+    }
+}
+
 /// Actor state the stepper reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EffectScriptActor {
@@ -1141,5 +1366,76 @@ mod tests {
         a.approach = None;
         let open = step_effect_script(lut, &block(&[(1, 0x84, 0, 0, 1000)]), a, 0, &[]);
         assert_eq!(open.spawns[0].at, (raw.0, 0, 400 + raw.1));
+    }
+
+    /// A move-power record shaped like Tail Fire's (table index 18): speed
+    /// `0x20`, a lift, a landing counter, one `0x1B` on each list.
+    fn tail_fire_like(lift: i16, land_counter: i16) -> [u8; 26] {
+        let mut r = [0u8; 26];
+        r[0x02..0x04].copy_from_slice(&lift.to_le_bytes());
+        r[0x06..0x08].copy_from_slice(&land_counter.to_le_bytes());
+        r[0x08] = 0x20;
+        r[0x12] = 0x1B;
+        r[0x16] = 0x1B;
+        r
+    }
+
+    #[test]
+    fn a_seeded_slot_flies_lands_raised_and_frees() {
+        let rec = tail_fire_like(300, 8);
+        let target = [0, 0, -2000];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, -300, 0), &[Some(target)], |_| 1);
+        assert_eq!(h.children(), 1);
+        assert_eq!(h.lead(), Some([0, -300, 0]));
+        // Phase 1 holds while the streak word runs.
+        assert!(h.step(&rec, 4, |_| Some(target)).is_empty());
+        assert_eq!(h.slots[0].phase, 1);
+        // Then the flight: one `+0x12` spawn on its first pass, re-armed to
+        // `0x40 - speed` and fired again once that has drained by 4 a frame.
+        let first = h.step(&rec, 0, |_| Some(target));
+        assert_eq!(first.len(), 1);
+        assert_eq!(h.slots[0].phase, 2);
+        assert_eq!(h.slots[0].pos[2], -0x20, "speed 0x20 straight down -z");
+        let mut spawns = first.len();
+        let mut frames = 1;
+        while h.slots[0].phase == 2 {
+            spawns += h.step(&rec, 0, |_| Some(target)).len();
+            frames += 1;
+            assert!(frames < 200, "the slot arrives");
+        }
+        // Landed inside the radius: on the target, raised by the record's
+        // lift, the `+0x16` list fired there.
+        assert_eq!(h.slots[0].phase, 3);
+        assert_eq!(h.slots[0].pos, [0, -300, -2000]);
+        assert!(spawns >= 2);
+        // The landing counter drains, then the slot frees.
+        for _ in 0..2 {
+            h.step(&rec, 0, |_| Some(target));
+        }
+        assert_eq!(h.slots[0].phase, 3);
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.slots[0].phase, 0);
+        assert_eq!(h.children(), 0);
+        assert_eq!(
+            h.lead(),
+            Some([0, -300, -2000]),
+            "the point stays for case 8"
+        );
+    }
+
+    #[test]
+    fn an_empty_flight_list_lands_straight_from_the_streak() {
+        let mut rec = tail_fire_like(0, 0);
+        rec[0x12] = 0;
+        let mut h = HomingSlots::default();
+        h.seed(Some(1), (0, 0, 0), &[Some([500, 0, 500])], |_| 1);
+        let out = h.step(&rec, 0, |_| Some([500, 0, 500]));
+        // The transition falls straight into the per-slot pass in the same
+        // call (`0x801E0F70` -> `0x801E0F78`), so a zero landing counter
+        // frees the slot on the frame it lands.
+        assert_eq!(h.slots[0].phase, 0);
+        assert_eq!(h.slots[0].pos, [500, 0, 500]);
+        assert_eq!(out.len(), 1, "the `+0x16` list only");
     }
 }

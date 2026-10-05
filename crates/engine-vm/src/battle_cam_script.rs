@@ -229,6 +229,7 @@ mod phase;
 mod pose;
 mod post_action;
 mod projection;
+mod spell_cam;
 
 pub use action::*;
 pub use camera::*;
@@ -237,6 +238,7 @@ pub use phase::*;
 pub use pose::*;
 pub use post_action::*;
 pub use projection::*;
+pub use spell_cam::*;
 
 #[cfg(test)]
 mod tests;

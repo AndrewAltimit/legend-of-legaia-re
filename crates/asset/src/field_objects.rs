@@ -144,6 +144,16 @@ pub const CELL_VISIBLE: u16 = 0x2000;
 /// See the `CELL_VISIBLE` docs for the shared `+0x10`-plus-prefix mesh
 /// resolution.
 pub const CELL_WALK_VISIBLE: u16 = 0x1000;
+/// Object-index-grid cell bit `0x8000`: the field ground pass's **depth-sort**
+/// flag. PROT 0900's ground emitter (`FUN_801F6D48`, and its depth-cued twin
+/// `FUN_801F69EC`) links a cell carrying it into the ordering-table bucket its
+/// own minimum projected `Z` picks; a cell without it goes into the fixed far
+/// bucket `(0x3FF6 >> ot_shift) * 4` (`andi s0,s5,0x8000` / `beqz` at
+/// `0x801F6F94`, the far-bucket pointer `s6` formed at `0x801F6D68`). The far
+/// bucket is the last the GPU walks first, so such a cell draws **under
+/// everything** - see [`WalkHeightfield::far_bucket`].
+// REF: FUN_801F6D48
+pub const CELL_GROUND_DEPTH_SORTED: u16 = 0x8000;
 /// Object-index-grid cell bit `0x0400`, read on a placed object's
 /// **footprint-anchor tile**: the marker that says *"this object is the
 /// init sweep's - do not re-create it"*.
@@ -770,6 +780,14 @@ pub struct WalkHeightfield {
     /// retail's ground emitter re-reads it every frame, so a drawn ground
     /// re-resolves its Y from these against the live ladder.
     pub corner_tiers: Vec<u8>,
+    /// Per-vertex: the cell links into the ground pass's fixed **far bucket**
+    /// (its object-grid word lacks [`CELL_GROUND_DEPTH_SORTED`]), so retail
+    /// draws it before - and therefore under - every other primitive in the
+    /// frame, whatever its depth. Only the field ground pass (PROT 0900,
+    /// [`GroundCellGate::WalkVisible`]) has the bit; the overworld emitter keys
+    /// every cell on its own corners (`legaia_engine_core::overworld_draw_order`)
+    /// and leaves this `false`. Empty on a heightfield built without it.
+    pub far_bucket: Vec<bool>,
 }
 
 /// The GP0 modulation colour every retail ground primitive carries: neutral
@@ -892,6 +910,8 @@ pub fn build_ground_heightfield(
                 corner_tier(col, row + 1),
                 corner_tier(col + 1, row + 1),
             ]);
+            let far = gate == GroundCellGate::WalkVisible && cell & CELL_GROUND_DEPTH_SORTED == 0;
+            hf.far_bucket.extend([far; 4]);
             // Per-cell atlas tile from +0x14: the 8x8 atlas places tile `id` at
             // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`. Compute in a wide type
             // and clamp to the u8 page extent: the bottom-right tile origin is

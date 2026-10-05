@@ -505,6 +505,27 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         ("POOL_CENTER", "DYN_POOL_CENTER"),
         ("POOL_INNER", "DYN_POOL_INNER"),
         ("POOL_OUTER", "DYN_POOL_OUTER"),
+        # Lit windows: the glass test and the pane colour of `shade_window`.
+        ("WINDOW_GLASS_MIN_BLUE", "DYN_WIN_GLASS_MIN_BLUE"),
+        ("WINDOW_RGB", "DYN_WIN_RGB"),
+        ("WINDOW_FLOOR", "DYN_WIN_FLOOR"),
+        ("WINDOW_GLASS_BLACK_MAX", "DYN_WIN_GLASS_BLACK_MAX"),
+    )
+] + [
+    # The point lights' shadow maps: the page's depth-array pass
+    # (webgl-tmd.js `_renderLightShadows`) rebuilds the native cone and
+    # compare from these literals, so each is the shadow model.
+    {
+        "what": f"point-light shadow constant {name}",
+        "native": (path, name),
+        "web": ("site/js/webgl-tmd.js", name),
+    }
+    for path, name in (
+        ("crates/engine-render/src/renderer/helpers.rs", "SHADOW_MAP_DIM"),
+        ("crates/engine-render/src/renderer/helpers.rs", "SHADOW_COMPARE_BIAS"),
+        ("crates/engine-render/src/scene_lights.rs", "SHADOW_FOV"),
+        ("crates/engine-render/src/scene_lights.rs", "SHADOW_NEAR_FRAC"),
+        ("crates/engine-render/src/scene_lights.rs", "SHADOW_NEAR_MIN"),
     )
 ]
 
@@ -543,6 +564,35 @@ NATIVE_TITLE_SAVE = (
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "fishing session affordance row, native vs play page - each "
+        "host names the same three session actions (menu, quit, prizes) "
+        "with its own keys; the page once printed only the menu, so a "
+        "player there never learned how to leave or reach the exchange",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": ("crates/web-viewer/src/play_fishing.rs", "fishing_status_draws"),
+        },
+        "mode": "pattern_same",
+        "pattern": r"= (menu|quit|prizes)\b",
+    },
+    {
+        "what": "effect-pool billboard TSB word, native vs play page (battle "
+        "and field FX) - retail sends every effect child as the semi-"
+        "transparent prim code 0x2E, which the atlas page byte cannot carry; "
+        "the page pushed the bare page, so every hit-dust / flame sprite drew "
+        "opaque. Each billboard builder must take `EffectSprite::packet_tsb`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs",
+                "effect_billboard_mesh",
+            ),
+            "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+            "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["packet_tsb"],
+    },
     {
         "what": "volumetric ground fog brightness, native vs play page - the "
         "bank may not outshine the battle stage it lies on, so each host's "
@@ -2414,6 +2464,7 @@ DIAG_GATES: list[dict[str, object]] = [
     # --- subtractive / logging only ----------------------------------------
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
+    {"env": "LEGAIA_DIAG_NO_PRIM_NEAR", "additive": False, "note": "disarm the per-primitive near reject (A/B attribution; the browser never disarms it)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
     {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},

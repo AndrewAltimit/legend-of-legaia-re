@@ -673,16 +673,15 @@ impl AudioBgmDirector {
                     channel, submode, ..
                 } = legaia_engine_audio::classify_cue(u32::from(cue.id))
                 {
-                    // A streamed CD-XA voice, not an SPU descriptor. The one
-                    // producer feeding this queue such ids is the
-                    // `FUN_801F3990` band, which the two measured retail casts
-                    // never raised (`docs/subsystems/cast-module.md`), so it is
-                    // declined rather than voiced. The cast's own voice - the
-                    // module head cue - does not come through here: it rides
-                    // the `(clip, channel, dur)` channel into `play_xa_clip`.
+                    // A streamed CD-XA voice, not an SPU descriptor. No
+                    // producer feeds this queue such ids: the `FUN_801F3990`
+                    // cast-cue band (the item-use voice) and the cast module's
+                    // head cue both resolve at the world into the
+                    // `(clip, channel, dur)` channel `play_xa_clip` plays, so
+                    // a voice id here is a stray and is declined.
                     log::debug!(
                         "battle cue {:#06x} is a CD-XA voice (clip channel {channel:#04x} \
-                         submode {submode}); the FUN_801F3990 band is declined",
+                         submode {submode}) on the SFX queue; declined",
                         cue.id
                     );
                     continue;

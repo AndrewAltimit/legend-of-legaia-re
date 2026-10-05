@@ -441,8 +441,22 @@ pub const GIMARD_HIT_ARM: u8 = 11;
 /// The phase arm PROT 0903 latches `0xFF` from (`sb v0,0x0(s6)` at
 /// `0x801F7698`).
 pub const GIMARD_SETTLE_ARM: u8 = 12;
+/// The `ctx+0x278` PROT 0903 stores as its arm 4 cut lands
+/// (`li v0,0x3; sb v0,0x278(v1)` at `0x801F6F24..0x801F6F2C`).
+pub const GIMARD_CUT_CTX_278: u8 = 3;
+/// The `ctx+0x278` PROT 0903 stores as its arm 6 seats the fire tunnel
+/// (`li v0,0x2; sb v0,0x278(v1)` at `0x801F7168..0x801F7170`).
+pub const GIMARD_TUNNEL_CTX_278: u8 = 2;
 /// The render flag PROT 0903 poses the summon seat at in arm 9.
 pub const GIMARD_POSE_RENDER_FLAG: u8 = 3;
+/// The tint word PROT 0903 stamps on the summon seat in arm 9
+/// (`li v0,0x3ff; sw v0,0x4(s3)` at `0x801F7318..0x801F731C`): the red
+/// channel alone at full, which is what turns the creature red for its
+/// breath. `gimard_burning_attack` reads it easing at `0x3FC`.
+pub const GIMARD_POSE_PRESENT_WORD: u32 = 0x3FF;
+/// The `+0x21F` selector PROT 0903 sets beside it (`sb t3,0x21f(s3)` at
+/// `0x801F7324`, `t3 = 1` from the prologue).
+pub const GIMARD_POSE_21F: u8 = 1;
 /// The render flag PROT 0903 drops the summon seat to once the hit has
 /// landed (`li v0,0x2; sb v0,0x21c(s3)` at `0x801F75E4`).
 pub const GIMARD_DONE_RENDER_FLAG: u8 = 2;
@@ -466,7 +480,13 @@ pub const GIMARD_SETTLE_ANIM_RATE: u8 = ANIM_RATE_NORMAL >> 1;
 /// Simulation state, by arm:
 ///
 /// * arm `0` - `ctx+0x278 = 0` (`0x801F6B8C`), `ctx+0x243 = 1`;
-/// * arm `9` - the summon seat's render flag `= 3` (`0x801F7310`);
+/// * arms `4` / `6` - `ctx+0x278 =` [`GIMARD_CUT_CTX_278`] /
+///   [`GIMARD_TUNNEL_CTX_278`]: above `1`, the battle ambient pass takes the
+///   backdrop pair's depth cue to full and off the draw
+///   (`battle_ground_grid::backdrop_cue_ceiling`), so the creature's attack
+///   plays inside the module's fire tunnel with no stage behind it;
+/// * arm `9` - the summon seat's render flag `= 3` (`0x801F7310`), its tint
+///   word `+0x04 = 0x3FF` and `+0x21F = 1`;
 /// * arm `10` - the summon seat's `+0x1DA` and `+0x1DC` each `+= 1`
 ///   (`0x801F7360..0x801F7374`);
 /// * arm `11` - advances **first** (`0x801F7478`), then, unless the victim
@@ -486,7 +506,7 @@ pub const GIMARD_SETTLE_ANIM_RATE: u8 = ANIM_RATE_NORMAL >> 1;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69D8 (PROT 0903; phase chain + the single-target hit; packet and camera arms unported)
+/// PORT: FUN_801F69D8 (PROT 0903; phase chain + the single-target hit + the ctx+0x278 stores; packet and camera arms unported)
 pub fn gimard_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
@@ -500,9 +520,19 @@ pub fn gimard_tick(
             c.ctx_278 = 0;
             CastArmStep::Advance
         }
+        4 => {
+            c.ctx_278 = GIMARD_CUT_CTX_278;
+            CastArmStep::Advance
+        }
+        6 => {
+            c.ctx_278 = GIMARD_TUNNEL_CTX_278;
+            CastArmStep::Advance
+        }
         GIMARD_POSE_ARM => {
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.render_flag = GIMARD_POSE_RENDER_FLAG;
+                s.present_04 = GIMARD_POSE_PRESENT_WORD;
+                s.render_21f = GIMARD_POSE_21F;
             }
             CastArmStep::Advance
         }

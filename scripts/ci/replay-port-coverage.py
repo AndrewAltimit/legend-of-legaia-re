@@ -694,6 +694,22 @@ CANONICAL_LADDERS = [
     # An all-target spell committed on the play page from a played-through
     # card, so the commit log copies the whole-row label (`801d57e8`).
     ("w8_commit_log_all_target_page", "legaia-web-viewer"),
+    # The SFX ring's replace-last (`80035bd0`): every headless member runs
+    # its producers, but the ring lives in a host's SFX scheduler and the
+    # play page's is the only one that exists without an audio device. The
+    # overworld sub-list's confirm brings its cue due there.
+    ("w9_world_map_sublist_sfx_page", "legaia-web-viewer"),
+    # The two ailment marks over the command chips - the Curse plate on the
+    # ring (`801dbec4`) and the Rot stamp on the arts entry (`801dbddc`) -
+    # with the ailment seeded the way an inflicting strike writes it.
+    ("w9_status_marks_page", "legaia-web-viewer"),
+    # Retail's visible-tile crop (`801f7088` / `801f6d48`), which the shared
+    # kernel answers only at the retail camera preset - and both hosts start
+    # on a wider one. The page's distance control takes it there.
+    ("w9_view_window_crop_page", "legaia-web-viewer"),
+    # The passive-ability badge column (`801d095c`), behind a party that
+    # wears one of six passive bits: an accessory equipped by pad.
+    ("w9_passive_badge_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

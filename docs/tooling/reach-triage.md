@@ -38,8 +38,8 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **859 live / 790 entered / 37
-never entered, across 84 ladders**, with both defect lists empty (and 39
+page verdicts. Over the current union they are **871 live / 815 entered / 26
+never entered, across 88 ladders**, with both defect lists empty (and 35
 addresses in the *not observable* bucket plus 2 const anchors, outside all
 three).
 
@@ -70,8 +70,12 @@ one - see
 [the partial-union note](#a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line).
 The export must also be **clean** of any source edit made while it ran: an
 export built partly before and partly after an edit to a file mixes two line
-maps for it, and the reader scores an anchor against both. Re-deriving with a
-bare `replay-port-coverage.py` is cheaper than trusting this line.
+maps for it, and the reader scores an anchor against both. An edit that
+keeps every line where it was (a tag moved between two adjacent doc blocks of
+the same length) is the one exception, and a member whose own test file
+changed can be re-exported alone - its test file holds no anchors. The
+figure above used both. Re-deriving with a bare `replay-port-coverage.py` is
+cheaper than trusting this line.
 
 ## Buckets
 
@@ -928,7 +932,7 @@ content rather than an entry point.
 
 | group | n | addresses | host |
 |---|---|---|---|
-| `engine-audio::sfx.rs` | 1 | `80065034` | the Muscle Dome **INTERVAL tally's key-on**, with a live audio device. Its producer `801d1288` (`arena_voice_cue`) is entered now - `play_ringside_still_disc` wins a dome leg by pad on the browser play page, whose tally resolves the per-lane voice attr - but `key_on_voice_attr` is taken only by the native window's minigame side-channel (a `bin/` target, and `w5_native_minigame_ladder` has no dome rung) and the standalone browser minigames page, which is outside the union |
+| `engine-audio::sfx.rs` | 1 | `80065034` | Converted by `w5_native_minigame_ladder` rung 9, through a different producer than the cell named: the slot machine's **reel motor**, a directly keyed voice (`World::take_sfx_voice_keys` -> the native director). The rung is the one run without `--no-audio` and seeds the coin bank so the machine spins; it skips on a machine with no output device. The dome tally's key-on (`801d1288`'s consumer) is still taken only by the native minigame side-channel and the standalone minigames page |
 
 One row moved rather than converting. `801d5510` (the shop's buy-quantity
 panel) is no longer a *host* gap: the missing native window-35 painter that
@@ -956,15 +960,16 @@ all of it executes under one ladder now.
 
 **`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
 
-**`801d765c` was credited to this ladder and is never entered.** The rung opens
+**`801d765c` was credited to rung 1 and is entered by rung 8.** Rung 1 opens
 the fishing minigame and the wander actor runs, but
 `tracked_point_separation` is not on that path: its only production caller is
 the native window's fishing **developer readout**, behind
 `debug_readout_visible(dev_menu.is_some(), held)` - the dev menu open *and*
-the pack-debug modifier held on the same frame the HUD draws. Neither is
-something opening a minigame does, so the address is `(a)` with that gate
-named, and `--key-script` plus a held `--pad-script` word is the rung that
-would convert it.
+the pack-debug modifier held on the same frame the HUD draws. Rung 8 is the
+rung that gate names: `LEGAIA_DEV_MENU` on the child, `40:L`, and R2 held
+(the raw word's `0x0200`, which the packed word carries as `0x0002`). It is
+scored against the same run without the held bit, and every pixel that
+differs must sit in the readout line's stage band.
 
 The way it was mis-credited is the general one: the cell named the *screen*
 the address is drawn on, and a rung that reaches a screen is not a rung that
@@ -1357,7 +1362,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
 | `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
-| `field_passive_hud.rs` | 1 | (b) | a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
+| `field_passive_hud.rs` | 1 | (b), **converted** | `w9_passive_badge_page` equips a badge-bit accessory through the Equip screen by pad and requires the badge against the same menu walk with nothing seeded. The gate it closes: a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `scus_core_helpers.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
 | `world_map_clut_fade.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
@@ -1591,7 +1596,7 @@ that half is disclosed at its tag and waived by the drift gate.
 
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
-| `sfx.rs` | 1 | (a) | the Muscle Dome interval tally's key-on; its producer `801d1288` is entered and it is not - see [the harness-blind table](#no-ladder-harness-blind) | `80065034` |
+| `sfx.rs` | 1 | converted | `w5_native_minigame_ladder` rung 9 keys the slot reel motor's voice through the native director - see [the harness-blind table](#no-ladder-harness-blind) | `80065034` |
 
 The footstep cadence and the SFX delay ring left this table through the
 composition ladder - both tick on the browser play page's frame path, which is
@@ -2134,7 +2139,7 @@ part worth keeping rather than the fact that it emptied:
 |---|---|---|
 | `8003f348` `8003f3fc` `8003f86c` | (a) | [content not driven](#no-ladder-content-not-driven) - the fog emitter, which only a **composing** ladder can enter |
 | `80057914` | (a), since **converted** | the op-`0x43` sub-`0x12` carriers the census names, drained by the headless frame tail - see [the rows no ladder converts](#rows-no-ladder-converts-and-why) |
-| `801d095c` | (b) | the [`engine-vm` table](#engine-vm), on a party that holds a HUD-badge ability |
+| `801d095c` | (b), since **converted** | the [`engine-vm` table](#engine-vm), on a party that holds a HUD-badge ability - `w9_passive_badge_page` equips one |
 | `8003c7ec` `800430ac` `801cefd4` | (a) | [content not driven](#no-ladder-content-not-driven) - two field-VM op carriers and the boot chain |
 | `801d1288` `80065034` | (a) | [harness-blind](#no-ladder-harness-blind), as **one** gate - the producer and its consumer |
 | `800485bc` | (b) | the [`engine-ui` table](#engine-ui), on the weapon-trail content gate `801e1ab0` already names |
@@ -2211,6 +2216,31 @@ The pairing was the verdict-shaped part of the set, and it held: `801d1288` is
 the Muscle Dome tally's per-lane voice resolve and `80065034` is the audio side
 it keys, so they are one row's worth of work and not two.
 
+#### A third refresh: nine added rows, and three rungs that were not reaching
+
+The next refresh added nine, plus `801d6058` - a row this page had already
+closed. Every one has a verdict, and the shape of the closures is the reusable
+part: four rows were behind a rung or a fixture that **looked** like it
+reached them.
+
+| addresses | verdict | what closed it |
+|---|---|---|
+| `801cf760` | (a), **converted** | `w1f2_menu_depth_ladder`'s Equip rung named Best Equipment and never ran it: the Equip row opens on the character picker (`0x12`), so its one Cross picked the character. It now presses twice and seeds a better sword, because a cold bag gives the applier nothing to change and the confirm is a buzz either way |
+| `801d3fd0` `801d40dc` | (a), **converted** | the dance's sequence-clear banner needs a **matched** note. `play_minigames_host` reads the run's judged symbol and presses it as the beat clock wraps; on lane 0 only a closed chain scores, so the score moving is the assertion |
+| `801d6310` | (a), **converted** | the Baka cameo's pose, with `801d65f8` - see [the rows no ladder converts](#rows-no-ladder-converts-and-why) |
+| `801dbddc` `801dbec4` | (b), **converted** | the Rot stamp on the arts entry and the Curse plate on the ring, both behind an ailment on the acting member. `w9_status_marks_page` seeds it through the tracker an inflicting strike writes and scores each mark against the same fight with no ailment |
+| `801f6d48` `801f7088` | (b), **converted** | retail's visible-tile crop, which the shared kernel answers only at the **retail** camera preset - and both hosts start on a wider one. `w9_view_window_crop_page` takes the page's distance control to `retail` and back |
+| `801f2134` | (c) | the Baka hub's close-sting tick. The port opens slot `0` only through `slot_for_op49_sub_op`'s fallback for a sub-op the op's own range test refuses, and no hub state machine writes `0` or `0x14..=0x18` into `+0x50`. Whether retail ever does is not established |
+| `801d6058` | **tag move** | the `PORT:` sat on `AmbientEmitter::step`, a collecting wrapper only unit tests call; the world tick runs `step_with` on every cold field entry. The tag is on `step_with` now - the row was the anchor, not the reach |
+
+Three of these failed the same way the Arrange rung did above: a rung, a
+door-warp test, or a page that opens the right **screen** and stops one input
+short of the routine - a character picker in front of the slot browse, a
+press off the beat, a pad still held from the previous prompt (the status
+ladder's Left press was swallowed until the ring frame was released first).
+Each new rung asserts a positive effect and was checked against the run
+without its precondition.
+
 #### Two of the added rows were the anchor mechanism, not a gap
 
 `8004fe5c` and `801d5854` are both `//!` **module** anchors, and a module block
@@ -2241,10 +2271,10 @@ one that does was declined for the reason given.
 
 | address | bucket | why |
 |---|---|---|
-| `80035bd0` | (a) | the SFX ring's replace-last op. `World::replace_last_sfx_cue` produces it (world-map sub-list and text box, the tile-board bonk, the Baka hub's confirm stings, the Incense notice), and only the hosts' SFX schedulers consume it - `AudioBgmDirector::apply_sfx_ring_ops` and the page's `play_sfx`. No headless member holds a scheduler (`enable_audio: false`), and no page member reaches one of those producers |
+| `80035bd0` | (a), **converted** | the SFX ring's replace-last op. `World::replace_last_sfx_cue` produces it and only the hosts' SFX schedulers consume it. The native one exists only with an audio device; the page's exists on every build, so `w9_world_map_sublist_sfx_page` drives the overworld sub-list (Square, then Cross on row 0) and requires cue `0x20` to come due on the page ring (`play_sfx_state_json`'s `last_ring_cue`) |
 | `8004c650` | (c) | `find_arts_record` carries `REPLACED-BY` (the typed arts catalog) and is live only through the permissive graph; no host is owed a call |
-| `801d31b0` | (a), render pass | `emit_strip`, reached through `engine-ui::move_strip::move_strip_prims` from both hosts' render passes, on the move-VM extension's sub-op `0x2C` strip requests. A composing member parked where a shipped move program issues `2F 2C` converts it; a headless one cannot |
-| `801d65f8` | (a), minigame | the Baka duel cameo's eye blit (`BakaDuelAssets::apply_wink`), run when a host builds the duel VRAM while the cameo's pose names a blit row. No member reaches a cameo frame |
+| `801d31b0` | (d), no carrier | `emit_strip`, wired on both hosts' render passes off the move-VM extension's sub-op `0x2C` requests. **No shipped move program issues `2F 2C`**: `move_ext_strip_census_disc.rs` walks every scene's stager records and every type-`0x05` MOVE slot and finds none (see [`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md#the-scanline-strip-emitter-0x2b--0x2c--0x2d)). The earlier "a composing member parked where a shipped program issues it" had no such place to park; a hand-built program would prove the interpreter, not reach |
+| `801d65f8` | (a), **converted** | the Baka duel cameo's eye blit (`BakaDuelAssets::apply_wink`). The cameo spawns only when the round setup reads Triangle **held** (`0x801D0190..0x801D01C4`); `play_minigames_host` plays the cabinet twice, with and without Triangle held, and requires the page's duel VRAM to differ. `801d6310` (`cameo_pose`) converts with it |
 | `801db9c4` | (b) | see [the gate table](#gates-behind-the-b-rows) - disassembly-grounded |
 
 Four rows left. Three went through the headless frame tail and the ladder

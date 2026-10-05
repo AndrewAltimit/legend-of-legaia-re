@@ -284,6 +284,10 @@ impl World {
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         self.battle_ctx = ctx;
+        // The frame driver counts the timed message's hold down straight
+        // after the SM step (`FUN_80046A20`, `jal 0x801E295C` then the
+        // `0x801F6964` block).
+        self.tick_timed_message();
         self.track_block_approach_terms(pre_state, &out);
         // The strike chain's exit re-arms the steal latch: the arm that
         // writes `0x1F` into the action state at `0x801E3A7C` clears
@@ -583,6 +587,21 @@ impl World {
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
+        // The morph-lane ramp envelope `FUN_80020740`, run by the part tick
+        // on every part whose `+0x10` carries the op-`0x0A` bit `0x1000` -
+        // the step `tick_move_fx` takes for the effect-script scenes. PROT
+        // 0903's breath (the PROT 0898 prototype `0x801F5B28`) arms three
+        // lanes on its rest mesh, a 52-unit seed, and grows to the flame
+        // only through them. The step is the move-VM ramp ratio, as for the
+        // effect-script scenes below, not the field cadence `frame_step`.
+        let step = self.move_vm.ramp_ratio.max(1);
+        for part in &mut scene.parts {
+            if !part.finished
+                && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+            {
+                vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+            }
+        }
         if !scene.finished() {
             self.casting.active_summon = Some(scene);
         }
@@ -760,6 +779,16 @@ impl World {
         let trail_texpage = fx.trail_texpage;
         let sound_cue_id = fx.sound_cue_id;
 
+        // A cast whose terminator is still ahead leaves both lists to the
+        // homing flight it seeds (`World::seed_homing_slots`): only the
+        // move's sound cue surfaces here (the trail texpage is scene-scoped).
+        if self.casting.homing_takes_lists {
+            if sound_cue_id != 0 {
+                self.casting.pending_move_fx_cue = Some(sound_cue_id);
+            }
+            return true;
+        }
+
         let mut staged_scene = false;
         if !wanted.is_empty() {
             // The 3D scene-graph path needs the retained battle-action overlay
@@ -898,8 +927,14 @@ impl World {
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
         let channel_delta = self.effect_channel_delta();
-        // Effect-script table-form scenes advance on the same clock. Take
-        // the list, tick each, keep the unfinished.
+        // Effect-script table-form scenes: take the list, tick each, keep the
+        // unfinished. Their wait timers drain at retail's own rate - the part
+        // tick subtracts `DAT_1F800393 * DAT_1F80037D` from `+0x54` per frame
+        // (`FUN_80021DF4`, `0x80021E40..0x80021E4C`), i.e. the channel delta,
+        // so a `WAIT_SET v` (`+0x54 = v << 3`) holds `v` frames. Under the
+        // scene-graph step `0x400` every wait under 128 frames expired in one
+        // tick: the Spirit charge's aura prototypes (`0x07` / `0x08`, a
+        // `0x4F`-frame hold each) lived three ticks and never showed.
         let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
         for scene in &mut action_fx {
             let mut host = MoveVmHostImpl {
@@ -910,7 +945,34 @@ impl World {
                 child_spawns: Vec::new(),
             };
             scene.channel_delta = channel_delta;
-            scene.tick(&mut host, frame_delta);
+            scene.tick(&mut host, channel_delta);
+            // The morph-lane ramp envelope `FUN_80020740`, which the part
+            // tick runs on a part whose `+0x10` word carries the op-`0x0A`
+            // bit `0x1000` - the same gate the field ambient tree takes. It
+            // is what moves the lane weights [`Self::morphed_part_tmd`]
+            // blends at.
+            // The envelope steps by `DAT_1F800393` alone (`+0xA0 +=
+            // +0xB8 * DAT_1F800393`, `FUN_80020740`) - the frame byte, whose
+            // stand-in is the move-VM ramp ratio the channel delta is built
+            // from, not the field cadence `frame_step`. Mid-Spirit captures
+            // pin it: the aura lane gains `0x66` per frame while the wait
+            // drains `8`, so the cone takes `0x28` frames to open.
+            //
+            // The envelope tail `FUN_800204F8` belongs to the per-frame part
+            // tick (`jal` at `0x80022EF4`, after the VM call); the spawn's
+            // own first VM run has no tail. So the spawn tick - the engine's
+            // first tick of a table-form scene, which runs that first VM
+            // step - grows nothing: the captures read `0x66 * N` at wait
+            // `0x278 - 8 * N`.
+            let step = self.move_vm.ramp_ratio.max(1);
+            let spawn_tick = scene.frame <= 1;
+            for part in scene.parts.iter_mut().filter(|_| !spawn_tick) {
+                if !part.finished
+                    && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+                {
+                    vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+                }
+            }
         }
         action_fx.retain(|s| !s.finished());
         self.casting.active_action_fx = action_fx;
@@ -954,6 +1016,78 @@ impl World {
             out.extend(scene.part_draws());
         }
         out
+    }
+
+    /// The mesh a part draw renders: its pool TMD with the part's live VDF
+    /// morph lanes staged onto every group they name (`FUN_8001C604` +
+    /// `FUN_8005B038`, [`vm::vdf_morph::sum_group_deltas`]), or `None` when
+    /// the part carries no armed lane or no lane resolves (the host draws
+    /// the rest mesh from [`Self::global_tmd`]). In battle the lanes index
+    /// the battle pack `vdf.dat` ([`crate::world::DiscTables::battle_vdf`]);
+    /// elsewhere the scene's VDF.
+    ///
+    /// This is what gives the Spirit charge its aura: its two effect-script
+    /// prototypes are small rest meshes (pool `14` / `15`) that op `0x0A`
+    /// grows through `vdf.dat` entry 12 into the cone around the actor.
+    /// Both hosts resolve every move-FX part draw through it.
+    pub fn morphed_part_tmd(
+        &self,
+        draw: &crate::summon::SummonPartDraw,
+    ) -> Option<crate::world::GlobalTmd> {
+        let lanes = draw.morph.lanes();
+        if lanes.is_empty() {
+            return None;
+        }
+        let rest = self.global_tmd(draw.model_index as i16)?;
+        let resolve = |idx: u8| -> Option<&[u8]> {
+            if self.mode == crate::world::SceneMode::Battle {
+                crate::world::vdf_entry(self.tables.battle_vdf.as_deref()?, idx)
+            } else {
+                self.vdf_record_bytes(idx)
+            }
+        };
+        let slots: Vec<(&[u8], i16)> = lanes
+            .iter()
+            .filter_map(|&(idx, w)| Some((resolve(idx)?, w as i16)))
+            .collect();
+        if slots.is_empty() {
+            return None;
+        }
+        let mut tmd = rest.tmd.clone();
+        for (group, obj) in tmd.objects.iter_mut().enumerate() {
+            let deltas = vm::vdf_morph::sum_group_deltas(obj.vertices.len(), group as u32, &slots);
+            for (v, d) in obj.vertices.iter_mut().zip(deltas) {
+                v.x = v.x.wrapping_add(d[0]);
+                v.y = v.y.wrapping_add(d[1]);
+                v.z = v.z.wrapping_add(d[2]);
+            }
+        }
+        Some(crate::world::GlobalTmd {
+            tmd,
+            raw: rest.raw.clone(),
+        })
+    }
+
+    /// The local-space mesh a summon / move-FX part draw renders: its
+    /// morphed or rest mesh ([`Self::morphed_part_tmd`], else the pool
+    /// TMD) with the part's render scale and colour word applied
+    /// ([`crate::summon::SummonPartDraw::apply_render_state`]) - the model
+    /// draw `0x8001B160` hands every part through. `None` when the part's
+    /// mesh is not in the pool. Both hosts draw every part whose
+    /// [`crate::summon::SummonPartDraw::draws_rest_mesh`] is false through
+    /// this kernel: it is what fades the Spirit aura in and out.
+    pub fn part_draw_vram_mesh(
+        &self,
+        draw: &crate::summon::SummonPartDraw,
+    ) -> Option<legaia_tmd::mesh::VramMesh> {
+        let morphed = self.morphed_part_tmd(draw);
+        let g = match morphed.as_ref() {
+            Some(g) => g,
+            None => self.global_tmd(draw.model_index as i16)?.as_ref(),
+        };
+        let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw);
+        draw.apply_render_state(&mut mesh);
+        Some(mesh)
     }
 
     /// This frame's effect ribbons - every draw-kind-4 ribbon node (move-VM op

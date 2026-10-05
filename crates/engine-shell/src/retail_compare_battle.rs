@@ -195,6 +195,13 @@ pub struct RetailBattle {
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
+    /// The timed message up in the capture (HUD element `0x66`): the
+    /// battle-overlay string its content word `0x800775B4` points at, and
+    /// the hold `0x801F6964` left on it. `None` when the hold is spent.
+    pub timed_message: Option<(u32, i16)>,
+    /// Record `0x51`'s content word `0x800773BC` is zero: the strike loop's
+    /// counter swap cleared the target plaque.
+    pub target_plate_cleared: bool,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -539,6 +546,33 @@ impl RetailBattle {
         out
     }
 
+    /// The ground pairs the seed puts on its first battle tick, by engine
+    /// slot ([`BarSeed::ground`]).
+    ///
+    /// Retail walks nobody home after an action
+    /// (`docs/subsystems/battle-action.md`, "Where an action leaves its
+    /// combatants"), so a capture of a running fight stands its combatants
+    /// wherever earlier rounds left them - a monster that struck earlier
+    /// casts from beside the party - and every case that frames an actor
+    /// (case 6 on a caster, case 0 on a member, case 9's formation box)
+    /// frames that ground. A fresh entry's authored seats frame it elsewhere.
+    /// The replayed cast carries the same pairs at its dispatch
+    /// ([`Self::inflight_cast`]).
+    ///
+    /// Not placed on an opening capture, which is sampled at the flip before
+    /// any round ran. The acting seat is placed too, even on a captured
+    /// Attack whose `+0x34` / `+0x38` is a point on the walk the drive is
+    /// about to replay: the walk ends at the target whatever it starts from,
+    /// and leaving that seat home measured worse over the corpus.
+    pub fn seeded_ground(
+        &self,
+    ) -> [Option<[i16; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        if self.seed_plan() == SeedPlan::Opening {
+            return [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        }
+        self.engine_ground()
+    }
+
     /// The phase the capture's **displayed frame** sits at: [`Self::phase_gate`]
     /// with the flash's age taken back by [`Self::display_lag`]. The RAM
     /// channels are sampled on the RAM's phase; the image is the frame the
@@ -845,9 +879,22 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            timed_message: {
+                let hold = game_anchors::u32_at(ram, TIMED_MESSAGE_HOLD) as i32;
+                let va = game_anchors::u32_at(ram, TIMED_MESSAGE_WORD);
+                (hold > 0 && va != 0).then_some((va, hold.min(i32::from(i16::MAX)) as i16))
+            },
+            target_plate_cleared: game_anchors::u32_at(ram, TARGET_PLATE_WORD) == 0,
         })
     }
 }
+
+/// The timed message's hold `0x801F6964` (`FUN_80046A20` counts it down).
+const TIMED_MESSAGE_HOLD: u32 = 0x801F_6964;
+/// Record `0x66`'s content word, `0x80076C10 + 0x66 * 0x18 + 0x14`.
+const TIMED_MESSAGE_WORD: u32 = 0x8007_75B4;
+/// Record `0x51`'s content word, `0x80076C10 + 0x51 * 0x18 + 0x14`.
+const TARGET_PLATE_WORD: u32 = 0x8007_73BC;
 
 /// What the engine shows after the battle seed.
 pub struct EngineBattle {
@@ -926,12 +973,14 @@ fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8]) -> Option<
 }
 
 /// One combatant's mid-fight bars as the capture read them: engine actor
-/// slot, HP, MP.
+/// slot, HP, MP - and, where the seed places it, the live ground pair
+/// `+0x34` / `+0x38` ([`RetailBattle::seeded_ground`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarSeed {
     pub slot: u8,
     pub hp: u16,
     pub mp: u16,
+    pub ground: Option<[i16; 2]>,
 }
 
 /// Seed the capture's HP / MP onto the engine actors (the engine enters a
@@ -950,14 +999,24 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
             a.battle.hp_display = Some(a.battle.hp);
         }
         a.battle.mp = s.mp;
+        if let Some([x, z]) = s.ground {
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            if a.battle.seat.is_some() {
+                a.battle.seat = Some((x, z));
+            }
+        }
     }
 }
 
-/// `slot:hp:mp,...` for `LEGAIA_BATTLE_BARS`.
+/// `slot:hp:mp[:x:z],...` for `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
         .iter()
-        .map(|s| format!("{}:{}:{}", s.slot, s.hp, s.mp))
+        .map(|s| match s.ground {
+            Some([x, z]) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
+            None => format!("{}:{}:{}", s.slot, s.hp, s.mp),
+        })
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -967,10 +1026,18 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
             let mut it = e.trim().split(':');
+            let slot = it.next()?.parse().ok()?;
+            let hp = it.next()?.parse().ok()?;
+            let mp = it.next()?.parse().ok()?;
+            let ground = match (it.next(), it.next()) {
+                (Some(x), Some(z)) => Some([x.parse().ok()?, z.parse().ok()?]),
+                _ => None,
+            };
             Some(BarSeed {
-                slot: it.next()?.parse().ok()?,
-                hp: it.next()?.parse().ok()?,
-                mp: it.next()?.parse().ok()?,
+                slot,
+                hp,
+                mp,
+                ground,
             })
         })
         .collect()
@@ -1138,6 +1205,7 @@ pub fn run_engine_battle(
     } else {
         Vec::new()
     };
+    let ground = battle.seeded_ground();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -1157,6 +1225,7 @@ pub fn run_engine_battle(
                     slot: u8::try_from(slot).ok()?,
                     hp,
                     mp: c.mp,
+                    ground: ground.get(slot).copied().flatten(),
                 })
             })
             .collect()
@@ -1510,10 +1579,19 @@ pub enum BattleDrive {
 /// does not share, and the half-turn it picks is the side cases 6, 7 and 8
 /// film from. [`BattleDrive::steer`] keeps the engine's counter on retail's
 /// half while the seat's action runs - the twin of the style alignment.
+///
+/// `message` is the timed message (HUD element `0x66`) the capture holds -
+/// its battle-overlay string pointer and remaining hold - and `plate_cleared`
+/// the counter swap's cleared target plaque. Both are the HUD's half of a
+/// counterattack the replay's own monster turn does not roll (the drive
+/// reaches the counterer's strike loop through its own turn), raised on the
+/// engine when it holds the capture's state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
     pub yaw: Option<u16>,
+    pub message: Option<(u32, i16)>,
+    pub plate_cleared: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1753,6 +1831,12 @@ impl BattleDrive {
                 if let Some(y) = steer.yaw {
                     s.push_str(&format!(",y{y}"));
                 }
+                if let Some((va, hold)) = steer.message {
+                    s.push_str(&format!(",m{va:x}/{hold}"));
+                }
+                if steer.plate_cleared {
+                    s.push_str(",c");
+                }
                 s
             }
         }
@@ -1773,6 +1857,11 @@ impl BattleDrive {
                 steer.target = Some(t.parse().ok()?);
             } else if let Some(y) = last.strip_prefix('y') {
                 steer.yaw = Some(y.parse().ok()?);
+            } else if let Some(m) = last.strip_prefix('m') {
+                let (va, hold) = m.split_once('/')?;
+                steer.message = Some((u32::from_str_radix(va, 16).ok()?, hold.parse().ok()?));
+            } else if last == "c" {
+                steer.plate_cleared = true;
             } else {
                 break;
             }
@@ -2050,6 +2139,18 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // The capture's counterattack HUD, on the frame the engine holds its
+        // state ([`ActionSteer::message`] / [`ActionSteer::plate_cleared`]).
+        if ours && state == want {
+            if let Some((va, hold)) = steer.message
+                && world.battle.message_banner.is_none()
+            {
+                world.raise_timed_message(va, i32::from(hold));
+            }
+            if steer.plate_cleared {
+                world.battle.target_plate_cleared = true;
+            }
+        }
         if let Some(style) = style
             && ours
             && (state == want || seat < 3 && (0x0C..=want).contains(&state))
@@ -2229,6 +2330,8 @@ impl RetailBattle {
                         || (seat >= 3 && self.queued_category == 2 && self.target_code < 3))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
+                    message: self.timed_message,
+                    plate_cleared: self.target_plate_cleared && seat < 3,
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -2318,9 +2421,17 @@ fn run_drive(
 }
 
 /// Fraction of equal `(hp, hp_max, mp, mp_max)` fields over the retail
-/// combatants; `mp_max` is left out where the engine has none (`0`).
-fn combatant_score(retail: &[Option<Combatant>], engine: &[Combatant], tag: &str) -> (f64, String) {
+/// combatants; `mp_max` is left out where the engine has none (`0`), and so
+/// is any field the manifest names as written by the capture probe after
+/// battle init (`injected`, e.g. `p0.mp_max`).
+fn combatant_score(
+    retail: &[Option<Combatant>],
+    engine: &[Combatant],
+    tag: &str,
+    injected: &[String],
+) -> (f64, String) {
     let mut total = 0usize;
+    let mut skipped = Vec::new();
     let mut equal = 0usize;
     let mut diffs = Vec::new();
     for (i, r) in retail.iter().enumerate() {
@@ -2334,6 +2445,11 @@ fn combatant_score(retail: &[Option<Combatant>], engine: &[Combatant], tag: &str
         ];
         for (name, want, got) in fields {
             if name == "mp_max" && got == Some(0) {
+                continue;
+            }
+            let key = format!("{tag}{i}.{name}");
+            if injected.contains(&key) {
+                skipped.push(format!("{key} retail={want} engine={got:?}"));
                 continue;
             }
             total += 1;
@@ -2354,6 +2470,12 @@ fn combatant_score(retail: &[Option<Combatant>], engine: &[Combatant], tag: &str
         d.push_str("; ");
         d.push_str(&diffs.iter().take(4).cloned().collect::<Vec<_>>().join(", "));
     }
+    if !skipped.is_empty() {
+        d.push_str(&format!(
+            "; not scored, written by the capture probe: {}",
+            skipped.join(", ")
+        ));
+    }
     (score, d)
 }
 
@@ -2362,6 +2484,7 @@ pub fn compare_battle(
     retail: &RetailObs,
     battle: &RetailBattle,
     engine: &EngineBattle,
+    injected: &[String],
 ) -> (BTreeMap<String, f64>, BTreeMap<String, String>) {
     use crate::retail_compare::{camera_score, flags_score, inventory_score, round3};
     let mut ch = BTreeMap::new();
@@ -2400,9 +2523,9 @@ pub fn compare_battle(
             battle.monster_ids, engine.monster_ids, engine.formation_source
         ),
     );
-    let (s, d) = combatant_score(&battle.monsters, &engine.monsters, "m");
+    let (s, d) = combatant_score(&battle.monsters, &engine.monsters, "m", injected);
     put("enemy_hp", s, d);
-    let (s, mut d) = combatant_score(&battle.party, &engine.party, "p");
+    let (s, mut d) = combatant_score(&battle.party, &engine.party, "p", injected);
     if battle.party.len() != engine.party.len() {
         d.push_str(&format!(
             "; retail seats {:?} vs engine party of {}",
@@ -2658,11 +2781,13 @@ mod tests {
                 slot: 0,
                 hp: 412,
                 mp: 37,
+                ground: None,
             },
             BarSeed {
                 slot: 4,
                 hp: 1,
                 mp: 0,
+                ground: Some([-4, -707]),
             },
         ];
         assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
@@ -2741,6 +2866,8 @@ mod tests {
                 steer: ActionSteer {
                     target: Some(4),
                     yaw: Some(0xA98),
+                    message: Some((0x801C_ED18, 25)),
+                    plate_cleared: true,
                 },
             },
         ] {
@@ -2828,9 +2955,9 @@ mod tests {
             mp_max: 9,
         };
         let e = Combatant { mp_max: 0, ..r };
-        let (s, _) = combatant_score(&[Some(r)], &[e], "m");
+        let (s, _) = combatant_score(&[Some(r)], &[e], "m", &[]);
         assert_eq!(s, 1.0);
-        let (s, d) = combatant_score(&[Some(r)], &[], "p");
+        let (s, d) = combatant_score(&[Some(r)], &[], "p", &[]);
         assert_eq!(s, 0.0, "{d}");
     }
 }

@@ -18,9 +18,11 @@ mod casting;
 mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;
+mod counterattack;
 mod effect_route;
 mod effect_teardown;
 mod formation_span;
+mod homing;
 mod initiative;
 mod intro_names;
 mod locomotion;
@@ -46,7 +48,10 @@ pub use cast_band::{
     PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
 };
 pub use effect_route::RoutedEffectSpawn;
-pub use message_banner::{ABSORB_BANNER_ELEMENT, BattleMessageBanner, MAGIC_LEVEL_BANNER_ELEMENT};
+pub use message_banner::{
+    ABSORB_BANNER_ELEMENT, BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,
+    MAGIC_LEVEL_BANNER_ELEMENT, TIMED_MESSAGE_ELEMENT,
+};
 pub use teardown::{BattleDefeatBanner, BattleSpoilsBanner};
 pub use victory::{
     LEVEL_UP_CUE, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,

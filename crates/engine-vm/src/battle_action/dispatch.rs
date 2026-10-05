@@ -755,6 +755,22 @@ fn spirit_seed_band<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> ActionState {
+    // The head of the arm (`0x801E2F64..0x801E2FEC`): size placement record
+    // `0x0F` - the AP bar - off the actor's live AGL `+0x154` less 6, or off
+    // the extended gauge when the `+0x1F9` charge byte is up, then raise the
+    // bar (`0x0F`) and the AP plate (`0x52`), parking the plate's handle at
+    // `0x801F6968`. The plate's `+0x10` value is the actor's Spirit gauge.
+    let slot = ctx.active_actor;
+    if let Some(a) = host.actor(slot) {
+        ctx.spirit_bar_width = if a.spirit_shield != 0 {
+            extended_gauge(a.agl_base)
+        } else {
+            (a.agl as i16).wrapping_sub(SPIRIT_BAR_WIDTH_BIAS)
+        };
+        ctx.spirit_plate_value = a.spirit_gauge.min(i16::MAX as u16) as i16;
+    }
+    host.ui_element(SPIRIT_AP_BAR_ELEMENT, 0);
+    host.ui_element(SPIRIT_AP_PLATE_ELEMENT, 0);
     ctx.spirit_action_count = ctx.spirit_action_count.wrapping_add(1);
     ctx.camera_variant = ((host.rng() % 2) * 2) as u8;
     ActionState::SpiritArtsEntry

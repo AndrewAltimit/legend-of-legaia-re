@@ -175,6 +175,9 @@ pub struct Renderer {
     /// `MeshUniforms.flags[3]`: the `clip.w`-to-`SZ` factor, `0.0` (the
     /// default) = identity. Set with [`Renderer::set_overworld_curvature`].
     pub(super) overworld_curve: std::cell::Cell<f32>,
+    /// Retail's per-primitive near reject, staged into the scene-lights
+    /// block's `prim_near` word (see [`Renderer::set_prim_near_reject`]).
+    pub(super) prim_near: std::cell::Cell<[f32; 4]>,
     /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
     /// When `true` (the default), a semi-transparent prim's blended fragments
     /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
@@ -393,13 +396,14 @@ impl Renderer {
         cur.extend_from_slice(sprites);
     }
 
-    /// Toggle the **shadow-casting point-light sub-layer** of the
-    /// dynamic-lighting enhancement (default on). Effective only while
+    /// Toggle the **point lights' shadows** (default on). Shadows only: with
+    /// this off the dynamic-lighting enhancement's point lights still shade
+    /// the scene, unshadowed, and no shadow-map pass runs - the same meaning
+    /// as the browser play page's "Lamp shadows" box. Effective only while
     /// [`Self::set_dynamic_lighting`] is on and the host has staged scene
-    /// lights via [`Self::set_scene_lights`]; when any of the three is
-    /// off, the point-light uniform stages a zero count and no shadow
-    /// pass runs, so the faithful path stays pixel-identical and pays
-    /// nothing.
+    /// lights via [`Self::set_scene_lights`]; without both the point-light
+    /// uniform stages a zero count, so the faithful path stays
+    /// pixel-identical and pays nothing.
     pub fn set_dyn_shadows(&self, enable: bool) {
         self.dyn_shadows.set(enable);
     }
@@ -708,6 +712,18 @@ impl Renderer {
     /// overworld (retail's overworld bit `_DAT_1F800394 & 1`) keeps.
     pub fn set_overworld_curvature(&self, sz_scale: f32) {
         self.overworld_curve.set(sz_scale.max(0.0));
+    }
+
+    /// Arm retail's per-primitive near reject for the scene pass
+    /// ([`legaia_engine_ui::prim_near_reject`]): `Some((sz_per_w,
+    /// ot_shift))` drops every textured / colour mesh primitive whose mean
+    /// corner `SZ` (the frame's clip `w` times `sz_per_w`) falls under
+    /// `0x10 << ot_shift`; `None` (the default) never rejects. Hosts arm it
+    /// under the retail field and battle cameras and leave it off for
+    /// cameras retail never had (the debug orbit) and for the viewers.
+    pub fn set_prim_near_reject(&self, cut: Option<(f32, u32)>) {
+        self.prim_near
+            .set(legaia_engine_ui::prim_near_reject::shader_params(cut));
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

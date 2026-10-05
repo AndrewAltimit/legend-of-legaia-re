@@ -271,6 +271,14 @@ const DYN_LAMBERT_FALLBACK: f32 = 0.6; // orientation term when no normal exists
 const DYN_POOL_CENTER: vec2<f32> = vec2<f32>(0.5, 0.45); // pool centre, 0..1
 const DYN_POOL_INNER: f32 = 0.15; // pool full-strength radius (screen frac)
 const DYN_POOL_OUTER: f32 = 0.75; // pool fade-out radius (screen frac)
+// Lit windows (`scene_lighting::LIT_WINDOWS` / `shade_window`): a prim
+// tagged TSB bit 12 samples a curated window art; its glass texels (blue
+// clearly above red and dominant, or near-black) blend toward a warm lamp
+// colour by the mood's window glow.
+const WIN_GLASS_MIN_BLUE: f32 = 0.19;
+const WIN_GLASS_BLACK_MAX: f32 = 0.1;
+const WIN_RGB: vec3<f32> = vec3<f32>(1.0, 0.72, 0.4);
+const WIN_FLOOR: f32 = 0.6;
 
 // 4x4 Bayer threshold in [0, 1) for the camera-occlusion fade's
 // screen-door discard (see `occl_keep` in the scene-lights layer). CPU
@@ -304,6 +312,26 @@ fn dyn_far(far_rgb: vec3<f32>, light_dir: vec4<f32>, light_color: vec4<f32>) -> 
     let amb = mood_ambient();
     let g = min(amb.rgb + 0.5 * DYN_DIFFUSE * light_color.xyz, vec3<f32>(DYN_MAX_GAIN));
     return clamp(far_rgb * g, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// Lit windows (NON-RETAIL, part of enhanced lighting): a window prim's
+// glass texel turns toward lamp light by the mood's window glow
+// (`mood_window`). `texel` is the raw decoded texel, `lit` the shaded
+// colour. Identity while the enhancement is off, the glow is zero, the prim
+// is not a window, or the texel is not glass. CPU mirror:
+// `scene_lighting::shade_window`.
+fn dyn_window(lit: vec3<f32>, texel: vec3<f32>, light_dir: vec4<f32>, window: bool) -> vec3<f32> {
+    let glow = mood_window();
+    if (light_dir.w < 0.5 || !window || glow <= 0.0) {
+        return lit;
+    }
+    let blue = texel.b - texel.r >= WIN_GLASS_MIN_BLUE && texel.b >= texel.g;
+    let black = max(texel.r, max(texel.g, texel.b)) <= WIN_GLASS_BLACK_MAX;
+    if (!blue && !black) {
+        return lit;
+    }
+    let pane = WIN_RGB * (WIN_FLOOR + (1.0 - WIN_FLOOR) * texel.b);
+    return clamp(mix(lit, pane, clamp(glow, 0.0, 1.0)), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn dyn_light(
@@ -378,7 +406,8 @@ const SCENE_LIGHT_MAX: u32 = 8u;
 struct ScenePointLightU {
     // xyz = world position, w = influence radius (attenuation reaches 0).
     pos_radius: vec4<f32>,
-    // rgb = gain colour, w unused.
+    // rgb = gain colour, w = shadows on (1) / off (0: the light still
+    // shades, unshadowed - the `Y` toggle).
     color: vec4<f32>,
     // The light's shadow view-projection (downward cone, 0..1 depth).
     viewproj: mat4x4<f32>,
@@ -386,7 +415,8 @@ struct ScenePointLightU {
 
 struct SceneLightsU {
     // x = active light count (0 = layer off), y = shadow-map texel size
-    // (1 / dimension), z = depth-compare bias, w reserved.
+    // (1 / dimension), z = depth-compare bias, w = the mood's window glow
+    // (`LightingMood::window_word`, read by `dyn_window`).
     params: vec4<f32>,
     // Camera-occlusion fade (opt-in see-through-walls enhancement,
     // NON-RETAIL - see `crate::occlusion_fade`): .xy = the player's
@@ -407,14 +437,27 @@ struct SceneLightsU {
     // (`scene_lighting::LightingMood::uniforms`'s third word). Read only
     // while the enhancement is on (`light_dir.w`).
     ambient: vec4<f32>,
+    // Retail's per-primitive near reject (`prim_near_reject` in
+    // engine-ui): (enable, sz_per_w, ot_shift, near_otz). Read by the
+    // vertex stage; all-zero (the default) never rejects.
+    prim_near: vec4<f32>,
     lights: array<ScenePointLightU, 8u>,
 };
 
 @group(2) @binding(0) var<uniform> sl: SceneLightsU;
 
+fn prim_near_params() -> vec4<f32> {
+    return sl.prim_near;
+}
+
 // The mood's (ambient rgb, emissive gain) for `dyn_light`.
 fn mood_ambient() -> vec4<f32> {
     return sl.ambient;
+}
+
+// The mood's window glow for `dyn_window`.
+fn mood_window() -> f32 {
+    return sl.params.w;
 }
 @group(2) @binding(1) var t_shadow: texture_depth_2d_array;
 @group(2) @binding(2) var s_shadow: sampler_comparison;
@@ -423,6 +466,9 @@ fn mood_ambient() -> vec4<f32> {
 // 1 = fully lit. Out-of-cone / behind-the-light fragments return 1.0
 // (distance attenuation still bounds them).
 fn scene_light_shadow(idx: u32, world_pos: vec3<f32>) -> f32 {
+    if (sl.lights[idx].color.w < 0.5) {
+        return 1.0;
+    }
     let clip = sl.lights[idx].viewproj * vec4<f32>(world_pos, 1.0);
     if (clip.w <= 0.0) {
         return 1.0;
@@ -549,11 +595,63 @@ fn mood_ambient() -> vec4<f32> {
     return vec4<f32>(0.7, 0.7, 0.7, 1.15);
 }
 
+// Window-glow stub: daylight - no window glows.
+fn mood_window() -> f32 {
+    return 0.0;
+}
+
 // Camera-occlusion fade stub: the single-mesh pipelines carry no scene
 // focus (group 2 is absent from their layouts), so every fragment keeps.
 fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
     return 1.0;
 }
+
+// Per-primitive near reject stub: the single-mesh pipelines carry no scene
+// block, so no primitive is ever rejected.
+fn prim_near_params() -> vec4<f32> {
+    return vec4<f32>(0.0);
+}
+"#;
+
+/// Retail's per-primitive near reject, evaluated in the vertex stage (see
+/// `legaia_engine_ui::prim_near_reject`). Every vertex carries its
+/// primitive's corners (`c0.w` = corner count, `0` = no single owner), so
+/// each corner reaches the same verdict and the whole primitive drops
+/// together. `m` is the draw's matrix: its `w` row is the eye depth. The
+/// mean is over GTE `SZ` - each corner floored and saturated to
+/// `0..=0xFFFF`, a corner behind the eye counting as `0` - weighted by
+/// `ZSF3 = 0x555 >> s` / `ZSF4 = 0x400 >> s` exactly as `AVSZ3` / `AVSZ4`.
+pub(crate) const PRIM_NEAR_WGSL: &str = r#"
+fn prim_sz(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32) -> i32 {
+    let w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
+    return clamp(i32(floor(w * sz_per_w)), 0, 0xFFFF);
+}
+
+fn prim_near_rejected(
+    m: mat4x4<f32>,
+    c0: vec4<f32>,
+    c1: vec3<f32>,
+    c2: vec3<f32>,
+    c3: vec3<f32>,
+) -> bool {
+    let p = prim_near_params();
+    if (p.x < 0.5 || c0.w < 2.5) {
+        return false;
+    }
+    let shift = u32(p.z);
+    var sum = prim_sz(m, c0.xyz, p.y) + prim_sz(m, c1, p.y) + prim_sz(m, c2, p.y);
+    var zsf = 0x555 >> shift;
+    if (c0.w > 3.5) {
+        sum = sum + prim_sz(m, c3, p.y);
+        zsf = 0x400 >> shift;
+    }
+    let otz = (zsf * sum) >> 12u;
+    return otz < i32(p.w);
+}
+
+// Where a rejected primitive's corners go: one point outside the clip
+// volume, so the triangle has no area and is clipped.
+const PRIM_REJECTED_CLIP: vec4<f32> = vec4<f32>(2.0, 2.0, 2.0, 1.0);
 "#;
 
 /// Glow-sprite shader for the enhanced-lighting enhancement (NON-RETAIL):
@@ -635,14 +733,18 @@ pub(crate) fn scene_lights_wgsl_for_tests() -> &'static str {
 /// layouts carry no lights group, so the point-light layer is the zero
 /// stub.
 pub(crate) fn compose_psx_shader(base: &str) -> String {
-    format!("{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}")
+    format!(
+        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}"
+    )
 }
 
 /// The scene-pipeline twin of [`compose_psx_shader`]: same prelude but
 /// with the REAL per-scene point-light layer ([`SCENE_LIGHTS_REAL_WGSL`] -
 /// lights uniform + shadow-map array at group 2) in place of the stub.
 pub(crate) fn compose_scene_lit_shader(base: &str) -> String {
-    format!("{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}")
+    format!(
+        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}"
+    )
 }
 
 /// Mesh shader: transforms positions by the host-supplied MVP, computes a
@@ -972,6 +1074,23 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
     return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
 }
 
+// The field ground pass's far bucket (`legaia_engine_core::field_ground::
+// flat_refs`): retail links a field ground cell without the object-grid sort
+// bit `0x8000` into the ordering table's fixed far bucket, so every other
+// primitive paints over it. A sloped such cell is marked by a swapped x pair
+// (`fa.x > fa.z`); its depth is pushed into the thin slice behind every other
+// draw - reversed-Z, so scaling `z` toward 0 moves it toward the far plane
+// while keeping the cell's own per-pixel order inside the slice. Off the
+// field (`sz_scale > 0`, the overworld's key) and on every unmarked vertex
+// nothing moves.
+const FIELD_FAR_BUCKET_DEPTH_SCALE: f32 = 0.001;
+fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+    if (sz_scale > 0.0 || fa.x <= fa.z || clip.w <= 0.0) {
+        return clip;
+    }
+    return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
+}
+
 // The overworld continent's depth cue
 // (`legaia_engine_core::overworld_ground_cue`): retail's ground emitter
 // (`FUN_801F89B8`) runs each cell's packet colour through `DPCS` with
@@ -1002,14 +1121,22 @@ fn vs_main(
     @location(4) color_in: vec4<u32>,
     @location(5) flat_a: vec4<f32>,
     @location(6) flat_b: vec4<f32>,
+    @location(7) prim_c0: vec4<f32>,
+    @location(8) prim_c1: vec3<f32>,
+    @location(9) prim_c2: vec3<f32>,
+    @location(10) prim_c3: vec3<f32>,
 ) -> VsOut {
     var out: VsOut;
     // The overworld's per-vertex screen-Y bend (see OVERWORLD_CURVE_WGSL),
     // ahead of the pixel snap - retail bends SY before the packet is written.
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
+    clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     if u.psx_params.z >= 0.5 {
         clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
+    }
+    if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
+        clip = PRIM_REJECTED_CLIP;
     }
     out.clip_pos = clip;
     out.world_pos = position;
@@ -1162,9 +1289,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
-    let enhanced = dyn_light(
-        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
-        (tsb & 0x2000u) != 0u,
+    let enhanced = dyn_window(
+        dyn_light(
+            lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
+            (tsb & 0x2000u) != 0u,
+        ),
+        color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
     // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
     // the GPU multiplies the texel by the result - so the far term reaches the
@@ -1245,9 +1375,12 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
-    let enhanced = dyn_light(
-        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
-        (tsb & 0x2000u) != 0u,
+    let enhanced = dyn_window(
+        dyn_light(
+            lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
+            (tsb & 0x2000u) != 0u,
+        ),
+        color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
     // Same grade-then-cue order as the opaque pass (see fs_main): the far
     // term is the texel-modulated far colour, un-tinted.
@@ -1346,9 +1479,16 @@ fn vs_main(
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
     @location(2) blend: u32,
+    @location(7) prim_c0: vec4<f32>,
+    @location(8) prim_c1: vec3<f32>,
+    @location(9) prim_c2: vec3<f32>,
+    @location(10) prim_c3: vec3<f32>,
 ) -> VsOut {
     var out: VsOut;
     out.clip_pos = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
+    if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
+        out.clip_pos = PRIM_REJECTED_CLIP;
+    }
     out.world_pos = position;
     out.color = color;
     out.blend = blend;

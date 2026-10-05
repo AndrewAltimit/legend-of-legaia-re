@@ -2037,6 +2037,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     camera_option: 0,
                     acting_body: None,
                     cursor: None,
+                    spell_cam: None,
                 };
                 drive(&mut slot, true, inputs, frames, None);
                 let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);

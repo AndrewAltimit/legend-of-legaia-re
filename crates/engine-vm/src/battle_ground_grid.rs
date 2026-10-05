@@ -404,6 +404,50 @@ pub fn ambient_base_step(base: u32, dimming: bool, dt: u8) -> u32 {
     }
 }
 
+/// The backdrop pair's depth-cue weight at which `FUN_80050120` takes the
+/// pair off the draw: `+0x56 = 0` on both records when `+0x78` reads exactly
+/// `0x1000` (`0x80050850..0x80050880`), `+0x56 = 3` otherwise.
+pub const BACKDROP_CUE_FULL: u16 = 0x1000;
+
+/// The ceiling `FUN_80050120` clamps the backdrop pair's rising `+0x78` to
+/// (`0x800505B4..0x800505F4`): `0x800` indoors, `0xC00` on an outdoor stage
+/// (the `DAT_80078C1C` table byte `0x8007BDA8`), and the full
+/// [`BACKDROP_CUE_FULL`] whenever `ctx + 0x278` or `ctx + 0x243` is above `1`
+/// - a cast module that wants the stage gone (PROT 0903 stores `2` / `3`
+///   into `+0x278`).
+pub fn backdrop_cue_ceiling(outdoor: bool, latch_243: u8, ctx_278: u8) -> u16 {
+    if ctx_278 >= 2 || latch_243 >= 2 {
+        BACKDROP_CUE_FULL
+    } else if outdoor {
+        0xC00
+    } else {
+        0x800
+    }
+}
+
+/// One frame of the backdrop pair's depth-cue ramp, the block of
+/// `FUN_80050120` beside the ambient one (`0x80050600..0x80050714`).
+///
+/// While `ctx + 0x243` is set the weight `+0x78` rises by `dt << 6` and a
+/// result above [`backdrop_cue_ceiling`] stores the ceiling instead
+/// (`sltu v0,a2,v1`) - so a weight already above a lowered ceiling snaps down
+/// to it; while it is clear the weight falls by `dt << 6` and stops at `0`.
+/// The record's colour word `+0x74` is `0` from battle init, so the weight
+/// pulls the whole backdrop toward black (`FUN_8001ADA4` case 3 hands both to
+/// `FUN_80043390`).
+///
+/// PORT: FUN_80050120 (the backdrop pair's `+0x78` ramp)
+pub fn backdrop_cue_step(cue: u16, latch_243: u8, ctx_278: u8, outdoor: bool, dt: u8) -> u16 {
+    let step = u16::from(dt) << 6;
+    if latch_243 != 0 {
+        let ceiling = backdrop_cue_ceiling(outdoor, latch_243, ctx_278);
+        let next = cue.wrapping_add(step);
+        if ceiling < next { ceiling } else { next }
+    } else {
+        cue.saturating_sub(step)
+    }
+}
+
 /// The packed `10:10:10` base as three 8-bit channels
 /// (`srl 2 / srl 4 / srl 6` + masks at `0x80050764..0x8005078C`).
 pub fn ambient_base_rgb(base: u32) -> [u8; 3] {

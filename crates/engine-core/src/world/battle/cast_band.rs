@@ -42,16 +42,19 @@
 //!   [`SUMMON_SPAWN_BEHIND`] units **behind** the caster on the party side
 //!   (`x=185, z=-2272` against the caster's `x=82, z=-542`), wearing the
 //!   caster's facing (`0xFD9`), on its idle clip.
-//! * `0x36`, stager phase 11 - the creature closer in (`z=-1606`,
-//!   [`SUMMON_STRIKE_BEHIND`] behind the caster) on clip `1`, the walk, with
-//!   the flame part-actors live and the damage numeral up.
+//! * `0x36`, stager phase 11 - the creature closer in (`z=-1606`) on clip
+//!   `1`, the walk, with the flame part-actors live and the victim still at
+//!   full HP: the walk arm holds on the range poll `FUN_8004E2F0(7, victim)`
+//!   and lands the hit only once the creature reaches the victim.
 //!
-//! So the retail creature walks **in from behind the party** toward the
-//! target while its effect parts play, and the damage lands mid-walk. The
+//! So the retail creature walks **in from behind the party** onto the target
+//! while its effect parts play, and the damage lands when it arrives. The
 //! stager here does the same with the pieces the engine has: it requests the
 //! namesake creature spawn ([`crate::world::CastFxState::pending_summon_spawn`]) at the spawn
-//! point, idles it, stages the walk clip and glides it to the strike point,
-//! folds the outcome there, lingers, and despawns it.
+//! point, idles it, stages the walk clip and walks it onto the victim until
+//! the range metric reads in range (a module with no directed walk arm glides
+//! it to the fixed strike point [`SUMMON_STRIKE_BEHIND`] instead), folds the
+//! outcome there, lingers, and despawns it.
 //!
 //! The per-summon effect parts are staged with it. They used to be the open
 //! half here ("the `0x180C` move-VM records are not staged"); the module's
@@ -74,13 +77,23 @@ use vm::battle_action::{ActionCategory, ActionState, StepOutcome};
 /// How far behind the caster (toward negative Z, the party side) the
 /// creature is seated - the capture's `-2272 - (-542)`.
 pub const SUMMON_SPAWN_BEHIND: i16 = 1730;
-/// Where the walk ends and the outcome lands - the capture's
-/// `-1606 - (-542)`.
+/// Where an undirected module's walk ends and the outcome lands. A directed
+/// walk arm walks onto the victim instead (`summon_walk_to_victim`); this is
+/// the `gimard_burning_attack` capture's mid-walk `-1606 - (-542)`.
 pub const SUMMON_STRIKE_BEHIND: i16 = 1064;
 /// Frames the creature idles at its spawn point before the walk.
 const SUMMON_IDLE_FRAMES: u16 = 30;
 /// Walk speed, world units per frame.
 const SUMMON_WALK_STEP: i16 = 12;
+/// A directed walk arm's creature speed, world units per display frame,
+/// along its heading onto the victim. Measured off `gimard_burning_attack`
+/// (PROT 0903 arm 11): the yaw base has swung `0x5D9 - 0x200 = 985` at
+/// `6 * scalar` (`48`) a display frame - 20.5 frames into the walk - and the
+/// creature stands 670 units on from its arm-3 seat (`z -2276 -> -1606`),
+/// `32.7` a frame. The walk is the clip's root motion, which the engine does
+/// not integrate for the creature, so the speed is carried as the measured
+/// constant.
+const SUMMON_DIRECTED_WALK_STEP: i32 = 32;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
 /// A host with no creature to seat (a headless driver) still owes the
@@ -241,9 +254,12 @@ impl World {
     /// The monster twin of [`Self::arm_player_cast`]. A monster's stream
     /// carries its cast clip behind the spell id (`params[1]`, the `+0x1E0`
     /// byte the `0x29` arm stages into `+0x1DA` - see
-    /// [`Self::monster_cast_clip`]), terminated at `params[2]`; a monster
-    /// with no such clip installed stages the terminator at once and the
-    /// band ends the action after the wait.
+    /// [`Self::monster_cast_clip`]), then its opening camera shot
+    /// (`params[2]`, `+0x1E1`, a case of the cast-effect driver - see
+    /// `SpellAnimPairs::opening_shot`), terminated at `params[3]`
+    /// (`FUN_801E9FD4`, `0x801EA53C..0x801EA588`); a monster with no such
+    /// clip installed stages the terminator at once and the band ends the
+    /// action after the wait.
     pub(in crate::world) fn arm_monster_cast(
         &mut self,
         slot: u8,
@@ -252,13 +268,21 @@ impl World {
     ) {
         let code = self.cast_target_code(def, &targets, slot);
         let clip = self.monster_cast_clip(slot, def.id).unwrap_or(0xFF);
+        // A table that was not read stages the terminator in the shot's
+        // place, the stream the port carried before the shot existed.
+        let shot = self
+            .battle
+            .spell_anim_pairs
+            .opening_shot(def.id)
+            .unwrap_or(0xFF);
         self.clear_action_stream(slot);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = code;
             a.battle.action_category = ActionCategory::Magic.as_byte();
             a.battle.params[0] = def.id;
             a.battle.params[1] = clip;
-            a.battle.params[2] = 0xFF;
+            a.battle.params[2] = shot;
+            a.battle.params[3] = 0xFF;
             a.battle.sub_route = 0;
         }
         self.casting.pending_cast = Some(PendingCast {
@@ -629,6 +653,37 @@ impl World {
         a.battle.current_anim = 0;
     }
 
+    /// The seat half of a summon spawn request for a host that draws
+    /// nothing: take [`crate::world::CastFxState::pending_summon_spawn`] and
+    /// seat an unrendered creature at the hosts' slot (`8 + party_count`),
+    /// through the same [`Self::seat_summon_actor`] the play hosts call
+    /// after binding the mesh.
+    ///
+    /// The seat is not presentation-only. A directed module's walk arm
+    /// (PROT 0903's arm 11) walks the seated creature and lands the hit when
+    /// it reaches the victim; with no creature seated the arm passes on its
+    /// first tick, so a headless run folded the outcome hundreds of frames
+    /// before either play host would. Returns `true` when a creature was
+    /// seated.
+    pub fn seat_summon_creature_unrendered(&mut self) -> bool {
+        if self.mode != SceneMode::Battle {
+            return false;
+        }
+        if self.take_pending_summon_spawn().is_none() {
+            return false;
+        }
+        let slot = self
+            .casting
+            .summon_actor_slot
+            .map_or(8 + usize::from(self.party.party_count), usize::from);
+        let Some(a) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        a.active = true;
+        self.seat_summon_actor(slot);
+        true
+    }
+
     /// Install the cast-effect pool - the DATA half of the slot-B cast-module
     /// band (PROT 0903..0966), parsed off the disc by the scene host (which
     /// holds the PROT index; `World` is index-agnostic, the same split
@@ -730,6 +785,109 @@ impl World {
         true
     }
 
+    /// Seat the spawn calls one module arm made this pass, each on its own
+    /// anchor, into the cast's running scene - the per-arm form of
+    /// [`Self::spawn_cast_module_fx`] for a module whose director reports its
+    /// spawns ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
+    ///
+    /// A record's program is bounded by the next record start, so each one
+    /// is parsed against the whole record set of its image: the module's own
+    /// recovered records for a [`SpawnRecord::Module`], the effect-prototype
+    /// table's for a [`SpawnRecord::BattleProto`].
+    ///
+    /// REF: FUN_80021B04 (the spawn calls), FUN_80058490 (the `MoveImage`)
+    ///
+    /// [`SpawnRecord::Module`]: vm::cast_module_camera::SpawnRecord::Module
+    /// [`SpawnRecord::BattleProto`]: vm::cast_module_camera::SpawnRecord::BattleProto
+    fn stage_module_arm_spawns(
+        &mut self,
+        prot_entry: u32,
+        spawns: &[vm::cast_module_camera::ModuleSpawn],
+        shot: Option<vm::cast_module_camera::ModuleShot>,
+    ) {
+        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
+        use vm::cast_module_camera::{SpawnAnchor, SpawnRecord};
+        const LINK_BASE: u32 = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        let creature = self
+            .casting
+            .module_cam
+            .creature
+            .or(self.casting.module_cam.creature_live)
+            .map(|c| ([c.x, c.y, c.z], [0, c.facing as i16, 0]));
+        for spawn in spawns {
+            let (pos, rot) = match spawn.anchor {
+                SpawnAnchor::Creature => match creature {
+                    Some(c) => c,
+                    None => continue,
+                },
+                SpawnAnchor::ShotFocus => match shot {
+                    Some(s) => (s.focus, s.angles),
+                    None => continue,
+                },
+            };
+            let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
+                SpawnRecord::Module(va) => {
+                    let Some(module) = self
+                        .casting
+                        .effect_pool
+                        .as_ref()
+                        .and_then(|p| p.module(prot_entry))
+                    else {
+                        continue;
+                    };
+                    let Some(off) = va.checked_sub(LINK_BASE).map(|o| o as usize) else {
+                        continue;
+                    };
+                    let mut offs: Vec<usize> = module.parts.iter().map(|p| p.record_off).collect();
+                    offs.push(off);
+                    let parts =
+                        legaia_asset::summon_overlay::parse_records_at(&module.bytes, &offs);
+                    (module.bytes.clone(), parts, off)
+                }
+                SpawnRecord::BattleProto(word_va) => {
+                    let Some(overlay) = self.tables.move_power_overlay.clone() else {
+                        continue;
+                    };
+                    let Some(ptr) = word_va
+                        .checked_sub(BATTLE_OVERLAY_BASE)
+                        .and_then(|o| overlay.get(o as usize..o as usize + 4))
+                        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    else {
+                        continue;
+                    };
+                    let Some(off) = ptr.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize) else {
+                        continue;
+                    };
+                    let mut offs: Vec<usize> = move_power::parse_effect_proto_records(&overlay)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|p| p.record_off)
+                        .collect();
+                    offs.push(off);
+                    let parts = legaia_asset::summon_overlay::parse_records_at(&overlay, &offs);
+                    (overlay, parts, off)
+                }
+            };
+            let picked: Vec<_> = parts.into_iter().filter(|p| p.record_off == off).collect();
+            if picked.is_empty() {
+                continue;
+            }
+            match self.casting.active_summon.as_mut() {
+                Some(scene) => scene.push_parts(&picked, &bytes, pos, rot),
+                None => {
+                    let mut scene = crate::summon::SummonScene::spawn_parts(
+                        &[],
+                        &bytes,
+                        crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                        pos,
+                    );
+                    scene.push_parts(&picked, &bytes, pos, rot);
+                    self.casting.active_summon = Some(scene);
+                }
+            }
+        }
+    }
+
     /// One stager tick - the engine body behind
     /// `BattleActionHost::summon_stager_tick`. Returns `true` while the
     /// choreography is still running (retail: the stager's non-zero return
@@ -780,6 +938,29 @@ impl World {
             .as_ref()
             .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
             .filter(|p| p.paces_band());
+        // A module whose director reports its spawn calls seats each record
+        // on the pass its arm makes the call, after the arm's own creature
+        // placement above (Gimard's arm 3 spawns on the seat it just set).
+        let stages_spawns = run
+            .as_ref()
+            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .is_some_and(|p| p.stages_spawns);
+        if let Some(r) = run.as_ref().filter(|_| stages_spawns) {
+            if let Some(m) = r.vram_move {
+                let i = |v: u16| v as i16;
+                self.battle.vram_moves.push(crate::world::ScriptVramMove {
+                    src: (i(m.src.0), i(m.src.1)),
+                    size: (i(m.size.0), i(m.size.1)),
+                    dst: (i(m.dst.0), i(m.dst.1)),
+                });
+            }
+            if !r.spawns.is_empty() {
+                self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot);
+            }
+            if let Some(c) = r.caption {
+                self.casting.module_caption = Some(c);
+            }
+        }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
@@ -819,7 +1000,9 @@ impl World {
                 // into the paged module, whose spawn records are the cast's
                 // particle layer. Seated where the creature is, since the
                 // records carry summon-local offsets.
-                self.spawn_cast_module_fx(st.spell_id, st.spawn);
+                if !stages_spawns {
+                    self.spawn_cast_module_fx(st.spell_id, st.spawn);
+                }
                 st.phase = SummonPhase::Approach;
                 st.frames = 0;
                 true
@@ -836,9 +1019,19 @@ impl World {
                     Some(p) => p.walk_arm.is_some_and(|w| module_phase >= w),
                     None => st.frames > SUMMON_IDLE_FRAMES,
                 };
-                let walked = match seat {
-                    Some(slot) => may_walk && self.summon_walk_step(slot as usize, st.goal),
-                    None => st.frames >= SUMMON_UNSEATED_GRACE,
+                // A directed walk arm walks the creature onto the **victim**
+                // and holds on the range poll `FUN_8004E2F0(7, victim)`
+                // (PROT 0903's arm 11, `bne v0,zero` at `0x801F7418`); the
+                // engine's fixed goal stands in only where no module walks.
+                let victim = profile
+                    .filter(|p| p.walk_arm.is_some())
+                    .map(|_| self.actors.get(st.caster as usize))
+                    .and_then(|c| c.map(|c| c.battle.active_target))
+                    .filter(|&v| self.actors.get(usize::from(v)).is_some_and(|a| a.active));
+                let walked = match (seat, victim) {
+                    (Some(slot), Some(v)) => may_walk && self.summon_walk_to_victim(slot, v),
+                    (Some(slot), None) => may_walk && self.summon_walk_step(slot as usize, st.goal),
+                    (None, _) => st.frames >= SUMMON_UNSEATED_GRACE,
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
@@ -961,6 +1154,54 @@ impl World {
         false
     }
 
+    /// A directed walk arm's step: stage the walk clip, glide the creature
+    /// one step toward `victim`'s seat, and report arrival on the range poll
+    /// retail's arm holds on - `FUN_8004E2F0(7, victim)` reading `0`. Retail
+    /// turns the creature onto the victim every pass (`sh v0,0x46(s3)` at
+    /// `0x801F73C4`); the creature's own `+0x1F` reads `0` in the
+    /// `gimard_burning_attack` capture, so the size class is the victim's.
+    fn summon_walk_to_victim(&mut self, slot: u8, victim: u8) -> bool {
+        let Some(a) = self.actors.get(usize::from(slot)) else {
+            return true;
+        };
+        let pos = (a.move_state.world_x, a.move_state.world_z);
+        if self.creature_range_metric(pos, 0, victim) == 0 {
+            return true;
+        }
+        let (vx, vz) = self.battle_seat_of(usize::from(victim));
+        // `FUN_80019B28(victim, creature) + 0x800` (`0x801F73A4..0x801F73C4`).
+        let bearing = vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
+        let facing = bearing.wrapping_add(0x800) & 0xFFF;
+        if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            a.battle.facing_angle = facing;
+            if a.battle.queued_anim != 1 {
+                a.battle.queued_anim = 1;
+            }
+            let ms = &mut a.move_state;
+            let (dx, dz) = (
+                i32::from(vx) - i32::from(ms.world_x),
+                i32::from(vz) - i32::from(ms.world_z),
+            );
+            if dx.abs() + dz.abs() <= SUMMON_DIRECTED_WALK_STEP {
+                ms.world_x = vx;
+                ms.world_z = vz;
+            } else {
+                let (sin, cos) = vm::battle_action::motion::trig12(facing);
+                ms.world_x = (i32::from(ms.world_x)
+                    + ((i32::from(sin) * SUMMON_DIRECTED_WALK_STEP) >> 12))
+                    as i16;
+                ms.world_z = (i32::from(ms.world_z)
+                    + ((i32::from(cos) * SUMMON_DIRECTED_WALK_STEP) >> 12))
+                    as i16;
+            }
+        }
+        let Some(a) = self.actors.get(usize::from(slot)) else {
+            return true;
+        };
+        let pos = (a.move_state.world_x, a.move_state.world_z);
+        self.creature_range_metric(pos, 0, victim) == 0 || pos == (vx, vz)
+    }
+
     /// Retire the summon creature: the seat goes inactive so both hosts
     /// stop drawing it (native: the `active` gate of the battle draw loop;
     /// browser: the transform row's `active` float).
@@ -1049,6 +1290,13 @@ pub struct CastModuleCodeRun {
     /// A capture-class body's drift this frame
     /// ([`vm::cast_module_camera::capture_camera_director`]).
     pub capture_drift: Option<vm::cast_module_camera::CaptureDrift>,
+    /// The spawn calls the module's arm made this frame, for a director that
+    /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
+    pub spawns: &'static [vm::cast_module_camera::ModuleSpawn],
+    /// The `MoveImage` the module's arm issued this frame.
+    pub vram_move: Option<vm::cast_module_camera::ModuleVramMove>,
+    /// The text the module's arm put up this frame.
+    pub caption: Option<vm::cast_module_camera::ModuleCaption>,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -1658,6 +1906,9 @@ impl World {
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
+        run.spawns = direction.map_or(&[], |d| d.spawns);
+        run.vram_move = direction.and_then(|d| d.vram_move);
+        run.caption = direction.and_then(|d| d.caption);
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
@@ -2538,6 +2789,9 @@ impl World {
             camera_follow: None,
             camera_nudge: None,
             capture_drift: None,
+            spawns: &[],
+            vram_move: None,
+            caption: None,
         })
     }
 

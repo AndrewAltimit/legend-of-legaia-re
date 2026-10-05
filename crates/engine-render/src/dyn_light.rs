@@ -58,6 +58,24 @@ mod tests {
                 "WGSL drifted from the mirror: {needle}"
             );
         }
+        use crate::scene_lighting::{
+            WINDOW_FLOOR, WINDOW_GLASS_BLACK_MAX, WINDOW_GLASS_MIN_BLUE, WINDOW_RGB,
+        };
+        for needle in [
+            format!("const WIN_GLASS_MIN_BLUE: f32 = {WINDOW_GLASS_MIN_BLUE};"),
+            format!(
+                "const WIN_RGB: vec3<f32> = vec3<f32>({:?}, {:?}, {:?});",
+                WINDOW_RGB[0], WINDOW_RGB[1], WINDOW_RGB[2]
+            ),
+            format!("const WIN_FLOOR: f32 = {WINDOW_FLOOR};"),
+            format!("const WIN_GLASS_BLACK_MAX: f32 = {WINDOW_GLASS_BLACK_MAX};"),
+        ] {
+            assert!(
+                src.contains(&needle),
+                "WGSL drifted from the mirror: {needle}"
+            );
+        }
+        assert!(src.contains("fn dyn_window"));
         assert!(src.contains("fn dyn_light"));
         assert!(src.contains(
             "let g = min(amb.rgb + 0.5 * DYN_DIFFUSE * light_color.xyz, vec3<f32>(DYN_MAX_GAIN));"

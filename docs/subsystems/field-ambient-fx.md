@@ -698,6 +698,21 @@ gate raised, all three regions off under flag `0x51C` and an empty pool;
 `rikuroa` and `garmel` key their spent regions on `0x007`. An engine that
 left the MAN's own bytes in place drew a full fog field over the inn.
 
+The region flags `0x51A..0x521` are the per-area **Mist lifts**: each is set
+by the scripted event that clears its area (a kingdom overworld `P2` record
+that then scene-changes into the cleared scene - `map03` `P2[12]` sets
+`0x51F` and enters `bubu1`). Buma shows why the flag is part of a scene's
+identity rather than a per-visit detail: frozen `bubu2` and thawed `bubu1`
+both key every Mist region on `0x51F`, and `map03`'s door `P2[2]` picks
+`bubu1` only while `0x378` is set, a flag every retail card save carries
+together with `0x51F` (Nilboa's twins `nilboa` / `nilboa2` share the gate).
+Retail therefore never draws the pool in `bubu1`; a port entry that drops
+into it with no story behind it has to stage both flags, which the free-roam
+picker does (`World::seed_free_roam_story_baseline`). Flag `0x007`, on the
+other hand, is the one-shot the town cupboards share (`town01` `P0[14]`
+and its siblings) - player state, not story - so a scene keying a region on
+it shows the Mist until any of those cupboards is opened.
+
 The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
 `FUN_8003F838` here, but it seeds that PRNG's state with the record's age
 rate first, and the step `v = state * 12 + 2; state = (v << 16) + (v >> 16)`

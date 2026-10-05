@@ -357,6 +357,10 @@
             <input type="checkbox" id="play-dyn-light"> Enhanced lighting
           </label>
           <label class="play-dev-menu"
+                 title="Lamp shadows: each of enhanced lighting's point lights casts soft shadows from the geometry around it (the native window's Y toggle). Inert while enhanced lighting is off. Presentation only.">
+            <input type="checkbox" id="play-dyn-shadows" checked> Lamp shadows
+          </label>
+          <label class="play-dev-menu"
                  title="Time of day for enhanced lighting (the native window's F8): Auto follows the scene - daylight outdoors, dim caves and dungeons; Day, Dusk and Night force one mood everywhere. Persisted.">
             <select id="play-time-of-day">
               <option value="auto">Auto</option>
@@ -1915,6 +1919,7 @@
   const psxRenderEl = document.getElementById('play-psx-render');
   const dynLightEl = document.getElementById('play-dyn-light');
   const timeOfDayEl = document.getElementById('play-time-of-day');
+  const dynShadowsEl = document.getElementById('play-dyn-shadows');
   function applyRenderToggles() {
     const rt = window.__playRuntime;
     if (rt && typeof rt.set_enhanced_lighting === 'function') {
@@ -1926,6 +1931,7 @@
     if (!view) return;
     view.setPsxRender(!!psxRenderEl.checked);
     view.setDynamicLighting(!!dynLightEl.checked);
+    view.setDynShadows(!!dynShadowsEl.checked);
   }
   function syncRenderToggles() {
     const rt = window.__playRuntime;
@@ -1939,6 +1945,7 @@
   psxRenderEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynLightEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  dynShadowsEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   window.__playApplyRenderToggles = applyRenderToggles;
   window.__playSyncRenderToggles = syncRenderToggles;
 

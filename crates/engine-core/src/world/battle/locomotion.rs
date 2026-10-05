@@ -239,6 +239,55 @@ impl World {
         motion::range_metric(&inputs, sin, cos)
     }
 
+    /// [`Self::battle_range_metric`] for the summon creature, which retail
+    /// seats at actor-table slot `7` - a non-party slot, so the metric takes
+    /// its monster arm with the creature's own `+0x1F` size class. The engine
+    /// seats the creature outside the eight-slot table (`8 + party_count`),
+    /// where the metric's head gate would read every call as out of range, so
+    /// the creature's live pair and size are passed in.
+    ///
+    /// REF: FUN_8004E2F0 (called as `FUN_8004E2F0(7, victim)` by PROT 0903's
+    /// walk arm, `0x801F740C`)
+    pub(in crate::world) fn creature_range_metric(
+        &self,
+        creature_pos: (i16, i16),
+        creature_size: u8,
+        target: u8,
+    ) -> u16 {
+        if self.battle.end.is_some() {
+            return 1;
+        }
+        let Some(tgt) = self.actors.get(usize::from(target)) else {
+            return 1;
+        };
+        let target_party = target < self.party.party_count;
+        let inputs = motion::RangeInputs {
+            attacker_party: false,
+            target_party,
+            attacker_reach: 0,
+            attacker_size: creature_size,
+            target_size: if target_party {
+                0
+            } else {
+                self.battle_size_class_of(target)
+            },
+            attacker_pos: creature_pos,
+            target_ref: tgt
+                .battle
+                .seat
+                .unwrap_or((tgt.move_state.world_x, tgt.move_state.world_z)),
+        };
+        let bearing = vm::battle_action::bearing_12bit_approx(
+            inputs.target_ref.1,
+            inputs.target_ref.0,
+            creature_pos.1,
+            creature_pos.0,
+        );
+        let angle = vm::battle_approach::approach_angle(bearing) as u16;
+        let (sin, cos) = motion::trig12(angle);
+        motion::range_metric(&inputs, sin, cos)
+    }
+
     /// Seed every seated actor's anchor pair from its live position, once.
     /// Retail's setup writes the seat pair first and copies it into the live
     /// pair (`FUN_800513F0`); the engine's `enter_battle` writes the live

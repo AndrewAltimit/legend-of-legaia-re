@@ -580,6 +580,8 @@ impl PlayWindowApp {
                 self.battle_ground_mesh = None;
                 self.battle_ground_cue_far = None;
                 self.battle_stage_outdoor = *outdoor;
+                // The backdrop ramp's ceiling reads the same table byte.
+                self.session.host.world.battle.stage_outdoor = *outdoor;
                 // Pre-cue colour = the settled battle ambient
                 // (`0x8007B7B0` -> `RGBC`), see `build_ground_grid_rgbc`.
                 let grid = build_battle_ground_grid(

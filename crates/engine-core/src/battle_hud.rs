@@ -1555,8 +1555,10 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
 ///   record 7 for that member and stores it as `ctx[+0x18]` for the close.
 ///   Tail Fire and Glare on Vahn show `Vahn`; Vahn's Somersault on Gimard
 ///   shows nothing;
-/// * the Spirit / Item pre-arm `0x3C` (`0x801E3DA0..0x801E3DC0`) opens it
-///   for the acting member when that member is a party slot.
+/// * the Item pre-arm `0x3C` (`0x801E3DA0..0x801E3DC0`) opens it for the
+///   acting member when that member is a party slot. A Spirit action never
+///   reaches `0x3C` - its seed arm goes straight to `0x46` - and raises the
+///   AP bar + plate pair instead, so it has no readout bar.
 pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
     use legaia_engine_vm::battle_action::ActionCategory;
     let pc = party_count(world) as u8;
@@ -1582,7 +1584,14 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
                 (t < pc).then_some(t)
             };
             let cat = actor.battle.action_category;
-            if cat == ActionCategory::Item.as_byte() || cat == ActionCategory::Spirit.as_byte() {
+            if cat == ActionCategory::Spirit.as_byte() {
+                // The Spirit arm (`0x801E2F54..0x801E3024`) sends category
+                // `4` straight to `0x46` and jumps past both record-7 opens:
+                // it raises the AP bar (`0x0F`) and the AP plate (`0x52`)
+                // instead ([`crate::world::World::spirit_gauge_view`]). The
+                // retail Spirit captures carry no readout bar.
+                None
+            } else if cat == ActionCategory::Item.as_byte() {
                 if a < pc { Some(a) } else { party_target }
             } else {
                 party_target
@@ -1658,9 +1667,22 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
         // The `0x28` arm's spell-name write is gated on the caster's seat:
         // `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,0x801E4460`
         // (`0x801E43D0..0x801E43DC`) skips it for a party caster, so a
-        // party cast - a Seru summon included - has no name label.
+        // party cast has no name label of the band's own.
         if a < pc {
-            return None;
+            // A summon module prints its own line at the label's place
+            // (`FUN_8003541C(.., 0x96, ..)`): the spell name, then the
+            // attack name, until the band's exit.
+            use legaia_engine_vm::cast_module_camera::ModuleCaption;
+            let id = actor.battle.params[0];
+            return match world.casting.module_caption? {
+                ModuleCaption::SpellName => world
+                    .menu
+                    .text
+                    .as_ref()
+                    .and_then(|t| t.spell_name(id))
+                    .map(str::to_string),
+                ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
+            };
         }
         let id = actor.battle.params[0];
         world
@@ -1695,6 +1717,60 @@ pub fn battle_message_bar(world: &crate::world::World) -> Option<String> {
     world.battle.steal_caption.as_ref().map(|c| c.text.clone())
 }
 
+/// Where a gliding plate sits relative to its rest seat: `FUN_801D9BBC`'s
+/// linear step from `seat_a` to `seat_b` (`a + (b - a) * elapsed / total`,
+/// snapped once settled), less `seat_b`. `0` with no glide recorded.
+fn plate_glide_dy(
+    glide: Option<&legaia_engine_vm::battle_commit_log::LogLaunch>,
+    seat_a: i32,
+    seat_b: i32,
+) -> i32 {
+    let Some(g) = glide.filter(|g| !g.settled()) else {
+        return 0;
+    };
+    (seat_a - seat_b) - (seat_a - seat_b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
+}
+
+/// Seat A / seat B rows of the actor-name plaque (record `0x44`: `(16,
+/// -24)` -> `(16, 14)`, read off the placement table in every battle state).
+const ACTION_PLAQUE_SEATS_Y: (i32, i32) = (-24, 14);
+
+/// Seat A / seat B rows of the target plaque (record `0x51`: `y = 236` ->
+/// `194`).
+const TARGET_PLAQUE_SEATS_Y: (i32, i32) = (236, 194);
+
+/// How far the **action** phase's actor-name plaque sits below its rest
+/// seat this frame (negative = above), in screen pixels.
+///
+/// The action seed raises record `0x44` with `FUN_801D8DE8(0x44, 0)`
+/// (`FUN_801E6D84`, the `jal` every category arm of state `0x0C` falls into
+/// at `0x801E3028`), which spawns it at seat A, off the top edge, and
+/// `FUN_801D9BBC` glides it down over `ctx[+0x1C] = 0x10` frames. So a frame
+/// taken the step the seed ran - the `super_queue_*` captures at `0x14` -
+/// shows no plaque, and one taken half a glide later shows it half in.
+/// Outside the action phase (the command ring's `Begin | <name>` trail) the
+/// plaque is a different record and this is `0`.
+pub fn battle_action_plaque_dy(world: &crate::world::World) -> i32 {
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode != crate::world::SceneMode::Battle
+    {
+        return 0;
+    }
+    let (a, b) = ACTION_PLAQUE_SEATS_Y;
+    plate_glide_dy(world.battle.action_plaque_glide.as_ref(), a, b)
+}
+
+/// How far the target plaque sits below its rest seat this frame - the
+/// same raise glide as [`battle_action_plaque_dy`], on record `0x51`, from
+/// below the bottom edge.
+pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
+    if world.mode != crate::world::SceneMode::Battle {
+        return 0;
+    }
+    let (a, b) = TARGET_PLAQUE_SEATS_Y;
+    plate_glide_dy(world.battle.target_plaque_glide.as_ref(), a, b)
+}
+
 /// The bottom-right target plaque (placement record 81): the monster a
 /// party member's attack is aimed at, with its element badge - or `None`.
 ///
@@ -1708,7 +1784,7 @@ pub fn battle_message_bar(world: &crate::world::World) -> Option<String> {
 /// (`0x801E6314..0x801E6348`).
 pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
     use legaia_engine_vm::battle_action::ActionCategory;
-    if battle_hud_phase(world) != BattleHudPhase::Action {
+    if battle_hud_phase(world) != BattleHudPhase::Action || world.battle.target_plate_cleared {
         return None;
     }
     // A dome play-out: the fighter's plays name the opponent here, the

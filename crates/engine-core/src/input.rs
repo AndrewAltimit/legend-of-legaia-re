@@ -590,6 +590,21 @@ impl Mapping {
         PadButton::from_name(btn_name)
     }
 
+    /// The key a prompt should name for pad button `button_name` (`"Circle"`,
+    /// `"Start"`, ...), or `None` when nothing is bound to it.
+    ///
+    /// A host prints this rather than a hand-typed key letter so a key hint
+    /// follows a rebind (and the layout the host actually runs). When several
+    /// keys share a button (Start takes Enter and Space) the alphabetically
+    /// first name is returned, so the label is stable across calls.
+    pub fn key_label_for_button(&self, button_name: &str) -> Option<&str> {
+        self.bindings
+            .iter()
+            .filter(|(_, btn)| btn.as_str() == button_name)
+            .map(|(key, _)| key.as_str())
+            .min()
+    }
+
     /// This mapping as `(KeyboardEvent.code, pad bit)` pairs, sorted by code.
     ///
     /// The shape a browser host wants: its keydown handler has a `code` and
@@ -638,6 +653,22 @@ impl Mapping {
 
 #[cfg(test)]
 mod tests {
+    /// A key hint names the key the layout really binds: the web layout's
+    /// Triangle is `C`, its Start the first of Enter / Space, and an unbound
+    /// button has no label.
+    #[test]
+    fn key_label_follows_the_layout() {
+        let web = super::Mapping::web_default();
+        assert_eq!(web.key_label_for_button("Triangle"), Some("C"));
+        assert_eq!(web.key_label_for_button("Circle"), Some("X"));
+        assert_eq!(web.key_label_for_button("Start"), Some("Enter"));
+        let native = super::Mapping::default();
+        assert_eq!(native.key_label_for_button("Triangle"), Some("A"));
+        let mut empty = native.clone();
+        empty.bindings.clear();
+        assert_eq!(empty.key_label_for_button("Start"), None);
+    }
+
     /// A key pressed and released between two frames still reaches the
     /// first tick of the next frame as a held bit - one press edge - and is
     /// gone by the following frame; a key still held is unchanged.

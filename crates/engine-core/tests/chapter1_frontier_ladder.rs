@@ -80,7 +80,8 @@
 //!
 //! Rung 5 is pad-only: [`World::set_pad`] plus [`SceneHost::tick`], nothing
 //! seated - and it is scored against a **released-pad control run of the same
-//! length from the same state**. Without that control, "the player walked"
+//! length from the same state**. A dialogue the walk opens (a walk-touch sign)
+//! is paged with Cross pulses while it owns input, as the settle pages one. Without that control, "the player walked"
 //! and "a script moved the player" are one measurement, and they are not one
 //! claim. When the driven run fails to beat its control the scene is probed
 //! once more as a *revisit* (flag banks left latched), which separates "the
@@ -581,7 +582,20 @@ fn probe(host: &mut SceneHost, pads: &[u16], ticks_each: usize) -> Probe {
         start_tile,
     };
     for &mask in pads {
-        for _ in 0..ticks_each {
+        for i in 0..ticks_each {
+            // A dialogue the walk itself opens is paged as a player pages it,
+            // with the direction still held: Cross pulses (press, release)
+            // only while a dialogue owns input, so the pulse cannot start an
+            // interact of its own. Without it, one walk-touch sign froze
+            // every later direction - `tower`'s spawn faces the rapid
+            // elevator, whose record types "Out of service" while its switch
+            // `0x1C6` is off, and the probe stood in that text box for the
+            // remaining three cardinals. The control applies the same rule.
+            let mask = if host.world.dialogue_owns_input() && i % 2 == 0 {
+                mask | PadButton::Cross.mask()
+            } else {
+                mask
+            };
             host.world.set_pad(mask);
             match host.tick() {
                 Ok(SceneTickEvent::SceneEntered { name }) => {

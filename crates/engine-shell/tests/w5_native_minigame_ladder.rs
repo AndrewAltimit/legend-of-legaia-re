@@ -136,17 +136,46 @@ fn run_window_with(
     shot_tick: u64,
     extra: &[&std::ffi::OsStr],
 ) -> (String, String) {
+    run_window_env(
+        disc,
+        shot,
+        key_script,
+        pad_script,
+        shot_tick,
+        extra,
+        &[],
+        false,
+    )
+}
+
+/// [`run_window_with`] with extra environment variables on the child (the
+/// opt-in surfaces such as `LEGAIA_DEV_MENU` are switched by environment, not
+/// by flag). `audio` drops `--no-audio`, so the window opens its output device.
+#[allow(clippy::too_many_arguments)]
+fn run_window_env(
+    disc: &Path,
+    shot: &Path,
+    key_script: &str,
+    pad_script: Option<&str>,
+    shot_tick: u64,
+    extra: &[&std::ffi::OsStr],
+    envs: &[(&str, &str)],
+    audio: bool,
+) -> (String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_legaia-engine"));
+    cmd.envs(envs.iter().copied());
     cmd.arg("play-window")
         .arg("--scene")
         .arg(SCENE)
         .arg("--disc")
         .arg(disc)
-        .arg("--no-audio")
         .arg("--screenshot")
         .arg(shot)
         .arg("--screenshot-tick")
         .arg(shot_tick.to_string());
+    if !audio {
+        cmd.arg("--no-audio");
+    }
     if !key_script.is_empty() {
         cmd.arg("--key-script").arg(key_script);
     }
@@ -480,4 +509,131 @@ fn rung7_muscle_dome_leg_opens() {
         0.001,
         SHOT_TICK,
     );
+}
+
+/// The fishing overlay's developer readout (`FUN_801D2050`'s debug arm and
+/// the tracked-point separation `FUN_801D765C` it prints): the wander actor's
+/// tile pair, settled height, facing and its distance from the venue anchor.
+///
+/// Retail gates it on two things at once - the global print flag and a held
+/// modifier bit (`_DAT_8007B850 & 2`) - and the native window maps them to
+/// the developer-menu session (`LEGAIA_DEV_MENU`) and a held R2 (the raw pad
+/// word's `0x0200`, which the packed word carries as `0x0002`). Opening the
+/// minigame does neither, which is why rung 1 never enters the readout.
+///
+/// Both captures run with the developer menu up, so the only difference
+/// between them is the held modifier: a readout that never drew leaves the
+/// two frames identical, which is the failure this rung exists to catch.
+#[test]
+fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
+    let Some((disc, out)) = ladder_env() else {
+        return;
+    };
+    let dev = [("LEGAIA_DEV_MENU", "1")];
+    let cast = "80:Circle,120:Circle";
+    let shoot = |label: &str, pad: &str| {
+        let shot = out.join(format!("{label}.png"));
+        let _ = std::fs::remove_file(&shot);
+        let (stdout, stderr) =
+            run_window_env(&disc, &shot, "40:L", Some(pad), SHOT_TICK, &[], &dev, false);
+        assert!(
+            stdout.contains("[ok] screenshot"),
+            "{label}: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("fishing: started"),
+            "{label}: fishing never opened\nstderr:\n{stderr}"
+        );
+        shot
+    };
+    let plain = shoot("fishing_dev_plain", cast);
+    let readout = shoot(
+        "fishing_dev_readout",
+        &format!("{cast},200-{}:R2", SHOT_TICK + 5),
+    );
+    let delta = pixel_delta(&plain, &readout);
+    assert!(
+        delta > 0.0,
+        "fishing_dev_readout: holding the modifier under the developer menu \
+         changed nothing on screen - the readout never drew"
+    );
+    // And the change is the readout's row, not some other effect of the held
+    // bit: every differing pixel sits in the band the HUD stages the line at
+    // (stage pen y = 116 of 240, one text row tall).
+    let (w, h, a) = read_png(&plain);
+    let (_, _, b) = read_png(&readout);
+    let rows: Vec<u32> = (0..w * h)
+        .filter(|&i| a[i as usize * 4..][..4] != b[i as usize * 4..][..4])
+        .map(|i| i / w)
+        .collect();
+    let (lo, hi) = (
+        *rows.iter().min().expect("non-empty"),
+        *rows.iter().max().expect("non-empty"),
+    );
+    let stage = |y: u32| y as f64 * 240.0 / h as f64;
+    assert!(
+        stage(lo) >= 110.0 && stage(hi) <= 140.0,
+        "fishing_dev_readout: the held modifier changed stage rows {:.0}..{:.0}, \
+         outside the readout line's band",
+        stage(lo),
+        stage(hi)
+    );
+    eprintln!(
+        "[ok] fishing_dev_readout: {:.3}% of the frame differs from the unmodified capture",
+        delta * 100.0
+    );
+}
+
+/// The slot machine's reel motor: a directly keyed SPU voice
+/// (`World::take_sfx_voice_keys` -> `AudioBgmDirector::key_on_voice_attr` ->
+/// `legaia_engine_audio::key_on_voice_attr`), the one cue path that bypasses
+/// both the SFX ring and the descriptor bank.
+///
+/// Two things keep every other rung off it. A spin needs coins - rung 6
+/// meets the machine's state-1 gate on an empty bank - so a cheat file
+/// seeds the coin bank (`0x800845A4`) the way rung 2 seeds fishing points.
+/// And the key needs the audio director, which exists only with a live
+/// output device, so this is the one rung that runs without `--no-audio`.
+/// A machine with no device cannot run it: the rung skips when the window
+/// reports no audio device rather than passing on a run that keyed
+/// nothing.
+#[test]
+fn rung9_slot_reel_motor_keys_a_voice() {
+    let Some((disc, out)) = ladder_env() else {
+        return;
+    };
+    let shot = out.join("slots_audio.png");
+    let _ = std::fs::remove_file(&shot);
+    let cheat = out.join("slot_coins.gs.txt");
+    // 1000 coins (a u16 write into the bank word).
+    std::fs::write(&cheat, "R I 2 L 0 800845A4 03E8 Coin bank\n").expect("write cheat file");
+    let (stdout, stderr) = run_window_env(
+        &disc,
+        &shot,
+        "40:O",
+        Some("100:Cross,160:Cross,220:Cross,280:Cross"),
+        400,
+        &[std::ffi::OsStr::new("--cheat-file"), cheat.as_os_str()],
+        &[("RUST_LOG", "info,legaia_engine_shell=debug")],
+        true,
+    );
+    if !stderr.contains("audio: device=") {
+        eprintln!("[skip] no audio output device - the voice-key path needs the director");
+        return;
+    }
+    assert!(
+        stdout.contains("[ok] screenshot"),
+        "slots_audio: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("minigame warp: entered slot_machine"),
+        "slots_audio: the machine never opened\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.contains("direct voice") && l.ends_with("keyed: true")),
+        "slots_audio: a spin with coins in the bank keyed no reel-motor voice\nstderr:\n{stderr}"
+    );
+    eprintln!("[ok] slots_audio: the reel motor keyed a voice");
 }

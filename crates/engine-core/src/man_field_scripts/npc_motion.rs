@@ -1043,20 +1043,74 @@ pub fn resolve_walk_touch_event(
     flat: usize,
     flag_test: &dyn Fn(u16) -> bool,
 ) -> Option<WalkTouchEvent> {
+    resolve_walk_touch_arm(man_file, man, flat, flag_test).flatten()
+}
+
+/// [`resolve_walk_touch_event`] with its two `None`s told apart:
+///
+/// - `None` - the record could not be walked (no span, an undecodable
+///   instruction): the caller keeps its load-time structural decode;
+/// - `Some(None)` - the record **was** walked under the live flags and its
+///   taken arm reaches no teleport and no spawn before it loops back: the
+///   contact runs the record and moves nobody.
+///
+/// The difference is the contact's whole effect for a record whose teleport
+/// sits behind a flag test. `tower` P0[4] / P0[5], the rapid elevator, tests
+/// `0x1C6` (its switch, P0[0]) first: clear, the arm types "Out of service"
+/// and loops back to the test; set, it parks the player on tile (0, 0) for
+/// the ride (`A3 F8 00 00`) before the arrival `MoveTo`. Falling back to the
+/// static decode on the clear arm took that parking move for the door's
+/// destination and dropped the player into the void corner of the map.
+// REF: FUN_801DE840 (op 0x7x TEST branch polarity, op 0x26 JmpRel, op 0x44 SPAWN)
+pub fn resolve_walk_touch_arm(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+    flag_test: &dyn Fn(u16) -> bool,
+) -> Option<Option<WalkTouchEvent>> {
     let (start, pc0, len) = super::flat_record_span(man_file, man, flat)?;
     let body = man.get(start..start + len)?;
+    // A lift record moves the player more than once - onto tile (0, 0) while
+    // the car travels, through each floor of a non-stop ride's camera tour -
+    // and only the move before its arrival bracket (`B1 <partner> 00`, see
+    // [`record_exempted_objects`]) is where the player stays. `tower` P0[5],
+    // the rapid lift down, parks at (0, 0), tours, and arrives at (14, 72).
+    let bracketed = !record_exempted_objects(man_file, man, flat).is_empty();
+    let mut pending: Option<WalkTouchEvent> = None;
     let mut pc = pc0;
     let mut facing: Option<i16> = None;
     let mut seen = std::collections::HashSet::new();
     for _ in 0..DOOR_WALK_BUDGET {
         if !seen.insert(pc) {
-            return None; // looped back: the record's idle loop
+            return Some(pending); // looped back: the record's idle loop
         }
         let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
         if insn.size == 0 {
             return None;
         }
         let player = insn.extended == Some(PLAYER_CHANNEL);
+        if bracketed {
+            match insn.info {
+                InsnInfo::MoveTo { xb, zb }
+                    if player && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE =>
+                {
+                    pending = Some(WalkTouchEvent::PlayerMoveTo {
+                        world_x: grid_byte_to_world(xb),
+                        world_z: grid_byte_to_world(zb),
+                        facing,
+                    });
+                    pc += insn.size;
+                    continue;
+                }
+                InsnInfo::CFlag {
+                    kind: FlagKind::Set,
+                    bit: 0,
+                } if pending.is_some() && insn.extended.is_some_and(|t| t != PLAYER_CHANNEL) => {
+                    return Some(pending);
+                }
+                _ => {}
+            }
+        }
         match insn.info {
             InsnInfo::SystemFlag {
                 kind: FlagKind::Test,
@@ -1079,11 +1133,11 @@ pub fn resolve_walk_touch_event(
             InsnInfo::MoveTo { xb, zb }
                 if player && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE =>
             {
-                return Some(WalkTouchEvent::PlayerMoveTo {
+                return Some(Some(WalkTouchEvent::PlayerMoveTo {
                     world_x: grid_byte_to_world(xb),
                     world_z: grid_byte_to_world(zb),
                     facing,
-                });
+                }));
             }
             InsnInfo::MenuCtrl {
                 kind:
@@ -1095,22 +1149,55 @@ pub fn resolve_walk_touch_event(
                     },
                 ..
             } if player && (x_enc & 0x7F, z_enc & 0x7F) != PARKED_SENTINEL_TILE => {
-                return Some(WalkTouchEvent::PlayerMoveTo {
+                return Some(Some(WalkTouchEvent::PlayerMoveTo {
                     world_x: grid_byte_to_world(x_enc),
                     world_z: grid_byte_to_world(z_enc),
                     facing: facing_index_to_engine_heading(depth & 0xF).or(facing),
-                });
+                }));
             }
             InsnInfo::SpawnRecord { global_index } => {
-                return Some(WalkTouchEvent::SpawnRecord {
+                return Some(pending.or(Some(WalkTouchEvent::SpawnRecord {
                     flat_index: usize::from(global_index),
-                });
+                })));
             }
             _ => {}
         }
         pc += insn.size;
     }
-    None
+    Some(pending)
+}
+
+/// The object actors a record makes **collision- and touch-exempt** by a
+/// cross-context `B1 <obj> 00` (`CFLAG_SET` bit 0 into another context's
+/// `+0x10`; the `flags & 3` filter of `FUN_801CF754` / `FUN_801CF9F4`), at
+/// any clean decode boundary of the record - the partner a lift ride brackets
+/// for the arrival (`tower` P0[2] runs `B1 03 00` before its walk-off and
+/// `B2 03 00` after it, P0[3] being the platform the player lands on). The
+/// player channel ([`PLAYER_CHANNEL`]) is not an object and is left out.
+// REF: FUN_801DE840 (op 0x31 CFLAG_SET, cross-context prefix), FUN_801CF754
+pub fn record_exempted_objects(man_file: &ManFile, man: &[u8], flat: usize) -> Vec<u8> {
+    let Some((start, pc0, len)) = super::flat_record_span(man_file, man, flat) else {
+        return Vec::new();
+    };
+    let Some(body) = man.get(start..start + len) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for insn in legaia_asset::field_disasm::LinearWalker::new(body, pc0).map_while(Result::ok) {
+        if let (
+            InsnInfo::CFlag {
+                kind: FlagKind::Set,
+                bit: 0,
+            },
+            Some(target),
+        ) = (&insn.info, insn.extended)
+            && target != PLAYER_CHANNEL
+            && !out.contains(&target)
+        {
+            out.push(target);
+        }
+    }
+    out
 }
 
 /// Classify placement `p`'s walk-touch behaviour, if any. `None` for parked

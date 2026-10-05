@@ -219,6 +219,29 @@ impl CameraZoneConfig {
         })
     }
 
+    /// Inverse of [`Self::from_retail_block`] (the enable byte `+6` and
+    /// the six bytes before it zero).
+    pub fn to_retail_block(&self) -> [u8; 0x28] {
+        let mut b = [0u8; 0x28];
+        b[7] = self.mode;
+        b[8] = self.b608;
+        b[9] = self.b609;
+        b[0xA] = self.b60a;
+        b[0xB] = self.b60b;
+        for (o, v) in [
+            (0xC, self.pitch),
+            (0x10, self.yaw),
+            (0x14, self.depth),
+            (0x18, self.h),
+            (0x1C, self.anchor_x),
+            (0x20, self.anchor_h),
+            (0x24, self.anchor_z),
+        ] {
+            b[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        b
+    }
+
     /// The ease shift code this block selects (`EASE_SHIFT_TABLE[B60B >> 4]`).
     pub fn ease_shift(&self) -> u8 {
         EASE_SHIFT_TABLE[usize::from(self.b60b >> 4)]
@@ -870,6 +893,10 @@ mod tests {
             (0x1A, 0x21, 0x1B8, -160, 0x200)
         );
         assert!(CameraZoneConfig::from_retail_block(&block[..10]).is_none());
+        assert_eq!(
+            CameraZoneConfig::from_retail_block(&cfg.to_retail_block()),
+            Some(cfg)
+        );
     }
 
     fn inputs(px: i32, pz: i32, floor: i32) -> ComposeInputs {

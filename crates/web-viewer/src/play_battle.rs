@@ -532,7 +532,10 @@ impl LegaiaRuntime {
         if bw.mode == SceneMode::MuscleDome && !self.dome_battle_chrome_up() {
             return empty;
         }
-        let Some(view) = bw.arts_input_view() else {
+        // A Spirit turn raises the same bar + plate pair (no chips, no
+        // pennants) and grows them - `World::spirit_gauge_view`; the native
+        // window takes the same fallback.
+        let Some(view) = bw.arts_input_view().or_else(|| bw.spirit_gauge_view()) else {
             return empty;
         };
         let frame = ai::ArtsInputFrame {
@@ -688,6 +691,8 @@ impl LegaiaRuntime {
                 third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                plaque_dy: world.map(bh::battle_action_plaque_dy).unwrap_or(0),
+                target_plaque_dy: world.map(bh::battle_target_plaque_dy).unwrap_or(0),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
@@ -1718,6 +1723,24 @@ impl LegaiaRuntime {
             host.world.battle.player_driven = true;
         }
         host.world.force_encounter(id)
+    }
+
+    /// Dispatch a cast the moment the next battle's first command prompt
+    /// opens - the browser twin of the native window's
+    /// `LEGAIA_BATTLE_INFLIGHT=caster,spell,target` debug seam (engine actor
+    /// indices; every seat keeps its ground). Pair with
+    /// [`Self::debug_force_battle`] to watch one cast from a cold page.
+    pub fn debug_seed_inflight_cast(&mut self, caster: u8, spell_id: u8, target: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.battle.inflight_seed = Some(legaia_engine_core::world::InflightCastSeed {
+            caster,
+            spell_id,
+            target,
+            ground: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+        });
+        true
     }
 
     /// `true` while the party-wipe hand-off owns the frame. The page stops

@@ -215,6 +215,19 @@ impl PlayWindowApp {
         let pad = legaia_engine_core::world_map_panel_host::packed_pad(world.input.pad());
         self.field_party_hud
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+        // The overworld's idle (`0xA0`) outlasts the run before the capture
+        // tick, so the rearm hold above cannot reach a short retail
+        // countdown on its own: clamp the running countdown as well.
+        if let Some(sc) = self.screenshot.as_ref()
+            && let Some(n) = sc.hud_countdown
+            && let Some(cap) = legaia_engine_core::world_map_panel_host::hud_countdown_cap(
+                self.tick_no,
+                sc.capture_tick,
+                n,
+            )
+        {
+            self.field_party_hud.cap_countdown(cap);
+        }
     }
 
     /// The field party HUD's two draw halves for this frame, or empty when
@@ -583,8 +596,17 @@ impl PlayWindowApp {
             // hosts print (`PondSession::status_rows`).
             let (line, hint) = s.status_rows("Circle", "Cross", "Square");
             out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            let hint = format!("{hint}  (Triangle = menu, Start = quit, P = prizes)");
             out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
+            // The session affordances on their own row - with the reel hint
+            // they overran the stage on one line. The browser play page
+            // prints the same three on the same row with its own keys.
+            out.extend(self.stage_status_row(
+                "Triangle = menu, Start = quit, P = prizes",
+                (8, 98),
+                dim,
+                w,
+                h,
+            ));
 
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the
@@ -1902,7 +1924,14 @@ impl PlayWindowApp {
         {
             return Vec::new();
         }
-        let Some(view) = self.session.host.world.arts_input_view() else {
+        // A Spirit turn raises the same bar + plate pair (no chips, no
+        // pennants) and grows them - `World::spirit_gauge_view`; the browser
+        // play page takes the same fallback.
+        let world = &self.session.host.world;
+        let Some(view) = world
+            .arts_input_view()
+            .or_else(|| world.spirit_gauge_view())
+        else {
             return Vec::new();
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
@@ -2325,6 +2354,8 @@ impl PlayWindowApp {
                 third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                plaque_dy: bh::battle_action_plaque_dy(w_ref),
+                target_plaque_dy: bh::battle_target_plaque_dy(w_ref),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),

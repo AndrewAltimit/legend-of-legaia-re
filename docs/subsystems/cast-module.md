@@ -1034,6 +1034,31 @@ change. It fires at the two seams retail uses: the capture band's pager
 (`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
 and the summon stager's first tick (`0x801E4B1C`).
 
+#### A module that reports its spawns
+
+Seating every record on the stager's first tick puts each program on the
+wrong clock: a record a module spawns late runs out long before the arm that
+spawns it. A director whose profile sets `stages_spawns` reports its
+`FUN_80021B04` calls per arm instead (`ArmDirection::spawns`, each with the
+record - a module VA, or a pointer word into PROT 0898's effect-prototype
+table - and the anchor: the creature seat, or the arm's own shot trios), and
+`World::summon_stager_tick` seats each one on the pass its arm makes the call.
+The parts then drain their wait timers at retail's own per-frame product
+(`SummonScene::retail_wait_drain`), the rate the module's countdown already
+runs at. PROT 0903 is the one such module:
+
+| arm | calls | what |
+|---:|---|---|
+| 3 | `0x801F7820`, `0x801F7870`, `0x801F78C4` on the creature | the creature's arrival |
+| 6 | `0x801F7724`, `0x801F7794`, `0x801F7804` on the shot | the camera-relative fire tunnel |
+| 8 | `*(0x801F63A8)` (PROT 0898 record `0x801F5B28`, library mesh `0x18`) on the creature, after a 16x1 `MoveImage` of the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)` | the breath |
+
+The `gimard_burning_attack` capture (arm 11) holds the two tunnel parts
+mid-program and `0x801F7804` and the breath record still allocated - the
+lifetimes the per-arm seating reproduces. Arm 3's `0x801F7820` is a record the
+static spawn scan does not recover (its `lui` / `addiu` pair is split across
+the arm), which is why the director names the records itself.
+
 **The code half.** The **PORT** rows - the six tick bodies and the seven
 state-touching stagers - are `legaia_engine_vm::cast_module_ticks`, one
 function per VA, and three sibling modules carry the rest of the band's code:
@@ -1923,7 +1948,15 @@ directors so far, each read off its own tick's disassembly:
   of arm 1, the creature placement of arm 3 (half a unit from the victim
   toward the caster, facing the victim), the cuts of arms 4 and 6, the
   `0xC0`-frame pan of arm 7, the gates of arms 2 and 4..10 and the walk-in of
-  arm 11;
+  arm 11. It also reports the module's spawn calls arm by arm
+  ([below](#a-module-that-reports-its-spawns)) and its two caption arms:
+  arm 5 prints the spell name and arm 6 replaces it with the actor record's
+  attack name (`FUN_8003541C(.., 0x96, ..)`, the move-name label's place),
+  which the port shows through `battle_hud::battle_move_name` until the
+  band's `0x37` exit. The walk-in is the creature clip's root motion; the
+  port steps it 32 units a frame along the heading onto the victim, the
+  speed `gimard_burning_attack` pins (670 units in the 20.5 frames its yaw
+  base says the walk has run);
 - **PROT 0905 (Vera)** - the whole choreography, including a third kernel the
   other two do not need: arms 8..10 write the camera globals directly every
   pass (pitch `0x8007B790`, TR y / z `0x800840BC` / `0x800840C0`), a drift on
@@ -2021,8 +2054,10 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   keys on the action id): Call Wave cuts to `(0, 0x600, 2z)` and pans to
   `z/2` then `z` (arms 1..3), Big Wave cuts to `z/2` and pans to `2z` over
   `0x100` frames (arms 4, 5), `z` being `ctx[+0x6D0]`; countdown
-  `0x801F7F20`. Arms 6..8 of Big Wave are not directed; the body has no other
-  port, so the director owns its phase and finishes the module there.
+  `0x801F7F20`. Big Wave then cuts to pitch `0x180`, yaw `0xF00 - facing`,
+  TR `(0, 0x600, 3z/2)` (arm 6) and spins the yaw `delta * scalar / 4` a frame
+  through arms 7 and 8. The body has no other port, so the director owns its
+  phase and finishes the module at arm 8.
 
 A body with no director keeps the held pose.
 

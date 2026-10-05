@@ -467,8 +467,35 @@ The window bytes are relative tile offsets, so the double loop runs
   `+0x1C`/`+0x1D`, and OR-ing the semi-transparency bit when `+0x1A` is
   non-zero;
 - sorts on `cell & 0x8000`: set, the packet goes in the bucket its own
-  minimum vertex `Z` picks; clear, it goes in the fixed far bucket
-  `(0x3FF6 >> ot_shift) * 4`.
+  farthest vertex `Z` picks (`(max SZ >> 5) + 2`, the three
+  `sub` / `bgez` / `move` steps at `0x801F6FAC..0x801F6FD8` keep the larger);
+  clear, it goes in the fixed far bucket `(0x3FF6 >> ot_shift) * 4`.
+
+### The far bucket draws under everything
+
+The far bucket is the last ordering-table slot, which the GPU walks first, so a
+far-bucket ground cell is painted over by every other primitive in the frame -
+nearer or not. A depth buffer agrees for a **flat** cell (nothing can stand
+behind a floor and in front of it at once) but not for a **sloped** one. A cell
+whose corner tiers differ rises between them, and where the tiers are a cliff
+apart it is a near-vertical sheet of ground texture that retail never shows,
+because the cliff mesh in front of it paints over it. `town01`'s cell
+`(30, 38)` is the case that surfaced: three corners on the town floor, one on
+the plateau 384 units up, standing in front of the recessed overhang by the
+plateau's cave mouth - a long dark-green sliver on every host.
+
+The port keeps the bit as `WalkHeightfield::far_bucket`
+(`legaia_asset::field_objects::CELL_GROUND_DEPTH_SORTED`, field ground only;
+the overworld emitter keys every cell on its own corners). The shared kernel
+`legaia_engine_core::field_ground::flat_refs` marks each **sloped** far-bucket
+cell in the per-vertex flat-depth references both hosts already upload beside
+the ground (its `x0` / `x1` pair swapped), and the ground shaders -
+`field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
+`site/js/webgl-shaders.js` - scale the marked cell's depth into the thin slice
+at the far end of the range, keeping its own per-pixel order inside it. Flat
+far-bucket cells keep their real depth, so the post passes that read the depth
+buffer (the volumetric fog's soft edge, the lamp halos) see the floor where it
+is. Disc-gated pin `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
 
 ### No draw channel is gated on object-grid bit `0x0800`
 
@@ -1793,8 +1820,9 @@ ground heightfield, the posed props, the NPCs) are resolved once at scene load
 and submitted whole on every frame. A town is a few hundred draws of a few
 thousand triangles - the budget the port is not on is the PSX's.
 
-Two things can still remove geometry: retail's own near reject on placed
-objects ([below](#the-placed-object-near-reject)), and the projection's clip
+Three things can still remove geometry: retail's own near reject on placed
+objects ([below](#the-placed-object-near-reject)), its per-primitive near
+reject ([below](#the-per-primitive-near-reject)), and the projection's clip
 volume, whose planes are sized to hold an entire scene from any vantage
 rather than to frame the current view:
 
@@ -1898,9 +1926,40 @@ Both hosts ask `field_env::placed_origin_near_culled` per placed draw with the
 origin's clip `w` under the frame's retail camera - the native placed, colour
 and posed-prop passes, and the play page's placed draws through the
 `field_placed_near_culled` export. The `F3` debug orbit is exempt: it frames
-from a vantage retail never had. The per-prim handlers carry a second gate the
-port does not reproduce, an `OTZ` cut against the scratch halfword
-`0x1F80037E` (kind 15: `sub v1,s2,t4` / `bltz v1` at `0x80043D6C`).
+from a vantage retail never had.
+
+### The per-primitive near reject
+
+The per-prim handlers carry a second, finer gate: after `AVSZ3` / `AVSZ4`
+each one reads `OTZ` back and drops the primitive when it is below the
+scratch halfword `0x1F80037E` (kind 13, `FUN_80043768`: `mfc2 s2,$7` /
+`sub s1,s2,t4` / `bltz s1` at `0x80043868..0x80043874`; kind 15 at
+`0x80043D6C`). The dispatcher loads that floor into `t4` per group
+(`lhu t4,0x6A(t2)` at `0x8004359C`, `t2 = 0x1F800314`) and stages
+`ZSF3 = 0x555 >> s` / `ZSF4 = 0x400 >> s` from the ordering-table shift byte
+`0x1F8003A4` (`0x80043568..0x8004357C`), so `OTZ` is the mean corner `SZ`
+shifted by `s`. The scene init writes the floor as `0x10` (`FUN_8001D424` at
+`0x8001D4E8`, `FUN_8001DCF8` at `0x8001DD5C`); the scratchpad of the
+catalogued PCSX-Redux states holds `s = 3` on the field and `s = 2` in
+battle. A field primitive whose mean depth is under 128, or a battle one under
+64, is not drawn. `SZ` saturates at `0`, so a corner behind the eye pulls the
+mean toward zero rather than below it.
+
+There is no near-plane clip on this path. A port that projects such a
+primitive and clips it per pixel paints it across the frame instead: the
+evolved-Cort approach in `jouine` parks the camera against a root-wall body,
+and the port drew a huge stretched brown surface over the shot retail draws
+clean.
+
+Both hosts reproduce the cut in their mesh vertex stage through one kernel,
+`legaia_engine_ui::prim_near_reject`. Every vertex carries its primitive's
+corners (a split quad's two triangles share one record; a vertex two
+primitives weld is never rejected), and the stage computes the same integer
+`OTZ` from the draw's matrix and parks a rejected primitive's corners outside
+the clip volume. `camera_view::prim_near_cut` picks the shift per pass -
+field and battle only, and never under the debug orbit; the native renderer
+stages it with `Renderer::set_prim_near_reject`, the play page with
+`TmdRenderer.setPrimNear`.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -2156,7 +2215,7 @@ different default:
 | `Renderer::set_psx_mode` | **off** | *on* is retail | vertex snap + 15-bit dither, and nothing else |
 | `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
 | `Renderer::set_dynamic_lighting` | **off** in the renderer, **on** in `play-window` + browser play page | *off* is retail, pixel-identical to the faithful render | enhanced lighting: mood, point lights, emissives, glow |
-| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light shadow maps (native only) |
+| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light shadow maps, shadows only - the lamps keep shading when it is off (both hosts; the page's "Lamp shadows" box) |
 | `Renderer::set_occlusion_fade` | **off** in the renderer, **on** in `play-window` | *off* is retail, pixel-identical to the faithful render | the see-through-walls camera-occlusion fade |
 | `Renderer::set_fog_volume` | nothing staged in the renderer; the engine's bank is **on** in `play-window` + the browser play page | nothing staged is retail, pixel-identical to the faithful render | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
 
@@ -2286,6 +2345,41 @@ morph, posed props). Two rules set it:
   test (`crates/web-viewer/tests/scene_lighting_real.rs`) pins every entry
   against the disc.
 
+**Lit windows.** A glazed window is an opaque prim on a wall tile, painted
+in daylight; neither rule above can find it, and blue texels alone also
+match sky sheets, water and slate. So the windows are curated by **art**:
+`LIT_WINDOWS` lists each glazed-window rectangle of a town atlas as its
+CLUT word, texture page, UV rectangle and an FNV-1a hash of the rectangle's
+decoded texels (`window_art_hash`) - coordinates and a hash, no disc bytes.
+A textured prim whose UVs sit inside an entry's rectangle on the same CLUT
+and page, with VRAM hashing to the entry's key, is tagged with TSB bit 12
+(`WINDOW_BIT`, free like bit 13) by the same `tag_emissive_*` calls. The
+content key is what makes the table scene-independent: Rim Elm's story
+revisits load the same art and match without entries of their own, while a
+different texture in the same atlas slot never does. The table covers Rim
+Elm's two glazed arts and Vidna's four (two outdoor, two interior).
+
+The shader lights only the **glass** of a tagged prim, per texel:
+
+```text
+glass = (texel.b - texel.r >= WINDOW_GLASS_MIN_BLUE && texel.b >= texel.g)
+     || max(texel) <= WINDOW_GLASS_BLACK_MAX
+pane  = WINDOW_RGB * (WINDOW_FLOOR + (1 - WINDOW_FLOOR) * texel.b)
+out   = glass ? mix(lit, pane, window_glow) : lit
+```
+
+The art paints panes either as saturated blue (night sky, sky reflection)
+or as near-black voids; frames, mullions, shutters and the wall around them
+are greys, wood and plaster that fail both tests, so the window keeps its
+structure and only the panes turn to lamp light. `window_glow` is a mood
+field (0 by day and in the enclosed mood, 0.6 at dusk, 1 at night), staged
+as the scene-lights block's `params.w` natively and as the fourth mood word
+of the page's lighting packet; the single-mesh pipelines' stub reads 0. The
+CPU mirror is `scene_lighting::shade_window`. The grey lower panes some art
+paints (a reflection of the sill) fail the glass test and stay as painted.
+Windows cast no point light of their own: the light list is derived once per
+scene, while the glow depends on the time of day.
+
 **Point lights.** What the player reads as candles, lamps and the glowing tree
 is that same emissive geometry, so the lights come from it: each glowing
 triangle small enough to be a prop (`EMIT_MAX_TRI_AREA`) is a sample at its
@@ -2304,15 +2398,15 @@ prop a script moves or parks carries its light along or drops it. The
 the mood's lamp strength; attenuation is `(1 - (d/r)^2)^2` with a
 half-Lambert wrap.
 
-**Shadows (native only).** `Renderer::set_dyn_shadows` (default on;
+**Shadows.** `Renderer::set_dyn_shadows` (default on;
 `--no-dyn-shadows` / `Y`) renders one depth layer per picked light into an
 8-layer `Depth32Float` array (512x512) from a downward cone
 (`scene_lights::light_view_proj`, near plane clipping out the emitter itself)
 and the scene shaders take a 3x3 PCF comparison. Casters render opaque (cutout
 texels shadow solid) and the cone is a spot approximation - geometry above
-the light attenuates but is never shadowed. With the sub-toggle off the whole
-point-light layer stages a zero count. The browser page lights the same
-picked set without shadow maps.
+the light attenuates but is never shadowed. With the sub-toggle off the lamps keep
+shading unshadowed: each light's `color.w = 0` and no shadow pass. The browser page draws the same
+shadows into its own depth array, and its "Lamp shadows" box has the same meaning.
 
 **Glow sprites (the bloom stand-in).** Around each picked light the host draws
 an additive camera-facing halo and a soft vertical shaft falling from it
@@ -2510,7 +2604,12 @@ determinism, the wake, the refill, the teleport rule and the recentre.
 reads as mist or night - `town0b` (Rim Elm under the Mist, a night scene),
 `dolk`, `vell`, `vozz`, `keikoku` - and a default style for any other field
 scene whose retail fog pool is live (gate `_DAT_8007B854` raised with an
-enabled section-4 region). A battle keeps the style of the field scene it was
+enabled section-4 region). Following the live pool is what keeps the bank off
+where the story has lifted the Mist: the region enables are rewritten from
+the area's Mist-lift flag at every entry, so a thawed town such as `bubu1`
+raises no bank once its flag is set - and a picker entry stages that flag
+([field ambient fx](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
+A battle keeps the style of the field scene it was
 entered from and runs its own grid in raw battle-stage units, centred on the
 arena. A new scene label starts a new bank; a style eases in and out over about
 a second and a half.

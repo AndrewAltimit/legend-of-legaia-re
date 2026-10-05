@@ -417,6 +417,22 @@ pub struct BattleState {
     /// ([`legaia_engine_vm::battle_commit_log::LogLaunch`]). `None` while the
     /// log rests; cleared by a commit (the next member's row lands fresh).
     pub commit_log_launch: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The action plates' raise glides: the actor-name plaque (record `0x44`)
+    /// and the target plaque (record `0x51`), each opened by the action
+    /// seed's `FUN_801E6D84` with `FUN_801D8DE8(id, 0)` - spawned at seat A
+    /// off screen and stepped onto seat B by `FUN_801D9BBC` over the same
+    /// `ctx[+0x1C]` frames as every tracked widget. `None` until the first
+    /// raise; a settled glide draws at rest
+    /// ([`crate::battle_hud::battle_action_plaque_dy`]).
+    pub action_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
+    pub target_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The target plaque's content word was cleared: the strike loop's
+    /// counterattack swap zeroes record `0x51`'s string and width
+    /// (`sw zero,0x7AC(s1)` / `sh zero,0x79E(s1)` at `0x801E36C8` /
+    /// `0x801E36CC`, `s1 = 0x80076C10`), so the counterer's strikes carry no
+    /// target plaque. The next action seed's raise rewrites it.
+    pub target_plate_cleared: bool,
     /// The battle side-band's state ([`crate::battle_sideband`], retail
     /// `FUN_80056208`): the stage phase cursor `ctx[+0x289]` (the sparring
     /// intro's `0` waiting / `1` caption up / `2` prompt machine live, and
@@ -498,6 +514,11 @@ pub struct BattleState {
     /// the host next to [`Self::ui_strings`]. Empty without a disc read, in
     /// which case a spell id below `0x25` stages no clip and folds at once.
     pub spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs,
+    /// The cast-effect driver's call this frame (`FUN_801DC0A0`, made from
+    /// the magic band's `0x2A..=0x2D` arms) as the battle camera reads it;
+    /// cleared after every camera step
+    /// (`crate::battle_cam_inputs::spell_cam_inputs`).
+    pub spell_cam: Option<legaia_engine_vm::battle_cam_script::SpellCamInputs>,
     /// The next [`crate::world::World::enter_battle`] is the sparring fight and should arm
     /// [`crate::world::BattleState::tutorial`]. Set by
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
@@ -608,6 +629,16 @@ pub struct BattleState {
     /// `World::tick_battle_ambient`; hosts read it through
     /// `World::battle_ambient_base`.
     pub ambient_stored: [u8; 3],
+    /// The backdrop pair's depth-cue weight `+0x78` (`ctx + 0x106C` /
+    /// `+0x1070`, driven in lockstep), `0x1000` = full: ramped by
+    /// `World::tick_battle_ambient` through
+    /// `battle_ground_grid::backdrop_cue_step`; hosts read it through
+    /// `World::battle_backdrop_cue`.
+    pub backdrop_cue: u16,
+    /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
+    /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
+    /// resolved the stage sets it when it enters battle rendering.
+    pub stage_outdoor: bool,
     /// The top-of-screen message line screen elements `0x59` (Seru absorbed)
     /// and `0x65` (magic level increased) carry, from the raise to the
     /// matching unload - see `world::battle::message_banner`.
@@ -693,6 +724,9 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             commit_log_launch: None,
+            action_plaque_glide: None,
+            target_plaque_glide: None,
+            target_plate_cleared: false,
             sideband: Default::default(),
             stage_id: 0,
             arrival: Default::default(),
@@ -709,6 +743,7 @@ impl BattleState {
             tutorial_boxes: std::collections::VecDeque::new(),
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
+            spell_cam: None,
             tutorial_pending: false,
             solo_spar_restore: None,
             active_formation: None,
@@ -719,6 +754,8 @@ impl BattleState {
             return_mode: SceneMode::Field,
             clip_ribbon: None,
             ambient_stored: legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
+            backdrop_cue: 0,
+            stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,
         }

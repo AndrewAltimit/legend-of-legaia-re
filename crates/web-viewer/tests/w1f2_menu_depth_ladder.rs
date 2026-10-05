@@ -362,7 +362,24 @@ fn rung5_sell_quantity(rt: &mut LegaiaRuntime) -> Result<(), String> {
 /// re-run the trial-equip preview `EquipSession::preview_candidate`
 /// (`FUN_801D9C14`). Neither is reachable by browsing the slot list, which is
 /// all the composition ladder does.
+///
+/// ## The Equip row opens on the character picker
+///
+/// Retail's first Equip step is the character picker (sub-screen `0x12`,
+/// `FUN_801D98F0`), so the first Cross picks the character and only the
+/// **second** reaches the slot browse's row 0. This rung once pressed Cross
+/// once, named that press Best Equipment, and never ran the applier - the
+/// screen it drew next was the slot browse, which looks like progress.
+///
+/// Row 0 also needs something to apply: on a cold-start bag every armament
+/// slot already holds its best candidate, so the applier changes nothing and
+/// retail buzzes. The rung seeds the one piece of state that is - a better
+/// sword in the bag, a shop purchase's worth - and scores the confirm on its
+/// positive effect: the slot browse must redraw with the new weapon.
 fn rung3_equip_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    // A sword Vahn can equip that outranks his starting one.
+    const BETTER_SWORD: &str = "0x27";
+    let _ = rt.cheat_give_item(BETTER_SWORD, 1);
     if !rt.play_menu_open_row("Equip") {
         return Err("Equip row did not open its sub-screen".into());
     }
@@ -370,9 +387,14 @@ fn rung3_equip_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
     if text_count(&before) == 0 {
         return Err("Equip screen drew nothing on open".into());
     }
+    // The character picker: Cross hands the pad to the slot browse.
+    rt.play_menu_input(PadButton::Cross.mask());
+    let browse = rt.play_menu_draws_json(W, H);
     // Row 0 = Best Equipment.
     rt.play_menu_input(PadButton::Cross.mask());
-    let _ = rt.play_menu_draws_json(W, H);
+    if rt.play_menu_draws_json(W, H) == browse {
+        return Err("Best Equipment changed nothing with a better sword in the bag".into());
+    }
 
     // Then every armament slot's candidate list: open it, walk it, confirm
     // the hovered row, and answer the Yes/No prompt.
