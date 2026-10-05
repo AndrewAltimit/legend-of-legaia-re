@@ -506,7 +506,11 @@ holds pitch `60`, `TR (0, 1472, 6912)` and `s5_tetsu_battle` (`0x00`) pitch
 in each is (`0x84` and `0xAF`), so an opening capture is taken once the
 engine's own sweep has run as far (`entry_sweep_reached`; the counter rides
 the drive as `opening,<swept>,<counter>`), and a counter of `0xFF` - the sweep
-over - waits for the engine's to end.
+over - waits for the engine's to end. Every other battle capture was taken
+after the sweep, since retail's battle tick opens no prompt under it, while
+the engine's prompt opens at the flip: the seed waits the engine's sweep out
+before it counts the first prompt, the in-flight cast seed dispatches only
+once it is over, and the image child's pad drive holds until then.
 
 A battle state whose RAM does not describe a seedable fight (the context
 pointer not yet resident, counts out of range, an empty cell) is kept with a
