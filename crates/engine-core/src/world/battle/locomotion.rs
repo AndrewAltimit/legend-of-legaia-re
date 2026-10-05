@@ -306,7 +306,7 @@ impl World {
     /// staged clip each answer their own entry - with the actor's `+0x21D`
     /// scale ([`DEFAULT_SPEED_SCALE`] when unset). `None` when no clip is
     /// playing or the playing clip carries no speed.
-    fn battle_playing_root_motion(&self, slot: usize) -> Option<(i16, u8)> {
+    pub(in crate::world) fn battle_playing_root_motion(&self, slot: usize) -> Option<(i16, u8)> {
         let a = self.actors.get(slot)?;
         let speed = a.battle_animation.as_ref()?.root_speed();
         if speed == 0 {

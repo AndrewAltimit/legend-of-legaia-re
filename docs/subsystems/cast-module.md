@@ -2028,10 +2028,14 @@ directors so far, each read off its own tick's disassembly:
   arm 5 prints the spell name and arm 6 replaces it with the actor record's
   attack name (`FUN_8003541C(.., 0x96, ..)`, the move-name label's place),
   which the port shows through `battle_hud::battle_move_name` until the
-  band's `0x37` exit. The walk-in is the creature clip's root motion; the
-  port steps it 32 units a frame along the heading onto the victim, the
-  speed `gimard_burning_attack` pins (670 units in the 20.5 frames its yaw
-  base says the walk has run);
+  band's `0x37` exit. The walk-in is the creature clip's root motion: arm 11
+  turns the creature onto the victim, whose seat is its target `+0x1DD`, and
+  the anim tick's positive-speed term steps it while the range poll fails -
+  the capture's creature runs at `+0x21D = 4`, half rate, about 30 units a
+  frame against the 670 units in 20.5 frames `gimard_burning_attack`'s yaw
+  base implies. The port's directed walk only sets the facing and target
+  and lets that term move the body; a 32-unit step remains for a creature
+  whose clip carries no speed;
 - **PROT 0905 (Vera)** - the whole choreography, including a third kernel the
   other two do not need: arms 8..10 write the camera globals directly every
   pass (pitch `0x8007B790`, TR y / z `0x800840BC` / `0x800840C0`), a drift on

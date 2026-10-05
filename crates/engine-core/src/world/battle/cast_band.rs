@@ -90,9 +90,9 @@ const SUMMON_WALK_STEP: i16 = 12;
 /// (PROT 0903 arm 11): the yaw base has swung `0x5D9 - 0x200 = 985` at
 /// `6 * scalar` (`48`) a display frame - 20.5 frames into the walk - and the
 /// creature stands 670 units on from its arm-3 seat (`z -2276 -> -1606`),
-/// `32.7` a frame. The walk is the clip's root motion, which the engine does
-/// not integrate for the creature, so the speed is carried as the measured
-/// constant.
+/// `32.7` a frame. The walk is the clip's root motion, which the anim tick's
+/// root-motion term integrates for the creature like any body; this measured
+/// constant only walks a creature whose playing clip carries no speed.
 const SUMMON_DIRECTED_WALK_STEP: i32 = 32;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
@@ -1534,10 +1534,26 @@ impl World {
         // `FUN_80019B28(victim, creature) + 0x800` (`0x801F73A4..0x801F73C4`).
         let bearing = vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
         let facing = bearing.wrapping_add(0x800) & 0xFFF;
+        // The walk is the creature clip's own root motion: the anim tick's
+        // positive-speed term steps it along this facing while the range
+        // poll against its target `+0x1DD` (the victim -
+        // `gimard_burning_attack` reads `3`) still fails
+        // (`World::drive_playing_root_motion`). Stepping it here as well
+        // walked it twice - 58 units a tick against retail's ~30 (the
+        // capture's creature `+0x21D = 4` halves the clip's speed). The
+        // measured constant stays for a creature with no root speed to
+        // play (a headless seat with no clip).
+        let root_driven = self
+            .battle_playing_root_motion(usize::from(slot))
+            .is_some_and(|(speed, _)| speed > 0);
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
             a.battle.facing_angle = facing;
+            a.battle.active_target = victim;
             if a.battle.queued_anim != 1 {
                 a.battle.queued_anim = 1;
+            }
+            if root_driven {
+                return false;
             }
             let ms = &mut a.move_state;
             let (dx, dz) = (
