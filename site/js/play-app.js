@@ -1004,7 +1004,19 @@ void main() {
             /* Animated prop: its own instance, uploaded at the rest pose
              * (frame 0) and re-posed per frame from the engine's live cursor. */
             meshId = ANIM_PROP_BASE + i;
-            if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
+            /* A prop carrying light-source rows is shaded at frame 0 and
+             * at its own rotation (`field_mesh_posed_lit`); re-poses move
+             * its positions only. */
+            const litRec = (typeof rt.field_mesh_posed_lit === 'function'
+              && rt.field_mesh_has_lit_rows(slots[i]))
+              ? { meshId, slot: slots[i], anim,
+                  rx: rotsX ? (rotsX[i] & 0xFFF) : 0, ry: rots ? (rots[i] & 0xFFF) : 0,
+                  rz: rotsZ ? (rotsZ[i] & 0xFFF) : 0 }
+              : null;
+            if (litRec) {
+              if (!this._uploadLitEnvMesh(rt, litRec)) continue;
+              this.litEnvMeshes.push(litRec);
+            } else if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
             animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0 };
           } else {
             meshId = ensureLit(slots[i], rots ? rots[i] : 0,
@@ -2152,7 +2164,10 @@ void main() {
     /* Upload one lit env copy: slot `rec.slot` shaded at the draw rotation
      * `(rec.rx, rec.ry, rec.rz)` under the world's live field light. */
     _uploadLitEnvMesh(rt, rec) {
-      try { rt.field_mesh_lit(rec.slot, rec.rx, rec.ry, rec.rz); }
+      try {
+        if (rec.anim) rt.field_mesh_posed_lit(rec.slot, rec.anim, rec.rx, rec.ry, rec.rz);
+        else rt.field_mesh_lit(rec.slot, rec.rx, rec.ry, rec.rz);
+      }
       catch (e) { return false; }
       const pos = rt.field_mesh_positions();
       const idx = rt.field_mesh_indices();

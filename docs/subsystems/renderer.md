@@ -187,8 +187,15 @@ keeps each lit vertex's normal and object colour
 (`legaia_tmd::mesh::LitVertex`), and since the intensity depends on the
 draw's rotation, a lit mesh gets one shaded copy per `(mesh, rotation)` -
 `play-window` keys its copies by the draw matrix, the play page by the record
-angles (`field_mesh_lit`). A live op `4C 8A` re-shades them. Posed props and
-the prologue legs (which keep their ambient restage) are not on this path.
+angles (`field_mesh_lit`), the static site's field-scene viewer the same way
+(`field_scene_mesh_posed_lit`). A live op `4C 8A` re-shades them. A posed
+placed prop (a door, a windmill - most of `town01`'s and `bylon`'s lit rows
+sit on them) shades its frame-0 rest pose with each normal turned by its bone
+(`tmd_to_vram_mesh_posed_rot_lit`) before the draw's rotation folds in;
+`play-window` re-shades a prop off its rest pose every frame, while the two
+browser pages re-pose positions only and keep the frame-0 colours. The
+kingdom overworld packs carry no light-source rows, so the world-overview
+page has nothing to shade; the prologue legs keep their ambient restage.
 
 Field shading is instead **baked into the TMD**. Every primitive carries a
 colour word `[R][G][B][GP0 code]`, the code byte being one of `0x20` (`F3`),

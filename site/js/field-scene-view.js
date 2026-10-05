@@ -234,11 +234,47 @@
       /* `floorBase` is where this list starts inside the engine's
        * concatenated floor-wave offset array (terrain draws, then
        * placements), so a draw skipped below does not shift later rungs. */
+      /* Light-source rows (TMD group flags 0x10..0x17) are shaded by the
+       * field light against the draw's world normal - the play hosts'
+       * `field_lit_mesh` kernel - so a slot carrying them gets one shaded
+       * copy per (slot, pose, rotation). */
+      const LIT_MESH_BASE = 900000;
+      const hasLit = typeof v.field_scene_mesh_posed_lit === 'function';
+      const litSlot = new Map(), litIds = new Map();
+      let litCount = 0;
+      const ensureLit = (slot, anim, rx, ry, rz, inst) => {
+        if (!hasLit) return -1;
+        let has = litSlot.get(slot);
+        if (has === undefined) {
+          has = !!v.field_scene_mesh_has_lit_rows(slot);
+          litSlot.set(slot, has);
+        }
+        if (!has) return -1;
+        /* A posed prop re-poses per instance, so it never shares an upload. */
+        const key = `${slot}:${anim}:${rx & 0xFFF}:${ry & 0xFFF}:${rz & 0xFFF}${anim ? ":" + inst : ""}`;
+        const known = litIds.get(key);
+        if (known !== undefined) return known;
+        try { v.field_scene_mesh_posed_lit(slot, anim, rx & 0xFFF, ry & 0xFFF, rz & 0xFFF); }
+        catch (e) { return -1; }
+        const positions = v.field_scene_mesh_positions();
+        const indices = v.field_scene_mesh_indices();
+        if (!positions.length || !indices.length) return -1;
+        const flat = v.field_scene_mesh_flat_rgba();
+        const id = LIT_MESH_BASE + litCount++;
+        this.renderer.uploadSceneMesh(id, positions, v.field_scene_mesh_uvs(),
+          v.field_scene_mesh_cba_tsb(), indices, flat.length ? flat : null);
+        litIds.set(key, id);
+        return id;
+      };
       const pushDraws = (slots, pos, rots, rotsX, rotsZ, anims, floorBase) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = (anims && hasPosed) ? anims[i] : 0;
           let ms = slots[i];
-          if (anim) {
+          const lit = ensureLit(slots[i], anim, rotsX ? rotsX[i] : 0,
+            rots ? rots[i] : 0, rotsZ ? rotsZ[i] : 0, i);
+          if (lit >= 0) {
+            ms = lit;
+          } else if (anim) {
             ms = ANIM_PROP_BASE + i;
             if (!uploadPosed(ms, slots[i], anim)) continue;
           } else if (!ensureMesh(ms)) {
@@ -267,6 +303,9 @@
             scale: 1.0,
             /* The env-pack slot + clip, for the .glb baker. */
             slot: slots[i], anim,
+            /* The record angles a lit copy was shaded at (null = plain). */
+            litRot: lit >= 0 ? [rotsX ? rotsX[i] & 0xFFF : 0, rots ? rots[i] & 0xFFF : 0,
+              rotsZ ? rotsZ[i] & 0xFFF : 0] : null,
             /* Floor-wave bookkeeping: this draw's index into the offset
              * array and the Y the shipped ladder gave it. */
             floorIdx: floorBase + i, baseY: -pos[i * 3 + 1],
@@ -557,7 +596,8 @@
         let mi = handles.get(d.meshId);
         if (mi === undefined) {
           try {
-            if (d.anim) v.field_scene_mesh_posed(d.slot, d.anim);
+            if (d.litRot) v.field_scene_mesh_posed_lit(d.slot, d.anim || 0, ...d.litRot);
+            else if (d.anim) v.field_scene_mesh_posed(d.slot, d.anim);
             else v.field_scene_mesh(d.meshId);
           } catch (e) { continue; }
           mi = v.scene_export_add_mesh(

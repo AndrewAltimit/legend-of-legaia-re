@@ -282,10 +282,27 @@ pub fn build_hybrid_env_mesh_posed(
     rtmd: &ResolvedTmd,
     offsets: &[([i16; 3], [i16; 3])],
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
+    let (mesh, flat, _) = build_hybrid_env_mesh_posed_lit(rtmd, offsets);
+    (mesh, flat)
+}
+
+/// [`build_hybrid_env_mesh_posed`] plus the textured half's lit-row vertices,
+/// their normals already turned by each bone's pose
+/// ([`legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit`]).
+pub fn build_hybrid_env_mesh_posed_lit(
+    rtmd: &ResolvedTmd,
+    offsets: &[([i16; 3], [i16; 3])],
+) -> (
+    legaia_tmd::mesh::VramMesh,
+    Vec<u8>,
+    Vec<Option<legaia_tmd::mesh::LitVertex>>,
+) {
+    let (mut mesh, lit) =
+        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit(&rtmd.tmd, &rtmd.raw, offsets);
     let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
     legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    (mesh, flat, lit)
 }
 
 /// The **kingdom slot-1 landmark pack** hybrid build - the world-map sibling

@@ -113,12 +113,25 @@ pub fn tmd_to_vram_mesh_posed_rot(
     buf: &[u8],
     bone_offsets: &[([i16; 3], [i16; 3])],
 ) -> super::VramMesh {
+    tmd_to_vram_mesh_posed_rot_lit(tmd, buf, bone_offsets).0
+}
+
+/// [`tmd_to_vram_mesh_posed_rot`] plus each lit-row vertex's
+/// [`super::LitVertex`], its normal turned by the vertex's bone rotation -
+/// the posed counterpart of [`super::tmd_to_vram_mesh_filtered_lit_vertices`],
+/// index-aligned with the mesh's vertices.
+pub fn tmd_to_vram_mesh_posed_rot_lit(
+    tmd: &Tmd,
+    buf: &[u8],
+    bone_offsets: &[([i16; 3], [i16; 3])],
+) -> (super::VramMesh, Vec<Option<super::LitVertex>>) {
     const A2R: f32 = std::f32::consts::TAU / 4096.0;
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
     let mut colors = Vec::new();
     let mut indices = Vec::new();
+    let mut lit = Vec::new();
 
     for (o_idx, o) in tmd.objects.iter().enumerate() {
         let (bone_pos, trig) = match bone_offsets.get(o_idx) {
@@ -152,7 +165,28 @@ pub fn tmd_to_vram_mesh_posed_rot(
                     continue;
                 }
                 let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let lit_normals =
+                    super::vram_filtered::lit_prim_normals(buf, o, g.header.flags, prim);
+                let object_rgb = super::vram_filtered::object_rgb(o);
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
+                    lit.push(lit_normals.as_ref().and_then(|ns| {
+                        ns.get(uv_idx).map(|n| {
+                            let n = n.unwrap_or([0; 3]);
+                            let r = rot_zyx(
+                                [n[0] as f32, n[1] as f32, n[2] as f32],
+                                cx,
+                                sx,
+                                cy,
+                                sy,
+                                cz,
+                                sz,
+                            );
+                            super::LitVertex {
+                                normal: r.map(|c| c.round().clamp(-32768.0, 32767.0) as i16),
+                                object_rgb,
+                            }
+                        })
+                    }));
                     let v = &o.vertices[vidx as usize];
                     let r = rot_zyx([v.x as f32, v.y as f32, v.z as f32], cx, sx, cy, sy, cz, sz);
                     let i = positions.len() as u32;
@@ -184,12 +218,15 @@ pub fn tmd_to_vram_mesh_posed_rot(
     }
 
     let normals = compute_smooth_normals(&positions, &indices);
-    super::VramMesh {
-        positions,
-        uvs,
-        cba_tsb,
-        indices,
-        normals,
-        colors,
-    }
+    (
+        super::VramMesh {
+            positions,
+            uvs,
+            cba_tsb,
+            indices,
+            normals,
+            colors,
+        },
+        lit,
+    )
 }

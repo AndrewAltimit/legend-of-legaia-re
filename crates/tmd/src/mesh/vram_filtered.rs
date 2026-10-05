@@ -98,6 +98,36 @@ fn lit_normal_offsets(flags: u16, n_verts: usize, vertex_offset: usize) -> Optio
     })
 }
 
+/// Each corner's object-local normal for a lit-row prim (`None` outside
+/// flags `0x10..=0x17`; a corner whose index misses the object's normal
+/// table is `None` inside).
+pub(super) fn lit_prim_normals(
+    buf: &[u8],
+    o: &crate::Object,
+    flags: u16,
+    prim: &legaia_prims::Prim,
+) -> Option<Vec<Option<[i16; 3]>>> {
+    let n_verts = prim.vertex_indices_raw.len();
+    let offs = legaia_prims::vertex_offset_bytes(flags)
+        .and_then(|vo| lit_normal_offsets(flags, n_verts, vo))?;
+    Some(
+        offs.iter()
+            .map(|&off| {
+                let at = prim.bytes_offset + off;
+                let raw = u16::from_le_bytes([*buf.get(at)?, *buf.get(at + 1)?]);
+                let n = o.normals.get(usize::from(raw & 0x7FF8) / 8)?;
+                Some([n.x, n.y, n.z])
+            })
+            .collect(),
+    )
+}
+
+/// The object colour word's `[R, G, B]` (object header `+0x18`).
+pub(super) fn object_rgb(o: &crate::Object) -> [u8; 3] {
+    let w = o.header.scale as u32;
+    [w as u8, (w >> 8) as u8, (w >> 16) as u8]
+}
+
 /// [`tmd_to_vram_mesh_filtered_lit`] with each lit-row vertex's
 /// [`LitVertex`] instead of a bare flag - what a host needs to shade the
 /// light-source rows the way retail's `NCCS` / `NCCT` handlers do. `None` for
@@ -140,24 +170,8 @@ where
                     continue;
                 }
                 let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
-                let lit_normals: Option<Vec<Option<[i16; 3]>>> =
-                    legaia_prims::vertex_offset_bytes(g.header.flags)
-                        .and_then(|vo| lit_normal_offsets(g.header.flags, raw_idx.len(), vo))
-                        .map(|offs| {
-                            offs.iter()
-                                .map(|&off| {
-                                    let at = prim.bytes_offset + off;
-                                    let raw =
-                                        u16::from_le_bytes([*buf.get(at)?, *buf.get(at + 1)?]);
-                                    let n = o.normals.get(usize::from(raw & 0x7FF8) / 8)?;
-                                    Some([n.x, n.y, n.z])
-                                })
-                                .collect()
-                        });
-                let object_rgb = {
-                    let w = o.header.scale as u32;
-                    [w as u8, (w >> 8) as u8, (w >> 16) as u8]
-                };
+                let lit_normals = lit_prim_normals(buf, o, g.header.flags, prim);
+                let object_rgb = object_rgb(o);
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;

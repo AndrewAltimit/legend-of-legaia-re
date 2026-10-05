@@ -1724,6 +1724,9 @@ struct FieldLitMeshes {
     terrain: Vec<Option<usize>>,
     /// Parallel to `field_placement_draws`: the variant each draw takes.
     placement: Vec<Option<usize>>,
+    /// Parallel to `field_posed_props`: the variant each prop's frame-0
+    /// rest mesh takes.
+    posed: Vec<Option<usize>>,
     /// The light the variants were shaded under.
     light: Option<legaia_engine_vm::field_light::FieldLight>,
 }

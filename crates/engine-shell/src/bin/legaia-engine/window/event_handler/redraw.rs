@@ -2180,7 +2180,15 @@ impl PlayWindowApp {
                             if place_near_culled(&mvp) {
                                 continue;
                             }
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                            // A lit prop's shaded copy (`LIT_VARIANT_TAG`).
+                            // Field-level borrows, not a `&self` helper.
+                            let tag = super::field_render::LIT_VARIANT_TAG;
+                            let baked = if *mesh_idx & tag != 0 {
+                                self.field_lit.meshes.get(*mesh_idx & !tag)
+                            } else {
+                                self.meshes.get(*mesh_idx)
+                            };
+                            if let Some(mesh) = baked {
                                 if let Some(c) =
                                     object_key(*record).and_then(|k| effect_clip(k, model))
                                 {

@@ -4,6 +4,10 @@ use super::*;
 
 use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
 
+/// Tag on a [`PlayWindowApp::posed_prop_frame_draws`] baked index naming a
+/// shaded light-source variant (`field_lit.meshes`) rather than `meshes`.
+pub(super) const LIT_VARIANT_TAG: usize = 1 << 30;
+
 /// One baked placed-object draw list: the `(mesh, model)` draws, the floor
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
 /// ([`legaia_engine_core::field_env::placed_window_key`]), and each draw's
@@ -205,6 +209,7 @@ impl PlayWindowApp {
         lit.meshes.clear();
         lit.terrain.clear();
         lit.placement.clear();
+        lit.posed.clear();
         // `LEGAIA_DIAG_NO_LIT_ROWS` leaves the lit rows at their neutral
         // texel, for before/after frames.
         if lit.sources.is_empty() || std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_some() {
@@ -258,8 +263,14 @@ impl PlayWindowApp {
             .iter()
             .map(|(m, model)| variant(*m, model))
             .collect();
+        let posed: Vec<Option<usize>> = self
+            .field_posed_props
+            .iter()
+            .map(|p| p.baked.vram.and_then(|i| variant(i, &p.model)))
+            .collect();
         lit.terrain = terrain;
         lit.placement = placement;
+        lit.posed = posed;
     }
 
     /// Re-shade the env draws when the live field light no longer matches
@@ -768,7 +779,7 @@ impl PlayWindowApp {
             legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,
         );
-        for p in &self.field_posed_props {
+        for (pi, p) in self.field_posed_props.iter().enumerate() {
             let record = self
                 .session
                 .host
@@ -804,6 +815,12 @@ impl PlayWindowApp {
                 .unwrap_or_default();
             if key.is_rest() {
                 if let Some(i) = p.baked.vram {
+                    // The copy shaded at this prop's rotation, when its mesh
+                    // carries light-source rows.
+                    let i = match self.field_lit.posed.get(pi).copied().flatten() {
+                        Some(v) => v | LIT_VARIANT_TAG,
+                        None => i,
+                    };
                     baked_v.push((i, model, record));
                 }
                 if let Some(i) = p.baked.color {
@@ -829,7 +846,24 @@ impl PlayWindowApp {
                 continue;
             };
             if p.baked.vram.is_some() {
-                let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
+                let (mut vmesh, posed_lit) =
+                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit(tmd, raw, &offsets);
+                if let Some(light) = self.field_lit.light
+                    && self
+                        .field_lit
+                        .sources
+                        .contains_key(&p.baked.vram.unwrap_or(usize::MAX))
+                    && std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_none()
+                {
+                    let m3: [[f32; 3]; 3] =
+                        std::array::from_fn(|row| std::array::from_fn(|col| p.model.col(col)[row]));
+                    legaia_engine_core::field_lit_mesh::shade_lit_rows(
+                        &mut vmesh.colors,
+                        &posed_lit,
+                        &light,
+                        &legaia_engine_core::field_lit_mesh::rotation_from_matrix(m3),
+                    );
+                }
                 if let Some(v) = self.cpu_vram_base.as_ref() {
                     legaia_engine_render::scene_lighting::tag_emissive_vram_mesh(
                         raw, &mut vmesh, v,

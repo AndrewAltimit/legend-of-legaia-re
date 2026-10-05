@@ -378,7 +378,7 @@ impl PlayWindowApp {
                             None => ([0; 3], [0; 3]),
                         })
                         .collect();
-                    let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                    let (mut vmesh, posed_lit) = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit(
                         &rtmd.tmd, &rtmd.raw, &offsets,
                     );
                     let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
@@ -407,6 +407,15 @@ impl PlayWindowApp {
                             &vmesh.indices,
                         ) {
                             Ok(m) => {
+                                // Light-source rows: each prop's draw takes a
+                                // copy shaded at its own rotation
+                                // (`rebuild_field_lit_meshes`).
+                                if self.session.host.world.scene_color_grade().is_none()
+                                    && posed_lit.len() == vmesh.colors.len()
+                                    && legaia_engine_core::field_lit_mesh::has_lit_rows(&posed_lit)
+                                {
+                                    lit_sources.insert(meshes.len(), (vmesh.clone(), posed_lit));
+                                }
                                 slot.vram = Some(meshes.len());
                                 meshes.push(m);
                                 tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
@@ -838,7 +847,6 @@ impl PlayWindowApp {
         self.field_terrain_cell_keys = terrain_cell_keys;
         self.field_terrain_color_cell_keys = terrain_color_cell_keys;
         self.field_placement_draws = field_placement_draws;
-        self.rebuild_field_lit_meshes();
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
         self.field_placement_window_keys = placement_window_keys;
@@ -865,6 +873,7 @@ impl PlayWindowApp {
         // its own clip cursor) and their own live animation state.
         self.field_posed_tmds = posed_tmds;
         self.field_posed_props = posed_props;
+        self.rebuild_field_lit_meshes();
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.world_map_terrain_color_draws = world_map_terrain_color_draws;
         self.world_map_terrain_records = world_map_terrain_records;

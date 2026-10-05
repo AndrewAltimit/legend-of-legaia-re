@@ -507,7 +507,23 @@ impl LegaiaRuntime {
         rot_y: u32,
         rot_z: u32,
     ) -> Result<bool, JsValue> {
+        self.field_mesh_posed_lit(slot, 0, rot_x, rot_y, rot_z)
+    }
+
+    /// [`Self::field_mesh_lit`] for a placed prop posed at frame 0 of scene
+    /// ANM record `anim_id - 1` ([`Self::field_mesh_posed`]): the lit rows'
+    /// normals turn with each bone before the draw's rotation folds in.
+    /// `anim_id == 0` is the unposed build.
+    pub fn field_mesh_posed_lit(
+        &mut self,
+        slot: u32,
+        anim_id: u32,
+        rot_x: u32,
+        rot_y: u32,
+        rot_z: u32,
+    ) -> Result<bool, JsValue> {
         let s = slot as usize;
+        let anim = anim_id.min(u8::MAX as u32) as u8;
         let light = self
             .scene_host
             .as_ref()
@@ -520,6 +536,11 @@ impl LegaiaRuntime {
             .env_tmds
             .get(s)
             .ok_or_else(|| JsValue::from_str(&format!("field_mesh_lit: slot {s} out of range")))?;
+        let offsets: Option<Vec<([i16; 3], [i16; 3])>> = if anim == 0 {
+            None
+        } else {
+            self.frame0_bone_offsets(anim, res_idx)
+        };
         let (mesh, flat, lit) = {
             let res = self
                 .res()
@@ -528,8 +549,14 @@ impl LegaiaRuntime {
                 .tmds
                 .get(res_idx)
                 .ok_or_else(|| JsValue::from_str("field_mesh_lit: tmd missing"))?;
-            let (mut mesh, mut flat, lit) =
-                legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram);
+            let (mut mesh, mut flat, lit) = match &offsets {
+                Some(o) => {
+                    legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
+                }
+                None => {
+                    legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram)
+                }
+            };
             if legaia_engine_core::field_lit_mesh::has_lit_rows(&lit) {
                 let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
                     rot_x as u16,
