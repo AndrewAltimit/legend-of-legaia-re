@@ -47,7 +47,7 @@ pub struct World {
     pub player_actor_slot: Option<u8>,
     /// Player field-locomotion state: run / slow / precise-movement gates, step deltas, ledge hop, vertical settle, wall probes and the per-tick movement cues.
     pub locomotion: FieldLocomotion,
-    /// Field NPC state: positions, headings, routes, motions, ambient anims, dialog bindings and the solid / animate toggles.
+    /// Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
     pub npcs: FieldNpcState,
     /// Engine behaviour toggles: the live gameplay loop, VM-driven dialogue, damage finish, monster targeting, select-attack option, flashing reduction and the entry pulse gate.
     pub toggles: WorldToggles,

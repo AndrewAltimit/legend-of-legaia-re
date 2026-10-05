@@ -1,11 +1,11 @@
-//! Field NPC state: positions, headings, routes, motions, ambient anims, dialog bindings and the solid / animate toggles.
+//! Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
 //!
 //! Split out of the composite [`World`] so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
 use super::*;
 
-/// Field NPC state: positions, headings, routes, motions, ambient anims, dialog bindings and the solid / animate toggles.
+/// Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
 pub struct FieldNpcState {
     /// When set, pad locomotion also blocks a direction when any of retail's
     /// **actor-collision probes** (`FIELD_ACTOR_PROBES`, the `DAT_801f21b4`
@@ -110,16 +110,8 @@ pub struct FieldNpcState {
     ///
     /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
     pub facing_save: Option<(u8, i16)>,
-    /// Per-NPC autonomous walk routes, keyed by the same placement `slot` as
-    /// [`crate::world::FieldNpcState::dialog`]: the ordered local waypoints the placement's
-    /// own pre-text script walks the actor through (its `0x4C 0x51` NPC
-    /// move-to-tile ops - [`crate::man_field_scripts::placement_motion_route`]).
-    /// Driven through the motion VM by `Self::tick_field_npc_motions` when
-    /// [`crate::world::FieldNpcState::animate`] is set. `BTreeMap` so the per-tick walk
-    /// order is deterministic (the replay oracle requires bit-stable traces).
-    pub routes: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
     /// Per-NPC glide speed, keyed by the same placement `slot` as
-    /// [`crate::world::FieldNpcState::routes`]: the per-frame world-unit step
+    /// [`crate::world::FieldNpcState::dialog`]: the per-frame world-unit step
     /// `Self::start_field_npc_motion` writes into a leg's motion-VM
     /// [`legaia_engine_vm::motion_vm::MotionState::speed`], decoded from the
     /// placement's real walk-kernel operands
@@ -168,8 +160,9 @@ pub struct FieldNpcState {
     /// tick by [`crate::world::World::tick_field_npc_ambient`]. Without it a standing town
     /// NPC holds one heading forever where retail NPCs slowly look around.
     pub ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
-    /// Drive autonomous NPC patrol routes ([`crate::world::FieldNpcState::routes`]) through
-    /// the motion VM. The bare `World` default is off (NPCs rest at their
+    /// Publish the ambient tail-section-1 streams' walk steps
+    /// ([`crate::world::World::tick_field_npc_ambient`]) - the villagers'
+    /// authored wandering. The bare `World` default is off (NPCs rest at their
     /// placement anchors, as the engine-core locomotion oracles expect); both
     /// play hosts and the headless `BootSession` turn it on
     /// (`play-window --no-live-npcs` is the opt-out). Script-started motion
@@ -258,7 +251,6 @@ impl FieldNpcState {
             headings: std::collections::HashMap::new(),
             tilts: std::collections::HashMap::new(),
             facing_save: None,
-            routes: std::collections::BTreeMap::new(),
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),

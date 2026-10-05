@@ -1691,7 +1691,6 @@ impl World {
                             if host.world.start_field_npc_motion(s, tx, tz) {
                                 if let Some(m) = host.world.npcs.motions.get_mut(&s) {
                                     m.state.speed = speed;
-                                    m.route_cursor = None;
                                 }
                                 // The record runs on past an NPC walk (`li
                                 // s7,4` in the delay slot at `0x801DF030`);
@@ -2676,12 +2675,7 @@ impl World {
     ///
     /// After stepping, each channel whose context position changed writes
     /// through to [`crate::world::FieldNpcState::positions`] so the field render / probes
-    /// follow the scripted move. On free-roam the engine's waypoint patroller
-    /// ([`Self::tick_field_npc_motions`]) owns any placement carrying a route,
-    /// so a channel's move (and the heading derived from it) is only surfaced
-    /// for placements the patroller does NOT drive - the two never fight over a
-    /// slot's position. During a cutscene the patroller stands down, so the
-    /// channel owns every slot's write-through exactly as before.
+    /// follow the scripted move.
     /// The render scale a placement channel's actor draws at - retail's
     /// `actor[+0x72]` fixed-point scalar (`0x1000` = 1.0), seeded by the
     /// allocator (`actor_free`) and rewritten by the spawn prologue's
@@ -2765,10 +2759,8 @@ impl World {
     /// (`FUN_801D6704` passes `a0 = loader-mask & 4` to `FUN_8003AEB0`, which
     /// skips the partition-1 spawn loop at `0x8003B8A0` when it is zero) runs
     /// none of it. Position writes are
-    /// surfaced for every repositioned slot, and a slot whose scripted
-    /// position parks it or leaves its decoded patrol route's locality drops
-    /// that route (the route was derived by a flag-blind linear walk; the
-    /// executed branch supersedes it). Headings are NOT derived from these
+    /// surfaced for every repositioned slot, and a slot the prologue parks
+    /// drops its glide pace and any in-flight leg. Headings are NOT derived from these
     /// teleports - [`Self::seed_field_npc_facings`] carries the prologue's
     /// facing ops.
     ///
@@ -2949,11 +2941,9 @@ impl World {
         }
         // Write the spawn prologue's moves through to the field NPC
         // render/probe state, unconditionally: the executed branch is the
-        // story truth for the slot's initial position, and a decoded patrol
-        // route it contradicts (a park, or a relocation beyond the route's
-        // locality) is a branch the flag-blind route decode kept wrongly -
-        // drop it so the patroller can neither resurrect the ghost nor pace a
-        // patrol around the wrong anchor.
+        // story truth for the slot's initial position. A park also drops the
+        // slot's glide pace and any in-flight leg - a despawned actor has
+        // nothing left to walk.
         for (c, pre) in channels.iter().zip(pre_pos) {
             if c.object_bind {
                 // Flat-record-keyed context; the NPC surfaces are
@@ -2967,15 +2957,7 @@ impl World {
             let slot = c.placement_index as u8;
             let (nx, nz) = (nx as i16, nz as i16);
             let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
-            let parked = (nx, nz) == (hide, hide);
-            let outside_route = self.npcs.routes.get(&slot).is_some_and(|route| {
-                route.iter().all(|&(wx, wz)| {
-                    let (dx, dz) = ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
-                    dx.max(dz) > crate::man_field_scripts::NPC_ROUTE_LOCALITY
-                })
-            });
-            if parked || outside_route {
-                self.npcs.routes.remove(&slot);
+            if (nx, nz) == (hide, hide) {
                 self.npcs.glide_speeds.remove(&slot);
                 self.npcs.motions.remove(&slot);
             }

@@ -1642,8 +1642,8 @@ impl World {
                 // REF: FUN_801d5d60, FUN_801e3e00
                 self.tick_field_script_arcs();
                 self.tick_field_attached_lights();
-                // Field-NPC walk legs (autonomous patrol routes + scripted
-                // interaction-prologue runs) - one motion-VM step per RETAIL
+                // Field-NPC walk legs (scripted interaction-prologue runs
+                // and cutscene walks) - one motion-VM step per RETAIL
                 // frame, writing back into `field_npc_positions` so collision /
                 // interact probes follow the live NPC. The step decode takes
                 // `dt = _DAT_1f800393` at 1, so one call credits one retail

@@ -1027,7 +1027,7 @@ window drains it every frame. No tier looks at what a host *fails to
 consume*.
 
 **Opposite defaults on one knob.** The three-probe wall footprint, solid NPC
-bodies and motion-VM patrol routes were on unconditionally in the browser and
+bodies and live NPC motion were on unconditionally in the browser and
 off by default natively (`--edge-collision` / `--solid-npcs` / `--live-npcs`
 opt-ins). The same engine, the same scene, two different games in a town.
 Native now defaults them on with `--no-*` opt-outs; a paired-defaults row

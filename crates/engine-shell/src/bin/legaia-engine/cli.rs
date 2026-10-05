@@ -967,10 +967,9 @@ pub(crate) enum Cmd {
         /// exempts them - so this flag only gates the NPC arm.
         #[arg(long, default_value_t = false)]
         no_solid_npcs: bool,
-        /// Park field NPCs at their placement anchors. By default each
-        /// placement's authored walk route (its script's `0x4C 0x51`
-        /// move-to-tile ops) runs through the motion VM so villagers patrol
-        /// like retail, and a moving NPC's collision box follows its live
+        /// Hold field NPCs on their seats. By default each villager's
+        /// ambient MAN tail-section-1 stream publishes its wander like
+        /// retail, and a moving NPC's collision box follows its live
         /// position. An interaction prologue's own walk runs either way.
         #[arg(long, default_value_t = false)]
         no_live_npcs: bool,

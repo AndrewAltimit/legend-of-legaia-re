@@ -531,7 +531,7 @@ pub(super) fn cmd_play_window_with_record(
     session.host.world.locomotion.follow_terrain_height = terrain_y;
     // Retail's three-probe leading-edge wall footprint (the `DAT_801f2214`
     // standoff), solid NPCs (the `DAT_801f21b4` actor probes) and the
-    // MAN-authored NPC patrol routes through the motion VM are all retail
+    // villagers' ambient tail-section-1 wander are all retail
     // behaviour and default ON - the same three the browser play page sets
     // unconditionally. `--no-edge-collision` / `--no-solid-npcs` /
     // `--no-live-npcs` clear them (candidate-centre test, walk-through NPCs,

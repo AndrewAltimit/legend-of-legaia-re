@@ -169,7 +169,7 @@ wall bits) is zeroed at field entry and painted by the field-VM `0x4C`
 outer-nibble-7 op as the prescript runs.
 
 **NPCs and props.** The same tick walks field NPCs through the motion VM
-(`tick_field_npc_motions`: MAN-authored `0x4C 0x51` patrol routes +
+(`tick_field_npc_motions`: cutscene walk legs +
 interaction-prologue runs, live positions feeding the collision /
 interact probes), and runs the prop walk-touch dispatch
 (`check_field_walk_touch`: door-warp / player-teleport placements post on

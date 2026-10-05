@@ -34,8 +34,7 @@ impl World {
         self.carriers.pending_engage = None;
         self.carriers.menu = None;
         // NPC motion + walk-touch state is placement-keyed too: never let a
-        // previous scene's routes / in-flight legs / door events leak.
-        self.npcs.routes.clear();
+        // previous scene's in-flight legs / door events leak.
         self.npcs.glide_speeds.clear();
         self.npcs.default_moves.clear();
         self.npcs.motions.clear();
@@ -214,44 +213,22 @@ impl World {
                 self.npcs
                     .positions
                     .insert(slot, (placement.world_x, placement.world_z));
-                // The placement's autonomous walk route (its own pre-text
-                // `0x4C 0x51` move-to-tile ops), driven through the motion VM
-                // when `animate_field_npcs` is set.
-                //
-                // Retail `4C 51` is an instant seat, and a record often
-                // carries one seat per story-flag branch - two targets within
-                // a tile of each other are alternative seats, not a patrol.
-                // Looping them produces a frantic one-tile shuttle (town01
-                // slot 34 ping-pongs 128 units at glide pace 16), so a
-                // multi-waypoint route must span more than one tile on some
-                // axis to count as a walk.
-                let route =
-                    crate::man_field_scripts::placement_motion_route(man_file, man, &placement);
-                let route = if route.len() > 1 {
-                    let (xs, zs): (Vec<i16>, Vec<i16>) = route.iter().copied().unzip();
-                    let span_x = xs.iter().max().unwrap() - xs.iter().min().unwrap();
-                    let span_z = zs.iter().max().unwrap() - zs.iter().min().unwrap();
-                    if span_x.max(span_z) > 0x80 {
-                        route
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    route
-                };
-                if !route.is_empty() {
-                    self.npcs.routes.insert(slot, route);
-                }
+                // No autonomous route is installed from the placement's own
+                // `4C 51` ops: retail's `4C 51` is an instant seat, one per
+                // story-flag branch, and the entry pre-run already applied
+                // the branch the flags select. Looping those seats as a
+                // patrol walked town01's gate guard between his story
+                // stations; retail holds him still (every catalogued town01
+                // field state has him on his seat).
                 // Faithful per-leg glide speed from the placement's real
                 // walk-kernel operands: the bound tail-section-1
                 // wander/step ops (`FUN_80038158` `0x80 >> (2+bits)`)
                 // first, then the record's own field-VM yield ops
                 // (`FUN_8003774C` `numerator / (4 << bits)`), then the
                 // facing-nibble heuristic as a last resort; absent = the
-                // leg falls back to `FIELD_NPC_MOTION_SPEED`. Installed
-                // independently of the route: scripted legs (interaction
-                // prologue `4C 51` runs, cutscene walk pokes) look the pace
-                // up too, and they run for route-less placements.
+                // leg falls back to `FIELD_NPC_MOTION_SPEED`. Scripted legs
+                // (interaction-prologue `4C 51` runs, cutscene walk pokes)
+                // look the pace up.
                 if let Some(speed) =
                     crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
                 {

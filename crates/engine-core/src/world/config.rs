@@ -389,12 +389,6 @@ pub struct FieldNpcMotion {
     pub state: vm::motion_vm::MotionState,
     /// World-space walk target of the current leg.
     pub target: (i16, i16),
-    /// For an autonomous route leg: the index into
-    /// [`crate::world::FieldNpcState::routes`] this leg walks toward (the next leg starts
-    /// at `cursor + 1`, wrapping - a patrol loop). `None` for a
-    /// script-started leg (interaction-prologue `0x4C 0x51` or actor-VM
-    /// `start_motion`), which ends where it lands.
-    pub route_cursor: Option<usize>,
 }
 
 /// One NPC's **ambient facing** channel - the idle turn-in-place behaviour of
