@@ -2758,13 +2758,17 @@ impl RetailBattle {
                 style: Some(self.cam_style),
                 steer: ActionSteer {
                     // A party killing blow on its victim, or a monster
-                    // cast on the party seat it aimed at.
+                    // action (a cast or a strike) on the party seat it
+                    // aimed at: the monster's pick is a draw, and a run on
+                    // another member frames another approach.
                     target: ((seat < 3
                         && self.target_code >= 3
                         && self
                             .action_victims()
                             .contains(&usize::from(self.target_code - 3)))
-                        || (seat >= 3 && self.queued_category == 2 && self.target_code < 3))
+                        || (seat >= 3
+                            && matches!(self.queued_category, 2 | 3)
+                            && self.target_code < 3))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
                     message: self.timed_message,
