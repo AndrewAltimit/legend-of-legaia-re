@@ -2003,6 +2003,21 @@ directors so far, each read off its own tick's disassembly:
   0930 dispatch through a jump table at the image head (`sltiu 0x20`) rather
   than a compare chain.
 
+- **The summon creatures PROT 0916, 0921, 0929, 0932, 0933, 0934** (Aluru,
+  Iota, Mule, Meta, Terra, Ozma) - camera-only in the same way, and they reach
+  further in: past the stream request and the CD poll each covers the arms
+  that frame the arrived creature, gated on the module's own countdown.
+  Terra and Meta drain theirs by the frame delta alone, Iota by
+  `scalar * delta` while pulling TR z in by the same amount, and Aluru moves
+  the band timer `ctx[+0x6D8]` itself (`scalar * 20`, drained under `bgez`).
+  Meta's arm 1 is a swing written straight into the globals (pitch
+  `-4 * delta`, TR y `+12 * delta`, TR z `-12 * delta`) that passes once its
+  `0xC0` word falls below `0x41`. Two shortcuts are folded into the next
+  arm's gate: Aluru's arm 1 and Ozma's arm 2 skip the band-timer wait when the
+  timer is already spent, which the port reaches one tick later. Mule's arms 1
+  and 2 also drift `0x80089120` and Meta's arm 4 writes five halfwords of the
+  camera block at `0x80083FF8`; neither is a global a module nudge carries.
+
 Two gates the engine reads as already open: the creature stream load
 (`FUN_8003EAE4` / the `0x8007BDB0` token) and the CD poll `FUN_8003F2B8(1)`.
 The engine has the record resident, so a module that spends its opening

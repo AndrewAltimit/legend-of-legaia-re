@@ -444,6 +444,12 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         928 => Some(ModuleProfile::camera_only(palma_direct)),
         930 => Some(ModuleProfile::camera_only(horn_direct)),
         931 => Some(ModuleProfile::camera_only(jedo_direct)),
+        916 => Some(ModuleProfile::camera_only(aluru_direct)),
+        921 => Some(ModuleProfile::camera_only(iota_direct)),
+        929 => Some(ModuleProfile::camera_only(mule_direct)),
+        932 => Some(ModuleProfile::camera_only(meta_direct)),
+        933 => Some(ModuleProfile::camera_only(terra_direct)),
+        934 => Some(ModuleProfile::camera_only(ozma_direct)),
         913 => Some(ModuleProfile::camera_beside(nova_direct)),
         _ => None,
     }
