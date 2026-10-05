@@ -226,6 +226,8 @@ pub const SOFT_RESET_RECORDS_X: i32 = 0x20;
 ///
 /// The phase machine is `legaia_engine_vm::world_map_panel_actors::soft_reset_tick`
 /// (`FUN_801EDF00`); this is the per-screen state it runs over.
+// REF: FUN_801EDF00 (soft_reset_tick), FUN_801ED710 (the records screen),
+// FUN_801D58F0 (the white fade), FUN_80017714 (the executable reload)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SoftResetScreen {
     /// The actor's `+0x54` phase.
