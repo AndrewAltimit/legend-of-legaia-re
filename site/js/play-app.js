@@ -2623,14 +2623,22 @@ void main() {
       if (this.player) {
         const posed = rt.player_mesh_positions();
         if (posed.length) this.renderer.updateSceneMeshPositions(PLAYER_MESH_ID, posed);
-        draws.push({
+        const playerDraw = {
           meshId: PLAYER_MESH_ID,
           x: pt[0], y: -pt[1], z: pt[2],
           rotY: -(pt[3] + 2048) * A2R,
           scale: 1.0,
           /* Actor draw: the occlusion fade must never dissolve the player. */
           noOccl: true,
-        });
+        };
+        /* The player's op `4C 81` draw tint (a cutscene's fade to black, a
+         * red flash) as a constant per-draw cue - the native window's
+         * `player_tint_cue`. Empty while untinted. */
+        const ptint = typeof rt.play_player_tint === 'function' ? rt.play_player_tint() : null;
+        if (ptint && ptint.length === 4 && ptint[3] > 0) {
+          playerDraw.cue = { far: [ptint[0], ptint[1], ptint[2]], nearZ: -1, farZ: 0, maxIr0: ptint[3] };
+        }
+        draws.push(playerDraw);
       }
 
       /* Animated environment props: advance each to the engine's live prop-bank

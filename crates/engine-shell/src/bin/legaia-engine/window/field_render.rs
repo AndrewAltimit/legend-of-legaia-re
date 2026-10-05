@@ -273,6 +273,7 @@ impl PlayWindowApp {
             false,
             binds.as_ref(),
             Some((posed, textured)),
+            None,
         )
     }
 
@@ -841,7 +842,7 @@ impl PlayWindowApp {
         }
         // Field frame: raw retail-convention transforms (see above).
         let (draws, floors, _, cells, _) =
-            self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None);
+            self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None, None);
         (draws, floors, cells)
     }
 
@@ -855,9 +856,9 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> (Vec<(usize, Mat4)>, usize) {
+    ) -> (Vec<(usize, Mat4)>, usize, Vec<Option<usize>>) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return (Vec::new(), 0);
+            return (Vec::new(), 0, Vec::new());
         };
         // Free-roam walk view: read the *walk* `.MAP` (`Scene::walk_field_map_
         // index`, the `block_start - 2` entry the runtime resolves through
@@ -888,10 +889,14 @@ impl PlayWindowApp {
         // Story-hidden landmarks: a placed record whose bind prologue parked
         // its actor at the hide box draws nothing (map01's sea dome south of
         // Rim Elm, the river bridge's second stamp).
-        if let Ok(Some(binds)) = scene.field_object_binds(&self.session.host.index) {
+        let binds = scene
+            .field_object_binds(&self.session.host.index)
+            .ok()
+            .flatten();
+        if let Some(binds) = binds.as_ref() {
             legaia_engine_core::field_env::retain_visible_landmark_placements(
                 &mut landmarks,
-                &binds,
+                binds,
                 &self.session.host.world.hidden_object_records(),
             );
         }
@@ -902,20 +907,32 @@ impl PlayWindowApp {
         // World-map frame: raw retail-convention transforms - both world-map
         // cameras compose FIELD_WORLD_FLIP (the walk view through the pinned
         // retail composition), so the draws are unflipped like the field's.
-        let mut draws = if landmarks.is_empty() {
-            Vec::new()
+        // The landmarks keep their bind record (a kingdom MAN's object
+        // records tint them - map02's walls around Jeremi draw half-dark), the
+        // decorations have none.
+        let (mut draws, mut records) = if landmarks.is_empty() {
+            (Vec::new(), Vec::new())
         } else {
-            self.resolve_placement_draws(res, tmd_src_index, &landmarks, false, None, None)
-                .0
+            let l = self.resolve_placement_draws(
+                res,
+                tmd_src_index,
+                &landmarks,
+                false,
+                None,
+                None,
+                binds.as_ref(),
+            );
+            (l.0, l.4)
         };
         let deco_start = draws.len();
         if !deco.is_empty() {
             draws.extend(
-                self.resolve_placement_draws(res, tmd_src_index, &deco, false, None, None)
+                self.resolve_placement_draws(res, tmd_src_index, &deco, false, None, None, None)
                     .0,
             );
         }
-        (draws, deco_start)
+        records.resize(draws.len(), None);
+        (draws, deco_start, records)
     }
 
     /// Resolve the world-map water/CLUT-cell animation for the active scene.
@@ -1068,6 +1085,10 @@ impl PlayWindowApp {
     /// are that clip's bones and are nonsense without its transform. The `bool`
     /// selects which uploaded-mesh list the caller is bridging (textured vs
     /// colour), since a posed prop has one slot in each.
+    ///
+    /// `record_binds` names each draw's bind record (the list's last member)
+    /// without applying any of the `binds` gates - the overworld landmarks,
+    /// which draw unposed and unscaled but whose actors a script can tint.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_placement_draws(
         &self,
@@ -1079,6 +1100,9 @@ impl PlayWindowApp {
             &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
         >,
         posed: Option<(&PosedPlacementMeshes, bool)>,
+        record_binds: Option<
+            &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+        >,
     ) -> PlacedDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Default::default();
@@ -1186,7 +1210,8 @@ impl PlayWindowApp {
         // Parallel to `draws`: the bind record whose actor a script can move
         // (`World::object_draw_displacements`, folded in per frame).
         let mut records = Vec::new();
-        let bind_records = legaia_engine_core::field_env::placed_bind_records(&env_draws, binds);
+        let bind_records =
+            legaia_engine_core::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
         for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on

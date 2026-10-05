@@ -923,6 +923,11 @@ struct PlayWindowApp {
     /// a world-map frame that draws only `world_map_terrain_draws` shows
     /// roofless huts.
     world_map_terrain_color_draws: Vec<(usize, Mat4)>,
+    /// Parallel to `world_map_terrain_draws` / `_color_draws`: each
+    /// landmark draw's bind record (`None` for a decoration), the key of
+    /// its op-`4C 81` draw tint (`World::object_draw_tints`).
+    world_map_terrain_records: Vec<Option<usize>>,
+    world_map_terrain_color_records: Vec<Option<usize>>,
     /// Where the decoration layer starts in `world_map_terrain_draws` /
     /// `world_map_terrain_color_draws` (landmarks first): the draws from here
     /// on carry retail's per-object decoration depth cue

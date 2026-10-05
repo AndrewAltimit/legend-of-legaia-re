@@ -120,6 +120,10 @@ pub struct FieldVmState {
     /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
     /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
     pub object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
+    /// Op-`4C 81` draw tints on the player, field NPCs and objects another
+    /// script tinted ([`crate::world::ActorTint`]), stepped by the per-actor
+    /// tick. Scene-scoped: retail re-spawns every actor on a scene load.
+    pub actor_tints: std::collections::HashMap<crate::world::ActorTintKey, crate::world::ActorTint>,
     /// Pending field-VM op-`0x44` SPAWN_RECORD requests: the GLOBAL record
     /// indices whose partition-2 records should spawn as new contexts.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
@@ -180,6 +184,7 @@ impl FieldVmState {
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
             object_slot_ramps: Vec::new(),
+            actor_tints: std::collections::HashMap::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,
             slot_table: [0; 256],

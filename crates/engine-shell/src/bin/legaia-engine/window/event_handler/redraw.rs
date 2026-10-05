@@ -1050,7 +1050,12 @@ impl PlayWindowApp {
             // boot UI clear them so the layer never lights the wrong
             // coordinate space. Inert (zero staged count, no shadow pass)
             // while dynamic lighting or the shadow sub-toggle is off.
+            // A menu-overlay screen that owns the frame (a shop, the casino
+            // prize counter) draws no field, so it stages no field light
+            // either: the halos are screen sprites and would otherwise glow
+            // through the black behind the windows.
             if !self.boot_ui.is_active()
+                && !self.menu_runtime.covers_field()
                 && !in_world_map
                 && self.session.host.world.mode == SceneMode::Field
                 && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
@@ -1545,6 +1550,25 @@ impl PlayWindowApp {
             // menu overlay, so the GameOver hold keeps drawing the
             // (frozen, untick'd) battle scene underneath.
             let game_over_hold = matches!(self.boot_ui, BootUiState::GameOver(_));
+            // An op-`4C 81` draw tint (`+0x74` colour / `+0x78` blend) as the
+            // constant per-draw cue retail's actor draw stages (far colour +
+            // `IR0`, `FUN_8001ADA4` -> `FUN_80043390`). One shape for placed
+            // objects, NPCs and the player.
+            fn tint_draw_cue((colour, blend): (u32, u16)) -> Option<legaia_engine_render::DrawCue> {
+                let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                Some(legaia_engine_render::DrawCue {
+                    far,
+                    near_z: -1.0,
+                    far_z: 0.0,
+                    max_ir0,
+                })
+            }
+            let player_tint_cue = self
+                .session
+                .host
+                .world
+                .player_draw_tint()
+                .and_then(tint_draw_cue);
             let mut draws: Vec<SceneDraw<'_>> = Vec::new();
             // Untextured (F*/G*) field props, drawn on the colour
             // pipeline alongside the textured `draws`.
@@ -1682,13 +1706,26 @@ impl PlayWindowApp {
                     })
                 };
                 let (deco_start, color_deco_start) = self.world_map_deco_start;
+                // A landmark whose actor carries an op-`4C 81` draw tint
+                // (map02's Jeremi walls, map03's bridge spans) draws with it,
+                // as the field's placed objects do; the browser page reads the
+                // same `World::object_draw_tints` (`field_placement_tints`).
+                let object_tints = self.session.host.world.object_draw_tints();
+                let landmark_cue = |record: Option<&Option<usize>>| {
+                    let &(colour, blend) = object_tints.get(&(*record?)?)?;
+                    tint_draw_cue((colour, blend))
+                };
                 for (i, (mesh_idx, model)) in self.world_map_terrain_draws.iter().enumerate() {
                     if let Some(mesh) = self.meshes.get(*mesh_idx) {
                         let mvp = cam * *model;
                         draws.push(SceneDraw {
                             mesh,
                             mvp,
-                            cue: if i >= deco_start { deco_cue(mvp) } else { None },
+                            cue: if i >= deco_start {
+                                deco_cue(mvp)
+                            } else {
+                                landmark_cue(self.world_map_terrain_records.get(i))
+                            },
                         });
                     }
                 }
@@ -1705,7 +1742,7 @@ impl PlayWindowApp {
                             cue: if i >= color_deco_start {
                                 deco_cue(mvp)
                             } else {
-                                None
+                                landmark_cue(self.world_map_terrain_color_records.get(i))
                             },
                         });
                     }
@@ -1752,7 +1789,7 @@ impl PlayWindowApp {
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * self.actor_model(slot),
-                                cue: None,
+                                cue: player_tint_cue,
                             });
                         }
                         // The untextured colour half (pants / sleeves), same
@@ -1765,7 +1802,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh: cmesh,
                                 mvp: cam * self.actor_model(cslot),
-                                cue: None,
+                                cue: player_tint_cue,
                             });
                         }
                     }
@@ -2000,13 +2037,7 @@ impl PlayWindowApp {
                     let object_tints = self.session.host.world.object_draw_tints();
                     let object_cue = |record: Option<usize>| {
                         let &(colour, blend) = object_tints.get(&record?)?;
-                        let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
-                        Some(legaia_engine_render::DrawCue {
-                            far,
-                            near_z: -1.0,
-                            far_z: 0.0,
-                            max_ir0,
-                        })
+                        tint_draw_cue((colour, blend))
                     };
                     let place_near_culled = |mvp: &Mat4| {
                         !self.field_debug_camera
@@ -2167,7 +2198,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * self.actor_model(slot),
-                            cue: None,
+                            cue: player_tint_cue,
                         });
                     }
                     // Field NPCs + animated props at their live
@@ -2243,6 +2274,13 @@ impl PlayWindowApp {
                             },
                         };
                         let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
+                        // The actor's op-`4C 81` draw tint (`+0x74` /
+                        // `+0x78`), staged as a constant per-draw cue on
+                        // both mesh halves - the browser page reads the same
+                        // `World::field_npc_draw_tint` (`play_npc_tints`).
+                        let cue = w
+                            .field_npc_draw_tint(d.slot as usize)
+                            .and_then(tint_draw_cue);
                         // A clip-less NPC's op-`0x4B` morph re-stages
                         // its static mesh (`npc_morph_static`).
                         let posed = npc_posed
@@ -2253,14 +2291,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * model,
-                                cue: None,
+                                cue,
                             }),
                             (None, Some(mi)) => {
                                 if let Some(mesh) = self.meshes.get(mi) {
                                     draws.push(SceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                        cue: None,
+                                        cue,
                                     });
                                 }
                             }
@@ -2270,14 +2308,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp: cam * model,
-                                cue: None,
+                                cue,
                             }),
                             (None, Some(ci)) => {
                                 if let Some(mesh) = self.color_meshes.get(ci) {
                                     color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                        cue: None,
+                                        cue,
                                     });
                                 }
                             }
@@ -2483,7 +2521,15 @@ impl PlayWindowApp {
                         // the two hosts' cursors drifted apart the moment
                         // either host's redraw rate left its tick rate.
                         let model = self.actor_model(i);
-                        let mut cue = None;
+                        // Outside battle the player's op-`4C 81` draw tint
+                        // rides the same per-draw cue seam.
+                        let mut cue = if !in_battle
+                            && self.session.host.world.player_actor_slot == Some(i as u8)
+                        {
+                            player_tint_cue
+                        } else {
+                            None
+                        };
                         if in_battle {
                             use legaia_engine_vm::battle_action as ba;
                             let b = &actor.battle;

@@ -1427,6 +1427,8 @@ pub(super) fn cmd_play_window_with_record(
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_terrain_color_draws: Vec::new(),
+        world_map_terrain_records: Vec::new(),
+        world_map_terrain_color_records: Vec::new(),
         world_map_deco_start: (0, 0),
         ground_heightfield: None,
         ground_src: None,

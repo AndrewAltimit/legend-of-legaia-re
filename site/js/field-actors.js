@@ -99,6 +99,7 @@
       pose_dims: f('pose_dims'),
       transforms: f('transforms'),
       tilts: f('tilts'),
+      tints: f('tints'),
       clip_states: f('clip_states'),
       live_bones: f('live_bones'),
       morph_states: f('morph_states'),
@@ -193,6 +194,9 @@
      * all-zero, so the draw keeps the cheap yaw-only record unless the pair
      * is non-zero. */
     const ntilt = a.tilts ? a.tilts() : null;
+    /* Op `4C 81` draw tints, `[r, g, b, ir0]` per actor (empty while none
+     * is tinted): a constant per-draw cue, the native NPC draw's twin. */
+    const ntint = a.tints ? a.tints() : null;
     const clipStates = a.clip_states ? a.clip_states() : null;
     /* A per-entry morph generation that moves whenever the slot's staged
      * deltas do; on a move the object-local base is swapped for the
@@ -256,6 +260,10 @@
         rotY: -(nt[base + 3] + 2048) * A2R,
         scale: 1.0,
       }, o.extra || {});
+      const tk = n.i * 4;
+      if (ntint && tk + 3 < ntint.length && ntint[tk + 3] > 0) {
+        actorDraw.cue = { far: [ntint[tk], ntint[tk + 1], ntint[tk + 2]], nearZ: -1, farZ: 0, maxIr0: ntint[tk + 3] };
+      }
       /* A tilted actor carries all three of retail's authored angles,
        * composed together (`FUN_8001ADA4` reads X at `+0`, Y at `+2`, Z at
        * `+4`); the yaw-only builder cannot express that, so it takes the

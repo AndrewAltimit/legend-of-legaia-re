@@ -851,9 +851,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// See `world::object_actor_height`.
     ///
     /// PORT: FUN_801DE840 (the nibble-8 sub-1 arm, `0x801E1FC4..0x801E2068`)
-    fn op4c_n_8_sub_1_set_tint(&mut self, ctx: &mut FieldCtx, colour: u32, blend: u16, ticks: u16) {
-        let record = self.world.field_vm.executing_object;
-        self.world.set_actor_tint(ctx, record, colour, blend, ticks);
+    fn op4c_n_8_sub_1_set_tint(
+        &mut self,
+        ctx: &mut FieldCtx,
+        target: Option<u8>,
+        colour: u32,
+        blend: u16,
+        ticks: u16,
+    ) {
+        let player = self.ctx_is_player(ctx);
+        self.world
+            .set_actor_tint(ctx, target, player, colour, blend, ticks);
     }
 
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {

@@ -291,7 +291,22 @@ pub fn build_field_render(
     }
     let placement_scales =
         field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);
-    let placement_records = field_env::placed_bind_records(&placements, binds.as_ref());
+    // The overworld resolves without binds (its landmarks draw unposed and
+    // unscaled), but a landmark still has an actor a kingdom MAN can tint -
+    // so its record comes off the binds all the same; the decorations that
+    // follow have none. The native window's `resolve_world_map_terrain_draws`
+    // keys its landmark cues the same way.
+    let placement_records = if is_world_map {
+        let wm_binds = scene.field_object_binds(index).ok().flatten();
+        let mut r = field_env::placed_bind_records(
+            &placements[..decoration_start.min(placements.len())],
+            wm_binds.as_ref(),
+        );
+        r.resize(placements.len(), None);
+        r
+    } else {
+        field_env::placed_bind_records(&placements, binds.as_ref())
+    };
     let window_keys = placements
         .iter()
         .map(|d| field_env::placed_window_key(d, binds.as_ref()))
@@ -1315,6 +1330,32 @@ impl LegaiaRuntime {
         self.scene_host
             .as_ref()
             .map(|h| self.actors.tilts(h))
+            .unwrap_or_default()
+    }
+
+    /// Per catalogued NPC, the op-`4C 81` **draw tint** as a constant
+    /// per-draw cue, `[r, g, b, ir0, ...]` (far colour in display `0..1`,
+    /// `ir0` in `1.0 = 0x1000` units; `ir0 == 0` = untinted). **Empty** while
+    /// no NPC is tinted. The same `World::field_npc_draw_tint` the native
+    /// play-window stages on its NPC draws.
+    pub fn play_npc_tints(&self) -> Vec<f32> {
+        self.scene_host
+            .as_ref()
+            .map(|h| self.actors.tints(h))
+            .unwrap_or_default()
+    }
+
+    /// The player's op-`4C 81` draw tint, `[r, g, b, ir0]`, or empty while
+    /// the player draws untinted (`World::player_draw_tint`, the native
+    /// window's player cue).
+    pub fn play_player_tint(&self) -> Vec<f32> {
+        self.scene_host
+            .as_ref()
+            .and_then(|h| h.world.player_draw_tint())
+            .map(|(colour, blend)| {
+                let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                vec![far[0], far[1], far[2], ir0]
+            })
             .unwrap_or_default()
     }
 }

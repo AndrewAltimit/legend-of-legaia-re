@@ -2412,10 +2412,23 @@ pub trait FieldHost {
     /// The draw stages `+0x74` / `+0x78` as the GTE far colour and `IR0`
     /// (`FUN_8001ADA4` -> `FUN_80043390`), so `(0, 0x1000)` pushes the actor
     /// fully to black. The earlier "model + animation frame" reading of this
-    /// op named the operands for what they are not. The VM always advances
-    /// PC by 9; the default impl is a no-op.
-    fn op4c_n_8_sub_1_set_tint(&mut self, ctx: &mut FieldCtx, colour: u32, blend: u16, ticks: u16) {
-        let _ = (ctx, colour, blend, ticks);
+    /// op named the operands for what they are not.
+    ///
+    /// `target` is the `0x80`-prefix target byte when the op carries one
+    /// (`CC <id> 81 ..`): retail resolves it through `FUN_8003C83C` and runs
+    /// the arm against **that** actor's words (`0xF8` = the player), so a
+    /// host whose runner hands the op a stand-in context must land the tint
+    /// on the named actor, not on `ctx`. The VM always advances PC by 9
+    /// (10 with the prefix); the default impl is a no-op.
+    fn op4c_n_8_sub_1_set_tint(
+        &mut self,
+        ctx: &mut FieldCtx,
+        target: Option<u8>,
+        colour: u32,
+        blend: u16,
+        ticks: u16,
+    ) {
+        let _ = (ctx, target, colour, blend, ticks);
     }
 
     /// Install the **reflection controller** (op 0x4C n8 sub-6, 15 bytes).
