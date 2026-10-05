@@ -157,9 +157,12 @@ casts in retail too. The per-body table, with the stage sites, is
 `legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and
 `CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; the engine replays the listed stages,
 each to its clip's natural end, at the head of battle phase `0x70`
-(`World::capture_stager_tick`). Melee bodies walk the caster into reach first
-(the walk entry, held on the range poll `FUN_8004E2F0`); the engine plays
-their strike in place. The disc-gated sweep
+(`World::capture_stager_tick`). Melee bodies walk the caster into reach first:
+arm `0` turns the caster onto its victim, stages the walk entry `1` (its root
+motion carries the body) and holds on the range poll `FUN_8004E2F0` until it
+reads zero (`CAPTURE_APPROACH_BODIES` lists the ported bodies that do this
+besides the table's `approach` rows); nothing walks it home afterwards. The
+disc-gated sweep
 `crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every
 monster's every magic-slot spell and asserts the caster plays a moving
 special clip unless its body is one of the five.

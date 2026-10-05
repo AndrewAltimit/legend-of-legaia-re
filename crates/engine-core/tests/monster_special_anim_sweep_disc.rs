@@ -70,6 +70,11 @@ struct CastTrace {
     deals_damage: bool,
     /// Party HP lost while the monster acted.
     party_hp_lost: u32,
+    /// The cast's capture-class body walks its caster into reach first
+    /// (`capture_body_approaches`).
+    approaches: bool,
+    /// Farthest the caster got from where it stood when it began acting.
+    moved: i32,
 }
 
 fn scus() -> Option<Vec<u8>> {
@@ -164,6 +169,10 @@ fn cast(
     // mid-action (armed before its clips were installed) when the sweep takes
     // over; that action is not the seeded one. Only an action that *starts*
     // under observation counts.
+    t.approaches = w.cast_module_for(spell).is_some_and(|entry| {
+        legaia_engine_vm::cast_module_ticks::capture_body_approaches(entry, spell)
+    });
+    let mut start = (0i32, 0i32);
     t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
         legaia_engine_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
     });
@@ -180,6 +189,10 @@ fn cast(
             usize::from(w.battle_ctx.active_actor) == seat && w.battle_ctx.queued_action == 2;
         if now_acting && !acting {
             hp_at_start = party_hp(&w);
+            start = (
+                i32::from(a.move_state.world_x),
+                i32::from(a.move_state.world_z),
+            );
             t.acted = true;
             t.staged_clip = Some(a.battle.params[1]);
         }
@@ -192,6 +205,9 @@ fn cast(
             continue;
         }
         t.ticks += 1;
+        let d = (i32::from(a.move_state.world_x) - start.0).abs()
+            + (i32::from(a.move_state.world_z) - start.1).abs();
+        t.moved = t.moved.max(d);
         if w.battle_ctx.action_state == 0x70 {
             t.band_run += 1;
             t.band_ticks = t.band_ticks.max(t.band_run);
@@ -229,6 +245,7 @@ fn every_monster_special_attack_animates() {
     let n = monster_archive::slot_count(&entry) as u16;
     let (mut total, mut animated, mut retail_idle) = (0usize, 0usize, Vec::new());
     let mut damaged = 0usize;
+    let (mut approached, mut walked) = (0usize, 0usize);
     let mut broken = Vec::new();
     for id in 1..=n {
         if !matches!(monster_archive::record(&entry, id), Ok(Some(_))) {
@@ -249,6 +266,12 @@ fn every_monster_special_attack_animates() {
                         .collect();
                     if t.deals_damage && t.party_hp_lost > 0 {
                         damaged += 1;
+                    }
+                    if t.approaches && t.states.contains(&0x6E) {
+                        approached += 1;
+                        if t.moved > 0 {
+                            walked += 1;
+                        }
                     }
                     if !t.acted {
                         Some(format!("never cast; tags {tags:02x?}"))
@@ -282,7 +305,8 @@ fn every_monster_special_attack_animates() {
     eprintln!(
         "[ran] [monster-special-anim-sweep] {total} (monster, spell) casts: {animated} animate, \
          {} hold idle as retail does ({}), {} without special motion; \
-         {damaged} damaging capture specials landed their hit",
+         {damaged} damaging capture specials landed their hit; \
+         {walked} of {approached} melee capture specials walked into reach",
         retail_idle.len(),
         retail_idle.join(" "),
         broken.len()
@@ -290,6 +314,12 @@ fn every_monster_special_attack_animates() {
     for b in &broken {
         eprintln!("  {b}");
     }
+    // A caster seated inside its reach does not move, so not every melee
+    // cast walks; that none of them does is the regression.
+    assert!(
+        approached == 0 || walked > 0,
+        "no melee capture special walked into reach"
+    );
     assert!(
         broken.is_empty(),
         "{} casts without special motion:\n{}",

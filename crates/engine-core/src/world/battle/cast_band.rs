@@ -144,6 +144,10 @@ pub enum SummonPhase {
     Done,
 }
 
+/// The walk entry a melee body stages while its caster closes in (the
+/// literal `1` of every `li v1,0x1; sb v1,0x1da(<caster>)` walk site).
+pub const CAPTURE_WALK_ENTRY: u8 = 1;
+
 /// Longest the band waits on the caster's stages before it gives up and lets
 /// the module run - a guard against a clip that never commits, not a timing.
 pub const CASTER_STAGE_TICK_LIMIT: u16 = 900;
@@ -165,6 +169,10 @@ pub struct CasterStageRun {
     pub clips: Vec<u8>,
     /// Index of the clip being staged / waited on.
     pub cursor: usize,
+    /// The seat the caster walks into reach of before the first stage
+    /// ([`vm::cast_module_ticks::capture_body_approaches`]); `None` for a
+    /// body that strikes from where it stands, or a group target.
+    pub approach: Option<u8>,
     /// Where the run is.
     pub phase: CasterStagePhase,
     /// Ticks spent holding the band so far ([`CASTER_STAGE_TICK_LIMIT`]).
@@ -194,6 +202,10 @@ fn caster_clip_settled(a: &crate::world::Actor) -> bool {
 /// The three stretches of a [`CasterStageRun`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CasterStagePhase {
+    /// Walking into reach: the walk entry `1` staged and the caster turned
+    /// onto its victim every tick (its root motion carries it), until the
+    /// range poll `FUN_8004E2F0` reads zero.
+    Approach,
     /// Staging the clips: each is held until it has committed and either
     /// played out or reached its authored loop-window park.
     Staging,
@@ -1264,12 +1276,16 @@ impl World {
         let actor = self.actors.get(usize::from(slot))?;
         let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
         let installed = actor.battle_action_clips.as_ref()?;
+        let approach = vm::cast_module_ticks::capture_body_approaches(entry, spell_id)
+            .then_some(actor.battle.active_target)
+            .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
         let clips: Vec<u8> = vm::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,
             seat_monster,
             self.battle_first_monster_byte(),
-        )?
+        )
+        .unwrap_or_default()
         .into_iter()
         .filter(|&c| {
             installed
@@ -1277,11 +1293,16 @@ impl World {
                 .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
         })
         .collect();
-        (!clips.is_empty()).then_some(CasterStageRun {
+        (!clips.is_empty() || approach.is_some()).then_some(CasterStageRun {
             slot,
             clips,
             cursor: 0,
-            phase: CasterStagePhase::Staging,
+            approach,
+            phase: if approach.is_some() {
+                CasterStagePhase::Approach
+            } else {
+                CasterStagePhase::Staging
+            },
             ticks: 0,
         })
     }
@@ -1311,6 +1332,40 @@ impl World {
             }
         }
         let gate = match run.phase {
+            CasterStagePhase::Approach => {
+                let victim = run.approach.unwrap_or(run.slot);
+                if self.battle_range_metric(run.slot, victim) == 0 {
+                    // Arrived. A body whose port stages its own strike takes
+                    // the band from here; the rest go on to their stages.
+                    run.ticks = 0;
+                    let a = &mut self.actors[usize::from(run.slot)];
+                    if a.battle.queued_anim == CAPTURE_WALK_ENTRY {
+                        a.battle.queued_anim = 0;
+                    }
+                    if run.clips.is_empty() {
+                        run.phase = CasterStagePhase::Module;
+                        self.casting.caster_stages = Some(run);
+                        return CasterStageGate::RunModule;
+                    }
+                    run.phase = CasterStagePhase::Staging;
+                    self.casting.caster_stages = Some(run);
+                    return CasterStageGate::Hold;
+                }
+                // `FUN_80019B28(victim, caster) + 0x800` onto the caster's
+                // facing each tick, then the walk stage (`li v1,0x1;
+                // sb v1,0x1da(<caster>)`, e.g. `0x801F72C8` in PROT 0952).
+                let (vx, vz) = self.battle_seat_of(usize::from(victim));
+                let a = &mut self.actors[usize::from(run.slot)];
+                let bearing = vm::battle_action::bearing_12bit_approx(
+                    vz,
+                    vx,
+                    a.move_state.world_z,
+                    a.move_state.world_x,
+                );
+                a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
+                a.battle.queued_anim = CAPTURE_WALK_ENTRY;
+                CasterStageGate::Hold
+            }
             CasterStagePhase::Staging => {
                 let want = run.clips[run.cursor];
                 if run.ticks == 1 {
@@ -1335,6 +1390,7 @@ impl World {
                 }
             }
             CasterStagePhase::Module => CasterStageGate::RunModule,
+            CasterStagePhase::Closing if run.clips.is_empty() => CasterStageGate::Done,
             CasterStagePhase::Closing => {
                 if a.battle.current_anim == 0 {
                     return CasterStageGate::Done;
@@ -1353,7 +1409,7 @@ impl World {
         let Some(run) = self.casting.caster_stages.as_mut() else {
             return false;
         };
-        if run.phase != CasterStagePhase::Module {
+        if run.phase != CasterStagePhase::Module || run.clips.is_empty() {
             return false;
         }
         run.phase = CasterStagePhase::Closing;
@@ -2547,8 +2603,11 @@ impl World {
                         .collect();
                     Some(step)
                 }
-                // `arrived = true` on all three, and this is a disclosed
-                // divergence rather than a shortcut.
+                // `arrived = true` on all three: the band's approach leg
+                // (`CasterStagePhase::Approach`, gated on
+                // `capture_body_approaches`) walks the caster in and holds
+                // the module until the metric reads zero, so by the time
+                // this body runs its poll would read arrival.
                 //
                 // Retail's predicate is `FUN_8004E2F0(ctx[+0x13],
                 // caster[+0x1DD]) == 0` - the **zero** side, not the non-zero
@@ -2562,14 +2621,9 @@ impl World {
                 // (`legaia_engine_vm::battle_separation`, a pairwise
                 // separation nudge - NOT the approach itself).
                 //
-                // What is missing is the approach: retail's caster is walked
-                // toward its target by the action SM before this body ever
-                // reads the metric, and the engine's cast band drives no such
-                // walk for a capture-class cast - it places the seats and
-                // leaves them. Feeding the live metric would therefore park
-                // the body on phase `1` forever wherever the placement does
-                // not already read as in-reach. The blocking capability is a
-                // caster approach leg on the band, not a call insertion.
+                // The walk itself is the band's approach leg: the body's arm
+                // `0` stages the walk entry and turns the caster onto the
+                // victim, and the walk clip's own root motion carries it.
                 (962, Some(arms::BLADE_BREATH_A_TICK)) => Some(arms::blade_breath_a_tick(
                     &mut ctx,
                     &mut caster,

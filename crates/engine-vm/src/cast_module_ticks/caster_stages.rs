@@ -27,10 +27,12 @@
 //!   Decision) and 0955's `0x6E` (Kiss of Death) write `+0x1DA` only on the
 //!   victim (its `+0x1F1` / `+0x1EF` reaction), so their caster holds idle in
 //!   retail too;
-//! * the **approach** half of the melee bodies (`approach` below): retail's
-//!   arm `0` stages the walk (`1`) and holds on the range poll
-//!   `FUN_8004E2F0` until the caster is in reach. The engine plays the strike
-//!   clips in place, as the ported 0962 / 0950 bodies already do.
+//! * the **approach** of the melee bodies (`approach` below, and the ported
+//!   bodies of [`CAPTURE_APPROACH_BODIES`]): retail's arm `0` turns the
+//!   caster onto its victim, stages the walk (`1`) and holds on the range
+//!   poll `FUN_8004E2F0` until the caster is in reach. That leg is the
+//!   band's (`World::capture_stager_tick`), ahead of the stages. Nothing
+//!   walks the caster home afterwards, as after any action.
 //!
 //! Provenance: the `sb ...,0x1DA` sites cited per row, in the module images at
 //! slot-B base `0x801F69D8` (`see ghidra/scripts/funcs/overlay_cast_<label>_<entry>_<va>.txt`).
@@ -246,6 +248,35 @@ pub fn capture_body_idles_caster(prot_entry: u32, action_id: u8) -> bool {
         .any(|(e, ids)| *e == prot_entry && (ids.is_empty() || ids.contains(&action_id)))
 }
 
+/// Ported capture-class bodies whose arm `0` walks the caster into reach
+/// (the walk entry `1` staged and held on the range poll `FUN_8004E2F0`, the
+/// pairwise separation `FUN_80050BB8` x `0x20` on arrival) but whose port
+/// runs the strike from wherever the caster stands, as `(PROT entry, action
+/// ids)`. Their approach is the band's, like the [`CAPTURE_CASTER_STAGES`]
+/// rows marked `approach`.
+///
+/// * PROT 0950 `0x5A` - the poll at `0x801F7B54`, the walk stage `0x801F7BA4`;
+/// * PROT 0952 `0xB8` - the poll and the walk stage `0x801F6BBC` (the
+///   stage's `li v1,0x1` sits in the poll branch's delay slot at
+///   `0x801F6B7C`);
+/// * PROT 0962 `0xA2` / `0xA3` / `0xA4` - the polls at `0x801F7C04` /
+///   `0x801F7D00` and their siblings in the other two bodies.
+pub const CAPTURE_APPROACH_BODIES: &[(u32, &[u8])] =
+    &[(950, &[0x5A]), (952, &[0xB8]), (962, &[0xA2, 0xA3, 0xA4])];
+
+/// Whether the capture-class body PROT `prot_entry` runs for `action_id`
+/// walks its caster into reach before it strikes.
+pub fn capture_body_approaches(prot_entry: u32, action_id: u8) -> bool {
+    let matches =
+        |e: u32, ids: &[u8]| e == prot_entry && (ids.is_empty() || ids.contains(&action_id));
+    CAPTURE_APPROACH_BODIES
+        .iter()
+        .any(|(e, ids)| matches(*e, ids))
+        || CAPTURE_CASTER_STAGES
+            .iter()
+            .any(|r| r.approach && matches(r.prot_entry, r.action_ids))
+}
+
 /// The caster clips a capture-class cast of `action_id` through PROT
 /// `prot_entry` stages, in order, for a caster seat whose monster id is
 /// `seat_monster` in a battle whose first monster is `first_monster`.
@@ -295,5 +326,11 @@ mod caster_stage_tests {
         // Bodies that stage nothing on the caster.
         assert_eq!(capture_caster_stages(945, 0x54, 0, 0), None);
         assert_eq!(capture_caster_stages(946, 0x56, 0, 0), None);
+        // The approach: table rows and the ported melee bodies alike.
+        assert!(capture_body_approaches(952, 0x5C));
+        assert!(capture_body_approaches(952, 0xB8));
+        assert!(capture_body_approaches(962, 0xA3));
+        assert!(!capture_body_approaches(962, 0xA5));
+        assert!(!capture_body_approaches(948, 0x58));
     }
 }
