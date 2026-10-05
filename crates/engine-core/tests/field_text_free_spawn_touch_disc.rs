@@ -11,17 +11,20 @@
 //! Saryu's room (`jagaroom`). The engine keyed interactions on text, so the
 //! press found the stand-in and ran nothing.
 //!
-//! The test pins the record on the real disc and prints the disc-wide set of
-//! text-free placements the spawn arm makes touchable. No Sony bytes are
+//! The test pins the record on the real disc, prints the disc-wide set of
+//! text-free placements the spawn arm makes touchable, and checks that no
+//! record such a touch spawns changes scene. No Sony bytes are
 //! asserted - only placement indices and an opcode class. Skip-passes
 //! without disc data / extracted assets (CLAUDE.md convention).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
 use legaia_asset::man_section::parse as parse_man;
 use legaia_engine_core::man_field_scripts::{
-    classify_placements, placement_inline_prologue, placement_scripted_menu_record,
+    classify_placements, partition_record_span, placement_inline_prologue,
+    placement_scripted_menu_record,
 };
 use legaia_engine_core::scene::{ProtIndex, Scene};
 
@@ -73,11 +76,41 @@ fn text_free_spawn_interactions_are_touchable() {
             if let Some(rec) = placement_scripted_menu_record(&mf, &man, &p) {
                 // No text to page: the whole body is the interaction.
                 assert_eq!(rec.first_segment, rec.body.len());
+                // The spawn class (a save point's press is the other one):
+                // what the touch spawns, which must not change scene.
+                let n_lead = mf.partitions.first().map_or(0, Vec::len)
+                    + mf.partitions.get(1).map_or(0, Vec::len);
+                let spawned: Vec<usize> = LinearWalker::new(&rec.body, rec.entry_pc)
+                    .map_while(Result::ok)
+                    .take_while(|i| rec.body.get(i.pc) != Some(&0x21))
+                    .filter_map(|i| match i.info {
+                        InsnInfo::SpawnRecord { global_index } => {
+                            usize::from(global_index).checked_sub(n_lead)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if spawned.is_empty() {
+                    continue;
+                }
+                for &r in &spawned {
+                    let Some((s, pc0, len)) = partition_record_span(&mf, &man, 2, r) else {
+                        continue;
+                    };
+                    let changes = LinearWalker::new(&man[s..s + len], pc0)
+                        .flatten()
+                        .any(|i| matches!(i.info, InsnInfo::SceneChange { .. }));
+                    assert!(
+                        !changes,
+                        "{name} P1[{}]'s touch spawns P2[{r}], which changes scene",
+                        p.index
+                    );
+                }
                 touchable.push((name.clone(), p.index));
             }
         }
     }
-    eprintln!("[ran] text-free touchable placements: {touchable:?}");
+    eprintln!("[ran] text-free spawn-touch placements: {touchable:?}");
     assert!(
         touchable.iter().any(|(s, i)| s == "retock" && *i == 32),
         "retock P1[32] (Eliza's stand-in) must be touchable: {touchable:?}"

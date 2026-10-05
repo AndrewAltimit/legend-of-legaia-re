@@ -283,16 +283,26 @@ flag dispatch. The `21` ends the interaction in the fight's own frame, so
 the fight does not fire again until the player touches Nene again.
 
 A touch engages a placement whether or not its interaction carries text.
-`retock` `P1[32]` is the case the story stops on: a stand-in seated at
-`(121, 14)` while `0x357` is set and `0x33B` clear, whose whole interaction
-section is `76 3C 08 00 44 65 21` - a spawn of `P2[16]`, or with `0x63C` set
-of `P2[33]`, Eliza's Seru-bride scene (it raises `0x33C`, the flag that seats
-`jagaroom` P1[8] where the party can reach it). The port installs a text-free placement's
-interaction when that section (spawn terminator to the next raw `0x21`)
-decodes cleanly and holds either a scripted menu press (a save point's
-`49 01`) or an op-`0x44` spawn
-(`man_field_scripts::placement_scripted_menu_record`); the disc-wide set is
-printed by `crates/engine-core/tests/field_text_free_spawn_touch_disc.rs`.
+Nothing on the path reads the script. The probe `FUN_801CF9F4` walks the
+actor list, skips an actor whose `+0x10 & 3` is non-zero, box-tests the rest
+and stores the hit in the player's `+0x98`; the touch post `FUN_801D5B5C`
+(`0x801D5BB0..0x801D5BBC`) then ORs `0x100` into that actor's `+0x10`
+unconditionally, and the context runner `FUN_80039B7C` steps the record from
+`+0x9E` until its `0x21` stop. A capture agrees: in `retock_field_card_boot`
+the script contexts of `retock` `P1[32]` - a stand-in seated at `(121, 14)`
+while `0x357` is set and `0x33B` clear - and of the text NPCs around it carry
+the same context flag word, `0x08020886`, and the same state, a PC parked one
+past the spawn section's `0x21` (`+0x24` for `P1[32]`). Its whole interaction section is `76 3C 08 00 44 65 21`: a spawn
+of `P2[16]`, or with `0x63C` set of `P2[33]`, Eliza's Seru-bride scene (it
+raises `0x33C`, the flag that seats `jagaroom` P1[8] where the party can reach
+it). The port installs a text-free placement's interaction when that section
+(spawn terminator to the next raw `0x21`) decodes cleanly and holds either a
+scripted menu press (a save point's `49 01`) or an op-`0x44` spawn
+(`man_field_scripts::placement_scripted_menu_record`). Beyond the save points,
+the spawn arm reaches a handful of placements disc-wide - most seated on the
+parked sentinel `(127, 127)` - and none of the records they spawn changes
+scene; the set is printed by
+`crates/engine-core/tests/field_text_free_spawn_touch_disc.rs`.
 
 The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
 too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
