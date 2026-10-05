@@ -1530,6 +1530,37 @@ and reseed to `0x10`, and the arm writes the cue ring
 countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
 staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
 
+### The tally cues key the arena's own bank
+
+Both ids are at or above `0x200`, so the drainer resolves them against the
+current-bundle slot `_DAT_8007B8D0` ([`sfx-table.md`](../formats/sfx-table.md)),
+and the arena points that slot at its own bundle. `FUN_801CEA6C` allocates a
+`0x14000` buffer, stores `buffer + 0x12800` to `_DAT_8007B8D0`
+(`0x801CEEDC..0x801CEEFC`) and fills it with `FUN_8003EB98(0x220, …)` at
+`0x801CEF14` - raw TOC `0x220`, extraction **542**, the third slot of the
+`koin1` block. A `minigame_muscle_dome` state parked in the hub reads those
+exact bytes at `*(0x8007B8D0)`. Its record table carries four rows:
+
+| Cue | Program | Tone | Voices | Category |
+|---|---|---|---|---|
+| `0x200` | 0 | 0 | 2 | 3 |
+| `0x201` | 0 | 2 | 1 | 3 |
+| `0x202` | 0 | 3 | 1 | 3 |
+| `0x203` | 0 | 4 | 2 | 3 |
+
+Category `3` is VAB slot 3, which the same init fills with extraction **1157**
+(`vab_01 + 0x57`, one program of six tones) - every tone the rows name. Only
+`0x202` and `0x203` have a writer anywhere in the arena image; `0x200` /
+`0x201` are carried but never queued by it.
+
+Port: the scene host stages the bundle on the warp
+(`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`) and
+`World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`;
+`World::tail_side_band_bank` names the slot-3 bank there, which both hosts'
+BGM-tail stagers take. `HubTimers` emits the four slot writes on the INTERVAL
+arm's first frame as `SfxRingOp::ArmSlot` (id and countdown of one ring slot),
+and both hosts replay them onto their cue ring.
+
 Port: `engine-core::muscle_dome::HubScreen` carries the envelope,
 `engine-core::muscle_ringside::HubTimers` arms and ticks it once per world
 tick (`World::tick_muscle_hub`, from the shared scene host; each play host's
@@ -2125,7 +2156,11 @@ each moment of the leg is in a battle:
 
 `DomeCamera::vp_raw` projects the script's pose through `battle_vp` over the
 stage model, so the native window and the browser play page (both upload that
-one matrix) frame a leg exactly as they frame a fight. The case-6 depth is
+one matrix) frame a leg exactly as they frame a fight. The standalone
+minigames page draws through the same surface (`muscle_surface_*`), naming the
+selection screen it has up with `MuscleDomeSurface::set_select_framing`
+because it drives its own command flow, and times its hit numerals off the
+surface's beat (`muscle_surface_beat_json`). The case-6 depth is
 `FUN_801F0348` over the seated monster's size class, the close-up height the
 character's `0x801F4D2C` row.
 
@@ -2137,6 +2172,32 @@ the pair stands - each play swings, and each attacker's string closes on the
 done band's `0x3C`-frame tail. The defender's knockdown lands on the play that
 ends the leg. The approach length and the per-swing cadence are the port's
 clock, not retail's root-motion arithmetic.
+
+### The leg opens like a battle: the name banner, then `Begin | Run`
+
+A leg opens through the round driver's flow `0x0A` / `0x0B`: `0x0A` composes
+the enemy-name banner (`FUN_801D9D3C`) and seeds `ctx[+0x6D6] = 0x5A`, `0x0B`
+drains it, and the turn top `0x14` then raises the round prompt `0x1E`
+(`0x801D0DE0..0x801D0EB8`). `0x14` is the only writer of `0x1E` and stores it
+unconditionally (`0x801D0ED4`), so **every** turn opens on `Begin | Run`, with
+the far framing and its idle orbit; Begin opens the ring with the highlight on
+its Left (Attack) arm, which `0x14` seeds into `ctx[+0x880]` at `0x801D0ECC`.
+
+Run is offered in the dome like anywhere else - the `0x1E` arm has no contest
+test - and the contest gives it its meaning: the `0xFE` arm, behind the sub-id
+test at `0x801D322C`, turns a party Run into the arena's ran outcome
+(`_DAT_80084448 = 4`, `0x801D3228..0x801D328C`) unless the formation monster
+is `0xAF` / `0x3D` / `0x3E` / `0x3F`, and the re-entered hub settles that as
+a give-up.
+
+Port: `MuscleDomeSession::arm_intro` / `tick_intro` / `intro_up` carry the
+hold (armed by `World::enter_muscle_dome`, drained once no hub screen covers
+the leg); while it runs the session takes no input and the HUD phase is
+`Idle`, and `battle_hud::battle_intro_names` lays the opponent's name out over
+the lone monster seat as the composer lays out a group label. `DomeMenu`
+opens each turn on the round prompt, and Run reports the leg as ran through
+`World::leave_muscle_dome`. The escape roll a Run makes in retail is not
+modelled - the leg ends on the press.
 
 Documented host models, each disclosed rather than presented as retail:
 

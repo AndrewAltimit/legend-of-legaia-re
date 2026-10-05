@@ -54,7 +54,7 @@ designer's `"setbl p:%d t:%d l:%d n:%d id:%d"` line off `+0..+4`. The row layout
 is therefore the layout above, and the disc bears it out.
 
 **Which** bundle sits in that slot is the whole content of the claim. It is
-whatever loaded last, and there are two occupants:
+whatever loaded last, and these are its occupants:
 
 - **Field** - the field asset loader repoints the slot at the scene's prescript
   bundle on every field load (`FUN_8001F7C0` `0x8001F864`), so the `>= 0x200`
@@ -68,6 +68,10 @@ whatever loaded last, and there are two occupants:
   the bank loads at **battle-scene setup** and reloads per battle. This page
   previously said "at init"; that rested on the routine's shape, not on its
   caller. [`bse-dat.md`](bse-dat.md).
+- **Minigame overlays** - the slot machine's init points the slot at its own
+  `efect.dat` (extraction 1199), and the Muscle Dome arena's at extraction 542,
+  whose category-3 rows key the arena's slot-3 side bank
+  ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-tally-cues-key-the-arenas-own-bank)).
 
 One row column is not static in battle. Before enqueueing a cue, the battle cue
 router `FUN_8004FE5C` overwrites byte `+4` (`id`, the category) of

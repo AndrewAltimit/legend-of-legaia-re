@@ -192,6 +192,9 @@ pub struct LegaiaMinigames {
     /// + id map, element-affinity matrix - all PROT 0898 rodata), decoded once
     /// per disc so each fresh contest rebuilds without re-decoding.
     muscle_tables: Option<muscle_web::MuscleTables>,
+    /// The dome leg's 3D surface - the engine kernel the play hosts draw a
+    /// leg with (`minigames_muscle/surface.rs`).
+    muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
 
     /// `SCUS_942.54` bytes, kept when the input was a full disc image (absent
     /// for a raw `PROT.DAT` load). The Muscle Dome reads the new-game
@@ -327,6 +330,7 @@ impl LegaiaMinigames {
             muscle_coins: 0,
             muscle_special: 0,
             muscle_settlement: None,
+            muscle_surface: Default::default(),
             muscle_tables: None,
             scus: None,
             #[cfg(target_arch = "wasm32")]

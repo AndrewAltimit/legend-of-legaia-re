@@ -857,7 +857,6 @@ pub struct MuscleDomeSurface {
     generation: u32,
     tick: u32,
     act: [Option<Act>; 2],
-    prev_phase: Option<MusclePhase>,
     /// The resolved turn playing out, if any.
     playback: Option<Playback>,
     /// Each body's floor position `(x, z)`, raw battle units.
@@ -869,6 +868,23 @@ pub struct MuscleDomeSurface {
     /// The Battle Camera option word `0x800846C0`
     /// ([`Self::set_camera_option`]).
     camera_option: u8,
+    /// A host-named selection framing ([`Self::set_select_framing`]).
+    select_framing: Option<SelectFraming>,
+}
+
+/// The selection-screen framing a host names for the dome camera, in the
+/// battle's terms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectFraming {
+    /// The round prompt and the `Begin | Reselect` confirm: case 9, the far
+    /// framing with its idle orbit.
+    Far,
+    /// The ring, the direction entry and its review, the Ra-Seru list:
+    /// case 0, the fighter's over-the-shoulder close-up.
+    Member,
+    /// The `Auto | Command` prompt and its cursor: case 1, turned toward
+    /// the opponent.
+    Target,
 }
 
 /// A resolved turn being played out on the surface.
@@ -926,6 +942,18 @@ impl MuscleDomeSurface {
             return None;
         };
         let monster = self.seated_monster(&read_prot, contest)?;
+        self.frame_seated(read_prot, session, monster, char_slot)
+    }
+
+    /// [`Self::frame`] for an opponent the host names itself rather than the
+    /// contest's ladder rung - the minigames page's foe picker.
+    pub fn frame_seated(
+        &mut self,
+        read_prot: impl Fn(usize) -> Option<Arc<Vec<u8>>>,
+        session: &MuscleDomeSession,
+        monster: u16,
+        char_slot: u32,
+    ) -> Option<&MuscleDomeScene> {
         let key = (monster, char_slot);
         if self.assets.as_ref().map(|a| a.key()) != Some(key) {
             if self.failed == Some(key) {
@@ -950,11 +978,33 @@ impl MuscleDomeSurface {
             // A new leg against the same opponent: back to the seats.
             self.reseat();
         }
+        // A turn resolved since the last frame: its plays act out. Keyed on
+        // the turn counter rather than on a `Resolve` frame, because a host
+        // that resolves inside one call (the minigames page) never shows the
+        // surface one.
+        let resolved = self.last_turn.is_some_and(|t| session.turn() > t);
         self.last_turn = Some(session.turn());
-        self.step(session, &assets);
+        self.step(session, &assets, resolved);
         self.pose(&assets);
         self.drive_camera(session, &assets);
         self.scene.as_ref()
+    }
+
+    /// The framing a host that drives its own selection flow asks for (the
+    /// minigames page, which commits through the session's card calls rather
+    /// than through its [`crate::muscle_dome::DomeMenu`]). `None` - every
+    /// world host - derives it from the session's own menu.
+    pub fn set_select_framing(&mut self, framing: Option<SelectFraming>) {
+        self.select_framing = framing;
+    }
+
+    /// The playback beat on screen now, and the ticks into it - the schedule
+    /// a host that times its own play-out readouts follows
+    /// ([`turn_timeline`]).
+    pub fn playback_beat(&self) -> Option<(Beat, u32)> {
+        let pb = self.playback.as_ref()?;
+        let beat = pb.beat(self.tick)?;
+        Some((beat, pb.elapsed(self.tick) - beat.start))
     }
 
     /// The Battle Camera option the framings run under (`0x800846C0`:
@@ -969,7 +1019,6 @@ impl MuscleDomeSurface {
     fn reseat(&mut self) {
         self.act = [None; 2];
         self.playback = None;
-        self.prev_phase = None;
         self.pos = [seat_xz(0), seat_xz(1)];
         self.camera = None;
     }
@@ -986,11 +1035,10 @@ impl MuscleDomeSurface {
     /// starts its [`turn_timeline`]; each tick plays the beat it is on - the
     /// closing walk, a swing with the defender's flinch (its knockdown on
     /// the play that ends the leg), the done tail.
-    fn step(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
+    fn step(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets, resolved: bool) {
         self.tick = self.tick.wrapping_add(1);
         let tick = self.tick;
-        let phase = session.phase();
-        if self.prev_phase == Some(MusclePhase::Resolve) && phase != MusclePhase::Resolve {
+        if resolved {
             self.playback = Some(Playback {
                 start: tick,
                 plays: session.last_turn_plays().to_vec(),
@@ -998,7 +1046,6 @@ impl MuscleDomeSurface {
                 walk: None,
             });
         }
-        self.prev_phase = Some(phase);
         let Some(pb) = self.playback.as_mut() else {
             return;
         };
@@ -1176,6 +1223,19 @@ impl MuscleDomeSurface {
             // `0x0B` arms no close-up).
             (None, MusclePhase::Select) if session.intro_up() => {
                 (cam::BattleCamPhase::Menu, 0, None)
+            }
+            (None, MusclePhase::Select) if self.select_framing.is_some() => {
+                match self.select_framing {
+                    Some(SelectFraming::Member) => (cam::BattleCamPhase::Submenu, 0, None),
+                    Some(SelectFraming::Target) => (
+                        cam::BattleCamPhase::TargetEnemy,
+                        0,
+                        Some(cam::CursorFraming::Enemy {
+                            target: monster_pos,
+                        }),
+                    ),
+                    _ => (cam::BattleCamPhase::Menu, 0, None),
+                }
             }
             (None, MusclePhase::Select) => match session.menu() {
                 DomeMenu::Command(c) => match c.phase {
