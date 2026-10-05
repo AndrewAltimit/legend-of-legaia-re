@@ -2690,6 +2690,27 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.queue_script_vram_move(words);
     }
 
+    /// Op `4C D4` - set the mask bit on a 16x1 VRAM run's non-zero words.
+    /// `teien` `P1[0]` runs it over every CLUT of rows 505..507 before it
+    /// installs the HSV cycler (`34 30 06`) that darkens them for the night
+    /// garden; without the bit, the entries the cycler takes to black read
+    /// `0x0000` and the hedge texels behind them go transparent.
+    fn op4c_n_d_sub_4_vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
+        self.world
+            .ambient
+            .script_vram_stp
+            .push((vram_x, vram_y, true));
+    }
+
+    /// Op `4C D5` - clear the mask bit on a 16x1 VRAM run (every word but
+    /// `0x8000`).
+    fn op4c_n_d_sub_5_vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
+        self.world
+            .ambient
+            .script_vram_stp
+            .push((vram_x, vram_y, false));
+    }
+
     /// Op `0x43` sub-`0x12` - the GP0 `0x80` VRAM rectangle copy, after the
     /// VM has resolved the arm's two-page split into one or two
     /// `FUN_800468A4` calls. Queued on the world the same way the `4C 60`

@@ -872,6 +872,17 @@ LoadImage(rect, buf16);    // FUN_800583c8 - write 16 u16 pixels back
 return iVar47 + 6;
 ```
 
+The bit matters for CLUT rows a CLUT-cell HSV cycler later darkens: the
+cycler keeps each word's STP bit and maps zero to zero, so an entry it takes
+to black reads `0x8000` (opaque black) only if this op marked it first, and
+`0x0000` (transparent) otherwise. `teien` `P1[0]`, behind flag `0x1C9`, runs
+`4C D4` over every CLUT of rows 505..507 and then installs the dusk cycler
+(`34 30 06`, H/S/V adds `-8 / -80 / -48` on those rows in
+`teien_field_run`); unmarked, the hedge texels behind the darkest entries
+went transparent and the clear colour showed through. Engine: the
+`AmbientFxState::script_vram_stp` queue, drained after the `4C 60` moves by
+`World::apply_script_vram_moves` on both hosts.
+
 `FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a from-scratch renderer that maintains its own framebuffer can emulate the read-modify-write itself.
 
 ## Nibble 9 is the floor-height ladder, not a fade

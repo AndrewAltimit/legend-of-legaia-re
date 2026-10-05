@@ -1658,7 +1658,11 @@ impl World {
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
     pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let moves = std::mem::take(&mut self.ambient.script_vram_moves);
-        apply_vram_moves(moves, vram)
+        let mut wrote = apply_vram_moves(moves, vram);
+        for (x, y, set) in std::mem::take(&mut self.ambient.script_vram_stp) {
+            wrote |= apply_vram_stp(vram, x, y, set);
+        }
+        wrote
     }
 
     /// Apply the battle `MoveImage`s a stage module queued
@@ -1669,6 +1673,37 @@ impl World {
         let moves = std::mem::take(&mut self.battle.vram_moves);
         apply_vram_moves(moves, vram)
     }
+}
+
+/// One `4C D4` / `4C D5` run: `StoreImage` the 16x1 rect at `(x, y)`, set the
+/// mask bit on every non-zero word (`set`) or clear it on every word but the
+/// mask-only `0x8000`, and `LoadImage` it back. The bit is what keeps a CLUT
+/// entry an HSV cycler later darkens to black opaque: a `0x0000` entry is
+/// transparent, `0x8000` is black.
+///
+/// PORT: FUN_801DE840 (`4C D4` / `4C D5` arm; `FUN_8005842C` / `FUN_800583C8`)
+fn apply_vram_stp(vram: &mut legaia_tim::Vram, x: u16, y: u16, set: bool) -> bool {
+    if usize::from(x) + 16 > 1024 || usize::from(y) >= 512 {
+        return false;
+    }
+    let mut changed = false;
+    let mut bytes = Vec::with_capacity(32);
+    for i in 0..16usize {
+        let w = vram.pixel(usize::from(x) + i, usize::from(y));
+        let n = if set {
+            if w != 0 { w | 0x8000 } else { w }
+        } else if w != 0x8000 {
+            w & 0x7FFF
+        } else {
+            w
+        };
+        changed |= n != w;
+        bytes.extend_from_slice(&n.to_le_bytes());
+    }
+    if changed {
+        vram.write_block(x, y, 16, 1, &bytes);
+    }
+    changed
 }
 
 /// The shared `MoveImage` kernel behind the field and battle queues.

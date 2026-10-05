@@ -388,3 +388,32 @@ fn script_vram_move_rejects_degenerate_rects() {
     );
     assert!(world.ambient.script_vram_moves.is_empty());
 }
+
+/// Field-VM `4C D4` / `4C D5`: the 16x1 run's mask bit is set on every
+/// non-zero word (zero stays transparent zero), then cleared on every word
+/// but the mask-only `0x8000`. `teien` `P1[0]` runs `4C D4` over CLUT row 507.
+#[test]
+fn op_4c_d4_d5_set_and_clear_the_mask_bit() {
+    let mut world = World::new();
+    let mut ctx = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    let op = [0x4C, 0xD4, 0xB0, 0x00, 0xFB, 0x01];
+    match vm::field::step(&mut host, &mut ctx, &op, 0) {
+        FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 6),
+        other => panic!("4C D4 should advance 6 bytes, got {other:?}"),
+    }
+    assert_eq!(world.ambient.script_vram_stp, vec![(176, 507, true)]);
+    let mut vram = legaia_tim::Vram::new();
+    let mut row = Vec::new();
+    for w in [0u16, 0x0DA6, 0x8000, 0x1524] {
+        row.extend_from_slice(&w.to_le_bytes());
+    }
+    vram.write_block(176, 507, 4, 1, &row);
+    assert!(world.apply_script_vram_moves(&mut vram));
+    let got: Vec<u16> = (0..4).map(|i| vram.pixel(176 + i, 507)).collect();
+    assert_eq!(got, [0, 0x8DA6, 0x8000, 0x9524]);
+    world.ambient.script_vram_stp.push((176, 507, false));
+    assert!(world.apply_script_vram_moves(&mut vram));
+    let got: Vec<u16> = (0..4).map(|i| vram.pixel(176 + i, 507)).collect();
+    assert_eq!(got, [0, 0x0DA6, 0x8000, 0x1524]);
+}

@@ -66,6 +66,13 @@ pub struct AmbientFxState {
     /// hook), drained against the host's software VRAM by
     /// [`crate::world::World::apply_script_vram_moves`], cleared on scene entry.
     pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
+    /// Queued field-VM `4C D4` / `4C D5` STP edits, `(x, y, set)`: each a
+    /// 16x1 VRAM run read back, its mask bit set on every non-zero word
+    /// (`D4`) or cleared on every word but `0x8000` (`D5`), and written
+    /// again. Drained after [`Self::script_vram_moves`] by
+    /// [`crate::world::World::apply_script_vram_moves`], cleared on scene
+    /// entry with it.
+    pub script_vram_stp: Vec<(u16, u16, bool)>,
     /// Queued field-VM op-`0x43` sub-`0x12` VRAM rectangle copies, in the
     /// emission order the arm resolved them (one call, or two for a copy
     /// wider than a VRAM page). Queued by
@@ -91,6 +98,7 @@ impl AmbientFxState {
             clut_fx: Vec::new(),
             clut_blend_fx: Vec::new(),
             script_vram_moves: Vec::new(),
+            script_vram_stp: Vec::new(),
             vram_rect_copies: Vec::new(),
         }
     }
