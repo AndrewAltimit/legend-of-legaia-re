@@ -414,6 +414,12 @@ pub struct PhaseGate {
     /// `6 * scalar * delta` a pass. The module phase is the arm's entry; this
     /// is how far into the walk the frame is.
     pub walk_yaw: Option<u16>,
+    /// For a capture in the Done band's hold (`0x51` / `0x52`): retail's
+    /// countdown `ctx[+0x6D8]` ([`SpanGate::DoneHold`]). The band holds
+    /// `0x3C` frames, or `0x96` behind a magic level-up banner, so the state
+    /// alone places the frame at the hold's first vsync -
+    /// `shiny_refactor_gimard_levelup` was taken 46 vsyncs in.
+    pub done_hold: Option<i16>,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -435,6 +441,9 @@ impl PhaseGate {
         if let Some(y) = self.walk_yaw {
             s.push_str(&format!(",y{y}"));
         }
+        if let Some(d) = self.done_hold {
+            s.push_str(&format!(",d{d}"));
+        }
         s
     }
 
@@ -452,6 +461,14 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let done_hold = match parts.last() {
+            Some(t) if t.starts_with('d') => {
+                let d = t[1..].parse().ok()?;
+                parts.pop();
+                Some(d)
+            }
+            _ => None,
+        };
         let walk_yaw = match parts.last() {
             Some(t) if t.starts_with('y') => {
                 let y = t[1..].parse().ok()?;
@@ -491,6 +508,7 @@ impl PhaseGate {
             module_phase,
             cam_accum,
             walk_yaw,
+            done_hold,
         })
     }
 
@@ -540,6 +558,11 @@ impl PhaseGate {
             if !committed || accum < u64::from(acc) {
                 return false;
             }
+        }
+        if let Some(t) = self.done_hold
+            && world.battle_ctx.frame_timer > t
+        {
+            return false;
         }
         let Some(want) = self.fade else {
             return true;
@@ -668,6 +691,11 @@ impl RetailBattle {
         if let Some(a) = g.cam_accum.as_mut() {
             *a = a.saturating_sub(u32::from(self.display_lag) * 8);
         }
+        if let Some(d) = g.done_hold.as_mut() {
+            // The countdown drains by the frame step a frame; the displayed
+            // frame is that many vsyncs older, so its countdown was higher.
+            *d = d.saturating_add(self.display_lag as i16);
+        }
         if let Some(y) = g.walk_yaw.as_mut() {
             // `6 * scalar` a vsync, taken back no further than the seat.
             let per_vsync = 6 * legaia_engine_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
@@ -697,12 +725,17 @@ impl RetailBattle {
         // creature; its yaw base says how far in the frame is.
         let walk_yaw = (entry == GIMARD_MODULE && module_phase == Some(GIMARD_WALK_ARM))
             .then_some(self.walk_yaw_base);
+        let done_hold = match self.span_gate {
+            SpanGate::DoneHold { timer } => Some(timer),
+            _ => None,
+        };
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
             module_phase,
             cam_accum,
             walk_yaw,
+            done_hold,
         })
     }
 }
@@ -3215,6 +3248,7 @@ mod tests {
                 module_phase: None,
                 cam_accum: None,
                 walk_yaw: None,
+                done_hold: None,
             },
             PhaseGate {
                 action_state: 0x35,
@@ -3225,6 +3259,7 @@ mod tests {
                 module_phase: None,
                 cam_accum: None,
                 walk_yaw: None,
+                done_hold: None,
             },
             PhaseGate {
                 action_state: 0x36,
@@ -3232,6 +3267,15 @@ mod tests {
                 module_phase: Some(6),
                 cam_accum: Some(72),
                 walk_yaw: Some(1497),
+                done_hold: None,
+            },
+            PhaseGate {
+                action_state: 0x51,
+                fade: None,
+                module_phase: None,
+                cam_accum: None,
+                walk_yaw: None,
+                done_hold: Some(104),
             },
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));

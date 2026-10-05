@@ -281,9 +281,21 @@ impl World {
         // write-back would clobber it.
         let mut ctx = self.battle_ctx.clone();
         let pre_state = ctx.action_state;
+        let pre_banner = ctx.levelup_banner_element;
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
+        // One host path does write the context: the summon stager's strike
+        // folds the cast inside the step, and the fold's level check stamps
+        // the banner element `ctx[+0x26]` (`sb v0,0x26(v1)` at `0x801E723C`,
+        // `World::accrue_summon_spell_xp`). Carry that store over the
+        // write-back, unless the step itself wrote the byte; clobbered, the
+        // Done band seeded its `0x3C` hold instead of `0x96` and its teardown
+        // never unloaded the banner.
+        let host_banner = self.battle_ctx.levelup_banner_element;
         self.battle_ctx = ctx;
+        if host_banner != pre_banner && self.battle_ctx.levelup_banner_element == pre_banner {
+            self.battle_ctx.levelup_banner_element = host_banner;
+        }
         // The frame driver counts the timed message's hold down straight
         // after the SM step (`FUN_80046A20`, `jal 0x801E295C` then the
         // `0x801F6964` block).
