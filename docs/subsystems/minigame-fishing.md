@@ -91,6 +91,9 @@ The same two buttons cast: state `0x0C` starts the cast and state `0x14` locks t
 
 The catch HUD `FUN_801d1580` (`overlay_fishing_801d1580.txt`) renders the live state: the line length / record number `DAT_801d927c`, the casting-power bar `DAT_801d9274`, the depth `DAT_801d9298`, and - gated on `DAT_801d91b4` - the tension bar `DAT_801d9168` itself (drawn via `FUN_801d1870`). It uses the digit / glyph blitters `FUN_801d76e0` (number) and `FUN_801d63b0` (single sprite-quad).
 
+The LINE readout's layout, read off the bytes: `FUN_801d76e0` style `0` draws an eight-slot right-aligned field at `x + 8 * slot` (leading zeros blank), so the whole part at `x = 0xDA` puts its units digit at `0x112` and the tenths at `0xE8` land at `0x120`. The plate (record `0xB`, `104 x 16` at `0xD4`) carries its own `.` (about `0x11B`) and `m` (about `0x129`) in its texels.
+The routine then emits record `0x10` at `(0x114, 0x30)` (`0x801D16B0..0x801D16C8`, no branch around it) - a `16 x 16` cell at page `u = 128` that holds a second `m` - which lands on the whole part's units digit. Nothing patches record `0x10` (the digit emitters patch only records `6` / `0x18`), and the runtime table in the `minigame_fishing` state matches the disc. So the overlapped "`11m3 m`" both hosts draw is what the emit sequence produces, not a port layout error; no retail cast-state frame exists yet to see it.
+
 The catch-HUD readout arithmetic: the length total is `max(record - 300, 0) * 100 >> 9` plus the `DAT_801d9178 >> 9` extent term (each clamped at zero), split as `/10` (whole) and `%10` (tenths digit) - the same `300` base as the hook check; the cast-power percent is `power * 100 >> 12` (percent of the `0x1000` meter ceiling); `FUN_801d1a90` draws the power bar. A debug length print sits behind the global print flag `_DAT_8007b9b0`.
 
 A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). The awarded points are

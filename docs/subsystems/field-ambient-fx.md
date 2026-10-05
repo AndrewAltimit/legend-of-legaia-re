@@ -578,6 +578,22 @@ and keeps still otherwise. Applied to all of them, the pulse throbbed
 object's op-`0x4B` lanes own a slot (town01's shoreline objects run their own
 tide envelope), the pulse stands aside on that slot rather than adding to it.
 
+### map01's mist bank is ambient sprite-arm sheets
+
+The white bank north of Rim Elm on `map01` is neither the fog pool nor the
+ground's depth cue: it is the ambient tree's draw-kind-4 sprite-arm nodes
+(`+0x56 == 4`, `+0x9E & 0x4000`, keyframe mode `+0x5A == 6`), eight sheets per
+node at `x = 9152` along the ridge, texpage `0x06` with ABR 1 (additive) and
+CLUT `0x774A`. `keikoku_chest_preload` holds nine such nodes with `+0x74 =
+0xC9000000` (black far colour, ABE + ABR 1) and `+0x78` levels between `0` and
+`0x1080` - the move VM fades each node in and out - and its ordering table
+carries the matching additive `POLY_FT4`s at packet colours up to `0x7F7F7F`.
+Additive sheets of that texture stacked eight to a node saturate to white where
+they overlap, so a player walked up to the bank sees a white screen on retail's
+rules too; the engine's nodes (`effect_sprite_arm`) carry the same words.
+Disabling the volumetric fog, lighting, the fog pool or the ground cue leaves it
+in place on both hosts; dropping the kind-4 draws removes it.
+
 ## Engine + viewer wiring
 
 - `engine-core::man_field_scripts::scene_entry_ambient_installs` is the
