@@ -675,6 +675,10 @@ impl LegaiaRuntime {
             "turns_resolved": self.minigame_ui.muscle.turns_resolved,
             "time_meter": s.time_meter(),
             "magic_open": s.magic_open(),
+            // The press the shared scripted driver makes this frame
+            // (`MuscleDomeSession::scripted_press`), as a pad mask; `null`
+            // outside the selection or while the battle-open hold runs.
+            "scripted_press": s.scripted_press().map(|b| b.mask()),
         })
         .to_string()
     }
