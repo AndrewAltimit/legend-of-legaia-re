@@ -194,8 +194,11 @@ pub struct EffectSprite {
     /// Child world position in world units (the pool's 16.8 coordinates
     /// `>> 8`, exactly as the retail projection input truncates).
     pub world_pos: [f32; 3],
-    /// Billboard size in world units - the pass-2 sizing `atlas w/h *
-    /// sprite_scale >> 8` (x10 the texel size at the retail `0xA00` scale).
+    /// Billboard half-extents in retail view units - the pass-2 sizing
+    /// `atlas w/h * sprite_scale >> 8` (x10 the texel size at the retail
+    /// `0xA00` scale), which the projector adds either side of the centre.
+    /// Hosts size the quad through
+    /// `legaia_engine_vm::effect_billboard::world_half_extents`.
     pub size: [f32; 2],
     /// Top-left source texel within the texture page (atlas `u`, `v`).
     pub uv: [u16; 2],
