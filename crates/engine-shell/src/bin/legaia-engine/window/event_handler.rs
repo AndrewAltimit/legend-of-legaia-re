@@ -53,6 +53,25 @@ impl ApplicationHandler for PlayWindowApp {
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // A `--screenshot` run is driven entirely by `--key-script` /
+        // `--pad-script`; host input must not reach it. The window opens on a
+        // shared desktop and can take focus, so a stray keystroke (every
+        // letter and F-key here is a live toggle), a drag or a wheel notch
+        // would change the captured frame between two runs of the same
+        // command - the shape of a capture-pair oracle going red with no
+        // change to the engine.
+        if self.screenshot.is_some()
+            && matches!(
+                event,
+                WindowEvent::KeyboardInput { .. }
+                    | WindowEvent::CursorMoved { .. }
+                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::MouseWheel { .. }
+                    | WindowEvent::Focused(_)
+            )
+        {
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => {
                 // Flush any pending record log before exiting so an Escape /
