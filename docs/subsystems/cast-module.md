@@ -280,6 +280,18 @@ the action SM's `0x51` settle gate (`FUN_801E7250`, a plain `+0x14C` vs
 `+0x172` compare) never opens. 960's dispatcher reaches arms `0..=0x10`
 before the terminal `0xFF`.
 
+**One wrapper call per cast.** The module's only damage-wrapper call is the
+burst - `li a0,0x1C0` / `lbu a1,0x13(ctx)` / `clear a2` / `jal 0x801DD6B4` at
+`0x801F8160..0x801F816C`, aimed at actor-table seat `0` - followed by the
+shape-A clamp against `+0x14C`, the `+0x10` accumulate and the HP write
+(`0x801F818C..0x801F81CC`). So a Plasma Strike is exactly two HP writes: arm
+`0x0C`'s landing of the flurry the cast clips' hit events accumulated through
+the melee kernel, then the one `0x1C0` burst. Nothing else in the cast deals
+damage, so the band's generic cast fold must not run after it; the port
+waives the fold once the tick's burst has landed (`module_skips_fold`).
+Folding as well rolled the burst twice and took a full-HP Noa to zero in one
+cast in the Nivora duel.
+
 **The victim is the core's target, not the caster.** The monster AI's
 Delilas arms (`FUN_801E9FD4`, `0x801EB7C0..0x801EB81C`) store only
 `+0x1DE = 2` and `+0x1DF = id - 0x29`; `+0x1DD` keeps the generic core's

@@ -739,3 +739,28 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
         NEVER_ENTERED.len()
     );
 }
+
+/// PROT 0960's Plasma Strike makes **one** wrapper call - the `0x1C0` burst
+/// `FUN_801DD6B4` at `0x801F8168`, onto seat 0 - beside arm `0x0C`'s landing
+/// of the flurry its clip hits accumulated. Once the burst has landed in the
+/// tick, the band's generic fold owes nothing: folding as well rolled the
+/// burst a second time.
+#[test]
+fn the_plasma_strike_burst_lands_once_and_waives_the_fold() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let mut w = seeded_base(&dir);
+    assert_eq!(w.cast_module_for(0x7B), Some(960));
+    w.casting.module_phase = ticks::PLASMA_STRIKE_BURST_ARM;
+    let before = w.actors[0].battle.hp;
+    w.run_cast_module_code(0x7B, ticks::PLASMA_STRIKE_BURST_ARM)
+        .expect("band entry");
+    assert!(w.actors[0].battle.hp < before, "the burst lands on seat 0");
+    assert!(
+        w.casting.module_skips_fold,
+        "the burst is the cast's outcome - the fold owes nothing"
+    );
+    eprintln!("[ran] plasma burst {}", before - w.actors[0].battle.hp);
+}

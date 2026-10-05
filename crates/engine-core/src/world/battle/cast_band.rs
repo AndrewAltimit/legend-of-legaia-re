@@ -2441,6 +2441,15 @@ impl World {
                     } else {
                         None
                     };
+                    // The burst is the module's one wrapper call (`jal
+                    // 0x801DD6B4` at `0x801F8168`), and its HP writes are the
+                    // cast's whole outcome beside arm `0x0C`'s flurry
+                    // landing: once it has landed here, the band's generic
+                    // fold owes nothing. Folding as well rolled the
+                    // `0x1C0` a second time through the catalog def.
+                    if hit.is_some() {
+                        self.casting.module_skips_fold = true;
+                    }
                     Some(ticks::plasma_strike_tick(
                         &mut ctx,
                         &mut caster,
