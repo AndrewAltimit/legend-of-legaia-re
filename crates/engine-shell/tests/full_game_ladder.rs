@@ -1334,7 +1334,10 @@ fn wanted_item(
         let hit = (threat + threat / 8).min(max * 95 / 100);
         pct.max(hit)
     };
-    let danger = |i: usize| hp[i] > 0 && hp[i] < limit(i);
+    // A member a committed revive brings back is still down while the
+    // window is open, and the target cursor refuses a heal on it (the
+    // confirm bounces): it is not a heal target until it stands.
+    let danger = |i: usize| hp[i] > 0 && w.actors[i].battle.hp > 0 && hp[i] < limit(i);
     let dead: Vec<usize> = (0..n).filter(|&i| hp[i] == 0).collect();
     let hurt: Vec<usize> = (0..n).filter(|&i| danger(i)).collect();
     if dead.is_empty() && hurt.is_empty() {
@@ -5389,90 +5392,6 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         let gained = flags_of_world(session).difference(&before).count();
         log.push(format!("{name}: {ran} beat(s) run, +{gained} flag(s)"));
     };
-    for p in boss_stager_placements(&mf, &man) {
-        STAGED_FIGHTS.with(|s| {
-            s.borrow_mut()
-                .insert((name.clone(), Some(u16::from(p.formation_row))))
-        });
-        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-            eprintln!(
-                "    [stager] {name} P1[{}] row {} park {:?} (set {:?}, next anchor {:?}) station {:?} spawn {:?} parked {}",
-                p.placement_index,
-                p.formation_row,
-                p.park_gate_flag,
-                p.park_gate_flag
-                    .map(|f| session.host.world.system_flag_test(f)),
-                p.park_gate_flag.map(next_anchor_has),
-                p.station_world,
-                p.spawn_world,
-                p.spawn_parked
-            );
-        }
-        if p.park_gate_flag
-            .is_some_and(|f| session.host.world.system_flag_test(f))
-        {
-            continue;
-        }
-        if stager_overreaches(&mf, &man, p.placement_index) {
-            continue;
-        }
-        let at = match (p.station_world, p.spawn_parked) {
-            (Some(st), _) => st,
-            (None, false) => p.spawn_world,
-            (None, true) => continue,
-        };
-        let (tx, tz) = tile_of(at.0, at.1);
-        ran += 1;
-        if pad_hand() {
-            // A player walks into a boss at full strength.
-            pad_field_heal(session, 900);
-            // Walk up to the stager; its touch dispatch runs off the
-            // locomotion step, as it does for a player.
-            let avoid = pad_avoid(session, None);
-            let walk = pad_walk(session, (tx, tz), &avoid, 1);
-            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                eprintln!("    [stager] walk -> {walk:?}");
-            }
-            match walk {
-                Ok(Walk::Entered(s)) => {
-                    finish(session, log, ran);
-                    return Ok(Some(s));
-                }
-                Ok(Walk::Arrived) => {
-                    let _ = pad_lean(session, move |_| Some(at), 24, |s| !released(s));
-                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                        eprintln!(
-                            "    [stager] leaned: holder {} at {}; touch {:?}; player {:?}",
-                            holder(session),
-                            park_site(session),
-                            session.host.world.props.active_walk_touch,
-                            player_xz(session)
-                        );
-                    }
-                }
-                Err(_) => continue,
-            }
-        } else {
-            session
-                .host
-                .world
-                .seat_player_at_tile(tx.clamp(0, 127) as u8, tz.clamp(0, 127) as u8);
-        }
-        let f0 = flags_of_world(session);
-        let r = run_while_moving(session, DEEP_EXIT_TICKS);
-        trace_beat(session, &f0, || {
-            format!("{name} boss stager P1[{}] -> {r:?}", p.placement_index)
-        });
-        match r {
-            Run::Entered(s) => {
-                finish(session, log, ran);
-                return Ok(Some(s));
-            }
-            Run::Battle(b) => return Err(format!("boss stager P1[{}]: {b}", p.placement_index)),
-            Run::Error(e) => return Err(e),
-            Run::Released | Run::Parked(_) => {}
-        }
-    }
     let doors: BTreeSet<u8> = overworld_portal_sites(&mf, &man, &triggers)
         .iter()
         .map(|s| s.record)
@@ -5498,8 +5417,105 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     let mut touched: BTreeSet<u8> = BTreeSet::new();
     let mut examined: BTreeSet<(u8, u8)> = BTreeSet::new();
     let overreach = overreaching_records(&mf, &man, 2);
+    // A stager's record is often a staged conversation (`tunnelc` P1[4],
+    // Xain: `0x323`, `0x324`, `0x325`, then the fight), each contact
+    // playing the next stage, so stagers are approached every round until
+    // a contact gains nothing.
+    let mut stager_spent: BTreeSet<usize> = BTreeSet::new();
     for _round in 0..BEAT_ROUNDS {
         let round_start = flags_of_world(session);
+        for p in boss_stager_placements(&mf, &man) {
+            if stager_spent.contains(&p.placement_index) {
+                continue;
+            }
+            STAGED_FIGHTS.with(|s| {
+                s.borrow_mut()
+                    .insert((name.clone(), Some(u16::from(p.formation_row))))
+            });
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "    [stager] {name} P1[{}] row {} park {:?} (set {:?}, next anchor {:?}) station {:?} spawn {:?} parked {}",
+                    p.placement_index,
+                    p.formation_row,
+                    p.park_gate_flag,
+                    p.park_gate_flag
+                        .map(|f| session.host.world.system_flag_test(f)),
+                    p.park_gate_flag.map(next_anchor_has),
+                    p.station_world,
+                    p.spawn_world,
+                    p.spawn_parked
+                );
+            }
+            if p.park_gate_flag
+                .is_some_and(|f| session.host.world.system_flag_test(f))
+            {
+                continue;
+            }
+            if stager_overreaches(&mf, &man, p.placement_index) {
+                continue;
+            }
+            let at = match (p.station_world, p.spawn_parked) {
+                (Some(st), _) => st,
+                (None, false) => p.spawn_world,
+                (None, true) => continue,
+            };
+            let (tx, tz) = tile_of(at.0, at.1);
+            ran += 1;
+            if pad_hand() {
+                // A player walks into a boss at full strength.
+                pad_field_heal(session, 900);
+                // Walk up to the stager; its touch dispatch runs off the
+                // locomotion step, as it does for a player.
+                let avoid = pad_avoid(session, None);
+                let walk = pad_walk(session, (tx, tz), &avoid, 1);
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [stager] walk -> {walk:?}");
+                }
+                match walk {
+                    Ok(Walk::Entered(s)) => {
+                        finish(session, log, ran);
+                        return Ok(Some(s));
+                    }
+                    Ok(Walk::Arrived) => {
+                        let _ = pad_lean(session, move |_| Some(at), 24, |s| !released(s));
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!(
+                                "    [stager] leaned: holder {} at {}; touch {:?}; player {:?}",
+                                holder(session),
+                                park_site(session),
+                                session.host.world.props.active_walk_touch,
+                                player_xz(session)
+                            );
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            } else {
+                session
+                    .host
+                    .world
+                    .seat_player_at_tile(tx.clamp(0, 127) as u8, tz.clamp(0, 127) as u8);
+            }
+            let f0 = flags_of_world(session);
+            let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            if flags_of_world(session) == f0 {
+                stager_spent.insert(p.placement_index);
+            }
+            trace_beat(session, &f0, || {
+                format!("{name} boss stager P1[{}] -> {r:?}", p.placement_index)
+            });
+            match r {
+                Run::Entered(s) => {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
+                Run::Battle(b) => {
+                    return Err(format!("boss stager P1[{}]: {b}", p.placement_index));
+                }
+                Run::Error(e) => return Err(e),
+                Run::Released | Run::Parked(_) => {}
+            }
+        }
         // A talk is re-tried each round while its flag stays clear: its
         // record may branch on a flag the previous round's beats set.
         for slot in talk_beats(session, &mf, &man) {

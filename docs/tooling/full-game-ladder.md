@@ -96,10 +96,10 @@ A milestone may also name `via` scenes: story waypoints the anchors show the
 retail run passed through between the previous milestone and this one, and
 that the cheapest route skips. They are visited in order, each with its beats
 pass played, before the route heads for the milestone's own scene. Each
-carries a comment naming the flags that put it there - the Fire Path through
-`geremi`, Vidna and `stone` (the Star Pearl that opens the `tunnela` door; the
-cheapest route rides `ropeway2`'s elevator, whose door opens only after Xain), Rogue Tower goes
-through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
+carries a comment naming the flags that put it there - the Fire Path goes
+through `geremi`, Vidna and `stone` (the Star Pearl that opens the `tunnela`
+door; the cheapest route rides `ropeway2`'s elevator, whose door opens only
+after Xain), Rogue Tower through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
 waits on), Zora Castle through `son`, Noaru Valley back through its own start
 scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
 to `concend`), then `concend`, `jou` and `retockin` (the way back from Drake
@@ -141,7 +141,9 @@ ticket talk's hop to `station3`.
 The **beats pass** runs once per scene, when the scene is the target and its
 reach flags are unset, at a waypoint, or when a hop's door does not fire. It
 approaches every boss stager whose park gate is clear (the touch dispatch runs
-its placement record), then plays four kinds of beat in rounds, repeating
+its placement record) - every round, until a contact gains nothing, since a
+stager's record is often a staged conversation (`tunnelc` P1[4], Xain) - and
+plays four kinds of beat in rounds, repeating
 while a round still gains flags, since each unlocks the other:
 
 - **Talks.** A talk NPC is spoken to when its own partition-1 record, or a
@@ -379,7 +381,7 @@ In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
 battle is fought through the command ring, one pad edge at a time, by a
 fighter shaped like a player: a member who is down gets a revive, and a
-member in danger - under 45% of its HP, or unable to take another loss the
+member in danger - standing, and under 45% of its HP, or unable to take another loss the
 size of the biggest it took this battle between two of the party's command
 windows (a round, not a hit: a fast foe acts twice in one, and a cast lands
 its flurry and its burst as separate HP writes) - gets a heal: a party heal when two
