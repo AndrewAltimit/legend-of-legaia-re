@@ -738,8 +738,14 @@ impl World {
     pub fn script_context_engages_player(&self) -> bool {
         // A parked scene change holds the player too: the door record that
         // issued it is parked (`26 FF FF` / `21`) for the whole countdown and
-        // keeps raising the engaged bit.
+        // keeps raising the engaged bit. So does one requested but not yet
+        // held: the port drops a record that ran its `0x3F` before the host
+        // drains the request into the hold, and in that gap the pad must not
+        // open a talk with whoever stands by (`taiku` P2[15] ends beside the
+        // NPC whose talk then rode the scene change into `map03`).
         self.scene_transition_hold.is_some()
+            || self.pending_named_scene_transition.is_some()
+            || self.pending_scene_transition.is_some()
             || self.cutscene_timeline_active()
             || self
                 .field_vm
