@@ -1153,7 +1153,22 @@ reaches on the matching tick - a column of flame around the creature that
 fades in, grows through `vdf.dat` entries 25..27 and halts during arm 10.
 The capture's puff cloud is the burning-body emitter's effect-`0x0B` sprites
 ([`battle-action.md`](battle-action.md)), each quad twice its pass-2 size
-across ([`effect-vm.md`](effect-vm.md#pass-2---render)). The same capture holds the creature
+across ([`effect-vm.md`](effect-vm.md#pass-2---render)). Their spawn
+points carry no offset of their own: effect `0x0B`'s one `efect.dat` record
+is all zeros (no height, planar legs or velocity - the capture's ten
+children hold zero velocity too), so each puff sits exactly where the emitter
+put it - the creature's live `+0x34..+0x38`, plus a decoded pose object
+turned by `+0x46`, plus `±(+0x58 >> 4)` of jitter. The decoded object table
+`ctx+0x6F4` matches the port's pose to a few units in both the walk
+(`gimard_burning_attack`) and the idle stance (`gimard_summon_visible`), so
+where the cloud lands on screen follows the creature's path and the framing,
+not the emitter. Two things move the path: at frame step `3` retail's
+creature takes its first walk step one whole frame (3 vsyncs) before the
+yaw base starts to swing - arm 10's exit queues the clip from the action
+SM, and the creature's anim tick, later on the same list, steps it - so at
+any given yaw base it stands about 56 units further on than a port ticking
+once a vsync; and puffs live about 23 vsyncs, so the cloud trails the
+creature by that much of its walk. The same capture holds the creature
 (pool slot 7) red: `+0x21C = 3`, `+0x04 = 0x3FC`, `+0x0C = 0x1000` - arm 9's
 render flag and tint word, eased by the presentation SM's red arm. The disc
 palette of the Gimard record is grey; the red is the tint pass, which walks
