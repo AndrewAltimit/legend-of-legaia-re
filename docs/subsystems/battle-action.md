@@ -1941,8 +1941,22 @@ attack. Two qualifications: (a) within the **battle-actor** struct the `+0xF8`
 bit `0x2000` is set on every party slot at this instant, so there it is not the
 per-actor delegation discriminator - `+0x16E & 0x380` is (the
 `FUN_80047430`/`+0xF8 & 0x2000` relation above is on the **character record**,
-a different struct); (b) this is a single sample, so the engine's auto-physical
-stand-in stays a stand-in - the writer and the pick variability are still open.
+a different struct); (b) it is a single sample.
+
+**The writer is `FUN_801F0450`'s auto-fill arm, and the sample fits it.** The
+arm's gate reads the **character record**, not the actor: `lw v0,0x6c0(v1)` at
+`0x801F04D4` with `v1 = 0x80084140 + (id - 1) * 0x414` is record `+0xF8`, and
+bit `0x2000` there is ability index `0x2D`, Rage - the Evil Medallion's passive
+([`accessory-passive-table.md`](../formats/accessory-passive-table.md)). With
+`actor[+0x16E] & 0x404` clear the arm stamps category `3`, rolls a target, then
+loops: stop on `rand() % 7 == 0`, else draw `record[+0x186 + rand() % count]`,
+discard a draw under the floor (`4`, or `6` for id `2`) and store `id + 0x1B`
+otherwise, up to fifteen (`0x801F05C4..0x801F06CC`). The capture's
+`[0x22,0x26,0x25,0x22,0x21]` is five learned arts `7, 11, 10, 7, 6`, all at or
+above either floor and drawn with replacement, which is that loop's output
+shape; its length and order are per-roll variability. The port runs this arm
+from its retail call site (`auto_fill_party_queues` in `engine-vm`), so the
+Rage pick is no longer a stand-in.
 
 **`FUN_801F0450` - the auto arts-combo assembler (a candidate writer).** A REAL
 928-instruction battle-action body (`--explain 801f0450` => `REAL`, entry
