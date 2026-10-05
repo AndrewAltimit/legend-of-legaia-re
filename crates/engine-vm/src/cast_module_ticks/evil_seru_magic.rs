@@ -52,8 +52,8 @@ pub const EVIL_SERU_MAGIC_SWEEP_SHAPE: CastDamageShape = CastDamageShape {
 ///
 /// Not carried: the creature seat 7's stages and rate bytes (the engine seats
 /// no creature for a capture cast), the seat poses and model scales arms 0 /
-/// 27 / 28 save and restore, the effect records, the screen fades and the
-/// arm-20 banner.
+/// 27 / 28 save and restore, the effect records and the arm-20 banner (the
+/// screen fades are the band seam's, `World::run_cast_module_code`).
 ///
 /// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the party and caster writes and the arm-26 hit)
 pub fn evil_seru_magic_seat_writes(

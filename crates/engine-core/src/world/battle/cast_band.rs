@@ -105,6 +105,37 @@ const SUMMON_UNSEATED_GRACE: u16 = 60;
 /// spawn arms the pool already stages.
 pub const AOE_STAGER_WORKING_ARM: u8 = 4;
 
+/// The screen fade PROT 0966's arm `phase` spawns on its pass, each a
+/// `FUN_80024E80(0x801C9070, 1)` over the template the arm writes:
+///
+/// | arm | kind | frames | from | to | delay / hold |
+/// |---|---|---|---|---|---|
+/// | 2 (`0x801F6EE8`) | 1 | `0x10` | `(0xFF, 0x40, 0x40)` | black | - |
+/// | 4 (`0x801F6FC0`) | 1 | `0x40` | black | white | held |
+/// | 10 (`0x801F70A0`) | 1 | `0x80` | white | black | - |
+/// | 26 (`0x801F8574`) | 1 | `0x40` | black | white | `0xC0` delay, held |
+/// | 27 (`0x801F879C`) | 1 | `0x80` | white | black | - |
+///
+/// Arm 26 spawns three fades at once (a white flash, a held blue grade, and
+/// the delayed white-in); the engine has one fade seat, so it carries the
+/// last, which is the one still on screen when arm 27 fades out of it.
+fn evil_seru_magic_fade(phase: u8) -> Option<crate::fade::FadeTemplate> {
+    let (duration, start_rgb, end_rgb, mode) = match phase {
+        2 => (0x10, [0xFF, 0x40, 0x40], [0; 3], [0, 0, 0]),
+        4 => (0x40, [0; 3], [0xFF; 3], [0, -1, 0]),
+        10 | 27 => (0x80, [0xFF; 3], [0; 3], [0, 0, 0]),
+        26 => (0x40, [0; 3], [0xFF; 3], [0xC0, -1, 0]),
+        _ => return None,
+    };
+    Some(crate::fade::FadeTemplate {
+        kind: 1,
+        duration,
+        start_rgb,
+        end_rgb,
+        mode,
+    })
+}
+
 /// Combat seats in retail's actor table `DAT_801C9370` - three party rows and
 /// five monster rows. The slot-B AoE sweeps' `ctx[+0]` / `ctx[+1]` bounds are
 /// indices into that span, so the engine's own extra seats (the summon
@@ -2257,6 +2288,9 @@ impl World {
             && let Some(arm) = capture_arm
         {
             let (phase, passed) = (ctx.phase, !arm.hold);
+            if passed && let Some(t) = evil_seru_magic_fade(phase) {
+                crate::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
+            }
             // The module's own move-VM stager hit lands mid-cast, not at the
             // fold: arm 10 spawns record `0x801F937C`, whose script waits
             // `0x7F` (`<< 3`, drained `scalar * delta` - 127 vsyncs) and then

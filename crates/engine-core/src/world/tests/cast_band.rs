@@ -941,6 +941,10 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
         }
     }
     assert!(done, "the body finishes");
+    assert!(
+        world.presentation.fade.is_some(),
+        "arm 27's white-out fade is up as the body ends"
+    );
     let phases: Vec<u8> = hit_phases.iter().map(|(p, _)| *p).collect();
     assert_eq!(phases, vec![11, 11, 11, 26, 26, 26], "{hit_phases:?}");
     let hp: Vec<u16> = (0..3).map(|i| world.actors[i].battle.hp).collect();

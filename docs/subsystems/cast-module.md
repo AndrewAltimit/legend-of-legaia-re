@@ -2153,8 +2153,10 @@ vsyncs, close to a minute.
 Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row
 of half-size models at `z = 0x190`, and restore them; arm 10 seats the
 creature at seat 7. The engine keeps every seat where the battle put it, so
-the cuts frame the stage rather than the moved seats. The effect records, the
-screen fades and the arm-20 spell-name banner are also left out.
+the cuts frame the stage rather than the moved seats. The effect records and
+the arm-20 spell-name banner are also left out. The screen fades are carried
+on the engine's one fade seat; arm 26 spawns three at once, and the seat keeps
+the last of them, the delayed white-in that arm 27 fades out of.
 
 ### PROT 0954 (Fatal Decision) is ported whole
 
