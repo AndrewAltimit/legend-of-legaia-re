@@ -86,6 +86,11 @@ pub struct FieldCtx {
     /// `+0x74` - composite control word. XOR-toggled by op 0x4C
     /// outer-nibble-0xC sub-8 (`[4C, 0xC8]` flips bit 0x10000000).
     pub field_74: u32,
+    /// `+0x78` - the draw's tint blend (`0x1000` = full), staged with the
+    /// low 24 bits of [`Self::field_74`] as the GTE far colour / `IR0` by
+    /// the actor draw (`FUN_8001ADA4` -> `FUN_80043390`). Written by op 0x4C
+    /// outer-nibble-8 sub-1.
+    pub field_78: u16,
 }
 
 impl FieldCtx {

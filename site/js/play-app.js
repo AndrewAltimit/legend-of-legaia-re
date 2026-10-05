@@ -1058,6 +1058,7 @@ void main() {
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
       this._objectMovesLive = false;
+      this._objectTintsLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {
@@ -2175,6 +2176,29 @@ void main() {
       this._objectMovesLive = mv.length > 0;
     }
 
+    /* A placed object whose actor carries a draw tint (op `4C 81`: the
+     * `+0x74` colour / `+0x78` blend retail stages as the far colour and
+     * IR0 - chitei2's hologram panels go black once the generator is down)
+     * draws with a constant per-draw cue. The engine hands back a
+     * per-placement [r, g, b, ir0] or an EMPTY array while nothing is
+     * tinted. The native window stages the same table
+     * (`World::object_draw_tints`) on its placed draws. */
+    _applyObjectTints(rt) {
+      if (!rt.field_placement_tints) return;
+      const t = rt.field_placement_tints();
+      if (!t.length && !this._objectTintsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const k = d.placeIdx * 4;
+        if (k + 3 < t.length && t[k + 3] > 0) {
+          d.cue = { far: [t[k], t[k + 1], t[k + 2]], nearZ: -1, farZ: 0, maxIr0: t[k + 3] };
+        } else if (d.cue) {
+          delete d.cue;
+        }
+      }
+      this._objectTintsLive = t.length > 0;
+    }
+
     /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
      * records the actor's new model id per placement slot, and
      * `play_npc_live_model` reports it per catalog entry (`-1` = still the
@@ -2443,6 +2467,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectTints(rt);
       this._applyGroundWave(rt);
 
       /* A camera re-centre this frame may have re-planned the windowed

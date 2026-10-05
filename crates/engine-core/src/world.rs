@@ -207,7 +207,7 @@ mod narration;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;
-pub use object_actor_height::ObjectSlotRamp;
+pub use object_actor_height::{ObjectRampSlot, ObjectSlotRamp, tint_cue};
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;

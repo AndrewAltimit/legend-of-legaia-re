@@ -182,3 +182,35 @@ fn the_generator_beat_walks_up_the_stairs_on_them_or_skip() {
     assert!(climbed > 4, "the beat walks the player up the stair run");
     assert_eq!(worst, 0, "every walked frame stands on the step under it");
 }
+
+#[test]
+fn the_hologram_panels_go_dark_once_the_generator_is_down_or_skip() {
+    let Some(root) = extracted_root() else { return };
+    let mut host = SceneHost::open_extracted(&root).expect("open SceneHost");
+    host.enter_field_scene("chitei2", 0).expect("enter chitei2");
+    // P0[38..39] spawn dark and light only under flag 0x4F0 - a tint
+    // that is not the generator's.
+    let before = host.world.object_draw_tints();
+    eprintln!("[ran] tinted records, generator running: {before:?}");
+    assert!(
+        (19..=27).all(|r| !before.contains_key(&r)),
+        "with the generator running the hologram panels are untinted"
+    );
+    // Flag 0x4C5 = the generator destroyed. The panels' spawn prologues
+    // (P0[19..27]) test it and run `4C 81 00 00 00 00 10 00 00`.
+    host.world.system_flag_set(0x4C5);
+    host.enter_field_scene("chitei2", 0)
+        .expect("re-enter chitei2");
+    let tints = host.world.object_draw_tints();
+    eprintln!("[ran] tinted records: {tints:?}");
+    let mut dark: Vec<usize> = tints
+        .iter()
+        .filter(|&(_, &t)| t == (0, 0x1000))
+        .map(|(&r, _)| r)
+        .collect();
+    dark.sort_unstable();
+    assert!(
+        (19..=27).all(|r| dark.contains(&r)),
+        "the hologram panels draw black at full blend: {dark:?}"
+    );
+}

@@ -847,6 +847,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // (`0x801E118C..0x801E11A8` -> `jal 0x8003C5F0` at `0x801E205C`). Other
     // contexts' `+0x72` ramps still drop: no port reader animates them.
     // REF: FUN_8003C5F0
+    /// Op `4C 81` - the actor's draw tint (`+0x74` colour, `+0x78` blend).
+    /// See `world::object_actor_height`.
+    ///
+    /// PORT: FUN_801DE840 (the nibble-8 sub-1 arm, `0x801E1FC4..0x801E2068`)
+    fn op4c_n_8_sub_1_set_tint(&mut self, ctx: &mut FieldCtx, colour: u32, blend: u16, ticks: u16) {
+        let record = self.world.field_vm.executing_object;
+        self.world.set_actor_tint(ctx, record, colour, blend, ticks);
+    }
+
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
         // Sub-2 on a placed object's actor: the `+0x8E` tween the actor
         // tick's `0x20000000` height law turns into its Y (`chitei2`'s

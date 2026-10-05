@@ -761,7 +761,7 @@ impl FieldHost for TestHost {
     ) {
         self.halt_acquire_calls.push((which, resume_pc, coords));
     }
-    fn op4c_n_8_sub_1_set_model_anim(
+    fn op4c_n_8_sub_1_set_tint(
         &mut self,
         _ctx: &mut FieldCtx,
         model_id: u32,

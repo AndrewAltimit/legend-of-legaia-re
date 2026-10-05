@@ -1988,6 +1988,24 @@ impl PlayWindowApp {
                             None => *model,
                         }
                     };
+                    // A placed object whose actor carries a draw tint
+                    // (op `4C 81`: `+0x74` colour, `+0x78` blend - chitei2's
+                    // hologram panels go black once the generator is down)
+                    // draws with that pair as a constant per-draw cue, the
+                    // far colour / `IR0` retail's case-5 draw stages. Shared
+                    // table `World::object_draw_tints`; the browser play page
+                    // reads the same one (`field_placement_tints`).
+                    let object_tints = self.session.host.world.object_draw_tints();
+                    let object_cue = |record: Option<usize>| {
+                        let &(colour, blend) = object_tints.get(&record?)?;
+                        let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                        Some(legaia_engine_render::DrawCue {
+                            far,
+                            near_z: -1.0,
+                            far_z: 0.0,
+                            max_ir0,
+                        })
+                    };
                     let place_near_culled = |mvp: &Mat4| {
                         !self.field_debug_camera
                             && legaia_engine_core::field_env::placed_origin_near_culled(
@@ -2008,10 +2026,8 @@ impl PlayWindowApp {
                         let static_window = &self.session.host.world.terrain.static_window;
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
-                            let model = &object_moved(
-                                model,
-                                self.field_placement_records.get(di).copied().flatten(),
-                            );
+                            let record = self.field_placement_records.get(di).copied().flatten();
+                            let model = &object_moved(model, record);
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
                             {
@@ -2037,7 +2053,7 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(record),
                                 });
                             }
                         }
@@ -2077,13 +2093,12 @@ impl PlayWindowApp {
                         for (di, (mesh_idx, model)) in
                             self.field_placement_color_draws.iter().enumerate()
                         {
-                            let model = &object_moved(
-                                model,
-                                self.field_placement_color_records
-                                    .get(di)
-                                    .copied()
-                                    .flatten(),
-                            );
+                            let record = self
+                                .field_placement_color_records
+                                .get(di)
+                                .copied()
+                                .flatten();
+                            let model = &object_moved(model, record);
                             if !legaia_engine_core::field_env::placed_draw_live(
                                 self.field_placement_color_window_keys
                                     .get(di)
@@ -2100,7 +2115,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(record),
                                 });
                             }
                         }

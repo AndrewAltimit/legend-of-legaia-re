@@ -26,20 +26,19 @@ pub(super) fn op_4c_n8<H: FieldHost>(
     op0: u8,
 ) -> StepResult {
     match op0 & 0x0F {
-        // Sub-1: 9-byte `[4C, 0x81, m0, m1, m2, anim_lo,
-        // anim_hi, frames_lo, frames_hi]`. Set actor model +
-        // animation frame, optionally with a tween if
-        // `tween_frames != 0`. Dispatcher lines 6496-6515; the
-        // host applies whichever path applies based on its own
-        // state model. PC always advances by 9.
+        // Sub-1: 9-byte `[4C, 0x81, r, g, b, blend_lo, blend_hi,
+        // ticks_lo, ticks_hi]` - the actor's draw tint (`+0x74` colour,
+        // `+0x78` blend), written outright or tweened over `ticks`
+        // (`0x801E1FC4..0x801E2068`; see the host hook). PC always
+        // advances by 9.
         1 => {
             if operand + 8 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let model_id = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
-            let anim_frame = crate::field_helpers::load_u16_le(&bytecode[operand + 4..]);
-            let tween_frames = crate::field_helpers::load_u16_le(&bytecode[operand + 6..]);
-            host.op4c_n_8_sub_1_set_model_anim(ctx, model_id, anim_frame, tween_frames);
+            let colour = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
+            let blend = crate::field_helpers::load_u16_le(&bytecode[operand + 4..]);
+            let ticks = crate::field_helpers::load_u16_le(&bytecode[operand + 6..]);
+            host.op4c_n_8_sub_1_set_tint(ctx, colour, blend, ticks);
             StepResult::Advance {
                 next_pc: pc + header_size + 8,
             }

@@ -2397,32 +2397,25 @@ pub trait FieldHost {
 
     // -- Round 18: 0x4C n8 actor-allocator + nE camera + nD/n5 dialog --
 
-    /// Set actor model + animation frame (op 0x4C n8 sub-1, 9 bytes).
+    /// Set the actor's draw **tint** (op 0x4C n8 sub-1, 9 bytes).
     ///
-    /// `[4C, 0x81, m0, m1, m2, anim_lo, anim_hi, frames_lo, frames_hi]`. The
-    /// 24-bit `model_id` is the standard `load_u24_le` decode of bytes 1..3;
-    /// `anim_frame` and `tween_frames` are 16-bit LE pairs at bytes 4..5 and
-    /// 6..7 respectively.
+    /// `[4C, 0x81, r, g, b, blend_lo, blend_hi, ticks_lo, ticks_hi]`: a 24-bit
+    /// colour (`FUN_8003CEB8` at operand `+1`), the `s16` blend and the `s16`
+    /// tween length (`FUN_8003CE9C` at `+4` / `+6`). The arm
+    /// (`0x801E1FC4..0x801E2068`, field overlay 0897) has three paths:
+    /// - `ticks == 0`: `+0x74 = colour`, `+0x78 = blend`.
+    /// - `+0x78 == 0`: `+0x74 = colour`, then a `FUN_8003C5F0` tween of
+    ///   `+0x78` to `blend` (type 2).
+    /// - otherwise: a type-3 tween of `+0x74` to `colour` (skipped when
+    ///   `blend == 0`) and a tween of `+0x78` to `blend`.
     ///
-    /// The original at lines 6496-6515 of the dispatcher dump has three paths:
-    /// - `tween_frames == 0`: write `*(int *)(ctx + 0x74) = model_id;
-    ///   *(short *)(ctx + 0x78) = anim_frame`. Done - caller advances PC by 9.
-    /// - `tween_frames != 0` and `ctx + 0x78 == 0` (no current anim):
-    ///   `*(int *)(ctx + 0x74) = model_id`. (Anim left untouched.)
-    /// - Otherwise call `func_0x8003C5F0(ctx, ctx + 0x74, 3, ctx[0x74],
-    ///   model_id, tween_frames)` to schedule a tween.
-    ///
-    /// This hook receives all four pieces of operand state - the host decides
-    /// which path to take based on its own state model. The default impl is a
-    /// no-op; the VM always advances PC by 9.
-    fn op4c_n_8_sub_1_set_model_anim(
-        &mut self,
-        ctx: &mut FieldCtx,
-        model_id: u32,
-        anim_frame: u16,
-        tween_frames: u16,
-    ) {
-        let _ = (ctx, model_id, anim_frame, tween_frames);
+    /// The draw stages `+0x74` / `+0x78` as the GTE far colour and `IR0`
+    /// (`FUN_8001ADA4` -> `FUN_80043390`), so `(0, 0x1000)` pushes the actor
+    /// fully to black. The earlier "model + animation frame" reading of this
+    /// op named the operands for what they are not. The VM always advances
+    /// PC by 9; the default impl is a no-op.
+    fn op4c_n_8_sub_1_set_tint(&mut self, ctx: &mut FieldCtx, colour: u32, blend: u16, ticks: u16) {
+        let _ = (ctx, colour, blend, ticks);
     }
 
     /// Install the **reflection controller** (op 0x4C n8 sub-6, 15 bytes).

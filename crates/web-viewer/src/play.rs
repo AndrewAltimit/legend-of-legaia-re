@@ -652,6 +652,37 @@ impl LegaiaRuntime {
         per.into_iter().flatten().map(|v| v as f32).collect()
     }
 
+    /// Per-placement **draw tint** (parallel to
+    /// [`Self::field_placement_slots`]), flattened `[r, g, b, ir0]`: the far
+    /// colour (display `0..1`) and `IR0` (`1.0 = 0x1000`) of a constant
+    /// per-draw depth cue, from the placed object's actor `+0x74` / `+0x78`
+    /// (op `4C 81` - chitei2's hologram panels go black once the generator
+    /// is down). `ir0 == 0` = untinted. **Empty** while no placement is
+    /// tinted. The same `World::object_draw_tints` table the native
+    /// play-window stages per placed draw.
+    pub fn field_placement_tints(&self) -> Vec<f32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let tints = h.world.object_draw_tints();
+        if tints.is_empty() {
+            return Vec::new();
+        }
+        let mut any = false;
+        let mut out = Vec::with_capacity(f.placement_records.len() * 4);
+        for r in &f.placement_records {
+            match r.and_then(|r| tints.get(&r)) {
+                Some(&(colour, blend)) => {
+                    let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                    out.extend_from_slice(&[far[0], far[1], far[2], ir0]);
+                    any = true;
+                }
+                None => out.extend_from_slice(&[0.0; 4]),
+            }
+        }
+        if any { out } else { Vec::new() }
+    }
+
     /// Per-placement **live** mask (parallel to [`Self::field_placement_slots`]):
     /// `1` = draw it this frame, `0` = the placement is a sub-area window
     /// sweep's whose actor is not on the world's windowed static-object list.

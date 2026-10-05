@@ -1,5 +1,7 @@
-//! The height law of a `.MAP` placed object's actor: op `4C 42`'s `+0x8E`
-//! slot and the actor tick's `+0x10 & 0x20000000` override.
+//! A `.MAP` placed object's actor words that a script tweens and the draw
+//! reads back: the height law (op `4C 42`'s `+0x8E` slot and the actor tick's
+//! `+0x10 & 0x20000000` override) and the draw tint (op `4C 81`'s `+0x74`
+//! colour / `+0x78` blend).
 //!
 //! The field VM's op `0x4C` nibble-4 sub-2 writes `+0x8E` outright (and, on
 //! that immediate path only, mirrors `world_y = -value` while `+0x10 &
@@ -15,56 +17,97 @@
 //! over 21..27 frames. The placed-object draw follows the actor
 //! ([`World::object_draw_displacements`]).
 //!
+//! Nibble-8 sub-1 (`0x801E1FC4..0x801E2068`) writes or tweens the tint pair
+//! the actor draw stages as the GTE far colour and `IR0` (`FUN_8001ADA4` ->
+//! `FUN_80043390`, `0x8001B46C..0x8001B474`): `chitei2`'s hologram panels
+//! (partition-0 records 19..27) run `4C 81 00 00 00 00 10 00 00` in their
+//! spawn prologue once flag `0x4C5` (the generator destroyed) is up - colour
+//! black at full blend, so the panels go dark
+//! ([`World::object_draw_tints`]).
+//!
 //! REF: FUN_8003C5F0 (the tween scheduler), FUN_8003BC08 (the height arm)
+//! REF: FUN_8001ADA4 (the tint staging)
 
 use super::*;
 
 /// The actor-tick flag that pins a field actor's Y to `-(+0x8E)`.
 const ACTOR_Y_FROM_8E: u32 = 0x2000_0000;
 
-/// One live `+0x8E` tween on an object-bind actor (`4C 42 <val> <ticks>`
-/// with `ticks != 0`), keyed by the actor's flat record index (`+0x50`).
+/// Which actor word an [`ObjectSlotRamp`] tweens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectRampSlot {
+    /// `+0x8E` - the height slot (`4C 42`).
+    Height8E,
+    /// `+0x74` - the tint colour, per channel (`4C 81`, scheduler type 3).
+    TintColour,
+    /// `+0x78` - the tint blend (`4C 81`, scheduler type 2).
+    TintBlend,
+}
+
+/// One live tween on an object-bind actor, keyed by the actor's flat record
+/// index (`+0x50`) and the word it moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectSlotRamp {
     /// The object channel's script id (flat partition-0 record).
     pub record: u16,
-    /// `+0x8E` when the tween was scheduled.
-    pub start: i16,
+    /// The word tweened.
+    pub slot: ObjectRampSlot,
+    /// The word when the tween was scheduled.
+    pub start: i32,
     /// The tween's end value.
-    pub end: i16,
+    pub end: i32,
     /// Length in frames.
     pub total: u16,
     /// Frames stepped so far.
     pub elapsed: u16,
 }
 
+/// A straight line from `start` to `end` after `elapsed` of `total` frames,
+/// landing exactly on `end`.
+fn lerp(start: i32, end: i32, elapsed: u16, total: u16) -> i32 {
+    if elapsed >= total || total == 0 {
+        return end;
+    }
+    start + (end - start) * i32::from(elapsed) / i32::from(total)
+}
+
 impl ObjectSlotRamp {
-    /// The slot value after `elapsed` frames - a straight line from `start`
-    /// to `end`, landing exactly on `end`.
-    fn value(&self) -> i16 {
-        if self.elapsed >= self.total || self.total == 0 {
-            return self.end;
+    /// The word's value after [`Self::elapsed`] frames. A colour tween moves
+    /// each 8-bit channel on its own line.
+    fn value(&self) -> i32 {
+        match self.slot {
+            ObjectRampSlot::TintColour => {
+                let mut out = 0u32;
+                for sh in [0u32, 8, 16] {
+                    let a = (self.start as u32 >> sh) & 0xFF;
+                    let b = (self.end as u32 >> sh) & 0xFF;
+                    let c = lerp(a as i32, b as i32, self.elapsed, self.total) as u32 & 0xFF;
+                    out |= c << sh;
+                }
+                out as i32
+            }
+            _ => lerp(self.start, self.end, self.elapsed, self.total),
         }
-        let span = i32::from(self.end) - i32::from(self.start);
-        (i32::from(self.start) + span * i32::from(self.elapsed) / i32::from(self.total)) as i16
     }
 }
 
 impl World {
-    /// Schedule an op-`4C 42` tween on object-bind actor `record` from its
-    /// current `+0x8E` (`start`) to `end` over `ticks` frames. A later tween
-    /// on the same actor replaces the earlier one.
-    pub(crate) fn schedule_object_slot_ramp(
+    /// Schedule a tween on object-bind actor `record`'s `slot` from `start`
+    /// to `end` over `ticks` frames. A later tween of the same word replaces
+    /// the earlier one.
+    pub(crate) fn schedule_object_ramp(
         &mut self,
         record: u16,
-        start: i16,
-        end: i16,
+        slot: ObjectRampSlot,
+        start: i32,
+        end: i32,
         ticks: u16,
     ) {
         let ramps = &mut self.field_vm.object_slot_ramps;
-        ramps.retain(|r| r.record != record);
+        ramps.retain(|r| !(r.record == record && r.slot == slot));
         ramps.push(ObjectSlotRamp {
             record,
+            slot,
             start,
             end,
             total: ticks,
@@ -72,7 +115,24 @@ impl World {
         });
     }
 
-    /// One actor tick of the object height law: step every live `+0x8E`
+    /// Schedule an op-`4C 42` tween of object-bind actor `record`'s `+0x8E`.
+    pub(crate) fn schedule_object_slot_ramp(
+        &mut self,
+        record: u16,
+        start: i16,
+        end: i16,
+        ticks: u16,
+    ) {
+        self.schedule_object_ramp(
+            record,
+            ObjectRampSlot::Height8E,
+            i32::from(start),
+            i32::from(end),
+            ticks,
+        );
+    }
+
+    /// One actor tick of the object words a script tweens: step every live
     /// tween, then pin each object actor carrying `0x20000000` to
     /// `-(+0x8E)` (the height arm's first branch).
     pub(crate) fn tick_object_actor_heights(&mut self) {
@@ -86,7 +146,13 @@ impl World {
                 .iter_mut()
                 .find(|c| c.object_bind && c.ctx.script_id == r.record)
             {
-                c.ctx.field_8e = v;
+                match r.slot {
+                    ObjectRampSlot::Height8E => c.ctx.field_8e = v as i16,
+                    ObjectRampSlot::TintColour => {
+                        c.ctx.field_74 = (c.ctx.field_74 & 0xFF00_0000) | (v as u32 & 0x00FF_FFFF)
+                    }
+                    ObjectRampSlot::TintBlend => c.ctx.field_78 = v as u16,
+                }
             }
         }
         ramps.retain(|r| r.elapsed < r.total);
@@ -97,6 +163,87 @@ impl World {
             }
         }
     }
+
+    /// Op `4C 81` on `ctx`: the three arms of `0x801E1FC4..0x801E2068`.
+    /// On a placed object's actor (`record`) the tweens are scheduled; on any
+    /// other actor, which no host draws tinted, they land at once.
+    pub(crate) fn set_actor_tint(
+        &mut self,
+        ctx: &mut legaia_engine_vm::field::FieldCtx,
+        record: Option<u16>,
+        colour: u32,
+        blend: u16,
+        ticks: u16,
+    ) {
+        let colour = colour & 0x00FF_FFFF;
+        if ticks == 0 {
+            ctx.field_74 = colour;
+            ctx.field_78 = blend;
+            return;
+        }
+        let tween_colour = ctx.field_78 != 0 && blend != 0;
+        if ctx.field_78 == 0 {
+            ctx.field_74 = colour;
+        }
+        let Some(record) = record else {
+            if tween_colour {
+                ctx.field_74 = colour;
+            }
+            ctx.field_78 = blend;
+            return;
+        };
+        if tween_colour {
+            self.schedule_object_ramp(
+                record,
+                ObjectRampSlot::TintColour,
+                (ctx.field_74 & 0x00FF_FFFF) as i32,
+                colour as i32,
+                ticks,
+            );
+        }
+        self.schedule_object_ramp(
+            record,
+            ObjectRampSlot::TintBlend,
+            i32::from(ctx.field_78),
+            i32::from(blend),
+            ticks,
+        );
+    }
+
+    /// Flat partition-0 record index -> `(colour, blend)` for every
+    /// **object-bind channel** whose actor draws tinted (`+0x78 != 0`): the
+    /// low 24 bits of `+0x74` (`0xBBGGRR`) and `+0x78` (`0x1000` = full),
+    /// which the actor draw stages as the GTE far colour and `IR0`
+    /// (`FUN_8001ADA4` -> `FUN_80043390`). Both hosts hand each listed
+    /// record's placed draws a constant per-draw depth cue from it.
+    // REF: FUN_8001ADA4 (0x8001B46C..0x8001B474)
+    pub fn object_draw_tints(&self) -> std::collections::HashMap<usize, (u32, u16)> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && c.ctx.field_78 != 0)
+            .map(|c| {
+                (
+                    c.placement_index,
+                    (c.ctx.field_74 & 0x00FF_FFFF, c.ctx.field_78),
+                )
+            })
+            .collect()
+    }
+}
+
+/// A tint pair as a constant per-draw depth cue: `far` in display `0..1`
+/// units (`0xBBGGRR`) and `IR0` in `1.0 = 0x1000` units - the
+/// `legaia_engine_render::DrawCue` / page `cue` shape with a flat ramp.
+pub fn tint_cue(colour: u32, blend: u16) -> ([f32; 3], f32) {
+    (
+        [
+            f32::from(colour as u8) / 255.0,
+            f32::from((colour >> 8) as u8) / 255.0,
+            f32::from((colour >> 16) as u8) / 255.0,
+        ],
+        f32::from(blend) / 4096.0,
+    )
 }
 
 #[cfg(test)]
@@ -107,6 +254,7 @@ mod tests {
     fn tween_lands_on_its_end_value() {
         let mut r = ObjectSlotRamp {
             record: 28,
+            slot: ObjectRampSlot::Height8E,
             start: 700,
             end: 0,
             total: 23,
@@ -117,5 +265,26 @@ mod tests {
         assert!(r.value() < 700 && r.value() > 0);
         r.elapsed = 23;
         assert_eq!(r.value(), 0);
+    }
+
+    #[test]
+    fn colour_tween_moves_each_channel_alone() {
+        let r = ObjectSlotRamp {
+            record: 1,
+            slot: ObjectRampSlot::TintColour,
+            start: 0x00_00_FF,
+            end: 0xFF_00_00,
+            total: 2,
+            elapsed: 1,
+        };
+        assert_eq!(r.value(), 0x7F_00_80);
+    }
+
+    #[test]
+    fn immediate_tint_writes_both_words() {
+        let mut w = World::default();
+        let mut ctx = legaia_engine_vm::field::FieldCtx::default();
+        w.set_actor_tint(&mut ctx, Some(19), 0, 0x1000, 0);
+        assert_eq!((ctx.field_74, ctx.field_78), (0, 0x1000));
     }
 }
