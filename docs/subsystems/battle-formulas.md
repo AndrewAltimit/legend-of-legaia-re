@@ -399,6 +399,41 @@ guard = def + rand() % (def/8 + 1) + … ;
 
 This is the binding that names ATK / UDF / LDF; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it.
 
+#### A zero-damage enemy strike is a block, keyed on the swing's own power byte
+
+A monster's ordinary attack that leaves a party member untouched is the
+**block roll** (`FUN_801EC3E4` `0x801EC5A8..0x801EC878`, ported as
+`battle_formulas::block_roll`), not a to-hit miss: the melee kernel has no miss
+arm for a party target, and the underdog rewrite's chip floor guarantees at
+least three points to any hit that lands. The `super_queue_replace_*` captures
+show it: the Gobu Gobu has already acted this round (both initiative keys
+spent, turn cursor `ctx[+0x1A] = 1`) with its picks `09 09 08` still in its
+stream, Vahn stands on full HP and an untouched combo word, and the juggle
+counter `ctx[+0x0A]` reads `1` - the value the kernel forces against a
+blocking defender.
+
+The roll's attacker scalar is `0x801F64E4[(power byte - 0x0C) % 5]`, so it is
+the **swing's** power byte that sets the odds, and that byte comes from the
+clip the strike loop stages: the AI picker's physical branch writes its picks
+(archive entry indices) into the monster's stream `+0x1DF..`, and each swing
+clip's hit events carry their own power byte.
+
+**Port gap.** The engine's AI physical arm (`World::take_monster_turn`,
+`MonsterAction::Physical`) leaves that stream empty - only the cast-fallback
+arm `arm_monster_physical` writes the picks - so an ordinary monster strike
+resolves on the clip-less immediate path (`World::apply_basic_attack`): no
+swing clip, every swing in one tick, and the block roll keyed on the generic
+command byte `0x0C`, whose scalar `6` is the largest in the table, so a party
+member rarely blocks. Writing the picks is one line, but the clip-paced path
+it opens is not yet sound for a party target: a hit that lands while the
+attacker is still in `0x1F` (cursor not yet parked) accumulates without
+applying, and when the last staged swing's clip lands no hit after the park
+the accumulated total is stranded - live HP and the bar's display then
+disagree with a zero accumulator, and the `0x51` settle gate (`FUN_801E7250`)
+holds the action band forever. The full-game ladder hit that softlock in
+`dolk` (Gimard's `0x0F` swing landing in `0x1F`, its `0x0D` swing landing
+nothing after it).
+
 #### The melee roll pair and the underdog rewrite
 
 `FUN_801EC3E4` is a **different kernel** from the summon / arts roll
