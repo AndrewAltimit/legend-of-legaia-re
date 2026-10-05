@@ -2460,15 +2460,38 @@ impl World {
             return;
         };
         let targets = crate::man_field_scripts::record_exempted_objects(&man_file, &man, record);
-        if targets.is_empty() {
-            return;
-        }
+        // A ride that sets the player down inside another door's contact
+        // box walks the player out of it before letting go (`balden`'s
+        // elevator cars, P0[7] / P0[14]: `CC F8 51` runs the player to the
+        // partner car, then `A2 F8 01` / `A2 F8 02` walk it out through the
+        // partner's door, with no `B1` bracket). The engine runs neither
+        // clip as motion, so a landing on the partner's centre would post
+        // its touch on the first step in any direction and ride straight
+        // back; the partner is exempt until the player has stepped off it,
+        // as a bracketed one is.
+        let landing = self
+            .player_actor_slot
+            .and_then(|p| self.actors.get(p as usize))
+            .map(|a| {
+                (
+                    i32::from(a.move_state.world_x),
+                    i32::from(a.move_state.world_z),
+                )
+            });
         let partners: Vec<(u8, (i16, i16))> = self
             .props
             .walk_touch_records
             .iter()
-            .filter(|&(&s, &r)| s != slot && targets.iter().any(|&t| usize::from(t) == r))
-            .filter_map(|(&s, _)| self.props.walk_touch.get(&s).map(|&(pos, _)| (s, pos)))
+            .filter(|&(&s, _)| s != slot)
+            .filter_map(|(&s, &r)| self.props.walk_touch.get(&s).map(|&(pos, _)| (s, r, pos)))
+            .filter(|&(_, r, (wx, wz))| {
+                targets.iter().any(|&t| usize::from(t) == r)
+                    || landing.is_some_and(|(lx, lz)| {
+                        (lx - i32::from(wx)).abs() < FIELD_PROP_BOX_HALF
+                            && (lz - i32::from(wz)).abs() < FIELD_PROP_BOX_HALF
+                    })
+            })
+            .map(|(s, _, pos)| (s, pos))
             .collect();
         for p in partners {
             if !self.props.arrival_exempt.contains(&p) {

@@ -412,6 +412,11 @@ clips and matches the same arts a windowed one does. Beyond that:
   (`town0d` P1[5], Tetsu's sparring offer).
 - A record polling the held pad (`42 01 <i>`, the compass table - Rim Elm's
   "stand here and press Down" doors) gets that direction held.
+  A band whose record polls once, on the tick it spawns, and that the pad
+  walk crosses on its way elsewhere is crossed holding the walk's own pad
+  for that tick, as a player walking through does: `balden`'s elevator call
+  bands (P2[6], P2[7]) want Up toward the car, and answering their poll
+  walked the player back off the band onto which the walk re-crossed it.
 - An op-`49 04` flag-window picker (the Uru Mais warp pads) gets the row
   whose branch in the record names the hop's destination; the rows are drawn
   flipped, so Up raises the selection.

@@ -161,6 +161,14 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "fire_path"
 scene = "tunnelb"
 reach = "scene"
+# The anchor gained the Star Pearl chain. Zalan (geremi P1[33]) stands
+# off-map until 0x1C9 (teien P2[2]); once the letter is delivered in
+# Vidna (0x1CB, balden P2[9]) his Yes spawns P2[16], which raises 0x1C1
+# (the Star Pearl); throwing it into the Stone Flower (stone P1[4]) raises
+# 0x1E9, the gate of stone P2[4], the door to tunnela. The cheapest route
+# rides ropeway2's elevator P2[21] instead, whose door P0[16] opens only
+# on 0x1D5 (Xain's defeat, later).
+via = ["teien", "geremi", "balden", "geremi", "stone"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-05" }
 
 [[milestone]]

@@ -858,6 +858,32 @@ fn held_pad_poll(session: &BootSession) -> Option<u16> {
         .copied()
 }
 
+/// The pads a script's leading held-pad poll chain passes, when the pad
+/// holder sits on one: consecutive op-`0x42` mode-1 tests (`42 01 <i> ..`),
+/// each against one compass point (`0x801F28D0`).
+fn poll_chain_pads(session: &BootSession) -> Option<Vec<u16>> {
+    let w = &session.host.world;
+    let (bc, mut pc) = if let Some(tl) = w.cutscene.timeline.as_ref() {
+        (&tl.bytecode, tl.pc)
+    } else {
+        let h = w.field_vm.helper_contexts.first()?;
+        (&h.bytecode, h.pc)
+    };
+    let (d, l, u, r) = (
+        PadButton::Down.mask(),
+        PadButton::Left.mask(),
+        PadButton::Up.mask(),
+        PadButton::Right.mask(),
+    );
+    let compass = [d, d | l, l, l | u, u, u | r, r, r | d];
+    let mut pads = Vec::new();
+    while bc.get(pc) == Some(&0x42) && bc.get(pc + 1) == Some(&0x01) {
+        pads.push(*compass.get(usize::from(*bc.get(pc + 2)?))?);
+        pc += 5;
+    }
+    (!pads.is_empty()).then_some(pads)
+}
+
 /// A conversation picker: the talk record's address and the picker's offset
 /// in it.
 type PickerKey = (usize, usize);
@@ -4646,7 +4672,24 @@ fn pad_walk(
                 flags_of_world(session),
                 cell_of(player_xz(session).0, player_xz(session).1),
             );
-            let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            // A band that polls the held pad once, on the tick it spawns
+            // (`balden`'s elevator call bands P2[6] / P2[7], whose poll wants
+            // Up toward the car), reads the pad the walk is holding: a hand
+            // that walks across one going elsewhere fails the poll and walks
+            // on. The scripted-sequence pad would answer the poll instead -
+            // and its Up walks the player back off the band, so the walk
+            // re-crosses it forever.
+            let r = match poll_chain_pads(session) {
+                Some(pads) if pad != 0 && !pads.contains(&pad) => {
+                    session.host.world.set_pad(pad);
+                    match session.tick() {
+                        Ok(SceneTickEvent::SceneEntered { name }) => Run::Entered(name),
+                        Ok(_) => run_while_moving(session, DEEP_EXIT_TICKS),
+                        Err(e) => Run::Error(format!("{e:#}")),
+                    }
+                }
+                _ => run_while_moving(session, DEEP_EXIT_TICKS),
+            };
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
                     "    [walk-script] tile {:?}: {site} -> {r:?}; game_over {}",

@@ -1872,10 +1872,17 @@ tour. Its landing is the last player `MoveTo` before the `B1`, so the resolver
 keeps walking a bracketed record to that point instead of stopping at its
 first move.
 
+Not every ride brackets. `balden`'s elevator cars (P0[7] / P0[14]) run the
+player to the partner car with `CC F8 51` and walk it out through the
+partner's door with `A2 F8 01` / `A2 F8 02`, setting it down on the
+partner's contact centre with no `B1` at all; retail's walk-off carries the
+player off the box before the record lets go.
+
 The engine does not run the walk-off clips as motion, so it keeps the
 bracket's effect instead: `World::arm_arrival_bracket` reads the partners off
 the teleporting record (`man_field_scripts::record_exempted_objects`) into
-`FieldPropState::arrival_exempt`, the touch dispatch and the prop collision
+`FieldPropState::arrival_exempt` - together with every other bind whose
+contact box holds the landing, the unbracketed car's case - and the touch dispatch and the prop collision
 probe skip them, and an entry clears once no probe point of the player reaches
 its contact box - never while the ride's own record is still running. A
 landing the walls seal on every side (the rapid lift down sets the player at
