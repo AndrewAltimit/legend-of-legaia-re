@@ -371,9 +371,11 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 
 pub mod capture;
 pub mod creature;
+mod evil_seru_magic;
 mod seru;
 pub use capture::*;
 pub use creature::*;
+pub use evil_seru_magic::*;
 pub use seru::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {

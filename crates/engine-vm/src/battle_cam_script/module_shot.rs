@@ -92,6 +92,16 @@ impl BattleCamera {
         }
     }
 
+    /// A capture arm's direct write into the TR x global `0x800840B8` - only
+    /// PROT 0966's arms walk it. Folded into the armed shot's target like
+    /// [`Self::drift_module`].
+    pub fn drift_module_tr_x(&mut self, tr_x: i16) {
+        self.pose.tr[0] += f32::from(tr_x);
+        if let Some(g) = self.module_glide.as_mut() {
+            g.target.tr[0] += f32::from(tr_x);
+        }
+    }
+
     fn land(&mut self, g: &Glide) {
         self.pose.pitch = g.target.pitch;
         self.pose.tr = g.target.tr;

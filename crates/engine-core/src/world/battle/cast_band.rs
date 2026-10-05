@@ -1256,6 +1256,9 @@ impl World {
             }
             if let Some(d) = run.capture_drift {
                 cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                if d.tr_x != 0 {
+                    cam.drift_module_tr_x(d.tr_x);
+                }
             }
         }
         if run.tick_ported && run.busy {
@@ -2247,6 +2250,61 @@ impl World {
             run.capture_drift = arm.drift;
             capture_held = arm.hold;
             capture_arm = Some(arm);
+        }
+        // PROT 0966 (Evil Seru Magic) has no other port: its seat half rides
+        // the director's gate, on the phase the director is answering for.
+        if entry == 966
+            && let Some(arm) = capture_arm
+        {
+            let (phase, passed) = (ctx.phase, !arm.hold);
+            let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                .map(|s| self.cast_actor_state(s))
+                .collect();
+            let mut rolls: Vec<(u8, i32)> = Vec::new();
+            if passed && phase == vm::cast_module_camera::EVIL_SERU_MAGIC_SWEEP_ARM {
+                // Rolled only for the seats the hit visits, in seat order,
+                // so the shared RNG cursor moves as retail's does.
+                for s in 0..ctx.party_count {
+                    if seats
+                        .get(s as usize)
+                        .is_some_and(ticks::aoe_seat_is_hittable)
+                    {
+                        let r = self
+                            .capture_module_roll(
+                                &ticks::EVIL_SERU_MAGIC_SWEEP_SHAPE,
+                                caster_slot,
+                                s,
+                            )
+                            .unwrap_or(0);
+                        rolls.push((s, r));
+                    }
+                }
+                self.refresh_seat_spirit(&mut seats);
+            }
+            let take = |s: u8| {
+                rolls
+                    .iter()
+                    .find(|(seat, _)| *seat == s)
+                    .map_or(0, |(_, r)| *r)
+            };
+            let hits = ticks::evil_seru_magic_seat_writes(
+                phase,
+                passed,
+                ctx.party_count,
+                caster_slot,
+                &mut seats,
+                take,
+            );
+            for (slot, st) in seats.iter().enumerate() {
+                self.write_cast_actor_state(slot as u8, st);
+            }
+            run.aoe_hits = hits
+                .iter()
+                .map(|h| ticks::AoeHit {
+                    seat: h.seat,
+                    applied: h.applied as i32,
+                })
+                .collect();
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);

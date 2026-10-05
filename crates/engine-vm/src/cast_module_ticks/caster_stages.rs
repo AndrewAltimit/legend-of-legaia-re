@@ -241,13 +241,9 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: false,
     },
-    // PROT 0966 Evil Seru Magic: `li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`.
-    CasterStageRow {
-        prot_entry: 966,
-        action_ids: &[],
-        rule: CasterClipRule::Fixed(&[0x06]),
-        approach: false,
-    },
+    // PROT 0966 Evil Seru Magic has no row: its body's port stages the
+    // caster itself (`li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`, arm 1;
+    // clip `0` at `0x801F7EA8`, arm 21) - `evil_seru_magic_seat_writes`.
 ];
 
 /// The capture-class bodies that write **no** caster `+0x1DA` at all - their
