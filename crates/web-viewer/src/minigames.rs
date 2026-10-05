@@ -81,6 +81,11 @@ pub struct LegaiaMinigames {
     /// The duel's CD-XA announcer lines (`XA32` / `XA33`), decoded at disc
     /// load while the raw sectors are still in hand.
     baka_xa: legaia_engine_audio::XaClipBank,
+    /// The Muscle Dome hub's live first visit, stepped by the page
+    /// (`muscle_first_visit_reset` / `muscle_first_visit_step`).
+    muscle_hub: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
+    /// Announcer lines the live first visit has started.
+    muscle_hub_xa_fired: u32,
     /// Announcer lines started (a read-out for the page's checks).
     baka_xa_fired: u32,
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
@@ -305,6 +310,8 @@ impl LegaiaMinigames {
             baka_run: None,
             baka_surface: Default::default(),
             baka_xa: legaia_engine_audio::XaClipBank::new(),
+            muscle_hub: None,
+            muscle_hub_xa_fired: 0,
             baka_xa_fired: 0,
             baka_tables: None,
             slot: None,
