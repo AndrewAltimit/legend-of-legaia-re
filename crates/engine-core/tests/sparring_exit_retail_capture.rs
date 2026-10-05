@@ -326,9 +326,9 @@ fn play_every_lesson(w: &mut World) -> Vec<u8> {
     );
 }
 
-/// A leaf to heal with: the item window offers only an item some target
-/// benefits from, and [`play_every_lesson`] wounds the lead once the fight
-/// has seated its stats.
+/// A leaf to heal with. The battle item window offers any battle-usable
+/// item, wounded party or not; [`play_every_lesson`] still wounds the lead
+/// once the fight has seated its stats, so the heal lands on something.
 fn stock_the_items_lesson(w: &mut World) {
     w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
     w.party.inventory.add(0x77, 3); // Healing Leaf
