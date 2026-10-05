@@ -1348,6 +1348,36 @@ is where the glide starts from:
 Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
 so the capture's own glide history is not fully explained either.
 
+### An ease-out camera carries its history
+
+Retail rebuilds its camera tween every frame
+([battle](../subsystems/battle.md#battle-camera-exact)), so a capture's camera
+words are a framing *plus* the distance still to close, and that distance
+depends on where the camera stood before and how long it has been easing.
+The capture's step table (`ctx[+0x118C]`) records the endpoint, so the target
+is checkable even where the pose is not. Two seeding limits follow.
+
+- **No clock under the Far option.** `battle_noa_miracle_art_combo` is
+  captured in a component strike `0x1E` with Battle Camera Far
+  (`0x800846C0 = 2`). Its endpoint matches the engine's case-7 target (yaw
+  `1778` against `1771`, TR z `4915` exact), but the yaw counter
+  `ctx[+0x6DA]` is frozen at the Attack branch's `0x200` under Far, and the
+  accumulator `ctx[+0x87C]` counts only from the component clip's commit. The
+  queue itself is no obstacle - the player entered it through the arts input,
+  and the drive replays the same entry from the saved command string - but no
+  word says how long retail's camera had been easing off the input close-up,
+  so the engine's strike still carries part of that close-up's pitch.
+- **The frame step.** The walker adds `increment * frame_step` a pass, with
+  the step rebuilt each frame from the duration history at `0x80084098`
+  (`frame_step`). The summon close-up's `a3 = 3` lands every pass at step `3`
+  and trails its target by `14` units at step `2`, and the captures split
+  that way: `theeder`, `gizam` and `nighto_summon_mid_cast` were saved on a
+  step-`3` frame and read landed, `freed` and `swordie` on step `2` and read
+  the lag. The engine runs a fixed step `2`, so on a step-`3` capture it shows
+  the lag retail did not have. Seeding retail's step into the engine clock
+  would change every actor's cadence, not only the camera, so the corpus
+  keeps it as a seeding limit.
+
 ## See also
 
 - [recomp-differential](recomp-differential.md) - the frame-tagged
