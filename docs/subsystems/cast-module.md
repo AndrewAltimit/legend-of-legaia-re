@@ -1115,9 +1115,9 @@ the wrapper is the module's own baked constant
 instead of the move-power table's scalar. PROT 0927 and PROT 0966 are the
 exception, because their damage is not a per-target fold at all: those two
 casts fold through `World::run_cast_module_aoe` and the generic path is
-skipped, so the seat range and the `HP - 1` clamp are the module's. PROT
-0966's tick adds its own party hit on top, through the band seam rather than
-the fold.
+skipped, so the seat range and the `HP - 1` clamp are the module's. When the
+band runs PROT 0966's body, both of its hits land mid-cast through the band
+seam, and the fold is skipped.
 
 PROT 0957 needs one more split: it carries **two** whole tick bodies, and its
 trampoline `0x801F9BA8` picks between them on the caster's queued action id -
@@ -2138,9 +2138,17 @@ vsyncs, close to a minute.
 - **The hit.** Arm 26 walks `actor_table[0 .. ctx[+0]]`, skips a dead or
   non-targetable seat, and calls `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with
   the shape-A clamp (`0x801F8610` / `0x801F863C`), so it can kill. It also
-  stages the seat's own knockdown at rate `2`. This is a second hit: the
-  module's stager `0x801F8D64` still lands its `0x100` never-kill sweep
-  through the band's fold.
+  stages the seat's own knockdown at rate `2`.
+- **The hit before it.** Retail lands two party hits, and the first is the
+  stager's. Arm 10 spawns record `0x801F937C`, whose script is `WAIT 0x7F`
+  then op `0x20` with arm `4`. Op `0x20` calls `gp[+0x714]`, which holds the
+  stager `0x801F8D64` in the `cort_evil_seru_magic_mid_cast` capture. Arm 4 is
+  the `0x100` never-kill sweep. The wait is `0x7F << 3`, drained
+  `scalar * delta` a battle frame, so it lasts 127 vsyncs - one short of arm
+  11's `0x80`. The port lands that sweep on arm 11's pass and raises the
+  band's skip-fold, so the fold adds no third hit. The order matters: the
+  never-kill hit comes first, and arm 26's hit can still kill a member it
+  left low.
 
 Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row
 of half-size models at `z = 0x190`, and restore them; arm 10 seats the

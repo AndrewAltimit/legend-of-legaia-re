@@ -2257,6 +2257,21 @@ impl World {
             && let Some(arm) = capture_arm
         {
             let (phase, passed) = (ctx.phase, !arm.hold);
+            // The module's own move-VM stager hit lands mid-cast, not at the
+            // fold: arm 10 spawns record `0x801F937C`, whose script waits
+            // `0x7F` (`<< 3`, drained `scalar * delta` - 127 vsyncs) and then
+            // runs op `0x20` with arm 4, the `0x100` never-kill sweep. That
+            // is arm 11's gate (`0x80` vsyncs), so it lands before arm 26's
+            // kill-capable hit, and the band's fold owes nothing more.
+            let mut stager_hits = Vec::new();
+            if passed && phase == vm::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM {
+                if let Some(r) =
+                    self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
+                {
+                    stager_hits = r.aoe_hits;
+                }
+                self.casting.module_skips_fold = true;
+            }
             let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
                 .map(|s| self.cast_actor_state(s))
                 .collect();
@@ -2298,13 +2313,11 @@ impl World {
             for (slot, st) in seats.iter().enumerate() {
                 self.write_cast_actor_state(slot as u8, st);
             }
-            run.aoe_hits = hits
-                .iter()
-                .map(|h| ticks::AoeHit {
-                    seat: h.seat,
-                    applied: h.applied as i32,
-                })
-                .collect();
+            run.aoe_hits = stager_hits;
+            run.aoe_hits.extend(hits.iter().map(|h| ticks::AoeHit {
+                seat: h.seat,
+                applied: h.applied as i32,
+            }));
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);

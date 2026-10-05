@@ -890,3 +890,62 @@ fn element_change_stays_on_the_seat_and_ends_with_the_battle() {
         "the next fight starts on the disc element"
     );
 }
+
+/// PROT 0966 (Cort's Evil Seru Magic, `0xAD`) hits the party exactly twice,
+/// in retail's order: the stager's `0x100` never-kill sweep on arm 11's pass
+/// (arm 10's record `0x801F937C` runs op `0x20` arm 4 after a 127-vsync
+/// wait), then the tick's own `0x327` sweep on arm 26. The band's fold adds
+/// no third hit.
+#[test]
+fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more() {
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    let caster = 3u8;
+    world.battle_ctx.active_actor = caster;
+    world.actors[caster as usize].battle_monster_id = Some(180);
+    world.set_battle_attack(caster, 300);
+    for i in 0..3 {
+        world.actors[i].battle.hp = 5000;
+        world.actors[i].battle.max_hp = 5000;
+    }
+    // Capture-class sub-id `0x1F` pages PROT 0966 (`935 + 0x1F`).
+    {
+        use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[0xAD].class = CAPTURE_CLASS;
+        entries[0xAD].sub_class = 0x1F;
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+    }
+    assert_eq!(world.cast_module_for(0xAD), Some(966));
+    world.casting.pending_cast = Some(crate::world::PendingCast {
+        caster,
+        spell_id: 0xAD,
+        targets: vec![0, 1, 2],
+    });
+    let mut hit_phases: Vec<(u8, u8)> = Vec::new();
+    let mut done = false;
+    for _ in 0..10_000 {
+        let phase = world.casting.module_phase;
+        let run = world
+            .run_cast_module_code(0xAD, phase)
+            .expect("PROT 0966 is a band entry");
+        for h in &run.aoe_hits {
+            hit_phases.push((phase, h.seat));
+        }
+        if !run.busy {
+            done = true;
+            break;
+        }
+    }
+    assert!(done, "the body finishes");
+    let phases: Vec<u8> = hit_phases.iter().map(|(p, _)| *p).collect();
+    assert_eq!(phases, vec![11, 11, 11, 26, 26, 26], "{hit_phases:?}");
+    let hp: Vec<u16> = (0..3).map(|i| world.actors[i].battle.hp).collect();
+    world.fold_pending_cast();
+    let after: Vec<u16> = (0..3).map(|i| world.actors[i].battle.hp).collect();
+    assert_eq!(hp, after, "the fold owes nothing once the stager has run");
+    assert!(hp.iter().all(|&h| h < 5000), "both hits reached the party");
+}

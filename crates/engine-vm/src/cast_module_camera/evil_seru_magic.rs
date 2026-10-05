@@ -37,6 +37,12 @@ pub const EVIL_SERU_MAGIC_COUNTDOWN: u32 = 0x801F_A464;
 /// The arm the party-wide hit lands on (`0x801F83C8`).
 pub const EVIL_SERU_MAGIC_SWEEP_ARM: u8 = 26;
 
+/// The arm on whose pass the module's move-VM stager sweep lands: arm 10
+/// (`0x801F7160`) spawns record `0x801F937C`, whose script is `WAIT 0x7F`
+/// then op `0x20` arm 4 - the stager `0x801F8D64`'s `0x100` party sweep.
+/// The wait runs 127 vsyncs; arm 11's gate is `0x80`.
+pub const EVIL_SERU_MAGIC_STAGER_HIT_ARM: u8 = 11;
+
 /// The arm whose gate finishes the body (`0x801F89A8`).
 pub const EVIL_SERU_MAGIC_LAST_ARM: u8 = 28;
 
