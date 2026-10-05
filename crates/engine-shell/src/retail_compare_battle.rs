@@ -864,10 +864,15 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                     })
                 })
                 .flatten();
+            // The yaw counter is a clock only while the action SM drifts it
+            // (any Battle Camera option but Far, `0x801E29D4`).
+            let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2)
+                .then(|| game_anchors::u16_at(ram, ctx + 0x6DA));
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),
                 accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
                 arm,
+                yaw,
             };
         }
         return SpanGate::Age {
@@ -1931,10 +1936,20 @@ pub enum SpanGate {
     /// phase is held until the engine's module sits in that arm with its
     /// countdown run down at least as far - the module's own clock, which
     /// places a camera shot or drift in flight.
+    ///
+    /// `yaw` is retail's yaw counter `ctx[+0x6DA]` (`None` under the Far
+    /// option, which stops it): the action seed `0x0C` stores `0x800` and
+    /// the SM's prologue adds about one a display frame, so it counts the
+    /// frames since the seed - including the ones `0x6E` spent waiting on
+    /// the drive (`FUN_8003DE7C(1)` at `0x801E4F08`) before the caster's
+    /// clip commit zeroed the accumulator. The accumulator alone cannot see
+    /// those; the three Delilas special captures sit `34` frames past the
+    /// accumulator's reading of them.
     CaptureFade {
         height: u16,
         accum: u16,
         arm: Option<(u8, i32)>,
+        yaw: Option<u16>,
     },
     /// Any other action-SM state, `accum` (`ctx[+0x87C]`) into it.
     ///
@@ -1988,6 +2003,27 @@ fn capture_accum_done(world: &legaia_engine_core::world::World, height: u16, acc
         .is_none_or(|c| c.close_up_accum() >= u32::from(want))
 }
 
+/// Whether the engine's yaw counter has run as far through `0x6E` as
+/// retail's `yaw` (`ctx[+0x6DA]`) says retail's did: the capture's value
+/// less the `0x6F` frames still to come (the depth ramps `16` a display
+/// frame against the counter's one). `None` - the Far option - holds
+/// nothing.
+fn capture_yaw_done(
+    world: &legaia_engine_core::world::World,
+    height: u16,
+    yaw: Option<u16>,
+) -> bool {
+    let Some(yaw) = yaw else {
+        return true;
+    };
+    let want = i32::from(yaw) - i32::from(capture_ramp_left(world, height) / 16);
+    world
+        .battle
+        .camera
+        .as_ref()
+        .is_none_or(|c| c.action_yaw_base() >= want)
+}
+
 /// Whether the engine's `0x6F` pull-in has come down at least as far as
 /// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps).
 fn capture_ramp_done(world: &legaia_engine_core::world::World, height: u16) -> bool {
@@ -2015,20 +2051,33 @@ impl SpanGate {
             Self::CaptureFade {
                 height,
                 accum,
-                arm: None,
-            } => format!("{height}/{accum}"),
-            Self::CaptureFade {
-                height,
-                accum,
-                arm: Some((phase, countdown)),
-            } => format!("{height}/{accum}/{phase}/{countdown}"),
+                arm,
+                yaw,
+            } => {
+                let mut s = format!("{height}/{accum}");
+                if let Some((phase, countdown)) = arm {
+                    s.push_str(&format!("/{phase}/{countdown}"));
+                }
+                if let Some(y) = yaw {
+                    s.push_str(&format!("/y{y}"));
+                }
+                s
+            }
             _ => self.to_env().1.to_string(),
         }
     }
 
     fn from_env(kind: &str, value: &str) -> Option<Self> {
         if kind.trim() == "5" {
-            let parts: Vec<&str> = value.trim().split('/').collect();
+            let mut parts: Vec<&str> = value.trim().split('/').collect();
+            let yaw = match parts.last() {
+                Some(t) if t.starts_with('y') => {
+                    let y = t[1..].parse().ok()?;
+                    parts.pop();
+                    Some(y)
+                }
+                _ => None,
+            };
             let arm = match parts.as_slice() {
                 [_, _] => None,
                 [_, _, p, c] => Some((p.parse().ok()?, c.parse().ok()?)),
@@ -2038,6 +2087,7 @@ impl SpanGate {
                 height: parts[0].parse().ok()?,
                 accum: parts[1].parse().ok()?,
                 arm,
+                yaw,
             });
         }
         let value: u16 = value.trim().parse().ok()?;
@@ -2397,8 +2447,11 @@ impl BattleDrive {
                                 || world.casting.module_phase == phase
                                     && world.casting.module_cam.countdown.0 <= countdown
                         }
-                        SpanGate::CaptureFade { height, accum, .. } if state == 0x6E => {
+                        SpanGate::CaptureFade {
+                            height, accum, yaw, ..
+                        } if state == 0x6E => {
                             capture_accum_done(world, height, accum)
+                                && capture_yaw_done(world, height, yaw)
                         }
                         SpanGate::CaptureFade { height, .. } if state == 0x6F => {
                             capture_ramp_done(world, height)
@@ -2495,11 +2548,15 @@ impl BattleDrive {
             world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);
             return;
         }
-        let SpanGate::CaptureFade { height, accum, .. } = end else {
+        let SpanGate::CaptureFade {
+            height, accum, yaw, ..
+        } = end
+        else {
             return;
         };
-        world.audio.sound_bank_ready =
-            !(ours && state == 0x6E && !capture_accum_done(world, height, accum));
+        world.audio.sound_bank_ready = !(ours
+            && state == 0x6E
+            && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
         world.battle.prev_action_cleared =
             !(ours && state == 0x6F && !capture_ramp_done(world, height));
     }
@@ -3441,6 +3498,7 @@ mod tests {
                     height: 0xFF40,
                     accum: 344,
                     arm: Some((1, 496)),
+                    yaw: Some(0x83C),
                 },
                 style: None,
                 steer: ActionSteer::default(),

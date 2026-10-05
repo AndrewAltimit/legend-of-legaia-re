@@ -689,6 +689,13 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   engine's polls busy (`SpanGate::CaptureFade`, `BattleDrive::steer`) until
   its depth has come down to retail's and its accumulator has run as far
   through `0x6E` as retail's, less what the `0x6F` frames still to come add.
+  The accumulator counts only from the caster's last clip commit, so the
+  `0x6E` hold also waits on the yaw counter `ctx[+0x6DA]` (the seed stores
+  `0x800`, the SM's prologue adds about one a frame unless the Battle Camera
+  option is Far), which counts from the seed: the three Delilas specials
+  (`che_delilas_megaton_press_mid_cast` and its two siblings) sat `34`
+  frames further into the wait than the accumulator showed, and under
+  retail's ease-out camera that left the engine's yaw a fifth of a turn short.
   Held so, the engine lands where every such capture is framed - pitch `0`,
   `TR y = 0x500`, focus on the caster's seat. What a `0x70` capture still
   reads is the cast module's own shot (Cort's Ultra Charge pulls out to
