@@ -431,6 +431,15 @@ phase later - gets the live values back and its level byte one lower.
 Without it `noa_levelup_banner`'s Noa, already level 3, gained nothing the
 second time and the engine frame showed no "level increased" line.
 
+A cast's **magic** level-up has the same shape one band earlier. The summon
+return's level check `FUN_801E70BC` bumps the cast spell's level byte and
+stores the banner element `0x65` on `ctx[+0x26]` (`0x801E723C`), which the
+next action seed clears; a capture that holds `0x65` there is past the bump.
+`retail_compare_battle::ungrant_magic_level_up` lowers that spell's level on
+the acting member's record by one and leaves its XP, which still clears the
+old threshold, so the replayed cast levels it again and raises the banner
+(`shiny_refactor_gimard_levelup`).
+
 A settled field also carries its script state into the fight. In `nilboa`
 the settle leaves the Nivora duel's dialogue parked on a text page when the
 encounter is forced. Retail cannot show that box over a fight: its pager

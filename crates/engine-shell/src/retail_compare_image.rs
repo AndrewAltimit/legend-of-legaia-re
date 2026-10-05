@@ -365,9 +365,26 @@ pub fn engine_frame_with(
     }
     let out = cmd.output().context("spawn play-window")?;
     // `LEGAIA_RC_CHILD_LOG=1` keeps the child's stderr beside its frame, for
-    // the trace hooks the capture gates carry.
+    // the trace hooks the capture gates carry, and the child's environment
+    // and arguments beside that, so a frame can be re-run by hand.
     if std::env::var_os("LEGAIA_RC_CHILD_LOG").is_some() {
         let _ = std::fs::write(shot.with_extension("stderr.log"), &out.stderr);
+        let mut line = format!("cd '{}' && ", work.display());
+        for (k, v) in cmd.get_envs() {
+            if let Some(v) = v {
+                line.push_str(&format!(
+                    "{}='{}' ",
+                    k.to_string_lossy(),
+                    v.to_string_lossy()
+                ));
+            }
+        }
+        line.push_str(&exe.display().to_string());
+        for a in cmd.get_args() {
+            line.push_str(&format!(" '{}'", a.to_string_lossy()));
+        }
+        line.push('\n');
+        let _ = std::fs::write(shot.with_extension("cmd.sh"), line);
     }
     if !shot.exists() {
         let tail: String = String::from_utf8_lossy(&out.stderr)

@@ -202,6 +202,11 @@ pub struct RetailBattle {
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
     pub absorbed_seru: u8,
+    /// `ctx[+0x26] == 0x65` - the summon-magic level check `FUN_801E70BC`
+    /// levelled the acting seat's cast spell this action (`sb v0,0x26(v1)`
+    /// at `0x801E723C`, beside the level byte's own `sb v0,0x729(a2)` at
+    /// `0x801E7224`), and the next action seed clears it.
+    pub magic_level_up: bool,
     /// Whether the active seat's committed queue `+0x1DF..+0x1EE` holds an
     /// art starter (`0x19` / `0x1A`): the turn was entered through the
     /// directional command entry, not the Auto swing.
@@ -944,6 +949,7 @@ impl RetailBattle {
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
+            magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             arts_queue: active.is_some_and(|p| {
                 (0..0x10).any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A))
             }),
@@ -2598,6 +2604,47 @@ pub fn ungrant_results_rewards(
         }
         let level = rec.level();
         rec.set_level(level.saturating_sub(1).max(1));
+    }
+}
+
+/// The magic-level-increased screen element `FUN_801E70BC` raises and stores
+/// on `ctx[+0x26]`.
+const MAGIC_LEVEL_BANNER: u8 = 0x65;
+
+/// Take a cast capture's magic level-up back off the caster it seeds.
+///
+/// The summon return's level check (`FUN_801E70BC`) bumps the cast spell's
+/// level byte (`record[+0x161 + slot]`) and raises the "magic level
+/// increased" banner, so a capture taken after it in the same action
+/// ([`RetailBattle::magic_level_up`]) holds the caster already a level up,
+/// with XP past the old threshold. The seed replays the cast from that
+/// record, and the engine's check then compares the XP against the **next**
+/// level's threshold: `shiny_refactor_gimard_levelup` levelled nothing the
+/// second time and the engine frame carried no banner. The level goes back
+/// one; the XP stays, and still clears the old threshold, so the replay's
+/// own check levels it again.
+pub fn ungrant_magic_level_up(save: &mut legaia_save::SaveFile, battle: &RetailBattle) {
+    if !battle.magic_level_up || battle.queued_category != 2 {
+        return;
+    }
+    let Some(&char_id) = battle.seat_chars.get(usize::from(battle.active_actor)) else {
+        return;
+    };
+    let Some(rec) = usize::from(char_id)
+        .checked_sub(1)
+        .and_then(|i| save.party.members.get_mut(i))
+    else {
+        return;
+    };
+    let mut list = rec.spell_list();
+    let count = usize::from(list.count).min(list.ids.len());
+    if let Some(at) = list.ids[..count]
+        .iter()
+        .position(|&id| id == battle.queued_action)
+        && list.levels[at] > 1
+    {
+        list.levels[at] -= 1;
+        rec.set_spell_list(list);
     }
 }
 

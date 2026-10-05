@@ -440,6 +440,7 @@ impl RetailObs {
         // which applies them again.
         if let (Some(save), Some(Ok(b))) = (save.as_mut(), battle.as_ref()) {
             crate::retail_compare_battle::ungrant_results_rewards(save, b, ram);
+            crate::retail_compare_battle::ungrant_magic_level_up(save, b);
         }
         Self {
             scene,
