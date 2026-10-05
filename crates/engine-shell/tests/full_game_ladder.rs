@@ -4129,6 +4129,34 @@ enum Walk {
 /// warp) instead of the beat under test. A band whose record's story gates
 /// shut it is inert and stays walkable: town gates and bridges are often
 /// lined with them. `keep` is exempt - it is the goal.
+/// Whether partition-2 record `rec` is an **inert band**: its body only
+/// configures the camera or the view (`retona` P2[0], `4C 38` then a park,
+/// laid across every pass off Mt. Letona's summit). Crossing one moves
+/// nobody, writes no story flag and changes no scene, so the walk need not
+/// step around it; avoiding it sealed the summit off from its way down.
+fn inert_band(mf: &legaia_asset::man_section::ManFile, man: &[u8], rec: usize) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 2, rec) else {
+        return false;
+    };
+    LinearWalker::new(&man[start..start + len], pc0).all(|i| {
+        i.is_ok_and(|i| {
+            i.extended.is_none()
+                && match i.info {
+                    InsnInfo::Nop
+                    | InsnInfo::JmpRel { .. }
+                    | InsnInfo::Camera { .. }
+                    | InsnInfo::CamCfg { .. }
+                    | InsnInfo::ViewWindow { .. }
+                    | InsnInfo::Bgm { .. } => true,
+                    InsnInfo::MenuCtrl { op0, .. } => (0x30..=0x3F).contains(&op0),
+                    _ => false,
+                }
+        })
+    })
+}
+
 fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i32)> {
     use legaia_engine_core::man_field_scripts::partition2_record_gates;
     let mut out = hazards(session, "");
@@ -4139,7 +4167,7 @@ fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i
         for t in triggers.iter().filter(|t| t.gate == 1) {
             let live = partition2_record_gates(&mf, &man, usize::from(t.record))
                 .is_none_or(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2));
-            if live {
+            if live && !inert_band(&mf, &man, usize::from(t.record)) {
                 out.insert((i32::from(t.tile_x), i32::from(t.tile_z)));
             }
         }
@@ -6659,6 +6687,12 @@ fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
+    // The flags each scene's beats pass left behind (pad tier): a scene
+    // the story came back to with new flags has new beats to play.
+    // `retona`: the Songi fight, the P2[17] hop to `map02` and back, and
+    // the summit scene P2[18] all come before the party can work the
+    // summit's wall switches (P2[4] / P2[5]) toward the way down.
+    let mut beaten_flags: BTreeMap<String, BTreeSet<u16>> = BTreeMap::new();
     // Crossing detours taken per (scene, goal). A detour that ends in a
     // third scene (`rikuroa` turns the party away and the walk out lands
     // by `cave01`) leaves the player on another side of `cur`, from which
@@ -6779,6 +6813,14 @@ fn traverse(
                 }
             }
             Err(e) => {
+                if pad
+                    && beaten.contains(&cur)
+                    && beaten_flags
+                        .get(&cur)
+                        .is_some_and(|f| *f != flags_of_world(session))
+                {
+                    beaten.remove(&cur);
+                }
                 if beaten.insert(cur.clone()) {
                     if !e.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         eprintln!("    [hop] {e}; playing {cur}'s beats");
@@ -6792,6 +6834,7 @@ fn traverse(
                     BEAT_TARGET.with(|t| *t.borrow_mut() = None);
                     let left =
                         left.map_err(|b| format!("in {cur}, playing beats (after {e}): {b}"))?;
+                    beaten_flags.insert(cur.clone(), flags_of_world(session));
                     trail.push(format!("[{}]", log.join("; ")));
                     if let Some(s) = left {
                         trail.push(format!("{s}(beat)"));

@@ -138,7 +138,11 @@ only `0x3F` to `map03` is P2[23], the chapter-3 cart crash, which the entry
 script spawns only while `0x36C` is clear, so later crossings go through the
 ticket talk's hop to `station3`.
 
-The **beats pass** runs once per scene, when the scene is the target and its
+The **beats pass** runs once per scene visit - in the pad tier, again when
+the story came back to the scene with new flags (`retona`: the Songi fight,
+the `P0[1]` -> P2[17] hop to `map02` and P2[10]'s carry back, then the summit
+scene P2[18], before the summit's wall switches P2[4] / P2[5] open the way
+down) - when the scene is the target and its
 reach flags are unset, at a waypoint, or when a hop's door does not fire. It
 approaches every boss stager whose park gate is clear (the touch dispatch runs
 its placement record) - every round, until a contact gains nothing, since a
@@ -265,8 +269,10 @@ frame of every few. A script that runs
 on the way and changes nothing - no flag, no cell, no scene (an examined prop
 with nothing to say) - leaves the route as it was rather than re-planning the
 walk component. Walks avoid the live
-walk-on bands (a band whose record's story gates shut it is walkable) unless
-one is the only way through.
+walk-on bands (a band whose record's story gates shut it is walkable, and so
+is an inert band that only sets the camera or the view, such as `retona`
+P2[0] across the summit's passes) unless one is the only way through. A band
+that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
 
 A door tile whose centre is wall is aimed at through its open sub-cell, which
 says the side a player steps in from (`teien`'s way down at (42..43, 29) is
