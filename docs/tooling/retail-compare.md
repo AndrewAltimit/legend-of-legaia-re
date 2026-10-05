@@ -1407,6 +1407,26 @@ is checkable even where the pose is not. Two seeding limits follow.
   the lag retail did not have. Seeding retail's step into the engine clock
   would change every actor's cadence, not only the camera, so the corpus
   keeps it as a seeding limit.
+- **A park lasts as long as retail sat in it.**
+  `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
+  fallback Move clip dies short of its target and the action holds in `0x19`
+  indefinitely. By the save the case-6 tween had long landed (step-table
+  increments `1`, the live yaw eight units behind its endpoint) and the yaw
+  counter had drifted to `0x9AC`. The engine walks the approach out instead,
+  and the drive takes the first `0x19` tick whose accumulator reads retail's
+  `72` - nine frames in, while the ease is still closing on the monster's
+  seat (pitch `34`, TR z `5017` against `5324`). Under the old linear glide
+  the camera had landed by frame twelve, so the frame scored better against
+  a pose retail reached only by parking. Reproducing the park would mean
+  reproducing the defect that froze it.
+- **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
+  `0x14`) is taken once the engine's entry sweep is over, as retail's flow
+  cannot reach `0x14` before it. The camera reads exact on both sides; what
+  moved the frame is Tetsu's idle clip, sampled `66` frames later than at the
+  battle-mode flip, at a different phase of its loop. Retail runs its intro
+  names after the sweep and the engine runs them under it, so neither sample
+  point is retail's elapsed time; the idle phase is not pinned by any word in
+  the capture.
 
 ## See also
 
