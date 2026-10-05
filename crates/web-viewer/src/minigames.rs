@@ -2757,7 +2757,7 @@ impl LegaiaMinigames {
             self.sfx_bank = Some(legaia_engine_audio::SfxBank::from_descriptors(
                 table
                     .active()
-                    .map(|(i, d)| (i, d.program, d.tone, d.note, d.voice_count())),
+                    .map(|(i, d)| (i, d.program, d.tone, d.note, d.flags)),
             ));
         }
         Some(table.get(id)?.vab_slot())

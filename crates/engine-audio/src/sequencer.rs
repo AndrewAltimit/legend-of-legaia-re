@@ -167,6 +167,10 @@ struct ActiveNote {
     /// this base via [`channel_mix`] so successive changes don't compound,
     /// mirroring `base_pitch` for bend.
     base_vol: (i16, i16),
+    /// The voice's [`crate::spu::voice::Voice::key_on_count`] right after
+    /// this note keyed it. A different count means an SFX cue re-keyed the
+    /// voice under the note; the note then no longer owns it.
+    key_on_stamp: u32,
 }
 
 /// Sequencer state machine. One per playing SEQ.
@@ -462,7 +466,19 @@ impl Sequencer {
         self.silence_all(spu);
     }
 
+    /// Forget every note whose voice another client has re-keyed since, so
+    /// its later note-off, bend or CC does not reach the cue now sounding
+    /// there and the allocator no longer counts the voice as the note's.
+    fn release_lost_voices(&mut self, spu: &Spu) {
+        self.active.retain(|n| {
+            spu.voices
+                .get(n.voice as usize)
+                .is_some_and(|v| v.key_on_count() == n.key_on_stamp)
+        });
+    }
+
     fn silence_all(&mut self, spu: &mut Spu) {
+        self.release_lost_voices(spu);
         for note in self.active.drain(..) {
             if (note.voice as usize) < spu.voices.len() {
                 spu.voices[note.voice as usize].key_off();
@@ -491,6 +507,7 @@ impl Sequencer {
     }
 
     fn fire_channel(&mut self, spu: &mut Spu, ch: usize, msg: ChannelMessage) {
+        self.release_lost_voices(spu);
         match msg {
             ChannelMessage::ProgramChange { program } => {
                 self.channels[ch].program = program;
@@ -619,6 +636,10 @@ impl Sequencer {
                 v.vol_left = l;
                 v.vol_right = r;
             }
+            let key_on_stamp = spu
+                .voices
+                .get(voice as usize)
+                .map_or(0, |v| v.key_on_count());
             self.active.push(ActiveNote {
                 channel,
                 key,
@@ -626,6 +647,7 @@ impl Sequencer {
                 base_pitch,
                 bend_range,
                 base_vol,
+                key_on_stamp,
             });
         }
     }
@@ -837,6 +859,7 @@ mod tests {
                 base_pitch: 0x1000,
                 bend_range: (2, 2),
                 base_vol: (0x3FFF, 0x3FFF),
+                key_on_stamp: 0,
             });
         }
         assert_eq!(seq.active.len(), 24);
@@ -855,6 +878,40 @@ mod tests {
         );
     }
 
+    /// A cue re-keying a voice under a sounding note takes the voice from
+    /// it: the note's later note-off must not key off the cue now playing
+    /// there (retail's cue key-on rewrites the voice's note record, so the
+    /// sequencer's note-off no longer matches it).
+    #[test]
+    fn a_voice_rekeyed_under_a_note_is_not_keyed_off_by_its_note_off() {
+        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        let mut spu = Spu::new();
+        spu.voices[23].key_on(&spu.ram.clone());
+        let stamp = spu.voices[23].key_on_count();
+        seq.active.push(ActiveNote {
+            channel: 0,
+            key: 60,
+            voice: 23,
+            base_pitch: 0x1000,
+            bend_range: (0, 0),
+            base_vol: (0x3FFF, 0x3FFF),
+            key_on_stamp: stamp,
+        });
+        // A cue takes voice 23.
+        spu.voices[23].key_on(&spu.ram.clone());
+        let phase = spu.voices[23].adsr.phase;
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOff {
+                key: 60,
+                velocity: 0,
+            },
+        );
+        assert_eq!(spu.voices[23].adsr.phase, phase, "the cue keeps sounding");
+        assert!(seq.active.is_empty(), "the note no longer owns the voice");
+    }
+
     /// Occupy a voice with a synthetic active note so the allocator treats it
     /// as reserved (the engine stand-in for the retail in-use marker).
     fn occupy(seq: &mut Sequencer, voice: u8) {
@@ -865,6 +922,7 @@ mod tests {
             base_pitch: 0x1000,
             bend_range: (2, 2),
             base_vol: (0x3FFF, 0x3FFF),
+            key_on_stamp: 0,
         });
     }
 
@@ -1272,6 +1330,7 @@ mod tests {
             base_pitch: base,
             bend_range: (2, 2),
             base_vol: (0x3FFF, 0x3FFF),
+            key_on_stamp: 0,
         });
 
         // Bend sharp: the voice's live pitch register rises, the channel
@@ -1324,6 +1383,7 @@ mod tests {
             base_pitch: 0x1000,
             bend_range: (0, 0),
             base_vol: base,
+            key_on_stamp: 0,
         });
 
         // Halve the channel volume: both sides scale by ~63/127, pan
@@ -1371,6 +1431,7 @@ mod tests {
             base_pitch: 0x1000,
             bend_range: (0, 0),
             base_vol: base,
+            key_on_stamp: 0,
         });
 
         // Pan hard left: the right side is silenced, the left passes through

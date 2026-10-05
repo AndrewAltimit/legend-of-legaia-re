@@ -647,7 +647,7 @@ impl AudioBgmDirector {
             for (id, fire) in &ring {
                 let voice = match fire {
                     RingFire::Static(small, vab) => bank.play_one_shot(*small, spu, vab),
-                    RingFire::Runtime(row, vab) => SfxBank::play_descriptor(row, spu, vab),
+                    RingFire::Runtime(row, vab) => bank.play_descriptor(row, spu, vab),
                 };
                 if let Some(v) = voice {
                     fired.push((*id, v));
@@ -913,6 +913,9 @@ impl AudioBgmDirector {
         if self.runtime_sfx_bundle.as_slice() != bundle {
             self.runtime_sfx_bundle = bundle.to_vec();
         }
+        // The drainer rolls one-shots over voices 23..=22 in the field and
+        // 23..=20 elsewhere (`FUN_80016B6C`).
+        self.sfx_bank.set_field_family(field_family);
         if field_family && let Some(slot) = self.tail.drop_reward() {
             self.sfx_vabs.remove(&slot);
         }

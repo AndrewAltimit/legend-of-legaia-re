@@ -211,6 +211,19 @@ immediately before reprogramming it. And the sustained held-count write lives
 old run but leaves `gp+0x5D0` unchanged - the next sustained cue re-releases the
 same, already-stopped voices.
 
+Two consequences shape what a burst of cues sounds like. The one-shots live at
+the top of the voice file, away from the sequencer's ascending first-idle scan,
+so a hit rarely competes with the score for a voice; and a cue is never dropped
+for want of an idle voice - the fifth hit in battle simply re-keys voice 23 and
+cuts the first. The cue key-on also rewrites the voice's libsnd note record
+(`+0x10 = 0x21`), so a sequencer note that held the voice before no longer
+matches it and its note-off does not reach the cue.
+
+Port: `legaia_engine_audio::SfxBank` carries the cursor, its limit and the held
+count (`set_field_family` selects the limit; both hosts call it per tick from the
+world's mode), and the sequencer drops a note whose voice was re-keyed under it
+(`Voice::key_on_count`).
+
 The channel gate is a 12-byte mixer record at `0x80091508 + channel * 12`: `+0`
 is a `VabHdr` pointer, `+8` is the **VAB slot id** handed to `FUN_80065034` as
 its second argument, `+0xB` is an enable byte and a zero there skips the cue

@@ -625,7 +625,7 @@ impl LegaiaRuntime {
             self.sfx.bank = SfxBank::from_descriptors(
                 table
                     .active()
-                    .map(|(id, d)| (id, d.program, d.tone, d.note, d.voice_count())),
+                    .map(|(id, d)| (id, d.program, d.tone, d.note, d.flags)),
             );
             self.sfx.cue_slots = table.cue_slots().collect();
         }
@@ -1024,6 +1024,9 @@ impl LegaiaRuntime {
         // over the field bank in the shared region, and the residency carries
         // it.
         let field_family = matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap);
+        // The drainer rolls one-shots over voices 23..=22 in the field and
+        // 23..=20 elsewhere (`FUN_80016B6C`), as the native director does.
+        self.sfx.bank.set_field_family(field_family);
         let want = field_family
             .then(|| host.world.side_band_bank())
             .flatten()
@@ -1356,7 +1359,7 @@ impl LegaiaRuntime {
                         let Some(vab) = vabs.get(&row[4]) else {
                             continue;
                         };
-                        SfxBank::play_descriptor(&row, spu, vab)
+                        sfx.bank.play_descriptor(&row, spu, vab)
                     }
                 };
                 if let Some(v) = voice {

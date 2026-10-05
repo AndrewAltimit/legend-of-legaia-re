@@ -72,6 +72,9 @@ pub struct Voice {
     /// Gaussian interpolator (`[0]` = oldest .. `[3]` = newest = the sample
     /// at the current pitch-counter position). Survives block boundaries.
     hist: [i16; 4],
+    /// Key-ons since construction. An owner that remembers the count at its
+    /// own key-on can tell whether someone else has re-keyed the voice since.
+    key_on_count: u32,
 }
 
 impl Default for Voice {
@@ -92,6 +95,7 @@ impl Default for Voice {
             decoder: AdpcmDecoder::new(),
             has_block: false,
             hist: [0; 4],
+            key_on_count: 0,
         }
     }
 }
@@ -121,6 +125,17 @@ impl Voice {
         // the "newest" tap at the initial counter position.
         self.hist = [0, 0, 0, if self.has_block { self.block_pcm[0] } else { 0 }];
         self.adsr.key_on();
+        self.key_on_count = self.key_on_count.wrapping_add(1);
+    }
+
+    /// How many times this voice has been keyed on. The sequencer stamps
+    /// each of its notes with this value; a later mismatch means another
+    /// client (an SFX cue) took the voice, so the note no longer owns it -
+    /// retail's equivalent is the cue key-on rewriting the voice's libsnd
+    /// note record (`+0x10 = 0x21`), which the sequencer's note-off then no
+    /// longer matches.
+    pub fn key_on_count(&self) -> u32 {
+        self.key_on_count
     }
 
     /// Trigger a key-off - the envelope transitions to Release. Voice keeps

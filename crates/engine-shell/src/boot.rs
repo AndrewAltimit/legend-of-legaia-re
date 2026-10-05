@@ -470,7 +470,7 @@ fn read_sfx_bank(
     let bank = legaia_engine_audio::SfxBank::from_descriptors(
         table
             .active()
-            .map(|(id, d)| (id, d.program, d.tone, d.note, d.voice_count())),
+            .map(|(id, d)| (id, d.program, d.tone, d.note, d.flags)),
     );
     // The routing half of the same table: which VAB slot each cue keys.
     Some((bank, table.cue_slots().collect()))
