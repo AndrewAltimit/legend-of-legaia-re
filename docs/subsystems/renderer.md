@@ -176,7 +176,11 @@ exactly the scene-load trio, back colour and matrix
 (`engine-vm::field_light`'s test pins the matrix element for element), and
 the frame's dark right wall and bright left one are this light: shaded this
 way, the port's frame of that state matches retail's to within the image
-channel's noise.
+channel's noise. Exec breakpoints settle the dispatch itself:
+`autorun_w4d_light_kind_hits.lua` (`LEGAIA_WARP_BTN=NONE`) loaded on that
+state counts 882 kind-8 and 200 kind-9 entries in 60 vsyncs, every one
+returning to `0x801F78D4` - the decoration pass's `jal 0x80043390` - with the
+depth-cue control group live beside them.
 
 Both hosts run one kernel, `engine-core::field_lit_mesh`: the mesh builder
 keeps each lit vertex's normal and object colour
