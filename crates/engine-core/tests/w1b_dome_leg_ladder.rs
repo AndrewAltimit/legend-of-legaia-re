@@ -335,15 +335,19 @@ fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
         let _ = w.tick();
     }
     w.input.set_pad(0);
-    let plays = w
-        .minigames
-        .muscle_dome
-        .as_ref()
-        .unwrap()
-        .last_turn_plays()
-        .len();
-    assert!(plays > 0, "the turn queued plays");
-    let hold = legaia_engine_core::muscle_dome_scene::playback_ticks(plays);
+    let (plays, hold) = {
+        let s = w.minigames.muscle_dome.as_ref().unwrap();
+        let plays = s.last_turn_plays();
+        assert!(!plays.is_empty(), "the turn queued plays");
+        assert!(s.last_turn_closes_in(), "the leg's first plays walk in");
+        (
+            plays.len(),
+            legaia_engine_core::muscle_dome_scene::turn_playback_ticks(
+                plays,
+                s.last_turn_closes_in(),
+            ),
+        )
+    };
     assert_eq!(w.muscle_playback_frames(), hold);
     let (attacker, _) = w
         .muscle_playback_tally()

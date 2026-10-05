@@ -198,8 +198,12 @@ fn digits_draws(
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
         let cell = (digits - len + i as i32).max(0);
-        let l = font.layout_ascii(&ch.to_string());
-        out.extend(text_draws_for(&l, (x + cell * NUM_CELL_W, y), color));
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
+            (x + cell * NUM_CELL_W, y),
+            color,
+        ));
     }
     out
 }
@@ -449,17 +453,18 @@ pub fn notify_prompt_draws_for(
 /// descriptor windows, and both label it with [`POINT_CARD_HEADING`] /
 /// [`POINT_CARD_UNIT_LABEL`] below.
 /// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
-/// character-substitution token the dialog codec resolves at draw time; the
-/// port stages an engine-authored line in the same slot.
+/// `0xC2 0xFE` substitution token - item `0xFE`'s name, the Point Card - so
+/// the line reads "Point Card has earned" on screen (Retock shop capture).
 ///
 /// Both hosts draw this window, so the label lives beside the builder rather
 /// than once per host - two host-local copies would be a divergence the
 /// drift gate could only catch by pairing them.
-pub const POINT_CARD_HEADING: &str = "Points earned";
+pub const POINT_CARD_HEADING: &str = "Point Card has earned";
 
 /// The unit label window 31 puts `0x40` right of its number field
-/// (`0x801CEA50`). Shared for the same reason as [`POINT_CARD_HEADING`].
-pub const POINT_CARD_UNIT_LABEL: &str = "point(s).";
+/// (`0x801CEA50`), leading space included. Shared for the same reason as
+/// [`POINT_CARD_HEADING`].
+pub const POINT_CARD_UNIT_LABEL: &str = " point(s).";
 
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
@@ -1021,13 +1026,18 @@ pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
     quantity.saturating_mul(unit_price) / 2
 }
 
-/// Heading the sell quantity window prints at its content origin.
-pub const SELL_QUANTITY_HEADING: &str = "How many?";
-/// Label the buy quantity window prints after the held count.
-pub const BUY_QUANTITY_HELD_TAIL: &str = "held";
+/// Heading the sell quantity window prints at its content origin (overlay
+/// rodata `0x801CEC38`, loaded by `FUN_801D5944`).
+pub const SELL_QUANTITY_HEADING: &str = "How many will you sell?";
+/// Label the buy quantity window prints at its content origin, ahead of the
+/// held count (rodata `0x801CEBC8`, `FUN_801D5510`'s first string draw).
+pub const BUY_QUANTITY_HELD_HEAD: &str = "Have";
+/// Label the buy quantity window prints after the held count (`0x801CEBD0`,
+/// at `WX + 0x30`).
+pub const BUY_QUANTITY_HELD_TAIL: &str = ".";
 /// Label the buy quantity window prints in place of the held line when the
-/// bag scan returned retail's `0x100` "nothing held" sentinel.
-pub const BUY_QUANTITY_NONE_HELD: &str = "None held";
+/// bag scan returned retail's `0x100` "nothing held" sentinel (`0x801CEBD4`).
+pub const BUY_QUANTITY_NONE_HELD: &str = "None";
 /// Prompt the buy quantity window prints on its second line.
 pub const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
 
@@ -1066,6 +1076,11 @@ pub fn buy_quantity_draws_for(
     let mut out = Vec::new();
     match held {
         Some(count) => {
+            out.extend(text_draws_for(
+                &font.layout_ascii(BUY_QUANTITY_HELD_HEAD),
+                (rect.x, rect.y),
+                MENU_TEXT_WHITE,
+            ));
             out.extend(digits_draws(
                 font,
                 u64::from(count),

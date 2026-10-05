@@ -1055,6 +1055,9 @@ pub fn battle_intro_names(
     world: &crate::world::World,
     font: &legaia_font::Font,
 ) -> Vec<(String, i32)> {
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return dome_intro_names(world, font);
+    }
     if world.mode != crate::world::SceneMode::Battle || world.battle.intro_names_frames == 0 {
         return Vec::new();
     }
@@ -1080,6 +1083,29 @@ pub fn battle_intro_names(
     rows.into_iter()
         .map(|r| (r.label, i32::from(r.x)))
         .collect()
+}
+
+/// The dome leg's battle-open banner: the composer `FUN_801D9D3C` over a
+/// one-monster formation is one label, the opponent's display name, laid out
+/// the way every group label is - `0xA0 + avg(+0x34) / 8 - width / 2` over
+/// the monster's battle X, which the lone monster seat puts at `0`
+/// (`crate::battle_seats`) - and clamped into `6 ..= 0x13A - width`. Up for
+/// the leg's battle-open hold ([`crate::muscle_dome::MuscleDomeSession::intro_up`])
+/// once no hub screen covers the leg.
+fn dome_intro_names(world: &crate::world::World, font: &legaia_font::Font) -> Vec<(String, i32)> {
+    let Some(s) = world.minigames.muscle_dome.as_ref() else {
+        return Vec::new();
+    };
+    if !s.intro_up() || world.minigames.muscle_hub.covers_leg() {
+        return Vec::new();
+    }
+    let Some(name) = s.opponent_name().filter(|n| !n.is_empty()) else {
+        return Vec::new();
+    };
+    let width = i32::from(font.layout_ascii(name).advance_x as i16);
+    let seat_x = i32::from(crate::battle_seats::monster_seat(1, 0, false).x);
+    let x = (0xA0 + (seat_x >> 3) - width / 2).clamp(6, (0x13A - width).max(6));
+    vec![(name.to_string(), x)]
 }
 
 /// The boss-name banner a battle-stage module has up this frame, as
@@ -1172,7 +1198,23 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
         // has no battle-action band behind it.
         // The resolved turn's play-out is that band's stand-in: while the
         // leg holds for it the frame is an action frame.
-        return match world.minigames.muscle_dome.as_ref().map(|s| s.phase()) {
+        let s = world.minigames.muscle_dome.as_ref();
+        if s.is_some_and(|s| s.intro_up()) {
+            // The battle-open hold: only the enemy-name banner is up.
+            return BattleHudPhase::Idle;
+        }
+        if s.is_some_and(|s| {
+            s.phase() == crate::muscle_dome::MusclePhase::Select
+                && matches!(
+                    s.menu(),
+                    crate::muscle_dome::DomeMenu::Command(c)
+                        if matches!(c.phase, CommandPhase::RoundPrompt { .. })
+                )
+        }) {
+            // The turn's `Begin | Run` prompt is the battle's `0x1E`.
+            return BattleHudPhase::RoundPrompt;
+        }
+        return match s.map(|s| s.phase()) {
             Some(crate::muscle_dome::MusclePhase::Select) => BattleHudPhase::CommandEntry,
             Some(crate::muscle_dome::MusclePhase::TurnOver)
                 if world.muscle_playback_tally().is_some() =>
@@ -1664,6 +1706,12 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
             .and_then(|c| legaia_art::tables::art_name(character, c))
             .map(str::to_string)
     } else if cat == ActionCategory::Magic.as_byte() {
+        // PROT 0954's arm 9 re-opens the label on the landed outcome's name
+        // (`FUN_801D8DE8(0x4C, 0)` at `0x801F7CD4`, the string at
+        // `0x801F8D50 + id * 0x28`).
+        if let Some(name) = world.casting.fatal_banner.as_ref() {
+            return Some(name.clone());
+        }
         // The `0x28` arm's spell-name write is gated on the caster's seat:
         // `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,0x801E4460`
         // (`0x801E43D0..0x801E43DC`) skips it for a party caster, so a
@@ -1879,12 +1927,12 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
 /// The element badge a monster slot's plaque wears (`None` for none).
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
-    let def = world
-        .tables
-        .monster_catalog
-        .get(actor.battle_monster_id?)
-        .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
-    Some(def.element)
+    let id = actor.battle_monster_id?;
+    let element = match actor.battle_element {
+        Some(e) => e,
+        None => world.tables.monster_catalog.get(id)?.element,
+    };
+    ((element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT).then_some(element)
 }
 
 /// Character record byte the magic chip's gate reads, as an index into the

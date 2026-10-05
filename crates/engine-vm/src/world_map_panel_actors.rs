@@ -1023,12 +1023,12 @@ pub fn flag_window_tick(
 // FUN_801D0D38 - field party HUD
 // ---------------------------------------------------------------------------
 
-/// Idle frames before the HUD appears in the low-camera mode
+/// Idle frames before the HUD appears under Field HP Display **Immediate**
 /// (`_DAT_800845C4 == 0`).
 pub const HUD_IDLE_FRAMES_NEAR: i16 = 0x28;
-/// Idle frames before it appears in the far mode (`_DAT_800845C4 == 1`).
+/// Idle frames before it appears under **Gradual** (`_DAT_800845C4 == 1`).
 pub const HUD_IDLE_FRAMES_FAR: i16 = 0xA0;
-/// Shortened idle when `_DAT_8007B5F4 == 1` in the far mode.
+/// Shortened idle when `_DAT_8007B5F4 == 1` under Gradual.
 pub const HUD_IDLE_FRAMES_FAR_SHORT: i16 = 0x50;
 /// Pad mask that suppresses the HUD outright (the four D-pad bits).
 pub const HUD_SUPPRESS_PAD_MASK: u32 = 0xF000;
@@ -1064,7 +1064,8 @@ pub enum HudDecision {
 pub struct HudInput {
     /// `_DAT_8007B868` - a non-zero value suppresses the HUD.
     pub hud_disabled: bool,
-    /// `_DAT_800845C4` - the camera/view mode. `2` also suppresses.
+    /// `_DAT_800845C4` - the options screen's Field HP Display row
+    /// (Immediate / Gradual / Display Off). `2` suppresses.
     pub view_mode: i32,
     /// `_DAT_8007B850` - the pad bank the D-pad mask is taken from.
     pub pad: u32,

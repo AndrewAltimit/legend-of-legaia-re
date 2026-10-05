@@ -28,8 +28,9 @@ impl PlayWindowApp {
     /// none; a scripted shot and the `F3` debug vantage do - the bank is world
     /// geometry, and `cam` is that frame's own matrix.
     /// The mood enhanced lighting lights this frame under: the persisted
-    /// time of day over the loaded scene (`scene_lighting::TimeOfDay::mood` -
-    /// the same call the browser play page makes).
+    /// time of day over the loaded scene and its held scripted grade
+    /// (`scene_lighting::TimeOfDay::mood_graded` - the same call the browser
+    /// play page makes).
     pub(in crate::window) fn lighting_mood(
         &self,
     ) -> legaia_engine_render::scene_lighting::LightingMood {
@@ -43,7 +44,7 @@ impl PlayWindowApp {
             .unwrap_or("");
         TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
             .unwrap_or_default()
-            .mood(scene_name)
+            .mood_graded(scene_name, self.session.host.world.held_scene_grade())
     }
 
     pub(in crate::window) fn stage_fog_volume(

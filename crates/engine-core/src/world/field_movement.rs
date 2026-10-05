@@ -658,6 +658,49 @@ impl World {
         (labels, sizes, edges)
     }
 
+    /// Whether the collision grid alone lets a walker get from `(x, z)` onto
+    /// the authored walk-visible floor within `budget` 64-unit sub-cells - the
+    /// wall-bit flood the locomotion collision (`FUN_801CFE4C`) actually
+    /// enforces, ending on a sub-cell [`Self::field_walk_component_size`]
+    /// counts. `false` when the point itself sits in a wall bit.
+    ///
+    /// The two disagree on floor a placed object provides: `chitei2`'s
+    /// escape platform (the env mesh on partition-0 record 31) carries no
+    /// floor-cell bit, yet it is open collision whose stairs lead down onto
+    /// the corridor floor.
+    pub fn field_collision_reaches_floor(&self, x: i16, z: i16, budget: usize) -> bool {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN || x < 0 || z < 0 {
+            return false;
+        }
+        let stride = (FIELD_GRID_STRIDE * 2) as i32;
+        let open = |sx: i32, sz: i32| {
+            (0..stride).contains(&sx)
+                && (0..stride).contains(&sz)
+                && !self.field_tile_is_wall((sx * 64 + 32) as i16, (sz * 64 + 32) as i16)
+        };
+        let start = ((x as i32) >> 6, (z as i32) >> 6);
+        if !open(start.0, start.1) {
+            return false;
+        }
+        let mut seen = std::collections::HashSet::from([start]);
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some((cx, cz)) = queue.pop_front() {
+            if self.field_subcell_open(cx, cz) {
+                return true;
+            }
+            if seen.len() >= budget {
+                break;
+            }
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let n = (cx + dx, cz + dz);
+                if open(n.0, n.1) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        false
+    }
+
     /// Size (in 64-unit sub-cells) of the connected open-floor region the
     /// world point `(x, z)` stands in - `0` when the covering sub-cell is
     /// closed (off the walk-visible floor or inside a wall). The reachability
@@ -1098,7 +1141,7 @@ impl World {
     ///   belong to, capture-pinned by `rimelm_npc_press_tetsu` (the sparring
     ///   partner's `flags+0x10 = 0x08020884` carries the `0x20000` class
     ///   bit, and the mutual `+0x98` collision link is live in-frame). The
-    ///   positions are LIVE: `Self::tick_field_npc_motions` walks routed /
+    ///   positions are LIVE: `Self::tick_field_npc_motions` walks
     ///   scripted NPCs through the motion VM and writes back into
     ///   [`crate::world::FieldNpcState::positions`], so a moving NPC's
     ///   ±`FIELD_NPC_BOX_HALF` (40) box follows it, exactly as retail
@@ -1432,7 +1475,7 @@ impl World {
     /// slot whose heading has been rewritten since the snap. That covers the
     /// case retail covers with its `0x400000` class test in the other
     /// direction: an NPC that *walked* during the conversation (a scripted
-    /// interaction leg, an autonomous patrol resuming) has earned a new
+    /// interaction leg, an ambient wander step) has earned a new
     /// heading, and restoring the pre-talk one would teleport its facing.
     ///
     /// PORT: FUN_80039B7C (the `+0x5A` -> `+0x26` interaction-end restore)
@@ -2040,8 +2083,8 @@ impl World {
     /// when `slot` is not an installed field NPC - the retail actor-list
     /// search miss, which returns 0.
     ///
-    /// A leg started here is *scripted* (`route_cursor = None`): it runs even
-    /// while [`crate::world::FieldNpcState::animate`] is off and even during a dialogue
+    /// Every leg started here is *scripted*: it runs even while
+    /// [`crate::world::FieldNpcState::animate`] is off and even during a dialogue
     /// (the interaction partner executing its own prologue walk), and ends
     /// where it lands.
     ///
@@ -2076,7 +2119,6 @@ impl World {
                     ..Default::default()
                 },
                 target: (tx, tz),
-                route_cursor: None,
             },
         );
         true
@@ -2149,81 +2191,29 @@ impl World {
     }
 
     /// Step every in-flight field-NPC walk leg one frame through the ported
-    /// motion VM and kick autonomous route legs, writing each NPC's new
-    /// position back into [`crate::world::FieldNpcState::positions`] - so the moving NPC's
+    /// motion VM, writing each NPC's new position back into
+    /// [`crate::world::FieldNpcState::positions`] - so the moving NPC's
     /// ±40-unit collision box ([`Self::field_actor_dir_blocked`]) and its
     /// interact box ([`Self::field_interact_probe_slot`]) follow the live
     /// position, exactly as retail probes the live `+0x14`/`+0x18` rather
     /// than the spawn anchor.
     ///
-    /// Autonomous legs (started from [`crate::world::FieldNpcState::routes`], gated by
-    /// [`crate::world::FieldNpcState::animate`]) loop their waypoints - a patrol - and
-    /// pause while a dialogue is up (retail's interaction motion-pause kick:
-    /// the touch event post reloads every moving-class actor's pause timer,
-    /// `FUN_8003c9ac`). Scripted legs (interaction-prologue `0x4C 0x51`,
-    /// actor-VM `start_motion`) keep stepping through a dialogue - they ARE
-    /// the interaction's choreography.
+    /// Every leg here is **scripted**: a cutscene timeline's cross-context
+    /// walk or an actor-VM `start_motion`. Each one ends where it lands, and none is gated by
+    /// [`crate::world::FieldNpcState::animate`] - a script started it. There
+    /// is no `0x4C 0x51` leg: that op is an instant seat wherever it runs,
+    /// and a placement's own `0x4C 0x51` ops are instant
+    /// story-branch **seats** that the scene-entry pre-run already applied,
+    /// and a villager's ambient wandering is its tail-section-1 stream
+    /// (`World::tick_field_npc_ambient`), so nothing walks between seats.
     ///
-    /// REF: FUN_8003774C, FUN_8003c9ac
+    /// REF: FUN_8003774C
     pub(crate) fn tick_field_npc_motions(&mut self) {
-        // A running cutscene timeline owns the stage: its pokes on the
-        // per-actor channels drive NPC moves, so the engine's
-        // autonomous waypoint substitute stands down (it would overwrite the
-        // scripted positions each frame). In-flight SCRIPTED legs keep
-        // stepping - the timeline's own cross-context walk-to-tile yields
-        // (`C7 <id> …`, [`crate::cutscene_timeline::TimelineWalk`]) glide
-        // through this same machinery, and retail's walk kernel ticks every
-        // frame regardless of what spawned the record.
-        let timeline_up = self.cutscene_timeline_active();
-        let dialogue_up = self.dialogue_owns_input();
-        // Kick autonomous legs for routed NPCs with no in-flight motion.
-        if self.npcs.animate && !dialogue_up && !timeline_up {
-            let kicks: Vec<(u8, (i16, i16))> = self
-                .npcs
-                .routes
-                .iter()
-                .filter(|(slot, _)| !self.npcs.motions.contains_key(slot))
-                // Retail dispatches the two motion VMs off different actor
-                // flag bits, so a placement bound to a walking ambient
-                // stream is never also pursued by `FUN_8003774C`. Its own
-                // `0x18` / `0x03` legs are the authored behaviour.
-                .filter(|(slot, _)| !self.npcs.ambient.get(slot).is_some_and(|c| c.walks))
-                .filter_map(|(&slot, route)| {
-                    let first = *route.first()?;
-                    // A one-waypoint route that has arrived stays put (no
-                    // restart churn); multi-waypoint routes always loop.
-                    if route.len() == 1 && self.npcs.positions.get(&slot) == Some(&first) {
-                        return None;
-                    }
-                    Some((slot, first))
-                })
-                .collect();
-            for (slot, (tx, tz)) in kicks {
-                if self.start_field_npc_motion(slot, tx, tz)
-                    && let Some(m) = self.npcs.motions.get_mut(&slot)
-                {
-                    m.route_cursor = Some(0);
-                    // Liveliness amble cap: the decoded pace comes from
-                    // seat/dash ops that retail fires once at story moments
-                    // (`0x41`/`0x47` bits-0 = 16/32 units per frame). A
-                    // patrol that loops those targets forever must walk at
-                    // the villager pace, not the story dash (town01's gate
-                    // guard loops its cutscene staging route at 32 ungated).
-                    // Scripted legs keep the decoded speed - they ARE the
-                    // authored dash.
-                    m.state.speed = m.state.speed.min(FIELD_NPC_MOTION_SPEED);
-                }
-            }
-        }
-        // Step each leg; collect per-slot outcomes, then apply.
         let slots: Vec<u8> = self.npcs.motions.keys().copied().collect();
         for slot in slots {
             let Some(motion) = self.npcs.motions.get_mut(&slot) else {
                 continue;
             };
-            if (dialogue_up || timeline_up) && motion.route_cursor.is_some() {
-                continue; // autonomous legs pause during an interaction / beat
-            }
             let target = vm::motion_vm::MotionTarget {
                 x: motion.target.0,
                 y: 0,
@@ -2232,7 +2222,6 @@ impl World {
             };
             let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
             let pos = (motion.state.world_x, motion.state.world_z);
-            let cursor = motion.route_cursor;
             // The walker's heading is the one the `0x47` step itself snapped
             // onto the eight-point compass - written **once per leg** at the
             // first moving frame and again on a step-direction change, the
@@ -2245,35 +2234,7 @@ impl World {
             }
             self.npcs.positions.insert(slot, pos);
             if result == vm::motion_vm::StepResult::Done {
-                match cursor {
-                    // Patrol loop: start the next route leg (wrapping).
-                    Some(i) => {
-                        let next = self
-                            .npcs
-                            .routes
-                            .get(&slot)
-                            .filter(|route| route.len() > 1)
-                            .map(|route| ((i + 1) % route.len(), route[(i + 1) % route.len()]));
-                        match next {
-                            Some((ni, (tx, tz))) => {
-                                if self.start_field_npc_motion(slot, tx, tz)
-                                    && let Some(m) = self.npcs.motions.get_mut(&slot)
-                                {
-                                    m.route_cursor = Some(ni);
-                                    // Same amble cap as the kick site above.
-                                    m.state.speed = m.state.speed.min(FIELD_NPC_MOTION_SPEED);
-                                }
-                            }
-                            None => {
-                                self.npcs.motions.remove(&slot);
-                            }
-                        }
-                    }
-                    // Scripted leg: ends where it lands.
-                    None => {
-                        self.npcs.motions.remove(&slot);
-                    }
-                }
+                self.npcs.motions.remove(&slot);
             }
         }
     }
@@ -2686,7 +2647,6 @@ impl World {
                     ..Default::default()
                 },
                 target: (target.x, target.y),
-                route_cursor: None,
             },
         );
     }

@@ -738,8 +738,14 @@ impl World {
     pub fn script_context_engages_player(&self) -> bool {
         // A parked scene change holds the player too: the door record that
         // issued it is parked (`26 FF FF` / `21`) for the whole countdown and
-        // keeps raising the engaged bit.
+        // keeps raising the engaged bit. So does one requested but not yet
+        // held: the port drops a record that ran its `0x3F` before the host
+        // drains the request into the hold, and in that gap the pad must not
+        // open a talk with whoever stands by (`taiku` P2[15] ends beside the
+        // NPC whose talk then rode the scene change into `map03`).
         self.scene_transition_hold.is_some()
+            || self.pending_named_scene_transition.is_some()
+            || self.pending_scene_transition.is_some()
             || self.cutscene_timeline_active()
             || self
                 .field_vm
@@ -1216,11 +1222,15 @@ impl World {
                         let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
                         let arrived =
                             (nx, nz) == (i32::from(walk.target.0), i32::from(walk.target.1));
-                        if arrived {
-                            let y = self.sample_field_floor_height(nx, nz) as i16;
-                            if let Some(a) = self.actors.get_mut(p as usize) {
-                                a.move_state.world_y = y;
-                            }
+                        // The floor under every step, not just the landing
+                        // tile: a leg that crosses a stair run (chitei2's
+                        // escape beats) otherwise carries the start height
+                        // through the steps and snaps at the end - Vahn
+                        // walking through the stairs. Same per-step
+                        // resolution the compass glide runs.
+                        let y = self.sample_field_floor_height(nx, nz) as i16;
+                        if let Some(a) = self.actors.get_mut(p as usize) {
+                            a.move_state.world_y = y;
                         }
                         arrived
                     } else {
@@ -1251,11 +1261,16 @@ impl World {
                         self.npcs.positions.insert(slot, walk.target);
                     }
                     None => {
+                        let y = self.sample_field_floor_height(
+                            i32::from(walk.target.0),
+                            i32::from(walk.target.1),
+                        ) as i16;
                         if let Some(p) = self.player_actor_slot
                             && let Some(actor) = self.actors.get_mut(p as usize)
                         {
                             actor.move_state.world_x = walk.target.0;
                             actor.move_state.world_z = walk.target.1;
+                            actor.move_state.world_y = y;
                         }
                     }
                 }
@@ -1691,7 +1706,6 @@ impl World {
                             if host.world.start_field_npc_motion(s, tx, tz) {
                                 if let Some(m) = host.world.npcs.motions.get_mut(&s) {
                                     m.state.speed = speed;
-                                    m.route_cursor = None;
                                 }
                                 // The record runs on past an NPC walk (`li
                                 // s7,4` in the delay slot at `0x801DF030`);
@@ -2589,11 +2603,28 @@ impl World {
         if dropped
             && self.field_vm.helper_contexts.is_empty()
             && matches!(self.mode, crate::world::SceneMode::Field)
+            // A record that ended by leaving the scene (`chitei2`'s rescue
+            // beat jumps the party into the drain pipe, then `0x3F`) parks
+            // the hand-off behind the streaming actor; the departing scene's
+            // last frames must not show the party yanked back to its spawn.
+            && self.scene_transition_hold.is_none()
+            && self.pending_named_scene_transition.is_none()
             && let Some((sx, sz)) = self.props.resolved_cold_spawn
             && let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get(slot as usize)
             && self.field_walk_component_size(actor.move_state.world_x, actor.move_state.world_z)
                 == 0
+            // ... and only when the collision grid really boxes them in. Floor
+            // a placed object provides has no walk-visible bit, but it is open
+            // collision the player walks off: `chitei2`'s collapse beat leaves
+            // the party on the escape platform (partition-0 record 31's mesh)
+            // to run down its stairs onto the corridor floor, and yanking them to the cold spawn skipped
+            // the boulder beat that platform leads to.
+            && !self.field_collision_reaches_floor(
+                actor.move_state.world_x,
+                actor.move_state.world_z,
+                STRANDED_COLLISION_REACH,
+            )
             // ... and only when the resolved spawn itself is on open floor: a
             // scene with no walkability data at all (a cutscene shell) reads
             // component 0 everywhere, and yanking the player there would be
@@ -2676,12 +2707,7 @@ impl World {
     ///
     /// After stepping, each channel whose context position changed writes
     /// through to [`crate::world::FieldNpcState::positions`] so the field render / probes
-    /// follow the scripted move. On free-roam the engine's waypoint patroller
-    /// ([`Self::tick_field_npc_motions`]) owns any placement carrying a route,
-    /// so a channel's move (and the heading derived from it) is only surfaced
-    /// for placements the patroller does NOT drive - the two never fight over a
-    /// slot's position. During a cutscene the patroller stands down, so the
-    /// channel owns every slot's write-through exactly as before.
+    /// follow the scripted move.
     /// The render scale a placement channel's actor draws at - retail's
     /// `actor[+0x72]` fixed-point scalar (`0x1000` = 1.0), seeded by the
     /// allocator (`actor_free`) and rewritten by the spawn prologue's
@@ -2743,6 +2769,47 @@ impl World {
             .collect()
     }
 
+    /// Flat partition-0 record index -> how far a script has moved that
+    /// **object-bind channel's** actor from where its bind seated it, as
+    /// `[dx, dy, dz]` in retail world units (Y-down). Retail draws a placed
+    /// object at its actor's live `+0x14 / +0x16 / +0x18`, not at the `.MAP`
+    /// record, so a script that seats one with `A3 <id> <tx> <tz>` or lifts it
+    /// with op `4C 42` (`+0x8E`, mirrored into world Y while `+0x10 &
+    /// 0x20000000` is up) moves the drawn mesh. `chitei2`'s collapse is the
+    /// case that needs it: partition-0 records 28..30 are the boulder, born
+    /// 700 units up at a parking tile (`31 1D` + `4C 42 BC 02`), and the
+    /// boulder beat (P2[17]) seats them at the foot of the escape stairs and
+    /// ramps them down to the floor.
+    ///
+    /// The bind seats the actor at Y `0`, so `dy` is the actor's Y itself;
+    /// hosts add the displacement to the placement's own transform. Parked
+    /// objects ([`Self::hidden_object_records`]) and unmoved ones are not
+    /// listed.
+    // REF: FUN_8001ADA4 (case 5 draws at the actor position), FUN_8003A55C
+    pub fn object_draw_displacements(&self) -> std::collections::HashMap<usize, [i32; 3]> {
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
+        // A record bound at several tiles seats its one channel at the first
+        // bind (`spawn_object_channels` skips the repeats).
+        let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
+        for &(record, pos) in &self.field_vm.object_channel_binds {
+            seeds.entry(record).or_insert(pos);
+        }
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && !(c.ctx.world_x == hide && c.ctx.world_z == hide))
+            .filter_map(|c| {
+                let (sx, sz) = *seeds.get(&c.placement_index)?;
+                let d = [
+                    i32::from(c.ctx.world_x as i16) - i32::from(sx),
+                    i32::from(c.ctx.world_y as i16),
+                    i32::from(c.ctx.world_z as i16) - i32::from(sz),
+                ];
+                (d != [0, 0, 0]).then_some((c.placement_index, d))
+            })
+            .collect()
+    }
+
     /// Retail's spawn-install prologue pre-run: `FUN_8003A1E4` runs each
     /// just-spawned placement context through the field VM at scene load, so
     /// the record's story-flag-tested opening ops execute BEFORE the first
@@ -2765,10 +2832,8 @@ impl World {
     /// (`FUN_801D6704` passes `a0 = loader-mask & 4` to `FUN_8003AEB0`, which
     /// skips the partition-1 spawn loop at `0x8003B8A0` when it is zero) runs
     /// none of it. Position writes are
-    /// surfaced for every repositioned slot, and a slot whose scripted
-    /// position parks it or leaves its decoded patrol route's locality drops
-    /// that route (the route was derived by a flag-blind linear walk; the
-    /// executed branch supersedes it). Headings are NOT derived from these
+    /// surfaced for every repositioned slot, and a slot the prologue parks
+    /// drops its glide pace and any in-flight leg. Headings are NOT derived from these
     /// teleports - [`Self::seed_field_npc_facings`] carries the prologue's
     /// facing ops.
     ///
@@ -2949,11 +3014,9 @@ impl World {
         }
         // Write the spawn prologue's moves through to the field NPC
         // render/probe state, unconditionally: the executed branch is the
-        // story truth for the slot's initial position, and a decoded patrol
-        // route it contradicts (a park, or a relocation beyond the route's
-        // locality) is a branch the flag-blind route decode kept wrongly -
-        // drop it so the patroller can neither resurrect the ghost nor pace a
-        // patrol around the wrong anchor.
+        // story truth for the slot's initial position. A park also drops the
+        // slot's glide pace and any in-flight leg - a despawned actor has
+        // nothing left to walk.
         for (c, pre) in channels.iter().zip(pre_pos) {
             if c.object_bind {
                 // Flat-record-keyed context; the NPC surfaces are
@@ -2967,15 +3030,7 @@ impl World {
             let slot = c.placement_index as u8;
             let (nx, nz) = (nx as i16, nz as i16);
             let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
-            let parked = (nx, nz) == (hide, hide);
-            let outside_route = self.npcs.routes.get(&slot).is_some_and(|route| {
-                route.iter().all(|&(wx, wz)| {
-                    let (dx, dz) = ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
-                    dx.max(dz) > crate::man_field_scripts::NPC_ROUTE_LOCALITY
-                })
-            });
-            if parked || outside_route {
-                self.npcs.routes.remove(&slot);
+            if (nx, nz) == (hide, hide) {
                 self.npcs.glide_speeds.remove(&slot);
                 self.npcs.motions.remove(&slot);
             }

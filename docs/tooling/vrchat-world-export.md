@@ -78,9 +78,8 @@ with, so the export matches the on-screen pages:
   clip, plus every placement transform in the manifest. The world glb
   keeps their frame-0 static twins, so these are opt-in upgrades.
 - **Baked ambient vertex morphs** - when the scene arms the engine's
-  scene-entry VDF pulse (`engine-core::vdf_pulse` - a populated type-7
-  morph pack with no retail entry arming; Rim Elm's shoreline is the
-  flagship), the world glb carries one glTF **morph target** per envelope
+  scene-entry VDF pulse (`engine-core::vdf_pulse` - opt-in per scene:
+  the jou family and Rim Elm's shoreline, the flagship), the world glb carries one glTF **morph target** per envelope
   lane on the affected meshes (Unity blendshapes, named
   `vdf_lane_<n>` via `extras.targetNames`) plus a looping `vdf_pulse`
   weights animation sampled over exactly one envelope period

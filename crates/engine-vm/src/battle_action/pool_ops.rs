@@ -569,7 +569,7 @@ pub fn first_selectable_target(pool: &[PoolActor], roster_char_ids: &[u8], actor
 /// **non-wrapping forward scan over player-commandable slots only** and drives
 /// a cursor. Substituting one for the other stops monsters taking turns.
 ///
-/// PORT: FUN_801DB81C
+/// PORT: FUN_801DB81C, overlay_battle_action_0898_801db81c
 pub fn next_selectable_actor(
     pool: &[PoolActor],
     roster_char_ids: &[u8],

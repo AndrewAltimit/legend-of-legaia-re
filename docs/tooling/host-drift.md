@@ -1027,7 +1027,7 @@ window drains it every frame. No tier looks at what a host *fails to
 consume*.
 
 **Opposite defaults on one knob.** The three-probe wall footprint, solid NPC
-bodies and motion-VM patrol routes were on unconditionally in the browser and
+bodies and live NPC motion were on unconditionally in the browser and
 off by default natively (`--edge-collision` / `--solid-npcs` / `--live-npcs`
 opt-ins). The same engine, the same scene, two different games in a town.
 Native now defaults them on with `--no-*` opt-outs; a paired-defaults row
@@ -1248,6 +1248,27 @@ battle ticks without them natively. On input, the page let OS key auto-repeat
 into its "just pressed" set, so a held direction scrolled every page menu,
 and the native window had no focus-loss arm, so a key held across an alt-tab
 stayed down.
+
+A later scripted pass - the same pad script driven through `play-window
+--pad-script` / `--key-script` and through the page with its tick stepped by
+hand, frames paired by engine tick - found field walking, NPC dialogue, the
+pause menu and its Options popups, the overworld, and a thousand ticks of an
+auto-resolved battle frame-identical up to filtering. What it did find sat in
+host state around the engine:
+
+- **A session choice the next entry re-armed.** The native `F7` (random
+  encounters off) cleared the world toggle only, and the live-loop arming a
+  card Load or New Game runs through `field_live_opts` raised it again. The
+  page's "No encounters" is a session flag every entry reads; `F7` now writes
+  the native one.
+- **A capture that wrote the player's config.** A `--screenshot` /
+  `--key-script` run persisted every toggle it pressed, so a scripted `F8`
+  left every later launch at night. Scripted runs write neither the options
+  nor the bindings file now.
+- **A handler key no script could press.** `--key-script` had no names for
+  `F4` / `F8` / `F9`, so the native half of an enhancement-toggle comparison
+  was unreachable; a test reads the handler's `KeyCode` arms and fails on any
+  key the script cannot name.
 
 ## What a waiver may say
 

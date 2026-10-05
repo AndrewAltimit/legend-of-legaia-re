@@ -25,9 +25,10 @@
  *     arithmetic and colour ramps, and the five banner animators on their
  *     traced slide/hold/fade ramps.
  *
- * Approximated (the page's note says so): the fishing sprite page (the HUD
- * glyph atlas) is undecoded, so glyph ids draw as labelled text; the
- * lure/ripple overlay is drawn as projected 2D
+ * The HUD's sprite half (plates, digits, gauge caps, banners) is the
+ * overlay's own sprite table cut from the venue's HUD page, rasterised by
+ * the engine; without it, glyph ids fall back to labelled text.
+ * Approximated (the page's note says so): the lure/ripple overlay is drawn as projected 2D
  * geometry. The LINE is the engine's: `fishing_line_json` hands back
  * retail's packet (the rod end is the rod actor's projected tip, the pair is
  * clipped by the ported FUN_801D56E4, the Gouraud end colours are the
@@ -380,12 +381,45 @@ window.MgFishing = (function () {
       g.restore();
     }
 
-    /* Draw one item of the ported HUD draw list (retail 320x240 coords). */
-    function drawHudItem(it) {
+    /* The HUD's sprite half - plates, digits, gauge caps, banners - cut
+     * from the overlay's own sprite table out of the venue's HUD page and
+     * rasterised by the engine (ui_fishing_sprite, the builder the play
+     * hosts draw on their GPUs). Available when the table and the pond
+     * decoded; the text stand-ins below then step aside. */
+    let spriteCanvas = null;
+    function hudSpritesReady() {
+      try {
+        return typeof api.fishing_hud_sprites_ready === 'function'
+          && api.fishing_hud_sprites_ready();
+      } catch (e) { return false; }
+    }
+    function drawHudSprites() {
+      const W = canvas.width, H = canvas.height;
+      let px;
+      try { px = api.fishing_hud_rgba(W, H); } catch (e) { return; }
+      if (!px || px.length !== W * H * 4) return;
+      if (!spriteCanvas) spriteCanvas = document.createElement('canvas');
+      if (spriteCanvas.width !== W || spriteCanvas.height !== H) {
+        spriteCanvas.width = W;
+        spriteCanvas.height = H;
+      }
+      const sg = spriteCanvas.getContext('2d');
+      sg.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.length), W, H), 0, 0);
+      g.drawImage(spriteCanvas, 0, 0);
+    }
+
+    /* Draw one item of the ported HUD draw list (retail 320x240 coords).
+     * `sprites`: the sprite half is drawn from the HUD page, so glyphs,
+     * digits and bar frames have no text stand-in. */
+    function drawHudItem(it, sprites) {
+      if (sprites && (it.t === 'digit' || it.t === 'glyph')) return;
       if (it.t === 'digit') {
         hudText(String(it.d), it.x, it.y, { b: it.b, bold: true });
+      } else if (it.t === 'count') {
+        hudText(String(it.d), it.x, it.y, { b: it.b });
       } else if (it.t === 'cap') {
-        hudText(CAPTION_TEXT[it.k] || '', it.x, it.y, { color: '#cfe0ef' });
+        const txt = (typeof it.txt === 'string') ? it.txt : (CAPTION_TEXT[it.k] || '');
+        hudText(txt, it.x, it.y, { color: '#cfe0ef' });
       } else if (it.t === 'glyph') {
         const label = GLYPH_LABEL[it.id];
         if (label === undefined) return;
@@ -402,19 +436,23 @@ window.MgFishing = (function () {
         g.save();
         if (it.axis === 'h') {
           const w = (it.end_x - it.x) * SCALE, h = 8 * SCALE;
-          g.fillStyle = 'rgba(0,0,0,0.55)';
-          g.fillRect(it.x * SCALE, it.y * SCALE, w, h);
-          g.strokeStyle = 'rgba(255,255,255,0.5)';
-          g.strokeRect(it.x * SCALE + 0.5, it.y * SCALE + 0.5, w, h);
+          if (!sprites) {
+            g.fillStyle = 'rgba(0,0,0,0.55)';
+            g.fillRect(it.x * SCALE, it.y * SCALE, w, h);
+            g.strokeStyle = 'rgba(255,255,255,0.5)';
+            g.strokeRect(it.x * SCALE + 0.5, it.y * SCALE + 0.5, w, h);
+          }
           g.fillStyle = rgb;
           g.fillRect((it.x + 4) * SCALE, (it.y + 1) * SCALE,
                      Math.max(0, it.fill) * SCALE, h - 2 * SCALE);
         } else {
           const h = (it.end_y - it.y) * SCALE, w = 8 * SCALE;
-          g.fillStyle = 'rgba(0,0,0,0.55)';
-          g.fillRect(it.x * SCALE, it.y * SCALE, w, h);
-          g.strokeStyle = 'rgba(255,255,255,0.5)';
-          g.strokeRect(it.x * SCALE + 0.5, it.y * SCALE + 0.5, w, h);
+          if (!sprites) {
+            g.fillStyle = 'rgba(0,0,0,0.55)';
+            g.fillRect(it.x * SCALE, it.y * SCALE, w, h);
+            g.strokeStyle = 'rgba(255,255,255,0.5)';
+            g.strokeRect(it.x * SCALE + 0.5, it.y * SCALE + 0.5, w, h);
+          }
           /* The power bar fills UPWARD from the bottom cap. */
           const fh = Math.max(0, it.fill) * SCALE;
           g.fillStyle = rgb;
@@ -619,7 +657,9 @@ window.MgFishing = (function () {
         g.fillRect(0, 0, W, H);
       }
       drawWaterOverlay(st);
-      if (hud) for (const it of hud) drawHudItem(it);
+      const sprites = !!hud && hudSpritesReady();
+      if (sprites) drawHudSprites();
+      if (hud) for (const it of hud) drawHudItem(it, sprites);
       drawFxParts(fx);
       drawHub();
     }

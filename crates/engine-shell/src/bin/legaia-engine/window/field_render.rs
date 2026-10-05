@@ -8,12 +8,15 @@ use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
 /// ([`legaia_engine_core::field_env::placed_window_key`]), and each draw's
 /// grid cell + cull radius for the visible-tile crop
-/// ([`legaia_engine_core::field_view_window::CellKey`]), all parallel.
+/// ([`legaia_engine_core::field_view_window::CellKey`]), and each draw's bind
+/// record ([`legaia_engine_core::field_env::placed_bind_records`] - the key of
+/// its live scripted displacement), all parallel.
 pub(super) type PlacedDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
     Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     Vec<legaia_engine_core::field_view_window::CellKey>,
+    Vec<Option<usize>>,
 );
 
 /// The live **floor-height ladder** patch for the field draw lists.
@@ -638,11 +641,16 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> (
-        Vec<(usize, Mat4)>,
-        Vec<(usize, Mat4)>,
-        Vec<(UploadedVramMesh, Mat4)>,
-        Vec<(UploadedColorMesh, Mat4)>,
+        Vec<(usize, Mat4, Option<usize>)>,
+        Vec<(usize, Mat4, Option<usize>)>,
+        Vec<(UploadedVramMesh, Mat4, Option<usize>)>,
+        Vec<(UploadedColorMesh, Mat4, Option<usize>)>,
     ) {
+        // A script can move a posed prop's actor (`A3` seat, a `4C 42` lift)
+        // like any placed object's; retail draws it at the actor
+        // (`World::object_draw_displacements`). The bind record also keys
+        // the prop's draw tint for the caller.
+        let moves = self.session.host.world.object_draw_displacements();
         let mut baked_v = Vec::new();
         let mut baked_c = Vec::new();
         let mut live_v = Vec::new();
@@ -651,6 +659,22 @@ impl PlayWindowApp {
             return (baked_v, baked_c, live_v, live_c);
         };
         for p in &self.field_posed_props {
+            let record = self
+                .session
+                .host
+                .world
+                .props
+                .bank
+                .props
+                .get(&p.anchor)
+                .map(|s| s.record);
+            let model = match record.and_then(|r| moves.get(&r)) {
+                Some(d) => {
+                    Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
+                        * p.model
+                }
+                None => p.model,
+            };
             let key = self
                 .session
                 .host
@@ -661,10 +685,10 @@ impl PlayWindowApp {
                 .unwrap_or_default();
             if key.is_rest() {
                 if let Some(i) = p.baked.vram {
-                    baked_v.push((i, p.model));
+                    baked_v.push((i, model, record));
                 }
                 if let Some(i) = p.baked.color {
-                    baked_c.push((i, p.model));
+                    baked_c.push((i, model, record));
                 }
                 continue;
             }
@@ -702,7 +726,7 @@ impl PlayWindowApp {
                         &vmesh.indices,
                     )
                 {
-                    live_v.push((m, p.model));
+                    live_v.push((m, model, record));
                 }
             }
             if p.baked.color.is_some() {
@@ -716,7 +740,7 @@ impl PlayWindowApp {
                         &cmesh.blend,
                     )
                 {
-                    live_c.push((m, p.model));
+                    live_c.push((m, model, record));
                 }
             }
         }
@@ -793,7 +817,7 @@ impl PlayWindowApp {
             return Default::default();
         }
         // Field frame: raw retail-convention transforms (see above).
-        let (draws, floors, _, cells) =
+        let (draws, floors, _, cells, _) =
             self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None);
         (draws, floors, cells)
     }
@@ -1135,7 +1159,11 @@ impl PlayWindowApp {
         // Parallel to `draws`: the grid cell + cull radius the visible-tile
         // crop (`field_view_window::terrain_draw_visible`) tests per frame.
         let mut cell_keys = Vec::new();
-        for (d, &scale) in env_draws.iter().zip(&scales) {
+        // Parallel to `draws`: the bind record whose actor a script can move
+        // (`World::object_draw_displacements`, folded in per frame).
+        let mut records = Vec::new();
+        let bind_records = legaia_engine_core::field_env::placed_bind_records(&env_draws, binds);
+        for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
             // contact). Those props are drawn from `field_posed_props`, which
@@ -1225,6 +1253,7 @@ impl PlayWindowApp {
             floors.push(d.floor);
             window_keys.push(legaia_engine_core::field_env::placed_window_key(d, binds));
             cell_keys.push(legaia_engine_core::field_view_window::CellKey::of_draw(d));
+            records.push(record);
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -1232,7 +1261,7 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        (draws, floors, window_keys, cell_keys)
+        (draws, floors, window_keys, cell_keys, records)
     }
 
     /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so

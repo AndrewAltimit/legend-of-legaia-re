@@ -59,9 +59,8 @@ pub const SPLASH_FRAMES: i32 = 0x98;
 // variant resolves into them rather than replacing them: FUN_801d1870 /
 // FUN_801d1a90 -> `bar_frame` / `power_bar_frame` (via
 // `HudDraw::resolve_bar`), and FUN_801d76e0 -> `number_digit_cells`.
-// FUN_801d63b0 is genuinely unported: it is a pure VRAM quad emitter with
-// no decision content, so the variant just carries its call-site
-// arguments and the host does the drawing.
+// FUN_801d63b0 itself is `crate::ui_fishing_sprite`: the variant carries
+// its call-site arguments and the sprite pass turns it into a quad.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudDraw {
     /// A number via the digit blitter `FUN_801d76e0`.
@@ -835,6 +834,19 @@ pub struct FishingCaptions<'a> {
     pub lure_count_suffix: &'a str,
 }
 
+impl<'a> FishingCaptions<'a> {
+    /// The captions off the user's disc, as the engine resolved them
+    /// (`World::minigames.fishing_captions`): the three lure labels, the
+    /// caption before the count and the one after it.
+    pub fn from_disc(lure_names: &'a [String; 3], lures_left: &'a str, suffix: &'a str) -> Self {
+        FishingCaptions {
+            rod_names: [&lure_names[0], &lure_names[1], &lure_names[2]],
+            lures_left,
+            lure_count_suffix: suffix,
+        }
+    }
+}
+
 impl FishingCaptions<'static> {
     /// Engine-side English placeholders. These are **not** the retail
     /// strings - they exist so a dev build draws a legible HUD before a
@@ -850,10 +862,10 @@ impl FishingCaptions<'static> {
 
 /// Where the consumer samples its non-text quads from.
 ///
-/// The fishing sprite page itself is not ported - `FUN_801d63b0` is a bare
-/// VRAM quad emitter, and its glyph ids index a page the host uploads. So
-/// glyph ids resolve through `glyph_src`, and a glyph the host cannot place
-/// is dropped rather than guessed at.
+/// A host that draws the sprite half itself (`crate::ui_fishing_sprite`,
+/// `FUN_801d63b0`'s quads over the venue's HUD page) sets
+/// [`Self::sprites_drawn`]; otherwise glyph ids resolve through `glyph_src`,
+/// and a glyph the host cannot place is dropped rather than guessed at.
 pub struct FishingHudAtlas<'a> {
     /// Atlas rect of a fully opaque texel, stretched to fill gauge bars.
     /// `None` when the host has no such texel to sample - the bar frames
@@ -863,6 +875,12 @@ pub struct FishingHudAtlas<'a> {
     pub glyph_src: &'a dyn Fn(u32) -> Option<(u32, u32, u32, u32)>,
     /// Pixel thickness of a gauge bar's fill quad across its axis.
     pub bar_thickness: u32,
+    /// The host draws the sprite half of this list itself, as screen
+    /// primitives over the venue's HUD page
+    /// ([`crate::ui_fishing_sprite::fishing_hud_sprite_prims`]): numbers,
+    /// glyphs and bar frames are then left out here, and only the captions,
+    /// counts and bar fills come back as quads.
+    pub sprites_drawn: bool,
 }
 
 /// Map a retail brightness byte to a vertex tint.
@@ -892,6 +910,9 @@ fn bar_frame_draws(
 ) -> Vec<SpriteDraw> {
     let mut out = Vec::new();
     for (glyph, pos) in frame.glyphs.iter().zip(frame.positions.iter()) {
+        if atlas.sprites_drawn {
+            break;
+        }
         if let Some(src) = (atlas.glyph_src)(*glyph) {
             out.push(SpriteDraw {
                 dst: (origin.0 + pos.0, origin.1 + pos.1, src.2, src.3),
@@ -939,9 +960,9 @@ fn bar_frame_draws(
 ///   ([`number_digit_cells`]), so leading zeros stay blank and the value is
 ///   right-aligned in its 8-slot row; each cell is drawn from the
 ///   proportional font atlas.
-/// - [`HudDraw::Count`] is the fixed-width variant. Its retail primitive
-///   (`0x80034b78`) is unported, so the width is honoured by zero-padding -
-///   an engine-side choice, not a pinned one.
+/// - [`HudDraw::Count`] is the fixed-width variant, laid out the way the
+///   shared number primitive `FUN_80034B78` does: right-aligned in
+///   `digits` 8-px cells, leading cells blank.
 /// - [`HudDraw::Caption`] resolves through `captions`; a [`HudCaption::RodName`]
 ///   whose index is out of range draws nothing, matching the builder's own
 ///   gate.
@@ -975,6 +996,7 @@ pub fn fishing_hud_draws_for(
 
     for item in items {
         match *item {
+            HudDraw::Number { .. } | HudDraw::Glyph { .. } if atlas.sprites_drawn => {}
             HudDraw::Number {
                 x,
                 y,
@@ -993,9 +1015,17 @@ pub fn fishing_hud_draws_for(
                 x,
                 y,
             } => {
-                let w = digits as usize;
-                let s = format!("{:0w$}", value.max(0), w = w);
-                text_at(&mut out, &s, x, y, HUD_BRIGHTNESS);
+                // `FUN_80034B78(value, digits, x, y)`: the value right-aligned
+                // in `digits` 8-px cells, leading cells blank - a zero-padded
+                // string here ran the count into the caption before it.
+                out.extend(crate::ui_menu::num_field_draws(
+                    font,
+                    value.max(0) as u64,
+                    origin.0 + x,
+                    origin.1 + y,
+                    digits as i32,
+                    hud_tint(HUD_BRIGHTNESS),
+                ));
             }
             HudDraw::Caption { text, x, y } => {
                 let s = match text {
@@ -1493,6 +1523,7 @@ mod tests {
             solid_src: Some((0, 0, 1, 1)),
             glyph_src: &test_atlas_glyph,
             bar_thickness: 8,
+            sprites_drawn: false,
         }
     }
 
@@ -1592,6 +1623,7 @@ mod tests {
             solid_src: Some((0, 0, 1, 1)),
             glyph_src: &|_| None,
             bar_thickness: 8,
+            sprites_drawn: false,
         };
         let items = persistent_hud_draws(1234, 5678, 2, 7);
         let draws = fishing_hud_draws_for(&font, &items, &caps, &blind, (0, 0));
@@ -1608,7 +1640,7 @@ mod tests {
     }
 
     #[test]
-    fn consumer_right_aligns_numbers_and_zero_pads_counts() {
+    fn consumer_right_aligns_numbers_and_blank_pads_counts() {
         let font = legaia_font::synthetic_for_tests();
         let caps = FishingCaptions::placeholder();
         let atlas = test_atlas();
@@ -1629,7 +1661,8 @@ mod tests {
         assert_eq!(num.len(), 2, "two significant digits, no leading zeros");
         assert_eq!(num[0].dst.0, 6 * DIGIT_PITCH_NARROW);
 
-        // A Count is the fixed-width field: 7 in four digits is "0007".
+        // A Count is `FUN_80034B78`'s fixed-width field: 7 in four 8-px
+        // cells is three blank cells and a 7 in the last one.
         let cnt = fishing_hud_draws_for(
             &font,
             &[HudDraw::Count {
@@ -1642,6 +1675,7 @@ mod tests {
             &atlas,
             (0, 0),
         );
-        assert_eq!(cnt.len(), 4, "zero-padded to the field width");
+        assert_eq!(cnt.len(), 1, "leading cells blank, not zeros");
+        assert_eq!(cnt[0].dst.0, 3 * 8);
     }
 }

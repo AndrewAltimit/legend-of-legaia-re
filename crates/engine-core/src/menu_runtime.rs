@@ -64,6 +64,10 @@ pub enum MenuTickEvent {
 /// after [`crate::world::World::tick`] when in
 /// [`crate::world::SceneMode::Menu`] (or whatever in-menu mode the engine
 /// uses).
+/// Ticks the field takes to fade to black when a shop opens - see
+/// [`MenuRuntime::shop_fade_level`].
+pub const SHOP_FADE_FRAMES: u32 = 14;
+
 pub struct MenuRuntime {
     pub ctx: MenuCtx,
     /// Save-slot directory. Created lazily on first save.
@@ -139,6 +143,22 @@ pub struct MenuRuntime {
     /// A host paints window 31 (`engine-ui`'s `amount_prompt_draws_for`)
     /// while this is `Some`.
     point_card_toast: Option<i32>,
+    /// The shop windows' open / close slides
+    /// ([`crate::shop::ShopSlides`]), stepped once per tick toward the
+    /// current screen's window set. Hosts draw from
+    /// [`Self::shop_slides`].
+    shop_slides: crate::shop::ShopSlides,
+    /// Free-running tick count, the engine's stand-in for retail's frame
+    /// word `0x80084570` that the list kernel blink-gates its page
+    /// triangles on ([`Self::ui_frame`]).
+    ui_frames: u32,
+    /// Ticks since the current shop / prize counter opened, saturating -
+    /// the clock of the field's fade to black ([`Self::shop_fade_level`]).
+    shop_age: u32,
+    /// The list row the hand was on when a quantity stepper opened over it.
+    /// The kind-4 list keeps its selection behind the stepper, so the hand
+    /// comes back to this row (clamped to the rebuilt list) when it closes.
+    quantity_list_row: u8,
     /// The UI cue this tick's shop step raised, if any, for the host to key
     /// ([`Self::take_ui_cue`]). Retail's shop screens key their own blips:
     /// the kind-4 list kernel `FUN_80032A44` (cursor `0x21` on a move,
@@ -276,6 +296,10 @@ impl MenuRuntime {
             prize_session: None,
             stay_cursor: None,
             point_card_toast: None,
+            shop_slides: crate::shop::ShopSlides::default(),
+            ui_frames: 0,
+            shop_age: 0,
+            quantity_list_row: 0,
             ui_cue: None,
             spell_level_notice: None,
             art_learned_notice: None,
@@ -389,6 +413,10 @@ impl MenuRuntime {
     /// this when the field VM triggers a shop transition.
     pub fn open_shop(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+        self.shop_slides.reset();
+        // A direct open (tooling / tests) skips the field fade; the merchant
+        // path (`open_shop_menu`) runs it.
+        self.shop_age = SHOP_FADE_FRAMES;
     }
 
     /// Open a shop into its **top-level Buy / Sell / Trade picker**
@@ -397,6 +425,8 @@ impl MenuRuntime {
     /// it opens this vendor's [`crate::seru_trade::SeruTradeSession`].
     pub fn open_shop_menu(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+        self.shop_slides.reset();
+        self.shop_age = 0;
         self.trade_session = None;
         self.recipient_session = None;
         self.ctx.state = MenuState::ShopMenu.as_byte();
@@ -410,6 +440,10 @@ impl MenuRuntime {
     /// hand the player straight into the store.
     pub fn open_shop_buy(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+        self.shop_slides.reset();
+        // A direct open (tooling / tests) skips the field fade; the merchant
+        // path (`open_shop_menu`) runs it.
+        self.shop_age = SHOP_FADE_FRAMES;
         self.ctx.state = MenuState::ShopBuy.as_byte();
         self.ctx.cursor = 0;
     }
@@ -474,11 +508,41 @@ impl MenuRuntime {
         self.prize_session.is_some() || (self.is_open() && self.inn_session.is_none())
     }
 
+    /// `true` while the screen behind the menu is **black** rather than the
+    /// field: the same menu-overlay sessions as [`Self::suspends_field`].
+    /// With the field overlay swapped out nothing draws the scene, so retail
+    /// fades the field to black before the shop's windows slide in (Retock
+    /// Items Shop capture: the scene darkens over the first frames of the
+    /// open, then every shop screen sits on black). Hosts skip the 3D pass
+    /// and clear black while this holds.
+    pub fn covers_field(&self) -> bool {
+        self.suspends_field() && self.shop_fade_level().is_none()
+    }
+
+    /// While a shop or the prize counter is opening, how far the field has
+    /// faded toward black: `Some(level)` with `level` `0..=255` for the
+    /// first [`SHOP_FADE_FRAMES`] ticks, `None` once the fade is done (the
+    /// screen is then black - [`Self::covers_field`]) or with no shop up.
+    ///
+    /// Retail (Retock Items Shop, stepped per vsync) darkens the field
+    /// linearly from the last dialogue frame to black over fourteen frames
+    /// before the shop's windows appear. Hosts draw it as a subtractive
+    /// full-screen quad over the frozen field
+    /// (`screen_prim::fade_prim(level * 0x010101, 2, 0)`).
+    pub fn shop_fade_level(&self) -> Option<u8> {
+        if self.shop_session.is_none() && self.prize_session.is_none() {
+            return None;
+        }
+        (self.shop_age < SHOP_FADE_FRAMES)
+            .then(|| (255 * (self.shop_age + 1) / SHOP_FADE_FRAMES).min(255) as u8)
+    }
+
     /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -
     /// the counterpart of [`Self::open_shop_menu`] for the session drained
     /// from `World::take_pending_prize_exchange`.
     pub fn open_prize_exchange(&mut self, session: crate::prize_exchange::PrizeExchangeSession) {
         self.prize_session = Some(session);
+        self.shop_age = 0;
     }
 
     /// Raw state byte of the underlying [`MenuCtx`].
@@ -545,7 +609,12 @@ impl MenuRuntime {
         // `ctx.state` directly, so the entry edge lands here on the first
         // tick; the post-`step` call below catches in-menu transitions.
         self.sync_widget_choreo(world);
+        self.ui_frames = self.ui_frames.wrapping_add(1);
+        self.tick_shop_slides();
         self.ui_cue = None;
+        if self.shop_session.is_some() || self.prize_session.is_some() {
+            self.shop_age = self.shop_age.saturating_add(1);
+        }
         if self.prize_session.is_some() {
             self.tick_prize(world, input);
             return MenuTickEvent::Stepped;
@@ -578,6 +647,34 @@ impl MenuRuntime {
         }
         let list_state_before = MenuState::from_byte(self.ctx.state);
         let list_cursor_before = self.ctx.cursor;
+        // The shop's two lists are kind-4 kernel pages: Up / Down wrap inside
+        // the page, Left / Right flip it. The menu VM's flat cursor would walk
+        // straight off the page instead, and has no page flip at all.
+        let mut input = input;
+        if let Some(rows) = list_state_before.and_then(crate::shop::shop_list_page_rows)
+            && (input.up || input.down || input.left || input.right)
+        {
+            let n = match list_state_before {
+                Some(MenuState::ShopBuy) => self
+                    .shop_session
+                    .as_ref()
+                    .map(|s| s.buy_item_count() as usize)
+                    .unwrap_or(0),
+                _ => Self::sell_list_rows(world).len(),
+            };
+            let pressed = menu_input_pad_word(input);
+            let c = crate::pause_screens::list_kernel_navigate_rows(
+                self.ctx.cursor as usize,
+                n,
+                pressed,
+                rows,
+            );
+            self.ctx.cursor = c.min(u8::MAX as usize) as u8;
+            input.up = false;
+            input.down = false;
+            input.left = false;
+            input.right = false;
+        }
         let mut refused = false;
         let mut host = MenuRuntimeHost {
             refused: &mut refused,
@@ -616,6 +713,7 @@ impl MenuRuntime {
         if MenuState::from_byte(self.ctx.state) == Some(MenuState::ShopQuantity)
             && self.quantity_session.is_none()
         {
+            self.quantity_list_row = list_cursor_before;
             self.open_quantity_picker(world);
         }
         // In-menu state transitions (picker → Sell, teardown) drive the
@@ -761,6 +859,69 @@ impl MenuRuntime {
         }
     }
 
+    /// Which retail shop screen the open shop is showing, or `None` outside
+    /// the gold shop (inn, seru trade, the transient exit beat, no shop).
+    ///
+    /// The sub-sessions decide it before the state byte does: a quantity
+    /// stepper or the recipient picker owns the screen while the list state
+    /// it was opened from stays parked underneath. A host feeds the result
+    /// to [`crate::shop::shop_screen_windows`] for the window set.
+    pub fn shop_screen_phase(&self) -> Option<crate::shop::ShopScreenPhase> {
+        use crate::shop::ShopScreenPhase as P;
+        self.shop_session.as_ref()?;
+        if let Some(view) = self.quantity_view() {
+            return Some(if view.buying {
+                P::BuyQuantity
+            } else {
+                P::SellQuantity
+            });
+        }
+        if self.recipient_session.is_some() {
+            return Some(P::BuyRecipient);
+        }
+        match MenuState::from_byte(self.ctx.state)? {
+            MenuState::ShopMenu => Some(P::Root),
+            MenuState::ShopBuy | MenuState::ShopQuantity | MenuState::ShopConfirm => {
+                Some(P::BuyList)
+            }
+            MenuState::ShopSell => Some(P::SellList),
+            _ => None,
+        }
+    }
+
+    /// The free-running UI frame count (retail's `0x80084570` frame word, for
+    /// the list kernel's blink gates).
+    pub fn ui_frame(&self) -> u32 {
+        self.ui_frames
+    }
+
+    /// The shop windows on screen this frame with their slide progress,
+    /// `(window id, progress)` in draw order - see [`crate::shop::ShopSlides`].
+    pub fn shop_slides(&self) -> Vec<(usize, u8)> {
+        if self.shop_session.is_none() {
+            return Vec::new();
+        }
+        self.shop_slides.draw_list()
+    }
+
+    /// Step the shop slides one frame toward the current screen's window
+    /// set. A shop that is closing (the transient exit beat) slides every
+    /// window out; no shop drops them.
+    fn tick_shop_slides(&mut self) {
+        // The windows wait for the field's fade to finish.
+        if self.shop_fade_level().is_some() {
+            self.shop_slides.tick(&[]);
+            return;
+        }
+        match self.shop_screen_phase() {
+            Some(phase) => self
+                .shop_slides
+                .tick(&crate::shop::shop_screen_windows(phase, false)),
+            None if self.shop_session.is_some() => self.shop_slides.tick(&[]),
+            None => self.shop_slides.reset(),
+        }
+    }
+
     /// The live quantity screen's content, for the window a host draws over
     /// the parked list. `None` while no stepper owns the pad.
     pub fn quantity_view(&self) -> Option<QuantityView> {
@@ -838,7 +999,25 @@ impl MenuRuntime {
             (false, false) => MenuState::ShopSell,
         }
         .as_byte();
-        self.ctx.cursor = 0;
+        // The list kept its selection behind the stepper: the hand returns
+        // to its row. A sale that emptied the last row leaves the hand on
+        // the new last row - with the page derived from the cursor, that is
+        // also the sell commit's scroll fix-up (`0x801dbef0..0x801dbf4c`),
+        // which steps a lone last-page row back one page.
+        let rows = match MenuState::from_byte(self.ctx.state) {
+            Some(MenuState::ShopSell) => Self::sell_list_rows(world).len(),
+            Some(MenuState::ShopBuy) => self
+                .shop_session
+                .as_ref()
+                .map(|s| s.buy_item_count() as usize)
+                .unwrap_or(0),
+            _ => 0,
+        };
+        self.ctx.cursor = if rows == 0 {
+            0
+        } else {
+            (self.quantity_list_row as usize).min(rows - 1) as u8
+        };
         self.widget_state_seen = self.ctx.state;
     }
 
@@ -1215,7 +1394,10 @@ pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static 
             MenuState::ShopBuy => ("Buy", ink[0].ink),
             MenuState::ShopSell => ("Sell", ink[1].ink),
             MenuState::ShopTrade => ("Trade Seru", ink[1].ink),
-            _ => ("Exit", ink[2].ink),
+            // Retail's third row reads "Quit" (overlay rodata `0x801CEBA4`,
+            // drawn by `FUN_801D4868`; capture-confirmed on Retock's Items
+            // Shop).
+            _ => ("Quit", ink[2].ink),
         })
         .collect()
 }
@@ -1343,6 +1525,24 @@ impl MenuRuntimeHost<'_> {
             },
         };
         let price = u16::try_from(item.price).unwrap_or(u16::MAX);
+        // The list kernel refuses a disabled row before the sub-screen's
+        // state-2 dispatch ever sees it: `FUN_80032A44` tests the row word's
+        // `0x800` bit on confirm (`80032d04`) and buzzes (`0x23`) without
+        // raising mode 2. The buy-row builder sets that bit for a purse short
+        // of the price *or* a stack already at 99 - the first half is the
+        // dispatch's own affordability test below, the second only the kernel
+        // runs. Retail capture (Retock Items Shop, a 99-stack row): the hand
+        // stays on the list.
+        let held = self
+            .world
+            .party
+            .inventory
+            .get(&item.item_id)
+            .copied()
+            .unwrap_or(0);
+        if held >= crate::shop::SHOP_HELD_CAP {
+            return Some(BuyListRoute::Refused);
+        }
         Some(crate::shop::buy_list_confirm_route(
             kind,
             self.world.party.money,
@@ -1780,12 +1980,12 @@ mod tests {
             vec![
                 ("Buy", SHOP_INK_NORMAL),
                 ("Sell", SHOP_INK_NORMAL),
-                ("Exit", SHOP_INK_NORMAL)
+                ("Quit", SHOP_INK_NORMAL)
             ]
         );
         let empty = shop_root_labels(true, false);
         let labels: Vec<_> = empty.iter().map(|r| r.0).collect();
-        assert_eq!(labels, ["Buy", "Sell", "Trade Seru", "Exit"]);
+        assert_eq!(labels, ["Buy", "Sell", "Trade Seru", "Quit"]);
         assert_eq!(empty[0].1, SHOP_INK_NORMAL);
         assert!(empty[1..].iter().all(|r| r.1 == SHOP_INK_GREY));
     }
@@ -2413,6 +2613,65 @@ mod tests {
         world.party.money = 500;
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+    }
+
+    #[test]
+    fn shop_buy_list_pages_seven_rows_like_the_kernel() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.party.money = 100_000;
+        let items = (0..10u8)
+            .map(|i| ShopItem {
+                item_id: 0x40 + i,
+                price: 10,
+            })
+            .collect();
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(1, items)));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        let right = MenuInput {
+            right: true,
+            ..Default::default()
+        };
+        let up = MenuInput {
+            up: true,
+            ..Default::default()
+        };
+        // Up at the page top wraps to the page's last row, not the list's.
+        runtime.tick(&mut world, up);
+        assert_eq!(runtime.ctx.cursor, 6);
+        // Right flips to page 2, clamped to the last row.
+        runtime.tick(&mut world, right);
+        assert_eq!(runtime.ctx.cursor, 9);
+        // Down past the last row wraps to the page top.
+        runtime.tick(&mut world, down());
+        assert_eq!(runtime.ctx.cursor, 7);
+    }
+
+    #[test]
+    fn shop_buy_full_stack_row_is_refused_at_the_list() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        // A stack already at 99 is a disabled row (`0x800`): the list
+        // kernel buzzes it before the state-2 dispatch - a purse that can
+        // afford it changes nothing, and no quantity / confirm screen opens.
+        let mut world = world_with_party(1);
+        world.party.money = 100_000;
+        world.party.inventory.insert(9, 99);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 9,
+                price: 10,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
+        assert!(runtime.quantity_view().is_none());
+        assert_eq!(world.party.inventory.get(&9), Some(&99));
     }
 
     /// The shop keys retail's list-kernel cues: a step only when the hand

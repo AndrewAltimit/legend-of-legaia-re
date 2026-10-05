@@ -117,6 +117,9 @@ pub struct FieldVmState {
     /// respawn the channel set can re-append the object-bind channels
     /// ([`crate::field_channels::spawn_object_channels`]).
     pub object_channel_binds: Vec<(usize, (i16, i16))>,
+    /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
+    /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
+    pub object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
     /// Pending field-VM op-`0x44` SPAWN_RECORD requests: the GLOBAL record
     /// indices whose partition-2 records should spawn as new contexts.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
@@ -176,6 +179,7 @@ impl FieldVmState {
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
+            object_slot_ramps: Vec::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,
             slot_table: [0; 256],

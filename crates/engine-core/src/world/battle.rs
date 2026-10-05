@@ -21,6 +21,7 @@ mod commit_log_launch;
 mod counterattack;
 mod effect_route;
 mod effect_teardown;
+mod fatal_decision;
 mod formation_span;
 mod homing;
 mod initiative;
@@ -45,7 +46,8 @@ mod victory;
 pub use actor_draw::{BattleActorDrawPlan, PARTY_BODY_RADIUS};
 pub use auto_combo::{AutoComboInputs, AutoComboState};
 pub use cast_band::{
-    PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
+    CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun, PendingCast, SUMMON_SPAWN_BEHIND,
+    SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
 };
 pub use effect_route::RoutedEffectSpawn;
 pub use message_banner::{

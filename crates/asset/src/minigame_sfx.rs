@@ -62,6 +62,26 @@ pub const SLOT_SFX_BANK_PROT_INDEX: usize = 1199;
 /// Extraction PROT entry of the slot machine's **sample** VAB (raw TOC `0x4B0`).
 pub const SLOT_SFX_VAB_PROT_INDEX: usize = 1198;
 
+/// Extraction PROT entry of the Muscle Dome arena's **descriptor** bundle.
+///
+/// The arena init `FUN_801CEA6C` (PROT 0977) allocates a `0x14000` buffer,
+/// points the current-bundle slot `_DAT_8007B8D0` at `buffer + 0x12800`
+/// (`0x801CEEDC..0x801CEEFC`) and fills it by index - `FUN_8003EB98(0x220, …)`
+/// at `0x801CEF14`, raw TOC `0x220` = extraction 542, the third slot of the
+/// `koin1` block. Its record table (offset at `+2`) carries four rows,
+/// `0x200..=0x203`, every one category `3` on program `0`, tones `0..=4` -
+/// the four tones the side bank [`ARENA_SIDE_BANK_PROT_INDEX`] carries. A
+/// `minigame_muscle_dome` save state parked in the hub reads these exact
+/// bytes at `*(0x8007B8D0)`.
+pub const ARENA_SFX_BUNDLE_PROT_INDEX: usize = 542;
+
+/// Extraction PROT entry of the Muscle Dome arena's **sample** VAB: the same
+/// init streams raw `*(0x8007BBE4) + 0x57` (`vab_01` + `0x57` = extraction
+/// 1157, one program of six tones) into VAB slot `3`
+/// (`FUN_8001FC00` / `FUN_8001E54C` at `0x801CEF50..0x801CEF70`). The
+/// arena bundle's category-`3` rows key it.
+pub const ARENA_SIDE_BANK_PROT_INDEX: u32 = 1157;
+
 /// Reel-stop click - fired once per reel as its stop is taken
 /// (`FUN_801CF0D8` case 3).
 pub const CUE_SLOT_REEL_STOP: u16 = 0x20A;

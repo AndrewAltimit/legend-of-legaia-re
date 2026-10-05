@@ -248,8 +248,8 @@ pub struct TraceBgmDirector {
 impl TraceBgmDirector {
     pub fn new() -> Self {
         // Configure the private SPU exactly as the shipped cpal host
-        // configures its own (`StreamResampler::new`): Studio C, every voice
-        // routed, retail depth. A bare `Spu::new()` here left the oracle
+        // configures its own (`StreamResampler::new`): Studio C at the retail
+        // depth, with each voice's send set per keyed tone (`mode & 4`). A bare `Spu::new()` here left the oracle
         // measuring an engine that differs from the one the port ships - the
         // trace's reverb channel read `Off` / no voices routed on every
         // frame while the live engine ran the retail configuration.

@@ -155,14 +155,14 @@ fn wait_until_idle<F: FnMut() -> u32>(
 
 /// Wait for the MDEC-**in** channel to go idle.
 ///
-/// PORT: FUN_801d0100
+/// PORT: FUN_801d0100, overlay_cutscene_str_0970_801d0100
 pub fn wait_mdec_in_idle<F: FnMut() -> u32>(status: F) -> SyncResult {
     wait_until_idle(status, IN_BUSY_MASK, IN_TIMEOUT_MESSAGE)
 }
 
 /// Wait for the MDEC-**out** channel to go idle.
 ///
-/// PORT: FUN_801d0198
+/// PORT: FUN_801d0198, overlay_cutscene_str_0970_801d0198
 pub fn wait_mdec_out_idle<F: FnMut() -> u32>(status: F) -> SyncResult {
     wait_until_idle(status, OUT_BUSY_MASK, OUT_TIMEOUT_MESSAGE)
 }

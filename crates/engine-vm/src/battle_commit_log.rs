@@ -339,6 +339,17 @@ pub struct LogLaunch {
 
 impl LogLaunch {
     /// A fresh launch in `inbound`'s direction, at the retail glide length.
+    ///
+    /// This is the record `FUN_801DB7B0(slot, total, flag, x, y)` registers in
+    /// `ctx[+0x11B4 + slot * 0xC]` (`0x801DB7B0..0x801DB818`, a frameless
+    /// leaf the element spawner `FUN_801D8DE8` calls at `0x801D93D8`):
+    /// `total` at `+0`, `elapsed = 0` at `+1`, the slot at `+2`, the flag at
+    /// `+3`, the target seat at `+4 / +6`, and the element's current seat -
+    /// the actor's `+0x0A / +0x0C` - as the start at `+8 / +A`. The port's
+    /// record keeps the two bytes the step reads; the seats are the clone's
+    /// own ([`Self::x_offset`]).
+    ///
+    /// PORT: overlay_battle_action_0898_801db7b0
     pub const fn new(inbound: bool) -> Self {
         Self {
             inbound,

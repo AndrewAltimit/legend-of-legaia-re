@@ -38,7 +38,7 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **871 live / 815 entered / 26
+page verdicts. Over the current union they are **871 live / 814 entered / 28
 never entered, across 88 ladders**, with both defect lists empty (and 35
 addresses in the *not observable* bucket plus 2 const anchors, outside all
 three).
@@ -255,6 +255,35 @@ against the export. Routing anchors with a known symbol through that path,
 instead of through the line fall-through, is what closes this. Until then, read
 a "disclosed `NOT WIRED` anchor executed" row as a claim to check rather than a
 finding: confirm a caller exists before treating it as a disclosure defect.
+
+### A module tag answers for its file, not for its routine
+
+A `//! PORT:` module tag has no span, so the join reads it as "something in
+this file executed". That is the right answer for a tag that is the address's
+only anchor, and the wrong one when the same address also carries
+function-level tags in the same file: then any sibling in the file credits the
+address, whatever the routine those tags name did. `FUN_801CFA48`, the effect
+ribbon, read entered for that reason alone - `effect_default_arm` borrows
+`effect_ribbon.rs`'s `RetailTrig` LUT, and that LUT was the only code in the
+file any ladder ran. No ribbon was ever built.
+
+So a function-level tag in the same file now decides, and the module tag is
+consulted only for an address that has none. Over the clean union that
+correction moved three addresses from entered to never entered: `801cfa48`,
+`801d9110` (the Magic screen's state-2 confirm dispatch, which only the list
+build had touched) and `801dba90`. The second is converted - see below - and
+the other two are rows:
+
+| address | bucket | why |
+|---|---|---|
+| `801cfa48` | (a) | wired on both battle hosts (`World::active_effect_ribbons`), but no union member drives a battle whose move program issues op `0x42`, so no ribbon is built. Its `801d0290` row is the same gap: the ribbon is that generator's only consumer |
+| `801d9110` | (a), **converted** | `w7_pause_learned_content_ladder` seeds a learned field heal, MP and a hurt lead, confirms caster and spell by pad, and requires the phase the spell's `+2` flag selects plus an HP rise |
+| `801dba90` | (d) | `reward_banner`, live only through the Muscle Dome session's reward path. Retail reaches the routine from nowhere ([`battle_cast_dispatch.rs`'s note](#engine-vm)), so no retail situation owes it a ladder; the dome's own reward rung is where it would convert |
+
+The rule is narrower than it could be on purpose: a `type` anchor in the same
+file does **not** silence the module tag, because a type's methods are a
+weaker witness than its file - `save_subscreen.rs`'s sub-screen enum is used
+by matching its variants, which no method count sees.
 
 ### The other way that category misfires: a disclosure about one arm
 
@@ -833,7 +862,7 @@ listed so the bucket count is the whole of what no host reaches.
 | `cutscene_script_elements.rs` | 2 | `801d5d60` `801d6058` | Since closed both ways. `801d6058` has a producer - `World::install_field_scene_elements` seats the emitter on every cold field entry, so any field ladder enters it. `801d5d60` (and `801d5c08`) were **duplicate** ports: every allocation from their templates is the hop-arc family, ported and live as `field_ledge_hop_arc::{advance_hop_arc, release_watcher_tick}`, so the element-channel copies were deleted rather than wired. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | **`REPLACED-BY`** `legaia_save`'s synchronous card writer - out of the wiring denominator. |
-| `effect_ribbon.rs` | 1 | `801cfa48` | Since reached: the op-`0x42` carriers arm it and both battle hosts draw `World::active_effect_ribbons`. |
+| `effect_ribbon.rs` | 1 | `801cfa48` | Wired: the op-`0x42` carriers arm it and both battle hosts draw `World::active_effect_ribbons`. Not reached - the "since reached" this cell carried was a module-tag credit; see [the module-tag note](#a-module-tag-answers-for-its-file-not-for-its-routine). |
 | `field_save_screen_actor.rs` | 1 | `80024190` | **`REPLACED-BY`** the save screen as host screen state - out of the wiring denominator, not owed a host. |
 | `scene_transition_actor.rs` | 1 | `80021934` | Since wired: `SceneHost::tick` parks every named transition and overworld-portal crossing in `SceneTransitionHold`, ticks the actor while the departing scene runs, and commits on its mode-2 hand-off, so any ladder that crosses a door enters it. |
 | `morph_weight_apply.rs` | 1 | `8002174c` | Since wired: `MorphWeightEnvelope::tick` steps from `World::tick_handler_actors` over every `4C D8` actor, and `apply_morph_weights` poses the mesh through `World::morph_weight_posed_tmd` on both hosts (see [the two-halves table](#a-wire-is-two-halves-and-a-refresh-can-enter-only-one-of-them)). |
@@ -1545,8 +1574,8 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `battle_trail.rs` | 1 | (b) | the weapon-trail gate, the same one `801e1ab0` names: a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`). `weapon_trail_prims` is called on **both** hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`), so this is content, not a host gap. Read it with the [module-anchor caveat](#a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions) - the tag is a `//!` block |  `800485bc` |
-| `ui_menu_window_painters.rs` | 1 | (c) | the casino prize-exchange confirm, disclosed inert - its tag anchors to `choice_panel_draws_for` itself, so the executed-disclosure misreport the pseudo-entry note records is resolved and the row reads unexecuted, as the disclosure says. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
-| `gte/math.rs` | 1 | (c) | disclosed | `8004629c` |
+| `ui_menu_window_painters.rs` | 1 | (a) | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`window/shop_windows.rs`, `play_shop.rs`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
+| `gte/math.rs` | 1 | (b) | wired, not disclosed: `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, but only for a part whose `+0x52` skips pitch or roll and **keeps** yaw. The flag kinds the library's flagged nodes carry are `0x380`, `0x100` / `0x180` and `0x400` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)) - each skips yaw or takes the saved-matrix arm first - so no captured part reaches the yaw factor. Content, not a host gap | `8004629c` |
 
 The crate used to be the largest one-reason cluster on this page: with no
 rendering host in the union, every anchored builder read never-entered at

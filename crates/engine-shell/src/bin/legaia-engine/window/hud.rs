@@ -180,8 +180,10 @@ impl PlayWindowApp {
         if let Some(sc) = self.screenshot.as_ref()
             && let Some(n) = sc.hud_countdown
         {
-            let near = i32::from(self.session.host.world.mode == SceneMode::WorldMap);
-            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(near, false);
+            let mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(
+                &self.session.host.world,
+            );
+            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(mode, false);
             if legaia_engine_core::world_map_panel_host::hud_phase_hold(
                 self.tick_no,
                 sc.capture_tick,
@@ -198,9 +200,10 @@ impl PlayWindowApp {
             self.field_hud_projected_player_y()
         };
         let world = &self.session.host.world;
-        // View mode `_DAT_800845C4`: `0` is the near field camera (0x28-frame
-        // idle before the HUD returns), `1` the far overworld one (0xA0).
-        let view_mode = i32::from(world.mode == SceneMode::WorldMap);
+        // `_DAT_800845C4` is the options screen's Field HP Display row
+        // (Immediate / Gradual / Display Off), not a camera mode - the one
+        // engine read both hosts share.
+        let view_mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(world);
         let player_pos = world
             .player_actor_slot
             .map(usize::from)
@@ -637,58 +640,32 @@ impl PlayWindowApp {
                 }
             }
 
-            // The retail persistent HUD rows (best-catch, capped point total,
-            // lure label, lures remaining) at their traced stage-pixel pens,
-            // through the ported layout + its draw-list consumer. The lure
-            // index is the session's - the entry's ownership gate already
-            // re-pointed it at an owned lure.
-            let inventory = &self.session.host.world.party.inventory;
-            let lure = s.lure;
-            let lures_left = *inventory
-                .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
-                .unwrap_or(&0) as i32;
-            let mut items = legaia_engine_render::persistent_hud_draws(
-                s.record.points,
-                s.record.best_points,
-                lure,
-                lures_left,
-            );
-            // The catch HUD, drawn over the persistent rows while a cast is
-            // out: the length / extent / cast-power readouts, plus the depth
-            // and tension gauge block once the fish is on - one engine
-            // derivation (`PondSession::catch_hud`). The cast line-projection
-            // term `DAT_801d9178` has no engine analogue and stays zero.
-            let c = s.catch_hud();
-            if c.visible {
-                items.extend(legaia_engine_render::catch_hud_draws(
-                    &legaia_engine_render::CatchHudState {
-                        record: c.record,
-                        line_extent: 0,
-                        cast_power: c.cast_power,
-                        depth: c.depth,
-                        tension: c.tension,
-                        gauges_visible: c.gauges_visible,
-                    },
-                ));
-            }
-            // This frame's live one-shot banners (hook / reel-in / miss /
-            // auxiliary / strike splash), serviced in the redraw handler.
-            items.extend(self.fishing_banner_draws.iter().copied());
-            // No fishing sprite page is uploaded, so the glyph ids resolve
-            // to nothing; the number / caption rows are font-atlas text and
-            // render as-is. The gauge fills (the cast-power and depth /
-            // tension bars) stretch the font atlas's solid texel - the page
-            // fills the same resolved frames from its `bars` payload, and a
-            // `None` here left the native gauges empty.
+            let items = self.fishing_hud_items();
+            // The sprite half (plates, digits, gauge caps, banners) is drawn
+            // as screen primitives over the venue's HUD page when the sprite
+            // table decoded (`fishing_hud_screen_prims`); this consumer then
+            // keeps only the captions, the lure count and the gauge fills.
+            let sprites_drawn = self.session.host.world.minigames.fishing_sprites.is_some();
             let hud_atlas = legaia_engine_render::FishingHudAtlas {
                 solid_src: self.battle_hud_solid_src(),
                 glyph_src: &|_| None,
                 bar_thickness: 8,
+                sprites_drawn,
+            };
+            // The lure row's captions off the disc when the overlay's text
+            // resolved, the engine placeholders otherwise.
+            let captions = match self.session.host.world.minigames.fishing_captions.as_ref() {
+                Some(t) => legaia_engine_render::FishingCaptions::from_disc(
+                    &t.lure_names,
+                    &t.lures_left,
+                    &t.suffix,
+                ),
+                None => legaia_engine_render::FishingCaptions::placeholder(),
             };
             let mut draws = legaia_engine_render::fishing_hud_draws_for(
                 &self.font,
                 &items,
-                &legaia_engine_render::FishingCaptions::placeholder(),
+                &captions,
                 &hud_atlas,
                 (0, 0),
             );
@@ -1558,9 +1535,25 @@ impl PlayWindowApp {
             // graph, so it is checked before the shop states. Windows
             // 43/44/45/46 through the shared engine-ui composition.
             if let Some(session) = &self.menu_runtime.prize_session {
-                stage.extend(self.prize_window_draws(session));
+                stage.extend(
+                    self.prize_window_draws(
+                        session,
+                        legaia_engine_render::BOOT_UI_STAGE_W,
+                        legaia_engine_render::BOOT_UI_STAGE_H,
+                    )
+                    .texts,
+                );
             }
-            if let Some(shop) = &self.menu_runtime.shop_session {
+            if let Some(screen) = self.gold_shop_screen(
+                legaia_engine_render::BOOT_UI_STAGE_W,
+                legaia_engine_render::BOOT_UI_STAGE_H,
+            ) {
+                // The gold shop's retail screen (window set, picker, paged
+                // list, party column, per-window painters) - the composition
+                // the browser page draws too. Only the stage texts land here;
+                // the sprite pass takes the frames.
+                stage.extend(screen.texts);
+            } else if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;
                 let gold = self.session.host.world.party.money;
@@ -1678,18 +1671,19 @@ impl PlayWindowApp {
                 // (`window/shop_windows.rs`). Empty without a disc table.
                 // The purse window is the retail gold readout, so the
                 // engine panel below drops its own footer whenever it draws.
-                let retail_windows = self.shop_window_draws(shop, state, cursor);
-                let show_gold = if retail_windows.is_empty() {
+                let retail = self.shop_window_draws(shop, state, cursor);
+                let show_gold = if retail.texts.is_empty() {
                     show_gold
                 } else {
                     None
                 };
-                stage.extend(retail_windows);
-                // The equipment-buy recipient flow's windows (36 / 25 / 41)
-                // ride over the parked buy list while the picker owns the
-                // pad - the same compositing order the browser play page
-                // uses in `play_overlay_draws_json`.
-                stage.extend(self.recipient_window_draws());
+                stage.extend(retail.texts);
+                for m in retail.marks {
+                    stage.extend(self.painter_cursor_stand_in(m));
+                }
+                for p in retail.pictograms {
+                    stage.extend(self.painter_pictogram_stand_in(p));
+                }
                 if !rows_spec.is_empty() {
                     let rows: Vec<ShopRow<'_>> = rows_spec
                         .iter()
@@ -1770,6 +1764,16 @@ impl PlayWindowApp {
         let Some(menu) = self.save_menu.as_ref() else {
             return Vec::new();
         };
+        // The gold shop and the prize counter frame their own retail window
+        // sets.
+        if let Some(screen) = self.gold_shop_screen(surface_w, surface_h) {
+            return screen.sprites;
+        }
+        if let Some(session) = &self.menu_runtime.prize_session {
+            return self
+                .prize_window_draws(session, surface_w, surface_h)
+                .sprites;
+        }
         let draws = self.shop_overlay_stage_draws();
         if draws.is_empty() {
             return Vec::new();

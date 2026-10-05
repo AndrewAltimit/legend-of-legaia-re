@@ -120,7 +120,9 @@ impl World {
         // seeded with that power instead of the MP-scaled placeholder
         // ([`Self::enemy_move_predamage`]). `None` keeps the placeholder path
         // (disc-free / synthetic battles never install the table).
-        let move_power = self.enemy_move_power(caster, def.id);
+        let move_power = self
+            .enemy_move_power(caster, def.id)
+            .or_else(|| self.monster_capture_power(caster, def.id));
 
         // A party member's Seru-magic cast trains the spell: each damaged
         // target contributes spell XP (the `FUN_801ddb30` accrual tail runs
@@ -401,13 +403,7 @@ impl World {
         // falls back to 7 = non-elemental, which no resist bit matches, so
         // disc-free battles keep magnitude and RNG stream unchanged (a >= 1
         // roll never trips the floor draw without mitigation).
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
@@ -502,13 +498,7 @@ impl World {
             self.next_rand() as u16
         });
 
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
@@ -641,7 +631,24 @@ impl World {
             return Some(i32::from(*power));
         }
         // --- end W1-D ---
-        vm::cast_module_ticks::baked_power_for(entry).map(i32::from)
+        vm::cast_module_ticks::baked_power_for(entry)
+            .or_else(|| vm::cast_module_ticks::capture_site_power(entry, move_id))
+            .map(i32::from)
+    }
+
+    /// The magnitude seed for a capture-class special a **monster** casts:
+    /// the module's baked `a0` ([`Self::baked_module_power`]). The move-power
+    /// table carries no record for most of these ids, and retail's module
+    /// never reads it, so without this the fold had nothing to roll with.
+    /// `None` for a party caster, a non-capture id, or a body with no damage
+    /// site (a status-only special such as Glare).
+    pub(in crate::world) fn monster_capture_power(&self, caster: u8, move_id: u8) -> Option<i32> {
+        if (caster as usize) < self.party.party_count as usize
+            || !self.is_capture_class_move(move_id)
+        {
+            return None;
+        }
+        self.baked_module_power(move_id)
     }
 
     fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
@@ -684,13 +691,7 @@ impl World {
             self.next_rand() as u16
         });
 
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
@@ -968,13 +969,7 @@ impl World {
         let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };
-        let Some(enemy_elem) = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-        else {
+        let Some(enemy_elem) = self.monster_seat_element(attacker as usize) else {
             return 100;
         };
         let Some(party_elem) = aff.character_element(target + 1) else {
@@ -995,9 +990,20 @@ impl World {
         if (slot as usize) < self.party.party_count as usize {
             aff.character_element(slot + 1)
         } else {
-            let id = self.actors.get(slot as usize)?.battle_monster_id?;
-            Some(self.tables.monster_catalog.get(id)?.element)
+            self.monster_seat_element(slot as usize)
         }
+    }
+
+    /// A monster seat's element this fight: the seat's own copy
+    /// ([`crate::world::Actor::battle_element`], which PROT 0964's Element
+    /// Change rewrites) ahead of its catalog record's `+0x1D`. `None` for a
+    /// seat with no monster id or no catalog record.
+    pub(in crate::world) fn monster_seat_element(&self, slot: usize) -> Option<u8> {
+        let actor = self.actors.get(slot)?;
+        let id = actor.battle_monster_id?;
+        actor
+            .battle_element
+            .or_else(|| Some(self.tables.monster_catalog.get(id)?.element))
     }
 
     /// Element id of the *summon creature* a player Seru-magic `spell_id` attacks
@@ -1357,6 +1363,10 @@ mod capture_bypass_tests {
         use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[id as usize].class = CAPTURE_CLASS;
+        // Sub-id 19 pages PROT 0954 (Fatal Decision), a body with no damage
+        // site, so no baked power stands in for the table's: these fixtures
+        // isolate the wrapper choice, not the power seed.
+        entries[id as usize].sub_class = 19;
         world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()

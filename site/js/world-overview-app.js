@@ -377,8 +377,10 @@
       renderer: () => glRenderer,
       cam: () => worldCam,
       extent: () => (worldDrawState ? worldDrawState.ext : [16320, 16320]),
-      draw: () => glRenderer.renderAssembled(
-        worldDrawState.draws, worldDrawState.ext, worldCam),
+      draw: () => {
+        stepKingdomClut();
+        glRenderer.renderAssembled(worldDrawState.draws, worldDrawState.ext, worldCam);
+      },
       modes: [
         /* Diorama: stand on the sea plane at the continent's framing centre -
          * at 2000 units/m that is 3.2 m above an ~8 m tabletop continent. */
@@ -588,6 +590,45 @@
      * Each kingdom is 16320 world units across (~64 wraps), matching
      * the retail tile pitch in the prim pool. */
     glRenderer.setOceanAssets(tex, frames, 256);
+  }
+
+  /* The kingdom's slot-5 CLUT-walk shimmer (ocean head + the river and
+   * shoreline cells beside it), stepped by the engine kernel every play host
+   * runs (`viewer.kingdom_clut_tick` -> `ClutWalkAnim`). set_scene_kingdom
+   * parks the walker's source strips into the kingdom VRAM; without the walk
+   * the destination CLUTs keep another TIM's palette or zeros, and those
+   * zero entries are transparent texels the backdrop plane shows through -
+   * water sliding under the land as the camera turns. */
+  let clutWalkActive = false;
+  let clutLast;
+  let clutAccum = 0;
+  function startKingdomClutWalk() {
+    clutWalkActive = !!(viewer && typeof viewer.kingdom_clut_walker_entries === 'function'
+      && viewer.kingdom_clut_walker_entries() > 0);
+    clutLast = undefined;
+    clutAccum = 0;
+    if (glRenderer && typeof glRenderer.setOceanWalkerDriven === 'function') {
+      glRenderer.setOceanWalkerDriven(clutWalkActive);
+      if (clutWalkActive) syncKingdomVram();
+    }
+  }
+  function syncKingdomVram() {
+    const bytes = viewer.pack_vram_bytes();
+    glRenderer.uploadVram(bytes);
+    glRenderer.setOceanClutFromVram(bytes);
+  }
+  /* Wall-clock vsyncs, not frames: the loop fires at the display rate. */
+  function stepKingdomClut() {
+    if (!clutWalkActive || !viewer || !glRenderer) return;
+    const VSYNC_MS = 1000 / 60;
+    const now = performance.now();
+    if (clutLast === undefined) clutLast = now;
+    clutAccum = Math.min(clutAccum + (now - clutLast), VSYNC_MS * 4);
+    clutLast = now;
+    const vsyncs = Math.floor(clutAccum / VSYNC_MS);
+    if (vsyncs <= 0) return;
+    clutAccum -= vsyncs * VSYNC_MS;
+    if (viewer.kingdom_clut_tick(vsyncs)) syncKingdomVram();
   }
   /* Default UI matches default viewMode = 'world' (assembled scene from
    * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
@@ -820,6 +861,7 @@
     /* Upload the disc-side ocean texture + 13-frame CLUT animation
      * table now that slot 0 has been decompressed. */
     pushOceanAssetsToRenderer();
+    startKingdomClutWalk();
     /* Walk-view continent ground: the procedural heightfield surface the
      * native engine draws (per-cell terrain-atlas textured from the same
      * slot-0 VRAM uploaded above). set_scene_kingdom already built it;
@@ -1247,6 +1289,7 @@
     worldDrawState = { draws: drawPlacements, ext };
     if (vr) vr.setReady(true);
     worldTick = () => {
+      stepKingdomClut();
       glRenderer.renderAssembled(worldDrawState.draws, worldDrawState.ext, worldCam);
       rafId = requestAnimationFrame(worldTick);
     };

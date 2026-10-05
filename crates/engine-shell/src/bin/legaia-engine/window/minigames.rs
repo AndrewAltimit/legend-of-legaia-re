@@ -989,6 +989,72 @@ impl PlayWindowApp {
         d
     }
 
+    /// This frame's fishing HUD draw list: the retail persistent rows
+    /// (best-catch, capped point total, lure label, lures remaining) at their
+    /// traced stage-pixel pens, the catch HUD while a cast is out, and the
+    /// live one-shot banners. The text consumer and the sprite pass read the
+    /// same list. Empty outside a fishing session.
+    pub(super) fn fishing_hud_items(&self) -> Vec<legaia_engine_render::HudDraw> {
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Fishing {
+            return Vec::new();
+        }
+        let Some(s) = world.minigames.fishing.as_ref() else {
+            return Vec::new();
+        };
+        // The lure index is the session's - the entry's ownership gate
+        // already re-pointed it at an owned lure.
+        let lure = s.lure;
+        let lures_left = *world
+            .party
+            .inventory
+            .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
+            .unwrap_or(&0) as i32;
+        let mut items = legaia_engine_render::persistent_hud_draws(
+            s.record.points,
+            s.record.best_points,
+            lure,
+            lures_left,
+        );
+        // The catch HUD, drawn over the persistent rows while a cast is out
+        // (`PondSession::catch_hud`). The cast line-projection term
+        // `DAT_801d9178` has no engine analogue and stays zero.
+        let c = s.catch_hud();
+        if c.visible {
+            items.extend(legaia_engine_render::catch_hud_draws(
+                &legaia_engine_render::CatchHudState {
+                    record: c.record,
+                    line_extent: 0,
+                    cast_power: c.cast_power,
+                    depth: c.depth,
+                    tension: c.tension,
+                    gauges_visible: c.gauges_visible,
+                },
+            ));
+        }
+        // This frame's live banners, serviced in the redraw handler.
+        items.extend(self.fishing_banner_draws.iter().copied());
+        items
+    }
+
+    /// The sprite half of the fishing HUD as screen primitives: every plate,
+    /// digit, gauge cap and banner cut from the overlay's sprite table
+    /// (`FUN_801D63B0`, through the shared `ui_fishing_sprite` builder) out of
+    /// the venue's HUD page, which the pond VRAM this window uploads for the
+    /// session already holds. The browser play page makes the same call.
+    /// Empty without a session or a decoded table.
+    pub(super) fn fishing_hud_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        let Some(table) = self.session.host.world.minigames.fishing_sprites.as_deref() else {
+            return Vec::new();
+        };
+        legaia_engine_render::ui_fishing_sprite::fishing_hud_sprite_prims(
+            &self.fishing_hud_items(),
+            table,
+        )
+    }
+
     /// The fishing rod and line as screen primitives: the rod model the rod
     /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
     /// `ui_fishing_rod` builder), then the session's line for this frame
@@ -1212,7 +1278,8 @@ impl PlayWindowApp {
     /// engine's (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::
     /// frame`, the call the browser play page makes too); this host uploads
     /// the dome VRAM on a generation change and the posed mesh every frame,
-    /// and the redraw draws them under `DomeCamera::vp_raw`. Drops the GPU
+    /// and the redraw draws them under `DomeCamera::vp_raw` (the battle
+    /// camera script's pose for the leg). Drops the GPU
     /// copy whenever no dome session is on screen.
     pub(super) fn refresh_muscle_dome_gpu(&mut self) {
         let world = &self.session.host.world;
@@ -1225,6 +1292,8 @@ impl PlayWindowApp {
             None
         };
         let contest = world.minigames.muscle_contest.as_ref();
+        self.muscle_surface
+            .set_camera_option(world.toggles.battle_camera as u8);
         let generation_before = self.muscle_surface.generation();
         if self
             .muscle_surface

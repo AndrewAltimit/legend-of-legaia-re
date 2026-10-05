@@ -35,6 +35,14 @@ pub enum FieldWarpTick {
 
 /// A `FUN_801D58F0` fade as the template `FUN_80024E80` loads. The trailing
 /// id word is left `0` for [`crate::fade::spawn_fade`] to stamp.
+///
+/// The field overlay's `FUN_801D58F0` is exactly this repack: it stores `a0`
+/// at `[0]`, its fifth argument at `[1]`, the bytes of `a1` / `a2` at
+/// `[3..=5]` / `[7..=9]`, `a3` at `[10]` and its sixth argument at `[11]`,
+/// then calls `FUN_80024E80(template, 0)` (`0x801D58F0..0x801D5968`). Other
+/// slot-A images hold unrelated code at the same VA, hence the stem.
+///
+/// PORT: overlay_field_0897_801d58f0
 fn warp_fade_template(f: &warp_tile::WarpFade, delay: i16) -> crate::fade::FadeTemplate {
     crate::fade::FadeTemplate {
         kind: f.kind,
@@ -207,6 +215,31 @@ mod tests {
         w.mode = crate::world::SceneMode::Field;
         w.install_field_player(0);
         w
+    }
+
+    #[test]
+    fn the_fade_template_is_the_retail_801d58f0_repack() {
+        // `FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x1C, 0xE)`: kind, duration, the
+        // two unpacked RGB triples, then `[10]` delay and `[11]` hold.
+        let out = warp_tile::WARP_FADE_OUT;
+        let t = warp_fade_template(&out, out.delay);
+        assert_eq!(t.kind, 2);
+        assert_eq!(t.duration, 0x1C);
+        assert_eq!(t.start_rgb, [0, 0, 0]);
+        assert_eq!(t.end_rgb, [0xFF, 0xFF, 0xFF]);
+        assert_eq!(t.mode, [0, 0xE, 0]);
+        let f = warp_tile::WarpFade {
+            kind: 1,
+            from_rgb: 0x0030_2010,
+            to_rgb: 0x0060_5040,
+            delay: 7,
+            duration: 9,
+            hold: -1,
+        };
+        let t = warp_fade_template(&f, f.delay);
+        assert_eq!(t.start_rgb, [0x10, 0x20, 0x30]);
+        assert_eq!(t.end_rgb, [0x40, 0x50, 0x60]);
+        assert_eq!(t.mode, [7, -1, 0]);
     }
 
     #[test]

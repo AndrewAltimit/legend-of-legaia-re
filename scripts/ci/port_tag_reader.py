@@ -121,6 +121,28 @@ def addresses(tail: str) -> set[str]:
     return {m.group(1).lower() for m in ADDR_RE.finditer(tail)}
 
 
+# The dump-stem form only, with its image label captured.
+STEM_RE = re.compile(
+    r"overlay_([0-9a-zA-Z_]+?)_(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
+    re.IGNORECASE,
+)
+
+
+def stem_labels(tail: str) -> dict[str, set[str]]:
+    """`{addr: {stem label, ...}}` for every `overlay_<label>_<addr>` token.
+
+    A bare `FUN_<addr>` names an address; a stem names an address **in one
+    image**. Where several images hold different code at one VA, only the stem
+    says which of them a port implements - the per-image port table
+    (`update-progress-metrics.py`) credits an aliased VA to an image only
+    through a stem whose label resolves to that image.
+    """
+    out: dict[str, set[str]] = {}
+    for m in STEM_RE.finditer(tail):
+        out.setdefault(m.group(2).lower(), set()).add(m.group(1).lower())
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Selftest. Run `python3 scripts/ci/port_tag_reader.py` (also driven by
 # `port-catalog.py --selftest`).
@@ -198,8 +220,16 @@ def selftest() -> int:
         bad += 1
         print("port_tag_reader selftest FAIL: REF list wraps too")
         print(f"  got {sorted(refs)}")
+    # Stem labels: the image a stem names travels with its address.
+    got_labels = stem_labels(
+        "PORT: FUN_801f69fc, overlay_cast_call_wave_0946_801f69fc, overlay_0897_801d58f0"
+    )
+    if got_labels != {"801f69fc": {"cast_call_wave_0946"}, "801d58f0": {"0897"}}:
+        bad += 1
+        print("port_tag_reader selftest FAIL: stem labels")
+        print(f"  got {got_labels}")
     if not bad:
-        print(f"port_tag_reader selftest: {len(_CASES) + 1} case(s) ok")
+        print(f"port_tag_reader selftest: {len(_CASES) + 2} case(s) ok")
     return bad
 
 

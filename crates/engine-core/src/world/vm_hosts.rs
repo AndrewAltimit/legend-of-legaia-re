@@ -847,7 +847,26 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // (`0x801E118C..0x801E11A8` -> `jal 0x8003C5F0` at `0x801E205C`). Other
     // contexts' `+0x72` ramps still drop: no port reader animates them.
     // REF: FUN_8003C5F0
+    /// Op `4C 81` - the actor's draw tint (`+0x74` colour, `+0x78` blend).
+    /// See `world::object_actor_height`.
+    ///
+    /// PORT: FUN_801DE840 (the nibble-8 sub-1 arm, `0x801E1FC4..0x801E2068`)
+    fn op4c_n_8_sub_1_set_tint(&mut self, ctx: &mut FieldCtx, colour: u32, blend: u16, ticks: u16) {
+        let record = self.world.field_vm.executing_object;
+        self.world.set_actor_tint(ctx, record, colour, blend, ticks);
+    }
+
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+        // Sub-2 on a placed object's actor: the `+0x8E` tween the actor
+        // tick's `0x20000000` height law turns into its Y (`chitei2`'s
+        // falling boulder). See `world::object_actor_height`.
+        if sub == 2
+            && let Some(record) = self.world.field_vm.executing_object
+        {
+            self.world
+                .schedule_object_slot_ramp(record, ctx.field_8e, target, ticks);
+            return;
+        }
         if sub != 0 || ctx.script_id != u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
             return;
         }
@@ -2438,6 +2457,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
         // walk-on beat instead of sliding in a frozen pose.
         // REF: FUN_80024E08, FUN_800204F8
+        //
+        // Aimed at a `.MAP` placed object's actor (`A2 <record> <clip>`), the
+        // same op re-points that prop's clip: `+0x5E = 0xFFFE` forces the anim
+        // tick's re-point (`0x8002057C`), which zeroes the cursor, and the
+        // tick then plays under the actor's own `+0x62` / `+0x6A` - the words
+        // the record's preceding `AC`/`AB` and `4C 41` pokes just set.
+        // `chitei2`'s rescue beat opens the drain pipe this way (P2[16]:
+        // `CC 01 41 20`, `AC 01 07`, `AB 01 03`, `AC 01 01`, `A2 01 02` - clear
+        // reverse, clamp, release the spawn hold, play clip 2 once).
+        if let Some(record) = self.world.field_vm.executing_object {
+            self.world
+                .play_object_prop_clip(record, move_id, ctx.local_flags, ctx.field_6a);
+        }
         if let Some(slot) = self.world.field_vm.executing_channel {
             self.world
                 .npcs
@@ -2688,15 +2720,6 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ActorAllocate { records });
     }
 
-    /// Op `0x4C 0x51` - NPC / player move-to-tile with run dispatch. The NPC
-    /// arm walks the executing actor to the decoded tile; the engine routes
-    /// it to the interacted NPC's placement slot (the inline-dialogue runner
-    /// exposes it while stepping that record) and starts a motion-VM walk
-    /// leg, so an interaction prologue's authored NPC run actually moves the
-    /// actor. The player arm (retail: the move-table consumer
-    /// `func_0x800204f8` with the run animation) is not modelled here.
-    ///
-    /// REF: FUN_800358c0, FUN_8003774C
     /// Op `0x4C` nibble-5 sub-1 - the retail "NPC run" primitive, which is a
     /// **teleport plus a move-anim start** (`FUN_80024E08` writes the target
     /// position outright and kicks the walk animation), not a glide.
@@ -2818,27 +2841,30 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
             return;
         }
-        if let Some(slot) = self.world.dialog.stepping_inline_npc {
-            self.world
-                .start_field_npc_motion(slot, world_x as i16, world_z as i16);
-            self.world.carry_npc_run_anim(slot, move_id);
-            return;
-        }
-        // A live channel stepping its OWN script (the spawn pre-run
-        // slice, retail `FUN_80039B7C`):
-        // walk the placement there as a scripted glide leg (the faithful
-        // `4C 51` run dispatch plays a move clip toward the tile). Falls
-        // back to a direct ctx seat when the slot has no surfaced position
-        // yet (the glide needs a start point).
-        if let Some(slot) = self.world.field_vm.executing_channel {
-            if self
-                .world
-                .start_field_npc_motion(slot, world_x as i16, world_z as i16)
-            {
+        // The talker's interaction prologue (the inline dialogue runner) or a
+        // live channel stepping its own script: the same SEAT as above. The
+        // case-5 sub-1 body stores the tile straight into the actor
+        // (`sh v0,0x14(s5)` at `0x801E1880`, `sh v0,0x18(s5)` at
+        // `0x801E1898`) and its LUT heading into `+0x26` (`0x801E1900`); no
+        // walk kernel is armed, so the NPC appears on the tile rather than
+        // gliding to it. Byte `+4` still picks the move clip.
+        if let Some(slot) = self
+            .world
+            .dialog
+            .stepping_inline_npc
+            .or(self.world.field_vm.executing_channel)
+        {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            if let Some(pos) = self.world.npcs.positions.get_mut(&slot) {
+                *pos = (world_x as i16, world_z as i16);
+                self.world.npcs.motions.remove(&slot);
+                if let Some(heading) =
+                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                {
+                    self.world.npcs.headings.insert(slot, heading);
+                }
                 self.world.carry_npc_run_anim(slot, move_id);
-            } else {
-                ctx.world_x = world_x;
-                ctx.world_z = world_z;
             }
         }
     }

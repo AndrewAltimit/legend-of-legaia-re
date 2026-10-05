@@ -147,6 +147,15 @@ pub struct LegaiaMinigames {
     fishing_exchange: Option<legaia_asset::fishing_exchange::FishingExchange>,
     /// The pond session's HUD banner timers (engine-ui's retail animators).
     fishing_banners: legaia_engine_ui::FishingBanners,
+    /// The fishing HUD's sprite table off PROT 0972
+    /// ([`legaia_asset::fishing_sprites`]).
+    fishing_sprites: Option<Vec<legaia_asset::fishing_sprites::FishingSprite>>,
+    /// The last frame's fishing HUD draw list, as `fishing_pond_hud_json`
+    /// built it - what `fishing_hud_rgba` rasterises.
+    fishing_hud_last: Vec<legaia_engine_ui::HudDraw>,
+    /// The lure row's captions off PROT 0972, resolved against the item
+    /// table.
+    fishing_captions: Option<legaia_engine_core::world::FishingCaptionText>,
     /// This page's **effect-part pool** - the standalone twin of
     /// `World::minigames.fx`, which this page cannot use because it drives
     /// the session types directly and holds no `World`. Same model
@@ -192,6 +201,9 @@ pub struct LegaiaMinigames {
     /// + id map, element-affinity matrix - all PROT 0898 rodata), decoded once
     /// per disc so each fresh contest rebuilds without re-decoding.
     muscle_tables: Option<muscle_web::MuscleTables>,
+    /// The dome leg's 3D surface - the engine kernel the play hosts draw a
+    /// leg with (`minigames_muscle/surface.rs`).
+    muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
 
     /// `SCUS_942.54` bytes, kept when the input was a full disc image (absent
     /// for a raw `PROT.DAT` load). The Muscle Dome reads the new-game
@@ -316,6 +328,9 @@ impl LegaiaMinigames {
             fishing_cadence: None,
             fishing_exchange: None,
             fishing_banners: Default::default(),
+            fishing_sprites: None,
+            fishing_hud_last: Vec::new(),
+            fishing_captions: None,
             fx: Default::default(),
             fishing_prizes: Default::default(),
             fishing_scene: None,
@@ -327,6 +342,7 @@ impl LegaiaMinigames {
             muscle_coins: 0,
             muscle_special: 0,
             muscle_settlement: None,
+            muscle_surface: Default::default(),
             muscle_tables: None,
             scus: None,
             #[cfg(target_arch = "wasm32")]
@@ -403,6 +419,9 @@ impl LegaiaMinigames {
         self.fishing_cadence = None;
         self.fishing_exchange = None;
         self.fishing_banners = Default::default();
+        self.fishing_sprites = None;
+        self.fishing_hud_last.clear();
+        self.fishing_captions = None;
         self.fishing_prizes = Default::default();
         self.fishing_scene = None;
         self.muscle = None;
@@ -2757,7 +2776,7 @@ impl LegaiaMinigames {
             self.sfx_bank = Some(legaia_engine_audio::SfxBank::from_descriptors(
                 table
                     .active()
-                    .map(|(i, d)| (i, d.program, d.tone, d.note, d.voice_count())),
+                    .map(|(i, d)| (i, d.program, d.tone, d.note, d.flags)),
             ));
         }
         Some(table.get(id)?.vab_slot())

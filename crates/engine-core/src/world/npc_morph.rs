@@ -238,6 +238,15 @@ impl World {
         Vec::new()
     }
 
+    /// Whether a placed object whose draws use env-pack slot `pack_slot`
+    /// carries op-`0x4B` morph lanes at all (armed, whatever their current
+    /// weight) - a retail carrier owns that mesh's morph.
+    pub(crate) fn slot_has_object_morph_owner(&self, pack_slot: usize) -> bool {
+        self.npcs.object_pack_slots.iter().any(|(&record, slots)| {
+            slots.contains(&pack_slot) && self.npcs.morphs.contains_key(&MorphOwner::Object(record))
+        })
+    }
+
     /// Drain the placement slots whose morph deltas moved since the last
     /// call; a host rebuilds just those NPC meshes.
     pub fn take_npc_morph_dirty(&mut self) -> Vec<u8> {

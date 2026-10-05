@@ -35,6 +35,46 @@ use legaia_engine_vm::vdf_morph;
 /// delta that is ~0.2 s per lane, a full 17-lane jou wave ~7 s.
 const PULSE_VELOCITY: i16 = 0x140;
 
+/// The scenes the entry pulse is authored for, with the env-pack slots it may
+/// move there (`None` = every slot the exact-fit rule targets).
+///
+/// The pulse is an **opt-in** enhancement, not a rule over every populated
+/// pack. Most scenes carry a VDF pack whose sub-entries are set-piece morphs:
+/// retail arms them from a cutscene (op `0x1F` on a P2 chain), from a
+/// placed object's op `0x4B`, or from an op-`0x4C 0xD8` morph-weight actor
+/// that spawns at rest - and at plain entry keeps the geometry still. The
+/// exact-fit rule cannot tell those apart from ambience: applied blindly it
+/// throbs `chitei2`'s rail and the boiler-room walls of `balden` / `balden2`,
+/// geometry retail never moves. So the pulse runs only where it reads as
+/// ambient life:
+///
+/// - the Juggernaut-fused scenes (`jou` and its `jouin*` interiors) - the
+///   flesh-ground packs the module was written for;
+/// - Rim Elm's shoreline strip (env slots 82 / 88 of `town01` and its
+///   story variants), the water edge the glb export bakes.
+const ENTRY_PULSE_SCENES: &[(&str, Option<&[usize]>)] = &[
+    ("jou", None),
+    ("jouina", None),
+    ("jouinb", None),
+    ("jouinc", None),
+    ("jouind", None),
+    ("jouine", None),
+    ("town01", Some(&[82, 88])),
+    ("town0b", Some(&[82, 88])),
+    ("town0c", Some(&[82, 88])),
+    ("town0d", Some(&[82, 88])),
+];
+
+/// Whether `scene` takes the entry pulse, and over which env-pack slots
+/// (`Some(None)` = all of them). `None` = the scene keeps retail's still
+/// geometry at entry. See [`ENTRY_PULSE_SCENES`].
+pub fn entry_pulse_slots(scene: &str) -> Option<Option<&'static [usize]>> {
+    ENTRY_PULSE_SCENES
+        .iter()
+        .find(|(name, _)| *name == scene)
+        .map(|&(_, slots)| slots)
+}
+
 /// The rolling scene-entry pulse over a populated VDF pack.
 #[derive(Debug, Clone)]
 pub struct EntryVdfPulse {

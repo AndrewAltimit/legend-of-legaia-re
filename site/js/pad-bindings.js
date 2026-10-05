@@ -82,12 +82,79 @@
     Triangle: 0x1000, Circle: 0x2000, Cross: 0x4000, Square: 0x8000,
   };
 
-  /* Fold a set of key codes into a pad word. */
+  /* Fold a set of key codes into a pad word. A `Gamepad:<Button>` entry
+   * (see `legaiaPollGamepad`) names a pad button directly. */
   function padMaskOf(keys) {
     let mask = 0;
-    for (const k of keys) mask |= (PAD && PAD[k]) || 0;
+    for (const k of keys) {
+      if (k.startsWith('Gamepad:')) mask |= window.legaiaPadButton(k.slice(8));
+      else mask |= (PAD && PAD[k]) || 0;
+    }
     return mask;
   }
+
+  /* Gamepad API, `standard` mapping -> the PSX pad, by physical position:
+   * the bottom / right / left / top face buttons are Cross / Circle /
+   * Square / Triangle, the bumpers L1 / R1, the triggers L2 / R2, back /
+   * start Select / Start, the stick clicks L3 / R3, and both the d-pad and
+   * the left stick drive the d-pad. A gamepad is a *controller*, not a key
+   * layout, so it binds buttons to buttons and the Key Config table (which
+   * maps keys) never reaches it. */
+  const GAMEPAD_BUTTONS = ['Cross', 'Circle', 'Square', 'Triangle', 'L1', 'R1',
+    'L2', 'R2', 'Select', 'Start', 'L3', 'R3', 'Up', 'Down', 'Left', 'Right'];
+  const STICK_DEAD_ZONE = 0.5;
+  let gamepadHeld = new Set();
+
+  /* The pad buttons every connected standard-mapped gamepad holds now. */
+  function gamepadButtons() {
+    const out = new Set();
+    let pads = [];
+    try { pads = (navigator.getGamepads && navigator.getGamepads()) || []; } catch (e) { pads = []; }
+    for (const gp of pads) {
+      if (!gp || !gp.connected) continue;
+      gp.buttons.forEach((b, i) => {
+        const name = GAMEPAD_BUTTONS[i];
+        if (name && (b.pressed || b.value > 0.5)) out.add(name);
+      });
+      const [x, y] = [gp.axes[0] || 0, gp.axes[1] || 0];
+      if (x <= -STICK_DEAD_ZONE) out.add('Left');
+      if (x >= STICK_DEAD_ZONE) out.add('Right');
+      if (y <= -STICK_DEAD_ZONE) out.add('Up');
+      if (y >= STICK_DEAD_ZONE) out.add('Down');
+    }
+    return out;
+  }
+
+  /* Merge this frame's gamepad state into a page's keyboard `held` / `pulse`
+   * sets as `Gamepad:<Button>` entries: a newly held button lands in both
+   * (a press edge, like a keydown), a released one leaves `held`. Returns
+   * `true` when anything changed, so the caller re-packs its pad word. Call
+   * once per display frame, before the frame reads `pulse`. */
+  window.legaiaPollGamepad = (held, pulse) => {
+    const now = gamepadButtons();
+    if (!now.size && !gamepadHeld.size) return false;
+    let changed = false;
+    for (const name of now) {
+      /* Re-asserted every frame, not only on the edge: a page clears its
+       * `held` set on a modal hand-off, and a key's auto-repeat refills it
+       * where a button held through the hand-off would otherwise read as
+       * released until pressed again. */
+      const key = 'Gamepad:' + name;
+      if (!held.has(key)) { held.add(key); changed = true; }
+      if (!gamepadHeld.has(name) && pulse) { pulse.add(key); changed = true; }
+    }
+    for (const name of gamepadHeld) {
+      if (!now.has(name)) {
+        held.delete('Gamepad:' + name);
+        changed = true;
+      }
+    }
+    gamepadHeld = now;
+    return changed;
+  };
+  /* A page that clears its `held` set (focus loss) forgets the pad too, so
+   * a still-held button re-enters as a fresh press rather than a stuck one. */
+  window.legaiaResetGamepad = () => { gamepadHeld = new Set(); };
 
   window.legaiaAdoptPadBindings = adoptPadBindings;
   /* Re-read the engine's table after the options screen's Key Config row

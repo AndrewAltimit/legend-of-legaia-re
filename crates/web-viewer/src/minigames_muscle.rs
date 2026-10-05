@@ -68,6 +68,8 @@ mod hud;
 mod render;
 #[path = "minigames_muscle/session.rs"]
 mod session;
+#[path = "minigames_muscle/surface.rs"]
+mod surface;
 
 /// PROT entry of the monster stat archive (`0867_battle_data`).
 const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;

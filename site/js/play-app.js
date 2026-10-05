@@ -1026,6 +1026,9 @@ void main() {
            * live mask (`_syncStaticWindow`). */
           if (placed) {
             draw.placeIdx = i;
+            /* Where the record put it, for `_applyObjectMoves`. */
+            draw.baseX = draw.x;
+            draw.baseZ = draw.z;
             /* Overworld decorations (the placed list past the landmarks):
              * retail's decoration sweep hazes each one toward 0xD0 by its
              * origin's camera depth - staged per draw by renderAssembled
@@ -1054,6 +1057,8 @@ void main() {
         rt.field_placement_scales ? rt.field_placement_scales() : null,
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
+      this._objectMovesLive = false;
+      this._objectTintsLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {
@@ -1176,7 +1181,10 @@ void main() {
       window.addEventListener('keydown', this._onDebugCam);
       /* Blur drops every held key - otherwise tabbing away mid-walk leaves the
        * player marching into a wall forever. */
-      this._onBlur = () => { this.held.clear(); this.pulse.clear(); this.pad = 0; };
+      this._onBlur = () => {
+        this.held.clear(); this.pulse.clear(); this.pad = 0;
+        if (window.legaiaResetGamepad) window.legaiaResetGamepad();
+      };
       window.addEventListener('blur', this._onBlur);
       this.canvas.addEventListener('blur', this._onBlur);
 
@@ -1808,9 +1816,10 @@ void main() {
       if (this._drawFishingHud(ctx, ov)) return;
 
       /* Field merchant panel + post-action banners (level-up, Seru capture).
-       * Same builders as the native window (`shop_draws_for`,
-       * `level_up_draws_for`, `capture_banner_draws_for`); like the dialog box
-       * they composite over the live field rather than blacking it. Sits above
+       * Same builders as the native window (`shop_screen_draws`,
+       * `level_up_draws_for`, `capture_banner_draws_for`). The banners
+       * composite over the live field like the dialog box; a shop asks for a
+       * black backdrop (`backdrop`), as retail's does. Sits above
        * the dialog check because a merchant's box closes before the shop
        * opens, and a banner should not be hidden by one. */
       let shop = null;
@@ -1829,6 +1838,14 @@ void main() {
       if (shop && shop.open) {
         this._ensureMenuBlitters();
         ctx.clearRect(0, 0, ov.width, ov.height);
+        /* A shop is a menu-overlay session: retail swaps the field overlay
+         * out and draws the shop's windows on black (`MenuRuntime::
+         * covers_field`), the same backdrop the native window clears to. */
+        if (shop.backdrop === 'black') {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, ov.width, ov.height);
+        }
         if (this._menuChrome) this._menuChrome.blit(ctx, shop.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, shop.texts);
         this._overlayActive = true;
@@ -2111,7 +2128,7 @@ void main() {
         if (!this._floorWaveLive) return;
         for (const d of this.staticDraws) {
           if (d.floorIdx === undefined) continue;
-          d.y = d.baseY;
+          d.y = d.baseY - (d.moveDy || 0);
           if (d.model) d.model[13] = d.y;
         }
         this._floorWaveLive = false;
@@ -2119,10 +2136,67 @@ void main() {
       }
       for (const d of this.staticDraws) {
         if (d.floorIdx === undefined || d.floorIdx >= wave.length) continue;
-        d.y = d.baseY - wave[d.floorIdx];
+        d.y = d.baseY - wave[d.floorIdx] - (d.moveDy || 0);
         if (d.model) d.model[13] = d.y;
       }
       this._floorWaveLive = true;
+    }
+
+    /* A placed object a script has moved - an `A3` seat, an op-`4C 42` lift
+     * under its actor's 0x20000000 height law (chitei2's falling boulder) -
+     * draws at its actor, as retail's case-5 draw does. The engine hands back
+     * a per-placement [dx, dy, dz] (retail frame, Y-down) or an EMPTY array
+     * while nothing has moved; `_objectMovesLive` returns the draws to the
+     * record's seat on the falling edge. Runs after `_applyFloorWave`, whose
+     * Y it composes with through `moveDy`. The native window folds the same
+     * table (`World::object_draw_displacements`) into its placed draws. */
+    _applyObjectMoves(rt) {
+      if (!rt.field_placement_moves) return;
+      const mv = rt.field_placement_moves();
+      if (!mv.length && !this._objectMovesLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined || d.baseX === undefined) continue;
+        const k = d.placeIdx * 3;
+        const dx = k + 2 < mv.length ? mv[k] : 0;
+        const dy = k + 2 < mv.length ? mv[k + 1] : 0;
+        const dz = k + 2 < mv.length ? mv[k + 2] : 0;
+        const prevDy = d.moveDy || 0;
+        if (d.x === d.baseX + dx && d.z === d.baseZ + dz && prevDy === dy) continue;
+        d.x = d.baseX + dx;
+        d.z = d.baseZ + dz;
+        /* The page's world frame negates retail Y. */
+        d.y += prevDy - dy;
+        d.moveDy = dy;
+        if (d.model) {
+          d.model[12] = d.x;
+          d.model[13] = d.y;
+          d.model[14] = d.z;
+        }
+      }
+      this._objectMovesLive = mv.length > 0;
+    }
+
+    /* A placed object whose actor carries a draw tint (op `4C 81`: the
+     * `+0x74` colour / `+0x78` blend retail stages as the far colour and
+     * IR0 - chitei2's hologram panels go black once the generator is down)
+     * draws with a constant per-draw cue. The engine hands back a
+     * per-placement [r, g, b, ir0] or an EMPTY array while nothing is
+     * tinted. The native window stages the same table
+     * (`World::object_draw_tints`) on its placed draws. */
+    _applyObjectTints(rt) {
+      if (!rt.field_placement_tints) return;
+      const t = rt.field_placement_tints();
+      if (!t.length && !this._objectTintsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const k = d.placeIdx * 4;
+        if (k + 3 < t.length && t[k + 3] > 0) {
+          d.cue = { far: [t[k], t[k + 1], t[k + 2]], nearZ: -1, farZ: 0, maxIr0: t[k + 3] };
+        } else if (d.cue) {
+          delete d.cue;
+        }
+      }
+      this._objectTintsLive = t.length > 0;
     }
 
     /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
@@ -2147,6 +2221,12 @@ void main() {
 
     _frame(skipDraw) {
       const rt = this.rt;
+      /* Gamepad buttons enter the same held / pulse sets the keyboard
+       * fills, so every reader below (menu, name entry, field tick) sees
+       * one pad word whichever device pressed it. */
+      if (window.legaiaPollGamepad && window.legaiaPollGamepad(this.held, this.pulse)) {
+        this._repack();
+      }
       const stepping = this.stepOnce;
       const advance = !this.paused || stepping;
       this.stepOnce = false;
@@ -2386,6 +2466,8 @@ void main() {
        * ground undulates with the walk heightfield. Costs one WASM call per
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
+      this._applyObjectMoves(rt);
+      this._applyObjectTints(rt);
       this._applyGroundWave(rt);
 
       /* A camera re-centre this frame may have re-planned the windowed

@@ -543,17 +543,22 @@ impl PlayWindowApp {
         // came from, parallel to the draw list, so the live ladder can be
         // folded back in per frame (`FieldFloorWave` - the op-`0x4C` nibble-9
         // floor wave).
-        let (field_placement_draws, floor_placement, placement_window_keys, _) =
+        let (field_placement_draws, floor_placement, placement_window_keys, _, placement_records) =
             self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
         // props' placement transforms map to `color_meshes` indices.
-        let (field_placement_color_draws, floor_placement_color, placement_color_window_keys, _) =
-            self.resolve_field_placement_draws(
-                &res,
-                &color_tmd_src_index,
-                &posed_placement_meshes,
-                false,
-            );
+        let (
+            field_placement_color_draws,
+            floor_placement_color,
+            placement_color_window_keys,
+            _,
+            placement_color_records,
+        ) = self.resolve_field_placement_draws(
+            &res,
+            &color_tmd_src_index,
+            &posed_placement_meshes,
+            false,
+        );
         let (field_terrain_draws, floor_terrain, terrain_cell_keys) =
             self.resolve_field_terrain_draws(&res, &tmd_src_index);
         // Untextured ground tiles resolve through the colour-mesh bridge (the
@@ -816,6 +821,8 @@ impl PlayWindowApp {
         self.field_placement_color_draws = field_placement_color_draws;
         self.field_placement_window_keys = placement_window_keys;
         self.field_placement_color_window_keys = placement_color_window_keys;
+        self.field_placement_records = placement_records;
+        self.field_placement_color_records = placement_color_records;
         // The ladder those four lists were baked against, plus their per-draw
         // rungs: `handle_redraw` folds any later movement into the matrices.
         let floor_base = self.session.host.scene.as_ref().and_then(|s| {

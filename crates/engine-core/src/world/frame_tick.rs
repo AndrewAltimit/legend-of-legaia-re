@@ -1642,8 +1642,8 @@ impl World {
                 // REF: FUN_801d5d60, FUN_801e3e00
                 self.tick_field_script_arcs();
                 self.tick_field_attached_lights();
-                // Field-NPC walk legs (autonomous patrol routes + scripted
-                // interaction-prologue runs) - one motion-VM step per RETAIL
+                // Field-NPC walk legs (cutscene walk-to-tile pokes,
+                // actor-VM glides) - one motion-VM step per RETAIL
                 // frame, writing back into `field_npc_positions` so collision /
                 // interact probes follow the live NPC. The step decode takes
                 // `dt = _DAT_1f800393` at 1, so one call credits one retail
@@ -3455,6 +3455,8 @@ impl World {
         {
             crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
+        let mut session = session;
+        session.arm_intro();
         self.minigames.muscle_dome = Some(session);
         self.minigames.muscle_hub_between_legs = false;
         self.minigames.muscle_playback_frames = 0;
@@ -3786,6 +3788,15 @@ impl World {
             }
             return;
         };
+        // The battle-open hold runs once the hub's own screens (the first
+        // visit, the leg-open ROUND card) have handed the leg over - retail
+        // starts the battle only past the hub's arm `0x16`.
+        if !self.minigames.muscle_hub.covers_leg() {
+            let step = u16::from(self.clock.frame_step.max(1));
+            if let Some(s) = self.minigames.muscle_dome.as_mut() {
+                s.tick_intro(step);
+            }
+        }
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {
@@ -3804,8 +3815,16 @@ impl World {
                     triangle: self.input.just_pressed(input::PadButton::Triangle),
                     select_attack: self.toggles.select_attack,
                 };
-                if let Some(s) = self.minigames.muscle_dome.as_mut() {
-                    s.select_input(pad);
+                let ev = self
+                    .minigames
+                    .muscle_dome
+                    .as_mut()
+                    .map(|s| s.select_input(pad));
+                if ev == Some(crate::muscle_dome::DomeMenuEvent::Run) {
+                    // Run on the round prompt: the leg is reported as ran,
+                    // which settles the contest as a give-up - the shared
+                    // escape path.
+                    let _ = self.leave_muscle_dome();
                 }
             }
             MusclePhase::Resolve => {
@@ -3816,12 +3835,16 @@ impl World {
                     // damage rolls draw on the world stream (retail's one
                     // `rand()` seed).
                     s.resolve_turn_on_stream(&mut self.rng_state);
-                    // The turn's plays now animate (the dome surface replays
-                    // them one every `PLAY_CADENCE_TICKS`); the leg holds at
-                    // `TurnOver` for that long, as retail's action phases do
-                    // before the round driver re-enters the command cluster.
+                    // The turn's plays now animate (the dome surface plays
+                    // out `turn_timeline`: the closing walk, the swings, the
+                    // done tails); the leg holds at `TurnOver` for that long,
+                    // as retail's action phases do before the round driver
+                    // re-enters the command cluster.
                     self.minigames.muscle_playback_frames =
-                        crate::muscle_dome_scene::playback_ticks(s.last_turn_plays().len());
+                        crate::muscle_dome_scene::turn_playback_ticks(
+                            s.last_turn_plays(),
+                            s.last_turn_closes_in(),
+                        );
                 }
             }
             MusclePhase::TurnOver => {
@@ -3876,17 +3899,17 @@ impl World {
     /// driver reaches its command phase only after the action phases
     /// `0xFE` / `0xFF` have played every queued action; the port times that
     /// span with the dome surface's own replay cadence
-    /// ([`crate::muscle_dome_scene::playback_ticks`]).
+    /// ([`crate::muscle_dome_scene::turn_playback_ticks`]).
     pub fn muscle_playback_frames(&self) -> u32 {
         self.minigames.muscle_playback_frames
     }
 
     /// The play the dome surface is replaying this tick and its attacker's
-    /// running damage total: `(attacker slot, total)`. The surface replays
-    /// play `i` from `i * PLAY_CADENCE_TICKS` into the playback; the total
+    /// running damage total: `(attacker slot, total)`. The surface plays the
+    /// turn out on [`crate::muscle_dome_scene::turn_timeline`]; the total
     /// sums that attacker's landed damage up to and including the current
-    /// play, which is the tally retail's play-out counts up
-    /// ("TOTAL n"). `None` outside a playback.
+    /// play, which is the tally retail's play-out counts up ("TOTAL n").
+    /// `None` outside a playback.
     pub fn muscle_playback_tally(&self) -> Option<(usize, i32)> {
         let left = self.minigames.muscle_playback_frames;
         if left == 0 {
@@ -3894,11 +3917,15 @@ impl World {
         }
         let s = self.minigames.muscle_dome.as_ref()?;
         let plays = s.last_turn_plays();
-        let total = crate::muscle_dome_scene::playback_ticks(plays.len());
-        let elapsed = total.saturating_sub(left);
-        let i = ((elapsed / crate::muscle_dome_scene::PLAY_CADENCE_TICKS) as usize)
-            .min(plays.len().checked_sub(1)?);
+        let closes_in = s.last_turn_closes_in();
+        let total = crate::muscle_dome_scene::turn_playback_ticks(plays, closes_in);
+        let beat = crate::muscle_dome_scene::beat_at(plays, closes_in, total.saturating_sub(left))?;
+        let i = beat.play;
         let attacker = plays[i].attacker.min(1);
+        if beat.kind == crate::muscle_dome_scene::BeatKind::Approach {
+            // The walk in is the acting side's action; nothing has landed.
+            return Some((attacker, 0));
+        }
         let sum = plays[..=i]
             .iter()
             .filter(|p| p.attacker.min(1) == attacker)
@@ -3934,6 +3961,13 @@ impl World {
         self.minigames.muscle_hub = timers;
         if frame.next_leg {
             self.begin_next_muscle_leg();
+        }
+        // The INTERVAL arm's tally cues go through the SFX ring like every
+        // other cue: the drainer resolves them against the arena bundle.
+        for &(slot, id, delay) in &frame.ring_cues {
+            self.audio
+                .sfx_ring_ops
+                .push(crate::world::SfxRingOp::ArmSlot(slot, id, delay));
         }
         let sounds = &mut self.minigames.muscle_hub_sounds;
         if frame.xa.is_some() {

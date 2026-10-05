@@ -295,6 +295,11 @@ pub enum SfxRingOp {
     /// DAT_8007B6D8[slot]`) without the cursor pair or the slot's countdown -
     /// the slot machine overlay's every cue.
     WriteSlot(u8, i16),
+    /// A producer that stores both cells of one slot - `sh id,
+    /// DAT_8007B6D8[slot]` and `sw delay, DAT_8007C338[slot]` - without the
+    /// cursor pair: the Muscle Dome hub's INTERVAL arm, which fills all four
+    /// slots at once (`0x801CFCAC..0x801CFCEC`).
+    ArmSlot(u8, i16, i16),
 }
 
 /// Where a side-band bank request lands: the VAB slot `FUN_800243F0` installs
@@ -314,6 +319,12 @@ pub struct SideBandBank {
 /// CDNAME `#define vab_01 1072`. Read as a runtime word from every catalogued
 /// mednafen state checked (field and battle alike).
 pub const VAB_01_RAW_BASE: u32 = 1072;
+
+/// The request id [`World::tail_side_band_bank`] tags the Muscle Dome arena's
+/// side bank with. The arena streams it without a request, so this is a tag
+/// no script can issue (`vab_01` rows are requested as `2000 + n`), only for
+/// a host's "is this the bank I already staged" test.
+pub const ARENA_SIDE_BAND_REQUEST: i32 = -0x977;
 
 /// The side-band request the field overlay seeds at init (`(8, -1)` at
 /// `0x801D6880`), which the driver settles on the next frame.
@@ -413,13 +424,18 @@ impl World {
     /// this into their runtime-row resolver every tick.
     /// The slot machine overlay's init points the slot at the machine's own
     /// `efect.dat` (extraction PROT 1199), which the scene host stages on the
-    /// warp ([`crate::world::MinigameState::slot_sfx_bundle`]).
+    /// warp ([`crate::world::MinigameState::slot_sfx_bundle`]); the Muscle
+    /// Dome's arena init points it at the arena's own bundle
+    /// ([`crate::world::MinigameState::muscle_sfx_bundle`]).
     // REF: FUN_8001FA88, FUN_8001F7C0
     pub fn runtime_sfx_bundle(&self) -> &[u8] {
         match (&self.mode, self.audio.battle_sfx_bank.as_deref()) {
             (SceneMode::Battle, Some(bank)) => bank,
             (SceneMode::SlotMachine, _) if !self.minigames.slot_sfx_bundle.is_empty() => {
                 &self.minigames.slot_sfx_bundle
+            }
+            (SceneMode::MuscleDome, _) if !self.minigames.muscle_sfx_bundle.is_empty() => {
+                &self.minigames.muscle_sfx_bundle
             }
             _ => &self.props.stager_bytes,
         }
@@ -477,6 +493,24 @@ impl World {
             pair.acked
         };
         side_band_bank_for_request(id)
+    }
+
+    /// The bank the BGM region's free tail holds this tick, for the hosts'
+    /// tail stager: the field family's side-band request
+    /// ([`Self::side_band_bank`]), or - in the Muscle Dome - the arena's own
+    /// slot-`3` side bank, which its init streams directly rather than through
+    /// a request (`legaia_asset::minigame_sfx::ARENA_SIDE_BANK_PROT_INDEX`).
+    /// `None` everywhere else.
+    pub fn tail_side_band_bank(&self) -> Option<SideBandBank> {
+        match self.mode {
+            SceneMode::Field | SceneMode::WorldMap => self.side_band_bank(),
+            SceneMode::MuscleDome => Some(SideBandBank {
+                request: ARENA_SIDE_BAND_REQUEST,
+                slot: 3,
+                prot_entry: legaia_asset::minigame_sfx::ARENA_SIDE_BANK_PROT_INDEX,
+            }),
+            _ => None,
+        }
     }
 }
 

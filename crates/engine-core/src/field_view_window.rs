@@ -169,7 +169,7 @@ impl ViewCells {
     /// so a non-positive count still runs once. The row wraps `& 0x7F`; the
     /// column does not. No region test: the clamp already confined the window.
     ///
-    /// PORT: FUN_801F6D48 (cell loop `0x801F6D6C..0x801F6DD8`, `0x801F7028..0x801F7058`)
+    /// PORT: FUN_801F6D48, overlay_summon_render_0900_801f6d48 (cell loop `0x801F6D6C..0x801F6DD8`, `0x801F7028..0x801F7058`)
     // REF: FUN_801F69EC (the same loop, the `_DAT_8007BB4C != 0` emitter)
     pub fn ground_visible(&self, col: i32, row: i32) -> bool {
         let cols = (i32::from(self.window[2]) - i32::from(self.window[0])).max(1);

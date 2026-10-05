@@ -360,17 +360,19 @@ class; a large share of the placements stand parked or relocated from frame one)
 The engine mirror is `World::pre_run_field_channel_prologues` (scene entry, after
 the carrier/channel install): one field-VM frame slice per placement channel, run
 unconditionally - load-time behaviour, not the opt-in free-roam liveliness - with
-position write-through, patrol-route invalidation when the executed branch
-contradicts the flag-blind route decode, and no heading derivation (facings come
-from `seed_field_npc_facings`). Disc + save-library oracle:
+position write-through, and no heading derivation (facings come from
+`seed_field_npc_facings`). Disc + save-library oracle:
 `crates/engine-core/tests/field_npc_entry_positions_disc.rs`.
 
-`World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Four start paths feed it:
+`World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
 
-- **Autonomous patrol routes** (`World::npcs.routes`, gated by `World::npcs.animate` - on by default in `play-window` and the browser play page, `play-window --no-live-npcs` clears it): each placement's own pre-text script bytecode carries `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints (dropping the `(127,127)` park sentinel, cross-context targets, and beyond-locality story-relocation branches) and the engine loops them as a patrol. Autonomous legs pause while a dialogue is up. That pause is the engine's own: retail's motion-pause kick (`FUN_8003C9AC`) is a standing-move clip request and holds nothing (see [the motion-pause kick](#the-motion-pause-kick)).
-- **Interaction-prologue runs**: when the opt-in field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) starts the interacted actor's walk leg. These run through the dialogue - they are the interaction's choreography.
+**A placement's own `0x4C 0x51` ops are not a route.** Each is an instant seat (the op writes `+0x14`/`+0x18` outright), and a record carries one per story-flag branch, so the entry pre-run's executed branch is the whole of their effect.
+Looping the seats as a patrol walks an NPC between story stations retail never connects: town01's gate guards (placements 32 and 33, beside the exit to the world map) stand on their seats in every catalogued town01 field-run state, across both emulators and the whole chapter, while the ambient-stream wanderers beside them move.
+A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---the-directional-steps-and-the-aabb-wander) and nothing else. `man_field_scripts::placement_motion_route` still decodes the seats, as the fallback glide-pace source below. Disc oracle: [`field_npc_motion_disc.rs`](../../crates/engine-core/tests/field_npc_motion_disc.rs) (town01's guards hold still; across every field scene, nothing without a walking ambient stream moves in free roam).
+
+- **Not interaction-prologue `0x4C 0x51`s.** When the field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) seats the actor on the tile, exactly as the entry pre-run and a spawned-record poke do: the case-5 sub-1 body stores the tile into `+0x14` / `+0x18` (`0x801E1880`, `0x801E1898`) and the LUT heading into `+0x26` (`0x801E1900`) and arms no walk kernel.
 - **Actor-VM `start_motion`** (op `0x09` `MotionAt`, retail `FUN_800358c0`): `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`).
-- **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`), PARKS on `CutsceneTimeline::walk_wait`, and resumes past the yield when the leg arrives - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place. The player-anchor form (`C7 F8 …`) steps the player actor directly in the same park. Scripted legs keep stepping while a timeline is active; only the autonomous patrol kicks stand down.
+- **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`), PARKS on `CutsceneTimeline::walk_wait`, and resumes past the yield when the leg arrives - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place. The player-anchor form (`C7 F8 …`) steps the player actor directly in the same park. Scripted legs keep stepping while a timeline is active.
 - **Cutscene-timeline cross-context turns** (`B8 <id> <dir|flags> <budget|dir>`, the targeted `0x38` yield - the field-VM CAM_CFG halt-acquire arm): same park shape for the rotate op. The timeline arms a `0x38` RotateToAngle leg on the NPC (`CutsceneTimeline::facing_wait`), steps it once per tick writing the raw yaw into `World::npcs.headings`, and resumes past the yield on the terminal compass snap - one parked tick per budget frame, the 1:1 retail duration. The simple path (`op1 & 0x7F == 0`) is an instant compass write, no park.
 
   The player (`B8 F8 ..`) takes both paths on its own heading (`move_state.render_26`, `TimelineFacing::slot = None`); the story beats turn the hero this way well over a thousand times across the disc. Outside the timeline, a simple-path `0x38` reaches the actor through `FieldHost::face_compass`: the player for `0xF8`, the stepping placement channel, or the NPC whose talk record is running.
@@ -654,9 +656,7 @@ so that pivot would be pure artefact rather than retail behaviour.
 `World::npcs.positions` on any tick that moved it, so the wandering
 NPC's own collision box and its interact box follow it. Because retail
 dispatches the two motion VMs off *different* actor flag bits (`+0x10 & 0x80`
-here, `& 0x400` for `FUN_8003774C`), no actor is ever walked by both: the
-engine stands its autonomous patrol substitute down for any placement bound
-to a stream that carries a walk op. Scripted legs still outrank both.
+here, `& 0x400` for `FUN_8003774C`), no actor is ever walked by both.
 
 One ordering trap the wander's absolute box makes fatal: the ambient
 channels install with the scene carriers, *before* the spawn-prologue pre-run

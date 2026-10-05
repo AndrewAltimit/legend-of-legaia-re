@@ -389,12 +389,6 @@ pub struct FieldNpcMotion {
     pub state: vm::motion_vm::MotionState,
     /// World-space walk target of the current leg.
     pub target: (i16, i16),
-    /// For an autonomous route leg: the index into
-    /// [`crate::world::FieldNpcState::routes`] this leg walks toward (the next leg starts
-    /// at `cursor + 1`, wrapping - a patrol loop). `None` for a
-    /// script-started leg (interaction-prologue `0x4C 0x51` or actor-VM
-    /// `start_motion`), which ends where it lands.
-    pub route_cursor: Option<usize>,
 }
 
 /// One NPC's **ambient facing** channel - the idle turn-in-place behaviour of
@@ -670,6 +664,13 @@ pub const SPAWNED_CONTEXT_SLOTS: usize = 8;
 /// so many parks in one record still complete comfortably.
 pub(crate) const CHANNEL_WAIT_PARK_TIMEOUT: u32 = 30;
 
+/// Sub-cell budget (64-unit) for the collision-only walk from a player a
+/// spawned record left off the walk-visible floor back onto it
+/// ([`crate::world::World::field_collision_reaches_floor`]). Within it the
+/// player is **not** stranded and the cold-spawn rescue in the helper-context
+/// drain stands aside.
+pub(crate) const STRANDED_COLLISION_REACH: usize = 1024;
+
 /// Park bound for a cross-context **walk-to-tile yield**
 /// (`C7 <id> <tx> <tz> <mode>`, [`crate::cutscene_timeline::TimelineWalk`]).
 /// A walk park is a real playout - the longest authored legs cross a dozen
@@ -734,6 +735,15 @@ pub const WALK_ON_REPOLL_FLAG: u32 = 0x0008_0000;
 /// top-view debug toggle (`0x801E7748`, gated on the debug word), and every
 /// mode entry clears it.
 pub const CAMERA_HOLD_FLAG: u32 = 0x0000_0400;
+
+/// Bit 16 of the scratchpad word `0x1F800394`: the player tick `FUN_801D1344`
+/// runs the follow ease even while the player is movement-locked. The tick
+/// calls the ease (`jal 0x801DB510` at `0x801D1834`) only when its local
+/// gate is up, and it raises the gate on this bit (`0x801D1634..0x801D1648`)
+/// or on a player with `+0x10 & 0x80000` clear and this word's `0x400` clear
+/// (`0x801D1694..0x801D16C0`); otherwise the frame runs only the shake
+/// (`FUN_801D9D30`, `0x801D184C`) and the camera holds.
+pub const CAMERA_LOCKED_EASE_FLAG: u32 = 0x0001_0000;
 
 /// Bit 18 of the scratchpad word `0x1F800394`: the follow ease composes and
 /// eases even on a frame the player did not move (`0x801DB578..0x801DB5A4`).

@@ -381,9 +381,20 @@ wound. Otherwise a member with an
 affordable damaging Seru spell casts the strongest one; otherwise it attacks
 through `Command`, entering the longest art its command pool pays for and
 spending the rest on plain directions (whether a matched art fires is the
-queue builder's call, out of the Spirit gauge). A random encounter that
+queue builder's call, out of the Spirit gauge). The plan runs up to nine
+commands, the length of each character's Miracle Art. A random encounter that
 interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
 the fight forbids running.
+
+The fighter also reads a boss's cadence the way a player does. It keeps each
+round's total party HP loss, and when the last four rounds went heavy, quiet,
+heavy, quiet (no two heavy rounds back to back all battle), the coming round
+is the heavy one: a member whose HP, once the round's committed heals land,
+the guard's halving lets live through it takes Spirit instead of attacking
+(Rogue alternates Element Change with a party-wide hit, off its picker's
+round parity). A foe on any other cycle gets no guard. A fight runs at least
+60 000 ticks and goes on past that while a foe's HP is still dropping, up to
+240 000; it is unresolved only once 12 000 ticks pass with no foe losing HP.
 
 The party's battle forms - the action clips the hit events are paced by and
 the art records the arts input tokenizes - are the engine's to install at
@@ -463,7 +474,7 @@ one level down from the tier that failed:
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
 | `reach flag(s) 0x.. never set` | The target scene was reached but the beat that separates the milestones did not play. |
 | `battle unresolved ...: action SM ctx[7]=0x.. <state> actor N` | The battle action state machine (retail `FUN_801E295C`) sat in that state for the whole budget. |
-| `party wiped: ...` | The fighter lost. It heals, casts and enters arts, but it never guards, charges Spirit or changes equipment. |
+| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round, but it never changes equipment. |
 | `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands, through the scene's teleports and object doors; a pad hop then tries a crossing scene. |
 | `pad walk stalled at tile ..` | A path existed and the follower stopped making progress on it. |
 | `PANIC: ...` | An engine panic, caught per segment. |
@@ -544,9 +555,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   options by rotation, not by reading them. Neither tier buys or equips, and
   only the pad tier opens the pause menu (to heal); a beat that waits on a
   purchase or an equip reads as a stall at that beat.
-- The fighter never guards, charges Spirit, targets a weakness or changes
-  equipment, and it flees a travel leg's random encounter. A fight that needs
-  any of those reads as a wipe.
+- The fighter guards only a foe that hits hard every other round, never
+  targets a weakness or changes equipment, and it flees a travel leg's random
+  encounter. A fight that needs any of those reads as a wipe.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
   (`suimon`'s water gate `0x27B`) needs that beat played first. The talk

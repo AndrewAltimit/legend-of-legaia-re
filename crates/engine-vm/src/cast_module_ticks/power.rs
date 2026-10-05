@@ -201,6 +201,45 @@ pub fn damage_shape_for(prot_entry: u32) -> Option<&'static CastDamageShape> {
         .find(|s| s.prot_entry == prot_entry)
 }
 
+/// The baked `a0` of the capture-class bodies whose tick port carries no
+/// damage shape of its own, as `(PROT entry, action ids, power, site)`;
+/// empty ids = the module's only body. Each is the immediate loaded into
+/// `a0` ahead of the body's `jal 0x801DD4B0` (or `0x801DD6B4` - the
+/// wrapper choice is the caller's, keyed on the action id) in the module
+/// image at slot-B base `0x801F69D8`. Where a body has two sites they carry
+/// the same constant (PROT 0935's `0x801F7AFC` / `0x801F7C50`).
+///
+/// Without these the cast band's fold had no magnitude for the cast: a
+/// capture-class special of one of these modules dealt nothing at all.
+pub const CAPTURE_SITE_POWERS: &[(u32, &[u8], u16, u32)] = &[
+    (935, &[], 0x1AE, 0x801F_7AFC),
+    (936, &[], 0x1E4, 0x801F_797C),
+    (937, &[], 0x26A, 0x801F_76AC),
+    (939, &[], 0x60, 0x801F_70E0),
+    (942, &[0xAA], 0x280, 0x801F_774C),
+    (946, &[], 0x120, 0x801F_73DC),
+    (947, &[], 0xEA, 0x801F_7414),
+    (948, &[], 0x78, 0x801F_6FB0),
+    (949, &[], 0xC0, 0x801F_7318),
+    (951, &[0x36], 0x3A0, 0x801F_7414),
+    (951, &[0x5B], 0x80, 0x801F_7F88),
+    (952, &[0x5C], 0x1D0, 0x801F_7948),
+    (953, &[], 0x274, 0x801F_7410),
+    (956, &[0x75], 0x100, 0x801F_6EF8),
+    (961, &[], 0x880, 0x801F_73AC),
+    (963, &[], 0x540, 0x801F_7C54),
+    (964, &[0xB0, 0xB1, 0xB2], 0x580, 0x801F_74CC),
+];
+
+/// The [`CAPTURE_SITE_POWERS`] constant for a cast of `action_id` through
+/// PROT `prot_entry`.
+pub fn capture_site_power(prot_entry: u32, action_id: u8) -> Option<u16> {
+    CAPTURE_SITE_POWERS
+        .iter()
+        .find(|(e, ids, _, _)| *e == prot_entry && (ids.is_empty() || ids.contains(&action_id)))
+        .map(|&(_, _, power, _)| power)
+}
+
 /// The module's first baked power - the seed a single-hit cast uses.
 pub fn baked_power_for(prot_entry: u32) -> Option<u16> {
     damage_shape_for(prot_entry).and_then(|s| s.powers.first().copied())

@@ -336,6 +336,7 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
     let mut saw_interval = false;
     let mut saw_card = false;
     let mut handed_off_at = None;
+    let mut armed = Vec::new();
     for frame in 0..4000 {
         w.set_pad(if frame == 2 {
             PadButton::Cross.mask()
@@ -345,7 +346,25 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
         let _ = w.tick();
         // The shared scene host runs the hub right after the world tick.
         w.tick_muscle_hub();
+        for op in w.take_sfx_ring_ops() {
+            if let legaia_engine_core::world::SfxRingOp::ArmSlot(slot, id, delay) = op {
+                armed.push((slot, id, delay));
+            }
+        }
         let timers = &w.minigames.muscle_hub;
+        if timers.interval.is_some() && !saw_interval {
+            // The INTERVAL arm fills the whole cue ring on its first frame.
+            assert_eq!(
+                armed,
+                [
+                    (0, 0x202, 0),
+                    (1, 0x202, 0x1E),
+                    (2, 0x202, 0x3C),
+                    (3, 0x203, 0x5A)
+                ],
+                "the staggered tally cues"
+            );
+        }
         saw_interval |= timers.interval.is_some();
         saw_card |= timers
             .backdrop

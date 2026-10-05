@@ -24,24 +24,23 @@ fn tick_retail_frames(world: &mut World, n: usize) {
 }
 
 #[test]
-fn field_npc_patrol_route_walks_through_motion_vm() {
+fn scripted_field_npc_leg_walks_through_motion_vm_and_ends_where_it_lands() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.npcs.positions.insert(1, (1000, 1000));
-    world
-        .npcs
-        .routes
-        .insert(1, vec![(1300, 1000), (1000, 1000)]);
 
-    // Baseline: with `animate_field_npcs` off the NPC rests at its anchor.
+    // Nothing started: the NPC rests at its anchor, liveliness flag or not
+    // (there is no autonomous leg - a placement's own `4C 51` ops are seats).
+    world.npcs.animate = true;
     for _ in 0..20 {
         let _ = world.tick();
     }
     assert_eq!(world.npcs.positions.get(&1), Some(&(1000, 1000)));
 
-    // Flag on: the motion VM walks the NPC toward waypoint 0 at the per-frame
-    // speed (8 units), reaches it, then patrols back toward waypoint 1.
-    world.npcs.animate = true;
+    // A script-started leg steps one motion-VM step per retail frame
+    // (FIELD_NPC_MOTION_SPEED = 8 units), clamps at the target and retires.
+    world.npcs.animate = false;
+    assert!(world.start_field_npc_motion(1, 1300, 1000));
     tick_retail_frames(&mut world, 1);
     assert_eq!(
         world.npcs.positions.get(&1),
@@ -52,11 +51,15 @@ fn field_npc_patrol_route_walks_through_motion_vm() {
     assert_eq!(
         world.npcs.positions.get(&1),
         Some(&(1300, 1000)),
-        "the leg clamps at the waypoint (300 units / 8 per frame)"
+        "the leg clamps at the target (300 units / 8 per frame)"
     );
-    tick_retail_frames(&mut world, 5);
-    let &(x, _) = world.npcs.positions.get(&1).unwrap();
-    assert!(x < 1300, "patrol loops: the NPC heads back to waypoint 1");
+    tick_retail_frames(&mut world, 20);
+    assert_eq!(
+        world.npcs.positions.get(&1),
+        Some(&(1300, 1000)),
+        "a scripted leg ends where it lands - no loop back"
+    );
+    assert!(world.npcs.motions.is_empty());
 }
 
 #[test]
@@ -64,21 +67,16 @@ fn moving_field_npc_collision_box_follows_live_position() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.npcs.solid = true;
-    world.npcs.animate = true;
     world.npcs.positions.insert(1, (1000, 1000));
-    world.npcs.routes.insert(1, vec![(1300, 1000)]);
 
     // Anchor blocks before the walk: the X+ probe from 102 out lands 38
     // inside the strict ±40 box (104 out reads exactly 40 = clear).
     assert!(world.field_actor_dir_blocked(1000 - 102, 1000, 3));
 
-    // Walk the NPC to its waypoint (one-shot route).
+    assert!(world.start_field_npc_motion(1, 1300, 1000));
     tick_retail_frames(&mut world, 60);
     assert_eq!(world.npcs.positions.get(&1), Some(&(1300, 1000)));
-    assert!(
-        world.npcs.motions.is_empty(),
-        "a one-waypoint route rests after arrival (no restart churn)"
-    );
+    assert!(world.npcs.motions.is_empty(), "the leg retires on arrival");
 
     // The ±40 moving-actor box follows the LIVE position: the abandoned
     // anchor no longer blocks, the new position does.
@@ -87,17 +85,13 @@ fn moving_field_npc_collision_box_follows_live_position() {
 }
 
 #[test]
-fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
+fn scripted_legs_run_through_a_dialogue() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.npcs.animate = true;
-    world.npcs.positions.insert(1, (1000, 1000));
-    world.npcs.routes.insert(1, vec![(1300, 1000)]);
     world.npcs.positions.insert(2, (2000, 2000));
 
-    // A dialogue is up: the autonomous patrol must not start (retail's
-    // interaction motion-pause), but a script-started leg (the interaction
-    // partner's own prologue walk) keeps stepping.
+    // A dialogue is up: a script-started leg (the interaction partner's own
+    // prologue walk) keeps stepping - it is the interaction's choreography.
     world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline: vec![],
@@ -108,21 +102,10 @@ fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
     assert!(world.start_field_npc_motion(2, 2080, 2000));
     tick_retail_frames(&mut world, 10);
     assert_eq!(
-        world.npcs.positions.get(&1),
-        Some(&(1000, 1000)),
-        "autonomous patrol paused while the box is up"
-    );
-    assert_eq!(
         world.npcs.positions.get(&2),
         Some(&(2080, 2000)),
         "scripted leg runs through the dialogue"
     );
-
-    // Box dismissed: the patrol resumes.
-    world.dialog.current = None;
-    tick_retail_frames(&mut world, 10);
-    let &(x, _) = world.npcs.positions.get(&1).unwrap();
-    assert!(x > 1000, "patrol resumes once the dialogue clears");
 }
 
 /// The walk kernel writes the heading **once per leg** (plus once per
@@ -303,15 +286,16 @@ fn walk_touch_player_moveto_teleports_player() {
 }
 
 #[test]
-fn interaction_prologue_npc_run_walks_the_interacted_npc() {
+fn interaction_prologue_npc_run_seats_the_interacted_npc() {
     // A synthetic interaction record: prologue = one `0x4C 0x51` NPC run to
-    // tile (12, 10), then a text segment. Driving the interact through the
-    // opt-in field-VM runner must start the NPC's walk leg (the host hook
-    // routing the op to the interacted placement slot) and the field ticks
-    // must converge the NPC on the decoded tile-centre world position.
+    // tile (12, 10), facing index 2, then a text segment. Retail's case-5
+    // sub-1 body stores the tile straight into `+0x14`/`+0x18`
+    // (`0x801E1880` / `0x801E1898`) and arms no walk kernel, so the
+    // interacted NPC is SEATED on the tile on the frame the op runs - it
+    // never glides there.
     let target_x = 12i16 * 0x80 + 0x40;
     let target_z = 10i16 * 0x80 + 0x40;
-    let mut body = vec![0x4C, 0x51, 12, 10, 0, 5];
+    let mut body = vec![0x4C, 0x51, 12, 10, 2, 5];
     let first_segment = body.len();
     body.extend_from_slice(&[0x1F, b'h', b'i', 0x00, 0x00]);
 
@@ -330,10 +314,24 @@ fn interaction_prologue_npc_run_walks_the_interacted_npc() {
     );
 
     world.trigger_field_interact(0, 3);
-    tick_retail_frames(&mut world, 15);
+    let start = (target_x - 80, target_z);
+    let mut seen = vec![start];
+    for _ in 0..15 {
+        tick_retail_frames(&mut world, 1);
+        let p = *world.npcs.positions.get(&3).unwrap();
+        if seen.last() != Some(&p) {
+            seen.push(p);
+        }
+    }
     assert_eq!(
-        world.npcs.positions.get(&3),
-        Some(&(target_x, target_z)),
-        "the prologue's 0x4C 0x51 walked the interacted NPC to its tile"
+        seen,
+        vec![start, (target_x, target_z)],
+        "the prologue's 0x4C 0x51 seats the NPC in one jump, no intermediate glide frames"
+    );
+    assert!(world.npcs.motions.is_empty(), "no walk leg is armed");
+    assert_eq!(
+        world.npcs.headings.get(&3).copied(),
+        crate::man_field_scripts::facing_index_to_engine_heading(2),
+        "operand byte +3's low nibble is the LUT facing"
     );
 }

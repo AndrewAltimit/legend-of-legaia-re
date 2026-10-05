@@ -697,7 +697,9 @@ impl SaveScreenMachine {
             SaveSubScreen::ShopModeSelect => self.tick_shop_mode_select(input),
             SaveSubScreen::QuantitySpinner => self.tick_quantity_spinner(input),
             // `FUN_801DD310` is a bare flush wrapper: no step, no transition,
-            // nothing for a host to do.
+            // nothing for a host to do. The menu image's routine at that VA
+            // (other images hold unrelated code there, hence the stem):
+            // PORT: overlay_menu_0899_801dd310
             SaveSubScreen::FrameFlushTick => Vec::new(),
             // A screen another module ports. Retail indirects into it through
             // the pointer table; the engine names the module instead, so a

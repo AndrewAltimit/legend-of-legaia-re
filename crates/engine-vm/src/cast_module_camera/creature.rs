@@ -125,7 +125,7 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
 /// `-= p / 2` a pass for as long as TR y is below `0x800` (`0x801F6CF8`),
 /// before the load. Parks at arm 2.
 ///
-/// PORT: FUN_801F6A30 (PROT 0917; camera arm 0 and the arm 1 climb)
+/// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; camera arm 0 and the arm 1 climb)
 pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -295,7 +295,7 @@ pub fn palma_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
 /// `(0, 0x1500, 0)` on `(0, 0, 0x200)` over `0x100` frames (`0x801F6D44`),
 /// then the load arms 2 and 3. Parks at arm 3.
 ///
-/// PORT: FUN_801F6A74 (PROT 0930; camera arms 0/1)
+/// PORT: FUN_801F6A74, overlay_summon_horn_0930_801f6a74 (PROT 0930; camera arms 0/1)
 pub fn horn_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     match phase {
         0 => ArmDirection::shot(ModuleShot {
@@ -324,7 +324,7 @@ pub fn horn_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
 /// Arm 0 also re-seats the monster row from the formation table at
 /// `0x80077628`; that is staging, not camera.
 ///
-/// PORT: FUN_801F6A58 (PROT 0931; camera arms 0/1)
+/// PORT: FUN_801F6A58, overlay_summon_jedo_0931_801f6a58 (PROT 0931; camera arms 0/1)
 pub fn jedo_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     match phase {
         0 => ArmDirection::shot(ModuleShot {
@@ -373,5 +373,273 @@ pub fn nova_direct(_st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         }),
         1 | 2 => ArmDirection::PASS.nudged(drift),
         _ => ArmDirection::PASS,
+    }
+}
+
+/// The cut every one of the six below opens or closes on: angles, TR and
+/// focus straight from immediates.
+fn cut(angles: [i16; 3], tr: [i16; 3], focus: [i16; 3], frames: u16) -> ArmDirection {
+    ArmDirection::shot(ModuleShot {
+        angles,
+        tr,
+        focus,
+        frames,
+    })
+}
+
+/// A delta-only countdown gate (`lbu 0x393; subu; bgtz`): drain one frame
+/// delta, hold while the word is positive, otherwise re-arm it by `rearm`
+/// (added to what is left, as the `addiu v0, v0, N` after the branch does).
+fn delta_gate(st: &mut ModuleCamState, rearm: i32) -> bool {
+    st.countdown.0 -= DELTA_PER_TICK;
+    if st.countdown.0 > 0 {
+        return true;
+    }
+    st.countdown.0 += rearm;
+    false
+}
+
+/// PROT 0916 (Aluru): with `h` the heading from the victim to the caster
+/// turned half round, a cut at arm 0 - pitch `-0x80`, yaw `0x800 - h`, TR
+/// `(0, 0x400, 0x800)`, on the point half a unit from the victim along `h`
+/// (`0x801F6C00..0x801F6CCC`). Arm 1 is the stream request; it skips arm 2
+/// when the band timer is already spent, and arm 2 otherwise waits for it -
+/// folded here into arm 2's gate, one tick later. Arm 3 (the CD poll) arms
+/// the band timer `ctx[+0x6D8] = scalar * 20`, which arm 4 drains by
+/// `scalar * delta` while it stays non-negative (`bgez`); this director keeps
+/// that word in its own countdown. Arm 4 then seats the creature half a unit
+/// from the victim along `h`, facing `h`, and frames it - pitch `0`, yaw
+/// `0x800 - h`, TR `(0, 0x500, 0x400)` over `0x80` frames
+/// (`0x801F7040..0x801F7190`). Parks at arm 5.
+///
+/// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; camera arms 0 and 4, the arm 2 wait and the arm 4 countdown)
+pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+    let v = seats.victim;
+    let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
+    let (sin, cos) = trig12(h);
+    match phase {
+        0 => cut(
+            [-0x80, yaw_from(0x800, h), 0],
+            [0, 0x400, 0x800],
+            [
+                (half(sin) - i32::from(v.x)) as i16,
+                0,
+                (half(cos) - i32::from(v.z)) as i16,
+            ],
+            1,
+        ),
+        1 => ArmDirection::PASS,
+        2 => gate(seats.band_timer != 0),
+        3 => {
+            st.countdown.0 = SPEED_SCALAR * 20;
+            ArmDirection::PASS
+        }
+        4 => {
+            if st.countdown.drain_non_negative() {
+                return ArmDirection::HOLD;
+            }
+            let creature = ModuleSeat {
+                x: (i32::from(v.x) - half(sin)) as i16,
+                y: 0,
+                z: (i32::from(v.z) - half(cos)) as i16,
+                facing: h,
+            };
+            st.creature = Some(creature);
+            cut(
+                [0, yaw_from(0x800, h), 0],
+                [0, 0x500, 0x400],
+                focus_on(creature),
+                0x80,
+            )
+        }
+        _ => ArmDirection::PARK,
+    }
+}
+
+/// PROT 0921 (Iota): a cut at arm 0 - pitch `0`, yaw `0x800`, TR
+/// `(0, 0x400, 0x800)` on the stage origin (`0x801F6C38`) - arming the
+/// countdown `0x801F8CB0 = scalar << 6`. While the word is positive arms 1..3
+/// drain it by `scalar * delta` and pull TR z in by the same amount
+/// (`0x801F6C84`); arm 1 passes on its stream request regardless, arm 2 holds
+/// until it is spent and re-arms `scalar << 6` past the CD poll, and arm 3
+/// holds the same way, then seats the creature on the origin and cuts to
+/// pitch `0`, yaw `0x800`, TR `(0, 0x400, 0x4E20)`, re-arming `scalar *
+/// 0x118` (`0x801F6FAC..0x801F7014`). Arm 4 is a `0x118`-frame push in to
+/// pitch `-0x118`, TR `(0, 0x400, 0x200)` that drains the word once
+/// (`0x801F7018..0x801F706C`). Parks at arm 5.
+///
+/// PORT: overlay_summon_iota_0921_801f6a08 (PROT 0921; camera arms 0, 3 and 4 and the arm 1..3 pull)
+pub fn iota_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
+    let pull = ModuleNudge {
+        tr_z: -MODULE_DRAIN_PER_TICK as i16,
+        ..Default::default()
+    };
+    // `if (cd > 0) { cd -= scalar * delta; TR z -= scalar * delta; }`
+    let drift = |st: &mut ModuleCamState| -> Option<ModuleNudge> {
+        (st.countdown.0 > 0).then(|| {
+            st.countdown.drain();
+            pull
+        })
+    };
+    match phase {
+        0 => {
+            st.countdown.arm(6);
+            cut([0, 0x800, 0], [0, 0x400, 0x800], [0; 3], 1)
+        }
+        1 => ArmDirection {
+            nudge: drift(st),
+            ..ArmDirection::PASS
+        },
+        2 => match drift(st) {
+            Some(n) => ArmDirection::HOLD.nudged(n),
+            None => {
+                st.countdown.arm(6);
+                ArmDirection::PASS
+            }
+        },
+        3 => match drift(st) {
+            Some(n) => ArmDirection::HOLD.nudged(n),
+            None => {
+                st.creature = Some(ModuleSeat::default());
+                st.countdown.add(0x118);
+                cut([0, 0x800, 0], [0, 0x400, 0x4E20], [0; 3], 1)
+            }
+        },
+        4 => {
+            st.countdown.drain();
+            cut([-0x118, 0x800, 0], [0, 0x400, 0x200], [0; 3], 0x118)
+        }
+        _ => ArmDirection::PARK,
+    }
+}
+
+/// PROT 0929 (Mule): a cut at arm 0 - pitch / yaw `0`, TR `(0, 0x500, 0x800)`
+/// on the stage origin (`0x801F6BB4`) - then the stream request at arm 1 and
+/// the CD poll at arm 2, which holds until the band timer `ctx[+0x6D8]` is
+/// spent. While that timer runs, arms 1 and 2 also add `(scalar * delta) / 2`
+/// a pass to `0x80089120`, a camera word outside the three globals a module
+/// nudge models, so that drift is not carried. Parks at arm 3.
+///
+/// PORT: overlay_summon_mule_0929_801f69fc (PROT 0929; camera arm 0 and the arm 2 wait)
+pub fn mule_direct(_st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+    match phase {
+        0 => cut([0; 3], [0, 0x500, 0x800], [0; 3], 1),
+        1 => ArmDirection::PASS,
+        2 => gate(seats.band_timer != 0),
+        _ => ArmDirection::PARK,
+    }
+}
+
+/// PROT 0932 (Meta): a cut at arm 0 - pitch `0`, yaw `0x800`, TR
+/// `(0, 0x400, 0x800)` on the stage origin (`0x801F6AD8`) - arming the
+/// countdown `0x801F8F18 = 0xC0`. Arm 1 drains it by the frame delta and,
+/// every pass, swings the camera straight through the globals: pitch
+/// `-4 * delta`, TR y `+12 * delta`, TR z `-12 * delta`; it passes once the
+/// word falls below `0x41` (`0x801F6CF0..0x801F6D98`). Arm 2 is the stream
+/// request and arm 3 the CD poll, which re-arms `0x60`. Arm 4 holds until
+/// that is spent, re-arms `0x2E`, seats the creature at `(-0x96, -0x1C0)`
+/// facing `0`, and cuts to pitch `-0x3C0`, yaw `0x80`, TR
+/// `(-0x5C8, 0x600, -0x1000)` (`0x801F6E8C..0x801F6F54`); arm 5 holds the
+/// same way, re-arms `8` and cuts to pitch `0xA0`, yaw `0xCD4`, TR
+/// `(-0x200, 0x800, 0x6F4)` (`0x801F6F98..0x801F7018`). Parks at arm 6.
+///
+/// Arm 4 also writes five halfwords of the battle camera block at
+/// `0x80083FF8` (`+0x14` / `+0x16` / `+0x18` / `+0x24` / `+0x26`), which no
+/// module director models.
+///
+/// PORT: overlay_summon_meta_0932_801f6a34 (PROT 0932; camera arms 0, 1, 4 and 5 and their countdown)
+pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
+    match phase {
+        0 => {
+            st.countdown.0 = 0xC0;
+            cut([0, 0x800, 0], [0, 0x400, 0x800], [0; 3], 1)
+        }
+        1 => {
+            st.countdown.0 -= DELTA_PER_TICK;
+            let swing = ModuleNudge {
+                pitch: -(4 * DELTA_PER_TICK) as i16,
+                tr_y: (12 * DELTA_PER_TICK) as i16,
+                tr_z: -(12 * DELTA_PER_TICK) as i16,
+            };
+            let base = if st.countdown.0 < 0x41 {
+                ArmDirection::PASS
+            } else {
+                ArmDirection::HOLD
+            };
+            base.nudged(swing)
+        }
+        2 => ArmDirection::PASS,
+        3 => {
+            st.countdown.0 = 0x60;
+            ArmDirection::PASS
+        }
+        4 => {
+            if delta_gate(st, 0x2E) {
+                return ArmDirection::HOLD;
+            }
+            st.creature = Some(ModuleSeat {
+                x: -0x96,
+                y: 0,
+                z: -0x1C0,
+                facing: 0,
+            });
+            cut([-0x3C0, 0x80, 0], [-0x5C8, 0x600, -0x1000], [0; 3], 1)
+        }
+        5 => {
+            if delta_gate(st, 8) {
+                return ArmDirection::HOLD;
+            }
+            cut([0xA0, 0xCD4, 0], [-0x200, 0x800, 0x6F4], [0; 3], 1)
+        }
+        _ => ArmDirection::PARK,
+    }
+}
+
+/// PROT 0933 (Terra): a cut at arm 0 - pitch `-0xA0`, yaw `0x800`, TR
+/// `(0, 0x700, 0x1800)` on the stage origin (`0x801F6ACC`) - then the stream
+/// request at arm 1. Arm 2, past the CD poll, arms the countdown
+/// `0x801F93BC = 0x100` and rises to pitch `0xA0`, TR `(0, 0x700, 0)` over
+/// `0x140` frames (`0x801F6D50..0x801F6DEC`). Arm 3 holds on the countdown
+/// (drained by the frame delta) and re-arms `0x20`; arm 4 holds the same way,
+/// re-arms `0x60` and cuts to pitch `0`, yaw `0x800`, TR `(0, 0x700, 0)`
+/// (`0x801F6ED4..0x801F6FD0`). Parks at arm 5.
+///
+/// PORT: overlay_summon_terra_0933_801f6a30 (PROT 0933; camera arms 0, 2 and 4 and the arm 3/4 countdown)
+pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
+    match phase {
+        0 => cut([-0xA0, 0x800, 0], [0, 0x700, 0x1800], [0; 3], 1),
+        1 => ArmDirection::PASS,
+        2 => {
+            st.countdown.0 = 0x100;
+            cut([0xA0, 0x800, 0], [0, 0x700, 0], [0; 3], 0x140)
+        }
+        3 => gate(delta_gate(st, 0x20)),
+        4 => {
+            if delta_gate(st, 0x60) {
+                return ArmDirection::HOLD;
+            }
+            cut([0, 0x800, 0], [0, 0x700, 0], [0; 3], 1)
+        }
+        _ => ArmDirection::PARK,
+    }
+}
+
+/// PROT 0934 (Ozma): a cut at arm 0 - pitch `0x180`, yaw `0x700`, TR
+/// `(0, 0, 0x1000)`, focus `(0, 0, -0x400)` (`0x801F6AD8`) - and at arm 1 a
+/// `0x80`-frame swing to yaw `0x6E8`, TR `(0, 0, 0x1800)` on the same point
+/// (`0x801F6C94..0x801F6CC0`). Arm 2 is the stream request; it skips arm 3
+/// when the band timer is already spent, and arm 3 otherwise waits for it -
+/// folded here into arm 3's gate, one tick later. Arm 4 is the CD poll and
+/// the creature's part spawns. Parks at arm 5.
+///
+/// PORT: overlay_summon_ozma_0934_801f6a40 (PROT 0934; camera arms 0 and 1 and the arm 3 wait)
+pub fn ozma_direct(_st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+    match phase {
+        0 => cut([0x180, 0x700, 0], [0, 0, 0x1000], [0, 0, 0x400], 1),
+        1 => cut([0x180, 0x6E8, 0], [0, 0, 0x1800], [0, 0, 0x400], 0x80),
+        2 => ArmDirection::PASS,
+        3 => gate(seats.band_timer != 0),
+        4 => ArmDirection::PASS,
+        _ => ArmDirection::PARK,
     }
 }

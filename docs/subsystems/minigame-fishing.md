@@ -976,7 +976,29 @@ The bar and digit primitives are ported as layout builders over that same draw l
 
 `fishing_hud_draws_for` is the consumer for that draw list - the fishing sibling of `battle_hud_draws_for`. It renders `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (the retail captions are overlay rodata), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame` into cap/body/cap quads plus a fill quad on the frame's own axis. An id the host cannot place is dropped rather than guessed at.
 
-What the consumer does **not** supply is the fishing sprite page itself. `FUN_801d63b0` is a bare VRAM quad emitter whose glyph ids index a page no host uploads yet, so a host that passes no atlas gets the number / caption rows and none of the icon or gauge geometry. Both play hosts render the persistent HUD's rows at their traced stage pens with no icons, and both fill the gauges from the same resolved frames: the native window hands the consumer its font's solid texel as the fill source, and the browser play page, whose atlas stays blind, fills the frames from the `bars` payload it emits beside the text. Each also keeps a status line for the live tension / cast readouts.
+The sprite half of that list - the HI SCORE / POINT plates, the gauge labels
+and caps, the banners, the score digits - is the overlay's own quad emitter
+`FUN_801D63B0`, ported as `legaia_engine_ui::ui_fishing_sprite`. It draws one
+record of the 29-entry, 20-byte sprite table at `0x801D8590`
+(`legaia_asset::fishing_sprites`: a 20.12 cell scale, texpage, CLUT, the `u v
+w h` cell, top and bottom RGB, a semi-transparency bit and an ABR rate) as a
+`POLY_GT4`: an id's upper bits (`id >> 10`) override the record's blend with
+that rate and, at `2`, swap in the white palette `0x7DCF`; a non-zero first
+argument anchors the quad's top-left corner on `(x, y)`, zero centres it; each
+channel is `colour * brightness >> 8`; every quad links at ordering-table
+bucket `3` (`_DAT_801D9158`). The digit wrappers patch a record's `u` before
+the call - `FUN_801D7DD8` record `6` at `digit * 8 + 0x28`, `FUN_801D7D44`
+record `0x18` at `digit << 4`, drawn twice as ids `0x418` / `0x818`. Every
+record cuts the 4bpp page at `(832, 0)` with a palette of the `(0, 503)`
+strip, which is the first TIM of the `other1` bundle's texture list -
+byte-identical to a retail fishing state's VRAM - so the pond VRAM each host
+already uploads holds the art. The native window and the browser play page
+draw the quads in their screen-primitive pass; the minigames page rasterises
+them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto
+its HUD canvas. With the table decoded, `FishingHudAtlas::sprites_drawn`
+leaves the text consumer the captions, the lure count and the gauge fills; the
+native window fills the gauges from its font's solid texel and the play page
+from the `bars` payload.
 
 `PondSession` composes those kernels into the cast → wait → strike → fight → score loop. Its glue (flight timing, the line-record reel-down rates, the snap-at-max-tension loss) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in. An earlier second session type, `FishingSession`, ran the two play hosts on a deterministic cast → fight loop in which the locked cast power picked the species and the fish pulled at a steady rate; it had no shore idle, no band roll, no spawn table and no RNG, so the play hosts and the minigames page played two different games. It is gone; the play hosts' debug launchers and the door warp open a `PondSession` from the same tables.
 

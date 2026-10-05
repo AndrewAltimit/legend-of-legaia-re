@@ -356,6 +356,14 @@ impl VabBank {
             v.vol_left = vol_l;
             v.vol_right = vol_r;
             v.adsr_cfg = AdsrConfig::from_words(tone.adsr1, tone.adsr2);
+            // PORT: FUN_80067550 (tail, 0x80067940..0x800679B4) - every
+            // key-on, sequencer note and cue alike, sets or clears this
+            // voice's bit in the staged reverb-enable mask (`EON`,
+            // `0x801CDB4C/4E`) from the tone's `mode` byte: bit 2 routes the
+            // voice into the reverb, a clear bit plays it dry. Reverb is per
+            // tone, not a global all-voices routing - most battle hit tones
+            // are authored dry.
+            v.reverb_send = tone_reverb(tone);
         }
         {
             let crate::spu::Spu {
@@ -422,6 +430,16 @@ impl VabBank {
         }
         matches!(self.samples.get((tone.vag - 1) as usize), Some(Some(_)))
     }
+}
+
+/// The VAB tone `mode` bit that routes a keyed voice into the reverb.
+pub const TONE_MODE_REVERB: u8 = 0x04;
+
+/// Whether a voice keyed from `tone` is sent to the reverb: `mode & 4`, the
+/// test `FUN_80067550` applies at `0x80067944..0x8006794C` before setting or
+/// clearing the voice's `EON` bit.
+pub fn tone_reverb(tone: &VagAtr) -> bool {
+    tone.mode & TONE_MODE_REVERB != 0
 }
 
 /// Entries in retail's note-to-pitch table: 12 semitones x 16 sixteenth-of-a
@@ -771,6 +789,36 @@ mod tests {
         assert!(!bank.play_note(&mut spu, 0, 1, 60, 100));
         // Program out of range -> not playable.
         assert!(!bank.can_play(9, 60));
+    }
+
+    /// A key-on routes the voice into the reverb exactly when the tone's
+    /// `mode & 4` is set, and clears the send otherwise - so a dry tone keyed
+    /// on a voice a wet one used last plays dry. Both key-on arms share it.
+    #[test]
+    fn key_on_reverb_send_follows_tone_mode_bit_2() {
+        let uploaded = UploadedVag { addr: 0, size: 16 };
+        let wet = VagAtr {
+            mode: TONE_MODE_REVERB,
+            ..dummy_tone(60, 1, 100, 0x40)
+        };
+        let dry = dummy_tone(60, 1, 100, 0x40);
+        let bank = VabBank {
+            master_vol: 127,
+            samples: vec![Some(uploaded)],
+            programs: vec![VabProgram {
+                mvol: 127,
+                mpan: 0x40,
+                tones: vec![wet, dry],
+            }],
+        };
+        let mut spu = Spu::new();
+        assert!(bank.play_tone(&mut spu, 5, 0, 0, 60, 100));
+        assert!(spu.voices[5].reverb_send);
+        assert!(bank.play_tone(&mut spu, 5, 0, 1, 60, 100));
+        assert!(!spu.voices[5].reverb_send);
+        // Sequencer arm: key range resolves the first (wet) tone.
+        assert!(bank.play_note(&mut spu, 5, 0, 60, 100));
+        assert!(spu.voices[5].reverb_send);
     }
 
     fn prog(tones: u8, mvol: u8) -> legaia_vab::ProgAtr {

@@ -46,21 +46,19 @@ fn placement_pretext_region<'a>(
     Some((&body[..walk_end], p.script_pc0))
 }
 
-/// Recover placement `p`'s **autonomous walk route**: the ordered list of
-/// `(world_x, world_z)` waypoints its own pre-text script bytecode walks the
-/// actor through. The carrier ops are the `0x4C 0x51` NPC move-to-tile
-/// instructions ([`MenuCtrlKind::Nibble5NpcRun`]) in the actor's own context
-/// (no `0x80` cross-context prefix) - the same ops retail's per-actor script
-/// channel feeds into the NPC run/glide path. Dropped: cross-context targets
+/// Recover placement `p`'s local **seat list**: the ordered
+/// `(world_x, world_z)` targets of the `0x4C 0x51` NPC move-to-tile
+/// instructions ([`MenuCtrlKind::Nibble5NpcRun`]) in its own pre-text
+/// script, own context only (no `0x80` cross-context prefix). Retail's
+/// `4C 51` is an instant seat, one per story-flag branch, so this is a set
+/// of alternative stations, never a route to walk: the engine reads it only
+/// as the fallback glide-pace source and as an oracle input. Dropped: cross-context targets
 /// (another actor's walk), the [`PARKED_SENTINEL_TILE`] despawn, waypoints
 /// beyond [`NPC_ROUTE_LOCALITY`] of the spawn anchor (story-flag-gated
 /// relocations the linear walk can't condition), and consecutive duplicates
 /// (facing/wait re-issues of the same tile).
 ///
-/// What this does NOT model: the per-actor field-VM channel that paces these
-/// ops with yields and story-flag branches - the engine consumer drives the
-/// kept waypoints as a loop through the motion VM instead. See
-/// `docs/subsystems/motion-vm.md`.
+/// See `docs/subsystems/motion-vm.md` (field-NPC walking).
 pub fn placement_motion_route(
     man_file: &ManFile,
     man: &[u8],

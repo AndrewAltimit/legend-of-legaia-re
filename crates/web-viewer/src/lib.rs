@@ -228,6 +228,14 @@ struct KingdomPack {
     /// slot 0's TIM_LIST. `None` when the kingdom is not a world-map
     /// kingdom (the assets are only present in PROT 0085 / 0244 / 0391).
     ocean: Option<OceanAssets>,
+    /// The kingdom's slot-5 **CLUT-walk** shimmer (ocean head + the seven
+    /// shoreline / river cells), installed into [`Self::vram`] by the engine
+    /// kernel every play host runs
+    /// (`legaia_engine_core::clut_walk_anim::ClutWalkAnim::install`) and
+    /// stepped by [`LegaiaViewer::kingdom_clut_tick`]. `None` until
+    /// `set_scene_kingdom` resolves it (raw PROT.DAT loads have no CDNAME
+    /// block to resolve against).
+    clut_anim: Option<crate::field_scene::FieldSceneAnim>,
 }
 
 #[wasm_bindgen]

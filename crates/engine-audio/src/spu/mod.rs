@@ -156,25 +156,20 @@ impl Spu {
     }
 
     /// Install the global reverb configuration retail actually runs: the
-    /// `Studio C` preset, every voice routed into the reverb send, at the
-    /// measured output depth.
+    /// `Studio C` preset at the measured output depth.
     ///
-    /// Pinned from two independent captures. The mednafen save-state corpus
-    /// gives reverb master-on in every state and a byte-identical Studio C
-    /// coefficient block; a per-vsync PCSX-Redux capture of a town scene adds
-    /// the two registers the coefficient block does not contain - `EON` reads
-    /// `0x00FFFFFF` (**all 24 voices**, every frame) and `vLOUT`/`vROUT` read
-    /// [`reverb::RETAIL_OUTPUT_VOL`]. Reverb is a fixed global in this game,
-    /// not a per-cue effect, so the engine selects it once.
+    /// The mednafen save-state corpus gives reverb master-on in every state
+    /// and a byte-identical Studio C coefficient block, and `vLOUT`/`vROUT`
+    /// read [`reverb::RETAIL_OUTPUT_VOL`]. The network is a fixed global; the
+    /// per-voice **send** is not. Retail sets or clears a voice's `EON` bit
+    /// at every key-on from the keyed tone's `mode & 4` (`FUN_80067550`), so
+    /// this installs no routing: [`crate::VabBank`]'s key-on does, per tone.
     /// See `docs/subsystems/audio.md`.
     pub fn set_retail_reverb(&mut self) {
         self.reverb_mode_raw = 4; // libspu SPU_REV_MODE_STUDIO_C
         self.set_reverb_mode(ReverbMode::StudioC);
         self.reverb
             .set_output_volume(reverb::RETAIL_OUTPUT_VOL, reverb::RETAIL_OUTPUT_VOL);
-        for v in &mut self.voices {
-            v.set_reverb_send(true);
-        }
     }
 
     /// Advance every voice by one sample tick at the SPU internal rate
@@ -310,15 +305,15 @@ mod tests {
         assert_eq!(spu.reverb.mode, ReverbMode::Off);
     }
 
-    /// `set_retail_reverb` selects Studio C and routes every voice.
+    /// `set_retail_reverb` selects Studio C at the retail depth and leaves
+    /// the per-voice sends to the key-on, which sets them per tone.
     #[test]
-    fn set_retail_reverb_routes_all_voices_studio_c() {
+    fn set_retail_reverb_selects_studio_c_without_routing() {
         let mut spu = Spu::new();
         assert_eq!(spu.reverb.mode, ReverbMode::Off);
-        assert!(spu.voices.iter().all(|v| !v.reverb_send));
         spu.set_retail_reverb();
         assert_eq!(spu.reverb.mode, ReverbMode::StudioC);
-        assert!(spu.voices.iter().all(|v| v.reverb_send));
+        assert!(spu.voices.iter().all(|v| !v.reverb_send));
     }
 
     /// A voice with `reverb_send` set produces an echo tail past the

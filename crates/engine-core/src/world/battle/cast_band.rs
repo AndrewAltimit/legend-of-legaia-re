@@ -144,6 +144,90 @@ pub enum SummonPhase {
     Done,
 }
 
+/// The walk entry a melee body stages while its caster closes in (the
+/// literal `1` of every `li v1,0x1; sb v1,0x1da(<caster>)` walk site).
+pub const CAPTURE_WALK_ENTRY: u8 = 1;
+
+/// Longest the band waits on the caster's stages before it gives up and lets
+/// the module run - a guard against a clip that never commits, not a timing.
+pub const CASTER_STAGE_TICK_LIMIT: u16 = 900;
+
+/// The caster's clip stages a capture-class body owes and its port does not
+/// write ([`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+/// in flight at the head of battle phase `0x70`.
+///
+/// Each stage is written into the caster's `+0x1DA` and the next one is
+/// written behind it as soon as it commits, so the commit's boundary rule
+/// plays every clip to its natural end; the last is followed by `0`, retail's
+/// closing `sb zero,0x1DA(<caster>)`, and the run ends when the caster is
+/// back on its idle entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CasterStageRun {
+    /// The casting seat.
+    pub slot: u8,
+    /// The clips to stage, in order.
+    pub clips: Vec<u8>,
+    /// Index of the clip being staged / waited on.
+    pub cursor: usize,
+    /// The seat the caster walks into reach of before the first stage
+    /// ([`vm::cast_module_ticks::capture_body_approaches`]); `None` for a
+    /// body that strikes from where it stands, or a group target.
+    pub approach: Option<u8>,
+    /// Where the run is.
+    pub phase: CasterStagePhase,
+    /// Ticks spent holding the band so far ([`CASTER_STAGE_TICK_LIMIT`]).
+    pub ticks: u16,
+}
+
+/// Whether the clip actor `a` has committed has run as far as it will on its
+/// own: played out, or reached its authored loop window (a park, or the start
+/// of a looping tail) with cycles still owed.
+fn caster_clip_settled(a: &crate::world::Actor) -> bool {
+    let Some(p) = a.battle_animation.as_ref() else {
+        return true;
+    };
+    if p.finished() {
+        return true;
+    }
+    let window_start = a
+        .battle_action_clips
+        .as_ref()
+        .and_then(|c| c.get(usize::from(a.battle.current_anim)))
+        .and_then(|c| c.as_ref())
+        .and_then(|c| c.entry_loop_window())
+        .map(|(_, start, _)| i16::from(start));
+    matches!(window_start, Some(w) if p.loop_cycles_remaining() > 0 && p.current_frame() >= w)
+}
+
+/// The three stretches of a [`CasterStageRun`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CasterStagePhase {
+    /// Walking into reach: the walk entry `1` staged and the caster turned
+    /// onto its victim every tick (its root motion carries it), until the
+    /// range poll `FUN_8004E2F0` reads zero.
+    Approach,
+    /// Staging the clips: each is held until it has committed and either
+    /// played out or reached its authored loop-window park.
+    Staging,
+    /// The caster sits on the last clip (parked, when it has a window) while
+    /// the module's own arms run.
+    Module,
+    /// The module is done: the park is released (`sh zero,0x176(<caster>)`)
+    /// and idle staged behind it (`sb zero,0x1DA(<caster>)`); the band holds
+    /// until the caster is back on its idle entry.
+    Closing,
+}
+
+/// What [`World::capture_stager_tick`] does with the module this tick.
+enum CasterStageGate {
+    /// The caster's stages hold the band; the module does not run.
+    Hold,
+    /// Run the module.
+    RunModule,
+    /// The run closed out: leave `0x70`.
+    Done,
+}
+
 /// One player summon in flight (see the module docs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SummonStager {
@@ -284,6 +368,17 @@ impl World {
             a.battle.params[2] = shot;
             a.battle.params[3] = 0xFF;
             a.battle.sub_route = 0;
+            // The picker stores the same entry into `+0x1E7` one instruction
+            // ahead of `+0x1E0` (`sb s2,0x1e7(s4)` at `0x801EA53C`, and the
+            // `OneAlly` re-pick's `sb s5,0x1e7(s4)` at `0x801EA6C4`). That is
+            // the byte the action seed's **Spirit band** stages instead of
+            // `+0x1E0` (`lbu v0,0x1e7(s3); sb v0,0x1da(s3)` at
+            // `0x801E3B4C..0x801E3B54`), which every monster cast of a
+            // class-`< 0x14` record below id `0x65` - the heals and buffs -
+            // runs through. A walk that found no entry writes neither byte.
+            if clip != 0xFF {
+                a.battle.queued_anim_b = clip;
+            }
         }
         self.casting.pending_cast = Some(PendingCast {
             caster: slot,
@@ -348,6 +443,12 @@ impl World {
         let Some(pc) = self.casting.pending_cast.take() else {
             return;
         };
+        // A capture body that took a branch with no damage site (PROT 0953's
+        // charge, `0x801F6CEC`) owes nothing: retail never reaches its
+        // `FUN_801DD6B4` on that path.
+        if std::mem::take(&mut self.casting.module_skips_fold) {
+            return;
+        }
         // Two casts in the band do not fold through the catalog at all:
         // PROT 0927 and PROT 0966 apply their damage inside the module's own
         // `0x801F6734` stager, over a seat range the spell record cannot
@@ -395,7 +496,20 @@ impl World {
             return;
         }
         // --- end W1-D ---
-        let Some(def) = self.tables.spell_catalog.get(pc.spell_id).cloned() else {
+        // A monster's capture-class special is not in the catalog (its record
+        // is the module's), so the fold resolves it the way the arm did -
+        // and only when the module has a damage site to seed it with; a
+        // status-only body (Glare) folds nothing here.
+        let def = self
+            .tables
+            .spell_catalog
+            .get(pc.spell_id)
+            .cloned()
+            .or_else(|| {
+                self.monster_capture_power(pc.caster, pc.spell_id)
+                    .and_then(|_| self.monster_cast_def(pc.spell_id))
+            });
+        let Some(def) = def else {
             return;
         };
         let hit_fx_start = self.battle.hit_fx.len();
@@ -431,7 +545,14 @@ impl World {
         let left_precast = from == ActionState::MagicPreCastWait.as_byte()
             && to != ActionState::MagicPreCastWait.as_byte()
             && to != ActionState::SummonInvoke.as_byte();
-        let band_over = to >= ActionState::DoneCleanup.as_byte();
+        // The capture band (`0x6E..=0x71`) sits above `0x50` in the state
+        // space but is not a door out: its module has not run yet, so its
+        // fold waits for the band's own exit into `0x50`, after the caster's
+        // stages and the module's arms - where retail's module lands its hit.
+        let capture_band = (ActionState::MagicCaptureBranch.as_byte()
+            ..=ActionState::MagicCaptureFinalize.as_byte())
+            .contains(&to);
+        let band_over = to >= ActionState::DoneCleanup.as_byte() && !capture_band;
         if left_precast || band_over {
             self.fold_pending_cast();
         }
@@ -519,6 +640,18 @@ impl World {
             return;
         };
         let id = head.resolve(|| self.next_rand());
+        self.emit_battle_xa_cue(id);
+    }
+
+    /// Run one CD-XA cue id through the dispatcher's CD-XA arm
+    /// ([`legaia_engine_vm::battle_cast_cue::admit_voice_cue`]) onto
+    /// [`crate::world::AudioState::battle_xa_cues`] - the half of
+    /// [`Self::emit_cast_module_voice`] after the module's head cue is
+    /// resolved, and what a module arm's own `FUN_8004FCC8(id >= 0x100)` call
+    /// raises.
+    ///
+    /// REF: FUN_8004FCC8 (the CD-XA arm)
+    pub(in crate::world) fn emit_battle_xa_cue(&mut self, id: u16) {
         let raw = self
             .audio
             .xa_cue_durations
@@ -774,6 +907,11 @@ impl World {
             return false;
         };
         if module.parts.is_empty() {
+            return false;
+        }
+        // A module whose body is ported whole seats its own records, each on
+        // the pass its arm spawns it.
+        if entry == vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return false;
         }
         self.casting.active_summon = Some(crate::summon::SummonScene::spawn_parts(
@@ -1091,8 +1229,22 @@ impl World {
         let Some(spell_id) = self.casting.capture_spell else {
             return false;
         };
+        // The caster's own stages the body's port does not write: the
+        // wind-up plays first, the module's arms run with the caster on its
+        // park, and the close releases the park once they are done.
+        match self.step_caster_stages() {
+            CasterStageGate::Hold => return true,
+            CasterStageGate::Done => {
+                self.casting.capture_spell = None;
+                return false;
+            }
+            CasterStageGate::RunModule => {}
+        }
         let arm = self.casting.module_phase;
         let Some(run) = self.run_cast_module_code(spell_id, arm) else {
+            if self.close_caster_stages() {
+                return true;
+            }
             self.casting.capture_spell = None;
             return false;
         };
@@ -1109,8 +1261,12 @@ impl World {
         if run.tick_ported && run.busy {
             return true;
         }
+        if self.close_caster_stages() {
+            return true;
+        }
         // The band is leaving `0x70`; the module stops being re-entered.
         self.casting.capture_spell = None;
+        self.casting.fatal_banner = None;
         false
     }
 
@@ -1124,10 +1280,177 @@ impl World {
         }
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        self.casting.module_skips_fold = false;
+        self.casting.fatal_decision = None;
+        self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
         self.casting.capture_spell = Some(spell_id);
+        self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);
+    }
+
+    /// The [`CasterStageRun`] a capture-class cast of `spell_id` by the
+    /// acting seat owes, when its body's port stages nothing on the caster
+    /// ([`vm::cast_module_ticks::capture_caster_stages`]). Only a monster seat
+    /// with installed clips plays one, and a stage naming an entry the
+    /// caster's record does not carry is dropped - retail would index past
+    /// the record's offset array there (the Gobu Gobu Curse fault on
+    /// `docs/subsystems/cast-module.md`).
+    fn caster_stage_run_for(&self, spell_id: u8) -> Option<CasterStageRun> {
+        let entry = self.cast_module_for(spell_id)?;
+        let slot = self.battle_ctx.active_actor;
+        let actor = self.actors.get(usize::from(slot))?;
+        let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
+        let installed = actor.battle_action_clips.as_ref()?;
+        let approach = vm::cast_module_ticks::capture_body_approaches(entry, spell_id)
+            .then_some(actor.battle.active_target)
+            .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
+        let clips: Vec<u8> = vm::cast_module_ticks::capture_caster_stages(
+            entry,
+            spell_id,
+            seat_monster,
+            self.battle_first_monster_byte(),
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|&c| {
+            installed
+                .get(usize::from(c))
+                .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
+        })
+        .collect();
+        (!clips.is_empty() || approach.is_some()).then_some(CasterStageRun {
+            slot,
+            clips,
+            cursor: 0,
+            approach,
+            phase: if approach.is_some() {
+                CasterStagePhase::Approach
+            } else {
+                CasterStagePhase::Staging
+            },
+            ticks: 0,
+        })
+    }
+
+    /// Advance the [`CasterStageRun`] by one band tick.
+    fn step_caster_stages(&mut self) -> CasterStageGate {
+        let Some(mut run) = self.casting.caster_stages.take() else {
+            return CasterStageGate::RunModule;
+        };
+        let Some(a) = self.actors.get_mut(usize::from(run.slot)) else {
+            return CasterStageGate::RunModule;
+        };
+        if run.phase != CasterStagePhase::Module {
+            run.ticks = run.ticks.saturating_add(1);
+            if run.ticks > CASTER_STAGE_TICK_LIMIT {
+                // A clip that never committed: hand the band back rather
+                // than hold it.
+                if let Some(p) = a.battle_animation.as_mut() {
+                    p.release_loop_window();
+                }
+                a.battle.queued_anim = 0;
+                return if run.phase == CasterStagePhase::Closing {
+                    CasterStageGate::Done
+                } else {
+                    CasterStageGate::RunModule
+                };
+            }
+        }
+        let gate = match run.phase {
+            CasterStagePhase::Approach => {
+                let victim = run.approach.unwrap_or(run.slot);
+                if self.battle_range_metric(run.slot, victim) == 0 {
+                    // Arrived. A body whose port stages its own strike takes
+                    // the band from here; the rest go on to their stages.
+                    run.ticks = 0;
+                    let a = &mut self.actors[usize::from(run.slot)];
+                    if a.battle.queued_anim == CAPTURE_WALK_ENTRY {
+                        a.battle.queued_anim = 0;
+                    }
+                    if run.clips.is_empty() {
+                        run.phase = CasterStagePhase::Module;
+                        self.casting.caster_stages = Some(run);
+                        return CasterStageGate::RunModule;
+                    }
+                    run.phase = CasterStagePhase::Staging;
+                    self.casting.caster_stages = Some(run);
+                    return CasterStageGate::Hold;
+                }
+                // `FUN_80019B28(victim, caster) + 0x800` onto the caster's
+                // facing each tick, then the walk stage (`li v1,0x1;
+                // sb v1,0x1da(<caster>)`, e.g. `0x801F72C8` in PROT 0952).
+                let (vx, vz) = self.battle_seat_of(usize::from(victim));
+                let a = &mut self.actors[usize::from(run.slot)];
+                let bearing = vm::battle_action::bearing_12bit_approx(
+                    vz,
+                    vx,
+                    a.move_state.world_z,
+                    a.move_state.world_x,
+                );
+                a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
+                a.battle.queued_anim = CAPTURE_WALK_ENTRY;
+                CasterStageGate::Hold
+            }
+            CasterStagePhase::Staging => {
+                let want = run.clips[run.cursor];
+                if run.ticks == 1 {
+                    a.battle.queued_anim = want;
+                    CasterStageGate::Hold
+                } else if a.battle.current_anim == want && caster_clip_settled(a) {
+                    if run.cursor + 1 < run.clips.len() {
+                        // A wind-up's park is released for the stage that
+                        // follows it.
+                        if let Some(p) = a.battle_animation.as_mut() {
+                            p.release_loop_window();
+                        }
+                        run.cursor += 1;
+                        a.battle.queued_anim = run.clips[run.cursor];
+                        CasterStageGate::Hold
+                    } else {
+                        run.phase = CasterStagePhase::Module;
+                        CasterStageGate::RunModule
+                    }
+                } else {
+                    CasterStageGate::Hold
+                }
+            }
+            CasterStagePhase::Module => CasterStageGate::RunModule,
+            CasterStagePhase::Closing if run.clips.is_empty() => CasterStageGate::Done,
+            CasterStagePhase::Closing => {
+                if a.battle.current_anim == 0 {
+                    return CasterStageGate::Done;
+                }
+                CasterStageGate::Hold
+            }
+        };
+        self.casting.caster_stages = Some(run);
+        gate
+    }
+
+    /// The module reported done: release the caster's park and stage idle
+    /// behind it. `true` when a [`CasterStageRun`] is now closing (the band
+    /// holds until the caster is back on idle).
+    fn close_caster_stages(&mut self) -> bool {
+        let Some(run) = self.casting.caster_stages.as_mut() else {
+            return false;
+        };
+        if run.phase != CasterStagePhase::Module || run.clips.is_empty() {
+            return false;
+        }
+        run.phase = CasterStagePhase::Closing;
+        if let Some(a) = self.actors.get_mut(usize::from(run.slot)) {
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
+            a.battle.queued_anim = 0;
+            if a.battle.current_anim == 0 {
+                self.casting.caster_stages = None;
+                return false;
+            }
+        }
+        true
     }
 
     /// Stage the walk clip (id `1`, the looping approach - the capture's
@@ -1438,48 +1761,35 @@ impl World {
             })
     }
 
-    /// The stand-in for retail's `0x801C8FE4`: which of PROT 0964's three
-    /// elements the record currently carries, so the re-roll cannot land on
-    /// it again. `0xFF` when the record's element is none of the three, which
-    /// makes the first draw acceptable - the same thing a never-written
-    /// `0x801C8FE4` does.
+    /// Retail's `0x801C8FE4`, the word PROT 0964's re-roll compares its draw
+    /// against (`lw v1,4(a1)` with `a1 = 0x801C8FE0` at `0x801F8A20`, again
+    /// at `0x801F8A4C`) and then overwrites with the accepted one (`sw a3,
+    /// 4(v1)` at `0x801F8A90`). It is the AI's phase counter
+    /// ([`crate::monster_ai::MonsterAiState::counter`]): Rogue's picker reads
+    /// the same byte back as its next attack, `counter - 0x50` (`0xB0` Wind /
+    /// `0xB1` Thunder / `0xB2` Flame), so the roll that recolours the record
+    /// is also what makes the attacks cycle. Battle init zeroes it, so the
+    /// first Element Change cannot roll `0`.
     fn cast_element_change_last_roll(&self) -> u8 {
-        use vm::cast_module_ticks::{ELEMENT_CHANGE_ELEMENTS, FIRST_MONSTER_SEAT};
-        let Some(elem) = self
-            .actors
-            .get(FIRST_MONSTER_SEAT as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-        else {
-            return 0xFF;
-        };
-        ELEMENT_CHANGE_ELEMENTS
-            .iter()
-            .position(|e| *e == elem)
-            .map(|i| i as u8)
-            .unwrap_or(0xFF)
+        self.battle.monster_ai_state.counter() as u8
     }
 
     /// Commit PROT 0964's new element onto the first monster seat.
     ///
-    /// Retail writes the loaded record at `0x801C9348[0]`; the engine's
-    /// equivalent store is the catalog entry that seat's `battle_monster_id`
-    /// names, which is what `World::battle_slot_element` reads back. The
-    /// difference from retail is scope: retail's write is per **seat**, so a
-    /// battle fielding two copies of the same monster id would see only one
-    /// of them change; here both do.
-    fn apply_cast_element_change(&mut self, element: u8) {
+    /// Retail writes the record copy the battle loader made for that seat
+    /// (`0x801C9348[0]`, record `+0x1D`) - per seat and per fight. The engine
+    /// keeps that copy as the seat's [`crate::world::Actor::battle_element`],
+    /// which `World::battle_slot_element` and the plaque badge read ahead of
+    /// the catalog; the shared catalog entry is never touched, so the next
+    /// battle with the same monster starts on its disc element.
+    pub(in crate::world) fn apply_cast_element_change(&mut self, element: u8) {
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
-        let Some(id) = self
+        if let Some(a) = self
             .actors
-            .get(FIRST_MONSTER_SEAT as usize)
-            .and_then(|a| a.battle_monster_id)
-        else {
-            return;
-        };
-        if let Some(def) = self.tables.monster_catalog.by_id.get_mut(&id) {
-            def.element = element;
+            .get_mut(FIRST_MONSTER_SEAT as usize)
+            .filter(|a| a.battle_monster_id.is_some())
+        {
+            a.battle_element = Some(element);
         }
     }
 
@@ -1706,7 +2016,7 @@ impl World {
 
     /// The caster and victim as the module camera arms read them: world
     /// position (`+0x34..+0x38`) and battle heading (`+0x46`).
-    fn module_cam_seats(
+    pub(in crate::world) fn module_cam_seats(
         &self,
         caster_slot: u8,
         victim_slot: u8,
@@ -1727,12 +2037,32 @@ impl World {
             victim: seat(victim_slot),
             band_timer: i32::from(self.battle_ctx.frame_timer),
             first_monster: self.battle_first_monster_byte(),
+            caster_monster: self
+                .actors
+                .get(caster_slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .map_or(0, |id| id as u8),
             action: self
                 .actors
                 .get(caster_slot as usize)
                 .map_or(0, |a| a.battle.params[0]),
             depth_raw: self.battle.camera_frame_height as i32,
+            caster_latch: self.caster_latch(caster_slot).unwrap_or(0),
         }
+    }
+
+    /// The monster caster's battle-scoped latch word `0x801C8FE0 +
+    /// (ctx[+0x13] + 1) * 4` - the monster AI's ability cooldown
+    /// `dat[m + 4]`. `None` for a party caster.
+    fn caster_latch_index(&self, caster_slot: u8) -> Option<usize> {
+        let m = usize::from(caster_slot).checked_sub(self.party.party_count as usize)?;
+        let i = m + 4;
+        (i < self.battle.monster_ai_state.dat.len()).then_some(i)
+    }
+
+    fn caster_latch(&self, caster_slot: u8) -> Option<i32> {
+        self.caster_latch_index(caster_slot)
+            .map(|i| self.battle.monster_ai_state.dat[i])
     }
 
     /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
@@ -1813,6 +2143,12 @@ impl World {
         // --- end W1-B ---
 
         let entry = self.cast_module_for(spell_id)?;
+        // PROT 0954's body is ported whole - camera, records, wheel and
+        // outcomes - and drives the band on its own
+        // (`world::battle::fatal_decision`).
+        if entry == vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
+            return Some(self.run_fatal_decision(entry));
+        }
         let mut ctx = self.cast_module_ctx();
         let caster_slot = self.battle_ctx.active_actor;
         let victim_slot = self
@@ -1899,6 +2235,14 @@ impl World {
             let mut st = self.casting.module_cam;
             let arm = direct(&mut st, ctx.phase, seats);
             self.casting.module_cam = st;
+            if let Some(v) = arm.latch
+                && let Some(i) = self.caster_latch_index(caster_slot)
+            {
+                self.battle.monster_ai_state.dat[i] = v;
+            }
+            if arm.skips_fold {
+                self.casting.module_skips_fold = true;
+            }
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
             capture_held = arm.hold;
@@ -2110,6 +2454,9 @@ impl World {
                         self.write_cast_actor_state(slot as u8, st);
                     }
                     if let Some(out) = outcome {
+                        self.battle
+                            .monster_ai_state
+                            .set_counter(i32::from(out.roll));
                         self.apply_cast_element_change(out.element);
                         run.element_change = Some((out.element, out.group));
                     }
@@ -2307,8 +2654,11 @@ impl World {
                         .collect();
                     Some(step)
                 }
-                // `arrived = true` on all three, and this is a disclosed
-                // divergence rather than a shortcut.
+                // `arrived = true` on all three: the band's approach leg
+                // (`CasterStagePhase::Approach`, gated on
+                // `capture_body_approaches`) walks the caster in and holds
+                // the module until the metric reads zero, so by the time
+                // this body runs its poll would read arrival.
                 //
                 // Retail's predicate is `FUN_8004E2F0(ctx[+0x13],
                 // caster[+0x1DD]) == 0` - the **zero** side, not the non-zero
@@ -2322,14 +2672,9 @@ impl World {
                 // (`legaia_engine_vm::battle_separation`, a pairwise
                 // separation nudge - NOT the approach itself).
                 //
-                // What is missing is the approach: retail's caster is walked
-                // toward its target by the action SM before this body ever
-                // reads the metric, and the engine's cast band drives no such
-                // walk for a capture-class cast - it places the seats and
-                // leaves them. Feeding the live metric would therefore park
-                // the body on phase `1` forever wherever the placement does
-                // not already read as in-reach. The blocking capability is a
-                // caster approach leg on the band, not a call insertion.
+                // The walk itself is the band's approach leg: the body's arm
+                // `0` stages the walk entry and turns the caster onto the
+                // victim, and the walk clip's own root motion carries it.
                 (962, Some(arms::BLADE_BREATH_A_TICK)) => Some(arms::blade_breath_a_tick(
                     &mut ctx,
                     &mut caster,
@@ -2881,13 +3226,7 @@ impl World {
             CastWrapper::SharedSummon => return net,
         };
         let party_count = self.party.party_count;
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let finish = DamageFinish {
             predamage: net.max(0) as u32,
             attacker_slot: if attacker < party_count { 0 } else { 3 },

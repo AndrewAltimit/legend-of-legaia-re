@@ -54,6 +54,13 @@ impl LegaiaMinigames {
                 self.fishing_spawn = fishing_species::parse_spawn_tables(ov);
                 self.fishing_cadence = fishing_species::parse_cadence_templates(ov);
                 self.fishing_exchange = legaia_asset::fishing_exchange::parse(ov);
+                self.fishing_sprites = legaia_asset::fishing_sprites::parse(ov);
+                let names = self.item_names.as_ref();
+                self.fishing_captions = legaia_asset::fishing_captions::parse(ov).map(|raw| {
+                    legaia_engine_core::world::FishingCaptionText::resolve(&raw, |id| {
+                        names.and_then(|n| n.name(id)).map(str::to_string)
+                    })
+                });
                 let venue_ok = self.fishing_spawn.is_some() && self.fishing_cadence.is_some();
                 self.fishing_species = Some(species);
                 self.fishing_overlay = img;
@@ -135,7 +142,11 @@ impl LegaiaMinigames {
 /// cap/body/cap frame ([`HudDraw::resolve_bar`]); glyphs and captions carry
 /// their ids for the page to map (the fishing sprite page itself is the one
 /// undecoded asset - the page substitutes labelled text and says so).
-fn hud_draw_json(d: &HudDraw, out: &mut Vec<String>) {
+fn hud_draw_json(
+    d: &HudDraw,
+    captions: Option<&legaia_engine_core::world::FishingCaptionText>,
+    out: &mut Vec<String>,
+) {
     match *d {
         HudDraw::Number {
             x,
@@ -172,9 +183,12 @@ fn hud_draw_json(d: &HudDraw, out: &mut Vec<String>) {
             }
             for (i, d) in shown.iter().rev().enumerate() {
                 let slot = digits - shown.len() as i32 + i as i32;
+                // A font cell, not a sprite digit: the page keeps drawing
+                // it when the sprite half is rasterised. The cells are the
+                // primitive's 8 px.
                 out.push(format!(
-                    r#"{{"t":"digit","x":{},"y":{},"d":{},"b":128}}"#,
-                    x + slot * ui_fishing::DIGIT_PITCH_NARROW,
+                    r#"{{"t":"count","x":{},"y":{},"d":{},"b":128}}"#,
+                    x + slot * 8,
                     y,
                     d
                 ));
@@ -195,7 +209,20 @@ fn hud_draw_json(d: &HudDraw, out: &mut Vec<String>) {
                 HudCaption::LuresLeft => "lures_left".to_string(),
                 HudCaption::LureCountSuffix => "lure_suffix".to_string(),
             };
-            out.push(format!(r#"{{"t":"cap","k":{},"x":{x},"y":{y}}}"#, jstr(&k)));
+            // The disc's own string when the overlay's row resolved.
+            let txt = captions.map(|c| match text {
+                HudCaption::RodName(i) => c.lure_names.get(i as usize).cloned().unwrap_or_default(),
+                HudCaption::LuresLeft => c.lures_left.clone(),
+                HudCaption::LureCountSuffix => c.suffix.clone(),
+            });
+            match txt {
+                Some(t) => out.push(format!(
+                    r#"{{"t":"cap","k":{},"txt":{},"x":{x},"y":{y}}}"#,
+                    jstr(&k),
+                    jstr(&t)
+                )),
+                None => out.push(format!(r#"{{"t":"cap","k":{},"x":{x},"y":{y}}}"#, jstr(&k))),
+            }
         }
         HudDraw::Bar { .. } | HudDraw::PowerBar { .. } => {
             if let Some(f) = d.resolve_bar() {
@@ -623,9 +650,42 @@ impl LegaiaMinigames {
         draws.extend(self.fishing_banners.service_frame(1));
         let mut out = Vec::new();
         for d in &draws {
-            hud_draw_json(d, &mut out);
+            hud_draw_json(d, self.fishing_captions.as_ref(), &mut out);
         }
+        self.fishing_hud_last = draws;
         format!("[{}]", out.join(","))
+    }
+
+    /// Whether this page can draw the HUD's sprite half itself
+    /// ([`Self::fishing_hud_rgba`]): the overlay's sprite table decoded and
+    /// the pond scene - whose VRAM holds the venue's HUD page - loaded. The
+    /// page then skips its text stand-ins for glyphs, digits and bar frames.
+    pub fn fishing_hud_sprites_ready(&self) -> bool {
+        self.fishing_sprites.is_some() && self.fishing_scene.is_some()
+    }
+
+    /// The last [`Self::fishing_pond_hud_json`] frame's sprite half - every
+    /// plate, digit, gauge cap and banner cut from the overlay's sprite table
+    /// (`FUN_801D63B0`, the shared `ui_fishing_sprite` builder the two play
+    /// hosts draw on their GPUs) - rasterised over the pond's VRAM into a
+    /// `w x h` RGBA8 overlay, transparent where nothing drew. Empty when
+    /// [`Self::fishing_hud_sprites_ready`] is false.
+    pub fn fishing_hud_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        let (Some(table), Some(scene)) =
+            (self.fishing_sprites.as_deref(), self.fishing_scene.as_ref())
+        else {
+            return Vec::new();
+        };
+        let prims = legaia_engine_ui::ui_fishing_sprite::fishing_hud_sprite_prims(
+            &self.fishing_hud_last,
+            table,
+        );
+        legaia_engine_ui::screen_prim_raster::rasterize_rgba_overlay(
+            &prims,
+            &scene.vram_words(),
+            w,
+            h,
+        )
     }
 
     /// The venue hub's draw lines for this frame, in retail 320x240 space:

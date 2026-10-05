@@ -290,6 +290,29 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
+    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell` (decimal or `0x..`): the
+    // monster in engine battle `seat` casts `spell` on its next turn instead
+    // of the AI's pick (`BattleState::forced_monster_cast`, the seam the
+    // retail comparison corpus replays a mid-cast capture through). Pairs
+    // with `--battle <ROW>` to watch one enemy special from a cold boot. A
+    // debug seam.
+    if let Some((seat, spell)) = std::env::var("LEGAIA_BATTLE_MONSTER_CAST")
+        .ok()
+        .and_then(|s| {
+            let parse = |t: &str| {
+                let t = t.trim();
+                t.strip_prefix("0x")
+                    .map_or_else(|| t.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
+            };
+            let (a, b) = s.split_once(',')?;
+            Some((parse(a)?, parse(b)?))
+        })
+    {
+        log::info!(
+            "play-window: LEGAIA_BATTLE_MONSTER_CAST seeds seat {seat} -> spell {spell:#04x}"
+        );
+        world.battle.forced_monster_cast = Some((seat, spell));
+    }
     // `LEGAIA_BATTLE_RNG_SEED=<u32>`: the world stream's state at the entry,
     // so the fight does not inherit however many field draws the boot took.
     // The retail comparison corpus pins it on both its sides
@@ -531,7 +554,7 @@ pub(super) fn cmd_play_window_with_record(
     session.host.world.locomotion.follow_terrain_height = terrain_y;
     // Retail's three-probe leading-edge wall footprint (the `DAT_801f2214`
     // standoff), solid NPCs (the `DAT_801f21b4` actor probes) and the
-    // MAN-authored NPC patrol routes through the motion VM are all retail
+    // villagers' ambient tail-section-1 wander are all retail
     // behaviour and default ON - the same three the browser play page sets
     // unconditionally. `--no-edge-collision` / `--no-solid-npcs` /
     // `--no-live-npcs` clear them (candidate-centre test, walk-through NPCs,
@@ -704,6 +727,19 @@ pub(super) fn cmd_play_window_with_record(
             {
                 Some(block) => session.camera.zone.arm_arrival_over(block),
                 None => session.camera.zone.arm_arrival(),
+            }
+            // `LEGAIA_SEAT_FOCUS=FX,FZ` (stored form, X / Z negated): a
+            // retail state's focus pair when it is not on the player - the
+            // snap lands it instead of pinning the player, and the follow
+            // ease leaves it there until the player moves, as retail's does.
+            if let Some([fx, fz]) = std::env::var("LEGAIA_SEAT_FOCUS").ok().and_then(|f| {
+                let v: Vec<i32> = f
+                    .split(',')
+                    .filter_map(|v| v.trim().parse::<i32>().ok())
+                    .collect();
+                <[i32; 2]>::try_from(v).ok()
+            }) {
+                session.camera.zone.seat_focus_after_snap([fx, fz]);
             }
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
         } else {
@@ -1207,6 +1243,25 @@ pub(super) fn cmd_play_window_with_record(
         )
         .ok();
 
+    // The menus' bold fixed-width numerals and the list pager pieces ride
+    // the font atlas as sprite cells, so every menu number draws off the
+    // same texture as its labels (`save_menu_atlas::menu_font_cells`; the
+    // browser page attaches the same cells).
+    let font = match session.host.index.prot_dat_raw_bytes(
+        legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64,
+        legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+            + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE
+            - legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET,
+    ) {
+        Ok(system_ui) => {
+            font.with_sprite_cells(&legaia_engine_core::save_menu_atlas::menu_font_cells(
+                &system_ui,
+                menu_glyph_tim_bytes.as_deref(),
+            ))
+        }
+        Err(_) => font,
+    };
+
     // Try to decode the save-menu UI atlas. Needs TWO disc sources:
     //   1. PROT 0899's extended footprint @ `OVERLAY_SAVE_MENU_TIM_OFFSET`
     //      carries the SLOT 1 / SLOT 2 pill sprites (CLUT 7).
@@ -1363,6 +1418,8 @@ pub(super) fn cmd_play_window_with_record(
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         field_placement_window_keys: Vec::new(),
+        field_placement_records: Vec::new(),
+        field_placement_color_records: Vec::new(),
         field_placement_color_window_keys: Vec::new(),
         field_terrain_draws: Vec::new(),
         field_floor_wave: Default::default(),

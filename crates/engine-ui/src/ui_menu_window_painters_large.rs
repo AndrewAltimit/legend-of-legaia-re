@@ -128,6 +128,14 @@ impl EquipStatBlock {
     /// `None` when the slice is too short to hold the last field.
     ///
     /// PORT: FUN_801cf5d0
+    /// REPLACED-BY: `engine-core::pause_screens::menu_stat_block`, which
+    /// seeds the same eight words off the character record and sums the
+    /// first five equip bytes (`FUN_801CF650`) in one step; the Equip
+    /// screen's window 25 and the shop's window 41
+    /// (`shop::party_compare_members`) both read their blocks from it and
+    /// hand them over through [`Self::from_words`]. A host showing this
+    /// unsummed seed would print a member's stats without their equipment,
+    /// which is the defect the shop's window 41 had while it called this.
     pub fn from_character_record(record: &[u8]) -> Option<Self> {
         let field = |off: usize| -> Option<i32> {
             let b = record.get(off..off + 2)?;
@@ -619,13 +627,15 @@ pub fn party_compare_panel_fields(
 }
 
 /// Resolve a compare-panel ink-staging id to an RGBA tint. `7` / `6` / `1`
-/// are the same string-CLUT rows the records screen pins; `4` and `9` are
-/// the two note colours and fall back to white and orange respectively.
+/// are the same string-CLUT rows the records screen pins; `4` is the green
+/// pen (the "Equipped" note reads green on the retail shop capture - the
+/// same staging the skill-passive lines use) and `9` the orange one.
 pub fn compare_panel_ink(staging: u8) -> [f32; 4] {
     match staging {
         INK_DEFAULT => crate::MENU_TEXT_WHITE,
         INK_RISE => crate::MENU_TEXT_GOLD,
         INK_FALL => crate::MENU_TEXT_TEAL,
+        INK_EQUIPPED => crate::MENU_TEXT_GREEN,
         INK_CANNOT_EQUIP => crate::MENU_TEXT_ORANGE,
         _ => crate::MENU_TEXT_WHITE,
     }
@@ -667,8 +677,9 @@ pub fn compare_panel_draws_for(
                 let color = compare_panel_ink(*ink);
                 for (i, ch) in s.chars().enumerate() {
                     let cell = (i32::from(*digits) - len + i as i32).max(0);
-                    out.extend(text_draws_for(
-                        &font.layout_ascii(&ch.to_string()),
+                    out.extend(crate::numeral_cell_draws(
+                        font,
+                        ch,
                         (*x + cell * NUM_CELL_W, *y),
                         color,
                     ));

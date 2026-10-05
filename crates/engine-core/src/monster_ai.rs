@@ -127,7 +127,7 @@ impl MonsterAiState {
     pub fn counter(&self) -> i32 {
         self.dat[1]
     }
-    fn set_counter(&mut self, v: i32) {
+    pub(crate) fn set_counter(&mut self, v: i32) {
         self.dat[1] = v;
     }
 }

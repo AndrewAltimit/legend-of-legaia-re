@@ -675,6 +675,10 @@ impl LegaiaRuntime {
             "turns_resolved": self.minigame_ui.muscle.turns_resolved,
             "time_meter": s.time_meter(),
             "magic_open": s.magic_open(),
+            // The press the shared scripted driver makes this frame
+            // (`MuscleDomeSession::scripted_press`), as a pad mask; `null`
+            // outside the selection or while the battle-open hold runs.
+            "scripted_press": s.scripted_press().map(|b| b.mask()),
         })
         .to_string()
     }
@@ -758,6 +762,9 @@ impl LegaiaRuntime {
         let read = |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok());
         let char_slot = self.minigame_ui.muscle.char_slot;
         let surface = &mut self.minigame_ui.muscle_surface;
+        if let Some(w) = world {
+            surface.set_camera_option(w.toggles.battle_camera as u8);
+        }
         match surface.frame(read, session, contest, char_slot) {
             Some(_) => surface.generation() as i32,
             None => -1,
@@ -821,8 +828,9 @@ impl LegaiaRuntime {
     }
 
     /// The dome camera's view-projection for a raw (Y-down) world vertex,
-    /// column-major (`DomeCamera::vp_raw`, the matrix the native window
-    /// draws the dome with). Empty with no scene.
+    /// column-major (`DomeCamera::vp_raw`, the battle camera script's pose
+    /// for the leg - the matrix the native window draws the dome with).
+    /// Empty with no scene.
     pub fn play_mg_muscle_scene_vp(&self, aspect: f32) -> Vec<f32> {
         self.minigame_ui
             .muscle_surface

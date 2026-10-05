@@ -967,11 +967,10 @@ pub(crate) enum Cmd {
         /// exempts them - so this flag only gates the NPC arm.
         #[arg(long, default_value_t = false)]
         no_solid_npcs: bool,
-        /// Park field NPCs at their placement anchors. By default each
-        /// placement's authored walk route (its script's `0x4C 0x51`
-        /// move-to-tile ops) runs through the motion VM so villagers patrol
-        /// like retail, and a moving NPC's collision box follows its live
-        /// position. An interaction prologue's own walk runs either way.
+        /// Hold field NPCs on their seats. By default each villager's
+        /// ambient MAN tail-section-1 stream publishes its wander like
+        /// retail, and a moving NPC's collision box follows its live
+        /// position. Scripted walks run either way.
         #[arg(long, default_value_t = false)]
         no_live_npcs: bool,
         /// Skip the retail damage finisher (`FUN_801ddb30`) on live
@@ -1031,7 +1030,7 @@ pub(crate) enum Cmd {
         /// e.g. `--key-script "40:L,120:P,140:Down,160:Enter"`. Each entry
         /// presses KEY and releases it on that same world tick, in the order
         /// listed. KEY is a physical key name (letters `A`-`Z`, `Up`/`Down`/
-        /// `Left`/`Right`, `Enter`, `Space`, digits).
+        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F9`).
         ///
         /// This reaches what `--pad-script` cannot: `--pad-script` writes the
         /// pad word and the keyboard handler never runs, but every minigame

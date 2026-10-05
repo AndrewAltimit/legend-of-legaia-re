@@ -6072,6 +6072,14 @@ apart, and the OT walk gives:
 | rows | eight per page; `PAGE n/m` header top-right, counts right-aligned at the interior's right edge |
 | breadcrumbs | gold tab plates `Begin` \| acting member's name \| `Item` top-left, replacing the actor-name plaque while the window is up |
 
+Which rows are selectable is the SCUS list builder's call (`FUN_80030628`),
+and it branches on the menu context word `gp+0x85C`: the field list (`0`)
+enables a field-usable row only when the relevance check `FUN_8003043C`
+finds a member it would help (`0x800309A4`), while the battle list (`1`)
+enables a row on the descriptor's battle-usable bit alone
+(`0x800309C8..0x800309E4`). A Healing Leaf with the whole party at full HP
+is therefore pickable in a fight and greyed in the pause menu.
+
 Content pens (row text, header, description line, breadcrumb seats) are
 screenshot-read off the same captures - the glyph packets ride a different
 draw pass than the window tiles.

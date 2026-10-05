@@ -356,7 +356,14 @@ draw decides is still one realisation of the stream, so the seeds in
 `BATTLE_RNG_SEEDS` are tried in order and the first under which the fight is
 still on, its opening reached a prompt, and the drive or replayed cast
 reached the capture's phase is the one scored; a state no seed satisfies
-keeps the first seed's run, `never reached`.
+keeps the first seed's run, `never reached`. A capture past the end signal
+also wants retail's win pose: the results sequencer draws it from the stream
+(`victory_pose_id`), and the results camera is that pose's own script
+(`battle_over_script`), so `noa_levelup_banner` reached its hold on another
+pose framed a shot nobody saw. The pose actor's latched `+0x1DB` is read
+(`RetailBattle::win_pose`), a seed that reaches the phase on another pose is
+kept only as the fallback, and the remaining seeds are tried for one that
+draws retail's.
 
 **The image child plays the same fight.** The frame is only evidence about
 the state the channels scored if the `play-window` child replays that fight
@@ -395,6 +402,29 @@ combatant on its captured live pair `+0x34` / `+0x38`
 sampled before any round ran. The acting seat is placed too, even on a
 captured Attack whose pair is a point on the walk the drive replays: the walk
 ends at its target whatever it starts from.
+
+Two more facts go with the pair. On a capture past the end signal each
+placed combatant takes its heading `+0x46` (a `:facing` field after `:x:z`):
+the attack band's recompute stores it every frame of a swing and nothing turns
+the actor back, so the member who struck last stands facing its target, and
+case 6's battle-over yaw is `0x800 - actor[+0x46]`. A capture of a running
+fight keeps the engine's own headings, which its replayed rounds set; seeding
+the captured ones there moved the corpus both ways. And a body whose tint state `+0x21C` is the defeat
+fade takes its colour lanes `+0x04` (a `:d<hex>` field): a monster killed
+earlier has stepped them to black and is no longer drawn, where a seed at
+`0` HP with resting lanes stood its body in the frame -
+`noa_levelup_banner`'s results camera sat inside the dead Gobu Gobu.
+
+**Rewards already granted.** A capture on the results frame or after it
+(`SpanGate::Results` / `Exit`) holds the party past the EXP grant and the
+level-up applier `FUN_801E9504`, and the seed replays the fight, which grants
+again. `RetailObs` takes them back first
+(`retail_compare_battle::ungrant_results_rewards`): every living member loses
+the share `gp+0xA04`, and a member the applier levelled - its record stat
+window `+0x11C..+0x12D` apart from the live window it is mirrored into one
+phase later - gets the live values back and its level byte one lower.
+Without it `noa_levelup_banner`'s Noa, already level 3, gained nothing the
+second time and the engine frame showed no "level increased" line.
 
 A settled field also carries its script state into the fight. In `nilboa`
 the settle leaves the Nivora duel's dialogue parked on a text page when the
@@ -503,6 +533,20 @@ credited back). On such a monster-cast drive the whole party commits Spirit
 instead of Attack, so the caster is still standing when its turn comes - a
 party that kills it first ends the fight with the seeded cast never taken
 (Zeto's two mid-cast captures sit in a party that does it in two swings).
+A party seat whose committed queue `+0x1DF..+0x1EE` holds an art starter
+(`0x19` / `0x1A`) entered its turn through `Command`, so its drive takes
+`Command` too and confirms the string the arts entry preseeds from the
+character record (`FUN_801DA34C`) - `Auto` builds a different queue under
+the same state byte. When that seat's live gauge `+0x154` stands above its
+base `+0x156` (a Spirit turn the replay does not play extended it), the drive
+restores it before the round: the extension selects the saved string's band
+and pays for its arrows (`player_steal_skeleton_banner`'s five-arrow
+`0F 0E 19 27 0E 19 27` needs the `153` gauge over the `104` base).
+A party attack capture's target byte `+0x1DD` is the monster the player
+picked, so the drive walks the target cursor (the command picker's, or the
+arts entry's) onto that row before confirming, rather than taking the
+picker's default: the strike shots look at the target, and the default row
+is whichever monster earlier turns left first in the ring.
 Monster seats are translated from retail's fixed pool slots
 `3..` onto the engine's seating straight after the party. A message box on
 screen takes Cross.
@@ -596,6 +640,12 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   The Done band's continuation `0x52` is a span of the same kind - it holds
   for its countdown `ctx[+0x6D8]`, `0xB4` frames after an absorb - so a `0x52`
   capture also waits for the engine's countdown to run down to retail's.
+  The fade-down `0x51` ticks the same word (the `0x3C` tail timer `0x50`
+  seeds) and is placed by it the same way, not by the close-up accumulator
+  below: in the Done band the accumulator counts from whichever idle or
+  return commit the acting actor's clip lengths put last, and an engine
+  whose actor committed nothing since its cast clip reads it far past
+  retail's and samples the band's first tick.
 - **A monster's capture-class cast mid-load.** The capture band's `0x6E`
   and `0x6F` wait on the disc - `0x6E` on the CD-ready poll
   `FUN_8003DE7C(1)` (`0x801E4F08`), `0x6F` on `FUN_8003F2B8(1)`
@@ -623,6 +673,13 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   drive takes the first tick in the state whose engine accumulator has run
   as far (`SpanGate::Age`); a state the engine leaves sooner is re-run on
   the same stream and sampled on its last tick (`EngineBattle::age_short`).
+  The strike loop `0x1E` commits one clip per queued swing, so an age alone
+  names the first swing that runs as long: for a party seat on a swing clip
+  the drive also waits for the engine's current clip to equal retail's
+  committed clip `+0x1D9` (art clips on their dynamic slot `0x10` / `0x11`,
+  which both sides store). A party seat's idle `0` is not gated - between
+  the approach and the first strike retail commits it and the engine holds
+  the walk clip.
   While the engine holds the capture's state, the acting action's framing
   style `ctx[+0xD]` - a draw the action seed rolls, which the post-strike
   cases fork on - is set to retail's, the camera twin of the orbit-yaw
@@ -1003,11 +1060,10 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
-| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a probe-poked capture: the focus stays where the player stood before the poke ([below](#a-poked-player-keeps-the-arrival-focus)) |
+| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the image child lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
-| camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 
 ### A script-held height is not a footing
 
@@ -1058,25 +1114,37 @@ the save does not carry.
 
 ### A poked player keeps the arrival focus
 
-`retock_innkeeper_talk_open` and `retock_inn_stay_prompt` were captured by
-warping into the inn at `(15168, 1280)` and then **poking** the player to
-`(14816, 1728)` (`LEGAIA_POKE_POS`). The states hold the player's position
-and its previous-position pair `+0x1C` / `+0x20` equal, so the ease's
-stationary test (`0x801DB578..0x801DB5A4` in `FUN_801DB510`) sees no move and
-the focus-writing legs never run: the focus stays at the arrival tile
-(`-15168`, `-1280` stored; the X is a tile centre, the Z the edge clamp) while
-the player stands elsewhere. Every retail writer of the focus pair takes the
-player as its anchor, so no script or region record accounts for the offset.
-The engine seats the player and frames on the seat, so its angles, `H` and eye
-trio match while the frame looks at a different part of the room; only the
-`camera` channel's focus part misses. Seated at the
-arrival point instead, the engine frames the counter, the walkway and the void
-below it the way retail's frame does. The `image` miss on these two states is
-the capture method, not the camera; the innkeeper's box over the room is the
-[engagement](#mid-script-states) drive's. `kor5_post_43a_checkpoint` is the
-same capture shape by its route: the player was poked onto `(32, 41)`, and
-the focus Z reads `11840` (tile `92`, near the room's south end the route
-started from) while the angles, `H` and eye trio match the seat's snap.
+Retail writes the camera focus `0x80089118` / `0x80089120` on two legs only:
+the snap, and the follow ease `FUN_801DB510` on a frame it runs **and** the
+player moved. The ease's stationary test (`0x801DB578..0x801DB5A4`) compares
+the player's position with its previous-position pair `+0x1C` / `+0x20` and
+branches past the pin leg `0x801DB820`; and the player tick `FUN_801D1344`
+does not call the ease at all while the player is movement-locked
+(`+0x10 & 0x80000`, the branch at `0x801D17DC` - only the shake
+`FUN_801D9D30` runs), unless scratchpad `0x1F800394 & 0x10000` lets it
+through. A player that moves without an eased frame leaves the focus
+behind:
+
+- `retock_innkeeper_talk_open` and `retock_inn_stay_prompt` were captured by
+  warping into the inn at `(15168, 1280)` and then **poking** the player to
+  `(14816, 1728)` (`LEGAIA_POKE_POS`); the states hold the position and its
+  previous pair equal, so the focus stays at the arrival tile (`-15168`,
+  `-1280` stored).
+- `kor5_post_43a_checkpoint` was poked onto `(32, 41)`; the focus Z reads
+  `11840` (tile `92`, near the room's south end the route started from).
+- `baka_fighter_entry_pretransition` is the organic shape: the sit script
+  carries the movement-locked player from X `2854` onto the chair at `2752`,
+  and the focus X stays `2854`.
+
+The engine follows the same rule (`ZoneFollow`'s gate in
+`Camera::zone_follow_tick`), but the seat is an arrival and its snap pins the
+focus on the seat. So the corpus reads retail's focus pair whenever it is not
+`-player` (`RetailObs::seat_focus`) and hands it to the image child as
+`LEGAIA_SEAT_FOCUS`, which the snap lands after its clamp; the ease then
+leaves it until the player moves, and the frame looks where retail's looked.
+The headless seed does not take it, so the `camera` channel's focus part
+keeps reporting the miss - it is history the seat cannot replay, not a
+compose the engine got wrong.
 
 ### Arrival states are captured before the town runs
 

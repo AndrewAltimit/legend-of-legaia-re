@@ -1,6 +1,6 @@
 //! Cutscene camera mover - the per-frame glide behind field-VM op `0x45`.
 //!
-//! PORT: FUN_801DC0BC, FUN_801DD310
+//! PORT: FUN_801DC0BC, FUN_801DD310, overlay_field_0897_801dd310
 //! REF: FUN_801DE084, FUN_8002519C
 //!
 //! # Where the mover sits

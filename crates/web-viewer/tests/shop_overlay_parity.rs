@@ -33,6 +33,23 @@ use legaia_web_viewer::runtime::LegaiaRuntime;
 const DOWN: u16 = 0x0040;
 const CROSS: u16 = 0x4000;
 
+/// Tick the shop with an idle pad until the opening has played out: a
+/// merchant open fades the field to black over
+/// [`SHOP_FADE_FRAMES`](legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES)
+/// with no window up (retail's per-vsync capture; the overlay carries
+/// nothing but the fade prim meanwhile), then the screen's windows slide in
+/// from their park edges over
+/// [`SHOP_SLIDE_FRAMES`](legaia_engine_core::shop::SHOP_SLIDE_FRAMES). The
+/// same settle lets a screen change's incoming windows land.
+fn settle(rt: &mut LegaiaRuntime) {
+    let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
+        + usize::from(legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+        + 2;
+    for _ in 0..frames {
+        rt.play_shop_input(0);
+    }
+}
+
 fn loaded_in_town() -> Option<LegaiaRuntime> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
     let bytes = std::fs::read(&disc).ok()?;
@@ -78,6 +95,7 @@ fn shop_opens_renders_and_releases_the_field_vm() {
         return;
     }
     assert!(rt.play_shop_is_open(), "shop opened");
+    settle(&mut rt);
 
     // The top picker (Buy / Sell / Exit) must render as real rows, not an
     // empty frame - this is the whole point of routing through
@@ -157,10 +175,15 @@ fn shop_descriptor_windows_paint_at_their_disc_rects() {
         eprintln!("[skip] no priced merchant record available on this disc build");
         return;
     }
+    // Let the field fade and the root's windows land first.
+    settle(&mut rt);
     // Step into the Buy list so a stock row is staged: window 34 draws nothing
     // at all while retail's `DAT_801E46B0` is not a positive item id.
     rt.play_shop_input(CROSS);
-    rt.play_shop_input(0);
+    // The Buy screen's windows slide in from their park edges
+    // (`shop::ShopSlides`, retail's measured open); let them land before
+    // asserting where their content sits.
+    settle(&mut rt);
 
     // Surface == stage at 320x240 (`stage_transform` yields origin (0,0),
     // scale 1), so a draw's `dst` is directly comparable to a window rect.
@@ -227,8 +250,9 @@ fn the_recipient_picker_paints_its_three_windows_at_their_disc_rects() {
     }
     // Cross enters the Buy list; cross again confirms row 0, whose kind byte
     // is `1` (equipment) and therefore routes to the recipient picker.
+    settle(&mut rt);
     rt.play_shop_input(CROSS);
-    rt.play_shop_input(0);
+    settle(&mut rt);
     rt.play_shop_input(CROSS);
     rt.play_shop_input(0);
     assert!(
@@ -240,7 +264,8 @@ fn the_recipient_picker_paints_its_three_windows_at_their_disc_rects() {
     // Move the hand onto the first party row so window 25 (the highlighted
     // member's compare panel) has a member to compare. Row 0 is the bag.
     rt.play_shop_input(DOWN);
-    rt.play_shop_input(0);
+    // The picker's windows slide in over the buy list.
+    settle(&mut rt);
 
     let v: serde_json::Value =
         serde_json::from_str(&rt.play_overlay_draws_json(320, 240)).expect("overlay json");

@@ -849,6 +849,11 @@ The point of the table is to make the cross-cuts cheap to read:
 
 ## See also
 
+- [`disc-coverage.md`](disc-coverage.md#per-image-port-status) - the per-image
+  port table on the site homepage: this catalog's `// PORT:` tags and ignore
+  list, counted per runtime code image over the functions the disc places in
+  each.
+
 - [`live-audit-triage.md`](live-audit-triage.md) - per-anchor verdicts for the
   `engine-core` and `engine-vm` rows of the audit's undisclosed-inert section,
   plus the analysis defects that triage turned up.

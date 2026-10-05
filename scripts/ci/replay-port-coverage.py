@@ -978,9 +978,20 @@ def join_anchor_coverage(
         entered_site = None
         observable = False
         const_site = None
+        # A `//! PORT:` module tag reads "anything in this file ran", so when
+        # the same address ALSO carries a function-level tag in that file,
+        # the module tag would credit the address off any sibling - a trig
+        # table, a helper another module calls - while the routine the
+        # function tags name never ran. `FUN_801CFA48` read entered that way:
+        # `effect_ribbon.rs`'s only executed code was the `RetailTrig` LUT
+        # `effect_default_arm` borrows, and no ribbon was ever built. The
+        # function tags are the more precise witness, so they decide.
+        fn_tag_files = {s["file"] for s in sites if s["kind"] == "fn"}
         for label, cov in sources:
             for site in sites:
                 if site["kind"] == "item":
+                    continue
+                if site["kind"] == "module" and site["file"] in fn_tag_files:
                     continue
                 ran = ran_in(cov, site)
                 if ran is None:
@@ -1019,7 +1030,10 @@ def join_anchor_coverage(
                 live_entered.add(addr)
         elif observable:
             if addr in live:
-                live_unentered.append((addr, sites[0]))
+                # Name the function tag when there is one: it is the site the
+                # verdict was taken from (see `fn_tag_files` above).
+                shown = next((x for x in sites if x["kind"] == "fn"), sites[0])
+                live_unentered.append((addr, shown))
         elif const_site is not None:
             not_observable_const.append((addr, const_site))
         else:
@@ -1068,6 +1082,18 @@ def join_anchor_coverage(
 # ---------------------------------------------------------------------------
 
 _SELFTEST_FILES = {
+    "ribbon.rs": """\
+//! PORT: FUN_8001d1b0
+
+/// PORT: FUN_8001d1b0 (the emitter body)
+pub fn cold_emitter() -> u32 {
+    1
+}
+
+pub fn hot_sibling() -> u32 {
+    2
+}
+""",
     "consts.rs": """\
 /// PORT: FUN_8001d110
 pub const USED_BY_EXEC: u32 = 1;
@@ -1130,7 +1156,7 @@ impl HotMeter {
 }
 
 # Which synthetic functions the synthetic ladder "executed".
-_SELFTEST_EXECUTED = {"exec_fn", "qual_user", "bump"}
+_SELFTEST_EXECUTED = {"exec_fn", "qual_user", "bump", "hot_sibling"}
 
 
 def run_selftest() -> int:
@@ -1177,6 +1203,7 @@ def run_selftest() -> int:
         "8001d170",
         "8001d190",
         "8001d1a0",
+        "8001d1b0",
     }
     not_live = {"8001d120", "8001d180"}
     joined = join_anchor_coverage(
@@ -1237,6 +1264,11 @@ def run_selftest() -> int:
     check(
         "unexecuted fn anchor stays on the never-entered worklist",
         "8001d150" in addrs("live_unentered"),
+    )
+    check(
+        "a module tag does not credit an address its own fn tag says never ran",
+        "8001d1b0" in addrs("live_unentered") and "8001d1b0" not in addrs("live_entered"),
+        f"entered={addrs('live_entered')}",
     )
     check(
         "type anchor with no executed method is never-entered, not const",

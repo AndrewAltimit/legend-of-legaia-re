@@ -125,11 +125,18 @@ pub struct ModuleCamSeats {
     /// The formation's first monster id `0x8007BD0C`, which a capture body
     /// can fork its framing on (PROT 0962's `0xA5` arm 0).
     pub first_monster: u8,
+    /// The caster's own formation monster id, `0x8007BD0C[ctx+0x13 - 3]` -
+    /// what PROT 0940's Glare forks its framing on (`0` for a party caster).
+    pub caster_monster: u8,
     /// The caster's queued action id `+0x1DF` - which choreography a
     /// two-spell module runs (PROT 0946's Call Wave / Big Wave).
     pub action: u8,
     /// `ctx[+0x6D0]`, the framing depth a capture shot can scale.
     pub depth_raw: i32,
+    /// The caster's battle-scoped latch word `0x801C8FE0 + (ctx[+0x13] + 1)
+    /// * 4` - the monster AI's ability cooldown `dat[m + 4]`, which PROT
+    /// 0953 reads as its charge flag. `0` for a party caster.
+    pub caster_latch: i32,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
@@ -444,6 +451,12 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         928 => Some(ModuleProfile::camera_only(palma_direct)),
         930 => Some(ModuleProfile::camera_only(horn_direct)),
         931 => Some(ModuleProfile::camera_only(jedo_direct)),
+        916 => Some(ModuleProfile::camera_only(aluru_direct)),
+        921 => Some(ModuleProfile::camera_only(iota_direct)),
+        929 => Some(ModuleProfile::camera_only(mule_direct)),
+        932 => Some(ModuleProfile::camera_only(meta_direct)),
+        933 => Some(ModuleProfile::camera_only(terra_direct)),
+        934 => Some(ModuleProfile::camera_only(ozma_direct)),
         913 => Some(ModuleProfile::camera_beside(nova_direct)),
         _ => None,
     }

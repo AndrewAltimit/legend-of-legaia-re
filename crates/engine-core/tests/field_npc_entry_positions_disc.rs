@@ -329,11 +329,7 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
                 c.ctx.world_z
             ))
         );
-        eprintln!(
-            "[diag] motion: {:?} routes: {:?}",
-            host.world.npcs.motions.get(&mei),
-            host.world.npcs.routes.get(&mei)
-        );
+        eprintln!("[diag] motion: {:?}", host.world.npcs.motions.get(&mei));
     }
     assert!(
         host.world.p2_gate_flag_set(550),

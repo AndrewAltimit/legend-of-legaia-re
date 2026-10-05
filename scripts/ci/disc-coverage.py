@@ -839,6 +839,11 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         "gap_shapes": shapes,
         "inherited_tail_bytes": tail_bytes,
         "runs": runs,
+        # The extents the floor credits, i.e. the dumps the bytes place in
+        # THIS image. Their entries are the image's function list for the
+        # per-image port table (`update-progress-metrics.py`), which therefore
+        # inherits this function's placement rule instead of restating it.
+        "floor_extents": sorted(set(floor)),
         "unattributed": sorted(set(unattributed)),
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
     }

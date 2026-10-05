@@ -395,7 +395,7 @@ impl LegaiaRuntime {
         // `load_disc` (byte-identical to what the native pause menu draws); the
         // built-in placeholder only stands in on a PROT.DAT-only load where the
         // font TIM / SCUS width table weren't available.
-        let font = self
+        let mut font = self
             .menu_font
             .clone()
             .unwrap_or_else(legaia_font::Font::placeholder);
@@ -432,6 +432,18 @@ impl LegaiaRuntime {
                         legaia_asset::menu_glyph_atlas::TIM_SIZE,
                     )
                     .ok();
+                // The menus' bold fixed-width numerals and the list pager
+                // pieces ride the font atlas as sprite cells - the native
+                // window attaches the same cells
+                // (`save_menu_atlas::menu_font_cells`).
+                if let Ok(system_ui) = panel.as_ref() {
+                    font = font.with_sprite_cells(
+                        &legaia_engine_core::save_menu_atlas::menu_font_cells(
+                            system_ui,
+                            glyph_tim.as_deref(),
+                        ),
+                    );
+                }
                 let chrome = match (panel, pill) {
                     (Ok(panel_bytes), Ok(pill_bytes)) => {
                         match build_atlas(&panel_bytes, &pill_bytes, glyph_tim.as_deref()) {

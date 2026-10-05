@@ -580,6 +580,10 @@ pub struct HubTimersFrame {
     pub xa: Option<HubXaCue>,
     /// The tally lanes' voice keys (`FUN_801D1288` builds each attr set).
     pub voice_cues: Vec<crate::other_game_overlay::VoiceAttrCue>,
+    /// Cue-ring slot writes `(slot, id, countdown)` - the INTERVAL arm's
+    /// staggered "ka-ching" cues, written into all four ring slots on the
+    /// arm's first frame ([`crate::muscle_dome::HUB_TALLY_CUES`]).
+    pub ring_cues: Vec<(u8, i16, i16)>,
     /// The between-legs hub has played out (INTERVAL drained, ROUND card
     /// gone): [`crate::world::World::tick_muscle_hub`] hands the next fight
     /// its start through [`crate::world::World::begin_next_muscle_leg`] -
@@ -640,6 +644,15 @@ impl HubTimers {
             let roll = md::HUB_TALLY_ROLL_LEAD_TICKS
                 + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32;
             self.interval = raises.then(|| md::HubScreen::interval(roll));
+            if raises {
+                // Arm `0x0A`'s first frame (`DAT_801D1A7C == 0`) fills the
+                // whole ring: ids and countdowns, slot by slot.
+                out.ring_cues = (0u8..)
+                    .zip(md::HUB_TALLY_CUES)
+                    .zip(md::HUB_TALLY_CUE_STAGGER)
+                    .map(|((slot, id), delay)| (slot, id, i16::from(delay)))
+                    .collect();
+            }
             self.tally = if raises {
                 mg.muscle_contest.as_ref().map(|c| c.tally_roll())
             } else {

@@ -75,7 +75,18 @@ fn build_world() -> World {
     // A Super's find row is written with `0x19` starters, and the builder
     // writes `0x1A` over the starter of an art this very performance learns
     // (`FUN_801EFBFC` verdict 2), so the component arts must already be
-    // known - retail's own "no NEW arts in a Super" rule.
+    // known - retail's own "no NEW arts in a Super" rule. "Known" is the
+    // character record's learned-art list (`+0x185` count, `+0x186..`
+    // ascending ids), the list `FUN_801EFBFC` scans, under the queue byte
+    // less `0x1B`: Cyclone `0x1F` = id `0x04`, Somersault `0x27` = id `0x0C`
+    // - the ids the rim_elm / dolk captures' Vahn records hold.
+    {
+        let rec = &mut w.party.roster.members[0];
+        let mut list = rec.displayed_skills();
+        list.count = 2;
+        list.ids[..2].copy_from_slice(&[0x1F - 0x1B, 0x27 - 0x1B]);
+        rec.set_displayed_skills(list);
+    }
     w.party.tactical_arts.mark_known(0, 0x27);
     w.party.tactical_arts.mark_known(0, 0x1F);
     // Seven presses on the disc-free 100-AP pool: 14 each spends 98, the

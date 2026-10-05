@@ -767,11 +767,20 @@ impl PauseItemsSession {
 ///
 /// PORT: FUN_80032A44 (kind-4 list kernel - navigation phase)
 pub fn list_kernel_navigate(cursor: usize, n: usize, pressed: u16) -> usize {
+    list_kernel_navigate_rows(cursor, n, pressed, LIST_PAGE_ROWS)
+}
+
+/// [`list_kernel_navigate`] for a list window whose page holds `rows` rows -
+/// the kernel's `visible = (content_h - 4) / 0xE` for that window (12 for
+/// the pause lists, 7 for the shop's buy list, 11 for its sell list).
+///
+/// PORT: FUN_80032A44 (kind-4 list kernel - navigation phase)
+pub fn list_kernel_navigate_rows(cursor: usize, n: usize, pressed: u16, rows: usize) -> usize {
     if n == 0 {
         return 0;
     }
+    let rows = rows.max(1);
     let mut c = cursor.min(n - 1);
-    let rows = LIST_PAGE_ROWS;
     let top = c - c % rows;
     if pressed & PadButton::Up.mask() != 0 {
         c = if c > top {

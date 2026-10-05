@@ -110,8 +110,8 @@ pub use audio_residency::{
     SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
 };
 pub use audio_state::{
-    AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SfxRingOp, SideBandBank,
-    VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
+    ARENA_SIDE_BAND_REQUEST, AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SfxRingOp,
+    SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
 pub use camera_hooks::CameraZoneRequest;
@@ -134,7 +134,7 @@ pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
 pub use item_bag::{BagEntry, ItemBag};
 pub use menu_state::MenuState;
-pub use minigame_state::MinigameState;
+pub use minigame_state::{FishingCaptionText, MinigameState};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
 pub use party_state::PartyState;
 pub use screen_fx_state::ScreenFxState;
@@ -174,6 +174,7 @@ pub use battle::{
     victory_pose_tier,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
+pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS,
@@ -205,6 +206,8 @@ mod items_arts;
 mod narration;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
+mod object_actor_height;
+pub use object_actor_height::{ObjectRampSlot, ObjectSlotRamp, tint_cue};
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;

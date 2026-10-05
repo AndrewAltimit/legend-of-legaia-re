@@ -863,7 +863,9 @@ impl PlayWindowApp {
         // The fishing line (`FUN_801D26CC`'s packet, clipped by
         // `FUN_801D56E4`): latched here, outside the renderer borrow, through
         // the same follow camera - the session's yaw feedback is a write.
-        let fishing_line_prims = self.fishing_line_screen_prims();
+        let mut fishing_line_prims = self.fishing_line_screen_prims();
+        // The fishing HUD's sprites (`FUN_801D63B0`'s quads) over the pond.
+        fishing_line_prims.extend(self.fishing_hud_screen_prims());
         // The Baka duel's 3D surface: posed and uploaded here, outside the
         // renderer borrow (`window::minigames`).
         self.refresh_baka_duel_gpu();
@@ -1547,7 +1549,9 @@ impl PlayWindowApp {
             // Untextured (F*/G*) field props, drawn on the colour
             // pipeline alongside the textured `draws`.
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
-            if self.boot_ui.is_active() && !game_over_hold {
+            if (self.boot_ui.is_active() && !game_over_hold) || self.menu_runtime.covers_field() {
+                // A shop is a menu-overlay session: the field overlay is
+                // swapped out and the screen behind the windows is black.
                 // Boot UI is fullscreen - suppress 3D draws.
             } else if let Some(g) = self
                 .baka_gpu
@@ -1967,6 +1971,43 @@ impl PlayWindowApp {
                     // behind it, is not drawn. Judged under the retail
                     // camera only - the `F3` debug orbit frames from a
                     // vantage retail never had.
+                    // A placed object a script has moved (`A3` seat, `4C 42`
+                    // lift under the actor's `0x20000000` height law) draws at
+                    // its actor's live position: retail's case-5 draw reads
+                    // the actor, not the `.MAP` record. The shared kernel is
+                    // `World::object_draw_displacements`; the browser play
+                    // page folds the same table in (`field_placement_moves`).
+                    let object_moves = self.session.host.world.object_draw_displacements();
+                    let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
+                        match record.and_then(|r| object_moves.get(&r)) {
+                            Some(d) => {
+                                Mat4::from_translation(Vec3::new(
+                                    d[0] as f32,
+                                    d[1] as f32,
+                                    d[2] as f32,
+                                )) * *model
+                            }
+                            None => *model,
+                        }
+                    };
+                    // A placed object whose actor carries a draw tint
+                    // (op `4C 81`: `+0x74` colour, `+0x78` blend - chitei2's
+                    // hologram panels go black once the generator is down)
+                    // draws with that pair as a constant per-draw cue, the
+                    // far colour / `IR0` retail's case-5 draw stages. Shared
+                    // table `World::object_draw_tints`; the browser play page
+                    // reads the same one (`field_placement_tints`).
+                    let object_tints = self.session.host.world.object_draw_tints();
+                    let object_cue = |record: Option<usize>| {
+                        let &(colour, blend) = object_tints.get(&record?)?;
+                        let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                        Some(legaia_engine_render::DrawCue {
+                            far,
+                            near_z: -1.0,
+                            far_z: 0.0,
+                            max_ir0,
+                        })
+                    };
                     let place_near_culled = |mvp: &Mat4| {
                         !self.field_debug_camera
                             && legaia_engine_core::field_env::placed_origin_near_culled(
@@ -1987,6 +2028,8 @@ impl PlayWindowApp {
                         let static_window = &self.session.host.world.terrain.static_window;
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
+                            let record = self.field_placement_records.get(di).copied().flatten();
+                            let model = &object_moved(model, record);
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
                             {
@@ -2012,7 +2055,7 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(record),
                                 });
                             }
                         }
@@ -2020,7 +2063,7 @@ impl PlayWindowApp {
                         // the ones resting on frame 0 replay their baked rest
                         // mesh; the ones whose clip is running were re-posed
                         // above, so the door draws mid-swing.
-                        for (mesh_idx, model) in &posed_prop_baked_v {
+                        for (mesh_idx, model, record) in &posed_prop_baked_v {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2029,11 +2072,11 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(*record),
                                 });
                             }
                         }
-                        for (mesh, model) in &posed_prop_live_v {
+                        for (mesh, model, record) in &posed_prop_live_v {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2041,7 +2084,7 @@ impl PlayWindowApp {
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp,
-                                cue: None,
+                                cue: object_cue(*record),
                             });
                         }
                     }
@@ -2052,6 +2095,12 @@ impl PlayWindowApp {
                         for (di, (mesh_idx, model)) in
                             self.field_placement_color_draws.iter().enumerate()
                         {
+                            let record = self
+                                .field_placement_color_records
+                                .get(di)
+                                .copied()
+                                .flatten();
+                            let model = &object_moved(model, record);
                             if !legaia_engine_core::field_env::placed_draw_live(
                                 self.field_placement_color_window_keys
                                     .get(di)
@@ -2068,11 +2117,11 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(record),
                                 });
                             }
                         }
-                        for (mesh_idx, model) in &posed_prop_baked_c {
+                        for (mesh_idx, model, record) in &posed_prop_baked_c {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2081,11 +2130,11 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(*record),
                                 });
                             }
                         }
-                        for (mesh, model) in &posed_prop_live_c {
+                        for (mesh, model, record) in &posed_prop_live_c {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2093,7 +2142,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp,
-                                cue: None,
+                                cue: object_cue(*record),
                             });
                         }
                     }
@@ -2740,7 +2789,8 @@ impl PlayWindowApp {
             // does). Passing it only for the boot UI and a
             // stage battle left every other frame on the renderer's own
             // fallback navy, a colour neither retail nor the page draws.
-            let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;
+            let boot_ui_clear =
+                (self.boot_ui.is_active() && !game_over_hold) || self.menu_runtime.covers_field();
             let stage_battle = self.session.host.world.mode == SceneMode::Battle
                 && self.battle_stage_mesh.is_some();
             let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
@@ -2992,11 +3042,28 @@ impl PlayWindowApp {
             // The PROT-0900 screen-effect widgets sort in the same pass, by
             // their retail OT slots - the play page's single-list order.
             light_prims.extend(self.screen_fx_screen_prims());
+            // Under a shop the field is not drawn at all (the 3D pass above
+            // is skipped), so none of its screen-space effects may survive
+            // onto the black backdrop either.
+            if self.menu_runtime.covers_field() {
+                light_prims.clear();
+            }
             screen_prims.extend(self.weapon_trail_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured.
             screen_prims.extend(self.screen_fade_screen_prim());
+            // A shop opening: the field fades to black under the menu's
+            // subtractive full-screen quad before its windows slide in
+            // (`MenuRuntime::shop_fade_level`; the browser page draws the
+            // same quad).
+            if let Some(level) = self.menu_runtime.shop_fade_level() {
+                screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
+                    u32::from(level) * 0x01_01_01,
+                    2,
+                    0,
+                ));
+            }
             // The field overlay's **screen-effect** washes: the colour-tween
             // actors the field VM's op `0x34` sub-0 arm spawns, each emitting
             // one `FUN_80024EE4(layer, blend, packed)` push per frame. This is

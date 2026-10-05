@@ -54,7 +54,7 @@ fn shape_b_heals_on_a_negative_roll() {
 // --- the phase discipline -------------------------------------------
 
 #[test]
-fn a_tick_advances_the_phase_exactly_once_and_parks_on_the_terminal_arm() {
+fn a_tick_advances_the_phase_exactly_once_and_the_terminal_arm_ends_the_module() {
     let mut ctx = CastModuleCtx::default();
     let mut caster = actor(100);
     let mut victim = actor(500);
@@ -65,14 +65,14 @@ fn a_tick_advances_the_phase_exactly_once_and_parks_on_the_terminal_arm() {
         );
         assert_eq!(ctx.phase, expect);
     }
-    // Arm 4 holds: the tick still reports Busy, but the phase stays.
-    for _ in 0..3 {
-        assert_eq!(
-            astral_slash_tick(&mut ctx, &mut caster, &mut victim),
-            CastTickStep::Busy
-        );
-        assert_eq!(ctx.phase, ASTRAL_SLASH_TERMINAL_ARM);
-    }
+    // Arm 4 advances nothing and clears the busy register (retail's
+    // countdown expiry, `clear s6` at `0x801F70DC`): the module is done and
+    // the phase stays where it is.
+    assert_eq!(
+        astral_slash_tick(&mut ctx, &mut caster, &mut victim),
+        CastTickStep::Done
+    );
+    assert_eq!(ctx.phase, ASTRAL_SLASH_TERMINAL_ARM);
 }
 
 #[test]

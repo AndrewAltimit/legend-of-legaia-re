@@ -98,6 +98,19 @@ Consumers:
   map - a surviving target with no get-up entry queues `+0x1EF` (light
   flinch, with the exit-to-idle flag), any other hit queues `+0x1F1`
   (knockdown);
+- the melee / arts kernel `FUN_801EC3E4` picks its own reaction per
+  connecting hit rather than the primitive's: a flinch on the struck half -
+  `+0x1EF` when the power byte's `(byte - 0x0C) % 10 < 5`, else `+0x1F0`,
+  each falling back to the other when absent (`0x801EDE18..0x801EDEBC`) -
+  escalated to the knockdown `+0x1F1` only on a hit that reaches the kill
+  compare and either kills, or leaves a get-up-carrying survivor whose combo
+  total exceeds a quarter of its max HP or whose HP it drops under a quarter
+  (`0x801EE1C0..0x801EE3B4`). So most swings flinch, and a combo's closing
+  hit is what knocks down. Two exceptions keep the flinch: a kill with a Seru
+  staged in `ctx[+0x269]` skips the knockdown load (`0x801EE350`) unless the
+  absorb that staged it found a get-up entry (`0x801EE2F4..0x801EE304`), and
+  the War God Icon carry (apply mode `0xFF`) branches to `0x801EE3B8`, past
+  every knockdown load;
 - the anim commit `FUN_8004AD80` stages behind a committed knockdown
   (record tag 4) the get-up `+0x1F2` while the actor lives, or anim id 7 for a
   downed party member (whose own commit stages 8), and tests the queued id
@@ -120,6 +133,44 @@ the `0x2A` / `0x2B` animation chain on it. Gimard's lone Tail Fire `0x27`
 therefore plays entry 8, his only tag-`0x23` entry (the
 `battle_gimard_tail_fire_a` capture reads `+0x1E0 = 8`); no entry carries tag
 `0x27`. Engine: `World::monster_cast_clip`.
+
+### Which byte a cast actually plays
+
+The picker writes the clip twice - `+0x1E7` one instruction ahead of
+`+0x1E0` (`sb s2,0x1e7(s4)` at `0x801EA53C`) - and the action seed then
+routes the cast into one of three bands, each of which takes the caster's
+clip from a different place:
+
+| Route | Taken when | Caster clip |
+|---|---|---|
+| `0x28` -> `0x29` | the spell record's class byte is `>= 0x14` (or the id `>= 0x65`) and not `0x63` | `+0x1E0`, staged by the `0x29` arm |
+| `0x3C` Spirit band | class `< 0x14` and id `< 0x65` - the heals and buffs (`0x801E2EEC..0x801E2EFC`) | `+0x1E7` (`lbu v0,0x1e7(s3); sb v0,0x1da(s3)` at `0x801E3B4C..0x801E3B54`), held until it commits and runs back to idle |
+| `0x28` -> `0x6E` capture band | class `0x63` | neither: the slot-B cast module stages literals of its own |
+
+The capture route is where most monster specials go, and its clips are code,
+not data. Each module body loads the caster from `actor_table[ctx[+0x13]]`
+and writes `sb <clip>,0x1DA(<caster>)` with a literal - usually one wind-up
+or cast entry at arm `0`, sometimes two in sequence (PROT 0937 Hyper Lightning
+stages `0x0D` then `0x0C`), occasionally chosen on a monster id (PROT 0940's
+`0x3C` stages `9` for monster `0xA9` and `8` for anyone else) - and closes
+with `sb zero,0x1DA`. The literal is an entry index into the caster's own
+record, so a module only lines up with the monsters that were built for it.
+Several bodies stage nothing on the caster at all - their only `+0x1DA` writes
+are the victim's reaction - so the caster holds its idle through those
+casts in retail too. The per-body table, with the stage sites, is
+`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and
+`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; the engine replays the listed stages,
+each to its clip's natural end, at the head of battle phase `0x70`
+(`World::capture_stager_tick`). Melee bodies walk the caster into reach first:
+arm `0` turns the caster onto its victim, stages the walk entry `1` (its root
+motion carries the body) and holds on the range poll `FUN_8004E2F0` until it
+reads zero (`CAPTURE_APPROACH_BODIES` lists the ported bodies that do this
+besides the table's `approach` rows); nothing walks it home afterwards. The
+disc-gated sweep
+`crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every
+monster's every magic-slot spell and asserts the caster plays a moving
+special clip unless its body is one of those, and fires the scripted
+per-monster AI's casts as well as the magic slots.
 
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 

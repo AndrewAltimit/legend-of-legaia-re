@@ -566,6 +566,15 @@ why a port must read it rather than pick a policy. The arms and the other seven
 query sites are in
 [`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms).
 
+The ease-and-clamp pair itself sits behind a second gate in the same routine:
+the local raised at `0x801D1648` when `_DAT_1F800394 & 0x10000` is up, or at
+`0x801D16C0` when the player's `+0x10 & 0x80000` (the movement lock) and the
+word's `0x400` are both clear. With it down (`beq s3` at `0x801D17DC`) the frame
+calls only the shake `FUN_801D9D30`, so a locked player - a conversation, a sit,
+a scripted walk - holds the camera where the lock found it, focus included. The
+ease writes the focus (`0x801DB820`) only when the player moved, so a player
+carried while locked leaves the focus behind until it next walks.
+
 ### `0x1F80035C` - the floor-elevation ladder
 
 Sixteen signed heights, indexed by the low nibble of a collision byte. Three

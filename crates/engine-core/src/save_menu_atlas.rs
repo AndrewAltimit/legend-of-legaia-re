@@ -1766,6 +1766,81 @@ fn copy_rect(
     }
 }
 
+/// The menu sprite cells retail draws in place of font glyphs, decoded off
+/// the disc for [`legaia_font::Font::with_sprite_cells`]:
+///
+/// * the ten 8x12 numerals the fixed-width number primitive `FUN_80034B78`
+///   blits (`uv = (d * 8, 208, 8, 12)` on the menu-glyph page, the same
+///   cells the battle HUD reads - [`add_hud_digit_strip`]); every menu
+///   price, count, stat and purse reads them, white-palette, tinted per ink;
+/// * the list kernel `FUN_80032A44`'s pager pieces off the system-UI sheet,
+///   at their UI-icon records (`0x800732A4 + code * 12`, `+3` CLUT byte,
+///   `+4..+7` U/V/W/H): the "PAGE" tag (code `0x76`, CLUT 1), the 6x8 page
+///   digits (`0x7A..=0x83`, CLUT 8) and slash (`0x79`, CLUT 8), and the two
+///   8x8 page triangles (`0x27` / `0x28`, CLUT 7).
+///
+/// `system_ui` is the sheet-rooted (or CLUT-extension-rooted) slice
+/// [`build_atlas`] takes. A source that does not decode contributes no cells
+/// and the menus keep their font glyphs.
+pub fn menu_font_cells(
+    system_ui: &[u8],
+    menu_glyph_tim: Option<&[u8]>,
+) -> Vec<legaia_font::SpriteCellSrc> {
+    use legaia_font::{SpriteCellSrc, sprite_cell_ids as ids};
+    fn cut(rgba: &[u8], src_w: u32, (x, y, w, h): (u32, u32, u32, u32)) -> Vec<u8> {
+        let mut out = Vec::with_capacity((w * h * 4) as usize);
+        for r in 0..h {
+            let o = (((y + r) * src_w + x) * 4) as usize;
+            out.extend_from_slice(&rgba[o..o + (w * 4) as usize]);
+        }
+        out
+    }
+    let mut cells = Vec::new();
+    if let Some(tim) = menu_glyph_tim
+        .and_then(|t| legaia_asset::menu_glyph_atlas::extract_from_tim_slice(t).ok())
+        .and_then(|t| legaia_tim::parse(t.bytes).ok())
+    {
+        let w = tim.pixel_width() as u32;
+        if let Ok(rgba) =
+            legaia_tim::decode_rgba8(&tim, title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW as usize)
+        {
+            for d in 0..10u32 {
+                cells.push(SpriteCellSrc {
+                    id: ids::NUMERAL + d as u16,
+                    w: 8,
+                    h: 12,
+                    rgba: cut(&rgba, w, (d * 8, 208, 8, 12)),
+                });
+            }
+        }
+    }
+    let (_, sheet) = split_leading_clut_ext(system_ui);
+    if let Some(tim) = title_pak::extract_overlay_system_ui_tim_from_slice(sheet)
+        .ok()
+        .and_then(|t| legaia_tim::parse(t.bytes).ok())
+    {
+        let w = tim.pixel_width() as u32;
+        let mut push = |id: u16, clut: usize, rect: (u32, u32, u32, u32)| {
+            if let Ok(rgba) = legaia_tim::decode_rgba8(&tim, clut) {
+                cells.push(SpriteCellSrc {
+                    id,
+                    w: rect.2,
+                    h: rect.3,
+                    rgba: cut(&rgba, w, rect),
+                });
+            }
+        };
+        push(ids::PAGE_TAG, 1, (80, 136, 24, 8));
+        push(ids::PAGE_SLASH, 8, (120, 136, 6, 7));
+        for d in 0..10u32 {
+            push(ids::PAGE_DIGIT + d as u16, 8, (64 + d * 6, 144, 6, 8));
+        }
+        push(ids::PAGE_PREV, 7, (96, 48, 8, 8));
+        push(ids::PAGE_NEXT, 7, (96, 56, 8, 8));
+    }
+    cells
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1805,6 +1880,14 @@ mod tests {
         // CLUT extension, so the three status badges on sub-palettes 16..18
         // come along; `build_atlas` splits that leading TIM back off.
         let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
+        // The menu font's sprite cells: ten numerals, the PAGE tag, ten page
+        // digits, the slash and two triangles - every one carrying ink.
+        let cells = menu_font_cells(hud_slice, Some(glyph_tim));
+        assert_eq!(cells.len(), 24, "every menu sprite cell decodes");
+        for c in &cells {
+            let opaque = c.rgba.chunks(4).filter(|p| p[3] != 0).count();
+            assert!(opaque > 3, "menu sprite cell {:#x} decoded empty", c.id);
+        }
         let atlas =
             build_atlas(hud_slice, &prot_899, Some(glyph_tim)).expect("build save-menu atlas");
         assert_eq!(atlas.width, ATLAS_WIDTH);

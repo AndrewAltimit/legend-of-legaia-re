@@ -86,6 +86,20 @@ use legaia_engine_ui::ui_menu_window_painters::{
 use legaia_engine_ui::{self as ui, ShopRow, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
+/// The per-window painters' output for one shop frame: texts in stage pixels
+/// plus the sprite requests `ui::shop_screen::shop_marker_draws` resolves.
+/// The Point Card toast is kept apart because it draws over every other
+/// window, text included. Twin of the native window's `ShopWindowDraws`.
+#[derive(Default)]
+struct ShopWindowDraws {
+    texts: Vec<TextDraw>,
+    marks: Vec<ui::ui_menu_window_painters::PainterSprite>,
+    pictograms: Vec<ui::ui_menu_window_painters::PainterPictogram>,
+    toast_texts: Vec<TextDraw>,
+    toast_marks: Vec<ui::ui_menu_window_painters::PainterSprite>,
+    toast_frame: Option<ui::ui_menu_window_painters::PainterRect>,
+}
+
 /// One shop panel row before it is turned into a borrowing [`ShopRow`]:
 /// owned label, optional price, retail `_DAT_8007B454` ink.
 type ShopRowSpec = (String, Option<u32>, u8);
@@ -108,8 +122,7 @@ const WIN_SELL_QUANTITY: usize = 37;
 const WIN_SELL_DETAIL: usize = 39;
 // Window 25 (`0x19`, the active-character stat compare) is not a shop window:
 // its only opener in the whole menu overlay is the Equip screen's script.
-/// Party-wide stat compare (`0x29`).
-const WIN_COMPARE_PARTY: usize = 41;
+// Window 41 (`0x29`, the party compare) draws through `ui::shop_screen`.
 /// Window 31 (`FUN_801DCE20`) - the Point Card toast retail raises after a buy
 /// commit credits the counter. Both openers hand the widget VM a script whose
 /// whole body is `[open 0x1F]` + terminator, so the beat is the only gate.
@@ -489,18 +502,28 @@ impl LegaiaRuntime {
     }
 
     /// The casino **prize-exchange** windows (43 / 44 / 45 / 46) while a
-    /// session owns the pad, in stage pixels - the shared `engine-ui`
-    /// composition, sprite/pictogram requests rendered through the same
-    /// ASCII stand-ins the shop windows use. Empty without the window table.
-    fn prize_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+    /// session owns the pad - the shared `engine-ui` composition, framed, with
+    /// its hand / coin pictogram resolved to atlas sprites
+    /// (`shop_screen::prize_screen_draws`, the native window's call too).
+    /// Texts in stage pixels, sprites in surface pixels. Empty without the
+    /// window table.
+    fn prize_window_draws(
+        &self,
+        font: &legaia_font::Font,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> ui::shop_screen::ShopScreenDraws {
         let Some(session) = self.menu.prize_session.as_ref() else {
-            return Vec::new();
+            return Default::default();
         };
-        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
-            return Vec::new();
+        let Some(assets) = self.menu_assets.as_ref() else {
+            return Default::default();
+        };
+        let Some(table) = assets.window_table() else {
+            return Default::default();
         };
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
+            return Default::default();
         };
         use legaia_engine_ui::ui_prize_exchange as px;
         let view = px::PrizeExchangeView {
@@ -526,14 +549,19 @@ impl LegaiaRuntime {
             coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
-        let (mut out, sprites, pict) = px::prize_exchange_draws_for(font, table, &view);
-        for s in sprites {
-            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
+        if self.menu.shop_fade_level().is_some() {
+            return Default::default();
         }
-        if let Some(p) = pict {
-            out.extend(self.painter_glyph_stand_in(font, "C", (p.x, p.y)));
-        }
-        out
+        let (text, marks, pict) = px::prize_exchange_draws_for(font, table, &view);
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+        let ctx = ui::shop_screen::ShopScreenCtx {
+            font,
+            rects: ui::pause_menu::MenuRects::new(Some(table)),
+            chrome: assets.chrome_rects(),
+            origin,
+            scale,
+        };
+        ui::shop_screen::prize_screen_draws(&ctx, session.confirming(), text, &marks, pict)
     }
 
     /// The casino **coin counter** (op-0x49 sub-6): the field overlay's entry
@@ -563,15 +591,16 @@ impl LegaiaRuntime {
         shop: &ShopSession,
         state: Option<MenuState>,
         cursor: usize,
-    ) -> Vec<TextDraw> {
+    ) -> ShopWindowDraws {
+        let mut draws = ShopWindowDraws::default();
         let Some(assets) = self.menu_assets.as_ref() else {
-            return Vec::new();
+            return draws;
         };
         let Some(table) = assets.window_table() else {
-            return Vec::new();
+            return draws;
         };
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
+            return draws;
         };
         let bag = legaia_engine_core::menu_runtime::MenuRuntime::inventory_items(world);
         let held_of = |id: u8| -> u32 {
@@ -580,7 +609,9 @@ impl LegaiaRuntime {
                 .map(|(_, q)| u32::from(*q))
                 .unwrap_or(0)
         };
-        let mut out = Vec::new();
+        let out = &mut draws.texts;
+        let marks = &mut draws.marks;
+        let pics = &mut draws.pictograms;
 
         // Window 33 - the vendor plate.
         if let (Some(name), Some((d, _))) = (
@@ -608,12 +639,7 @@ impl LegaiaRuntime {
             let rect = ui::painter_rect(d);
             let (digits, pic) = counter_panel_draws_for(font, rect, pictogram, value);
             out.extend(digits);
-            let glyph = match pic.id {
-                ui::COUNTER_PICTOGRAM_GOLD => "G",
-                ui::COUNTER_PICTOGRAM_COINS => "C",
-                _ => "*",
-            };
-            out.extend(self.painter_glyph_stand_in(font, glyph, (pic.x, pic.y)));
+            pics.push(pic);
         }
 
         // Window 34 - the hovered item's info panel. The sell list draws
@@ -621,7 +647,10 @@ impl LegaiaRuntime {
         // `FUN_801D5AE8` is the sell-family renderer, and the two windows
         // print the same name/description head at overlapping rects.
         let staged = self.shop_staged_item(shop, state, cursor);
-        let selling_list = matches!(state, Some(MenuState::ShopSell));
+        // The sell family (list or its quantity stepper) shows window 39 in
+        // place of 34.
+        let selling_list = matches!(state, Some(MenuState::ShopSell))
+            || self.menu.quantity_view().is_some_and(|v| !v.buying);
         if !selling_list
             && let Some((d, _)) =
                 ui::painter_at(table, WIN_ITEM_INFO, ui::MenuWindowPainter::ItemDescription)
@@ -637,7 +666,9 @@ impl LegaiaRuntime {
             ));
         }
         if selling_list {
-            out.extend(self.sell_detail_window_draws(font, table, staged));
+            let (text, pic) = self.sell_detail_window_draws(font, table, staged);
+            out.extend(text);
+            pics.extend(pic);
         }
 
         // Windows 37 / 35 - the two quantity steppers. Retail runs the
@@ -663,12 +694,8 @@ impl LegaiaRuntime {
                 u32::from(view.price),
             );
             out.extend(text);
-            if let Some(pic) = pic {
-                out.extend(self.painter_glyph_stand_in(font, "G", (pic.x, pic.y)));
-            }
-            if let Some(cur) = cur {
-                out.extend(self.painter_glyph_stand_in(font, ">", (cur.x, cur.y)));
-            }
+            pics.extend(pic);
+            marks.extend(cur);
         }
         if let Some(view) = quantity.filter(|v| v.buying)
             && let Some(d) = table
@@ -688,12 +715,8 @@ impl LegaiaRuntime {
                 u32::from(view.price),
             );
             out.extend(text);
-            if let Some(pic) = pic {
-                out.extend(self.painter_glyph_stand_in(font, "G", (pic.x, pic.y)));
-            }
-            if let Some(cur) = cur {
-                out.extend(self.painter_glyph_stand_in(font, ">", (cur.x, cur.y)));
-            }
+            pics.extend(pic);
+            marks.extend(cur);
         }
 
         // Window 31 - the Point Card toast, the browser twin of the native
@@ -712,10 +735,11 @@ impl LegaiaRuntime {
                 world.minigames.point_card.max(0) as u64,
                 painters::POINT_CARD_UNIT_LABEL,
             );
-            out.extend(text);
-            out.extend(self.painter_glyph_stand_in(font, ">", (cur.x, cur.y)));
+            draws.toast_texts.extend(text);
+            draws.toast_marks.push(cur);
+            draws.toast_frame = Some(ui::painter_rect(d));
         }
-        out
+        draws
     }
 
     /// Window 39 - the sell list's item detail panel (`FUN_801D5AE8` via
@@ -728,16 +752,19 @@ impl LegaiaRuntime {
         font: &legaia_font::Font,
         table: &legaia_asset::menu_windows::MenuWindowTable,
         staged: Option<u8>,
-    ) -> Vec<TextDraw> {
+    ) -> (
+        Vec<TextDraw>,
+        Option<ui::ui_menu_window_painters::PainterPictogram>,
+    ) {
         let mut out = Vec::new();
         let Some(d) = table
             .window(WIN_SELL_DETAIL)
             .filter(|d| d.renderer_va == RENDERER_SELL_DETAIL)
         else {
-            return out;
+            return (out, None);
         };
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return out;
+            return (out, None);
         };
         let rect = ui::painter_rect(d);
         let id = staged.unwrap_or(0);
@@ -778,9 +805,9 @@ impl LegaiaRuntime {
             passive,
         );
         if staged.is_none() {
-            // Retail leaves only the shade box when nothing is staged; this
-            // host draws no colour-fill primitives, so nothing renders.
-            return out;
+            // Retail leaves only the shade box when nothing is staged; the
+            // shop screen frames that box, so no text renders.
+            return (out, None);
         }
         let text = |out: &mut Vec<TextDraw>, s: &str, pen: (i16, i16), ink: [f32; 4]| {
             out.extend(ui::text_draws_for(
@@ -807,17 +834,14 @@ impl LegaiaRuntime {
                     row.label_pen,
                     ui::MENU_TEXT_TEAL,
                 );
-                out.extend(self.painter_glyph_stand_in(
+                // A 5-digit field at `WX + 0x64`, right-packed.
+                out.extend(ui::shop_screen::shop_digit_field_draws(
                     font,
-                    "G",
-                    (i32::from(row.icon_pen.0), i32::from(row.icon_pen.1)),
-                ));
-                text(
-                    &mut out,
-                    &row.price.to_string(),
-                    row.value_pen,
+                    u32::from(row.price),
+                    (i32::from(row.value_pen.0), i32::from(row.value_pen.1)),
+                    ui::shop_screen::SELL_DETAIL_PRICE_CELLS,
                     ui::MENU_TEXT_WHITE,
-                );
+                ));
             }
             None => text(
                 &mut out,
@@ -835,128 +859,63 @@ impl LegaiaRuntime {
             text(&mut out, &name, panel.passive_name_pen, ui::MENU_TEXT_GREEN);
             text(&mut out, &line, panel.passive_desc_pen, ui::MENU_TEXT_WHITE);
         }
-        out
+        // The currency pictogram beside the price.
+        let pic = panel
+            .sell
+            .map(|row| ui::ui_menu_window_painters::PainterPictogram {
+                id: ui::COUNTER_PICTOGRAM_GOLD,
+                x: i32::from(row.icon_pen.0),
+                y: i32::from(row.icon_pen.1),
+            });
+        (out, pic)
     }
 
-    /// The three retail windows of the **equipment-buy recipient flow**
-    /// (menu-overlay sub-screen `0x1C`), drawn while
+    /// Window 36 (`0x24`, `FUN_801D56FC`) of the **equipment-buy recipient
+    /// flow** (menu-overlay sub-screen `0x1C`): the bag row plus one row per
+    /// member, greyed by the character mask, drawn while
     /// [`legaia_engine_core::menu_runtime::MenuRuntime::recipient_session`]
-    /// owns the pad:
+    /// owns the pad. Window 41, the party compare beside it, belongs to the
+    /// whole buy flow's window set and draws through
+    /// [`ui::shop_screen::shop_screen_draws`].
     ///
-    /// | Id | Renderer | Content |
-    /// |---|---|---|
-    /// | 36 (`0x24`) | `FUN_801D56FC` | bag row + one row per member, greyed by the character mask |
-    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare |
-    /// | 41 (`0x29`) | `FUN_801D4C28` | the party-wide ATK / UDF / LDF compare |
-    ///
-    /// The layout itself is [`ui::recipient_picker_draws_for`], the shared
-    /// composition the native window calls too - this method only resolves
-    /// the three rects off the disc window table and builds the model. Row
-    /// order, cursor rows, note strings and the compare-category chain
-    /// therefore cannot drift between the two hosts.
-    fn recipient_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+    /// The layout is [`ui::recipient_picker_draws_for`], the shared
+    /// composition the native window calls too. Returns the texts and the
+    /// hand request, which the shop screen resolves to a sprite.
+    fn recipient_window_draws(
+        &self,
+        font: &legaia_font::Font,
+    ) -> (
+        Vec<TextDraw>,
+        Vec<ui::ui_menu_window_painters::PainterSprite>,
+    ) {
         let Some(session) = self.menu.recipient_session.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
-        let item_id = session.item_id;
-        let members: Vec<&legaia_save::CharacterRecord> = world
-            .party
-            .roster
-            .members
-            .iter()
-            .take(session.can_equip.len())
-            .collect();
-        let labels: Vec<String> = members
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let n = r.name();
-                if n.is_empty() {
-                    format!("Member {}", i + 1)
-                } else {
-                    n
-                }
-            })
-            .collect();
-        // The slot the disc category names, and what currently sits in it -
-        // both feed the trial-equip (candidate) stat blocks.
-        let slot_idx = self
-            .menu
-            .equip_info
-            .as_ref()
-            .and_then(|i| i.entry(item_id))
-            .map(|e| {
-                use legaia_asset::equip_stats::EquipSlot as Disc;
-                use legaia_engine_core::equipment::EquipSlot;
-                match e.category {
-                    Disc::Weapon => EquipSlot::Weapon,
-                    Disc::Body => EquipSlot::BodyArmor,
-                    Disc::Head => EquipSlot::Helmet,
-                    Disc::Footwear => EquipSlot::Boot,
-                }
-                .as_index() as usize
-            });
-        let candidate_for = |rec: &legaia_save::CharacterRecord,
-                             current: ui::EquipStatBlock|
-         -> ui::EquipStatBlock {
-            let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
-            let old_m = world
-                .tables
-                .equipment_table
-                .get(displaced)
-                .copied()
-                .unwrap_or_default();
-            let new_m = world
-                .tables
-                .equipment_table
-                .get(item_id)
-                .copied()
-                .unwrap_or_default();
-            let mut cand = current;
-            cand.atk += i32::from(new_m.atk) - i32::from(old_m.atk);
-            cand.udf += i32::from(new_m.udf) - i32::from(old_m.udf);
-            cand.ldf += i32::from(new_m.ldf) - i32::from(old_m.ldf);
-            cand.spd += i32::from(new_m.spd) - i32::from(old_m.spd);
-            cand.int += i32::from(new_m.int) - i32::from(old_m.int);
-            cand
-        };
-
+        let members = legaia_engine_core::shop::party_compare_members(
+            world,
+            self.menu.equip_info.as_ref(),
+            session.item_id,
+        );
         let rows: Vec<ui::RecipientMemberView<'_>> = members
             .iter()
-            .zip(labels.iter())
+            .take(session.can_equip.len())
             .enumerate()
-            .map(|(i, (rec, label))| {
-                let current =
-                    ui::EquipStatBlock::from_character_record(&rec.raw).unwrap_or_default();
-                let hms = rec.hp_mp_sp();
-                ui::RecipientMemberView {
-                    name: label.as_str(),
-                    equippable: session.can_equip.get(i).copied().unwrap_or(false),
-                    already_equipped: rec.equipment().slots.contains(&item_id),
-                    current,
-                    candidate: candidate_for(rec, current),
-                    hp_max: hms.hp_max,
-                    mp_max: hms.mp_max,
-                }
+            .map(|(i, m)| ui::RecipientMemberView {
+                name: m.name.as_str(),
+                equippable: session.can_equip.get(i).copied().unwrap_or(false),
+                already_equipped: m.already_equipped,
+                current: Default::default(),
+                candidate: Default::default(),
+                hp_max: 0,
+                mp_max: 0,
             })
             .collect();
-
-        // The staged item's compare-category byte (equip record `+5`). Every
-        // retail equipment record carries the `0x40` sentinel, so this is
-        // the same value the native host passes as a constant.
-        let staged_category = self
-            .equip_stats
-            .as_ref()
-            .and_then(|t| t.bonus(item_id))
-            .map(|b| b.raw[5])
-            .unwrap_or(ui::CATEGORY_DEFAULT);
-
         let rects = ui::RecipientWindowRects {
             target_list: ui::painter_at(
                 table,
@@ -964,26 +923,223 @@ impl LegaiaRuntime {
                 ui::MenuWindowPainter::EquipTargetList,
             )
             .map(|(d, _)| ui::painter_rect(d)),
-            // No window 25: retail's picker script opens only window 36, and
-            // the shop's stat compare is window 41 below.
-            party_compare: ui::painter_at(
-                table,
-                WIN_COMPARE_PARTY,
-                ui::MenuWindowPainter::PartyStatCompare,
-            )
-            .map(|(d, _)| ui::painter_rect(d)),
+            party_compare: None,
         };
         let view = ui::RecipientPickerView {
             heading: ui::RECIPIENT_HEADING,
             cursor: session.cursor,
             members: &rows,
-            staged_category,
+            staged_category: ui::CATEGORY_DEFAULT,
         };
-        let (mut out, sprites) = ui::recipient_picker_draws_for(font, rects, &view);
-        for s in sprites {
-            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
+        ui::recipient_picker_draws_for(font, rects, &view)
+    }
+
+    /// The whole gold-shop screen for one frame, or `None` when no gold-shop
+    /// screen is up (inn, seru trade, the exit beat). The twin of the native
+    /// window's `gold_shop_screen` (`window/shop_windows.rs`): the phase's
+    /// window set framed, the picker / paged list / party column off
+    /// [`ui::shop_screen::shop_screen_draws`], every per-window painter on
+    /// top, and their hand / pictogram requests resolved to atlas sprites.
+    /// Texts are stage pixels; sprites surface pixels.
+    fn gold_shop_screen(
+        &self,
+        font: &legaia_font::Font,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Option<ui::shop_screen::ShopScreenDraws> {
+        use legaia_engine_core::shop::ShopScreenPhase as P;
+        use ui::shop_screen as ss;
+        let phase = self.menu.shop_screen_phase()?;
+        // The field is still fading to black: no window is up yet.
+        if self.menu.shop_fade_level().is_some() {
+            return Some(Default::default());
         }
-        out
+        let shop = self.menu.shop_session.as_ref()?;
+        let assets = self.menu_assets.as_ref()?;
+        let world = &self.scene_host.as_ref()?.world;
+        let state = MenuState::from_byte(self.menu.ctx_state());
+        let cursor = self.menu.cursor() as usize;
+        // The windows on screen this frame with their slide progress
+        // (`ShopSlides`, stepped by the menu tick): the phase's set plus any
+        // window still sliding out. The toast's frame is laid last by hand
+        // below, after the markers of the windows it covers.
+        let mut slides = self.menu.shop_slides();
+        if slides.is_empty() && self.menu.shop_fade_level().is_none() {
+            slides = legaia_engine_core::shop::shop_screen_windows(phase, false)
+                .into_iter()
+                .map(|id| (id, legaia_engine_core::shop::SHOP_SLIDE_FRAMES))
+                .collect();
+        }
+        let windows: Vec<usize> = slides.iter().map(|(id, _)| *id).collect();
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+        let ctx = ss::ShopScreenCtx {
+            font,
+            rects: ui::pause_menu::MenuRects::new(assets.window_table()),
+            chrome: assets.chrome_rects(),
+            origin,
+            scale,
+        };
+        let bag = legaia_engine_core::menu_runtime::MenuRuntime::inventory_items(world);
+        let held_of = |id: u8| -> i16 {
+            bag.iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, q)| *q as i16)
+                .unwrap_or(0)
+        };
+
+        // Window 42 - the picker, with the hand only while it has the pad.
+        let picker_rows = legaia_engine_core::menu_runtime::shop_root_labels(
+            world.seru_trade_enabled(),
+            !bag.is_empty(),
+        );
+        let picker = ss::ShopPickerView {
+            rows: &picker_rows,
+            cursor: (phase == P::Root).then_some(cursor),
+        };
+
+        // Window 40 / 38 - the list for this phase.
+        let gold = world.party.money;
+        let (labels, values, inks, kind, list_cursor, browsing): (
+            Vec<String>,
+            Vec<u32>,
+            Vec<u8>,
+            _,
+            usize,
+            bool,
+        ) = match phase {
+            P::SellList | P::SellQuantity => {
+                let rows = legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(world);
+                (
+                    rows.iter().map(|r| self.shop_item_label(r.id)).collect(),
+                    rows.iter().map(|r| u32::from(r.count)).collect(),
+                    rows.iter()
+                        .map(|r| {
+                            if r.dim {
+                                ui::SHOP_INK_GREY
+                            } else {
+                                ui::SHOP_INK_NORMAL
+                            }
+                        })
+                        .collect(),
+                    ss::ShopListKind::Sell,
+                    cursor,
+                    true,
+                )
+            }
+            _ => {
+                let parked = phase == P::Root;
+                let items = &shop.inventory.items;
+                (
+                    items
+                        .iter()
+                        .map(|i| self.shop_item_label(i.item_id))
+                        .collect(),
+                    items.iter().map(|i| i.price).collect(),
+                    items
+                        .iter()
+                        .enumerate()
+                        .map(|(row, i)| {
+                            legaia_engine_core::shop::shop_buy_row_ink(
+                                row < shop.inventory.featured_rows,
+                                held_of(i.item_id),
+                                gold,
+                                i.price as i32,
+                                parked,
+                            )
+                        })
+                        .collect(),
+                    ss::ShopListKind::Buy,
+                    if parked { 0 } else { cursor },
+                    phase == P::BuyList,
+                )
+            }
+        };
+        let rows: Vec<ss::ShopListRow<'_>> = labels
+            .iter()
+            .zip(values.iter().zip(inks.iter()))
+            .map(|(l, (v, i))| ss::ShopListRow {
+                label: l.as_str(),
+                value: *v,
+                ink: *i,
+            })
+            .collect();
+        // The page triangles: only while the list itself has the pad, and
+        // through the kernel's blink gate.
+        let arrows = matches!(phase, P::BuyList | P::SellList)
+            && ss::page_arrows_blink_on(self.menu.ui_frame());
+        let list = ss::ShopListView {
+            kind,
+            rows: &rows,
+            cursor: list_cursor,
+            browsing,
+            arrows,
+        };
+
+        // Window 41 - the party column for the staged item.
+        let staged = match phase {
+            P::BuyRecipient => self.menu.recipient_session.as_ref().map(|r| r.item_id),
+            P::BuyQuantity => self.menu.quantity_view().map(|v| v.item_id),
+            _ => self.shop_staged_item(shop, state, cursor),
+        };
+        let members = staged
+            .map(|id| {
+                legaia_engine_core::shop::party_compare_members(
+                    world,
+                    self.menu.equip_info.as_ref(),
+                    id,
+                )
+            })
+            .unwrap_or_default();
+        let party: Vec<ss::ShopCompareMember<'_>> = members
+            .iter()
+            .map(|m| ss::ShopCompareMember {
+                name: m.name.as_str(),
+                already_equipped: m.already_equipped,
+                equippable: m.equippable,
+                current: m.current,
+                candidate: m.candidate,
+            })
+            .collect();
+
+        let view = ss::ShopScreenView {
+            windows: &windows,
+            picker: Some(picker),
+            list: Some(list),
+            party: &party,
+        };
+        let mut out = ss::shop_screen_draws(&ctx, &view);
+
+        // The per-window painters (vendor plate, purse, item info, the
+        // quantity steppers, the sell detail, the recipient list, the toast).
+        let mut win = self.shop_window_draws(font, shop, state, cursor);
+        let (recip_text, recip_marks) = self.recipient_window_draws(font);
+        win.texts.extend(recip_text);
+        win.marks.extend(recip_marks);
+        out.texts.extend(win.texts);
+        let marks = ss::shop_marker_draws(&ctx, &win.marks, &win.pictograms);
+        out.texts.extend(marks.texts);
+        out.sprites.extend(marks.sprites);
+        // Every window's draws ride its open / close slide.
+        ss::apply_shop_slides(
+            &ctx,
+            &slides,
+            legaia_engine_core::shop::SHOP_SLIDE_FRAMES,
+            &mut out.texts,
+            &mut out.sprites,
+        );
+        // The Point Card toast draws over everything: its frame after every
+        // other window's sprites, its text after every other window's text,
+        // and no text it covers.
+        if let Some(r) = win.toast_frame {
+            ss::occlude_texts(&mut out.texts, (r.x - 8, r.y - 8, r.w + 16, r.h + 16));
+            out.sprites
+                .extend(ss::shop_window_frames(&ctx, &[ss::WIN_SHOP_POINT_CARD]));
+            out.texts.extend(win.toast_texts);
+            let t = ss::shop_marker_draws(&ctx, &win.toast_marks, &[]);
+            out.texts.extend(t.texts);
+            out.sprites.extend(t.sprites);
+        }
+        Some(out)
     }
 
     /// Post-action banner draws in **stage** pixels: the level-up summary and
@@ -1253,27 +1409,44 @@ impl LegaiaRuntime {
         // is the control, these are the readouts around it. Built FIRST
         // because whether they draw decides whether the panel keeps its own
         // gold footer (window 34 is the purse).
-        let mut windows = match self.menu.shop_session.as_ref() {
-            Some(session) => self.shop_window_draws(
-                font,
-                session,
-                MenuState::from_byte(self.menu.ctx_state()),
-                self.menu.cursor() as usize,
-            ),
-            None => Vec::new(),
+        // The gold shop's retail screen (window set, picker, paged list,
+        // party column, per-window painters) - the composition the native
+        // window draws too. Outside it (inn, seru trade) the engine panel and
+        // the loose painters below keep the screen.
+        let gold_shop = self.gold_shop_screen(font, surface_w, surface_h);
+        let mut gold_shop_sprites = Vec::new();
+        let (mut windows, shop) = if let Some(screen) = gold_shop {
+            gold_shop_sprites = screen.sprites;
+            (screen.texts, None)
+        } else {
+            let mut windows = Vec::new();
+            if let Some(session) = self.menu.shop_session.as_ref() {
+                let w = self.shop_window_draws(
+                    font,
+                    session,
+                    MenuState::from_byte(self.menu.ctx_state()),
+                    self.menu.cursor() as usize,
+                );
+                windows.extend(w.texts);
+                for m in w.marks.iter().chain(w.toast_marks.iter()) {
+                    windows.extend(self.painter_glyph_stand_in(font, ">", (m.x, m.y)));
+                }
+                for p in &w.pictograms {
+                    windows.extend(self.painter_glyph_stand_in(font, "G", (p.x, p.y)));
+                }
+                windows.extend(w.toast_texts);
+            }
+            let shop = self
+                .shop_stage_draws(font, !windows.is_empty())
+                .or_else(|| self.inn_stage_draws(font))
+                .or_else(|| self.menu_label_stand_in(font));
+            (windows, shop)
         };
-        let shop = self
-            .shop_stage_draws(font, !windows.is_empty())
-            .or_else(|| self.inn_stage_draws(font))
-            .or_else(|| self.menu_label_stand_in(font));
-        // The equipment-buy recipient flow's windows (36 / 25 / 41) ride
-        // over the parked buy list while the picker owns the pad.
-        if self.menu.recipient_session.is_some() {
-            windows.extend(self.recipient_window_draws(font));
-        }
         // Casino prize exchange (windows 43/44/45/46) + the coin counter's
         // digit entry, both shared engine-ui compositions.
-        windows.extend(self.prize_window_draws(font));
+        let prize = self.prize_window_draws(font, surface_w, surface_h);
+        gold_shop_sprites.extend(prize.sprites);
+        windows.extend(prize.texts);
         windows.extend(self.coin_counter_window_draws(font));
         // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
         // the engine layout + shared line composition the native window
@@ -1323,6 +1496,7 @@ impl LegaiaRuntime {
         let (minigame_sprites, minigame_texts) =
             self.minigame_overlay_draws(font, surface_w, surface_h);
         if shop.is_none()
+            && gold_shop_sprites.is_empty()
             && windows.is_empty()
             && banners.is_empty()
             && battle.is_empty()
@@ -1346,6 +1520,8 @@ impl LegaiaRuntime {
         // The post-battle report's two framed windows (level-up above,
         // spoils below) - same atlas, drawn outside battle mode.
         sprites.extend(self.battle_spoils_chrome_sprite_draws(assets, surface_w, surface_h));
+        // The gold shop's frames and atlas sprites.
+        sprites.extend(gold_shop_sprites);
         let mut texts: Vec<TextDraw> = Vec::new();
         if let Some(draws) = shop {
             // Frame the panel in the same gold 9-slice the pause menu uses,
@@ -1392,6 +1568,11 @@ impl LegaiaRuntime {
 
         serde_json::json!({
             "open": true,
+            // A shop is a menu-overlay session: the field overlay is swapped
+            // out and the screen behind its windows is black
+            // (`MenuRuntime::covers_field`). The page paints the backdrop
+            // before the quads.
+            "backdrop": if self.menu.covers_field() { "black" } else { "none" },
             "sprites": sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
         })

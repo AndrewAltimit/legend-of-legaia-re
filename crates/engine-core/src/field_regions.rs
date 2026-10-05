@@ -835,6 +835,29 @@ pub fn refresh_region_attributes(
     (mask, attrs)
 }
 
+/// The region-type mask alone: `1 << (type & 0x1F)` ORed over every region
+/// containing the tile, with no attribute latch.
+///
+/// This is the field overlay's `FUN_801DE234(tile_x, tile_z)`: it zeroes
+/// `_DAT_8007B8F4`, then loops the resumable scan `FUN_80017FBC` (first call
+/// `a0 = 0`, every later one `a0 = 1`) and ORs `1 << record[+4]` into the
+/// word until the scan returns null (`0x801DE234..0x801DE2AC`). `FUN_801DBA20`
+/// opens on the same loop inline (`0x801DBA64..0x801DBAA0`), which is why
+/// [`zone_query`] calls this. Other slot-A images hold unrelated code at the
+/// same VA, hence the stem.
+///
+/// PORT: overlay_field_0897_801de234
+pub fn region_type_mask(table: Option<&RegionTable<'_>>, tile_x: i32, tile_z: i32) -> u32 {
+    let mut mask = 0u32;
+    if let Some(table) = table {
+        let mut cursor = 0usize;
+        while let Some(m) = table.scan(&mut cursor, tile_x, tile_z) {
+            mask |= 1u32 << (m.kind() & 0x1F);
+        }
+    }
+    mask
+}
+
 /// Result of a [`zone_query`] walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ZoneQueryResult<'a> {
@@ -875,13 +898,7 @@ pub fn zone_query<'a>(
     if count == 0 {
         return None;
     }
-    let mut region_mask = 0u32;
-    if let Some(table) = table {
-        let mut cursor = 0usize;
-        while let Some(m) = table.scan(&mut cursor, tile_x, tile_z) {
-            region_mask |= 1u32 << (m.kind() & 0x1F);
-        }
-    }
+    let region_mask = region_type_mask(table, tile_x, tile_z);
     let [ax0, az0, ax1, az1] = attrs.box_bytes.map(|b| b as i32);
     for i in 0..count {
         let off = 1 + i * ZONE_RECORD_STRIDE;
@@ -1035,6 +1052,21 @@ mod tests {
         let (mask, attrs) = refresh_region_attributes(Some(&t), 5, 5, true);
         assert_eq!(mask, 1 << 1);
         assert_eq!(attrs, RegionAttributes::DEFAULT_FILL);
+    }
+
+    #[test]
+    fn region_type_mask_is_the_refresh_mask_without_the_latch() {
+        // `FUN_801DE234`: OR `1 << type` over every containing region, and
+        // nothing else - no attribute box, no world-map fallback.
+        let b = block(&[[0, 0, 0x20, 0x20, 4], [4, 2, 10, 8, 1], [30, 30, 40, 40, 6]]);
+        let t = RegionTable::parse(&b).unwrap();
+        assert_eq!(region_type_mask(Some(&t), 5, 5), (1 << 4) | (1 << 1));
+        assert_eq!(
+            region_type_mask(Some(&t), 5, 5),
+            refresh_region_attributes(Some(&t), 5, 5, true).0
+        );
+        assert_eq!(region_type_mask(Some(&t), 0x7E, 0x7E), 0);
+        assert_eq!(region_type_mask(None, 5, 5), 0);
     }
 
     fn zone_table(records: &[[u8; ZONE_RECORD_STRIDE]]) -> Vec<u8> {

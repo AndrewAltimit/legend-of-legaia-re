@@ -51,6 +51,16 @@ pub struct CastFxState {
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
+    /// The capture body took a branch with no damage site (PROT 0953's
+    /// charge): the band's fold owes the cast nothing.
+    pub module_skips_fold: bool,
+    /// PROT 0954's module-resident words while its body runs
+    /// ([`legaia_engine_vm::cast_fatal_decision`]).
+    pub fatal_decision: Option<legaia_engine_vm::cast_fatal_decision::FatalDecisionState>,
+    /// The outcome name PROT 0954's arm 9 put up in the move-name label
+    /// (HUD element `0x4C`), until the band leaves. Read by
+    /// `battle_hud::battle_move_name`.
+    pub fatal_banner: Option<String>,
     /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
     ///
     /// Arm 12 grows it by the frame delta times `8` every tick
@@ -97,6 +107,12 @@ pub struct CastFxState {
     /// [`crate::world::World::capture_stager_tick`] reports "not busy" - which is what a
     /// disc-free host, or any cast that is not capture-class, sees.
     pub capture_spell: Option<u8>,
+    /// The caster's clip stages the resident capture-class body owes and its
+    /// port does not write ([`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+    /// replayed at the head of the band by
+    /// [`crate::world::World::capture_stager_tick`]. `None` once played out,
+    /// or for a body that stages nothing on its caster.
+    pub caster_stages: Option<crate::world::battle::CasterStageRun>,
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
     /// sets `(move_id, target world pos)` here (see [`crate::world::World::request_move_fx_spawn`]).
@@ -169,6 +185,9 @@ impl CastFxState {
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,
+            module_skips_fold: false,
+            fatal_decision: None,
+            fatal_banner: None,
             module_ring_angle: 0,
             module_nighto_outcome: None,
             // --- W1-D ---
@@ -177,6 +196,7 @@ impl CastFxState {
             module_swordie: Default::default(),
             module_cam: Default::default(),
             capture_spell: None,
+            caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,
             active_action_fx: Vec::new(),

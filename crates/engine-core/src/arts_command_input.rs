@@ -168,6 +168,12 @@ pub struct ArtsCommandInputSession {
     pub list_pages: u8,
     /// Open arts-list page (`None` = closed).
     pub list_page: Option<u8>,
+    /// The character's learned-arts count (`record[+0x185]`, the byte
+    /// `FUN_801D3748` reads at `0x80084140 + char * 0x414 + 0x74D`), when the
+    /// host supplies it. `Some` routes Triangle through the retail pager
+    /// ([`arts_list_pager`]); `None` keeps the plain page cycle over
+    /// [`Self::list_pages`].
+    pub list_rows: Option<u8>,
     /// The character's saved auto command string, loaded when the entry
     /// opened (`FUN_801DA34C` at `0x801D1734`, beside the `0x50` phase
     /// store), as `Command::as_byte()` values. Empty when the record held
@@ -197,7 +203,47 @@ pub enum ArtsInputResolution {
     Aborted,
 }
 
+/// One Triangle press on the battle arts list, as `FUN_801D3748` steps it:
+/// the page a press leaves open (`None` = closed), given the page open before
+/// it and the character's learned-arts count.
+///
+/// Retail keeps the page as a row offset in `_DAT_8007B458` and the open bit
+/// in `0x801F4E09`. With no learned art the press does nothing
+/// (`beqz v1` at `0x801D3794`). A closed list opens on the first page
+/// (`0x801D3848..0x801D3878`). An open one steps to the second page only from
+/// the first and only with six or more arts (`sltiu v1, 6`), to the third
+/// only from the second and only with eleven or more (`sltiu v0, 0xB`), and
+/// any other press closes it - so retail shows at most three pages of five,
+/// however many arts are learned.
+///
+/// PORT: overlay_battle_action_0898_801d3748
+pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
+    if learned == 0 {
+        return open;
+    }
+    match open {
+        None => Some(0),
+        Some(0) if learned >= 6 => Some(1),
+        Some(1) if learned >= 11 => Some(2),
+        Some(_) => None,
+    }
+}
+
 impl ArtsCommandInputSession {
+    /// The entry with the retail pager over `learned` arts
+    /// ([`Self::list_rows`]); the page count follows the pager's three-page
+    /// cap.
+    pub fn with_list_rows(mut self, learned: u8) -> Self {
+        self.list_rows = Some(learned);
+        self.list_pages = match learned {
+            0 => 0,
+            1..=5 => 1,
+            6..=10 => 2,
+            _ => 3,
+        };
+        self
+    }
+
     /// Open a fresh entry. `pool` seeds both the live pool and its
     /// maximum; `costs` are the four per-direction press costs
     /// (Left / Right / Down / Up); `list_pages` sizes the Triangle list.
@@ -212,6 +258,7 @@ impl ArtsCommandInputSession {
             spent: Vec::new(),
             list_pages,
             list_page: None,
+            list_rows: None,
             preseed: Vec::new(),
             preseed_spent: Vec::new(),
             replay: false,
@@ -338,10 +385,13 @@ impl ArtsCommandInputSession {
                 ArtsInputPhase::Entering | ArtsInputPhase::Review
             )
         {
-            self.list_page = match self.list_page {
-                None => Some(0),
-                Some(p) if p + 1 < self.list_pages => Some(p + 1),
-                Some(_) => None,
+            self.list_page = match self.list_rows {
+                Some(rows) => arts_list_pager(self.list_page, rows),
+                None => match self.list_page {
+                    None => Some(0),
+                    Some(p) if p + 1 < self.list_pages => Some(p + 1),
+                    Some(_) => None,
+                },
             };
             return;
         }
@@ -984,6 +1034,25 @@ mod tests {
         // the leave press, so the reset is not a one-way trap.
         s.input(press("o"), party3(), one_monster());
         assert_eq!(s.resolved(), Some(ArtsInputResolution::Aborted));
+    }
+
+    #[test]
+    fn the_retail_pager_steps_at_most_three_pages() {
+        assert_eq!(arts_list_pager(None, 0), None, "no art: inert");
+        assert_eq!(arts_list_pager(Some(0), 0), Some(0));
+        assert_eq!(arts_list_pager(None, 3), Some(0));
+        assert_eq!(arts_list_pager(Some(0), 5), None, "one page closes");
+        assert_eq!(arts_list_pager(Some(0), 6), Some(1));
+        assert_eq!(arts_list_pager(Some(1), 10), None);
+        assert_eq!(arts_list_pager(Some(1), 11), Some(2));
+        assert_eq!(arts_list_pager(Some(2), 16), None, "the third page closes");
+        let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 9).with_list_rows(7);
+        assert_eq!(s.list_pages, 2);
+        s.input(press("t"), party3(), one_monster());
+        s.input(press("t"), party3(), one_monster());
+        assert_eq!(s.list_page, Some(1));
+        s.input(press("t"), party3(), one_monster());
+        assert_eq!(s.list_page, None);
     }
 
     #[test]

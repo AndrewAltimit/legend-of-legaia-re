@@ -1270,3 +1270,70 @@ Read a warning as "the published number is behind this tree", never as "the
 number is wrong": the tiles were correct when they were written, and the drift
 is the interval since.
 
+### Per-image port status
+
+The four tiles are whole-project figures, and three of them saturate: once the
+worklist is empty they read 100% whatever is left. The homepage's per-image
+table answers the question that still moves - for each runtime code image
+(`SCUS_942.54` and every overlay in `crates/asset/data/static-overlays.toml`),
+how much of *that image's* code is ported. It is rendered from
+`scripts/ci/image-port-status.json`, written by the same refresh
+(`update-progress-metrics.py`; `--images-only` writes just this file).
+
+What one row counts:
+
+- **Denominator** - the function entries this script's own **floor** places in
+  the image: extents the byte attribution names for it, plus extents no other
+  image's span reaches. The inherited tail is cut first, so a sibling's code
+  never lands in a row. The cover result carries these as `floor_extents`, so
+  the table inherits the placement rule rather than restating it. Entries the
+  ignore list calls *not a function* (labels, interior fragments, phantom
+  prints - the `worklist_*` address claims and their kin) leave the
+  denominator.
+- **Ported** - entries carrying a `// PORT:` tag, with the `REPLACED-BY:` share
+  broken out (from the catalog's live pass). At a VA-aliased address (below) a
+  bare `FUN_<addr>` cannot say which image's routine it implements, so it
+  credits none of them; the tag credits an image only through a dump stem
+  `overlay_<label>_<addr>` whose label names it - a four-digit PROT token
+  (`overlay_field_0897_801db510`, `overlay_cast_steal_0941_801f7d38`) or, with
+  none, the image's own label.
+- **Native / no behaviour** - ignore-list scope claims: PsyQ, BIOS, libgte, the
+  GPU and CD plumbing the engine replaces wholesale, and routines with no retail
+  behaviour (unreferenced, dev-gated, empty). The two VA-aliasing sections
+  (`va_aliased_overlay_local`, `worklist_va_aliased`) excuse a bare address,
+  not any one image's routine, so per image they excuse nothing and the routine
+  counts as open until a stem-qualified tag ports it or
+  `scripts/ci/image-scoped-verdicts.toml` classifies it. That file is the
+  per-image sibling of the ignore list: one table per image label, rows
+  `addr = [category, reason]` with the category drawn from the ignore list's
+  sections, applying to that image only - "in the field overlay this VA is an
+  interior fragment" without excusing the real routine fishing holds there.
+- **Open** - everything else. This is real work the whole-project worklist
+  cannot show: an image function that is dumped but uncited never enters the
+  catalog's worklist, and a VA-aliased one is excused there for every image at
+  once.
+- **Code identified** - `covered_attributed / code_denominator`, the image's
+  code bytes inside a placed dump. A function list cannot see a routine nobody
+  dumped, so the table prints this beside every percentage.
+
+A row is **fully ported** when nothing is open, no code byte is un-dumped, and
+at least 99% of the code bytes sit in a placed dump. The 1% admits the
+4-to-36-byte Ghidra fragments every overlay carries; it is not room for a real
+routine. The 64 slot-B modules (PROT 0903..0966) render as one band with a
+"modules complete" count, and an image whose own content is all inherited tail
+counts as having no code rather than as incomplete.
+
+One limit travels with the figure: dumps the bytes could not place
+(`unplaced` in the JSON) are left out of every row - the code-identified figure
+is where that shows up. `update-progress-metrics.py --list-open [IMAGE...]`
+prints every open entry with its category, which is the worklist this table
+counts.
+
+Freshness: the JSON records a digest of each committed input (the ported
+address set and its stem labels, the ignore list, the image-scoped verdicts,
+the attribution CSV, the overlay map), and
+`check-progress-metrics-freshness.py` recomputes them from the tree and warns
+on a mismatch. The same check now counts the tree's `// PORT:` tags directly
+instead of trusting `port-catalog-baseline.json`, which can lag as far as the
+tiles do.
+

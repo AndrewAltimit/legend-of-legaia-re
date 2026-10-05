@@ -386,7 +386,7 @@ pub fn rot_stamp_on_arts_chip(x: i16, y: i16, w: u8) -> StripQuad {
 /// `(0xF8, 0x42)` - the Magic chip's anchor - when the acting member's
 /// `+0x16E & 0x1000` is set (`0x801D1330..0x801D1360`).
 ///
-/// PORT: FUN_801DBEC4
+/// PORT: FUN_801DBEC4, overlay_battle_action_0898_801dbec4
 pub fn curse_plate_on_chip(x: i16, y: i16) -> StripQuad {
     let x0 = x.wrapping_sub(8);
     let x1 = x.wrapping_add(0x37);

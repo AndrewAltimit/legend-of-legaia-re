@@ -149,8 +149,13 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
                 break;
             }
         }
-        if !matches!(host.world.mode, SceneMode::Field) {
-            continue; // a scripted transition took over; nothing to assert
+        if !matches!(host.world.mode, SceneMode::Field)
+            || host.world.scene_transition_hold.is_some()
+            || host.world.pending_named_scene_transition.is_some()
+        {
+            // A scripted transition took over (or is parked behind the
+            // streaming actor's hand-off countdown); nothing to assert.
+            continue;
         }
         if !host.world.field_vm.helper_contexts.is_empty() || host.world.cutscene.timeline.is_some()
         {

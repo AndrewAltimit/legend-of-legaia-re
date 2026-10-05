@@ -1743,6 +1743,20 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Make the monster in engine battle `seat` cast `spell_id` on its next
+    /// turn instead of the AI's pick - the browser twin of the native
+    /// window's `LEGAIA_BATTLE_MONSTER_CAST=seat,spell` debug seam
+    /// (`BattleState::forced_monster_cast`). Pair with
+    /// [`Self::debug_force_battle`] to watch one enemy special from a cold
+    /// page.
+    pub fn debug_seed_monster_cast(&mut self, seat: u8, spell_id: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.battle.forced_monster_cast = Some((seat, spell_id));
+        true
+    }
+
     /// `true` while the party-wipe hand-off owns the frame. The page stops
     /// feeding the pad into the world and drives
     /// [`Self::game_over_input`] instead.
@@ -2123,6 +2137,8 @@ impl LegaiaRuntime {
         // `FUN_801D56E4`), the native window's `fishing_line_screen_prims`
         // twin ([`crate::play_fishing`]).
         prims.extend(self.fishing_line_prims());
+        // The fishing HUD's sprites, the native window's twin.
+        prims.extend(self.fishing_hud_sprite_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.
@@ -2163,6 +2179,15 @@ impl LegaiaRuntime {
             .and_then(|h| h.world.screen_fade_draw())
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
+        }
+        // A shop opening: the field fades to black before its windows slide
+        // in (`MenuRuntime::shop_fade_level`, the native window's quad too).
+        if let Some(level) = self.menu.shop_fade_level() {
+            prims.push(legaia_engine_ui::screen_prim::fade_prim(
+                u32::from(level) * 0x01_01_01,
+                2,
+                0,
+            ));
         }
         // The field overlay's screen-effect washes (op `0x34` sub-0 ->
         // `FUN_80024EE4`): the scene-entry fade-from-black and the door

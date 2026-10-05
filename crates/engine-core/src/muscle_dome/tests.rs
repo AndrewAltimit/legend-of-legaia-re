@@ -21,7 +21,18 @@ fn hand(costs: [u16; 4]) -> [MuscleCard; 4] {
     ]
 }
 
+/// A fresh leg, past its round prompt: Begin taken, the ring up.
 fn session() -> MuscleDomeSession {
+    let mut s = prompt_session();
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Confirm
+    );
+    s
+}
+
+/// A fresh leg on its round prompt.
+fn prompt_session() -> MuscleDomeSession {
     MuscleDomeSession::new(
         hand([0x1E, 0x2A, 0x2A, 0x1E]),
         hand([0x1E, 0x1E, 0x1E, 0x1E]),
@@ -29,6 +40,61 @@ fn session() -> MuscleDomeSession {
         [500, 400],
         3,
     )
+}
+
+/// The battle-open hold (`ctx[+0x6D6] = 0x5A`) takes no input and draws no
+/// chips; once drained, the round prompt is up.
+#[test]
+fn the_battle_open_hold_parks_the_prompt() {
+    let mut s = prompt_session();
+    s.arm_intro();
+    assert!(s.intro_up());
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Idle
+    );
+    assert!(s.command_chips("-", ["Begin", "Reselect"]).is_none());
+    assert_eq!(s.scripted_press(), None);
+    s.tick_intro(0x59);
+    assert!(s.intro_up());
+    s.tick_intro(1);
+    assert!(!s.intro_up());
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Confirm
+    );
+}
+
+/// Every turn opens on `Begin | Run`; Begin opens the ring on its Attack
+/// arm, cancel on the ring steps back, and Run flees the leg.
+#[test]
+fn a_turn_opens_on_the_round_prompt_and_run_flees() {
+    let mut s = prompt_session();
+    assert!(matches!(
+        s.menu(),
+        DomeMenu::Command(c)
+            if matches!(c.phase, crate::battle_input::CommandPhase::RoundPrompt { .. })
+    ));
+    let chips = s.command_chips("-", ["Begin", "Reselect"]).expect("chips");
+    assert_eq!(
+        chips.phase,
+        crate::battle_hud::CommandChipPhase::RoundPrompt
+    );
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Confirm
+    );
+    assert!(matches!(
+        s.menu(),
+        DomeMenu::Command(c)
+            if matches!(c.phase, crate::battle_input::CommandPhase::Menu { cursor: 1 })
+    ));
+    // Cancel on the ring: back to the prompt.
+    s.select_input(pad(|p| p.cancel = true));
+    assert!(!is_ring(&s));
+    // Right on the prompt is Run.
+    assert_eq!(s.select_input(pad(|p| p.right = true)), DomeMenuEvent::Run);
+    assert_eq!(s.phase(), MusclePhase::Select, "the host ends the leg");
 }
 
 // --- The Ra-Seru command class ----------------------------------------
@@ -239,7 +305,7 @@ fn is_confirm(s: &MuscleDomeSession) -> bool {
 #[test]
 fn the_selection_walks_the_battle_screens_and_only_begin_fights() {
     let mut s = session();
-    assert!(is_ring(&s), "a turn opens on the command ring");
+    assert!(is_ring(&s), "Begin opens the command ring");
     // Up on the ring is the Item arm, not a swing.
     assert_eq!(s.select_input(pad(|p| p.up = true)), DomeMenuEvent::Refused);
     assert!(s.queue(0).is_empty(), "a ring press commits nothing");
@@ -376,7 +442,7 @@ fn the_ring_chips_project_through_the_battle_cluster() {
 }
 
 #[test]
-fn a_turn_boundary_clears_the_cast_and_reopens_the_ring() {
+fn a_turn_boundary_clears_the_cast_and_reopens_the_round_prompt() {
     let mut s = session();
     s.install_magic(0, magic(60));
     s.commit_cast(0, 0x81).expect("affordable");
@@ -390,7 +456,12 @@ fn a_turn_boundary_clears_the_cast_and_reopens_the_ring() {
     );
     s.next_turn();
     assert_eq!(s.queued_cast(0), None, "a new turn clears the cast");
-    assert!(is_ring(&s));
+    // Every turn top is `0x14` -> `0x1E`: the prompt, then the ring.
+    assert!(matches!(
+        s.menu(),
+        DomeMenu::Command(c)
+            if matches!(c.phase, crate::battle_input::CommandPhase::RoundPrompt { .. })
+    ));
 }
 
 #[test]

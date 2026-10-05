@@ -189,12 +189,40 @@ pub struct RetailBattle {
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
     pub absorbed_seru: u8,
+    /// Whether the active seat's committed queue `+0x1DF..+0x1EE` holds an
+    /// art starter (`0x19` / `0x1A`): the turn was entered through the
+    /// directional command entry, not the Auto swing.
+    pub arts_queue: bool,
+    /// The active seat's live action gauge `+0x154` and its base `+0x156`.
+    /// A Spirit turn's round boundary extends the live gauge
+    /// (`(base * 7) / 5 + 8`), and the extension decides both the arts
+    /// entry's AP pool and which saved command band it preseeds.
+    pub acting_gauge: Option<(u16, u16)>,
     /// The battle-end sequence's position, when the capture is past the end
     /// signal ([`SpanGate`]).
     pub span_gate: SpanGate,
+    /// The win pose the battle-end sequence latched on its pose actor
+    /// (`ctx[+0x13]`'s `+0x1DB`), for a capture past the end signal. The
+    /// results framing is that pose's script ([`legaia_engine_vm::battle_cam_script`]'s
+    /// `battle_over_script`), and the sequencer draws the pose from the
+    /// stream, so a seed that reaches the phase on another pose frames
+    /// another shot.
+    pub win_pose: Option<u8>,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
+    /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
+    /// the attack band's facing recompute stores it every frame of a
+    /// swing and nothing turns the actor back, so a member stands facing
+    /// the last target it struck. The results framing reads it (case 6's
+    /// battle-over yaw is `0x800 - actor[+0x46]`).
+    pub facing: Vec<Option<u16>>,
+    /// Each pool slot's colour lanes `+0x04`, for a slot whose tint state
+    /// `+0x21C` is the defeat fade (`2`): a monster killed earlier has
+    /// stepped its lanes to black (`noa_levelup_banner`'s Gobu reads `0`)
+    /// and the per-actor draw skips it, so the seed lands it there rather
+    /// than standing a body retail no longer draws.
+    pub defeat_lanes: Vec<Option<u32>>,
     /// The timed message up in the capture (HUD element `0x66`): the
     /// battle-overlay string its content word `0x800775B4` points at, and
     /// the hold `0x801F6964` left on it. `None` when the hold is spent.
@@ -573,6 +601,43 @@ impl RetailBattle {
         self.engine_ground()
     }
 
+    /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
+    pub fn engine_defeat_lanes(
+        &self,
+    ) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let pc = usize::from(self.party_count);
+        for (s, o) in out.iter_mut().enumerate() {
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            *o = self.defeat_lanes.get(pool).copied().flatten();
+        }
+        out
+    }
+
+    /// [`Self::facing`] re-keyed to engine battle slots, placed where
+    /// [`Self::seeded_ground`] places a ground pair - on a capture past the
+    /// end signal only. There the sequencer has stopped the action SM, so
+    /// nothing recomputes a heading before the results framing reads it. A
+    /// capture of a running fight replays its rounds, whose own swings set
+    /// the headings; seeding the captured ones there moved the corpus both
+    /// ways (camera up on most, frames down on more than rose).
+    pub fn seeded_facing(&self) -> [Option<u16>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        if !self.span_gate.is_end() {
+            return out;
+        }
+        let ground = self.seeded_ground();
+        let pc = usize::from(self.party_count);
+        for (s, o) in out.iter_mut().enumerate() {
+            if ground[s].is_none() {
+                continue;
+            }
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            *o = self.facing.get(pool).copied().flatten();
+        }
+        out
+    }
+
     /// The phase the capture's **displayed frame** sits at: [`Self::phase_gate`]
     /// with the flash's age taken back by [`Self::display_lag`]. The RAM
     /// channels are sampled on the RAM's phase; the image is the frame the
@@ -691,7 +756,7 @@ const END_RESULTS_HOLD: u32 = 0x8007_BD6C;
 /// Read the [`SpanGate`] off a capture.
 fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
     if game_anchors::u8_at(ram, END_SIGNAL) != 0xFE {
-        if game_anchors::u8_at(ram, ctx + 7) == 0x52 {
+        if matches!(game_anchors::u8_at(ram, ctx + 7), 0x51 | 0x52) {
             return SpanGate::DoneHold {
                 timer: game_anchors::u16_at(ram, ctx + 0x6D8) as i16,
             };
@@ -866,7 +931,20 @@ impl RetailBattle {
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
+            arts_queue: active.is_some_and(|p| {
+                (0..0x10).any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A))
+            }),
+            acting_gauge: active.map(|p| {
+                (
+                    game_anchors::u16_at(ram, p + 0x154),
+                    game_anchors::u16_at(ram, p + 0x156),
+                )
+            }),
             span_gate: span_gate(ram, ctx),
+            win_pose: span_gate(ram, ctx)
+                .is_end()
+                .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
+                .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             ground: (0..8u32)
                 .map(|slot| {
@@ -877,6 +955,21 @@ impl RetailBattle {
                             game_anchors::u16_at(ram, p + 0x38) as i16,
                         ]
                     })
+                })
+                .collect(),
+            facing: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| game_anchors::u16_at(ram, p + 0x46) & 0xFFF)
+                })
+                .collect(),
+            defeat_lanes: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    (in_ram(p)
+                        && game_anchors::u8_at(ram, p + 0x21C)
+                            == legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE)
+                        .then(|| game_anchors::u32_at(ram, p + 4))
                 })
                 .collect(),
             timed_message: {
@@ -936,6 +1029,8 @@ pub struct EngineBattle {
     /// there, which a re-run gates on instead (and which the re-run's own
     /// result carries as the gate it was sampled on).
     pub age_short: Option<u16>,
+    /// The win pose the engine's battle-end sequence picked, when it runs.
+    pub win_pose: Option<u8>,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
@@ -981,6 +1076,11 @@ pub struct BarSeed {
     pub hp: u16,
     pub mp: u16,
     pub ground: Option<[i16; 2]>,
+    /// The heading `+0x46` that goes with [`Self::ground`].
+    pub facing: Option<u16>,
+    /// A body seeded inside (or past) its defeat fade: the colour lanes it
+    /// holds ([`RetailBattle::defeat_lanes`]).
+    pub defeat_lanes: Option<u32>,
 }
 
 /// Seed the capture's HP / MP onto the engine actors (the engine enters a
@@ -1006,6 +1106,15 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
                 a.battle.seat = Some((x, z));
             }
         }
+        if let Some(f) = s.facing {
+            a.battle.facing_angle = f;
+        }
+        if let Some(lanes) = s.defeat_lanes
+            && a.battle.hp == 0
+        {
+            a.battle.render_flag = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
+            a.battle.render_color = lanes;
+        }
     }
 }
 
@@ -1013,9 +1122,16 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
         .iter()
-        .map(|s| match s.ground {
-            Some([x, z]) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
-            None => format!("{}:{}:{}", s.slot, s.hp, s.mp),
+        .map(|s| {
+            let head = match (s.ground, s.facing) {
+                (Some([x, z]), Some(f)) => format!("{}:{}:{}:{x}:{z}:{f}", s.slot, s.hp, s.mp),
+                (Some([x, z]), None) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
+                _ => format!("{}:{}:{}", s.slot, s.hp, s.mp),
+            };
+            match s.defeat_lanes {
+                Some(l) => format!("{head}:d{l:x}"),
+                None => head,
+            }
         })
         .collect::<Vec<_>>()
         .join(",")
@@ -1025,7 +1141,11 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
 pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
-            let mut it = e.trim().split(':');
+            let (e, defeat_lanes) = match e.trim().rsplit_once(":d") {
+                Some((head, l)) => (head, Some(u32::from_str_radix(l, 16).ok()?)),
+                None => (e.trim(), None),
+            };
+            let mut it = e.split(':');
             let slot = it.next()?.parse().ok()?;
             let hp = it.next()?.parse().ok()?;
             let mp = it.next()?.parse().ok()?;
@@ -1033,11 +1153,17 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 (Some(x), Some(z)) => Some([x.parse().ok()?, z.parse().ok()?]),
                 _ => None,
             };
+            let facing = match it.next() {
+                Some(f) => Some(f.parse().ok()?),
+                None => None,
+            };
             Some(BarSeed {
                 slot,
                 hp,
                 mp,
                 ground,
+                facing,
+                defeat_lanes,
             })
         })
         .collect()
@@ -1206,6 +1332,8 @@ pub fn run_engine_battle(
         Vec::new()
     };
     let ground = battle.seeded_ground();
+    let facing = battle.seeded_facing();
+    let defeat_lanes = battle.engine_defeat_lanes();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -1226,6 +1354,10 @@ pub fn run_engine_battle(
                     hp,
                     mp: c.mp,
                     ground: ground.get(slot).copied().flatten(),
+                    facing: facing.get(slot).copied().flatten(),
+                    defeat_lanes: (hp == 0)
+                        .then(|| defeat_lanes.get(slot).copied().flatten())
+                        .flatten(),
                 })
             })
             .collect()
@@ -1361,6 +1493,7 @@ pub fn run_engine_battle(
         prompt_tick,
         inflight: seed.map(|_| phase_tick),
         driven,
+        win_pose: world.battle.victory.and_then(|v| v.pose_id),
         action_state: world.battle_ctx.action_state,
         active_actor: world.battle_ctx.active_actor,
         monster_ids: snap.monster_ids,
@@ -1586,12 +1719,47 @@ pub enum BattleDrive {
 /// counterattack the replay's own monster turn does not roll (the drive
 /// reaches the counterer's strike loop through its own turn), raised on the
 /// engine when it holds the capture's state.
+///
+/// `arts` marks a party capture whose committed queue holds an art starter
+/// ([`RetailBattle::arts_queue`]): the player entered that turn through
+/// `Command`, so the drive opens the arts entry and confirms the string it
+/// preseeds from the record (`FUN_801DA34C`) instead of taking `Auto`, which
+/// builds a different queue under the same state byte. `gauge` is that
+/// seat's live gauge over its base ([`RetailBattle::acting_gauge`]), set when
+/// a Spirit turn the replay does not play had extended it: the extension is
+/// what selects the saved string's band and pays for its arrows, so
+/// [`BattleDrive::prime`] restores it.
+///
+/// `clip` is the acting party seat's committed clip `+0x1D9` on an
+/// [`SpanGate::Age`] capture, when that is a swing clip. The age is frames
+/// since the seat's **last** clip commit, and the strike loop `0x1E` spans
+/// one commit per queued swing, so an age alone matches the first swing
+/// that runs as long; the clip names which one retail sits in
+/// (`rim_elm_gimard_victory`: `0x1E` at `16` on `0x0E`, the second swing -
+/// the age alone took the first, `0x0F`). Art clips are compared on the
+/// dynamic slot (`0x10` / `0x11`) the anim commit remaps them onto, which
+/// both sides store. An idle `0` is not gated: a party seat's idle between
+/// the approach and its first strike has no engine twin (the engine holds
+/// the walk clip there).
+///
+/// `aim` is the monster row a party attack capture's target byte `+0x1DD`
+/// names: the player picked that monster, so the drive walks the target
+/// cursor onto it rather than confirming the picker's default. Which body
+/// the swing lands on moves the framing (the strike shots look at the
+/// target), and a default pick lands on whichever monster the earlier turns
+/// left first in the ring (`battle_vahn_tri_somersault_super`: retail row
+/// `1`, the default row `0`, which Noa's and Gala's swings had knocked far
+/// back).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
     pub yaw: Option<u16>,
     pub message: Option<(u32, i16)>,
     pub plate_cleared: bool,
+    pub arts: bool,
+    pub gauge: Option<u16>,
+    pub clip: Option<u8>,
+    pub aim: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1599,7 +1767,14 @@ pub struct ActionSteer {
 /// **The Done band's continuation `0x52`** holds for its own countdown
 /// `ctx[+0x6D8]` (`0xB4` frames when a Seru absorb stages it), and the engine
 /// enters it at the top: the capture's countdown places it, the drive holding
-/// until the engine's has run down to it.
+/// until the engine's has run down to it. **The fade-down `0x51`** ticks the
+/// same word - the `0x3C` tail timer `0x50` seeds - and is placed by it too,
+/// not by the close-up accumulator: in the Done band that word counts frames
+/// since the acting actor's last clip commit, which there is whichever idle or
+/// return commit the actor's clip lengths put last, so the engine's
+/// accumulator in `0x51` may not have been reset since its cast clip
+/// (`zora_glare_petrify_post`: retail `24`, engine past `4000`) and the
+/// accumulator gate held the band's first tick.
 ///
 /// **The battle-end sequence**, for a capture taken after the `0x5A` gate
 /// raised the end signal (`DAT_8007BD71 == 0xFE`):
@@ -1623,7 +1798,8 @@ pub enum SpanGate {
     Results { hold: u16 },
     /// `ctx[+0x6CE] >= 2`: the exit fade, at that phase halfword.
     Exit { phase: u16 },
-    /// Action-SM state `0x52`, its countdown `ctx[+0x6D8]` down to `timer`.
+    /// Action-SM state `0x51` or `0x52`, its countdown `ctx[+0x6D8]` down to
+    /// `timer`.
     DoneHold { timer: i16 },
     /// The capture band's CD holds `0x6E` / `0x6F` (or the module tick
     /// `0x70` they lead to), with retail's framing depth `ctx[+0x6D0]` at
@@ -1776,7 +1952,7 @@ impl SpanGate {
     }
 
     /// Whether a gate past the end signal.
-    fn is_end(self) -> bool {
+    pub fn is_end(self) -> bool {
         matches!(
             self,
             Self::Loading | Self::Results { .. } | Self::Exit { .. }
@@ -1837,6 +2013,18 @@ impl BattleDrive {
                 if steer.plate_cleared {
                     s.push_str(",c");
                 }
+                if let Some(g) = steer.gauge {
+                    s.push_str(&format!(",g{g}"));
+                }
+                if steer.arts {
+                    s.push_str(",a");
+                }
+                if let Some(k) = steer.clip {
+                    s.push_str(&format!(",k{k}"));
+                }
+                if let Some(p) = steer.aim {
+                    s.push_str(&format!(",p{p}"));
+                }
                 s
             }
         }
@@ -1862,6 +2050,14 @@ impl BattleDrive {
                 steer.message = Some((u32::from_str_radix(va, 16).ok()?, hold.parse().ok()?));
             } else if last == "c" {
                 steer.plate_cleared = true;
+            } else if last == "a" {
+                steer.arts = true;
+            } else if let Some(g) = last.strip_prefix('g') {
+                steer.gauge = Some(g.parse().ok()?);
+            } else if let Some(k) = last.strip_prefix('k') {
+                steer.clip = Some(k.parse().ok()?);
+            } else if let Some(p) = last.strip_prefix('p') {
+                steer.aim = Some(p.parse().ok()?);
             } else {
                 break;
             }
@@ -1955,6 +2151,15 @@ impl BattleDrive {
     /// absorbed Seru to take back off the seat's spell list). Called once,
     /// on the first battle tick.
     pub fn prime(&self, world: &mut legaia_engine_core::world::World) {
+        if let Self::Action { seat, steer, .. } = *self
+            && let Some(live) = steer.gauge
+            && seat < 3
+        {
+            let pc = world.party.party_count.clamp(1, 3);
+            if let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc))) {
+                a.battle.agl = live;
+            }
+        }
         if let Self::Action { seat, absorbed, .. } = *self
             && absorbed != 0
             && seat < 3
@@ -2080,11 +2285,17 @@ impl BattleDrive {
                         SpanGate::Landed => {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
-                        SpanGate::Age { accum } => world
-                            .battle
-                            .camera
-                            .as_ref()
-                            .is_none_or(|c| c.close_up_accum() >= u32::from(accum)),
+                        SpanGate::Age { accum } => {
+                            world
+                                .battle
+                                .camera
+                                .as_ref()
+                                .is_none_or(|c| c.close_up_accum() >= u32::from(accum))
+                                && steer.clip.is_none_or(|k| {
+                                    world.battle_current_anim(usize::from(engine_seat(seat, pc)))
+                                        == k
+                                })
+                        }
                         _ => true,
                     }
             }
@@ -2187,6 +2398,42 @@ impl BattleDrive {
         if !world.battle.tutorial_boxes.is_empty() {
             return Some(PadButton::Cross);
         }
+        // The arts entry the capture seat opened to replay its saved
+        // command string: a bare confirm takes the string, and the
+        // confirms after it begin the turn and pick the target.
+        if let Self::Action { seat, steer, .. } = *self
+            && let Some(want) = steer.aim
+        {
+            let picker = world
+                .battle
+                .arts_input
+                .as_ref()
+                .filter(|a| a.party_slot == seat)
+                .and_then(|a| a.picker())
+                .or_else(|| {
+                    world
+                        .battle
+                        .command
+                        .as_ref()
+                        .filter(|c| c.actor == seat)
+                        .and_then(|c| c.picker())
+                });
+            if let Some(picker) = picker
+                && let legaia_engine_core::target_picker::PickerState::Cursor {
+                    row: legaia_engine_core::target_picker::CursorRow::Enemy,
+                    slot,
+                } = picker.state()
+                && slot != want
+                && aim_alive(world, want)
+            {
+                return Some(PadButton::Right);
+            }
+        }
+        if matches!(self, Self::Action { steer, .. } if steer.arts)
+            && world.battle.arts_input.is_some()
+        {
+            return Some(PadButton::Cross);
+        }
         let cmd = world.battle.command.as_ref()?;
         match *self {
             Self::Opening { .. } => None,
@@ -2217,6 +2464,7 @@ impl BattleDrive {
                 seat,
                 category,
                 spare,
+                steer,
                 ..
             } => Some(match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.actor == seat && category == 4 => PadButton::Down,
@@ -2226,6 +2474,11 @@ impl BattleDrive {
                 // (a strong party otherwise kills it first, and the cast the
                 // seed names is never taken).
                 CommandPhase::Menu { .. } if seat >= 3 && category == 2 => PadButton::Down,
+                CommandPhase::AttackMode { .. }
+                    if cmd.actor == seat && steer.arts && saved_command_string(world, seat) =>
+                {
+                    PadButton::Right
+                }
                 CommandPhase::RoundPrompt { .. }
                 | CommandPhase::Menu { .. }
                 | CommandPhase::AttackMode { .. } => PadButton::Left,
@@ -2241,6 +2494,97 @@ impl BattleDrive {
             return 0;
         }
         self.press(world).map_or(0, |b| b.mask())
+    }
+}
+
+/// Whether party seat `seat`'s character record carries a saved auto
+/// command string - the arrows the arts entry preseeds its window from
+/// (`FUN_801DA34C`) and a bare confirm replays.
+///
+/// A party capture's queue `+0x1DF` is the turn the player committed, and a
+/// record that holds a string is a player who entered (and so saved) one: a
+/// replay through `Command` rebuilds that queue, where `Auto` rebuilds the
+/// queue from the direction commands and learned arts and plays a different
+/// action under the same state byte.
+fn saved_command_string(world: &legaia_engine_core::world::World, seat: u8) -> bool {
+    use legaia_save::character::AutoCommandBand;
+    let slot = world.party_roster_slot(usize::from(seat));
+    world.party.roster.members.get(slot).is_some_and(|rec| {
+        rec.auto_command_string(AutoCommandBand::Primary)[0] != 0
+            || rec.auto_command_string(AutoCommandBand::Secondary)[0] != 0
+    })
+}
+
+/// The member's EXP share the results sequencer hands out, `gp+0xA04`
+/// (`sw s6,0xA04(gp)` at `0x8004F684`).
+const END_XP_SHARE: u32 = 0x8007_BD1C;
+
+/// Take a results-frame capture's rewards back off the party it seeds.
+///
+/// The results sequencer `FUN_8004E568` grants the fight's EXP and runs the
+/// level-up applier `FUN_801E9504` when it opens the results frame, so a
+/// capture on that frame or after it (`SpanGate::Results` / `Exit`) holds the
+/// party past the grant. The seed replays the fight from that party, and the
+/// engine grants again on its own results frame: `noa_levelup_banner`'s Noa,
+/// already level 3 in the capture, gained nothing the second time, and the
+/// engine frame carried no "level increased" line.
+///
+/// Every living member (`+0x14C > 0` on its seat) loses the share. A member
+/// the applier levelled is recognised by its record stat window
+/// (`+0x11C` HP max, `+0x11E` MP max, `+0x122..+0x12D` the six stats)
+/// standing apart from the live window it is mirrored into one phase later
+/// (`+0x104`, `+0x108`, `+0x110..+0x11B` -
+/// `docs/subsystems/level-up.md#phase-split-multi-frame-writes`); that member
+/// gets the live values back in its record window and its level byte
+/// `+0x130` one lower. A capture past the live copy keeps the growth, which
+/// the engine's grant does not repeat because the level stays where it is.
+pub fn ungrant_results_rewards(
+    save: &mut legaia_save::SaveFile,
+    battle: &RetailBattle,
+    ram: &[u8],
+) {
+    if !matches!(
+        battle.span_gate,
+        SpanGate::Results { .. } | SpanGate::Exit { .. }
+    ) {
+        return;
+    }
+    let share = game_anchors::u32_at(ram, END_XP_SHARE);
+    for (seat, &char_id) in battle.seat_chars.iter().enumerate() {
+        let alive = battle
+            .party
+            .get(seat)
+            .and_then(|c| c.as_ref())
+            .is_some_and(|c| c.hp > 0);
+        let Some(rec) = usize::from(char_id)
+            .checked_sub(1)
+            .and_then(|i| save.party.members.get_mut(i))
+        else {
+            continue;
+        };
+        if alive {
+            rec.set_cumulative_xp(rec.cumulative_xp().saturating_sub(share));
+        }
+        // (record window, live window) halfword pairs.
+        const PAIRS: [(usize, usize); 8] = [
+            (0x11C, 0x104),
+            (0x11E, 0x108),
+            (0x122, 0x110),
+            (0x124, 0x112),
+            (0x126, 0x114),
+            (0x128, 0x116),
+            (0x12A, 0x118),
+            (0x12C, 0x11A),
+        ];
+        let raw = &mut rec.raw;
+        if raw.len() < 0x130 || PAIRS.iter().all(|&(r, l)| raw[r..r + 2] == raw[l..l + 2]) {
+            continue;
+        }
+        for (r, l) in PAIRS {
+            raw.copy_within(l..l + 2, r);
+        }
+        let level = rec.level();
+        rec.set_level(level.saturating_sub(1).max(1));
     }
 }
 
@@ -2332,6 +2676,27 @@ impl RetailBattle {
                     yaw: Some(self.walk_yaw_base),
                     message: self.timed_message,
                     plate_cleared: self.target_plate_cleared && seat < 3,
+                    arts: seat < 3 && self.queued_category == 3 && self.arts_queue,
+                    gauge: self
+                        .acting_gauge
+                        .filter(|&(live, base)| {
+                            seat < 3 && self.queued_category == 3 && self.arts_queue && live > base
+                        })
+                        .map(|(live, _)| live),
+                    clip: (seat < 3
+                        && self.caster_clip != 0
+                        // Gate on the direction swing clips 0x0C..=0x0F only:
+                        // retail can sit on the dynamic art slot 0x10 / 0x11
+                        // while the engine holds the swing's own clip, which
+                        // the gate could then never match
+                        // (battle_melee_hit_spark: retail 0x11, engine 0x0E).
+                        && (0x0C..=0x0F).contains(&self.caster_clip)
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.caster_clip),
+                    aim: (seat < 3
+                        && self.queued_category == 3
+                        && (3..8).contains(&self.target_code))
+                    .then(|| self.target_code - 3),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -2340,6 +2705,16 @@ impl RetailBattle {
             _ => None,
         }
     }
+}
+
+/// Whether monster row `row` stands in the engine's pool (party count +
+/// `row`), so the target cursor can land on it.
+fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bool {
+    let pc = usize::from(world.party.party_count.clamp(1, 3));
+    world
+        .actors
+        .get(pc + usize::from(row))
+        .is_some_and(|a| a.active && a.battle.hp > 0)
 }
 
 /// Run `drive` from the round prompt through the pad path. The ticks it took,
@@ -2402,6 +2777,34 @@ fn run_drive(
                     .iter()
                     .take(8)
                     .map(|a| (a.battle.render_flag, a.battle.render_color))
+                    .collect::<Vec<_>>()
+            );
+            let anims: Vec<(u8, u32, bool)> = (0..world.actors.len().min(8))
+                .map(|i| {
+                    (
+                        world.battle_current_anim(i),
+                        world.actors[i].battle.damage_accum,
+                        world.battle_on_knockdown(i),
+                    )
+                })
+                .collect();
+            let pose = world.battle.camera.as_ref().map(|c| {
+                let p = c.framing_pose();
+                (p.pitch as i32, p.yaw as i32, p.tr.map(|v| v as i32))
+            });
+            eprintln!(
+                "[rc] t={t} anims={anims:?} pose={pose:?} mod={} cd={} tgt={} pos={:?}",
+                world.casting.module_phase,
+                world.casting.module_cam.countdown.0,
+                world
+                    .actors
+                    .get(usize::from(world.battle_ctx.active_actor))
+                    .map_or(0, |a| a.battle.active_target),
+                world
+                    .actors
+                    .iter()
+                    .take(8)
+                    .map(|a| (a.move_state.world_x, a.move_state.world_z))
                     .collect::<Vec<_>>()
             );
         }
@@ -2575,13 +2978,14 @@ pub fn compare_battle(
         "phase",
         f64::from(u8::from(phase_ok)),
         format!(
-            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X}; engine {:?} action=0x{:02X} seat={} (first prompt at +{:?}){inflight}{driven}",
+            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X} clip=0x{:02X}; engine {:?} action=0x{:02X} seat={} (first prompt at +{:?}){inflight}{driven}",
             battle.flow,
             battle.action_state,
             battle.run_state,
             battle.active_actor,
             battle.queued_category,
             battle.queued_action,
+            battle.caster_clip,
             engine.flow,
             engine.action_state,
             engine.active_actor,
@@ -2782,12 +3186,16 @@ mod tests {
                 hp: 412,
                 mp: 37,
                 ground: None,
+                facing: None,
+                defeat_lanes: None,
             },
             BarSeed {
                 slot: 4,
                 hp: 1,
                 mp: 0,
                 ground: Some([-4, -707]),
+                facing: Some(0x9F0),
+                defeat_lanes: Some(0),
             },
         ];
         assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
@@ -2868,6 +3276,25 @@ mod tests {
                     yaw: Some(0xA98),
                     message: Some((0x801C_ED18, 25)),
                     plate_cleared: true,
+                    ..ActionSteer::default()
+                },
+            },
+            BattleDrive::Action {
+                seat: 0,
+                state: 0x20,
+                category: 3,
+                queued: 0x0F,
+                spare: false,
+                absorbed: 0,
+                end: SpanGate::Age { accum: 176 },
+                style: Some(0),
+                steer: ActionSteer {
+                    yaw: Some(0x280),
+                    arts: true,
+                    gauge: Some(153),
+                    clip: Some(0x11),
+                    aim: Some(1),
+                    ..ActionSteer::default()
                 },
             },
         ] {

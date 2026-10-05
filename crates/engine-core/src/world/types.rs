@@ -845,6 +845,13 @@ pub struct Actor {
     /// relocated per battle slot - see
     /// `legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`).
     pub battle_monster_id: Option<u16>,
+
+    /// This fight's element override for a monster seat: the per-seat copy
+    /// of the monster record retail loads per battle (`0x801C9348[seat - 3]`,
+    /// record `+0x1D`), which PROT 0964's Element Change rewrites. `None`
+    /// reads the catalog's element. Cleared whenever a seat is (re)assigned
+    /// a monster, so a changed element never outlives its battle.
+    pub battle_element: Option<u8>,
 }
 
 impl Actor {

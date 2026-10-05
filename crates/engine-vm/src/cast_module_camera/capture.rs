@@ -43,6 +43,13 @@ pub struct CaptureCamArm {
     /// owns the module phase, the way a camera-only player director does; a
     /// ported body ignores it.
     pub next: Option<u8>,
+    /// A store into the caster's battle-scoped latch word
+    /// (`0x801C8FE0 + (ctx[+0x13] + 1) * 4`, the monster AI's ability
+    /// cooldown `dat[m + 4]`), when the arm makes one.
+    pub latch: Option<i32>,
+    /// The arm took a branch that applies no damage: the band's fold owes
+    /// this cast nothing.
+    pub skips_fold: bool,
 }
 
 /// One capture body's camera arms, by the module phase `ctx[+0x279]` the
@@ -57,6 +64,8 @@ pub type CaptureCamDirector = fn(&mut ModuleCamState, u8, ModuleCamSeats) -> Cap
 pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirector> {
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
+        (940, GLARE_BODY) => Some(glare_camera),
+        (953, SINGLE_BODY) => Some(terio_punch_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
@@ -70,7 +79,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 /// holds of where in an arm the module is.
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
-        0xAC => Some(MYSTIC_SHIELD_COUNTDOWN),
+        0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
@@ -142,6 +151,7 @@ pub fn mystic_shield_camera(
                 drift: None,
                 hold: false,
                 next: None,
+                ..Default::default()
             }
         }
         1..=7 => {
@@ -154,6 +164,7 @@ pub fn mystic_shield_camera(
                 drift,
                 hold,
                 next: None,
+                ..Default::default()
             }
         }
         _ => CaptureCamArm::default(),
@@ -211,6 +222,7 @@ pub fn guilty_cross_camera(
             drift: None,
             hold: false,
             next: None,
+            ..Default::default()
         };
     }
     let drift = match phase {
@@ -248,6 +260,7 @@ pub fn guilty_cross_camera(
         drift,
         hold,
         next: None,
+        ..Default::default()
     }
 }
 
@@ -300,6 +313,7 @@ pub fn ultra_charge_camera(
                 drift: None,
                 hold: false,
                 next: Some(1),
+                ..Default::default()
             }
         }
         1 => CaptureCamArm {
@@ -307,6 +321,7 @@ pub fn ultra_charge_camera(
             drift: Some(drift(0, 0, 0, super::MODULE_DRAIN_PER_TICK as i16)),
             hold: st.countdown.drain_above(0),
             next: Some(0xFF),
+            ..Default::default()
         },
         _ => CaptureCamArm::default(),
     }
@@ -388,6 +403,7 @@ pub fn mystic_circle_camera(
         drift,
         hold,
         next: None,
+        ..Default::default()
     }
 }
 
@@ -419,7 +435,7 @@ pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
 /// outlasts). The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
 /// pan, `zeto_big_wave_mid_cast` in arm 5 on arm 4's.
 ///
-/// PORT: FUN_801F69FC (PROT 0946; the camera arms 0..8, their countdown and
+/// PORT: FUN_801F69FC, overlay_cast_call_wave_0946_801f69fc (PROT 0946; the camera arms 0..8, their countdown and
 /// phase chain)
 pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> CaptureCamArm {
     let c = seats.caster;
@@ -435,6 +451,7 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         drift: None,
         hold: false,
         next,
+        ..Default::default()
     };
     let gate = |st: &mut ModuleCamState| st.countdown.drain_above(0);
     let held = CaptureCamArm {
@@ -518,5 +535,223 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             }
         }
         _ => pass(None, None),
+    }
+}
+
+/// PROT 0940's `0x3C` body (Glare), the trampoline's first arm.
+pub const GLARE_BODY: u32 = 0x801F_69F8;
+
+/// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
+/// countdown is the module word `0x801F864C` Mystic Shield also uses):
+///
+/// | arm | camera | countdown as it passes |
+/// |---|---|---|
+/// | 0 (`0x801F6ACC`) | shot behind the caster: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x800)` for monster `0xA9` else `(0, 0x400, 0xA00)`, focus the caster, `0xC` frames | `= scalar << 8` |
+/// | 1 (`0x801F6C7C`) | drift TR z `-8`, TR y `+2` a pass; once spent, a cut onto the victim: pitch `0`, yaw `0x800 - victim[+0x46]`, TR `(0, 0x400, 0xA00)` | `+= scalar << 7` |
+/// | 2 (`0x801F6EEC`) | drift TR z `-8` | `+= scalar << 7` |
+/// | 3 (`0x801F71B4`) | drift TR z `-8`; the last gate - the body returns `0` | - |
+///
+/// Each arm from 1 on drains the word by `scalar * delta` and holds while it
+/// stays positive (`bgtz` to the epilogue with the busy `1`). The body has no
+/// damage site: arm 2 raises the element `0x5B` and sets `ctx[+0x18]`, the
+/// status half the band's fold owns, which the camera does not touch. The
+/// body's phase chain has no other port, so this director owns the phase.
+///
+/// PORT: overlay_cast_glare_divide_0940_801f69f8 (PROT 0940 `0x3C`; the camera arms, the countdown and the phase chain)
+pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> CaptureCamArm {
+    let pull = drift(0, 0, 0, -8);
+    match phase {
+        0 => {
+            st.countdown.0 = SPEED_SCALAR << 8;
+            let tr = if seats.caster_monster == 0xA9 {
+                [0, 0x600, 0x800]
+            } else {
+                [0, 0x400, 0xA00]
+            };
+            CaptureCamArm {
+                shot: Some(ModuleShot {
+                    angles: [0, yaw_from(0x800, seats.caster.facing), 0],
+                    tr,
+                    focus: focus_on(seats.caster),
+                    frames: 0xC,
+                }),
+                drift: None,
+                hold: false,
+                next: Some(1),
+                ..Default::default()
+            }
+        }
+        1..=3 => {
+            let d = if phase == 1 { drift(0, 0, 2, -8) } else { pull };
+            let hold = st.countdown.drain_above(0);
+            if hold {
+                return CaptureCamArm {
+                    shot: None,
+                    drift: Some(d),
+                    hold: true,
+                    next: Some(phase),
+                    ..Default::default()
+                };
+            }
+            if phase < 3 {
+                st.countdown.add(1 << 7);
+            }
+            let shot = (phase == 1).then(|| ModuleShot {
+                angles: [0, yaw_from(0x800, seats.victim.facing), 0],
+                tr: [0, 0x400, 0xA00],
+                focus: focus_on(seats.victim),
+                frames: 1,
+            });
+            CaptureCamArm {
+                shot,
+                drift: Some(d),
+                hold: false,
+                next: (phase < 3).then_some(phase + 1),
+                ..Default::default()
+            }
+        }
+        _ => CaptureCamArm::default(),
+    }
+}
+
+/// PROT 0953 (Terio Punch), a single-body module: its `0x801CF56C` arm
+/// points straight at the tick `0x801F69FC`, a nine-arm switch (`sltiu 9`,
+/// table at the image head).
+///
+/// The body is **two casts in one**, forked at arm 0 on the caster's latch
+/// word `0x801C8FE0 + (ctx[+0x13] + 1) * 4` - the word the monster AI
+/// reads for monster `0x8B` (it picks `0x5D` when it is set, else `0x5E`):
+///
+/// * latch clear - the **charge** (`0x801F6CEC`): a cut behind the caster -
+///   pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, depth / 2)` -
+///   the latch set, and phase 1; arm 1 (`0x801F6E74`) pulls out to pitch
+///   `0x200`, TR `(0, 0, depth * 2)` over `0x100` frames and arms
+///   `scalar << 8` on the module word `0x801F7E88`; arm 2 holds on it and
+///   the body returns `0`. No damage site runs, so the fold owes nothing.
+/// * latch set - the **punch** (`0x801F6B0C`): the caster turned to face
+///   its victim (`h = heading(victim -> caster) + 0x800`), a cut - pitch
+///   `0x20`, yaw `0x400 - h`, TR `(0, 0x600, depth)` - the latch cleared, and
+///   phase 4. Arm 4 (`0x801F6FA0`): pitch `-0x40`, yaw `0x600 - h`, TR
+///   `(0x200, 0xA00, depth / 3)` over `0x50` frames, `+= scalar * 80`. Arm 5:
+///   held, then pitch `0`, yaw `0x800 - h`, TR `(0, 0x550, depth)` over
+///   `0x40`, `+= scalar << 6`. Arm 6 drains every pass (spawning the trail
+///   parts) and, once spent, pulls out to TR `(0, 0x550, 0x2800)` over
+///   `0x80`, `+= scalar * 96`. Arm 7: held, then the **strike** -
+///   `FUN_801DD6B4(0x274, caster, seat)` over every hittable party seat
+///   (`0x801F7410`), which is the band's fold here - and `+= scalar * 160`.
+///   Arm 8 holds out the word and the body returns `0`.
+///
+/// `depth` is `ctx[+0x6D0]`. Every framing's focus is the caster. Arm 8 also
+/// waits for every party seat to leave its reaction clip, which this
+/// director does not model.
+///
+/// PORT: overlay_cast_terio_punch_0953_801f69fc (PROT 0953; the camera arms, the countdown, the charge latch and the phase chain)
+pub fn terio_punch_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let c = seats.caster;
+    let depth = seats.depth_raw as i16;
+    let h = super::heading(seats.victim, c).wrapping_add(0x800) & 0xFFF;
+    let shot = |angles: [i16; 3], tr: [i16; 3], frames: u16| {
+        Some(ModuleShot {
+            angles,
+            tr,
+            focus: focus_on(c),
+            frames,
+        })
+    };
+    let held = CaptureCamArm {
+        hold: true,
+        next: Some(phase),
+        ..Default::default()
+    };
+    let step = |shot: Option<ModuleShot>, next: Option<u8>| CaptureCamArm {
+        shot,
+        next,
+        ..Default::default()
+    };
+    match phase {
+        0 if seats.caster_latch != 0 => {
+            st.countdown.0 = 0;
+            CaptureCamArm {
+                latch: Some(0),
+                ..step(
+                    shot([0x20, yaw_from(0x400, h), 0], [0, 0x600, depth], 1),
+                    Some(4),
+                )
+            }
+        }
+        0 => CaptureCamArm {
+            latch: Some(1),
+            skips_fold: true,
+            ..step(
+                shot([0, yaw_from(0x800, c.facing), 0], [0, 0x600, depth / 2], 1),
+                Some(1),
+            )
+        },
+        1 => {
+            st.countdown.add(1 << 8);
+            step(
+                shot(
+                    [0x200, yaw_from(0x800, c.facing), 0],
+                    [0, 0, depth.wrapping_mul(2)],
+                    0x100,
+                ),
+                Some(2),
+            )
+        }
+        2 => {
+            if st.countdown.drain_above(0) {
+                return held;
+            }
+            step(None, None)
+        }
+        4 => {
+            st.countdown.add(80);
+            step(
+                shot(
+                    [-0x40, yaw_from(0x600, h), 0],
+                    [0x200, 0xA00, depth / 3],
+                    0x50,
+                ),
+                Some(5),
+            )
+        }
+        5 => {
+            if st.countdown.drain_above(0) {
+                return held;
+            }
+            st.countdown.add(1 << 6);
+            step(
+                shot([0, yaw_from(0x800, h), 0], [0, 0x550, depth], 0x40),
+                Some(6),
+            )
+        }
+        6 => {
+            if st.countdown.drain_above(0) {
+                return held;
+            }
+            st.countdown.add(96);
+            step(
+                shot([0, yaw_from(0x800, h), 0], [0, 0x550, 0x2800], 0x80),
+                Some(7),
+            )
+        }
+        7 => {
+            if st.countdown.drain_above(0) {
+                return held;
+            }
+            st.countdown.add(160);
+            step(None, Some(8))
+        }
+        8 => {
+            if st.countdown.0 > 0 && st.countdown.drain_above(0) {
+                return held;
+            }
+            step(None, None)
+        }
+        _ => CaptureCamArm::default(),
     }
 }

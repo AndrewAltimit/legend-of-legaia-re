@@ -1516,7 +1516,7 @@ pub struct CameoPose {
 // [`CAMEO_SCENE_MODEL`] posed by records `0x1B` / `0x1C` of the PROT 1203
 // clip bank in the camera-relative frame, with [`sprite_blit`]'s wink
 // applied to the surface's VRAM.
-/// PORT: FUN_801D6310 - the round-start **cameo walk-on** animator.
+/// PORT: FUN_801D6310, overlay_baka_fighter_0976_801d6310 - the round-start **cameo walk-on** animator.
 ///
 /// Each frame it forces the actor's step `+0x6A = 8`, raises flag
 /// `0x200000` and the camera-relative bit `+0x52 |= 0x400`, then poses the

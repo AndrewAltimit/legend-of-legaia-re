@@ -54,7 +54,7 @@ designer's `"setbl p:%d t:%d l:%d n:%d id:%d"` line off `+0..+4`. The row layout
 is therefore the layout above, and the disc bears it out.
 
 **Which** bundle sits in that slot is the whole content of the claim. It is
-whatever loaded last, and there are two occupants:
+whatever loaded last, and these are its occupants:
 
 - **Field** - the field asset loader repoints the slot at the scene's prescript
   bundle on every field load (`FUN_8001F7C0` `0x8001F864`), so the `>= 0x200`
@@ -68,6 +68,10 @@ whatever loaded last, and there are two occupants:
   the bank loads at **battle-scene setup** and reloads per battle. This page
   previously said "at init"; that rested on the routine's shape, not on its
   caller. [`bse-dat.md`](bse-dat.md).
+- **Minigame overlays** - the slot machine's init points the slot at its own
+  `efect.dat` (extraction 1199), and the Muscle Dome arena's at extraction 542,
+  whose category-3 rows key the arena's slot-3 side bank
+  ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-tally-cues-key-the-arenas-own-bank)).
 
 One row column is not static in battle. Before enqueueing a cue, the battle cue
 router `FUN_8004FE5C` overwrites byte `+4` (`id`, the category) of
@@ -210,6 +214,19 @@ immediately before reprogramming it. And the sustained held-count write lives
 *inside* the key-on loop, so a sustained cue with a zero voice count releases the
 old run but leaves `gp+0x5D0` unchanged - the next sustained cue re-releases the
 same, already-stopped voices.
+
+Two consequences shape what a burst of cues sounds like. The one-shots live at
+the top of the voice file, away from the sequencer's ascending first-idle scan,
+so a hit rarely competes with the score for a voice; and a cue is never dropped
+for want of an idle voice - the fifth hit in battle simply re-keys voice 23 and
+cuts the first. The cue key-on also rewrites the voice's libsnd note record
+(`+0x10 = 0x21`), so a sequencer note that held the voice before no longer
+matches it and its note-off does not reach the cue.
+
+Port: `legaia_engine_audio::SfxBank` carries the cursor, its limit and the held
+count (`set_field_family` selects the limit; both hosts call it per tick from the
+world's mode), and the sequencer drops a note whose voice was re-keyed under it
+(`Voice::key_on_count`).
 
 The channel gate is a 12-byte mixer record at `0x80091508 + channel * 12`: `+0`
 is a `VabHdr` pointer, `+8` is the **VAB slot id** handed to `FUN_80065034` as

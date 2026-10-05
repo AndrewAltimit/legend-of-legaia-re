@@ -1530,6 +1530,37 @@ and reseed to `0x10`, and the arm writes the cue ring
 countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
 staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
 
+### The tally cues key the arena's own bank
+
+Both ids are at or above `0x200`, so the drainer resolves them against the
+current-bundle slot `_DAT_8007B8D0` ([`sfx-table.md`](../formats/sfx-table.md)),
+and the arena points that slot at its own bundle. `FUN_801CEA6C` allocates a
+`0x14000` buffer, stores `buffer + 0x12800` to `_DAT_8007B8D0`
+(`0x801CEEDC..0x801CEEFC`) and fills it with `FUN_8003EB98(0x220, …)` at
+`0x801CEF14` - raw TOC `0x220`, extraction **542**, the third slot of the
+`koin1` block. A `minigame_muscle_dome` state parked in the hub reads those
+exact bytes at `*(0x8007B8D0)`. Its record table carries four rows:
+
+| Cue | Program | Tone | Voices | Category |
+|---|---|---|---|---|
+| `0x200` | 0 | 0 | 2 | 3 |
+| `0x201` | 0 | 2 | 1 | 3 |
+| `0x202` | 0 | 3 | 1 | 3 |
+| `0x203` | 0 | 4 | 2 | 3 |
+
+Category `3` is VAB slot 3, which the same init fills with extraction **1157**
+(`vab_01 + 0x57`, one program of six tones) - every tone the rows name. Only
+`0x202` and `0x203` have a writer anywhere in the arena image; `0x200` /
+`0x201` are carried but never queued by it.
+
+Port: the scene host stages the bundle on the warp
+(`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`) and
+`World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`;
+`World::tail_side_band_bank` names the slot-3 bank there, which both hosts'
+BGM-tail stagers take. `HubTimers` emits the four slot writes on the INTERVAL
+arm's first frame as `SfxRingOp::ArmSlot` (id and countdown of one ring slot),
+and both hosts replay them onto their cue ring.
+
 Port: `engine-core::muscle_dome::HubScreen` carries the envelope,
 `engine-core::muscle_ringside::HubTimers` arms and ticks it once per world
 tick (`World::tick_muscle_hub`, from the shared scene host; each play host's
@@ -1636,7 +1667,9 @@ gate: the `0x4000` arm is skipped when `ctx+0x275 < 4` and the `0x1000` arm when
 `ctx+0x275 < 3`, so a panel with fewer than four slots takes fewer directions
 and plays no blip for the missing ones.
 
-**BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field).
+**BGM.** The arena loads its music itself, through the streaming pair the other minigame inits use - not through the BGM-id word. Its init `FUN_801CEA6C` (PROT 0977) runs two `FUN_8001FC00` / `FUN_8001E54C` pairs: raw `0x3F8` into slot `5` at `0x801CF000..0x801CF020` - extraction **1014**, `music_01` sound-test #26 `M26B1`, the standard battle theme, global `2026` - and raw `*(0x8007BBE4) + 0x57` into slot `3` at `0x801CEF50..0x801CEF70` (`vab_01` + `0x57`, extraction **1157**, a four-program side bank).
+
+Because the load bypasses `_DAT_8007BAC8`, a state parked in the hub still reads the host scene's id there (`minigame_muscle_dome`: `0x7E0`, `town01`'s track). The earlier reading - "no streaming-loader call, the music is inherited" - came from a sweep of the dumped functions, which do not include the init's load block.
 
 The engine and the site represent that with the standard battle theme
 (`M26B1`, global BGM `2026`). `MinigameSubId::bgm_id` names it, and the shared
@@ -2099,6 +2132,72 @@ course-select screen, so it walks the Beginner course one round per contest;
 the browser page fills its foe picker from the ladder. The stand-in constants
 survive only as the fallback for a disc whose ladder or archive does not
 decode, and a log line says so when they are used.
+
+### The leg is filmed by the battle camera
+
+Because a leg is an ordinary battle, its camera is the battle camera
+director `FUN_801D5854` driven by the round and action state machines - not
+a dome-specific shot. The 3D surface every dome host draws
+(`engine-core::muscle_dome_scene::MuscleDomeSurface`) therefore seats the
+fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)`
+(`battle_seats`, facings `0` / `0x800`) at the battle world scale, and steps
+the shared `legaia_engine_vm::battle_cam_script` once a frame with the phase
+each moment of the leg is in a battle:
+
+| Dome moment | Battle state | Framing |
+|---|---|---|
+| Begin / Reselect confirm | flow `0x6E` | case 9 far framing + idle orbit |
+| the command ring, the direction entry, the Ra-Seru list | flow `0x28` / `0x50` / `0x46` | case 0 over-the-shoulder close-up |
+| Auto / Command prompt | flow `0x78` | case 1, the member turned toward the opponent |
+| the closing walk | action `0x14` | case 6 in-fight arm |
+| each strike | action `0x1E` | case 7 two-shot |
+| an attacker's done tail | action `0x50`, category Attack | case 8 on the target |
+| a won leg | battle-end signal up | case 6 battle-over arm |
+
+`DomeCamera::vp_raw` projects the script's pose through `battle_vp` over the
+stage model, so the native window and the browser play page (both upload that
+one matrix) frame a leg exactly as they frame a fight. The standalone
+minigames page draws through the same surface (`muscle_surface_*`), naming the
+selection screen it has up with `MuscleDomeSurface::set_select_framing`
+because it drives its own command flow, and times its hit numerals off the
+surface's beat (`muscle_surface_beat_json`). The case-6 depth is
+`FUN_801F0348` over the seated monster's size class, the close-up height the
+character's `0x801F4D2C` row.
+
+The playback the camera follows is one schedule, `turn_timeline`, which the
+surface, the world's `TurnOver` hold and the play-out tally all read: the
+leg's first acting play walks its attacker in from the seat on its walk clip
+(tag `1`) - battle locomotion has no walk home, so later turns swing from where
+the pair stands - each play swings, and each attacker's string closes on the
+done band's `0x3C`-frame tail. The defender's knockdown lands on the play that
+ends the leg. The approach length and the per-swing cadence are the port's
+clock, not retail's root-motion arithmetic.
+
+### The leg opens like a battle: the name banner, then `Begin | Run`
+
+A leg opens through the round driver's flow `0x0A` / `0x0B`: `0x0A` composes
+the enemy-name banner (`FUN_801D9D3C`) and seeds `ctx[+0x6D6] = 0x5A`, `0x0B`
+drains it, and the turn top `0x14` then raises the round prompt `0x1E`
+(`0x801D0DE0..0x801D0EB8`). `0x14` is the only writer of `0x1E` and stores it
+unconditionally (`0x801D0ED4`), so **every** turn opens on `Begin | Run`, with
+the far framing and its idle orbit; Begin opens the ring with the highlight on
+its Left (Attack) arm, which `0x14` seeds into `ctx[+0x880]` at `0x801D0ECC`.
+
+Run is offered in the dome like anywhere else - the `0x1E` arm has no contest
+test - and the contest gives it its meaning: the `0xFE` arm, behind the sub-id
+test at `0x801D322C`, turns a party Run into the arena's ran outcome
+(`_DAT_80084448 = 4`, `0x801D3228..0x801D328C`) unless the formation monster
+is `0xAF` / `0x3D` / `0x3E` / `0x3F`, and the re-entered hub settles that as
+a give-up.
+
+Port: `MuscleDomeSession::arm_intro` / `tick_intro` / `intro_up` carry the
+hold (armed by `World::enter_muscle_dome`, drained once no hub screen covers
+the leg); while it runs the session takes no input and the HUD phase is
+`Idle`, and `battle_hud::battle_intro_names` lays the opponent's name out over
+the lone monster seat as the composer lays out a group label. `DomeMenu`
+opens each turn on the round prompt, and Run reports the leg as ran through
+`World::leave_muscle_dome`. The escape roll a Run makes in retail is not
+modelled - the leg ends on the press.
 
 Documented host models, each disclosed rather than presented as retail:
 

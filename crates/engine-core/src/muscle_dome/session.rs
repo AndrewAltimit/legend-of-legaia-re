@@ -65,6 +65,17 @@ pub struct MuscleDomeSession {
     /// ([`Self::set_opponent_name`]). `None` when the host staged a
     /// stand-in.
     pub(super) opponent_name: Option<String>,
+    /// Some play has already acted this leg, so the two bodies stand within
+    /// reach of each other: battle locomotion has no walk-home leg
+    /// (`engine-core::world::battle::locomotion`), so only a leg's **first**
+    /// acting play closes the gap from the seats.
+    pub(super) closed_in: bool,
+    /// The last resolved turn's first play is that closing approach
+    /// ([`Self::last_turn_closes_in`]).
+    pub(super) last_turn_closes_in: bool,
+    /// The battle-open intro hold still to run, in frames - retail's
+    /// `ctx[+0x6D6]` ([`Self::arm_intro`]).
+    pub(super) intro: u16,
 }
 
 impl MuscleDomeSession {
@@ -98,7 +109,30 @@ impl MuscleDomeSession {
             special: 0,
             menu: DomeMenu::default(),
             opponent_name: None,
+            closed_in: false,
+            last_turn_closes_in: false,
+            intro: 0,
         }
+    }
+
+    /// Arm the leg's battle-open hold: the round driver's flow `0x0A` seeds
+    /// `ctx[+0x6D6] = 0x5A` and composes the enemy-name banner
+    /// (`FUN_801D9D3C`), and `0x0B` drains it before the turn top raises the
+    /// round prompt (`0x801D0DE0..0x801D0EB8`). The host arms it when the leg
+    /// opens; no command surface takes the pad while it runs.
+    pub fn arm_intro(&mut self) {
+        self.intro = crate::battle_open::PLAIN_OPEN_FRAMES;
+    }
+
+    /// Drain the battle-open hold by `step` frames (`0x0B`'s
+    /// `ctx[+0x6D6] -= DAT_1F800393`).
+    pub fn tick_intro(&mut self, step: u16) {
+        self.intro = self.intro.saturating_sub(step);
+    }
+
+    /// Whether the battle-open hold (and its enemy-name banner) is up.
+    pub fn intro_up(&self) -> bool {
+        self.intro > 0
     }
 
     /// Name the opponent (its PROT 867 monster record's name) for the action
@@ -815,8 +849,21 @@ impl MuscleDomeSession {
         };
         model.begin_turn([self.f[0].hp, self.f[1].hp]);
         self.resolve_turn(|attacker, cmd| model.damage(attacker, cmd));
+        let played = !model.plays().is_empty();
+        self.last_turn_closes_in = played && !self.closed_in;
+        self.closed_in |= played;
         self.damage = Some(model);
         true
+    }
+
+    /// Whether the last resolved turn's first play opened by walking its
+    /// attacker in from the formation seat - true exactly once per leg, on
+    /// the first turn that plays anything. Retail's approach is the
+    /// attacker's walk-clip root motion toward its target
+    /// (`FUN_80047430`), and nothing walks a combatant home afterwards, so
+    /// every later play swings from where the last one left the pair.
+    pub fn last_turn_closes_in(&self) -> bool {
+        self.last_turn_closes_in
     }
 
     /// Resolve the turn the way **both** hosts must: through the retail

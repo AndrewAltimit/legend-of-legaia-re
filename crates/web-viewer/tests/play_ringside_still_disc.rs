@@ -23,10 +23,7 @@
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const CROSS: u16 = 0x4000;
-const DIRECTIONS: [u16; 4] = [0x0080, 0x0020, 0x0010, 0x0040];
 const SUB_MUSCLE: u8 = 5;
-/// The door warp's stand-in swing cost (`FAVORED_COST` in the scene host).
-const SWING_COST: i64 = 0x1E;
 /// The page's sheet id for the still.
 const STILL_SHEET: u64 = 8;
 
@@ -65,19 +62,14 @@ fn play_one_leg(rt: &mut LegaiaRuntime) -> String {
             step(rt, 0);
             return phase;
         }
+        // The selection is the battle's command flow - every turn opens on
+        // the round prompt (`Begin` | `Run`), then ring -> Attack ->
+        // Command -> entry -> review -> Begin - so the page's own scripted
+        // press walks it, the same press the native harnesses make.
         let pad = if frame % 2 == 1 {
             0
-        } else if phase == "select" {
-            // `budget` is what is left of the turn's pool.
-            if st["budget"].as_i64().unwrap_or(0) >= SWING_COST
-                && st["queued"].as_u64().unwrap_or(0) < 4
-            {
-                DIRECTIONS[(frame as usize / 2) % 4]
-            } else {
-                CROSS
-            }
         } else {
-            0
+            st["scripted_press"].as_u64().unwrap_or(0) as u16
         };
         step(rt, pad);
     }

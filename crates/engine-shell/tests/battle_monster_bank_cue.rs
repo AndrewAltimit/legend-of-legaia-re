@@ -103,7 +103,8 @@ fn a_monster_cue_keys_a_sample_from_its_monster_snd_bank() {
     let report = legaia_vab::parse(bytes, 4).expect("the bank's VAB header at +4");
     let mut spu = Spu::new();
     let vab = legaia_engine_audio::bgm_tail::upload_at(&mut spu, 0x20000, &report, &bytes[4..]);
-    let voice = SfxBank::play_descriptor(&row, &mut spu, &vab)
+    let voice = SfxBank::default()
+        .play_descriptor(&row, &mut spu, &vab)
         .unwrap_or_else(|| panic!("cue {id:#x} row {row:02x?} keys a voice in bank {bank}"));
     let mut buf = vec![0i16; 2 * 8192];
     spu.render_into(&mut buf);

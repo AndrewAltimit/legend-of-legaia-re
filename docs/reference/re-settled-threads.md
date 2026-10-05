@@ -5041,8 +5041,7 @@ coverage, not a caller
 
 ### SCUS recomp gap - render/GTE + boot/init clusters
 
-*Status:* resolved (behavior-read + dumped); the general-game band remains the
-open remainder
+*Status:* resolved (behavior-read + dumped), the general-game band included
 
 The psxrecomp static recompilation's function inventory surfaced a set of SCUS
 entries with no dump / doc / port-tag on our side, clustered by VA band. The
@@ -5086,19 +5085,26 @@ Recorded so the same entries aren't re-flagged:
   function - the per-frame battle actor maintenance pass
   ([`battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c)),
   **not** a mode dispatcher.
-- **Still open from the same inventory:** the general-game band (never
-  per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,
-  no static caller), `0x80025DA4`. Next step:
-  behavior-read each against its `0x8007xxxx`/`gp` globals the way this
-  thread's entries were closed. Five former members are now closed:
+- **The general-game band closes the same way - its two named heads are not
+  new functions.** `0x8002A9F8` is the branch target past the header test of
+  `FUN_8002A9CC`, the `"ME"` channel-delta codec: `beq v0,v1,0x8002a9f8` at
+  `0x8002A9E8` takes it when `(b0 & 0xC0) == 0x40`, and the fall-through is the
+  `jr ra; clear v0` reject - a block split, which is why it has "no static
+  caller" ([`functions.md` § battle](functions/battle.md)). `0x80025DA4` is
+  `FUN_80025DA0` + 4, the Mode 12 `MAPDSIP INIT` handler, split after its
+  leading `lw v0,0x798(gp)` - the same +4 skew as `0x80046498` and the
+  boot-band entries above ([`boot.md`](../subsystems/boot.md)). With both read, no member of
+  the inventory is left un-attributed, and `disc-coverage.py` puts every
+  `SCUS_942.54` code byte inside a dumped body, so the band holds no
+  undumped routine either. Five former members closed earlier:
   `0x8004DC68` is the near-camera ghost pass (Battle, above); `0x80036D80` is
   the ambient ramp pool's own actor template (Animation, above);
   `0x80056208` is **not** a libgpu-band bridge - it is a battle side-band tick
   (three submodes off `DAT_8007B64A`) that merely sits at a PsyQ-adjacent
   address, ported to `engine-render`; and `0x8002149C` / `0x80059E10` both now
   carry full disassembly, so their grade is `disassembly` rather than the
-  weaker evidence this line assumed. The PsyQ sound-driver
-  cluster is tracked separately under Audio.
+  weaker evidence this line assumed. The PsyQ sound-driver cluster is tracked
+  separately under Audio.
 
 ### Full-window item-add OOB reachability
 
@@ -5460,7 +5466,7 @@ Grade `capture` for the census (a disc-derived executing oracle) and
 | `content_bytes` vs `clean_copy_bytes` - which is an overlay's length? | resolved (the entry's sector extent is the length; `clean_copy_bytes` is how much a RAM capture verified) | `disassembly` | On PROT 0899 they differ by `0xF174`, and using the shorter one made the menu overlay read 99.9% covered while measuring a prefix; every overlay image equals its corrected PROT extent exactly (31 of 31), so `content_bytes` is the denominator disc-coverage uses. See [`disc-coverage.md`](../tooling/disc-coverage.md). |
 | Does `PROT.DAT`'s TOC leave gaps between entries? | resolved (no - it is a gapless partition) | `disassembly` | Zero LBA gaps across every row; each entry's extent abuts the next. Any "unindexed gap between entries N and N+1" reading is the superseded over-reading entry size (`prot.md`). |
 | PROT 0867's trailing `0x14000` slots | resolved (raw 4bpp PSX TIMs, not LZS monster blocks) | `capture` | Slots 187..194 open with the TIM magic `0x10` where a block carries `dec_size`: CLUT to VRAM `(0, 482)` 256x1, page to `(384, 0)` 64x256 halfwords, 33,312 bytes, rest zero; row 482 sits under the monster CLUT base 484 and `x = 384` is monster page origin 1. The same TIM shape sits inside PROT 0892. LZS-decoding the magic as a length "succeeds" against the zeroed ring buffer. Instrument: `asset account` ([`byte-accounting.md`](../tooling/byte-accounting.md)). |
-| `summon.dat`'s seven unclassified slots | resolved (the big-summon third members) | `inference` | PROT 0893 slots 77 / 81 / 85 / 89 / 93 / 97 / 101 classify as bare payload, each directly before an actor-record slot, and the big-summon id band `0x9A..=0xA0` has exactly seven ids; the module's `RAW_SLOT_*` constants tile each slot exactly. No consumer read yet. |
+| `summon.dat`'s seven unclassified slots | resolved (the big-summon third members) | `disassembly` | PROT 0893 slots 77 / 81 / 85 / 89 / 93 / 97 / 101 are the raw slot of each big-summon group: id `0x9A` gives base `0xCB` (slot `0x4B` + 2 = 77) and id `0xA0` gives `0xE3` (slot `0x63` + 2 = 101). The consumer is the applier `FUN_801F12D0`'s arm gated on `ctx[+0x277] >= 0xCB` (`sltiu 0xcb` at `0x801F16A0`, i.e. exactly that id band): a 240-entry CLUT to `(0, 486)`, a page from `+0x1E0` to `(448, 256)`, and `0x2188` words from `+0x81E0` to `*0x8007B85C + 0x44000` (`0x801F16A0..0x801F1774`), tiling the `0x10800` slot. See [`summon-readef.md`](../formats/summon-readef.md#big-summon-raw-slot-3rd-slot-base--0xcb-only). |
 | Do a MAN's partition offset tables tile its data region? | resolved (exactly, data-region-relative) | `inference` | Record offsets are relative to `data_region_offset` and tile `[data_region_offset, data_region_offset + u24_at_28)` with no gaps across five real MANs (one byte of padding left). Measured by `asset account`. |
 | Where does an overlay image's code stop? | resolved (at the word after its last `jr ra`) | `disassembly` | Every complete MIPS body ends in `jr ra`, so the data segment begins after the last one; the only exception is a body the sector-granular PROT extent cut short, which still carries a RAM-page `lui` in its tail (PROT 0902 / 0977 / 0979). Corroborated by the slot-B frame-matched partition ending at the same word in all thirteen images. `disc-coverage.py`'s `data_floor`. |
 | Is a caller-site citation checkable, or only assertable? | resolved (checkable - the disc word at the cited address settles it) | `disassembly` | A citation of the form "called from `0x...`" is true exactly when the word at that address decodes as a `jal` / `j` / conditional branch to the entry. `check-port-provenance.py`'s `site_relation` reads it off the bytes, so a citation that names the wrong site now fails rather than reading plausibly. |

@@ -274,6 +274,15 @@ counter `DAT_801C8FE4`). Verified live: the Zeto mid-cast states hold
 | `0xB4` / `0xB5` / `0xB6` Cort forms | ESM `0xAD` / Mystic Circle `0xB7` / Mystic Shield `0xAC`; Ultra Charge `0xA5` → Final Crisis `0xB4`, Doomsday `0xB6`; the `0xA2..0xA5` → Dead End Crisis `0xA1` round ladder | round-scripted |
 | species bands (`0x43+`, `0x54+`, `0x59+`, `0x62+`, `0x6B+`, `0x99..0xA1`, ...) | Steal `0x51`, Power Up `0x52`, White Shield `0x60`, Rolling Flare `0x5A`, Power Charge `0x72`, Void Accessories `0x73`, Paralyzing Wave `0x75`, Death Game `0x76`, Thunder Storm `0x77`, Stone Circle `0xB9`, Chaos Breath `0x4E`, Jugger Power `0xBA`, Lapis Wave `0xB5`, ... | HP-fraction / cadence gates |
 
+Rogue's arm (`0x801EB910`) splits on the round counter's parity: an even
+round queues Element Change, an odd one the attack `DAT_801C8FE4 - 0x50`
+aimed at the whole party (`+0x1DD = 8`). The counter is written by Element
+Change itself - PROT 0964 re-draws `rand() % 3` while it equals the word at
+`0x801C8FE4` (`0x801F8A20`, `0x801F8A4C`) and stores the accepted draw there
+(`0x801F8A90`) - so each Element Change both recolours the record and picks
+the next attack, which never repeats the last one. Battle init zeroes the
+counter, so the first attack is Thunder or Flame, never Wind.
+
 No case queues Curse All `0x53` (or Curse `0x40`) - with neither mechanism
 sourcing them, both are confirmed **casterless** in retail.
 
@@ -438,9 +447,10 @@ overlay data (a float/transform table, then the `data\battle\summon.DAT` / `read
 filename strings). Decoded record fields, each code-traced to a battle-action reader: `+0x00`
 `i16` power; `+0x04` `u16` an action-timing counter (seeded at `ctx+0x6c6`, decremented by
 the SM); `+0x0d` `u8` a sound / voice cue id (handed to the cue dispatcher `FUN_8004fcc8`).
-Still open: the `+0x02` u16, the `+0x08` flag halfword, the `+0x0a`/`+0x0b` field (the SM's
-most-read), the `+0x0c` category byte (`C`/`E`/`G`/`0x00`), and the `+0x0e`/`+0x12`/`+0x16`
-fields.
+The rest of the record - the `+0x02` strike Y offset, the `+0x08` homing speed, the `+0x0a`
+impact-effect selector, the `+0x0e` / `+0x12` / `+0x16` effect-id lists, and the `+0x0c`
+designer tag no instruction reads - is decoded field by field in
+[`move-power.md` § Record layout](move-power.md#record-layout-26-bytes).
 
 **What the records are.** Because the move id (`actor[+0x1df]`) is the *same id space* this
 spell table is indexed by, joining the two labels every record: power records `0x10..=0x2b`

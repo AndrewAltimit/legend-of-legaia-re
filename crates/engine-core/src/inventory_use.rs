@@ -697,9 +697,18 @@ fn filter_items(
 ) -> Vec<usize> {
     let mut out = Vec::new();
     for (i, id) in items.iter().enumerate() {
+        // The relevance gate is the field list's only. The SCUS list builder
+        // `FUN_80030628` branches on the menu context word `gp+0x85C`: in the
+        // field (`0`) a field-usable row (descriptor `+2 & 0x02`) is enabled
+        // only when `FUN_8003043C` finds a member it would help
+        // (`0x800309A4`); in battle (`1`) the battle-usable bit (`+2 & 0x04`,
+        // `0x800309C8..0x800309E4`) alone enables the row. A Healing Leaf at
+        // full party HP is therefore pickable in a fight - greying it there
+        // left the battle Item window with no selectable row, no cursor and
+        // a dead Confirm.
         if let Some(entry) = catalog.get(*id)
             && context.allows(entry)
-            && item_has_valid_target(entry, targets)
+            && (context == InventoryContext::Battle || item_has_valid_target(entry, targets))
         {
             out.push(i);
         }
@@ -717,6 +726,8 @@ fn filter_items(
 /// (the liveness/kind arms live in `target_picker`). The all-party descriptor flag
 /// (`& 0x20`) collapses the per-member loop into a single check, which falls
 /// out naturally from the `targets.iter().any(...)` below.
+///
+/// Field context only: the battle list skips it (see [`filter_items`]).
 ///
 /// PORT: FUN_8003043c
 /// REF: FUN_8003fb10 (16-arm target-relevance validator)
@@ -1179,9 +1190,45 @@ mod tests {
     fn revive_filtered_out_when_every_ally_is_alive() {
         // The retail menu-usability gate (FUN_8003043c): a revive item is
         // greyed / omitted when nobody has fallen, so it never reaches the
-        // browse list. party_targets() are both alive.
-        let s = empty_session(vec![0x0C], InventoryContext::Battle);
+        // browse list. party_targets() are both alive. Field context: the
+        // gate is the field list's only (`FUN_80030628`, `gp+0x85C == 0`).
+        let s = empty_session(vec![0x0C], InventoryContext::Field);
         assert_eq!(s.filtered_items.len(), 0);
+    }
+
+    #[test]
+    fn battle_list_skips_the_relevance_gate() {
+        // `FUN_80030628`'s battle arm (`gp+0x85C == 1`) enables a row on the
+        // battle-usable bit alone: a Healing Leaf with the whole party at full
+        // HP is still pickable, and so is a revive with nobody fallen.
+        let full = vec![
+            TargetRow::new(0, "Vahn").with_stats(200, 200, 30, 30),
+            TargetRow::new(1, "Noa").with_stats(200, 200, 20, 20),
+        ];
+        let mut s = InventoryUseSession::new(
+            test_catalog(),
+            vec![0x01],
+            full.clone(),
+            InventoryContext::Battle,
+        );
+        assert_eq!(
+            s.filtered_items.len(),
+            1,
+            "heal offered in battle at full HP"
+        );
+        assert_eq!(
+            s.menu_view().cursor_row,
+            Some(0),
+            "the cursor sits on the row"
+        );
+        s.input(InventoryUseInput::Confirm);
+        assert!(
+            matches!(s.state, InventoryUseState::TargetSelect { .. }),
+            "Confirm opens the target step"
+        );
+        let r =
+            InventoryUseSession::new(test_catalog(), vec![0x0C], full, InventoryContext::Battle);
+        assert_eq!(r.filtered_items.len(), 1, "revive offered in battle");
     }
 
     #[test]

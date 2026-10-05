@@ -76,8 +76,23 @@ fn blend(back: f32, front: f32, abr: u8) -> f32 {
 /// `w x h` RGBA8 surface cleared to black, sampling textures out of `vram`
 /// (1024x512 BGR555 words).
 pub fn rasterize_rgba(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32) -> Vec<u8> {
+    rasterize(prims, vram, w, h, false)
+}
+
+/// [`rasterize_rgba`] for an **overlay**: a pixel no primitive drew comes back
+/// fully transparent instead of black, so a page can composite the list over
+/// a frame it drew itself (the minigames page's fishing HUD over its pond).
+/// A drawn pixel is opaque; a blended primitive is blended against black,
+/// which is exact for the additive (ABR 1) sprites and an approximation for
+/// the other rates.
+pub fn rasterize_rgba_overlay(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32) -> Vec<u8> {
+    rasterize(prims, vram, w, h, true)
+}
+
+fn rasterize(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32, overlay: bool) -> Vec<u8> {
     let (w, h) = (w as usize, h as usize);
     let mut px = vec![[0.0f32; 3]; w * h];
+    let mut covered = vec![false; w * h];
     let sx = w as f32 / PSX_DISPLAY_W as f32;
     let sy = h as f32 / PSX_DISPLAY_H as f32;
     for i in order_primitives(prims) {
@@ -153,6 +168,7 @@ pub fn rasterize_rgba(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32) -> Vec
                     } else {
                         col.map(|v| (v / 255.0).clamp(0.0, 1.0))
                     };
+                    covered[y * w + x] = true;
                     let dst = &mut px[y * w + x];
                     *dst = if semi {
                         core::array::from_fn(|k| blend(dst[k], front[k], abr))
@@ -164,9 +180,9 @@ pub fn rasterize_rgba(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32) -> Vec
         }
     }
     let mut out = Vec::with_capacity(w * h * 4);
-    for p in px {
+    for (p, &hit) in px.iter().zip(covered.iter()) {
         out.extend(p.map(|v| (v * 255.0).round() as u8));
-        out.push(0xFF);
+        out.push(if overlay && !hit { 0 } else { 0xFF });
     }
     out
 }

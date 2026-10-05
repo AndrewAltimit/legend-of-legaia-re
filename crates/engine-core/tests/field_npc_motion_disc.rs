@@ -1,28 +1,28 @@
-//! Disc-gated: field-NPC motion derives from real MAN placement scripts and
-//! the motion VM walks the NPCs in the engine.
+//! Disc-gated: a field NPC walks only where retail walks it.
 //!
-//! Retail drives field-NPC walking through each placement's own field-VM
-//! script: the per-actor record's `0x4C 0x51` NPC move-to-tile ops feed the
-//! glide path whose per-frame stepper is the motion VM (`FUN_8003774C`,
-//! started through the `FUN_800358c0`-shape target write). The engine mirrors
-//! this with [`crate::world::FieldNpcState::routes`] (decoded by
-//! `man_field_scripts::placement_motion_route` from the same pre-text script
-//! region the interaction-prologue runner executes) driven through
-//! [`legaia_engine_vm::motion_vm::step`] by `World::tick_field_npc_motions`,
-//! writing live positions back into `field_npc_positions` so the ±40-unit
-//! moving-actor collision box and the interact probe follow the walking NPC.
+//! Retail has two sources of free-roam NPC movement and the port runs both:
+//! the ambient tail-section-1 stream (`FUN_80038158` walk ops, the
+//! villagers' wandering) and script-started legs (an interaction prologue, a
+//! cutscene poke). A placement's own `0x4C 0x51` ops are neither: each is an
+//! instant **seat**, one per story-flag branch, applied once by the
+//! scene-entry pre-run. The port once looped those seats as an autonomous
+//! patrol, which walked town01's gate guards (placements 32 / 33, beside the
+//! exit to the world map) back and forth between their story stations.
+//! Retail holds them still: every catalogued town01 field-run state (both
+//! emulators, across the whole chapter) has placement 32 on its seat
+//! `(12864, 1856)`, and 33 on one seat or another per story state.
 //!
-//! Assertions are structural (slots, world coordinates, movement deltas) - no
-//! Sony bytes. Skip-passes without `LEGAIA_DISC_BIN` / `extracted/`
-//! (CLAUDE.md convention).
+//! Assertions are structural (slots, world coordinates) - no Sony bytes.
+//! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md
+//! convention).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::man_field_scripts::NPC_ROUTE_LOCALITY;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+
+/// Per placement slot: its entry seat and its summed free-roam travel.
+type Excursions = BTreeMap<u8, ((i16, i16), i32)>;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -34,8 +34,49 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
+/// Enter `scene` with the play hosts' liveliness on, tick `ticks` frames,
+/// and return each placement's entry position and its summed free-roam
+/// travel: only frames with no cutscene timeline running count (a
+/// timeline's cross-context walks are scripted legs retail runs too).
+fn run_scene(
+    extracted: &std::path::Path,
+    scene: &str,
+    ticks: usize,
+) -> Option<(SceneHost, Excursions)> {
+    let mut host = SceneHost::open_extracted(extracted).expect("open SceneHost");
+    host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+    let entered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        host.enter_field_scene(scene, 0).is_ok()
+    }));
+    if !matches!(entered, Ok(true)) {
+        return None;
+    }
+    host.world.npcs.animate = true;
+    let mut prev = host.world.npcs.positions.clone();
+    let mut out: Excursions = prev.iter().map(|(&k, &p)| (k, (p, 0))).collect();
+    for _ in 0..ticks {
+        let stepped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            host.world.tick();
+        }));
+        if stepped.is_err() {
+            break;
+        }
+        let free_roam = !host.world.cutscene_timeline_active();
+        for (k, &(x, z)) in &host.world.npcs.positions {
+            if let (true, Some(&(px, pz)), Some((_, d))) = (free_roam, prev.get(k), out.get_mut(k))
+            {
+                *d += (x as i32 - px as i32)
+                    .abs()
+                    .max((z as i32 - pz as i32).abs());
+            }
+        }
+        prev = host.world.npcs.positions.clone();
+    }
+    Some((host, out))
+}
+
 #[test]
-fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
+fn town01_gate_guards_stand_still_and_only_ambient_walkers_wander() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
@@ -44,83 +85,92 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
+    let (host, seen) = run_scene(&extracted, "town01", 600).expect("enter town01");
 
-    let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open ProtIndex"));
-    let scene = Scene::load(&index, "town01").expect("load town01");
-    let man_bytes = scene
-        .field_man_payload(&index)
-        .expect("read MAN")
-        .expect("town01 has a MAN payload");
-    let man_file = parse_man(&man_bytes).expect("parse MAN");
-
-    let mut world = World::new();
-    world.mode = SceneMode::Field;
-    world.install_field_carriers_from_man(&man_file, &man_bytes);
-
-    // Route derivation is non-vacuous: several Rim Elm villagers carry local
-    // `0x4C 0x51` walk legs in their placement scripts.
-    assert!(
-        world.npcs.routes.len() >= 3,
-        "town01 derives walk routes for several NPCs (got {})",
-        world.npcs.routes.len()
+    // The gate guards hold their seats for ten seconds of free roam.
+    for slot in [32u8, 33] {
+        let &(seat, disp) = seen.get(&slot).expect("gate guard is installed");
+        assert_eq!(
+            disp, 0,
+            "town01 gate guard P1[{slot}] stays on its seat {seat:?} (retail never walks it)"
+        );
+    }
+    assert_eq!(
+        seen[&32].0,
+        (12864, 1856),
+        "P1[32]'s seat is the one every retail town01 state shows"
     );
-    // Every derived waypoint is a local, on-map world position (the locality
-    // gate that drops story-relocation branches held).
-    let anchors = world.npcs.positions.clone();
-    for (slot, route) in &world.npcs.routes {
-        let &(ax, az) = anchors
-            .get(slot)
-            .expect("routed slots are installed NPC placements");
-        for &(wx, wz) in route {
-            assert!(
-                (wx as i32 - ax as i32).abs() <= NPC_ROUTE_LOCALITY
-                    && (wz as i32 - az as i32).abs() <= NPC_ROUTE_LOCALITY,
-                "slot {slot}: waypoint ({wx},{wz}) within locality of anchor ({ax},{az})"
+
+    // The only free-roam movers are placements bound to a walking ambient
+    // stream - retail's own wander.
+    let mut wanderers = 0;
+    for (&slot, &(seat, disp)) in &seen {
+        let walks = host.world.npcs.ambient.get(&slot).is_some_and(|c| c.walks);
+        if walks {
+            wanderers += usize::from(disp > 0);
+        } else {
+            assert_eq!(
+                disp, 0,
+                "P1[{slot}] has no ambient walk stream, so it holds {seat:?}"
             );
         }
     }
-
-    // Baseline: with the patrol flag off, every NPC rests at its placement
-    // anchor across ticks (the non-vacuous control).
-    for _ in 0..30 {
-        let _ = world.tick();
-    }
-    assert_eq!(
-        world.npcs.positions, anchors,
-        "flag off: NPCs rest at their MAN placement anchors"
-    );
-
-    // Flag on: the motion VM walks at least one routed NPC off its anchor.
-    world.npcs.animate = true;
-    for _ in 0..120 {
-        let _ = world.tick();
-    }
-    let moved: Vec<u8> = world
-        .npcs
-        .routes
-        .keys()
-        .filter(|slot| world.npcs.positions.get(slot) != anchors.get(slot))
-        .copied()
-        .collect();
+    // Non-vacuous: the ambient wander really runs (P1[12] wanders in every
+    // retail state too).
     assert!(
-        !moved.is_empty(),
-        "at least one routed town01 NPC walked off its anchor"
+        wanderers >= 3,
+        "several town01 villagers wander (got {wanderers})"
     );
+    eprintln!("[ran] town01: {wanderers} ambient wanderers moved; gate guards held");
+}
+
+/// The same rule across every field scene the disc ships: no placement
+/// without a walking ambient stream moves in free roam.
+#[test]
+fn no_scene_walks_a_placement_without_an_ambient_stream() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let names = {
+        let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+        let mut n = host.index.cdname_scene_names();
+        n.sort();
+        n.dedup();
+        n
+    };
+    let mut entered = 0;
+    let mut failures = Vec::new();
+    for name in &names {
+        let Some((host, seen)) = run_scene(&extracted, name, 300) else {
+            continue;
+        };
+        entered += 1;
+        for (&slot, &(seat, disp)) in &seen {
+            let walks = host.world.npcs.ambient.get(&slot).is_some_and(|c| c.walks);
+            if !walks && disp > 0 {
+                failures.push(format!("{name} P1[{slot}] left {seat:?} by {disp}"));
+            }
+        }
+    }
     eprintln!(
-        "[town01] {} routed NPCs, {} moved off-anchor after 120 ticks: {:?}",
-        world.npcs.routes.len(),
-        moved.len(),
-        moved
+        "[ran] {entered} field scenes entered, {} stray walker(s)",
+        failures.len()
     );
-
-    // Collision consistency: a moved NPC blocks at its LIVE position with the
-    // ±40-unit moving-actor box, exactly like the anchored case - the probes
-    // read `field_npc_positions`, which the motion tick keeps live.
-    world.npcs.solid = true;
-    let slot = moved[0];
-    let &(lx, lz) = world.npcs.positions.get(&slot).unwrap();
+    for f in &failures {
+        eprintln!("  STRAY {f}");
+    }
     assert!(
-        world.field_actor_dir_blocked(lx - 102, lz, 3),
-        "the moving NPC's collision box follows its live position"
+        entered >= 50,
+        "expected the field-scene corpus, got {entered}"
+    );
+    assert!(
+        failures.is_empty(),
+        "{} placement(s) walk without a stream",
+        failures.len()
     );
 }

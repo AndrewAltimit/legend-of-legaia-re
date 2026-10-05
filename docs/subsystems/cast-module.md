@@ -1034,6 +1034,30 @@ change. It fires at the two seams retail uses: the capture band's pager
 (`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
 and the summon stager's first tick (`0x801E4B1C`).
 
+**The caster's clips.** Most capture-class body ports carry the phase walk,
+the damage and the victim's reaction but none of the body's
+`sb <literal>,0x1DA(<caster>)` sites, so without more a monster special plays
+its whole band on the idle loop. `CAPTURE_CASTER_STAGES`
+(`legaia_engine_vm::cast_module_ticks`) lists, per body the port leaves bare,
+the literals the caster is staged with and their sites; `World::capture_stager_tick`
+replays them at the head of phase `0x70`, each to its clip's end, before the
+module's arms run. The bodies whose ports already stage the caster are not in
+it, and neither are the bodies that stage nothing on the caster in retail
+(`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table, and the three clip routes
+a monster cast can take, are on
+[`monster-animation.md`](../formats/monster-animation.md#which-byte-a-cast-actually-plays).
+
+**The hit.** A capture-class record is not in the spell catalog (the module
+owns it), so the band's fold resolves the cast the way the arm did and seeds
+the wrapper roll with the module's own baked `a0`: the per-module damage
+shapes, and for the bodies without one `CAPTURE_SITE_POWERS` - the immediate
+ahead of each body's `jal 0x801DD4B0` / `0x801DD6B4` (PROT 0935 Earthquake
+`0x1AE` at `0x801F7AFC`, and so on). A body with no damage site (Glare,
+Fatal Decision) folds no damage. The fold runs at the band's exit into
+`0x50`, after the caster's stages and the module's arms - not at the
+`0x28 -> 0x6E` edge, which sits above `0x50` in the state space but is the
+door *into* the band.
+
 #### A module that reports its spawns
 
 Seating every record on the stager's first tick puts each program on the
@@ -1990,6 +2014,21 @@ directors so far, each read off its own tick's disassembly:
   0930 dispatch through a jump table at the image head (`sltiu 0x20`) rather
   than a compare chain.
 
+- **The summon creatures PROT 0916, 0921, 0929, 0932, 0933, 0934** (Aluru,
+  Iota, Mule, Meta, Terra, Ozma) - camera-only in the same way, and they reach
+  further in: past the stream request and the CD poll each covers the arms
+  that frame the arrived creature, gated on the module's own countdown.
+  Terra and Meta drain theirs by the frame delta alone, Iota by
+  `scalar * delta` while pulling TR z in by the same amount, and Aluru moves
+  the band timer `ctx[+0x6D8]` itself (`scalar * 20`, drained under `bgez`).
+  Meta's arm 1 is a swing written straight into the globals (pitch
+  `-4 * delta`, TR y `+12 * delta`, TR z `-12 * delta`) that passes once its
+  `0xC0` word falls below `0x41`. Two shortcuts are folded into the next
+  arm's gate: Aluru's arm 1 and Ozma's arm 2 skip the band-timer wait when the
+  timer is already spent, which the port reaches one tick later. Mule's arms 1
+  and 2 also drift `0x80089120` and Meta's arm 4 writes five halfwords of the
+  camera block at `0x80083FF8`; neither is a global a module nudge carries.
+
 Two gates the engine reads as already open: the creature stream load
 (`FUN_8003EAE4` / the `0x8007BDB0` token) and the CD poll `FUN_8003F2B8(1)`.
 The engine has the record resident, so a module that spends its opening
@@ -2059,7 +2098,79 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   through arms 7 and 8. The body has no other port, so the director owns its
   phase and finishes the module at arm 8.
 
+- **PROT 0953 (Terio Punch, body `0x801F69FC`, keyed on `SINGLE_BODY`)** -
+  arm 0 forks on the caster's battle-scoped latch word `0x801C8FE0 +
+  (ctx[+0x13] + 1) * 4` (the monster AI's cooldown `dat[m + 4]`). Zero takes
+  the **charge**: the body sets the latch and leaves without reaching its
+  `FUN_801DD6B4`, so the band's fold owes that cast nothing (the director
+  reports `skips_fold`). Non-zero takes the **punch** (arms 4..8): the latch is
+  cleared and the party sweep lands through the fold at power `0x274`. The two
+  branches hold different caster stages (`0x5E` charge, `0x5D` punch).
+
 A body with no director keeps the held pose.
+
+PROT 0966 (Evil Seru Magic) is a 29-arm camera body whose damage belongs to
+its stager, not to the band's fold; its arms are not directed.
+
+### PROT 0954 (Fatal Decision) is ported whole
+
+Fatal Decision is a roulette, and its body (`0x801F6A58`, thirteen arms and a
+terminal `0xFF`) runs the whole cast itself: camera, records, wheel and
+outcome. The port is `legaia_engine_vm::cast_fatal_decision` (the arms) and
+`world::battle::fatal_decision` (the battle side), dispatched from the band
+seam ahead of every other body; nothing of it reaches the band's fold.
+
+- **The wheel.** Arm 4 fills eight slots at `0x801F9020` from the caster's
+  formation id - `rand() % 8` for `0x77`, `% 12` for `0x78`, `% 16` for
+  `0x79` - blanks a Stone slot when the victim already carries a Rot bit
+  (`& 0x38`), and blanks slot `rand() % 8` when no slot came out blank. A
+  monster victim then trades the four party-only outcomes for monster ones
+  (Stone to Death, Rot to Halve HP, Steal to Halve ATK, Gold to Halve DEF).
+  Each slot spawns its outcome's icon record (`0x801F86DC + id * 0x4C`) at
+  render scale `0x20` - the sprite is authored `0x1000` wide.
+- **The spin.** Arm 5 spirals the icons out to the ring
+  (`sin * r / 6 >> 10`, `r` growing a frame-delta a frame) while the angle
+  `0x801F9010` falls `32` a delta; arm 6 holds the ring (radius `85`) spinning.
+- **Who stops it.** Arm 6 holds while the countdown is positive and the
+  packed pad edge misses the confirm mask `_DAT_800846D0`. The countdown is
+  set on the victim's seat: `scalar * 1200` for a party victim, with "Press the
+  (button) to decide your fate!" up in the message bar, and `scalar << 6` for
+  a monster victim. A monster casts it, so the player stops the wheel on their
+  own party member; the port reads the engine's confirm (Cross).
+- **The landing.** Arm 7 decelerates over `scalar << 9` drained `2 * scalar` a
+  frame, then snaps the angle back to the slot boundary it crosses, flashes
+  white (`FUN_80024E80`, a `0x20`-frame ramp), retires the backdrop, spawns the
+  three landing records and raises cue `0x14A` (`0x14B` on the full heal). The
+  slot at angle `0x800` is the outcome; arm 9 opens the ring out, grows that
+  icon (`+0x72` and `+0x16` up a delta a frame) and puts its name
+  (`0x801F8D50 + id * 0x28`) in the move-name label.
+- **The outcome.** Arm 10 retires the icons and applies one of sixteen effects
+  to the victim through the jump table `0x801F6A18`: nothing; HP and max HP
+  halved; HP to zero; MP and max MP halved; MP and max MP to zero; Venom,
+  Toxic, all three Rot limbs, Curse; Numb or Stone, each also cancelling a
+  queued item action and handing the item back; the ATK pair or both defence
+  pairs halved with a floor of `1`; a full heal that clears every status bit;
+  one bag item destroyed (the PROT 0941 draw over the whole 256-slot bag,
+  written into the thief's cell and cleared in the same arm, so a slain
+  caster hands nothing back); a tenth of the gold. The HP and MP arms do
+  nothing to a petrified victim. Nothing, Numb, Stone and the full heal skip
+  arm 11, the victim's reaction clip, and so do the HP / MP arms on a
+  petrified victim and a steal that finds nothing.
+
+Two pieces are not ported: the `FUN_801D5854(caster, 8)` framing arms 11
+and 12 re-arm each pass, and the full heal's party-seat CLUT reload and
+effect-list spawn (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's wait for the
+victim's clip to settle has no bound in retail; the port lets go after
+`600` ticks rather than hold the band on a clip the engine never reports.
+
+**Where the icon art lives is open.** The icons sample texture page `0x8A`
+(8bpp at `(640, 0)`) through CLUT row `490` - the second side-band texture
+slot's upload targets. Action `0x5F`'s side-band group, by the case-`0x32`
+arithmetic, is `readef.DAT` slots 26 / 27, and those carry a "BACK READ"
+placeholder and a tiling sparkle page, not a sixteen-tile icon sheet; the
+capture band also has no case `0x32` of its own. Which loader puts the icon
+sheet there for a real Evil Shadow fight has not been traced, so the port
+draws the icons over whatever that page holds.
 
 ### The band has eight stat-block writers, not one
 

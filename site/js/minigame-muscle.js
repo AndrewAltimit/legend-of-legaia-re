@@ -57,7 +57,8 @@
  * backdrop + ground grid texture address, the ABE additive lamp glows (the
  * object-1 dust decal is omitted - the retail match capture shows a
  * mist-free interior; see docs/subsystems/minigame-muscle-dome.md), the
- * time-meter ramp, the idle-phase camera spin rate, the cue id set, the
+ * time-meter ramp, the battle seats + battle camera script (the engine's
+ * dome surface, shared with the play hosts), the cue id set, the
  * command -> swing-clip pairing (the four card ids 0xC..0xF ARE the swing
  * record slots of the player battle file - the disc's own pairing), the
  * flinch clip (slot 2, the head of the party hit-reaction map FUN_80053CB8
@@ -91,7 +92,7 @@
  * page). The flow is capture-pinned too: Attack -> Auto|Command ->
  * direction entry that auto-ends when no command is affordable ->
  * queue review -> Begin|Reselect.
- * STILL FITTED: the base camera seat, fighter spacing/facing, which traced
+ * STILL FITTED: which traced
  * blip fires on which page event, the KO clip pick (slot 4 of the pinned
  * reaction family), the small art-name caption + hint lines (page aids),
  * the banner speed-line rays (polygonal in retail, procedural here), the
@@ -120,7 +121,6 @@
 window.MgMuscle = (function () {
   'use strict';
 
-  const A2R = (Math.PI * 2) / 4096;   /* PSX angle units -> radians */
   const HUD_W = 320, HUD_H = 240;     /* retail frame; canvas is 2x */
 
   /* The four swing-command ids and their directions - the runtime
@@ -133,41 +133,15 @@ window.MgMuscle = (function () {
     15: { name: 'Up',    glyph: '↑', dir: 'up' },
   };
 
-  /* Player battle-form clip slots (player battle file record[0] + swing
-   * records; crates/web-viewer muscle_fighter_* APIs). Slot 0 = idle; the
-   * four swings live AT the card ids 0xC..0xF (the disc's own pairing);
-   * slot 2 = the light flinch (head of the party hit-reaction map
-   * [2,3,4,5,0xB] FUN_80053CB8 writes to +0x1EF..); slot 4 = the
-   * knockdown-family pick for the KO hold (fitted within that pinned map). */
-  const P_ANIM = { IDLE: 0, HIT: 2, KO: 4 };
-
   /* Ra-Seru names - the retail magic-command chip label per character
    * (capture: Vahn's chip reads "Meta"). */
   const RA_SERU = ['Meta', 'Terra', 'Ozma'];
-
-  /* Monster action tags (docs/formats/monster-animation.md): 0 idle, 2/3
-   * light hit reactions, 4 knockdown, 0x20 pre-approach / 0x21 close-in
-   * attacks. */
-  function pickMonsterClips(anims) {
-    const byTag = (t) => anims.findIndex(a => a.action_id === t);
-    const idle = byTag(0);
-    let attack = byTag(0x21);
-    if (attack < 0) attack = byTag(0x20);
-    if (attack < 0) attack = anims.findIndex(a => a.action_id >= 0x20);
-    if (attack < 0) attack = anims.length > 1 ? 1 : idle;
-    let hit = byTag(2);
-    if (hit < 0) hit = byTag(3);
-    let ko = byTag(4);
-    if (ko < 0) ko = hit;
-    return { idle: Math.max(idle, 0), attack, hit: hit < 0 ? idle : hit, ko };
-  }
 
   function create(api, hudCanvas, glCanvas) {
     const g = hudCanvas.getContext('2d');
     g.imageSmoothingEnabled = false;
 
     let scene = null;          /* 3D scene (null = text fallback) */
-    let sceneMonster = -1;     /* monster the scene was built for */
     /* idle|intro|select|playback|interval|decided. `interval` is the arena's
      * BETWEEN-LEGS hub screen (retail state 0x0A); a turn boundary never
      * enters it. */
@@ -191,6 +165,8 @@ window.MgMuscle = (function () {
     let popups = [];           /* {text, x, y, t, life, color} */
     let playQueue = [];        /* remaining round-log events */
     let playT = 0;             /* ticks into the current event */
+    let playSeen = false;      /* the surface has started this play-out */
+    let playLanded = 0;        /* events landed this play-out */
     let pIdx = 0;              /* player events landed this playback */
     let artsSpans = [];        /* muscle_round_arts_json rows */
     let artsBanner = null;     /* {text, name, t, life} */
@@ -545,327 +521,45 @@ window.MgMuscle = (function () {
       return bw;
     }
 
-    /* --------------------------------------------------- 3D scene assembly */
-
-    /* Pose `base` through `clip` at `frame` into `out` - the shared retail
-     * per-object composition Rz.Ry.Rx . v + T with a world yaw + offset on
-     * top (identical to minigame-baka.js / minigame-dance.js). */
-    function poseInto(out, base, oids, clip, frame, vertBase, dx, yaw, dz) {
-      const pc = clip.parts, f = clip.frames;
-      const ff = ((frame % clip.frameCount) + clip.frameCount) % clip.frameCount;
-      const sin = new Float32Array(pc * 3), cos = new Float32Array(pc * 3);
-      const tr = new Float32Array(pc * 3);
-      for (let p = 0; p < pc; p++) {
-        const o = (ff * pc + p) * 6;
-        for (let k = 0; k < 3; k++) {
-          const a = f[o + 3 + k] * A2R;
-          sin[p * 3 + k] = Math.sin(a);
-          cos[p * 3 + k] = Math.cos(a);
-          tr[p * 3 + k] = f[o + k];
-        }
-      }
-      const wsin = Math.sin(yaw || 0), wcos = Math.cos(yaw || 0);
-      const n = oids.length;
-      for (let v = 0; v < n; v++) {
-        const vi = (vertBase + v) * 3;
-        const o = oids[v];
-        let x = base[vi], y = base[vi + 1], z = base[vi + 2];
-        if (o < pc) {
-          const sx = sin[o * 3], cxx = cos[o * 3];
-          const sy = sin[o * 3 + 1], cyy = cos[o * 3 + 1];
-          const sz = sin[o * 3 + 2], czz = cos[o * 3 + 2];
-          let ny = y * cxx - z * sx, nz = y * sx + z * cxx; y = ny; z = nz;
-          let nx = x * cyy + z * sy; nz = -x * sy + z * cyy; x = nx; z = nz;
-          nx = x * czz - y * sz; ny = x * sz + y * czz; x = nx; y = ny;
-          x += tr[o * 3]; y += tr[o * 3 + 1]; z += tr[o * 3 + 2];
-        }
-        const wx = x * wcos + z * wsin;
-        const wz = -x * wsin + z * wcos;
-        out[vi] = wx + (dx || 0);
-        out[vi + 1] = y;
-        out[vi + 2] = wz + (dz || 0);
-      }
+    /* --------------------------------------------------------- 3D scene
+     *
+     * The dome's 3D is the engine's own surface
+     * (legaia_engine_core::muscle_dome_scene::MuscleDomeSurface, through
+     * muscle_surface_*): the fighter and the opponent on the battle
+     * formation seats, the play-out choreography (the closing walk, the
+     * swings, the flinch and the knockdown) and the battle camera script -
+     * the same kernel the native window and the browser play page draw a
+     * dome leg with, so all three hosts frame a fight alike. The page only
+     * names which selection screen it has up (`selectCode`), because it
+     * drives its own command flow. */
+    function selectCode() {
+      if (mode !== 'select') return 0;
+      if (selectSub === 'attackmenu') return 2;
+      if (selectSub === 'confirm') return 0;
+      return 1;
     }
 
-    /* Half-extent + height of a rest pose, for spacing / camera framing. */
-    function poseExtent(f, clip) {
-      const out = new Float32Array(f.pos);
-      poseInto(out, f.pos, f.oid, clip, 0, 0, 0, 0, 0);
-      let lo = Infinity, hi = -Infinity, top = 0;
-      for (let i = 0; i < out.length; i += 3) {
-        if (out[i] < lo) lo = out[i];
-        if (out[i] > hi) hi = out[i];
-        if (-out[i + 1] > top) top = -out[i + 1];   /* Y-down: up = -y */
-      }
-      return { half: (hi - lo) / 2 || 200, height: top || 400 };
+    function uploadSurface(s, gen) {
+      s.renderer.uploadVram(api.muscle_surface_vram());
+      s.renderer.uploadMesh(
+        api.muscle_surface_positions(), api.muscle_surface_uvs(),
+        api.muscle_surface_cba_tsb(), api.muscle_surface_indices(),
+        api.muscle_surface_flat_rgba());
+      s.gen = gen;
     }
 
-    /* Fallback plain-quad floor: alternating dark tiles on y = 0. Used only
-     * when the arena backdrop entry (PROT 1225) doesn't decode on this image
-     * (flat-coloured geometry, no invented texture art). */
-    function floorBuffers(extent) {
-      const out = { pos: [], uvs: [], ct: [], flat: [], idx: [] };
-      const T = Math.max(160, Math.round(extent / 4));
-      const N = 12;
-      for (let iz = -N; iz < N; iz++) {
-        for (let ix = -N; ix < N; ix++) {
-          const dark = ((ix + iz) & 1) === 0;
-          const c = dark ? [34, 36, 44] : [48, 52, 62];
-          const base = out.pos.length / 3;
-          const x0 = ix * T, x1 = x0 + T, z0 = iz * T, z1 = z0 + T;
-          out.pos.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
-          for (let k = 0; k < 4; k++) {
-            out.uvs.push(0, 0);
-            out.ct.push(0, 0);
-            out.flat.push(c[0], c[1], c[2], 0);   /* flag 0 = flat colour */
-          }
-          out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-        }
-      }
-      return out;
-    }
-
-    /* The Sol arena backdrop (PROT 1225): the fenced dirt ring's own TMD,
-     * world-fixed at raw coordinates and drawn twice the way the retail
-     * battle renderer draws every stage shell - copy A raw, copy B
-     * half-turned about Y, closing the half-stage into the full ring
-     * (engine-core muscle_dome_scene::arena_ring; docs/subsystems/
-     * battle.md "Two actors, one registered mesh"). Its texture pages ride
-     * in muscle_vram. Null when the entry doesn't decode. */
-    function arenaBuffers() {
-      if (!api.muscle_arena_positions) return null;
-      const pos = api.muscle_arena_positions();
-      if (!pos.length) return null;
-      return {
-        pos,
-        uvs: api.muscle_arena_uvs(),
-        ct: api.muscle_arena_cba_tsb(),
-        flat: api.muscle_arena_flat_rgba(),
-        idx: api.muscle_arena_indices(),
-      };
-    }
-
-    /* The retail battle ground grid (func_0x801d02c0, battle overlay): a flat
-     * tiled plane on y = 0 centred at the world origin. Traced constants
-     * (docs/subsystems/battle.md "Backdrop ground"): cell pitch 0x200 with
-     * each cell emitted as FOUR quads (2x2 sub-step 0x100), texture = the
-     * 4bpp page at framebuffer (832, 0) (tpage attr 0x000D) through CLUT
-     * (0, 479) (CBA 0x77C0), UV window (192..255)^2 stretched across one
-     * cell - deterministic sub-tiling, no RNG. The live capture reads the
-     * grid as 28x28 cells; the page emits the same. */
-    function groundBuffers() {
-      const out = { pos: [], uvs: [], ct: [], flat: [], idx: [] };
-      const CELL = 0x200, SUB = 0x100, N = 14;   /* 28x28 cells */
-      const CBA = 0x77C0, TSB = 0x000D;
-      for (let cz = -N; cz < N; cz++) {
-        for (let cx = -N; cx < N; cx++) {
-          for (let sr = 0; sr < 2; sr++) {
-            for (let sc = 0; sc < 2; sc++) {
-              const x0 = cx * CELL + sc * SUB, x1 = x0 + SUB;
-              const z0 = cz * CELL + sr * SUB, z1 = z0 + SUB;
-              const u0 = 192 + sc * 32, u1 = u0 + 31;
-              const v0 = 192 + sr * 32, v1 = v0 + 31;
-              const base = out.pos.length / 3;
-              out.pos.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
-              out.uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
-              for (let k = 0; k < 4; k++) {
-                out.ct.push(CBA, TSB);
-                /* Textured, neutral packet colour (0x80): the shader's
-                 * `texel * rgb / 128` needs 0x80 for the identity. White
-                 * here would brighten the whole grid by 255/128. */
-                out.flat.push(128, 128, 128, 255);
-              }
-              out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-            }
-          }
-        }
-      }
-      return out;
-    }
-
-    /* Build the arena for (charSlot, monsterId). Returns null when either
-     * body doesn't decode - the panel then keeps its text presentation. */
-    function buildScene(charSlot, monsterId) {
+    function buildSurfaceScene() {
       if (!glCanvas || !window.TmdRenderer) return null;
-      if (!api.muscle_scene_ready || !api.muscle_scene_ready(monsterId, charSlot)) return null;
-
-      /* The player's assembled battle form (fighter form - the retail dome
-       * roster), not the Baka pack. */
-      const P = {
-        pos: api.muscle_fighter_positions(charSlot),
-        uvs: api.muscle_fighter_uvs(charSlot),
-        ct: api.muscle_fighter_cba_tsb(charSlot),
-        idx: api.muscle_fighter_indices(charSlot),
-        oid: api.muscle_fighter_object_ids(charSlot),
-        flat: api.muscle_fighter_flat_rgba(charSlot),
-        parts: api.muscle_fighter_part_count(charSlot),
-      };
-      const M = {
-        pos: api.muscle_monster_positions(monsterId),
-        uvs: api.muscle_monster_uvs(monsterId),
-        ct: api.muscle_monster_cba_tsb(monsterId),
-        idx: api.muscle_monster_indices(monsterId),
-        oid: api.muscle_monster_object_ids(monsterId),
-        flat: api.muscle_monster_flat_rgba(monsterId),
-        parts: api.muscle_monster_part_count(monsterId),
-      };
-      if (!P.pos.length || !M.pos.length) return null;
-
-      /* Player clips out of the battle form's own action streams: idle
-       * (record[0] slot 0), flinch (slot 2), KO family (slot 4), and the
-       * four per-command swings AT the card ids 0xC..0xF - the disc's own
-       * card -> clip pairing. Rates follow the entry's +0x78 byte through
-       * the same rate/8-per-tick scale as the monster clips. */
-      let pAnims = [];
-      try { pAnims = JSON.parse(api.muscle_fighter_anims_json(charSlot)); }
-      catch (e) { pAnims = []; }
-      const pClip = (slot) => {
-        const row = pAnims.find(a => a.slot === slot);
-        if (!row || !row.frame_count) return null;
-        const frames = api.muscle_fighter_pose_frames(charSlot, slot, P.parts);
-        if (!frames.length) return null;
-        return {
-          frames, frameCount: row.frame_count, parts: P.parts,
-          rate: Math.max(1, (row.rate || 1) * 2),
-        };
-      };
-      /* Monster clips out of its own action set (rate is the retail cursor
-       * byte: rate/8 keyframes per tick with the normal x4 scale). */
-      const mAnims = JSON.parse(api.muscle_monster_anims_json(monsterId));
-      const mPick = pickMonsterClips(mAnims);
-      const mClip = (index) => {
-        if (index < 0 || index >= mAnims.length) return null;
-        const a = mAnims[index];
-        const frames = api.muscle_monster_pose_frames(monsterId, index, M.parts);
-        if (!frames.length) return null;
-        return {
-          frames, frameCount: a.frame_count, parts: M.parts,
-          rate: Math.max(1, (a.rate || 1) * 2),
-        };
-      };
-      const pIdle = pClip(P_ANIM.IDLE);
-      const pHit = pClip(P_ANIM.HIT);
-      const clips = [
-        { idle: pIdle, hit: pHit || pIdle,
-          ko: pClip(P_ANIM.KO) || pHit || pIdle,
-          byCmd: Object.fromEntries([12, 13, 14, 15]
-            .map(c => [c, pClip(c)])) },
-        { idle: mClip(mPick.idle), hit: mClip(mPick.hit),
-          attack: mClip(mPick.attack), ko: mClip(mPick.ko) },
-      ];
-      if (!clips[0].idle || !clips[1].idle) return null;
-
-      const extP = poseExtent(P, clips[0].idle);
-      const extM = poseExtent(M, clips[1].idle);
-      const gap = (extP.half + extM.half) * 1.5 + 120;
-
-      /* Static geometry behind the fighters: the real arena backdrop + the
-       * retail ground grid when PROT 1225 decodes, the flat fallback floor
-       * otherwise. */
-      const arena = arenaBuffers();
-      const statics = arena ? [arena, groundBuffers()] : [floorBuffers(gap)];
-
-      /* Combined buffers: player, monster, then the static set. */
-      const nP = P.pos.length / 3, nM = M.pos.length / 3;
-      let n = nP + nM;
-      for (const st2 of statics) n += st2.pos.length / 3;
-      const pos = new Float32Array(n * 3);
-      const uvs = new Uint8Array(n * 2);
-      const ct = new Uint16Array(n * 2);
-      const flat = new Uint8Array(n * 4);
-      const idx = [];
-      pos.set(P.pos, 0); pos.set(M.pos, nP * 3);
-      uvs.set(P.uvs, 0); uvs.set(M.uvs, nP * 2);
-      ct.set(P.ct, 0); ct.set(M.ct, nP * 2);
-      flat.set(P.flat, 0); flat.set(M.flat, nP * 4);
-      for (const i of P.idx) idx.push(i);
-      for (const i of M.idx) idx.push(i + nP);
-      let at = nP + nM;
-      for (const st2 of statics) {
-        pos.set(st2.pos, at * 3);
-        uvs.set(st2.uvs, at * 2);
-        ct.set(st2.ct, at * 2);
-        flat.set(st2.flat, at * 4);
-        for (const i of st2.idx) idx.push(i + at);
-        at += st2.pos.length / 3;
-      }
-
+      if (typeof api.muscle_surface_frame !== 'function') return null;
+      const gen = api.muscle_surface_frame(selectCode(), 0);
+      if (gen < 0) return null;
       const renderer = new window.TmdRenderer(glCanvas);
       /* Two-pass PSX semi-transparency for the shell's ABE lamp-glow prims
-       * (ABR mode 1, additive) - the legacy single pass draws them opaque
-       * (the dance-hall smoke defect shape; see webgl-tmd.js semiTwoPass).
-       * The stream's OTHER additive set - the object-1 wall-base dust
-       * decal - is omitted on the Rust side (muscle_arena_hybrid): its
-       * texels are genuinely bright, so any draw of it reads as a cloud
-       * band, and the retail match capture shows a mist-free interior. */
+       * (ABR mode 1, additive) - the legacy single pass draws them opaque. */
       renderer.semiTwoPass = true;
-      renderer.uploadVram(api.muscle_vram(monsterId, charSlot));
-      renderer.uploadMesh(pos, uvs, ct, new Uint32Array(idx), flat);
-
-      /* With the real arena up, the shell is authored at X >= 0 with the
-       * open side facing -X (the town01 half-stage rule) and the fighters
-       * seat near the world origin; spread them across Z so the default
-       * camera - parked on the open side, looking into the shell - sees
-       * them side by side. Without the arena, keep the old X spread. The
-       * exact seats + camera remain FITTED, as the note says. */
-      const spreadZ = !!arena;
-      const s = {
-        renderer, P, M, nP, nM,
-        clips,
-        base: pos.slice(),
-        out: pos,
-        /* Fighter world placement: the families' intrinsic facing needs
-         * opposite world yaws (the Baka finding). */
-        dx: spreadZ ? [0, 0] : [-gap / 2, gap / 2],
-        dz: spreadZ ? [-gap / 2, gap / 2] : [0, 0],
-        yaw: spreadZ ? [0, Math.PI] : [Math.PI / 2, -Math.PI / 2],
-        /* Per-fighter clip state: {clip, start, loop, hold} */
-        act: [
-          { clip: clips[0].idle, start: 0, loop: true },
-          { clip: clips[1].idle, start: 0, loop: true },
-        ],
-        cam: {
-          yaw: spreadZ ? Math.PI / 2 : 0.0,
-          pitch: 0.14,
-          distance: spreadZ ? 2.1 : 1.75,
-        },
-        defCam: {
-          yaw: spreadZ ? Math.PI / 2 : 0.0,
-          pitch: 0.14,
-          distance: spreadZ ? 2.1 : 1.75,
-        },
-        center: [spreadZ ? 260 : 0,
-          -Math.max(extP.height, extM.height) * 0.42, 0],
-        radius: gap * 0.95 + Math.max(extP.half, extM.half) * 0.6,
-      };
-      attachOrbit(s);
+      const s = { renderer, gen: -1 };
+      uploadSurface(s, gen);
       return s;
-    }
-
-    function attachOrbit(s) {
-      const c = glCanvas;
-      let drag = false, lx = 0, ly = 0;
-      s.dragging = () => drag;
-      c.addEventListener('pointerdown', (e) => {
-        drag = true; lx = e.clientX; ly = e.clientY;
-        c.setPointerCapture(e.pointerId);
-      });
-      c.addEventListener('pointerup', (e) => {
-        drag = false; try { c.releasePointerCapture(e.pointerId); } catch (_) { /* */ }
-      });
-      c.addEventListener('pointermove', (e) => {
-        if (!drag) return;
-        s.cam.yaw -= (e.clientX - lx) * 0.006;
-        s.cam.pitch = Math.max(-1.1, Math.min(1.1,
-          s.cam.pitch - (e.clientY - ly) * 0.006));
-        lx = e.clientX; ly = e.clientY;
-      });
-      c.addEventListener('dblclick', () => { s.cam = Object.assign({}, s.defCam); });
-      c.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        s.cam.distance = Math.max(0.9, Math.min(6,
-          s.cam.distance * (e.deltaY > 0 ? 1.1 : 0.9)));
-      }, { passive: false });
     }
 
     /* ---------------- sound ----------------
@@ -949,41 +643,30 @@ window.MgMuscle = (function () {
       for (const buf of a.hit) playBuf(a, buf, 0.5);
     }
 
-    /* Trigger a one-shot clip on fighter `fi` (idle resumes after; `hold`
-     * freezes the final frame - the loser's knockdown). */
-    function play(fi, clip, hold) {
-      if (!scene || !clip) return;
-      scene.act[fi] = { clip, start: tick, loop: false, hold: !!hold };
-    }
-
+    /* One frame of the dome surface: step it (the choreography and the
+     * camera advance one tick per call), re-read the buffers on a new
+     * generation, and draw under the battle camera's matrix. */
     function renderScene() {
       const s = scene;
       if (!s) return;
-      for (let fi = 0; fi < 2; fi++) {
-        const a = s.act[fi];
-        let clip = a.clip || s.clips[fi].idle;
-        let frame;
-        if (a.loop) {
-          frame = Math.floor((tick - a.start) * clip.rate / 16) % clip.frameCount;
-        } else {
-          frame = Math.floor((tick - a.start) * clip.rate / 16);
-          if (frame >= clip.frameCount) {
-            if (a.hold) {
-              frame = clip.frameCount - 1;
-            } else {
-              s.act[fi] = { clip: s.clips[fi].idle, start: tick, loop: true };
-              clip = s.clips[fi].idle;
-              frame = 0;
-            }
-          }
-        }
-        const f = fi === 0 ? s.P : s.M;
-        poseInto(s.out, s.base, f.oid, clip, frame,
-          fi === 0 ? 0 : s.nP, s.dx[fi], s.yaw[fi], s.dz[fi]);
-      }
-      s.renderer.updatePositions(s.out);
-      s.renderer.render(s.cam.yaw, s.cam.pitch, s.cam.distance,
-        0, 0, s.center, s.radius);
+      const gen = api.muscle_surface_frame(selectCode(), 0);
+      if (gen < 0) return;
+      if (gen !== s.gen) uploadSurface(s, gen);
+      const r = s.renderer;
+      r.updatePositions(api.muscle_surface_positions());
+      const c = r.canvas || glCanvas;
+      const vp = api.muscle_surface_vp(c.width / Math.max(c.height, 1));
+      r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
+      r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
+      r.mvpOverride = null;
+    }
+
+    /* The play-out beat the surface is on (`muscle_surface_beat_json`):
+     * `{kind, play, attacker, at, len}` or null. */
+    function surfaceBeat() {
+      if (!scene || typeof api.muscle_surface_beat_json !== 'function') return null;
+      try { return JSON.parse(api.muscle_surface_beat_json()); }
+      catch (e) { return null; }
     }
 
     /* -------------------------------------------------------- contest flow */
@@ -1016,17 +699,11 @@ window.MgMuscle = (function () {
       if (!api.muscle_start_vs(lastOpts.char, lastOpts.level, monster, seed)) {
         return false;
       }
-      if (sceneMonster !== monster || !scene ||
-          scene.charSlot !== lastOpts.char) {
-        try { scene = buildScene(lastOpts.char, monster); }
+      /* The surface re-seats the pair and re-reads its buffers itself when
+       * the opponent or the fighter changes (a new generation). */
+      if (!scene) {
+        try { scene = buildSurfaceScene(); }
         catch (e) { scene = null; }
-        if (scene) { scene.charSlot = lastOpts.char; }
-        sceneMonster = monster;
-      } else {
-        scene.act = [
-          { clip: scene.clips[0].idle, start: tick, loop: true },
-          { clip: scene.clips[1].idle, start: tick, loop: true },
-        ];
       }
       const state = st();
       hpShow = [state.hp[0], state.hp[1]];
@@ -1170,6 +847,8 @@ window.MgMuscle = (function () {
       try { artsSpans = JSON.parse(api.muscle_round_arts_json()); }
       catch (e) { artsSpans = []; }
       playT = 0;
+      playSeen = false;
+      playLanded = 0;
       pIdx = 0;
       banner = null;
       artsBanner = null;
@@ -1313,13 +992,6 @@ window.MgMuscle = (function () {
     /* One play event lands: animations + popup + HP target. */
     function applyEvent(ev, instant) {
       const defender = ev.attacker ^ 1;
-      if (!instant && scene) {
-        if (ev.attacker === 0) {
-          play(0, scene.clips[0].byCmd[ev.cmd] || scene.clips[0].idle);
-        } else {
-          play(1, scene.clips[1].attack);
-        }
-      }
       /* Retail arts banner: when this player event starts a recognized art
        * sequence, raise the class banner over the whole span. */
       if (ev.attacker === 0) {
@@ -1372,10 +1044,6 @@ window.MgMuscle = (function () {
         artsPage = -1;
       } else if (state.phase === 'won' || state.phase === 'lost') {
         mode = 'decided';
-        if (scene) {
-          const loser = state.phase === 'won' ? 1 : 0;
-          play(loser, loser === 1 ? scene.clips[1].ko : scene.clips[0].ko, true);
-        }
         if (state.phase === 'won') {
           /* Retail's own victory banner, composed the way retail composes
            * it: the winning fighter's lead-in line from the PROT 0898
@@ -2405,28 +2073,36 @@ window.MgMuscle = (function () {
       if (mode === 'interval') intervalT++;
       const state = st();
 
-      /* Playback: land one event every 34 ticks (attacker swing, then the
-       * hit + number as it connects). */
+      /* Playback on the surface's own schedule (turn_timeline: the closing
+       * walk, one swing per play, the done tail after each attacker's
+       * string): each event lands on its swing's first tick and its impact
+       * cue on the connect, 12 ticks in. Without a 3D surface, one event
+       * every 34 ticks. */
       if (mode === 'playback') {
-        if (playQueue.length) {
+        const beat = surfaceBeat();
+        if (beat) {
+          playSeen = true;
+          if (beat.kind === 'swing') {
+            while (playQueue.length && playLanded <= beat.play) {
+              applyEvent(playQueue.shift(), false);
+              playLanded++;
+              setTimeoutTick(12, () => { if (mode === 'playback') playHit(); });
+            }
+          }
+          playT++;
+        } else if (scene && !playSeen && playT < 4) {
+          /* The surface steps once per drawn frame; give it the frame that
+           * starts the schedule. */
+          playT++;
+        } else if (!scene && playQueue.length) {
           if (playT === 0) {
             applyEvent(playQueue[0], false);
-            /* Defender hit reaction + the impact cue fire as the swing
-             * lands (the cue rides the same 12-tick connect delay). */
-            const ev = playQueue[0];
-            const defender = ev.attacker ^ 1;
-            const hitClip = scene
-              ? (defender === 0 ? scene.clips[0].hit : scene.clips[1].hit)
-              : null;
-            setTimeoutTick(12, () => {
-              if (mode !== 'playback') return;
-              if (hitClip) play(defender, hitClip);
-              playHit();
-            });
+            setTimeoutTick(12, () => { if (mode === 'playback') playHit(); });
           }
           playT++;
           if (playT >= 34) { playQueue.shift(); playT = 0; }
         } else {
+          while (playQueue.length) applyEvent(playQueue.shift(), true);
           finishPlayback();
         }
       }
@@ -2446,15 +2122,6 @@ window.MgMuscle = (function () {
       if (mode !== 'playback' && state.live) {
         hpShow[0] += (state.hp[0] - hpShow[0]) * 0.3;
         hpShow[1] += (state.hp[1] - hpShow[1]) * 0.3;
-      }
-
-      /* The rotating dome camera: retail's idle/terminal phases tick a spin
-       * azimuth global +2/frame (FUN_801d0748, phases 0x1e/0x32/0x6e/0xfe -
-       * 2 PSX angle units = 2*2pi/4096 rad). Mirrored during the idle
-       * presentation modes; a user drag pauses it. */
-      if (scene && (mode === 'interval' || mode === 'decided') &&
-          !(scene.dragging && scene.dragging())) {
-        scene.cam.yaw += 2 * A2R;
       }
 
       /* 3D under, HUD over. */
@@ -2574,11 +2241,13 @@ window.MgMuscle = (function () {
         try { return !!JSON.parse(api.muscle_sfx_json()).ok; }
         catch (e) { return false; }
       },
-      camInfo: () => scene
-        ? { cam: Object.assign({}, scene.cam), center: scene.center.slice(),
-            radius: scene.radius }
-        : null,
-      setCam: (c) => { if (scene && c) Object.assign(scene.cam, c); },
+      /* The battle camera's matrix the last frame drew with (the camera is
+       * the engine's battle script; the page no longer orbits its own). */
+      camInfo: () => {
+        if (!scene || !glCanvas) return null;
+        const vp = api.muscle_surface_vp(glCanvas.width / Math.max(glCanvas.height, 1));
+        return vp.length === 16 ? { vp: Array.from(vp) } : null;
+      },
     };
   }
 

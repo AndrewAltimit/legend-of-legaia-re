@@ -392,6 +392,7 @@ impl World {
             // Party members are not monsters - clear any id left from a
             // previous battle that placed an enemy in this slot.
             a.battle_monster_id = None;
+            a.battle_element = None;
         }
         // Fold the roster's live stats + equipped-gear bonuses onto the party
         // combatants' attack / defense (no-op for a zeroed roster).
@@ -427,6 +428,7 @@ impl World {
             // Tag the slot with its monster id so a renderer can fetch the
             // battle mesh, even if the catalog has no stats for it.
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
+            self.actors[mslot].battle_element = None;
             if let Some(def) = self.tables.monster_catalog.get(fslot.monster_id) {
                 // The installed stat block for THIS fight's class. The catalog
                 // is built at scene entry, before any formation is chosen, so

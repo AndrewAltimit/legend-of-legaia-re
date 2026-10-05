@@ -100,8 +100,8 @@ correct terrain textures from the VRAM the viewer already has.
 
 The `walk_ground_{positions,uvs,cba_tsb,indices,quad_count}` WASM
 accessors hand the surface to the WebGL renderer. `TmdRenderer.uploadGround`
-keeps it resident as one mesh; `renderAssembled` draws it after the ocean
-plane (so land occludes water via depth-test), with a fixed `diag(1, -1, 1)`
+keeps it resident as one mesh; `renderAssembled` draws it over the ocean
+backdrop plane (which writes no depth - see the ocean section), with a fixed `diag(1, -1, 1)`
 model - the same Y-flip the placement models apply, since the heightfield is
 already in world coordinates. The "terrain" checkbox toggles the ground pass
 (read per-frame, no kingdom re-entry). The heightfield drives the default
@@ -438,18 +438,19 @@ animation, both shipped on disc:
   first frame starting 0x54 bytes into the record (8 zero bytes +
   12-byte CLUT block header + 32 unrelated CLUT entries).
 
-The viewer DMAs one frame at a time onto VRAM ``(0, 506)``,
-overwriting the first 16 CLUT entries; the wave peak (``0x3D05``
+Each frame overwrites the first 16 CLUT entries; the wave peak (``0x3D05``
 bright blue) propagates through indices 0..7 over the 13-frame cycle.
 Frame 0 starts at index 5; the cycle wraps back to index 0 at frame
-8 and continues through index 2 at frame 12.
+8 and continues through index 2 at frame 12. Entry 0 of every frame is
+``0x0000`` - a transparent texel.
 
-**This 13-frame table is not what retail cycles.** The frames are real disc
-data and the viewer animates them legitimately, but retail drives the same
+**This 13-frame table is not what retail cycles.** Retail drives the same
 ``(0, 506)`` head from the kingdom bundle's **slot-5 CLUT-walk table**, on a
-different cadence (18 steps, one every 9 vsyncs, ≈2.7 s per cycle). The
-13-frame slot-0 path survives in the engine only as the fallback for a bundle
-with no parseable slot 5, which no retail bundle is. See
+different cadence (18 steps, one every 9 vsyncs, ≈2.7 s per cycle), copying
+from parked strips whose entry 0 is ``0x8000`` (opaque black, STP set), and
+seven more walkers fill the river / shoreline CLUT cells beside it. The
+13-frame slot-0 path survives only as the fallback for a bundle with no
+parseable slot 5, which no retail bundle is. See
 [`world-map.md`](world-map.md) for the retail mechanism.
 
 ## Web-overview shader plumbing
@@ -460,25 +461,37 @@ signature-scans the slot for the animation table. The disc-gated
 test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
 across all three kingdoms.
 
-The viewer animates the water through retail's own CLUT head: each animation
-step writes the frame's 16 BGR555 entries **into the VRAM texture at
-`(0, 506)`** - the CLUT row the continent heightfield's water cells
-sample (CBA `0x7E80`, the retail ocean CLUT target). The frames it steps
-through are the slot-0 13-frame table, i.e. the live engine's
-`advance_ocean_animation` **fallback** arm rather than its retail slot-5
-stepper. Every
-water prim in the scene shimmers from that single CLUT write, so
-terrain-embedded water and the open sea stay phase-locked as one
-layer. The wall-clock frame cadence matches the live engine's tuned
-approximation (6 sim ticks at 60 Hz = 0.1 s/frame) and advances even
-when the backdrop pass is toggled off.
+The viewer animates the water through the **retail slot-5 walker**:
+`set_scene_kingdom` resolves the kingdom's CDNAME block and runs the engine's
+`ClutWalkAnim::install` over the kingdom VRAM (parks the slot-0 source strips,
+plus the Drake complement on map02 / map03, and seeds the eight walkers), and
+the page steps it with `kingdom_clut_tick` on wall-clock vsyncs at the
+overworld's 3-vsync game tick, re-uploading the VRAM when a copy lands. It is
+the same kernel the play hosts and the field-scene viewer run, so the ocean
+head `(0, 506)` (CBA `0x7E80`), the river cells and the shoreline cells hold
+retail's palettes and shimmer on retail's cadence.
+
+Without the walk, the page's VRAM holds only the slot-0 TIMs: the source
+rows 498 / 502..505 are blank and the walker destination cells keep another
+TIM's palette, so the rivers draw pink-grey instead of retail's grey-blue. The
+13-frame cycle (entry 0 transparent, where retail's walked head holds
+`0x8000` on half its strips) stays only as the page's fallback for a kingdom
+with no walker.
 
 The ocean *backdrop* (``site/js/webgl-tmd.js``) is a flat quad at
 ``y=0`` extending past the continent so the sea reaches the horizon
 under the orbit camera; its shader samples the same 4bpp texture
-through a 16-entry CLUT texture updated from the same frame counter.
-The plane is drawn before bulk-terrain meshes so depth-test handles
-occlusion; the "ocean" checkbox toggles only this backdrop pass.
+through a 16-entry CLUT texture copied from the walked VRAM row
+`(0, 506)` after every step (`setOceanClutFromVram`), so the open sea past
+the continent grid shimmers in lockstep with the heightfield's water cells.
+The plane is drawn first **without writing depth**, so everything after it
+covers it whatever the depth: it is a backdrop fill, not geometry. Retail has
+no sea plane at all - inside the kingdom the sea is the heightfield's own water
+cells, and the river / lake / coastal cells sit at the lowest floor tier, only
+`0.6` units above `y = 0` once `GROUND_SINK` is applied. A depth-writing plane
+z-fights them as soon as the camera tilts (at range the depth step exceeds that
+gap), and the sea showed through the rivers and coastline depending on the
+view angle. The "ocean" checkbox toggles only this backdrop pass.
 
 Capture pipeline for the procedural-tint fallback used before the
 disc is loaded:

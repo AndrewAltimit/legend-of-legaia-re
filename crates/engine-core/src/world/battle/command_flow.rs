@@ -11,6 +11,15 @@ use super::*;
 /// slot's `+0x25F` Miracle marker is armed.
 const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
 
+/// The bias between an art's action-queue byte and its id in the character
+/// record's learned-art list `+0x185..`. The builder `FUN_801EED1C` walks
+/// the art grid with `s3` from `0xB` (`li s3,0xb` at `0x801EF2EC`), writes
+/// the matched art's queue byte as `s3 + 0x10` (`addiu v0,s3,0x10` at
+/// `0x801EF794`) and hands the learn check `s3 - 0xB` (`addiu a1,s3,-0xb`
+/// at `0x801EF438`): list id = queue byte - `0x1B`, so the first normal art
+/// `0x1F` is id `4` and the Hyper Arts sit below it.
+const ART_RECORD_ID_BIAS: u8 = 0x1B;
+
 /// Whether the command ring refuses `arm` for an actor whose `+0x16E` word is
 /// `status`. `FUN_801D0748`'s ring state tests the word on the press itself
 /// and answers a refusal with cue `0x23` (`0x801D2968`):
@@ -788,8 +797,19 @@ impl World {
         // `sb 0x50` phase store in its delay slot); a bare confirm replays it.
         let preseed = self.preseed_arts_entry_string(actor);
         let loaded = preseed.len();
-        let session =
+        // The Triangle list pages over the character's learned arts
+        // (`record[+0x185]`), the count the retail pager reads.
+        let learned = self
+            .party
+            .roster
+            .members
+            .get(char_slot as usize)
+            .map(|r| r.displayed_skills().count);
+        let mut session =
             ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed);
+        if let Some(n) = learned {
+            session = session.with_list_rows(n);
+        }
         // The gauge build cuts the window at the first command one full pool
         // cannot pay, zeroing that one byte (`sb zero,0x1df(a1)` at
         // `0x801D4DC4`).
@@ -900,6 +920,40 @@ impl World {
         }
     }
 
+    /// `FUN_801EFBFC` over roster member `roster`'s record list
+    /// (`+0x185` count, `+0x186..` ids): the membership scan, then the
+    /// learn-on-use insert, for the art whose queue byte is `art_byte`. The
+    /// record id is `art_byte - 0x1B` ([`ART_RECORD_ID_BIAS`]). `None` when
+    /// the roster slot has no
+    /// record.
+    ///
+    /// REF: FUN_801EFBFC (`0x801EFC54..0x801EFC98` scan, the insert after
+    /// `0x801EFD2C`)
+    pub(in crate::world) fn learn_art_on_record(
+        &mut self,
+        roster: u8,
+        art_byte: u8,
+    ) -> Option<vm::battle_action::ArtUseCheck> {
+        let cap = self
+            .party
+            .tactical_arts
+            .innate_cap(roster)
+            .saturating_sub(ART_RECORD_ID_BIAS);
+        let rec = self.party.roster.members.get_mut(usize::from(roster))?;
+        let mut list = rec.displayed_skills();
+        let verdict = vm::battle_action::check_and_learn_art(
+            &mut list.count,
+            &mut list.ids,
+            art_byte.wrapping_sub(ART_RECORD_ID_BIAS),
+            true,
+            cap,
+        );
+        if verdict == vm::battle_action::ArtUseCheck::Learned {
+            rec.set_displayed_skills(list);
+        }
+        Some(verdict)
+    }
+
     /// Build the action queue retail's queue-builder `FUN_801EED1C` writes
     /// into `actor[+0x1DF..]` for an entered arrow string - byte-exact, not
     /// structural:
@@ -986,6 +1040,15 @@ impl World {
         // first occurrence, which is what makes that pass load-bearing rather
         // than a no-op. Retail's insert gate (`ctx[+0x266 + slot]`) has no
         // engine analogue and reads open.
+        //
+        // The list the verdict scans is the character record's own -
+        // count `+0x185`, ascending ids `+0x186..` (retail
+        // `0x80084140 + (char - 1) * 0x414 + 0x74D`, `lbu v0,0x74d(v0)` at
+        // `0x801EFC54`) - keyed by the art's queue byte **less `0x1B`**
+        // ([`ART_RECORD_ID_BIAS`]), the id space the auto-fill arm and the
+        // pause menu's arts pager read the same list in. A save
+        // lifted from retail therefore knows every art its record lists, and
+        // a known art takes the plain `0x19` starter.
         for i in (0..tokens.len().saturating_sub(1)).rev() {
             if bytes[i] != ActionConstant::RegularStarter.as_byte() {
                 continue;
@@ -994,10 +1057,22 @@ impl World {
                 continue;
             };
             let id = art.as_byte();
-            let known = self.party.tactical_arts.is_learned(roster, id);
-            self.notify_art_used(roster, id);
-            if !known && self.party.tactical_arts.is_learned(roster, id) {
-                bytes[i] = ActionConstant::SpecialStarter.as_byte();
+            let verdict = self.learn_art_on_record(roster, id);
+            match verdict {
+                Some(vm::battle_action::ArtUseCheck::Learned) => {
+                    bytes[i] = ActionConstant::SpecialStarter.as_byte();
+                    self.notify_art_used(roster, id);
+                }
+                Some(_) => self.party.tactical_arts.mark_known(roster, id),
+                // No character record behind the roster slot: the tracker
+                // alone decides, as before the record was read.
+                None => {
+                    let known = self.party.tactical_arts.is_learned(roster, id);
+                    self.notify_art_used(roster, id);
+                    if !known && self.party.tactical_arts.is_learned(roster, id) {
+                        bytes[i] = ActionConstant::SpecialStarter.as_byte();
+                    }
+                }
             }
         }
         let miracle_armed = self.miracle_marker_armed_for(roster);

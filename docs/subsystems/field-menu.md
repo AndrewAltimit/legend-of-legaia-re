@@ -1039,8 +1039,12 @@ bottom would pass y = `0xB0`). `FUN_801D2B44` lists the choices at a
 Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 `OptionsSession` Browsing→Editing SM, `options_popup_content_rect`) +
 `engine-ui::options_draws_for`; the Sound row drives the audio
-mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
-settings persist in the engine's options config file.
+mixer's monaural downmix (`engine-audio AudioOut::set_mono`), Field HP
+Display sets the field party HUD's idle delay on both hosts
+(`WorldToggles::field_hp_display`, read through
+`world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
+no HUD - see [`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)),
+and the other settings persist in the engine's options config file.
 
 ### Dev-menu EVENT FLAG editor (debug build only)
 
@@ -2108,10 +2112,12 @@ can paint. Two consequences fall out of keying on the renderer:
 Both hosts draw their pause-screen tabs and the shop's vendor plate / purse /
 item-info / sell-quantity windows through this dispatch, at their disc-parsed
 rects - the native window in `window/menu_draws.rs` + `window/shop_windows.rs`,
-the browser play page in `web-viewer::play_shop`. Windows **36 / 25 / 41** join
-them whenever the equipment-buy recipient sub-screen is up: that screen is one
-shared composition (`engine-ui::recipient_picker_draws_for`) rather than three
-separate host-side draws, so its row order and cursor rows are the same on both.
+the browser play page in `web-viewer::play_shop`. Window **36** joins them
+whenever the equipment-buy recipient sub-screen is up, through one shared
+composition (`engine-ui::recipient_picker_draws_for`), so its row order and
+cursor rows are the same on both. The frames, the picker, the paged lists and
+window 41 come from `engine-ui::shop_screen` - see
+[shop.md](shop.md#screen-composition).
 
 ### Which screen opens a window
 
@@ -2702,9 +2708,10 @@ The two windows belong to **different screens**, and no script opens both:
   over the set already up.
 
 Ports: `engine-ui::equip_compare_panel_fields` (window 25) and
-`party_compare_panel_fields` (window 41). Both hosts draw window 41 beside
-the recipient list through `engine-ui::recipient_picker_draws_for`, and both
-draw window 25 on the Equip screen's candidate step beside window 24, from
+`party_compare_panel_fields` (window 41). Both hosts draw window 41 for the
+whole buy flow - the list, the quantity stepper and the recipient picker -
+through `engine-ui::shop_screen` off `engine-core::shop::party_compare_members`,
+and both draw window 25 on the Equip screen's candidate step beside window 24, from
 `engine-core::pause_screens::EquipCompareModel`. Neither derives its
 candidate column from the inline trial-equip swap: the port installs the
 staged id in a copy of the record's equip bytes and re-runs the aggregator.

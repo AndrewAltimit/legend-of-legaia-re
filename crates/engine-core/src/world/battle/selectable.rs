@@ -93,7 +93,7 @@ impl World {
     /// agree on every ordinary ring walk and differ only where the port
     /// reopens a ring mid-round.
     ///
-    /// PORT: FUN_801DB81C
+    /// PORT: FUN_801DB81C, overlay_battle_action_0898_801db81c
     /// PORT: FUN_801DBA04
     pub(in crate::world) fn next_member_owing_command(&self, after: Option<u8>) -> Option<u8> {
         let party_count = self.party.party_count.clamp(1, 3);

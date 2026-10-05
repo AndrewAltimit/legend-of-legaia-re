@@ -54,6 +54,10 @@ pub struct FieldRender {
     /// static-object list through [`field_env::placed_draw_live`] - the kernel
     /// the native play-window asks per frame.
     pub window_keys: Vec<Option<field_env::PlacedWindowKey>>,
+    /// Per-placement bind record (parallel to [`Self::placements`], `None` =
+    /// unbound): the key [`LegaiaRuntime::field_placement_moves`] looks a
+    /// script's live object displacement up by.
+    pub placement_records: Vec<Option<usize>>,
     /// Bulk terrain-tile draws (ground / decor tiles). `FLAG_PLACED` records
     /// are excluded - they are already drawn, posed, by the placement layer
     /// (the native window's `resolve_field_terrain_draws` rule).
@@ -282,6 +286,7 @@ pub fn build_field_render(
     }
     let placement_scales =
         field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);
+    let placement_records = field_env::placed_bind_records(&placements, binds.as_ref());
     let window_keys = placements
         .iter()
         .map(|d| field_env::placed_window_key(d, binds.as_ref()))
@@ -307,6 +312,7 @@ pub fn build_field_render(
         env_tmds,
         placements,
         window_keys,
+        placement_records,
         terrain,
         ground,
         floor_lut,
@@ -619,6 +625,62 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|f| f.placements.iter().map(|d| d.anim_id as u32).collect())
             .unwrap_or_default()
+    }
+
+    /// Per-placement **scripted displacement** (parallel to
+    /// [`Self::field_placement_slots`]), flattened `[dx, dy, dz]` in retail
+    /// world units (Y-down): how far a script has moved the placed object's
+    /// actor from its bind seat - an `A3` seat, an op-`4C 42` lift under the
+    /// actor's `0x20000000` height law (`chitei2`'s falling boulder). Retail
+    /// draws a placed object at its actor, so the page adds this to each
+    /// draw's translation. **Empty** while no placement has moved, which is
+    /// nearly every frame of nearly every scene. The same
+    /// `World::object_draw_displacements` table the native play-window folds
+    /// into its placed draws.
+    pub fn field_placement_moves(&self) -> Vec<f32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let moves = h.world.object_draw_displacements();
+        if moves.is_empty() {
+            return Vec::new();
+        }
+        let per = field_env::placed_draw_displacements(&f.placement_records, &moves);
+        if per.iter().all(|d| *d == [0; 3]) {
+            return Vec::new();
+        }
+        per.into_iter().flatten().map(|v| v as f32).collect()
+    }
+
+    /// Per-placement **draw tint** (parallel to
+    /// [`Self::field_placement_slots`]), flattened `[r, g, b, ir0]`: the far
+    /// colour (display `0..1`) and `IR0` (`1.0 = 0x1000`) of a constant
+    /// per-draw depth cue, from the placed object's actor `+0x74` / `+0x78`
+    /// (op `4C 81` - chitei2's hologram panels go black once the generator
+    /// is down). `ir0 == 0` = untinted. **Empty** while no placement is
+    /// tinted. The same `World::object_draw_tints` table the native
+    /// play-window stages per placed draw.
+    pub fn field_placement_tints(&self) -> Vec<f32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let tints = h.world.object_draw_tints();
+        if tints.is_empty() {
+            return Vec::new();
+        }
+        let mut any = false;
+        let mut out = Vec::with_capacity(f.placement_records.len() * 4);
+        for r in &f.placement_records {
+            match r.and_then(|r| tints.get(&r)) {
+                Some(&(colour, blend)) => {
+                    let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                    out.extend_from_slice(&[far[0], far[1], far[2], ir0]);
+                    any = true;
+                }
+                None => out.extend_from_slice(&[0.0; 4]),
+            }
+        }
+        if any { out } else { Vec::new() }
     }
 
     /// Per-placement **live** mask (parallel to [`Self::field_placement_slots`]):
