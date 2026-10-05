@@ -5,8 +5,9 @@ chain: a 4-bit or 8-bit **index** in a texture, a 16-bit **palette entry** that
 index selects out of video memory, a per-primitive **colour word** the GPU
 multiplies the entry by, an optional **depth cue** that pulls that colour word
 toward a far colour, an optional **blend** with what is already on screen, and
-a **dither + 15-bit write** into the framebuffer. There is no light source
-anywhere in that chain.
+a **dither + 15-bit write** into the framebuffer. The colour word is baked into
+the mesh for nearly every primitive; the exception, the light-source rows,
+gets it from the GTE light ([below](#step-4-the-colour-word---why-raw-textures-look-darker-or-brighter)).
 
 This page walks the chain in order, with the retail routine behind each step,
 and ends with what it means for someone editing textures. The per-routine
@@ -155,14 +156,16 @@ minority draw brighter. A texel of `(200, 100, 50)` under a colour word of
 `(255, 150, 75)`. An untextured primitive has no texel and is filled with the
 colour directly.
 
-There is **no light source**. The two retail TMD renderers `FUN_8002735C` and
-`FUN_80029888` issue exactly one GTE colour op, the depth cue `DPCS`, and the
-per-primitive dispatcher `FUN_80043390` that a measured frame's polygons
-actually come out of runs its depth-cue bodies (`DPCT` / `DPCS`, e.g. kind 19
-at `FUN_80045584`) on every sampled field and battle frame. Its four
-light-capable handlers (`FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` /
-`FUN_800445B0`) are never entered in any capture. The evidence is in
-[`renderer.md`](renderer.md#lighting).
+The exception is the **light-source rows** (TMD group flags `0x10..=0x17`).
+They carry no colour word; the per-prim dispatcher `FUN_80043390` sends them to
+its `NCCS` / `NCCT` handlers, which compute the colour word from the GTE light
+against each face's normal: the scene's back colour (`_DAT_8007B788`, `0x20`
+per channel unless op `4C 8A` sets another) plus the first light's intensity,
+times the object colour. Under the scene-load light a face turned away keeps
+an eighth of its texel and a face square to the light a little over the whole
+of it. `cave01`'s rock walls are all such rows; most scene packs hold few or
+none. The evidence and the formula are in
+[`renderer.md`](renderer.md#the-light-source-rows).
 
 2D sprites ride the same rule. The widget-sprite emitters stamp the packet
 word `0x64808080` / `0x66808080` (`FUN_8002C488` at `0x8002C4C0` and

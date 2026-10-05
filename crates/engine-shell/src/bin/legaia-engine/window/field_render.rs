@@ -194,6 +194,84 @@ impl PlayWindowApp {
         self.ground_crop = None;
     }
 
+    /// Shade the env draws' light-source rows under the world's live field
+    /// light: one shaded copy of each lit mesh per draw rotation, retail's
+    /// `L * Rot` fold (`legaia_engine_core::field_lit_mesh`). Runs after an
+    /// asset upload and again whenever the live light changes (op `4C 8A`).
+    pub(super) fn rebuild_field_lit_meshes(&mut self) {
+        let light = self.session.host.world.presentation.field_light;
+        let lit = &mut self.field_lit;
+        lit.light = Some(light);
+        lit.meshes.clear();
+        lit.terrain.clear();
+        lit.placement.clear();
+        // `LEGAIA_DIAG_NO_LIT_ROWS` leaves the lit rows at their neutral
+        // texel, for before/after frames.
+        if lit.sources.is_empty() || std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_some() {
+            return;
+        }
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let mut keys: std::collections::HashMap<(usize, [[i32; 3]; 3]), usize> =
+            std::collections::HashMap::new();
+        let sources = &lit.sources;
+        let shaded = &mut lit.meshes;
+        let mut variant = |mesh_idx: usize, model: &Mat4| -> Option<usize> {
+            let (mesh, lit_vertices) = sources.get(&mesh_idx)?;
+            let m3: [[f32; 3]; 3] =
+                std::array::from_fn(|row| std::array::from_fn(|col| model.col(col)[row]));
+            let rot = legaia_engine_core::field_lit_mesh::rotation_from_matrix(m3);
+            if let Some(&v) = keys.get(&(mesh_idx, rot)) {
+                return Some(v);
+            }
+            let mut colors = mesh.colors.clone();
+            legaia_engine_core::field_lit_mesh::shade_lit_rows(
+                &mut colors,
+                lit_vertices,
+                &light,
+                &rot,
+            );
+            let up = r
+                .upload_vram_mesh(
+                    &mesh.positions,
+                    &mesh.uvs,
+                    &mesh.cba_tsb,
+                    &mesh.normals,
+                    &colors,
+                    &mesh.indices,
+                )
+                .map_err(|e| log::warn!("lit env mesh upload skipped: {e:#}"))
+                .ok()?;
+            shaded.push(up);
+            let v = shaded.len() - 1;
+            keys.insert((mesh_idx, rot), v);
+            Some(v)
+        };
+        let terrain: Vec<Option<usize>> = self
+            .field_terrain_draws
+            .iter()
+            .map(|(m, model)| variant(*m, model))
+            .collect();
+        let placement: Vec<Option<usize>> = self
+            .field_placement_draws
+            .iter()
+            .map(|(m, model)| variant(*m, model))
+            .collect();
+        lit.terrain = terrain;
+        lit.placement = placement;
+    }
+
+    /// Re-shade the env draws when the live field light no longer matches
+    /// the one they were shaded under.
+    pub(super) fn sync_field_lit_meshes(&mut self) {
+        if !self.field_lit.sources.is_empty()
+            && self.field_lit.light != Some(self.session.host.world.presentation.field_light)
+        {
+            self.rebuild_field_lit_meshes();
+        }
+    }
+
     pub(super) fn sync_ground_crop(
         &mut self,
         cells: Option<&legaia_engine_core::field_view_window::ViewCells>,

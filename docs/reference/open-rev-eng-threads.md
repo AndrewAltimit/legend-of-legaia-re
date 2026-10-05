@@ -481,7 +481,8 @@ kind-8..11 world-map handlers, with no overlay image containing one and no
 question needed a census of GTE opcodes rather than an xref query, because the
 matrix is consumed implicitly by the normal-colour commands
 ([settled](re-settled-threads.md#rendering--camera)). It corroborates rather
-than changes the renderer page: the field path applies no light source.
+than changes the renderer page: those handlers are the field's
+light-source rows ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
 
 Before it: **where a slot-B module image's highest spawn record ends**. Its
 own move-VM program bounds it, under four rules the page states - round the end

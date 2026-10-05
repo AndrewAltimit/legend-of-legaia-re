@@ -493,6 +493,105 @@ impl LegaiaRuntime {
         Ok(slot)
     }
 
+    /// Select + build environment-pack slot `slot` (unposed) with its
+    /// **light-source rows** shaded for a draw at the record angles
+    /// `(rot_x, rot_y, rot_z)` under the world's live field light - the
+    /// `legaia_engine_core::field_lit_mesh` kernel the native window shades
+    /// its env draws with. Returns whether the mesh has lit rows at all; for a
+    /// mesh without any, the build is the plain [`Self::field_mesh`] one and
+    /// the page keeps sharing that upload across draws.
+    pub fn field_mesh_lit(
+        &mut self,
+        slot: u32,
+        rot_x: u32,
+        rot_y: u32,
+        rot_z: u32,
+    ) -> Result<bool, JsValue> {
+        let s = slot as usize;
+        let light = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.presentation.field_light)
+            .ok_or_else(|| JsValue::from_str("field_mesh_lit: no scene"))?;
+        let res_idx = *self
+            .field
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("field_mesh_lit: no scene"))?
+            .env_tmds
+            .get(s)
+            .ok_or_else(|| JsValue::from_str(&format!("field_mesh_lit: slot {s} out of range")))?;
+        let (mesh, flat, lit) = {
+            let res = self
+                .res()
+                .ok_or_else(|| JsValue::from_str("field_mesh_lit: no resources"))?;
+            let rtmd = res
+                .tmds
+                .get(res_idx)
+                .ok_or_else(|| JsValue::from_str("field_mesh_lit: tmd missing"))?;
+            let (mut mesh, mut flat, lit) =
+                legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram);
+            if legaia_engine_core::field_lit_mesh::has_lit_rows(&lit) {
+                let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
+                    rot_x as u16,
+                    rot_y as u16,
+                    rot_z as u16,
+                );
+                legaia_engine_core::field_lit_mesh::shade_lit_rows_rgba(
+                    &mut mesh.colors,
+                    &mut flat,
+                    &lit,
+                    &light,
+                    &rot,
+                );
+            }
+            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+                &rtmd.raw, &mut mesh, &flat, &res.vram,
+            );
+            (mesh, flat, lit)
+        };
+        let has_lit = legaia_engine_core::field_lit_mesh::has_lit_rows(&lit);
+        if let Some(f) = self.field.as_mut() {
+            // Not the plain build's cache key: a later `field_mesh(slot)`
+            // must rebuild the unshaded stream.
+            f.cur = Some(((usize::MAX, 0), mesh, flat));
+        }
+        Ok(has_lit)
+    }
+
+    /// Whether env-pack slot `slot` carries light-source rows - the page's
+    /// "needs a per-rotation shaded copy" test.
+    pub fn field_mesh_has_lit_rows(&self, slot: u32) -> bool {
+        let Some(res_idx) = self
+            .field
+            .as_ref()
+            .and_then(|f| f.env_tmds.get(slot as usize).copied())
+        else {
+            return false;
+        };
+        let Some(res) = self.res() else {
+            return false;
+        };
+        res.tmds.get(res_idx).is_some_and(|rtmd| {
+            let (_, lit) = rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
+            legaia_engine_core::field_lit_mesh::has_lit_rows(&lit)
+        })
+    }
+
+    /// The live field light as one comparable key (angles + back colour) -
+    /// the page re-shades its lit env copies when it changes (op `4C 8A`).
+    pub fn field_light_key(&self) -> String {
+        self.scene_host
+            .as_ref()
+            .map(|h| {
+                let l = h.world.presentation.field_light;
+                format!(
+                    "{},{},{},{},{},{}",
+                    l.angles[0], l.angles[1], l.angles[2], l.back[0], l.back[1], l.back[2]
+                )
+            })
+            .unwrap_or_default()
+    }
+
     pub fn field_mesh_positions(&self) -> Vec<f32> {
         let Some((_, m, _)) = self.field_cur() else {
             return Vec::new();

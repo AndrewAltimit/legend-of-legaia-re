@@ -739,6 +739,9 @@ impl PlayWindowApp {
         );
         self.sync_ground_wave();
         self.sync_ground_crop(view_cells.as_ref());
+        // The env draws' light-source rows follow the live field light
+        // (op `4C 8A` mid-scene).
+        self.sync_field_lit_meshes();
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the
@@ -1974,10 +1977,17 @@ impl PlayWindowApp {
                             ) {
                                 continue;
                             }
-                            let mesh = self
-                                .field_morph_live
-                                .get(mesh_idx)
-                                .or_else(|| self.meshes.get(*mesh_idx));
+                            // A lit mesh draws its copy shaded at this
+                            // draw's rotation (`field_lit_mesh`).
+                            let mesh = self.field_morph_live.get(mesh_idx).or_else(|| {
+                                self.field_lit
+                                    .terrain
+                                    .get(di)
+                                    .copied()
+                                    .flatten()
+                                    .and_then(|v| self.field_lit.meshes.get(v))
+                                    .or_else(|| self.meshes.get(*mesh_idx))
+                            });
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
@@ -2097,10 +2107,15 @@ impl PlayWindowApp {
                             ) {
                                 continue;
                             }
-                            let mesh = self
-                                .field_morph_live
-                                .get(mesh_idx)
-                                .or_else(|| self.meshes.get(*mesh_idx));
+                            let mesh = self.field_morph_live.get(mesh_idx).or_else(|| {
+                                self.field_lit
+                                    .placement
+                                    .get(di)
+                                    .copied()
+                                    .flatten()
+                                    .and_then(|v| self.field_lit.meshes.get(v))
+                                    .or_else(|| self.meshes.get(*mesh_idx))
+                            });
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;

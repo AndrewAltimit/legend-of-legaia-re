@@ -65,6 +65,18 @@ replacements) fire in the same run. A kingdom overworld never enters the SCUS
 prim-dispatch family at all. See
 [`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
+### The field runs no hardware light source
+
+*Falsified by a frame.*
+
+The reading rested on a `town01` sweep that sampled only the kind-11 body and
+on a GTE-opcode census that found the light handlers' consumers but not who
+reaches them. The dispatcher selects by `flags >> 1`, so every TMD group with
+flags `0x10..=0x17` goes through `NCCS` / `NCCT`; `cave01`'s walls are all such
+groups, and its retail frame is the light's. A white back colour (`town01`'s
+op `4C 8A`) is what made the town's lit rows look baked. See
+[`renderer.md`](../subsystems/renderer.md#the-light-source-rows).
+
 ## Battle / arts / level-up
 
 | Thread | Verdict | Why |

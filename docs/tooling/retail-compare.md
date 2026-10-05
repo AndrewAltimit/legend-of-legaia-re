@@ -1173,20 +1173,20 @@ re-entry's `P2[50]` set the flag: the state holds every lane at `0x1000` with `0
 A card load of that save seats the objects with the flag already set, so the
 engine draws the full tree where retail's frame shows the withered one.
 
-### A wall cell beside the eye
+### A dark wall is a lit row, not a missing one
 
-`cave01_attached_light`'s camera words match retail's exactly, yet retail's
-right-hand cave wall starts about 60 px further left than the port's, dark
-and with a straight vertical edge. The port's right wall is the `.MAP`
-terrain column of pack 37 at X `12224` (the left wall is pack 29 at
-`11808`), every record unrotated; the eye the words compose sits near Z
-`13746`, so the column's cell at Z `13760` straddles the eye plane. Retail
-has no near-plane clip on the per-primitive path (only the `OTZ` floor of
-[the near reject](../subsystems/renderer.md#the-per-primitive-near-reject)),
-so a primitive with corners behind the eye is projected with saturated
-coordinates and covers that strip; the port clips it per pixel. The reading
-rests on the composed eye position, not on a captured display list - the
-state's pools held only stale buffers.
+`cave01_attached_light`'s right-hand cave wall reads, in the side-by-side,
+as starting about 60 px further left in retail than in the port. It does
+not: read against the retail panel's own origin, both walls start at the
+same column (the third of the strip is the engine's), and every wall cell
+is drawn in both games. What differs is the brightness. The cave's rock
+columns (packs 29 and 37) are **light-source rows** - group flags `0x11`,
+dispatch kind 8, `NCCS` - so retail shades each face through the GTE light
+against its normal; under the scene-load light (back colour `0x202020`)
+the right wall, whose faces turn from the light, falls to an eighth of its
+texel and the left wall rises past neutral. A port that drew the lit rows
+at the neutral `0x80` painted both walls at their raw texel
+([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
 
 ### A poked player keeps the arrival focus
 

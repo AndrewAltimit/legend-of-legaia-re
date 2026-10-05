@@ -827,6 +827,13 @@ struct PlayWindowApp {
     /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
     /// on its ground instead of floating over the bare clear colour.
     field_terrain_draws: Vec<(usize, Mat4)>,
+    /// The field's **light-source** row shading
+    /// (`legaia_engine_core::field_lit_mesh`): per env mesh with lit-row
+    /// vertices, the CPU mesh + its lit vertices (keyed by `meshes` index),
+    /// the shaded per-rotation variants, which variant each terrain /
+    /// placement draw takes (parallel to the two draw lists) and the light
+    /// they were shaded under - a different live light rebuilds them.
+    field_lit: FieldLitMeshes,
     /// Live floor-height-ladder patch for the four field draw lists above: the
     /// per-draw ladder rungs plus the ladder currently folded into their Y, so
     /// a script that sets a rung oscillating (op `0x4C` nibble-9) moves the
@@ -1696,6 +1703,29 @@ struct FieldNpcDraw {
     /// `rebind_live_npc_models` notices a swap the world made after the
     /// upload ran.
     bound_model: i16,
+}
+
+/// The field env meshes' light-source row shading (see
+/// `PlayWindowApp::field_lit` and `legaia_engine_core::field_lit_mesh`).
+#[derive(Default)]
+struct FieldLitMeshes {
+    /// `meshes` index -> the processed CPU mesh and its lit vertices, for
+    /// every uploaded env mesh carrying a lit-row vertex.
+    sources: std::collections::HashMap<
+        usize,
+        (
+            legaia_tmd::mesh::VramMesh,
+            Vec<Option<legaia_tmd::mesh::LitVertex>>,
+        ),
+    >,
+    /// The shaded variants, one per `(mesh, draw rotation)`.
+    meshes: Vec<UploadedVramMesh>,
+    /// Parallel to `field_terrain_draws`: the variant each draw takes.
+    terrain: Vec<Option<usize>>,
+    /// Parallel to `field_placement_draws`: the variant each draw takes.
+    placement: Vec<Option<usize>>,
+    /// The light the variants were shaded under.
+    light: Option<legaia_engine_vm::field_light::FieldLight>,
 }
 
 /// The scene's CLUT-walk shimmer (`legaia_engine_core::clut_walk_anim`, the

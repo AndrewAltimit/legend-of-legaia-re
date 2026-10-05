@@ -87,6 +87,7 @@ pub mod field_channels;
 pub mod field_env;
 pub mod field_events;
 pub mod field_ground;
+pub mod field_lit_mesh;
 pub mod field_menu;
 pub mod field_menu_dispatch;
 pub mod field_occlusion;

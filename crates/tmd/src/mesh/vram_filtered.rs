@@ -45,8 +45,70 @@ where
 pub fn tmd_to_vram_mesh_filtered_lit<F>(
     tmd: &Tmd,
     buf: &[u8],
-    mut keep_prim: F,
+    keep_prim: F,
 ) -> (VramMesh, Vec<bool>)
+where
+    F: FnMut(u16, u16, &[(u8, u8)]) -> bool,
+{
+    let (mesh, lit) = tmd_to_vram_mesh_filtered_lit_vertices(tmd, buf, keep_prim);
+    (mesh, lit.iter().map(Option::is_some).collect())
+}
+
+/// What retail's light-source handlers read for one **lit-row** vertex: the
+/// TMD normal the corner is shaded by and the object's colour word.
+///
+/// The field dispatcher `FUN_80043390` routes group flags `0x10..=0x17`
+/// (`flags >> 1` = kinds `8..=11`) to the four `NCCS` / `NCCT` handlers
+/// (`FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0`), which
+/// shade each corner from a normal index carried in the packet and load
+/// `RGBC` from the dispatcher's colour argument scaled by the object's
+/// `+0x18` word (`0x80043404..0x8004347C` - the TMD object header's "scale"
+/// slot, a colour in Legaia's TMDs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LitVertex {
+    /// The object-local normal, q3.12 (`4096` = unit length).
+    pub normal: [i16; 3],
+    /// The object colour word's `[R, G, B]` (object header `+0x18`).
+    pub object_rgb: [u8; 3],
+}
+
+/// Byte offsets, within a lit-row prim, of its normal indices - one per
+/// corner for a gouraud row (`NCCT`), one shared by every corner for a flat
+/// row (`NCCS`). `None` outside flags `0x10..=0x17`.
+///
+/// Read from the handlers' own loads: kind 8 (flat tri, `FUN_8004409C`)
+/// takes the normal from the low half of `+0x0C`, ahead of its vertices;
+/// kind 9 (flat quad, `FUN_8004423C`) from `+0x14`, after its four
+/// vertices; kind 10 (gouraud tri, `FUN_80044434`) from `+0x12..+0x16`,
+/// trailing its vertices, and kind 11 (gouraud quad) likewise.
+fn lit_normal_offsets(flags: u16, n_verts: usize, vertex_offset: usize) -> Option<Vec<usize>> {
+    if !(0x10..=0x17).contains(&flags) {
+        return None;
+    }
+    let gouraud = flags >= 0x14;
+    let quad = (flags >> 1) & 1 == 1;
+    Some(if gouraud {
+        (0..n_verts)
+            .map(|i| vertex_offset + n_verts * 2 + i * 2)
+            .collect()
+    } else if quad {
+        vec![vertex_offset + n_verts * 2; n_verts]
+    } else {
+        vec![vertex_offset.checked_sub(2)?; n_verts]
+    })
+}
+
+/// [`tmd_to_vram_mesh_filtered_lit`] with each lit-row vertex's
+/// [`LitVertex`] instead of a bare flag - what a host needs to shade the
+/// light-source rows the way retail's `NCCS` / `NCCT` handlers do. `None` for
+/// every baked-colour vertex. A lit vertex whose normal index falls outside
+/// the object's normal table (or its packet) carries a zero normal, which
+/// shades it at the back colour alone.
+pub fn tmd_to_vram_mesh_filtered_lit_vertices<F>(
+    tmd: &Tmd,
+    buf: &[u8],
+    mut keep_prim: F,
+) -> (VramMesh, Vec<Option<LitVertex>>)
 where
     F: FnMut(u16, u16, &[(u8, u8)]) -> bool,
 {
@@ -78,7 +140,24 @@ where
                     continue;
                 }
                 let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
-                let lit_row = (0x10..=0x17).contains(&g.header.flags);
+                let lit_normals: Option<Vec<Option<[i16; 3]>>> =
+                    legaia_prims::vertex_offset_bytes(g.header.flags)
+                        .and_then(|vo| lit_normal_offsets(g.header.flags, raw_idx.len(), vo))
+                        .map(|offs| {
+                            offs.iter()
+                                .map(|&off| {
+                                    let at = prim.bytes_offset + off;
+                                    let raw =
+                                        u16::from_le_bytes([*buf.get(at)?, *buf.get(at + 1)?]);
+                                    let n = o.normals.get(usize::from(raw & 0x7FF8) / 8)?;
+                                    Some([n.x, n.y, n.z])
+                                })
+                                .collect()
+                        });
+                let object_rgb = {
+                    let w = o.header.scale as u32;
+                    [w as u8, (w >> 8) as u8, (w >> 16) as u8]
+                };
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -87,7 +166,12 @@ where
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
                     colors.push(prim_color(prim, uv_idx));
-                    lit.push(lit_row);
+                    lit.push(lit_normals.as_ref().and_then(|ns| {
+                        ns.get(uv_idx).map(|n| LitVertex {
+                            normal: n.unwrap_or([0; 3]),
+                            object_rgb,
+                        })
+                    }));
                     i
                 };
                 match raw_idx.len() {

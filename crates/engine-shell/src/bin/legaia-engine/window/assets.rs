@@ -71,6 +71,7 @@ impl PlayWindowApp {
         };
         // Pose source for the scene's animated actors + placed static objects.
         let scene_bundle = self.find_scene_anm_bundle();
+        let mut lit_sources = std::collections::HashMap::new();
         let (
             vram_opt,
             font_opt,
@@ -136,7 +137,10 @@ impl PlayWindowApp {
                 // matches the asset-viewer's cleanup and avoids the "flat
                 // green CLUT[0]" shells over correctly-textured geometry
                 // that the unfiltered builder produces.
-                let (mut vmesh, lit_rows) = rtmd.build_filtered_vram_mesh_lit(&res.vram);
+                let (mut vmesh, lit_vertices) =
+                    rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
+                let lit_rows: Vec<bool> = lit_vertices.iter().map(Option::is_some).collect();
+                let prologue_graded = self.session.host.world.scene_color_grade().is_some();
                 // Prologue dim ambient on the LIT prim rows. Retail stages the
                 // GTE back/ambient colour `DAT_8007B788` = `0x00202020` (dim,
                 // R=G=B=32) for the prologue cutscene legs vs `0x00FFFFFF` in
@@ -149,7 +153,7 @@ impl PlayWindowApp {
                 // colour, and the colour test turned every such prim (the
                 // jungle's one-quad bush / branch billboards) black. Scoped to
                 // the prologue legs by the same gate as the sepia grade.
-                if self.session.host.world.scene_color_grade().is_some() {
+                if prologue_graded {
                     legaia_engine_core::fade::apply_prologue_lit_ambient(
                         &mut vmesh.colors,
                         &lit_rows,
@@ -308,6 +312,16 @@ impl PlayWindowApp {
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
+                        // The light-source rows: keep the processed mesh so
+                        // each env draw can take a copy shaded at its own
+                        // rotation (`rebuild_field_lit_meshes`). The prologue
+                        // legs keep their ambient restage above.
+                        if !prologue_graded
+                            && lit_vertices.len() == vmesh.colors.len()
+                            && legaia_engine_core::field_lit_mesh::has_lit_rows(&lit_vertices)
+                        {
+                            lit_sources.insert(meshes.len(), (vmesh.clone(), lit_vertices));
+                        }
                         tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
                         meshes.push(m);
                         tmd_src_index.push(src_i);
@@ -818,10 +832,13 @@ impl PlayWindowApp {
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         self.field_terrain_draws = field_terrain_draws;
+        self.field_lit.sources = lit_sources;
+        self.field_lit.light = None;
         self.field_terrain_color_draws = field_terrain_color_draws;
         self.field_terrain_cell_keys = terrain_cell_keys;
         self.field_terrain_color_cell_keys = terrain_color_cell_keys;
         self.field_placement_draws = field_placement_draws;
+        self.rebuild_field_lit_meshes();
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
         self.field_placement_window_keys = placement_window_keys;

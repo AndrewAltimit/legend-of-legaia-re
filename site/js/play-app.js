@@ -965,6 +965,33 @@ void main() {
           rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
         return true;
       };
+      /* Light-source rows (TMD group flags 0x10..0x17): retail shades each
+       * corner through the GTE light against the draw's world normal, so a
+       * slot carrying them gets one shaded copy per draw rotation - the
+       * `field_lit_mesh` kernel the native window runs. `_syncFieldLight`
+       * re-shades them when the live light changes (op 4C 8A). */
+      const LIT_MESH_BASE = 1400000;
+      this.litEnvMeshes = [];
+      this._fieldLightKey = (typeof rt.field_light_key === 'function') ? rt.field_light_key() : '';
+      const litSlot = new Map(), litIds = new Map();
+      const ensureLit = (slot, ry, rx, rz) => {
+        if (typeof rt.field_mesh_lit !== 'function') return -1;
+        let has = litSlot.get(slot);
+        if (has === undefined) {
+          has = !!rt.field_mesh_has_lit_rows(slot);
+          litSlot.set(slot, has);
+        }
+        if (!has) return -1;
+        const rec = { meshId: 0, slot, rx: rx & 0xFFF, ry: ry & 0xFFF, rz: rz & 0xFFF };
+        const key = `${slot}:${rec.rx}:${rec.ry}:${rec.rz}`;
+        const known = litIds.get(key);
+        if (known !== undefined) return known;
+        rec.meshId = LIT_MESH_BASE + this.litEnvMeshes.length;
+        if (!this._uploadLitEnvMesh(rt, rec)) return -1;
+        this.litEnvMeshes.push(rec);
+        litIds.set(key, rec.meshId);
+        return rec.meshId;
+      };
       /* `floorBase` is where this list starts inside the concatenated
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
@@ -980,7 +1007,9 @@ void main() {
             if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
             animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0 };
           } else {
-            meshId = ensure(slots[i], 0);
+            meshId = ensureLit(slots[i], rots ? rots[i] : 0,
+              rotsX ? rotsX[i] : 0, rotsZ ? rotsZ[i] : 0);
+            if (meshId < 0) meshId = ensure(slots[i], 0);
             if (meshId < 0) continue;
           }
           /* Sky domes and kilometre-wide horizon planes are scene geometry
@@ -2120,6 +2149,31 @@ void main() {
      * applies at retail framing only (the camera-distance preset at Retail, no
      * drag / zoom, and never under `F3`), so the default page draws the map
      * whole. */
+    /* Upload one lit env copy: slot `rec.slot` shaded at the draw rotation
+     * `(rec.rx, rec.ry, rec.rz)` under the world's live field light. */
+    _uploadLitEnvMesh(rt, rec) {
+      try { rt.field_mesh_lit(rec.slot, rec.rx, rec.ry, rec.rz); }
+      catch (e) { return false; }
+      const pos = rt.field_mesh_positions();
+      const idx = rt.field_mesh_indices();
+      if (!pos.length || !idx.length) return false;
+      const flat = rt.field_mesh_flat_rgba();
+      this.renderer.uploadSceneMesh(rec.meshId, pos, rt.field_mesh_uvs(),
+        rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
+      return true;
+    }
+
+    /* Re-shade the lit env copies when the live field light moves (op
+     * 4C 8A - koin3's cutscene records drop it to black and back). */
+    _syncFieldLight(rt) {
+      if (!this.litEnvMeshes || !this.litEnvMeshes.length
+          || typeof rt.field_light_key !== 'function') return;
+      const key = rt.field_light_key();
+      if (key === this._fieldLightKey) return;
+      this._fieldLightKey = key;
+      for (const rec of this.litEnvMeshes) this._uploadLitEnvMesh(rt, rec);
+    }
+
     _syncViewWindow(rt) {
       if (typeof rt.field_view_window_stamp !== 'function') return;
       const stamp = rt.field_view_window_stamp(this.debugCamera);
@@ -2504,6 +2558,7 @@ void main() {
 
       /* Retail's visible-tile crop may have moved with the camera. */
       this._syncViewWindow(rt);
+      this._syncFieldLight(rt);
       this._syncPlacementCull(rt);
 
       /* A script may have re-bound an NPC's mesh this frame. */
