@@ -82,6 +82,10 @@ pub struct MinigameState {
     /// is one of its records drawn out of the venue's HUD page; `None` leaves
     /// a host on its text fallback.
     pub fishing_sprites: Option<Vec<legaia_asset::fishing_sprites::FishingSprite>>,
+    /// The lure row's captions off PROT 0972, resolved against the item
+    /// table ([`FishingCaptionText`]); `None` leaves a host on its
+    /// placeholders.
+    pub fishing_captions: Option<FishingCaptionText>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
@@ -304,6 +308,7 @@ impl MinigameState {
             fishing_prize_venues: None,
             fishing_hub_text: None,
             fishing_sprites: None,
+            fishing_captions: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             slot_sfx_bundle: Vec::new(),
@@ -342,5 +347,38 @@ impl MinigameState {
 impl Default for MinigameState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The fishing HUD's lure-row text as `FUN_801D13F0` prints it: the three
+/// lure labels (each the item name its `0xC2` token names), the caption
+/// before the count and the one after it - all off the user's disc
+/// ([`legaia_asset::fishing_captions`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FishingCaptionText {
+    pub lure_names: [String; 3],
+    pub lures_left: String,
+    pub suffix: String,
+}
+
+impl FishingCaptionText {
+    /// Resolve the overlay's raw row against the item-name table. Bytes
+    /// outside printable ASCII are dropped (the HUD draws with the ASCII
+    /// font layout).
+    pub fn resolve(
+        raw: &legaia_asset::fishing_captions::FishingCaptionsRaw,
+        item_name: impl Fn(u8) -> Option<String>,
+    ) -> Self {
+        let ascii = |b: &[u8]| {
+            b.iter()
+                .filter(|c| c.is_ascii_graphic() || **c == b' ')
+                .map(|&c| c as char)
+                .collect::<String>()
+        };
+        Self {
+            lure_names: raw.lure_items.map(|id| item_name(id).unwrap_or_default()),
+            lures_left: ascii(&raw.lures_left),
+            suffix: ascii(&raw.suffix),
+        }
     }
 }

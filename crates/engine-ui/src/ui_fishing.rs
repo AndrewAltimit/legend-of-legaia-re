@@ -834,6 +834,19 @@ pub struct FishingCaptions<'a> {
     pub lure_count_suffix: &'a str,
 }
 
+impl<'a> FishingCaptions<'a> {
+    /// The captions off the user's disc, as the engine resolved them
+    /// (`World::minigames.fishing_captions`): the three lure labels, the
+    /// caption before the count and the one after it.
+    pub fn from_disc(lure_names: &'a [String; 3], lures_left: &'a str, suffix: &'a str) -> Self {
+        FishingCaptions {
+            rod_names: [&lure_names[0], &lure_names[1], &lure_names[2]],
+            lures_left,
+            lure_count_suffix: suffix,
+        }
+    }
+}
+
 impl FishingCaptions<'static> {
     /// Engine-side English placeholders. These are **not** the retail
     /// strings - they exist so a dev build draws a legible HUD before a
@@ -947,9 +960,9 @@ fn bar_frame_draws(
 ///   ([`number_digit_cells`]), so leading zeros stay blank and the value is
 ///   right-aligned in its 8-slot row; each cell is drawn from the
 ///   proportional font atlas.
-/// - [`HudDraw::Count`] is the fixed-width variant. Its retail primitive
-///   (`0x80034b78`) is unported, so the width is honoured by zero-padding -
-///   an engine-side choice, not a pinned one.
+/// - [`HudDraw::Count`] is the fixed-width variant, laid out the way the
+///   shared number primitive `FUN_80034B78` does: right-aligned in
+///   `digits` 8-px cells, leading cells blank.
 /// - [`HudDraw::Caption`] resolves through `captions`; a [`HudCaption::RodName`]
 ///   whose index is out of range draws nothing, matching the builder's own
 ///   gate.
@@ -1002,9 +1015,17 @@ pub fn fishing_hud_draws_for(
                 x,
                 y,
             } => {
-                let w = digits as usize;
-                let s = format!("{:0w$}", value.max(0), w = w);
-                text_at(&mut out, &s, x, y, HUD_BRIGHTNESS);
+                // `FUN_80034B78(value, digits, x, y)`: the value right-aligned
+                // in `digits` 8-px cells, leading cells blank - a zero-padded
+                // string here ran the count into the caption before it.
+                out.extend(crate::ui_menu::num_field_draws(
+                    font,
+                    value.max(0) as u64,
+                    origin.0 + x,
+                    origin.1 + y,
+                    digits as i32,
+                    hud_tint(HUD_BRIGHTNESS),
+                ));
             }
             HudDraw::Caption { text, x, y } => {
                 let s = match text {
@@ -1619,7 +1640,7 @@ mod tests {
     }
 
     #[test]
-    fn consumer_right_aligns_numbers_and_zero_pads_counts() {
+    fn consumer_right_aligns_numbers_and_blank_pads_counts() {
         let font = legaia_font::synthetic_for_tests();
         let caps = FishingCaptions::placeholder();
         let atlas = test_atlas();
@@ -1640,7 +1661,8 @@ mod tests {
         assert_eq!(num.len(), 2, "two significant digits, no leading zeros");
         assert_eq!(num[0].dst.0, 6 * DIGIT_PITCH_NARROW);
 
-        // A Count is the fixed-width field: 7 in four digits is "0007".
+        // A Count is `FUN_80034B78`'s fixed-width field: 7 in four 8-px
+        // cells is three blank cells and a 7 in the last one.
         let cnt = fishing_hud_draws_for(
             &font,
             &[HudDraw::Count {
@@ -1653,6 +1675,7 @@ mod tests {
             &atlas,
             (0, 0),
         );
-        assert_eq!(cnt.len(), 4, "zero-padded to the field width");
+        assert_eq!(cnt.len(), 1, "leading cells blank, not zeros");
+        assert_eq!(cnt[0].dst.0, 3 * 8);
     }
 }

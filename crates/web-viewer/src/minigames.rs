@@ -153,6 +153,9 @@ pub struct LegaiaMinigames {
     /// The last frame's fishing HUD draw list, as `fishing_pond_hud_json`
     /// built it - what `fishing_hud_rgba` rasterises.
     fishing_hud_last: Vec<legaia_engine_ui::HudDraw>,
+    /// The lure row's captions off PROT 0972, resolved against the item
+    /// table.
+    fishing_captions: Option<legaia_engine_core::world::FishingCaptionText>,
     /// This page's **effect-part pool** - the standalone twin of
     /// `World::minigames.fx`, which this page cannot use because it drives
     /// the session types directly and holds no `World`. Same model
@@ -327,6 +330,7 @@ impl LegaiaMinigames {
             fishing_banners: Default::default(),
             fishing_sprites: None,
             fishing_hud_last: Vec::new(),
+            fishing_captions: None,
             fx: Default::default(),
             fishing_prizes: Default::default(),
             fishing_scene: None,
@@ -417,6 +421,7 @@ impl LegaiaMinigames {
         self.fishing_banners = Default::default();
         self.fishing_sprites = None;
         self.fishing_hud_last.clear();
+        self.fishing_captions = None;
         self.fishing_prizes = Default::default();
         self.fishing_scene = None;
         self.muscle = None;

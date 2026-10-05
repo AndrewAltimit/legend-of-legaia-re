@@ -415,8 +415,11 @@ window.MgFishing = (function () {
       if (sprites && (it.t === 'digit' || it.t === 'glyph')) return;
       if (it.t === 'digit') {
         hudText(String(it.d), it.x, it.y, { b: it.b, bold: true });
+      } else if (it.t === 'count') {
+        hudText(String(it.d), it.x, it.y, { b: it.b });
       } else if (it.t === 'cap') {
-        hudText(CAPTION_TEXT[it.k] || '', it.x, it.y, { color: '#cfe0ef' });
+        const txt = (typeof it.txt === 'string') ? it.txt : (CAPTION_TEXT[it.k] || '');
+        hudText(txt, it.x, it.y, { color: '#cfe0ef' });
       } else if (it.t === 'glyph') {
         const label = GLYPH_LABEL[it.id];
         if (label === undefined) return;

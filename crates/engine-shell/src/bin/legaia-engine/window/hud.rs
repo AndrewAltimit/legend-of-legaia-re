@@ -652,10 +652,20 @@ impl PlayWindowApp {
                 bar_thickness: 8,
                 sprites_drawn,
             };
+            // The lure row's captions off the disc when the overlay's text
+            // resolved, the engine placeholders otherwise.
+            let captions = match self.session.host.world.minigames.fishing_captions.as_ref() {
+                Some(t) => legaia_engine_render::FishingCaptions::from_disc(
+                    &t.lure_names,
+                    &t.lures_left,
+                    &t.suffix,
+                ),
+                None => legaia_engine_render::FishingCaptions::placeholder(),
+            };
             let mut draws = legaia_engine_render::fishing_hud_draws_for(
                 &self.font,
                 &items,
-                &legaia_engine_render::FishingCaptions::placeholder(),
+                &captions,
                 &hud_atlas,
                 (0, 0),
             );

@@ -149,6 +149,20 @@ impl SceneHost {
         // And the HUD sprite table every glyph, digit and gauge cap is cut
         // from (`FUN_801D63B0`'s records).
         self.world.minigames.fishing_sprites = legaia_asset::fishing_sprites::parse(loaded);
+        // And the lure row's captions, the labels resolved through the
+        // same item table the exchange rows use.
+        let names = self
+            .world
+            .menu
+            .text
+            .as_ref()
+            .and_then(|t| t.item_names.as_ref());
+        self.world.minigames.fishing_captions =
+            legaia_asset::fishing_captions::parse(loaded).map(|raw| {
+                crate::world::FishingCaptionText::resolve(&raw, |id| {
+                    names.and_then(|n| n.name(id)).map(str::to_string)
+                })
+            });
         true
     }
 

@@ -134,7 +134,7 @@ pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
 pub use item_bag::{BagEntry, ItemBag};
 pub use menu_state::MenuState;
-pub use minigame_state::MinigameState;
+pub use minigame_state::{FishingCaptionText, MinigameState};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
 pub use party_state::PartyState;
 pub use screen_fx_state::ScreenFxState;

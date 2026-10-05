@@ -468,13 +468,17 @@ impl LegaiaRuntime {
             bar_thickness: 8,
             sprites_drawn,
         };
-        let mut texts = ui::fishing_hud_draws_for(
-            font,
-            &items,
-            &FishingCaptions::placeholder(),
-            &atlas,
-            (0, 0),
-        );
+        // The lure row's captions off the disc, as the native window draws
+        // them.
+        let disc_captions = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.fishing_captions.clone());
+        let captions = match disc_captions.as_ref() {
+            Some(t) => FishingCaptions::from_disc(&t.lure_names, &t.lures_left, &t.suffix),
+            None => FishingCaptions::placeholder(),
+        };
+        let mut texts = ui::fishing_hud_draws_for(font, &items, &captions, &atlas, (0, 0));
         texts.extend(self.fishing_status_draws(font));
         // The venue's point-exchange sub-screen, when one is open. This page
         // used to answer the rows as a JSON side-channel only

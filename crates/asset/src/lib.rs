@@ -57,6 +57,7 @@ pub mod field_map;
 pub mod field_objects;
 pub mod field_pack;
 pub mod field_probe_tables;
+pub mod fishing_captions;
 pub mod fishing_exchange;
 pub mod fishing_species;
 pub mod fishing_sprites;
