@@ -2188,12 +2188,17 @@ when someone guesses.
 
 | address | crate | anchor |
 |---|---|---|
-| `801cf5d0` | engine-ui | `from_character_record` (`ui_menu_window_painters_large.rs`) |
-| `801d3748` | engine-core | `arts_list_pager` (`arts_command_input.rs`) |
+| *(none)* | | |
 
-Both arrived with ports that landed after the previous export. The four this
-section held before them have verdicts - see the table after the next one, and
-the correction under it.
+The two the last refresh added have verdicts: `801cf5d0` was the anchor
+mechanism - a `//! PORT:` module line repeating the address whose function tag
+is `REPLACED-BY` (`EquipStatBlock::from_character_record`), so the module line
+alone kept it live; it is a `REF:` now. `801d3748`, the battle arts entry's
+Triangle list pager, is `(a)` and **converted**: `w1c_arts_swing_ladder` seeds
+one learned art (not the swung one, so learn-on-use still fires) and presses
+Triangle twice before the combo, requiring page 0 to open and the second press
+to close it. The four this section held before them have verdicts - see the
+table after the next one, and the correction under it.
 
 The same refresh converted four rows: the dev menu's EVENT FLAG pair
 `801dbd04` / `801db8f4` (the flag list now seeded from the field overlay, see

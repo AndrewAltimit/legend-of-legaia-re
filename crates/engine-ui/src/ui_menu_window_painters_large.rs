@@ -51,7 +51,8 @@
 //!
 //! PORT: FUN_801d1290 - window 25, active-character stat compare
 //! PORT: FUN_801d4c28 - window 41, per-party-member stat compare
-//! PORT: FUN_801cf5d0 - the seeder that fills [`EquipStatBlock`]
+//! REF: FUN_801cf5d0 - the seeder that fills [`EquipStatBlock`] (its port, on
+//!      `EquipStatBlock::from_character_record`, is `REPLACED-BY`)
 //! REF: FUN_801cf650 - the equipment-bonus summer over the same block
 //! REF: FUN_801d21c0 - window 22's own Best-Equipment stat-compare pass. The
 //!      port draws the Equip screen's compare block from THIS, not from
