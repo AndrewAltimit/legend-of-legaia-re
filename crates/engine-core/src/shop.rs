@@ -1501,6 +1501,81 @@ pub fn shop_screen_windows(phase: ShopScreenPhase, toast: bool) -> Vec<usize> {
     v
 }
 
+/// Frames a shop window takes to slide between its park position and its
+/// home rect. The Retock capture, stepped one vsync at a time, has every
+/// window of the open set (picker, list, purse, plate) leave its park edge
+/// together and land eleven frames later at a constant per-window speed.
+pub const SHOP_SLIDE_FRAMES: u8 = 11;
+
+/// The shop's window slides: which windows are on screen and how far along
+/// their slide each one is.
+///
+/// A window that joins the screen's set starts at its park edge (the
+/// descriptor's `+0x1` class, off screen) and travels home linearly over
+/// [`SHOP_SLIDE_FRAMES`]; one that leaves the set travels back out and is
+/// dropped when it arrives. That is the motion the widget scripts' open (op
+/// `1`) and close (op `4`) commands produce on the live window list. The
+/// geometry (home rect, park edge) is the descriptor table's, which the
+/// drawing side owns; this keeps only the timing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShopSlides {
+    /// `(window id, progress 0..=SHOP_SLIDE_FRAMES, leaving)`, leaving
+    /// windows first, then the current set in its draw order.
+    entries: Vec<(usize, u8, bool)>,
+}
+
+impl ShopSlides {
+    /// Advance one frame toward `target` (the current screen's window set).
+    pub fn tick(&mut self, target: &[usize]) {
+        for e in &mut self.entries {
+            if e.2 {
+                e.1 = e.1.saturating_sub(1);
+            } else if e.1 < SHOP_SLIDE_FRAMES {
+                e.1 += 1;
+            }
+        }
+        self.entries.retain(|e| !(e.2 && e.1 == 0));
+        let mut leaving: Vec<(usize, u8, bool)> = self
+            .entries
+            .iter()
+            .filter(|e| !target.contains(&e.0))
+            // A window that starts leaving this frame already takes its
+            // first step out.
+            .map(|e| (e.0, if e.2 { e.1 } else { e.1.saturating_sub(1) }, true))
+            .filter(|e| e.1 > 0)
+            .collect();
+        let staying: Vec<(usize, u8, bool)> = target
+            .iter()
+            .map(|&id| match self.entries.iter().find(|e| e.0 == id) {
+                Some(e) => (id, e.1, false),
+                // A new window is drawn on its first frame already one step
+                // in from the park edge.
+                None => (id, 1, false),
+            })
+            .collect();
+        leaving.extend(staying);
+        self.entries = leaving;
+    }
+
+    /// Drop every window at once (the shop closed).
+    pub fn reset(&mut self) {
+        self.entries.clear();
+    }
+
+    /// `(window id, progress)` in draw order. Progress
+    /// [`SHOP_SLIDE_FRAMES`] is home; `0` is fully parked.
+    pub fn draw_list(&self) -> Vec<(usize, u8)> {
+        self.entries.iter().map(|e| (e.0, e.1)).collect()
+    }
+
+    /// Whether every window is home (nothing in motion).
+    pub fn settled(&self) -> bool {
+        self.entries
+            .iter()
+            .all(|e| !e.2 && e.1 == SHOP_SLIDE_FRAMES)
+    }
+}
+
 /// One party member's block in window 41 (`FUN_801D4C28`), as a host hands
 /// it to `engine-ui`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1596,6 +1671,30 @@ pub fn party_compare_members(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shop_slides_open_together_and_close_out() {
+        let mut s = ShopSlides::default();
+        let root = shop_screen_windows(ShopScreenPhase::Root, false);
+        s.tick(&root);
+        assert!(s.draw_list().iter().all(|(_, p)| *p == 1));
+        for _ in 0..SHOP_SLIDE_FRAMES {
+            s.tick(&root);
+        }
+        assert!(s.settled());
+        // Buy: the picker leaves (drawn first, sliding out), 41 slides in,
+        // the plate and purse stay home.
+        let buy = shop_screen_windows(ShopScreenPhase::BuyList, false);
+        s.tick(&buy);
+        let l = s.draw_list();
+        assert_eq!(l[0], (42, SHOP_SLIDE_FRAMES - 1));
+        assert!(l.contains(&(33, SHOP_SLIDE_FRAMES)) && l.contains(&(41, 1)));
+        for _ in 0..SHOP_SLIDE_FRAMES {
+            s.tick(&buy);
+        }
+        assert!(s.settled());
+        assert!(!s.draw_list().iter().any(|(id, _)| *id == 42));
+    }
 
     #[test]
     fn shop_screen_window_sets_follow_the_widget_scripts() {

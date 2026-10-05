@@ -507,9 +507,18 @@ wears the carved plaque), the picker, the paged list, window 41 and the
 painters' hand / currency-pictogram sprites, so the native window
 (`window/shop_windows.rs::gold_shop_screen`) and the browser play page
 (`web-viewer::play_shop::gold_shop_screen`) draw one screen. Both clear to
-black under a shop. The windows appear in place: the slide and the fade are
-not modelled, and the PAGE tag and page digits are dialog-font stand-ins for
-retail's small-cap icon cells.
+black under a shop.
+
+**Slides.** Stepped one vsync at a time, every window that joins a screen
+leaves its descriptor's park edge (`+0x1`: bottom, left, top, right) from just
+off screen and lands home **eleven frames** later at a constant speed, all of
+a screen's new windows together; a window that leaves travels back out the
+same way. The port keeps the timing in `shop::ShopSlides` (stepped by the menu
+tick toward the screen's set) and moves each window's draws with it
+(`engine-ui::shop_screen::apply_shop_slides`). The field's fade to black
+before the first slide is not modelled - the shop opens on black - and the
+PAGE tag and page digits are dialog-font stand-ins for retail's small-cap icon
+cells.
 
 ## Mode-select panel (Buy / Sell / Quit)
 

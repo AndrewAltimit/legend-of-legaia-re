@@ -37,6 +37,9 @@ use crate::{
     TextDraw, text_draws_for,
 };
 
+/// A stage-pixel rect `(x, y, w, h)`.
+type StageRect = (i32, i32, i32, i32);
+
 /// Window 31 - the Point Card toast.
 pub const WIN_SHOP_POINT_CARD: usize = 31;
 /// Window 32 - the purse.
@@ -518,7 +521,13 @@ pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> 
         out.texts.extend(d.texts);
         out.sprites.extend(d.sprites);
     };
-    if let Some(p) = view.picker.as_ref().filter(|_| has(WIN_SHOP_PICKER)) {
+    // Window 41's frame covers the picker's whole rect, so while 41 is up
+    // (sliding in or out included) the picker's rows are hidden under it.
+    if let Some(p) = view
+        .picker
+        .as_ref()
+        .filter(|_| has(WIN_SHOP_PICKER) && !has(WIN_SHOP_PARTY_COMPARE))
+    {
         add(shop_picker_draws(ctx, p));
     }
     if let Some(l) = view.list.as_ref().filter(|l| has(l.kind.window())) {
@@ -532,6 +541,95 @@ pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> 
             .extend(crate::compare_panel_draws_for(ctx.font, &fields));
     }
     out
+}
+
+/// Stage displacement of window `id` at slide `progress` out of `frames`:
+/// zero at home, and at progress `0` just far enough toward the
+/// descriptor's park edge (`+0x1`: 0 bottom, 2 left, 4 top, 6 right) that
+/// the frame sits wholly off the 320x240 stage. The Retock capture moves
+/// every window linearly between the two, so a window travels its own
+/// distance in the same number of frames. No table, no slide.
+pub fn shop_slide_offset(
+    ctx: &ShopScreenCtx<'_>,
+    id: usize,
+    progress: u8,
+    frames: u8,
+) -> (i32, i32) {
+    let Some(d) = ctx.rects.table().and_then(|t| t.window(id)) else {
+        return (0, 0);
+    };
+    let (fx, fy, fw, fh) = ctx.rects.frame_rect(id);
+    let (dx, dy) = match d.park_edge {
+        0 => (0, crate::BOOT_UI_STAGE_H as i32 - fy),
+        2 => (-(fx + fw), 0),
+        4 => (0, -(fy + fh)),
+        6 => (crate::BOOT_UI_STAGE_W as i32 - fx, 0),
+        _ => (0, 0),
+    };
+    let frames = i32::from(frames.max(1));
+    let rest = frames - i32::from(progress.min(frames as u8));
+    (dx * rest / frames, dy * rest / frames)
+}
+
+/// Move every draw of a composed shop frame with the window it belongs to.
+///
+/// The composition and the per-window painters lay everything out at the
+/// windows' home rects; this assigns each text (stage pixels) and sprite
+/// (surface pixels) to the last window in `slides` whose home frame holds
+/// its origin - window 39's widget box counting as 39 - and shifts it by
+/// that window's [`shop_slide_offset`]. A draw in no window stays put.
+pub fn apply_shop_slides(
+    ctx: &ShopScreenCtx<'_>,
+    slides: &[(usize, u8)],
+    frames: u8,
+    texts: &mut Vec<TextDraw>,
+    sprites: &mut [SpriteDraw],
+) {
+    // (home frame rect, slide offset) per window region, in draw order.
+    let mut regions: Vec<(StageRect, (i32, i32))> = Vec::new();
+    for &(id, p) in slides {
+        let off = shop_slide_offset(ctx, id, p, frames);
+        regions.push((ctx.rects.frame_rect(id), off));
+        if id == WIN_SHOP_SELL_DETAIL {
+            let (x, y, w, h) = sell_detail_box_rect(ctx.rects.rect(id));
+            regions.push(((x - 8, y - 8, w + 16, h + 16), off));
+        }
+    }
+    if regions.iter().all(|(_, o)| *o == (0, 0)) {
+        return;
+    }
+    let inside = |(rx, ry, rw, rh): (i32, i32, i32, i32), x: i32, y: i32| {
+        x >= rx && x < rx + rw && y >= ry && y < ry + rh
+    };
+    let owner_at =
+        |x: i32, y: i32| -> Option<usize> { regions.iter().rposition(|(r, _)| inside(*r, x, y)) };
+    let offset_at =
+        |x: i32, y: i32| -> (i32, i32) { owner_at(x, y).map(|i| regions[i].1).unwrap_or((0, 0)) };
+    // A text whose window slid under a later window's frame is hidden by
+    // it: the host draws every frame before any text, so the cover has to
+    // be applied here.
+    texts.retain_mut(|t| {
+        let owner = owner_at(t.dst.0, t.dst.1);
+        let (dx, dy) = owner.map(|i| regions[i].1).unwrap_or((0, 0));
+        t.dst.0 += dx;
+        t.dst.1 += dy;
+        let Some(owner) = owner else {
+            return true;
+        };
+        !regions[owner + 1..]
+            .iter()
+            .any(|((rx, ry, rw, rh), (ox, oy))| {
+                inside((rx + ox, ry + oy, *rw, *rh), t.dst.0, t.dst.1)
+            })
+    });
+    let s = ctx.scale.max(1) as i32;
+    for sp in sprites.iter_mut() {
+        let sx = (sp.dst.0 - ctx.origin.0).div_euclid(s);
+        let sy = (sp.dst.1 - ctx.origin.1).div_euclid(s);
+        let (dx, dy) = offset_at(sx, sy);
+        sp.dst.0 += dx * s;
+        sp.dst.1 += dy * s;
+    }
 }
 
 /// Drop the stage texts a window's frame covers - for a window drawn over

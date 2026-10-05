@@ -160,7 +160,12 @@ fn shop_descriptor_windows_paint_at_their_disc_rects() {
     // Step into the Buy list so a stock row is staged: window 34 draws nothing
     // at all while retail's `DAT_801E46B0` is not a positive item id.
     rt.play_shop_input(CROSS);
-    rt.play_shop_input(0);
+    // The windows slide in from their park edges over eleven frames
+    // (`shop::ShopSlides`, retail's measured open); let them land before
+    // asserting where their content sits.
+    for _ in 0..16 {
+        rt.play_shop_input(0);
+    }
 
     // Surface == stage at 320x240 (`stage_transform` yields origin (0,0),
     // scale 1), so a draw's `dst` is directly comparable to a window rect.

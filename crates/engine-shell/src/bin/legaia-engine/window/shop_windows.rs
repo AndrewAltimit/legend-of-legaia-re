@@ -717,9 +717,18 @@ impl PlayWindowApp {
         let world = &self.session.host.world;
         let state = MenuState::from_byte(self.menu_runtime.ctx_state());
         let cursor = self.menu_runtime.cursor() as usize;
-        // The toast's frame is laid last by hand below, after the markers of
-        // the windows it covers.
-        let windows = legaia_engine_core::shop::shop_screen_windows(phase, false);
+        // The windows on screen this frame with their slide progress
+        // (`ShopSlides`, stepped by the menu tick): the phase's set plus any
+        // window still sliding out. The toast's frame is laid last by hand
+        // below, after the markers of the windows it covers.
+        let mut slides = self.menu_runtime.shop_slides();
+        if slides.is_empty() {
+            slides = legaia_engine_core::shop::shop_screen_windows(phase, false)
+                .into_iter()
+                .map(|id| (id, legaia_engine_core::shop::SHOP_SLIDE_FRAMES))
+                .collect();
+        }
+        let windows: Vec<usize> = slides.iter().map(|(id, _)| *id).collect();
         let (origin, scale) =
             legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h);
         let ctx = ss::ShopScreenCtx {
@@ -872,6 +881,14 @@ impl PlayWindowApp {
         let marks = ss::shop_marker_draws(&ctx, &win.marks, &win.pictograms);
         out.texts.extend(marks.texts);
         out.sprites.extend(marks.sprites);
+        // Every window's draws ride its open / close slide.
+        ss::apply_shop_slides(
+            &ctx,
+            &slides,
+            legaia_engine_core::shop::SHOP_SLIDE_FRAMES,
+            &mut out.texts,
+            &mut out.sprites,
+        );
         // The Point Card toast draws over everything: its frame after every
         // other window's sprites, its text after every other window's text,
         // and no text it covers.

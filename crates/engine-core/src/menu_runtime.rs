@@ -139,6 +139,11 @@ pub struct MenuRuntime {
     /// A host paints window 31 (`engine-ui`'s `amount_prompt_draws_for`)
     /// while this is `Some`.
     point_card_toast: Option<i32>,
+    /// The shop windows' open / close slides
+    /// ([`crate::shop::ShopSlides`]), stepped once per tick toward the
+    /// current screen's window set. Hosts draw from
+    /// [`Self::shop_slides`].
+    shop_slides: crate::shop::ShopSlides,
     /// The UI cue this tick's shop step raised, if any, for the host to key
     /// ([`Self::take_ui_cue`]). Retail's shop screens key their own blips:
     /// the kind-4 list kernel `FUN_80032A44` (cursor `0x21` on a move,
@@ -276,6 +281,7 @@ impl MenuRuntime {
             prize_session: None,
             stay_cursor: None,
             point_card_toast: None,
+            shop_slides: crate::shop::ShopSlides::default(),
             ui_cue: None,
             spell_level_notice: None,
             art_learned_notice: None,
@@ -389,6 +395,7 @@ impl MenuRuntime {
     /// this when the field VM triggers a shop transition.
     pub fn open_shop(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+        self.shop_slides.reset();
     }
 
     /// Open a shop into its **top-level Buy / Sell / Trade picker**
@@ -397,6 +404,7 @@ impl MenuRuntime {
     /// it opens this vendor's [`crate::seru_trade::SeruTradeSession`].
     pub fn open_shop_menu(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+        self.shop_slides.reset();
         self.trade_session = None;
         self.recipient_session = None;
         self.ctx.state = MenuState::ShopMenu.as_byte();
@@ -410,6 +418,7 @@ impl MenuRuntime {
     /// hand the player straight into the store.
     pub fn open_shop_buy(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
+        self.shop_slides.reset();
         self.ctx.state = MenuState::ShopBuy.as_byte();
         self.ctx.cursor = 0;
     }
@@ -556,6 +565,7 @@ impl MenuRuntime {
         // `ctx.state` directly, so the entry edge lands here on the first
         // tick; the post-`step` call below catches in-menu transitions.
         self.sync_widget_choreo(world);
+        self.tick_shop_slides();
         self.ui_cue = None;
         if self.prize_session.is_some() {
             self.tick_prize(world, input);
@@ -827,6 +837,28 @@ impl MenuRuntime {
             }
             MenuState::ShopSell => Some(P::SellList),
             _ => None,
+        }
+    }
+
+    /// The shop windows on screen this frame with their slide progress,
+    /// `(window id, progress)` in draw order - see [`crate::shop::ShopSlides`].
+    pub fn shop_slides(&self) -> Vec<(usize, u8)> {
+        if self.shop_session.is_none() {
+            return Vec::new();
+        }
+        self.shop_slides.draw_list()
+    }
+
+    /// Step the shop slides one frame toward the current screen's window
+    /// set. A shop that is closing (the transient exit beat) slides every
+    /// window out; no shop drops them.
+    fn tick_shop_slides(&mut self) {
+        match self.shop_screen_phase() {
+            Some(phase) => self
+                .shop_slides
+                .tick(&crate::shop::shop_screen_windows(phase, false)),
+            None if self.shop_session.is_some() => self.shop_slides.tick(&[]),
+            None => self.shop_slides.reset(),
         }
     }
 
