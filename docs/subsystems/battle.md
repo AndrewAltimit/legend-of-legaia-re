@@ -9,7 +9,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits) · [commit confirm](#the-commit-confirm-screen-0x6e)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-round-prompt-is-the-far-framing-a-members-surfaces-are-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-round-prompt-is-the-far-framing-a-members-surfaces-are-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-battle-init-zeroes-it) · [entry sweep](#the-battle-entry-sweep) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -1617,11 +1617,27 @@ target is not frozen at the state change, and the difference is not cosmetic:
 most of the gap to its target before the swing. A focus pinned to the vacated
 seat frames bare ground - at the close-up depth `prescale(0x500)` = 2048
 against 4x-scaled stage coordinates the whole formation leaves the frustum,
-several combatants behind the eye. `BattleCamera::retarget_action_glide` is
-the port's re-arm; it carries the armed segment's remaining step count over,
-so a framing whose actor stands still still arrives on target at
-`ACTION_STEPS`. One visible consequence: the in-fight arm's yaw follows the
-live `ctx[+0x6DA]` drift instead of freezing on its value at the phase change.
+several combatants behind the eye. One visible consequence: the in-fight
+arm's yaw follows the live `ctx[+0x6DA]` drift instead of freezing on its
+value at the phase change.
+
+**The re-arm makes it an ease-out, not a glide.** Each rebuild takes the gap
+as it stands and divides it by `a3 = 0xC` again, and the walker task
+`FUN_8002149C` adds `increment * frame_step` before the next pass rebuilds it -
+so a pass covers about a sixth of what remains (at the 30 Hz tick), and the
+camera is still closing in long after the twelfth frame rather than landing
+there. Retail's step table at `ctx[+0x118C]` pins it in two captures:
+`nivora_duel_mid_blazing_slash` reads yaw / TR z increments `59` / `55` with
+`589` / `547` to go, `battle_noa_miracle_art_combo` `66` / `86` with `587` /
+`772` - each exactly `ceil((rem + frame_step * step) / 0xC)`, a table one pass
+old with one walk applied. A drifting yaw therefore trails its counter by a
+few units for as long as the gap stays under `0xC`, where the increment
+equals the counter's own two units a pass - the eight units the `0x19` parks
+read. Cases 7 and 8 are re-armed the same way on the same `a3`.
+`BattleCamera::retarget_action_glide` / `retarget_post_action_glide` are the
+port's re-arms, each a `Glide::chase` over `0xC` frames; the port had carried
+the armed segment's remaining step count over instead, which landed every
+framing linearly at step 6.
 
 The in-fight arm (`0x801D64C4`) frames on the live position `actor[+0x34/+0x38]`
 with the focus height left at the stage floor, pitch `0`, `TR = (0, 0x500,
@@ -1852,19 +1868,50 @@ other behind it. Engine side: `BattleCamera::retarget_menu_glide`, which skips
 only the two segments that are not "walk to the far framing" (the rate-clamped
 dialogue dismiss and the scripted submenu-exit swing).
 
-### The resting yaw is the orbit, and a battle inherits it
+### The resting yaw is the orbit, and battle init zeroes it
 
 `_DAT_8007B790/92/94` is **one** rotation trio, shared by the field and battle
-cameras, and nothing on the battle-entry path zeroes it: case 9 passes
-`_DAT_8007B792` straight through and the action SM only decrements it. A fight
-therefore inherits whatever azimuth the field camera left. Five battle save
-states caught at the identical framing (`ctx[7] == 0x00`, pitch `32`,
-`TR (0, 1280, 7680)`, focus at the origin, `+-800` seats) read five different
-yaws - `224`, `2632`, `3136`, `3808`, `3882` - so no captured value is *the*
-resting yaw. What must not survive is `0`: at yaw `0` the eye looks straight
-down the seat axis and the two rows project to the same screen X, each
-occluding the other. `BattleCamInputs::entry_yaw` carries the inherited
-azimuth; both hosts feed it `World::locomotion.camera_azimuth`.
+cameras, and battle init `FUN_80055B6C` overwrites it: pitch `0x3C`, yaw and
+roll `0` (`sh zero,-0x486e(at)` at `0x80055E84` is the yaw), TR
+`(0, 0x500, 0x1C00)` (`0x80055E50..0x80055E90`). From there the yaw is a
+clock - the entry sweep leaves it alone ([below](#the-battle-entry-sweep)),
+case 9 passes it straight through and the battle tick only decrements it - so
+the five battle save states caught at the identical far framing
+(`ctx[7] == 0x00`, pitch `32`, `TR (0, 1280, 7680)`, focus at the origin,
+`+-800` seats) read five different yaws (`224`, `2632`, `3136`, `3808`,
+`3882`) because they were taken at five different times, and no captured value
+is *the* resting yaw. At yaw `0` the eye looks straight down the seat axis and
+the two rows project to the same screen X, each occluding the other; retail
+opens every fight there and orbits out of it. The port does not: it opens on
+the azimuth the field camera left, moved off the seat axis by
+`battle_entry_yaw` - a port judgement, carried by
+`BattleCamInputs::entry_yaw`, which both hosts feed
+`World::locomotion.camera_azimuth`.
+
+### The battle-entry sweep
+
+The SCUS frame driver `FUN_80046A20` owns the camera before the battle tick
+does. Its entry counter `gp+0x330` (`0x8007B648`) counts the load up to `0x80`
+and then, advancing by the frame step `0x1F800393` a pass, runs the sweep
+(`0x80046EEC..0x8004700C`):
+
+| Counter | Camera |
+|---|---|
+| `0x80..0xA1` | TR y `+= 0x30 * fs`, TR z `-= 0x40 * fs` from battle init's pose: the camera rises and pulls in |
+| `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass - case 2's pitch `0`, yaw `0`, TR `(0, 0x600, 0x700)` on the origin, `a3 = 0xC`, re-armed each pass |
+| past `0xC0` | parked at `0xFF`; the battle tick `FUN_801D0748` runs from then on |
+
+Two captures of the sparring fight's entry pin it: `v0_1_battle_loading_tetsu`
+(counter `0x84`) reads pitch `60`, `TR (0, 1472, 6912)` - four frames of
+drift from `(0, 1280, 7168)` - with an empty step table, and
+`s5_tetsu_battle` (`0xAF`) reads pitch `16`, `TR (0, 2010, 3552)` under a
+case-2 step table whose endpoints are `(0, 1536, 2867)`. The battle tick's
+first framing takes over from wherever the sweep leaves the camera: the
+tutorial cuts to its dialogue close-up, any other fight re-arms case 9's far
+framing. Engine: `BattleCamera::start_entry_sweep`, armed on a fight's first
+camera frame (`BattleCamInputs::entry_sweep`, which the live world sets); the
+port's battle tick does not wait for it, so the round prompt and the intro
+names run under the sweep.
 
 **The per-art attack camera is an override, not a fold.** `FUN_801D71B8` is
 *not* part of case 6. Its only call site is `FUN_801D5854`'s shared tail

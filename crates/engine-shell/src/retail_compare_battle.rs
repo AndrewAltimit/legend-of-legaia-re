@@ -66,6 +66,10 @@ const SEAT_CHARS: u32 = 0x8007_BD10;
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
+/// the fight loads, `0x80..=0xC0` the entry sweep owns the camera, `0xFF`
+/// the battle tick runs (`FUN_80046A20`, `0x80046EEC..0x8004700C`).
+const ENTRY_COUNTER: u32 = 0x8007_B648;
 /// Frames a forced encounter may take to reach battle mode (the intro
 /// transition runs 132 display frames).
 const ENTRY_TICKS: u32 = 400;
@@ -193,6 +197,8 @@ pub struct RetailBattle {
     pub walk_yaw_base: u16,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
+    pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
     /// Normal `1` / Far `2`), which the action shots read. It sits in the
     /// saved game-state window, but the save lift does not carry options,
@@ -745,8 +751,8 @@ impl RetailBattle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeedPlan {
     /// The fight is still opening: `ctx[+0x06]` holds one of the entry
-    /// values below the round prompt. The engine is sampled at its
-    /// battle-mode flip, before its own opening runs.
+    /// values below the round prompt. The engine is sampled once its
+    /// entry sweep has run as far as retail's ([`entry_sweep_reached`]).
     Opening,
     /// A command-selection surface above the round prompt, on party seat
     /// `seat` (`ctx[+0x13]`, the member cursor): the engine's command flow
@@ -762,6 +768,27 @@ pub enum SeedPlan {
     Action { seat: u8, state: u8 },
     /// The round prompt: park on it and settle.
     Prompt,
+}
+
+/// Ticks an opening seed may run waiting for the engine's entry sweep to
+/// reach retail's counter ([`entry_sweep_reached`]); the sweep spans `0x41`
+/// display frames.
+const ENTRY_SWEEP_TICKS: u32 = 120;
+
+/// Whether the engine's battle-entry sweep
+/// ([`legaia_engine_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
+/// has run as far as retail's frame-driver counter `entry` reads: a counter
+/// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
+/// one past it (`0xFF`) once the engine's sweep is over, and one below it
+/// (the fight still loading) at once.
+pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) -> bool {
+    if entry < 0x80 {
+        return true;
+    }
+    world.battle.camera.as_ref().is_some_and(|c| {
+        c.entry_sweep_counter()
+            .is_none_or(|n| entry != 0xFF && n >= u32::from(entry))
+    })
 }
 
 /// `ctx[+0x06]` values below the round prompt: SCUS battle init's `0xFD`
@@ -981,6 +1008,7 @@ impl RetailBattle {
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
+            entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             arts_queue: active.is_some_and(|p| {
@@ -1417,7 +1445,7 @@ pub fn run_engine_battle(
     apply_bar_seeds(&mut session.host.world, &hp_seed);
     // Place the engine at the capture's phase ([`SeedPlan`]).
     //
-    // An opening capture is sampled at the battle-mode flip. Everything else
+    // An opening capture is sampled at retail's entry-sweep counter. Everything else
     // runs the opening (banner, intro camera, initiative) to the first round
     // prompt, the earliest point a retail capture of a running fight can
     // share with a fresh entry, and then:
@@ -1460,7 +1488,18 @@ pub fn run_engine_battle(
     let mut pre_drive = None;
     let mut age_short = None;
     match (plan, battle.phase_gate()) {
-        (SeedPlan::Opening, _) => {}
+        // The entry sweep owns retail's camera until the frame driver's
+        // counter passes `0xC0`; run the engine's to the same count.
+        (SeedPlan::Opening, _) => {
+            for _ in 0..ENTRY_SWEEP_TICKS {
+                if entry_sweep_reached(&session.host.world, battle.entry_counter) {
+                    break;
+                }
+                session.tick()?;
+                session.fog_render_tick();
+                session.host.route_bgm_events(&mut director)?;
+            }
+        }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
             for t in 0..INFLIGHT_TICKS {
                 if gate.met(&session.host.world) {
@@ -1685,8 +1724,8 @@ pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleDrive {
     /// An opening capture ([`SeedPlan::Opening`]): nothing is pressed, and
-    /// the frame is the first one in battle mode - the instant the headless
-    /// seed samples. Retail's opening holds the fight on its intro (the
+    /// the frame is the first one in battle mode whose entry sweep has run
+    /// as far as retail's - the instant the headless seed samples. Retail's opening holds the fight on its intro (the
     /// tutorial's first speech, the formation reveal) while the engine's
     /// round prompt opens with it, so a frame taken past the prompt shows a
     /// surface retail had not reached.
@@ -1695,7 +1734,11 @@ pub enum BattleDrive {
     /// (`0x0C` / `0x14`): the enemy-name labels `0x0B` sweeps are gone there,
     /// so the frame waits for the engine's own intro names to clear
     /// (`World::battle.intro_names_frames`).
-    Opening { swept: bool },
+    ///
+    /// `entry` is retail's frame-driver counter `gp+0x330`: the frame also
+    /// waits for the engine's battle-entry sweep to run as far
+    /// ([`entry_sweep_reached`]).
+    Opening { swept: bool, entry: u8 },
     /// A command-selection surface on party seat `seat`: members ahead of
     /// it commit a plain Attack, the seat itself takes the arm that leads
     /// to `flow`.
@@ -2031,7 +2074,7 @@ impl BattleDrive {
     /// `action,<seat>,<state>,<category>,<queued>[,<spare>,<absorbed>[,<end kind>,<end value>]]`.
     pub fn to_env(&self) -> String {
         match *self {
-            Self::Opening { swept } => format!("opening,{}", u8::from(swept)),
+            Self::Opening { swept, entry } => format!("opening,{},{entry}", u8::from(swept)),
             Self::Menu { flow, seat } => format!("menu,{},{seat}", flow.raw()),
             Self::Action {
                 seat,
@@ -2084,8 +2127,24 @@ impl BattleDrive {
 
     pub fn from_env(s: &str) -> Option<Self> {
         match s.trim() {
-            "opening" | "opening,0" => return Some(Self::Opening { swept: false }),
-            "opening,1" => return Some(Self::Opening { swept: true }),
+            "opening" | "opening,0" => {
+                return Some(Self::Opening {
+                    swept: false,
+                    entry: 0,
+                });
+            }
+            "opening,1" => {
+                return Some(Self::Opening {
+                    swept: true,
+                    entry: 0,
+                });
+            }
+            t if t.starts_with("opening,") => {
+                let mut it = t.split(',').skip(1);
+                let swept = it.next()? == "1";
+                let entry = it.next()?.parse().ok()?;
+                return Some(Self::Opening { swept, entry });
+            }
             _ => {}
         }
         // The tagged steering tokens ride at the end (`t<seat>`, `y<yaw>`).
@@ -2247,8 +2306,9 @@ impl BattleDrive {
         match *self {
             // The first frame whose monsters are drawable: the bodies bind
             // a few ticks after the mode flip.
-            Self::Opening { swept } => {
+            Self::Opening { swept, entry } => {
                 let ok = (!swept || world.battle.intro_names_frames == 0)
+                    && entry_sweep_reached(world, entry)
                     && world.actors.iter().enumerate().all(|(i, a)| {
                         a.battle_monster_id.is_none()
                             || !a.active
@@ -2798,6 +2858,7 @@ impl RetailBattle {
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
                 swept: matches!(self.flow, 0x0C | 0x14),
+                entry: self.entry_counter,
             }),
             _ => None,
         }
@@ -3063,7 +3124,9 @@ pub fn compare_battle(
         Some(None) => "; cast replayed, phase never reached".to_string(),
     };
     let driven = match (plan, engine.driven) {
-        (_, None) if plan == SeedPlan::Opening => "; sampled at the battle-mode flip".to_string(),
+        (_, None) if plan == SeedPlan::Opening => {
+            "; sampled at the entry-sweep counter".to_string()
+        }
         (_, None) => String::new(),
         (_, Some(Some(t))) if battle.span_gate != SpanGate::None => {
             format!("; driven by pad, {:?} reached at +{t}", battle.span_gate)
@@ -3313,7 +3376,10 @@ mod tests {
     #[test]
     fn the_battle_drive_round_trips_through_its_env_form() {
         for d in [
-            BattleDrive::Opening { swept: true },
+            BattleDrive::Opening {
+                swept: true,
+                entry: 0xAF,
+            },
             BattleDrive::Menu {
                 flow: BattleFlowState::ArtsCommandEntry,
                 seat: 2,

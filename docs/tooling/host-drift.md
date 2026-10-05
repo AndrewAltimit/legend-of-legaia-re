@@ -3390,7 +3390,7 @@ The audio rows of the same pass are closed or settled in
   derivation. The derivation is `engine-core::battle_cam_inputs` now and the
   state is `BattleState::camera`, stepped from `World::tick`; both hosts only
   read `World::battle_cam_pose`
-  ([`battle.md`](../subsystems/battle.md#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it)
+  ([`battle.md`](../subsystems/battle.md#the-resting-yaw-is-the-orbit-and-battle-init-zeroes-it)
   carries the camera's port note beside the phase script).
 - **Battle-intro names and the commit-log launch**, absent from both hosts.
   The flow-`0x0A` enemy-name banner and the commit log's slide off the ring

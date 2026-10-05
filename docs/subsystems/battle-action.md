@@ -251,6 +251,20 @@ focus = -(actor[+0x3C], 0, actor[+0x40])
 
 A low camera beside the caster, pitched up by as much as `400` units, rising
 and swinging round as the accumulator runs; it also sets `ctx[+0x243] = 1`.
+
+The camera trails that target rather than sitting on it. The builder turns
+`a3 = 3` into a per-frame increment `ceil(rem / 3)` per component, and the
+walker task `FUN_8002149C` adds `increment * frame_step` (`0x1F800393`) a
+pass and clamps on the endpoint. At retail's 30 Hz tick (`frame_step = 2`) a
+pass covers two thirds of the gap while the target moves `16 * 2` TR y a
+pass, so the walk settles `14` units short: `freed_summon_mid_cast`'s step
+table at `ctx[+0x118C]` reads increments `16` / `16` / `39` (yaw, TR y, TR z)
+with the live globals `14` / `14` / `37` short of the endpoints. A capture on a
+dropped frame (`frame_step = 3`: `nighto_summon_mid_cast`,
+`theeder_summon_mid_cast`, `gizam_summon_mid_cast`) walks `3 * 16` and lands.
+The port steps it as `battle_cam_script::Glide::chase` - the builder's
+increment times the camera step's two frames - where it had halved `a3` into
+one camera step, a snap.
 Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
 the shared battle camera both hosts drive. The focus is the **body pair**
 (`lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` at `0x801DCD74..0x801DCD84`), not the

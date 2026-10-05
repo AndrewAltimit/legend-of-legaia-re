@@ -122,9 +122,9 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // formation's X/Z bounding box (`FUN_801D5854` case 9).
         formation: battle_formation_box(world),
         action: battle_action_framing(world, acting_slot),
-        // `_DAT_8007B792` is one global shared with the field camera, and
-        // nothing on the battle-entry path zeroes it - a fight inherits the
-        // live azimuth, through the shared on-axis guard.
+        // Retail's battle init zeroes `_DAT_8007B792`; the port opens on the
+        // field camera's azimuth, through the shared on-axis guard (a port
+        // judgement, `docs/subsystems/battle.md`).
         entry_yaw: script::battle_entry_yaw(world.locomotion.camera_azimuth),
         shake_amplitude: world.camera.shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
@@ -140,6 +140,9 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         acting_body,
         cursor,
         spell_cam: world.battle.spell_cam,
+        // A fight opens on the SCUS frame driver's entry sweep, before the
+        // battle tick frames anything (`BattleCamera::start_entry_sweep`).
+        entry_sweep: true,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
@@ -736,6 +739,31 @@ mod tests {
     use crate::world::SceneMode;
     use script::BattleCamPhase;
 
+    /// Run a fresh fight's battle-entry sweep out and let the far framing
+    /// that takes over from it land, so a test of a framing starts from a
+    /// fight already running.
+    fn run_entry_sweep_out(world: &mut World) {
+        let mut over = None;
+        for step in 0..64 {
+            world.clock.display_frames += 2;
+            world.tick_battle_camera();
+            if world
+                .battle
+                .camera
+                .as_ref()
+                .is_some_and(|c| c.entry_sweep_counter().is_none())
+            {
+                over = Some(step);
+                break;
+            }
+        }
+        assert!(over.is_some(), "the entry sweep never ended");
+        for _ in 0..16 {
+            world.clock.display_frames += 2;
+            world.tick_battle_camera();
+        }
+    }
+
     /// Every retail capture on a member's command ring (`ctx[+0x06] = 0x28`)
     /// or arts input (`0x50`) reads case 0's close-up; every capture on the
     /// round's Begin / Run prompt (`0x1E`) reads case 9's far framing.
@@ -778,6 +806,7 @@ mod tests {
             a.move_state.world_x = x;
             a.move_state.world_z = -800;
         }
+        run_entry_sweep_out(&mut world);
         for member in 0u8..3 {
             world.battle_ctx.active_actor = member;
             world.battle.command = Some(BattleCommandSession::new(member, member));
@@ -839,6 +868,7 @@ mod tests {
             command: BattleCommand::Attack,
             picker: picker(true),
         };
+        run_entry_sweep_out(&mut world);
         world.battle.command = Some(session);
         let inputs = battle_cam_inputs(&world);
         assert_eq!(inputs.phase, BattleCamPhase::TargetEnemy);
