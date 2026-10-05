@@ -1419,7 +1419,13 @@ void main() {
          * (`menu_cue_requests` in `play_sfx_state_json`), so the wiring stays
          * measurable. See `play_sfx::CUE_MENU_CURSOR` for the one inexactness
          * left, which is a bank choice rather than a pitch. */
-        if (edge) this.menuBlip(edge, !inSubScreen);
+        /* `play_menu_input` fires it itself now, after the save screen's
+         * refusal box and block grid have filtered the edge (the native
+         * window's order); a cached WASM without `play_menu_blips_inline`
+         * still gets the page-side blip. */
+        let inlineBlip = false;
+        try { inlineBlip = typeof rt.play_menu_blips_inline === 'function' && rt.play_menu_blips_inline(); } catch (e) {}
+        if (edge && !inlineBlip) this.menuBlip(edge, !inSubScreen);
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
