@@ -429,9 +429,20 @@ fn key_from_name(name: &str) -> Option<KeyCode> {
         // Window-toggle band. F-keys can never collide with a pad binding,
         // which is why the three arms that used to sit on `E` / `V` / `C`
         // live here (see `keycode_to_name`).
+        // Every F-key the keyboard handler has an arm for, so the
+        // enhancement toggles (`F4` occlusion fade, `F8` time of day, `F9`
+        // ground fog) and the cheats (`F6` / `F7`) are scriptable like the
+        // rest - a capture comparing a toggle against the play page's
+        // checkbox needs the native half reachable from a script.
+        "F1" => KeyCode::F1,
         "F2" => KeyCode::F2,
         "F3" => KeyCode::F3,
+        "F4" => KeyCode::F4,
         "F5" => KeyCode::F5,
+        "F6" => KeyCode::F6,
+        "F7" => KeyCode::F7,
+        "F8" => KeyCode::F8,
+        "F9" => KeyCode::F9,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -1743,6 +1754,53 @@ mod key_script_tests {
             );
         }
         assert_eq!(key_from_name("NotAKey"), None);
+    }
+
+    /// Every `KeyCode` the keyboard handler has an arm for is reachable from
+    /// `--key-script`, read off the handler's own source so a new arm is
+    /// covered the day it lands.
+    ///
+    /// The F-key band was the hole: `F4` / `F8` / `F9` - the occlusion fade,
+    /// the time of day and the ground fog, the three enhancement toggles a
+    /// side-by-side against the play page's checkboxes has to flip - had arms
+    /// and no names, so a script could not drive the native half of the
+    /// comparison at all.
+    #[test]
+    fn every_handler_key_is_nameable() {
+        let src = include_str!("window/event_handler/keyboard.rs");
+        let mut names: Vec<String> = ["Up", "Down", "Left", "Right", "Enter", "Space", "RShift"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        names.extend((b'A'..=b'Z').map(|c| (c as char).to_string()));
+        names.extend((0..=9).map(|d| d.to_string()));
+        names.extend((1..=12).map(|f| format!("F{f}")));
+        let reachable: std::collections::BTreeSet<String> = names
+            .iter()
+            .filter_map(|n| key_from_name(n))
+            .map(|k| format!("{k:?}"))
+            .collect();
+        let mut handled = std::collections::BTreeSet::new();
+        for (i, _) in src.match_indices("KeyCode::") {
+            let tail = &src[i + "KeyCode::".len()..];
+            let end = tail
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .unwrap_or(tail.len());
+            handled.insert(tail[..end].to_string());
+        }
+        // `Escape` quits through the event loop (`handle_keyboard`), which a
+        // script deliberately never reaches; `--screenshot-last-tick` ends a
+        // scripted run instead.
+        handled.remove("Escape");
+        assert!(
+            handled.len() >= 20,
+            "the handler reads its keys as `KeyCode::*`"
+        );
+        let missing: Vec<&String> = handled.iter().filter(|k| !reachable.contains(*k)).collect();
+        assert!(
+            missing.is_empty(),
+            "handler keys `--key-script` cannot name: {missing:?}"
+        );
     }
 
     /// Every key the engine's default pad table binds must survive

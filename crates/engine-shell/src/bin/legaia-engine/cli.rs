@@ -1031,7 +1031,7 @@ pub(crate) enum Cmd {
         /// e.g. `--key-script "40:L,120:P,140:Down,160:Enter"`. Each entry
         /// presses KEY and releases it on that same world tick, in the order
         /// listed. KEY is a physical key name (letters `A`-`Z`, `Up`/`Down`/
-        /// `Left`/`Right`, `Enter`, `Space`, digits).
+        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F9`).
         ///
         /// This reaches what `--pad-script` cannot: `--pad-script` writes the
         /// pad word and the keyboard handler never runs, but every minigame
