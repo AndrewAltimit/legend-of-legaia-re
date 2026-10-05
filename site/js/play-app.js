@@ -1026,6 +1026,9 @@ void main() {
            * live mask (`_syncStaticWindow`). */
           if (placed) {
             draw.placeIdx = i;
+            /* Where the record put it, for `_applyObjectMoves`. */
+            draw.baseX = draw.x;
+            draw.baseZ = draw.z;
             /* Overworld decorations (the placed list past the landmarks):
              * retail's decoration sweep hazes each one toward 0xD0 by its
              * origin's camera depth - staged per draw by renderAssembled
@@ -1054,6 +1057,7 @@ void main() {
         rt.field_placement_scales ? rt.field_placement_scales() : null,
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
+      this._objectMovesLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {
@@ -2114,7 +2118,7 @@ void main() {
         if (!this._floorWaveLive) return;
         for (const d of this.staticDraws) {
           if (d.floorIdx === undefined) continue;
-          d.y = d.baseY;
+          d.y = d.baseY - (d.moveDy || 0);
           if (d.model) d.model[13] = d.y;
         }
         this._floorWaveLive = false;
@@ -2122,10 +2126,44 @@ void main() {
       }
       for (const d of this.staticDraws) {
         if (d.floorIdx === undefined || d.floorIdx >= wave.length) continue;
-        d.y = d.baseY - wave[d.floorIdx];
+        d.y = d.baseY - wave[d.floorIdx] - (d.moveDy || 0);
         if (d.model) d.model[13] = d.y;
       }
       this._floorWaveLive = true;
+    }
+
+    /* A placed object a script has moved - an `A3` seat, an op-`4C 42` lift
+     * under its actor's 0x20000000 height law (chitei2's falling boulder) -
+     * draws at its actor, as retail's case-5 draw does. The engine hands back
+     * a per-placement [dx, dy, dz] (retail frame, Y-down) or an EMPTY array
+     * while nothing has moved; `_objectMovesLive` returns the draws to the
+     * record's seat on the falling edge. Runs after `_applyFloorWave`, whose
+     * Y it composes with through `moveDy`. The native window folds the same
+     * table (`World::object_draw_displacements`) into its placed draws. */
+    _applyObjectMoves(rt) {
+      if (!rt.field_placement_moves) return;
+      const mv = rt.field_placement_moves();
+      if (!mv.length && !this._objectMovesLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined || d.baseX === undefined) continue;
+        const k = d.placeIdx * 3;
+        const dx = k + 2 < mv.length ? mv[k] : 0;
+        const dy = k + 2 < mv.length ? mv[k + 1] : 0;
+        const dz = k + 2 < mv.length ? mv[k + 2] : 0;
+        const prevDy = d.moveDy || 0;
+        if (d.x === d.baseX + dx && d.z === d.baseZ + dz && prevDy === dy) continue;
+        d.x = d.baseX + dx;
+        d.z = d.baseZ + dz;
+        /* The page's world frame negates retail Y. */
+        d.y += prevDy - dy;
+        d.moveDy = dy;
+        if (d.model) {
+          d.model[12] = d.x;
+          d.model[13] = d.y;
+          d.model[14] = d.z;
+        }
+      }
+      this._objectMovesLive = mv.length > 0;
     }
 
     /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
@@ -2395,6 +2433,7 @@ void main() {
        * ground undulates with the walk heightfield. Costs one WASM call per
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
+      this._applyObjectMoves(rt);
       this._applyGroundWave(rt);
 
       /* A camera re-centre this frame may have re-planned the windowed

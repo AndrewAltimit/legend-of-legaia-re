@@ -848,6 +848,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // contexts' `+0x72` ramps still drop: no port reader animates them.
     // REF: FUN_8003C5F0
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+        // Sub-2 on a placed object's actor: the `+0x8E` tween the actor
+        // tick's `0x20000000` height law turns into its Y (`chitei2`'s
+        // falling boulder). See `world::object_actor_height`.
+        if sub == 2
+            && let Some(record) = self.world.field_vm.executing_object
+        {
+            self.world
+                .schedule_object_slot_ramp(record, ctx.field_8e, target, ticks);
+            return;
+        }
         if sub != 0 || ctx.script_id != u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
             return;
         }
@@ -2438,6 +2448,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
         // walk-on beat instead of sliding in a frozen pose.
         // REF: FUN_80024E08, FUN_800204F8
+        //
+        // Aimed at a `.MAP` placed object's actor (`A2 <record> <clip>`), the
+        // same op re-points that prop's clip: `+0x5E = 0xFFFE` forces the anim
+        // tick's re-point (`0x8002057C`), which zeroes the cursor, and the
+        // tick then plays under the actor's own `+0x62` / `+0x6A` - the words
+        // the record's preceding `AC`/`AB` and `4C 41` pokes just set.
+        // `chitei2`'s rescue beat opens the drain pipe this way (P2[16]:
+        // `CC 01 41 20`, `AC 01 07`, `AB 01 03`, `AC 01 01`, `A2 01 02` - clear
+        // reverse, clamp, release the spawn hold, play clip 2 once).
+        if let Some(record) = self.world.field_vm.executing_object {
+            self.world
+                .play_object_prop_clip(record, move_id, ctx.local_flags, ctx.field_6a);
+        }
         if let Some(slot) = self.world.field_vm.executing_channel {
             self.world
                 .npcs

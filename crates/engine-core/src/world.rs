@@ -206,6 +206,8 @@ mod items_arts;
 mod narration;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
+mod object_actor_height;
+pub use object_actor_height::ObjectSlotRamp;
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;

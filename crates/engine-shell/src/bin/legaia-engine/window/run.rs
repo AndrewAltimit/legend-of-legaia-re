@@ -1399,6 +1399,8 @@ pub(super) fn cmd_play_window_with_record(
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         field_placement_window_keys: Vec::new(),
+        field_placement_records: Vec::new(),
+        field_placement_color_records: Vec::new(),
         field_placement_color_window_keys: Vec::new(),
         field_terrain_draws: Vec::new(),
         field_floor_wave: Default::default(),

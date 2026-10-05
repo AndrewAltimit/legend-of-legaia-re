@@ -796,6 +796,20 @@ sub-4 on a non-zero one). On the disc it would restart `taiku` P2[16] - Zora
 Castle's post-boss cutscene, whose `CC 25 43 00 00 00 00` zeroes channel
 `0x25`'s `+0x24` - at its first byte on every pass.
 
+**Sub-2's ramp moves `+0x8E` alone, and the actor tick turns it into Y.**
+The scheduled tween writes the slot and nothing else; the `world_y = -value`
+mirror is the immediate arm's. What carries a tweened `+0x8E` into the actor's
+position is the per-actor tick's height arm (`FUN_8003BC08`): an actor carrying
+`+0x10 & 0x20000000` takes `+0x16 = -(+0x8E)` every frame instead of the ground
+sample ([motion-vm.md](motion-vm.md)). A `.MAP` placed object is drawn at its
+actor, so this is how a script lifts or drops scenery: `chitei2`'s boulder
+pieces (partition-0 records 28..30) raise the bit (`31 1D`) and park at `700`
+in their spawn prologue, and the collapse's boulder beat (P2[17]) seats them at
+the foot of the escape stairs with `A3` and tweens the slot to `0` over 21..27
+frames. Engine: `World::schedule_object_slot_ramp` /
+`tick_object_actor_heights`, read out per placed draw through
+`World::object_draw_displacements` on both hosts.
+
 Sub-9's tristate dispatch:
 
 | Bit `0x02000000` | Bit `0x01000000` | Path |

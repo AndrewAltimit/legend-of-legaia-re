@@ -1967,6 +1967,25 @@ impl PlayWindowApp {
                     // behind it, is not drawn. Judged under the retail
                     // camera only - the `F3` debug orbit frames from a
                     // vantage retail never had.
+                    // A placed object a script has moved (`A3` seat, `4C 42`
+                    // lift under the actor's `0x20000000` height law) draws at
+                    // its actor's live position: retail's case-5 draw reads
+                    // the actor, not the `.MAP` record. The shared kernel is
+                    // `World::object_draw_displacements`; the browser play
+                    // page folds the same table in (`field_placement_moves`).
+                    let object_moves = self.session.host.world.object_draw_displacements();
+                    let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
+                        match record.and_then(|r| object_moves.get(&r)) {
+                            Some(d) => {
+                                Mat4::from_translation(Vec3::new(
+                                    d[0] as f32,
+                                    d[1] as f32,
+                                    d[2] as f32,
+                                )) * *model
+                            }
+                            None => *model,
+                        }
+                    };
                     let place_near_culled = |mvp: &Mat4| {
                         !self.field_debug_camera
                             && legaia_engine_core::field_env::placed_origin_near_culled(
@@ -1987,6 +2006,10 @@ impl PlayWindowApp {
                         let static_window = &self.session.host.world.terrain.static_window;
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
+                            let model = &object_moved(
+                                model,
+                                self.field_placement_records.get(di).copied().flatten(),
+                            );
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
                             {
@@ -2052,6 +2075,13 @@ impl PlayWindowApp {
                         for (di, (mesh_idx, model)) in
                             self.field_placement_color_draws.iter().enumerate()
                         {
+                            let model = &object_moved(
+                                model,
+                                self.field_placement_color_records
+                                    .get(di)
+                                    .copied()
+                                    .flatten(),
+                            );
                             if !legaia_engine_core::field_env::placed_draw_live(
                                 self.field_placement_color_window_keys
                                     .get(di)

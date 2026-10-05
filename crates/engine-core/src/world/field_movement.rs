@@ -658,6 +658,49 @@ impl World {
         (labels, sizes, edges)
     }
 
+    /// Whether the collision grid alone lets a walker get from `(x, z)` onto
+    /// the authored walk-visible floor within `budget` 64-unit sub-cells - the
+    /// wall-bit flood the locomotion collision (`FUN_801CFE4C`) actually
+    /// enforces, ending on a sub-cell [`Self::field_walk_component_size`]
+    /// counts. `false` when the point itself sits in a wall bit.
+    ///
+    /// The two disagree on floor a placed object provides: `chitei2`'s
+    /// escape platform (the env mesh on partition-0 record 31) carries no
+    /// floor-cell bit, yet it is open collision whose stairs lead down onto
+    /// the corridor floor.
+    pub fn field_collision_reaches_floor(&self, x: i16, z: i16, budget: usize) -> bool {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN || x < 0 || z < 0 {
+            return false;
+        }
+        let stride = (FIELD_GRID_STRIDE * 2) as i32;
+        let open = |sx: i32, sz: i32| {
+            (0..stride).contains(&sx)
+                && (0..stride).contains(&sz)
+                && !self.field_tile_is_wall((sx * 64 + 32) as i16, (sz * 64 + 32) as i16)
+        };
+        let start = ((x as i32) >> 6, (z as i32) >> 6);
+        if !open(start.0, start.1) {
+            return false;
+        }
+        let mut seen = std::collections::HashSet::from([start]);
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some((cx, cz)) = queue.pop_front() {
+            if self.field_subcell_open(cx, cz) {
+                return true;
+            }
+            if seen.len() >= budget {
+                break;
+            }
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let n = (cx + dx, cz + dz);
+                if open(n.0, n.1) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        false
+    }
+
     /// Size (in 64-unit sub-cells) of the connected open-floor region the
     /// world point `(x, z)` stands in - `0` when the covering sub-cell is
     /// closed (off the walk-visible floor or inside a wall). The reachability

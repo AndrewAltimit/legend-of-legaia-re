@@ -609,6 +609,7 @@ impl SceneHost {
         self.world.cutscene.caption_alpha = 0.0;
         self.world.cutscene.caption_shown_frames = 0;
         self.world.field_vm.channels.clear();
+        self.world.field_vm.object_slot_ramps.clear();
         self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();

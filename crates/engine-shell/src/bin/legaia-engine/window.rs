@@ -805,6 +805,12 @@ struct PlayWindowApp {
     /// asks.
     field_placement_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     field_placement_color_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    /// The bind record of each draw of `field_placement_draws` /
+    /// `field_placement_color_draws` (parallel lists, `None` = unbound): the
+    /// key the per-frame pass looks a script's live object displacement up by
+    /// (`World::object_draw_displacements` - `chitei2`'s falling boulder).
+    field_placement_records: Vec<Option<usize>>,
+    field_placement_color_records: Vec<Option<usize>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense

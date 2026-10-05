@@ -627,6 +627,44 @@ pub fn placed_render_scales(
         .collect()
 }
 
+/// The bind record each placed draw's actor runs (parallel to `draws`), or
+/// `None` for an unbound draw - the key hosts look a draw's live
+/// [`World::object_draw_displacements`] entry up by.
+///
+/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+pub fn placed_bind_records(
+    draws: &[EnvDraw],
+    binds: Option<&HashMap<(u8, u8), ObjectBind>>,
+) -> Vec<Option<usize>> {
+    draws
+        .iter()
+        .map(|d| {
+            binds
+                .and_then(|b| b.get(&d.anchor))
+                .map(|b| b.record as usize)
+        })
+        .collect()
+}
+
+/// Per-draw scripted displacement of a placed-object list: each draw's bind
+/// record looked up in `record_moves` ([`World::object_draw_displacements`]),
+/// `[0, 0, 0]` for an unbound or unmoved draw. Both hosts add it to the
+/// draw's translation every frame.
+///
+/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+pub fn placed_draw_displacements(
+    records: &[Option<usize>],
+    record_moves: &HashMap<usize, [i32; 3]>,
+) -> Vec<[i32; 3]> {
+    records
+        .iter()
+        .map(|r| {
+            r.and_then(|r| record_moves.get(&r).copied())
+                .unwrap_or([0; 3])
+        })
+        .collect()
+}
+
 /// The identity a window-owned placed draw shares with the actor the sub-area
 /// window sweep spawns for it: the footprint-anchor tile plus the X/Z the
 /// sweep computes (`tile * 0x80 + 0x40 + desc[+0]`, `tile * 0x80 - (desc[+4] -

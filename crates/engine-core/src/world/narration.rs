@@ -1216,11 +1216,15 @@ impl World {
                         let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
                         let arrived =
                             (nx, nz) == (i32::from(walk.target.0), i32::from(walk.target.1));
-                        if arrived {
-                            let y = self.sample_field_floor_height(nx, nz) as i16;
-                            if let Some(a) = self.actors.get_mut(p as usize) {
-                                a.move_state.world_y = y;
-                            }
+                        // The floor under every step, not just the landing
+                        // tile: a leg that crosses a stair run (chitei2's
+                        // escape beats) otherwise carries the start height
+                        // through the steps and snaps at the end - Vahn
+                        // walking through the stairs. Same per-step
+                        // resolution the compass glide runs.
+                        let y = self.sample_field_floor_height(nx, nz) as i16;
+                        if let Some(a) = self.actors.get_mut(p as usize) {
+                            a.move_state.world_y = y;
                         }
                         arrived
                     } else {
@@ -1251,11 +1255,16 @@ impl World {
                         self.npcs.positions.insert(slot, walk.target);
                     }
                     None => {
+                        let y = self.sample_field_floor_height(
+                            i32::from(walk.target.0),
+                            i32::from(walk.target.1),
+                        ) as i16;
                         if let Some(p) = self.player_actor_slot
                             && let Some(actor) = self.actors.get_mut(p as usize)
                         {
                             actor.move_state.world_x = walk.target.0;
                             actor.move_state.world_z = walk.target.1;
+                            actor.move_state.world_y = y;
                         }
                     }
                 }
@@ -2593,6 +2602,17 @@ impl World {
             && let Some(actor) = self.actors.get(slot as usize)
             && self.field_walk_component_size(actor.move_state.world_x, actor.move_state.world_z)
                 == 0
+            // ... and only when the collision grid really boxes them in. Floor
+            // a placed object provides has no walk-visible bit, but it is open
+            // collision the player walks off: `chitei2`'s collapse beat leaves
+            // the party on the escape platform (partition-0 record 31's mesh)
+            // to run down its stairs onto the corridor floor, and yanking them to the cold spawn skipped
+            // the boulder beat that platform leads to.
+            && !self.field_collision_reaches_floor(
+                actor.move_state.world_x,
+                actor.move_state.world_z,
+                STRANDED_COLLISION_REACH,
+            )
             // ... and only when the resolved spawn itself is on open floor: a
             // scene with no walkability data at all (a cutscene shell) reads
             // component 0 everywhere, and yanking the player there would be
@@ -2734,6 +2754,47 @@ impl World {
             .iter()
             .filter(|c| c.object_bind && c.ctx.field_72 != 0 && c.ctx.field_72 != 0x1000)
             .map(|c| (c.placement_index, c.ctx.field_72))
+            .collect()
+    }
+
+    /// Flat partition-0 record index -> how far a script has moved that
+    /// **object-bind channel's** actor from where its bind seated it, as
+    /// `[dx, dy, dz]` in retail world units (Y-down). Retail draws a placed
+    /// object at its actor's live `+0x14 / +0x16 / +0x18`, not at the `.MAP`
+    /// record, so a script that seats one with `A3 <id> <tx> <tz>` or lifts it
+    /// with op `4C 42` (`+0x8E`, mirrored into world Y while `+0x10 &
+    /// 0x20000000` is up) moves the drawn mesh. `chitei2`'s collapse is the
+    /// case that needs it: partition-0 records 28..30 are the boulder, born
+    /// 700 units up at a parking tile (`31 1D` + `4C 42 BC 02`), and the
+    /// boulder beat (P2[17]) seats them at the foot of the escape stairs and
+    /// ramps them down to the floor.
+    ///
+    /// The bind seats the actor at Y `0`, so `dy` is the actor's Y itself;
+    /// hosts add the displacement to the placement's own transform. Parked
+    /// objects ([`Self::hidden_object_records`]) and unmoved ones are not
+    /// listed.
+    // REF: FUN_8001ADA4 (case 5 draws at the actor position), FUN_8003A55C
+    pub fn object_draw_displacements(&self) -> std::collections::HashMap<usize, [i32; 3]> {
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
+        // A record bound at several tiles seats its one channel at the first
+        // bind (`spawn_object_channels` skips the repeats).
+        let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
+        for &(record, pos) in &self.field_vm.object_channel_binds {
+            seeds.entry(record).or_insert(pos);
+        }
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && !(c.ctx.world_x == hide && c.ctx.world_z == hide))
+            .filter_map(|c| {
+                let (sx, sz) = *seeds.get(&c.placement_index)?;
+                let d = [
+                    i32::from(c.ctx.world_x as i16) - i32::from(sx),
+                    i32::from(c.ctx.world_y as i16),
+                    i32::from(c.ctx.world_z as i16) - i32::from(sz),
+                ];
+                (d != [0, 0, 0]).then_some((c.placement_index, d))
+            })
             .collect()
     }
 

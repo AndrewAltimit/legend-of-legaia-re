@@ -664,6 +664,13 @@ pub const SPAWNED_CONTEXT_SLOTS: usize = 8;
 /// so many parks in one record still complete comfortably.
 pub(crate) const CHANNEL_WAIT_PARK_TIMEOUT: u32 = 30;
 
+/// Sub-cell budget (64-unit) for the collision-only walk from a player a
+/// spawned record left off the walk-visible floor back onto it
+/// ([`crate::world::World::field_collision_reaches_floor`]). Within it the
+/// player is **not** stranded and the cold-spawn rescue in the helper-context
+/// drain stands aside.
+pub(crate) const STRANDED_COLLISION_REACH: usize = 1024;
+
 /// Park bound for a cross-context **walk-to-tile yield**
 /// (`C7 <id> <tx> <tz> <mode>`, [`crate::cutscene_timeline::TimelineWalk`]).
 /// A walk park is a real playout - the longest authored legs cross a dozen

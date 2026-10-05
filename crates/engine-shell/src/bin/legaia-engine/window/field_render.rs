@@ -8,12 +8,15 @@ use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
 /// ([`legaia_engine_core::field_env::placed_window_key`]), and each draw's
 /// grid cell + cull radius for the visible-tile crop
-/// ([`legaia_engine_core::field_view_window::CellKey`]), all parallel.
+/// ([`legaia_engine_core::field_view_window::CellKey`]), and each draw's bind
+/// record ([`legaia_engine_core::field_env::placed_bind_records`] - the key of
+/// its live scripted displacement), all parallel.
 pub(super) type PlacedDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
     Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     Vec<legaia_engine_core::field_view_window::CellKey>,
+    Vec<Option<usize>>,
 );
 
 /// The live **floor-height ladder** patch for the field draw lists.
@@ -793,7 +796,7 @@ impl PlayWindowApp {
             return Default::default();
         }
         // Field frame: raw retail-convention transforms (see above).
-        let (draws, floors, _, cells) =
+        let (draws, floors, _, cells, _) =
             self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None);
         (draws, floors, cells)
     }
@@ -1135,7 +1138,11 @@ impl PlayWindowApp {
         // Parallel to `draws`: the grid cell + cull radius the visible-tile
         // crop (`field_view_window::terrain_draw_visible`) tests per frame.
         let mut cell_keys = Vec::new();
-        for (d, &scale) in env_draws.iter().zip(&scales) {
+        // Parallel to `draws`: the bind record whose actor a script can move
+        // (`World::object_draw_displacements`, folded in per frame).
+        let mut records = Vec::new();
+        let bind_records = legaia_engine_core::field_env::placed_bind_records(&env_draws, binds);
+        for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
             // contact). Those props are drawn from `field_posed_props`, which
@@ -1225,6 +1232,7 @@ impl PlayWindowApp {
             floors.push(d.floor);
             window_keys.push(legaia_engine_core::field_env::placed_window_key(d, binds));
             cell_keys.push(legaia_engine_core::field_view_window::CellKey::of_draw(d));
+            records.push(record);
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -1232,7 +1240,7 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        (draws, floors, window_keys, cell_keys)
+        (draws, floors, window_keys, cell_keys, records)
     }
 
     /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so

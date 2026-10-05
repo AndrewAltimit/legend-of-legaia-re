@@ -65,6 +65,43 @@ impl World {
         // the clip cursors (a treasure chest's lid, every NPC's idle loop).
         self.tick_npc_morphs();
         self.tick_npc_clips();
+        // The height arm of the same actor tick over the placed objects: a
+        // `4C 42` tween's `+0x8E` step and the `0x20000000` Y pin.
+        self.tick_object_actor_heights();
+    }
+
+    /// A cross-context `A2 <record> <clip>` ExecMove landing on a placed
+    /// prop's actor: bind `clip` to every prop that record's actor draws,
+    /// cursor at zero (the anim tick's forced re-point), under the actor's
+    /// live `+0x62` control word (`flags`) and `+0x6A` rate (`rate`, kept
+    /// when zero). The windowed and browser hosts pose posed props from the
+    /// bank, so both draw the clip.
+    ///
+    /// REF: FUN_800204F8 (the re-point at `0x8002057C..0x800205A8`)
+    pub(crate) fn play_object_prop_clip(&mut self, record: u16, clip: u8, flags: u16, rate: i16) {
+        let meta = self.props.bank.clip_meta(clip);
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == usize::from(record))
+        {
+            if p.anim.anim_id != clip {
+                let Some((frames, scaled, div)) = meta else {
+                    continue;
+                };
+                p.anim.anim_id = clip;
+                p.anim.frames = frames.max(1);
+                p.anim.scaled_step = scaled;
+                p.anim.step_div = div;
+            }
+            p.anim.cursor = 0;
+            p.anim.flags = flags;
+            if rate != 0 {
+                p.anim.rate = rate;
+            }
+        }
     }
 
     /// Advance the placed-prop layer one field tick: step the clips, step an
