@@ -707,12 +707,12 @@ fn countin_banner_slides_holds_then_fades() {
 #[test]
 fn the_countin_animator_runs_once_every_three_vsyncs() {
     let mut ci = CountIn::new();
-    let first = ci.step().banner;
+    let first = ci.step().banner.unwrap();
     // Two more vsyncs return the SAME envelope - the animator has not run.
-    assert_eq!(ci.step().banner, first);
-    assert_eq!(ci.step().banner, first);
+    assert_eq!(ci.step().banner, Some(first));
+    assert_eq!(ci.step().banner, Some(first));
     // The fourth vsync is the animator's next run, three counter units on.
-    let second = ci.step().banner;
+    let second = ci.step().banner.unwrap();
     assert_ne!(second, first);
     assert_eq!(
         first.x_offset - second.x_offset,
@@ -720,15 +720,53 @@ fn the_countin_animator_runs_once_every_three_vsyncs() {
         "one visible step is 18 px"
     );
 
-    // The count-in still lasts exactly COUNTIN_END_FRAME vsyncs: the
-    // coarser sampling must not shorten or stretch it.
+    // The whole count-in - READY to its 0x6F exit, GO! in and out - lasts
+    // COUNTIN_TOTAL_VSYNCS: 38 + 11 + 11 animator runs of three vsyncs, with
+    // `done` on the first vsync of the run after.
+    assert_eq!(COUNTIN_RUNS, 38 + 11 + 11);
     let mut ci = CountIn::new();
     let mut vsyncs = 1;
     while !ci.step().done {
         vsyncs += 1;
         assert!(vsyncs < 1000, "count-in never finished");
     }
-    assert_eq!(vsyncs, COUNTIN_END_FRAME);
+    assert_eq!(vsyncs, COUNTIN_TOTAL_VSYNCS);
+}
+
+/// `FUN_801cf470` states 3 -> 4 -> 5: the READY banner is cut at counter
+/// `0x6F` (before its slide-out ends), then `GO!` fades in to `0x3C * 2` and
+/// back out, and the run-start cue `0x201` fires once during the fade-in -
+/// after the READY hold's `0x200`.
+#[test]
+fn the_countin_leaves_ready_at_0x6f_then_fades_go_with_the_start_cue() {
+    let mut ci = CountIn::new();
+    let mut last_ready = None;
+    let mut go_peak = 0;
+    let mut cues = Vec::new();
+    let mut go_frames = 0;
+    loop {
+        let s = ci.step();
+        if let Some(c) = s.cue {
+            cues.push(c);
+        }
+        if s.banner.is_some() {
+            last_ready = Some(ci.frame() - COUNTIN_ANIM_STEP);
+            assert!(s.go.is_none(), "READY and GO! never draw together");
+        }
+        if let Some(g) = s.go {
+            go_frames += 1;
+            go_peak = go_peak.max(g);
+        }
+        if s.done {
+            break;
+        }
+    }
+    // The last READY run drew counter 111 = 0x6F, short of the 0x78 end.
+    assert_eq!(last_ready, Some(COUNTIN_READY_EXIT));
+    const { assert!(COUNTIN_READY_EXIT < COUNTIN_END_FRAME) };
+    assert_eq!(go_peak, COUNTIN_GO_FULL * 2);
+    assert_eq!(go_frames, 22 * 3, "11 runs in, 11 runs out");
+    assert_eq!(cues, vec![COUNTIN_INTRO_CUE, COUNTIN_START_CUE]);
 }
 
 #[test]

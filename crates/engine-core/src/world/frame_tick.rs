@@ -2489,6 +2489,7 @@ impl World {
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = Some(crate::dance::CountIn::new());
         self.minigames.dance_countin_banner = None;
+        self.minigames.dance_countin_go = None;
         // The dance overlay loads one of two mode-selected chart loops; the
         // exact mode -> song arm is unpinned, so it is approximated by song
         // length. Held until the count-in clears, which is when retail's
@@ -2543,6 +2544,7 @@ impl World {
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = None;
         self.minigames.dance_countin_banner = None;
+        self.minigames.dance_countin_go = None;
         self.minigames.dance_pending_bgm = None;
         self.minigames.dance_tutorial = None;
         self.minigames.dance_tutorial_frame = None;
@@ -2585,12 +2587,14 @@ impl World {
         // below-10 state band. The song starts on the frame it clears.
         if let Some(mut ci) = self.minigames.dance_countin.take() {
             let step = ci.step();
-            self.minigames.dance_countin_banner = Some(step.banner);
+            self.minigames.dance_countin_banner = step.banner;
+            self.minigames.dance_countin_go = step.go;
             if let Some(cue) = step.cue {
                 self.minigames.pending_sfx.push(cue);
             }
             if step.done {
                 self.minigames.dance_countin_banner = None;
+                self.minigames.dance_countin_go = None;
                 if let Some(bgm) = self.minigames.dance_pending_bgm.take() {
                     self.swap_to_minigame_bgm(bgm);
                 }

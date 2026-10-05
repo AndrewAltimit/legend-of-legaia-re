@@ -23,7 +23,7 @@ fn dance_test_chart() -> legaia_asset::dance_chart::DanceChart {
 /// `DanceGame::advance` off until it clears, so a test that pressed on the
 /// entry frame would be pressing into the banner.
 fn run_dance_countin(world: &mut World) {
-    for _ in 0..crate::dance::COUNTIN_END_FRAME {
+    for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
     }
@@ -55,7 +55,7 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     assert!(!world.minigames.dance_status_visible());
     // The intro cue fires once, on the hold-segment entry.
     let mut cues = world.drain_minigame_sfx_cues();
-    for _ in 0..crate::dance::COUNTIN_END_FRAME {
+    for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
         cues.extend(world.drain_minigame_sfx_cues());

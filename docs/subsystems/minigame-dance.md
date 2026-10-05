@@ -31,7 +31,7 @@ The per-frame controller is `FUN_801cf470` (the overlay's dance tick). It is a `
 | `6` | Start BGM, zero the beat counters `DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`, set the lead-in countdown `DAT_801d513c = 4`. **Confirmed** (the `func_0x80026478` call in this state is the **actor sound-source attach / re-pan** primitive, `FUN_80026478` in [`functions.md`](../reference/functions.md) - it enables the dancer's positional voice, not the BGM stream; the SEQ itself is the pre-staged `music_01` entry loaded by the mode-24 entry path below). |
 | `7` | Lead-in countdown: decrement `DAT_801d513c`; when it reaches 0 jump straight to the play state `10`. **Confirmed** |
 | `10` (`0xa`) | **Main play loop.** Per-frame the beat counters advance and `FUN_801d231c` draws the HUD; the song-end test runs here. Judging happens in `FUN_801d1af4`, called once per frame **for every dancer** from the actor handler `FUN_801d1358`. **Confirmed** |
-| `11` (`0xb`) | "Finish" banner: pushes four banner sprite primitives, advances. **Confirmed** |
+| `11` (`0xb`) | "Finish" countdown: spawns `3`, `2`, `1` and `FINISH!` as four sprite parts at once, each running its own move program, and advances. See [The count-in, state by state](#the-count-in-state-by-state). **Confirmed** |
 | `12` (`0xc`) | Result wipe: ramps `DAT_801d515c`; sets `DAT_801d5130` past a threshold; at the end jumps to results state `0x14`. **Confirmed** |
 | `0x14` (20) | Results / grading: copies the per-player scores into display RAM, compares the player score against the win threshold, and sets the win/lose story flag. **Confirmed** |
 
@@ -434,12 +434,14 @@ Three further pieces of the retail frame run in the same host
   (`dance::CountIn`, which owns the banner's frame counter and the once-only
   intro-cue latch) and the world's dance tick plays the
   `dance_countin_banner_envelope` timeline (`FUN_801d2d98`) out, holding
-  `DanceGame::advance` off and starting the song when the slide-out finishes.
+  `DanceGame::advance` off and starting the song after the `GO!` fade
+  ([the count-in, state by state](#the-count-in-state-by-state)).
   This is the `FUN_801cf470` below-10 pre-song band, and it is in the **world**
   rather than in a host precisely because the player-reachable entry is the
   mode-24 door warp, which both hosts drain through the shared scene host - a
   host-side phase reached only a debug launcher. Hosts draw retail's own
-  `READY...` sprite through `engine-ui::ui_dance::dance_countin_prims`, as
+  `READY...` sprite through `engine-ui::ui_dance::dance_countin_prims` and
+  `GO!` through `dance_go_prims`, as
   screen-space PSX primitives on the staged HUD page, and fall back to
   `dance_countin_draws_for`'s placeholder letterforms only when that page is
   absent. Which of the two runs is decided once, in
@@ -1075,6 +1077,38 @@ the row-500 strip. The `1 2 3`, `GO!` and `FINISH!` that sit beside it on the
 sheet belong to the **sprite spawner** (`FUN_801d3fd0`, the `(160, 120)`
 banner seats above), not to this animator - so an emit that draws
 "READY... GO!" as one banner is drawing a cell the table does not hold.
+
+### The count-in, state by state
+
+`FUN_801cf470`'s jump table at `0x801CEE68` (21 words, PROT 0980 file
+`0x650`) puts the pre-song states at `0x801CFA60` (3), `0x801CFBBC` (4) and
+`0x801CFC4C` (5). The hall runs at `dt = 3` (`DAT_1F800393`), so every state
+body runs once per three vsyncs.
+
+| State | What it draws and decides |
+|---|---|
+| 3 | `FUN_801d2d98(counter)` - the READY banner above - then leaves once the counter it drew is at least `0x6F` (`slti v0,v0,0x6f` at `0x801CFAB4`). The counter grows by `dt` at the tail of every run (`0x801D015C..0x801D0184`), so the last READY frame is counter `111` and the slide-out is cut before its `0x78` end. |
+| 4 | `GO!` - widget `0x0C`, `FUN_801D2F38(0xA0, 0x78, 0xC, acc * 2)` - while the accumulator `DAT_801D515C` grows by `dt * 2`; the run that reaches `0x3D` parks it at `0x3C` and advances. Once the READY hold's latch `DAT_801D5134` is `1` and the accumulator has reached `0x1F`, it queues the run-start cue `0x201` and sets the latch to `2` (`0x801CFBBC..0x801CFBF4`). |
+| 5 | The same `GO!` while the accumulator falls by `dt * 2`; the run that takes it below zero clears it and hands over to state 6, which starts the song (`0x801CFC4C..0x801CFCA0`). |
+
+So the whole count-in is 38 READY runs, 11 `GO!`-in runs and 11 `GO!`-out
+runs. There is **no** `1 2 3` before the song: the three digits on the
+sheet belong to state `0xB`, the end of the song. Its four
+`FUN_801d3fd0` spawns at `(0xA0, 0x78)` (`0x801CFD5C..0x801CFDB8`) seat
+sprite ids `0x17`..`0x1A` - widgets `FINISH!`, `1`, `2`, `3` - each on its
+own move program in the overlay's data (`0x801D4CF4`, `0x801D4BBC`,
+`0x801D4C24`, `0x801D4C8C`). The four programs differ only in one `WAIT`
+operand and one cue: `3` shows at once with cue `0x209`, `2` after `50`
+ticks with `0x208`, `1` after `100` with `0x207`, and `FINISH!` after `150`
+with `0x206` - a closing `3 2 1 FINISH!` while the pad is still read at the
+`x 0x22` bonus.
+
+Port: `dance::CountIn` runs states 3 to 5 (`COUNTIN_READY_EXIT`,
+`COUNTIN_GO_STEP`, `COUNTIN_START_CUE`), so all three surfaces - the native
+window, the play page and the minigames page (`dance_countin_step`) - draw
+READY, then `GO!`, and fire `0x200` then `0x201` off one kernel. The state
+`0xB` countdown is not modelled on any of them yet: the port has no
+move-program runner for the dance's sprite parts.
 
 ### Where the HUD's texels come from
 

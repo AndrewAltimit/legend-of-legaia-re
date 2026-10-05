@@ -69,6 +69,10 @@ pub struct LegaiaMinigames {
 
     /// Live dance run.
     dance: Option<DanceGame>,
+    /// The pre-song count-in (READY, then `GO!`), the engine's
+    /// `dance::CountIn` both play hosts run - armed by [`Self::dance_start`],
+    /// stepped by [`Self::dance_countin_step`].
+    dance_countin: Option<legaia_engine_core::dance::CountIn>,
     /// Live Baka Fighter duel.
     baka: Option<BakaFight>,
     /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
@@ -306,6 +310,7 @@ impl LegaiaMinigames {
             prot: Vec::new(),
             entries: Vec::new(),
             dance: None,
+            dance_countin: None,
             baka: None,
             baka_run: None,
             baka_surface: Default::default(),
@@ -636,7 +641,40 @@ impl LegaiaMinigames {
             game.attach_clip_bank(b.clip_bank());
         }
         self.dance = Some(game);
+        self.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
         true
+    }
+
+    /// Step the count-in one vsync - the engine's `dance::CountIn`, which the
+    /// play hosts' `World::tick_dance` steps the same way. Returns
+    /// `[active, ready, x_offset, brightness, hold, go, cue, done]`:
+    /// `active` `0` once the song runs (the rest then zero); `ready` `1`
+    /// while the READY banner draws, with its envelope in the next three;
+    /// `go` the `GO!` brightness or `-1`; `cue` the cue id this vsync fires
+    /// (`0x200` intro, `0x201` run start) or `0`; `done` `1` on the vsync the
+    /// song starts. The page holds the beat clock and the music until `done`.
+    pub fn dance_countin_step(&mut self) -> Vec<i32> {
+        let Some(ci) = self.dance_countin.as_mut() else {
+            return vec![0; 8];
+        };
+        let s = ci.step();
+        if s.done {
+            self.dance_countin = None;
+        }
+        let (ready, x, b, hold) = match s.banner {
+            Some(e) => (1, e.x_offset, e.brightness, i32::from(e.hold)),
+            None => (0, 0, 0, 0),
+        };
+        vec![
+            1,
+            ready,
+            x,
+            b,
+            hold,
+            s.go.unwrap_or(-1),
+            s.cue.map_or(0, i32::from),
+            i32::from(s.done),
+        ]
     }
 
     /// Advance the beat clock by `frames` frames (the retail clock steps
@@ -2860,5 +2898,36 @@ fn blit_text(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod countin_tests {
+    use super::*;
+
+    /// The minigames page counts in through the engine's `CountIn`: READY
+    /// with the intro cue, then `GO!` with the run-start cue, then `done`.
+    #[test]
+    fn the_page_count_in_is_the_engine_count_in() {
+        let mut mg = LegaiaMinigames::new();
+        assert_eq!(mg.dance_countin_step(), vec![0; 8], "no run, no count-in");
+        mg.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
+        let (mut cues, mut saw_ready, mut saw_go, mut vsyncs) = (Vec::new(), false, false, 0);
+        loop {
+            let s = mg.dance_countin_step();
+            vsyncs += 1;
+            saw_ready |= s[1] == 1;
+            saw_go |= s[5] >= 0;
+            if s[6] != 0 {
+                cues.push(s[6]);
+            }
+            if s[7] == 1 {
+                break;
+            }
+        }
+        assert!(saw_ready && saw_go);
+        assert_eq!(cues, vec![0x200, 0x201]);
+        assert_eq!(vsyncs, legaia_engine_core::dance::COUNTIN_TOTAL_VSYNCS);
+        assert_eq!(mg.dance_countin_step()[0], 0, "the song runs after done");
     }
 }

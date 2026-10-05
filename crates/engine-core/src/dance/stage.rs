@@ -7,23 +7,88 @@ use super::*;
 /// (`0x1e`) + hold (to `0x5a`) + slide-out (`0x1e` more).
 pub const COUNTIN_END_FRAME: i32 = 0x5a + 0x1e;
 
-/// The pre-song count-in as an advancing object - the frame counter and the
-/// once-only [`COUNTIN_INTRO_CUE`] latch (`DAT_801D5134`) that
-/// [`dance_countin_banner_envelope`] leaves to its caller.
+/// The banner counter at which `FUN_801cf470`'s state 3 leaves the READY
+/// banner (`slti v0,v0,0x6f` at `0x801CFAB4`, read after the animator ran):
+/// the slide-out is cut there, short of [`COUNTIN_END_FRAME`].
+pub const COUNTIN_READY_EXIT: i32 = 0x6F;
+
+/// `GO!` fade accumulator step per animator run: states 4 / 5 add / subtract
+/// `dt * 2` (`sll v1,v1,0x1` at `0x801CFC08` / `0x801CFC5C`), and the hall runs
+/// at `dt = 3`.
+pub const COUNTIN_GO_STEP: i32 = 2 * COUNTIN_ANIM_STEP;
+
+/// The `GO!` accumulator's ceiling: state 4 leaves once it reaches `0x3D`
+/// (`slti v0,v0,0x3d` at `0x801CFC14`) and parks it at `0x3C`.
+pub const COUNTIN_GO_FULL: i32 = 0x3C;
+
+/// State 4 fires the run-start cue once the accumulator has reached `0x1F`
+/// (`slti v0,v0,0x1f` at `0x801CFBDC`), and only after the READY hold's
+/// intro cue raised the latch `DAT_801D5134` to `1`.
+pub const COUNTIN_START_CUE_AT: i32 = 0x1F;
+
+/// The run-start cue (`li v0,0x201` / `sh v0,-0x4928(v1)` at `0x801CFBF0`).
+pub const COUNTIN_START_CUE: u16 = 0x201;
+
+/// Where the count-in is: retail's states 3 (READY), 4 (`GO!` in) and 5
+/// (`GO!` out) of `FUN_801cf470`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CountInStage {
+    /// State 3: the READY banner animator `FUN_801d2d98`.
+    #[default]
+    Ready,
+    /// State 4: `GO!` (widget `0x0C`) fades in.
+    GoIn,
+    /// State 5: `GO!` fades out.
+    GoOut,
+    /// State 6 reached: the song starts.
+    Done,
+}
+
+/// The pre-song count-in as an advancing object - the READY banner's frame
+/// counter, the `GO!` fade accumulator `DAT_801D515C`, and the cue latch
+/// `DAT_801D5134` (`1` once the intro cue fired, `2` once the start cue did).
 ///
 /// Retail runs the below-10 states of `FUN_801cf470` before the beat clock
 /// starts; the port stages one of these on [`crate::world::World::enter_dance`]
 /// and the world's dance tick plays it out, holding `DanceGame::advance` off
 /// until it finishes. Owning the counter here rather than in a host is what
-/// makes the native window and the browser play page count in identically -
-/// and what gives the **door-warp** entry a count-in at all, which neither
-/// host had (only the native debug launcher ran one).
+/// makes the native window, the browser play page and the minigames page
+/// count in identically - and what gives the **door-warp** entry a count-in
+/// at all.
+///
+/// The three states, read off the disassembly:
+///
+/// * **State 3** draws `FUN_801d2d98(counter)` every run and leaves once the
+///   counter it drew is at least [`COUNTIN_READY_EXIT`]; the counter grows by
+///   `dt` at the tail of every run (`0x801D015C..0x801D0184`).
+/// * **State 4** draws `GO!` (widget `0x0C`, `(0xA0, 0x78)`) at brightness
+///   `acc * 2` (`sll a3,a3,0x1` at `0x801CFCC4`) while `acc` climbs by
+///   [`COUNTIN_GO_STEP`]; the run that reaches `0x3D` parks it at
+///   [`COUNTIN_GO_FULL`]. On the way it fires [`COUNTIN_START_CUE`].
+/// * **State 5** draws the same while `acc` falls back by the same step; the
+///   run that takes it below zero clears it and hands over to state 6, which
+///   starts the song.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CountIn {
     pub(super) frame: i32,
     /// Vsyncs since the animator last ran, `0..COUNTIN_ANIM_PERIOD_VSYNCS`.
     pub(super) phase: u8,
     pub(super) cue_fired: bool,
+    pub(super) stage: CountInStage,
+    /// `DAT_801D515C`, the `GO!` fade accumulator.
+    pub(super) go_acc: i32,
+    pub(super) start_cue_fired: bool,
+    /// What the last run drew: the READY envelope, or the `GO!` brightness.
+    pub(super) view: CountInView,
+}
+
+/// What the count-in draws this vsync.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CountInView {
+    /// The READY banner's envelope while state 3 runs.
+    pub banner: Option<CountInBanner>,
+    /// `GO!`'s brightness (`acc * 2`) while states 4 / 5 run.
+    pub go: Option<i32>,
 }
 
 /// Vsyncs between two runs of the count-in banner animator.
@@ -35,18 +100,31 @@ pub struct CountIn {
 /// per-vsync port slides them 6.
 pub const COUNTIN_ANIM_PERIOD_VSYNCS: u8 = 3;
 
-/// How far the animator's own counter advances per run - the same 3, which is
-/// what keeps [`COUNTIN_END_FRAME`] the same number of vsyncs away.
+/// How far the animator's own counter advances per run - the same 3 (`dt`).
 pub const COUNTIN_ANIM_STEP: i32 = 3;
+
+/// Animator runs the whole count-in takes: READY draws counters
+/// `0, 3, ..` through the first at or past [`COUNTIN_READY_EXIT`], `GO!` climbs
+/// to its ceiling and falls back below zero.
+pub const COUNTIN_RUNS: i32 = (COUNTIN_READY_EXIT + COUNTIN_ANIM_STEP - 1) / COUNTIN_ANIM_STEP
+    + 1
+    + 2 * ((0x3D + COUNTIN_GO_STEP - 1) / COUNTIN_GO_STEP);
+
+/// Vsyncs from the count-in's first frame to the one that reports `done`
+/// (the first vsync of state 6's run).
+pub const COUNTIN_TOTAL_VSYNCS: i32 = COUNTIN_RUNS * COUNTIN_ANIM_PERIOD_VSYNCS as i32 + 1;
 
 /// What one [`CountIn::step`] produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CountInStep {
-    /// This frame's banner envelope, for the host's draw list.
-    pub banner: CountInBanner,
-    /// The intro cue, on the single frame the hold segment is entered.
+    /// This frame's READY envelope, `None` once state 3 has left.
+    pub banner: Option<CountInBanner>,
+    /// This frame's `GO!` brightness, `None` outside states 4 / 5.
+    pub go: Option<i32>,
+    /// The intro cue ([`COUNTIN_INTRO_CUE`]) on the READY hold's first frame,
+    /// or the start cue ([`COUNTIN_START_CUE`]) during the `GO!` fade-in.
     pub cue: Option<u16>,
-    /// The slide-out finished: the caller starts the song this frame.
+    /// State 6 reached: the caller starts the song this frame.
     pub done: bool,
 }
 
@@ -60,36 +138,96 @@ impl CountIn {
         self.frame
     }
 
-    /// This frame's envelope without advancing - what a `&self` draw builder
-    /// reads.
+    /// Which state the count-in is in.
+    pub fn stage(&self) -> CountInStage {
+        self.stage
+    }
+
+    /// What the count-in draws now, without advancing.
+    pub fn view(&self) -> CountInView {
+        self.view
+    }
+
+    /// The READY envelope at the current counter - what a `&self` draw
+    /// builder reads while state 3 runs.
     pub fn banner(&self) -> CountInBanner {
         dance_countin_banner_envelope(self.frame)
     }
 
+    /// One animator run: retail's per-tick body of the current state.
+    fn run(&mut self) -> Option<u16> {
+        let mut cue = None;
+        match self.stage {
+            CountInStage::Ready => {
+                let banner = dance_countin_banner_envelope(self.frame);
+                if banner.hold && !self.cue_fired {
+                    self.cue_fired = true;
+                    cue = Some(COUNTIN_INTRO_CUE);
+                }
+                self.view = CountInView {
+                    banner: Some(banner),
+                    go: None,
+                };
+                if self.frame >= COUNTIN_READY_EXIT {
+                    self.stage = CountInStage::GoIn;
+                    self.go_acc = 0;
+                }
+                self.frame += COUNTIN_ANIM_STEP;
+            }
+            CountInStage::GoIn => {
+                if self.cue_fired && !self.start_cue_fired && self.go_acc >= COUNTIN_START_CUE_AT {
+                    self.start_cue_fired = true;
+                    cue = Some(COUNTIN_START_CUE);
+                }
+                self.go_acc += COUNTIN_GO_STEP;
+                if self.go_acc > COUNTIN_GO_FULL {
+                    self.go_acc = COUNTIN_GO_FULL;
+                    self.stage = CountInStage::GoOut;
+                }
+                self.view = CountInView {
+                    banner: None,
+                    go: Some(self.go_acc * 2),
+                };
+            }
+            CountInStage::GoOut => {
+                self.go_acc -= COUNTIN_GO_STEP;
+                if self.go_acc < 0 {
+                    self.go_acc = 0;
+                    self.stage = CountInStage::Done;
+                }
+                self.view = CountInView {
+                    banner: None,
+                    go: Some(self.go_acc * 2),
+                };
+            }
+            CountInStage::Done => {
+                self.view = CountInView::default();
+            }
+        }
+        cue
+    }
+
     /// Advance one **vsync**.
     ///
-    /// The animator itself runs once every [`COUNTIN_ANIM_PERIOD_VSYNCS`],
-    /// with its counter advancing [`COUNTIN_ANIM_STEP`] - so this returns the
-    /// same envelope three vsyncs running and then jumps. The count-in still
-    /// lasts exactly [`COUNTIN_END_FRAME`] vsyncs; only the sampling is
-    /// retail's.
+    /// The animator runs on the first vsync of every
+    /// [`COUNTIN_ANIM_PERIOD_VSYNCS`] and its picture holds for the period -
+    /// so this returns the same view three vsyncs running and then jumps.
     pub fn step(&mut self) -> CountInStep {
-        let banner = dance_countin_banner_envelope(self.frame);
-        let cue = if banner.hold && !self.cue_fired {
-            self.cue_fired = true;
-            Some(COUNTIN_INTRO_CUE)
+        let (cue, done) = if self.phase == 0 {
+            let done = self.stage == CountInStage::Done;
+            (self.run(), done)
         } else {
-            None
+            (None, false)
         };
         self.phase += 1;
         if self.phase >= COUNTIN_ANIM_PERIOD_VSYNCS {
             self.phase = 0;
-            self.frame += COUNTIN_ANIM_STEP;
         }
         CountInStep {
-            banner,
+            banner: self.view.banner,
+            go: self.view.go,
             cue,
-            done: self.frame >= COUNTIN_END_FRAME,
+            done,
         }
     }
 }

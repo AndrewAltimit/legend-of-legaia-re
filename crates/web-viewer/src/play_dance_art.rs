@@ -100,6 +100,22 @@ impl LegaiaRuntime {
         if !mg.dance_hud_art_staged {
             return Vec::new();
         }
+        // `GO!` after READY (`FUN_801cf470` states 4 / 5): widget `0x0C`
+        // off the run's own table, through the one shared emitter.
+        if let Some(go) = mg.dance_countin_go {
+            return mg
+                .dance
+                .as_ref()
+                .and_then(|g| g.widget(ud::COUNTIN_GO_WIDGET))
+                .map(|(w, abr)| {
+                    ud::dance_go_prims(
+                        go,
+                        ud::DanceCountInArt::from_widget(&w, abr),
+                        ud::COUNTIN_OT,
+                    )
+                })
+                .unwrap_or_default();
+        }
         let Some(env) = mg.dance_countin_banner.as_ref() else {
             return Vec::new();
         };

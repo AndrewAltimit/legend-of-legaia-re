@@ -200,6 +200,9 @@ pub struct MinigameState {
     /// The count-in banner envelope the last dance tick produced, for a
     /// host's draw list. `None` outside the count-in.
     pub dance_countin_banner: Option<crate::dance::CountInBanner>,
+    /// The `GO!` banner's brightness (`acc * 2`, `FUN_801cf470` states 4 / 5)
+    /// the last dance tick produced. `None` outside those states.
+    pub dance_countin_go: Option<i32>,
     /// The global `music_01` track the dance's own overlay loads, held until
     /// the count-in ends (retail starts the song when the banner clears).
     /// Chosen by song length in [`crate::world::World::enter_dance`].
@@ -269,7 +272,7 @@ impl MinigameState {
     /// One predicate for every host: the rule belongs to the phase, not to a
     /// draw list.
     pub fn dance_status_visible(&self) -> bool {
-        self.dance.is_some() && self.dance_countin_banner.is_none()
+        self.dance.is_some() && self.dance_countin.is_none()
     }
 
     /// The dance HUD's retail textured quads for this frame
@@ -331,6 +334,7 @@ impl MinigameState {
             pending_warp: None,
             dance_countin: None,
             dance_countin_banner: None,
+            dance_countin_go: None,
             dance_pending_bgm: None,
             dance_tutorial: None,
             dance_tutorial_frame: None,

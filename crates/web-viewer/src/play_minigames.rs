@@ -497,6 +497,10 @@ impl LegaiaRuntime {
                 1,
             ));
         }
+        // `GO!` after READY (`FUN_801cf470` states 4 / 5), same either/or.
+        if let Some(go) = mg.dance_countin_go.filter(|_| !mg.dance_hud_art_staged) {
+            out.extend(ui_dance::dance_go_draws_for(font, go, (0, 0), 1));
+        }
         if let Some(tf) = mg.dance_tutorial_frame.as_ref() {
             out.extend(ui_dance::dance_tutorial_draws_for(
                 font,

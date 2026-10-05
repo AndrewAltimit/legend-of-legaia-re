@@ -645,6 +645,27 @@ window.MgDance = (function () {
 
     /* Draw widget `id` centred at retail (x, y) - exactly the emitter's
      * contract - through palette `pal` (default: the record's own). */
+    /* One widget at a retail brightness `level` (texel * level / 128):
+     * `semi` blends it additively (the record's +0x0F flag), otherwise it
+     * draws opaque, with a lighter pass for the part above 128. */
+    function wdrawLevel(id, x, y, level, semi) {
+      const w = widgets[id];
+      if (!w) return;
+      const img = page(w.palette);
+      if (!img || level <= 0) return;
+      const dx = (x - w.w / 2) * SCALE, dy = (y - w.h / 2) * SCALE;
+      g.save();
+      if (semi) g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = Math.min(1, level / 128);
+      g.drawImage(img, w.u, w.v, w.w, w.h, dx, dy, w.w * SCALE, w.h * SCALE);
+      if (level > 128) {
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = Math.min(1, (level - 128) / 128);
+        g.drawImage(img, w.u, w.v, w.w, w.h, dx, dy, w.w * SCALE, w.h * SCALE);
+      }
+      g.restore();
+    }
+
     function wdraw(id, x, y, pal, bright) {
       const w = widgets[id];
       if (!w) return;
@@ -886,9 +907,17 @@ window.MgDance = (function () {
       }
       flashT = 0; finished = false;
       if (body) body.rivalTri = {};
-      intro = { t: 0 };
-      play('start', 0.5);
-      startBgm(songSeconds);
+      /* The engine's count-in (`dance::CountIn`, the play hosts' own): the
+       * READY banner, then GO!, with the intro / run-start cues - and the
+       * song only once it clears (retail starts it in FUN_801cf470 state 6).
+       * A cached WASM without it keeps the old hand-timed overlay. */
+      if (typeof api.dance_countin_step === 'function') {
+        intro = { live: true, songSeconds };
+      } else {
+        intro = { t: 0 };
+        play('start', 0.5);
+        startBgm(songSeconds);
+      }
     }
 
     function stopRun() {
@@ -896,7 +925,9 @@ window.MgDance = (function () {
       intro = null;
     }
 
-    /* The count-in overlay: READY... slides, then 1 / 2 / 3, then GO!.
+    /* The count-in: the engine's READY banner, then GO! (the hand-timed
+     * READY / 1 / 2 / 3 / GO! overlay only against a cached WASM - retail's
+     * 3 / 2 / 1 belong to the song's end, FUN_801cf470 state 0xB).
      * Returns true while the engine clock should hold. */
     function introActive() { return intro !== null; }
 
@@ -993,8 +1024,28 @@ window.MgDance = (function () {
         drawGroovyWindow(st);
       }
 
-      /* Count-in overlay (banner widgets at the traced centre spawn). */
-      if (intro) {
+      /* Count-in, stepped by the engine one vsync per drawn frame. */
+      if (intro && intro.live) {
+        const c = api.dance_countin_step();
+        if (c[6] === 0x200) play('intro', 0.5);
+        else if (c[6] === 0x201) play('start', 0.5);
+        if (c[1]) {
+          /* FUN_801d2d98: two blended copies sliding apart on row 0x77, or
+           * one opaque centred copy on row 0x78 while it holds. */
+          if (c[4]) {
+            wdrawLevel(W.READY, 0xA0, 0x78, c[3], false);
+          } else {
+            wdrawLevel(W.READY, 0xA0 + c[2], 0x77, c[3], true);
+            wdrawLevel(W.READY, 0xA0 - c[2], 0x77, c[3], true);
+          }
+        }
+        /* FUN_801cf470 states 4 / 5: GO! (widget 0x0C) at acc * 2. */
+        if (c[5] >= 0) wdrawLevel(W.GO, 0xA0, 0x78, c[5], true);
+        if (c[7] || !c[0]) {
+          startBgm(intro.songSeconds);
+          intro = null;
+        }
+      } else if (intro) {
         const C = L.banners.centre;
         const t = intro.t++;
         if (t < 55) {
@@ -1022,7 +1073,7 @@ window.MgDance = (function () {
 
     return {
       loadAssets, startRun, stopRun, onPress, draw, introActive, setBgmTrack,
-      get introGate() { return intro !== null && !intro.go; },
+      get introGate() { return intro !== null && (intro.live || !intro.go); },
       sfxCount() { return sfxIds ? Object.keys(sfxIds).length : 0; },
       bgmOk() { return !!(bgmInfo && bgmInfo.ok); },
       bodyOk() { return !!body; },

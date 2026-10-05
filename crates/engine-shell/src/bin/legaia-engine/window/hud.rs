@@ -575,6 +575,18 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // `GO!` after READY (`FUN_801cf470` states 4 / 5), same either/or.
+        if !self.session.host.world.minigames.dance_hud_art_staged
+            && let Some(go) = self.session.host.world.minigames.dance_countin_go
+        {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            out.extend(legaia_engine_render::ui_dance::dance_go_draws_for(
+                &self.font,
+                go,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         // The shared minigame effect pool's live parts (fishing splash,
         // wander ripples, celebration bursts), in stage space. The pool is
         // `World::minigames.fx` and the builder is the one the browser hosts
