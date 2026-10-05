@@ -482,3 +482,56 @@ fn a_granted_flee_turns_the_standing_party_around_and_regroups_it() {
         "a downed member stays where it fell"
     );
 }
+
+/// The AI picker's physical branch writes its budget picks - archive entry
+/// indices - into the monster's action stream (`+0x1DF..`, `FUN_801E9FD4`),
+/// the way retail's `super_queue_replace_*` capture holds a Gobu Gobu's
+/// `09 09 08`; the strike loop then stages each as its own swing clip.
+#[test]
+fn a_physical_ai_pick_writes_its_swing_entries_into_the_stream() {
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+
+    let mut cat = MonsterCatalog::new();
+    let mut def = MonsterDef::new(42, "Multi", 500, 30);
+    def.agl = 60;
+    def.action_costs = vec![20];
+    def.action_entries = vec![7];
+    cat.insert(def);
+
+    let mut world = live_battle_world_3v2();
+    world.tables.monster_catalog = cat;
+    world.actors[3].battle_monster_id = Some(42);
+    world.take_monster_turn(3);
+    let a = &world.actors[3].battle;
+    assert_eq!(a.action_category, 3, "a physical pick");
+    assert_eq!(
+        &a.params[..4],
+        &[7, 7, 7, 0],
+        "three swings of entry 7, then the terminator"
+    );
+}
+
+/// A seat that held another monster in an earlier fight drops that
+/// monster's clips when a different record is seated there: the scene host
+/// installs clips only for a seat with none, so a stale set would stage the
+/// old record's entries for the new monster's swings.
+#[test]
+fn reseating_a_different_monster_drops_the_old_clips() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+
+    let mut world = World::new();
+    world.party.party_count = 1;
+    let gobu = FormationDef::new(1, vec![FormationSlot::new(4)]);
+    world.enter_battle_from_formation(&gobu);
+    let seat = 1;
+    assert_eq!(world.actors[seat].battle_monster_id, Some(4));
+    world.set_actor_battle_action_clips(seat, std::sync::Arc::new(vec![None; 10]));
+    // The same record again keeps its install.
+    world.enter_battle_from_formation(&gobu);
+    assert!(world.actors[seat].battle_action_clips.is_some());
+    // Another record drops it.
+    let gimard = FormationDef::new(2, vec![FormationSlot::new(10)]);
+    world.enter_battle_from_formation(&gimard);
+    assert_eq!(world.actors[seat].battle_monster_id, Some(10));
+    assert!(world.actors[seat].battle_action_clips.is_none());
+}

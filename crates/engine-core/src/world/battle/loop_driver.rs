@@ -530,6 +530,31 @@ impl World {
             self.apply_basic_attack();
         }
 
+        // No combo total may outlive the attack band. Retail's ordering makes
+        // a stranded total impossible when the stream holds swing entries:
+        // a staged byte commits on the playing clip's event frame, after
+        // that clip's hit, so every hit but the last swing's lands before the
+        // `0x1F` park and the last swing's lands after it - the parked,
+        // last-beat hit that subtracts the whole total
+        // (`0x801EE984..0x801EEA40`). A last staged entry with no hit event
+        // (a clip set a stale or synthetic install put behind the stream)
+        // would leave the total on the target with live HP never written,
+        // the bar's display short of it, and the `0x51` settle gate
+        // (`FUN_801E7250`) holding the band forever. Engine choice: land any
+        // such total as the band leaves `0x20`.
+        if let StepOutcome::Transition { from, to } = outcome
+            && from == ActionState::AttackReturn.as_byte()
+            && to == ActionState::DoneCleanup.as_byte()
+        {
+            let stranded: Vec<u8> = (0..self.actors.len().min(8))
+                .filter(|&i| self.actors[i].battle.damage_accum > 0)
+                .map(|i| i as u8)
+                .collect();
+            for t in stranded {
+                self.apply_combo_total(t);
+            }
+        }
+
         // Mark the dead so the SM's liveness scan resolves the wipe.
         for a in self.actors.iter_mut() {
             if a.battle.max_hp > 0 && a.battle.hp == 0 {

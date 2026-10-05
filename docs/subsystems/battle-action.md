@@ -2526,7 +2526,10 @@ knockdown.
 Port: `battle_action::attack`'s `target_reaction_holds`, reading the target
 through `BattleActionHost::reaction_hold_view` (the engine plays reactions on a
 side channel, so its host merges that channel into the committed id); the latch
-is raised by `World::tick_battle_defeat_sink`.
+is raised by `World::tick_battle_defeat_sink`. One engine choice sits beside
+it: a target whose animation rate `+0x21D` reads `0` - frozen by a starter
+commit that no art commit thawed - does not hold the band, since its clip
+cannot advance before the Done band restores the rates.
 
 ### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the lone-monster defeat latch
 

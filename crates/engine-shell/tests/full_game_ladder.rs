@@ -1648,9 +1648,12 @@ fn fight_pad(session: &BootSession) -> u16 {
             // Right takes Run. A lone member worn down by a string of fights
             // wipes on whichever one the RNG happens to deal - a finding
             // about the route, not the port. A fight that forbids running
-            // (`no_escape`) is fought.
+            // (`no_escape`) is fought. A member low enough to want a heal
+            // takes it first: monster swings play their own clips and roll
+            // their own power bytes, so a failed run under a full enemy
+            // round can now take a worn member from half HP to zero.
             CommandPhase::RoundPrompt { .. }
-                if FLEE_ENCOUNTERS.with(std::cell::Cell::get) && !w.battle.no_escape =>
+                if FLEE_ENCOUNTERS.with(std::cell::Cell::get) && !w.battle.no_escape && !heal() =>
             {
                 PadButton::Right.mask()
             }

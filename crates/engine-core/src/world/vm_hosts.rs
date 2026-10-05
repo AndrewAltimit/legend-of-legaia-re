@@ -3062,6 +3062,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
         let gone = a.battle.render_flag == vm::battle_formulas::STATE_DEFEAT_FADE
             && a.battle.render_color & 0x00FF_FFFF == 0;
+        // Engine choice: a target whose animation rate `+0x21D` is `0` is
+        // frozen - a starter commit stopped every slot - and its clip cannot
+        // advance until the Done band restores the rates, which is past this
+        // hold. Waiting on it would park the action forever; a queue that
+        // reaches `0x20` with a non-acting slot still frozen is one an art
+        // commit would have thawed in retail.
+        if a.battle.anim_rate.get() == 0 {
+            return Some((0, !gone));
+        }
         Some((self.world.battle_current_anim(usize::from(slot)), !gone))
     }
     fn rng(&mut self) -> u32 {

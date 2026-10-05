@@ -418,21 +418,27 @@ clip the strike loop stages: the AI picker's physical branch writes its picks
 (archive entry indices) into the monster's stream `+0x1DF..`, and each swing
 clip's hit events carry their own power byte.
 
-**Port gap.** The engine's AI physical arm (`World::take_monster_turn`,
-`MonsterAction::Physical`) leaves that stream empty - only the cast-fallback
-arm `arm_monster_physical` writes the picks - so an ordinary monster strike
-resolves on the clip-less immediate path (`World::apply_basic_attack`): no
-swing clip, every swing in one tick, and the block roll keyed on the generic
-command byte `0x0C`, whose scalar `6` is the largest in the table, so a party
-member rarely blocks. Writing the picks is one line, but the clip-paced path
-it opens is not yet sound for a party target: a hit that lands while the
-attacker is still in `0x1F` (cursor not yet parked) accumulates without
-applying, and when the last staged swing's clip lands no hit after the park
-the accumulated total is stranded - live HP and the bar's display then
-disagree with a zero accumulator, and the `0x51` settle gate (`FUN_801E7250`)
-holds the action band forever. The full-game ladder hit that softlock in
-`dolk` (Gimard's `0x0F` swing landing in `0x1F`, its `0x0D` swing landing
-nothing after it).
+**Why no damage strands.** The hit that lands the total is the parked,
+last-beat one (`0x801EE984..0x801EEA40`), and retail's ordering guarantees one
+exists. A byte staged behind a playing swing commits on that swing's event
+frame (the anim tick's event-path commit), *after* the swing's own hit, so
+every swing but the last lands its hit while the strike loop still runs and
+accumulates; the last swing commits, `0x1F` sees the stage latch clear and
+parks the cursor, and the last swing's hit then lands parked and applies. The
+picker only queues swing entries (tags `0x0C..=0x1F` with a real AGL cost),
+each of which carries a hit event, so the last staged clip always has one.
+
+**Port.** The engine's AI physical arm (`World::take_monster_turn`,
+`MonsterAction::Physical`) writes the picks into the stream, so an ordinary
+monster strike plays its swing clips and rolls the block on each swing's own
+power byte. Two engine defects broke the ordering above and are fixed beside
+it: the scene host installs a seat's clips only when it has none, so a seat
+that held another monster in an earlier fight kept that monster's clips
+(Gimard's swings staged Gobu Gobu's block clip, which has no hit) - seating a
+different record now drops them; and, as an engine choice, any combo total
+still on a target when the band leaves `0x20` is landed there, so a clip set
+that breaks the guarantee can no longer leave live HP and the bar's display
+apart with the `0x51` settle gate (`FUN_801E7250`) holding forever.
 
 #### The melee roll pair and the underdog rewrite
 

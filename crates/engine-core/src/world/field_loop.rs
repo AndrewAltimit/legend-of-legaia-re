@@ -427,6 +427,19 @@ impl World {
             }
             // Tag the slot with its monster id so a renderer can fetch the
             // battle mesh, even if the catalog has no stats for it.
+            // A slot that seated another monster in an earlier fight still
+            // carries that monster's action clips: the scene host installs
+            // clips only for a seat that has none, so a stale set survived
+            // into this fight and the strike loop staged the old record's
+            // entries (Gobu Gobu's block clip as Gimard's swing). Retail's
+            // loader stages each seated record's own entries per fight.
+            if self.actors[mslot].battle_monster_id != Some(fslot.monster_id) {
+                let a = &mut self.actors[mslot];
+                a.battle_action_clips = None;
+                a.battle_animation = None;
+                a.battle_staged_anim = None;
+                a.battle_pose = None;
+            }
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
             self.actors[mslot].battle_element = None;
             if let Some(def) = self.tables.monster_catalog.get(fslot.monster_id) {
