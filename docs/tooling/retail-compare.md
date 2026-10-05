@@ -626,6 +626,12 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   The Done band's continuation `0x52` is a span of the same kind - it holds
   for its countdown `ctx[+0x6D8]`, `0xB4` frames after an absorb - so a `0x52`
   capture also waits for the engine's countdown to run down to retail's.
+  The fade-down `0x51` ticks the same word (the `0x3C` tail timer `0x50`
+  seeds) and is placed by it the same way, not by the close-up accumulator
+  below: in the Done band the accumulator counts from whichever idle or
+  return commit the acting actor's clip lengths put last, and an engine
+  whose actor committed nothing since its cast clip reads it far past
+  retail's and samples the band's first tick.
 - **A monster's capture-class cast mid-load.** The capture band's `0x6E`
   and `0x6F` wait on the disc - `0x6E` on the CD-ready poll
   `FUN_8003DE7C(1)` (`0x801E4F08`), `0x6F` on `FUN_8003F2B8(1)`

@@ -747,7 +747,7 @@ const END_RESULTS_HOLD: u32 = 0x8007_BD6C;
 /// Read the [`SpanGate`] off a capture.
 fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
     if game_anchors::u8_at(ram, END_SIGNAL) != 0xFE {
-        if game_anchors::u8_at(ram, ctx + 7) == 0x52 {
+        if matches!(game_anchors::u8_at(ram, ctx + 7), 0x51 | 0x52) {
             return SpanGate::DoneHold {
                 timer: game_anchors::u16_at(ram, ctx + 0x6D8) as i16,
             };
@@ -1714,7 +1714,14 @@ pub struct ActionSteer {
 /// **The Done band's continuation `0x52`** holds for its own countdown
 /// `ctx[+0x6D8]` (`0xB4` frames when a Seru absorb stages it), and the engine
 /// enters it at the top: the capture's countdown places it, the drive holding
-/// until the engine's has run down to it.
+/// until the engine's has run down to it. **The fade-down `0x51`** ticks the
+/// same word - the `0x3C` tail timer `0x50` seeds - and is placed by it too,
+/// not by the close-up accumulator: in the Done band that word counts frames
+/// since the acting actor's last clip commit, which there is whichever idle or
+/// return commit the actor's clip lengths put last, so the engine's
+/// accumulator in `0x51` may not have been reset since its cast clip
+/// (`zora_glare_petrify_post`: retail `24`, engine past `4000`) and the
+/// accumulator gate held the band's first tick.
 ///
 /// **The battle-end sequence**, for a capture taken after the `0x5A` gate
 /// raised the end signal (`DAT_8007BD71 == 0xFE`):
@@ -1738,7 +1745,8 @@ pub enum SpanGate {
     Results { hold: u16 },
     /// `ctx[+0x6CE] >= 2`: the exit fade, at that phase halfword.
     Exit { phase: u16 },
-    /// Action-SM state `0x52`, its countdown `ctx[+0x6D8]` down to `timer`.
+    /// Action-SM state `0x51` or `0x52`, its countdown `ctx[+0x6D8]` down to
+    /// `timer`.
     DoneHold { timer: i16 },
     /// The capture band's CD holds `0x6E` / `0x6F` (or the module tick
     /// `0x70` they lead to), with retail's framing depth `ctx[+0x6D0]` at
@@ -2591,6 +2599,23 @@ fn run_drive(
                     .take(8)
                     .map(|a| (a.battle.render_flag, a.battle.render_color))
                     .collect::<Vec<_>>()
+            );
+            let anims: Vec<(u8, u32, bool)> = (0..world.actors.len().min(8))
+                .map(|i| {
+                    (
+                        world.battle_current_anim(i),
+                        world.actors[i].battle.damage_accum,
+                        world.battle_on_knockdown(i),
+                    )
+                })
+                .collect();
+            let pose = world.battle.camera.as_ref().map(|c| {
+                let p = c.framing_pose();
+                (p.pitch as i32, p.yaw as i32, p.tr.map(|v| v as i32))
+            });
+            eprintln!(
+                "[rc] t={t} anims={anims:?} pose={pose:?} mod={} cd={}",
+                world.casting.module_phase, world.casting.module_cam.countdown.0
             );
         }
         let pad = if reached.is_some() {
