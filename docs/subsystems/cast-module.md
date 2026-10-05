@@ -1144,8 +1144,16 @@ which the module's spawn stager `0x801F8078` (the move-VM op-`0x20` hook)
 seats eight at a time with random spreads, and which no host runs.
 
 The `gimard_burning_attack` capture (arm 11) holds the two tunnel parts
-mid-program and `0x801F7804` and the breath record still allocated - the
-lifetimes the per-arm seating reproduces. The same capture holds the creature
+mid-program and `0x801F7804` (render mode `4`, wait `1360`) still allocated,
+and no breath node: the breath's program has halted and the list walk has
+killed it, so a port must stop drawing a halted part. The breath itself runs
+on retail's clock - `shiny_refactor_gimard_plus35` (arm 9) holds it at lane
+25 weight `2048`, depth cue `0x340`, wait `584`, the values the engine's part
+reaches on the matching tick - a column of flame around the creature that
+fades in, grows through `vdf.dat` entries 25..27 and halts during arm 10.
+The capture's puff cloud is the burning-body emitter's effect-`0x0B` sprites
+([`battle-action.md`](battle-action.md)), each quad twice its pass-2 size
+across ([`effect-vm.md`](effect-vm.md#pass-2---render)). The same capture holds the creature
 (pool slot 7) red: `+0x21C = 3`, `+0x04 = 0x3FC`, `+0x0C = 0x1000` - arm 9's
 render flag and tint word, eased by the presentation SM's red arm. The disc
 palette of the Gimard record is grey; the red is the tint pass, which walks
