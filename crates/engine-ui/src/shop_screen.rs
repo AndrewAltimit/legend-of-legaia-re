@@ -152,19 +152,6 @@ pub struct ShopCompareMember<'a> {
     pub candidate: Option<[i32; 8]>,
 }
 
-fn stat_block(b: [i32; 8]) -> EquipStatBlock {
-    EquipStatBlock {
-        hp: b[0],
-        mp: b[1],
-        agl: b[2],
-        atk: b[3],
-        udf: b[4],
-        ldf: b[5],
-        spd: b[6],
-        int: b[7],
-    }
-}
-
 /// Everything one shop frame shows.
 #[derive(Debug, Clone, Copy)]
 pub struct ShopScreenView<'a> {
@@ -576,7 +563,7 @@ pub fn shop_party_compare_views<'a>(
     members
         .iter()
         .map(|m| {
-            let current = stat_block(m.current);
+            let current = EquipStatBlock::from_words(&m.current);
             PartyCompareMemberView {
                 name: m.name,
                 outcome: if m.already_equipped {
@@ -586,7 +573,7 @@ pub fn shop_party_compare_views<'a>(
                 } else {
                     PartyCompareOutcome::Stats {
                         current,
-                        candidate: m.candidate.map(stat_block),
+                        candidate: m.candidate.map(|w| EquipStatBlock::from_words(&w)),
                         labels: crate::COMPARE_LABELS_ATK,
                     }
                 },

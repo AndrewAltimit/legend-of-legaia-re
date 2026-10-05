@@ -128,6 +128,14 @@ impl EquipStatBlock {
     /// `None` when the slice is too short to hold the last field.
     ///
     /// PORT: FUN_801cf5d0
+    /// REPLACED-BY: `engine-core::pause_screens::menu_stat_block`, which
+    /// seeds the same eight words off the character record and sums the
+    /// first five equip bytes (`FUN_801CF650`) in one step; the Equip
+    /// screen's window 25 and the shop's window 41
+    /// (`shop::party_compare_members`) both read their blocks from it and
+    /// hand them over through [`Self::from_words`]. A host showing this
+    /// unsummed seed would print a member's stats without their equipment,
+    /// which is the defect the shop's window 41 had while it called this.
     pub fn from_character_record(record: &[u8]) -> Option<Self> {
         let field = |off: usize| -> Option<i32> {
             let b = record.get(off..off + 2)?;
