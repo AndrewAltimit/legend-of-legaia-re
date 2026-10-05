@@ -535,3 +535,21 @@ fn reseating_a_different_monster_drops_the_old_clips() {
     assert_eq!(world.actors[seat].battle_monster_id, Some(10));
     assert!(world.actors[seat].battle_action_clips.is_none());
 }
+
+/// A member who left the last fight on the escape walk (`+0x1DA = 1`) starts
+/// the next one on idle: a member still committed to the walk held the magic
+/// band's animation census open and parked `0x2E` on the first cast.
+#[test]
+fn a_new_fight_starts_the_party_on_idle() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+
+    let mut world = World::new();
+    world.party.party_count = 1;
+    world.actors[0].battle.current_anim = 1;
+    world.actors[0].battle.queued_anim = 1;
+    world.actors[0].battle_staged_anim = Some(1);
+    world.enter_battle_from_formation(&FormationDef::new(1, vec![FormationSlot::new(4)]));
+    let a = &world.actors[0];
+    assert_eq!((a.battle.current_anim, a.battle.queued_anim), (0, 0));
+    assert_eq!(a.battle_staged_anim, None);
+}

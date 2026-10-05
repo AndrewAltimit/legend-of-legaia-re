@@ -389,6 +389,19 @@ impl World {
             a.battle.liveness = 1;
             a.battle.action_category = 3; // Attack
             a.battle.active_target = first_monster;
+            // A member leaves an escape on the looping walk the success arm
+            // stages (`+0x1DA = 1`), and nothing on the way out stages idle
+            // over it. Retail builds every battle actor afresh at load; a
+            // member carried into the next fight still committed to the walk
+            // holds the magic band's animation census (`ctx[+0x249]`) open,
+            // so the first cast parks `0x2E` forever.
+            a.battle.current_anim = 0;
+            a.battle.queued_anim = 0;
+            a.battle_staged_anim = None;
+            a.battle_reaction = None;
+            a.battle_reaction_entry = None;
+            a.battle_reaction_next = None;
+            a.battle_pose = None;
             // Party members are not monsters - clear any id left from a
             // previous battle that placed an enemy in this slot.
             a.battle_monster_id = None;
