@@ -95,6 +95,8 @@ def load_disc_coverage(funcs=None, extracted=None):
 IMAGE_STATUS_OUT = os.path.join(REPO, "scripts", "ci", "image-port-status.json")
 STATIC_OVERLAYS = os.path.join(REPO, "crates", "asset", "data", "static-overlays.toml")
 IGNORE_TOML = os.path.join(REPO, "scripts", "ci", "port-catalog-ignore.toml")
+# Per-image verdicts for VA-aliased addresses (see `load_scoped_verdicts`).
+SCOPED_TOML = os.path.join(REPO, "scripts", "ci", "image-scoped-verdicts.toml")
 ATTRIBUTION_CSV = os.path.join(
     REPO, "scripts", "ghidra-analysis", "dump-extent-attribution.csv")
 
@@ -110,7 +112,10 @@ NOT_A_FUNCTION = {
 # Sections that excuse a bare VA because several images hold DIFFERENT code
 # there. That is a statement about the address, not about any one image's
 # routine, so per image it excuses nothing: the routine stays open unless a
-# tag ports it.
+# tag ports it **in that image** - a stem `overlay_<label>_<addr>` whose label
+# resolves to the image (`stem_names_image`), never a bare `FUN_<addr>`, which
+# cannot say which of the images it implements - or `image-scoped-verdicts.toml`
+# classifies that image's routine.
 NOT_AN_EXCUSE = {"va_aliased_overlay_local", "worklist_va_aliased"}
 # Real routines with no retail behaviour to carry: never reached on the disc,
 # dev-gated, or empty bodies.
@@ -183,12 +188,72 @@ def image_status_inputs(ports, ignore):
             return open(p, "rb").read()
         except OSError:
             return b""
+    stems = collect_port_stems()
     return {
         "ports": _sha(",".join(sorted(ports))),
+        "stems": _sha(",".join("%s=%s" % (a, "+".join(sorted(stems[a]))) for a in sorted(stems))),
+        "scoped": _sha(file_bytes(SCOPED_TOML)),
         "ignore": _sha(",".join("%s=%s" % (a, ignore[a][0]) for a in sorted(ignore))),
         "attribution": _sha(file_bytes(ATTRIBUTION_CSV)),
         "overlay_map": _sha(file_bytes(STATIC_OVERLAYS)),
     }
+
+
+def stem_names_image(stem_label, image_label, prot_index):
+    """Does a dump-stem label (`0897`, `0897_xxx_dat`, `cast_steal_0941`,
+    `fishing`) name this image? A stem carrying a four-digit PROT token names
+    that entry; one without names the image whose label it equals. Capture
+    labels that are no image (`cutscene_dialogue`, `muscle_dome`) name none."""
+    digits = [t for t in stem_label.split("_") if len(t) == 4 and t.isdigit()]
+    if digits:
+        return prot_index is not None and int(digits[0]) == prot_index
+    return stem_label == image_label.lower()
+
+
+def collect_port_stems():
+    """`{addr: {stem label}}` over every `// PORT:` tag in `crates/`."""
+    sys.path.insert(0, os.path.dirname(PORT_CATALOG))
+    import port_tag_reader
+    out = {}
+    for root, _dirs, files in os.walk(os.path.join(REPO, "crates")):
+        for fn in files:
+            if not fn.endswith(".rs"):
+                continue
+            try:
+                text = open(os.path.join(root, fn), errors="ignore").read()
+            except OSError:
+                continue
+            for _ln, kind, tail in port_tag_reader.iter_markers(text):
+                if kind != "PORT":
+                    continue
+                for a, labels in port_tag_reader.stem_labels(tail).items():
+                    out.setdefault(a, set()).update(labels)
+    return out
+
+
+def load_scoped_verdicts():
+    """`{(image label, addr): (category, reason)}` from `image-scoped-verdicts.toml`.
+
+    The ignore list keys a verdict by bare VA, so it cannot say "in the field
+    overlay this VA is an interior fragment, in fishing it is a real routine".
+    This file can: one table per image label, rows `addr = [category, reason]`
+    with `category` drawn from the ignore list's sections. A row applies to its
+    image only and overrides that image's bare-VA category.
+    """
+    import tomllib
+    try:
+        with open(SCOPED_TOML, "rb") as fh:
+            data = tomllib.load(fh)
+    except OSError:
+        return {}
+    out = {}
+    for label, body in data.items():
+        if not isinstance(body, dict):
+            continue
+        for addr, val in body.items():
+            cat, reason = (val[0], val[1]) if isinstance(val, list) else (str(val), "")
+            out[(label, addr.lower())] = (cat, reason)
+    return out
 
 
 def load_port_catalog(funcs=None):
@@ -213,8 +278,16 @@ def replaced_addresses(pc):
     return {a for a, v in live.items() if not v["live"] and v["replaced_tag"]}
 
 
-def _image_row(row, ports, ignore, replaced):
+# `--list-open` collects `(image, addr, category)` for every open entry here.
+OPEN_SINK = None
+
+
+def _image_row(row, ports, ignore, replaced, stems=None, scoped=None,
+               prot_index=None):
     """Counts for one covered image (a `cover_image` result)."""
+    stems = stems or {}
+    scoped = scoped or {}
+    label = row["name"]
     entries = sorted({a for a, _b in row["floor_extents"]})
     unplaced = sorted({a for a, _b in row["unattributed"]} - set(entries))
     c = {"functions": 0, "ported": 0, "replaced": 0, "native": 0,
@@ -222,18 +295,25 @@ def _image_row(row, ports, ignore, replaced):
          "unplaced": len(unplaced), "unplaced_open": 0}
     for va in entries:
         a = "%08x" % va
-        if a in ports:
+        cat = ignore.get(a, (None,))[0]
+        aliased = cat in NOT_AN_EXCUSE
+        # At an aliased VA a bare tag cannot say which image it ports; only a
+        # stem naming this image credits it.
+        here = any(stem_names_image(s, label, prot_index) for s in stems.get(a, ()))
+        if (a in ports and not aliased) or here:
             c["functions"] += 1
             c["ported"] += 1
             c["replaced"] += a in replaced
             continue
-        cat = ignore.get(a, (None,))[0]
+        cat = scoped.get((label, a), (cat,))[0]
         if cat in NOT_A_FUNCTION:
             c["not_a_function"] += 1
             continue
         c["functions"] += 1
         if cat is None or cat in NOT_AN_EXCUSE:
             c["open"] += 1
+            if OPEN_SINK is not None:
+                OPEN_SINK.append((label, a, cat))
         elif cat in NO_BEHAVIOUR:
             c["no_behaviour"] += 1
         else:
@@ -286,6 +366,8 @@ def build_image_status(funcs=None, extracted=None, with_replaced=True):
     ports = set(pc.collect_ports())
     ignore = pc.load_ignore()
     replaced = replaced_addresses(pc) if with_replaced else set()
+    stems = collect_port_stems()
+    scoped = load_scoped_verdicts()
 
     prot = {}
     import tomllib
@@ -296,8 +378,8 @@ def build_image_status(funcs=None, extracted=None, with_replaced=True):
     rows, band = [], None
     for r in [scus] + overlays:
         label = r["name"]
-        counts = _image_row(r, ports, ignore, replaced)
         p = prot.get(label)
+        counts = _image_row(r, ports, ignore, replaced, stems, scoped, p)
         if p is not None and 903 <= p <= 966:
             if band is None:
                 key, name, desc, kind = CAST_BAND
@@ -477,7 +559,20 @@ def main():
     ap.add_argument("--images-only", action="store_true",
                     help="refresh only image-port-status.json (the per-image "
                          "port table), leaving progress-metrics.json alone")
+    ap.add_argument("--list-open", nargs="*", metavar="IMAGE", default=None,
+                    help="print every open entry (optionally only for the named "
+                         "image labels) with its function extent, and write nothing")
     args = ap.parse_args()
+
+    if args.list_open is not None:
+        global OPEN_SINK
+        OPEN_SINK = []
+        build_image_status(args.funcs, args.extracted, with_replaced=False)
+        for label, a, cat in OPEN_SINK:
+            if args.list_open and label not in args.list_open:
+                continue
+            print("%-28s %s  %s" % (label, a, cat or "-"))
+        return 0
 
     scus, data = load_disc_coverage(args.funcs, args.extracted)
     if scus is None:

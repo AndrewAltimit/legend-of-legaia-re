@@ -595,7 +595,7 @@ fn dy_stage(cfg: &CameraZoneConfig, floor: i32) -> i32 {
 /// global: `live + (delta >> s) [+ (delta >> (s + 1))] + sign(delta)`, with
 /// `s` and the two-shift flag decoded from the shift `code`
 /// ([`EASE_SHIFT_TABLE`]).
-// PORT: FUN_801DB510
+// PORT: FUN_801DB510, overlay_field_0897_801db510
 pub fn ease_step(live: i32, target: i32, code: u8) -> i32 {
     let two = code >= 0x40;
     let s = u32::from(if two { code - 0x40 } else { code });

@@ -1,0 +1,38 @@
+# Per-image verdicts for VA-aliased addresses.
+#
+# `port-catalog-ignore.toml` keys a verdict by bare VA, so where several
+# images hold different code at one address it can only say "this VA is not
+# one port site" (`[va_aliased_overlay_local]` / `[worklist_va_aliased]`) -
+# true of the address, and silent about each image's routine. This file says
+# what the routine is in ONE image. It is read only by the per-image port
+# table (`scripts/ci/update-progress-metrics.py`, see
+# docs/tooling/disc-coverage.md#per-image-port-status); the whole-project
+# catalog keeps reading the ignore list.
+#
+# One table per image label (`crates/asset/data/static-overlays.toml`), rows
+#   "<addr>" = ["<category>", "<reason>"]
+# with <category> one of the ignore list's sections - which decides how the
+# row counts (not a function / no behaviour / native). The reason must come
+# from that image's own bytes at its own base, not from a dump printed at the
+# VA by another image.
+
+[field]
+"801d81e0" = ["subsumed_glue", "List relink, 44 B at 0x801D81E0..0x801D820C: FUN_800204A4(a0, a1) frees the node, then FUN_80020454(a1) pops it straight back (the free stack is LIFO) and appends it to the list head a1 - so the actor moves to the tail of that list. Its two callers are field-VM op 0x23 MOVE_TO's NPC arm (0x801DECD0, head = *(0x8007C348 + 0xC)) and 0x801E1AA4; both are ported, and the port's actor table is a slot array with no linked lists to reorder. The 0897 dump at this VA is a mis-based fragment of other code."]
+"801de648" = ["subsumed_glue", "Sized store, 80 B at 0x801DE648..0x801DE698: value a0 -> *a1 as byte / half / word for a2 = 1 / 2 / 4, any other size a no-op. Its only references disc-wide are sixteen `jal`s from PROT 0900's move-VM extension handlers (FUN_801F7A9C, FUN_801F811C, FUN_801F849C - all ported), where it stores a tween result; the ports write the typed field directly."]
+
+[battle_action]
+"801de648" = ["worklist_interior", "Jump-table case inside FUN_801DDB30 (0898): the word before it is the switch's `jr v0` delay slot (0x801DE63C/0x801DE640) and the block opens `lhu t1,0x15c(s1)` on a register the parent set up - no prologue, no caller of any form."]
+
+[summon_render]
+"801f7a54" = ["worklist_interior", "Interior of FUN_801F7088 in PROT 0900: the tail of its register-restore epilogue (`sb a3,0x3ea(at)` ... `jr ra` at 0x801F7A94). The extent comes from a muscle-dome-labelled capture of a different slot-B image placed here by the byte attribution."]
+"801f7d38" = ["worklist_interior", "Interior of FUN_801F7A9C (0x801F7A9C..0x801F8004), PROT 0900's move-VM extension handler: a case block of its five-way sub-op switch (jump table at 0x801F69D8). Not an entry in this image; the cast modules hold their own trampolines at this VA."]
+"801f7e4c" = ["worklist_interior", "Interior of FUN_801F7A9C (0x801F7A9C..0x801F8004) in PROT 0900 - a case block of its sub-op switch."]
+"801f7ebc" = ["worklist_interior", "Interior of FUN_801F7A9C (0x801F7A9C..0x801F8004) in PROT 0900 - a case block of its sub-op switch."]
+"801f8080" = ["worklist_interior", "Interior of FUN_801F8004 (0x801F8004..0x801F811C) in PROT 0900."]
+"801f80a0" = ["worklist_interior", "Interior of FUN_801F8004 (0x801F8004..0x801F811C) in PROT 0900."]
+"801f8190" = ["worklist_interior", "Interior of FUN_801F811C (0x801F811C..0x801F849C) in PROT 0900."]
+"801f8228" = ["worklist_interior", "Interior of FUN_801F811C (0x801F811C..0x801F849C) in PROT 0900."]
+"801f8438" = ["worklist_interior", "Interior of FUN_801F811C (0x801F811C..0x801F849C) in PROT 0900."]
+"801f8638" = ["worklist_interior", "Interior of FUN_801F849C (0x801F849C..0x801F88FC) in PROT 0900."]
+"801f87f4" = ["worklist_interior", "Interior of FUN_801F849C (0x801F849C..0x801F88FC) in PROT 0900."]
+"801f8e3c" = ["worklist_interior", "Interior of FUN_801F8D4C (0x801F8D4C..0x801F8E6C) in PROT 0900."]

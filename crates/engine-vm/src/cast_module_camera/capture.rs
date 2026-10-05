@@ -419,7 +419,7 @@ pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
 /// outlasts). The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
 /// pan, `zeto_big_wave_mid_cast` in arm 5 on arm 4's.
 ///
-/// PORT: FUN_801F69FC (PROT 0946; the camera arms 0..8, their countdown and
+/// PORT: FUN_801F69FC, overlay_cast_call_wave_0946_801f69fc (PROT 0946; the camera arms 0..8, their countdown and
 /// phase chain)
 pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> CaptureCamArm {
     let c = seats.caster;

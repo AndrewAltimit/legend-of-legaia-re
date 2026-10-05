@@ -637,7 +637,7 @@ impl FogPool {
     /// retail folds into the camera rotation; with no camera seen yet
     /// ([`Self::depth_view`] empty) the test is skipped.
     ///
-    /// PORT: FUN_801D629C
+    /// PORT: FUN_801D629C, overlay_field_0897_801d629c
     ///
     /// WIRED: [`crate::world::World::tick_cutscene_elements`] calls this for
     /// every tile the ambient emitter names, on both hosts.

@@ -125,7 +125,7 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
 /// `-= p / 2` a pass for as long as TR y is below `0x800` (`0x801F6CF8`),
 /// before the load. Parks at arm 2.
 ///
-/// PORT: FUN_801F6A30 (PROT 0917; camera arm 0 and the arm 1 climb)
+/// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; camera arm 0 and the arm 1 climb)
 pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -295,7 +295,7 @@ pub fn palma_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
 /// `(0, 0x1500, 0)` on `(0, 0, 0x200)` over `0x100` frames (`0x801F6D44`),
 /// then the load arms 2 and 3. Parks at arm 3.
 ///
-/// PORT: FUN_801F6A74 (PROT 0930; camera arms 0/1)
+/// PORT: FUN_801F6A74, overlay_summon_horn_0930_801f6a74 (PROT 0930; camera arms 0/1)
 pub fn horn_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     match phase {
         0 => ArmDirection::shot(ModuleShot {
@@ -324,7 +324,7 @@ pub fn horn_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
 /// Arm 0 also re-seats the monster row from the formation table at
 /// `0x80077628`; that is staging, not camera.
 ///
-/// PORT: FUN_801F6A58 (PROT 0931; camera arms 0/1)
+/// PORT: FUN_801F6A58, overlay_summon_jedo_0931_801f6a58 (PROT 0931; camera arms 0/1)
 pub fn jedo_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     match phase {
         0 => ArmDirection::shot(ModuleShot {

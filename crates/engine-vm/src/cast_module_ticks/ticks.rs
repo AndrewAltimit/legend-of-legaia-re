@@ -537,7 +537,7 @@ pub const ALL_STATS_SURGE_ARM: u8 = 2;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69F8 (phase machine + the ten-halfword surge and the AGL-base write; packet arms unported)
+/// PORT: FUN_801F69F8, overlay_cast_water_column_0945_801f69f8 (phase machine + the ten-halfword surge and the AGL-base write; packet arms unported)
 pub fn all_stats_surge_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,
