@@ -905,8 +905,19 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
     let menu = |bytecode: &std::sync::Arc<Vec<u8>>,
                 panel: &legaia_engine_core::dialog::OwnedDialogPanel| {
         let pk = panel.picker()?;
+        // Keyed on the record's bytes, not its allocation: each talk
+        // re-installs the record in a fresh buffer, so a pointer key made
+        // every conversation the picker's first opening and the hand never
+        // got past option 0 (`tunnelc` P1[4], Xain: only option 1 raises
+        // the `0x325` the fight waits on).
+        let id = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            bytecode.as_slice().hash(&mut h);
+            h.finish() as usize
+        };
         panel.menu_active().then_some((
-            (std::sync::Arc::as_ptr(bytecode) as usize, pk.open),
+            (id, pk.open),
             pk.n.max(1),
             panel.picker_cursor(),
             panel.picker_takes_input(),
@@ -6051,6 +6062,11 @@ fn talk_beats(
         .keys()
         .copied()
         .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        // A venue cabinet's record runs the minigame door-warp (`3E` with
+        // `op0 >= 100`): `balden` P1[24], Vidna's slot machine, raises
+        // `0x5D2` on the way in. Its flags are the minigame's, not the
+        // story's, and the hand does not play minigames.
+        .filter(|&s| !record_enters_minigame(mf, man, 1, usize::from(s)))
         .filter(|&s| {
             // The talk's own record writes a wanted flag, or a partition-2
             // record it spawns does (`station`'s ticket seller spawns the
@@ -6077,6 +6093,24 @@ fn talk_beats(
         });
     }
     slots
+}
+
+/// Whether record `(part, rec)` runs the mode-24 minigame door-warp
+/// (op `0x3E` with `op0 >= 100`, a venue cabinet's entry).
+fn record_enters_minigame(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
+        return false;
+    };
+    LinearWalker::new(&man[start..start + len], pc0)
+        .flatten()
+        .any(|i| matches!(i.info, InsnInfo::WarpOrInteract { is_warp: true, .. }))
 }
 
 /// Whether talk record `P1[rec]` is a **hand-off**: it sets a system flag

@@ -96,7 +96,9 @@ A milestone may also name `via` scenes: story waypoints the anchors show the
 retail run passed through between the previous milestone and this one, and
 that the cheapest route skips. They are visited in order, each with its beats
 pass played, before the route heads for the milestone's own scene. Each
-carries a comment naming the flags that put it there - Rogue Tower goes
+carries a comment naming the flags that put it there - the Fire Path through
+`geremi`, Vidna and `stone` (the Star Pearl that opens the `tunnela` door; the
+cheapest route rides `ropeway2`'s elevator, whose door opens only after Xain), Rogue Tower goes
 through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
 waits on), Zora Castle through `son`, Noaru Valley back through its own start
 scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
@@ -152,6 +154,9 @@ while a round still gains flags, since each unlocks the other:
   beat owns the player (`station`'s P2[19] walks it from the counter to the
   cart).
   A record that branches on where the player stands is tried from each side.
+  A venue cabinet - a record that runs the minigame door-warp (`3E` with
+  `op0 >= 100`), `balden` P1[24]'s slot machine among them - is never a
+  talk beat: the flags it raises are the minigame's.
 - **Walk-ons.** The ladder steps onto every gate-1 walk-on tile whose
   partition-2 record the live flags let spawn and that is not a door. The
   tile must be the record's own - the dispatch takes the first
@@ -410,7 +415,8 @@ clips and matches the same arts a windowed one does. Beyond that:
   in both play hosts (`World::toggles.use_vm_dialogue`); `BootSession` leaves
   it off, and without it a talk only types its first segment.
 - A picker takes option `k` on its `k`-th opening, in a conversation and in
-  a script's own box alike (the modal timeline's, else the first spawned
+  a script's own box alike, counted by the record's bytes and the picker's
+  offset across every talk of the run (the modal timeline's, else the first spawned
   record holding one). Option 0 is often "tell me again", a branch back to
   the same speech, so always confirming the default loops a talk forever
   (`town0d` P1[5], Tetsu's sparring offer).

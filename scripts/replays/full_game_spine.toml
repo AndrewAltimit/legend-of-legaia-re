@@ -175,6 +175,11 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "mt_letona"
 scene = "retona"
 reach = "scene"
+# The anchor gained Xain's defeat (0x1D5, tunnelc P1[4]) and tunnelc's beat
+# flags, then Vidna's post-mist beats (balden P2[0] / P2[6] / P2[12]),
+# Ratayu's (retock P2[14] / P2[26]) and the inn's (retockin P2[42]); the
+# cheapest route walks tunnelb back out past all of them.
+via = ["tunnelc", "balden", "retock", "retockin"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-06" }
 
 [[milestone]]
