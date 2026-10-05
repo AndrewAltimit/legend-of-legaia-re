@@ -672,6 +672,21 @@ impl SummonScene {
         }));
     }
 
+    /// Pose every part the way `FUN_80021B04` seats its arguments: `rot`
+    /// into the render banks `+0x24..+0x28`, `rot[1] & 0xFFF` into the
+    /// heading `+0x96` (`0x80021D78`), `scale` into `+0x72` (`0x80021DAC`) -
+    /// for a scene [`Self::spawn_parts`] seated at zeroed angles and unit
+    /// scale.
+    pub fn pose_parts(&mut self, rot: [i16; 3], scale: u16) {
+        for part in &mut self.parts {
+            part.state.render_24 = rot[0];
+            part.state.render_26 = rot[1];
+            part.state.render_28 = rot[2];
+            part.state.tween_scale_x = rot[1] & 0xFFF;
+            part.state.field_72 = scale;
+        }
+    }
+
     /// Run the move VM once for every part no tick has run yet - the call
     /// retail's seater makes before it returns (`FUN_80021B04`,
     /// `li v0,0x1` / `jal 0x80023070` at `0x80021DBC..0x80021DC0`). A seated

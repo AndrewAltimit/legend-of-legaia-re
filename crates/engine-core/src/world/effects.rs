@@ -867,13 +867,9 @@ impl World {
     /// `MoveImage` onto `(224, 476)`, not a sound cue - see
     /// [`crate::battle_effect_clut`].
     ///
-    /// Still unmodelled from the same arm: the spawn-scale specials (code
-    /// `4` spawns at base scale `0xC00`, code `6` at `0x2000`, all scales
-    /// modulated by the actor's mesh-header `+0x72` word - this signature
-    /// has no scale channel and the scene seats parts at unit scale), the
-    /// code `0` -> `9` substitution when the active actor's `+0x1D9` reads
-    /// `0x11`, and the codes-`4..=6` twin extra spawns (prototypes
-    /// `0x801F5E28` / `0x801F5E6C`).
+    /// This form seats its parts at unit scale with zeroed angles - the
+    /// cue-group arm's spawn. The effect-script walk's own spawn passes the
+    /// arm's rotation and scale: [`Self::spawn_action_table_effect_posed`].
     ///
     /// No-op (returns `false`) without an installed move-power catalog /
     /// overlay (disc-free battles), for an id outside the prototype table,
@@ -882,6 +878,41 @@ impl World {
     // PORT: FUN_801DEA50 (the table-form spawn arm; the pool allocator it
     // calls, FUN_80050ED4, is modeled by the scene list + cap).
     pub fn spawn_action_table_effect(&mut self, effect_id: u8, origin: [i16; 3]) -> bool {
+        self.spawn_action_table_effect_posed(
+            effect_id,
+            origin,
+            [0; 3],
+            crate::summon::SPAWN_RENDER_SCALE,
+        )
+    }
+
+    /// The effect-script walk's table-form spawn with the arm's own pose
+    /// (`FUN_801DEA50`, `0x801DF098..0x801DF194`): the rotation trio is
+    /// `(0, actor[+0x46] + 0x800, 0)` - the spawning actor's facing turned
+    /// half a circle (`lhu v0,0x46(v0)` / `addiu v0,v0,0x800` /
+    /// `sh v0,0x1a(sp)`, the two other angles zeroed) - and the scale is
+    /// the code's base ([`action_fx_base_scale`]) times the actor's
+    /// mesh-header `+0x72` over `0x1000`. The seater `FUN_80021B04` copies
+    /// the trio into the render banks `+0x24..+0x28`, `rot[1] & 0xFFF` into
+    /// the heading `+0x96` and the scale into `+0x72`. Codes `4..=6` then
+    /// seat two more records on the same pose, the prototypes `0x801F5E28`
+    /// and `0x801F5E6C` (`0x801DF1E8..0x801DF22C`).
+    ///
+    /// Without the turn every cast-clip ray burst (`nighto_summon_mid_cast`,
+    /// `swordie_summon_mid_cast`, `freed_summon_mid_cast`) spun from yaw `0`
+    /// rather than from the caster's back-facing: the nighto capture's
+    /// node reads `+0x26 = 1376`, 26 frames after a seat at `840 + 0x800`
+    /// spinning `-56` a frame.
+    ///
+    /// Not modelled: the code `0` -> `9` substitution when the active
+    /// actor's `+0x1D9` reads `0x11` (`0x801DF054..0x801DF094`).
+    pub fn spawn_action_table_effect_posed(
+        &mut self,
+        effect_id: u8,
+        origin: [i16; 3],
+        rot: [i16; 3],
+        scale: u16,
+    ) -> bool {
         if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
             return false;
         }
@@ -901,21 +932,35 @@ impl World {
         let Some(all_parts) = move_power::parse_effect_proto_records(&overlay) else {
             return false;
         };
-        let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+        let mut offs: Vec<usize> = all_parts.iter().map(|p| p.record_off).collect();
+        let mut parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
             .into_iter()
             .filter(|p| p.record_off == off)
             .collect();
         if parts.is_empty() {
             return false;
         }
-        self.casting
-            .active_action_fx
-            .push(crate::summon::SummonScene::spawn_parts(
-                &parts,
-                &overlay,
-                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
-                origin,
-            ));
+        if (4..=6).contains(&effect_id) {
+            let twins: Vec<usize> = ACTION_FX_TWIN_RECORDS
+                .iter()
+                .filter_map(|va| va.checked_sub(move_power::BATTLE_OVERLAY_BASE))
+                .map(|o| o as usize)
+                .collect();
+            offs.extend(&twins);
+            parts.extend(
+                legaia_asset::summon_overlay::parse_records_at(&overlay, &offs)
+                    .into_iter()
+                    .filter(|p| twins.contains(&p.record_off)),
+            );
+        }
+        let mut scene = crate::summon::SummonScene::spawn_parts(
+            &parts,
+            &overlay,
+            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+            origin,
+        );
+        scene.pose_parts(rot, scale);
+        self.casting.active_action_fx.push(scene);
         true
     }
 
@@ -1755,4 +1800,20 @@ fn apply_vram_moves(moves: Vec<ScriptVramMove>, vram: &mut legaia_tim::Vram) -> 
         wrote = true;
     }
     wrote
+}
+
+/// The two records the effect-script walk's table arm seats beside codes
+/// `4..=6` (`addiu a2,a2,0x5e28` / `0x5e6c` ahead of the two
+/// `jal 0x80050ED4` at `0x801DF210` / `0x801DF228`).
+const ACTION_FX_TWIN_RECORDS: [u32; 2] = [0x801F_5E28, 0x801F_5E6C];
+
+/// The table arm's base spawn scale for an effect code (`li s7,0x1000` at
+/// `0x801DEC74`; `0xC00` for code `4` at `0x801DF0C4`, `0x2000` for code `6`
+/// at `0x801DF0D0`), before the actor's mesh-header `+0x72` scales it.
+pub(crate) fn action_fx_base_scale(effect_id: u8) -> u16 {
+    match effect_id {
+        4 => 0xC00,
+        6 => 0x2000,
+        _ => 0x1000,
+    }
 }

@@ -37,7 +37,13 @@ impl World {
                 self.try_spawn_effect(s.effect, at, s.facing);
                 None
             } else {
-                Some(self.spawn_action_table_effect(s.effect, at))
+                // `FUN_801DEA50`'s table arm: the actor's facing turned half
+                // a circle, the code's base scale times the actor's
+                // mesh-header `+0x72` (the engine actor carries no render
+                // node; the unit stands in, as for the walk's offsets).
+                let rot = [0, (s.facing as i16).wrapping_add(0x800), 0];
+                let scale = crate::world::effects::action_fx_base_scale(s.effect);
+                Some(self.spawn_action_table_effect_posed(s.effect, at, rot, scale))
             };
             out.push(RoutedEffectSpawn {
                 spawn: s,
