@@ -17,8 +17,9 @@ use crate::*;
 //   14 px row pitch, ink 7 white;
 // - control bar at `y = base + 92 = 191`: "BS" at `x = 36`, the quoted
 //   default name at `x = 148`, "Select" at `x = 244`, ink 6 gold;
-// - working name at `(208, 79)` ink 7 white, teal `_` caret 6 px after the
-//   name (ink 5), 75%-duty blink (`frame & 0x18`);
+// - working name at `(208, 79)` ink 7 white, teal `_` caret 2 px after the
+//   name (ink 5; `box_x + width + 6`, the box 4 px left of the pen),
+//   75%-duty blink (`frame & 0x18`);
 // - hand cursor 16x16: grid cell -> `(16 + col*15, 101 + row*14)`; control
 //   anchors -> `x = {16, 128, 224}, y = 189`;
 // - prompt "Select your name." at `(176, 32)` white; the confirm state
@@ -137,12 +138,27 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
     ));
     if !view.confirming && view.caret_on {
         let name_w = font.layout_ascii(view.name).advance_x as i32;
-        // Retail draws the `_` caret 6 px after the name, ink 5 teal, only
-        // while it still fits the 57 px name field.
-        if name_w + 6 < 0x39 + 6 {
+        // Retail draws the `_` caret, ink 5 teal, at the name-field box's
+        // left edge (`base + 0xAC`, 4 px left of the name pen) plus the
+        // name's width plus 6 (`0x801E6EF8..0x801E6EFC`) - 2 px after the
+        // name. It is drawn only while the glyph under a grid cursor
+        // (its width + 1, `0x801E6EC4..0x801E6ECC`) or, off the grid, 12 px
+        // (`li s0,0xc`) still fits the 57 px field (`slti v0,v0,0x39`).
+        let room = match view.grid_cursor.and_then(|(r, c)| {
+            view.grid_rows
+                .get(r)
+                .and_then(|row| row.as_bytes().get(c).copied())
+        }) {
+            Some(ch) => font.layout_ascii(&(ch as char).to_string()).advance_x as i32 + 1,
+            None => 0xC,
+        };
+        if name_w + room < 0x39 {
             out.extend(text_draws_for(
                 &font.layout_ascii("_"),
-                (NAME_ENTRY_NAME_PEN.0 + name_w + 6, NAME_ENTRY_NAME_PEN.1),
+                (
+                    NAME_ENTRY_NAME_PEN.0 - 4 + name_w + 6,
+                    NAME_ENTRY_NAME_PEN.1,
+                ),
                 teal,
             ));
         }
