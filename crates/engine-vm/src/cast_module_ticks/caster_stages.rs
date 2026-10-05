@@ -151,10 +151,12 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         rule: CasterClipRule::Fixed(&[0x09, 0x0A]),
         approach: true,
     },
-    // PROT 0953 Terio Punch: `li v1,0xa; sb v1,0x1da(s4)` at `0x801F6CAC`.
+    // PROT 0953 Terio Punch: `li v1,0xa; sb v1,0x1da(s4)` at `0x801F6CAC` -
+    // on the punch branch only, the one the caster's latch selects and the
+    // monster AI casts as `0x5D`. The charge (`0x5E`) stages nothing.
     CasterStageRow {
         prot_entry: 953,
-        action_ids: &[],
+        action_ids: &[0x5D],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
     },
@@ -258,6 +260,8 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
 ///   victim `s2`.
 /// * PROT 0946 Call Wave - `0x801F7468`, the victim's `+0x1F1`.
 /// * PROT 0949 Water Crystals - `0x801F7370`, the victim's `+0x1F1`.
+/// * PROT 0953's charge, `0x5E` - its branch (`0x801F6CEC`) writes no
+///   `+0x1DA` at all; the stage at `0x801F6CAC` is the punch's.
 /// * PROT 0954 Fatal Decision - `0x801F83CC` / `0x801F83E8`, the victim's
 ///   reaction run.
 /// * PROT 0955 `0x6E` Kiss of Death - `0x801F8DB4`, the victim's `+0x1F1` /
@@ -279,6 +283,7 @@ pub const CAPTURE_BODIES_WITHOUT_CASTER_STAGE: &[(u32, &[u8])] = &[
     (945, &[0x54, 0xBA]),
     (946, &[]),
     (949, &[]),
+    (953, &[0x5E]),
     (954, &[]),
     (955, &[0x60, 0x6E, 0x73]),
     (956, &[0x71, 0x75]),

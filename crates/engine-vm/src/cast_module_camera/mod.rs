@@ -133,6 +133,10 @@ pub struct ModuleCamSeats {
     pub action: u8,
     /// `ctx[+0x6D0]`, the framing depth a capture shot can scale.
     pub depth_raw: i32,
+    /// The caster's battle-scoped latch word `0x801C8FE0 + (ctx[+0x13] + 1)
+    /// * 4` - the monster AI's ability cooldown `dat[m + 4]`, which PROT
+    /// 0953 reads as its charge flag. `0` for a party caster.
+    pub caster_latch: i32,
 }
 
 /// The module-resident state the camera arms carry between ticks: the

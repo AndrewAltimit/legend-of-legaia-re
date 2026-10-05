@@ -782,3 +782,22 @@ fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
     assert_eq!(world.monster_cast_clip(1, 0x28), Some(2));
     assert_eq!(world.monster_cast_clip(1, 0x27), Some(4));
 }
+
+/// PROT 0953's charge owes no fold: with the module's skip raised, the
+/// pending cast is consumed and nobody's HP moves, and the skip is spent.
+#[test]
+fn a_capture_charge_branch_folds_nothing() {
+    let mut world = seru_cast_world();
+    let before: Vec<u16> = world.actors.iter().map(|a| a.battle.hp).collect();
+    world.casting.pending_cast = Some(crate::world::PendingCast {
+        caster: 1,
+        spell_id: 0x81,
+        targets: vec![0],
+    });
+    world.casting.module_skips_fold = true;
+    world.fold_pending_cast();
+    let after: Vec<u16> = world.actors.iter().map(|a| a.battle.hp).collect();
+    assert_eq!(before, after);
+    assert!(world.casting.pending_cast.is_none());
+    assert!(!world.casting.module_skips_fold);
+}

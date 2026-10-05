@@ -443,6 +443,12 @@ impl World {
         let Some(pc) = self.casting.pending_cast.take() else {
             return;
         };
+        // A capture body that took a branch with no damage site (PROT 0953's
+        // charge, `0x801F6CEC`) owes nothing: retail never reaches its
+        // `FUN_801DD6B4` on that path.
+        if std::mem::take(&mut self.casting.module_skips_fold) {
+            return;
+        }
         // Two casts in the band do not fold through the catalog at all:
         // PROT 0927 and PROT 0966 apply their damage inside the module's own
         // `0x801F6734` stager, over a seat range the spell record cannot
@@ -1256,6 +1262,7 @@ impl World {
         }
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        self.casting.module_skips_fold = false;
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
         self.casting.capture_spell = Some(spell_id);
@@ -2033,7 +2040,22 @@ impl World {
                 .get(caster_slot as usize)
                 .map_or(0, |a| a.battle.params[0]),
             depth_raw: self.battle.camera_frame_height as i32,
+            caster_latch: self.caster_latch(caster_slot).unwrap_or(0),
         }
+    }
+
+    /// The monster caster's battle-scoped latch word `0x801C8FE0 +
+    /// (ctx[+0x13] + 1) * 4` - the monster AI's ability cooldown
+    /// `dat[m + 4]`. `None` for a party caster.
+    fn caster_latch_index(&self, caster_slot: u8) -> Option<usize> {
+        let m = usize::from(caster_slot).checked_sub(self.party.party_count as usize)?;
+        let i = m + 4;
+        (i < self.battle.monster_ai_state.dat.len()).then_some(i)
+    }
+
+    fn caster_latch(&self, caster_slot: u8) -> Option<i32> {
+        self.caster_latch_index(caster_slot)
+            .map(|i| self.battle.monster_ai_state.dat[i])
     }
 
     /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
@@ -2200,6 +2222,14 @@ impl World {
             let mut st = self.casting.module_cam;
             let arm = direct(&mut st, ctx.phase, seats);
             self.casting.module_cam = st;
+            if let Some(v) = arm.latch
+                && let Some(i) = self.caster_latch_index(caster_slot)
+            {
+                self.battle.monster_ai_state.dat[i] = v;
+            }
+            if arm.skips_fold {
+                self.casting.module_skips_fold = true;
+            }
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
             capture_held = arm.hold;

@@ -51,6 +51,9 @@ pub struct CastFxState {
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
+    /// The capture body took a branch with no damage site (PROT 0953's
+    /// charge): the band's fold owes the cast nothing.
+    pub module_skips_fold: bool,
     /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
     ///
     /// Arm 12 grows it by the frame delta times `8` every tick
@@ -175,6 +178,7 @@ impl CastFxState {
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,
+            module_skips_fold: false,
             module_ring_angle: 0,
             module_nighto_outcome: None,
             // --- W1-D ---

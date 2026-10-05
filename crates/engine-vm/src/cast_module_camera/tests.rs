@@ -19,6 +19,7 @@ fn seats() -> ModuleCamSeats {
         caster_monster: 0,
         action: 0,
         depth_raw: 0,
+        caster_latch: 0,
     }
 }
 
@@ -444,4 +445,51 @@ fn glare_frames_caster_then_victim_and_finishes_on_arm_3() {
     assert_eq!(held[1], SPEED_SCALAR * 256 / MODULE_DRAIN_PER_TICK - 1);
     assert_eq!(held[2], SPEED_SCALAR * 128 / MODULE_DRAIN_PER_TICK - 1);
     assert_eq!(held[3], held[2]);
+}
+
+/// Walk a phase-owning capture director to its finish, returning the phase
+/// sequence it passed through and every arm's output.
+fn walk_capture(direct: CaptureCamDirector, s: ModuleCamSeats) -> (Vec<u8>, Vec<CaptureCamArm>) {
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut seq = vec![0u8];
+    let mut arms = Vec::new();
+    for _ in 0..20_000 {
+        let a = direct(&mut st, phase, s);
+        arms.push(a);
+        if a.hold {
+            continue;
+        }
+        match a.next {
+            Some(n) => {
+                phase = n;
+                seq.push(n);
+            }
+            None => return (seq, arms),
+        }
+    }
+    panic!("never finished");
+}
+
+/// Terio Punch forks on the caster's latch: clear charges (sets it, no
+/// damage, done at arm 2); set punches (clears it, arms 4..8).
+#[test]
+fn terio_punch_charges_then_punches_on_its_latch() {
+    let mut s = seats();
+    s.depth_raw = 0x600;
+    let (seq, arms) = walk_capture(terio_punch_camera, s);
+    assert_eq!(seq, vec![0, 1, 2]);
+    assert_eq!((arms[0].latch, arms[0].skips_fold), (Some(1), true));
+    assert_eq!(arms[0].shot.unwrap().tr, [0, 0x600, 0x300]);
+    assert_eq!(arms[1].shot.unwrap().tr, [0, 0, 0xC00]);
+
+    s.caster_latch = 1;
+    let (seq, arms) = walk_capture(terio_punch_camera, s);
+    assert_eq!(seq, vec![0, 4, 5, 6, 7, 8]);
+    assert_eq!((arms[0].latch, arms[0].skips_fold), (Some(0), false));
+    let shots: Vec<_> = arms.iter().filter_map(|a| a.shot).collect();
+    assert_eq!(shots[0].angles[0], 0x20);
+    assert_eq!(shots[1].tr, [0x200, 0xA00, 0x200]);
+    assert_eq!(shots.last().unwrap().tr, [0, 0x550, 0x2800]);
+    assert!(capture_camera_director(953, SINGLE_BODY).is_some());
 }
