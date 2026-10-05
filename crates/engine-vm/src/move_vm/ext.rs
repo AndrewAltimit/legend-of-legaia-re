@@ -385,16 +385,41 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             host.ext_world_struct_write(idx, vals);
             MoveExtResult::with_size(5)
         }
-        // 0x19 / 0x1A - world-struct write variants. Same op_w(2) = idx.
-        // Size 8 (`li s2, 0x8` at 0x801D3CD0 / in the 0x801D3D7C exit).
-        0x19 | 0x1A => {
+        // 0x19 - object-effect row **add**. The arm at `0x801D3C5C` loads
+        // each of the row's five halfwords (`+0`, `+2`, `+4`, `+0x10`,
+        // `+0x12`) and adds `op[3..=7]` to it - it is not a write.
+        // Size 8 (`li s2, 0x8` at 0x801D3CD0).
+        0x19 => {
             let idx = op_w(2) as i16;
-            let vals = [
+            let deltas = [
                 op_w(3) as i16,
                 op_w(4) as i16,
                 op_w(5) as i16,
                 op_w(6) as i16,
                 op_w(7) as i16,
+            ];
+            host.ext_world_struct_add(idx, deltas);
+            MoveExtResult::with_size(8)
+        }
+        // 0x1A - object-effect row **yaw seat**. The arm at `0x801D3CE0`
+        // writes `+0 = 0`, `+2 = yaw = (op[3] + 0x400) & 0xFFF`,
+        // `+4 = 0x400`, and offsets both clip words by the operand vector
+        // rotated to that yaw: `v = (op[5] * sin[yaw] + op[4] * cos[yaw]) >> 12`
+        // (`_DAT_8007B81C` / `_DAT_8007B7F8`, `0x801D3D0C..0x801D3D64`), then
+        // `+0x10 = op[6] + v`, `+0x12 = op[7] + v`. Size 8 (exit 0x801D3D7C).
+        0x1A => {
+            let idx = op_w(2) as i16;
+            let yaw = op_w(3).wrapping_add(0x400) & 0xFFF;
+            let (sin, cos) = host.rotation_lut(yaw);
+            let v = ((op_w(5) as i16 as i32) * (sin as i32)
+                + (op_w(4) as i16 as i32) * (cos as i32))
+                >> 12;
+            let vals = [
+                0,
+                yaw as i16,
+                0x400,
+                (op_w(6) as i16).wrapping_add(v as i16),
+                (op_w(7) as i16).wrapping_add(v as i16),
             ];
             host.ext_world_struct_write(idx, vals);
             MoveExtResult::with_size(8)

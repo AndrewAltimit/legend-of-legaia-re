@@ -3154,11 +3154,22 @@ in the native mesh shaders (`OVERWORLD_CURVE_WGSL`, staged through
 (`overworldCurve`, staged through `play_render_curve_scale` ->
 `setOverworldCurve`). Both hosts take the per-frame scale from the one kernel
 `overworld_curvature::frame_curve_scale`, and both shaders evaluate the table
-in closed form, pinned against it by `curvature_closed_form`. Residual, the
-same on both hosts: the port bends every overworld scene draw, where retail's
-four SCUS lit rows (`8..11`) do not bend. The `/world-overview/` viewer's
+in closed form, pinned against it by `curvature_closed_form`. The port bends
+every overworld scene draw where retail's four SCUS lit rows (`8..11`) do not
+bend, and that changes no pixel: no overworld TMD on the disc carries a lit-row
+group ([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). The `/world-overview/` viewer's
 ocean plane shares the page's renderer but not its program, and stays flat
 with the rest of that viewer (it never stages a scale).
+
+**The object-effect clip on a raised `+0x42`.** Field-VM `4C C2 1` sends a
+placed actor through `FUN_8001C204` and `FUN_8002735C`, which clip its
+polygons against the bound `0x1F800380` staged from object-effect row 0
+([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)). Nine
+scenes do so around scripted beats. Neither host reads `field_42`, and the move
+VM's ext `0x17..0x1A` table writes reach a no-op `MoveHost` on both, so both
+draw those actors unclipped. It stays open because the clip needs a per-draw
+plane in both mesh pipelines, and no library state sits inside one of those
+beats to pin the bound's space against.
 
 **The field drop shadow.** `FUN_8001C394` (called from the animated-actor
 renderer `FUN_8001B964`) is ported as `engine-core::drop_shadow` and walked by

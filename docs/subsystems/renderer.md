@@ -655,7 +655,7 @@ is a property of the actor, not of the mode, so a state that does raise
 
 ### The disc does ship writers of `+0x42`
 
-Read the zero as a statement about the sampled modes, not about the disc: two
+Read the zero as a statement about the sampled modes, not about the disc: three
 writer families put a non-zero value in that halfword, and reading the census
 as "nothing raises it" overstates what four states measured.
 
@@ -675,8 +675,19 @@ as "nothing raises it" overstates what four states measured.
   `0x80023420`..`0x8002342C` ([`move-vm.md`](move-vm.md)). A cast or summon
   record that issues it with a non-zero operand raises the gate for its own
   actor for as long as the program leaves it up, and that is content, not a
-  dev switch. Which shipped records do so, and whether any of them is drawn
-  through one of the three brackets, is the open half.
+  dev switch.
+- **A field script raises it on a placed actor.** Field-VM `4C C2 <b>` stores
+  its operand byte into the executing (or `0x80`-prefix targeted) actor's
+  `+0x42`: `lbu v0,0x1(s6)` / `sh v0,0x42(s5)` at `0x801E26F0..0x801E26FC` in
+  `FUN_801DE840`, where `s5` is the actor the prologue resolved
+  (`0x801DE898..0x801DE8B0`). The disc-wide
+  [field-op census](../tooling/field-op-census.md) finds 50 clean
+  occurrences in nine scenes - `garmel`, `rikuroa`, `station`, `uru`, `uru2`,
+  `kor5`, `jou`, `rugi`, `noaru` - every operand `0` or `1`, raised and later
+  lowered around a scripted beat; several targets are the player (`F8`).
+  Placed field actors are drawn by `FUN_8001ADA4` / `FUN_8001B964`, so these
+  actors **are** drawn through a bracket's far arm while the byte is up. The
+  four sampled states simply sat in none of those beats.
 
 What the census does establish is narrower and still useful: across the four
 sampled states no *drawn* actor had the bit up, so those modes' geometry comes
@@ -691,6 +702,33 @@ landmark walk passes each landmark TMD "once per frame through `FUN_8002735C`",
 and that `FUN_80029888` is reached whenever `actor[+0x7A] != 0` on the overworld.
 On `map03` the case-5 gate fired 756 times in 180 vsyncs and took the near arm
 every time.
+
+### What a raised `+0x42` draws
+
+The far arm is not only a different leaf. `FUN_8001ADA4` zeroes two scratch
+triples at `0x1F8002C0` (`0x8001B570..0x8001B588`), calls `FUN_8001C204`, and
+only then hands the object to `FUN_8002735C`. `FUN_8001C204` reads `+0x42 - 1`
+as a row of the **object-effect parameter table** at `0x80083FF8` (stride
+`0x14`): it saves the GTE rotation, loads the base matrix, rotates it by the
+row's three angles (`+4`, `+2`, `+0`), transforms the actor's position through
+that, folds in the actor's own Euler `+0x24..+0x28`, and stores the result as
+the working transform at `0x1F800314` with its translation at
+`0x1F800328..0x1F800330`. It also copies the row's `+0x10` / `+0x12` to
+`0x1F800380` / `0x1F800382`, which is the bound
+`FUN_80027F00`'s clip loop reads as `[0x1F800314]+0x6C` - the only reader of
+that word disc-wide besides a store in the dev image PROT 0973. So a raised
+`+0x42` gives the actor a group rotation about the row's frame plus a
+per-actor clip bound; the row itself is written by move-VM ext sub-ops
+`0x17..0x1A` ([`move-vm-overlay-ext.md`](move-vm-overlay-ext.md#0x170x1a-write-the-object-effect-parameter-table))
+and seeded at boot as angles `0` with clip words `(-100, -20)`.
+
+Every shipped `4C C2` writes `1`, so every field use selects row 0. **The
+port does not model this path**: `FieldCtx::field_42` and the move VM's
+`field_42` are written and never read by a renderer, and the table writes
+reach a no-op host on both play hosts. With row 0 at its boot seed the
+rotation half is the identity, so what the port omits on those beats is the
+clip bound - recorded as an open host gap in
+[`host-drift.md`](../tooling/host-drift.md#gaps-absent-from-both-hosts-overworld-curvature-ground-shadow).
 
 ## The battle per-actor draw
 
@@ -1108,8 +1146,13 @@ the curvature table bends their `SY` after projection. Test
   both pinned by `curvature_closed_form`) with a per-frame scale
   (`frame_curve_scale`: `1` under the walk camera, whose matrix carries the
   6x world scale, `6` under a `1x` scripted shot, `0` under the top-view
-  debug camera). The port bends every overworld scene draw, lit rows
-  included, and the overworld markers bend with the ground they stand on. See
+  debug camera). The port bends every overworld scene draw and the
+  overworld markers bend with the ground they stand on. That matches retail
+  on every overworld mesh the disc ships: a group's dispatch row is its
+  `flags >> 1` (`srl s5,s7,0x11` at `0x800435A4`), and no TMD in the three
+  kingdom bundles' scene entries or in the party pack PROT 0874 carries a
+  `flags 0x10..=0x17` group, so no overworld draw ever reaches lit rows
+  `8..11`. See
   `ghidra/scripts/funcs/800271a8.txt`.
 - **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
   advances. It is the CD load-kick / completion driver the asset queue drains

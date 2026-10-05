@@ -376,7 +376,8 @@ the player in field mode only, and the loop's whole-map box test read tile
 **`FUN_800271A8`** is the overworld's screen-Y curvature table builder, and
 retail bends each overworld vertex by it (`0x801F7770..0x801F77E4`, rows 12..19
 only); both hosts' mesh shaders now apply it per vertex. The port bends the lit
-rows 8..11 too, which retail leaves flat - an accepted residual
+rows 8..11 too, which retail leaves flat, and a disc census closes that
+residual as inert: no overworld TMD carries a lit-row group
 ([settled](re-settled-threads.md#world-map--kingdom-bundles),
 [`renderer.md`](../subsystems/renderer.md#frame-setup--present)). **The field
 drop shadow** is drawn on both hosts: `FUN_800460AC` `RTPT`s a 3x3 grid at
@@ -449,9 +450,13 @@ field (`sh $v0,0x42($s2)` at `0x8002342C`), and shipped move programs do issue
 it with non-zero operands. What the 5089-zero census establishes is narrower
 than "nothing raises it": across the sampled modes no *drawn* actor had the bit
 up ([settled](re-settled-threads.md#rendering--camera),
-[falsified](re-do-not-re-walk.md#rendering--camera)). Whether an actor a
-shipped program raises it on is then drawn through one of the three brackets is
-unmeasured - the residual the census leaves, and too narrow for a row.
+[falsified](re-do-not-re-walk.md#rendering--camera)). The residual that left -
+whether a content-raised actor is ever drawn through a bracket - closed by
+disassembly and the field-op census: field-VM `4C C2 1` raises it on placed
+actors in nine scenes, and those are drawn by `FUN_8001ADA4` / `FUN_8001B964`.
+The far arm adds an object-effect transform and a clip bound the port does not
+model, which is now a recorded gap on both hosts
+([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)).
 
 **Is `FUN_801D0748` entered by an ordinary, non-dome battle** closed on the
 bytes before the capture landed, and then again on the capture. The routine has
