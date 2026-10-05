@@ -288,7 +288,17 @@ started from:
   idle channel and the innkeeper states were sampled with no box on screen.
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
-  the player made to page the conversation to where it was captured.
+  the player made to page the conversation to where it was captured. A
+  topic menu on the way is steered rather than confirmed blind: the cursor
+  is walked onto the option whose branch target is the last one at or
+  before the gate PC and confirmed there, with no press while the menu
+  still slides in (one would commit its opening cursor). `Cross` alone took
+  option 0 every time, and `v0_1_tetsu_dialogue_accept` looped on Tetsu's
+  first topic, short of the spar arm (`town01` `P1[10]`, picker at
+  `+0x17F`, third arm `+0x766`) it is captured in. Items the run gives on
+  its way to the gate (op `0x39`, the same straight-line run whose flag
+  sets are cleared above) are taken back before the replay, which grants
+  them again: that arm gives item `119` at `+0x7A6`.
 
 `play-window` takes the same gate as `LEGAIA_SCRIPT_GATE`, with the same
 resume and paging, so the image channel frames the phase the state

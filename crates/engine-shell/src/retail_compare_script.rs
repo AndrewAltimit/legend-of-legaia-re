@@ -463,6 +463,40 @@ impl ScriptGate {
         if tick < SCRIPT_RESUME_TICK || !tick.is_multiple_of(2) {
             return 0;
         }
+        // A topic menu on the way: the player picked the option whose arm
+        // leads to the capture, so steer the cursor onto the arm with the
+        // last branch target at or before the gate PC and confirm it there.
+        // `Cross` alone took option 0 every time (`v0_1_tetsu_dialogue_accept`
+        // looped on Tetsu's first topic, short of the spar arm it is captured
+        // in).
+        let inline = world
+            .dialog
+            .inline
+            .as_ref()
+            .filter(|id| !id.done && head_of(&id.bytecode) == self.head);
+        // A press while the menu still slides in commits it at its opening
+        // cursor once the pager reads the choice: hold off until it takes
+        // input.
+        if inline.is_some_and(|id| id.menu_active() && !id.picker_takes_input()) {
+            return 0;
+        }
+        if let Some(id) = inline
+            && id.picker_takes_input()
+            && let Some(p) = id.picker()
+            && let Some(want) = (0..p.n)
+                .filter_map(|i| p.jump_target(i).map(|t| (i, t)))
+                .filter(|&(_, t)| t <= self.pc)
+                .max_by_key(|&(_, t)| t)
+                .map(|(i, _)| i)
+        {
+            let cur = id.picker_cursor();
+            let b = match cur.cmp(&want) {
+                std::cmp::Ordering::Less => legaia_engine_core::input::PadButton::Down,
+                std::cmp::Ordering::Greater => legaia_engine_core::input::PadButton::Up,
+                std::cmp::Ordering::Equal => legaia_engine_core::input::PadButton::Cross,
+            };
+            return b.mask();
+        }
         match self.context(world) {
             Some(c) if c.dialog_open && c.pc != self.pc => {
                 legaia_engine_core::input::PadButton::Cross.mask()
@@ -680,7 +714,46 @@ pub fn run_latches(body: &[u8], gate_pc: usize) -> Vec<u16> {
     Vec::new()
 }
 
-/// Clear [`run_latches`] before a record is replayed toward the gate.
+/// The items a record gives (op `0x39`) on its way to `gate_pc`, in the same
+/// straight-line run [`run_latches`] reads: retail executed those grants to
+/// stand where it was captured, so the state's bag already holds them, and a
+/// replay grants them a second time. `town01` `P1[10]`'s spar arm gives item
+/// `119` at `+0x7A6`, ahead of the line `v0_1_tetsu_dialogue_accept` is
+/// captured on.
+pub fn run_grants(body: &[u8], gate_pc: usize) -> Vec<u8> {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    for start in 0..gate_pc.min(64) {
+        let mut pc = start;
+        let mut run: Vec<u8> = Vec::new();
+        let mut ok = false;
+        while pc < gate_pc {
+            let Ok(i) = decode(body, pc) else { break };
+            if i.size == 0 {
+                break;
+            }
+            match i.info {
+                InsnInfo::JmpRel { .. }
+                | InsnInfo::CondJmp { .. }
+                | InsnInfo::Picker { .. }
+                | InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                } => run.clear(),
+                InsnInfo::GiveItem { item_id } => run.push(item_id),
+                _ => {}
+            }
+            pc += i.size;
+            ok = pc == gate_pc;
+        }
+        if ok {
+            return run;
+        }
+    }
+    Vec::new()
+}
+
+/// Clear [`run_latches`] and take back [`run_grants`] before a record is
+/// replayed toward the gate.
 fn roll_back_run_latches(
     world: &mut legaia_engine_core::world::World,
     body: &[u8],
@@ -688,6 +761,18 @@ fn roll_back_run_latches(
 ) {
     for idx in run_latches(body, gate_pc) {
         world.system_flag_clear(idx);
+    }
+    for id in run_grants(body, gate_pc) {
+        let bag = &mut world.party.inventory;
+        match bag.get(&id).copied() {
+            Some(n) if n > 1 => {
+                bag.insert(id, n - 1);
+            }
+            Some(_) => {
+                bag.remove(&id);
+            }
+            None => {}
+        }
     }
 }
 
@@ -705,6 +790,15 @@ mod tests {
         assert_eq!(run_latches(&body, 14), vec![0x5C1]);
         assert_eq!(run_latches(&body, 11), vec![0x5C1]);
         assert!(run_latches(&body, 9).is_empty());
+    }
+
+    #[test]
+    fn run_grants_are_the_gives_after_the_last_branch() {
+        // 39 05 (give 5, behind the jump), 26 02 00 (jump), 39 77 (give
+        // 119), 4A 10 00 (wait), gate.
+        let body = [0x39, 0x05, 0x26, 0x02, 0x00, 0x39, 0x77, 0x4A, 0x10, 0x00];
+        assert_eq!(run_grants(&body, 10), vec![0x77]);
+        assert!(run_grants(&body, 5).is_empty());
     }
 
     #[test]
