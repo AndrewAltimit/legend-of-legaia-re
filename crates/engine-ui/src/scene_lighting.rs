@@ -1285,6 +1285,35 @@ impl LightingMood {
         glow: 1.0,
         window_glow: 1.0,
     };
+    /// Night over a scene the **script** already graded to night
+    /// ([`ScriptedSky::Night`]): retail's subtractive wash has darkened and
+    /// cooled the frame, so the ambient stays near daylight's floor (a
+    /// second darkening crushed `town0b` to near-black) and the mood adds
+    /// what retail has no system for - moonlight, lamps, lit windows.
+    pub const SCRIPTED_NIGHT: Self = Self {
+        name: "night",
+        key_dir: [-0.35, -0.85, 0.40],
+        key_rgb: [0.30, 0.36, 0.52],
+        ambient_rgb: [0.62, 0.66, 0.78],
+        pool: 0.20,
+        point_scale: 1.35,
+        emissive_gain: 1.45,
+        glow: 1.0,
+        window_glow: 1.0,
+    };
+    /// Dusk over a scene the script already graded warm
+    /// ([`ScriptedSky::Dusk`]); the same reasoning as [`Self::SCRIPTED_NIGHT`].
+    pub const SCRIPTED_DUSK: Self = Self {
+        name: "dusk",
+        key_dir: [0.80, -0.45, 0.40],
+        key_rgb: [0.50, 0.36, 0.24],
+        ambient_rgb: [0.70, 0.67, 0.68],
+        pool: 0.20,
+        point_scale: 0.85,
+        emissive_gain: 1.30,
+        glow: 0.65,
+        window_glow: 0.6,
+    };
     /// Enclosed spaces (caves, dungeons, interiors): dim neutral ambient,
     /// the authored lamps and torches doing the lighting.
     pub const CAVE: Self = Self {
@@ -1436,8 +1465,8 @@ impl TimeOfDay {
     pub fn mood_graded(self, scene: &str, grade: Option<(i16, [i16; 3])>) -> LightingMood {
         match self {
             Self::Auto => match grade.and_then(|(b, rgb)| ScriptedSky::from_grade(b, rgb)) {
-                Some(ScriptedSky::Night) => LightingMood::NIGHT,
-                Some(ScriptedSky::Dusk) => LightingMood::DUSK,
+                Some(ScriptedSky::Night) => LightingMood::SCRIPTED_NIGHT,
+                Some(ScriptedSky::Dusk) => LightingMood::SCRIPTED_DUSK,
                 None => LightingMood::for_scene(scene),
             },
             Self::Day => LightingMood::DAY,
@@ -2062,6 +2091,8 @@ mod tests {
             LightingMood::DUSK,
             LightingMood::NIGHT,
             LightingMood::CAVE,
+            LightingMood::SCRIPTED_NIGHT,
+            LightingMood::SCRIPTED_DUSK,
         ] {
             let out = shade(
                 rgb,

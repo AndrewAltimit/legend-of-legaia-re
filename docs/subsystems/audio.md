@@ -456,6 +456,15 @@ scene-entry window on picker entries only; the new-game chain keeps the
 authored pause. The same staging seeds story-twin scenery flags (e.g.
 `town0c`'s blown gate). Disc pins: `engine-core/tests/free_roam_staging_disc.rs`.
 
+A twin's flags pick its **track** too. `town0b` (Rim Elm under attack) is
+reached only through `MV2.STR`'s hand-off, after `town01`'s attack timeline
+(`P2[25]`) raised `0x147` and left `0x141` clear. Its entry script opens on
+the Rim Elm theme (`35 E0 07 01`, 2016) and then, on exactly that pair,
+takes the attack arm (`P1[0]` `+0xF3`): the attack theme `35 DA 07 01`
+(2010) over the subtractive night grade `34 01 30 30 00 14`. Every retail
+`town0b` state holds `0x8007BAC8 = 2010`; a picker entry with neither flag
+staged took the other arm and played 2016, so the staging seeds `0x147`.
+
 #### The cold scene-entry sequence, and what each missing step sounds like
 
 Anything that drops the engine into a scene from cold - both playable hosts
