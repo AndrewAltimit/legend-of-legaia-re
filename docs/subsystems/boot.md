@@ -865,6 +865,8 @@ This is **executed in-engine**: the `town01` entry installs P2[3] as a spawned c
 The timeline plays the establishing camera beats over ~490 frames (stepping past the conditional-wait parks the engine doesn't model - `0x4C` nibble-C `script_alloc`/globals, `0x2D`/`0x30` flag-tests - while honoring `0x4A` timed waits), then op `0x49` opens the name-entry overlay through the op-49 host hooks (`op49_invoke_setup` → `open_name_entry(0)`; `op49_state` Armed while open, Done after commit).
 The timeline freezes while the overlay is up and resumes - playing Vahn's walk-out - once a name commits. Disc-gated `town01_opening_name_entry_wiring.rs` + `opening_full_chain_e2e.rs`.
 
+Only the script freezes. The prompt is an actor on the field list, not a mode, so the field frame keeps running around it, and the camera mover `FUN_801DC0BC` with it. The op before the `49 03` (`+0x2B1`) is an op-`0x45` configure with a 16-frame glide to pitch `292`, yaw `-510`, eye `(-600, 8, 3840)`, and that glide lands under the prompt: `name_input_ui` holds those exact words and no mover on its lists, and its frame shows Vahn standing in the upper left. The engine's prompt frame (`World::step_name_entry_frame`, `BootSession::step_name_entry_frame`, and the play page's `name_entry_advance_frames`) therefore passes the display frame and runs the camera half; a prompt that froze the clock held the camera on the previous shot, with Vahn's head behind the name box.
+
 Pinned addresses (live in `name_input_ui`):
 
 | Datum | Address | Notes |

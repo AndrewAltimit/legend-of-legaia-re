@@ -271,14 +271,16 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "world.step_name_entry_frame(pressed_edge)"
+arm = "session.step_name_entry_frame(pressed_edge)"
 reason = """
-The naming prompt is modal: retail suspends the field VM while it is up, so
-the world must not advance under it. The arm's kernel
-(`World::step_name_entry_frame`, the same one `BootSession::tick` runs for
-every other driver) routes the edge and advances the world frame counter (the
-caret blinks); the arm then steps the party-HUD kernel. Nothing else in the
-list has a reader that changes while the overlay owns the pad.
+The naming prompt is modal: retail parks the opening's script on it, so the
+world must not advance under it. The arm's kernel
+(`BootSession::step_name_entry_frame`, the same one `BootSession::tick` runs
+for every other driver) routes the edge, passes the display frame (the caret
+blinks, and the camera mover keeps gliding as retail's does around the prompt
+actor) and runs the camera half; the arm then steps the party-HUD kernel.
+Nothing else in the list has a reader that changes while the overlay owns the
+pad.
 """
 skips = [
     "advance_ocean_animation",

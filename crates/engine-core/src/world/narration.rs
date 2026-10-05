@@ -100,8 +100,30 @@ impl World {
             return false;
         }
         self.step_name_entry(crate::name_entry::NameEntryInput::from_pad_edge(edge));
-        self.frame = self.frame.wrapping_add(1);
+        self.name_entry_display_frames(1);
         true
+    }
+
+    /// `steps` display frames pass under the naming prompt.
+    ///
+    /// The prompt is not a mode of its own: op `0x49` sub-3 hands off to an
+    /// actor (`func_0x80020de0(0x8007065c, ...)` on the field list), and the
+    /// field frame loop keeps running around it - only the opening's script
+    /// is parked. So the camera mover (`FUN_801DC0BC`) keeps stepping, and the
+    /// 16-frame glide the opening stages one op before the `49 03`
+    /// (`town01` P2[3] `+0x2B1`: pitch `292`, yaw `-510`, eye
+    /// `(-600, 8, 3840)`) lands under the prompt - the shot every retail
+    /// capture of the screen holds, with Vahn standing in the upper left. The
+    /// engine's two glide clocks both run on
+    /// [`crate::world::FrameClock::display_frames`], so the prompt advances
+    /// it along with the caret's [`Self::frame`]; the hosts then run their
+    /// camera half as on any frame.
+    // REF: FUN_801DC0BC
+    pub fn name_entry_display_frames(&mut self, steps: u32) {
+        self.frame = self.frame.wrapping_add(u64::from(steps));
+        self.clock.display_frames += u64::from(steps);
+        let glide = &mut self.camera.state.glide_frames;
+        *glide = (*glide - steps as i32).max(0);
     }
 
     /// Install the opening-cutscene narration presenter with `pages` (the

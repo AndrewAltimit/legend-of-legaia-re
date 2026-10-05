@@ -355,9 +355,16 @@ impl ScriptGate {
             return true;
         }
         let text = self.op & 0x7F < 0x20;
-        let glide_landed = self
-            .glide_left
-            .is_none_or(|g| world.camera.state.glide_frames <= g);
+        // A capture with no camera mover on its lists holds a landed shot:
+        // retail frees the mover (`FUN_801DC0BC`) when its glide ends. So a
+        // record parked on the gate PC is met once the engine's glide has
+        // landed too - `name_input_ui` is parked on the opening's `49 03`
+        // one op after a 16-frame glide that lands under the prompt, and the
+        // first tick on that PC is that glide's first frame.
+        let glide_landed = match self.glide_left {
+            Some(g) => world.camera.state.glide_frames <= g,
+            None => world.camera.state.glide_frames <= 0,
+        };
         let passed = |tl: &legaia_engine_core::cutscene_timeline::CutsceneTimeline| {
             head_of(&tl.bytecode) == self.head
                 && ((tl.pc == self.pc

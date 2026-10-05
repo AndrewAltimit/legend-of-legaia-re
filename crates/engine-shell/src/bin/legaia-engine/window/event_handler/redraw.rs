@@ -210,7 +210,7 @@ impl PlayWindowApp {
             // kernel `BootSession::tick` runs for every other driver): the
             // edge drives the entry SM and the frame counter advances so the
             // caret blinks. This arm adds only the window's frame-tail skip.
-            if self.session.host.world.step_name_entry_frame(pressed_edge) {
+            if self.session.step_name_entry_frame(pressed_edge) {
                 // Same reason as the boot-UI arm above: the party readout's
                 // decision kernel is stepped in the fall-through path and its
                 // suppression predicate names this state, so an arm that

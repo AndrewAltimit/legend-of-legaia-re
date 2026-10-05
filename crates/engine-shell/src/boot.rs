@@ -1482,6 +1482,24 @@ impl BootSession {
         }
     }
 
+    /// One frame under the naming prompt: the edge drives the entry SM
+    /// (`World::step_name_entry_frame`, which also passes the display frame)
+    /// and the camera's half still runs, because retail's field frame keeps
+    /// stepping the camera mover around the prompt actor - the opening's
+    /// last glide lands under it. `false` when no prompt is open. The native
+    /// window's per-tick arm calls this too.
+    pub fn step_name_entry_frame(&mut self, edge: u16) -> bool {
+        if !self.host.world.step_name_entry_frame(edge) {
+            return false;
+        }
+        legaia_engine_core::frame_step::camera_after_world_tick(
+            &mut self.camera,
+            &mut self.host.world,
+            false,
+        );
+        true
+    }
+
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         // The hosts' per-tick queue duty, for a caller that does not perform
         // it: what the previous tick queued and nobody took is gone before
@@ -1498,7 +1516,7 @@ impl BootSession {
         // skips its per-frame tail); both call the same kernel.
         let input = &self.host.world.input;
         let edge = input.pad() & !input.pad_prev();
-        if self.host.world.step_name_entry_frame(edge) {
+        if self.step_name_entry_frame(edge) {
             return Ok(SceneTickEvent::Stepped);
         }
         // The mode table's outer level, once per frame, ahead of everything

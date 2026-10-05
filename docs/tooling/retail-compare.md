@@ -230,7 +230,12 @@ engine's box has typed its page and waits for the press - the press that
 turns the page, or on the last page the press that closes the box - the
 frame every such capture shows. Counting only the page-turn wait missed
 every capture on a closing page (`garmel`'s Songi taunt), and the run
-sampled the settle window instead. The run has a deadline of 9000 ticks; a gate it never
+sampled the settle window instead. A capture with no camera mover on its
+lists holds a landed shot (retail frees the mover when its glide ends), so
+there the record's context is met on the gate PC only once the engine's glide
+has landed too: `name_input_ui` is parked on the opening's `49 03` one op
+after a 16-frame glide, and the first tick on that PC is the glide's first
+frame. The run has a deadline of 9000 ticks; a gate it never
 meets keeps the settle-window sample, and the `script` detail says which
 it was.
 
@@ -1111,6 +1116,14 @@ taken after that beat in the same visit, so retail holds both down, and no
 record is running. A card load of that save runs the entry script again and
 raises both, which is what the engine's seed does: the divergence is history
 the save does not carry.
+
+The Genesis tree in `rikuroa_post_caruban` is the same history from the other
+side. The tree's three objects (`P0[2..4]`) arm their withered vertex morph
+in the bind prologue only while flag `0x142` is clear, and retail ran those
+prologues on the scene's re-entry after the Caruban fight, before the
+re-entry's `P2[50]` set the flag: the state holds every lane at `0x1000` with `0x142` up.
+A card load of that save seats the objects with the flag already set, so the
+engine draws the full tree where retail's frame shows the withered one.
 
 ### A poked player keeps the arrival focus
 
