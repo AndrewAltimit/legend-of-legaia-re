@@ -1738,8 +1738,10 @@ impl PlayWindowApp {
                         stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
                     }
                 }
-            } else {
-                // Non-shop, non-inn menu: show current mode label.
+            } else if self.menu_runtime.prize_session.is_none() {
+                // Non-shop, non-inn menu: show current mode label. The prize
+                // exchange draws its own retail window set above and has no
+                // label row.
                 let menu_label = format!("[{}]", label);
                 let ml_layout = self.font.layout_ascii(&menu_label);
                 stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));

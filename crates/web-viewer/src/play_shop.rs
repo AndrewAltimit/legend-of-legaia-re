@@ -366,7 +366,13 @@ impl LegaiaRuntime {
     /// on purpose: `ShopQuantity` legitimately contributes no rows, because
     /// the retail descriptor windows carry that screen.
     fn menu_label_stand_in(&self, font: &legaia_font::Font) -> Option<Vec<TextDraw>> {
-        if !self.menu.is_open() || self.menu.shop_session.is_some() {
+        // The prize exchange draws its own retail window set
+        // (`prize_window_draws`) and has no label row - the native window's
+        // stand-in skips it the same way.
+        if !self.menu.is_open()
+            || self.menu.shop_session.is_some()
+            || self.menu.prize_session.is_some()
+        {
             return None;
         }
         Some(ui::text_draws_for(
