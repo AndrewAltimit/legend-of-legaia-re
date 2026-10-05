@@ -571,12 +571,18 @@ fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
         *rows.iter().max().expect("non-empty"),
     );
     let stage = |y: u32| y as f64 * 240.0 / h as f64;
+    let out_of_band = rows
+        .iter()
+        .filter(|&&y| !(110.0..=140.0).contains(&stage(y)))
+        .count();
     assert!(
         stage(lo) >= 110.0 && stage(hi) <= 140.0,
         "fishing_dev_readout: the held modifier changed stage rows {:.0}..{:.0}, \
-         outside the readout line's band",
+         outside the readout line's band ({out_of_band} of {} differing pixels \
+         out of band)",
         stage(lo),
-        stage(hi)
+        stage(hi),
+        rows.len()
     );
     eprintln!(
         "[ok] fishing_dev_readout: {:.3}% of the frame differs from the unmodified capture",
