@@ -52,3 +52,6 @@
 "801d58f0" = ["worklist_interior", "Interior of the animation-slot remover FUN_801D58E0 (ported as engine-core baka_fighter_chrome, `jal` from 0x801D52A4): 0x10 bytes into its body, mid-way through the slot-address computation."]
 "801d5a24" = ["worklist_interior", "Interior of FUN_801D59D4 (ported, 0x801D59D4..0x801D5C7C); no reference in this image."]
 "801d63b0" = ["worklist_interior", "Interior of the cameo walk-on animator FUN_801D6310 (ported, 0x801D6310..0x801D6480): opens `jal 0x801D65F8` on the parent's frame; no reference in this image (the 28 `jal`s to this VA are all fishing's)."]
+
+[jp_options_status]
+"801d9414" = ["jp_options_status_overlay", "A function entry of PROT 0896 (jp_options_status), dumped but uncited: the foreign-build image this disc never loads (see this section's header), so the routine has no retail behaviour on this build to port."]
