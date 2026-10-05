@@ -1636,7 +1636,9 @@ gate: the `0x4000` arm is skipped when `ctx+0x275 < 4` and the `0x1000` arm when
 `ctx+0x275 < 3`, so a panel with fewer than four slots takes fewer directions
 and plays no blip for the missing ones.
 
-**BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field).
+**BGM.** The arena loads its music itself, through the streaming pair the other minigame inits use - not through the BGM-id word. Its init `FUN_801CEA6C` (PROT 0977) runs two `FUN_8001FC00` / `FUN_8001E54C` pairs: raw `0x3F8` into slot `5` at `0x801CF000..0x801CF020` - extraction **1014**, `music_01` sound-test #26 `M26B1`, the standard battle theme, global `2026` - and raw `*(0x8007BBE4) + 0x57` into slot `3` at `0x801CEF50..0x801CEF70` (`vab_01` + `0x57`, extraction **1157**, a four-program side bank).
+
+Because the load bypasses `_DAT_8007BAC8`, a state parked in the hub still reads the host scene's id there (`minigame_muscle_dome`: `0x7E0`, `town01`'s track). The earlier reading - "no streaming-loader call, the music is inherited" - came from a sweep of the dumped functions, which do not include the init's load block.
 
 The engine and the site represent that with the standard battle theme
 (`M26B1`, global BGM `2026`). `MinigameSubId::bgm_id` names it, and the shared
@@ -2099,6 +2101,42 @@ course-select screen, so it walks the Beginner course one round per contest;
 the browser page fills its foe picker from the ladder. The stand-in constants
 survive only as the fallback for a disc whose ladder or archive does not
 decode, and a log line says so when they are used.
+
+### The leg is filmed by the battle camera
+
+Because a leg is an ordinary battle, its camera is the battle camera
+director `FUN_801D5854` driven by the round and action state machines - not
+a dome-specific shot. The 3D surface every dome host draws
+(`engine-core::muscle_dome_scene::MuscleDomeSurface`) therefore seats the
+fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)`
+(`battle_seats`, facings `0` / `0x800`) at the battle world scale, and steps
+the shared `legaia_engine_vm::battle_cam_script` once a frame with the phase
+each moment of the leg is in a battle:
+
+| Dome moment | Battle state | Framing |
+|---|---|---|
+| Begin / Reselect confirm | flow `0x6E` | case 9 far framing + idle orbit |
+| the command ring, the direction entry, the Ra-Seru list | flow `0x28` / `0x50` / `0x46` | case 0 over-the-shoulder close-up |
+| Auto / Command prompt | flow `0x78` | case 1, the member turned toward the opponent |
+| the closing walk | action `0x14` | case 6 in-fight arm |
+| each strike | action `0x1E` | case 7 two-shot |
+| an attacker's done tail | action `0x50`, category Attack | case 8 on the target |
+| a won leg | battle-end signal up | case 6 battle-over arm |
+
+`DomeCamera::vp_raw` projects the script's pose through `battle_vp` over the
+stage model, so the native window and the browser play page (both upload that
+one matrix) frame a leg exactly as they frame a fight. The case-6 depth is
+`FUN_801F0348` over the seated monster's size class, the close-up height the
+character's `0x801F4D2C` row.
+
+The playback the camera follows is one schedule, `turn_timeline`, which the
+surface, the world's `TurnOver` hold and the play-out tally all read: the
+leg's first acting play walks its attacker in from the seat on its walk clip
+(tag `1`) - battle locomotion has no walk home, so later turns swing from where
+the pair stands - each play swings, and each attacker's string closes on the
+done band's `0x3C`-frame tail. The defender's knockdown lands on the play that
+ends the leg. The approach length and the per-swing cadence are the port's
+clock, not retail's root-motion arithmetic.
 
 Documented host models, each disclosed rather than presented as retail:
 
