@@ -80,6 +80,23 @@ fn overlay_quads(rt: &mut LegaiaRuntime) -> usize {
     text_count(&json(&rt.play_overlay_draws_json(W, H)))
 }
 
+/// Tick the shop with an idle pad until a screen's opening has played out.
+/// A merchant open fades the field to black over
+/// [`SHOP_FADE_FRAMES`](legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES)
+/// with no window up - the overlay draws nothing but the fade prim - and
+/// every screen's incoming windows then slide in from their park edges over
+/// [`SHOP_SLIDE_FRAMES`](legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+/// (retail's per-vsync captures). A composition read before that is a read
+/// of the fade, not of the screen.
+fn settle_shop(rt: &mut LegaiaRuntime) {
+    let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
+        + usize::from(legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+        + 2;
+    for _ in 0..frames {
+        rt.play_shop_input(0);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Rung 1 + 2 - the shop cluster
 // ---------------------------------------------------------------------------
@@ -101,9 +118,12 @@ fn rung1_recipient_picker(rt: &mut LegaiaRuntime) -> Result<(), String> {
         return Err("shop session not reported open".into());
     }
     // Top picker row 0 = Buy.
+    settle_shop(rt);
     rt.play_shop_input(PadButton::Cross.mask());
+    settle_shop(rt);
     // Baseline: the buy list alone, before any recipient window exists.
-    let list_quads = overlay_quads(rt);
+    let list_frame = rt.play_overlay_draws_json(W, H);
+    let list_quads = text_count(&json(&list_frame));
     if list_quads == 0 {
         return Err("buy list composed no glyph quads".into());
     }
@@ -129,19 +149,25 @@ fn rung1_recipient_picker(rt: &mut LegaiaRuntime) -> Result<(), String> {
             rt.debug_menu_state_byte()
         ));
     }
+    settle_shop(rt);
 
     // The picker is up: its windows must actually paint. Window 36 is the
     // target list (the bag row + one row per member), window 41 the
-    // party-wide compare - both come out of `recipient_picker_draws_for`,
-    // and both are additive over the parked buy list underneath.
-    let draws = json(&rt.play_overlay_draws_json(W, H));
+    // party-wide compare - both come out of `recipient_picker_draws_for`.
+    // The picker is a screen of its own, not an overlay on the list: its
+    // window set (`shop::shop_screen_windows`, retail's widget script) drops
+    // the list window 40 and adds 36, so the frame is scored on a *change*
+    // from the list frame rather than on a quad-count delta. Where each
+    // window's content lands is `shop_overlay_parity`'s rect assertion.
+    let picker_frame = rt.play_overlay_draws_json(W, H);
+    let draws = json(&picker_frame);
     if draws["open"] != true {
         return Err("recipient picker open but the overlay reports closed".into());
     }
     let picker_quads = text_count(&draws);
-    if picker_quads <= list_quads {
+    if picker_quads == 0 || picker_frame == list_frame {
         return Err(format!(
-            "recipient windows added no draws over the parked list \
+            "the recipient picker drew nothing of its own over the list \
              ({list_quads} quads before, {picker_quads} with the picker up)"
         ));
     }
@@ -217,6 +243,7 @@ fn rung2_vendor_plate(rt: &mut LegaiaRuntime) -> Result<(), String> {
     if !rt.debug_open_test_shop() {
         return Err("test shop did not open in town01".into());
     }
+    settle_shop(rt);
     let unnamed = overlay_quads(rt);
     if unnamed == 0 {
         return Err("shop overlay drew no glyph quads at all".into());
@@ -231,6 +258,7 @@ fn rung2_vendor_plate(rt: &mut LegaiaRuntime) -> Result<(), String> {
             close_shop(rt);
             continue;
         }
+        settle_shop(rt);
         let named = overlay_quads(rt);
         close_shop(rt);
         if named > unnamed {
@@ -247,12 +275,16 @@ fn rung2_vendor_plate(rt: &mut LegaiaRuntime) -> Result<(), String> {
 /// to press Circle, which the shop ignores, so no rung ever closed its shop
 /// and the pause-menu rungs below ran over a still-open one - which the menu
 /// gate now refuses, as retail's does (the shop owns the screen).
+///
+/// Each cancel steps back one screen and its windows slide out before the
+/// next screen's take the pad, so the presses are spaced by idle frames.
 fn close_shop(rt: &mut LegaiaRuntime) {
     for _ in 0..12 {
         if !rt.play_shop_is_open() {
             return;
         }
         rt.play_shop_input(PadButton::Triangle.mask());
+        settle_shop(rt);
     }
 }
 
@@ -284,8 +316,10 @@ fn rung5_sell_quantity(rt: &mut LegaiaRuntime) -> Result<(), String> {
         return Err("test shop did not open for the sell rung".into());
     }
     // Top picker: row 0 Buy, row 1 Sell.
+    settle_shop(rt);
     rt.play_shop_input(PadButton::Down.mask());
     rt.play_shop_input(PadButton::Cross.mask());
+    settle_shop(rt);
     if rt.debug_menu_state_byte() != SHOP_SELL {
         let got = rt.debug_menu_state_byte();
         close_shop(rt);
@@ -318,6 +352,7 @@ fn rung5_sell_quantity(rt: &mut LegaiaRuntime) -> Result<(), String> {
             "no sell row reached the quantity screen (menu state {got:#04x})"
         ));
     }
+    settle_shop(rt);
 
     // The stepper screen is not additive over the sell list - it parks the
     // list and draws in its place - so the panel is scored on a *change*
