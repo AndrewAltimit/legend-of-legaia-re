@@ -2597,6 +2597,12 @@ impl World {
         if dropped
             && self.field_vm.helper_contexts.is_empty()
             && matches!(self.mode, crate::world::SceneMode::Field)
+            // A record that ended by leaving the scene (`chitei2`'s rescue
+            // beat jumps the party into the drain pipe, then `0x3F`) parks
+            // the hand-off behind the streaming actor; the departing scene's
+            // last frames must not show the party yanked back to its spawn.
+            && self.scene_transition_hold.is_none()
+            && self.pending_named_scene_transition.is_none()
             && let Some((sx, sz)) = self.props.resolved_cold_spawn
             && let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get(slot as usize)
