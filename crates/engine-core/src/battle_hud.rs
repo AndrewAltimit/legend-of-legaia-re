@@ -1172,7 +1172,19 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
         // has no battle-action band behind it.
         // The resolved turn's play-out is that band's stand-in: while the
         // leg holds for it the frame is an action frame.
-        return match world.minigames.muscle_dome.as_ref().map(|s| s.phase()) {
+        let s = world.minigames.muscle_dome.as_ref();
+        if s.is_some_and(|s| {
+            s.phase() == crate::muscle_dome::MusclePhase::Select
+                && matches!(
+                    s.menu(),
+                    crate::muscle_dome::DomeMenu::Command(c)
+                        if matches!(c.phase, CommandPhase::RoundPrompt { .. })
+                )
+        }) {
+            // The turn's `Begin | Run` prompt is the battle's `0x1E`.
+            return BattleHudPhase::RoundPrompt;
+        }
+        return match s.map(|s| s.phase()) {
             Some(crate::muscle_dome::MusclePhase::Select) => BattleHudPhase::CommandEntry,
             Some(crate::muscle_dome::MusclePhase::TurnOver)
                 if world.muscle_playback_tally().is_some() =>

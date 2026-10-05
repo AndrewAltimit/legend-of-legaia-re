@@ -56,8 +56,11 @@ pub enum DomeMenu {
 }
 
 impl Default for DomeMenu {
+    /// Every turn opens on the round prompt: the round driver's turn-top arm
+    /// `0x14` is the only writer of `0x1E` and stores it unconditionally
+    /// (`0x801D0ED4`), and the dome round is that driver.
     fn default() -> Self {
-        DomeMenu::Command(BattleCommandSession::new(0, 0))
+        DomeMenu::Command(BattleCommandSession::new_round_open(0, 0, false))
     }
 }
 
@@ -75,6 +78,9 @@ pub enum DomeMenuEvent {
     /// `Begin` was taken: both fighters' selections are closed and the turn
     /// is ready to resolve.
     Fight,
+    /// `Run` was taken on the round prompt: the fighter flees the leg, which
+    /// gives the contest up (the host reports the leg as ran).
+    Run,
 }
 
 /// The ring seat of a [`DomeRingChip`] in [`BattleCommand::MENU`] order.
@@ -209,6 +215,7 @@ impl MuscleDomeSession {
         let before = command_cursor(&cmd.phase);
         let before_screen = std::mem::discriminant(&cmd.phase);
         let was_ring = matches!(cmd.phase, CommandPhase::Menu { .. });
+        let was_prompt = matches!(cmd.phase, CommandPhase::RoundPrompt { .. });
         let (party, monsters) = self.picker_rows();
         cmd.input(
             BattleCommandInput {
@@ -239,6 +246,13 @@ impl MuscleDomeSession {
         if attack_arm && !self.chip_enabled(0, DomeRingChip::Attack) {
             self.menu = DomeMenu::Command(ring_at(ring_cursor(DomeRingChip::Attack)));
             return DomeMenuEvent::Refused;
+        }
+        if was_prompt && matches!(cmd.phase, CommandPhase::Menu { .. }) {
+            // Begin: the ring opens with its highlight on the Left arm - the
+            // turn-top arm seeds `ctx[+0x880] = 0x8000` before the prompt
+            // (`0x801D0ECC`), and the prompt's Begin keeps it.
+            self.menu = DomeMenu::Command(ring_at(ring_cursor(DomeRingChip::Attack)));
+            return DomeMenuEvent::Confirm;
         }
         match cmd.resolved() {
             None => {
@@ -293,10 +307,24 @@ impl MuscleDomeSession {
                 self.menu = DomeMenu::Command(ring_at(ring_cursor(DomeRingChip::Attack)));
                 DomeMenuEvent::Cursor
             }
-            // Cancel on the ring has no earlier member to step back to, a
-            // dome round has no Run, and an abort has no target to miss:
-            // all three leave the ring up.
-            Some(Resolution::StepBack | Resolution::RunAway | Resolution::Aborted) => {
+            // Cancel on the ring steps back to the round prompt: the dome
+            // fields one member, so the first member's step-back is the
+            // only one there is (`0x28`'s cancel arm, `0x801D11B4`).
+            Some(Resolution::StepBack) => {
+                self.menu = DomeMenu::default();
+                DomeMenuEvent::Cursor
+            }
+            // Run on the prompt. Inside a contest the round driver's `0xFE`
+            // arm turns a party Run into the arena's "ran" outcome
+            // (`_DAT_80084448 = 4`, `0x801D3228..0x801D328C`, behind the
+            // sub-id test at `0x801D322C`), which settles the contest as a
+            // give-up. The escape roll itself is not modelled: the leg ends.
+            Some(Resolution::RunAway) => {
+                self.menu = DomeMenu::default();
+                DomeMenuEvent::Run
+            }
+            // An abort has no target to miss: the ring stays up.
+            Some(Resolution::Aborted) => {
                 self.menu = DomeMenu::Command(ring_at(before.unwrap_or(1)));
                 DomeMenuEvent::Idle
             }
@@ -505,6 +533,14 @@ impl MuscleDomeSession {
         };
         let chip = |label: &str, enabled: bool| (label.to_string(), enabled);
         match cmd.phase {
+            CommandPhase::RoundPrompt { cursor } => Some(BattleCommandChips {
+                chips: crate::battle_input::RoundChoice::PROMPT
+                    .iter()
+                    .map(|c| chip(c.label(), true))
+                    .collect(),
+                cursor: usize::from(cursor),
+                phase: CommandChipPhase::RoundPrompt,
+            }),
             CommandPhase::Menu { cursor } => Some(BattleCommandChips {
                 chips: DomeRingChip::RING
                     .iter()

@@ -3804,8 +3804,16 @@ impl World {
                     triangle: self.input.just_pressed(input::PadButton::Triangle),
                     select_attack: self.toggles.select_attack,
                 };
-                if let Some(s) = self.minigames.muscle_dome.as_mut() {
-                    s.select_input(pad);
+                let ev = self
+                    .minigames
+                    .muscle_dome
+                    .as_mut()
+                    .map(|s| s.select_input(pad));
+                if ev == Some(crate::muscle_dome::DomeMenuEvent::Run) {
+                    // Run on the round prompt: the leg is reported as ran,
+                    // which settles the contest as a give-up - the shared
+                    // escape path.
+                    let _ = self.leave_muscle_dome();
                 }
             }
             MusclePhase::Resolve => {
