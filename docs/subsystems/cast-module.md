@@ -292,6 +292,36 @@ waives the fold once the tick's burst has landed (`module_skips_fold`).
 Folding as well rolled the burst twice and took a full-HP Noa to zero in one
 cast in the Nivora duel.
 
+**One owner per hit, across the band.** Every `jal` to `FUN_801DD0AC`,
+`FUN_801DD4B0` or `FUN_801DD6B4` in `0903..0966` is a hit the cast owes once,
+and the port gives each one exactly one owner:
+
+- **The fold.** This is the default. A body the port runs with a neutral wrapper return
+  (`None`, `|_| 0`, a zero heal) writes no HP, and the band's generic fold
+  rolls the cast. That covers every player-Seru and summon tick and every
+  single-target capture body except Plasma Strike's burst.
+- **The tick.** A body that rolls its own baked power in-tick owns the
+  outcome, and the fold must be waived for it. The waivers are:
+  - PROT 0927 / 0966's stager sweeps: the fold runs the stager itself,
+    `run_cast_module_aoe_for`.
+  - The three whole-row tick sweeps: PROT 0938's two and PROT 0965's,
+    waived by `tick_body_owns_the_fold` once the phase is past the sweep arm.
+  - The three trampoline-arm sweeps: PROT 0941 `0xB9`, 0950 `0xAB` and
+    0956 `0x71`, waived by `arm_sweep_arm` past the arm.
+  - PROT 0966's arm-11 stager hit and PROT 0960's burst, which raise
+    `module_skips_fold`.
+
+The rule for a newly ported damage site is the same: whatever rolls the
+wrapper in-tick must also waive the fold, on the same branch that rolled.
+Two module HP writes are not wrapper rolls and owe the fold nothing either
+way: PROT 0907's kill / confuse fork and PROT 0924's finale
+`sh zero, 0x14c` at `0x801F76A0`. Both zero the victim outright. The
+in-crate tests
+`no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold` and
+`no_seru_or_summon_tick_writes_hp_beside_its_fold`
+(`crates/engine-core/src/world/tests/cast_band.rs`) drive every
+choreography and check the rule.
+
 **The victim is the core's target, not the caster.** The monster AI's
 Delilas arms (`FUN_801E9FD4`, `0x801EB7C0..0x801EB81C`) store only
 `+0x1DE = 2` and `+0x1DF = id - 0x29`; `+0x1DD` keeps the generic core's
