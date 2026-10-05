@@ -363,6 +363,7 @@ impl PlayWindowApp {
                 anim_id: d.anim_id,
                 model: t * rot,
                 baked,
+                cull_radius: d.cull_radius,
             });
         }
         log::info!(
@@ -682,6 +683,13 @@ impl PlayWindowApp {
         let Some(bundle) = self.npc_anim_bundles.0.as_ref() else {
             return (baked_v, baked_c, live_v, live_c);
         };
+        // The placed-object actor cull (`field_view_window::placed_actor_visible`),
+        // the same gate the static placed pass asks.
+        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+            &self.session.host.world,
+            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+                && !self.field_debug_camera,
+        );
         for p in &self.field_posed_props {
             let record = self
                 .session
@@ -699,6 +707,15 @@ impl PlayWindowApp {
                 }
                 None => p.model,
             };
+            if !legaia_engine_core::field_view_window::placed_actor_visible(
+                &self.session.host.world,
+                view_cells.as_ref(),
+                model.w_axis.x as i32,
+                model.w_axis.z as i32,
+                p.cull_radius,
+            ) {
+                continue;
+            }
             let key = self
                 .session
                 .host

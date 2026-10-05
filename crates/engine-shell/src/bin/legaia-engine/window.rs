@@ -532,6 +532,9 @@ pub(crate) struct PosedPropDraw {
     pub model: Mat4,
     /// The baked frame-0 rest meshes + the raw TMD to re-pose from.
     pub baked: PosedMesh,
+    /// The record's `+0x1E` cull radius (the actor's `+0x58`), for the
+    /// placed-object actor cull.
+    pub cull_radius: u8,
 }
 
 /// Per-party-member battle facial-animation state: the member's per-action
@@ -805,6 +808,11 @@ struct PlayWindowApp {
     /// asks.
     field_placement_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     field_placement_color_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    /// Grid cell + record cull radius per `field_placement_draws` entry, for
+    /// the placed-object actor cull (`field_view_window::placed_actor_visible`).
+    field_placement_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    /// The same, per `field_placement_color_draws` entry.
+    field_placement_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
     /// The bind record of each draw of `field_placement_draws` /
     /// `field_placement_color_draws` (parallel lists, `None` = unbound): the
     /// key the per-frame pass looks a script's live object displacement up by

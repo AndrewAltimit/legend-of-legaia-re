@@ -2071,6 +2071,14 @@ impl PlayWindowApp {
                                     .get(di)
                                     .and_then(Option::as_ref),
                                 static_window,
+                            ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                                &self.session.host.world,
+                                view_cells.as_ref(),
+                                model.w_axis.x as i32,
+                                model.w_axis.z as i32,
+                                self.field_placement_cell_keys
+                                    .get(di)
+                                    .map_or(0, |k| k.cull_radius),
                             ) {
                                 continue;
                             }
@@ -2137,6 +2145,14 @@ impl PlayWindowApp {
                                     .get(di)
                                     .and_then(Option::as_ref),
                                 static_window,
+                            ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                                &self.session.host.world,
+                                view_cells.as_ref(),
+                                model.w_axis.x as i32,
+                                model.w_axis.z as i32,
+                                self.field_placement_color_cell_keys
+                                    .get(di)
+                                    .map_or(0, |k| k.cull_radius),
                             ) {
                                 continue;
                             }

@@ -85,6 +85,24 @@ the follow camera publishes each frame (`Camera::route_camera_events` ->
 The engine still draws the whole scene, so the hold shows only on a glider
 the player walks back into view of.
 
+The bit is also a **draw** gate. The actor draw walk `FUN_8001ADA4` skips
+any actor whose `+0x10 & 0xA` is set (`andi v0,v0,0xa` / `bne` at
+`0x8001AE54..0x8001AE58`), and every `.MAP` placed object is an actor on
+this tick, carrying its record's `+0x1E` byte as `+0x58` (`FUN_80020F88`,
+`0x80020FC0..0x80020FC8`). Fed each capture's focus, box and window, the
+kernel reproduces bit `1` for all 84 placed-object actors of both
+`rikuroa` Caruban captures and all 83 of `rim_elm_queen_bee_battle`. So
+under retail's visible-tile crop both hosts skip a culled placed object
+through `field_view_window::placed_actor_visible` (the native placed,
+colour and posed-prop passes; the play page's `field_placement_culled`
+mask): the moss spires on the slopes below the `rikuroa` summit, which the
+port drew floating over the mist, are culled there. The crop runs under a
+cutscene shot too - a staging record sets the window for its shot with op
+`0x46` (`town0c` `P1[21]`'s `46 24 FD EC 18 03` before the Queen Bee shot,
+the window that capture holds) - and the published view is taken after the
+frame's op-`0x46` events land, since retail's op writes the scratchpad
+outright.
+
 Every partition-1 placement passes the `0x20200` test on its own class bit
 `0x20000` (the seater `FUN_8003A1E4` ORs it in at `0x8003A3A4..0x8003A3B4`),
 so retail rewrites every visible placement's Y on every actor tick.

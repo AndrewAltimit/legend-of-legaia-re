@@ -901,6 +901,7 @@ void main() {
       this.staticDraws = [];
       this._staticWindowStamp = undefined;
       this._viewWindowStamp = undefined;
+      this._placementCullStamp = undefined;
       this.player = null;
       this.npcs = [];
       this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
@@ -2080,7 +2081,28 @@ void main() {
       const live = rt.field_placement_live();
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
-        d.hidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
+        d.winHidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
+        d.hidden = d.winHidden || !!d.cullHidden;
+      }
+    }
+
+    /* Every placed object is a field actor, and retail's actor tick culls it
+     * (FUN_801D79E8: outside the region box, or outside the visible tile
+     * window widened by its record's cull radius) - the draw walk then skips
+     * it. The engine answers through the same
+     * `field_view_window::placed_actor_visible` kernel the native window asks;
+     * the mask is empty while the visible-tile crop does not apply, and the
+     * page re-reads it only when the cull view moves. */
+    _syncPlacementCull(rt) {
+      if (typeof rt.field_placement_cull_stamp !== 'function') return;
+      const stamp = rt.field_placement_cull_stamp(this.debugCamera);
+      if (stamp === this._placementCullStamp) return;
+      this._placementCullStamp = stamp;
+      const culled = stamp ? rt.field_placement_culled(this.debugCamera) : [];
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        d.cullHidden = d.placeIdx < culled.length && culled[d.placeIdx] === 1;
+        d.hidden = !!d.winHidden || d.cullHidden;
       }
     }
 
@@ -2476,6 +2498,7 @@ void main() {
 
       /* Retail's visible-tile crop may have moved with the camera. */
       this._syncViewWindow(rt);
+      this._syncPlacementCull(rt);
 
       /* A script may have re-bound an NPC's mesh this frame. */
       this._rebindLiveNpcModels(rt);

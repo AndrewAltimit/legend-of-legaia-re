@@ -721,6 +721,69 @@ impl LegaiaRuntime {
             .collect()
     }
 
+    /// Per-placement **actor-cull** mask (parallel to
+    /// [`Self::field_placement_slots`]): `1` = the placed object's actor is
+    /// culled this frame (outside the region box or the visible tile window
+    /// widened by its record's cull radius - retail's `FUN_801D79E8`, which
+    /// the actor draw walk honours), so the page skips it. **Empty** while
+    /// the visible-tile crop does not apply (no crop = draw every placement).
+    /// The same `field_view_window::placed_actor_visible` kernel the native
+    /// play-window's placed-object pass asks per draw.
+    pub fn field_placement_culled(&self, debug_camera: bool) -> Vec<u8> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(cells) = self.field_view_cells_now(debug_camera) else {
+            return Vec::new();
+        };
+        let moves = h.world.object_draw_displacements();
+        let per = field_env::placed_draw_displacements(&f.placement_records, &moves);
+        f.placements
+            .iter()
+            .zip(per)
+            .map(|(d, m)| {
+                u8::from(
+                    !legaia_engine_core::field_view_window::placed_actor_visible(
+                        &h.world,
+                        Some(&cells),
+                        d.world_x + m[0],
+                        d.world_z + m[2],
+                        d.cull_radius,
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    /// A stamp that moves whenever [`Self::field_placement_culled`] can: the
+    /// published cull view (focus, region box, window) and the crop's own
+    /// stamp; `0` while no crop applies. The page re-reads the mask only when
+    /// it moves.
+    pub fn field_placement_cull_stamp(&self, debug_camera: bool) -> u32 {
+        let Some(cells) = self.field_view_cells_now(debug_camera) else {
+            return 0;
+        };
+        let Some(view) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.npcs.cull_view)
+        else {
+            return 0;
+        };
+        let mut h: u32 = cells.stamp();
+        for v in [
+            view.focus_stored[0],
+            view.focus_stored[1],
+            i32::from_le_bytes(view.attr_box),
+            i32::from_le_bytes(view.window.map(|b| b as u8)),
+        ] {
+            for b in v.to_le_bytes() {
+                h = (h ^ u32::from(b)).wrapping_mul(0x0100_0193);
+            }
+        }
+        h.max(1)
+    }
+
     /// Whether retail's placed-object near reject drops a placed draw whose
     /// origin sits at clip `w` = `origin_view_depth` under this frame's
     /// retail camera - the same `field_env::placed_origin_near_culled` kernel
