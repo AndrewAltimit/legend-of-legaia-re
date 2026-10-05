@@ -786,6 +786,12 @@ tail): with no creature seated the walk arm passed on its first tick and
 folded the hit there, so a capture mid-walk (`gimard_burning_attack`, victim
 still at full HP) read the victim dead.
 
+A capture on the Done band the cast hands on to (`0x51` / `0x52`) is
+gated on that band's hold countdown `ctx[+0x6D8]` as well (the `d<timer>`
+suffix, the same countdown the pad-driven plan's `DoneHold` reads): the hold
+is `0x3C` frames, or `0x96` behind a magic level-up banner, so the state
+alone placed the frame on its first vsync.
+
 The frame and the RAM are not the same instant. Retail double-buffers its
 packet pools, so while the CPU builds frame `N` the display scans out
 `N - 2`: of the flash's two full-screen `POLY_F4` packets, one carries the
