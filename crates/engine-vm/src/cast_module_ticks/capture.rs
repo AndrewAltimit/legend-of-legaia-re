@@ -65,24 +65,17 @@ pub const WHITE_SHIELD_TRAMPOLINE_ARMS: [(u8, u32); 6] = [
 /// modules put a body at `0x801F69D8`, the load base - so a consumer has to
 /// key on `(entry, body)`, never on the body alone.
 ///
-/// The first `PORT:` tag names the six trampoline VAs that are neither
-/// phantom prints nor VA-aliased across images by bare address. The other
-/// fifteen, PROT 0957's `0x801F9BA8` included, sit at VAs where other images
-/// hold different code (`scripts/ci/port-catalog-ignore.toml` files them under
-/// `[worklist_va_aliased]` / `[ghidra_phantoms]`), so the second tag names
-/// each by its **dump stem** - `overlay_<label>_<prot>_<addr>`, the trampoline
-/// in that one image - which is how the per-image port table tells this
-/// port from the unrelated routines at the same VA.
+/// The `PORT:` tag names the six trampoline VAs that are neither phantom
+/// prints nor VA-aliased across images by bare address. The other fifteen,
+/// PROT 0957's `0x801F9BA8` included, sit at VAs where other images hold
+/// different code (`scripts/ci/port-catalog-ignore.toml` files them under
+/// `[worklist_va_aliased]` / `[ghidra_phantoms]`), so the lookup that does
+/// each trampoline's job, [`capture_tick_body`], names them by **dump
+/// stem**, `overlay_<label>_<prot>_<addr>`: the trampoline in that one image,
+/// which is how the per-image port table tells this port from the unrelated
+/// routines at the same VA.
 ///
 /// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4
-/// PORT: overlay_cast_glare_divide_0940_801f8228, overlay_cast_steal_0941_801f7d38,
-///       overlay_cast_power_up_0942_801f80a0, overlay_cast_curse_0943_801f7624,
-///       overlay_cast_guilty_cross_0944_801f7ebc, overlay_cast_water_column_0945_801f76f4,
-///       overlay_cast_rolling_flare_0950_801f8190, overlay_cast_water_hazard_0956_801f7e4c,
-///       overlay_summon_effect_table_0957_801f9ba8, overlay_cast_megaton_press_0959_801f87f4,
-///       overlay_cast_plasma_strike_0960_801f8638, overlay_cast_dead_end_crisis_0961_801f7a54,
-///       overlay_cast_blade_breath_0962_801f8080, overlay_cast_genocidal_cannon_0963_801f8438,
-///       overlay_cast_element_change_0964_801f8e3c
 pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 21] = [
     // `beq v1, 0x4e -> 0x801F726C` / `beq v1, 0xb7 -> 0x801F69EC`.
     CaptureTrampoline {
@@ -293,6 +286,15 @@ pub fn capture_trampoline_for(prot_entry: u32) -> Option<&'static CaptureTrampol
 /// "multi-spell cell" is several whole choreographies in one image rather
 /// than one body branching internally: PROT 0955 holds **six**, the widest in
 /// the band.
+///
+/// PORT: overlay_cast_glare_divide_0940_801f8228, overlay_cast_steal_0941_801f7d38,
+///       overlay_cast_power_up_0942_801f80a0, overlay_cast_curse_0943_801f7624,
+///       overlay_cast_guilty_cross_0944_801f7ebc, overlay_cast_water_column_0945_801f76f4,
+///       overlay_cast_rolling_flare_0950_801f8190, overlay_cast_water_hazard_0956_801f7e4c,
+///       overlay_summon_effect_table_0957_801f9ba8, overlay_cast_megaton_press_0959_801f87f4,
+///       overlay_cast_plasma_strike_0960_801f8638, overlay_cast_dead_end_crisis_0961_801f7a54,
+///       overlay_cast_blade_breath_0962_801f8080, overlay_cast_genocidal_cannon_0963_801f8438,
+///       overlay_cast_element_change_0964_801f8e3c
 pub fn capture_tick_body(prot_entry: u32, action_id: u8) -> Option<u32> {
     capture_trampoline_for(prot_entry).and_then(|t| {
         t.arms

@@ -1098,11 +1098,18 @@ def collect_port_anchors(
         if src.is_test_file:
             continue
         rel = str(path.relative_to(REPO))
-        for lineno, line in enumerate(src.raw.splitlines(), start=1):
+        raw_lines = src.raw.splitlines()
+        for lineno, line in enumerate(raw_lines, start=1):
             tag = PORT_TAG_RE.search(line)
             if not tag:
                 continue
-            addrs = {m.group(1).lower() for m in PORT_ADDR_RE.finditer(tag.group(1))}
+            # The tag's addresses come from the shared reader, wrapped list and
+            # all: scraping the opening line alone left every address past a
+            # wrap with no anchor, so `collect_ports` counted it ported while
+            # this pass called it inert.
+            got = port_tag_reader.marker_tail(raw_lines, lineno - 1)
+            tail = got[1] if got and got[0] == "PORT" else tag.group(1)
+            addrs = {m.group(1).lower() for m in PORT_ADDR_RE.finditer(tail)}
             if not addrs:
                 continue
             is_module_tag = line.lstrip().startswith("//!")
