@@ -1188,6 +1188,27 @@ texel and the left wall rises past neutral. A port that drew the lit rows
 at the neutral `0x80` painted both walls at their raw texel
 ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
 
+### One ease step behind, or a few frames into an arrival
+
+Two field states score low on the image channel for timing the seed does
+not replay, not for a compose the port gets wrong:
+
+- `kor5_post_436_organic` holds its camera mid-ease toward the block a
+  walk-on loader staged (staging `0x801C6EA8` / `0x801F3580`: pitch `700`,
+  yaw `0`, `H` `400`, eye Z `8320`); retail reads `590 / -108 / 407`, eye Z
+  `7552`, the port `600 / -98 / 406`, eye Z `7622`. All three channels sit
+  the same fraction of the remaining distance ahead - one step of the same
+  ease - so the ease law agrees and the start frame does not; on a tiled
+  floor that one step costs a third of the image score.
+- `retona_field_card_boot` was caught a few frames into the card load's
+  arrival: the op `4C 12` word `0x8007BCB8..BA` reads `27` (mid-ramp), and
+  the fog pool holds 27 particles whose ages are all under half of the
+  `0x400` brightness ramp. The particles' colour is
+  `grey * tint * brightness >> 15`, so retail's sheets are nearly black; the
+  port, past its settle, draws them at full strength over the cave's holes.
+  The same frame shows the scene geometry at full brightness while the word
+  reads `27`, so the word is not a multiply on the whole field frame there.
+
 ### A poked player keeps the arrival focus
 
 Retail writes the camera focus `0x80089118` / `0x80089120` on two legs only:
