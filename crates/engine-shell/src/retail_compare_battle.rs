@@ -192,6 +192,13 @@ pub struct RetailBattle {
     /// The battle-end sequence's position, when the capture is past the end
     /// signal ([`SpanGate`]).
     pub span_gate: SpanGate,
+    /// The win pose the battle-end sequence latched on its pose actor
+    /// (`ctx[+0x13]`'s `+0x1DB`), for a capture past the end signal. The
+    /// results framing is that pose's script ([`legaia_engine_vm::battle_cam_script`]'s
+    /// `battle_over_script`), and the sequencer draws the pose from the
+    /// stream, so a seed that reaches the phase on another pose frames
+    /// another shot.
+    pub win_pose: Option<u8>,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
@@ -867,6 +874,10 @@ impl RetailBattle {
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             span_gate: span_gate(ram, ctx),
+            win_pose: span_gate(ram, ctx)
+                .is_end()
+                .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
+                .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             ground: (0..8u32)
                 .map(|slot| {
@@ -936,6 +947,8 @@ pub struct EngineBattle {
     /// there, which a re-run gates on instead (and which the re-run's own
     /// result carries as the gate it was sampled on).
     pub age_short: Option<u16>,
+    /// The win pose the engine's battle-end sequence picked, when it runs.
+    pub win_pose: Option<u8>,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
@@ -1361,6 +1374,7 @@ pub fn run_engine_battle(
         prompt_tick,
         inflight: seed.map(|_| phase_tick),
         driven,
+        win_pose: world.battle.victory.and_then(|v| v.pose_id),
         action_state: world.battle_ctx.action_state,
         active_actor: world.battle_ctx.active_actor,
         monster_ids: snap.monster_ids,
@@ -1776,7 +1790,7 @@ impl SpanGate {
     }
 
     /// Whether a gate past the end signal.
-    fn is_end(self) -> bool {
+    pub fn is_end(self) -> bool {
         matches!(
             self,
             Self::Loading | Self::Results { .. } | Self::Exit { .. }

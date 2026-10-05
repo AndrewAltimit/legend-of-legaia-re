@@ -1659,6 +1659,10 @@ fn run_battle(
     // first run.
     let mut first = None;
     let mut reached = None;
+    // A battle-end capture also wants retail's win pose: a run that reaches
+    // the phase on another one is kept as the fallback while the remaining
+    // streams are tried (`RetailBattle::win_pose`).
+    let mut off_pose = None;
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     let revive: &[bool] = if battle.action_victims().is_empty() {
         &[false]
@@ -1701,6 +1705,10 @@ fn run_battle(
                         && e.driven != Some(None)
                         && e.inflight != Some(None) =>
                 {
+                    if battle.win_pose.is_some() && e.win_pose != battle.win_pose {
+                        off_pose.get_or_insert(e);
+                        continue;
+                    }
                     reached = Some(e);
                     break 'search;
                 }
@@ -1714,7 +1722,7 @@ fn run_battle(
             }
         }
     }
-    let engine = match reached.map(Ok).or(first) {
+    let engine = match reached.or(off_pose).map(Ok).or(first) {
         Some(Ok(e)) => e,
         Some(Err(e)) => {
             report.unseeded = format!("seeding failed: {e:#}");

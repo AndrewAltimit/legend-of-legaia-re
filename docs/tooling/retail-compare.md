@@ -356,7 +356,14 @@ draw decides is still one realisation of the stream, so the seeds in
 `BATTLE_RNG_SEEDS` are tried in order and the first under which the fight is
 still on, its opening reached a prompt, and the drive or replayed cast
 reached the capture's phase is the one scored; a state no seed satisfies
-keeps the first seed's run, `never reached`.
+keeps the first seed's run, `never reached`. A capture past the end signal
+also wants retail's win pose: the results sequencer draws it from the stream
+(`victory_pose_id`), and the results camera is that pose's own script
+(`battle_over_script`), so `noa_levelup_banner` reached its hold on another
+pose framed a shot nobody saw. The pose actor's latched `+0x1DB` is read
+(`RetailBattle::win_pose`), a seed that reaches the phase on another pose is
+kept only as the fallback, and the remaining seeds are tried for one that
+draws retail's.
 
 **The image child plays the same fight.** The frame is only evidence about
 the state the channels scored if the `play-window` child replays that fight
