@@ -1071,13 +1071,35 @@ table - and the anchor: the creature seat, or the arm's own shot trios), and
 `World::summon_stager_tick` seats each one on the pass its arm makes the call.
 The parts then drain their wait timers at retail's own per-frame product
 (`SummonScene::retail_wait_drain`), the rate the module's countdown already
-runs at. PROT 0903 is the one such module:
+runs at. PROT 0903 is one such module:
 
 | arm | calls | what |
 |---:|---|---|
 | 3 | `0x801F7820`, `0x801F7870`, `0x801F78C4` on the creature | the creature's arrival |
 | 6 | `0x801F7724`, `0x801F7794`, `0x801F7804` on the shot | the camera-relative fire tunnel |
 | 8 | `*(0x801F63A8)` (PROT 0898 record `0x801F5B28`, library mesh `0x18`) on the creature, after a 16x1 `MoveImage` of the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)` | the breath |
+
+PROT 0905 (Vera) reports its calls the same way. Its anchors are points the
+arm builds on its stack rather than seats - the framed point, or a step along
+the target's heading - so `SpawnAnchor` carries those shapes too
+(`cast_module_camera::spawn_anchor_point`):
+
+| arm | calls | anchor |
+|---:|---|---|
+| 0 | `0x801F81E4`, `0x801F823C`, `0x801F8294`, `0x801F82FC` | the framed point (the shot focus negated back) at `y = -0x280`, angles zeroed (`0x801F6BF4..0x801F6C7C`) |
+| 4 | `0x801F8364`, `0x801F83CC`, `0x801F8434` | the target plus `trunc(sin / 32)` / `trunc(cos / 32)` of its heading, `y = -0x1C2` (`0x801F707C..0x801F7144`) |
+| 5 | `0x801F8494`, `0x801F8500` | the creature it has just seated plus `trunc(sin / 24)` / `trunc(cos / 24)` of the target's heading, `y = -0x1C2` (`0x801F7340..0x801F7420`) |
+| 8 | `0x801F85D4`, `0x801F862C` | the creature (`0x801F7A48` / `7A60`) |
+| 9 | `0x801F868C`, `0x801F86EC`, `0x801F8730`, `0x801F8774`, `0x801F87D4` | the target (`0x801F7B34..0x801F7B94`) |
+
+`vera_summon_mid_cast` holds arm 0's four records and nothing else, at
+`(-365, -418, -810)`: dropped `+0x3E = 3 << 3` a step by the part tick's
+motion block from `y = -0x280` over the target's raised hand. A part seated
+this way holds a real `+0x14..+0x18`, so it moves by the motion block's
+velocity integration rather than the whole-set staging's glide toward
+`origin + anim bank`. One record is lost to the per-arm form: `0x801F8568`,
+which the module's spawn stager `0x801F8078` (the move-VM op-`0x20` hook)
+seats eight at a time with random spreads, and which no host runs.
 
 The `gimard_burning_attack` capture (arm 11) holds the two tunnel parts
 mid-program and `0x801F7804` and the breath record still allocated - the

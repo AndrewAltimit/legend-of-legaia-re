@@ -282,7 +282,39 @@ fn gimard_reports_its_spawns_and_captions_on_their_arms() {
         ]
     );
     assert!(module_profile(903).is_some_and(|p| p.stages_spawns));
-    assert!(!module_profile(905).is_some_and(|p| p.stages_spawns));
+    assert!(module_profile(905).is_some_and(|p| p.stages_spawns));
+}
+
+/// PROT 0905 reports its spawn calls on the arms that make them: four glows
+/// on the framed point in arm 0, three along the target's heading in arm 4,
+/// two off the seated creature in arm 5, two on the creature in arm 8 and
+/// five on the restored target in arm 9.
+#[test]
+fn vera_reports_its_spawns_on_their_arms() {
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut seen = Vec::new();
+    for _ in 0..4000u32 {
+        let d = vera_direct(&mut st, phase, seats());
+        if !d.spawns.is_empty() {
+            seen.push((phase, d.spawns.len()));
+        }
+        if !d.hold {
+            phase += if phase == 5 { 3 } else { 1 };
+            if phase > 10 {
+                break;
+            }
+        }
+    }
+    assert_eq!(seen, vec![(0, 4), (4, 3), (5, 2), (8, 2), (9, 5)]);
+    // Arm 0's glows sit on the framed point at `y = -0x280`, unturned.
+    let s = seats();
+    let shot = vera_direct(&mut ModuleCamState::default(), 0, s).shot;
+    let (pos, rot) =
+        spawn_anchor_point(VERA_OPEN_SPAWNS[0].anchor, None, Some(s.victim), shot).unwrap();
+    let f = shot.unwrap().focus;
+    assert_eq!(pos, [-f[0], -0x280, -f[2]]);
+    assert_eq!(rot, [0; 3]);
 }
 
 /// Walk any director to its park, returning `(passes per arm, shots by arm)`.

@@ -706,7 +706,17 @@ impl SummonScene {
             // `0x80022BA4`); it is what grows a ribbon node's `+0xC8` total.
             move_vm::integrate_draw_channels(&mut part.state, self.channel_delta);
             let camera_locked = is_camera_locked(&part.state);
-            if camera_locked && crate::part_motion::runs_motion_block(&part.state) {
+            // A part a module arm seated on its own spawn point
+            // ([`Self::push_parts`]) holds a real `+0x14..+0x18`, exactly as
+            // retail's `FUN_80021B04` left it, so it moves the way retail
+            // moves it: the motion block's velocity integration. The glide
+            // below re-seats a part on `origin + anim bank`, which only means
+            // something for the whole-set staging's summon-local offsets
+            // (`vera_summon_mid_cast`: arm 0's four glows fall `+0x3E = 24`
+            // per step from `y = -0x280` to retail's `-418`; the glide parked
+            // them at `-616`, off the top of the frame).
+            let seated = part.origin.is_some();
+            if (camera_locked || seated) && crate::part_motion::runs_motion_block(&part.state) {
                 // Retail's motion block (`0x800228A0..0x80022B90`), ahead of
                 // the VM call: `+0x3C..+0x40` are velocities integrated into
                 // `+0x14..+0x18`, never offsets from a spawn origin.
@@ -723,7 +733,7 @@ impl SummonScene {
                 }
                 _ => {}
             }
-            if is_camera_locked(&part.state) {
+            if seated || is_camera_locked(&part.state) {
                 // The `+0x52 & 0x400` arm of `FUN_8001CF50` reads `+0x14`
                 // as an eye-space offset (`+0x2C = S_b * (+0x14)`,
                 // `FUN_8003D344`), so the part keeps the position its own

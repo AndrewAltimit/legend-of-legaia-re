@@ -207,12 +207,14 @@ pub fn camera_relative_model_prefix(
     let part = camera_relative_part(flags, world_pos, cam)?;
     let sy = if frame_flip { -1.0 } else { 1.0 };
     // Back into the host frame, `F K F` for the basis. The skip arm keeps the
-    // host's own translation (retail leaves `+0x2C` as the full camera put
-    // it); the locked arm's placement is a retail-frame point, `F p` here.
+    // full camera's translation (retail leaves `+0x2C` as the full camera put
+    // it) - the node's own world point, which in the host frame is `F p` like
+    // any other translation ([`part_model_place`]); the locked arm's
+    // placement is a retail-frame point, `F p` here too.
     let p = if flags & view_rot_flags::USE_SAVED_MATRIX != 0 {
         [part.pos[0], part.pos[1] * sy, part.pos[2]]
     } else {
-        world_pos
+        [world_pos[0], world_pos[1] * sy, world_pos[2]]
     };
     let fl = [1.0, sy, 1.0];
     let b = &part.basis;
@@ -237,11 +239,70 @@ pub fn camera_relative_model_prefix(
     ])
 }
 
+/// The model prefix both play hosts place a move-VM part with: the
+/// camera-relative prefix ([`camera_relative_model_prefix`]) for a
+/// `+0x52 & 0x780` node, else the plain translation `T(F p)`.
+///
+/// `frame_flip` is the battle frame, whose view-projection carries the
+/// trailing `scale(1,-1,1)` (`psx_camera_vp`) that cancels the per-model
+/// Y-flip: a model `T(q) * R * F` reaches the retail camera as the point
+/// `F q`, so a node at retail `+0x14 = p` is placed at `q = F p`. Placing it
+/// at `p` drew every off-floor battle effect mirrored through the floor -
+/// `vera_summon_mid_cast`'s glows, seated at `y = -0x280` over the target's
+/// raised hand (PROT 0905 arm 0), rendered under the stage.
+pub fn part_model_place(
+    flags: u16,
+    world_pos: [f32; 3],
+    cam: Option<&PartCameraPose>,
+    frame_flip: bool,
+) -> [f32; 16] {
+    camera_relative_model_prefix(flags, world_pos, cam, frame_flip).unwrap_or_else(|| {
+        let y = if frame_flip {
+            -world_pos[1]
+        } else {
+            world_pos[1]
+        };
+        [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            world_pos[0],
+            y,
+            world_pos[2],
+            1.0,
+        ]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const EPS: f32 = 2e-3;
+
+    /// A battle part's placement is the retail point under the frame flip,
+    /// whether it is a plain node or a skip-bit billboard; a field part keeps
+    /// the raw retail point.
+    #[test]
+    fn a_battle_part_is_placed_at_the_flipped_retail_point() {
+        let cam = battle_cam([0.0, 0.0, 0.0]);
+        let p = [-365.0, -430.0, -810.0];
+        for flags in [0u16, 0x0380] {
+            let m = part_model_place(flags, p, Some(&cam), true);
+            assert_eq!([m[12], m[13], m[14]], [-365.0, 430.0, -810.0], "{flags:#x}");
+        }
+        let m = part_model_place(0, p, None, false);
+        assert_eq!([m[12], m[13], m[14]], p);
+    }
 
     fn field_cam() -> PartCameraPose {
         PartCameraPose {
@@ -381,8 +442,11 @@ mod tests {
         let flags = view_rot_flags::SKIP_YAW;
         let raw = camera_relative_part(flags, pos, &cam).unwrap();
         let m = camera_relative_model_prefix(flags, pos, Some(&cam), true).unwrap();
-        // Skip arm: translation is the host's own.
-        assert_eq!([m[12], m[13], m[14]], pos);
+        // Skip arm: the full camera's translation, which in the flipped host
+        // frame is `F p` - the frame's VP undoes the flip on the way to the
+        // retail camera (`vera_summon_mid_cast`'s glows drew under the floor
+        // while this read `p`).
+        assert_eq!([m[12], m[13], m[14]], [pos[0], -pos[1], pos[2]]);
         // Basis `F K F`: the Y row and column change sign, the rest do not.
         let sign = [1.0, -1.0, 1.0];
         for r in 0..3 {

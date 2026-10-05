@@ -1044,7 +1044,13 @@ Both hosts honour it. Every move-VM part draw record carries the node's
 part pass - the native window's `build_summon_and_move_fx_part_draws` /
 `build_field_fx_part_draws` and the browser play page's `build_battle_fx` /
 `build_field_fx` - composes the part with
-`engine-ui::gte::camera_relative_model_prefix` in place of its translation.
+`engine-ui::gte::camera_relative_model_prefix` in place of its translation,
+through the one placement kernel `gte::part_model_place`. In battle the
+hosts' view-projection ends in the `scale(1,-1,1)` that cancels the per-model
+Y-flip, so a node at retail `+0x14 = p` is placed at `(x, -y, z)` on both the
+plain and the skip arm; placed at `p`, every off-floor battle effect drew
+mirrored through the floor (`vera_summon_mid_cast`'s glows over the target's
+raised hand rendered under the stage).
 The hosts cannot branch around their view matrix, so the kernel expresses the
 retail result under it: the skip arm is the basis `(6 / S_b) * R^T * P`
 (`P` from the port `camera_view_rotation`), the `0x400` arm is `R^T` at the

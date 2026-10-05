@@ -587,17 +587,16 @@ impl PlayWindowApp {
         part_cam: Option<&legaia_engine_render::gte::PartCameraPose>,
     ) -> Vec<(UploadedVramMesh, Mat4)> {
         let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
-        // A part's placement: `T(world_pos)`, or - for a `+0x52 & 0x780`
-        // node - the camera-relative prefix `FUN_8001CF50` resolves to under
-        // this host's full-camera view. Battle models carry the per-model
-        // Y-flip, which is the frame flip the prefix conjugates by.
+        // A part's placement (`gte::part_model_place`, the browser page's
+        // too): `T(F world_pos)`, or - for a `+0x52 & 0x780` node - the
+        // camera-relative prefix `FUN_8001CF50` resolves to under this host's
+        // full-camera view. Battle models carry the per-model Y-flip, which is
+        // the frame flip `F` both the prefix and the translation take.
         let frame_flip = self.session.host.world.mode == SceneMode::Battle;
         let place = |flags: u16, pos: [f32; 3]| -> Mat4 {
-            legaia_engine_render::gte::camera_relative_model_prefix(
+            Mat4::from_cols_array(&legaia_engine_render::gte::part_model_place(
                 flags, pos, part_cam, frame_flip,
-            )
-            .map(|m| Mat4::from_cols_array(&m))
-            .unwrap_or_else(|| Mat4::from_translation(Vec3::from(pos)))
+            ))
         };
         if !self.boot_ui.is_active() && !in_world_map {
             // Summon parts and battle move-FX parts render identically

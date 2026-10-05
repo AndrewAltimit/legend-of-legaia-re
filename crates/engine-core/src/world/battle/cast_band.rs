@@ -975,24 +975,29 @@ impl World {
         shot: Option<vm::cast_module_camera::ModuleShot>,
     ) {
         use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
-        use vm::cast_module_camera::{SpawnAnchor, SpawnRecord};
+        use vm::cast_module_camera::SpawnRecord;
         const LINK_BASE: u32 = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let creature = self
             .casting
             .module_cam
             .creature
-            .or(self.casting.module_cam.creature_live)
-            .map(|c| ([c.x, c.y, c.z], [0, c.facing as i16, 0]));
+            .or(self.casting.module_cam.creature_live);
+        let victim = self
+            .casting
+            .module_cam
+            .victim_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .map(|a| vm::cast_module_camera::ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0xFFF,
+            });
         for spawn in spawns {
-            let (pos, rot) = match spawn.anchor {
-                SpawnAnchor::Creature => match creature {
-                    Some(c) => c,
-                    None => continue,
-                },
-                SpawnAnchor::ShotFocus => match shot {
-                    Some(s) => (s.focus, s.angles),
-                    None => continue,
-                },
+            let Some((pos, rot)) =
+                vm::cast_module_camera::spawn_anchor_point(spawn.anchor, creature, victim, shot)
+            else {
+                continue;
             };
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {

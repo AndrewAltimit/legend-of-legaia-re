@@ -463,16 +463,38 @@ fn a_live_cast_stages_its_module_records() {
         // (`0x801F716C..0x801F719C`) and one in arm 8 (`0x801F72B8`). The
         // first staged frame holds arm 3's three, and the band seats all
         // seven by the time it folds.
-        assert_eq!(entry, 903, "PROT 0903 is the one module seated per arm");
-        let arms: [&[cmc::ModuleSpawn]; 3] = [
-            &cmc::GIMARD_SEAT_SPAWNS,
-            &cmc::GIMARD_TUNNEL_SPAWNS,
-            &cmc::GIMARD_BREATH_SPAWNS,
-        ];
+        //
+        // PROT 0905 makes four calls in arm 0, three in arm 4, two in arm 5,
+        // two in arm 8 and five in arm 9 (`vera_direct`); its first staged
+        // frame is arm 0's four. Its spawn stager `0x801F8078` - the move-VM
+        // op-`0x20` hook a record calls - seats `0x801F8568` eight at a time;
+        // no host runs that hook, so per-arm seating stages that record
+        // nowhere.
+        let (arms, hook_only): (Vec<&[cmc::ModuleSpawn]>, &[u32]) = match entry {
+            903 => (
+                vec![
+                    &cmc::GIMARD_SEAT_SPAWNS,
+                    &cmc::GIMARD_TUNNEL_SPAWNS,
+                    &cmc::GIMARD_BREATH_SPAWNS,
+                ],
+                &[],
+            ),
+            905 => (
+                vec![
+                    &cmc::VERA_OPEN_SPAWNS,
+                    &cmc::VERA_CUT_SPAWNS,
+                    &cmc::VERA_SEAT_SPAWNS,
+                    &cmc::VERA_CREATURE_SPAWNS,
+                    &cmc::VERA_RESTORE_SPAWNS,
+                ],
+                &[0x801F_8568],
+            ),
+            _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
+        };
         assert_eq!(
             *parts,
             arms[0].len(),
-            "spell {id:#04x}: PROT {entry}'s first staged frame is arm 3's calls"
+            "spell {id:#04x}: PROT {entry}'s first staged frame is its first arm's calls"
         );
         let calls: usize = arms.iter().map(|a| a.len()).sum();
         assert_eq!(
@@ -492,13 +514,13 @@ fn a_live_cast_stages_its_module_records() {
         for p in &module.parts {
             let va = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE + p.record_off as u32;
             assert!(
-                called.contains(&va),
+                called.contains(&va) || hook_only.contains(&va),
                 "PROT {entry} record {va:#010x} is staged by one of its arms"
             );
         }
         println!(
-            "[ok] spell {id:#04x} -> PROT {entry}: {parts} records on arm 3, \
-             {seated} seated over arms 3/6/8 (static set {})",
+            "[ok] spell {id:#04x} -> PROT {entry}: {parts} records on the first arm, \
+             {seated} seated over the band (static set {})",
             module.parts.len()
         );
     }

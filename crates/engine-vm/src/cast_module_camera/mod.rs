@@ -262,6 +262,73 @@ pub enum SpawnAnchor {
     /// way is camera-relative (`+0x52 & 0x780`), so its program's own
     /// `WORLD_SET` places it and the anchor is only its seed.
     ShotFocus,
+    /// The arm's shot focus turned back into a world point - the stack trio
+    /// `sp+0x30` / `sp+0x34` negated again (`subu v0,zero,v0`) - at the
+    /// literal height `y` stored over `sp+0x32`, with the shot's yaw zeroed
+    /// (`sh zero,0x22(sp)`). PROT 0905 arm 0 (`0x801F6BF4..0x801F6C1C`).
+    ShotPoint { y: i16 },
+    /// The cast's victim seat `actor_table[caster + 0x1DD]`:
+    /// `a0 = victim + 0x34`, `a1 = victim + 0x44`.
+    Victim,
+    /// A point `4096 / div` units along the **victim's** heading `+0x46`
+    /// from `base` - `base + trunc(sin(h) / div)` on X, the same with `cos`
+    /// on Z, through the SCUS tables `0x8007B81C` / `0x8007B7F8` - at the
+    /// literal height `y`, with no rotation (the arm's zeroed stack angles).
+    /// PROT 0905 arms 4 (`/ 32`, `0x801F707C..0x801F710C`) and 5 (`/ 24` on
+    /// the creature, `0x801F7340..0x801F7404`).
+    AlongVictimHeading { base: HeadingBase, div: i16, y: i16 },
+}
+
+/// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadingBase {
+    Victim,
+    Creature,
+}
+
+/// Resolve one spawn call's `(a0, a1)` - the position trio and the angle
+/// trio `FUN_80021B04` seats the record on - from the seats the arm read and
+/// the shot it armed this pass. `None` when the anchor's seat or shot is not
+/// there.
+pub fn spawn_anchor_point(
+    anchor: SpawnAnchor,
+    creature: Option<ModuleSeat>,
+    victim: Option<ModuleSeat>,
+    shot: Option<ModuleShot>,
+) -> Option<([i16; 3], [i16; 3])> {
+    let seat_at = |s: ModuleSeat| ([s.x, s.y, s.z], [0, s.facing as i16, 0]);
+    Some(match anchor {
+        SpawnAnchor::Creature => seat_at(creature?),
+        SpawnAnchor::Victim => seat_at(victim?),
+        SpawnAnchor::ShotFocus => {
+            let s = shot?;
+            (s.focus, s.angles)
+        }
+        SpawnAnchor::ShotPoint { y } => {
+            let s = shot?;
+            (
+                [s.focus[0].wrapping_neg(), y, s.focus[2].wrapping_neg()],
+                [s.angles[0], 0, s.angles[2]],
+            )
+        }
+        SpawnAnchor::AlongVictimHeading { base, div, y } => {
+            let v = victim?;
+            let from = match base {
+                HeadingBase::Victim => v,
+                HeadingBase::Creature => creature?,
+            };
+            let (sin, cos) = trig12(v.facing & 0xFFF);
+            let d = i32::from(div);
+            (
+                [
+                    (i32::from(from.x) + i32::from(sin) / d) as i16,
+                    y,
+                    (i32::from(from.z) + i32::from(cos) / d) as i16,
+                ],
+                [0; 3],
+            )
+        }
+    })
 }
 
 /// Which record one module spawn call hands `FUN_80021B04` as `a2`.
@@ -438,7 +505,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             hit_arm: Some(VERA_RESTORE_ARM),
             walk_arm: None,
             owns_phase: true,
-            stages_spawns: false,
+            stages_spawns: true,
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
