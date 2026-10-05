@@ -111,6 +111,12 @@ impl TacticalArtsTracker {
         self.innate_cap.insert(char_id, cap);
     }
 
+    /// The per-character innate-art cap set by [`Self::set_innate_cap`]
+    /// (`0` when none was supplied).
+    pub fn innate_cap(&self, char_id: u8) -> u8 {
+        self.innate_cap.get(&char_id).copied().unwrap_or(0)
+    }
+
     /// Supply art display names from disc MES data.
     /// Keys are art IDs; values are display strings. Overrides the default
     /// `"Art #N"` fallback for any id present in the table.

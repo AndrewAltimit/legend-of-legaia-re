@@ -274,6 +274,57 @@ fn a_doubled_art_keeps_the_learn_verdict_on_its_first_performance() {
     assert_eq!(starters[1].1, 0x19, "{queue:02X?}");
 }
 
+/// The learn verdict scans the character record's own list (`+0x185`
+/// count, `+0x186..` ids, retail `+0x74D` / `+0x74E`) under the queue byte
+/// less `0x1B` (the builder's `s3 + 0x10` byte against its `s3 - 0xB` id):
+/// an art a lifted save
+/// already lists takes the plain `0x19` starter over its last arrow, and a
+/// new one is inserted
+/// into the record, ascending.
+#[test]
+fn the_learn_verdict_reads_the_record_list_under_the_queue_byte_less_0x1b() {
+    use legaia_art::{ActionConstant, Character, Command};
+    let build = |known: &[u8]| {
+        let mut w = arts_world([0u8; 8]);
+        let art = ActionConstant::from_byte(0x27).expect("art constant");
+        w.set_art_record(
+            Character::Vahn,
+            art,
+            legaia_art::ArtRecord {
+                action: art,
+                commands: vec![Command::Right, Command::Left],
+                anim_index: 0,
+                anim_extra: vec![],
+                name: None,
+                power: vec![],
+                dmg_timing: vec![],
+                effect_cues: Default::default(),
+                hit_cues: vec![],
+                identifier: 0,
+                anim_speed: 0,
+                enemy_effect: legaia_art::EnemyEffect::default(),
+                repeat_frames: Default::default(),
+                background: 0,
+                runtime_address: None,
+            },
+        );
+        let rec = &mut w.party.roster.members[0];
+        let mut list = rec.displayed_skills();
+        list.count = known.len() as u8;
+        list.ids[..known.len()].copy_from_slice(known);
+        rec.set_displayed_skills(list);
+        let (queue, _, _) = w.build_arts_action_queue(0, &[Command::Right, Command::Left]);
+        let skills = w.party.roster.members[0].displayed_skills();
+        (queue, skills.ids[..usize::from(skills.count)].to_vec())
+    };
+    let (queue, list) = build(&[0x04, 0x0C]);
+    assert_eq!(&queue[..4], &[0x0D, 0x19, 0x27, 0], "{queue:02X?}");
+    assert_eq!(list, vec![0x04, 0x0C], "a known art is not inserted again");
+    let (queue, list) = build(&[0x04, 0x0E]);
+    assert_eq!(&queue[..4], &[0x0D, 0x1A, 0x27, 0], "{queue:02X?}");
+    assert_eq!(list, vec![0x04, 0x0C, 0x0E], "inserted ascending");
+}
+
 #[test]
 fn a_party_target_never_leaves_the_ordinary_apply_arm() {
     // Retail gates both copies of the kernel on `target >= 3` before the
