@@ -1706,6 +1706,12 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
             .and_then(|c| legaia_art::tables::art_name(character, c))
             .map(str::to_string)
     } else if cat == ActionCategory::Magic.as_byte() {
+        // PROT 0954's arm 9 re-opens the label on the landed outcome's name
+        // (`FUN_801D8DE8(0x4C, 0)` at `0x801F7CD4`, the string at
+        // `0x801F8D50 + id * 0x28`).
+        if let Some(name) = world.casting.fatal_banner.as_ref() {
+            return Some(name.clone());
+        }
         // The `0x28` arm's spell-name write is gated on the caster's seat:
         // `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,0x801E4460`
         // (`0x801E43D0..0x801E43DC`) skips it for a party caster, so a

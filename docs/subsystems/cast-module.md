@@ -2109,18 +2109,68 @@ run; a holding gate withholds the body's pass. The battle camera holds in
 
 A body with no director keeps the held pose.
 
-**Not yet directed.** PROT 0954 (Fatal Decision) is a roulette: arm 0 fills
-eight slots from the caster's monster id (`rand % 8`, `% 12` or `% 16`),
-clears slot 10 when the victim already carries status `0x38`, and forces at
-least one zero; the wheel stops on a pad press or when its countdown runs out,
-decelerates and snaps, and the slot at angle `0x800 - rot` is the outcome.
-Arm 9 shows that outcome's name banner (`0x801F8D50 + id * 0x28`); arm 10
-applies one of sixteen stat / status / gold / item effects to the victim
-(halved HP, MP or attack, status bits, a full heal, a stolen item, gold
-`-10%`), remapping four ids for a monster victim. None of it reaches the
-fold, so the port folds no damage and applies no outcome. PROT 0966 (Evil
-Seru Magic) is a 29-arm camera body whose damage belongs to its stager, not
-to the band's fold; its arms are not directed.
+PROT 0966 (Evil Seru Magic) is a 29-arm camera body whose damage belongs to
+its stager, not to the band's fold; its arms are not directed.
+
+### PROT 0954 (Fatal Decision) is ported whole
+
+Fatal Decision is a roulette, and its body (`0x801F6A58`, thirteen arms and a
+terminal `0xFF`) runs the whole cast itself: camera, records, wheel and
+outcome. The port is `legaia_engine_vm::cast_fatal_decision` (the arms) and
+`world::battle::fatal_decision` (the battle side), dispatched from the band
+seam ahead of every other body; nothing of it reaches the band's fold.
+
+- **The wheel.** Arm 4 fills eight slots at `0x801F9020` from the caster's
+  formation id - `rand() % 8` for `0x77`, `% 12` for `0x78`, `% 16` for
+  `0x79` - blanks a Stone slot when the victim already carries a Rot bit
+  (`& 0x38`), and blanks slot `rand() % 8` when no slot came out blank. A
+  monster victim then trades the four party-only outcomes for monster ones
+  (Stone to Death, Rot to Halve HP, Steal to Halve ATK, Gold to Halve DEF).
+  Each slot spawns its outcome's icon record (`0x801F86DC + id * 0x4C`) at
+  render scale `0x20` - the sprite is authored `0x1000` wide.
+- **The spin.** Arm 5 spirals the icons out to the ring
+  (`sin * r / 6 >> 10`, `r` growing a frame-delta a frame) while the angle
+  `0x801F9010` falls `32` a delta; arm 6 holds the ring (radius `85`) spinning.
+- **Who stops it.** Arm 6 holds while the countdown is positive and the
+  packed pad edge misses the confirm mask `_DAT_800846D0`. The countdown is
+  set on the victim's seat: `scalar * 1200` for a party victim, with "Press the
+  (button) to decide your fate!" up in the message bar, and `scalar << 6` for
+  a monster victim. A monster casts it, so the player stops the wheel on their
+  own party member; the port reads the engine's confirm (Cross).
+- **The landing.** Arm 7 decelerates over `scalar << 9` drained `2 * scalar` a
+  frame, then snaps the angle back to the slot boundary it crosses, flashes
+  white (`FUN_80024E80`, a `0x20`-frame ramp), retires the backdrop, spawns the
+  three landing records and raises cue `0x14A` (`0x14B` on the full heal). The
+  slot at angle `0x800` is the outcome; arm 9 opens the ring out, grows that
+  icon (`+0x72` and `+0x16` up a delta a frame) and puts its name
+  (`0x801F8D50 + id * 0x28`) in the move-name label.
+- **The outcome.** Arm 10 retires the icons and applies one of sixteen effects
+  to the victim through the jump table `0x801F6A18`: nothing; HP and max HP
+  halved; HP to zero; MP and max MP halved; MP and max MP to zero; Venom,
+  Toxic, all three Rot limbs, Curse; Numb or Stone, each also cancelling a
+  queued item action and handing the item back; the ATK pair or both defence
+  pairs halved with a floor of `1`; a full heal that clears every status bit;
+  one bag item destroyed (the PROT 0941 draw over the whole 256-slot bag,
+  written into the thief's cell and cleared in the same arm, so a slain
+  caster hands nothing back); a tenth of the gold. The HP and MP arms do
+  nothing to a petrified victim. Nothing, Numb, Stone and the full heal skip
+  arm 11, the victim's reaction clip, and so do the HP / MP arms on a
+  petrified victim and a steal that finds nothing.
+
+Two pieces are not ported: the `FUN_801D5854(caster, 8)` framing arms 11
+and 12 re-arm each pass, and the full heal's party-seat CLUT reload and
+effect-list spawn (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's wait for the
+victim's clip to settle has no bound in retail; the port lets go after
+`600` ticks rather than hold the band on a clip the engine never reports.
+
+**Where the icon art lives is open.** The icons sample texture page `0x8A`
+(8bpp at `(640, 0)`) through CLUT row `490` - the second side-band texture
+slot's upload targets. Action `0x5F`'s side-band group, by the case-`0x32`
+arithmetic, is `readef.DAT` slots 26 / 27, and those carry a "BACK READ"
+placeholder and a tiling sparkle page, not a sixteen-tile icon sheet; the
+capture band also has no case `0x32` of its own. Which loader puts the icon
+sheet there for a real Evil Shadow fight has not been traced, so the port
+draws the icons over whatever that page holds.
 
 ### The band has eight stat-block writers, not one
 

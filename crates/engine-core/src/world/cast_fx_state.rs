@@ -54,6 +54,13 @@ pub struct CastFxState {
     /// The capture body took a branch with no damage site (PROT 0953's
     /// charge): the band's fold owes the cast nothing.
     pub module_skips_fold: bool,
+    /// PROT 0954's module-resident words while its body runs
+    /// ([`legaia_engine_vm::cast_fatal_decision`]).
+    pub fatal_decision: Option<legaia_engine_vm::cast_fatal_decision::FatalDecisionState>,
+    /// The outcome name PROT 0954's arm 9 put up in the move-name label
+    /// (HUD element `0x4C`), until the band leaves. Read by
+    /// `battle_hud::battle_move_name`.
+    pub fatal_banner: Option<String>,
     /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
     ///
     /// Arm 12 grows it by the frame delta times `8` every tick
@@ -179,6 +186,8 @@ impl CastFxState {
             module_phase: 0,
             module_ctx_278: 0,
             module_skips_fold: false,
+            fatal_decision: None,
+            fatal_banner: None,
             module_ring_angle: 0,
             module_nighto_outcome: None,
             // --- W1-D ---

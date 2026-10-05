@@ -640,6 +640,18 @@ impl World {
             return;
         };
         let id = head.resolve(|| self.next_rand());
+        self.emit_battle_xa_cue(id);
+    }
+
+    /// Run one CD-XA cue id through the dispatcher's CD-XA arm
+    /// ([`legaia_engine_vm::battle_cast_cue::admit_voice_cue`]) onto
+    /// [`crate::world::AudioState::battle_xa_cues`] - the half of
+    /// [`Self::emit_cast_module_voice`] after the module's head cue is
+    /// resolved, and what a module arm's own `FUN_8004FCC8(id >= 0x100)` call
+    /// raises.
+    ///
+    /// REF: FUN_8004FCC8 (the CD-XA arm)
+    pub(in crate::world) fn emit_battle_xa_cue(&mut self, id: u16) {
         let raw = self
             .audio
             .xa_cue_durations
@@ -895,6 +907,11 @@ impl World {
             return false;
         };
         if module.parts.is_empty() {
+            return false;
+        }
+        // A module whose body is ported whole seats its own records, each on
+        // the pass its arm spawns it.
+        if entry == vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return false;
         }
         self.casting.active_summon = Some(crate::summon::SummonScene::spawn_parts(
@@ -1249,6 +1266,7 @@ impl World {
         }
         // The band is leaving `0x70`; the module stops being re-entered.
         self.casting.capture_spell = None;
+        self.casting.fatal_banner = None;
         false
     }
 
@@ -1263,6 +1281,8 @@ impl World {
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
         self.casting.module_skips_fold = false;
+        self.casting.fatal_decision = None;
+        self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
         self.casting.capture_spell = Some(spell_id);
@@ -2009,7 +2029,7 @@ impl World {
 
     /// The caster and victim as the module camera arms read them: world
     /// position (`+0x34..+0x38`) and battle heading (`+0x46`).
-    fn module_cam_seats(
+    pub(in crate::world) fn module_cam_seats(
         &self,
         caster_slot: u8,
         victim_slot: u8,
@@ -2136,6 +2156,12 @@ impl World {
         // --- end W1-B ---
 
         let entry = self.cast_module_for(spell_id)?;
+        // PROT 0954's body is ported whole - camera, records, wheel and
+        // outcomes - and drives the band on its own
+        // (`world::battle::fatal_decision`).
+        if entry == vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
+            return Some(self.run_fatal_decision(entry));
+        }
         let mut ctx = self.cast_module_ctx();
         let caster_slot = self.battle_ctx.active_actor;
         let victim_slot = self

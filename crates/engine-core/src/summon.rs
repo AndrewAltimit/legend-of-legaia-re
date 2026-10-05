@@ -445,6 +445,11 @@ pub struct SummonPartRuntime {
     /// not the scene's [`SummonScene::origin`] - a part seated later than
     /// the scene's first, on its own spawn position ([`SummonScene::push_parts`]).
     pub origin: Option<[i16; 3]>,
+    /// A label the code that seated the part keeps to find it again - a
+    /// module that writes into its own spawned parts every frame (PROT 0954
+    /// places its wheel icons through their `+0x14` / `+0x16`). `None` for
+    /// a part nobody addresses.
+    pub tag: Option<u32>,
 }
 
 /// A running summon: every spawned part plus the model-library base the parts'
@@ -897,6 +902,7 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
         state,
         finished: false,
         origin: None,
+        tag: None,
     })
 }
 

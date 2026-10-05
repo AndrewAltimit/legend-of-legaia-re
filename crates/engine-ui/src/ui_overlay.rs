@@ -1836,7 +1836,21 @@ pub fn battle_hud_draws_for(
     // glyphs on the bar's name pen.
     if let Some(message) = message_bar.filter(|_| !bar_covered) {
         plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
-        stage_text(&mut text, font, message, BAR_NAME.0, BAR_NAME.1, white);
+        // The bar's text can carry a `0xCE` button escape (PROT 0954's stop
+        // prompt), parked at `U+E000 + byte`, and the steal captions carry
+        // their accented glyphs as Latin-1 characters: hand the font the
+        // bytes back so each draws its own glyph.
+        let bytes: Vec<u8> = message
+            .chars()
+            .map(|c| match c as u32 {
+                u @ 0..=0xFF => u as u8,
+                u @ 0xE000..=0xE0FF => (u - 0xE000) as u8,
+                _ => b'?',
+            })
+            .collect();
+        let mut draws = text_draws_for(&font.layout(&bytes), BAR_NAME, white);
+        scale_stage_text_draws(&mut draws, origin, scale as u32);
+        text.extend(draws);
     }
 
     // ---- The ring's AP plate ----

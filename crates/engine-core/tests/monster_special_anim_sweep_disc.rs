@@ -38,6 +38,20 @@ fn archive() -> Option<Vec<u8>> {
     None
 }
 
+/// How long the capture band may hold before the sweep reads it as the
+/// stage guard rather than a choreography. PROT 0954's body is longer than
+/// the guard even with the wheel stopped at once: its arms count down
+/// `0x40 + 0x80 + 0x40 + 0x80` ticks before the spin, the deceleration
+/// alone drains `scalar << 9` at `2 * scalar` a tick, and the landing,
+/// banner and outcome arms add `0x20 + 0x40 + 0x80` more.
+fn band_limit(t: &CastTrace) -> u32 {
+    if t.owns_band {
+        3 * u32::from(CASTER_STAGE_TICK_LIMIT)
+    } else {
+        u32::from(CASTER_STAGE_TICK_LIMIT)
+    }
+}
+
 /// A clip whose keyframes move: some part differs from frame 0.
 fn clip_moves(c: &MonsterAnimation) -> bool {
     c.frames.len() > 1 && c.frames.iter().skip(1).any(|f| f != &c.frames[0])
@@ -62,6 +76,10 @@ struct CastTrace {
     /// (`0x70`), and the stretch in progress.
     band_ticks: u32,
     band_run: u32,
+    /// The cast runs a capture body ported whole and paced by its own
+    /// countdowns (PROT 0954's roulette), whose band is the choreography
+    /// rather than the stage guard.
+    owns_band: bool,
     /// The cast runs a capture-class body that stages no caster clip in
     /// retail either (`capture_body_idles_caster`).
     idles_in_retail: bool,
@@ -254,6 +272,8 @@ fn cast(
         && w.cast_module_for(spell).is_some_and(|entry| {
             legaia_engine_vm::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0).is_none()
         });
+    t.owns_band = w.cast_module_for(spell)
+        == Some(legaia_engine_vm::cast_fatal_decision::FATAL_DECISION_ENTRY);
     let mut start = (0i32, 0i32);
     t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
         legaia_engine_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
@@ -262,6 +282,15 @@ fn cast(
     let mut hp_at_start = party_hp(&w);
     let mut acting = usize::from(w.battle_ctx.active_actor) == seat;
     for _ in 0..8000 {
+        // The player's half of the band: PROT 0954's wheel spins until the
+        // confirm button stops it, so the sweep taps it through `0x70` (no
+        // other module reads the pad there).
+        let tap = w.battle_ctx.action_state == 0x70 && t.ticks.is_multiple_of(2);
+        w.set_pad(if tap {
+            legaia_engine_core::input::PadButton::Cross.mask()
+        } else {
+            0
+        });
         w.tick();
         if w.mode != SceneMode::Battle {
             break;
@@ -369,7 +398,7 @@ fn every_monster_special_attack_animates() {
                     }
                     if !t.acted {
                         Some(format!("never cast; tags {tags:02x?}"))
-                    } else if t.band_ticks >= u32::from(CASTER_STAGE_TICK_LIMIT) {
+                    } else if t.band_ticks >= band_limit(&t) {
                         Some(format!(
                             "the capture band held {} ticks (the stage guard, not a choreography)",
                             t.band_ticks

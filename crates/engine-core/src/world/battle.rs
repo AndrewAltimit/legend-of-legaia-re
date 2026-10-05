@@ -21,6 +21,7 @@ mod commit_log_launch;
 mod counterattack;
 mod effect_route;
 mod effect_teardown;
+mod fatal_decision;
 mod formation_span;
 mod homing;
 mod initiative;
