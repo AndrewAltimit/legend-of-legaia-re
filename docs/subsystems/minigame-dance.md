@@ -54,7 +54,7 @@ Per-mode behaviour, all read directly from `FUN_801cf470`:
 | `0` yosenn | Versus. Grading compares the human score `DAT_801d53cc` against score slot 2 `DAT_801d53d4`; a lower score clears the win flag. |
 | `1` hosenn | Versus. Grading compares `DAT_801d53cc` against score slot 1 `DAT_801d53d0`; a lower score clears the win flag. |
 | `2` setumei | Short how-to/demo: shorter song limit (`0x41dc` vs `0x64fc`), the [camera keyframe track](#the-camera-keyframe-track) at the head of `FUN_801cf470` is skipped, so the camera holds the entry's pose (guarded `DAT_801d514c != 2`), and state 1 routes through the load-wait state 2. Grading clears the win flag when the score exceeds `300`. |
-| `3` asobi | Free play: draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and cycles a start voice via `_DAT_80084468`; the grading switch has **no** branch, so free play sets no win/lose flag. |
+| `3` asobi | Free play: draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and rotates its BGM through the counter `_DAT_80084468` (see [the BGM pick](#the-bgm-pick)); the grading switch has **no** branch, so free play sets no win/lose flag. |
 
 Engine port: the door warp picks its floor through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag` - all in `engine-core`, so every host that drains the warp gets them.
 
@@ -700,19 +700,22 @@ hosts also build the textured quads (`hud_draw_quads`) against the HUD page
 the entry stages - see the Retail-coordinate HUD item above. A
 disc-gated oracle pins both against the real widget table.
 
-## Assets: the overlay loads none - the entry path stages PROT 1230
+## Assets: the overlay's init stages PROT 1230 through the scene-pack loader
 
-The dance overlay (extraction PROT 0980) issues **no texture load and no mesh
-load at all**. A full sweep of the 32 KB image finds no `jal 0x8003eb98` (PROT
+The dance overlay (extraction PROT 0980) issues **no direct texture load and no
+mesh load at all**. A full sweep of the 32 KB image finds no `jal 0x8003eb98` (PROT
 entry load), no `jal 0x8001f05c` (asset dispatcher) and no `jal 0x800198e0`
-(TIM -> VRAM), and it never touches the global TMD pool `DAT_8007C018`. It has
-exactly three PROT loads, all sound:
+(TIM -> VRAM), and it never touches the global TMD pool `DAT_8007C018`. Its art
+arrives through the SCUS scene loaders its init calls, like any field scene's
+(see [the staging chain](#the-staging-chain-in-the-init) below). Its own PROT
+loads are all sound - the SFX bank and three BGM entries:
 
 | raw | extraction | role |
 |---|---|---|
 | `0x4D1` | **1231** | the dance's SFX sample bank (`VABp`) |
 | `0x41A` | **1048** | BGM (`music_01` #60 `M116` "Sol disco final 1") |
 | `0x420` | **1054** | the alternate BGM (`music_01` #66 `M120` "Sol disco final 2"; a branch on `DAT_801D514C` picks the song) |
+| `0x42B` | **1065** | the third song, free play only - see [the BGM pick](#the-bgm-pick) |
 
 Both BGM entries are genuine `music_01` Sol-disco finals - the natural fit for
 the Sol dance floor. The bank map is **piecewise** (extraction = `988 + index`
@@ -728,7 +731,7 @@ set (`M112`/`M115`/`M116`/`M120`) is also the host casino scene's op-`0x35`
 BGM around the minigame; the site's dance page offers them as a jukebox on top
 of these two.
 
-The art it draws with is nevertheless dance-specific: the mode-24 entry path
+The art it draws with is nevertheless dance-specific: the overlay's init
 stages **extraction PROT 1230** (`other7`, a `prot::timpack` of **31 TIMs** -
 parser [`legaia_asset::dance_art`](../../crates/asset/src/dance_art.rs)):
 
@@ -748,6 +751,52 @@ pixels. **Confirmed.**
 PROT 1230/1231 sit against the PROT TOC's zeroed tail, where the indexed size
 formula `toc[p+5] - toc[p+3] + 4` underflows; the TOC readers fall back to the
 LBA footprint for them (`legaia_prot::archive`).
+
+### The BGM pick
+
+`FUN_801CF470` state 3 streams the song once the intro count reaches `0x6F`
+(`slti v0,v0,0x6f` at `0x801CFAB4`), through `FUN_8001FC00(raw, 5, buf, 0)`
+with a `0x32000` size word - and the mode global `DAT_801D514C` picks it
+(`0x801CFAC0..0x801CFB80`):
+
+| mode | raw | extraction |
+|---|---|---|
+| `0` yosenn, `2` setumei | `0x41A` (`0x801CFB24`) | 1048 |
+| `1` hosenn | `0x420` (`0x801CFB14`) | 1054 |
+| `3` asobi | rotation over `_DAT_80084468` | 1065 / 1048 / 1054 |
+
+Free play reads the counter at `0x80084140 + 0x328`: `0x81D`, `0x80C` or
+`0x812` for counter `0`, `1`, `2`, less `0x3F2` (`addiu a0,a0,-0x3f2` at
+`0x801CFB6C`), so `0x42B`, `0x41A`, `0x420`. It then bumps the counter and
+wraps it to `0` at `3` (`0x801CFB84..0x801CFBA0`). The counter sits in the
+game-state window the save block is composed from, so the rotation carries
+across visits and saves.
+
+Extraction 1065 is chart-sized like the other two: its SEQ (at `+0x1828`)
+runs **15 840 ticks**, the same length as 1048, where an ordinary score runs
+thousands of events. The [music-track](../reference/music-tracks.md) piecewise
+map labels extraction 1065 as sound-test #75, `M47B`; the bytes measured here
+do not test that label, and the ear is the arbiter for it.
+
+### The staging chain in the init
+
+The init entry `FUN_801CEF54` (arm 6 of `FUN_80025980`'s switch, `jal` at SCUS
+`0x80025AE0`) makes the dance an ordinary scene load over the `other7` block
+(CDNAME raw `0x4CC`, extraction 1226..1232). It stores the block base into the
+scene-index word `0x80084540` (`sw v0,0x400(s0)` at `0x801CF100`, `s0 =
+0x80084140`) and calls two SCUS loaders that key on it:
+
+- **`efect.dat` (1228)** - `jal 0x8001F7C0` at `0x801CF0FC` with `a2 = 0x4CC`.
+  On the retail by-index arm (`0x8001F9A4..0x8001F9B4`) the field-file loader
+  reads `0x28` sectors from the block base in one call: `.MAP` (1226,
+  `0x12000`), `.PCH` (1227, `0x800`) and the `+2` slot (1228) at scratch
+  `+0x12800`, the `efect.dat` base [`field-pack.md`](../formats/field-pack.md#per-scene-runtime-ram-base)
+  names.
+- **the art pack (1230)** - `jal 0x8002541C` at `0x801CF1A0` with `a0 = 0x14`,
+  skipped when `_DAT_8007B8B8` is non-zero (`lw` at `0x801CF190`). Mode `0x14`
+  is the scene-pack route: `FUN_800255B8` loads `*(0x80084540) + 4` = raw
+  `0x4D0` = extraction 1230 by index, and `FUN_8002541C` walks its DATA_FIELD
+  chunks into VRAM ([`field-pack.md`](../formats/field-pack.md#runtime-consumers)).
 
 ### Dancer bodies: the retail cast + choreography tables
 
@@ -1233,22 +1282,10 @@ stays possible and unevidenced.
 
 ## Open
 
-- The exact SCUS mode-24 entry-path call sites that stage the art pack (1230)
-  and `efect.dat` (1228). Partly answered: the overlay's **own** init entry
-  `FUN_801CEF54` (arm 6 of `FUN_80025980`'s 7-arm switch, `jal` at SCUS
-  `0x80025AE0`) calls the field-file loader `FUN_8001F7C0` with index `0x4CC`
-  = 1228 and a name string at `0x801CEDE4` (file `+0x5CC`) - so at least one
-  of the two loads is issued from inside 0980, not from the
-  `FUN_80025980` -> `FUN_8003EBE4` chain. The 1230 call site is still open.
-  The entries themselves are pinned by content + the byte-identical VRAM
-  capture. Disassembly: `overlay_dance_0980_801cef54.txt`.
 - The dancers' **yaw** on the retail floor: the spawn tables pin kind + world
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
   but not the facing, and the actor records are not RAM-pinned live.
-- Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
-  pinned, the arm-to-song mapping is not; both are short chart-sized loops -
-  see the PROT-load table above).
 
 ## See also
 
