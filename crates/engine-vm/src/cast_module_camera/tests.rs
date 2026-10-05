@@ -16,6 +16,7 @@ fn seats() -> ModuleCamSeats {
         },
         band_timer: 0,
         first_monster: 0,
+        caster_monster: 0,
         action: 0,
         depth_raw: 0,
     }
@@ -409,4 +410,38 @@ fn mule_and_ozma_wait_on_the_band_timer() {
     s.band_timer = 0;
     assert!(!mule_direct(&mut st, 2, s).hold);
     assert!(!ozma_direct(&mut st, 3, s).hold);
+}
+
+/// Glare frames the caster, holds `scalar << 8` with a pull-in, cuts to the
+/// victim, then holds `scalar << 7` twice more and finishes.
+#[test]
+fn glare_frames_caster_then_victim_and_finishes_on_arm_3() {
+    let mut st = ModuleCamState::default();
+    let mut s = seats();
+    s.caster_monster = 0xA9;
+    let a0 = capture_camera_director(940, GLARE_BODY).unwrap()(&mut st, 0, s);
+    assert_eq!(a0.shot.unwrap().tr, [0, 0x600, 0x800]);
+    assert_eq!(a0.next, Some(1));
+    let mut phase = 1u8;
+    let mut held = [0i32; 4];
+    let mut victim_cut = false;
+    for _ in 0..10_000 {
+        let a = glare_camera(&mut st, phase, s);
+        if a.hold {
+            held[phase as usize] += 1;
+            assert!(a.drift.is_some(), "every pass drifts");
+            continue;
+        }
+        if phase == 1 {
+            victim_cut = a.shot.is_some_and(|sh| sh.focus == focus_on(s.victim));
+        }
+        match a.next {
+            Some(n) => phase = n,
+            None => break,
+        }
+    }
+    assert!(victim_cut);
+    assert_eq!(held[1], SPEED_SCALAR * 256 / MODULE_DRAIN_PER_TICK - 1);
+    assert_eq!(held[2], SPEED_SCALAR * 128 / MODULE_DRAIN_PER_TICK - 1);
+    assert_eq!(held[3], held[2]);
 }

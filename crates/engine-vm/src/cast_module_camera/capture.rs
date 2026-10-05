@@ -57,6 +57,7 @@ pub type CaptureCamDirector = fn(&mut ModuleCamState, u8, ModuleCamSeats) -> Cap
 pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirector> {
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
+        (940, GLARE_BODY) => Some(glare_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
@@ -70,7 +71,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 /// holds of where in an arm the module is.
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
-        0xAC => Some(MYSTIC_SHIELD_COUNTDOWN),
+        0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
@@ -518,5 +519,78 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             }
         }
         _ => pass(None, None),
+    }
+}
+
+/// PROT 0940's `0x3C` body (Glare), the trampoline's first arm.
+pub const GLARE_BODY: u32 = 0x801F_69F8;
+
+/// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
+/// countdown is the module word `0x801F864C` Mystic Shield also uses):
+///
+/// | arm | camera | countdown as it passes |
+/// |---|---|---|
+/// | 0 (`0x801F6ACC`) | shot behind the caster: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x800)` for monster `0xA9` else `(0, 0x400, 0xA00)`, focus the caster, `0xC` frames | `= scalar << 8` |
+/// | 1 (`0x801F6C7C`) | drift TR z `-8`, TR y `+2` a pass; once spent, a cut onto the victim: pitch `0`, yaw `0x800 - victim[+0x46]`, TR `(0, 0x400, 0xA00)` | `+= scalar << 7` |
+/// | 2 (`0x801F6EEC`) | drift TR z `-8` | `+= scalar << 7` |
+/// | 3 (`0x801F71B4`) | drift TR z `-8`; the last gate - the body returns `0` | - |
+///
+/// Each arm from 1 on drains the word by `scalar * delta` and holds while it
+/// stays positive (`bgtz` to the epilogue with the busy `1`). The body has no
+/// damage site: arm 2 raises the element `0x5B` and sets `ctx[+0x18]`, the
+/// status half the band's fold owns, which the camera does not touch. The
+/// body's phase chain has no other port, so this director owns the phase.
+///
+/// PORT: overlay_cast_glare_divide_0940_801f69f8 (PROT 0940 `0x3C`; the camera arms, the countdown and the phase chain)
+pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> CaptureCamArm {
+    let pull = drift(0, 0, 0, -8);
+    match phase {
+        0 => {
+            st.countdown.0 = SPEED_SCALAR << 8;
+            let tr = if seats.caster_monster == 0xA9 {
+                [0, 0x600, 0x800]
+            } else {
+                [0, 0x400, 0xA00]
+            };
+            CaptureCamArm {
+                shot: Some(ModuleShot {
+                    angles: [0, yaw_from(0x800, seats.caster.facing), 0],
+                    tr,
+                    focus: focus_on(seats.caster),
+                    frames: 0xC,
+                }),
+                drift: None,
+                hold: false,
+                next: Some(1),
+            }
+        }
+        1..=3 => {
+            let d = if phase == 1 { drift(0, 0, 2, -8) } else { pull };
+            let hold = st.countdown.drain_above(0);
+            if hold {
+                return CaptureCamArm {
+                    shot: None,
+                    drift: Some(d),
+                    hold: true,
+                    next: Some(phase),
+                };
+            }
+            if phase < 3 {
+                st.countdown.add(1 << 7);
+            }
+            let shot = (phase == 1).then(|| ModuleShot {
+                angles: [0, yaw_from(0x800, seats.victim.facing), 0],
+                tr: [0, 0x400, 0xA00],
+                focus: focus_on(seats.victim),
+                frames: 1,
+            });
+            CaptureCamArm {
+                shot,
+                drift: Some(d),
+                hold: false,
+                next: (phase < 3).then_some(phase + 1),
+            }
+        }
+        _ => CaptureCamArm::default(),
     }
 }

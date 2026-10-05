@@ -125,6 +125,9 @@ pub struct ModuleCamSeats {
     /// The formation's first monster id `0x8007BD0C`, which a capture body
     /// can fork its framing on (PROT 0962's `0xA5` arm 0).
     pub first_monster: u8,
+    /// The caster's own formation monster id, `0x8007BD0C[ctx+0x13 - 3]` -
+    /// what PROT 0940's Glare forks its framing on (`0` for a party caster).
+    pub caster_monster: u8,
     /// The caster's queued action id `+0x1DF` - which choreography a
     /// two-spell module runs (PROT 0946's Call Wave / Big Wave).
     pub action: u8,

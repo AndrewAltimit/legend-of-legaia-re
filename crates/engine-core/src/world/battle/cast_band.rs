@@ -2023,6 +2023,11 @@ impl World {
             victim: seat(victim_slot),
             band_timer: i32::from(self.battle_ctx.frame_timer),
             first_monster: self.battle_first_monster_byte(),
+            caster_monster: self
+                .actors
+                .get(caster_slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .map_or(0, |id| id as u8),
             action: self
                 .actors
                 .get(caster_slot as usize)
