@@ -1785,6 +1785,16 @@ impl World {
                 // the ambient-particle gate (`4C 30`) that puts fog over the
                 // continent. Same frame slice as the field arm.
                 self.step_field_frame_slice();
+                // Cross-context walk legs a world-map record starts
+                // (`C7 <id> ..`) run on the same per-actor walk kernel as the
+                // field's (`FUN_8003774C`, from the actor driver every mode-3
+                // scene runs). Without the step an overworld beat that walks
+                // a placement and then waits on its halt bit (`B3 <id> 0A` -
+                // urudre2's hand-off onto `map01`) parks for good.
+                // REF: FUN_8003774C
+                if self.clock.display_frame_step == 1 {
+                    self.tick_field_npc_motions();
+                }
                 // The per-actor anim tick: the overworld's MAN actors play
                 // the kingdom bundle's slot-4 clips through `FUN_800204F8`
                 // exactly as a town's do (a live `map01` actor list holds

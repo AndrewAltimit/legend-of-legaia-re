@@ -778,6 +778,50 @@ def catalog_address_sets() -> tuple[set[str], set[str]]:
     return run("--live-only"), run("--not-live")
 
 
+def disclosed_dead_addresses(catalog, srcs: dict) -> dict[str, str]:
+    """Live addresses whose liveness is the permissive graph's alone and whose
+    every live anchor disclaims a host - `{addr: "NOT WIRED" | "REPLACED-BY"}`.
+
+    The catalog's `live` is the permissive graph (a name-matched call edge is
+    enough), and the receiver-gated sibling graph only feeds the
+    stale-disclosure test (`port-catalog.py --live-audit`). An address can
+    therefore be `live` on the strength of an edge the strict graph refuses,
+    while its own `PORT:` block says no host is owed a call. Such an address
+    reads "live but never entered" here and nowhere else: `--live-audit` does
+    not see it (it is live) and the stale test does not fire (the strict graph
+    agrees with the disclosure). Three instruments then agree it is dead - the
+    disclosure, the strict graph and the coverage - and listing it as reach
+    work only buries the rows a ladder could convert.
+
+    It is kept as its own bucket rather than dropped: the headline
+    never-entered count is unchanged, and a row in this bucket that a ladder
+    later enters surfaces as `disclosed_entered`, the loudest bucket.
+
+    Computed in-process with the catalog's own liveness pass - the same
+    functions `--live` runs, so there is no second copy of the verdict.
+    """
+    fns, edges = catalog.build_rust_graph(srcs)
+    roots = catalog.collect_roots(srcs)
+    reach = catalog.reachable_fns(fns, edges, roots)
+    _, edges_s = catalog.build_rust_graph(srcs, strict=True)
+    reach_s = catalog.reachable_fns(fns, edges_s, roots)
+    # Anchor uids are resolved against the graph, so collect after building it.
+    live_map = catalog.compute_live(
+        catalog.collect_port_anchors(srcs), srcs, fns, reach, reach_s
+    )
+    out: dict[str, str] = {}
+    for addr, row in live_map.items():
+        if not row["live"] or row["live_strict"]:
+            continue
+        live_anchors = [a for a in row["anchors"] if a["live"]]
+        if not live_anchors:
+            continue
+        if all(a["not_wired_tag"] or a["replaced_tag"] for a in live_anchors):
+            replaced = all(a["replaced_tag"] for a in live_anchors)
+            out[addr.lower()] = "REPLACED-BY" if replaced else "NOT WIRED"
+    return out
+
+
 class FileCoverage:
     """Executed-line lookup for one source file, from llvm-cov regions.
 
@@ -1470,7 +1514,16 @@ def main() -> int:
     inert_entered = joined["inert_entered"]
     disclosed_entered = joined["disclosed_entered"]
     live_entered = joined["live_entered"]
-    live_unentered = joined["live_unentered"]
+    # Split the never-entered set: rows whose own disclosure the strict graph
+    # confirms are not reach work (see `disclosed_dead_addresses`).
+    dead = disclosed_dead_addresses(catalog, srcs)
+    live_unentered_all = joined["live_unentered"]
+    live_unentered = [(a, x) for a, x in live_unentered_all if a.lower() not in dead]
+    unentered_disclosed = [
+        (a, {**x, "symbol": f"{x['symbol']}` ({dead[a.lower()]})`"})
+        for a, x in live_unentered_all
+        if a.lower() in dead
+    ]
     unobservable = joined["unobservable"]
     not_observable_const = joined["not_observable_const"]
     # label -> the live addresses that source entered. Drives the per-source
@@ -1491,6 +1544,11 @@ def main() -> int:
     w("")
     w(f"- ported addresses with anchors: **{len(anchors)}**")
     w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
+    w(
+        f"- live, never entered: **{len(live_unentered_all)}** - "
+        f"**{len(live_unentered)}** reach worklist, "
+        f"**{len(unentered_disclosed)}** disclosed and receiver-gated dead"
+    )
     w(f"- statically not-live: **{len(not_live)}**, of which entered anyway: **{len(inert_entered)}**")
     w(
         "- `NOT WIRED` / `REPLACED-BY`-disclosed anchors executed: "
@@ -1582,6 +1640,18 @@ def main() -> int:
         "no lines to enter, so its rows live in the bucket below instead.",
     )
     table(
+        "Live, never entered, and disclosed dead",
+        unentered_disclosed,
+        "Live only through the permissive graph: the receiver-gated graph "
+        "reaches none of the address's anchors, and every anchor the "
+        "permissive graph does reach carries a `NOT WIRED:` or `REPLACED-BY:` "
+        "disclosure. The disclosure, the strict graph and the coverage all "
+        "agree, so these are not reach work - they are counted in the "
+        "never-entered total above and listed here so they leave the worklist "
+        "without leaving the report. One that a ladder enters moves to the "
+        "disclosed-executed bucket.",
+    )
+    table(
         "Not observable in any of these binaries",
         unobservable,
         "No coverage binary in the union carries the anchor's file at all, so "
@@ -1613,7 +1683,9 @@ def main() -> int:
     print(f"not-live / entered    : {len(not_live)} / {len(inert_entered)}")
     print(f"  (observable         : {not_live_observable} / {len(not_live)})")
     print(f"NOT WIRED executed    : {len(disclosed_entered)}")
-    print(f"live never entered    : {len(live_unentered)}")
+    print(f"live never entered    : {len(live_unentered_all)}")
+    print(f"  reach worklist      : {len(live_unentered)}")
+    print(f"  disclosed dead      : {len(unentered_disclosed)}")
     print(f"not observable (const): {len(not_observable_const)}")
     print(f"not observable        : {len(unobservable)}")
     for label, _ in sources:

@@ -950,18 +950,18 @@ terminal instead, and the open question was whether a live battle reaches it.
 
 It does, by concrete trace through `engine-vm`'s own accumulation logic:
 
-- `Begin` stamps the acting actor's counter (`actor[+0x1A]`,
-  `BattleActor::action_queue_counter`) from `ctx.queued_action`, which the
-  engine's arming paths set to `3`;
+- the counter is the action context's **turn cursor** `ctx[+0x1A]`
+  (`BattleActionCtx::turn_cursor`), not a field of the actor record: `Begin`
+  seeds it from the formation-advantage byte and never from
+  `ctx.queued_action` (the earlier trace here said both, and the port has since
+  dropped the actor-record reading - see `BattleActionCtx::turn_cursor`);
 - the `0x5A` gate's non-wipe arm bumps it and compares against
-  `party_alive + monsters_alive`, so `3 + 1 = 4 >= alive_total` in any battle
-  with four or fewer living combatants (3 party + 1 monster, or later rounds
-  of a larger fight);
+  `party_alive + monsters_alive`, so the threshold is reached in every fight
+  once each living combatant has acted - the ordinary end of a round;
 - the gate is dispatched whenever a driver leaves the SM parked at
-  `EndOfAction` across a tick - which the live loop does after a folded
-  monster spell cast and after a Sleep/Stone skipped turn (a repeatedly
-  casting monster's never-restamped counter also walks `1, 2, 3, ...` up to
-  the same threshold).
+  `EndOfAction` across a tick (the live loop does after a folded monster spell
+  cast and after a Sleep/Stone skipped turn), so the round boundary is reached
+  in the first round of a battle that leaves both sides standing.
 
 Symptom: a spurious victory - loot and XP granted - after one round with both
 sides standing. The fix renames the state to `ActionState::RoundEnd`, whose
