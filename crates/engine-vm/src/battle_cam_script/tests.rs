@@ -377,6 +377,20 @@ fn the_entry_sweep_drifts_then_eases_onto_case_two_then_cuts_to_the_dialogue() {
     assert_eq!(cam.entry_sweep_counter(), None);
 }
 
+/// Retail opens no surface and runs no action under the sweep; the port's
+/// battle tick can, and the first one ends the sweep.
+#[test]
+fn an_action_opened_under_the_entry_sweep_ends_it() {
+    let mut cam = traced_cam(BattleCamPhase::Menu);
+    cam.start_entry_sweep();
+    steps(&mut cam, 4);
+    assert!(cam.entry_sweep_counter().is_some());
+    cam.set_phase(BattleCamPhase::Action);
+    steps(&mut cam, 1);
+    assert_eq!(cam.entry_sweep_counter(), None);
+    assert_eq!(cam.phase(), BattleCamPhase::Action);
+}
+
 /// Battle entry on tutorial dialogue: the measured held close-up, static
 /// over any number of frames.
 #[test]

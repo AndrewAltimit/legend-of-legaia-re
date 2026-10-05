@@ -1461,15 +1461,24 @@ pub fn run_engine_battle(
     //   on the capture's seat ([`BattleDrive::Action`]).
     let plan = battle.seed_plan();
     let seed = battle.inflight_cast();
-    session.host.world.battle.inflight_seed = seed;
     let mut prompt_tick = None;
     if plan != SeedPlan::Opening {
+        // Retail's battle tick runs only once the frame driver's entry sweep
+        // is over, so no capture of a running fight was taken under it. The
+        // port's tick does not wait; the seed does, and a cast is seeded to
+        // dispatch only from there.
+        let mut seeded = false;
         for t in 0..OPENING_TICKS {
+            if !seeded && entry_sweep_reached(&session.host.world, 0xFF) {
+                session.host.world.battle.inflight_seed = seed;
+                seeded = true;
+            }
             let w = &session.host.world;
-            let reached = match seed {
-                Some(_) => w.battle.inflight_seed.is_none(),
-                None => w.battle.flow != BattleFlowState::Idle,
-            };
+            let reached = seeded
+                && match seed {
+                    Some(_) => w.battle.inflight_seed.is_none(),
+                    None => w.battle.flow != BattleFlowState::Idle,
+                };
             if reached {
                 prompt_tick = Some(t);
                 break;

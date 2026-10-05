@@ -371,16 +371,31 @@ impl PlayWindowApp {
             let field_pad = match self.screenshot.as_ref() {
                 Some(sc) if let Some(drive) = sc.battle_drive => {
                     let world = &mut self.session.host.world;
-                    if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
-                        drive.prime(world);
-                    }
-                    drive.steer(world);
-                    // A reached phase is held with no input until it is
-                    // sampled (`BattleDrive::hold_ticks`).
-                    if drive.reached(world) {
+                    // Retail's battle tick waits out the camera's entry
+                    // sweep; a drive into a running fight waits with it, as
+                    // the headless seed does.
+                    let sweeping = !matches!(
+                        drive,
+                        legaia_engine_shell::retail_compare_battle::BattleDrive::Opening { .. }
+                    ) && world.mode == SceneMode::Battle
+                        && !legaia_engine_shell::retail_compare_battle::entry_sweep_reached(
+                            world, 0xFF,
+                        );
+                    if sweeping {
                         0
                     } else {
-                        drive.pad_word_at(world, self.tick_no)
+                        if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true)
+                        {
+                            drive.prime(world);
+                        }
+                        drive.steer(world);
+                        // A reached phase is held with no input until it is
+                        // sampled (`BattleDrive::hold_ticks`).
+                        if drive.reached(world) {
+                            0
+                        } else {
+                            drive.pad_word_at(world, self.tick_no)
+                        }
                     }
                 }
                 _ => field_pad,

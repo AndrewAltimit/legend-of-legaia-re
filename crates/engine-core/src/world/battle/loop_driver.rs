@@ -285,10 +285,17 @@ impl World {
         }
 
         // Retail-compare debug seed: a capture taken mid-cast starts its cast
-        // from the first command prompt, bypassing the pad.
+        // from the first command prompt, bypassing the pad - once the camera's
+        // battle-entry sweep is over, since retail's battle tick opens no
+        // prompt under it.
         if self.battle.inflight_seed.is_some()
             && self.battle.command.is_some()
             && self.battle.flow == crate::battle_flow::BattleFlowState::TurnPrompt
+            && self
+                .battle
+                .camera
+                .as_ref()
+                .is_none_or(|c| c.entry_sweep_counter().is_none())
             && let Some(seed) = self.battle.inflight_seed.take()
         {
             self.dispatch_inflight_seed(seed);

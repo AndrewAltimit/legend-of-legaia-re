@@ -78,6 +78,15 @@ impl BattleCamera {
         let Some(counter) = self.entry_sweep else {
             return false;
         };
+        // Retail's battle tick does not run until the sweep is over, so no
+        // surface or action can open under it. The port's tick does not
+        // wait: a phase past the opening's own ends the sweep early, and
+        // the battle tick's framing takes the camera from where it stands.
+        if !matches!(self.phase, BattleCamPhase::Menu | BattleCamPhase::Dialogue) {
+            self.entry_sweep = None;
+            self.hand_over_from_entry_sweep();
+            return false;
+        }
         let fs = 2.0;
         if counter < ENTRY_CASE2_FROM {
             self.pose.tr[1] += ENTRY_DRIFT_TR_Y * fs;
