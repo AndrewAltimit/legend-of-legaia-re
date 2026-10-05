@@ -1056,6 +1056,111 @@ fn flag_window_pad(session: &BootSession) -> Option<u16> {
     })
 }
 
+/// The scenes a partition-2 record reaches through an op-`49 04` floor list
+/// (empty for any other record). The record is followed from its start with
+/// only the flags it sets itself raised, to the list it parks on - a pad
+/// first raises its own floor and one of two list variants (`kor3` P2[9]
+/// sets `0x136`, the full eight-floor list; P2[10] sets `0x137`, the
+/// four-row list from row 4 that leaves out `kor`) - and a row counts only
+/// inside that list's visible band. Each row's scene is the first named
+/// scene change behind the record's test of `base + row`.
+fn flag_window_destinations(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    record: usize,
+) -> BTreeSet<String> {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode, scene_change_name};
+    use legaia_engine_core::field_submode_flag_window::descriptor_from_operand;
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let mut out = BTreeSet::new();
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 2, record) else {
+        return out;
+    };
+    let body = &man[start..start + len];
+    let mut raised: BTreeSet<u16> = BTreeSet::new();
+    let mut pc = pc0;
+    let mut list = None;
+    for _ in 0..512 {
+        let Ok(i) = decode(body, pc) else { break };
+        match i.info {
+            InsnInfo::StateResume { sub_op: 4, .. } => {
+                list = Some(descriptor_from_operand(
+                    body.get(pc + 1..pc + 7).unwrap_or(&[]),
+                ));
+                break;
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } => {
+                raised.insert(idx);
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Clear,
+                idx,
+                ..
+            } => {
+                raised.remove(&idx);
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(t),
+                ..
+            } if raised.contains(&idx) => {
+                pc = t;
+                continue;
+            }
+            InsnInfo::JmpRel { target, .. } => {
+                pc = target;
+                continue;
+            }
+            InsnInfo::SceneChange { .. } => break,
+            _ => {}
+        }
+        if i.size == 0 {
+            break;
+        }
+        pc += i.size;
+    }
+    let Some(desc) = list else {
+        return out;
+    };
+    let (base, first) = (desc.base_flag, i32::from(desc.first_visible));
+    let visible = first..first + i32::from(desc.rows);
+    let mut pc = 0usize;
+    while pc < body.len() {
+        let Ok(insn) = decode(body, pc) else {
+            pc += 1;
+            continue;
+        };
+        if let InsnInfo::SystemFlag {
+            kind: FlagKind::Test,
+            idx,
+            target: Some(t),
+            ..
+        } = insn.info
+            && visible.contains(&(i32::from(idx) - base))
+        {
+            let mut q = t;
+            for _ in 0..64 {
+                let Ok(i) = decode(body, q) else { break };
+                if let Some(name) = scene_change_name(body, &i) {
+                    out.insert(name.to_ascii_lowercase());
+                    break;
+                }
+                if i.size == 0 {
+                    break;
+                }
+                q += i.size;
+            }
+        }
+        pc += insn.size.max(1);
+    }
+    out
+}
+
 /// Tick with Cross pulsed on a human duty cycle (edge-triggered pages advance
 /// on a press), completing FMVs and auto-resolving battles, until a scene
 /// change, release, or the budget.
@@ -2054,7 +2159,7 @@ fn doors_to(session: &BootSession, graph: &DiscGraph, dest: &str) -> Result<Vec<
         .map_err(|e| format!(".MAP triggers: {e:#}"))?;
     let triggers: Vec<TileTrigger> = primary.into_iter().chain(fallback).collect();
     let sites = overworld_portal_sites(&mf, &man, &triggers);
-    let doors: Vec<Door> = sites
+    let mut doors: Vec<Door> = sites
         .iter()
         .filter(|s| {
             s.scene_name == dest || s.conditional.as_ref().is_some_and(|c| c.scene_name == dest)
@@ -2064,6 +2169,27 @@ fn doors_to(session: &BootSession, graph: &DiscGraph, dest: &str) -> Result<Vec<
             entry: (s.scene_name == dest).then_some((s.entry_x & 0x7F, s.entry_z & 0x7F)),
         })
         .collect();
+    // Sol's warp pads: a band whose record parks on the op-`49 04` floor
+    // list and branches on the picked row to one scene change per floor
+    // (`kor3` P2[9..12]). With every flag clear the record's path ends in no
+    // `0x3F`, so the portal join reads no door off it; [`flag_window_pad`]
+    // picks the row that names the hop's destination.
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        if doors.iter().any(|d| d.tile == (t.tile_x, t.tile_z))
+            || triggers
+                .iter()
+                .find(|u| (u.tile_x, u.tile_z) == (t.tile_x, t.tile_z))
+                .is_some_and(|u| u.record != t.record || u.gate != 1)
+        {
+            continue;
+        }
+        if flag_window_destinations(&mf, &man, usize::from(t.record)).contains(dest) {
+            doors.push(Door {
+                tile: (t.tile_x, t.tile_z),
+                entry: None,
+            });
+        }
+    }
     // An FMV hop: the walk-on tiles whose partition-2 record triggers the
     // movie that hands off to `dest`.
     let fmv_doors: Vec<Door> = graph

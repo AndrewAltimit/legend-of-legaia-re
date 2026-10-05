@@ -623,17 +623,21 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   **to**, taken on arrival, which the graph does not model. Op `0x3E` with
   `op0 >= 100` is the minigame door-warp, not a transport, so no story edge is
   lost with it.
-- Sol's elevators are not doors to the graph. `kor3` P2[9..12] (and their
-  `kor` / `kor4` twins) set a floor flag, park on op `0x49` sub-op `4` - the
-  numbered floor list the `0x138..0x13F` flags seed - and change scene on the
-  floor picked; with every flag clear the record's path ends in no `0x3F`,
-  so no door is read off it and the pad hand never rides one. `kor3`'s door
-  to `kor`, `(115, 11)`, sits behind the teleport `(115, 12)` that returns
-  the west doorway's landing `(115, 13)` to `(19, 39)`; the lattice counts a
-  door gap with a teleport tile in it as unwalkable, and the pad hop then
-  looks for a crossing, but `koin1` P2[4], the exit landing north of that
-  door, lies in another walk component of `koin1`. `sol_tower ->
-  sol_tower_b2` stalls there.
+- Sol's warp pads (`kor3` P2[9..12] and their `kor` / `kor4` twins) are
+  doors read off the record's own floor list: the pad raises its floor and
+  one of two list variants (`0x136`, the full eight-floor list; `0x137`, the
+  four rows from row 4 that leave out `kor`), parks on op `0x49` sub-op `4`,
+  and branches on the picked row to one scene change per floor; a pad is a
+  door to every scene a visible row names, and the pad hand moves the
+  highlight to that row. On the way from `sol_tower` the pad rooms are shut:
+  their doors (`kor3` P0[3..6]) refuse with a power-out line while `0x403` /
+  `0x0007` are clear, the lattice reads them as doors a press opens, and the
+  walk stalls at the door. `kor3`'s door to `kor`, `(115, 11)`, sits behind
+  the teleport `(115, 12)` that returns the west doorway's landing
+  `(115, 13)` to `(19, 39)`; the lattice counts a door gap with a teleport
+  tile in it as unwalkable, and the crossing that lands north of that door,
+  `koin1` P2[4], lies in another walk component of `koin1`.
+  `sol_tower -> sol_tower_b2` stalls there.
 - Waypoints are hand-set in the spine from the anchors' flag differences; a
   stretch whose retail path left no flag the census can place has none.
 - Chapter-1 anchors come from several sessions, some with cheat-seeded
