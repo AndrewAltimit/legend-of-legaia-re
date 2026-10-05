@@ -645,6 +645,23 @@ impl LegaiaMinigames {
         true
     }
 
+    /// The global BGM id the page plays for `game` (`"baka"`, `"slot"`,
+    /// `"muscle"`, `"dance"`, `"fishing"`), or `-1` for none - the engine's
+    /// `MinigameSubId::standalone_bgm_id`, so the page carries no track
+    /// literal of its own.
+    pub fn minigame_bgm_id(&self, game: &str) -> i32 {
+        use legaia_engine_core::minigame_entry::MinigameSubId as M;
+        let sub = match game {
+            "baka" => M::BakaFighter,
+            "slot" => M::SlotMachine,
+            "muscle" => M::MuscleDome,
+            "dance" => M::Dance,
+            "fishing" => M::Fishing,
+            _ => return -1,
+        };
+        sub.standalone_bgm_id().map_or(-1, i32::from)
+    }
+
     /// Step the count-in one vsync - the engine's `dance::CountIn`, which the
     /// play hosts' `World::tick_dance` steps the same way. Returns
     /// `[active, ready, x_offset, brightness, hold, go, cue, done]`:
@@ -2929,5 +2946,18 @@ mod countin_tests {
         assert_eq!(cues, vec![0x200, 0x201]);
         assert_eq!(vsyncs, legaia_engine_core::dance::COUNTIN_TOTAL_VSYNCS);
         assert_eq!(mg.dance_countin_step()[0], 0, "the song runs after done");
+    }
+
+    /// The page's tracks are the engine's: the literals it used to carry are
+    /// what `standalone_bgm_id` answers.
+    #[test]
+    fn the_page_reads_its_tracks_from_the_engine() {
+        let mg = LegaiaMinigames::new();
+        assert_eq!(mg.minigame_bgm_id("baka"), 2055);
+        assert_eq!(mg.minigame_bgm_id("slot"), 2018);
+        assert_eq!(mg.minigame_bgm_id("muscle"), 2026);
+        assert_eq!(mg.minigame_bgm_id("dance"), 2060);
+        assert_eq!(mg.minigame_bgm_id("fishing"), -1);
+        assert_eq!(mg.minigame_bgm_id("nope"), -1);
     }
 }

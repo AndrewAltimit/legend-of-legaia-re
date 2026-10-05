@@ -121,6 +121,14 @@ pub const DANCE_SHORT_SONG_BGM_ID: u16 = 2060;
 /// mode arm (`DAT_801D514C`) and is unpinned; the engine picks by song length.
 pub const DANCE_LONG_SONG_BGM_ID: u16 = 2066;
 
+/// Global `music_01` track the Sol casino floor plays under its cabinets:
+/// sound-test **18** (`M16` "Sub-game"), the id `koin1`'s scene-entry script
+/// sets unconditionally (`0x35` at record `+0x0C`) and again for a spawn on the
+/// casino floor (`+0xE1`). The slot machine, the Baka Fighter cabinet and the
+/// Muscle Dome door all warp from that floor, so it is the track a slot run
+/// inherits there.
+pub const SOL_CASINO_FLOOR_BGM_ID: u16 = 2018;
+
 impl MinigameSubId {
     /// All seven slots in `sub_id` order.
     pub const ALL: [MinigameSubId; 7] = [
@@ -221,6 +229,21 @@ impl MinigameSubId {
         }
     }
 
+    /// The track a host with **no** host scene plays for this slot - the
+    /// standalone minigames page. [`Self::bgm_id`] where the overlay brings
+    /// its own; the Sol casino floor's track for the slot machine, which
+    /// inherits its scene's; the dance's short song, which the world holds
+    /// until the count-in clears; `None` for fishing (its venue's track is
+    /// the lake scene's, which a standalone page has no scene to read) and
+    /// the two dev slots.
+    pub fn standalone_bgm_id(self) -> Option<u16> {
+        match self {
+            MinigameSubId::SlotMachine => Some(SOL_CASINO_FLOOR_BGM_ID),
+            MinigameSubId::Dance => Some(DANCE_SHORT_SONG_BGM_ID),
+            other => other.bgm_id(),
+        }
+    }
+
     /// Does the engine implement this slot as a playable minigame?
     ///
     /// The two dev modules do not resolve to a [`SceneMode`]; a warp naming
@@ -283,6 +306,33 @@ mod tests {
     /// hold: entry `1043` is sound-test `55`, not `53`. Three constants here
     /// were written by subtracting the high base from a documented extraction
     /// entry, which pointed every one of them two slots low.
+    /// A standalone host's track per game: the overlay's own where it has
+    /// one, the Sol casino floor's for the slot machine (extraction `1006`,
+    /// `legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX`), the dance's
+    /// short song, and nothing for fishing.
+    #[test]
+    fn standalone_tracks_cover_the_inheriting_slots() {
+        use MinigameSubId as M;
+        assert_eq!(
+            M::BakaFighter.standalone_bgm_id(),
+            Some(BAKA_FIGHTER_BGM_ID)
+        );
+        assert_eq!(
+            M::MuscleDome.standalone_bgm_id(),
+            Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
+        );
+        assert_eq!(
+            M::SlotMachine.standalone_bgm_id(),
+            Some(SOL_CASINO_FLOOR_BGM_ID)
+        );
+        assert_eq!(
+            crate::music_labels::prot_entry_for_bgm_id(SOL_CASINO_FLOOR_BGM_ID),
+            Some(legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32)
+        );
+        assert_eq!(M::Dance.standalone_bgm_id(), Some(DANCE_SHORT_SONG_BGM_ID));
+        assert_eq!(M::Fishing.standalone_bgm_id(), None);
+    }
+
     #[test]
     fn the_minigame_tracks_resolve_to_their_documented_prot_entries() {
         use crate::music_labels::prot_entry_for_bgm_id;

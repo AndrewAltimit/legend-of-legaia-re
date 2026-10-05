@@ -1102,7 +1102,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      * BGM 2026 = music_01 slot 26 (M26B1, the standard random-battle theme;
      * see docs/subsystems/minigame-muscle-dome.md). Fishing inherits its venue
      * scene's BGM, which the overlay doesn't pin, so it carries no track. */
-    const GAME_BGM = { baka: 2055, slot: 2018, muscle: 2026 };
+    /* The track per game is the engine's (`minigame_bgm_id`, over
+     * `MinigameSubId::standalone_bgm_id`); `-1` = none. */
+    function gameBgm(game) {
+      if (!api || typeof api.minigame_bgm_id !== 'function') return 0;
+      const id = api.minigame_bgm_id(game);
+      return id > 0 ? id : 0;
+    }
 
     function audio() {
       if (!ctx) {
@@ -1118,7 +1124,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     const prerendered = {};
     function prerender(game) {
-      const bgm = GAME_BGM[game];
+      const bgm = gameBgm(game);
       if (!bgm || prerendered[game] || !window.MgBgm2) return;
       prerendered[game] = true;
       const a = audio();
@@ -1130,7 +1136,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       stop();
       if (!soundOn() || !window.MgBgm2) return false;
       const a = audio();
-      const bgm = GAME_BGM[game];
+      const bgm = gameBgm(game);
       if (!a || !bgm) return false;
       const entry = MgBgm2.render(api, a, bgm, RENDER_SECONDS);
       const src = MgBgm2.start(a, entry, 0.5);

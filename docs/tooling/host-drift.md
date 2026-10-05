@@ -1225,22 +1225,25 @@ no announcer, where both play hosts tick the hub live. It now resets and
 steps a live hub (`muscle_first_visit_reset` / `_step`), and the hub's two
 lines stage on the announcer lane.
 
-Found by the same pass and still open:
+Two more rows the same pass found are closed. The minigames page counted in
+on its own READY / 1 / 2 / 3 / GO timeline; it now steps the engine's
+`dance::CountIn` (`dance_countin_step`), which runs retail's states 3 to 5 -
+READY, then `GO!` - on all three surfaces, with the `1 2 3` moved to where
+the disassembly puts them, the song's end
+([`minigame-dance.md`](../subsystems/minigame-dance.md#the-count-in-state-by-state)).
+And the page's track per game (`GAME_BGM`) is read from the engine
+(`minigame_bgm_id`, over `MinigameSubId::standalone_bgm_id`) instead of
+spelled as literals beside it.
 
-- **Dance count-in on the minigames page.** `site/js/minigame-dance.js` runs
-  its own READY / 1 / 2 / 3 / GO timeline on fixed frame counts, and
-  `dance_start` builds no `dance::CountIn`, so the page neither shares the
-  play hosts' 120-vsync banner nor plays `COUNTIN_INTRO_CUE` (a runtime-bank
-  id the page's cue path refuses). Which pre-song numerals retail shows
-  belongs to the sprite spawner `FUN_801D3FD0`, not the banner, and needs
-  pinning before the page's numerals are replaced.
+Still open from that pass:
+
 - **Dance How-To mode** has no minigames-page entry (`DanceGame::from_overlay`
   only, no `DanceTutorial`).
-- **Minigame BGM ids** are page literals (`GAME_BGM` in `minigames.html`)
-  that equal `MinigameSubId::bgm_id()` today but do not read it.
+- **The song-end `3 2 1 FINISH!`** (state `0xB`'s four move-program sprite
+  parts) is drawn on no surface.
 - **The page refuses the pause menu while any dialog box is up**
   (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
-  the native window asks alone.
+  the native window asks alone. No retail evidence decides it yet.
 
 ## A rule spelled beside the shared predicate
 

@@ -605,7 +605,8 @@ window.MgDance = (function () {
      * 1 and 2) = global BGM 2060/2066. This value is only the fallback for a
      * WASM surface with no dance_jukebox_json; normally the page selects the
      * jukebox's first row. Default = overlay track A. */
-    let bgmTrack = 2060;
+    let bgmTrack = (typeof api.minigame_bgm_id === 'function' && api.minigame_bgm_id('dance') > 0)
+      ? api.minigame_bgm_id('dance') : 0;
     let bgmSrc = null;
 
     /* Render + start the selected BGM as a seamless loop (SEQ+VAB through the
@@ -615,7 +616,7 @@ window.MgDance = (function () {
     function startBgm(seconds) {
       stopBgm();
       const a = audioReady();
-      if (!a || !window.MgBgm2) return false;
+      if (!a || !window.MgBgm2 || !bgmTrack) return false;
       const entry = MgBgm2.render(api, a.ctx, bgmTrack, Math.min(seconds || 45, 45));
       if (!entry) return false;
       bgmSrc = MgBgm2.start(a.ctx, entry, 0.55);
