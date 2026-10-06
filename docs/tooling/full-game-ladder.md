@@ -329,7 +329,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 
 A pad segment has a frame budget (`PAD_SEGMENT_FRAMES`); a segment the hand
 cannot finish inside it stalls with `pad frame budget (N) spent` rather than holding
-the run. `LEGAIA_FGL_TRACE` prints each pad segment's frames and planner cost,
+the run. The budget is for walking: a fight's frames come off it only past a
+battle allowance (`PAD_BATTLE_ALLOWANCE`), since each fight is already bounded
+by its own tick cap and the hand's fights are slow - `nilboa`'s Three Tunnels
+put each member alone against a 9500..12000 HP boss, and those three fights
+alone outrun the walking budget. `LEGAIA_FGL_TRACE` prints each pad segment's frames and planner cost,
 and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
 teleports, tile triggers and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
 edge the planner adds, and `LEGAIA_FGL_COMP_DEBUG` prints the tile map of every
@@ -406,7 +410,10 @@ from, and a further detour is taken from there (up to three per hop): from
 `cave01`, on the side of `map01` that holds `keikoku`'s west mouth.
 
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
-cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
+cycle (and nothing while no script holds the frame: a Cross then is a talk,
+and a seat on `rayman`'s `tunnelb` door beside the gate guard opened his talk
+on the frame the walk-on band was due), the naming prompt's Yes/No confirm
+gets Up first (it opens on No), and a
 battle is fought through the command ring, one pad edge at a time, by a
 fighter shaped like a player: a member who is down gets a revive, and a
 member in danger - standing, and under 45% of its HP, or unable to take another loss the
@@ -643,14 +650,25 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
 - Inside an armed three-actor talk (`43 02`) each party member stands in
   its own part of the map, and the pad hand presses Square - the edge the
   talk controller `FUN_801D27E0` reads - to hand control to the next member
-  when a walk-on beat is out of the leader's walk component. It does not
-  solve the co-operative puzzles such a split carries. `nilboa`'s Three
-  Tunnels need two members on pressure plates at once (`P1[0]` raises
-  `0x4F2` only while the player and actor `0x31` both stand in its boxes)
-  before the boulders `P1[13]` / `P1[14]` can be pushed, and its tunnel
-  mouth `P2[4]` offers "go back outside?" to a walk that crosses it, so
-  `nivora -> nivora_late` stops with only the Thunder Ravine member's goal
-  (`P2[38]`, `0x50E`) reached.
+  when a walk-on beat is out of the leader's walk component. Three rules
+  hold the split together, all keyed on the armed talk. A script's picker
+  is answered with the first option whose branch spawns no record and
+  changes no scene: `nilboa`'s tunnel mouths (`P2[4]` / `P2[5]` / `P2[6]`)
+  ask "go back outside?", and their Yes spawns `P2[28]`, which regroups the
+  party and clears the members' progress. A band that fires twice on one
+  walk, changes no flag and moves the walker (the mouths' No, a step back)
+  is a wall to every later plan in the segment, and the walk that met it
+  ends as unwalkable, so the next member is tried; the members' tunnels join
+  only outside, through the mouths. And a record that ran on a walk to
+  somewhere else counts as played: the split cutscene `P2[0]` runs from the
+  entrance band `P2[29]` (`44 4E`), and walking its own band afterwards
+  sent every member across the map, the Fire Ravine member re-dressing the
+  boulder room (`P2[26]`, gated on nothing) across the way another member
+  needs, which only `P2[27]` (dead while `0x00D` is up) re-opens. A band no member can walk to stays on the beat list: a later
+  beat may open the way, as the warp at the end of a tunnel (`P2[39]`)
+  drops its member into the `P2[2]` pocket. The boulders `P1[13]` /
+  `P1[14]` stay pushed (`0x457`) across `P2[27]`'s `4C C3` re-seats
+  because the port re-runs their spawn sections.
 - Each pass answers pickers from a fresh rotation, so a segment's pad tier
   does not depend on what its seated pass, or an earlier segment, opened.
 - The pad hand heals only with items it already carries and with a free

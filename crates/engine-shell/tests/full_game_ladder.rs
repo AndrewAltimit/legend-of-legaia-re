@@ -702,6 +702,20 @@ fn holder(session: &BootSession) -> &'static str {
     }
 }
 
+/// The partition-2 record the modal cutscene timeline is running, matched
+/// by its bytes against the scene's records.
+fn timeline_p2_record(session: &BootSession) -> Option<u8> {
+    let tl = session.host.world.cutscene.timeline.as_ref()?;
+    let (mf, man, _) = scene_man_and_triggers(session)?;
+    let n2 = mf.partitions.get(2)?.len();
+    (0..n2).find_map(|i| {
+        let (start, _, len) =
+            legaia_engine_core::man_field_scripts::partition_record_span(&mf, &man, 2, i)?;
+        (len == tl.bytecode.len() && man.get(start..start + len)? == tl.bytecode.as_slice())
+            .then_some(i as u8)
+    })
+}
+
 fn released(session: &BootSession) -> bool {
     let w = &session.host.world;
     // A scene change parked behind the streaming actor's countdown has not
@@ -818,6 +832,13 @@ fn script_pad(session: &BootSession, f: usize) -> u16 {
         && !ne.confirm_yes
     {
         return PadButton::Up.mask();
+    }
+    // Nothing holds the frame: a Cross here is a talk, not a page turn. A
+    // door seat beside an NPC (`rayman`'s gate guard, re-seated beside the
+    // `tunnelb` door once `0x1FC` is up) otherwise opened his talk on the
+    // frame the walk-on band was due.
+    if released(session) {
+        return 0;
     }
     PadButton::Cross.mask()
 }
@@ -966,7 +987,7 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
     if !takes {
         return Some(0);
     }
-    let want = (visit - 1) % n;
+    let want = split_stay_option(session).unwrap_or((visit - 1) % n);
     Some(if cursor < want {
         PadButton::Down.mask()
     } else if cursor > want {
@@ -974,6 +995,60 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
     } else {
         PadButton::Cross.mask()
     })
+}
+
+/// While a three-actor talk holds the party split (`43 02`, `nilboa`'s Three
+/// Tunnels), the option of a script's picker that keeps the split: the
+/// first whose branch spawns no record (`0x44`) and changes no scene
+/// (`0x3F`) before its first `0x21`. The tunnel mouths (`nilboa` P2[4] /
+/// P2[5] / P2[6]) ask "go back outside?" and their Yes spawns P2[28], which
+/// regroups the party and clears the members' progress flags; their No
+/// steps the walker back. `None` outside a split, or when no option stays.
+fn split_stay_option(session: &BootSession) -> Option<usize> {
+    use legaia_asset::field_disasm::{InsnInfo, decode};
+    let w = &session.host.world;
+    w.dialog.three_actor_talk.as_ref()?;
+    let tl = w
+        .cutscene
+        .timeline
+        .iter()
+        .filter(|t| t.dialog.is_some())
+        .chain(
+            w.field_vm
+                .helper_contexts
+                .iter()
+                .filter(|t| t.dialog.is_some()),
+        )
+        .next()?;
+    let bc = tl.bytecode.as_slice();
+    // The box's text runs from the record's PC up to the picker it opens.
+    let mut pc = tl.pc;
+    let mut picker = None;
+    for _ in 0..16 {
+        let Ok(i) = decode(bc, pc) else { break };
+        if let InsnInfo::Picker { count, targets, .. } = i.info {
+            picker = Some((count as usize, targets));
+            break;
+        }
+        pc += i.size.max(1);
+    }
+    let (count, targets) = picker?;
+    let stays = |mut at: usize| {
+        for _ in 0..48 {
+            let Ok(i) = decode(bc, at) else { return true };
+            match bc[at] & 0x7F {
+                0x44 | 0x3F => return false,
+                0x21 => return true,
+                _ => {}
+            }
+            at = match i.info {
+                InsnInfo::JmpRel { target, .. } => target,
+                _ => at + i.size.max(1),
+            };
+        }
+        true
+    };
+    (0..count.min(4)).find(|&k| stays(targets[k]))
 }
 
 thread_local! {
@@ -1995,6 +2070,26 @@ fn party_dump(session: &BootSession) {
 /// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
 /// walking mode came back.
 fn drain_battle(session: &mut BootSession) -> Option<Run> {
+    // A fight's frames come off the pad segment's budget only past the
+    // battle allowance: the deadline moves ahead of the fight by the most
+    // it may need, and the unused part is taken back.
+    let lent = if pad_hand() {
+        PAD_BATTLE_LEFT
+            .with(std::cell::Cell::get)
+            .min(BATTLE_TICKS_CAP as u64)
+    } else {
+        0
+    };
+    PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(lent)));
+    let start = session.frames;
+    let r = fight_battle(session);
+    let used = session.frames.saturating_sub(start).min(lent);
+    PAD_DEADLINE.with(|d| d.set(d.get().saturating_sub(lent - used)));
+    PAD_BATTLE_LEFT.with(|l| l.set(l.get().saturating_sub(used)));
+    r
+}
+
+fn fight_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     DUEL_SPIRIT_ROUND.with(|d| d.set(None));
@@ -4080,8 +4175,43 @@ fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> {
                 out.insert((i32::from(s.overworld_x), i32::from(s.overworld_z)));
             }
         }
+        // A band that turned a split party's walker back is a wall to it.
+        let turned: HashSet<u8> = TURNBACK.with(|t| {
+            t.borrow()
+                .iter()
+                .filter(|(sc, _)| *sc == name)
+                .map(|&(_, r)| r)
+                .collect()
+        });
+        if w.dialog.three_actor_talk.is_some() {
+            out.extend(
+                triggers
+                    .iter()
+                    .filter(|t| t.gate == 1 && turned.contains(&t.record))
+                    .map(|t| (i32::from(t.tile_x), i32::from(t.tile_z))),
+            );
+        }
     }
     out
+}
+
+thread_local! {
+    /// `(scene, partition-2 record)` bands whose record ran to its release
+    /// on a walk to somewhere else and left a three-actor split armed. The
+    /// beat pass does not walk them again: `nilboa`'s split cutscene P2[0]
+    /// runs from the entrance band P2[29] (`44 4E`), and walking its own
+    /// band afterwards sent every member of the split across the map toward
+    /// a beat already played - the Fire Ravine member re-dressing the
+    /// boulder room (P2[26]) across the other member's way.
+    static RAN_ON_WALK: std::cell::RefCell<HashSet<(String, u8)>> =
+        std::cell::RefCell::new(HashSet::new());
+    /// `(scene, partition-2 record)` bands that fired on a split party's
+    /// walk and changed nothing - `nilboa`'s tunnel mouths, whose "go back
+    /// outside?" No steps the walker back. While the split holds, the plan
+    /// treats them as walls: the members' tunnels join only outside, and a
+    /// route through a mouth loops on its refusal.
+    static TURNBACK: std::cell::RefCell<HashSet<(String, u8)>> =
+        std::cell::RefCell::new(HashSet::new());
 }
 
 /// Walk to a door toward `dest` with the pad only. `Ok(entered)` on a scene
@@ -4464,6 +4594,19 @@ thread_local! {
     /// `BootSession::frames` at which the current pad segment's budget runs
     /// out.
     static PAD_DEADLINE: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+}
+
+/// Frames of battle a pad segment may spend beyond [`PAD_SEGMENT_FRAMES`].
+/// The budget is for walking; a fight is already bounded by
+/// [`BATTLE_TICKS_CAP`], and the pad hand's fights are slow - `nilboa`'s
+/// Three Tunnels stage a lone member against a 9500..12000 HP boss in each
+/// tunnel (`F29`..`F31`), and those three fights alone run past the walking
+/// budget.
+const PAD_BATTLE_ALLOWANCE: u64 = 2 * PAD_SEGMENT_FRAMES;
+
+thread_local! {
+    /// What is left of [`PAD_BATTLE_ALLOWANCE`] in the current segment.
+    static PAD_BATTLE_LEFT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// `Err` once the pad segment's frame budget is spent.
@@ -5125,6 +5268,8 @@ fn pad_walk(
         let w = &session.host.world;
         if w.cutscene_timeline_active() || w.dialogue_owns_input() || w.active_fmv().is_some() {
             let site = format!("{} at {}", holder(session), park_site(session));
+            let fired_record = timeline_p2_record(session);
+            let rec_label = fired_record.map_or("-".to_string(), |r| format!("P2[{r}]"));
             // A script that changes nothing - an examined prop with nothing
             // to say (`ropeway`'s `21 26 FE FF` bind, which the stalled
             // follower's action tap keeps opening) - leaves the route as it
@@ -5154,14 +5299,21 @@ fn pad_walk(
             };
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
-                    "    [walk-script] tile {:?}: {site} -> {r:?}; game_over {}",
+                    "    [walk-script] tile {:?}: {site} [{}] -> {r:?}; game_over {}",
                     here(session),
+                    rec_label,
                     session.host.world.game_over
                 );
             }
             match r {
                 Run::Entered(s) => return Ok(Walk::Entered(s)),
-                Run::Released => {}
+                Run::Released => {
+                    if let Some(rec) = fired_record
+                        && session.host.world.dialog.three_actor_talk.is_some()
+                    {
+                        RAN_ON_WALK.with(|t| t.borrow_mut().insert((scene_name(session), rec)));
+                    }
+                }
                 other => return Err(format!("scripted sequence on the walk: {other:?}")),
             }
             let (px, pz) = player_xz(session);
@@ -5174,11 +5326,31 @@ fn pad_walk(
             // forbidden" without Lord Saryu's key, then a step back) is a
             // wall to this walk; re-crossing it burns the segment budget.
             let flags_now = flags_of_world(session);
+            // The script itself moved the walker and left the flags as
+            // they were: a refusal's step back, not a band walked through
+            // (`nilboa` P2[26] / P2[27] re-dress the boulder room in place).
+            let turned_back = before.0 == flags_now && before.1 != cell_of(px, pz);
             let n = refires.entry(site).or_insert((0, flags_now.clone()));
             if n.1 == flags_now {
                 n.0 += 1;
             } else {
                 *n = (1, flags_now);
+            }
+            // On a split party, a band that fired twice on one walk and
+            // changed nothing turned the walker back (`nilboa`'s tunnel
+            // mouths: "go back outside?", No, a step back): the walk cannot
+            // pass it, and the band is a wall to every later plan.
+            if session.host.world.dialog.three_actor_talk.is_some()
+                && n.0 >= 2
+                && turned_back
+                && let Some(rec) = fired_record
+            {
+                TURNBACK.with(|t| t.borrow_mut().insert((scene_name(session), rec)));
+                session.host.world.set_pad(0);
+                return Err(format!(
+                    "no walkable path: band P2[{rec}] turned the walk to {goal:?} back at {:?}",
+                    here(session)
+                ));
             }
             if n.0 > WALK_SCRIPT_REFIRES {
                 return Err(format!(
@@ -6113,6 +6285,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 return Err(w);
             }
             pad_budget(session)?;
+            if RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec))) {
+                walked.insert(rec);
+            }
             if doors.contains(&rec)
                 || walked.contains(&rec)
                 || overreach.contains(&usize::from(rec))
@@ -6170,8 +6345,11 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                         if e.contains("no walkable path")
                             || (e.contains("pad walk stalled") && short(e).is_some_and(|n| n <= 2)));
                     // A room-marker band crossed on the way may raise a flag
-                    // (`0x52A`); only the record's own run ends the search.
-                    if !unreached {
+                    // (`0x52A`); only the record's own run ends the search -
+                    // which may have come from another band on the way
+                    // (`nilboa` P2[29] spawns the split, P2[0]).
+                    if !unreached || RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec)))
+                    {
                         break;
                     }
                     if queue.is_empty() && swaps < 2 && swap_leader(session) {
@@ -6185,6 +6363,12 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 run_while_moving(session, DEEP_EXIT_TICKS)
             };
             let r = fight_committed(session, r);
+            // A band no member could walk to stays on the list: a later
+            // beat may open the way (`nilboa` P2[39], the warp at the far
+            // end of one tunnel, drops its member beside the P2[2] band).
+            if matches!(&r, Run::Parked(e) if e.contains("no walkable path")) {
+                walked.remove(&rec);
+            }
             trace_beat(session, &f0, || {
                 format!("{name} walk P2[{rec}] at {tile:?} -> {r:?}")
             });
@@ -7191,6 +7375,8 @@ fn traverse(
     PAD_HAND.with(|h| h.set(pad));
     RESTED.with(|r| r.borrow_mut().clear());
     REFUSED_DOORS.with(|r| r.borrow_mut().clear());
+    TURNBACK.with(|t| t.borrow_mut().clear());
+    RAN_ON_WALK.with(|t| t.borrow_mut().clear());
     // Each pass answers pickers from a fresh rotation: a count carried over
     // from the seated pass (or an earlier segment) made the pad hand's
     // first answer depend on what else had run in the process (`nilboa`
@@ -7494,6 +7680,7 @@ fn run_segment(
             let opts = live_opts(true);
             seed(&mut session, from, from_anchor, &opts)?;
             PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+            PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
             // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
             // Every random draw it meets comes off the world rand stream, so
             // a re-seeded run is how a pad route is checked for depending on
