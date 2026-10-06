@@ -55,7 +55,7 @@ impl LegaiaRuntime {
     /// The CDNAME label of the scene the host has loaded, if any.
     fn running_scene(&self) -> Option<String> {
         self.scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.scene.as_ref())
             .map(|s| s.name.clone())
     }
@@ -125,12 +125,12 @@ impl CardLoadHost for PageCardLoad<'_> {
         let rt = &mut *self.0;
         let armed = rt
             .scene_host
-            .as_mut()
+            .host_mut()
             .is_some_and(|h| h.arm_resume_seat(save, save_scene, scene));
         let entered = rt.enter_field_core(scene, true).map(|_| ());
         if entered.is_err()
             && armed
-            && let Some(h) = rt.scene_host.as_mut()
+            && let Some(h) = rt.scene_host.host_mut()
         {
             h.disarm_entry_seat();
         }
@@ -138,7 +138,7 @@ impl CardLoadHost for PageCardLoad<'_> {
     }
 
     fn card_load_hydrated(&mut self) {
-        if let Some(h) = self.0.scene_host.as_mut() {
+        if let Some(h) = self.0.scene_host.host_mut() {
             h.refresh_party_battle_inputs();
         }
     }

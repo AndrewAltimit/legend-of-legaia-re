@@ -62,7 +62,7 @@ impl LegaiaRuntime {
     /// ([`legaia_engine_core::scene::bgm_bank_id`]), as the native
     /// `BootSession::restore_field_bgm` plays it. Returns whether it started.
     pub(crate) fn start_world_bgm(&mut self) -> bool {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return false;
         };
         let Some(id) = host.world.audio.current_bgm else {

@@ -16,7 +16,7 @@ impl LegaiaRuntime {
     /// [`World::install_retail_progression_tables`]:
     ///     legaia_engine_core::world::World::install_retail_progression_tables
     pub fn debug_progression_tables_json(&self) -> String {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return "null".into();
         };
         let w = &h.world;
@@ -54,7 +54,7 @@ impl LegaiaRuntime {
     pub fn debug_lead_live_stats_json(&self) -> String {
         let Some(lead) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.party.roster.members.first())
         else {
             return "null".into();

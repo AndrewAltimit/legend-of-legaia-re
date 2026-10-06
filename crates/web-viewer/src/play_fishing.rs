@@ -91,7 +91,7 @@ impl LegaiaRuntime {
     pub(crate) fn tick_fishing_banners(&mut self) {
         let Some(world) = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| &h.world)
             .filter(|w| w.minigames.fishing.is_some())
         else {
@@ -119,7 +119,7 @@ impl LegaiaRuntime {
     /// writes, applied here to this page's engine camera. The ripples and
     /// bursts land in `World::minigames.fx`, which this page already draws.
     pub(crate) fn tick_fishing_actors(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let writes = legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(host);
@@ -135,7 +135,7 @@ impl LegaiaRuntime {
     /// shared `ui_fishing_line` builder, into the page's screen-prim pass.
     pub(crate) fn fishing_line_prims(&mut self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return Vec::new();
         };
         let world = &mut host.world;
@@ -182,7 +182,7 @@ impl LegaiaRuntime {
     pub(crate) fn fishing_hud_sprite_prims(
         &self,
     ) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         if host.world.mode != legaia_engine_core::world::SceneMode::Fishing {
@@ -200,7 +200,7 @@ impl LegaiaRuntime {
     /// The live fishing session, when one is installed on the scene host's
     /// world.
     fn fishing_session(&self) -> Option<&PondSession> {
-        self.scene_host.as_ref()?.world.minigames.fishing.as_ref()
+        self.scene_host.host()?.world.minigames.fishing.as_ref()
     }
 
     /// The phase / prompt status rows the native window prints above the retail
@@ -240,7 +240,7 @@ impl LegaiaRuntime {
     /// The venue hub's draws (menu, help pages, tackle list) - empty while no
     /// hub is up.
     fn fishing_hub_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
         let lines = world.fishing_hub_lines();
@@ -262,7 +262,7 @@ impl LegaiaRuntime {
         };
         let inventory = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| &h.world.party.inventory)
             .expect("fishing_session() proved the host exists");
         // The lure index is the session's; the entry's ownership gate already
@@ -292,7 +292,7 @@ impl LegaiaRuntime {
         if let Some(r) = s.catch_result() {
             let name_len = self
                 .scene_host
-                .as_ref()
+                .host()
                 .and_then(|h| h.world.minigames.fishing_captions.as_ref())
                 .map_or(0, |t| t.species_name(r.species).len());
             items.extend(ui::catch_result_draws(
@@ -347,7 +347,7 @@ impl LegaiaRuntime {
     /// re-entering keeps the running total and the cast counter.
     pub fn play_fishing_start(&mut self) -> bool {
         use legaia_asset::{fishing_species, static_overlay};
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let Some(rec) = static_overlay::overlay_map()
@@ -376,7 +376,7 @@ impl LegaiaRuntime {
     /// the session's persistent words into the world. Returns the banked
     /// point total (`-1` when no session was live).
     pub fn play_fishing_stop(&mut self) -> i32 {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return -1;
         };
         if host.world.exit_fishing().is_none() {
@@ -415,7 +415,7 @@ impl LegaiaRuntime {
         };
         let (wander, line, fx_parts) =
             self.scene_host
-                .as_ref()
+                .host()
                 .map(|h| {
                     let v = &h.world.minigames.fishing_venue;
                     let wander = v.wander.as_ref().map(
@@ -476,7 +476,7 @@ impl LegaiaRuntime {
         // frames from `bars` in JS.
         let sprites_drawn = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.minigames.fishing_sprites.is_some());
         let atlas = FishingHudAtlas {
             solid_src: None,
@@ -488,7 +488,7 @@ impl LegaiaRuntime {
         // them.
         let disc_captions = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.minigames.fishing_captions.clone());
         let captions = match disc_captions.as_ref() {
             Some(t) => FishingCaptions::from_disc(&t.lure_names, &t.lures_left, &t.suffix)
@@ -532,7 +532,7 @@ impl LegaiaRuntime {
     ///
     /// `null` when the venue pages did not decode.
     pub fn play_fishing_prizes_json(&self, venue: u32) -> String {
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return "null".to_string();
         };
         let Some(venues) = world.minigames.fishing_prize_venues.as_ref() else {
@@ -583,7 +583,7 @@ impl LegaiaRuntime {
     /// ([`Self::tick_fishing_actors`]) advances on the world for both hosts.
     fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         use legaia_engine_ui::ui_fishing_exchange as fx;
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
         let Some(ex) = world.minigames.fishing_exchange.as_ref() else {
@@ -657,7 +657,7 @@ impl LegaiaRuntime {
         let Some(input) = ExchangeInput::from_code(code) else {
             return -1;
         };
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return -1;
         };
         let Some(venues) = host.world.minigames.fishing_prize_venues.clone() else {
@@ -677,7 +677,7 @@ impl LegaiaRuntime {
     pub fn play_fishing_exchange_state_json(&self) -> String {
         let ex = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.minigames.fishing_exchange.as_ref());
         match ex {
             Some(e) => serde_json::json!({ "open": true, "venue": e.venue, "cursor": e.cursor }),
@@ -717,7 +717,7 @@ impl LegaiaRuntime {
     /// few points, a latched one-time prize, or a full stack).
     pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
         use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return -1;
         };
         let Some(venues) = host.world.minigames.fishing_prize_venues.clone() else {

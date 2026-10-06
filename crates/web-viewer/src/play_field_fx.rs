@@ -50,7 +50,7 @@ impl LegaiaRuntime {
     /// kingdom overworld) or while the script gate is clear.
     pub(crate) fn tick_field_fog_prims(&mut self) -> Vec<ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return Vec::new();
         };
         let world = &mut host.world;
@@ -110,7 +110,7 @@ impl LegaiaRuntime {
     /// through the boot system-UI underlay. Empty outside game mode 3.
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &host.world;
@@ -141,7 +141,7 @@ impl LegaiaRuntime {
     /// every call; only a field scene draws them.
     pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return Vec::new();
         };
         let world = &host.world;
@@ -165,7 +165,7 @@ impl LegaiaRuntime {
     /// window's `field_light_screen_prims` twin. Empty outside a field scene.
     pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &host.world;
@@ -219,7 +219,7 @@ impl LegaiaRuntime {
     /// A page-side probe for the oracle; the draw itself rides the
     /// screen-prim pass.
     pub fn play_fog_stats(&self) -> Vec<u32> {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return vec![0, 0];
         };
         vec![

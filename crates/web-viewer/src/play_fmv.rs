@@ -371,7 +371,7 @@ impl LegaiaRuntime {
     pub(crate) fn fmv_arm(&mut self, fmv_id: i16, origin: FmvOrigin) {
         let wanted = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|host| resolve_wanted(&mut self.fmv, host, &self.disc_files, fmv_id));
         match wanted.as_ref() {
             Some(w) => crate::console_log(&format!(
@@ -508,7 +508,7 @@ impl LegaiaRuntime {
     /// the label of the scene the hand-off entered (empty when none did).
     pub(crate) fn service_cutscene_fmv(&mut self) -> String {
         let mut fmv_handoff_scene = String::new();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return fmv_handoff_scene;
         };
         let active = (host.world.mode == SceneMode::Cutscene)
@@ -531,7 +531,7 @@ impl LegaiaRuntime {
         if self.fmv.armed_for() != Some((FmvOrigin::Cutscene, fmv_id)) {
             self.fmv_arm(fmv_id, FmvOrigin::Cutscene);
         }
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return fmv_handoff_scene;
         };
         // Retail's pad abort: the attract id only, on a face button / Select.
@@ -744,7 +744,7 @@ impl LegaiaRuntime {
     /// or outside the field (retail's dispatch only reads the trigger from
     /// field mode).
     pub fn play_fmv_trigger(&mut self, fmv_id: i16) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         if host.world.mode != SceneMode::Field {
@@ -786,12 +786,12 @@ mod tests {
         host.world.cutscene.return_mode = Some(SceneMode::Field);
         host.world.mode = SceneMode::Cutscene;
         host.world.cutscene.active_fmv = Some(fmv_id);
-        rt.scene_host = Some(host);
+        rt.scene_host.set(host);
         rt
     }
 
     fn mode(rt: &LegaiaRuntime) -> SceneMode {
-        rt.scene_host.as_ref().unwrap().world.mode
+        rt.scene_host.host().unwrap().world.mode
     }
 
     /// Unsupported page (a cached bundle): the beat finishes the frame it
@@ -801,7 +801,7 @@ mod tests {
         let mut rt = runtime_in_cutscene(1);
         assert_eq!(rt.service_cutscene_fmv(), "");
         assert_eq!(mode(&rt), SceneMode::Field);
-        let host = rt.scene_host.as_mut().unwrap();
+        let host = rt.scene_host.host_mut().unwrap();
         assert_eq!(host.world.cutscene.active_fmv, None);
         assert_eq!(
             host.world.take_finished_fmv(),
@@ -865,7 +865,7 @@ mod tests {
             assert_eq!(rt.service_cutscene_fmv(), "");
             assert_eq!(mode(&rt), SceneMode::Cutscene, "held while the movie plays");
             assert_eq!(
-                rt.scene_host.as_ref().unwrap().world.cutscene.active_fmv,
+                rt.scene_host.host().unwrap().world.cutscene.active_fmv,
                 Some(1)
             );
         }
@@ -889,7 +889,7 @@ mod tests {
         assert_eq!(rt.service_cutscene_fmv(), "");
         assert_eq!(mode(&rt), SceneMode::Field);
         assert!(!rt.play_fmv_active());
-        let host = rt.scene_host.as_mut().unwrap();
+        let host = rt.scene_host.host_mut().unwrap();
         assert_eq!(host.world.cutscene.active_fmv, None);
         assert_eq!(host.world.take_finished_fmv(), None);
     }

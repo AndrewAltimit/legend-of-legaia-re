@@ -159,7 +159,7 @@ impl LegaiaRuntime {
     /// [`LegaiaRuntime::tick_frame`], mirroring the native window's
     /// `take_pending_field_shop` drain.
     pub(crate) fn poll_field_shop(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         if let Some(shop) = host.world.take_pending_field_shop() {
@@ -176,7 +176,7 @@ impl LegaiaRuntime {
     fn shop_item_label(&self, id: u8) -> String {
         // `MenuState::item_label`, the label the native shop prints.
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.menu.item_label(id))
             .unwrap_or_else(|| format!("Item {id:02X}"))
     }
@@ -198,7 +198,7 @@ impl LegaiaRuntime {
         let shop = self.menu.shop_session.as_ref()?;
         let state = MenuState::from_byte(self.menu.ctx_state());
         let cursor = self.menu.cursor() as usize;
-        let world = self.scene_host.as_ref().map(|h| &h.world)?;
+        let world = self.scene_host.host().map(|h| &h.world)?;
         let gold = world.party.money;
 
         // Owned label storage: the ShopRow view borrows &str, so the
@@ -332,7 +332,7 @@ impl LegaiaRuntime {
             Some(MenuState::InnConfirm) => {
                 let gold = self
                     .scene_host
-                    .as_ref()
+                    .host()
                     .map(|h| h.world.party.money)
                     .unwrap_or(0);
                 let title = format!("INN  Rest for {cost}G?");
@@ -405,7 +405,7 @@ impl LegaiaRuntime {
         let pending = self.menu.pending_trade_offer();
         let party = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.party.roster.members.as_slice())
             .unwrap_or(&[]);
         let text = legaia_engine_core::seru_trade::trade_screen_text(
@@ -433,7 +433,7 @@ impl LegaiaRuntime {
     ///
     /// REF: FUN_801DCF14
     fn shop_vendor_name<'a>(&'a self, shop: &ShopSession) -> Option<&'a str> {
-        let shops = &self.scene_host.as_ref()?.world.shops.scene_shops;
+        let shops = &self.scene_host.host()?.world.shops.scene_shops;
         shops
             .iter()
             .find(|s| {
@@ -462,7 +462,7 @@ impl LegaiaRuntime {
         match state {
             Some(MenuState::ShopBuy) => shop.inventory.items.get(cursor).map(|i| i.item_id),
             Some(MenuState::ShopSell) => {
-                let world = &self.scene_host.as_ref()?.world;
+                let world = &self.scene_host.host()?.world;
                 legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(world)
                     .get(cursor)
                     .map(|r| r.id)
@@ -483,7 +483,7 @@ impl LegaiaRuntime {
     fn shop_item_description(&self, id: u8) -> String {
         let Some(text) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.menu.text.as_ref())
         else {
             return String::new();
@@ -528,7 +528,7 @@ impl LegaiaRuntime {
         let Some(table) = assets.window_table() else {
             return Default::default();
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Default::default();
         };
         use legaia_engine_ui::ui_prize_exchange as px;
@@ -576,7 +576,7 @@ impl LegaiaRuntime {
     /// (`SceneHost::coin_counter_lines`) and drawn through the pen
     /// composition the native window shares. Stage pixels.
     fn coin_counter_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let lines = host.coin_counter_lines();
@@ -605,7 +605,7 @@ impl LegaiaRuntime {
         let Some(table) = assets.window_table() else {
             return draws;
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return draws;
         };
         let bag = legaia_engine_core::menu_runtime::MenuRuntime::inventory_items(world);
@@ -769,7 +769,7 @@ impl LegaiaRuntime {
         else {
             return (out, None);
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return (out, None);
         };
         let rect = ui::painter_rect(d);
@@ -858,7 +858,7 @@ impl LegaiaRuntime {
         }
         if let Some((name, line)) = panel.passive.and_then(|_| {
             self.scene_host
-                .as_ref()
+                .host()
                 .and_then(|h| h.world.menu.text.as_ref())
                 .and_then(|t| t.item_passive_lines(id))
         }) {
@@ -900,7 +900,7 @@ impl LegaiaRuntime {
         let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
             return (Vec::new(), Vec::new());
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return (Vec::new(), Vec::new());
         };
         let members = legaia_engine_core::shop::party_compare_members(
@@ -962,7 +962,7 @@ impl LegaiaRuntime {
         }
         let shop = self.menu.shop_session.as_ref()?;
         let assets = self.menu_assets.as_ref()?;
-        let world = &self.scene_host.as_ref()?.world;
+        let world = &self.scene_host.host()?.world;
         let state = MenuState::from_byte(self.menu.ctx_state());
         let cursor = self.menu.cursor() as usize;
         // The windows on screen this frame with their slide progress
@@ -1152,7 +1152,7 @@ impl LegaiaRuntime {
     /// the Seru-capture line, both ticked down by `World::tick`.
     fn banner_stage_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let mut out = Vec::new();
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return out;
         };
         // The native window's arm (`window/hud.rs`): with the system-UI
@@ -1208,14 +1208,14 @@ impl LegaiaRuntime {
     /// `try_arm_field_shop` rejects every merchant record.
     pub fn debug_has_shop_catalog(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.shops.item_shop_data.is_some())
     }
 
     /// Is the op-`0x49` shop gate still held (i.e. the field VM suspended)?
     pub fn debug_field_shop_gate_held(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.shops.shop_open)
     }
 
@@ -1223,7 +1223,7 @@ impl LegaiaRuntime {
     /// stocked from the real price table. Returns `false` when no catalog is
     /// installed (nothing to price a stock list with).
     pub fn debug_open_test_shop(&mut self) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let Some(data) = host.world.shops.item_shop_data.as_ref() else {
@@ -1259,7 +1259,7 @@ impl LegaiaRuntime {
     /// disc at boot) or a counter is already armed.
     pub fn debug_arm_prize_exchange(&mut self, block: u8) -> bool {
         self.scene_host
-            .as_mut()
+            .host_mut()
             .is_some_and(|h| h.world.try_arm_prize_exchange(&[0x49, 0x07, block]))
     }
 
@@ -1274,7 +1274,7 @@ impl LegaiaRuntime {
         let Some(table) = self.equip_stats.clone() else {
             return false;
         };
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let Some(data) = host.world.shops.item_shop_data.as_ref() else {
@@ -1316,7 +1316,7 @@ impl LegaiaRuntime {
     /// config disabled, so this is the only way a test reaches the shop's
     /// Trade Seru row without a patched image. `false` with no scene host.
     pub fn debug_enable_seru_trade(&mut self, seed: u64) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
@@ -1360,7 +1360,7 @@ impl LegaiaRuntime {
         // scaffold) can be ticked in place - the shop spends the player's
         // real gold and stocks their real bag.
         let menu = &mut self.menu;
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             menu.tick(&mut host.world, input);
         }
         // The shop's own blip (`MenuRuntime::take_ui_cue`), keyed through
@@ -1370,7 +1370,7 @@ impl LegaiaRuntime {
             self.play_sfx(u32::from(cue));
         }
         if self.menu.shop_session.is_none()
-            && let Some(host) = self.scene_host.as_mut()
+            && let Some(host) = self.scene_host.host_mut()
             && host.world.shops.shop_open
         {
             host.world.finish_field_shop();
@@ -1378,7 +1378,7 @@ impl LegaiaRuntime {
         // The prize exchange's own Exit already unparks through the runtime
         // tick; this is the same safety net the shop keeps.
         if self.menu.prize_session.is_none()
-            && let Some(host) = self.scene_host.as_mut()
+            && let Some(host) = self.scene_host.host_mut()
             && host.world.shops.prize_exchange_open
         {
             host.world.finish_prize_exchange();
@@ -1469,7 +1469,7 @@ impl LegaiaRuntime {
         // records screen at the engine's pen, as the native window draws it.
         if let Some(pen) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.soft_reset_records_pen())
         {
             windows.extend(self.records_draws_at(font, pen));
@@ -1477,7 +1477,7 @@ impl LegaiaRuntime {
         // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
         // the engine layout + shared line composition the native window
         // draws (`SceneHost::flag_window_lines`).
-        if let Some(host) = self.scene_host.as_ref() {
+        if let Some(host) = self.scene_host.host() {
             let mut floor = host.flag_window_lines();
             // The code lock (op-0x49 sub-op 2, slot 0x21), same line
             // composition as the native window (`SceneHost::code_lock_lines`).

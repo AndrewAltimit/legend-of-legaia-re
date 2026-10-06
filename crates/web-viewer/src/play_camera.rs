@@ -33,7 +33,7 @@ impl LegaiaRuntime {
     /// The half before the tick (free-roam reset + the compass azimuth) runs
     /// in [`Self::tick_frame`] ahead of the scene tick.
     pub(crate) fn tick_camera(&mut self, scene_entered: bool) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         legaia_engine_core::frame_step::camera_after_world_tick(
@@ -51,7 +51,7 @@ impl LegaiaRuntime {
     /// one advances the cutscene glide and drains the snap-beat bank, so an
     /// export that only needs the verdict must not call it.
     pub(crate) fn cutscene_owns_frame(&self) -> bool {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return false;
         };
         camera_view::cutscene_owns_camera(&host.world)
@@ -98,7 +98,7 @@ impl LegaiaRuntime {
     /// alone, for the exports that need the answer without advancing the
     /// glide - this one is a per-frame STEP, not a query.
     fn resolve_camera_frame(&mut self) -> FieldCameraFrame {
-        if self.scene_host.is_none() {
+        if self.scene_host.host().is_none() {
             return FieldCameraFrame::HostDebugOrbit;
         }
         // The host's fallback focus: the loaded scene's own centre, the same
@@ -111,7 +111,7 @@ impl LegaiaRuntime {
             [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5]
         };
         let scripted = self.cutscene_owns_frame();
-        let host = self.scene_host.as_ref().expect("checked above");
+        let host = self.scene_host.host().expect("checked above");
         let world = &host.world;
         let cutscene = if scripted {
             let target = camera_view::cutscene_view(world, centre);
@@ -126,7 +126,7 @@ impl LegaiaRuntime {
             self.cutscene_glide.idle(&mut self.camera);
             None
         };
-        let world = &self.scene_host.as_ref().expect("checked above").world;
+        let world = &self.scene_host.host().expect("checked above").world;
         camera_view::resolve_field_camera(world, &self.camera, cutscene, centre)
     }
 }
@@ -220,7 +220,7 @@ impl LegaiaRuntime {
     pub fn play_render_nclip_mode(&self) -> u32 {
         let mode = self
             .scene_host
-            .as_ref()
+            .host()
             .map_or(SceneMode::Title, |h| h.world.mode);
         camera_view::nclip_cull_mode(self.cutscene_owns_frame(), mode)
     }
@@ -234,7 +234,7 @@ impl LegaiaRuntime {
     pub fn play_render_prim_near(&self, retail_camera: bool) -> Vec<f32> {
         let mode = self
             .scene_host
-            .as_ref()
+            .host()
             .map_or(SceneMode::Title, |h| h.world.mode);
         legaia_engine_ui::prim_near_reject::shader_params(camera_view::prim_near_cut(
             mode,
@@ -271,7 +271,7 @@ impl LegaiaRuntime {
     pub fn play_render_curve_scale(&mut self) -> f32 {
         if !self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.overworld_bit())
         {
             return 0.0;
@@ -280,7 +280,7 @@ impl LegaiaRuntime {
             let (lo, hi) = self.scene_aabb();
             [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5]
         };
-        let world = &self.scene_host.as_ref().expect("checked above").world;
+        let world = &self.scene_host.host().expect("checked above").world;
         let cutscene = self
             .cutscene_owns_frame()
             .then(|| camera_view::cutscene_view(world, centre));
@@ -308,7 +308,7 @@ impl LegaiaRuntime {
     /// from dissolving.
     pub fn play_occlusion_focus(&self) -> Vec<f32> {
         let cutscene = self.cutscene_owns_frame();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         if !legaia_engine_core::field_occlusion::fade_armed(&host.world, cutscene) {
@@ -341,7 +341,7 @@ impl LegaiaRuntime {
         // not decide where the readout sits.
         let aabb = self.scene_aabb();
         let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             self.set_field_player_screen_y(crate::runtime::NO_FIELD_PROJECTION);
             return;
         };
@@ -392,7 +392,7 @@ impl LegaiaRuntime {
     /// (`Camera::compass_azimuth_units_for` the live world), for the page's
     /// diagnostics and the compass oracle.
     pub fn debug_compass_azimuth(&self) -> u16 {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => self.camera.compass_azimuth_units_for(&h.world),
             None => self.camera.compass_azimuth_units(),
         }
@@ -437,7 +437,7 @@ impl LegaiaRuntime {
     /// track together with `F3` off, flipped the orbit by twice its value
     /// every time the toggle was cycled.
     pub fn play_camera_debug_orbit_by(&mut self, radians: f32) -> bool {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => self.camera.debug_orbit_by(&h.world, radians),
             None => false,
         }
@@ -450,7 +450,7 @@ impl LegaiaRuntime {
     /// and off the field.
     pub fn play_camera_knobs_live(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| self.camera.follow_knobs_live(&h.world))
     }
 
@@ -460,7 +460,7 @@ impl LegaiaRuntime {
     /// the gesture was taken; a drag during a cutscene is dropped rather
     /// than banked, so the view never snaps when control returns.
     pub fn play_camera_orbit_by(&mut self, radians: f32) -> bool {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => self.camera.orbit_by(&h.world, radians),
             None => false,
         }
@@ -470,7 +470,7 @@ impl LegaiaRuntime {
     /// gated like [`Self::play_camera_orbit_by`]
     /// ([`legaia_engine_core::camera::Camera::tilt_by`]).
     pub fn play_camera_tilt_by(&mut self, radians: f32) -> bool {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => self.camera.tilt_by(&h.world, radians),
             None => false,
         }
@@ -480,7 +480,7 @@ impl LegaiaRuntime {
     /// the eye back), gated like [`Self::play_camera_orbit_by`]
     /// ([`legaia_engine_core::camera::Camera::zoom_by`]).
     pub fn play_camera_zoom_by(&mut self, factor: f32) -> bool {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => self.camera.zoom_by(&h.world, factor),
             None => false,
         }
@@ -529,7 +529,7 @@ impl LegaiaRuntime {
     /// readout a page needs to label its HUD.
     pub fn play_camera_is_top_view(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.world_map.ctrl.as_ref())
             .is_some_and(|c| c.is_top_view())
     }

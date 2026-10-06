@@ -17,7 +17,7 @@ use crate::runtime::LegaiaRuntime;
 impl LegaiaRuntime {
     fn fog_volume_frame(&self) -> Option<FogVolumeFrame<'_>> {
         self.scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.fog_volume_frame())
     }
 }

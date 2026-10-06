@@ -17,7 +17,7 @@ use wasm_bindgen::prelude::*;
 impl LegaiaRuntime {
     fn limb_dim_plan(&self, i: u32) -> Option<legaia_engine_vm::battle_actor_draw::LimbDimPlan> {
         let br = self.battle_render.as_ref()?;
-        let host = self.scene_host.as_ref()?;
+        let host = self.scene_host.host()?;
         let (actor_idx, _, ids) = br.actor_colour_stream(i as usize)?;
         let objects = ids.iter().copied().max().map_or(0, |m| m as usize + 1);
         host.world.battle_limb_dim_plan(actor_idx, objects)

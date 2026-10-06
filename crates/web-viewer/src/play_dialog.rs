@@ -149,7 +149,7 @@ impl LegaiaRuntime {
     /// segment (when a timeline plays) and the inline-script field-VM runner -
     /// the same precedence as the native window's `dialog_snapshot`.
     fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
-        let h = self.scene_host.as_ref()?;
+        let h = self.scene_host.host()?;
         if let Some(panel) = h.world.script_dialog_panel()
             && let Some(snap) = from_panel(panel, true)
         {
@@ -176,12 +176,12 @@ impl LegaiaRuntime {
     fn take_text_balloon_placement(&mut self) -> Option<TextBalloonPlacement> {
         let text = self
             .scene_host
-            .as_ref()?
+            .host()?
             .world
             .text_balloon_drawing()?
             .to_vec();
         let width = ui::text_balloon_text_width(self.menu_assets.as_ref()?.font_ref(), &text);
-        let host = self.scene_host.as_mut()?;
+        let host = self.scene_host.host_mut()?;
         let rect = host.world.cutscene.text_balloon.as_ref()?.frame_rect();
         let pen = host.world.commit_text_balloon_width(width)?;
         Some((text, pen, rect))
@@ -203,19 +203,16 @@ impl LegaiaRuntime {
         const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[]}"#;
         let has_balloon = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.text_balloon_drawing().is_some());
         // The tile board's quit prompt (walk-SM state 5) draws in this
         // channel too - the native window puts it beside the balloon.
-        let prompt = self.scene_host.as_ref().and_then(|h| {
+        let prompt = self.scene_host.host().and_then(|h| {
             let cursor = h.world.tile_board_prompt_cursor()?;
             Some((cursor, h.tile_board_prompt_lines()?))
         });
         // The Incense wear-off notice (`FUN_801F1E48`) shares the channel.
-        let notice = self
-            .scene_host
-            .as_ref()
-            .and_then(|h| h.incense_notice_line());
+        let notice = self.scene_host.host().and_then(|h| h.incense_notice_line());
         if (self.dialog_snapshot().is_none()
             && !has_balloon
             && prompt.is_none()
@@ -421,7 +418,7 @@ mod tests {
         // Spawn one exactly as the field-VM arm does (unmeasured, `x` unset).
         let line: &[u8] = b"BALLOON";
         {
-            let host = rt.scene_host.as_mut().expect("scene host");
+            let host = rt.scene_host.host_mut().expect("scene host");
             host.world.cutscene.text_balloon = Some(TextBalloon::spawn(line));
             assert!(
                 host.world
@@ -457,7 +454,7 @@ mod tests {
 
         // The measurement round-trip landed on the record, and it is the
         // font's own width - not a default.
-        let world = &rt.scene_host.as_ref().unwrap().world;
+        let world = &rt.scene_host.host().unwrap().world;
         let x = world
             .cutscene
             .text_balloon
@@ -483,7 +480,7 @@ mod tests {
         }
         assert!(
             rt.scene_host
-                .as_ref()
+                .host()
                 .unwrap()
                 .world
                 .cutscene

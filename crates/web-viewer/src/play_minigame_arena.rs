@@ -77,19 +77,14 @@ pub(crate) struct MuscleUi {
 
 impl LegaiaRuntime {
     fn muscle_session(&self) -> Option<&MuscleDomeSession> {
-        self.scene_host
-            .as_ref()?
-            .world
-            .minigames
-            .muscle_dome
-            .as_ref()
+        self.scene_host.host()?.world.minigames.muscle_dome.as_ref()
     }
 
     /// Entry: open the contest the door warp did not, stage the ladder's
     /// monster, parse the hub sprite table.
     pub(crate) fn enter_muscle_ui(&mut self) {
         self.minigame_ui.muscle = MuscleUi::default();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let raw = host
@@ -128,7 +123,7 @@ impl LegaiaRuntime {
     /// Exit: a ladder that has run out settles into the coin bank (a no-op
     /// mid-ladder, and a no-op after the engine's own Won/Lost settle).
     pub(crate) fn exit_muscle_ui(&mut self) {
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             host.world.settle_muscle_contest();
         }
     }
@@ -138,7 +133,7 @@ impl LegaiaRuntime {
     /// turn-resolved edge the page keys its swing clips on.
     pub(crate) fn tick_muscle_ui(&mut self) {
         let phase = self.muscle_session().map(|s| s.phase());
-        if let Some(host) = self.scene_host.as_mut()
+        if let Some(host) = self.scene_host.host_mut()
             && let Some(s) = host.world.minigames.muscle_dome.as_mut()
         {
             s.tick_time_meter(1);
@@ -155,7 +150,7 @@ impl LegaiaRuntime {
     /// tick, which also hands the next leg its fight), so this host - like
     /// the native window - only drains the CD-XA line and the tally keys.
     pub(crate) fn tick_muscle_hub(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let frame = host.world.take_muscle_hub_sounds();
@@ -187,7 +182,7 @@ impl LegaiaRuntime {
         let Some(table) = ui.sprite_table.as_ref() else {
             return Vec::new();
         };
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &host.world;
@@ -283,7 +278,7 @@ impl LegaiaRuntime {
     /// `pal` = the still variant). Empty unless a still is up.
     fn muscle_still_rows(&self) -> Vec<serde_json::Value> {
         use legaia_engine_ui::ringside_backdrop as rb;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         if host.world.minigames.muscle_dome.is_some() {
@@ -323,7 +318,7 @@ impl LegaiaRuntime {
         self.muscle_session().is_some()
             && !self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.minigames.muscle_hub.covers_leg())
     }
 
@@ -331,7 +326,7 @@ impl LegaiaRuntime {
     /// (`minigame_status::muscle_status_rows`) through the shared draw kernel
     /// the native window calls.
     pub(crate) fn muscle_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let rows = legaia_engine_core::minigame_status::muscle_status_rows(&host.world);
@@ -344,7 +339,7 @@ impl LegaiaRuntime {
     /// The two hub-page TIMs out of the dome data container (extraction
     /// 1220, LZS section 0 = `[12-byte header][TIM][TIM]`), CLUTs as uploaded.
     fn muscle_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
-        let host = self.scene_host.as_ref()?;
+        let host = self.scene_host.host()?;
         let entry = host
             .index
             .entry_bytes_extended(HUB_CONTAINER_PROT_INDEX)
@@ -370,7 +365,7 @@ pub(crate) struct BakaUi {
 impl LegaiaRuntime {
     fn baka_session(&self) -> Option<&legaia_engine_core::baka_fighter::BakaFight> {
         self.scene_host
-            .as_ref()?
+            .host()?
             .world
             .minigames
             .baka_fighter
@@ -396,7 +391,7 @@ impl LegaiaRuntime {
         // VRAM when the seated pair changes, on both play hosts.
         let (cues, xa): (Vec<u8>, _) = self
             .scene_host
-            .as_mut()
+            .host_mut()
             .and_then(|h| h.world.minigames.baka_fighter.as_mut())
             .map(|f| (f.take_cues(), f.chrome_frame().xa))
             .unwrap_or_default();
@@ -510,7 +505,7 @@ impl LegaiaRuntime {
         if f.cabinet().choice_sheet().is_some() {
             let pot = self
                 .scene_host
-                .as_ref()
+                .host()
                 .map(|h| h.world.minigames.winnings)
                 .unwrap_or(0);
             out.extend(
@@ -529,7 +524,7 @@ impl LegaiaRuntime {
 
 impl LegaiaRuntime {
     fn dance_session(&self) -> Option<&DanceGame> {
-        self.scene_host.as_ref()?.world.minigames.dance.as_ref()
+        self.scene_host.host()?.world.minigames.dance.as_ref()
     }
 
     /// The native window's dance HUD lines: score / gauge / lane, the arrow
@@ -539,7 +534,7 @@ impl LegaiaRuntime {
         let Some(g) = self.dance_session() else {
             return Vec::new();
         };
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         // Score / gauge / lane, the called arrow with the last judgement and
@@ -712,7 +707,7 @@ impl LegaiaRuntime {
         if sheet == STILL_SHEET {
             return self
                 .scene_host
-                .as_ref()
+                .host()
                 .and_then(|h| {
                     h.index
                         .entry_bytes_extended(
@@ -751,7 +746,7 @@ impl LegaiaRuntime {
     /// VRAM changed (a new rung seated a new monster): re-read them before
     /// the positions.
     pub fn play_mg_muscle_scene_frame(&mut self) -> i32 {
-        let host = self.scene_host.as_ref();
+        let host = self.scene_host.host();
         let world = host.map(|h| &h.world);
         let live =
             world.is_some_and(|w| w.mode == legaia_engine_core::world::SceneMode::MuscleDome);
@@ -847,7 +842,7 @@ impl LegaiaRuntime {
     /// outside a fishing session or when the pond does not decode. A new
     /// generation means the static buffers and the VRAM changed.
     pub fn play_mg_fishing_scene_frame(&mut self) -> i32 {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return -1;
         };
         let live = host.world.mode == legaia_engine_core::world::SceneMode::Fishing;
@@ -945,7 +940,7 @@ impl LegaiaRuntime {
     /// static buffers and the VRAM changed (a rung seated a new opponent):
     /// re-read them before the positions.
     pub fn play_mg_baka_scene_frame(&mut self) -> i32 {
-        let host = self.scene_host.as_ref();
+        let host = self.scene_host.host();
         let fight = host.and_then(|h| h.world.minigames.baka_fighter.as_ref());
         let read =
             |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok().map(|b| b.to_vec()));
@@ -1188,7 +1183,7 @@ impl LegaiaRuntime {
         }
         let game = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.minigames.dance.as_ref());
         let surface = &mut self.minigame_ui.dance_surface;
         match surface.frame(game) {
@@ -1262,7 +1257,7 @@ impl LegaiaRuntime {
         };
         let staged = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.minigames.dance_venue.as_ref())
             .map(|s| s.camera);
         match staged {
@@ -1312,7 +1307,7 @@ impl LegaiaRuntime {
         };
         let staged = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.minigames.dance_venue.as_ref())
             .map(|s| s.camera);
         match staged {

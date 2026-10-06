@@ -364,7 +364,7 @@ impl LegaiaRuntime {
         }
         let d = self.director.as_mut()?;
         if !self.sfx.resident_staged
-            && let Some(host) = self.scene_host.as_mut()
+            && let Some(host) = self.scene_host.host_mut()
         {
             self.sfx.resident_staged = true;
             let staged = host
@@ -431,7 +431,7 @@ impl LegaiaRuntime {
     /// player is still, [`WALK_SPEED_UNITS`] when walking. See that constant
     /// for why a walking player cannot simply be handed its world-unit delta.
     fn player_move_magnitude(&mut self) -> i32 {
-        let host = self.scene_host.as_ref();
+        let host = self.scene_host.host();
         let pos = host
             .and_then(|h| {
                 let w = &h.world;
@@ -466,7 +466,7 @@ impl LegaiaRuntime {
         // does not run there either.
         let walking_mode = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| matches!(h.world.mode, SceneMode::Field | SceneMode::WorldMap));
         let mag = if walking_mode {
             self.player_move_magnitude()
@@ -488,7 +488,7 @@ impl LegaiaRuntime {
         // battle).
         let configured = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.audio.levels.configured_level);
         let Some(configured) = configured else {
             return;
@@ -509,7 +509,7 @@ impl LegaiaRuntime {
     /// dropped, as every unheard cue is.
     // REF: FUN_80035B50, FUN_80035BAC, FUN_80035BD0
     pub(crate) fn route_field_sfx(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let field_xa = host.world.drain_field_xa_cues();
@@ -526,7 +526,7 @@ impl LegaiaRuntime {
             self.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
         }
         if self.audio_director().is_none() {
-            if let Some(host) = self.scene_host.as_mut() {
+            if let Some(host) = self.scene_host.host_mut() {
                 let w = &mut host.world;
                 let _ = (
                     w.take_sfx_ring_ops(),
@@ -536,7 +536,7 @@ impl LegaiaRuntime {
             }
             return;
         }
-        if let (Some(host), Some(d)) = (self.scene_host.as_mut(), self.director.as_mut()) {
+        if let (Some(host), Some(d)) = (self.scene_host.host_mut(), self.director.as_mut()) {
             d.route_world_sfx(&mut host.world, &host.index);
         }
     }
@@ -571,7 +571,7 @@ impl LegaiaRuntime {
         };
         let Some(bytes) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.index.entry_bytes_extended(prot).ok())
         else {
             return (0, 0);

@@ -296,7 +296,7 @@ impl LegaiaRuntime {
     ///
     /// REF: FUN_801DEA50
     pub(crate) fn drain_battle_effect_spawns_web(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // The routing is the engine's, shared with the native window.
@@ -361,7 +361,7 @@ impl LegaiaRuntime {
         };
         let right = transform_dir(&inv, [1.0, 0.0, 0.0]);
         let up = transform_dir(&inv, [0.0, 1.0, 0.0]);
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             self.battle_fx = frame;
             return;
         };
@@ -655,7 +655,7 @@ impl LegaiaRuntime {
     /// battle), so half-extents are the raw pass-2 size.
     fn build_field_fx(&mut self, vp: [f32; 16]) {
         let mut frame = BattleFxFrame::default();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             self.battle_fx = frame;
             return;
         };
@@ -905,7 +905,7 @@ impl LegaiaRuntime {
     /// difference is that the page re-uploads the whole battle scene on the
     /// bumped generation instead of appending a single GPU mesh.
     pub(crate) fn spawn_summon_creature_web(&mut self, spell_id: u8) {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return;
         };
         if host.world.mode != SceneMode::Battle {
@@ -967,7 +967,7 @@ impl LegaiaRuntime {
         let slot = self.summon_actor_slot.unwrap_or(8 + party_count);
         self.summon_actor_slot = Some(slot);
 
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         if let Some(a) = host.world.actors.get_mut(slot) {
@@ -1162,7 +1162,7 @@ impl LegaiaRuntime {
     /// REF: FUN_801DA6B4
     pub fn play_battle_actor_cursor(&self) -> Vec<f32> {
         use legaia_engine_vm::battle_action as ba;
-        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let frame = host.world.clock.display_frames;
@@ -1208,7 +1208,7 @@ impl LegaiaRuntime {
     /// Build the VRAM mesh for `World::global_tmd_pool[tmd]`, or `None` when
     /// the slot is empty / the battle render is down.
     fn fx_mesh(&self, tmd: u32) -> Option<legaia_tmd::mesh::VramMesh> {
-        let host = self.scene_host.as_ref()?;
+        let host = self.scene_host.host()?;
         let gtmd = host.world.global_tmd(tmd as i16)?;
         Some(legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw))
     }

@@ -22,7 +22,7 @@ use legaia_engine_core::battle_events::BattleEvent;
 impl LegaiaRuntime {
     /// Drain this tick's battle audio queues.
     pub(crate) fn drain_battle_audio_cues(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // Typed battle events. **Observation only** - the live battle loop
@@ -48,7 +48,7 @@ impl LegaiaRuntime {
         // director exists to hear them.
         self.sfx.queued += cues.len() as u32;
         if self.audio_director().is_some()
-            && let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.as_ref())
+            && let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.host())
         {
             if let Some(pct) = duck_pct {
                 d.set_duck_pct(pct);

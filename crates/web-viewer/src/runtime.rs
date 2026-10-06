@@ -49,7 +49,7 @@ const BGM_DEFAULT_GAIN: f32 = 1.0;
 pub struct LegaiaRuntime {
     pub(crate) world: World,
     pub(crate) menu: MenuRuntime,
-    pub(crate) scene_host: Option<SceneHost>,
+    pub(crate) scene_host: crate::host_slot::HostSlot,
     /// Assembled static map for the current scene.
     pub(crate) field: Option<FieldRender>,
     /// Lead party member's field-form mesh.
@@ -384,7 +384,7 @@ impl LegaiaRuntime {
         Self {
             world,
             menu,
-            scene_host: None,
+            scene_host: Default::default(),
             field: None,
             player: None,
             tile_mesh: None,
@@ -694,7 +694,7 @@ impl LegaiaRuntime {
         self.scus = scus;
 
         let count = host.index.entry_count() as u32;
-        self.scene_host = Some(host);
+        self.scene_host.set(host);
         self.field = None;
         self.player = None;
         self.actors.clear();
@@ -737,7 +737,7 @@ impl LegaiaRuntime {
 
     /// `true` if a disc has been loaded.
     pub fn disc_loaded(&self) -> bool {
-        self.scene_host.is_some()
+        self.scene_host.host().is_some()
     }
 
     /// Boot a named CDNAME scene (e.g. `"town01"`) and assemble everything the
@@ -763,7 +763,7 @@ impl LegaiaRuntime {
     pub(crate) fn enter_field_core(&mut self, name: &str, resume: bool) -> Result<String, String> {
         let host = self
             .scene_host
-            .as_mut()
+            .host_mut()
             .ok_or_else(|| "enter_field: call load_disc first".to_string())?;
         // Faithful-play arming, matching the native play-window's flags:
         // dialogue through the field VM (so branch handlers - flag sets,
@@ -833,7 +833,7 @@ impl LegaiaRuntime {
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
-        let in_opening = self.scene_host.as_ref().is_some_and(|h| {
+        let in_opening = self.scene_host.host().is_some_and(|h| {
             h.world.cutscene.opening_chain_active || h.world.cutscene_timeline_active()
         });
         if !in_opening {
@@ -883,7 +883,7 @@ impl LegaiaRuntime {
     /// `0x2000` Circle, `0x4000` Cross, `0x8000` Square. Edge detection is the
     /// engine's - just hand it the held set each frame.
     pub fn set_pad(&mut self, mask: u16) {
-        match self.scene_host.as_mut() {
+        match self.scene_host.host_mut() {
             Some(h) => h.world.set_pad(mask),
             None => self.world.set_pad(mask),
         }
@@ -897,7 +897,7 @@ impl LegaiaRuntime {
     /// "stick forward" walks exactly where the headset looks; the keyboard
     /// path keeps the retail quantised 8-way remap.
     pub fn set_precise_movement(&mut self, on: bool) {
-        match self.scene_host.as_mut() {
+        match self.scene_host.host_mut() {
             Some(h) => h.world.locomotion.precise_movement = on,
             None => self.world.locomotion.precise_movement = on,
         }
@@ -910,7 +910,7 @@ impl LegaiaRuntime {
         }
         // A live session override (VR first-person) still rules the world.
         if let Some(o) = self.precise_movement_override {
-            match self.scene_host.as_mut() {
+            match self.scene_host.host_mut() {
                 Some(h) => h.world.locomotion.precise_movement = o,
                 None => self.world.locomotion.precise_movement = o,
             }
@@ -972,7 +972,7 @@ impl LegaiaRuntime {
             use legaia_engine_core::scene::BgmDirector;
             d.stop();
         }
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             self.world.begin_new_game();
             return;
         };
@@ -987,7 +987,7 @@ impl LegaiaRuntime {
     /// signed bytes, X right-positive, Y **down**-positive; only read by the
     /// precise-locomotion decode ([`Self::set_precise_movement`]).
     pub fn set_left_stick(&mut self, x: i8, y: i8) {
-        match self.scene_host.as_mut() {
+        match self.scene_host.host_mut() {
             Some(h) => h.world.input.set_lstick((x, y)),
             None => self.world.input.set_lstick((x, y)),
         }
@@ -1008,7 +1008,7 @@ impl LegaiaRuntime {
     /// it sets the azimuth outright for that tick.
     pub fn set_camera_azimuth(&mut self, units: u16) {
         self.camera_azimuth_override = Some(units % 4096);
-        if let Some(h) = self.scene_host.as_mut() {
+        if let Some(h) = self.scene_host.host_mut() {
             h.world.locomotion.camera_azimuth = units % 4096;
         }
     }
@@ -1028,7 +1028,7 @@ impl LegaiaRuntime {
         // The same for a score hand-off armed alongside it: with no entry to
         // run it, it runs now, over the scene still open.
         self.run_pending_bgm_handoff();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             self.world.tick();
             return Ok(String::new());
         };
@@ -1190,7 +1190,7 @@ impl LegaiaRuntime {
         // (`rebind_live_npc_models` there drains the same signal).
         if self
             .scene_host
-            .as_mut()
+            .host_mut()
             .is_some_and(|h| h.world.take_player_rig_change())
         {
             self.build_player_rig();
@@ -1219,7 +1219,7 @@ impl LegaiaRuntime {
     /// visible signal that a music change resolved without reaching the
     /// sequencer.
     pub fn state_json(&self) -> String {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return serde_json::json!({
                 "scene": serde_json::Value::Null,
                 "frame": self.world.frame,
@@ -1270,7 +1270,7 @@ impl LegaiaRuntime {
     fn bgm_value(&self) -> serde_json::Value {
         let requested = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.audio.current_bgm)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
@@ -1297,7 +1297,7 @@ impl LegaiaRuntime {
     /// + window-descriptor table); this feeds the browser's HTML overlay
     /// equivalent so Start still surfaces the party / items on the play page.
     pub fn field_menu_model_json(&self) -> String {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return "null".to_string();
         };
         let w = &h.world;
@@ -1413,10 +1413,7 @@ impl LegaiaRuntime {
             return false;
         };
         d.stop();
-        let Some(Ok(Some(entry))) = self
-            .scene_host
-            .as_ref()
-            .map(|h| h.music_bank_entry_bytes(id))
+        let Some(Ok(Some(entry))) = self.scene_host.host().map(|h| h.music_bank_entry_bytes(id))
         else {
             return false;
         };
@@ -1462,7 +1459,7 @@ impl LegaiaRuntime {
 
     /// Frame counter.
     pub fn frame(&self) -> u64 {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => h.world.frame,
             None => self.world.frame,
         }
@@ -1470,7 +1467,7 @@ impl LegaiaRuntime {
 
     /// Active scene mode as a stable enum string (`Field`, `WorldMap`, ...).
     pub fn scene_mode(&self) -> String {
-        match self.scene_host.as_ref() {
+        match self.scene_host.host() {
             Some(h) => format!("{:?}", h.world.mode),
             None => format!("{:?}", self.world.mode),
         }
@@ -1550,7 +1547,7 @@ impl LegaiaRuntime {
     /// (`crate::session_save`) targets this so a session saved on the play
     /// page captures the world the engine is actually simulating.
     pub(crate) fn world_mut(&mut self) -> &mut World {
-        match self.scene_host.as_mut() {
+        match self.scene_host.host_mut() {
             Some(h) => &mut h.world,
             None => &mut self.world,
         }
@@ -1639,7 +1636,7 @@ impl LegaiaRuntime {
     /// Decode the live dialogue box (the field VM's inline-script runner) into
     /// the JSON the HUD prints. Glyph bytes are ASCII-compatible from `0x20`.
     fn dialog_value(&self) -> serde_json::Value {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return serde_json::Value::Null;
         };
         let Some(id) = h.world.dialog.inline.as_ref() else {
@@ -1693,7 +1690,7 @@ impl LegaiaRuntime {
         self.scene_anm = None;
         self.locomotion_anm = None;
         self.field_vram_anim = None;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Ok(());
         };
         let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_ref()) else {
@@ -1736,7 +1733,7 @@ impl LegaiaRuntime {
         // spawned it into the live world at scene entry, and
         // `step_field_vram_fx` drains it against the same VRAM.
         self.field_vram_anim = None;
-        if let Some(host) = self.scene_host.as_mut()
+        if let Some(host) = self.scene_host.host_mut()
             && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_mut())
         {
             let frame_step = host.world.clock.frame_step.max(1);
@@ -1780,7 +1777,7 @@ impl LegaiaRuntime {
     /// the page's GPU texture holds the battle VRAM and a field re-upload
     /// would clobber it.
     fn step_field_vram_fx(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         if host.world.mode == SceneMode::Battle {
@@ -1809,7 +1806,7 @@ impl LegaiaRuntime {
     /// Rebuild the actor layer over the entered scene
     /// ([`crate::field_actors::FieldActors::rebuild`]).
     fn build_npc_clips(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             self.actors.clear();
             return;
         };
@@ -1823,7 +1820,7 @@ impl LegaiaRuntime {
     /// One sim tick of the actor layer's clip playback
     /// ([`crate::field_actors::FieldActors::drive`]).
     fn drive_npc_clips(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let banks = crate::field_actors::ActorBanks {
@@ -1849,7 +1846,7 @@ impl LegaiaRuntime {
     /// position - the locomotion step is what normally does that, so without it
     /// the first frame would draw the character sunk into an elevated tier.
     fn seat_player(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let Some(slot) = host.world.player_actor_slot.map(|s| s as usize) else {
@@ -1960,7 +1957,7 @@ impl LegaiaRuntime {
     /// bone `i` poses object `i`.
     /// REF: FUN_8001E890
     fn build_player_rig(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // The overworld draws the lead's field form too (retail walks the
@@ -2040,7 +2037,7 @@ impl LegaiaRuntime {
         if self.audio_director().is_none() {
             return;
         }
-        let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.as_mut()) else {
+        let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.host_mut()) else {
             return;
         };
         if let Err(e) = host.route_bgm_events(d) {
@@ -2065,7 +2062,7 @@ impl LegaiaRuntime {
         // a dance song ending) before the drain below drops whatever is left.
         // The native `drain_and_route_field_events` opens with the same pass.
         self.route_bgm();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             self.world.drain_field_events();
             return;
         };
@@ -2167,14 +2164,14 @@ impl LegaiaRuntime {
         // ticks its creature's first frame on the same tick on both hosts.
         // The creature seat needs `&mut self`, so it runs between two host
         // borrows.
-        let summon = match self.scene_host.as_mut() {
+        let summon = match self.scene_host.host_mut() {
             Some(host) => host.world.take_pending_summon_spawn(),
             None => return,
         };
         if let Some((spell_id, _origin)) = summon {
             self.spawn_summon_creature_web(spell_id);
         }
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let world = &mut host.world;
@@ -2217,7 +2214,7 @@ impl LegaiaRuntime {
     /// the old mark.
     pub(crate) fn tick_play_clock(&mut self) {
         let now_secs = wall_clock_ms() / 1000.0;
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             host.world.tick_play_clock(now_secs);
         }
     }
@@ -2254,7 +2251,7 @@ impl LegaiaRuntime {
             ));
             audio.set_muted(self.options_state.muted);
         }
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             // The simulation knobs (precise movement, Field Move default,
             // reduce flashing, battle Select Attack) through the one push the
             // native window re-asserts each tick.

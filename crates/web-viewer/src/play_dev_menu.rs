@@ -80,7 +80,7 @@ impl LegaiaRuntime {
         if !self.dev_menu_enabled {
             return;
         }
-        let Some(scene) = self.scene_host.as_mut() else {
+        let Some(scene) = self.scene_host.host_mut() else {
             return;
         };
         // The EVENT FLAG page's list comes off the user's disc (the field
@@ -129,7 +129,7 @@ impl LegaiaRuntime {
         font: &legaia_font::Font,
         pen: (i32, i32),
     ) -> Vec<TextDraw> {
-        let Some(scene) = self.scene_host.as_ref() else {
+        let Some(scene) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &scene.world;

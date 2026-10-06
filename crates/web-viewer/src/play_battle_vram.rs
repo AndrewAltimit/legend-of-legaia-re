@@ -134,7 +134,7 @@ impl LegaiaRuntime {
     pub(crate) fn tick_battle_vram_channel(&mut self) {
         let in_battle = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.mode == SceneMode::Battle)
             && self.battle_render.is_some();
         if !in_battle {
@@ -179,7 +179,7 @@ impl LegaiaRuntime {
     fn tick_battle_face_stamps_web(&mut self) {
         use legaia_asset::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
         use legaia_engine_vm::battle_action::BattleEndCause;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return;
         };
         let Some(br) = self.battle_render.as_mut() else {
@@ -307,7 +307,7 @@ impl LegaiaRuntime {
     /// ([`legaia_engine_core::battle_effect_clut`]). Drains unconditionally
     /// so the queue cannot accumulate across a battle.
     fn tick_battle_effect_clut_web(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let stages = host.world.drain_battle_clut_stages();
@@ -365,7 +365,7 @@ impl LegaiaRuntime {
     /// ...). Returns `false` outside battle or for an unknown kind.
     pub fn debug_apply_battle_status(&mut self, slot: u8, kind: &str) -> bool {
         use legaia_engine_vm::status_effects::StatusKind;
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         if host.world.mode != SceneMode::Battle {
@@ -392,7 +392,7 @@ impl LegaiaRuntime {
     /// driver can exercise the drain without scripting a cast. Returns
     /// `false` outside battle.
     pub fn debug_stage_battle_effect_clut(&mut self, src_x: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         if host.world.mode != SceneMode::Battle {
@@ -409,7 +409,7 @@ impl LegaiaRuntime {
     /// that exact swing. Returns `false` outside battle or for an unknown
     /// slot.
     pub fn debug_stage_battle_anim(&mut self, slot: usize, id: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         if host.world.mode != SceneMode::Battle || slot >= host.world.actors.len() {
@@ -461,7 +461,7 @@ impl LegaiaRuntime {
     /// face record at all, the last stamp count - plus the battle-end
     /// latch. A driver's diagnostic, not a model.
     pub fn debug_battle_face_state(&self) -> String {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return "no host".into();
         };
         let Some(br) = self.battle_render.as_ref() else {

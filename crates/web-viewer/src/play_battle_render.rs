@@ -340,7 +340,7 @@ impl LegaiaRuntime {
     /// native `build_battle_stage`; `None` when the scene has no stage entry
     /// or the battle-kind resource build fails.
     fn build_battle_stage(&self) -> Option<WebBattleStage> {
-        let host = self.scene_host.as_ref()?;
+        let host = self.scene_host.host()?;
         let scene = host.scene.as_ref()?;
         // The region the fight starts in names the backdrop
         // (`SceneHost::battle_stage_entry`, retail `_DAT_8007BD60`).
@@ -418,10 +418,10 @@ impl LegaiaRuntime {
         // The party's forms are the engine's to build (normally already done
         // by the tick that entered the battle); this covers a battle entered
         // outside a tick.
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             host.ensure_battle_party_forms();
         }
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return;
         };
         let monsters = host.world.battle_monster_slots();
@@ -471,7 +471,7 @@ impl LegaiaRuntime {
             // shared kernel, `SceneHost::battle_stage_object_indices`.
             let objects = self
                 .scene_host
-                .as_ref()
+                .host()
                 .map(|h| h.battle_stage_object_indices(tmd.objects.len()))
                 .unwrap_or_else(|| {
                     legaia_asset::battle_backdrop::drawn_object_indices(tmd.objects.len())
@@ -605,7 +605,7 @@ impl LegaiaRuntime {
         // pristine copy from the last fight would restage the wrong
         // palette. The latch arm (`sync_status`) runs later this same tick.
         self.battle_hud.status_clut.reset();
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             for p in pending {
                 host.world
                     .install_monster_battle_form(p.actor_idx, p.tex_slot, p.idle.as_ref());
@@ -620,7 +620,7 @@ impl LegaiaRuntime {
             ground.is_some(),
             faces.len()
         ));
-        if let Some(h) = self.scene_host.as_mut() {
+        if let Some(h) = self.scene_host.host_mut() {
             h.world.fog_volume.battle_luma = fog_stage_luma;
             // The backdrop ramp's ceiling reads the same table byte.
             h.world.battle.stage_outdoor = outdoor;
@@ -646,7 +646,7 @@ impl LegaiaRuntime {
     /// (`SceneHost::battle_stage_object_indices`), bumping the generation so
     /// the page re-uploads the battle scene.
     pub(crate) fn tick_battle_stage_shell_web(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let Some(br) = self.battle_render.as_mut() else {
@@ -682,7 +682,7 @@ impl LegaiaRuntime {
         // The same release the native window runs (`World::release_summon_seat`):
         // mesh binding, texture slot, clip and pose all go with the seat.
         if let Some(slot) = self.summon_actor_slot.take()
-            && let Some(host) = self.scene_host.as_mut()
+            && let Some(host) = self.scene_host.host_mut()
         {
             host.world.release_summon_seat(slot);
         }
@@ -747,7 +747,7 @@ impl LegaiaRuntime {
                 .is_some_and(|b| b.stage_present());
         let field_rgb = self
             .scene_host
-            .as_ref()
+            .host()
             .map_or([0; 3], |h| h.world.frame_clear_rgb());
         legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle, field_rgb).to_vec()
     }
@@ -758,7 +758,7 @@ impl LegaiaRuntime {
         self.battle_render.is_some()
             && self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.mode == SceneMode::Battle)
     }
 
@@ -888,7 +888,7 @@ impl LegaiaRuntime {
     /// host.
     fn battle_ambient_base(&self) -> [u8; 3] {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.battle_ambient_base())
             .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL)
     }
@@ -901,7 +901,7 @@ impl LegaiaRuntime {
     /// `{"far":[0,0,0],"near_z":-1,"far_z":0,"max_ir0":W}` - the same cue
     /// the native window attaches to its stage draw.
     pub fn play_battle_backdrop_cue_json(&self) -> String {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return "null".to_string();
         };
         match host.world.battle_backdrop_cue() {
@@ -1024,7 +1024,7 @@ impl LegaiaRuntime {
     /// native draw loop's skips.
     pub fn play_battle_actor_transforms(&self) -> Vec<f32> {
         use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
-        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(br.actors.len() * 5);
@@ -1067,7 +1067,7 @@ impl LegaiaRuntime {
         }
         if let Some(pose) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.actors.get(a.actor_idx))
             .and_then(|actor| actor.pose_frame.as_ref())
             && !pose.bone_outputs.is_empty()
@@ -1105,7 +1105,7 @@ impl LegaiaRuntime {
     /// SpecialStarter dash / non-idle monster clip.
     pub fn play_battle_actor_ghosts(&self, i: u32) -> Vec<f32> {
         use legaia_engine_core::battle_afterimage as ai;
-        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let Some(a) = br.actors.get(i as usize) else {
@@ -1163,7 +1163,7 @@ impl LegaiaRuntime {
     /// [`Self::play_battle_actor_pose`] shape (6 `i32` per part). Empty when
     /// the ghost is not active this frame.
     pub fn play_battle_actor_ghost_pose(&self, i: u32, g: u32) -> Vec<i32> {
-        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let Some(a) = br.actors.get(i as usize) else {
@@ -1256,7 +1256,7 @@ impl LegaiaRuntime {
         use legaia_engine_vm::battle_cam_script::BattleCamPhase as P;
         match self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.battle.camera.as_ref())
             .map(|c| c.phase())
         {
@@ -1280,7 +1280,7 @@ impl LegaiaRuntime {
         actor_idx: usize,
     ) -> Option<legaia_engine_core::world::BattleActorDrawPlan> {
         let br = self.battle_render.as_ref()?;
-        let host = self.scene_host.as_ref()?;
+        let host = self.scene_host.host()?;
         let pose = br.backdrop.is_some().then(|| self.battle_cam_pose());
         host.world
             .battle_actor_draw_plan(actor_idx, pose.as_ref(), BATTLE_WORLD_SCALE, br.outdoor)
@@ -1291,7 +1291,7 @@ impl LegaiaRuntime {
     /// scene host.
     pub(crate) fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.battle_cam_pose())
             .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
     }

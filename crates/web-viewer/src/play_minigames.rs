@@ -212,7 +212,7 @@ impl LegaiaRuntime {
         if self.minigame_ui.art_failed {
             return false;
         }
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return false;
         };
         let Some(img) = compact_prot_image(&host.index) else {
@@ -268,7 +268,7 @@ impl LegaiaRuntime {
     /// `drain_minigame_sfx_cues`. Drained every frame, audio up or not, so
     /// the queue cannot grow on a muted page.
     pub(crate) fn drain_minigame_sfx_cues_web(&mut self) {
-        let cues = match self.scene_host.as_mut() {
+        let cues = match self.scene_host.host_mut() {
             Some(h) => h.world.drain_minigame_sfx_cues(),
             None => return,
         };
@@ -293,7 +293,7 @@ impl LegaiaRuntime {
         // this page never called `exit_dance` at all, so a finished song kept
         // playing the chart's track over the field and the run stayed
         // installed until the player pressed Start.
-        if let Some(host) = self.scene_host.as_mut()
+        if let Some(host) = self.scene_host.host_mut()
             && host.world.mode != legaia_engine_core::world::SceneMode::Dance
         {
             host.world.exit_dance();
@@ -303,12 +303,12 @@ impl LegaiaRuntime {
         // the first frame after it, through the kernel the native window
         // runs (`FUN_801CEF54` / `FUN_801D414C`). The hall geometry itself is
         // the minigame art's `DanceVenue` build (`play_mg_dance_*`).
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             legaia_engine_core::dance_venue::sync_dance_venue(&mut host.world, &mut self.camera);
         }
         let now = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| ActiveGame::of_mode(h.world.mode));
         let prev = self.minigame_ui.game;
         if now != prev {
@@ -380,7 +380,7 @@ impl LegaiaRuntime {
         // reads - the rule lives with the phase, not with either draw list.
         let dance_status = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.minigames.dance_status_visible());
         let mut texts = match self.minigame_ui.game {
             Some(ActiveGame::Slot) => self.slot_status_draws(font),
@@ -416,7 +416,7 @@ impl LegaiaRuntime {
     fn minigame_fx_stage_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         use legaia_engine_core::dance::SpritePartEmit;
         use legaia_engine_ui::minigame_fx as fx;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let mg = &host.world.minigames;
@@ -471,7 +471,7 @@ impl LegaiaRuntime {
     /// one only from its own debug launcher.
     fn dance_countin_and_tutorial_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         use legaia_engine_ui::ui_dance;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let mg = &host.world.minigames;
@@ -552,7 +552,7 @@ impl LegaiaRuntime {
         // installs mid-visit replaces it), the entry snapshot only without one.
         let opponent = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.minigames.baka_fighter.as_ref())
             .map_or(ui.baka.opponent, |f| f.opponent_roster());
         serde_json::json!({
@@ -599,7 +599,7 @@ impl LegaiaRuntime {
     /// first use. A walked door gets its lead from the door scene's list
     /// instead (`field_xa::scene_minigame_door_xa_prestage`).
     pub fn play_mg_debug_warp(&mut self, sub_id: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.request_minigame_warp(sub_id);

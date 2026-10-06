@@ -19,6 +19,7 @@ mod field_actors;
 pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;
+mod host_slot;
 mod inspect;
 pub mod minigames;
 mod monster;
