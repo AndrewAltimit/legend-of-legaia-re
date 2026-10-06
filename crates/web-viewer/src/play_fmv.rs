@@ -786,7 +786,7 @@ mod tests {
         host.world.cutscene.return_mode = Some(SceneMode::Field);
         host.world.mode = SceneMode::Cutscene;
         host.world.cutscene.active_fmv = Some(fmv_id);
-        rt.scene_host.set(host);
+        rt.scene_host.install(host, None).expect("session");
         rt
     }
 

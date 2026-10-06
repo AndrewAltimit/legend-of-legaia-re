@@ -694,7 +694,9 @@ impl LegaiaRuntime {
         self.scus = scus;
 
         let count = host.index.entry_count() as u32;
-        self.scene_host.set(host);
+        self.scene_host
+            .install(host, self.scus.as_deref())
+            .map_err(|e| JsValue::from_str(&format!("load_disc: {e:#}")))?;
         self.field = None;
         self.player = None;
         self.actors.clear();
