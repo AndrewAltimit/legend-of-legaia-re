@@ -3919,6 +3919,17 @@ limb-vs-height miss (`0x801EC554`,
 [battle-formulas.md](battle-formulas.md#the-limb-vs-height-miss)), ported with
 it as `World::consume_effect_skip_strobe`.
 
+The table arm reads the record's code `+0x01` into `s1` and, when it is
+`0` and the **context's active actor** (`ctx[+0x13]`, not the stepped one)
+has the dynamic art slot `0x11` committed in `+0x1D9`, replaces it with `9`
+(`0x801DF054..0x801DF094`); the CLUT map, the scale arms and the prototype
+table all read the substituted code. Codes `0` and `9` are twins - the same
+ray-burst mesh in the PROT 0871 pool, index `8` baked red-to-yellow and
+index `9` purple-to-pale - so a plain swing throws red rays and an art throws
+purple ones (`battle_melee_hit_spark`'s Somersault draws pool `9`'s colours,
+`(120, 0, 255)` cued to the captured `(52, 0, 111)`). The port applies it
+where the walk queues the spawn (`World::step_actor_effect_script`).
+
 Engine port: kernel `engine-core::action_effect_script` (stepper, rotation,
 terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
@@ -3929,7 +3940,7 @@ reaches `World::audio.battle_sfx_cues` as a cue id, which is wrong for the reaso
 [below](#0x801f6418-is-a-clut-row-map-not-an-sfx-map) - the walker's own sink
 still has to be moved off the SFX queue. Not yet modeled: the mesh-header scale + the
 per-code scale specials (the engine substitutes the q12 unit and the scene
-spawner has no scale channel), the code-`0` substitution, the extra-spawn
+spawner has no scale channel), the extra-spawn
 and screen-shake specials above, and the prologue's follow-the-actor
 re-seat (`BattleEffectSpawn` carries no raw-offset channel and a staged
 scene is not identified back to its record). The terminator's

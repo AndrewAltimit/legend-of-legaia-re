@@ -5,6 +5,13 @@
 
 use super::*;
 
+/// The committed anim id (`+0x1D9`) the effect stepper's code substitution
+/// keys on - the dynamic art slot the anim commit remaps an art clip onto.
+const ACTION_FX_ART_SLOT: u8 = 0x11;
+/// The table-form code an art's code-`0` record becomes (`li s1,0x9` at
+/// `0x801DF094`).
+const ACTION_FX_ART_CODE: u8 = 9;
+
 impl World {
     /// Per-actor move-VM tick - clean port of `FUN_80021DF4` (lines
     /// `80022B94..80022BBC`).
@@ -473,12 +480,29 @@ impl World {
             map,
         );
         let cursor = step.cursor;
+        // The table arm's code substitution (`0x801DF054..0x801DF094`): code
+        // `0` reads as `9` while the context's **active** actor (`ctx[+0x13]`,
+        // not the stepped one) has the dynamic art slot `0x11` committed in
+        // `+0x1D9`. Every later read of the code - the `0x801F6418` CLUT map,
+        // the `4` / `6` scale arms, the prototype table `0x801F6324` - takes
+        // the substituted one, so an art's ray burst (code `9`, the purple
+        // pool `9` mesh) replaces the plain swing's (code `0`, the red pool
+        // `8` twin) - `battle_melee_hit_spark`'s Somersault.
+        // PORT: FUN_801DEA50 (`0x801DF054..0x801DF094`)
+        let art_slot_active = self
+            .actors
+            .get(usize::from(self.battle_ctx.active_actor))
+            .is_some_and(|a| a.battle.current_anim == ACTION_FX_ART_SLOT);
         for s in &step.spawns {
+            let mut effect = s.effect & !fx::EFFECT_DIRECT_BIT;
+            if !s.direct && effect == 0 && art_slot_active {
+                effect = ACTION_FX_ART_CODE;
+            }
             self.battle
                 .effect_spawns
                 .push(crate::battle_events::BattleEffectSpawn {
                     actor_slot: i as u8,
-                    effect: s.effect & !fx::EFFECT_DIRECT_BIT,
+                    effect,
                     direct: s.direct,
                     at: s.at,
                     facing: script_actor.facing,

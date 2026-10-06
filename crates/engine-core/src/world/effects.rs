@@ -904,8 +904,10 @@ impl World {
     /// node reads `+0x26 = 1376`, 26 frames after a seat at `840 + 0x800`
     /// spinning `-56` a frame.
     ///
-    /// Not modelled: the code `0` -> `9` substitution when the active
-    /// actor's `+0x1D9` reads `0x11` (`0x801DF054..0x801DF094`).
+    /// The code `0` -> `9` substitution when the active actor's `+0x1D9`
+    /// reads `0x11` (`0x801DF054..0x801DF094`) happens upstream, where the
+    /// walk queues the spawn (`World::step_actor_effect_script`), so
+    /// `effect_id` arrives already substituted.
     pub fn spawn_action_table_effect_posed(
         &mut self,
         effect_id: u8,

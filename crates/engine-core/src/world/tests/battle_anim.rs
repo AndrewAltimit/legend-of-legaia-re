@@ -603,6 +603,30 @@ fn committed_clip_effect_script_queues_a_positioned_spawn() {
     assert_eq!(world.actors[0].battle_effect_cursor, 0);
 }
 
+/// The table arm's code substitution (`0x801DF054..0x801DF094`): a code-`0`
+/// record reads as `9` while the active actor has the art slot `0x11`
+/// committed, and stays `0` on any other clip.
+#[test]
+fn an_art_clip_turns_effect_code_zero_into_nine() {
+    for (slot, want) in [(0x11u8, 9u8), (0x0C, 0)] {
+        let mut world = World::new();
+        world.enter_battle(1, 1);
+        let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 0x20];
+        clips[0] = Some(pose_test_clip(0, 2, 0));
+        clips[usize::from(slot)] = Some(scripted_clip(slot, (1, 0x00, 0, 0, 0)));
+        world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+        world.actors[0].battle.queued_anim = slot;
+        world.commit_staged_battle_anim(0);
+        assert_eq!(world.actors[0].battle.current_anim, slot);
+        world.battle_ctx.active_actor = 0;
+        world.tick_battle_animations();
+        let spawns = world.drain_battle_effect_spawns();
+        assert_eq!(spawns.len(), 1, "slot {slot:#x}");
+        assert!(!spawns[0].direct);
+        assert_eq!(spawns[0].effect, want, "slot {slot:#x}");
+    }
+}
+
 #[test]
 fn monster_facing_rotates_the_spawn_offset_half_a_turn() {
     let mut world = World::new();
