@@ -103,9 +103,9 @@ pub const MULT_ORDINARY: u32 = 3;
 pub const MULT_COMBO: u32 = 0x19;
 /// The award routine's *other* combo multiplier (`(lane + 1) * 0x22`). Retail
 /// selects it by `DAT_801d5334 - 0xb < 2`, i.e. **only in the post-song Finish /
-/// result-wipe states** (11 / 12), where the pad is still read. The rules engine
-/// ends the run at the song timer, so this tier is documented but unreachable
-/// here.
+/// result-wipe states** (11 / 12), where the pad is still read
+/// (`0x801D1CE0..0x801D1D30`); the rules engine pays it while
+/// [`DanceGame::in_finale`].
 pub const MULT_FINALE: u32 = 0x22;
 
 /// Triangles ("groovy moves") each dancer gets per song (`FUN_801cf470` state 3

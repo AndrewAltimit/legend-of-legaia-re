@@ -678,6 +678,19 @@ impl DanceGame {
         self.song_over() && (self.finished || self.finish_programs.is_empty())
     }
 
+    /// Whether the run is in states `0xB` / `0xC` - the song over, the
+    /// countdown and wipe still running - where the award routine still
+    /// judges and a landed triangle pays [`MULT_FINALE`].
+    pub fn in_finale(&self) -> bool {
+        self.song_over() && !self.finished()
+    }
+
+    /// Whether dancer `i` landed a triangle during the finale
+    /// (`DAT_801d538c[player]`).
+    pub fn finale_landed(&self, i: usize) -> bool {
+        self.dancers.get(i).is_some_and(|d| d.finale_landed)
+    }
+
     /// The countdown's cues since the last call (`0x206..=0x209`).
     pub fn take_finish_cues(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.finish_cues)
@@ -1215,6 +1228,7 @@ impl DanceGame {
     pub(super) fn spend_triangle(&mut self, i: usize, beat: u32) -> DanceEvent {
         let rows = self.chart.rows.len();
         let landed = self.on_combo_slot();
+        let finale = self.in_finale();
         let d = &mut self.dancers[i];
         if d.triangles == 0 {
             return DanceEvent::NoCharge;
@@ -1227,7 +1241,15 @@ impl DanceGame {
         d.landed = landed;
         let points = if landed {
             d.gauge = (d.gauge + GAUGE_STEP).min(GAUGE_MAX);
-            (lane + 1) * MULT_COMBO
+            // `0x801D1CE0..0x801D1D30`: in states 0xB / 0xC (`state - 0xB <
+            // 2`) the landed triangle pays `(lane + 1) * 17 << 1` and raises
+            // `DAT_801d538c[player]`; otherwise `(lane + 1) * 25`.
+            if finale {
+                d.finale_landed = true;
+                (lane + 1) * MULT_FINALE
+            } else {
+                (lane + 1) * MULT_COMBO
+            }
         } else {
             (lane + 1) * MULT_ORDINARY
         };

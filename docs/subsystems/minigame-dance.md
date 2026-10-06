@@ -104,7 +104,7 @@ The **input disruption** is step 4. The dancer now spins `lane + 1` full turns -
 
 So the wildcard's design is exactly the one the tutorial teaches: it is worth `8.3x` an ordinary press *and* a free lane promotion, but only on the combo slot, and it costs you the next second of input - so you spend it on the **last** note of a combo, not the first, and you save it for the lane where `(lane + 1)` is biggest.
 
-The `× 0x22` (34) multiplier in the same branch is **not** a "perfect" tier: its selector is `DAT_801d5334 - 0xb < 2`, i.e. the **game state** being 11 or 12 - the post-song Finish banner / result wipe, where the pad is still read. **Confirmed** (`DAT_801d5334` is the state global the whole tick switches on).
+The `× 0x22` (34) multiplier in the same branch is **not** a "perfect" tier: its selector is `DAT_801d5334 - 0xb < 2`, i.e. the **game state** being 11 or 12 - the post-song Finish banner / result wipe, where the pad is still read. **Confirmed** (`DAT_801d5334` is the state global the whole tick switches on). The arm at `0x801D1CE0..0x801D1D30` pays `(lane + 1) * 17 << 1` and raises `DAT_801d538c[player]`, whose reader is not in the dump corpus; the port pays it while `DanceGame::in_finale` (the song over, the countdown and wipe still running) and keeps the flag as `finale_landed`.
 
 ## Scoring
 
@@ -1122,8 +1122,9 @@ the others. `DanceGame::finished` - the song over and the state `0xC` wipe
 past `0x489` - is when the world restores the interrupted mode and a page
 reports the run over; the disc-gated `dance_minigame_real` test pins
 `3, 2, 1, FINISH!` with cues `0x209, 0x208, 0x207, 0x206` and the wipe at
-384 vsyncs. Not yet modelled: the `x 0x22` award the judge gives in states
-`0xB` / `0xC`.
+384 vsyncs. The judge keeps running through both states, and a triangle
+landed there pays the `x 0x22` finale tier
+([the triangle wildcard](#the-triangle-wildcard-the-groovy-move)).
 
 ### Where the HUD's texels come from
 

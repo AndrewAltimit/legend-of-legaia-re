@@ -189,6 +189,23 @@ fn triangle_on_the_combo_slot_multiplies_and_promotes_the_lane() {
     assert_eq!(g.gauge(), GAUGE_STEP);
     assert_eq!(g.lane(), 1, "the landed triangle promoted the lane");
 
+    // In the finale (song over, countdown / wipe running - states 0xB /
+    // 0xC) the landed triangle pays (lane + 1) * 0x22 and raises the
+    // finale flag; a chart-only run has no finale and keeps 0x19.
+    let mut g = game();
+    g.finish_programs = vec![(0x17, vec![0xFFFF, 0, 0x0008])];
+    g.song_timer = g.song_len;
+    assert!(g.in_finale());
+    g.phase = 3 * BEAT_PERIOD;
+    assert!(matches!(
+        g.press(DanceDir::C),
+        DanceEvent::Groovy { landed: true, points, .. } if points == MULT_FINALE
+    ));
+    assert!(g.finale_landed(0));
+    let mut g = game();
+    g.song_timer = g.song_len;
+    assert!(!g.in_finale(), "no countdown programs, no finale window");
+
     // Spent at the end of a long combo (lane 2) it is worth 3 x 25 = 75.
     let mut g = game();
     g.dancers[0].gauge = 2000; // lane 2 - the combo the player built
