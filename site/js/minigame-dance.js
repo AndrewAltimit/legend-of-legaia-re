@@ -429,7 +429,17 @@ window.MgDance = (function () {
         b.lastBeat = -1;
         b.rivalTri = {};
       }
+      /* The run's own cast (the engine's floor: one dancer on the how-to,
+       * three on the qualifier): a body whose kind the run did not spawn is
+       * collapsed rather than posed. Without the export every body draws. */
+      const runKinds = (live && typeof api.dance_run_kinds === 'function')
+        ? Array.from(api.dance_run_kinds()) : null;
       for (let d = 0; d < b.dancers.length; d++) {
+        if (runKinds && runKinds.length && runKinds.indexOf(b.dancers[d].kind) < 0) {
+          const start = b.vertBases[d] * 3;
+          b.out.fill(0, start, start + b.dancers[d].pos.length);
+          continue;
+        }
         const st_ = advance(d, live);
         if (!st_.clip) continue;
         poseInto(b.out, b.base, b.dancers[d].oid, st_.clip, st_.frame,

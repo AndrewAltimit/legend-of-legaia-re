@@ -24,6 +24,11 @@ fn the_howto_mode_runs_the_tutorial_actor() {
         mg.dance_tutorial_active(),
         "the tutorial actor is installed"
     );
+    assert_eq!(
+        mg.dance_run_kinds().len(),
+        1,
+        "the how-to floor is one dancer"
+    );
     let state: serde_json::Value = serde_json::from_str(&mg.dance_state_json()).unwrap();
     eprintln!("how-to state: {state}");
     // The opening prompt draws (Yes / No thanks and the cursor).
@@ -39,4 +44,9 @@ fn the_howto_mode_runs_the_tutorial_actor() {
     // A qualifier run installs no tutorial.
     assert!(mg.dance_start_mode(0, false));
     assert!(!mg.dance_tutorial_active());
+    assert_eq!(
+        mg.dance_run_kinds().len(),
+        3,
+        "the qualifier floor is three"
+    );
 }

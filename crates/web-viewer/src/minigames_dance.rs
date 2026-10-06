@@ -792,6 +792,22 @@ impl LegaiaMinigames {
             .unwrap_or(0)
     }
 
+    /// The live run's floor cast as dancer kinds, in spawn-slot order - the
+    /// engine's `DanceGame::dancer_kind` over `dancer_count`. One entry on a
+    /// how-to run, three on the qualifier / finals, six in free play; empty
+    /// with no run. The page draws a body only while its kind is in here, so
+    /// the floor shows the mode's own cast.
+    pub fn dance_run_kinds(&self) -> Vec<u32> {
+        self.dance
+            .as_ref()
+            .map(|g| {
+                (0..g.dancer_count())
+                    .map(|i| g.dancer_kind(i) as u32)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Dancer `dancer`'s kind descriptor index (0 = Noa, 1 = Mary, 2/3 = the
     /// competitor dancers, 4 = the Disco King) - also the face-stamp rig id
     /// for kinds 0..=3. `255` when out of range.
