@@ -242,6 +242,17 @@ impl World {
         // no menu - until the exit gate fires.
         // REF: FUN_80046A20
         if self.battle.victory.is_some() {
+            // The body-pair store is not the SM's: the battle draw callback
+            // `FUN_80048A08` -> `FUN_8004998C` re-derives every drawn actor's
+            // `+0x3C` / `+0x40` whatever `DAT_8007BD71` says, so the posing
+            // leader's pair follows the win pose through the whole sequence
+            // - and that pair is the focus case 6's battle-over arm frames
+            // (`noa_levelup_banner`: Vahn's pair reads `(78, -15)` off a
+            // live `(2, -3)`, 38 frames into pose `0x14`). Skipping it left
+            // the pair on the killing blow's pose. The root-motion half of
+            // the locomotion pass stays with the SM.
+            // REF: FUN_8004998C
+            self.refresh_battle_body_pairs();
             self.tick_battle_end_sequence();
             return None;
         }

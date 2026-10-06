@@ -5649,6 +5649,8 @@ The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two 
 
 The escape arm returns before either call (`0x8004E720`). `noa_levelup_banner` reads the results framing directly: Vahn posing `0x14` with `ctx[+0x87C] = 616`, pitch `-0x20` and yaw `0x800 - actor[+0x46]` exactly, TR one tween step short of the script's `(0, 928, prescale(1126))` and walking down toward it from the stand-off pose. The port folds both framings over the camera inputs while `World::battle.victory` is armed (`battle_cam_inputs::battle_end_cam_inputs`); before it, the camera stayed on the far framing with the idle orbit through the whole sequence. Disc-free regression: `engine-core/tests/battle_end_camera.rs`.
 
+The focus both arms take is the pose actor's **body pair** `+0x3C` / `+0x40`, and the store that keeps it current is the battle draw callback's (`FUN_80048A08` -> `FUN_8004998C`, [battle-action.md](battle-action.md#where-an-action-leaves-its-combatants)), which runs for every drawn actor whether or not the action SM does. So the pair follows the win pose through the hold: `noa_levelup_banner`'s Vahn stands at a live `(2, -3)` with his pair at `(78, -15)`, 38 frames into pose `0x14`. The port refreshes the pairs on every sequence tick (`World::refresh_battle_body_pairs`); the root-motion half of the locomotion pass stays with the SM.
+
 The exit fade is a fade **to black**, not a white-out. The template's kind word (`2`) is also
 the quad's blend: the fade actor's tick `FUN_80025000` hands it to the quad emitter
 `FUN_80024EE4` as the second argument, which folds it into the draw-mode packet's ABR bits (`sll
