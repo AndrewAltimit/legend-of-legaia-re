@@ -583,7 +583,10 @@ one absence produced a projection difference, a simulation difference and two
 missing screens at once, with all seven tiers green.
 
 Ownership is a **field declaration or a construction** in that host's own
-shipped source. The three things that are not ownership are the three the page
+shipped source. Holding the session (`BootSession`, a field, a construction or
+a type alias of it) owns every type the session's own fields hold: both hosts
+reach the scene host and the camera through their session, so they own them
+through it. The three things that are not ownership are the three the page
 had: a `use` line, a match arm, and a borrowed parameter. Two shapes look like
 constructions and are not - `-> Camera {` is a return type and
 `impl Trait for Camera {` is an impl block - and the control suite pins every
@@ -797,8 +800,8 @@ remaining difference, the page advancing its clip players inside the step.
 
 This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
-reaches. Engine means the four wgpu-free crates both hosts link
-(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`). A host's own
+reaches. Engine means the five wgpu-free crates both hosts link
+(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`, `engine-session`). A host's own
 helpers are followed transitively, so a step spelled as five private methods
 is compared against a twin that inlines them.
 
