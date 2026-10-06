@@ -2,9 +2,12 @@
 # CI + GitHub Pages deploy for legend-of-legaia-re.
 # Modeled on faultline/.github/workflows/main-ci.yml (same self-hosted runner
 # convention). Tailored:
-#   - WASM check is in the main `ci` job (`cargo build --target
-#     wasm32-unknown-unknown`) so PR builds catch regressions before merge.
-#     The deploy-pages job below packages the same build with `wasm-pack`.
+#   - Pull requests run the disc-free gates (`gates`) and a lint pass
+#     (`pr-lint`: fmt, clippy, wasm32 type-check) on every push to the PR.
+#     The full build + test pass (`ci`) stays on push-to-main and
+#     workflow_dispatch; tests are expected to have been run locally before
+#     a PR is opened. The deploy-pages job packages the wasm build with
+#     `wasm-pack`.
 #   - No scenarios symlink to materialize.
 #   - cargo runs directly on the runner (no docker-compose `rust-ci` service
 #     in this repo yet; the only compose service here is `ghidra`).
@@ -26,12 +29,17 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [labeled]
+    # opened / synchronize / reopened drive `gates` + `pr-lint`; `labeled`
+    # is reserved for the `disc-test` job and runs nothing else.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
+# A PR push supersedes the previous push's lint run, so PR runs cancel per
+# PR; a label event gets its own group so adding `disc-test` never cancels
+# the lint pass. Pushes to main keep one group per commit and never cancel.
 concurrency:
-  group: main-ci-${{ github.sha }}
-  cancel-in-progress: false
+  group: main-ci-${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.event.pull_request.number, github.event.action == 'labeled' && 'label' || 'push') || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' }}
 
 # Every cargo step builds into one persistent target directory OUTSIDE the
 # checkout. `actions/checkout` with `clean: true` runs `git clean -ffdx`, and
@@ -70,7 +78,7 @@ jobs:
     name: Repo Gates
     runs-on: self-hosted
     timeout-minutes: 10
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -200,6 +208,35 @@ jobs:
           tail -1 port-tags.log
           rm -f port-tags.log
 
+  # -- PR Lint ----------------------------------------------------------------
+  # The fast cargo half of `ci` for pull requests: format, clippy and the
+  # wasm32 type-check (`#[cfg(target_arch = "wasm32")]` code is invisible to
+  # every host-target pass). No test run and no release build - those stay on
+  # push-to-main, after merge.
+  pr-lint:
+    name: PR Lint
+    runs-on: self-hosted
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      - name: Select per-toolchain target dir
+        run: scripts/ci/select-ci-target-dir.sh
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --workspace -- -D warnings
+
+      - name: wasm32 type-check
+        run: scripts/ci/check-wasm-target.sh
+
   # -- Cargo CI ---------------------------------------------------------------
   ci:
     name: Legaia CI
@@ -207,8 +244,8 @@ jobs:
     # A cold sccache after a big wave can push the full build + test pass past
     # 30 minutes on the shared runner; match the disc-test job's budget.
     timeout-minutes: 120
-    # Don't run the full CI on PR label events - that trigger is reserved for
-    # the disc-test job below. CI still runs on push-to-main and workflow_dispatch.
+    # The full build + test pass runs on push-to-main and workflow_dispatch;
+    # pull requests get `pr-lint` instead.
     if: github.event_name != 'pull_request'
     steps:
       - name: Checkout
@@ -350,7 +387,7 @@ jobs:
   # -- CI Summary -------------------------------------------------------------
   notify:
     name: CI Summary
-    needs: [gates, ci, deploy-pages, disc-test]
+    needs: [gates, pr-lint, ci, deploy-pages, disc-test]
     if: always()
     runs-on: self-hosted
     steps:
@@ -364,11 +401,12 @@ jobs:
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Repo Gates | ${{ needs.gates.result == 'success' && 'pass' || needs.gates.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Lint | ${{ needs.pr-lint.result == 'success' && 'pass' || needs.pr-lint.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| GitHub Pages | ${{ needs.deploy-pages.result == 'success' && 'pass' || needs.deploy-pages.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Disc Tests | ${{ needs.disc-test.result == 'success' && 'pass' || needs.disc-test.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ needs.gates.result }}" == "failure" || "${{ needs.ci.result }}" == "failure" || "${{ needs.disc-test.result }}" == "failure" ]]; then
+          if [[ "${{ needs.gates.result }}" == "failure" || "${{ needs.pr-lint.result }}" == "failure" || "${{ needs.ci.result }}" == "failure" || "${{ needs.disc-test.result }}" == "failure" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
             exit 1

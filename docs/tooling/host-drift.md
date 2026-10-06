@@ -70,13 +70,10 @@ belongs to a crate carrying such a block. It is a type-check rather than a
 build and shares the profile `build-wasm.sh` and the CI wasm step use, so a
 warm run costs about a second.
 
-It is a hook tier for a reason worth writing down rather than an exception to
-the rule above. The `ci` job **does** build the wasm target - and it carries
-`if: github.event_name != 'pull_request'`, so that build happens after a merge
-to `main`, not on the pull request. The comment at the top of the workflow
-says the opposite ("so PR builds catch regressions before merge"); the `if` is
-what runs. Until the two agree, the hook is the browser host's only pre-merge
-compiler.
+It runs in two places. The pre-commit hook runs it on a staged file in such a
+crate, and the `pr-lint` job of `.github/workflows/main-ci.yml` runs it on
+every push to a pull request, beside `cargo fmt` and `cargo clippy`, so the
+browser host is compiled before a merge rather than only after one.
 
 ### A wasm export is a property of its impl block, and no compiler reads that
 
