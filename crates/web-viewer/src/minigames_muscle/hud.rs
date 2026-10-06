@@ -403,7 +403,68 @@ impl LegaiaMinigames {
     /// shade between the wall and the screens. `arm` is the arm name
     /// (`intro`, `title`, `card`, `drain`, `round`, `done`).
     pub fn muscle_first_visit_json(&self, tick: i32, course: i32, round: i32) -> String {
-        use legaia_engine_core::muscle_ringside::{FirstVisitArm as A, FirstVisitHub};
+        use legaia_engine_core::muscle_ringside::FirstVisitHub;
+        // The walk is deterministic and bounded; replay it to `tick`.
+        let mut hub = FirstVisitHub::new();
+        for _ in 0..tick.clamp(0, 4096) {
+            if hub.done() {
+                break;
+            }
+            hub.tick(1, 0);
+        }
+        self.first_visit_rows_json(&hub, course, round)
+    }
+
+    /// Start a **live** first visit: the page steps it once per tick with
+    /// [`Self::muscle_first_visit_step`] instead of replaying a no-input walk,
+    /// so a press ends the two card holds early and the announcer lines play
+    /// - what both play hosts do through `World::tick_muscle_hub`.
+    pub fn muscle_first_visit_reset(&mut self) {
+        self.muscle_hub = Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
+    }
+
+    /// Step the live first visit one tick. `pressed` is whether the player
+    /// pressed a button this tick (the page has no retail pad word; any press
+    /// stands for the hold arms' `0xF4` mask). Starts the CD-XA line the tick
+    /// started, through the announcer lane. Returns the frame as
+    /// [`Self::muscle_first_visit_json`] does; `{"ok":false}` with no live hub.
+    pub fn muscle_first_visit_step(&mut self, pressed: bool, course: i32, round: i32) -> String {
+        use legaia_engine_core::muscle_dome::HUB_SKIP_PAD_MASK;
+        let Some(mut hub) = self.muscle_hub.take() else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        if !hub.done() {
+            hub.tick(1, if pressed { HUB_SKIP_PAD_MASK } else { 0 });
+        }
+        if let Some(cue) = hub.take_xa() {
+            self.muscle_hub_xa_fired = self.muscle_hub_xa_fired.wrapping_add(1);
+            self.play_baka_xa(legaia_engine_core::baka_fighter_chrome::XaCue {
+                clip: cue.clip,
+                chan: cue.channel,
+                dur: cue.duration_sectors,
+            });
+        }
+        let out = self.first_visit_rows_json(&hub, course, round);
+        self.muscle_hub = Some(hub);
+        out
+    }
+
+    /// How many announcer lines the live first visit has started.
+    pub fn muscle_hub_xa_fired(&self) -> u32 {
+        self.muscle_hub_xa_fired
+    }
+}
+
+impl LegaiaMinigames {
+    /// The first-visit frame of `hub` as retail-placed rows (see
+    /// [`Self::muscle_first_visit_json`]).
+    fn first_visit_rows_json(
+        &self,
+        hub: &legaia_engine_core::muscle_ringside::FirstVisitHub,
+        course: i32,
+        round: i32,
+    ) -> String {
+        use legaia_engine_core::muscle_ringside::FirstVisitArm as A;
         use legaia_engine_ui::other_game_hud as hud;
         use legaia_engine_ui::ringside_backdrop as rb;
         let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
@@ -412,14 +473,6 @@ impl LegaiaMinigames {
         let mut table = hud::parse_sprite_table(raw);
         if table.is_empty() {
             return r#"{"ok":false}"#.to_string();
-        }
-        // The walk is deterministic and bounded; replay it to `tick`.
-        let mut hub = FirstVisitHub::new();
-        for _ in 0..tick.clamp(0, 4096) {
-            if hub.done() {
-                break;
-            }
-            hub.tick(1, 0);
         }
         let f = hub.frame();
         let levels = rb::FirstVisitLevels {
@@ -470,7 +523,10 @@ impl LegaiaMinigames {
         };
         serde_json::json!({ "ok": true, "arm": arm, "done": hub.done(), "rows": rows }).to_string()
     }
+}
 
+#[wasm_bindgen]
+impl LegaiaMinigames {
     /// The re-entered hub's **ringside still** under the INTERVAL screen,
     /// `tick` ticks into that screen: `{ ok, quads: [...] }` with two rows on
     /// sheet `7` (`pal` = the still variant, `0` = extraction 1221 / `int.tim`,

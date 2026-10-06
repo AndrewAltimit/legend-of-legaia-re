@@ -4,6 +4,10 @@ use super::*;
 
 use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
 
+/// Tag on a [`PlayWindowApp::posed_prop_frame_draws`] baked index naming a
+/// shaded light-source variant (`field_lit.meshes`) rather than `meshes`.
+pub(super) const LIT_VARIANT_TAG: usize = 1 << 30;
+
 /// One baked placed-object draw list: the `(mesh, model)` draws, the floor
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
 /// ([`legaia_engine_core::field_env::placed_window_key`]), and each draw's
@@ -194,6 +198,91 @@ impl PlayWindowApp {
         self.ground_crop = None;
     }
 
+    /// Shade the env draws' light-source rows under the world's live field
+    /// light: one shaded copy of each lit mesh per draw rotation, retail's
+    /// `L * Rot` fold (`legaia_engine_core::field_lit_mesh`). Runs after an
+    /// asset upload and again whenever the live light changes (op `4C 8A`).
+    pub(super) fn rebuild_field_lit_meshes(&mut self) {
+        let light = self.session.host.world.presentation.field_light;
+        let lit = &mut self.field_lit;
+        lit.light = Some(light);
+        lit.meshes.clear();
+        lit.terrain.clear();
+        lit.placement.clear();
+        lit.posed.clear();
+        // `LEGAIA_DIAG_NO_LIT_ROWS` leaves the lit rows at their neutral
+        // texel, for before/after frames.
+        if lit.sources.is_empty() || std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_some() {
+            return;
+        }
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let mut keys: std::collections::HashMap<(usize, [[i32; 3]; 3]), usize> =
+            std::collections::HashMap::new();
+        let sources = &lit.sources;
+        let shaded = &mut lit.meshes;
+        let mut variant = |mesh_idx: usize, model: &Mat4| -> Option<usize> {
+            let (mesh, lit_vertices) = sources.get(&mesh_idx)?;
+            let m3: [[f32; 3]; 3] =
+                std::array::from_fn(|row| std::array::from_fn(|col| model.col(col)[row]));
+            let rot = legaia_engine_core::field_lit_mesh::rotation_from_matrix(m3);
+            if let Some(&v) = keys.get(&(mesh_idx, rot)) {
+                return Some(v);
+            }
+            let mut colors = mesh.colors.clone();
+            legaia_engine_core::field_lit_mesh::shade_lit_rows(
+                &mut colors,
+                lit_vertices,
+                &light,
+                &rot,
+            );
+            let up = r
+                .upload_vram_mesh(
+                    &mesh.positions,
+                    &mesh.uvs,
+                    &mesh.cba_tsb,
+                    &mesh.normals,
+                    &colors,
+                    &mesh.indices,
+                )
+                .map_err(|e| log::warn!("lit env mesh upload skipped: {e:#}"))
+                .ok()?;
+            shaded.push(up);
+            let v = shaded.len() - 1;
+            keys.insert((mesh_idx, rot), v);
+            Some(v)
+        };
+        let terrain: Vec<Option<usize>> = self
+            .field_terrain_draws
+            .iter()
+            .map(|(m, model)| variant(*m, model))
+            .collect();
+        let placement: Vec<Option<usize>> = self
+            .field_placement_draws
+            .iter()
+            .map(|(m, model)| variant(*m, model))
+            .collect();
+        let posed: Vec<Option<usize>> = self
+            .field_posed_props
+            .iter()
+            .map(|p| p.baked.vram.and_then(|i| variant(i, &p.model)))
+            .collect();
+        lit.terrain = terrain;
+        lit.placement = placement;
+        lit.posed = posed;
+    }
+
+    /// Re-shade the env draws when the live field light no longer matches
+    /// the one they were shaded under.
+    pub(super) fn sync_field_lit_meshes(&mut self) {
+        if !self.field_lit.sources.is_empty()
+            && self.field_lit.light != Some(self.session.host.world.presentation.field_light)
+        {
+            self.rebuild_field_lit_meshes();
+        }
+    }
+
     pub(super) fn sync_ground_crop(
         &mut self,
         cells: Option<&legaia_engine_core::field_view_window::ViewCells>,
@@ -273,6 +362,7 @@ impl PlayWindowApp {
             false,
             binds.as_ref(),
             Some((posed, textured)),
+            None,
         )
     }
 
@@ -325,6 +415,7 @@ impl PlayWindowApp {
             &binds,
             &self.session.host.world.hidden_object_records(),
         );
+        self.follow_floor_placed_draws(&mut draws, &binds);
 
         let scales = field_env::placed_render_scales(
             &draws,
@@ -361,6 +452,7 @@ impl PlayWindowApp {
                 anim_id: d.anim_id,
                 model: t * rot,
                 baked,
+                cull_radius: d.cull_radius,
             });
         }
         log::info!(
@@ -384,6 +476,25 @@ impl PlayWindowApp {
     /// placed objects; world-map scenes use the walk layers) - the shared
     /// input of the coplanar-lift pass and the occlusion-fade gate's
     /// occluder set.
+    /// Seat the placed draws whose bind record follows the floor on the
+    /// floor sample under them (`field_env::follow_floor_placed_draws` over
+    /// `World::object_floor_follow_y`) - the same pass the browser play page
+    /// runs in `build_field_render`.
+    fn follow_floor_placed_draws(
+        &self,
+        draws: &mut [legaia_engine_core::field_env::EnvDraw],
+        binds: &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+    ) {
+        let world = &self.session.host.world;
+        let follow = world.object_floor_follow_records();
+        if follow.is_empty() {
+            return;
+        }
+        legaia_engine_core::field_env::follow_floor_placed_draws(draws, binds, |r, x, z| {
+            world.object_floor_follow_y(&follow, r, x, z)
+        });
+    }
+
     pub(super) fn static_env_draws(
         &self,
         res: &SceneResources,
@@ -421,12 +532,15 @@ impl PlayWindowApp {
             }
             if let Ok(Some(placements)) = scene.field_object_placements(index) {
                 let binds = scene.field_object_binds(index).ok().flatten();
-                let (d, _) = field_env::resolve_placed_env_draws(
+                let (mut d, _) = field_env::resolve_placed_env_draws(
                     &env_tmds,
                     &placements,
                     floor_lut,
                     binds.as_ref(),
                 );
+                if let Some(binds) = binds.as_ref() {
+                    self.follow_floor_placed_draws(&mut d, binds);
+                }
                 draws.extend(d);
             }
         }
@@ -658,7 +772,14 @@ impl PlayWindowApp {
         let Some(bundle) = self.npc_anim_bundles.0.as_ref() else {
             return (baked_v, baked_c, live_v, live_c);
         };
-        for p in &self.field_posed_props {
+        // The placed-object actor cull (`field_view_window::placed_actor_visible`),
+        // the same gate the static placed pass asks.
+        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+            &self.session.host.world,
+            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+                && !self.field_debug_camera,
+        );
+        for (pi, p) in self.field_posed_props.iter().enumerate() {
             let record = self
                 .session
                 .host
@@ -675,6 +796,15 @@ impl PlayWindowApp {
                 }
                 None => p.model,
             };
+            if !legaia_engine_core::field_view_window::placed_actor_visible(
+                &self.session.host.world,
+                view_cells.as_ref(),
+                model.w_axis.x as i32,
+                model.w_axis.z as i32,
+                p.cull_radius,
+            ) {
+                continue;
+            }
             let key = self
                 .session
                 .host
@@ -685,6 +815,12 @@ impl PlayWindowApp {
                 .unwrap_or_default();
             if key.is_rest() {
                 if let Some(i) = p.baked.vram {
+                    // The copy shaded at this prop's rotation, when its mesh
+                    // carries light-source rows.
+                    let i = match self.field_lit.posed.get(pi).copied().flatten() {
+                        Some(v) => v | LIT_VARIANT_TAG,
+                        None => i,
+                    };
                     baked_v.push((i, model, record));
                 }
                 if let Some(i) = p.baked.color {
@@ -710,7 +846,24 @@ impl PlayWindowApp {
                 continue;
             };
             if p.baked.vram.is_some() {
-                let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
+                let (mut vmesh, posed_lit) =
+                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit(tmd, raw, &offsets);
+                if let Some(light) = self.field_lit.light
+                    && self
+                        .field_lit
+                        .sources
+                        .contains_key(&p.baked.vram.unwrap_or(usize::MAX))
+                    && std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_none()
+                {
+                    let m3: [[f32; 3]; 3] =
+                        std::array::from_fn(|row| std::array::from_fn(|col| p.model.col(col)[row]));
+                    legaia_engine_core::field_lit_mesh::shade_lit_rows(
+                        &mut vmesh.colors,
+                        &posed_lit,
+                        &light,
+                        &legaia_engine_core::field_lit_mesh::rotation_from_matrix(m3),
+                    );
+                }
                 if let Some(v) = self.cpu_vram_base.as_ref() {
                     legaia_engine_render::scene_lighting::tag_emissive_vram_mesh(
                         raw, &mut vmesh, v,
@@ -818,7 +971,7 @@ impl PlayWindowApp {
         }
         // Field frame: raw retail-convention transforms (see above).
         let (draws, floors, _, cells, _) =
-            self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None);
+            self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None, None);
         (draws, floors, cells)
     }
 
@@ -832,9 +985,9 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> (Vec<(usize, Mat4)>, usize) {
+    ) -> (Vec<(usize, Mat4)>, usize, Vec<Option<usize>>) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return (Vec::new(), 0);
+            return (Vec::new(), 0, Vec::new());
         };
         // Free-roam walk view: read the *walk* `.MAP` (`Scene::walk_field_map_
         // index`, the `block_start - 2` entry the runtime resolves through
@@ -865,10 +1018,14 @@ impl PlayWindowApp {
         // Story-hidden landmarks: a placed record whose bind prologue parked
         // its actor at the hide box draws nothing (map01's sea dome south of
         // Rim Elm, the river bridge's second stamp).
-        if let Ok(Some(binds)) = scene.field_object_binds(&self.session.host.index) {
+        let binds = scene
+            .field_object_binds(&self.session.host.index)
+            .ok()
+            .flatten();
+        if let Some(binds) = binds.as_ref() {
             legaia_engine_core::field_env::retain_visible_landmark_placements(
                 &mut landmarks,
-                &binds,
+                binds,
                 &self.session.host.world.hidden_object_records(),
             );
         }
@@ -879,20 +1036,32 @@ impl PlayWindowApp {
         // World-map frame: raw retail-convention transforms - both world-map
         // cameras compose FIELD_WORLD_FLIP (the walk view through the pinned
         // retail composition), so the draws are unflipped like the field's.
-        let mut draws = if landmarks.is_empty() {
-            Vec::new()
+        // The landmarks keep their bind record (a kingdom MAN's object
+        // records tint them - map02's walls around Jeremi draw half-dark), the
+        // decorations have none.
+        let (mut draws, mut records) = if landmarks.is_empty() {
+            (Vec::new(), Vec::new())
         } else {
-            self.resolve_placement_draws(res, tmd_src_index, &landmarks, false, None, None)
-                .0
+            let l = self.resolve_placement_draws(
+                res,
+                tmd_src_index,
+                &landmarks,
+                false,
+                None,
+                None,
+                binds.as_ref(),
+            );
+            (l.0, l.4)
         };
         let deco_start = draws.len();
         if !deco.is_empty() {
             draws.extend(
-                self.resolve_placement_draws(res, tmd_src_index, &deco, false, None, None)
+                self.resolve_placement_draws(res, tmd_src_index, &deco, false, None, None, None)
                     .0,
             );
         }
-        (draws, deco_start)
+        records.resize(draws.len(), None);
+        (draws, deco_start, records)
     }
 
     /// Resolve the world-map water/CLUT-cell animation for the active scene.
@@ -1045,6 +1214,10 @@ impl PlayWindowApp {
     /// are that clip's bones and are nonsense without its transform. The `bool`
     /// selects which uploaded-mesh list the caller is bridging (textured vs
     /// colour), since a posed prop has one slot in each.
+    ///
+    /// `record_binds` names each draw's bind record (the list's last member)
+    /// without applying any of the `binds` gates - the overworld landmarks,
+    /// which draw unposed and unscaled but whose actors a script can tint.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_placement_draws(
         &self,
@@ -1056,6 +1229,9 @@ impl PlayWindowApp {
             &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
         >,
         posed: Option<(&PosedPlacementMeshes, bool)>,
+        record_binds: Option<
+            &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+        >,
     ) -> PlacedDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Default::default();
@@ -1094,6 +1270,7 @@ impl PlayWindowApp {
                 binds,
                 &self.session.host.world.hidden_object_records(),
             );
+            self.follow_floor_placed_draws(&mut env_draws, binds);
         }
         // Render scale: a bind record's prologue can leave the actor's
         // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
@@ -1162,7 +1339,8 @@ impl PlayWindowApp {
         // Parallel to `draws`: the bind record whose actor a script can move
         // (`World::object_draw_displacements`, folded in per frame).
         let mut records = Vec::new();
-        let bind_records = legaia_engine_core::field_env::placed_bind_records(&env_draws, binds);
+        let bind_records =
+            legaia_engine_core::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
         for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
@@ -1239,14 +1417,15 @@ impl PlayWindowApp {
             };
             if diag {
                 log::info!(
-                    "DIAG place keep: pack {} (res {} -> mesh {}) at ({}, {}, {}) rot {}",
+                    "DIAG place keep: pack {} (res {} -> mesh {}) at ({}, {}, {}) rot {} bind {:?}",
                     d.env_slot,
                     d.res_tmd,
                     mesh_idx,
                     d.world_x,
                     d.world_y,
                     d.world_z,
-                    d.rot_y & 0x0FFF
+                    d.rot_y & 0x0FFF,
+                    record
                 );
             }
             draws.push((mesh_idx, model));

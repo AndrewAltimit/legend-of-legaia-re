@@ -67,7 +67,28 @@ For the ten branch arms listed below, the width above is the fall-through side; 
 
 The mirror is `move_vm_overlay_ext::canonical_size`; `crates/engine-vm`'s unit tests dispatch every sub-opcode against it.
 
-Two members are easy to lump with a neighbour and are not the same width. `0x18` is 5 where `0x17` / `0x19` / `0x1A` are 8: it zeroes the world-struct record's first three u16s and seeds the last two from `actor.world_y + op[3]` and `+ op[4]`, so it reads two operand words, not five. `0x11` is 2 where `0x25` is 3: `0x11` takes its slot index from the cycle counter, `0x25` from the bytecode.
+Two members are easy to lump with a neighbour and are not the same width. `0x18` is 5 where `0x17` / `0x19` / `0x1A` are 8: it zeroes the object-effect row's three angles and seeds the last two from `actor.world_y + op[3]` and `+ op[4]`, so it reads two operand words, not five. `0x11` is 2 where `0x25` is 3: `0x11` takes its slot index from the cycle counter, `0x25` from the bytecode.
+
+### `0x17..0x1A` write the object-effect parameter table
+
+The record the four arms address is row `op[2]` of the **object-effect
+parameter table** at `0x80083FF8` (stride `0x14`): three rotation angles at
+`+0` / `+2` / `+4` and two clip words at `+0x10` / `+0x12`. It is what
+`FUN_8001C204` composes into the transform of every actor whose `+0x42` is
+`row + 1` ([`renderer.md`](renderer.md#what-a-raised-0x42-draws)). The four
+arms are four different writes, not one write and three variants:
+
+| Sub-op | Arm | Effect on the row |
+|---|---|---|
+| `0x17` | `0x801D3BB4` | Writes `op[3..=7]` into `+0`, `+2`, `+4`, `+0x10`, `+0x12`. |
+| `0x18` | `0x801D3C0C` | Zeroes the three angles; `+0x10` / `+0x12` = actor `+0x16` plus `op[3]` / `op[4]`. |
+| `0x19` | `0x801D3C5C` | **Adds** `op[3..=7]` to the same five halfwords. |
+| `0x1A` | `0x801D3CE0` | `+0 = 0`, `+2 = yaw = (op[3] + 0x400) & 0xFFF`, `+4 = 0x400`; both clip words are `op[6]` / `op[7]` plus `(op[5] * sin[yaw] + op[4] * cos[yaw]) >> 12`. |
+
+The table is seeded twice outside the VM: the boot init `FUN_8001D424` writes
+row 0 as angles `0` with clip words `(-100, -20)` (`0x8001D618..0x8001D664`),
+and the battle scene setup `FUN_80055B6C` re-seeds it as angles `0` with
+`+0x10 = -0x7FFF` (`0x80055DDC..0x80055DF8`).
 
 ### The ten conditional-branch arms
 

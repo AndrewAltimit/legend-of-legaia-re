@@ -216,7 +216,7 @@ pub enum FieldMenuPhase {
     /// (No) and the cancel button both return to the root picker
     /// (`0x801d6dbc..0x801d6df8`).
     ///
-    /// PORT: FUN_801D6D38
+    /// PORT: FUN_801D6D38 (PROT 0899)
     ReadyConfirm {
         /// The two-row choice cursor (`DAT_801E46D0`): `0` = Yes, `1` = No.
         cursor: u8,

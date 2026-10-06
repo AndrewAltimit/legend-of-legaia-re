@@ -100,7 +100,8 @@ cheapest place to look for a claim that is still wrong.
   the ground's bucket key is `FUN_801F89B8`'s, not the mesh leaves'
   ([falsified](re-do-not-re-walk.md#rendering--camera)).
 - **The Rim Elm ambush seats its monsters from row 8, not the origin**, and
-  allows Run (open row above).
+  allows Run: the formation row's header byte is `0`
+  ([settled](re-settled-threads.md#battle--arts--level-up)).
 - **A dialog picker slides in; it does not resize.** The odd pager states
   count 24 frame-step units from off screen, and input opens only at count 0,
   26 vsyncs after the press ([falsified](re-do-not-re-walk.md#menus--ui)).
@@ -376,7 +377,8 @@ the player in field mode only, and the loop's whole-map box test read tile
 **`FUN_800271A8`** is the overworld's screen-Y curvature table builder, and
 retail bends each overworld vertex by it (`0x801F7770..0x801F77E4`, rows 12..19
 only); both hosts' mesh shaders now apply it per vertex. The port bends the lit
-rows 8..11 too, which retail leaves flat - an accepted residual
+rows 8..11 too, which retail leaves flat, and a disc census closes that
+residual as inert: no overworld TMD carries a lit-row group
 ([settled](re-settled-threads.md#world-map--kingdom-bundles),
 [`renderer.md`](../subsystems/renderer.md#frame-setup--present)). **The field
 drop shadow** is drawn on both hosts: `FUN_800460AC` `RTPT`s a 3x3 grid at
@@ -426,7 +428,8 @@ section-2 effect pool the fog page samples; retail keeps it resident under every
 field scene, and nine retail states agree cell for cell
 ([settled](re-settled-threads.md#rendering--camera)). **Which host draws Koru's
 strip** is both: the gate is formation slot 0, the limit is Koru's own AI arm,
-and only the draw order against the tab stays open (row above).
+and the draw order against the tab closed after it (the strip covers the
+plaque, above).
 
 **Does the port run retail's in-battle steal** and **how does the port step
 back to an earlier member** both closed with a wire on both hosts. The steal is
@@ -449,9 +452,13 @@ field (`sh $v0,0x42($s2)` at `0x8002342C`), and shipped move programs do issue
 it with non-zero operands. What the 5089-zero census establishes is narrower
 than "nothing raises it": across the sampled modes no *drawn* actor had the bit
 up ([settled](re-settled-threads.md#rendering--camera),
-[falsified](re-do-not-re-walk.md#rendering--camera)). Whether an actor a
-shipped program raises it on is then drawn through one of the three brackets is
-unmeasured - the residual the census leaves, and too narrow for a row.
+[falsified](re-do-not-re-walk.md#rendering--camera)). The residual that left -
+whether a content-raised actor is ever drawn through a bracket - closed by
+disassembly and the field-op census: field-VM `4C C2 1` raises it on placed
+actors in nine scenes, and those are drawn by `FUN_8001ADA4` / `FUN_8001B964`.
+The far arm clips the actor to the slab its object-effect row stages, which
+both hosts now draw
+([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)).
 
 **Is `FUN_801D0748` entered by an ordinary, non-dome battle** closed on the
 bytes before the capture landed, and then again on the capture. The routine has
@@ -476,7 +483,8 @@ kind-8..11 world-map handlers, with no overlay image containing one and no
 question needed a census of GTE opcodes rather than an xref query, because the
 matrix is consumed implicitly by the normal-colour commands
 ([settled](re-settled-threads.md#rendering--camera)). It corroborates rather
-than changes the renderer page: the field path applies no light source.
+than changes the renderer page: those handlers are the field's
+light-source rows ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
 
 Before it: **where a slot-B module image's highest spawn record ends**. Its
 own move-VM program bounds it, under four rules the page states - round the end

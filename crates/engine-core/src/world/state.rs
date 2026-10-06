@@ -86,6 +86,11 @@ pub struct World {
     /// on. Read by move-VM op `0x03` (the Z term).
     pub cos_lut: Vec<i16>,
 
+    /// The object-effect parameter table at `0x80083FF8` (boot-seeded;
+    /// move-VM ext `0x17..0x1A` write it): what a raised `actor[+0x42]`
+    /// draws under ([`crate::object_effect`]).
+    pub object_effect: crate::object_effect::ObjectEffectTable,
+
     /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
     pub battle: BattleState,
 
@@ -389,6 +394,7 @@ impl World {
             cos_lut: crate::action_effect_script::retail_rotation_lut()
                 .cos_table()
                 .to_vec(),
+            object_effect: crate::object_effect::ObjectEffectTable::boot(),
             battle: BattleState::new(),
             camera: CameraRig::new(),
             audio: AudioState::new(),
@@ -636,6 +642,7 @@ impl World {
         self.terrain.floor_tier_bobs.clear();
         self.cutscene.prologue_naming_pending = false;
         self.cutscene.prologue_naming_armed = false;
+        self.cutscene.naming_owner = None;
         self.cutscene.entering_town01_opening = false;
         self.field_vm.pending_record_spawns.clear();
         self.cutscene.opening_chain_active = false;

@@ -865,6 +865,8 @@ This is **executed in-engine**: the `town01` entry installs P2[3] as a spawned c
 The timeline plays the establishing camera beats over ~490 frames (stepping past the conditional-wait parks the engine doesn't model - `0x4C` nibble-C `script_alloc`/globals, `0x2D`/`0x30` flag-tests - while honoring `0x4A` timed waits), then op `0x49` opens the name-entry overlay through the op-49 host hooks (`op49_invoke_setup` → `open_name_entry(0)`; `op49_state` Armed while open, Done after commit).
 The timeline freezes while the overlay is up and resumes - playing Vahn's walk-out - once a name commits. Disc-gated `town01_opening_name_entry_wiring.rs` + `opening_full_chain_e2e.rs`.
 
+Only the script freezes. The prompt is an actor on the field list, not a mode, so the field frame keeps running around it, and the camera mover `FUN_801DC0BC` with it. The op before the `49 03` (`+0x2B1`) is an op-`0x45` configure with a 16-frame glide to pitch `292`, yaw `-510`, eye `(-600, 8, 3840)`, and that glide lands under the prompt: `name_input_ui` holds those exact words and no mover on its lists, and its frame shows Vahn standing in the upper left. The engine's prompt frame (`World::step_name_entry_frame`, `BootSession::step_name_entry_frame`, and the play page's `name_entry_advance_frames`) therefore passes the display frame and runs the camera half; a prompt that froze the clock held the camera on the previous shot, with Vahn's head behind the name box.
+
 Pinned addresses (live in `name_input_ui`):
 
 | Datum | Address | Notes |
@@ -1003,6 +1005,8 @@ For each of the four TIMs it forms the header `+8` (the CLUT block), writes that
 | `+0xD3E4`  | Contrail | 8bpp | (320, 509) | (768, 256) | `0x9C` | `0x7F54` |
 | `+0x18E04` | SCEA     | 4bpp | (320, 508) | (640, 0)   | `0x0A` | `0x7F14` |
 | `+0x1CE44` | WARNING  | 4bpp | (0, 506)   | (704, 0)   | `0x0B` | `0x7E80` |
+
+The logo CLUT rows stay resident after boot: nothing re-uploads `(320..575, 507)` until a scene's own TIM claims the cells, so PROKION's palette - entries `131..161` are a 31-step grey ramp `0x0421 * k` at `(451..481, 507)` - shows up in the VRAM of every field state captured since, `teien`'s hedge CLUT row included. A cold-boot exec breakpoint on the upload body `FUN_80059BD4` (`scripts/pcsx-redux/autorun_grey_ramp_writer.lua`) sees exactly one write covering `(451, 507)`: this 256 x 1 rect, from `0x801D09F0`, at vsync 317. No TMD on the disc names a CLUT cell past `x = 255` on row 507, so a port that leaves the boot palettes out of a field scene's VRAM loses nothing on screen.
 
 SCEA and WARNING are uploaded where their rects are written; PROKION and Contrail have their rects written in the same pass but are uploaded later in the body, after the display env is up. The routine also selects the **640×480** wide display mode (`FUN_8001DAF8(0x400)`), clears VRAM `(0, 0, 640, 500)` to black through `FUN_80058298` with the RECT at file `+0x08`, loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00` (so the pack "header" is two `RECT`s, not four opaque words), spawns the two boot actors, and stores game mode `0x11`.
 

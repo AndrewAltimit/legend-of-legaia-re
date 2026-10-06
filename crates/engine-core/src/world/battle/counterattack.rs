@@ -120,6 +120,7 @@ impl World {
         });
         self.dispatch_pending_party_action(counterer, action);
         self.battle.target_plate_cleared = true;
+        self.battle.counter_hud = Some(counterer);
         true
     }
 }

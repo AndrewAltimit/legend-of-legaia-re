@@ -429,7 +429,17 @@ window.MgDance = (function () {
         b.lastBeat = -1;
         b.rivalTri = {};
       }
+      /* The run's own cast (the engine's floor: one dancer on the how-to,
+       * three on the qualifier): a body whose kind the run did not spawn is
+       * collapsed rather than posed. Without the export every body draws. */
+      const runKinds = (live && typeof api.dance_run_kinds === 'function')
+        ? Array.from(api.dance_run_kinds()) : null;
       for (let d = 0; d < b.dancers.length; d++) {
+        if (runKinds && runKinds.length && runKinds.indexOf(b.dancers[d].kind) < 0) {
+          const start = b.vertBases[d] * 3;
+          b.out.fill(0, start, start + b.dancers[d].pos.length);
+          continue;
+        }
         const st_ = advance(d, live);
         if (!st_.clip) continue;
         poseInto(b.out, b.base, b.dancers[d].oid, st_.clip, st_.frame,
@@ -583,6 +593,14 @@ window.MgDance = (function () {
       src.start();
     }
 
+    /* A cue by its retail id, through the names `dance_sfx_cue_ids` gives. */
+    function playId(id) {
+      if (!sfxIds) return;
+      for (const [name, v] of Object.entries(sfxIds)) {
+        if (v === id) { play(name, 0.5); return; }
+      }
+    }
+
     function playSting() {
       const a = audioReady();
       if (!a || !a.stings.length) return;
@@ -605,7 +623,8 @@ window.MgDance = (function () {
      * 1 and 2) = global BGM 2060/2066. This value is only the fallback for a
      * WASM surface with no dance_jukebox_json; normally the page selects the
      * jukebox's first row. Default = overlay track A. */
-    let bgmTrack = 2060;
+    let bgmTrack = (typeof api.minigame_bgm_id === 'function' && api.minigame_bgm_id('dance') > 0)
+      ? api.minigame_bgm_id('dance') : 0;
     let bgmSrc = null;
 
     /* Render + start the selected BGM as a seamless loop (SEQ+VAB through the
@@ -615,7 +634,7 @@ window.MgDance = (function () {
     function startBgm(seconds) {
       stopBgm();
       const a = audioReady();
-      if (!a || !window.MgBgm2) return false;
+      if (!a || !window.MgBgm2 || !bgmTrack) return false;
       const entry = MgBgm2.render(api, a.ctx, bgmTrack, Math.min(seconds || 45, 45));
       if (!entry) return false;
       bgmSrc = MgBgm2.start(a.ctx, entry, 0.55);
@@ -645,6 +664,27 @@ window.MgDance = (function () {
 
     /* Draw widget `id` centred at retail (x, y) - exactly the emitter's
      * contract - through palette `pal` (default: the record's own). */
+    /* One widget at a retail brightness `level` (texel * level / 128):
+     * `semi` blends it additively (the record's +0x0F flag), otherwise it
+     * draws opaque, with a lighter pass for the part above 128. */
+    function wdrawLevel(id, x, y, level, semi) {
+      const w = widgets[id];
+      if (!w) return;
+      const img = page(w.palette);
+      if (!img || level <= 0) return;
+      const dx = (x - w.w / 2) * SCALE, dy = (y - w.h / 2) * SCALE;
+      g.save();
+      if (semi) g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = Math.min(1, level / 128);
+      g.drawImage(img, w.u, w.v, w.w, w.h, dx, dy, w.w * SCALE, w.h * SCALE);
+      if (level > 128) {
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = Math.min(1, (level - 128) / 128);
+        g.drawImage(img, w.u, w.v, w.w, w.h, dx, dy, w.w * SCALE, w.h * SCALE);
+      }
+      g.restore();
+    }
+
     function wdraw(id, x, y, pal, bright) {
       const w = widgets[id];
       if (!w) return;
@@ -886,9 +926,17 @@ window.MgDance = (function () {
       }
       flashT = 0; finished = false;
       if (body) body.rivalTri = {};
-      intro = { t: 0 };
-      play('start', 0.5);
-      startBgm(songSeconds);
+      /* The engine's count-in (`dance::CountIn`, the play hosts' own): the
+       * READY banner, then GO!, with the intro / run-start cues - and the
+       * song only once it clears (retail starts it in FUN_801cf470 state 6).
+       * A cached WASM without it keeps the old hand-timed overlay. */
+      if (typeof api.dance_countin_step === 'function') {
+        intro = { live: true, songSeconds };
+      } else {
+        intro = { t: 0 };
+        play('start', 0.5);
+        startBgm(songSeconds);
+      }
     }
 
     function stopRun() {
@@ -896,7 +944,9 @@ window.MgDance = (function () {
       intro = null;
     }
 
-    /* The count-in overlay: READY... slides, then 1 / 2 / 3, then GO!.
+    /* The count-in: the engine's READY banner, then GO! (the hand-timed
+     * READY / 1 / 2 / 3 / GO! overlay only against a cached WASM - retail's
+     * 3 / 2 / 1 belong to the song's end, FUN_801cf470 state 0xB).
      * Returns true while the engine clock should hold. */
     function introActive() { return intro !== null; }
 
@@ -993,8 +1043,28 @@ window.MgDance = (function () {
         drawGroovyWindow(st);
       }
 
-      /* Count-in overlay (banner widgets at the traced centre spawn). */
-      if (intro) {
+      /* Count-in, stepped by the engine one vsync per drawn frame. */
+      if (intro && intro.live) {
+        const c = api.dance_countin_step();
+        if (c[6] === 0x200) play('intro', 0.5);
+        else if (c[6] === 0x201) play('start', 0.5);
+        if (c[1]) {
+          /* FUN_801d2d98: two blended copies sliding apart on row 0x77, or
+           * one opaque centred copy on row 0x78 while it holds. */
+          if (c[4]) {
+            wdrawLevel(W.READY, 0xA0, 0x78, c[3], false);
+          } else {
+            wdrawLevel(W.READY, 0xA0 + c[2], 0x77, c[3], true);
+            wdrawLevel(W.READY, 0xA0 - c[2], 0x77, c[3], true);
+          }
+        }
+        /* FUN_801cf470 states 4 / 5: GO! (widget 0x0C) at acc * 2. */
+        if (c[5] >= 0) wdrawLevel(W.GO, 0xA0, 0x78, c[5], true);
+        if (c[7] || !c[0]) {
+          startBgm(intro.songSeconds);
+          intro = null;
+        }
+      } else if (intro) {
         const C = L.banners.centre;
         const t = intro.t++;
         if (t < 55) {
@@ -1008,9 +1078,18 @@ window.MgDance = (function () {
         if (t >= 145) intro && (intro.go = true);
       }
 
+      /* The song end: the engine runs the overlay's own 3 2 1 FINISH!
+       * programs (drawn with the other engine sprite parts) and their cues;
+       * `over` is the results state after them. A cached WASM without the
+       * countdown keeps the page's own FINISH! banner. */
+      if (typeof api.dance_take_finish_cues === 'function') {
+        for (const id of api.dance_take_finish_cues()) playId(id);
+      }
       if (st && st.over && !finished) {
         finished = true;
-        spawnBanner(W.FINISH, L.banners.centre[0], L.banners.centre[1], 120);
+        if (typeof api.dance_take_finish_cues !== 'function') {
+          spawnBanner(W.FINISH, L.banners.centre[0], L.banners.centre[1], 120);
+        }
         stopBgm();
       }
 
@@ -1021,8 +1100,8 @@ window.MgDance = (function () {
     }
 
     return {
-      loadAssets, startRun, stopRun, onPress, draw, introActive, setBgmTrack,
-      get introGate() { return intro !== null && !intro.go; },
+      loadAssets, startRun, stopRun, onPress, draw, introActive, setBgmTrack, playId,
+      get introGate() { return intro !== null && (intro.live || !intro.go); },
       sfxCount() { return sfxIds ? Object.keys(sfxIds).length : 0; },
       bgmOk() { return !!(bgmInfo && bgmInfo.ok); },
       bodyOk() { return !!body; },

@@ -120,7 +120,7 @@ impl Renderer {
                             snap,
                             snap, // .w = dither_enable (shares the psx_mode flag)
                         ],
-                        tex_window: self.tex_window.get(),
+                        tex_window: [pack_tex_window(self.tex_window.get()), 0, 0, 0],
                         grade: self.color_grade.get(),
                         flags: [
                             self.backface_cull.get(),
@@ -684,6 +684,17 @@ impl Renderer {
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         self.encode_frame(target, &view)?;
+        // Let the frame's own submission finish before the copy is encoded.
+        // The queue orders the two, but under heavy GPU contention a
+        // retail-compare readback has come back with whole 32-px-wide tile
+        // columns of its top rows still zero - a black band of 1 to 15 rows
+        // whose lower edge steps every 32 columns, the rest of the frame
+        // byte-identical. Waiting here keeps the copy off tiles the frame
+        // is still writing; the screenshot harness also re-reads until two
+        // readbacks agree.
+        self.device
+            .poll(wgpu::PollType::wait())
+            .context("poll device for the captured frame")?;
 
         // copy_texture_to_buffer requires bytes_per_row aligned to 256.
         let bpp = 4u32;
@@ -1065,7 +1076,8 @@ impl Renderer {
             snap,
             snap, // .w = dither_enable (shares the psx_mode flag)
         ];
-        let tex_window = self.tex_window.get();
+        let tex_window_packed = pack_tex_window(self.tex_window.get());
+        let (clips_textured, clips_color) = self.draw_clips.borrow().clone();
         let grade = self.color_grade.get();
         // flags[2] is set per draw below: 1.0 = environment geometry the
         // occlusion fade may dissolve, 0.0 = actor draws (player / NPCs)
@@ -1096,7 +1108,10 @@ impl Renderer {
                     slot: usize,
                     mvp: Mat4,
                     cue: Option<crate::DrawCue>,
-                    occl_allowed: bool| {
+                    occl_allowed: bool,
+                    clip: Option<DrawClip>| {
+            let [c0, c1, c2] = pack_draw_clip(clip);
+            let tex_window = [tex_window_packed, c0, c1, c2];
             let mut flags = flags_base;
             flags[2] = if occl_allowed { 1.0 } else { 0.0 };
             let model = match inv_vp {
@@ -1149,10 +1164,18 @@ impl Renderer {
             bytes[off..off + n].copy_from_slice(bytemuck::bytes_of(&u));
         };
         for (i, draw) in scene.draws.iter().enumerate() {
-            push(&mut bytes, i, draw.mvp, draw.cue, i < occl_env_textured);
+            let clip = clips_textured.get(i).copied().flatten();
+            push(
+                &mut bytes,
+                i,
+                draw.mvp,
+                draw.cue,
+                i < occl_env_textured,
+                clip,
+            );
         }
         if let Some((_, mvp)) = scene.overlay_lines {
-            push(&mut bytes, scene.draws.len(), mvp, None, false);
+            push(&mut bytes, scene.draws.len(), mvp, None, false, None);
         }
         // Colour-mesh slots follow the draws + the optional overlay-lines slot.
         let color_base = scene.draws.len() + scene.overlay_lines.is_some() as usize;
@@ -1163,6 +1186,7 @@ impl Renderer {
                 draw.mvp,
                 draw.cue,
                 i < occl_env_color,
+                clips_color.get(i).copied().flatten(),
             );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();

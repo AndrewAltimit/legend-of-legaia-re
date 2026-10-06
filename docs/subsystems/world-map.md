@@ -889,14 +889,22 @@ world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
   `6 x 17` glyph grid from the string at `0x801F29F0`, and three label lines
   resolving the map name through `_DAT_8007B450[+1]` into the 8-byte-stride
   name table at `0x801F2A6C`. Render-track.
-- **`FUN_801ECD0C`** (168-383 bytes across captures; body in
-  `overlay_world_map_walk_801ecd0c.txt`) - a destination / map-list picker
-  panel keyed on `ctx[+0x54]` (6-case jump table `0x801CF4E4`), sizing off the
-  panel descriptor at `0x801F2B98[+0x5C/+0x5E]`. Case 0 seeds `ctx[+0x94]` from
-  the string list at `0x801F2BEC` (`FUN_80032434`) and reads the CDNAME
-  define-table count `_DAT_8007B806`. The list cursor is the same swap-wrap picker
-  `FUN_801ECA08` runs; documented-not-ported (interwoven with the panel /
-  prompt draw path).
+- **`FUN_801ECD0C`** (1532 bytes in PROT 0897's own image; the 168-byte
+  dumps at this VA are the minigame overlays' unrelated code) - a destination
+  / map-list picker panel keyed on `ctx[+0x54]` (6-case jump table
+  `0x801CF4E4`), sizing off the panel descriptor at `0x801F2B98[+0x5C/+0x5E]`.
+  Case 0 seeds `ctx[+0x94]` with the 16-byte rows `FUN_80019788` returns,
+  raises window `3` from `0x801F2BEC` (`FUN_80032434`), sorts the rows
+  (count `_DAT_8007B806`, the CDNAME define-table count) on each row's 3-byte
+  key, then seeks the row whose `FUN_8003CE9C(row + 0xC)` matches the live
+  scene word `0x80084540`. The list cursor is the same
+  swap-wrap picker `FUN_801ECA08` runs. **Retail never runs it:** its only
+  reference is slot `1` of the subsystem actor's handler table `0x801F33B4`,
+  and no store on the disc puts `1` in that actor's `+0x50` - the installer
+  `FUN_801F1278` writes `7` or a `0x801F33A4` byte (`-1` or `0x21..0x33`), and
+  every handler exit writes one of `0x02`, `0x13`, `0x1A`, `0x29`, `0x2B`,
+  `0x2C`, `0x30`. The per-image verdict lives in
+  `scripts/ci/image-scoped-verdicts.toml`.
 - **`FUN_801E9F64`** (659 bytes, `overlay_world_map_walk_801e9f64.txt`) - the
   **input** half of the dev menu, a 20-case dispatcher on `ctx[+0x9e] - 3`
   (jump table `0x801CF294`). Each case edits one row's backing value from the

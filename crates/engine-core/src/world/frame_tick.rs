@@ -26,6 +26,31 @@ fn travel_scene(names: &legaia_prot::cdname::IndexMap, word: u32) -> Option<Stri
 }
 
 impl World {
+    /// The colour the frame is cleared to this tick - the one both hosts hand
+    /// their clear (`battle_stage_clear::scene_clear`'s field input).
+    ///
+    /// The field's draw-environment clear (`presentation.clear_rgb`, op
+    /// `4C 13`) outside four minigame modes. Under the slot machine, Baka
+    /// Fighter, the Muscle Dome and the dance the frame clears to **black**:
+    /// every retail state of those four holds `r0 / g0 / b0 = 0` at
+    /// `0x8007BF5D..5F` and a `0x0000` display background around its HUD
+    /// (`minigame_slot_machine`, `minigame_baka_fighter`,
+    /// `minigame_muscle_dome`, `minigame_dance_noa`), entered from a town
+    /// whose own states carry a non-zero clear. The port suspends the field
+    /// instead of reloading over it, so without this the town's colour
+    /// showed behind the cabinet and the attract card. Fishing keeps the
+    /// field's word: its venue (`other1`) writes its own sky colour, which
+    /// the retail fishing state carries.
+    pub fn frame_clear_rgb(&self) -> [u8; 3] {
+        match self.mode {
+            SceneMode::SlotMachine
+            | SceneMode::BakaFighter
+            | SceneMode::MuscleDome
+            | SceneMode::Dance => [0; 3],
+            _ => self.presentation.clear_rgb,
+        }
+    }
+
     /// Advance the wall-clock play-time counter by `delta_seconds`. Engines
     /// drive this from the frame loop's wall-clock delta. Mirrors the
     /// retail "play time" field shown on the save screen.
@@ -1304,6 +1329,9 @@ impl World {
         {
             self.presentation.fade = None;
         }
+        self.presentation
+            .module_fades
+            .retain_mut(|f| f.step() || f.holds_at_end());
         // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp
         // that lands on a non-neutral target HOLDS there (a screen faded to
         // black stays black until a new op replaces it); one that lands on
@@ -1315,6 +1343,14 @@ impl World {
             t.step();
             if t.is_identity() {
                 self.presentation.tint = None;
+            }
+        }
+        // Step an op-`4C 13` clear-colour ramp (its `FUN_8003C5F0` slot jobs).
+        if let Some(r) = self.presentation.clear_ramp.as_mut() {
+            r.elapsed = r.elapsed.saturating_add(1);
+            self.presentation.clear_rgb = r.value();
+            if r.elapsed >= r.total {
+                self.presentation.clear_ramp = None;
             }
         }
         // Consume a pending FMV transition the field VM signalled last frame
@@ -1634,6 +1670,9 @@ impl World {
                 if !scripts_held {
                     self.step_field_frame_slice();
                 }
+                // A placement the system script engaged (`B1 <id> 08`) runs
+                // its interaction once the frame is free.
+                self.drain_placement_engagements();
                 // Field script actors the VM just spawned or is running: the
                 // op-0x43 scripted arcs (arc helper `FUN_801D5C08` + release
                 // watcher `FUN_801D5D60`) and the op-0x34 sub-1 attached
@@ -1782,6 +1821,16 @@ impl World {
                 // the ambient-particle gate (`4C 30`) that puts fog over the
                 // continent. Same frame slice as the field arm.
                 self.step_field_frame_slice();
+                // Cross-context walk legs a world-map record starts
+                // (`C7 <id> ..`) run on the same per-actor walk kernel as the
+                // field's (`FUN_8003774C`, from the actor driver every mode-3
+                // scene runs). Without the step an overworld beat that walks
+                // a placement and then waits on its halt bit (`B3 <id> 0A` -
+                // urudre2's hand-off onto `map01`) parks for good.
+                // REF: FUN_8003774C
+                if self.clock.display_frame_step == 1 {
+                    self.tick_field_npc_motions();
+                }
                 // The per-actor anim tick: the overworld's MAN actors play
                 // the kingdom bundle's slot-4 clips through `FUN_800204F8`
                 // exactly as a town's do (a live `map01` actor list holds
@@ -2468,6 +2517,7 @@ impl World {
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = Some(crate::dance::CountIn::new());
         self.minigames.dance_countin_banner = None;
+        self.minigames.dance_countin_go = None;
         // The dance overlay loads one of two mode-selected chart loops; the
         // exact mode -> song arm is unpinned, so it is approximated by song
         // length. Held until the count-in clears, which is when retail's
@@ -2522,6 +2572,7 @@ impl World {
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = None;
         self.minigames.dance_countin_banner = None;
+        self.minigames.dance_countin_go = None;
         self.minigames.dance_pending_bgm = None;
         self.minigames.dance_tutorial = None;
         self.minigames.dance_tutorial_frame = None;
@@ -2564,12 +2615,14 @@ impl World {
         // below-10 state band. The song starts on the frame it clears.
         if let Some(mut ci) = self.minigames.dance_countin.take() {
             let step = ci.step();
-            self.minigames.dance_countin_banner = Some(step.banner);
+            self.minigames.dance_countin_banner = step.banner;
+            self.minigames.dance_countin_go = step.go;
             if let Some(cue) = step.cue {
                 self.minigames.pending_sfx.push(cue);
             }
             if step.done {
                 self.minigames.dance_countin_banner = None;
+                self.minigames.dance_countin_go = None;
                 if let Some(bgm) = self.minigames.dance_pending_bgm.take() {
                     self.swap_to_minigame_bgm(bgm);
                 }
@@ -2600,7 +2653,9 @@ impl World {
         if let Some(dir) = dir {
             self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
-        if game.song_over() {
+        let finish_cues = game.take_finish_cues();
+        self.minigames.pending_sfx.extend(finish_cues);
+        if game.finished() {
             // Song finished: the results state grades the run into the pass
             // flag, then the interrupted mode is restored, leaving `dance` in
             // place so the host can read the final score before clearing.

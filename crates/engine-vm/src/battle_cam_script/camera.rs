@@ -123,7 +123,42 @@ impl Glide {
             steps_left: Some(steps.max(1)),
         }
     }
+
+    /// One pass of a tween its caller **re-arms every pass**: the builder
+    /// run over `frames` display frames, each component's per-frame
+    /// increment `ceil(|current - target| / frames)` scaled by the camera
+    /// step's [`CHASE_FRAME_STEP`] frames - the walker task `FUN_8002149C`
+    /// adds `increment * frame_step` (`0x1F800393`) a pass and clamps on the
+    /// endpoint. Rate-clamped (`steps_left == None`): the caller steps it
+    /// once with [`BattleCamera::step_components`] and rebuilds next pass.
+    ///
+    /// This is not [`Self::linear`] over `frames / 2` steps. The two agree
+    /// for an even duration, but a three-frame arm halves to **one** step,
+    /// whose rate is the whole remaining distance - a snap - where retail
+    /// covers `2 * ceil(rem / 3)`, about two thirds of it, and trails a
+    /// moving target. The summon close-up `FUN_801DC0A0` case `0x12` is that
+    /// arm: the `freed_summon_mid_cast` capture's step table reads yaw / TR y
+    /// increments of `16` with the live globals `14` short of the endpoints.
+    ///
+    /// REF: FUN_801D829C, FUN_8002149C
+    pub(super) fn chase(
+        from: &mut BattleCamPose,
+        target: BattleCamPose,
+        target_tr_z_raw: i32,
+        frames: u32,
+    ) -> Self {
+        let mut g = Self::linear(from, target, target_tr_z_raw, frames.max(1), true);
+        for r in &mut g.rate {
+            *r *= CHASE_FRAME_STEP;
+        }
+        g.steps_left = None;
+        g
+    }
 }
+
+/// Display frames one camera step stands for: the walker's frame-step
+/// multiplier at retail's 30 Hz battle tick.
+pub(super) const CHASE_FRAME_STEP: f32 = 2.0;
 
 /// Step `v` toward `target` by at most `rate`, clamping at the target.
 pub(super) fn step_toward(v: f32, target: f32, rate: f32) -> f32 {
@@ -219,6 +254,10 @@ pub struct BattleCamera {
     /// What the target cursor rests on, while one is up
     /// ([`BattleCamera::set_cursor`]).
     pub(super) cursor: Option<CursorFraming>,
+    /// The SCUS frame driver's entry counter `gp+0x330` while its
+    /// battle-entry sweep owns the camera ([`BattleCamera::start_entry_sweep`]);
+    /// `None` once the battle tick has it.
+    pub(super) entry_sweep: Option<u32>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
@@ -266,8 +305,8 @@ pub(super) const STANDALONE_RAND_SEED: u32 = 0x0BAD_5EED;
 ///
 /// It is not "the" resting yaw and nothing in retail makes it special: five
 /// battle states caught at the same framing read `224`, `2632`, `3136`, `3808`
-/// and `3882`, because `_DAT_8007B792` free-runs and a fight inherits whatever
-/// the field camera left. What every one of them *is* is **far from the seat
+/// and `3882`, because `_DAT_8007B792` free-runs from the `0` battle init
+/// stores. What every one of them *is* is **far from the seat
 /// axis**, and that is the property this constant is used for - see
 /// [`battle_entry_yaw`].
 pub const BATTLE_ENTRY_YAW_SAMPLE: f32 = 3372.0;
@@ -281,7 +320,7 @@ pub const BATTLE_ENTRY_YAW_SAMPLE: f32 = 3372.0;
 /// character meshes ~400 units wide (`docs/formats/character-mesh.md`). Inside
 /// ~17 degrees the separation is under one character width and the near row
 /// still covers the far one. It is a threshold on a continuum, and it is a
-/// **port judgement** - retail needs none because its azimuth free-runs.
+/// **port judgement** - retail has none: it opens on the axis and orbits out.
 /// Sanity check rather than derivation: all five captured retail battle yaws
 /// (`224`, `2632`, `3136`, `3808`, `3882`) sit outside it.
 pub const DEGENERATE_YAW_WINDOW: u16 = 192;
@@ -290,8 +329,10 @@ pub const DEGENERATE_YAW_WINDOW: u16 = 192;
 /// compass word (`_DAT_8007B792`, the port's
 /// `World::locomotion.camera_azimuth`).
 ///
-/// Retail passes the shared rotation global straight through. The problem is
-/// that the port's mirror is not free-running: the field is framed by a
+/// Retail zeroes the shared rotation global at battle init
+/// (`FUN_80055B6C`, `0x80055E84`) and orbits out of the seat axis; the port
+/// opens on the field's azimuth instead. The raw word will not do: the
+/// port's mirror is not free-running: the field is framed by a
 /// **fixed follow camera** whose free-roam reset snaps the controller back
 /// every frame, so the compass publishes a constant `0` for the entire time
 /// the player is not manually orbiting.
@@ -344,21 +385,20 @@ pub struct BattleCamInputs {
     pub attack: Option<AttackCamChannels>,
     /// The idle orbit's azimuth **on battle entry**, in 12-bit units.
     ///
-    /// `_DAT_8007B792` is one global: the field camera and the battle camera
-    /// share the rotation trio `0x8007B790/92/94`, and nothing on the battle
-    /// entry path zeroes it - case 9 passes it straight through and the
-    /// action SM only decrements it. A fight therefore *inherits* whatever
-    /// azimuth the field camera left, which is why five retail battle save
-    /// states caught at the same framing (`ctx[7] == 0x00`, pitch `32`,
-    /// `TR (0, 1280, 7680)`, focus at the origin) read five different yaws -
-    /// `224`, `2632`, `3136`, `3808`, `3882`. No captured value is *the*
-    /// resting yaw; the resting yaw is the free-running orbit.
+    /// Retail has no such input: battle init `FUN_80055B6C` zeroes the yaw
+    /// global `0x8007B792` (`0x80055E84`) and the fight orbits out of `0`,
+    /// so the five retail battle save states caught at the same far framing
+    /// (`ctx[7] == 0x00`, pitch `32`, `TR (0, 1280, 7680)`, focus at the
+    /// origin) read five different yaws - `224`, `2632`, `3136`, `3808`,
+    /// `3882` - because the orbit had run for five different times. No
+    /// captured value is *the* resting yaw.
     ///
-    /// Seeding it matters because `0` is the one degenerate azimuth: the
-    /// retail seats are `(0, +-800)`, so at yaw `0` the eye looks straight
-    /// down the seat axis and the two rows project to the same screen X,
-    /// each occluding the other. Retail cannot start there; a host that
-    /// seeds `0` does, for the ~6 seconds the `-4`/step orbit needs to leave.
+    /// `0` is the one degenerate azimuth: the retail seats are `(0, +-800)`,
+    /// so at yaw `0` the eye looks straight down the seat axis and the two
+    /// rows project to the same screen X, each occluding the other, for the
+    /// seconds the `-4`/step orbit needs to leave. The port opens on the
+    /// field camera's azimuth instead, moved off the axis by
+    /// [`battle_entry_yaw`] - a port judgement.
     pub entry_yaw: f32,
     /// The live action-SM state `ctx[7]`, the same byte [`phase_for_state`]
     /// classifies. The camera reads it for the edges that re-seed the yaw
@@ -393,6 +433,11 @@ pub struct BattleCamInputs {
     /// case, so the driver's shot is the camera. `accum`, `live_yaw` and
     /// `frame_step` are the camera's own and are overwritten.
     pub spell_cam: Option<SpellCamInputs>,
+    /// Open a newly created camera on the battle-entry sweep
+    /// ([`BattleCamera::start_entry_sweep`]) rather than on its entry
+    /// phase's framing. The live world sets it; a preview or a unit test
+    /// that wants the framing at once leaves it off.
+    pub entry_sweep: bool,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -450,7 +495,12 @@ pub fn drive_on_stream(
         BattleCamPhase::Menu
     };
     let cam = slot.get_or_insert_with(|| {
-        BattleCamera::new_with_formation(entry, inputs.formation, inputs.entry_yaw, frames)
+        let mut cam =
+            BattleCamera::new_with_formation(entry, inputs.formation, inputs.entry_yaw, frames);
+        if inputs.entry_sweep {
+            cam.start_entry_sweep();
+        }
+        cam
     });
     cam.rand_state = *rng;
     if let Some(actor) = inputs.acting {

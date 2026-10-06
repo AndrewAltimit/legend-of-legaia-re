@@ -9,7 +9,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits) · [commit confirm](#the-commit-confirm-screen-0x6e)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-round-prompt-is-the-far-framing-a-members-surfaces-are-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-round-prompt-is-the-far-framing-a-members-surfaces-are-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-battle-init-zeroes-it) · [entry sweep](#the-battle-entry-sweep) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -1337,6 +1337,21 @@ predicate `+0x5A & 0xE` (`8001afd8`) negates the per-object rotation argument
 and swaps the draw-call mode word from `0x40000000` to `0x48000000` - the
 winding compensation a negative-determinant transform needs.
 
+The compensation is to stop culling, not to flip a winding. The mode word is
+ORed into the node's `+0x74` and handed to the prim dispatcher `FUN_80043390`
+as its colour argument (`0x8001B014..0x8001B024`), and the dispatcher reads
+bit `0x08000000` as "both sides": the NCLIP mask it stores at `-0x2D8(t2)` is
+`0xFFFFFFFF` without it and `0x7FFFFFFF` with it (`0x80043520..0x80043540`),
+and every prim leaf ANDs the signed area with that mask before its sign test
+(`and s2,s2,s3` / `bltz` at `0x80043E78` in the GT3 leaf `FUN_80043DD4`). So
+copy A, and copy B under the half turn, are back-face culled; the mirrored
+copy B draws both sides. The two backdrop nodes of
+`nivora_duel_pre_megaton_press` read `+0x74 = 0`, one with `+0x5A = 2`. The
+port draws every battle mesh both-sided (`camera_view::nclip_cull_mode` is `0`
+in battle); on that capture the difference is invisible - the shell's
+`0x7640` additive group, which no retail packet of the frame carries, covers
+no pixel of the port's frame either.
+
 #### The per-stage table
 
 Which transform a stage gets comes from the zero-terminated `u16` table at
@@ -1617,11 +1632,27 @@ target is not frozen at the state change, and the difference is not cosmetic:
 most of the gap to its target before the swing. A focus pinned to the vacated
 seat frames bare ground - at the close-up depth `prescale(0x500)` = 2048
 against 4x-scaled stage coordinates the whole formation leaves the frustum,
-several combatants behind the eye. `BattleCamera::retarget_action_glide` is
-the port's re-arm; it carries the armed segment's remaining step count over,
-so a framing whose actor stands still still arrives on target at
-`ACTION_STEPS`. One visible consequence: the in-fight arm's yaw follows the
-live `ctx[+0x6DA]` drift instead of freezing on its value at the phase change.
+several combatants behind the eye. One visible consequence: the in-fight
+arm's yaw follows the live `ctx[+0x6DA]` drift instead of freezing on its
+value at the phase change.
+
+**The re-arm makes it an ease-out, not a glide.** Each rebuild takes the gap
+as it stands and divides it by `a3 = 0xC` again, and the walker task
+`FUN_8002149C` adds `increment * frame_step` before the next pass rebuilds it -
+so a pass covers about a sixth of what remains (at the 30 Hz tick), and the
+camera is still closing in long after the twelfth frame rather than landing
+there. Retail's step table at `ctx[+0x118C]` pins it in two captures:
+`nivora_duel_mid_blazing_slash` reads yaw / TR z increments `59` / `55` with
+`589` / `547` to go, `battle_noa_miracle_art_combo` `66` / `86` with `587` /
+`772` - each exactly `ceil((rem + frame_step * step) / 0xC)`, a table one pass
+old with one walk applied. A drifting yaw therefore trails its counter by a
+few units for as long as the gap stays under `0xC`, where the increment
+equals the counter's own two units a pass - the eight units the `0x19` parks
+read. Cases 7 and 8 are re-armed the same way on the same `a3`.
+`BattleCamera::retarget_action_glide` / `retarget_post_action_glide` are the
+port's re-arms, each a `Glide::chase` over `0xC` frames; the port had carried
+the armed segment's remaining step count over instead, which landed every
+framing linearly at step 6.
 
 The in-fight arm (`0x801D64C4`) frames on the live position `actor[+0x34/+0x38]`
 with the focus height left at the stage floor, pitch `0`, `TR = (0, 0x500,
@@ -1723,9 +1754,11 @@ and pushes in on the falling body, then snaps to the flat pose the frame the
 body lands. Engine side the ramp lives on
 `battle_attack_camera::AttackCamCtx::death_ramp`.
 
-What stays out of the port is the counter-attack fork above it (`ctx[+0x287]` /
-`ctx[+0x288]` / `_DAT_8007BD0D` at `0x801D6AC8`), which reads channels the
-engine's battle actor does not carry. Case 8's focus fork tests the target's
+The lone-monster defeat fork above it (`ctx[+0x287]` / `ctx[+0x288]` /
+`_DAT_8007BD0D` at `0x801D6AC8..0x801D6AF0`; `+0x288` is the defeat-fade latch
+[`battle-action.md`](battle-action.md#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-lone-monster-defeat-latch)
+documents) sends a scripted fight's lone monster, dying in place, to the same
+stand-off arm as a gone node (`PostActionTarget::lone_defeat`). Case 8's focus fork tests the target's
 node word `+0x4` (`0x801D682C`), not its HP, so a target killed but still drawn
 stays framed; both cases read the body pair `+0x3C` / `+0x40` for X / Z (the
 live `+0x36` for case 7's Y), not the live pair case 6 reads.
@@ -1850,19 +1883,56 @@ other behind it. Engine side: `BattleCamera::retarget_menu_glide`, which skips
 only the two segments that are not "walk to the far framing" (the rate-clamped
 dialogue dismiss and the scripted submenu-exit swing).
 
-### The resting yaw is the orbit, and a battle inherits it
+### The resting yaw is the orbit, and battle init zeroes it
 
 `_DAT_8007B790/92/94` is **one** rotation trio, shared by the field and battle
-cameras, and nothing on the battle-entry path zeroes it: case 9 passes
-`_DAT_8007B792` straight through and the action SM only decrements it. A fight
-therefore inherits whatever azimuth the field camera left. Five battle save
-states caught at the identical framing (`ctx[7] == 0x00`, pitch `32`,
-`TR (0, 1280, 7680)`, focus at the origin, `+-800` seats) read five different
-yaws - `224`, `2632`, `3136`, `3808`, `3882` - so no captured value is *the*
-resting yaw. What must not survive is `0`: at yaw `0` the eye looks straight
-down the seat axis and the two rows project to the same screen X, each
-occluding the other. `BattleCamInputs::entry_yaw` carries the inherited
-azimuth; both hosts feed it `World::locomotion.camera_azimuth`.
+cameras, and battle init `FUN_80055B6C` overwrites it: pitch `0x3C`, yaw and
+roll `0` (`sh zero,-0x486e(at)` at `0x80055E84` is the yaw), TR
+`(0, 0x500, 0x1C00)` (`0x80055E50..0x80055E90`). From there the yaw is a
+clock - the entry sweep leaves it alone ([below](#the-battle-entry-sweep)),
+case 9 passes it straight through and the battle tick only decrements it - so
+the five battle save states caught at the identical far framing
+(`ctx[7] == 0x00`, pitch `32`, `TR (0, 1280, 7680)`, focus at the origin,
+`+-800` seats) read five different yaws (`224`, `2632`, `3136`, `3808`,
+`3882`) because they were taken at five different times, and no captured value
+is *the* resting yaw. At yaw `0` the eye looks straight down the seat axis and
+the two rows project to the same screen X, each occluding the other; retail
+opens every fight there and orbits out of it. The port does not: it opens on
+the azimuth the field camera left, moved off the seat axis by
+`battle_entry_yaw` - a port judgement, carried by
+`BattleCamInputs::entry_yaw`, which both hosts feed
+`World::locomotion.camera_azimuth`.
+
+### The battle-entry sweep
+
+The SCUS frame driver `FUN_80046A20` owns the camera before the battle tick
+does. Its entry counter `gp+0x330` (`0x8007B648`) counts the load up to `0x80`
+and then, advancing by the frame step `0x1F800393` a pass, runs the sweep
+(`0x80046EEC..0x8004700C`):
+
+| Counter | Camera |
+|---|---|
+| `0x80..0xA1` | TR y `+= 0x30 * fs`, TR z `-= 0x40 * fs` from battle init's pose: the camera rises and pulls in |
+| `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass - case 2's pitch `0`, yaw `0`, TR `(0, 0x600, 0x700)` on the origin, `a3 = 0xC`, re-armed each pass |
+| past `0xC0` | parked at `0xFF`; the battle tick `FUN_801D0748` runs from then on |
+
+Two captures of the sparring fight's entry pin it: `v0_1_battle_loading_tetsu`
+(counter `0x84`) reads pitch `60`, `TR (0, 1472, 6912)` - four frames of
+drift from `(0, 1280, 7168)` - with an empty step table, and
+`s5_tetsu_battle` (`0xAF`) reads pitch `16`, `TR (0, 2010, 3552)` under a
+case-2 step table whose endpoints are `(0, 1536, 2867)`. The battle tick's
+first framing takes over from wherever the sweep leaves the camera: the
+tutorial cuts to its dialogue close-up, any other fight re-arms case 9's far
+framing. Engine: `BattleCamera::start_entry_sweep`, armed on a fight's first
+camera frame (`BattleCamInputs::entry_sweep`, which the live world sets); the
+port's battle tick does not wait for it, so the round prompt opens under the
+sweep, and a command surface or an action that opens under it (a fight that
+auto-acts on load) ends it early: retail cannot open one there at all. The
+enemy-name intro keeps retail's order: its labels and their `ctx[+0x6D6]`
+hold belong to the battle tick's flow `0x0A` / `0x0B`, which the frame
+driver reaches only past the sweep (`0x80046EF8` / `0x80047014`), so the
+port neither shows nor drains them until the sweep is over
+(`World::battle_entry_sweeping`).
 
 **The per-art attack camera is an override, not a fold.** `FUN_801D71B8` is
 *not* part of case 6. Its only call site is `FUN_801D5854`'s shared tail
@@ -2757,7 +2827,10 @@ index→palette lookup the PSX GPU does in VRAM.
 The from-scratch engine renders the decoded monster directly through its standard
 PSX-VRAM texture path rather than the site's index→palette shortcut.
 `MonsterMesh::battle_render_mesh(slot, &mut vram)` reproduces the loader's
-per-slot relocation: it writes the CLUT region to VRAM row `484 + slot` and the
+per-slot relocation: it writes the CLUT region to VRAM row `484 + slot` - with
+the loader's STP bit on every non-zero entry (`battle_clut_region`), without
+which the near-camera ghost and the defeat fade, both semi-transparent draws,
+blend nothing and draw the body solid - and the
 4bpp page to `((5 + slot) * 64, 256)`, then rewrites every prim's CBA/TSB to
 point at those regions (`relocate_cba` / `relocate_tsb`), keeping the
 page-local UVs untouched. Because the on-disc CBA/TSB are nominal defaults the
@@ -4264,6 +4337,24 @@ active-actor bar takes over, the panels do not stop drawing - they move to
 `y = 230`, below the 228-line display window, the same park row the arts
 input screen uses ([`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned)).
 
+Inside an action the panels come back up for a party-wide target
+(`t2 == 8`) through two openers, each raising records 6, `0x4E` and `0x4F`
+and leaving `6` for the Done hold's close:
+
+- the seed's plate routine `FUN_801E6D84`, which every category arm of `0x0C`
+  ends in, only for a **monster** caster (`sltiu v0,v0,3` on the caster seat
+  at `0x801E7038..0x801E7080`) and only past its Run / Arts / Spirit returns;
+- the item band's `0x3E` arm (`0x801E404C`), reached from a single branch at
+  `0x801E3E88` off its non-gauge-extend path, for any caster.
+
+So a party member's magic cast on the whole party keeps them parked -
+`orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`, and
+its frame shows the scene where the panels would sit. The same routine opens
+the target plaque (record 81) for a monster target, except for Theeder,
+Zenoir and Mushura (`0x82` / `0x86` / `0x8D`), which it sends down its row arm
+whatever their target byte (`0x801E6E4C..0x801E6E68`). Port:
+`battle_hud::battle_panels_visible` / `battle_target_plaque`.
+
 ### The per-phase rule - what the sub-draw script builds
 
 Retail's battle HUD is not drawn per frame. It is a list of retained text
@@ -4307,13 +4398,21 @@ The steps the menu SM runs, with the records that decide the party surfaces
 
 So the roster **card** is the round prompt's and the browsed windows'; the
 full-width **pill** is the ring's and the target steps'; and the ring alone
-carries the AP plate. The action SM's openers are two: the `0x0C` seed
-(`0x801E2F24`, again `0x801E401C`) reads the acting actor's target byte
-`+0x1DD` and raises the bar for it when it is a party slot (`t2 == 8`, a
-party-wide cast, raises all three panels instead), and the Item / Spirit
-pre-arm `0x3C` (`0x801E3DA0`) raises it for the acting member. A party
+carries the AP plate. The action SM's openers are three: the `0x0C` seed
+(`0x801E2F24`) reads the acting actor's target byte `+0x1DD` and raises the
+bar for it when it is a party slot; the Item pre-arm `0x3C` (`0x801E3DA0`)
+raises it for the acting member; and the item band's `0x3E` arm
+(`0x801E401C`) raises it for a member target again, or all three panels for
+a party-wide one (`t2 == 8`), as the seed's plate routine does for a monster
+caster (see the roster-panel note above). A party
 member's attack on a monster therefore shows **no** readout at all; a monster's
 cast on a member shows that member's bar.
+A counterattack runs no seed of its own: the strike loop's swap hands the
+monster's action to the counterer, so the elements the monster's seed opened
+stay up - the bar for its party target, the counterer - and the combo cluster
+is never opened (`battle_vahn_tri_somersault_super`'s glide slots hold the bar
+at `(16, 192)` and the move name, and no cluster record). Port:
+`BattleState::counter_hud`, read by the bar and combo-style predicates.
 
 The handle lists of the catalogued states agree with the table, element for
 element: `v0_1_battle_command_menu` (`0x1E`) holds `Begin`, `Run` and one panel
@@ -4790,15 +4889,17 @@ block and copied verbatim into the actor's display-name buffer `+0x1BC`. The
 `0xCE`-lead form is the *runtime-composed* HUD label string (actor `+0x29`, an
 icon index then the text) - a different producer, not this one.
 
-**Port + what is still off.** The plaque widens by `20 + 5` exactly as
-`name_plaque` lays out, and the geometry and palette decode are disc-read. The
-port's selector (`battle_hud::battle_plaque_element_badge`) is **not** retail:
-it returns the record's element byte for every monster with a valid element, so
-it (a) badges all 186 instead of the 64 whose name carries the escape, and (b)
-indexes the strip in element order where the escape orders it `A..H`, a
-different permutation (`element -> caret index` is `4, 3, 0, 2, 1, 5, 6, 7`).
-Retail's rule is one line: badge only when the name starts `^X`, at strip index
-`X - 'A'`.
+**Port.** The plaque widens by `20 + 5` exactly as `name_plaque` lays out,
+and the geometry and palette decode are disc-read. Both plaques that carry a
+badge - the top-left actor plaque (`battle_hud::battle_plaque_element_badge`)
+and the bottom-right target plaque (`battle_hud::battle_target_plaque`) - read
+the caret letter `legaia_asset::monster_archive` lifts off the name
+(`MonsterDef::plaque_badge`), never the `+0x1D` element byte. The target
+plaque's payload is the actor's name buffer `+0x29`, where the text engine
+carries the leading `^X` as the `0xCE` icon escape (`0xCE 0x14 0x20 'G' ...`
+for `^A Gimard`), so it is the same markup. Read off the element byte, Fire
+Gimard (element `2`) wore strip cell `2` - the green Wind badge - and every
+unescaped monster wore one, where retail draws `Skeleton A` bare.
 
 ### Four ids are not on this sheet at all - they are the save-slot portraits
 
@@ -5564,6 +5665,8 @@ The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two 
 - **The results frame onward** (`0x8004FC80..0x8004FC90`): it stores `ctx[+0xD] = 0` and calls `FUN_801D5854(seat, 6)`. With the signal up and a party seat, case 6 takes the battle-over arm: the close-up from behind the posing character, moved by the per-character win-pose script (`battle_cam_script::battle_over_script`), which reads the close-up accumulator `ctx[+0x87C]` - zeroed by the pose clip's commit (`FUN_8004AD80`, `0x8004BF68..0x8004BF78`) and advanced `8` a frame by every framing call - so the shot keeps moving through the hold.
 
 The escape arm returns before either call (`0x8004E720`). `noa_levelup_banner` reads the results framing directly: Vahn posing `0x14` with `ctx[+0x87C] = 616`, pitch `-0x20` and yaw `0x800 - actor[+0x46]` exactly, TR one tween step short of the script's `(0, 928, prescale(1126))` and walking down toward it from the stand-off pose. The port folds both framings over the camera inputs while `World::battle.victory` is armed (`battle_cam_inputs::battle_end_cam_inputs`); before it, the camera stayed on the far framing with the idle orbit through the whole sequence. Disc-free regression: `engine-core/tests/battle_end_camera.rs`.
+
+The focus both arms take is the pose actor's **body pair** `+0x3C` / `+0x40`, and the store that keeps it current is the battle draw callback's (`FUN_80048A08` -> `FUN_8004998C`, [battle-action.md](battle-action.md#where-an-action-leaves-its-combatants)), which runs for every drawn actor whether or not the action SM does. So the pair follows the win pose through the hold: `noa_levelup_banner`'s Vahn stands at a live `(2, -3)` with his pair at `(78, -15)`, 38 frames into pose `0x14`. The port refreshes the pairs on every sequence tick (`World::refresh_battle_body_pairs`); the root-motion half of the locomotion pass stays with the SM.
 
 The exit fade is a fade **to black**, not a white-out. The template's kind word (`2`) is also
 the quad's blend: the fade actor's tick `FUN_80025000` hands it to the quad emitter

@@ -229,6 +229,13 @@ pub fn install_party_battle_forms(
         battle_serial: world.battle.entry_serial,
         ..Default::default()
     };
+    // The monsters' side-band pages ride the same replayed log: retail
+    // streams them on each monster turn, and the module casts sample them.
+    crate::battle_sideband_textures::record_monster_sideband_textures(
+        index,
+        world,
+        &mut out.vram_writes,
+    );
     let party_count = usize::from(world.party.party_count).min(3);
     if party_count == 0 {
         return out;

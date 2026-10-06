@@ -158,6 +158,9 @@ window.MgMuscle = (function () {
     let magicWhy = '';         /* last Ra-Seru refusal name, '' when none */
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
     let introT = 0;            /* ticks into the intro card */
+    let introLive = false;     /* the engine steps the first visit */
+    let introPress = false;    /* a press this tick, for the live visit */
+    let introFvOk = false;     /* the live visit drew last frame */
     let intervalT = 0;         /* ticks into the INTERVAL + tally screen */
     let intervalHp = [0, 0];   /* [hp, hp_max] the leg ended on (still pick) */
     let tick = 0;
@@ -716,6 +719,12 @@ window.MgMuscle = (function () {
        * then straight into round 1's command menu. Skippable. */
       mode = 'intro';
       introT = 0;
+      /* The live first visit (the play hosts' `FirstVisitHub`): a press ends
+       * a card hold early and the announcer lines play. */
+      introLive = !!(api && api.muscle_first_visit_reset && api.muscle_first_visit_step);
+      if (introLive) { try { api.muscle_first_visit_reset(); } catch (e) { introLive = false; } }
+      introPress = false;
+      introFvOk = false;
       intervalT = 0;
       selectSub = 'menu';
       artsPage = -1;
@@ -860,7 +869,7 @@ window.MgMuscle = (function () {
 
     /* Pad-shaped input from the page: left/right/up/down/back/triangle. */
     function key(name) {
-      if (mode === 'intro') { beginSelect(); return; }
+      if (mode === 'intro') { if (introLive && introFvOk) introPress = true; else beginSelect(); return; }
       if (mode !== 'select') return;
       if (selectSub === 'menu') {
         if (name === 'left') {            /* Attack -> Auto | Command */
@@ -930,7 +939,8 @@ window.MgMuscle = (function () {
       const state = st();
       if (!state.live) { if (lastOpts) start(lastOpts); return; }
       if (mode === 'intro') {
-        beginSelect();
+        /* Retail skips only the two card holds, not the whole visit. */
+        if (introLive && introFvOk) introPress = true; else beginSelect();
       } else if (mode === 'select') {
         if (selectSub === 'magic') {
           /* Confirm the row under the cursor. A refusal leaves the list
@@ -1268,8 +1278,15 @@ window.MgMuscle = (function () {
     function drawFirstVisit() {
       if (!api || !api.muscle_first_visit_json || !contest) return null;
       const key = introT + ':' + contest.course + ':' + contest.round;
-      let m = firstVisitCache.get(key);
-      if (m === undefined) {
+      let m = introLive ? undefined : firstVisitCache.get(key);
+      if (introLive) {
+        try {
+          m = JSON.parse(api.muscle_first_visit_step(introPress,
+            contest.course | 0, (contest.round | 0) + 1));
+        } catch (e) { m = { ok: false }; }
+        introPress = false;
+        introFvOk = !!m.ok;
+      } else if (m === undefined) {
         try {
           m = JSON.parse(api.muscle_first_visit_json(introT, contest.course | 0, (contest.round | 0) + 1));
         } catch (e) { m = { ok: false }; }

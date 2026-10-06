@@ -73,7 +73,7 @@ Retirement quirk: retiring zeroes both the active flag and the wait, but the fra
 For each live child, one flat textured **semi-transparent quad** (9-word GPU packet, tag `0x09000000`, prim code `0x2E`):
 
 - **Brightness envelope**: with `n = frame_count >> 3`, the modulation ramps in over the first eighth of the animation (`0x80 * (frame_cursor+1) / n`) then back out over the rest (`0x80 * (frame_count - frame_cursor) / (frame_count - n)`), clamped at `0x80` (neutral) and written as `r = g = b`.
-- **Size**: atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00` → ×10 texel size), projected through `FUN_800195A8` and inserted into the OT at `_DAT_1F8003F4 + depth * 4`.
+- **Size**: atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00` → ×10 texel size) is the **half**-extent: `FUN_800195A8` forms the corners as the view-space centre minus and plus it (`0x801E082C..0x801E0880` hand it over as `a1` / `a2`), so the quad spans twice the value. The quad is inserted into the OT at `_DAT_1F8003F4 + depth * 4`.
 - **UV corners**: base/extent from the 8-byte atlas entry, corner order swapped per the child's random mirror bits; CLUT from atlas `+4`, tpage from atlas `+6`.
 
 The semi-transparency is a property of the **prim code**, not of the atlas entry. `0x2E`
@@ -371,7 +371,7 @@ The effect-script **table form** (`0x801F6324` prototypes, `World::spawn_action_
 
 `FUN_800195A8` transforms the sprite **centre** through the GTE camera matrix (`FUN_8003D344`, one `MVMVA`), then forms the four corners by adding the half-extents to that *already-transformed* view-space centre, then resets the rotation matrix to identity with `TRX/TRY/TRZ = 0` before the `RTPT`. The camera matrix therefore multiplies the centre and never touches the half-extents.
 
-In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`, a **4x uniform scale**. A port that offsets the corners in *world* space and draws the quad under the same scaled MVP puts the half-extents through the 4x a second time, so every battle effect sprite comes out exactly `BATTLE_WORLD_SCALE` too large - a 32-texel puff spanning 1280 view units instead of 320, three quarters of an actor's height instead of a fifth. The shared correction is `engine-vm::effect_billboard::world_half_extents(size, view_scale)`; the native window passes its `fx_scale` (the same factor it composes into `fx_cam`) into `effect_sprite_corners`.
+In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`, a **4x uniform scale**. A port that offsets the corners in *world* space and draws the quad under the same scaled MVP puts the half-extents through the 4x a second time, so every battle effect sprite comes out exactly `BATTLE_WORLD_SCALE` too large - a 32-texel puff reaching 1280 view units either side instead of 320. The shared correction is `engine-vm::effect_billboard::world_half_extents(size, view_scale)`; the native window passes its `fx_scale` (the same factor it composes into `fx_cam`) into `effect_sprite_corners`.
 
 #### "The spawns fire and nothing appears" is mostly the atlas, not the pipeline
 

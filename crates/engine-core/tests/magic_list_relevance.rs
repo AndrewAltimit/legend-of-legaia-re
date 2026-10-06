@@ -55,6 +55,7 @@ fn world(hp: u16, record: Option<(u8, u8, u8)>) -> World {
                 mp: 0,
                 target: 0,
                 desc: None,
+                icon: None,
             })
             .collect();
         entries[HEAL as usize] = SpellEntry {
@@ -64,6 +65,7 @@ fn world(hp: u16, record: Option<(u8, u8, u8)>) -> World {
             mp: 5,
             target,
             desc: None,
+            icon: None,
         };
         world.menu.text = Some(MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),

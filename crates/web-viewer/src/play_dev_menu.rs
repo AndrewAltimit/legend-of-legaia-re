@@ -83,7 +83,11 @@ impl LegaiaRuntime {
         let Some(scene) = self.scene_host.as_mut() else {
             return;
         };
-        let session = self.dev_menu.get_or_insert_with(DevMenuSession::new);
+        // The EVENT FLAG page's list comes off the user's disc (the field
+        // overlay's data segment), as on the native window.
+        let session = self
+            .dev_menu
+            .get_or_insert_with(|| DevMenuSession::with_flag_tags(scene.dev_flag_list_tags()));
         let world = &mut scene.world;
         let (edge, held) = {
             let (now, prev) = (
@@ -113,6 +117,18 @@ impl LegaiaRuntime {
     /// Build the records page for the live world - the browser twin of the
     /// native `build_dev_records_draws`.
     fn dev_records_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        self.records_draws_at(font, DEV_RECORDS_PEN)
+    }
+
+    /// The records screen (`FUN_801ED710`) at `pen`, retail stage pixels -
+    /// the browser twin of the native `records_draws_at`, shared by the dev
+    /// Records page and the end-of-game soft reset
+    /// (`World::soft_reset_records_pen`).
+    pub(crate) fn records_draws_at(
+        &self,
+        font: &legaia_font::Font,
+        pen: (i32, i32),
+    ) -> Vec<TextDraw> {
         let Some(scene) = self.scene_host.as_ref() else {
             return Vec::new();
         };
@@ -126,7 +142,7 @@ impl LegaiaRuntime {
             .map(|m| m.raw.as_slice())
             .collect();
         let model = dev_records_model(&records, world.clock.play_time_seconds);
-        ui::records_screen_draws_for(font, &records_view(&model), DEV_RECORDS_PEN)
+        ui::records_screen_draws_for(font, &records_view(&model), pen)
     }
 }
 

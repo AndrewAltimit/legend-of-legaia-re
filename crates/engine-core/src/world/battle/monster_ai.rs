@@ -233,9 +233,22 @@ impl World {
                 // approach never walks at a corpse (the short step `0x19`
                 // has no timeout).
                 let target = self.redirect_dead_battle_target(target, 3, 0);
+                let picks = std::mem::take(&mut self.battle.monster_strike_entries);
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
+                    // The picker's physical branch writes its budget picks -
+                    // archive entry indices - into the stream `+0x1DF..`
+                    // (`FUN_801E9FD4`), and the strike loop stages each as its
+                    // own swing clip whose hit events carry the swing's power
+                    // byte (`super_queue_replace_*` holds a Gobu Gobu's
+                    // `09 09 08`). An empty stream sent every AI strike down
+                    // the clip-less immediate path: no swing clip, every hit
+                    // in one tick, and the block roll keyed on the generic
+                    // command byte `0x0C`, whose scalar is the largest.
+                    let n = picks.len().min(a.battle.params.len().saturating_sub(1));
+                    a.battle.params[..n].copy_from_slice(&picks[..n]);
+                    a.battle.params[n] = 0;
                 }
                 // The picker's counter roll follows the redirect
                 // (`0x801DAF74..0x801DB050`, `World::roll_counterattack`).

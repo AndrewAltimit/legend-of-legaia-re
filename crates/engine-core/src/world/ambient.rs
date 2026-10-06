@@ -739,7 +739,7 @@ impl World {
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
     pub fn step_ambient_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
-        if self.ambient.fx.is_empty() {
+        if self.ambient.fx.is_empty() && self.ambient.cell_fx_seed.is_empty() {
             return false;
         }
         let mut wrote = false;
@@ -753,7 +753,7 @@ impl World {
         // Whatever a headless tick banked up (a host that ticked without a
         // VRAM surface) still lands, in queue order.
         wrote |= self.apply_ambient_scrolls(vram);
-        let fx: Vec<ClutCellFx> = self
+        let mut fx: Vec<ClutCellFx> = self
             .ambient
             .fx
             .iter()
@@ -763,10 +763,27 @@ impl World {
                     .flatten()
             })
             .collect();
+        // A seeded cycler the engine has no part for (a part a later script
+        // beat spawns) still writes its cell: the seed is what the state's
+        // own part wrote there.
+        for seed in &self.ambient.cell_fx_seed {
+            if !fx.iter().any(|f| f.rect == seed.rect) {
+                fx.push(*seed);
+            }
+        }
         if !self.toggles.reduce_flashing && !self.ambient.flash_applied.is_empty() {
             self.ambient.flash_applied.clear();
         }
-        for f in fx {
+        for mut f in fx {
+            if let Some(seed) = self
+                .ambient
+                .cell_fx_seed
+                .iter()
+                .rev()
+                .find(|s| s.rect == f.rect)
+            {
+                f = *seed;
+            }
             let (x, y, w, h) = f.rect;
             if w == 0 || h == 0 || w > 256 || h > 64 {
                 continue;
@@ -910,6 +927,24 @@ fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16
         }
     }
     out
+}
+
+impl World {
+    /// Write [`crate::world::AmbientFxState::vram_rect_seed`] over the
+    /// engine's VRAM; `true` when a texel changed. Capture alignment only.
+    pub(crate) fn apply_vram_rect_seed(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let mut wrote = false;
+        for ((x, y, w, h), texels) in &self.ambient.vram_rect_seed {
+            if texels.len() != usize::from(*w) * usize::from(*h) {
+                continue;
+            }
+            if read_rect(vram, *x, *y, *w, *h) != *texels {
+                write_rect(vram, *x, *y, *w, texels);
+                wrote = true;
+            }
+        }
+        wrote
+    }
 }
 
 /// Write a `w`-wide halfword rect into the software VRAM.

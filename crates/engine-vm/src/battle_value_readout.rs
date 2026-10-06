@@ -65,17 +65,15 @@
 //! The quads are `0x2C` at colour `0x808080` - opaque, unmodulated - so retail
 //! does **not** fade the numeral out; it ends by no longer being emitted.
 //!
-//! [`value_cells`] is that layout. What is *not* pinned is the frame count the
-//! growth and the rise take, or the numeral's total lifetime: no capture
-//! carries a frame index. [`POP_FRAMES`] and [`POP_START_CELL`] are therefore
-//! engine-chosen, constrained at both ends by the measured sizes.
+//! The rate is pinned too, by the renderer itself: `FUN_801DF6B8` grows a
+//! view-space square with the ring timer and rises it as it grows (see
+//! [`popup_cells`] and the section that introduces it). Both hosts seat their
+//! numerals through that kernel (`engine-ui::battle_numerals::
+//! popup_value_cells`); [`value_cells`] is the older fixed-ramp layout,
+//! kept for the dialog-font fallback's tests, with [`POP_FRAMES`] and
+//! [`POP_START_CELL`] engine-chosen.
 //!
 //! # Wiring
-//!
-//! [`value_cells`] is live: the native window lays a landed hit's damage out
-//! with it and draws the cells as screen-space VRAM quads off the resident
-//! effect atlas, so the numerals are retail's own art at retail's own
-//! geometry.
 //!
 //! The multi-cast half above it - the teardown pass and the
 //! `DAMAGE`/`HIT`/`TOTAL` combo cluster - stays unwired, and for a reason that
@@ -333,6 +331,126 @@ pub fn value_cells(value: u16, centre_x: i32, start_y: i32, age: u16) -> Vec<Val
 }
 
 // ---------------------------------------------------------------------------
+// The per-hit numeral's own renderer - `FUN_801DF6B8`
+// ---------------------------------------------------------------------------
+//
+// The floating numeral a landed hit throws is drawn by `FUN_801DF6B8`, which
+// walks the 8-slot popup ring (`ctx[+0x83C]` value, `+0x318` seat, `+0x85C`
+// timer; `battle_gauge_rearm::DamagePopupRing`) once per frame. Per live
+// entry (`0x801DF700..0x801DFDA4`):
+//
+// 1. the anchor is the struck actor's display trio `+0x3C / +0x3E / +0x40`
+//    with Y replaced by `+0x3E / 2 - timer * 3 / 2` (both divides truncate),
+//    read with the timer **before** this frame's step;
+// 2. the timer steps by `0x10 * DAT_1F800393` (`0x801DF7B8..0x801DF7C8`);
+// 3. `FUN_800195A8` projects a view-space square of half-extent
+//    `timer / 2` about the anchor (`sll 0xF; sra 0x10` at `0x801DF810`), so
+//    the numeral grows as it rises and its on-screen size is set by the
+//    camera distance, not by a fixed pixel ramp;
+// 4. the rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to
+//    at most 24 px, moved right by half a pitch per extra digit, clamped to
+//    `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`, and the digits
+//    are laid right to left at a pitch of the corner span plus one;
+// 5. once the stepped timer passes `0x240` the value is zeroed - the numeral
+//    lives 37 frames at a frame step of one.
+//
+// `battle_vahn_tri_somersault_super` holds a fresh entry (`242`; the drawn
+// frame's timer is `0x70`, the RAM word already stepped to `0x80`) and its
+// display list draws three 3x3 cells at `x = 183, 187, 191`;
+// `battle_melee_hit_spark`'s `15` is two 22-px cells resting on row 32.
+
+/// The ring timer's step per frame at a frame step of one.
+pub const POPUP_TIMER_STEP: i32 = 0x10;
+/// Past this stepped timer the entry's value is zeroed after the draw.
+pub const POPUP_TIMER_LIMIT: i32 = 0x240;
+/// The widest corner span a numeral cell keeps (`slti 0x19`).
+pub const POPUP_MAX_CELL: i32 = 24;
+/// The cap on the timer's minimum-width gate (`timer >> 5`, at most 12).
+pub const POPUP_MIN_CELL_CAP: i32 = 12;
+/// The right clamp on the units cell's left x (`slti 0x119`).
+pub const POPUP_MAX_X: i32 = 0x118;
+
+/// The ring timer an entry `age` frames old is drawn with (`age = 0` is the
+/// push frame), i.e. after that frame's step.
+pub const fn popup_timer(age: u16) -> i32 {
+    (age as i32 + 1) * POPUP_TIMER_STEP
+}
+
+/// Is an entry `age` frames old still drawn? The value is zeroed after the
+/// first draw whose stepped timer exceeds [`POPUP_TIMER_LIMIT`].
+pub const fn popup_live(age: u16) -> bool {
+    popup_timer(age) - POPUP_TIMER_STEP <= POPUP_TIMER_LIMIT
+}
+
+/// The anchor and view-space half-extent `FUN_801DF6B8` projects for an
+/// entry `age` frames old over an actor whose display trio is `trio`.
+pub fn popup_anchor(trio: [i32; 3], age: u16) -> ([i32; 3], i32) {
+    let before = popup_timer(age) - POPUP_TIMER_STEP;
+    let y = trio[1] / 2 - (before * 3) / 2;
+    let half = (popup_timer(age) << 15) >> 16;
+    ([trio[0], y, trio[2]], half)
+}
+
+/// Lay a value out the way `FUN_801DF6B8` does from the projected square
+/// `rect = (left, top, right, bottom)` in stage pixels at ring timer `timer`
+/// ([`popup_timer`]). Cells come back left to right; a cell's far corner is
+/// `x + w - 1`, so `w` is retail's corner span plus one.
+// PORT: FUN_801DF6B8 (the per-entry layout `0x801DF870..0x801DFD78`; the
+// anchor and timer are [`popup_anchor`] / [`popup_timer`], the projection the
+// host's camera)
+pub fn popup_cells(value: u16, rect: (i32, i32, i32, i32), timer: i32) -> Vec<ValueCell> {
+    let digits = decimal_digits(value);
+    let extra = digits.len() as i32 - 1;
+    let (mut x0, mut y0, mut x1, mut y1) = rect;
+    // Minimum width (`0x801DF870..0x801DF92C`).
+    let floor = (timer >> 5).clamp(1, POPUP_MIN_CELL_CAP);
+    if x1 - x0 < floor {
+        let d = (floor - (x1 - x0)) / 2;
+        x0 -= 1 + d;
+        x1 += 1 + d;
+        y0 -= 1 + d;
+        y1 += 1 + d;
+    }
+    // Maximum width (`0x801DF930..0x801DF9C8`).
+    if x1 - x0 > POPUP_MAX_CELL {
+        let d = (x1 - x0 - POPUP_MAX_CELL) / 2;
+        x0 += 1 + d;
+        x1 -= 1 + d;
+        y0 += 1 + d;
+        y1 -= 1 + d;
+    }
+    let w = x1 - x0;
+    let h = y1 - y0;
+    // Half a pitch right per extra digit, in doubled coordinates
+    // (`0x801DF9E4..0x801DFAB8`).
+    x0 = i32::from((x0 * 2 + extra * (w + 1)) as i16) >> 1;
+    // Clamps (`0x801DFADC..0x801DFB54`).
+    if y0 < RESTING_TOP_Y {
+        y0 = RESTING_TOP_Y;
+    }
+    if x0 > POPUP_MAX_X {
+        x0 = POPUP_MAX_X;
+    }
+    x0 = x0.max(extra * 32 + 8);
+    // The units digit at `x0`, each higher digit one pitch further left.
+    let n = digits.len() as i32;
+    digits
+        .iter()
+        .enumerate()
+        .map(|(i, &d)| ValueCell {
+            digit: d,
+            x: x0 - (n - 1 - i as i32) * (w + 1),
+            y: y0,
+            w: (w + 1).max(0) as u32,
+            h: (h + 1).max(0) as u32,
+            u: digit_cell_u(d),
+            v: DIGIT_ROW_V,
+            cell: DIGIT_CELL,
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // The combo cluster - `N HIT` / `TOTAL x` and `DAMAGE x`
 // ---------------------------------------------------------------------------
 //
@@ -404,7 +522,7 @@ pub const COMBO_SLIDE_FRAMES: u16 = 16;
 /// `FUN_801D9BBC`'s linear step from the start seat to the target, holding
 /// at `0` once the record has snapped.
 ///
-/// PORT: FUN_801D9BBC (the per-handle step, applied to record 80)
+/// PORT: FUN_801D9BBC (PROT 0898; the per-handle step, applied to record 80)
 pub fn combo_slide(age: u16) -> i32 {
     if age >= COMBO_SLIDE_FRAMES {
         return 0;
@@ -551,6 +669,42 @@ pub fn label_quad(widget_x: u16, widget_y: u16) -> ReadoutQuad {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `battle_vahn_tri_somersault_super`: `242` on its drawn frame (timer
+    /// `0x70`) is three 3x3 cells at `x = 183, 187, 191`, row 133.
+    #[test]
+    fn a_fresh_popup_is_three_tiny_cells() {
+        let cells = popup_cells(242, (187, 133, 190, 136), 0x70);
+        let xs: Vec<i32> = cells.iter().map(|c| c.x).collect();
+        assert_eq!(xs, vec![183, 187, 191]);
+        assert!(cells.iter().all(|c| c.w == 4 && c.y == 133));
+        assert_eq!(
+            cells.iter().map(|c| c.digit).collect::<Vec<_>>(),
+            vec![2, 4, 2]
+        );
+    }
+
+    /// `battle_melee_hit_spark`'s `15`: a projected square wider than 24 px
+    /// is cut to a 22-px span (pitch 23) and pinned to the row-32 ceiling.
+    #[test]
+    fn a_grown_popup_caps_its_width_and_rests_on_row_32() {
+        let cells = popup_cells(15, (113, 20, 139, 46), 0x120);
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].w, 23);
+        assert_eq!(cells[1].x - cells[0].x, 23);
+        assert!(cells.iter().all(|c| c.y == RESTING_TOP_Y));
+    }
+
+    /// 37 frames of life; the anchor rises 24 units a frame as the square
+    /// grows 8.
+    #[test]
+    fn the_popup_lives_37_frames_and_rises_as_it_grows() {
+        assert!(popup_live(0));
+        assert!(popup_live(36));
+        assert!(!popup_live(37));
+        assert_eq!(popup_anchor([0, -500, 0], 0), ([0, -250, 0], 8));
+        assert_eq!(popup_anchor([0, -500, 0], 7), ([0, -250 - 168, 0], 64));
+    }
 
     #[test]
     fn combo_cluster_reproduces_the_steal_banner_packets() {

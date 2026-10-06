@@ -653,10 +653,21 @@ impl World {
     /// Idempotent within a battle (a second Fury Boost re-sets the already-set
     /// flag, no extra gauge). Returns [`crate::items::ItemOutcome::NoEffect`] for
     /// a non-party slot.
+    ///
+    /// The flag itself is the battle actor's `+0x1F9` byte
+    /// ([`legaia_engine_vm::battle_action::BattleActor::spirit_shield`]), and
+    /// that is what the live gauge reads: the round boundary
+    /// ([`crate::battle_round::BattleRound::boundary`], `FUN_801D88CC` loop A)
+    /// restores `+0x154` - the arts entry's command pool - to
+    /// `base * 7 / 5 + 8` (cap `0x120`) while it is up. The `ApGauge` budget
+    /// alone reached neither, so a Fury Boost bought a player nothing.
     fn apply_fury_boost_item(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
         let idx = target_slot as usize;
         if idx >= self.battle.ap_gauges.len() {
             return crate::items::ItemOutcome::NoEffect;
+        }
+        if let Some(a) = self.actors.get_mut(idx) {
+            a.battle.spirit_shield = 1;
         }
         // Already boosted this battle: retail re-sets the same flag, no compound.
         if self.battle.fury_boost[idx].is_none() {

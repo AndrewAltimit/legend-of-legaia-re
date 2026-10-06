@@ -242,15 +242,33 @@ pub fn build_hybrid_env_mesh(
     rtmd: &ResolvedTmd,
     vram: &legaia_tim::Vram,
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mut mesh = rtmd.build_filtered_vram_mesh(vram);
+    let (mesh, flat, _) = build_hybrid_env_mesh_lit(rtmd, vram);
+    (mesh, flat)
+}
+
+/// [`build_hybrid_env_mesh`] plus the textured half's lit-row vertices
+/// ([`legaia_tmd::mesh::LitVertex`], index-aligned with the leading vertices
+/// of the merged stream) - what [`crate::field_lit_mesh::shade_lit_rows_rgba`]
+/// shades at a draw's rotation.
+pub fn build_hybrid_env_mesh_lit(
+    rtmd: &ResolvedTmd,
+    vram: &legaia_tim::Vram,
+) -> (
+    legaia_tmd::mesh::VramMesh,
+    Vec<u8>,
+    Vec<Option<legaia_tmd::mesh::LitVertex>>,
+) {
+    let (mut mesh, lit) = rtmd.build_filtered_vram_mesh_lit_vertices(vram);
     let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
     // Coplanar z-fight resolution over BOTH halves as one stream - the same
     // shared kernel the native play-window runs (`legaia_tmd::mesh::coplanar`):
     // flag double-sided pairs for the shader's facing discard, nudge distinct
     // coplanar decal layers toward their visible side. The merge below carries
-    // the colour half's pair flag onto the merged CBA attribute.
+    // the colour half's pair flag onto the merged CBA attribute. Neither
+    // half's vertex count moves, so `lit` stays aligned.
     legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    (mesh, flat, lit)
 }
 
 /// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
@@ -264,10 +282,27 @@ pub fn build_hybrid_env_mesh_posed(
     rtmd: &ResolvedTmd,
     offsets: &[([i16; 3], [i16; 3])],
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
+    let (mesh, flat, _) = build_hybrid_env_mesh_posed_lit(rtmd, offsets);
+    (mesh, flat)
+}
+
+/// [`build_hybrid_env_mesh_posed`] plus the textured half's lit-row vertices,
+/// their normals already turned by each bone's pose
+/// ([`legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit`]).
+pub fn build_hybrid_env_mesh_posed_lit(
+    rtmd: &ResolvedTmd,
+    offsets: &[([i16; 3], [i16; 3])],
+) -> (
+    legaia_tmd::mesh::VramMesh,
+    Vec<u8>,
+    Vec<Option<legaia_tmd::mesh::LitVertex>>,
+) {
+    let (mut mesh, lit) =
+        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit(&rtmd.tmd, &rtmd.raw, offsets);
     let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
     legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    (mesh, flat, lit)
 }
 
 /// The **kingdom slot-1 landmark pack** hybrid build - the world-map sibling

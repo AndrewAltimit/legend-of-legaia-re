@@ -1110,13 +1110,14 @@ def build_progress_meter() -> str:
     static status pills rather than failing the build.
     """
     src = ROOT.parent / "scripts" / "ci" / "progress-metrics.json"
-    if not src.exists():
-        return ""
-    try:
-        tracks = json.loads(src.read_text(encoding="utf-8")).get("tracks", [])
-    except (ValueError, OSError):
-        return ""
-    if not tracks:
+    tracks: list = []
+    if src.exists():
+        try:
+            tracks = json.loads(src.read_text(encoding="utf-8")).get("tracks", [])
+        except (ValueError, OSError):
+            tracks = []
+    play = _playability_tiles()
+    if not tracks and not play:
         return ""
 
     # Compact stat strip: big number + one-line label + thin meter. The full
@@ -1150,11 +1151,116 @@ def build_progress_meter() -> str:
             f'    <div class="meter"><i style="width: {pct:.1f}%"></i></div>\n'
             f'  </div>'
         )
-    return (
-        '<div class="stats-block">\n<div class="stats">\n' + "\n".join(rows) + "\n</div>\n"
-        '<div class="stats-foot"><a href="tooling/disc-coverage.html">'
-        "How these are measured →</a></div>\n</div>"
-    )
+    out = ['<div class="stats-block">']
+    if play:
+        out += [
+            '<div class="stats-group">How far it plays</div>',
+            f'<div class="stats stats-{len(play)}">',
+            *play,
+            "</div>",
+        ]
+    if rows:
+        out += [
+            '<div class="stats-group">How much is traced and ported</div>',
+            '<div class="stats">',
+            *rows,
+            "</div>",
+            '<div class="stats-foot"><a href="tooling/disc-coverage.html">'
+            "How these are measured →</a></div>",
+        ]
+    out.append("</div>")
+    return "\n".join(out)
+
+
+DOCS_BLOB = "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/"
+
+
+def _playability_tiles() -> list[str]:
+    """The landing page's "how far it plays" tiles, read at build time from
+    two committed instrument baselines (no disc needed, so they cannot go
+    stale against the tree the way the corpus-derived tiles can).
+
+    Same convention as the structural tiles: every tile names its own
+    denominator, in its label and its aria-label, and links to the page that
+    defines the measurement.
+
+    * Full-game ladder (`scripts/replays/full_game_baseline.toml`): of the
+      story segments the spine defines, how many a cold New Game clears in
+      order at tier `progresses` (scripted traversal reaches the next
+      milestone) and at tier `pad` (pad input alone reaches it). The
+      denominator is the baseline's own segment count.
+    * Retail compare (`scripts/ci/retail-compare-baseline.json`): the mean
+      `image` score - the fraction of 8x8 blocks whose mean colour is within
+      tolerance of retail's frame - over the baselined states that carry one.
+      States with no scored frame (fades, image runs not taken) are outside
+      the denominator, and N is printed beside the figure. The mean rather
+      than the median, so a few badly drawn states move the number.
+    """
+    tiles: list[str] = []
+
+    def tile(num: str, lbl: str, pct: float, aria: str, detail: str, href: str) -> str:
+        pct = max(0.0, min(100.0, pct))
+        return (
+            f'  <a class="stat stat-link" href="{href}" title="{html.escape(detail)}" '
+            f'aria-label="{html.escape(aria)}">\n'
+            f'    <div class="num">{num}</div>\n'
+            f'    <div class="lbl">{html.escape(lbl)}</div>\n'
+            f'    <div class="meter" aria-hidden="true"><i style="width: {pct:.1f}%"></i></div>\n'
+            f'  </a>'
+        )
+
+    ladder = ROOT.parent / "scripts" / "replays" / "full_game_baseline.toml"
+    try:
+        with ladder.open("rb") as fh:
+            lb = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        lb = {}
+    n = len(lb.get("segments", {}))
+    head = lb.get("headline", {})
+    href = DOCS_BLOB + "tooling/full-game-ladder.md"
+    if n and "contiguous_progresses" in head:
+        k = int(head["contiguous_progresses"])
+        tiles.append(tile(
+            f"{k}<small>/{n}</small>",
+            "story milestones the engine reaches in order from a New Game",
+            100.0 * k / n,
+            f"Full-game ladder: {k} of {n} story milestones reached in order",
+            f"Full-game ladder: a cold New Game is driven segment by segment along the "
+            f"story spine; {k} of its {n} segments reach their next milestone in order "
+            f"(tier 'progresses': scripted traversal plus the story beats).",
+            href))
+    if n and "contiguous_pad" in head:
+        k = int(head["contiguous_pad"])
+        tiles.append(tile(
+            f"{k}<small>/{n}</small>",
+            "of them reached in order on pad input alone",
+            100.0 * k / n,
+            f"Full-game ladder: {k} of {n} story milestones reached in order on pad input only",
+            f"Full-game ladder, tier 'pad': {k} of {n} segments reach their next "
+            f"milestone, in order from a New Game, with nothing but pad input - the "
+            f"strictest tier the ladder measures.",
+            href))
+
+    rc = ROOT.parent / "scripts" / "ci" / "retail-compare-baseline.json"
+    try:
+        states = json.loads(rc.read_text(encoding="utf-8")).get("states", {})
+    except (OSError, ValueError):
+        states = {}
+    scores = [float(v["image"]) for v in states.values()
+              if isinstance(v, dict) and isinstance(v.get("image"), (int, float))]
+    if scores:
+        mean = 100.0 * sum(scores) / len(scores)
+        tiles.append(tile(
+            f"{mean:.1f}<small>%</small>",
+            f"mean frame match against retail, over {len(scores)} captured states",
+            mean,
+            f"Retail compare: mean frame match {mean:.1f} percent over {len(scores)} states",
+            f"Retail compare: the engine is seeded from {len(scores)} retail save states "
+            f"and its frame is compared with retail's own; the score is the share of "
+            f"8x8 blocks whose mean colour is within 24 of retail's on every channel, "
+            f"averaged over the states that carry a scored frame.",
+            DOCS_BLOB + "tooling/retail-compare.md"))
+    return tiles
 
 
 def build_image_port_status() -> str:
@@ -1191,8 +1297,15 @@ def build_image_port_status() -> str:
 
     def card(r: dict) -> str:
         fn = int(r.get("functions", 0))
+
+        def seg(cls: str, n: int) -> str:
+            # A zero-count segment is left out rather than drawn at 0 width,
+            # so the 2px gap between segments never stacks into a visible
+            # empty notch.
+            return f'<i class="{cls}" style="width: {pct(n, fn):.2f}%"></i>' if n else ""
         ported = int(r.get("ported", 0))
-        native = int(r.get("native", 0)) + int(r.get("no_behaviour", 0))
+        native = int(r.get("native", 0))
+        nobeh = int(r.get("no_behaviour", 0))
         open_ = int(r.get("open", 0))
         done = bool(r.get("fully_ported"))
         acc = float(r.get("pct_accounted", 0.0))
@@ -1209,27 +1322,43 @@ def build_image_port_status() -> str:
         tip = (
             f"{fn} functions placed in this image by the dump corpus: {ported} ported "
             f"(of which {int(r.get('replaced', 0))} replaced by an engine mechanism), "
-            f"{int(r.get('native', 0))} covered natively (PsyQ / BIOS / GPU / CD), "
-            f"{int(r.get('no_behaviour', 0))} with no retail behaviour, {open_} open. "
+            f"{native} covered natively by the engine (PsyQ libraries, BIOS, GPU and CD "
+            f"plumbing, data-driven layers), {nobeh} with no retail behaviour "
+            f"(unreferenced, dev-only or empty), {open_} open. "
             f"Code identified: {ident:.1f}% of the image's code bytes sit in a dump "
             f"placed here; {int(r.get('undumped_code_bytes', 0)):,} code bytes are un-dumped. "
             f"{int(r.get('unplaced', 0))} further dumps fall in its address span but "
             f"the bytes could not place them."
         )
-        badge = '<span class="ip-badge">Fully ported</span>' if done else ""
-        open_txt = (f'<b class="ip-open">{open_} open</b>' if open_ else "0 open")
+        # "Fully ported" on an image with nothing ported (a dev harness whose
+        # every routine is unreachable, the never-loaded JP image) said the
+        # opposite of the card's own counts.
+        if not done:
+            badge_txt = ""
+        elif ported:
+            badge_txt = "Fully ported"
+        elif native:
+            badge_txt = "Covered natively"
+        else:
+            badge_txt = "Nothing to port"
+        badge = f'<span class="ip-badge">{badge_txt}</span>' if badge_txt else ""
+        nb = "\u00a0"  # keep each "N word" item on one line
+        open_txt = (f'<b class="ip-open">{open_}{nb}open</b>' if open_ else f"0{nb}open")
+        items = [f"{ported:,}{nb}ported", f"{native:,}{nb}native"]
+        if nobeh:
+            items.append(f"{nobeh:,}{nb}no{nb}behaviour")
+        items.append(open_txt)
         return (
             f'<div class="ip-card{" done" if done else ""}" title="{html.escape(tip)}" '
             f'role="img" aria-label="{name}: {acc:.1f} percent of {fn} functions '
             f'accounted for, {open_} open; code identified {ident:.1f} percent'
-            f'{", fully ported" if done else ""}">\n'
+            f'{", " + badge_txt.lower() if badge_txt else ""}">\n'
             f'  <div class="ip-top"><span class="ip-name">{name}</span>{badge}</div>\n'
             f'  <div class="ip-desc">{desc} <span class="ip-where">{where}</span></div>\n'
             f'  <div class="ip-num">{acc:.1f}<small>%</small>'
             f'<span class="ip-of">of {fn:,} functions</span></div>\n'
-            f'  <div class="ip-bar"><i class="p" style="width: {pct(ported, fn):.2f}%"></i>'
-            f'<i class="n" style="width: {pct(native, fn):.2f}%"></i></div>\n'
-            f'  <div class="ip-foot">{ported:,} ported · {native:,} native · {open_txt}'
+            f'  <div class="ip-bar">{seg("p", ported)}{seg("n", native)}{seg("b", nobeh)}</div>\n'
+            f'  <div class="ip-foot">{" · ".join(items)}'
             f'{" · " + sub if sub else ""}<br>code identified {ident:.1f}%</div>\n'
             f'</div>'
         )
@@ -1240,12 +1369,14 @@ def build_image_port_status() -> str:
     out = [
         '<div class="ip-block">',
         '<div class="ip-head"><h2>Port status by code image</h2>'
-        f'<span class="ip-count">{n_done} of {len(game)} game images fully ported</span></div>',
+        f'<span class="ip-count">{n_done} of {len(game)} game images complete</span></div>',
         '<p class="ip-lede">The game\'s logic ships as one executable plus overlays the disc '
         'swaps in per mode. Each card counts the functions the disc places in that image: '
         '<span class="ip-key p"></span>ported to Rust, '
-        '<span class="ip-key n"></span>covered natively (PsyQ libraries, BIOS, GPU and CD '
-        'plumbing) or with no retail behaviour, and what is still open. '
+        '<span class="ip-key n"></span>covered natively by the engine (PsyQ libraries, '
+        'BIOS, GPU and CD plumbing, data-driven layers), '
+        '<span class="ip-key b"></span>no retail behaviour to carry (unreferenced, '
+        'dev-only or empty), and the empty remainder of the bar is what is still open. '
         '<em>Code identified</em> is the share of the image\'s code bytes inside an identified '
         'function, so a 100% never hides code nobody has looked at.</p>',
         '<div class="ip-grid">',

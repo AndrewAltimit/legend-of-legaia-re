@@ -1151,7 +1151,7 @@ impl LegaiaRuntime {
             "rivals": rivals,
             "song_timer": g.song_timer(),
             "song_len": g.song_len(),
-            "over": g.song_over(),
+            "over": g.finished(),
             "passed": g.passed(),
         })
         .to_string()

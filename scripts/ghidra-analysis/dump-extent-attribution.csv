@@ -24,11 +24,11 @@ entry,bytes,image,class,reason
 801ced68,492,-,misbased,"no image holds these bytes at this VA; they live at summon_render(900) 0x801f75c8 (delta +0x28860), world_map_render(901) 0x801f6f28 (delta +0x281c0)"
 801cee80,164,other3_dev(974),unique,own content of other3_dev(974) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
 801cee80,236,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801dd698 (delta +0xe818)
-801cef54,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801cef54,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801cef54,1308,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801cef6c,168,-,misbased,no image holds these bytes at this VA; they live at world_map_render(901) 0x801f712c (delta +0x281c0)
 801cefd4,1388,boot_init_pak(895),unique,own content of boot_init_pak(895) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
-801cf00c,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801cf00c,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
 801cf00c,892,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801cf070,152,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801d4888 (delta +0x5818)
 801cf070,844,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
@@ -37,7 +37,7 @@ entry,bytes,image,class,reason
 801cf098,1236,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801cf0d8,3060,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
 801cf0d8,3864,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
-801cf1b0,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801cf1b0,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801cf1b0,1036,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801cf338,1016,debug_menu(971),unique,own content of debug_menu(971) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801cf388,11892,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
@@ -87,6 +87,7 @@ entry,bytes,image,class,reason
 801cfcdc,156,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801cfce4,144,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801de4fc (delta +0xe818)
 801cfd68,992,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
+801cfd78,12,cutscene_str(970),unique,"own content of cutscene_str(970) reproduces the 3-instruction window at this VA (short window, at-VA test only)"
 801cfd84,124,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801cfda0,964,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801cfe00,32,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 8-instruction window at this VA (inherited_tail(menu) cut)
@@ -110,7 +111,7 @@ entry,bytes,image,class,reason
 801d0100,152,cutscene_str(970)|fishing(972),divergent,"dumps at this extent resolve to different images (cutscene_str(970), fishing(972)), so it is genuinely more than one routine"
 801d0148,452,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0164,524,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
-801d0170,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d0170,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d0190,564,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d0198,152,cutscene_str(970)|fishing(972),divergent,"dumps at this extent resolve to different images (cutscene_str(970), fishing(972)), so it is genuinely more than one routine"
 801d01b0,40,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801de9c8 (delta +0xe818), field(897) 0x801e1978 (delta +0x117c8)"
@@ -118,13 +119,13 @@ entry,bytes,image,class,reason
 801d0230,24,cutscene_str(970),unique,"own content of cutscene_str(970) reproduces the 6-instruction window at this VA (short window, at-VA test only)"
 801d0230,384,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d0248,304,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
-801d0290,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d0290,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d0290,48,battle_action(898),unique,own content of battle_action(898) reproduces the 12-instruction window at this VA (inherited_tail(prot_0894) cut)
 801d02a8,76,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801deac0 (delta +0xe818)
 801d02c0,1160,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801d02f0,80,arena_init(977),unique,own content of arena_init(977) reproduces the 20-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d030c,532,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801d0338,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d0338,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d0344,232,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d0370,1196,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d0378,652,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
@@ -176,14 +177,14 @@ entry,bytes,image,class,reason
 801d0d38,1548,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d0e1c,396,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
 801d0e54,892,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
-801d0e78,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d0e78,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d0ed8,136,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d0eec,40,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801df704 (delta +0xe818)
 801d0f1c,884,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d0f5c,1172,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d0f60,548,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d0fa8,1052,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
-801d0fe4,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d0fe4,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d1184,260,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d11d0,916,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d1288,128,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
@@ -202,7 +203,7 @@ entry,bytes,image,class,reason
 801d15c8,72,arena_init(977),unique,own content of arena_init(977) reproduces the 18-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d1610,252,arena_init(977),unique,own content of arena_init(977) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d1694,80,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801dfeac (delta +0xe818)
-801d1744,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d1744,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d1820,320,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d1854,36,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801d1870,544,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
@@ -225,7 +226,7 @@ entry,bytes,image,class,reason
 801d1dac,356,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d1ec4,40,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e06dc (delta +0xe818)
 801d1ec4,980,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801d1eec,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801d1eec,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801d1ef0,132,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e0708 (delta +0xe818)
 801d1ef0,296,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d1f10,388,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -234,11 +235,11 @@ entry,bytes,image,class,reason
 801d2094,300,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d20d4,40,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e08ec (delta +0xe818)
 801d2114,812,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
-801d21ac,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801d21ac,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
 801d21c0,1872,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d21fc,416,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d2278,628,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
-801d227c,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d227c,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d2298,364,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d231c,520,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d239c,1676,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
@@ -251,13 +252,13 @@ entry,bytes,image,class,reason
 801d25ec,500,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d261c,164,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801d26cc,5864,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
-801d2774,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d2774,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d2784,148,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d27e0,1368,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d2910,564,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d2914,400,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
 801d2958,200,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801d2968,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801d2968,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801d2a10,904,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d2a28,212,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d2aa4,540,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
@@ -265,13 +266,13 @@ entry,bytes,image,class,reason
 801d2b44,340,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d2c98,476,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d2cc0,1036,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
-801d2cfc,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d2cfc,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d2d1c,40,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801d2d2c,164,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e1544 (delta +0xe818)
 801d2d38,388,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d2d98,416,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
 801d2e74,560,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801d2e90,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801d2e90,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
 801d2ebc,692,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d2ebc,756,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d2f38,960,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
@@ -285,7 +286,7 @@ entry,bytes,image,class,reason
 801d31d8,48,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801d89f0 (delta +0x5818)
 801d31ec,492,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d3230,152,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
-801d3290,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d3290,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d32bc,24,battle_action(898),unique,"own content of battle_action(898) reproduces the 6-instruction window at this VA (short window, at-VA test only)"
 801d32bc,392,battle_action(898)|field(897),divergent,"dumps at this extent resolve to different images (battle_action(898), field(897)), so it is genuinely more than one routine"
 801d32c8,184,slot_machine(975),unique,own content of slot_machine(975) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
@@ -301,7 +302,7 @@ entry,bytes,image,class,reason
 801d3468,1452,baka_fighter(976),unique,own content of baka_fighter(976) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801d34a4,68,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801d8cbc (delta +0x5818)
 801d362c,5172,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801d3730,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d3730,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d3748,100,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e1f60 (delta +0xe818)
 801d3748,324,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801d387c,432,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
@@ -501,7 +502,7 @@ entry,bytes,image,class,reason
 801d8258,40,field(897),unique,own content of field(897) reproduces the 10-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d8258,52,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e6a70 (delta +0xe818)
 801d8280,220,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801d828c,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d828c,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d829c,40,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e6ab4 (delta +0xe818)
 801d829c,548,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801d8308,1068,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -518,7 +519,7 @@ entry,bytes,image,class,reason
 801d84d0,5996,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d8644,480,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d8734,804,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801d873c,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d873c,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d8824,328,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d886c,240,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801de084 (delta +0x5818)
 801d88cc,236,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e70e4 (delta +0xe818)
@@ -545,7 +546,7 @@ entry,bytes,image,class,reason
 801d9280,788,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d9414,1084,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d9594,860,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801d95a8,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d95a8,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d9804,196,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801e7b50 (delta +0xe34c), field(897) 0x801e801c (delta +0xe818), field(897) 0x801e819c (delta +0xe998)"
 801d9850,1496,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801d9860,44,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801df078 (delta +0x5818)
@@ -560,9 +561,9 @@ entry,bytes,image,class,reason
 801d9c0c,292,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801e7af0 (delta +0xdee4), field(897) 0x801e7fbc (delta +0xe3b0), field(897) 0x801e813c (delta +0xe530)"
 801d9c14,1676,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801d9c3c,244,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801d9d30,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d9d30,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d9d30,236,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801d9d3c,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801d9d3c,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801d9d3c,1552,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801d9e1c,12,-,data,at least half the window's non-`nop` instructions write `$zero` or are no R3000 instruction - a table decoded as opcodes
 801d9e1c,144,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801e7d18 (delta +0xdefc), field(897) 0x801e8630 (delta +0xe814), field(897) 0x801e8a90 (delta +0xec74)"
@@ -596,7 +597,7 @@ entry,bytes,image,class,reason
 801dab90,2432,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801daba4,1408,battle_action(898)|field(897),divergent,"dumps at this extent resolve to different images (battle_action(898), field(897)), so it is genuinely more than one routine"
 801daba4,2412,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801dabb4,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dabb4,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dac78,52,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e0490 (delta +0x5818)
 801dac90,824,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dad6c,184,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -604,28 +605,28 @@ entry,bytes,image,class,reason
 801daef4,224,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dafc8,916,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dafd4,584,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801db0f0,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801db0f0,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
 801db0f8,44,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e0910 (delta +0x5818)
 801db124,500,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801db21c,356,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801db2c0,100,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e9ad8 (delta +0xe818)
-801db2fc,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801db2fc,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
 801db318,1176,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801db35c,944,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801db380,1140,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801db49c,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
-801db4e8,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
-801db510,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801db49c,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801db4e8,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801db510,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801db510,940,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801db510,988,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801db6cc,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801db6cc,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801db70c,1756,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801db7b0,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801db7b0,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801db7b0,108,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801db7f4,1128,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801db81c,40,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ea034 (delta +0xe818)
 801db81c,152,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
-801db844,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801db844,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801db8b4,56,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ea0cc (delta +0xe818)
 801db8b4,64,battle_action(898),unique,own content of battle_action(898) reproduces the 16-instruction window at this VA (inherited_tail(prot_0894) cut)
 801db8ec,16,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
@@ -634,19 +635,19 @@ entry,bytes,image,class,reason
 801db8f4,208,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801db9c4,32,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801db9c4,64,battle_action(898),unique,own content of battle_action(898) reproduces the 16-instruction window at this VA (inherited_tail(prot_0894) cut)
-801dba04,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dba04,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dba04,140,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801dba20,36,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801dba20,512,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dba28,496,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801dba78,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dba78,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dba90,156,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801dbb2c,96,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
-801dbb8c,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dbb8c,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dbb8c,164,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801dbbcc,36,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
-801dbbdc,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
-801dbbfc,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801dbbdc,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dbbfc,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801dbc20,636,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dbc30,124,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801dbc30,212,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
@@ -690,7 +691,7 @@ entry,bytes,image,class,reason
 801dcae8,272,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dcb1c,68,menu(899),unique,own content of menu(899) reproduces the 17-instruction window at this VA (content_bytes cut)
 801dcb60,192,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801dcbf8,8,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
+801dcbf8,8,jp_options_status(896),unique,"own content of jp_options_status(896), and of no other image, reproduces the 2-instruction window at this VA (below the at-VA floor; sole holder)"
 801dcc00,256,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dcc20,148,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dcc40,368,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801eb458 (delta +0xe818)
@@ -710,18 +711,18 @@ entry,bytes,image,class,reason
 801dd000,172,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801eafe0 (delta +0xdfe0), field(897) 0x801eb4e0 (delta +0xe4e0), field(897) 0x801eb678 (delta +0xe678)"
 801dd028,96,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd088,56,menu(899),unique,own content of menu(899) reproduces the 14-instruction window at this VA (content_bytes cut)
-801dd094,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dd094,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dd0ac,612,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dd0ac,1028,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801dd0bc,32,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
-801dd0c0,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dd0c0,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dd0c0,108,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd0d4,32,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 8-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dd0f4,44,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 11-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dd120,320,jp_options_status(896),unique,own content of jp_options_status(896) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dd12c,140,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd1b8,180,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801dd260,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dd260,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dd26c,164,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd310,32,menu(899),unique,own content of menu(899) reproduces the 8-instruction window at this VA (content_bytes cut)
 801dd310,204,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801eaff0 (delta +0xdce0), field(897) 0x801eb1b0 (delta +0xdea0), field(897) 0x801eb4f0 (delta +0xe1e0)"
@@ -738,7 +739,7 @@ entry,bytes,image,class,reason
 801dd8f0,680,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ec108 (delta +0xe818)
 801dd9d4,588,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dda90,156,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
-801ddb30,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801ddb30,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801ddb30,2456,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801ddb30,3556,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801ddc20,532,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
@@ -783,7 +784,7 @@ entry,bytes,image,class,reason
 801df6b8,1848,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801df8dc,84,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801dfb10,532,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ee328 (delta +0xe818)
-801dfdf0,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801dfdf0,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801dfdf0,648,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801dfdf0,656,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801dfdf8,640,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
@@ -806,7 +807,7 @@ entry,bytes,image,class,reason
 801e0be8,556,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e6400 (delta +0x5818)
 801e0df0,120,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ef608 (delta +0xe818)
 801e0f3c,1236,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
-801e0f40,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e0f40,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e0fd0,324,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e1114,244,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e1208,432,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -820,7 +821,7 @@ entry,bytes,image,class,reason
 801e1ab0,744,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801e1c1c,4520,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e1c64,1236,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801f047c (delta +0xe818)
-801e1d98,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e1d98,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e1d98,1328,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801e205c,1496,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801e7874 (delta +0x5818)
 801e22c4,152,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801f0adc (delta +0xe818)
@@ -828,7 +829,7 @@ entry,bytes,image,class,reason
 801e23ec,552,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801f0c04 (delta +0xe818)
 801e249c,180,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801e7afc (delta +0x5660), field(897) 0x801e7fc8 (delta +0x5b2c), field(897) 0x801e8148 (delta +0x5cac)"
 801e2524,300,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
-801e2640,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e2640,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e2650,256,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801f0e68 (delta +0xe818)
 801e2650,780,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801e295c,16396,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
@@ -847,10 +848,10 @@ entry,bytes,image,class,reason
 801e37cc,64,menu(899),unique,own content of menu(899) reproduces the 16-instruction window at this VA (content_bytes cut)
 801e380c,196,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e3894,240,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801e38d0,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801e38d0,8,menu(899),unique,"own content of menu(899), and of no other image, reproduces the 2-instruction window at this VA (below the at-VA floor; sole holder)"
 801e38d8,40,menu(899),unique,own content of menu(899) reproduces the 10-instruction window at this VA (content_bytes cut)
 801e3900,168,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
-801e3984,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e3984,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e3984,1148,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e39a8,88,menu(899),unique,own content of menu(899) reproduces the 22-instruction window at this VA (content_bytes cut)
 801e3a00,152,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
@@ -868,13 +869,13 @@ entry,bytes,image,class,reason
 801e3f74,124,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e3ff0,328,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e4000,1136,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801e4138,8,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
+801e4138,8,menu(899),unique,"own content of menu(899), and of no other image, reproduces the 2-instruction window at this VA (below the at-VA floor; sole holder)"
 801e4140,80,menu(899),unique,own content of menu(899) reproduces the 20-instruction window at this VA (content_bytes cut)
 801e4190,124,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e420c,336,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e435c,140,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801e4404,20,-,data,at least half the window's non-`nop` instructions write `$zero` or are no R3000 instruction - a table decoded as opcodes
-801e4420,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e4420,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e4470,332,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e45ac,16,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
 801e45bc,68,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
@@ -889,7 +890,8 @@ entry,bytes,image,class,reason
 801e5134,972,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
 801e5154,484,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e5338,804,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801e5520,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
+801e5520,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
+801e565c,12,field(897),unique,"own content of field(897) reproduces the 3-instruction window at this VA (short window, at-VA test only)"
 801e5668,212,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e573c,180,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e573c,1764,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
@@ -898,15 +900,15 @@ entry,bytes,image,class,reason
 801e58a8,264,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e59b0,88,field(897),unique,own content of field(897) reproduces the 22-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e5a08,324,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801e5ae8,16,-,short,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e5ae8,16,-,no_holder,"4 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e5b4c,2228,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e5e84,8,-,data,at least half the window's non-`nop` instructions write `$zero` or are no R3000 instruction - a table decoded as opcodes
-801e5fb0,8,-,short,"2 instructions, below the 3-instruction at-VA floor for naming an image"
-801e60a8,12,-,short,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e5fb0,8,-,no_holder,2 instructions: no image's own content reproduces this window at this VA
+801e60a8,12,-,no_holder,"3 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e6388,36,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
 801e63e0,760,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801cfbf8 (delta +0xfffe9818)
 801e6400,556,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801e6548,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e6548,20,-,no_holder,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e65f8,224,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801eafd8 (delta +0x49e0), field(897) 0x801eb4d8 (delta +0x4ee0), field(897) 0x801eb670 (delta +0x5078)"
 801e662c,332,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e66d8,928,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801cfef0 (delta +0xfffe9818)
@@ -923,7 +925,7 @@ entry,bytes,image,class,reason
 801e7250,208,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801e7320,524,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801e733c,268,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801e7448,28,-,short,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801e7448,28,-,no_holder,"7 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801e7448,404,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801e7504,1180,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801e752c,760,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
@@ -988,7 +990,7 @@ entry,bytes,image,class,reason
 801ee90c,128,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801ee90c,696,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801ee90c,1100,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
-801eeafc,8,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
+801eeafc,8,battle_action(898),unique,"own content of battle_action(898), and of no other image, reproduces the 2-instruction window at this VA (below the at-VA floor; sole holder)"
 801eeb60,444,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801eed1c,3272,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801eed58,88,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
@@ -999,7 +1001,7 @@ entry,bytes,image,class,reason
 801ef2b0,3408,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801ef2b0,4416,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801ef6e0,1412,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801cfc78 (delta +0xfffe0598)
-801ef91c,24,-,short,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
+801ef91c,24,-,no_holder,"6 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801ef9e4,148,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801d01fc (delta +0xfffe0818)
 801ef9e4,536,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801efbfc,584,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
@@ -1053,7 +1055,7 @@ entry,bytes,image,class,reason
 801f1ed4,652,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801f1f4c,136,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801f1fc8,60,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801db7e0 (delta +0xfffe9818)
-801f1fd4,8,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
+801f1fd4,8,field(897),unique,"own content of field(897), and of no other image, reproduces the 2-instruction window at this VA (below the at-VA floor; sole holder)"
 801f1fdc,212,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801f2098,68,-,misbased,no image holds these bytes at this VA; they live at battle_action(898) 0x801db8b0 (delta +0xfffe9818)
 801f20b0,132,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
@@ -1064,8 +1066,8 @@ entry,bytes,image,class,reason
 801f2410,2372,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801f2d54,44,battle_action(898),unique,own content of battle_action(898) reproduces the 11-instruction window at this VA (inherited_tail(prot_0894) cut)
 801f2d80,84,battle_action(898),unique,own content of battle_action(898) reproduces the 21-instruction window at this VA (inherited_tail(prot_0894) cut)
-801f2dd4,48,battle_action(898),unique,own content of battle_action(898) reproduces the 12-instruction window at this VA (inherited_tail(prot_0894) cut)
-801f2e04,12,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
+801f2dd4,60,battle_action(898),unique,own content of battle_action(898) reproduces the 12-instruction window at this VA (inherited_tail(prot_0894) cut)
+801f2e04,12,battle_action(898),unique,"own content of battle_action(898) reproduces the 3-instruction window at this VA (short window, at-VA test only)"
 801f2e10,692,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801f30c4,16,-,data,at least half the window's non-`nop` instructions write `$zero` or are no R3000 instruction - a table decoded as opcodes
 801f30c4,2252,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
@@ -1077,7 +1079,7 @@ entry,bytes,image,class,reason
 801f3d3c,524,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801f3d3c,1892,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (inherited_tail(prot_0894) cut)
 801f3e80,5136,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
-801f69d8,8,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
+801f69d8,8,summon_stager_x98(926),unique,"own content of summon_stager_x98(926), and of no other image, reproduces the 2-instruction window at this VA (below the at-VA floor; sole holder)"
 801f69d8,892,cast_blade_breath(962),unique,own content of cast_blade_breath(962) reproduces the 24-instruction window at this VA (inherited_tail(cast_plasma_strike) cut)
 801f69d8,1612,battle_slot_b_0969(969),unique,own content of battle_slot_b_0969(969) reproduces the 24-instruction window at this VA (inherited_tail(battle_slot_b_0968) cut)
 801f69d8,2240,cast_water_hazard(956),unique,own content of cast_water_hazard(956) reproduces the 24-instruction window at this VA (inherited_tail(cast_white_shield) cut)
@@ -1104,7 +1106,7 @@ entry,bytes,image,class,reason
 801f69ec,860,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801f69ec,2176,cast_chaos_breath(938),unique,own content of cast_chaos_breath(938) reproduces the 24-instruction window at this VA (inherited_tail(cast_hyper_lightning) cut)
 801f69ec,4652,summon_swordie(910),unique,own content of summon_swordie(910) reproduces the 24-instruction window at this VA (inherited_tail(summon_theeder) cut)
-801f69f0,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f69f0,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801f69f0,2172,cast_cross_beam(948),unique,own content of cast_cross_beam(948) reproduces the 24-instruction window at this VA (inherited_tail(cast_power_up) cut)
 801f69f0,3848,cast_v_windhash(947),unique,own content of cast_v_windhash(947) reproduces the 24-instruction window at this VA (inherited_tail(cast_call_wave) cut)
 801f69f0,4240,summon_gola_gola(914),unique,own content of summon_gola_gola(914) reproduces the 24-instruction window at this VA (inherited_tail(summon_nova) cut)
@@ -1126,10 +1128,10 @@ entry,bytes,image,class,reason
 801f6a04,1264,cast_curse(943),unique,own content of cast_curse(943) reproduces the 24-instruction window at this VA (inherited_tail(cast_power_up) cut)
 801f6a04,2312,cast_steal(941),unique,own content of cast_steal(941) reproduces the 24-instruction window at this VA (inherited_tail(cast_glare_divide) cut)
 801f6a04,2668,cast_guilty_cross(944),unique,own content of cast_guilty_cross(944) reproduces the 24-instruction window at this VA (inherited_tail(cast_power_up) cut)
-801f6a08,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a08,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801f6a08,5636,summon_iota(921),unique,own content of summon_iota(921) reproduces the 24-instruction window at this VA (inherited_tail(summon_spoon) cut)
 801f6a0c,1804,cast_bloody_horns(952),unique,own content of cast_bloody_horns(952) reproduces the 24-instruction window at this VA (inherited_tail(cast_chaos_flare) cut)
-801f6a10,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a10,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801f6a10,2988,cast_water_crystals(949),unique,own content of cast_water_crystals(949) reproduces the 24-instruction window at this VA (inherited_tail(cast_cross_beam) cut)
 801f6a14,3960,summon_effect_table(957),unique,own content of summon_effect_table(957) reproduces the 24-instruction window at this VA (inherited_tail(summon_ozma) cut)
 801f6a18,3592,stager_ultimate_rave(924),unique,own content of stager_ultimate_rave(924) reproduces the 24-instruction window at this VA (inherited_tail(summon_gilium) cut)
@@ -1142,7 +1144,7 @@ entry,bytes,image,class,reason
 801f6a34,4,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
 801f6a34,6768,summon_meta(932),unique,own content of summon_meta(932) reproduces the 24-instruction window at this VA (inherited_tail(summon_jedo) cut)
 801f6a3c,9896,summon_puera(922),unique,own content of summon_puera(922) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
-801f6a40,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6a40,4,-,no_holder,1 instructions: no image's own content reproduces this window at this VA
 801f6a40,10348,summon_ozma(934),unique,own content of summon_ozma(934) reproduces the 24-instruction window at this VA (inherited_tail(summon_gilium) cut)
 801f6a58,8,-,data,at least half the window's non-`nop` instructions write `$zero` or are no R3000 instruction - a table decoded as opcodes
 801f6a58,7036,cast_fatal_decision(954),unique,own content of cast_fatal_decision(954) reproduces the 24-instruction window at this VA (inherited_tail(summon_ozma) cut)
@@ -1154,10 +1156,10 @@ entry,bytes,image,class,reason
 801f6b24,2100,field_back_read(978),unique,own content of field_back_read(978) reproduces the 24-instruction window at this VA (inherited_tail(arena_init) cut)
 801f6b70,1452,battle_tutorial(967),unique,own content of battle_tutorial(967) reproduces the 24-instruction window at this VA (inherited_tail(cast_evil_seru_magic) cut)
 801f6b70,2316,battle_tutorial(967),unique,own content of battle_tutorial(967) reproduces the 24-instruction window at this VA (inherited_tail(cast_evil_seru_magic) cut)
-801f6c70,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6c70,4,summon_zenoir(908)|summon_orb(911)|cast_plasma_strike(960),short,"1 instructions, below the 3-instruction at-VA floor for naming an image; own content of summon_zenoir(908), summon_orb(911), cast_plasma_strike(960) reproduces it here"
 801f6c70,56,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801f6c70,7744,summon_kemaro(918),unique,own content of summon_kemaro(918) reproduces the 24-instruction window at this VA (inherited_tail(summon_barra) cut)
-801f6d48,4,-,short,"1 instructions, below the 3-instruction at-VA floor for naming an image"
+801f6d48,4,summon_gizam(906)|cast_guilty_cross(944),short,"1 instructions, below the 3-instruction at-VA floor for naming an image; own content of summon_gizam(906), cast_guilty_cross(944) reproduces it here"
 801f6d48,184,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801f6d48,832,summon_render(900),unique,own content of summon_render(900) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801f6d54,1868,cast_blade_breath(962),unique,own content of cast_blade_breath(962) reproduces the 24-instruction window at this VA (inherited_tail(cast_plasma_strike) cut)

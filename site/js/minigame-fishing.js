@@ -414,7 +414,9 @@ window.MgFishing = (function () {
     function drawHudItem(it, sprites) {
       if (sprites && (it.t === 'digit' || it.t === 'glyph')) return;
       if (it.t === 'digit') {
-        hudText(String(it.d), it.x, it.y, { b: it.b, bold: true });
+        /* `big`: the large digit style (16 px cells) the landed catch's
+         * points draw in. */
+        hudText(String(it.d), it.x, it.y, { b: it.b, bold: true, px: it.big ? 14 : 8 });
       } else if (it.t === 'count') {
         hudText(String(it.d), it.x, it.y, { b: it.b });
       } else if (it.t === 'cap') {

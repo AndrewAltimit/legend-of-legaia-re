@@ -1197,6 +1197,55 @@ kernels and the native window asks each for its own layer; only the page's
 tagging crossed them. The shape to look for is a mask whose index is
 assigned by a branch that was written for a different property.
 
+**A cue fired before the filter that swallows its edge.** Both hosts ask
+`menu_cues::menu_edge_blip` for the pause menu's blip, and both run the save
+screen's refusal box and block grid over the pad edge. The native window
+fires the cue after those filters; the page fired it off the raw press before
+`play_menu_input` ran them, so the press that dismissed a save error, or a
+blocked Load on an empty block, blipped on the page only. `play_menu_input`
+now fires the cue on the filtered edge. The shape to look for is a side
+effect a host derives from an input before the shared kernel has decided
+whether that input counts.
+
+**A write that is durable on one host only.** A Save on the native window
+writes the card file in the same commit (`card.persist()`); the page changed
+the card in wasm memory and stored it back only from the Export button, so a
+reload before Export lost the save. The runtime raises a per-port store latch
+(`card_take_written`) on every in-game Save and the page stores the card over
+its browser session when the latch fires. The same pass found the opposite
+direction on the native window: a failed save-folder Load or Save only logged
+and closed, where the card port and the page raise the shared refusal box.
+
+**A stateless replay standing in for a stateful kernel.** The minigames page
+drew the Muscle Dome first visit by replaying `FirstVisitHub` with no input
+to a JS tick count. Every row it drew was the kernel's, so nothing looked
+wrong in a still, but a replay cannot take a press or hand back the CD-XA
+lines a tick started: the page skipped the whole visit on any key and played
+no announcer, where both play hosts tick the hub live. It now resets and
+steps a live hub (`muscle_first_visit_reset` / `_step`), and the hub's two
+lines stage on the announcer lane.
+
+Two more rows the same pass found are closed. The minigames page counted in
+on its own READY / 1 / 2 / 3 / GO timeline; it now steps the engine's
+`dance::CountIn` (`dance_countin_step`), which runs retail's states 3 to 5 -
+READY, then `GO!` - on all three surfaces, with the `1 2 3` moved to where
+the disassembly puts them, the song's end
+([`minigame-dance.md`](../subsystems/minigame-dance.md#the-count-in-state-by-state)).
+And the page's track per game (`GAME_BGM`) is read from the engine
+(`minigame_bgm_id`, over `MinigameSubId::standalone_bgm_id`) instead of
+spelled as literals beside it. The song-end `3 2 1 FINISH!` now runs on
+all three surfaces off the overlay's own part programs
+(`dance::FinishCountdown`), and the minigames page gained the how-to mode:
+`dance_start_mode(2, ..)` installs the engine's `DanceTutorial` beside the
+one-dancer run, stepped per frame as `World::step_dance_tutorial` does and
+drawn through the shared `ui_dance::dance_tutorial_draws_for`.
+
+Still open from that pass:
+
+- **The page refuses the pause menu while any dialog box is up**
+  (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
+  the native window asks alone. No retail evidence decides it yet.
+
 ## A rule spelled beside the shared predicate
 
 A second side-by-side pass, with the first pass's rows closed, found a shape
@@ -3154,11 +3203,24 @@ in the native mesh shaders (`OVERWORLD_CURVE_WGSL`, staged through
 (`overworldCurve`, staged through `play_render_curve_scale` ->
 `setOverworldCurve`). Both hosts take the per-frame scale from the one kernel
 `overworld_curvature::frame_curve_scale`, and both shaders evaluate the table
-in closed form, pinned against it by `curvature_closed_form`. Residual, the
-same on both hosts: the port bends every overworld scene draw, where retail's
-four SCUS lit rows (`8..11`) do not bend. The `/world-overview/` viewer's
+in closed form, pinned against it by `curvature_closed_form`. The port bends
+every overworld scene draw where retail's four SCUS lit rows (`8..11`) do not
+bend, and that changes no pixel: no overworld TMD on the disc carries a lit-row
+group ([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). The `/world-overview/` viewer's
 ocean plane shares the page's renderer but not its program, and stays flat
 with the rest of that viewer (it never stages a scale).
+
+**The object-effect clip on a raised `+0x42`.** Field-VM `4C C2 1` sends a
+placed actor through `FUN_8001C204` and `FUN_8002735C`, which clip its
+polygons to the slab its object-effect row stages
+([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)). Both
+hosts ask one kernel per placed / NPC draw (`World::object_effect_mesh_clip`)
+and discard outside the slab: the native mesh shaders through
+`EFFECT_CLIP_WGSL`, the page's field program through `u_eclip_m` /
+`u_eclip_b` (`play_effect_clip`, which negates the page model's row 1 back to
+retail's frame). The player's draws ask the same kernel under
+`ActorTintKey::Player` - native at each player mesh push, the page through
+`play_effect_clip` kind `2`.
 
 **The field drop shadow.** `FUN_8001C394` (called from the animated-actor
 renderer `FUN_8001B964`) is ported as `engine-core::drop_shadow` and walked by
@@ -3334,7 +3396,7 @@ The audio rows of the same pass are closed or settled in
   derivation. The derivation is `engine-core::battle_cam_inputs` now and the
   state is `BattleState::camera`, stepped from `World::tick`; both hosts only
   read `World::battle_cam_pose`
-  ([`battle.md`](../subsystems/battle.md#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it)
+  ([`battle.md`](../subsystems/battle.md#the-resting-yaw-is-the-orbit-and-battle-init-zeroes-it)
   carries the camera's port note beside the phase script).
 - **Battle-intro names and the commit-log launch**, absent from both hosts.
   The flow-`0x0A` enemy-name banner and the commit log's slide off the ring

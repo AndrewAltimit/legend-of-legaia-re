@@ -11,7 +11,7 @@
 //! the individual `pub fn` docs below).
 //! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
 //! module ports the arithmetic kernel the dispatch feeds into).
-//! PORT: FUN_801DD0AC (damage roll - both branches. Summon branch
+//! PORT: FUN_801DD0AC (PROT 0898; damage roll - both branches. Summon branch
 //! (`attacker_slot == 7`): `summon_attacker_roll` / `summon_defender_roll` /
 //! `summon_bonus_roll` / `summon_predamage`. Arts/physical branch
 //! (`attacker_slot != 7`, seeded by the `0x801F4F5C` move-power table):

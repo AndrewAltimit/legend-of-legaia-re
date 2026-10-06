@@ -23,7 +23,7 @@ fn dance_test_chart() -> legaia_asset::dance_chart::DanceChart {
 /// `DanceGame::advance` off until it clears, so a test that pressed on the
 /// entry frame would be pressing into the banner.
 fn run_dance_countin(world: &mut World) {
-    for _ in 0..crate::dance::COUNTIN_END_FRAME {
+    for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
     }
@@ -55,7 +55,7 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     assert!(!world.minigames.dance_status_visible());
     // The intro cue fires once, on the hold-segment entry.
     let mut cues = world.drain_minigame_sfx_cues();
-    for _ in 0..crate::dance::COUNTIN_END_FRAME {
+    for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
         cues.extend(world.drain_minigame_sfx_cues());
@@ -780,4 +780,25 @@ fn leaving_the_dance_drops_the_press_edge_too() {
     let _ = world.exit_dance();
     assert!(!world.input.just_pressed(input::PadButton::Circle));
     assert!(world.input.pressed(input::PadButton::Circle), "still held");
+}
+
+/// Four minigame modes clear the frame to black over whatever colour the
+/// suspended field's `4C 13` left; fishing and the field keep that colour.
+#[test]
+fn minigame_frames_clear_to_black_over_the_suspended_field_colour() {
+    let mut world = World::new();
+    world.presentation.clear_rgb = [0x3C, 0x28, 0x14];
+    world.mode = SceneMode::Field;
+    assert_eq!(world.frame_clear_rgb(), [0x3C, 0x28, 0x14]);
+    for mode in [
+        SceneMode::SlotMachine,
+        SceneMode::BakaFighter,
+        SceneMode::MuscleDome,
+        SceneMode::Dance,
+    ] {
+        world.mode = mode;
+        assert_eq!(world.frame_clear_rgb(), [0; 3], "{mode:?}");
+    }
+    world.mode = SceneMode::Fishing;
+    assert_eq!(world.frame_clear_rgb(), [0x3C, 0x28, 0x14]);
 }

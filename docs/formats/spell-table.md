@@ -30,8 +30,17 @@ higher id resolves to.
 | `+5..+8` | - | padding (zero) |
 | `+8` | u32 | `name_ptr` - pointer to the display-name C-string |
 
-The display name string carries a leading MES colour-control prefix (`0xCE`,
-an element-colour byte, a space) before the ASCII name.
+A player Seru spell's display name opens with an **icon escape** (`0xCE`, an
+operand, a space) before the ASCII name - not a colour control. The operand
+indexes the dialog font's escape table
+([dialog-font.md](dialog-font.md#escape-table-0x80074050)): `0x14..=0x1A` are
+the element plates, so Gimard (`0x81`) carries `0xCE 0x14`, the fire plate,
+which is the authoring `^A` the preprocessor `FUN_80036514` expands. Every
+surface that copies the raw name draws the plate in front of it - the battle
+banner's `<spell>'s magic level increased.` (element `0x65`) and the Seru
+absorb line (`0x59`). The parser keeps the operand as `SpellEntry::icon` and
+drops the escape from `name`; the port's banner composer puts it back as `^X`
+(`World::spell_banner_name`), which `engine-ui::battle_hud_chrome` expands.
 
 ### The `+1` byte has two readers, and one of them is not the pager
 

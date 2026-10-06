@@ -17,13 +17,28 @@
 # VA by another image.
 
 [field]
+"801d32bc" = ["worklist_interior", "Not an entry in PROT 0897: the field image's own bytes at this VA open mid-body (`mflo t0` after `slt v0,v1,s0`) with no prologue. The ported routine at this VA is PROT 0898's (its tag says so); the 0897 dump here is a fragment."]
+"801d3444" = ["worklist_interior", "Not an entry in PROT 0897: the field image's own bytes at this VA open mid-body (`nop; mult v0,v1` on a value loaded one instruction earlier) with no prologue. The ported routine at this VA is PROT 0898's (its tag says so); the 0897 dump here is a fragment."]
+"801d9bbc" = ["worklist_interior", "Not an entry in PROT 0897: the field image's own bytes at this VA open mid-body (`bnez v0` on the parent's v0, after `lh v0,0x54(t1)`) with no prologue. The ported routine at this VA is PROT 0898's (its tag says so); the 0897 dump here is a fragment."]
+"801daba4" = ["worklist_interior", "Not an entry in PROT 0897: the field image's own bytes at this VA open mid-body (`sw ra,0x4c(sp)` - the middle of a register-save run whose `addiu sp` sits above it) with no prologue. The ported routine at this VA is PROT 0898's (its tag says so); the 0897 dump here is a fragment."]
+"801dd0ac" = ["worklist_interior", "Not an entry in PROT 0897: the field image's own bytes at this VA open mid-body (`div v1,a1` on a quotient the preceding `mult`/`mflo` formed) with no prologue. The ported routine at this VA is PROT 0898's (its tag says so); the 0897 dump here is a fragment."]
+"801d7964" = ["worklist_interior", "Not an entry in PROT 0897: the field image's bytes here are the middle of an unaligned `lwl`/`lwr` -> `swl`/`swr` word copy. The routine at this VA is fishing's fill-primitive builder (PROT 0972)."]
 "801d81e0" = ["subsumed_glue", "List relink, 44 B at 0x801D81E0..0x801D820C: FUN_800204A4(a0, a1) frees the node, then FUN_80020454(a1) pops it straight back (the free stack is LIFO) and appends it to the list head a1 - so the actor moves to the tail of that list. Its two callers are field-VM op 0x23 MOVE_TO's NPC arm (0x801DECD0, head = *(0x8007C348 + 0xC)) and 0x801E1AA4; both are ported, and the port's actor table is a slot array with no linked lists to reorder. The 0897 dump at this VA is a mis-based fragment of other code."]
+"801ecd0c" = ["unreferenced", "Map-list warp picker, 1532 B at 0x801ECD0C..0x801ED308 (frame -0x40, six-case switch on actor[+0x54] through 0x801CF4E4): case 0 loads the 16-byte-record list behind 0x801F2BEC, sorts it on its 3-byte key and seeks the row whose name hash (FUN_8003CE9C(rec + 0xC)) matches the live scene word *(0x80084540). Its one reference of any form is slot 1 of the subsystem actor's 52-entry handler table 0x801F33B4 (word at 0x801F33B8), which FUN_801F159C indexes by actor[+0x50] (0x801F1618..0x801F1634); nothing on the disc stores 1 there. The actor (template 0x8007065C, spawned at 0x801D0324 / 0x801D0D20 / 0x801E09A0 with its result discarded) gets +0x50 only from its installer FUN_801F1278 (7 at 0x801F140C, else a byte of 0x801F33A4, whose fourteen rows are -1 or 0x21..0x33) and from its handlers' own exits, every one a constant: 0x02, 0x13, 0x1A, 0x29, 0x2B, 0x2C, 0x30. The image's other `sh rX,0x50(rY)` sites with a computed value write different actors: those spawned from templates 0x801F22AC / 0x801F22C4 / 0x801F26D8 / 0x801F27EC / 0x801F2828 / 0x801F2870 / 0x801F2978, the timer of the tick at 0x801DD4C4 on its own actor, and the move-VM extension FUN_801D362C's executing actor. So the routine is a real entry retail never dispatches - the 801e5338 shape, one table level up."]
 "801de648" = ["subsumed_glue", "Sized store, 80 B at 0x801DE648..0x801DE698: value a0 -> *a1 as byte / half / word for a2 = 1 / 2 / 4, any other size a no-op. Its only references disc-wide are sixteen `jal`s from PROT 0900's move-VM extension handlers (FUN_801F7A9C, FUN_801F811C, FUN_801F849C - all ported), where it stores a tween result; the ports write the typed field directly."]
 
 [battle_action]
+"801de4c8" = ["worklist_interior", "Not an entry in PROT 0898: a loop body (`lui v0,0x8008; addiu a2,a2,1; sltiu v0,a2,0x20; bnez v0,0x801DE4B8`) entered from the `beq` at 0x801DE4C4. The interpolator ported at this VA is PROT 0897's (16 `jal`s from the co-resident PROT 0900)."]
 "801de648" = ["worklist_interior", "Jump-table case inside FUN_801DDB30 (0898): the word before it is the switch's `jr v0` delay slot (0x801DE63C/0x801DE640) and the block opens `lhu t1,0x15c(s1)` on a register the parent set up - no prologue, no caller of any form."]
 
 [summon_render]
+"801f69ec" = ["render_pipeline", "The first instruction of PROT 0900 (file offset 0 is a five-word pointer table): the field ground-plane tile rasteriser, inline GTE RTPT + depth cue, a POLY_GT per visible bit-0x1000 tile. The ignore list's row at this VA describes this routine."]
+"801f7624" = ["worklist_interior", "Not an entry in PROT 0900: the bytes open mid GTE matrix load (`lw t4,0x14(v0); lw t5,0x18(v0)` run into it) with no prologue."]
+"801f76f4" = ["worklist_interior", "Not an entry in PROT 0900: a `nop` in the `lwc2` -> RTPT sequence of a larger GTE transform routine, no prologue."]
+"801f7a40" = ["worklist_interior", "Interior of FUN_801F7088 in PROT 0900: a run of `lui at,0x1f80; sb ...,0x3e8(at)` scratchpad stores ahead of its epilogue. The cast modules hold their trampolines at this VA."]
+"801f7b1c" = ["worklist_interior", "Interior of FUN_801F7A9C (0x801F7A9C..0x801F8004) in PROT 0900: a case block (`ori v0,v0,8; j 0x801F7F04`) of its sub-op switch."]
+"801f816c" = ["worklist_interior", "Interior of FUN_801F811C (0x801F811C..0x801F849C) in PROT 0900: `lhu a1,0x42(s0)` ahead of `j 0x801F82CC`."]
+"801f8e60" = ["worklist_interior", "Interior of FUN_801F8D4C (0x801F8D4C..0x801F8E6C) in PROT 0900: its register-restore epilogue (`lw s0,0x10(sp); jr ra`)."]
 "801f7a54" = ["worklist_interior", "Interior of FUN_801F7088 in PROT 0900: the tail of its register-restore epilogue (`sb a3,0x3ea(at)` ... `jr ra` at 0x801F7A94). The extent comes from a muscle-dome-labelled capture of a different slot-B image placed here by the byte attribution."]
 "801f7d38" = ["worklist_interior", "Interior of FUN_801F7A9C (0x801F7A9C..0x801F8004), PROT 0900's move-VM extension handler: a case block of its five-way sub-op switch (jump table at 0x801F69D8). Not an entry in this image; the cast modules hold their own trampolines at this VA."]
 "801f7e4c" = ["worklist_interior", "Interior of FUN_801F7A9C (0x801F7A9C..0x801F8004) in PROT 0900 - a case block of its sub-op switch."]
@@ -38,10 +53,14 @@
 "801f8e3c" = ["worklist_interior", "Interior of FUN_801F8D4C (0x801F8D4C..0x801F8E6C) in PROT 0900."]
 
 [cutscene_str]
+"801d0070" = ["render_pipeline_mdec", "The MDEC upload wrapper of PROT 0970 (real prologue `addiu sp,sp,-0x20` after the previous routine's `jr ra`); the ignore list's row at this VA describes it."]
 "801cfc50" = ["unreferenced", "MDEC decode-environment copy (the libpress DecDCTGetEnv shape): copies 16 + 16 + 32 words of quantisation / IDCT tables from 0x801D0D5C / 0x801D0D9C / 0x801D0DE0 into a0 and returns it. No reference of any form in this image (find-address-word-refs.py: no word, jal, j, branch or lui pair)."]
+"801cfd78" = ["unreferenced", "Halfword load leaf, 12 B at 0x801CFD78..0x801CFD84: `lhu v0,0(a0); jr ra; nop` - returns *(u16 *)a0. Opens on the word after FUN_801CFCDC's `jr ra` + delay slot. No reference of any form names it (find-address-word-refs.py 801cfd78: no word, jal, j, branch or lui pair in any image). see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cfd78.txt"]
 "801d0230" = ["render_pipeline_mdec", "MDEC status read: returns the word at *0x801D0E94 (the MDEC status register pointer). Its two callers (0x801CFE3C / 0x801CFE78) are the in / out idle waits around the ported FUN_801D0100 / FUN_801D0198, whose ports (engine-core mdec_dma_sync) take the status read as a closure; legaia-mdec decodes synchronously."]
 
 [fishing]
+"801d0070" = ["worklist_interior", "Interior of FUN_801CF3BC (ported) in fishing: a `jal 0x801D0C3C` in the middle of a call run, no prologue."]
+"801d7964" = ["prim_builder", "Fishing fill-primitive builder (prologue `addiu sp,sp,-0x38` after the previous `jr ra`): unpacks two RGB arguments into a stack record and posts it through 0x80024E80. The ignore list's row at this VA describes it."]
 "801d0100" = ["worklist_interior", "Interior of the fishing state machine FUN_801CF3BC (ported): no `jr ra` or prologue between 0x801CF3BC and this VA, and no reference of any form names it in this image. The cutscene_str image holds the MDEC in-wait here."]
 "801d0198" = ["worklist_interior", "Interior of FUN_801CF3BC (ported) in fishing: no `jr ra` or prologue between its entry and this VA, no reference in this image."]
 "801d0230" = ["worklist_interior", "Interior of FUN_801CF3BC (ported) in fishing: opens `lw a0,-0x6f10(s0)` on the parent's s0; no reference in this image."]
@@ -55,4 +74,28 @@
 "801d63b0" = ["worklist_interior", "Interior of the cameo walk-on animator FUN_801D6310 (ported, 0x801D6310..0x801D6480): opens `jal 0x801D65F8` on the parent's frame; no reference in this image (the 28 `jal`s to this VA are all fishing's)."]
 
 [jp_options_status]
+"801d6d38" = ["jp_options_status_overlay", "A function entry of PROT 0896 (prologue at 0x801D6D40), referenced only from 0896's own pointer table at 0x801DD4C8: the foreign-build image this disc never loads. The routine ported at this VA is the menu overlay's (PROT 0899)."]
 "801d9414" = ["jp_options_status_overlay", "A function entry of PROT 0896 (jp_options_status), dumped but uncited: the foreign-build image this disc never loads (see this section's header), so the routine has no retail behaviour on this build to port."]
+"801dcbf8" = ["jp_options_status_overlay", "Empty leaf of PROT 0896 (jp_options_status), `jr ra; nop` at 0x801DCBF8: the foreign-build image this disc never loads, and the body does nothing in any case. Placed in this image once the byte attribution stopped reading a delay-slot `nop` as zero fill."]
+
+[world_map_render]
+"801f69d8" = ["render_pipeline", "PROT 0901's first routine (file offset 0 opens an `addiu sp` prologue): the world-map top-view per-cell terrain dispatcher the ignore list's row at this VA describes. Every other slot-B image holds its own, different routine here."]
+"801f7644" = ["worklist_shared_tail", "In PROT 0901 this VA follows a `jr ra` and opens `lw s7,(a1)` on callee-saved registers it never saved, exiting `j 0x80043580`: an entry into a multi-entry routine, as the ignore list's row says."]
+
+[debug_menu]
+"801ce8ec" = ["dev_tool_overlays", "PROT 0971 is the developer mode-select image; its routine at this VA is dev code the retail game never enters. The ignore list's row at this VA describes PROT 0973's routine."]
+
+[other2_dev]
+"801ce8ec" = ["dev_tool_overlays", "PROT 0973 dev viewer's per-frame tick (prologue `addiu sp,sp,-0x18`), the routine the ignore list's row at this VA describes."]
+
+[summon_stager_x98]
+"801f69d8" = ["noop_stubs", "PROT 0926's whole own content is `jr ra; nop` at the slot-B base: a null routine."]
+
+[cast_chaos_flare]
+"801f81dc" = ["slot_b_spawn_stagers", "PROT 0951's move-VM spawn stager (the ignore list's row at this VA): four spawn calls, no damage wrapper, output staged by legaia_asset::cast_effect_pool. PROT 0910's different routine at this VA is ported (its tag names 0910)."]
+
+[cast_terio_punch]
+"801f7624" = ["slot_b_spawn_stagers", "PROT 0953's move-VM spawn stager, the 0x801F6734 row 50 for that entry (0x801F7624..0x801F77C8, 420 B, read from 0953's own bytes): three arms on a1 - 0 and 1 one FUN_80021B04 spawn each (records 0x801F78FC / 0x801F794C), 2 three loops of three spawns (records 0x801F7D70 / 0x801F7DB4 / 0x801F7E08). No damage wrapper; its only stores are to the stack and to +0x3E of the records it just spawned, so its whole output is spawn records, staged by legaia_asset::cast_effect_pool through World::spawn_cast_module_fx. Unlike the other rows of the category it also draws six times from the shared RNG (two rand() per arm-2 loop, 0x801F76B4 / 0x801F7704) to jitter those records. The VA is not a function in PROT 0900 (an interior GTE load) or PROT 0943 (its trampoline)."]
+
+[cast_cross_beam]
+"801f726c" = ["prim_builder", "Cross Beam's beam packet builder in PROT 0948 (0x801F726C..0x801F8504, a prologue head in 0948's own bytes). Its one reference of any form in 0948 or 0898 is the jal at 0x801F6EF4 in the tick body's arm 3 (FUN_801F69F0, ported as cast_module_ticks::CROSS_BEAM_CHAIN). It takes primitives from the scratchpad packet cursor 0x1F8003A0, fills them and links them with FUN_8003D2C4 (x12) and FUN_80059010 (x2); it writes no actor or battle-context state. The engine draws the cast through the effect pool and does not reproduce this beam's packets - a presentation gap, not a simulation one."]

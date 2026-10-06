@@ -88,7 +88,17 @@ fn shipped_ribbon_carriers_arm_the_emitter_from_their_own_operands() {
                     part.state.actor_u16(0xC8) as i16,
                 );
                 // Every shipped carrier seeds the overlay RNG with `0x3039`.
-                assert_eq!(params.rng_seed, 0x3039, "PROT {idx:04} part {i}");
+                // The part is first seen after its seat frame's tick, whose
+                // channel block (`0x80021E78`) has already stepped `+0xB8`
+                // once by its rate `+0xC4` - the value the seat frame's own
+                // draw reads.
+                let rate = i32::from(part.state.actor_u16(0xC4) as i16);
+                let first_step = ((rate * i32::from(scene.channel_delta)) >> 6) as i16;
+                assert_eq!(
+                    params.rng_seed,
+                    0x3039i16.wrapping_add(first_step),
+                    "PROT {idx:04} part {i}"
+                );
                 assert!(count > 0, "PROT {idx:04} part {i}: a ribbon with no steps");
                 let mut s = 1u32;
                 let r = build_ribbon(mode, packed, params, &AnalyticTrig::new(), || {

@@ -121,6 +121,14 @@ EXTENT_FIXUPS = {
         "own `beq v0,zero,0x801DDBC8` at 0x801DDA78 branches past the stated "
         "end",
     ),
+    (0x801F2DD4, 48): (
+        60,
+        "body runs 0x801F2DD4..0x801F2E10 in overlay_battle_action_0898 at base "
+        "0x801CE818 (second jr ra at 0x801F2E08 + delay slot); Ghidra stopped "
+        "at the first `jr ra` at 0x801F2DFC, and the routine's own "
+        "`bne v0,zero,0x801F2E04` at 0x801F2DEC branches past the stated end "
+        "into the store-and-return tail `sb v1,0x27A(a0); jr ra; nop`",
+    ),
 }
 
 _FIXUPS_HIT = set()

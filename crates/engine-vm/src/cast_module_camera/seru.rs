@@ -270,8 +270,117 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
 
 /// PROT 0905's countdown word.
 pub const VERA_COUNTDOWN_VA: u32 = 0x801F_8818;
+
+const fn module_spawns<const N: usize>(vas: [u32; N], anchor: SpawnAnchor) -> [ModuleSpawn; N] {
+    let mut out = [ModuleSpawn {
+        record: SpawnRecord::Module(0),
+        anchor,
+    }; N];
+    let mut i = 0;
+    while i < N {
+        out[i].record = SpawnRecord::Module(vas[i]);
+        i += 1;
+    }
+    out
+}
+
+/// PROT 0905 arm 0's four spawns, on the framed point at `y = -0x280`
+/// (`jal 0x80021B04` at `0x801F6C18` / `6C3C` / `6C58` / `6C7C`). The
+/// `vera_summon_mid_cast` capture holds exactly these four parts, risen to
+/// `y = -418` over the target's hand.
+pub const VERA_OPEN_SPAWNS: [ModuleSpawn; 4] = module_spawns(
+    [0x801F_81E4, 0x801F_823C, 0x801F_8294, 0x801F_82FC],
+    SpawnAnchor::ShotPoint { y: -0x280 },
+);
+
+/// PROT 0905 arm 4's three spawns, an eighth of a unit (`/ 32`) along the
+/// target's heading at `y = -0x1C2` (`0x801F710C` / `7128` / `7144`).
+pub const VERA_CUT_SPAWNS: [ModuleSpawn; 3] = module_spawns(
+    [0x801F_8364, 0x801F_83CC, 0x801F_8434],
+    SpawnAnchor::AlongVictimHeading {
+        base: HeadingBase::Victim,
+        div: 32,
+        y: -0x1C2,
+    },
+);
+
+/// PROT 0905 arm 5's two spawns, a sixth of a unit (`/ 24`) along the
+/// target's heading from the creature it has just seated, at `y = -0x1C2`
+/// (`0x801F7404` / `7420`).
+pub const VERA_SEAT_SPAWNS: [ModuleSpawn; 2] = module_spawns(
+    [0x801F_8494, 0x801F_8500],
+    SpawnAnchor::AlongVictimHeading {
+        base: HeadingBase::Creature,
+        div: 24,
+        y: -0x1C2,
+    },
+);
+
+/// PROT 0905 arm 8's two spawns, on the creature (`a0 = creature + 0x34`,
+/// `a1 = creature + 0x44`; `0x801F7A48` / `7A60`).
+pub const VERA_CREATURE_SPAWNS: [ModuleSpawn; 2] =
+    module_spawns([0x801F_85D4, 0x801F_862C], SpawnAnchor::Creature);
+
+/// PROT 0905 arm 9's five spawns, on the restored target (`a0 = target +
+/// 0x34`, `a1 = target + 0x44`; `0x801F7B34..0x801F7B94`).
+pub const VERA_RESTORE_SPAWNS: [ModuleSpawn; 5] = module_spawns(
+    [
+        0x801F_868C,
+        0x801F_86EC,
+        0x801F_8730,
+        0x801F_8774,
+        0x801F_87D4,
+    ],
+    SpawnAnchor::Victim,
+);
 /// The phase arm PROT 0905 restores its target in.
 pub const VERA_RESTORE_ARM: u8 = 9;
+
+/// PROT 0905's arm-2 fade (`0x801F6DF4..0x801F6E5C`): once the countdown
+/// has run out the arm requests the creature stream and spawns an additive
+/// ramp black -> white over `0x20` vsyncs, held until killed, id `1`, and
+/// keeps its actor at `ctx[+0x102C]`. The kind is the busy word the routine
+/// returns (`sp+0x38`, `1` while it runs). `vera_summon_mid_cast` holds it
+/// eight vsyncs in beside the band's flash-out.
+pub const VERA_RISE_FADE: crate::battle_action::SummonFadeTemplate =
+    crate::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x20,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        delay: 0,
+        hold: -1,
+    };
+
+/// PROT 0905's arm-4 pair (`0x801F6F30..0x801F6FC4`): the arm kills the
+/// arm-2 fade and four effect actors, then spawns a warm additive flash
+/// `(0xFF, 0xE0, 0x80)` -> black over `0x40` vsyncs and a blue one
+/// `(0, 0x1F, 0x7F)` -> black over `0x20`, both id `1` and done when they
+/// land.
+pub const VERA_CUT_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 2] = [
+    (
+        crate::battle_action::SummonFadeTemplate {
+            kind: 1,
+            duration: 0x40,
+            start_rgb: [0xFF, 0xE0, 0x80],
+            end_rgb: [0, 0, 0],
+            delay: 0,
+            hold: 0,
+        },
+        1,
+    ),
+    (
+        crate::battle_action::SummonFadeTemplate {
+            kind: 1,
+            duration: 0x20,
+            start_rgb: [0, 0x1F, 0x7F],
+            end_rgb: [0, 0, 0],
+            delay: 0,
+            hold: 0,
+        },
+        1,
+    ),
+];
 
 /// `trunc(v / d)` - the reciprocal-`mult` / `sra` / `subu sign` idiom and the
 /// `bgez; addiu d-1; sra` idiom both round toward zero.
@@ -287,9 +396,9 @@ fn div0(v: i16, d: i32) -> i32 {
 /// |---:|---|---|
 /// | 0 | - | snap: pitch `0`, yaw `0x60C - f`, TR `(0, 0x5E0, 0x800)`, focus a 24th of a unit along `g` from the target (`0x801F6BDC`); countdown `= scalar << 6` |
 /// | 1 | one drain | pitch `-0x60`, yaw `0x9F4 - f`, TR `(0, 0x580, 0x80)`, the same focus, over `0x60` frames (`0x801F6D88`) |
-/// | 2 | while non-negative, drain; hold while still non-negative | the creature stream load and a fade, taken as ready |
+/// | 2 | while non-negative, drain; hold while still non-negative | the creature stream load, taken as ready; the white rise ([`VERA_RISE_FADE`]) |
 /// | 3 | - | countdown `= scalar << 5` |
-/// | 4 | drain, hold while non-negative | snap: pitch `0`, yaw `-f`, TR `(0, 0x600, 0x800)`, focus a 16th of a unit along `f` past the target (`0x801F7074`); countdown `+= scalar * 60` |
+/// | 4 | drain, hold while non-negative | snap: pitch `0`, yaw `-f`, TR `(0, 0x600, 0x800)`, focus a 16th of a unit along `f` past the target (`0x801F7074`); kills the rise, spawns [`VERA_CUT_FADES`]; countdown `+= scalar * 60` |
 /// | 5 | drain, hold while non-negative | seats the creature a 16th of a unit along `g` from the target, facing `g`; countdown `+= scalar * 180`; the phase jumps by **3**, so arms 6 and 7 are never reached |
 /// | 8 | drift; drain, hold while non-negative | snap: pitch `0`, yaw `0x800 - facing`, TR `(0, 0xA00, 0x200)`, focus the creature (`0x801F7994`); countdown `+= scalar * 112` |
 /// | 9 | drift; drain, hold while non-negative | the restore; countdown `+= scalar * 112` |
@@ -319,12 +428,15 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
     match phase {
         0 => {
             st.countdown.arm(6);
-            ArmDirection::shot(ModuleShot {
-                angles: [0, yaw_from(0x60C, f), 0],
-                tr: [0, 0x5E0, 0x800],
-                focus: near_focus(),
-                frames: 1,
-            })
+            ArmDirection {
+                spawns: &VERA_OPEN_SPAWNS,
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0, yaw_from(0x60C, f), 0],
+                    tr: [0, 0x5E0, 0x800],
+                    focus: near_focus(),
+                    frames: 1,
+                })
+            }
         }
         1 => {
             st.countdown.drain();
@@ -339,7 +451,10 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if st.countdown.0 >= 0 && st.countdown.drain_non_negative() {
                 return ArmDirection::HOLD;
             }
-            ArmDirection::PASS
+            ArmDirection {
+                fades: &[(VERA_RISE_FADE, 1)],
+                ..ArmDirection::PASS
+            }
         }
         3 => {
             st.countdown.arm(5);
@@ -351,16 +466,21 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             }
             st.countdown.add(60);
             let (sin, cos) = trig12(f);
-            ArmDirection::shot(ModuleShot {
-                angles: [0, yaw_from(0, f), 0],
-                tr: [0, 0x600, 0x800],
-                focus: [
-                    (-(i32::from(t.x) + div0(sin, 16))) as i16,
-                    0,
-                    (-(i32::from(t.z) + div0(cos, 16))) as i16,
-                ],
-                frames: 1,
-            })
+            ArmDirection {
+                spawns: &VERA_CUT_SPAWNS,
+                fades: &VERA_CUT_FADES,
+                kills_fades: true,
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0, yaw_from(0, f), 0],
+                    tr: [0, 0x600, 0x800],
+                    focus: [
+                        (-(i32::from(t.x) + div0(sin, 16))) as i16,
+                        0,
+                        (-(i32::from(t.z) + div0(cos, 16))) as i16,
+                    ],
+                    frames: 1,
+                })
+            }
         }
         5 => {
             if st.countdown.drain_non_negative() {
@@ -374,7 +494,10 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 facing: g,
             });
             st.countdown.add(180);
-            ArmDirection::PASS
+            ArmDirection {
+                spawns: &VERA_SEAT_SPAWNS,
+                ..ArmDirection::PASS
+            }
         }
         8 => {
             let drift = ModuleNudge {
@@ -386,12 +509,15 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 return ArmDirection::HOLD.nudged(drift);
             }
             st.countdown.add(112);
-            ArmDirection::shot(ModuleShot {
-                angles: [0, yaw_from(0x800, creature.facing), 0],
-                tr: [0, 0xA00, 0x200],
-                focus: focus_on(creature),
-                frames: 1,
-            })
+            ArmDirection {
+                spawns: &VERA_CREATURE_SPAWNS,
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0, yaw_from(0x800, creature.facing), 0],
+                    tr: [0, 0xA00, 0x200],
+                    focus: focus_on(creature),
+                    frames: 1,
+                })
+            }
             .nudged(drift)
         }
         9 => {
@@ -404,7 +530,11 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 return ArmDirection::HOLD.nudged(drift);
             }
             st.countdown.add(112);
-            ArmDirection::PASS.nudged(drift)
+            ArmDirection {
+                spawns: &VERA_RESTORE_SPAWNS,
+                ..ArmDirection::PASS
+            }
+            .nudged(drift)
         }
         10 => {
             let drift = ModuleNudge {

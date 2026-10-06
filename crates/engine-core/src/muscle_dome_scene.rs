@@ -1295,6 +1295,7 @@ impl MuscleDomeSurface {
                 live: session.hp(target) > 0,
                 facing: t.facing,
                 node_gone: false,
+                lone_defeat: false,
             }),
             formation,
             action: cam::ActionFraming {

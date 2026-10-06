@@ -65,6 +65,12 @@ pub(crate) struct ScreenshotConfig {
     /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
     /// the retail-compare image channel from the state's own RAM.
     pub hud_countdown: Option<i16>,
+    /// `LEGAIA_CAPTURE_TALK=<slot>@<tick>`: at that world tick, talk to the
+    /// scene's placement `slot` through `World::trigger_field_interact` - the
+    /// call the walk-up interaction probe makes - so a capture can open a
+    /// merchant's or innkeeper's conversation without walking to it. The
+    /// browser twin is `LegaiaRuntime::debug_talk_to_placement`.
+    pub talk_at: Option<(u64, u8)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_engine_shell::retail_compare_battle::PhaseGate`]) instead of
@@ -85,6 +91,20 @@ pub(crate) struct ScreenshotConfig {
     /// the record from its start when nothing runs it and paging its dialog
     /// boxes on the way. `capture_tick` is the deadline.
     pub script_gate: Option<legaia_engine_shell::retail_compare_script::ScriptGate>,
+    /// `LEGAIA_SEAT_LATCHES=59c,134` (hex): the system flags a captured
+    /// record latched after the scene entry ran. The seed lands the save
+    /// without them so the entry does not read them, and they are raised at
+    /// the settle tick, where retail's state holds them
+    /// (`RetailObs::seed_save`).
+    pub seat_latches: Vec<u16>,
+    /// `LEGAIA_SEAT_OBJECT_MODELS=<record>:<model>,..`: a retail state's
+    /// drawn actors' live model ids, written over the placed objects' stream
+    /// swaps (`World::object_live_models`) on the capture frame.
+    pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
+    /// over the pool on the frame the capture is taken
+    /// (`FogPool::install_snapshot`); taken once.
+    pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_core::fog_particles::FogParticle>>>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -363,6 +383,10 @@ impl ScreenshotConfig {
             sweep,
             pad_script: script,
             key_script: keys,
+            talk_at: std::env::var("LEGAIA_CAPTURE_TALK").ok().and_then(|v| {
+                let (slot, tick) = v.trim().split_once('@')?;
+                Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
+            }),
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
@@ -375,6 +399,28 @@ impl ScreenshotConfig {
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
+            seat_fog: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_FOG")
+                    .ok()
+                    .map(|v| legaia_engine_shell::retail_compare::fog_from_env(&v)),
+            ),
+            seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (r, m) = e.split_once(':')?;
+                            Some((r.trim().parse().ok()?, m.trim().parse().ok()?))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            seat_latches: std::env::var("LEGAIA_SEAT_LATCHES")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|i| u16::from_str_radix(i.trim(), 16).ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
             battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE").ok().and_then(|v| {
                 legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
             }),
@@ -532,6 +578,9 @@ pub(crate) struct PosedPropDraw {
     pub model: Mat4,
     /// The baked frame-0 rest meshes + the raw TMD to re-pose from.
     pub baked: PosedMesh,
+    /// The record's `+0x1E` cull radius (the actor's `+0x58`), for the
+    /// placed-object actor cull.
+    pub cull_radius: u8,
 }
 
 /// Per-party-member battle facial-animation state: the member's per-action
@@ -805,12 +854,27 @@ struct PlayWindowApp {
     /// asks.
     field_placement_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     field_placement_color_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    /// Grid cell + record cull radius per `field_placement_draws` entry, for
+    /// the placed-object actor cull (`field_view_window::placed_actor_visible`).
+    field_placement_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    /// The same, per `field_placement_color_draws` entry.
+    field_placement_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
     /// The bind record of each draw of `field_placement_draws` /
     /// `field_placement_color_draws` (parallel lists, `None` = unbound): the
     /// key the per-frame pass looks a script's live object displacement up by
     /// (`World::object_draw_displacements` - `chitei2`'s falling boulder).
     field_placement_records: Vec<Option<usize>>,
     field_placement_color_records: Vec<Option<usize>>,
+    /// Scene-bank model id (= env-pack slot) -> uploaded mesh, for a placed
+    /// object whose motion stream swapped its model (op `0x0E`,
+    /// `World::object_live_models`); textured and colour bridges.
+    field_pack_meshes: Vec<Option<usize>>,
+    /// Parallel to `field_placement_records` / `_color_records`: the draw
+    /// is its record's first placement, the one a motion stream drives
+    /// (`field_env::stream_bound_draws`).
+    field_placement_stream_bound: Vec<bool>,
+    field_placement_color_stream_bound: Vec<bool>,
+    field_pack_color_meshes: Vec<Option<usize>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense
@@ -819,6 +883,13 @@ struct PlayWindowApp {
     /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
     /// on its ground instead of floating over the bare clear colour.
     field_terrain_draws: Vec<(usize, Mat4)>,
+    /// The field's **light-source** row shading
+    /// (`legaia_engine_core::field_lit_mesh`): per env mesh with lit-row
+    /// vertices, the CPU mesh + its lit vertices (keyed by `meshes` index),
+    /// the shaded per-rotation variants, which variant each terrain /
+    /// placement draw takes (parallel to the two draw lists) and the light
+    /// they were shaded under - a different live light rebuilds them.
+    field_lit: FieldLitMeshes,
     /// Live floor-height-ladder patch for the four field draw lists above: the
     /// per-draw ladder rungs plus the ladder currently folded into their Y, so
     /// a script that sets a rung oscillating (op `0x4C` nibble-9) moves the
@@ -923,6 +994,11 @@ struct PlayWindowApp {
     /// a world-map frame that draws only `world_map_terrain_draws` shows
     /// roofless huts.
     world_map_terrain_color_draws: Vec<(usize, Mat4)>,
+    /// Parallel to `world_map_terrain_draws` / `_color_draws`: each
+    /// landmark draw's bind record (`None` for a decoration), the key of
+    /// its op-`4C 81` draw tint (`World::object_draw_tints`).
+    world_map_terrain_records: Vec<Option<usize>>,
+    world_map_terrain_color_records: Vec<Option<usize>>,
     /// Where the decoration layer starts in `world_map_terrain_draws` /
     /// `world_map_terrain_color_draws` (landmarks first): the draws from here
     /// on carry retail's per-object decoration depth cue
@@ -1683,6 +1759,32 @@ struct FieldNpcDraw {
     /// `rebind_live_npc_models` notices a swap the world made after the
     /// upload ran.
     bound_model: i16,
+}
+
+/// The field env meshes' light-source row shading (see
+/// `PlayWindowApp::field_lit` and `legaia_engine_core::field_lit_mesh`).
+#[derive(Default)]
+struct FieldLitMeshes {
+    /// `meshes` index -> the processed CPU mesh and its lit vertices, for
+    /// every uploaded env mesh carrying a lit-row vertex.
+    sources: std::collections::HashMap<
+        usize,
+        (
+            legaia_tmd::mesh::VramMesh,
+            Vec<Option<legaia_tmd::mesh::LitVertex>>,
+        ),
+    >,
+    /// The shaded variants, one per `(mesh, draw rotation)`.
+    meshes: Vec<UploadedVramMesh>,
+    /// Parallel to `field_terrain_draws`: the variant each draw takes.
+    terrain: Vec<Option<usize>>,
+    /// Parallel to `field_placement_draws`: the variant each draw takes.
+    placement: Vec<Option<usize>>,
+    /// Parallel to `field_posed_props`: the variant each prop's frame-0
+    /// rest mesh takes.
+    posed: Vec<Option<usize>>,
+    /// The light the variants were shaded under.
+    light: Option<legaia_engine_vm::field_light::FieldLight>,
 }
 
 /// The scene's CLUT-walk shimmer (`legaia_engine_core::clut_walk_anim`, the

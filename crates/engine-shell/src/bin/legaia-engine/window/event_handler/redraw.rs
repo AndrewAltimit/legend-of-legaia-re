@@ -139,6 +139,11 @@ impl PlayWindowApp {
             // Screenshot harness: inject the scripted one-tick pad edge for
             // this tick (overriding keyboard). Ticks with no script entry get
             // a neutral pad so the previous press releases (edge resets).
+            if let Some((t, slot)) = self.screenshot.as_ref().and_then(|sc| sc.talk_at)
+                && t == self.tick_no
+            {
+                self.session.host.world.trigger_field_interact(0xFF, slot);
+            }
             if self.screenshot.is_some() {
                 let scripted_pad = self
                     .screenshot
@@ -148,6 +153,13 @@ impl PlayWindowApp {
                 // A script-gated capture resumes the retail record when the
                 // entry did not start it, and pages its dialog boxes - the
                 // same drive the headless seed runs.
+                if self.tick_no == legaia_engine_shell::retail_compare_script::SCRIPT_RESUME_TICK
+                    && let Some(sc) = self.screenshot.as_ref()
+                {
+                    for &idx in &sc.seat_latches {
+                        self.session.host.world.system_flag_set(idx);
+                    }
+                }
                 let gate = self
                     .screenshot
                     .as_ref()
@@ -210,7 +222,7 @@ impl PlayWindowApp {
             // kernel `BootSession::tick` runs for every other driver): the
             // edge drives the entry SM and the frame counter advances so the
             // caret blinks. This arm adds only the window's frame-tail skip.
-            if self.session.host.world.step_name_entry_frame(pressed_edge) {
+            if self.session.step_name_entry_frame(pressed_edge) {
                 // Same reason as the boot-UI arm above: the party readout's
                 // decision kernel is stepped in the fall-through path and its
                 // suppression predicate names this state, so an arm that
@@ -327,6 +339,11 @@ impl PlayWindowApp {
                     self.prev_pad = self.pad;
                     continue;
                 }
+            } else if !narration && pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
+                // A press the menu lock refuses buzzes (`0x23` on the SFX
+                // ring); every other refusal is silent. The browser page
+                // makes the same call through `play_menu_open`.
+                self.session.host.world.field_menu_press_denied();
             }
             // Route this frame's pad into the engine before the
             // tick so World::tick's mode dispatch (world-map
@@ -371,16 +388,31 @@ impl PlayWindowApp {
             let field_pad = match self.screenshot.as_ref() {
                 Some(sc) if let Some(drive) = sc.battle_drive => {
                     let world = &mut self.session.host.world;
-                    if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
-                        drive.prime(world);
-                    }
-                    drive.steer(world);
-                    // A reached phase is held with no input until it is
-                    // sampled (`BattleDrive::hold_ticks`).
-                    if drive.reached(world) {
+                    // Retail's battle tick waits out the camera's entry
+                    // sweep; a drive into a running fight waits with it, as
+                    // the headless seed does.
+                    let sweeping = !matches!(
+                        drive,
+                        legaia_engine_shell::retail_compare_battle::BattleDrive::Opening { .. }
+                    ) && world.mode == SceneMode::Battle
+                        && !legaia_engine_shell::retail_compare_battle::entry_sweep_reached(
+                            world, 0xFF,
+                        );
+                    if sweeping {
                         0
                     } else {
-                        drive.pad_word_at(world, self.tick_no)
+                        if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true)
+                        {
+                            drive.prime(world);
+                        }
+                        drive.steer(world);
+                        // A reached phase is held with no input until it is
+                        // sampled (`BattleDrive::hold_ticks`).
+                        if drive.reached(world) {
+                            0
+                        } else {
+                            drive.pad_word_at(world, self.tick_no)
+                        }
                     }
                 }
                 _ => field_pad,
@@ -671,6 +703,29 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
+        // Capture harness: on the frame the capture is taken, the fog pool
+        // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`), installed
+        // before this frame's draw pass runs the pool's render step.
+        if let Some(sc) = self.screenshot.as_ref() {
+            let gated =
+                sc.phase_gate.is_some() || sc.script_gate.is_some() || sc.battle_drive.is_some();
+            let due = if gated {
+                self.capture_phase_met()
+            } else {
+                self.tick_no >= sc.capture_tick
+            };
+            if due && let Some(fog) = sc.seat_fog.take() {
+                self.session.host.world.fog.install_snapshot(&fog);
+            }
+            if due {
+                for &(record, model) in &sc.seat_object_models {
+                    self.session
+                        .host
+                        .world
+                        .seed_object_live_model(record, model);
+                }
+            }
+        }
         // Capture harness: phase-align the battle idle orbit to the retail
         // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
         if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
@@ -724,6 +779,9 @@ impl PlayWindowApp {
         );
         self.sync_ground_wave();
         self.sync_ground_crop(view_cells.as_ref());
+        // The env draws' light-source rows follow the live field light
+        // (op `4C 8A` mid-scene).
+        self.sync_field_lit_meshes();
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the
@@ -936,37 +994,26 @@ impl PlayWindowApp {
             // retail); every other scene, incl. the Rim Elm hand-off, is
             // natural colour. Staged every frame so it clears on transition.
             //
-            // The scripted screen-fade tint (op `0x4C 0x12` global tint -
-            // the scene-entry fade-from-black) composes into the
-            // same multiply: with grade strength `s` and gold `G`, the shaded
-            // pixel is `rgb*((1-s) + G*s)`, so a full-strength grade of
-            // `gold' = tint*((1-s) + G*s)` is exactly `tint * graded`. The
-            // depth-cue far colour is tinted the same way below, so both
-            // branches of the shader's cue mix carry the tint and the product
-            // distributes to the final pixel. `None` tint stages the previous
-            // identity values - the byte-identical untouched path. The text /
-            // narration overlay is a separate shader and stays bright, which
-            // is retail's look (the creation crawl scrolls over the fades).
-            let tint = self.session.host.world.scene_screen_tint();
-            match (self.session.host.world.scene_color_grade(), tint) {
+            // The op `0x4C 0x12` word (`_DAT_8007BCB8..BA`) is NOT a frame
+            // multiply: its one reader disc-wide is the fog particle update
+            // `FUN_8003F3FC` (see `docs/subsystems/field-ambient-fx.md`), so
+            // the scene's own pixels never take it - `retona_field_card_boot`
+            // holds the word at 27 over a full-brightness frame. The fog
+            // sheets take it through `World::fog_render_step`.
+            match self.session.host.world.scene_color_grade() {
                 // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
                 // mode - the retail mechanism's true altitude (the scene's
                 // uploaded CLUTs are rewritten to the gold law and the
                 // resident TMD colour words by the two `4C E6` HSV ops; the
                 // engine's shaders apply the identical laws per texel /
-                // packet colour, `prologue_sepia_word`). The screen tint
-                // rides the palette slot so the ground's neutral modulation
-                // still fades. The view-depth cue ramp is inert in this mode
-                // (retail's prologue nodes hold `IR0 = 0`).
-                (Some(g), t) => {
+                // packet colour, `prologue_sepia_word`). The view-depth cue
+                // ramp is inert in this mode (retail's prologue nodes hold
+                // `IR0 = 0`).
+                Some(g) => {
                     r.set_color_grade(g.gold, g.strength);
-                    r.set_palette_grade(t.unwrap_or([1.0; 3]), true);
+                    r.set_palette_grade([1.0; 3], true);
                 }
-                (None, Some(t)) => {
-                    r.set_color_grade(t, 1.0);
-                    r.set_palette_grade([1.0; 3], false);
-                }
-                (None, None) => {
+                None => {
                     r.set_color_grade([1.0, 1.0, 1.0], 0.0);
                     r.set_palette_grade([1.0; 3], false);
                 }
@@ -974,17 +1021,9 @@ impl PlayWindowApp {
             // The grade's second half: the per-render-node DPCS far-colour
             // pull (gold far colour + depth-graded IR0 in retail), staged as
             // a view-depth IR0 ramp. Cleared every non-prologue frame, so
-            // interactive scenes render the identity (ramp-off) path. The
-            // screen-fade tint multiplies the far colour too (see above), so
-            // a fade-to-black reaches full black on far-cued geometry.
+            // interactive scenes render the identity (ramp-off) path.
             match self.session.host.world.scene_depth_cue() {
-                Some(c) => {
-                    let far = match tint {
-                        Some(t) => [c.far[0] * t[0], c.far[1] * t[1], c.far[2] * t[2]],
-                        None => c.far,
-                    };
-                    r.set_depth_cue_ramp(far, c.near_z, c.far_z, c.max_ir0)
-                }
+                Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
                 None => r.clear_depth_cue_ramp(),
             }
             // Retail GTE NCLIP winding rejection over the whole field pass
@@ -1050,7 +1089,12 @@ impl PlayWindowApp {
             // boot UI clear them so the layer never lights the wrong
             // coordinate space. Inert (zero staged count, no shadow pass)
             // while dynamic lighting or the shadow sub-toggle is off.
+            // A menu-overlay screen that owns the frame (a shop, the casino
+            // prize counter) draws no field, so it stages no field light
+            // either: the halos are screen sprites and would otherwise glow
+            // through the black behind the windows.
             if !self.boot_ui.is_active()
+                && !self.menu_runtime.covers_field()
                 && !in_world_map
                 && self.session.host.world.mode == SceneMode::Field
                 && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
@@ -1545,7 +1589,52 @@ impl PlayWindowApp {
             // menu overlay, so the GameOver hold keeps drawing the
             // (frozen, untick'd) battle scene underneath.
             let game_over_hold = matches!(self.boot_ui, BootUiState::GameOver(_));
+            // An op-`4C 81` draw tint (`+0x74` colour / `+0x78` blend) as the
+            // constant per-draw cue retail's actor draw stages (far colour +
+            // `IR0`, `FUN_8001ADA4` -> `FUN_80043390`). One shape for placed
+            // objects, NPCs and the player.
+            fn tint_draw_cue((colour, blend): (u32, u16)) -> Option<legaia_engine_render::DrawCue> {
+                let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                Some(legaia_engine_render::DrawCue {
+                    far,
+                    near_z: -1.0,
+                    far_z: 0.0,
+                    max_ir0,
+                })
+            }
+            let player_tint_cue = self
+                .session
+                .host
+                .world
+                .player_draw_tint()
+                .and_then(tint_draw_cue);
             let mut draws: Vec<SceneDraw<'_>> = Vec::new();
+            // Object-effect clips (a raised `+0x42`, field-VM `4C C2`): the
+            // draw indices that carry one, staged on the renderer below.
+            // Shared kernel `World::object_effect_mesh_clip`; the browser
+            // page asks the same one (`field_placement_effect_clips`).
+            let mut clip_marks: Vec<(usize, legaia_engine_render::DrawClip)> = Vec::new();
+            let mut color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)> = Vec::new();
+            let effect_clips = self.session.host.world.object_effect_clips();
+            let effect_clip = |key: legaia_engine_core::world::ActorTintKey,
+                               model: &Mat4|
+             -> Option<legaia_engine_render::DrawClip> {
+                let (_, clip, scale) = effect_clips.iter().find(|(k, _, _)| *k == key)?;
+                let rows = [
+                    model.row(0).to_array(),
+                    model.row(1).to_array(),
+                    model.row(2).to_array(),
+                ];
+                let mc = clip.in_mesh_space(rows, *scale);
+                Some(legaia_engine_render::DrawClip {
+                    m: mc.m,
+                    lo: mc.lo,
+                    hi: mc.hi,
+                })
+            };
+            let object_key = |record: Option<usize>| {
+                record.map(|r| legaia_engine_core::world::ActorTintKey::Object(r as u16))
+            };
             // Untextured (F*/G*) field props, drawn on the colour
             // pipeline alongside the textured `draws`.
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
@@ -1682,13 +1771,26 @@ impl PlayWindowApp {
                     })
                 };
                 let (deco_start, color_deco_start) = self.world_map_deco_start;
+                // A landmark whose actor carries an op-`4C 81` draw tint
+                // (map02's Jeremi walls, map03's bridge spans) draws with it,
+                // as the field's placed objects do; the browser page reads the
+                // same `World::object_draw_tints` (`field_placement_tints`).
+                let object_tints = self.session.host.world.object_draw_tints();
+                let landmark_cue = |record: Option<&Option<usize>>| {
+                    let &(colour, blend) = object_tints.get(&(*record?)?)?;
+                    tint_draw_cue((colour, blend))
+                };
                 for (i, (mesh_idx, model)) in self.world_map_terrain_draws.iter().enumerate() {
                     if let Some(mesh) = self.meshes.get(*mesh_idx) {
                         let mvp = cam * *model;
                         draws.push(SceneDraw {
                             mesh,
                             mvp,
-                            cue: if i >= deco_start { deco_cue(mvp) } else { None },
+                            cue: if i >= deco_start {
+                                deco_cue(mvp)
+                            } else {
+                                landmark_cue(self.world_map_terrain_records.get(i))
+                            },
                         });
                     }
                 }
@@ -1705,7 +1807,7 @@ impl PlayWindowApp {
                             cue: if i >= color_deco_start {
                                 deco_cue(mvp)
                             } else {
-                                None
+                                landmark_cue(self.world_map_terrain_color_records.get(i))
                             },
                         });
                     }
@@ -1749,10 +1851,16 @@ impl PlayWindowApp {
                             .and_then(|o| o.as_ref())
                             .or_else(|| self.meshes.get(tmd_idx));
                         if let Some(mesh) = mesh {
+                            if let Some(c) = effect_clip(
+                                legaia_engine_core::world::ActorTintKey::Player,
+                                &self.actor_model(slot),
+                            ) {
+                                clip_marks.push((draws.len(), c));
+                            }
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * self.actor_model(slot),
-                                cue: None,
+                                cue: player_tint_cue,
                             });
                         }
                         // The untextured colour half (pants / sleeves), same
@@ -1762,10 +1870,16 @@ impl PlayWindowApp {
                                 .as_ref()
                                 .or_else(|| self.color_meshes.get(cidx))
                         {
+                            if let Some(c) = effect_clip(
+                                legaia_engine_core::world::ActorTintKey::Player,
+                                &self.actor_model(cslot),
+                            ) {
+                                color_clip_marks.push((color_draws.len(), c));
+                            }
                             color_draws.push(ColorSceneDraw {
                                 mesh: cmesh,
                                 mvp: cam * self.actor_model(cslot),
-                                cue: None,
+                                cue: player_tint_cue,
                             });
                         }
                     }
@@ -1922,10 +2036,17 @@ impl PlayWindowApp {
                             ) {
                                 continue;
                             }
-                            let mesh = self
-                                .field_morph_live
-                                .get(mesh_idx)
-                                .or_else(|| self.meshes.get(*mesh_idx));
+                            // A lit mesh draws its copy shaded at this
+                            // draw's rotation (`field_lit_mesh`).
+                            let mesh = self.field_morph_live.get(mesh_idx).or_else(|| {
+                                self.field_lit
+                                    .terrain
+                                    .get(di)
+                                    .copied()
+                                    .flatten()
+                                    .and_then(|v| self.field_lit.meshes.get(v))
+                                    .or_else(|| self.meshes.get(*mesh_idx))
+                            });
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
@@ -1998,15 +2119,10 @@ impl PlayWindowApp {
                     // table `World::object_draw_tints`; the browser play page
                     // reads the same one (`field_placement_tints`).
                     let object_tints = self.session.host.world.object_draw_tints();
+                    let object_models = self.session.host.world.object_live_models().clone();
                     let object_cue = |record: Option<usize>| {
                         let &(colour, blend) = object_tints.get(&record?)?;
-                        let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
-                        Some(legaia_engine_render::DrawCue {
-                            far,
-                            near_z: -1.0,
-                            far_z: 0.0,
-                            max_ir0,
-                        })
+                        tint_draw_cue((colour, blend))
                     };
                     let place_near_culled = |mvp: &Mat4| {
                         !self.field_debug_camera
@@ -2040,18 +2156,51 @@ impl PlayWindowApp {
                                     .get(di)
                                     .and_then(Option::as_ref),
                                 static_window,
+                            ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                                &self.session.host.world,
+                                view_cells.as_ref(),
+                                model.w_axis.x as i32,
+                                model.w_axis.z as i32,
+                                self.field_placement_cell_keys
+                                    .get(di)
+                                    .map_or(0, |k| k.cull_radius),
                             ) {
                                 continue;
                             }
-                            let mesh = self
-                                .field_morph_live
-                                .get(mesh_idx)
-                                .or_else(|| self.meshes.get(*mesh_idx));
+                            // A motion stream's model swap (op `0x0E`) draws
+                            // the record's object with the swapped-in mesh.
+                            let swapped = record
+                                .filter(|_| {
+                                    self.field_placement_stream_bound
+                                        .get(di)
+                                        .copied()
+                                        .unwrap_or(false)
+                                })
+                                .and_then(|r| object_models.get(&r))
+                                .and_then(|&id| usize::try_from(id).ok())
+                                .and_then(|id| self.field_pack_meshes.get(id).copied().flatten())
+                                .and_then(|m| self.meshes.get(m));
+                            let mesh = swapped
+                                .or_else(|| self.field_morph_live.get(mesh_idx))
+                                .or_else(|| {
+                                    self.field_lit
+                                        .placement
+                                        .get(di)
+                                        .copied()
+                                        .flatten()
+                                        .and_then(|v| self.field_lit.meshes.get(v))
+                                        .or_else(|| self.meshes.get(*mesh_idx))
+                                });
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
                             }
                             if let Some(mesh) = mesh {
+                                if let Some(c) =
+                                    object_key(record).and_then(|k| effect_clip(k, model))
+                                {
+                                    clip_marks.push((draws.len(), c));
+                                }
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
@@ -2068,7 +2217,20 @@ impl PlayWindowApp {
                             if place_near_culled(&mvp) {
                                 continue;
                             }
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                            // A lit prop's shaded copy (`LIT_VARIANT_TAG`).
+                            // Field-level borrows, not a `&self` helper.
+                            let tag = super::field_render::LIT_VARIANT_TAG;
+                            let baked = if *mesh_idx & tag != 0 {
+                                self.field_lit.meshes.get(*mesh_idx & !tag)
+                            } else {
+                                self.meshes.get(*mesh_idx)
+                            };
+                            if let Some(mesh) = baked {
+                                if let Some(c) =
+                                    object_key(*record).and_then(|k| effect_clip(k, model))
+                                {
+                                    clip_marks.push((draws.len(), c));
+                                }
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
@@ -2080,6 +2242,10 @@ impl PlayWindowApp {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
+                            }
+                            if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model))
+                            {
+                                clip_marks.push((draws.len(), c));
                             }
                             draws.push(SceneDraw {
                                 mesh,
@@ -2106,6 +2272,14 @@ impl PlayWindowApp {
                                     .get(di)
                                     .and_then(Option::as_ref),
                                 static_window,
+                            ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                                &self.session.host.world,
+                                view_cells.as_ref(),
+                                model.w_axis.x as i32,
+                                model.w_axis.z as i32,
+                                self.field_placement_color_cell_keys
+                                    .get(di)
+                                    .map_or(0, |k| k.cull_radius),
                             ) {
                                 continue;
                             }
@@ -2113,7 +2287,25 @@ impl PlayWindowApp {
                             if place_near_culled(&mvp) {
                                 continue;
                             }
-                            if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                            let color_idx = record
+                                .filter(|_| {
+                                    self.field_placement_color_stream_bound
+                                        .get(di)
+                                        .copied()
+                                        .unwrap_or(false)
+                                })
+                                .and_then(|r| object_models.get(&r))
+                                .and_then(|&id| usize::try_from(id).ok())
+                                .and_then(|id| {
+                                    self.field_pack_color_meshes.get(id).copied().flatten()
+                                })
+                                .unwrap_or(*mesh_idx);
+                            if let Some(mesh) = self.color_meshes.get(color_idx) {
+                                if let Some(c) =
+                                    object_key(record).and_then(|k| effect_clip(k, model))
+                                {
+                                    color_clip_marks.push((color_draws.len(), c));
+                                }
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
@@ -2127,6 +2319,11 @@ impl PlayWindowApp {
                                 continue;
                             }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                if let Some(c) =
+                                    object_key(*record).and_then(|k| effect_clip(k, model))
+                                {
+                                    color_clip_marks.push((color_draws.len(), c));
+                                }
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
@@ -2138,6 +2335,10 @@ impl PlayWindowApp {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
+                            }
+                            if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model))
+                            {
+                                color_clip_marks.push((color_draws.len(), c));
                             }
                             color_draws.push(ColorSceneDraw {
                                 mesh,
@@ -2164,10 +2365,16 @@ impl PlayWindowApp {
                             .as_ref()
                             .or_else(|| self.color_meshes.get(cidx))
                     {
+                        if let Some(c) = effect_clip(
+                            legaia_engine_core::world::ActorTintKey::Player,
+                            &self.actor_model(slot),
+                        ) {
+                            color_clip_marks.push((color_draws.len(), c));
+                        }
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * self.actor_model(slot),
-                            cue: None,
+                            cue: player_tint_cue,
                         });
                     }
                     // Field NPCs + animated props at their live
@@ -2243,6 +2450,23 @@ impl PlayWindowApp {
                             },
                         };
                         let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
+                        // The actor's op-`4C 81` draw tint (`+0x74` /
+                        // `+0x78`), staged as a constant per-draw cue on
+                        // both mesh halves - the browser page reads the same
+                        // `World::field_npc_draw_tint` (`play_npc_tints`).
+                        let cue = w
+                            .field_npc_draw_tint(d.slot as usize)
+                            .and_then(tint_draw_cue);
+                        let npc_clip = effect_clip(
+                            legaia_engine_core::world::ActorTintKey::Npc(d.slot as usize),
+                            &model,
+                        );
+                        if let Some(c) = npc_clip {
+                            // Both mesh halves push below; mark the slot each
+                            // lands in.
+                            clip_marks.push((draws.len(), c));
+                            color_clip_marks.push((color_draws.len(), c));
+                        }
                         // A clip-less NPC's op-`0x4B` morph re-stages
                         // its static mesh (`npc_morph_static`).
                         let posed = npc_posed
@@ -2253,14 +2477,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * model,
-                                cue: None,
+                                cue,
                             }),
                             (None, Some(mi)) => {
                                 if let Some(mesh) = self.meshes.get(mi) {
                                     draws.push(SceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                        cue: None,
+                                        cue,
                                     });
                                 }
                             }
@@ -2270,14 +2494,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp: cam * model,
-                                cue: None,
+                                cue,
                             }),
                             (None, Some(ci)) => {
                                 if let Some(mesh) = self.color_meshes.get(ci) {
                                     color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                        cue: None,
+                                        cue,
                                     });
                                 }
                             }
@@ -2483,7 +2707,15 @@ impl PlayWindowApp {
                         // the two hosts' cursors drifted apart the moment
                         // either host's redraw rate left its tick rate.
                         let model = self.actor_model(i);
-                        let mut cue = None;
+                        // Outside battle the player's op-`4C 81` draw tint
+                        // rides the same per-draw cue seam.
+                        let mut cue = if !in_battle
+                            && self.session.host.world.player_actor_slot == Some(i as u8)
+                        {
+                            player_tint_cue
+                        } else {
+                            None
+                        };
                         if in_battle {
                             use legaia_engine_vm::battle_action as ba;
                             let b = &actor.battle;
@@ -2567,6 +2799,15 @@ impl PlayWindowApp {
                                     max_ir0: p.cue_ir0(),
                                 });
                             }
+                        }
+                        // The player's object-effect clip (`CC F8 C2`), off
+                        // the battle stage.
+                        if !in_battle
+                            && self.session.host.world.player_actor_slot == Some(i as u8)
+                            && let Some(c) =
+                                effect_clip(legaia_engine_core::world::ActorTintKey::Player, &model)
+                        {
+                            clip_marks.push((draws.len(), c));
                         }
                         draws.push(SceneDraw {
                             mesh,
@@ -2796,6 +3037,7 @@ impl PlayWindowApp {
             let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
                 boot_ui_clear,
                 stage_battle,
+                self.session.host.world.frame_clear_rgb(),
             ));
 
             // Slot 1: logos OR title-art bands (title still
@@ -2972,6 +3214,21 @@ impl PlayWindowApp {
             // the retail mechanism - the 3D scene darkens while the narration
             // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
+            {
+                let mut tex = vec![None; draws.len()];
+                for (i, c) in clip_marks {
+                    if let Some(slot) = tex.get_mut(i) {
+                        *slot = Some(c);
+                    }
+                }
+                let mut col = vec![None; color_draws.len()];
+                for (i, c) in color_clip_marks {
+                    if let Some(slot) = col.get_mut(i) {
+                        *slot = Some(c);
+                    }
+                }
+                r.set_draw_clips(tex, col);
+            }
             let scene = RenderScene {
                 vram,
                 draws: &draws,
@@ -3049,10 +3306,27 @@ impl PlayWindowApp {
                 light_prims.clear();
             }
             screen_prims.extend(self.weapon_trail_screen_prims());
+            // PROT 0948's Cross Beam, while its arm 3 runs. Its two OT
+            // entries (`2`, `0x400`) are both behind the text's bucket, so it
+            // draws under the HUD - the browser play page's GL pass sits
+            // under its text canvas the same way.
+            light_prims.extend(self.cross_beam_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
-            // the intro fades use so the ABR mode is honoured.
-            screen_prims.extend(self.screen_fade_screen_prim());
+            // the intro fades use so the ABR mode is honoured, and split at
+            // the text layer by its ordering-table id exactly as the
+            // screen-effect pushes below are: the summon band's flashes
+            // (id `1`, the text's own bucket) draw under the battle HUD, a
+            // field warp's fade (id `0`) over it. The browser play page
+            // makes the same split (`play_text_layer_washes_json`).
+            for p in self.screen_fade_screen_prims() {
+                let ot = i16::try_from(p.ot_index()).unwrap_or(i16::MAX);
+                if legaia_engine_render::screen_prim::push_covers_text(ot) {
+                    screen_prims.push(p);
+                } else {
+                    light_prims.push(p);
+                }
+            }
             // A shop opening: the field fades to black under the menu's
             // subtractive full-screen quad before its windows slide in
             // (`MenuRuntime::shop_fade_level`; the browser page draws the
@@ -3233,7 +3507,30 @@ impl PlayWindowApp {
                     .as_ref()
                     .and_then(|sc| sc.path.clone())
                     .unwrap();
-                match r.capture_rgba(target(&scene)) {
+                // Read the frame back until two consecutive readbacks of
+                // this same frame agree. Re-rendering an unchanged target is
+                // deterministic, yet under heavy machine load a readback
+                // has come back with its top rows still zero - a black band
+                // of up to 15 rows whose lower edge steps every 32 columns
+                // (GPU tiles), the rest of the frame byte-identical - on a
+                // few runs in ten of the retail-compare corpus (never with
+                // the child run alone; see `Renderer::capture_rgba`).
+                // A band is not a frame the scene drew, so the capture is
+                // the first one a second readback reproduces.
+                let mut capture = r.capture_rgba(target(&scene));
+                for retry in 1..=4 {
+                    let Ok(prev) = &capture else { break };
+                    match r.capture_rgba(target(&scene)) {
+                        Ok(next) if next.rgba == prev.rgba => break,
+                        next => {
+                            eprintln!(
+                                "screenshot readback {retry} disagreed with the previous one; reading again"
+                            );
+                            capture = next;
+                        }
+                    }
+                }
+                match capture {
                     Ok(img) => match write_capture_png(&path, &img) {
                         Ok(()) => {
                             println!(
@@ -3267,12 +3564,6 @@ impl PlayWindowApp {
         self.win.request_redraw();
     }
 }
-
-/// Where a landed hit's numeral starts, above the struck actor's own origin,
-/// in stage pixels. Retail's start seat is captured only once
-/// (`battle_melee_hit_spark`, top edge 49 with the actor mid-frame), so the
-/// lift is engine-chosen; the row it rises **to** is pinned.
-const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
 
 impl PlayWindowApp {
     /// One sim tick of ANIMATE-cue handling through the shared kernel
@@ -3434,6 +3725,22 @@ impl PlayWindowApp {
         let mg = &self.session.host.world.minigames;
         if !mg.dance_hud_art_staged {
             return Vec::new();
+        }
+        // `GO!` after READY (`FUN_801cf470` states 4 / 5): widget `0x0C`
+        // off the run's own table, through the one shared emitter.
+        if let Some(go) = mg.dance_countin_go {
+            return mg
+                .dance
+                .as_ref()
+                .and_then(|g| g.widget(ud::COUNTIN_GO_WIDGET))
+                .map(|(w, abr)| {
+                    ud::dance_go_prims(
+                        go,
+                        ud::DanceCountInArt::from_widget(&w, abr),
+                        ud::COUNTIN_OT,
+                    )
+                })
+                .unwrap_or_default();
         }
         let Some(env) = mg.dance_countin_banner.as_ref() else {
             return Vec::new();
@@ -3623,18 +3930,24 @@ impl PlayWindowApp {
                 None => newest.push(p),
             }
         }
+        // Seated the way retail's renderer `FUN_801DF6B8` seats them: a
+        // view-space square over the struck actor's display trio, rising and
+        // growing with the ring timer (`battle_numerals::popup_value_cells`,
+        // the kernel the browser play page seats through too).
+        let vp = cam.to_cols_array();
+        let world = &self.session.host.world;
         let mut runs = Vec::new();
         for p in newest {
-            let Some((ax, ay)) = self.actor_stage_point(usize::from(p.slot), cam) else {
+            let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            runs.push(vr::value_cells(
-                p.amount,
-                ax,
-                ay - VALUE_READOUT_ACTOR_LIFT,
-                age,
-            ));
+            let cells = legaia_engine_render::battle_numerals::popup_value_cells(
+                &vp, 1.0, trio, p.amount, age,
+            );
+            if !cells.is_empty() {
+                runs.push(cells);
+            }
         }
         Some((cluster, runs))
     }

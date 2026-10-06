@@ -384,13 +384,31 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
     assert_eq!(xs, want);
 
     // The full HUD quad frame (the play window's per-frame list) carries the
-    // box frames plus the gauge readout pair; a zero score draws no digit
-    // quads (the number renderer's -1 sentinel suppresses every slot).
+    // box frames plus the gauge readout pair; a zero score draws one `0`
+    // digit (the number renderer seeds its units slot, `0x801D3358`), and so
+    // does the zero gauge counter beside the `Lv.` pair.
+    // Plus the human's beat track (`FUN_801D2524`): the arrow and caps, the
+    // clipped notes and body, the stock markers (submission order).
     let frame = game.hud_draw_quads(false);
+    let (tx, ty) = legaia_engine_core::dance::DANCE_TRACK_XY;
+    let track = game.beat_track_quads(0, tx, ty);
+    assert!(
+        track.len() >= 3 + 12 + 3,
+        "three stock markers, the body tiles and caps + arrow: {}",
+        track.len()
+    );
     assert_eq!(
         frame.len(),
-        3 + 2,
-        "three box frames + the Lv. label + level digit"
+        3 + 3 + 2 + 1 + track.len(),
+        "three box frames + three `0` scores + the Lv. pair + the `0` counter + the beat track"
+    );
+    // Body and notes stay inside the track's [x, x + 0x50) draw area.
+    assert!(
+        track[3..track.len() - 3]
+            .iter()
+            .filter(|q| q.y1 <= ty + 0x10)
+            .all(|q| q.x0 >= tx && q.x1 <= tx + 0x50),
+        "the body and notes are clipped to the track window"
     );
     // A non-zero score adds its style-A digit run with the glyph-U patched
     // per digit.
@@ -571,4 +589,38 @@ fn real_step_marker_flipbook_cycles_every_class() {
         now.iter().collect::<std::collections::BTreeSet<_>>().len() > 1,
         "the four classes must not be in lockstep: {now:?}"
     );
+}
+
+/// The song end runs the overlay's own countdown programs (states `0xB` /
+/// `0xC`): `3`, `2`, `1`, `FINISH!` come up in that order, each with its own
+/// cue, and the run reaches its results only after the wipe.
+#[test]
+fn the_song_end_counts_down_3_2_1_finish() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    eprintln!("[ran] dance song-end countdown");
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    while !game.song_over() {
+        game.advance(1);
+    }
+    assert!(!game.finished(), "the countdown runs after the song");
+    let mut first_seen: Vec<u16> = Vec::new();
+    let mut cues = Vec::new();
+    let mut vsyncs = 0;
+    while !game.finished() {
+        game.advance(1);
+        vsyncs += 1;
+        cues.extend(game.take_finish_cues());
+        for f in game.sprite_part_emits() {
+            if (0x17..=0x1A).contains(&f.sprite) && !first_seen.contains(&f.sprite) && f.fade > 0 {
+                first_seen.push(f.sprite);
+            }
+        }
+        assert!(vsyncs < 2000, "the wipe never reached the results");
+    }
+    eprintln!("countdown: {first_seen:x?}, cues {cues:x?}, {vsyncs} vsyncs");
+    assert_eq!(first_seen, vec![0x1A, 0x19, 0x18, 0x17], "3, 2, 1, FINISH!");
+    assert_eq!(cues, vec![0x209, 0x208, 0x207, 0x206]);
 }

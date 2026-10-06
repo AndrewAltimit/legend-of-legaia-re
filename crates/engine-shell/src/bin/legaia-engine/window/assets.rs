@@ -71,6 +71,7 @@ impl PlayWindowApp {
         };
         // Pose source for the scene's animated actors + placed static objects.
         let scene_bundle = self.find_scene_anm_bundle();
+        let mut lit_sources = std::collections::HashMap::new();
         let (
             vram_opt,
             font_opt,
@@ -136,7 +137,10 @@ impl PlayWindowApp {
                 // matches the asset-viewer's cleanup and avoids the "flat
                 // green CLUT[0]" shells over correctly-textured geometry
                 // that the unfiltered builder produces.
-                let (mut vmesh, lit_rows) = rtmd.build_filtered_vram_mesh_lit(&res.vram);
+                let (mut vmesh, lit_vertices) =
+                    rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
+                let lit_rows: Vec<bool> = lit_vertices.iter().map(Option::is_some).collect();
+                let prologue_graded = self.session.host.world.scene_color_grade().is_some();
                 // Prologue dim ambient on the LIT prim rows. Retail stages the
                 // GTE back/ambient colour `DAT_8007B788` = `0x00202020` (dim,
                 // R=G=B=32) for the prologue cutscene legs vs `0x00FFFFFF` in
@@ -149,7 +153,7 @@ impl PlayWindowApp {
                 // colour, and the colour test turned every such prim (the
                 // jungle's one-quad bush / branch billboards) black. Scoped to
                 // the prologue legs by the same gate as the sepia grade.
-                if self.session.host.world.scene_color_grade().is_some() {
+                if prologue_graded {
                     legaia_engine_core::fade::apply_prologue_lit_ambient(
                         &mut vmesh.colors,
                         &lit_rows,
@@ -308,6 +312,16 @@ impl PlayWindowApp {
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
+                        // The light-source rows: keep the processed mesh so
+                        // each env draw can take a copy shaded at its own
+                        // rotation (`rebuild_field_lit_meshes`). The prologue
+                        // legs keep their ambient restage above.
+                        if !prologue_graded
+                            && lit_vertices.len() == vmesh.colors.len()
+                            && legaia_engine_core::field_lit_mesh::has_lit_rows(&lit_vertices)
+                        {
+                            lit_sources.insert(meshes.len(), (vmesh.clone(), lit_vertices));
+                        }
                         tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
                         meshes.push(m);
                         tmd_src_index.push(src_i);
@@ -364,7 +378,7 @@ impl PlayWindowApp {
                             None => ([0; 3], [0; 3]),
                         })
                         .collect();
-                    let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                    let (mut vmesh, posed_lit) = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot_lit(
                         &rtmd.tmd, &rtmd.raw, &offsets,
                     );
                     let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
@@ -393,6 +407,15 @@ impl PlayWindowApp {
                             &vmesh.indices,
                         ) {
                             Ok(m) => {
+                                // Light-source rows: each prop's draw takes a
+                                // copy shaded at its own rotation
+                                // (`rebuild_field_lit_meshes`).
+                                if self.session.host.world.scene_color_grade().is_none()
+                                    && posed_lit.len() == vmesh.colors.len()
+                                    && legaia_engine_core::field_lit_mesh::has_lit_rows(&posed_lit)
+                                {
+                                    lit_sources.insert(meshes.len(), (vmesh.clone(), posed_lit));
+                                }
                                 slot.vram = Some(meshes.len());
                                 meshes.push(m);
                                 tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
@@ -543,15 +566,20 @@ impl PlayWindowApp {
         // came from, parallel to the draw list, so the live ladder can be
         // folded back in per frame (`FieldFloorWave` - the op-`0x4C` nibble-9
         // floor wave).
-        let (field_placement_draws, floor_placement, placement_window_keys, _, placement_records) =
-            self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
+        let (
+            field_placement_draws,
+            floor_placement,
+            placement_window_keys,
+            placement_cell_keys,
+            placement_records,
+        ) = self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
         // props' placement transforms map to `color_meshes` indices.
         let (
             field_placement_color_draws,
             floor_placement_color,
             placement_color_window_keys,
-            _,
+            placement_color_cell_keys,
             placement_color_records,
         ) = self.resolve_field_placement_draws(
             &res,
@@ -601,12 +629,12 @@ impl PlayWindowApp {
                 }
             }
         }
-        let (world_map_terrain_draws, deco_start) =
+        let (world_map_terrain_draws, deco_start, world_map_terrain_records) =
             self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // The same stamps bridged through the colour-mesh list: the landmark
         // pack's untextured F*/G* prims (hut roofs, colour-only landmarks)
         // draw on the colour pipeline, as the field terrain's do.
-        let (world_map_terrain_color_draws, color_deco_start) =
+        let (world_map_terrain_color_draws, color_deco_start, world_map_terrain_color_records) =
             self.resolve_world_map_terrain_draws(&res, &color_tmd_src_index);
         // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
         // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
@@ -813,6 +841,8 @@ impl PlayWindowApp {
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         self.field_terrain_draws = field_terrain_draws;
+        self.field_lit.sources = lit_sources;
+        self.field_lit.light = None;
         self.field_terrain_color_draws = field_terrain_color_draws;
         self.field_terrain_cell_keys = terrain_cell_keys;
         self.field_terrain_color_cell_keys = terrain_color_cell_keys;
@@ -821,8 +851,31 @@ impl PlayWindowApp {
         self.field_placement_color_draws = field_placement_color_draws;
         self.field_placement_window_keys = placement_window_keys;
         self.field_placement_color_window_keys = placement_color_window_keys;
+        self.field_placement_cell_keys = placement_cell_keys;
+        self.field_placement_color_cell_keys = placement_color_cell_keys;
         self.field_placement_records = placement_records;
         self.field_placement_color_records = placement_color_records;
+        // Pack slot -> uploaded mesh, for the placed objects a motion
+        // stream re-binds (`World::object_live_models`).
+        let env_tmds = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .map(|s| legaia_engine_core::field_env::env_pack_tmd_indices(s, &res))
+            .unwrap_or_default();
+        let bridge = |src: &[usize]| -> Vec<Option<usize>> {
+            env_tmds
+                .iter()
+                .map(|&r| src.iter().position(|&s| s == r))
+                .collect()
+        };
+        self.field_pack_meshes = bridge(&tmd_src_index);
+        self.field_pack_color_meshes = bridge(&color_tmd_src_index);
+        self.field_placement_stream_bound =
+            legaia_engine_core::field_env::stream_bound_draws(&self.field_placement_records);
+        self.field_placement_color_stream_bound =
+            legaia_engine_core::field_env::stream_bound_draws(&self.field_placement_color_records);
         // The ladder those four lists were baked against, plus their per-draw
         // rungs: `handle_redraw` folds any later movement into the matrices.
         let floor_base = self.session.host.scene.as_ref().and_then(|s| {
@@ -841,8 +894,11 @@ impl PlayWindowApp {
         // its own clip cursor) and their own live animation state.
         self.field_posed_tmds = posed_tmds;
         self.field_posed_props = posed_props;
+        self.rebuild_field_lit_meshes();
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.world_map_terrain_color_draws = world_map_terrain_color_draws;
+        self.world_map_terrain_records = world_map_terrain_records;
+        self.world_map_terrain_color_records = world_map_terrain_color_records;
         self.world_map_deco_start = (deco_start, color_deco_start);
         self.ground_heightfield = world_map_hf;
         self.ground_src = ground_src;

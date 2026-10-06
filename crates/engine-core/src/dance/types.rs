@@ -254,6 +254,10 @@ pub(super) struct Dancer {
     pub(super) misses: u32,
     /// The last triangle landed on the combo slot (`DAT_801d570c`).
     pub(super) landed: bool,
+    /// A triangle landed during the Finish countdown / wipe (states `0xB` /
+    /// `0xC`) - `DAT_801d538c[player] = 1` at `0x801D1D30`. Its reader is not
+    /// in the dump corpus; the port keeps the store.
+    pub(super) finale_landed: bool,
     /// Beat index of the last judged press. Retail's actor handler stops calling
     /// the award routine while the reaction / move clip plays, which is always
     /// long enough to cover the rest of the beat's window; this is that gate in

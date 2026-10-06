@@ -230,6 +230,7 @@ pub fn build_field_render(
     is_world_map: bool,
     hidden_records: &std::collections::HashSet<usize>,
     render_scales: &std::collections::HashMap<usize, u16>,
+    floor_follow: &dyn Fn(usize, i32, i32) -> Option<i32>,
 ) -> FieldRender {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
@@ -283,10 +284,29 @@ pub fn build_field_render(
     // `resolve_placement_draws`.
     if let Some(binds) = binds.as_ref() {
         field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
+        // A bind record carrying the actor tick's floor-follow law draws on
+        // the floor sample under it, not at its `.MAP` lift - the same pass
+        // the native shell runs (`follow_floor_placed_draws`).
+        field_env::follow_floor_placed_draws(&mut placements, binds, floor_follow);
     }
     let placement_scales =
         field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);
-    let placement_records = field_env::placed_bind_records(&placements, binds.as_ref());
+    // The overworld resolves without binds (its landmarks draw unposed and
+    // unscaled), but a landmark still has an actor a kingdom MAN can tint -
+    // so its record comes off the binds all the same; the decorations that
+    // follow have none. The native window's `resolve_world_map_terrain_draws`
+    // keys its landmark cues the same way.
+    let placement_records = if is_world_map {
+        let wm_binds = scene.field_object_binds(index).ok().flatten();
+        let mut r = field_env::placed_bind_records(
+            &placements[..decoration_start.min(placements.len())],
+            wm_binds.as_ref(),
+        );
+        r.resize(placements.len(), None);
+        r
+    } else {
+        field_env::placed_bind_records(&placements, binds.as_ref())
+    };
     let window_keys = placements
         .iter()
         .map(|d| field_env::placed_window_key(d, binds.as_ref()))
@@ -471,6 +491,132 @@ impl LegaiaRuntime {
             f.cur = Some(((s, anim), built.0, built.1));
         }
         Ok(slot)
+    }
+
+    /// Select + build environment-pack slot `slot` (unposed) with its
+    /// **light-source rows** shaded for a draw at the record angles
+    /// `(rot_x, rot_y, rot_z)` under the world's live field light - the
+    /// `legaia_engine_core::field_lit_mesh` kernel the native window shades
+    /// its env draws with. Returns whether the mesh has lit rows at all; for a
+    /// mesh without any, the build is the plain [`Self::field_mesh`] one and
+    /// the page keeps sharing that upload across draws.
+    pub fn field_mesh_lit(
+        &mut self,
+        slot: u32,
+        rot_x: u32,
+        rot_y: u32,
+        rot_z: u32,
+    ) -> Result<bool, JsValue> {
+        self.field_mesh_posed_lit(slot, 0, rot_x, rot_y, rot_z)
+    }
+
+    /// [`Self::field_mesh_lit`] for a placed prop posed at frame 0 of scene
+    /// ANM record `anim_id - 1` ([`Self::field_mesh_posed`]): the lit rows'
+    /// normals turn with each bone before the draw's rotation folds in.
+    /// `anim_id == 0` is the unposed build.
+    pub fn field_mesh_posed_lit(
+        &mut self,
+        slot: u32,
+        anim_id: u32,
+        rot_x: u32,
+        rot_y: u32,
+        rot_z: u32,
+    ) -> Result<bool, JsValue> {
+        let s = slot as usize;
+        let anim = anim_id.min(u8::MAX as u32) as u8;
+        let light = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.presentation.field_light)
+            .ok_or_else(|| JsValue::from_str("field_mesh_lit: no scene"))?;
+        let res_idx = *self
+            .field
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("field_mesh_lit: no scene"))?
+            .env_tmds
+            .get(s)
+            .ok_or_else(|| JsValue::from_str(&format!("field_mesh_lit: slot {s} out of range")))?;
+        let offsets: Option<Vec<([i16; 3], [i16; 3])>> = if anim == 0 {
+            None
+        } else {
+            self.frame0_bone_offsets(anim, res_idx)
+        };
+        let (mesh, flat, lit) = {
+            let res = self
+                .res()
+                .ok_or_else(|| JsValue::from_str("field_mesh_lit: no resources"))?;
+            let rtmd = res
+                .tmds
+                .get(res_idx)
+                .ok_or_else(|| JsValue::from_str("field_mesh_lit: tmd missing"))?;
+            let (mut mesh, mut flat, lit) = match &offsets {
+                Some(o) => {
+                    legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
+                }
+                None => {
+                    legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram)
+                }
+            };
+            if legaia_engine_core::field_lit_mesh::has_lit_rows(&lit) {
+                let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
+                    rot_x as u16,
+                    rot_y as u16,
+                    rot_z as u16,
+                );
+                legaia_engine_core::field_lit_mesh::shade_lit_rows_rgba(
+                    &mut mesh.colors,
+                    &mut flat,
+                    &lit,
+                    &light,
+                    &rot,
+                );
+            }
+            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+                &rtmd.raw, &mut mesh, &flat, &res.vram,
+            );
+            (mesh, flat, lit)
+        };
+        let has_lit = legaia_engine_core::field_lit_mesh::has_lit_rows(&lit);
+        if let Some(f) = self.field.as_mut() {
+            // Not the plain build's cache key: a later `field_mesh(slot)`
+            // must rebuild the unshaded stream.
+            f.cur = Some(((usize::MAX, 0), mesh, flat));
+        }
+        Ok(has_lit)
+    }
+
+    /// Whether env-pack slot `slot` carries light-source rows - the page's
+    /// "needs a per-rotation shaded copy" test.
+    pub fn field_mesh_has_lit_rows(&self, slot: u32) -> bool {
+        let Some(res_idx) = self
+            .field
+            .as_ref()
+            .and_then(|f| f.env_tmds.get(slot as usize).copied())
+        else {
+            return false;
+        };
+        let Some(res) = self.res() else {
+            return false;
+        };
+        res.tmds.get(res_idx).is_some_and(|rtmd| {
+            let (_, lit) = rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
+            legaia_engine_core::field_lit_mesh::has_lit_rows(&lit)
+        })
+    }
+
+    /// The live field light as one comparable key (angles + back colour) -
+    /// the page re-shades its lit env copies when it changes (op `4C 8A`).
+    pub fn field_light_key(&self) -> String {
+        self.scene_host
+            .as_ref()
+            .map(|h| {
+                let l = h.world.presentation.field_light;
+                format!(
+                    "{},{},{},{},{},{}",
+                    l.angles[0], l.angles[1], l.angles[2], l.back[0], l.back[1], l.back[2]
+                )
+            })
+            .unwrap_or_default()
     }
 
     pub fn field_mesh_positions(&self) -> Vec<f32> {
@@ -683,6 +829,33 @@ impl LegaiaRuntime {
         if any { out } else { Vec::new() }
     }
 
+    /// Per-placement **live model** (parallel to
+    /// [`Self::field_placement_slots`]): the env-pack slot a placed object's
+    /// scripted-motion stream swapped in with op `0x0E` (koin3's video
+    /// wall), or `-1` for a placement drawing its own slot. **Empty** while
+    /// no stream has swapped a model. The same `World::object_live_models`
+    /// table the native play-window draws its placed objects through.
+    pub fn field_placement_models(&self) -> Vec<i32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let models = h.world.object_live_models();
+        if models.is_empty() {
+            return Vec::new();
+        }
+        let bound = field_env::stream_bound_draws(&f.placement_records);
+        f.placement_records
+            .iter()
+            .zip(bound)
+            .map(|(r, bound)| {
+                r.filter(|_| bound)
+                    .and_then(|r| models.get(&r))
+                    .filter(|&&id| (0..0xF0).contains(&id))
+                    .map_or(-1, |&id| i32::from(id))
+            })
+            .collect()
+    }
+
     /// Per-placement **live** mask (parallel to [`Self::field_placement_slots`]):
     /// `1` = draw it this frame, `0` = the placement is a sub-area window
     /// sweep's whose actor is not on the world's windowed static-object list.
@@ -699,6 +872,69 @@ impl LegaiaRuntime {
             .iter()
             .map(|k| u8::from(field_env::placed_draw_live(k.as_ref(), window)))
             .collect()
+    }
+
+    /// Per-placement **actor-cull** mask (parallel to
+    /// [`Self::field_placement_slots`]): `1` = the placed object's actor is
+    /// culled this frame (outside the region box or the visible tile window
+    /// widened by its record's cull radius - retail's `FUN_801D79E8`, which
+    /// the actor draw walk honours), so the page skips it. **Empty** while
+    /// the visible-tile crop does not apply (no crop = draw every placement).
+    /// The same `field_view_window::placed_actor_visible` kernel the native
+    /// play-window's placed-object pass asks per draw.
+    pub fn field_placement_culled(&self, debug_camera: bool) -> Vec<u8> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(cells) = self.field_view_cells_now(debug_camera) else {
+            return Vec::new();
+        };
+        let moves = h.world.object_draw_displacements();
+        let per = field_env::placed_draw_displacements(&f.placement_records, &moves);
+        f.placements
+            .iter()
+            .zip(per)
+            .map(|(d, m)| {
+                u8::from(
+                    !legaia_engine_core::field_view_window::placed_actor_visible(
+                        &h.world,
+                        Some(&cells),
+                        d.world_x + m[0],
+                        d.world_z + m[2],
+                        d.cull_radius,
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    /// A stamp that moves whenever [`Self::field_placement_culled`] can: the
+    /// published cull view (focus, region box, window) and the crop's own
+    /// stamp; `0` while no crop applies. The page re-reads the mask only when
+    /// it moves.
+    pub fn field_placement_cull_stamp(&self, debug_camera: bool) -> u32 {
+        let Some(cells) = self.field_view_cells_now(debug_camera) else {
+            return 0;
+        };
+        let Some(view) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.npcs.cull_view)
+        else {
+            return 0;
+        };
+        let mut h: u32 = cells.stamp();
+        for v in [
+            view.focus_stored[0],
+            view.focus_stored[1],
+            i32::from_le_bytes(view.attr_box),
+            i32::from_le_bytes(view.window.map(|b| b as u8)),
+        ] {
+            for b in v.to_le_bytes() {
+                h = (h ^ u32::from(b)).wrapping_mul(0x0100_0193);
+            }
+        }
+        h.max(1)
     }
 
     /// Whether retail's placed-object near reject drops a placed draw whose
@@ -1310,6 +1546,90 @@ impl LegaiaRuntime {
         self.scene_host
             .as_ref()
             .map(|h| self.actors.tilts(h))
+            .unwrap_or_default()
+    }
+
+    /// Per catalogued NPC, the op-`4C 81` **draw tint** as a constant
+    /// per-draw cue, `[r, g, b, ir0, ...]` (far colour in display `0..1`,
+    /// `ir0` in `1.0 = 0x1000` units; `ir0 == 0` = untinted). **Empty** while
+    /// no NPC is tinted. The same `World::field_npc_draw_tint` the native
+    /// play-window stages on its NPC draws.
+    pub fn play_npc_tints(&self) -> Vec<f32> {
+        self.scene_host
+            .as_ref()
+            .map(|h| self.actors.tints(h))
+            .unwrap_or_default()
+    }
+
+    /// Whether any field context has `+0x42` raised this frame (field-VM
+    /// `4C C2`) - the page asks [`Self::play_effect_clip`] per draw only
+    /// while this is `true`.
+    pub fn play_effect_clip_live(&self) -> bool {
+        self.scene_host
+            .as_ref()
+            .is_some_and(|h| !h.world.object_effect_clips().is_empty())
+    }
+
+    /// One draw's **object-effect clip** in mesh space,
+    /// `[m0, m1, m2, lo, hi, 1]` (keep `lo <= m . p <= hi`), or empty while
+    /// the draw's actor has no raised `+0x42`. `kind` `0` = a placed
+    /// object, `key` its placement draw index (the [`Self::field_placement_tints`]
+    /// index); `kind` `1` = a catalogued NPC, `key` its placement slot;
+    /// `kind` `2` = the player (`key` ignored).
+    /// `model` is the draw's page model matrix (16 floats, column-major), in
+    /// the page's Y-flipped frame: its row 1 is negated back to retail's
+    /// before the shared kernel `World::object_effect_mesh_clip` - the one
+    /// the native window asks per placed / NPC draw.
+    pub fn play_effect_clip(&self, kind: u8, key: u32, model: Vec<f32>) -> Vec<f32> {
+        use legaia_engine_core::world::ActorTintKey;
+        let Some(h) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        if model.len() < 16 {
+            return Vec::new();
+        }
+        let tint_key = match kind {
+            0 => {
+                let Some(r) = self
+                    .field
+                    .as_ref()
+                    .and_then(|f| f.placement_records.get(key as usize).copied().flatten())
+                else {
+                    return Vec::new();
+                };
+                ActorTintKey::Object(r as u16)
+            }
+            1 => ActorTintKey::Npc(key as usize),
+            2 => ActorTintKey::Player,
+            _ => return Vec::new(),
+        };
+        // Column-major `model[c * 4 + r]`; retail = diag(1, -1, 1) * page.
+        let row = |r: usize, sign: f32| {
+            [
+                sign * model[r],
+                sign * model[4 + r],
+                sign * model[8 + r],
+                sign * model[12 + r],
+            ]
+        };
+        let rows = [row(0, 1.0), row(1, -1.0), row(2, 1.0)];
+        h.world
+            .object_effect_mesh_clip(tint_key, rows)
+            .map(|c| c.shader_floats().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// The player's op-`4C 81` draw tint, `[r, g, b, ir0]`, or empty while
+    /// the player draws untinted (`World::player_draw_tint`, the native
+    /// window's player cue).
+    pub fn play_player_tint(&self) -> Vec<f32> {
+        self.scene_host
+            .as_ref()
+            .and_then(|h| h.world.player_draw_tint())
+            .map(|(colour, blend)| {
+                let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                vec![far[0], far[1], far[2], ir0]
+            })
             .unwrap_or_default()
     }
 }

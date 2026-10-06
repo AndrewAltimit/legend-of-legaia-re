@@ -95,6 +95,15 @@ pub struct CutsceneState {
     /// the op suspends (Armed) until the player commits a name, then resumes
     /// (Done) - and never re-opens it on the record's later STATE_RESUMEs.
     pub prologue_naming_armed: bool,
+    /// The field-VM context whose op-`0x49` sub-3 raised the pending naming
+    /// prompt: only that context opens the screen and reads its park. The
+    /// opening install names the cutscene timeline; any other `49 03 <slot>`
+    /// names the context that executed it (`cave01`'s Noa prompt runs in a
+    /// concurrent helper context).
+    pub naming_owner: Option<crate::field_submode_screen::Op49ParkOwner>,
+    /// The party slot the pending naming prompt edits - the byte after the
+    /// sub-op (`49 03 <slot>`, retail's `_DAT_8007B450 + 1`).
+    pub naming_slot: usize,
     /// Set by [`crate::world::World::take_prologue_handoff`] when it hands off to `town01`, so
     /// the next `town01` field entry installs the opening cutscene timeline
     /// (establishing shot + Vahn walk-out + name-entry handoff). Cleared when
@@ -168,6 +177,8 @@ impl CutsceneState {
             in_timeline: false,
             prologue_naming_pending: false,
             prologue_naming_armed: false,
+            naming_owner: None,
+            naming_slot: 0,
             entering_town01_opening: false,
             card: None,
             caption: None,

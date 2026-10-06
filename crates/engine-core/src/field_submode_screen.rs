@@ -206,6 +206,39 @@ pub struct SubmodeScreen {
     /// is spent until the park is re-armed. See
     /// [`World::scripted_menu_open_pending`].
     pub scripted_menu_opened: bool,
+    /// Slot `0x33`'s return-to-title state ([`SoftResetScreen`]).
+    pub soft_reset: SoftResetScreen,
+}
+
+/// Handler slot op `49 0C` installs: `FUN_801EDF00`, the return-to-title soft
+/// reset (`OP49_SUBOP_SLOTS[0x0C]`).
+pub const SOFT_RESET_SLOT: u16 = 0x33;
+
+/// Retail pen x of the records screen the soft reset draws:
+/// `FUN_801ED710(0x20, _DAT_801F35B8)` (`li a0,0x20` at `0x801EDF48` /
+/// `0x801EE004`).
+pub const SOFT_RESET_RECORDS_X: i32 = 0x20;
+
+/// Slot `0x33` - the screen `edlast`'s credits end on (`49 0C` after the
+/// press-to-continue poll). It slides the play records in, waits for a face
+/// button, fades to white and reloads the executable, so it never hands the
+/// frame back: the op stays parked until the title takes over.
+///
+/// The phase machine is `legaia_engine_vm::world_map_panel_actors::soft_reset_tick`
+/// (`FUN_801EDF00`); this is the per-screen state it runs over.
+// REF: FUN_801EDF00 (soft_reset_tick), FUN_801ED710 (the records screen),
+// FUN_801D58F0 (the white fade), FUN_80017714 (the executable reload)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SoftResetScreen {
+    /// The actor's `+0x54` phase.
+    pub phase: i16,
+    /// `_DAT_801F35B8` - the records slide, then the reload counter.
+    pub slide: i32,
+    /// The records screen's y this frame (`FUN_801ED710`'s `a1`), `None`
+    /// before the first draw.
+    pub records_y: Option<i32>,
+    /// The reload was reached and the title hand-off raised.
+    pub reloaded: bool,
 }
 
 impl SubmodeScreen {
@@ -299,6 +332,7 @@ impl World {
         s.flag_window = Default::default();
         s.code_lock = Default::default();
         s.coin_panel.clear();
+        s.soft_reset = SoftResetScreen::default();
     }
 
     /// Open the casino **coin counter** - buy coins with party gold at
@@ -510,12 +544,14 @@ impl World {
         let mut screen = std::mem::take(&mut self.field_vm.submode_screen);
         let window = screen.window;
         let mut installed = std::mem::take(&mut screen.installed_windows);
+        let mut reset_fx = Vec::new();
         let SubmodeScreen {
             actor,
             cursor,
             counter,
             flag_window,
             code_lock,
+            soft_reset,
             ..
         } = &mut screen;
         let flag_bank: &[u8] = &self.flags.system_flags;
@@ -549,6 +585,23 @@ impl World {
                     lock_delta,
                     &mut flag_writes,
                 )
+            } else if a.state == SOFT_RESET_SLOT {
+                use legaia_engine_vm::world_map_panel_actors::{SoftResetInput, soft_reset_tick};
+                let (phase, slide, fx) = soft_reset_tick(
+                    soft_reset.phase,
+                    SoftResetInput {
+                        frame_delta: env.frame_delta,
+                        slide: soft_reset.slide,
+                        // Retail samples the held word once per game tick;
+                        // the latched edge keeps a tap that fell between two
+                        // ticks (see `pad_edge_latch`).
+                        pad: env.pad_held | env.pad_edge,
+                    },
+                );
+                soft_reset.phase = phase;
+                soft_reset.slide = slide;
+                reset_fx = fx;
+                HubFrame::default()
             } else {
                 run_slot(a, &env, g, counter)
             };
@@ -611,6 +664,7 @@ impl World {
         self.field_vm.submode_screen.picker_result = 0;
         self.apply_submode_actions();
         self.paint_coin_entry_panel();
+        self.apply_soft_reset_effects(&reset_fx);
         if retired {
             self.field_vm.submode_screen.open = false;
             self.field_vm.submode_screen.done = true;
@@ -836,6 +890,61 @@ impl World {
             equip: self.submode_equip_env(),
             ..HubEnv::default()
         }
+    }
+
+    /// Apply what one tick of the soft reset (slot [`SOFT_RESET_SLOT`]) asked
+    /// for.
+    ///
+    /// - `DrawRecords` positions the records screen
+    ///   ([`crate::scene::SceneHost::soft_reset_records_pen`]).
+    /// - `WhiteFade` is `FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x78, -1)`
+    ///   (`0x801EDFC8..0x801EDFE8`): a kind-2 fade from black to white over
+    ///   `0x78` frames, held.
+    /// - `ReloadExecutable` is `FUN_80017714` reloading the boot executable
+    ///   (`0x801EE04C`). The port has no image to reload; the destination is
+    ///   the title screen, which the hosts reach through the same title
+    ///   hand-off field-VM op `4C EA` raises ([`World::game_over`]). Retail's
+    ///   reboot also replays the boot logos on the way; the port does not.
+    fn apply_soft_reset_effects(
+        &mut self,
+        fx: &[legaia_engine_vm::world_map_panel_actors::SoftResetEffect],
+    ) {
+        use legaia_engine_vm::world_map_panel_actors::SoftResetEffect as Fx;
+        for e in fx {
+            match *e {
+                Fx::DrawRecords { y } => {
+                    self.field_vm.submode_screen.soft_reset.records_y = Some(y)
+                }
+                Fx::WhiteFade { frames } => {
+                    let template = crate::fade::FadeTemplate {
+                        kind: 2,
+                        duration: frames as i16,
+                        start_rgb: [0, 0, 0],
+                        end_rgb: [0xFF, 0xFF, 0xFF],
+                        mode: [0, -1, 0],
+                    };
+                    crate::fade::spawn_fade(&mut self.presentation.fade, &template, 0);
+                }
+                Fx::ReloadExecutable => {
+                    if !self.field_vm.submode_screen.soft_reset.reloaded {
+                        self.field_vm.submode_screen.soft_reset.reloaded = true;
+                        self.game_over = true;
+                    }
+                }
+                Fx::ArmReset | Fx::TickTextActors => {}
+            }
+        }
+    }
+
+    /// Where the soft reset's records screen draws this frame, in retail
+    /// 320x240 stage pixels: `(0x20, slide)`. `None` unless slot
+    /// [`SOFT_RESET_SLOT`] is up and has drawn.
+    pub fn soft_reset_records_pen(&self) -> Option<(i32, i32)> {
+        let s = &self.field_vm.submode_screen;
+        if !s.open || s.actor.state != SOFT_RESET_SLOT {
+            return None;
+        }
+        s.soft_reset.records_y.map(|y| (SOFT_RESET_RECORDS_X, y))
     }
 
     /// Apply the side effects the last tick reported.
@@ -1411,6 +1520,50 @@ mod tests {
         assert!(retired, "the close tick clears the gate and retires");
         assert!(w.field_vm.submode_screen.is_done());
         assert!(!w.field_vm.submode_screen.is_open());
+    }
+
+    /// `49 0C` (slot `0x33`, `FUN_801EDF00`): the records slide in, a face
+    /// press fades to white, and the reload raises the title hand-off. The
+    /// screen never hands the frame back, so the op stays parked.
+    #[test]
+    fn the_soft_reset_slides_records_in_then_hands_off_to_the_title() {
+        use crate::input::PadButton;
+        use legaia_engine_vm::world_map_panel_actors::{
+            SOFT_RESET_SLIDE_REST, SOFT_RESET_SLIDE_START,
+        };
+        assert_eq!(slot_for_op49_sub_op(0x0C), Some(SOFT_RESET_SLOT));
+        let mut w = world_with_driver();
+        w.open_field_submode_screen(SOFT_RESET_SLOT, None);
+        assert!(w.soft_reset_records_pen().is_none(), "nothing drawn yet");
+        w.tick_submode_screen(1);
+        w.tick_submode_screen(1);
+        let (x, y0) = w.soft_reset_records_pen().expect("records drawn");
+        assert_eq!(x, SOFT_RESET_RECORDS_X);
+        assert!(y0 < SOFT_RESET_SLIDE_START && y0 > SOFT_RESET_SLIDE_REST);
+        // A press before the slide lands is ignored.
+        w.input.set_pad(PadButton::Cross.mask());
+        assert!(!w.tick_submode_screen(1));
+        w.input.set_pad(0);
+        for _ in 0..0x100 {
+            assert!(!w.tick_submode_screen(1), "the soft reset never retires");
+        }
+        assert_eq!(
+            w.soft_reset_records_pen(),
+            Some((SOFT_RESET_RECORDS_X, SOFT_RESET_SLIDE_REST))
+        );
+        assert!(!w.game_over);
+        w.input.set_pad(PadButton::Cross.mask());
+        w.tick_submode_screen(1);
+        w.input.set_pad(0);
+        assert_eq!(
+            w.field_vm.submode_screen.soft_reset.phase, 2,
+            "white fade armed"
+        );
+        for _ in 0..0x78 {
+            w.tick_submode_screen(1);
+        }
+        assert!(w.game_over, "the reload raises the title hand-off");
+        assert!(w.field_vm.submode_screen.is_open(), "the op stays parked");
     }
 
     #[test]

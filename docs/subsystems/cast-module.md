@@ -45,6 +45,14 @@ from outside the image - see [the entry tables](#the-entry-tables-and-where-the-
 | PROT 959 | `0x3000` B | 6-entry head table (`0x801F8290, 82C4, 8478, 850C, 8600, 878C`), its own **stager** dispatcher at `0x801F8250` | `0x801F87F4` | `0x801F69F0` = file `+0x18`, 6240 B |
 | PROT 960 | `0x2800` B | none - code at file `+0` | `0x801F8638` | `0x801F74E4` (`0x7B` Plasma Strike, 4436 B) / `0x801F69D8` (`0xA6` Neo Star Slash, 2828 B) |
 
+958's 256 slots hold only 27 arms: `0..=25` and `0xFF` (`0x801F8CBC`); the
+other 229 point at the default exit, which returns busy without advancing.
+Arm 25, once its countdown runs out, stores `0xFF` to the phase
+(`0x801F8CB0..0x801F8CB8`), and arm `0xFF` clears the return register
+(`sw zero,0x28(sp)` at `0x801F8CF4`) - the module's one Done. The bound
+`sltiu 0x100` covers the whole byte, so a port that only advanced the phase
+spun it through the wrap and held state `0x70` forever.
+
 Two figures in that table **correct** earlier entries here. 958's tick body is
 file `+0x400` (the first word past the head table), not `+0x4C4` - `0x801F6E9C`
 is 0xC4 bytes INTERIOR to it, inside the register-save block. 959's was given as
@@ -280,6 +288,48 @@ the action SM's `0x51` settle gate (`FUN_801E7250`, a plain `+0x14C` vs
 `+0x172` compare) never opens. 960's dispatcher reaches arms `0..=0x10`
 before the terminal `0xFF`.
 
+**One wrapper call per cast.** The module's only damage-wrapper call is the
+burst - `li a0,0x1C0` / `lbu a1,0x13(ctx)` / `clear a2` / `jal 0x801DD6B4` at
+`0x801F8160..0x801F816C`, aimed at actor-table seat `0` - followed by the
+shape-A clamp against `+0x14C`, the `+0x10` accumulate and the HP write
+(`0x801F818C..0x801F81CC`). So a Plasma Strike is exactly two HP writes: arm
+`0x0C`'s landing of the flurry the cast clips' hit events accumulated through
+the melee kernel, then the one `0x1C0` burst. Nothing else in the cast deals
+damage, so the band's generic cast fold must not run after it; the port
+waives the fold once the tick's burst has landed (`module_skips_fold`).
+Folding as well rolled the burst twice and took a full-HP Noa to zero in one
+cast in the Nivora duel.
+
+**One owner per hit, across the band.** Every `jal` to `FUN_801DD0AC`,
+`FUN_801DD4B0` or `FUN_801DD6B4` in `0903..0966` is a hit the cast owes once,
+and the port gives each one exactly one owner:
+
+- **The fold.** This is the default. A body the port runs with a neutral wrapper return
+  (`None`, `|_| 0`, a zero heal) writes no HP, and the band's generic fold
+  rolls the cast. That covers every player-Seru and summon tick and every
+  single-target capture body except Plasma Strike's burst.
+- **The tick.** A body that rolls its own baked power in-tick owns the
+  outcome, and the fold must be waived for it. The waivers are:
+  - PROT 0927 / 0966's stager sweeps: the fold runs the stager itself,
+    `run_cast_module_aoe_for`.
+  - The three whole-row tick sweeps: PROT 0938's two and PROT 0965's,
+    waived by `tick_body_owns_the_fold` once the phase is past the sweep arm.
+  - The three trampoline-arm sweeps: PROT 0941 `0xB9`, 0950 `0xAB` and
+    0956 `0x71`, waived by `arm_sweep_arm` past the arm.
+  - PROT 0966's arm-11 stager hit and PROT 0960's burst, which raise
+    `module_skips_fold`.
+
+The rule for a newly ported damage site is the same: whatever rolls the
+wrapper in-tick must also waive the fold, on the same branch that rolled.
+Two module HP writes are not wrapper rolls and owe the fold nothing either
+way: PROT 0907's kill / confuse fork and PROT 0924's finale
+`sh zero, 0x14c` at `0x801F76A0`. Both zero the victim outright. The
+in-crate tests
+`no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold` and
+`no_seru_or_summon_tick_writes_hp_beside_its_fold`
+(`crates/engine-core/src/world/tests/cast_band.rs`) drive every
+choreography and check the rule.
+
 **The victim is the core's target, not the caster.** The monster AI's
 Delilas arms (`FUN_801E9FD4`, `0x801EB7C0..0x801EB81C`) store only
 `+0x1DE = 2` and `+0x1DF = id - 0x29`; `+0x1DD` keeps the generic core's
@@ -440,9 +490,11 @@ landing stages its reaction clip while the HP outcome stays the fold's.
 Those same two routines are the band's only row-wide appliers **among the
 stagers**, and they are `0x801F6734` stagers, not tick bodies - the move
 script drives them through move-VM opcode `0x20`, so the damage lands from the
-spawn stager and not from the `ctx+0x279` machine. Three *tick* bodies sweep a
-row too, and none of them shares the never-kill clamp -
-[below](#the-twelve-bodies-the-trampoline-map-names).
+spawn stager and not from the `ctx+0x279` machine. Four *tick* bodies sweep a
+row too, and none of them shares the never-kill clamp: the three
+[below](#the-twelve-bodies-the-trampoline-map-names), and PROT 0966's own
+tick, whose arm 26 hits the party a second time at power `0x327`
+([below](#prot-0966-evil-seru-magic-is-ported-whole)).
 
 | | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
 |---|---|---|
@@ -1053,10 +1105,42 @@ the wrapper roll with the module's own baked `a0`: the per-module damage
 shapes, and for the bodies without one `CAPTURE_SITE_POWERS` - the immediate
 ahead of each body's `jal 0x801DD4B0` / `0x801DD6B4` (PROT 0935 Earthquake
 `0x1AE` at `0x801F7AFC`, and so on). A body with no damage site (Glare,
-Fatal Decision) folds no damage. The fold runs at the band's exit into
-`0x50`, after the caster's stages and the module's arms - not at the
-`0x28 -> 0x6E` edge, which sits above `0x50` in the state space but is the
-door *into* the band.
+Fatal Decision) folds no damage. A phase-chain body (`chain_bodies`) folds
+on the tick its hit arm first runs - the arm that holds the wrapper `jal` -
+so the victim reacts where retail's does and a settle wait after it has a
+reaction to wait on. Every other body folds at the band's exit into `0x50`,
+after the caster's stages and the module's arms - not at the `0x28 -> 0x6E`
+edge, which sits above `0x50` in the state space but is the door *into* the
+band.
+
+#### The creature is seated in an arm
+
+A summon module seats its creature itself: one arm of its tick body calls
+`FUN_801F19EC`, which installs the streamed creature as actor slot 7. In
+about half the modules that arm also polls the stream (`FUN_8003F2B8(1)`)
+and seats on its first pass with the stream resident; in the rest an earlier
+arm polls and exits, and the seat arm runs after it (PROT 0905 polls in arm
+3 and seats in arm 5). `zenoir_summon_mid_cast` holds phase 3 with slot 7
+still empty (`+0x14C` zero, the seat at the origin), one arm short of its
+seat in arm 4. The arms, read off each image's own phase dispatch, are
+`cast_module_camera::module_seat_arm`; Viguro's seat sits in a routine
+(`FUN_801F7AF4`) nothing in its image references, so it has none. The
+engine's stream is resident at once, so a module with a seat arm has its
+creature requested as its phase reaches the arm instead of on the stager's
+first tick. Four camera-only directors (PROT 0917, 0928, 0929, 0931) park
+short of their seat arm, so theirs keep the first-tick seat.
+
+#### A module's fades run beside the band's
+
+The fade spawner `FUN_80024E80` takes a fresh pool actor per call, so a
+module's own ramps run beside the summon band's flash rather than replacing
+it. PROT 0905 (Vera) spawns a white rise in arm 2 (`0x20` vsyncs, additive,
+held) and in arm 4 kills it and spawns a warm `(0xFF, 0xE0, 0x80)` and a blue
+`(0, 0x1F, 0x7F)` flash decaying to black. `vera_summon_mid_cast` holds the
+rise eight vsyncs in beside the band's flash-out, and the frame is their
+sum. The engine keeps such fades in `presentation.module_fades`
+(`ArmDirection::fades`) and both hosts composite every live fade through
+`World::screen_fade_draws`.
 
 #### A module that reports its spawns
 
@@ -1069,7 +1153,7 @@ table - and the anchor: the creature seat, or the arm's own shot trios), and
 `World::summon_stager_tick` seats each one on the pass its arm makes the call.
 The parts then drain their wait timers at retail's own per-frame product
 (`SummonScene::retail_wait_drain`), the rate the module's countdown already
-runs at. PROT 0903 is the one such module:
+runs at. PROT 0903 is one such module:
 
 | arm | calls | what |
 |---:|---|---|
@@ -1077,9 +1161,60 @@ runs at. PROT 0903 is the one such module:
 | 6 | `0x801F7724`, `0x801F7794`, `0x801F7804` on the shot | the camera-relative fire tunnel |
 | 8 | `*(0x801F63A8)` (PROT 0898 record `0x801F5B28`, library mesh `0x18`) on the creature, after a 16x1 `MoveImage` of the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)` | the breath |
 
+PROT 0905 (Vera) reports its calls the same way. Its anchors are points the
+arm builds on its stack rather than seats - the framed point, or a step along
+the target's heading - so `SpawnAnchor` carries those shapes too
+(`cast_module_camera::spawn_anchor_point`):
+
+| arm | calls | anchor |
+|---:|---|---|
+| 0 | `0x801F81E4`, `0x801F823C`, `0x801F8294`, `0x801F82FC` | the framed point (the shot focus negated back) at `y = -0x280`, angles zeroed (`0x801F6BF4..0x801F6C7C`) |
+| 4 | `0x801F8364`, `0x801F83CC`, `0x801F8434` | the target plus `trunc(sin / 32)` / `trunc(cos / 32)` of its heading, `y = -0x1C2` (`0x801F707C..0x801F7144`) |
+| 5 | `0x801F8494`, `0x801F8500` | the creature it has just seated plus `trunc(sin / 24)` / `trunc(cos / 24)` of the target's heading, `y = -0x1C2` (`0x801F7340..0x801F7420`) |
+| 8 | `0x801F85D4`, `0x801F862C` | the creature (`0x801F7A48` / `7A60`) |
+| 9 | `0x801F868C`, `0x801F86EC`, `0x801F8730`, `0x801F8774`, `0x801F87D4` | the target (`0x801F7B34..0x801F7B94`) |
+
+`vera_summon_mid_cast` holds arm 0's four records and nothing else, at
+`(-365, -418, -810)`: dropped `+0x3E = 3 << 3` a step by the part tick's
+motion block from `y = -0x280` over the target's raised hand. A part seated
+this way holds a real `+0x14..+0x18`, so it moves by the motion block's
+velocity integration rather than the whole-set staging's glide toward
+`origin + anim bank`. One record is lost to the per-arm form: `0x801F8568`,
+which the module's spawn stager `0x801F8078` (the move-VM op-`0x20` hook)
+seats eight at a time with random spreads, and which no host runs.
+
 The `gimard_burning_attack` capture (arm 11) holds the two tunnel parts
-mid-program and `0x801F7804` and the breath record still allocated - the
-lifetimes the per-arm seating reproduces. Arm 3's `0x801F7820` is a record the
+mid-program and `0x801F7804` (render mode `4`, wait `1360`) still allocated,
+and no breath node: the breath's program has halted and the list walk has
+killed it, so a port must stop drawing a halted part. The breath itself runs
+on retail's clock - `shiny_refactor_gimard_plus35` (arm 9) holds it at lane
+25 weight `2048`, depth cue `0x340`, wait `584`, the values the engine's part
+reaches on the matching tick - a column of flame around the creature that
+fades in, grows through `vdf.dat` entries 25..27 and halts during arm 10.
+The capture's puff cloud is the burning-body emitter's effect-`0x0B` sprites
+([`battle-action.md`](battle-action.md)), each quad twice its pass-2 size
+across ([`effect-vm.md`](effect-vm.md#pass-2---render)). Their spawn
+points carry no offset of their own: effect `0x0B`'s one `efect.dat` record
+is all zeros (no height, planar legs or velocity - the capture's ten
+children hold zero velocity too), so each puff sits exactly where the emitter
+put it - the creature's live `+0x34..+0x38`, plus a decoded pose object
+turned by `+0x46`, plus `±(+0x58 >> 4)` of jitter. The decoded object table
+`ctx+0x6F4` matches the port's pose to a few units in both the walk
+(`gimard_burning_attack`) and the idle stance (`gimard_summon_visible`), so
+where the cloud lands on screen follows the creature's path and the framing,
+not the emitter. Two things move the path: at frame step `3` retail's
+creature takes its first walk step one whole frame (3 vsyncs) before the
+yaw base starts to swing - arm 10's exit queues the clip from the action
+SM, and the creature's anim tick, later on the same list, steps it - so at
+any given yaw base it stands about 56 units further on than a port ticking
+once a vsync; and puffs live about 23 vsyncs, so the cloud trails the
+creature by that much of its walk. The same capture holds the creature
+(pool slot 7) red: `+0x21C = 3`, `+0x04 = 0x3FC`, `+0x0C = 0x1000` - arm 9's
+render flag and tint word, eased by the presentation SM's red arm. The disc
+palette of the Gimard record is grey; the red is the tint pass, which walks
+slot 7 like any combatant. The engine seats the creature in a high slot, and
+`World::battle_actor_draw_plan` hands that slot seat 7 so the tint reaches
+the pixel on both hosts. Arm 3's `0x801F7820` is a record the
 static spawn scan does not recover (its `lui` / `addiu` pair is split across
 the arm), which is why the director names the records itself.
 
@@ -1113,7 +1248,9 @@ the wrapper is the module's own baked constant
 instead of the move-power table's scalar. PROT 0927 and PROT 0966 are the
 exception, because their damage is not a per-target fold at all: those two
 casts fold through `World::run_cast_module_aoe` and the generic path is
-skipped, so the seat range and the `HP - 1` clamp are the module's.
+skipped, so the seat range and the `HP - 1` clamp are the module's. When the
+band runs PROT 0966's body, both of its hits land mid-cast through the band
+seam, and the fold is skipped.
 
 PROT 0957 needs one more split: it carries **two** whole tick bodies, and its
 trampoline `0x801F9BA8` picks between them on the caster's queued action id -
@@ -1676,6 +1813,28 @@ all three of its bodies' walks, and PROT 0950's `0x801F86B0` goes **negative**
 (`0xFFFFFF80`) inside `0x5A`'s last arm, so whatever ends those arms is a
 different word or a different test.
 
+##### What the port gates
+
+The engine runs each of these bodies' phase chains only on the tick its arm's
+gate lets through. Seven bodies carry the gate with their camera arms
+(`cast_module_camera::capture_camera_director`); the rest of the measured set -
+PROT 0940's `0x50` / `0xAE`, PROT 0941's `0x51` and `0xB9`, PROT 0943's `0x40`
+and `0xB5`, PROT 0944's `0x53`, PROT 0950's `0x5A` and `0xAB`, and PROT 0956's `0x71` - carry it as a
+countdown table read off their disassembly
+(`cast_module_camera::capture_countdown`): per arm, the drain form and the
+re-arm store. Dividing each seed by the capture's own per-tick drain
+reproduces the dwells above arm for arm, so the table is checked against
+retail rather than fitted to it. At the engine's one-vsync tick the same seeds
+give the same wall time, which is several seconds per special rather than the
+handful of frames an ungated chain took.
+
+The fourteen phase-chain bodies carry the same kind of table
+([below](#the-fourteen-phase-chain-bodies)).
+
+PROT 0962's three bodies stay ungated: no arm of theirs drains a module word
+on the shape above (PROT 0962's `0xA3` counts one **up**
+to `0x41`, and the others wait on the scene).
+
 ##### The two Curse arms fault on a caster with too few spell entries
 
 Driving PROT 0943's `0x40` (Curse) or PROT 0944's `0x53` (Curse All) from the
@@ -1825,6 +1984,123 @@ falls to half its maximum, the pass restores the reaction run (`+0x1EF..+0x1F2
 Cort's first form fights the first half of his HP behind a halved-damage
 shield, and his Evil Seru Magic only opens after it breaks. The engine carries
 the word as `MonsterAiState::flag_bd84` (`World::tick_mystic_shield_break`).
+
+### The fourteen phase-chain bodies
+
+The tables above leave fourteen tick bodies, each read off its owning image.
+Seven sit behind a trampoline arm: PROT 0942 `0xAA`, 0956 `0x75`, 0959
+`0x7A`, 0960 `0xA6` (Neo Star Slash), 0961 `0xA1` / `0xB4`, 0963 `0xB3`
+and 0964 `0xB0..=0xB2`. The other seven are called directly by their tick
+arm: PROT 0919 (Spoon), 0935, 0936, 0937, 0939, 0947 and 0948. Their
+simulation footprint is the band's skeleton and nothing more. Each has a head
+over the module phase, arms that stage clips and set `+0x21D` rates and
+`ctx[+0x278]`, an exit per arm (advance, a literal phase, or the terminal
+clear of the returned register), and at most one damage site per arm. So the
+port is data rather than code. `legaia_engine_vm::cast_module_ticks::chain_bodies`
+holds one descriptor per body, with every arm's landing VA and every stage,
+rate and wrapper site. `run_chain_body` interprets the descriptors, and
+`World::run_cast_module_code` drives it. The disc-gated
+`crates/engine-vm/tests/cast_chain_bodies_real.rs` re-derives each descriptor
+from the owning image: the 0898 arm that names the body, the head reaching
+every arm, and the instruction at every cited site.
+
+Four of the bodies need more than a descriptor:
+
+- **PROT 0964 forks three ways inside the body.** Its three ids run the same
+  code, and nothing in it reads `+0x1DF`. Arm 1 instead picks one of three
+  six-arm variants (phases `2..`, `0x32..`, `0x64..`) from `0x801C8FE4`,
+  which holds the roll the module's own `0xAF` Element Change body last
+  accepted.
+- **PROT 0956 `0x75` steals a turn.** After its hit it sets
+  `+0x16E |= 0x400` on a live victim and runs the turn-steal idiom (refund,
+  initiative clear, `ctx[+0x1A]` bump, `0x801F6FC4..0x801F70A8`). The record
+  immunity bits (`+0x6BC & 0x18000000`) that spare a victim are not visible
+  to the port.
+- **PROT 0961 is two casts.** In formation `0xB5` (the evolved Cort) it
+  rolls `FUN_801DD4B0(0x880)` per party seat. In any other formation - the
+  one other caster is Koru, whose round-4 finisher is `0xA1` - arm 3 keeps
+  the `9999` it loaded in the `bne` delay slot (`0x801F739C`), calls no
+  wrapper and draws no RNG, so every party seat goes to zero. Arm 5 then
+  finds no one standing and raises the party-wipe end itself (signal `0xFE`,
+  cause `5`), the same end the action SM's `0x5A` gate raises. The port
+  lands both through the fold (`World::dead_end_crisis_wipes`), and the
+  engine's own wipe scan ends the fight.
+- **PROT 0919 heals.** It writes `+0x14C` directly, with no wrapper.
+
+The hit on every one of these bodies is the fold's (the
+[one-owner rule](#tick-abi-caster-victim-staging)). The fold seeds the hit with the baked
+power, and the descriptor records the hit's site without applying it.
+
+**Two rules come with the runner.**
+
+1. **Caster stages.** A body with a `CAPTURE_CASTER_STAGES` row has its
+   caster clips replayed ahead of its arms, each to its clip's end. The
+   runner walks one arm per tick, and staging the same literals again would
+   cut that wind-up short, so it leaves those bodies' caster stages to the
+   replay.
+2. **Rates.** A `+0x21D` store is carried only when the body itself returns
+   the actor to rate `8`. PROT 0942's `0xAA`, 0960's `0xA6`, 0961 and 0963
+   leave their caster slowed or frozen and rely on a reset outside the
+   module.
+
+**The fold waiver is keyed on `(entry, body)`.** Six images put a body at the
+load base `0x801F69D8`, and one of them is PROT 0965's Doomsday, a whole-row
+sweep that owns its fold. `tick_body_owns_the_fold` used to match the VA
+alone. Once these bodies walked their phase past Doomsday's sweep arm
+(`0x0B`), the fold waived the hit of 0956's `0x75`, 0961 and 0964's
+`0xB0..=0xB2`, and their casts dealt nothing.
+
+**The arms are gated.** Every capture-class body of the fourteen opens its
+arms on the band's countdown shape (one module word, a per-arm drain, a
+re-arm as the arm passes), and its table sits beside the measured set's in
+`cast_module_camera::capture_countdown`, keyed the way the band looks it up -
+`(entry, body)` behind a trampoline, the entry alone otherwise. The drain is
+the product on every body but PROT 0963, which drains the bare step and
+re-arms literals. Four arms do not fit the one-word shape, and each table
+row says how it is carried:
+
+- PROT 0956's `0x75` arm 3 leaves on a ramp (`0x801F86A8 += (scalar *
+  step) << 2`) reaching `0x1000` long before its countdown would, so the row
+  runs the arm at the ramp's rate.
+- PROT 0937's arm 7 paces its four hits on a second word that arm 6 zeroes;
+  the row carries that cadence on the main word.
+- PROT 0936's arm 4 holds on its own tick counter reaching `6` while it
+  drains the word untested; the row passes it at once and carries the six
+  drains forward.
+- PROT 0935's arms 1 and 3 hold on the caster's `+0x21B` and on its model's
+  `+0x68`, which no table carries; the rows keep only their seeds.
+
+The settle waits are carried (`ChainSettle`, held by the band's caller,
+which owns the clip state the runner does not). Each one tests a seat the
+same way - live (`+0x14C != 0`) once its playing clip `+0x1D9` is back at
+`0`, dead once it reads the down clip `8` - and they differ only in the seats
+they walk and in what settles a dead monster:
+
+| Body | Arm | Seats | Dead monster |
+|---|---|---|---|
+| PROT 0935 Earthquake | 6 | the row the caster's `+0x1DD` names | prim word `+0x04` at `0` |
+| PROT 0936 Hyper Crush, 0960 `0xA6` | 8, 6 | party seats `0 .. ctx[+0x00]` | - |
+| PROT 0937, 0939, 0956 `0x75` | 7, 5, 3 | the victim | clip `8` |
+| PROT 0947, 0948 | 5, 5 | the victim | clip `8` or prim word `0` |
+
+Retail's waits have no bound; the port lets go after the Fatal Decision
+bound (`SETTLE_TICK_LIMIT`), since an engine clip that never reports the id
+retail waits for would hold the band for good. The engine's prim word is
+its colour word: a monster's defeat fade has run out when it reads `0`.
+PROT 0919 (Spoon) stays ungated - it is a summon-band module, and the stager
+decides that band's length.
+
+**PROT 0948's beam is drawn.** Its other routine, `0x801F726C`, is not a
+second body. It is the beam's packet builder, called only from arm 3 of the
+0948 body (`0x801F6EF4`), ahead of the arm's gate, so it draws on every tick
+the arm holds. It writes no actor or context state: it advances its own
+counter (`0x801F8858`, zeroed by arm 2) by `step * 2` and builds every
+packet from that counter and the sine table - two `POLY_G4` beams swept up
+from the bottom corners along `(sin[16 i] / 12, 0xE0 - sin[12 i] / 32)`,
+each a red-to-yellow head and a trail of core, glow and flare quads that
+dims by `2` per segment, the right beam the left's mirror run `0x20` steps
+behind, all under ABR 1. `World::cross_beam_draw` carries the counter and
+`legaia_engine_ui::cast_beam` builds the packets for both hosts.
 
 ### The player Seru band's tick bodies are code, not data
 
@@ -1977,10 +2253,14 @@ directors so far, each read off its own tick's disassembly:
   arm 5 prints the spell name and arm 6 replaces it with the actor record's
   attack name (`FUN_8003541C(.., 0x96, ..)`, the move-name label's place),
   which the port shows through `battle_hud::battle_move_name` until the
-  band's `0x37` exit. The walk-in is the creature clip's root motion; the
-  port steps it 32 units a frame along the heading onto the victim, the
-  speed `gimard_burning_attack` pins (670 units in the 20.5 frames its yaw
-  base says the walk has run);
+  band's `0x37` exit. The walk-in is the creature clip's root motion: arm 11
+  turns the creature onto the victim, whose seat is its target `+0x1DD`, and
+  the anim tick's positive-speed term steps it while the range poll fails -
+  the capture's creature runs at `+0x21D = 4`, half rate, about 30 units a
+  frame against the 670 units in 20.5 frames `gimard_burning_attack`'s yaw
+  base implies. The port's directed walk only sets the facing and target
+  and lets that term move the body; a 32-unit step remains for a creature
+  whose clip carries no speed;
 - **PROT 0905 (Vera)** - the whole choreography, including a third kernel the
   other two do not need: arms 8..10 write the camera globals directly every
   pass (pitch `0x8007B790`, TR y / z `0x800840BC` / `0x800840C0`), a drift on
@@ -2109,8 +2389,50 @@ run; a holding gate withholds the body's pass. The battle camera holds in
 
 A body with no director keeps the held pose.
 
-PROT 0966 (Evil Seru Magic) is a 29-arm camera body whose damage belongs to
-its stager, not to the band's fold; its arms are not directed.
+### PROT 0966 (Evil Seru Magic) is ported whole
+
+Cort's Evil Seru Magic (action `0xAD`) runs one tick body, `0x801F6A74`:
+8944 bytes, 29 arms behind `sltiu a1, 0x1D`, the longest choreography in
+the band. Arms 5..9 are the table default and are never entered - arm 4
+writes `ctx[+0x279] = 10` itself. The body returns `1` until arm 28's gate
+passes. Its countdown `0x801FA464` is armed in absolute vsyncs and drained by
+the frame delta alone, with no speed scalar; the whole cast runs `0xCC4`
+vsyncs, close to a minute.
+
+- **The camera** is
+  `legaia_engine_vm::cast_module_camera::evil_seru_magic_camera`: arm 0's
+  `0x30`-frame opening shot, eight cuts and arm 22's re-armed `0x24`-frame
+  shot, plus the drifts the arms add to
+  pitch, yaw and all three TR globals - this is the only body that walks TR x
+  `0x800840B8`.
+- **The seats** are `cast_module_ticks::evil_seru_magic_seat_writes`. The
+  party is hidden (`+0x04 = 0`, `+0x21C = 0xFF`) from arm 0, shown at arm 10,
+  hidden at 18 and shown at 21. The caster stages clip `6` at rate `2` on
+  arm 1's pass, hides at arm 10, comes back on clip `0` at arm 21, takes the
+  defeat-fade tint state `2` at arm 23 and is shown again at arm 27. Because
+  the body stages its own caster, it has no row in the caster-stage table.
+- **The hit.** Arm 26 walks `actor_table[0 .. ctx[+0]]`, skips a dead or
+  non-targetable seat, and calls `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with
+  the shape-A clamp (`0x801F8610` / `0x801F863C`), so it can kill. It also
+  stages the seat's own knockdown at rate `2`.
+- **The hit before it.** Retail lands two party hits, and the first is the
+  stager's. Arm 10 spawns record `0x801F937C`, whose script is `WAIT 0x7F`
+  then op `0x20` with arm `4`. Op `0x20` calls `gp[+0x714]`, which holds the
+  stager `0x801F8D64` in the `cort_evil_seru_magic_mid_cast` capture. Arm 4 is
+  the `0x100` never-kill sweep. The wait is `0x7F << 3`, drained
+  `scalar * delta` a battle frame, so it lasts 127 vsyncs - one short of arm
+  11's `0x80`. The port lands that sweep on arm 11's pass and raises the
+  band's skip-fold, so the fold adds no third hit. The order matters: the
+  never-kill hit comes first, and arm 26's hit can still kill a member it
+  left low.
+
+Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row
+of half-size models at `z = 0x190`, and restore them; arm 10 seats the
+creature at seat 7. The engine keeps every seat where the battle put it, so
+the cuts frame the stage rather than the moved seats. The effect records and
+the arm-20 spell-name banner are also left out. The screen fades are carried
+on the engine's one fade seat; arm 26 spawns three at once, and the seat keeps
+the last of them, the delayed white-in that arm 27 fades out of.
 
 ### PROT 0954 (Fatal Decision) is ported whole
 
@@ -2163,14 +2485,18 @@ effect-list spawn (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's wait for the
 victim's clip to settle has no bound in retail; the port lets go after
 `600` ticks rather than hold the band on a clip the engine never reports.
 
-**Where the icon art lives is open.** The icons sample texture page `0x8A`
-(8bpp at `(640, 0)`) through CLUT row `490` - the second side-band texture
-slot's upload targets. Action `0x5F`'s side-band group, by the case-`0x32`
-arithmetic, is `readef.DAT` slots 26 / 27, and those carry a "BACK READ"
-placeholder and a tiling sparkle page, not a sixteen-tile icon sheet; the
-capture band also has no case `0x32` of its own. Which loader puts the icon
-sheet there for a real Evil Shadow fight has not been traced, so the port
-draws the icons over whatever that page holds.
+**The icon art is the caster's own side-band page.** The icons sample texture
+page `0x8A` (8bpp at `(640, 0)`) through CLUT row `490` - the side-band
+applier's second texture target. A capture-class cast streams nothing of its
+own (the band has no case `0x32`), so what sits there is what the caster's
+turn streamed. The initiative scheduler `FUN_801DABA4` seeds the applier's base
+byte with `3 * monster_record[+0x1C]` on every monster turn. The roulette's
+casters (monster ids `119..=121`, Evil Shadow / Shade / Nightmare) all carry
+group `7`, so the turn streams `readef.DAT` slots 21 and 22, and slot 22 is the
+4x4 icon sheet. A retail capture of a Skeleton fight (group `7` too) holds
+exactly that page at `(640, 0)` with its CLUT on row 490. The engine streams
+nothing per turn; `engine-core::battle_sideband_textures` writes every
+formation group's pages into the battle-entry VRAM log both hosts replay.
 
 ### The band has eight stat-block writers, not one
 

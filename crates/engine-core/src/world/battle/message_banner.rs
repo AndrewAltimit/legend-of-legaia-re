@@ -167,18 +167,43 @@ impl World {
     /// `multi_cast_gate`) and the acting seat's character. `None` without a
     /// staged Seru. Without the disc caption table the line degrades to the
     /// Seru's name alone rather than to invented prose.
-    fn absorb_banner_text(&self) -> Option<String> {
-        let seru = self.battle_ctx.multi_cast_gate;
-        if seru == 0 {
-            return None;
-        }
-        let spell = seru.wrapping_add(0x80);
+    /// Spell `id`'s name as the banner composers copy it: the raw table
+    /// string, element plate included. Retail's name opens with the `0xCE`
+    /// icon escape (`0xCE 0x14 0x20 'G' ...`), the string copy
+    /// `FUN_8003CA78` carries it into the message buffer, and the banner
+    /// draws the plate in front of the text. The port's names are the
+    /// escape-free display form, so the plate goes back in as the authoring
+    /// markup it was written in (`^A ` - the preprocessor `FUN_80036514`
+    /// turns `^X` into `0xCE (X - 0x2D)`), which the banner's layout
+    /// expands again (`engine-ui::battle_hud_chrome`).
+    pub(in crate::world) fn spell_banner_name(&self, spell: u8) -> String {
         let name = self
             .tables
             .spell_catalog
             .get(spell)
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("Spell {spell:#04X}"));
+        let icon = self
+            .menu
+            .text
+            .as_ref()
+            .and_then(|t| t.spell_names.as_ref())
+            .and_then(|t| t.icon(spell))
+            .and_then(|op| op.checked_add(0x2D))
+            .filter(u8::is_ascii_uppercase);
+        match icon {
+            Some(letter) => format!("^{} {name}", letter as char),
+            None => name,
+        }
+    }
+
+    fn absorb_banner_text(&self) -> Option<String> {
+        let seru = self.battle_ctx.multi_cast_gate;
+        if seru == 0 {
+            return None;
+        }
+        let spell = seru.wrapping_add(0x80);
+        let name = self.spell_banner_name(spell);
         // `0x8007BD10[seat]` is a 1-based character id; the roster slot is
         // that id minus one.
         let char_id = self.party_roster_slot(usize::from(self.battle_ctx.active_actor)) as u8 + 1;

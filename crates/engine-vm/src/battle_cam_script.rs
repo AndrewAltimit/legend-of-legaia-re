@@ -224,6 +224,7 @@
 mod action;
 mod camera;
 mod camera_step;
+mod entry_sweep;
 mod module_shot;
 mod phase;
 mod pose;
@@ -233,6 +234,7 @@ mod spell_cam;
 
 pub use action::*;
 pub use camera::*;
+pub use entry_sweep::*;
 pub use module_shot::*;
 pub use phase::*;
 pub use pose::*;

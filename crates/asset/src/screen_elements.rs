@@ -91,6 +91,68 @@ pub const RECORDS_PARTY_PANEL: [usize; 3] = [6, 78, 79];
 /// up / left / right / down order (interior 48, around `(228, 70)`).
 pub const RECORDS_COMMAND_CHIP: [usize; 4] = [8, 9, 10, 11];
 
+/// The post-battle **level-up window**: element `0x44 + mask`, where the
+/// results frame `FUN_8004E568` builds `mask` from the three per-character
+/// level-up bytes `ctx[+0xE..=+0x10]` (bit `k` = character `k`,
+/// `0x8004F6F8..0x8004F728`). Records `0x45..=0x4B` (masks `1..=7`) share one
+/// box - content `280 x 12`, sliding from `(16, -24)` to `(16, 14)` - and
+/// differ only in the string their `+0x14` word points at: one line naming
+/// the characters through the `0xC1` name escape (`0xC1 k` = record `k`),
+/// and for all three a line that names nobody.
+pub const RECORD_LEVEL_UP_BASE: usize = 0x44;
+
+/// The NUL-terminated MES string record `index`'s `+0x14` payload points at
+/// in the SCUS data segment, raw: `0xC0..=0xCF` escapes keep their operand
+/// byte (so `0xC1 0x00` - a name escape for record `0` - is not cut at its
+/// zero operand). `None` for a record with no payload or one outside the
+/// image.
+pub fn payload_string(scus: &[u8], index: usize) -> Option<Vec<u8>> {
+    let map = ExeMap::parse(scus)?;
+    let rec = ScreenElementTable::from_scus(scus)?.get(index)?;
+    if rec.payload == 0 {
+        return None;
+    }
+    mes_string_at(scus, &map, rec.payload)
+}
+
+/// The SCUS word (`gp + 0x384`) that points at the report window's **drop
+/// line** template. The results frame `FUN_8004E568` patches the template's
+/// `0xC2` item escape operand with the dropped item id (`FUN_8003CBF8` finds
+/// the token, `sb s2,0x1(v0)` at `0x8004F5E0`) and appends the whole string,
+/// which opens with a `0x7C` line break, to the victory message buffer
+/// `ctx + 0xA9` (`0x8004F5E4..0x8004F600`): the drop is the report window's
+/// third line, under `... won the battle!` and the `Gained ...` row.
+pub const DROP_LINE_PTR_VA: u32 = 0x8007_B69C;
+
+/// The drop line template [`DROP_LINE_PTR_VA`] points at, raw MES bytes
+/// (escape operands kept, as in [`payload_string`]).
+pub fn drop_line_template(scus: &[u8]) -> Option<Vec<u8>> {
+    let map = ExeMap::parse(scus)?;
+    let o = map.off(DROP_LINE_PTR_VA)?;
+    let va = u32::from_le_bytes(scus.get(o..o + 4)?.try_into().ok()?);
+    mes_string_at(scus, &map, va)
+}
+
+/// The NUL-terminated MES string at `va`, escape operands kept.
+fn mes_string_at(scus: &[u8], map: &ExeMap, va: u32) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut i = map.off(va)?;
+    loop {
+        let b = *scus.get(i)?;
+        if b == 0 {
+            break;
+        }
+        out.push(b);
+        if (0xC0..=0xCF).contains(&b) {
+            out.push(*scus.get(i + 1)?);
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    Some(out)
+}
+
 /// PSX-EXE `t_addr` -> file-offset resolver for `SCUS_942.54`'s data segment.
 pub(crate) struct ExeMap {
     t_addr: u32,

@@ -26,6 +26,8 @@ pub struct CaptureDrift {
     pub yaw: i16,
     pub tr_y: i16,
     pub tr_z: i16,
+    /// TR x `0x800840B8` - walked by PROT 0966's arms only.
+    pub tr_x: i16,
 }
 
 /// What a capture module's camera does on one pass of one arm.
@@ -70,6 +72,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
+        (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
         _ => None,
     }
 }
@@ -84,6 +87,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
         0x55 | 0x56 => Some(WAVE_COUNTDOWN),
+        0xAD => Some(super::EVIL_SERU_MAGIC_COUNTDOWN),
         _ => None,
     }
 }
@@ -177,6 +181,7 @@ fn drift(pitch: i16, yaw: i16, tr_y: i16, tr_z: i16) -> CaptureDrift {
         yaw,
         tr_y,
         tr_z,
+        tr_x: 0,
     }
 }
 

@@ -533,6 +533,12 @@ impl LegaiaRuntime {
                 .as_ref()
                 .is_some_and(|h| !h.world.field_menu_open_allowed())
         {
+            // A press the menu lock refuses buzzes (`0x23` on the SFX ring,
+            // which the page's scheduler drains); every other refusal is
+            // silent. The native window makes the same call.
+            if let Some(h) = self.scene_host.as_mut() {
+                h.world.field_menu_press_denied();
+            }
             return;
         }
         let mut session = FieldMenuSession::new();
@@ -812,11 +818,22 @@ impl LegaiaRuntime {
             .unwrap_or_else(|| vec![0, 0])
     }
 
+    /// `true`: [`Self::play_menu_input`] fires the menu's blip itself, so
+    /// the page must not fire one off the raw edge too. A cached bundle
+    /// without this export leaves the page on its old raw-edge blip.
+    pub fn play_menu_blips_inline(&self) -> bool {
+        true
+    }
+
     /// Drive the menu one frame from an edge-triggered PSX pad word (same bit
     /// layout as [`Self::set_pad`]). Navigation:
     /// - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
     /// - a sub-screen: routes the edges to its session; Circle (or the session
     ///   finishing) drops back to the top-level list.
+    ///
+    /// It also fires the menu's blip for the edge the refusal box and the save
+    /// grid let through (the native window's order), so the page no longer
+    /// blips the raw press.
     pub fn play_menu_input(&mut self, edge: u16) {
         if self.play_menu.is_none() {
             return;
@@ -828,6 +845,25 @@ impl LegaiaRuntime {
             && m.save_flow.tick_refusal(edge)
         {
             return;
+        }
+        // The menu's blip, off this edge once the refusal box has had it -
+        // the native window fires its cues after the same pre-empts
+        // (`tick_boot_ui`). The save screen's grid filters the edge further
+        // (`before_tick`, below), so its blip waits for the filtered edge:
+        // a blocked Load on an empty block is silent on both hosts.
+        let (start_closes_menu, save_sub) = self
+            .play_menu
+            .as_ref()
+            .map(|m| {
+                let save = matches!(
+                    m.sub.as_ref(),
+                    Some(PlaySub::Session(s)) if matches!(s.as_ref(), FieldMenuSubsession::Save(_))
+                );
+                (m.sub.is_none(), save)
+            })
+            .unwrap_or((true, false));
+        if edge != 0 && !save_sub {
+            let _ = self.play_menu_edge_blip(edge, start_closes_menu);
         }
         // Window 7 (spell level-up notice) owns the pad while armed: retail's
         // cast sub-screens stall on the confirm | cancel masks after the
@@ -863,6 +899,7 @@ impl LegaiaRuntime {
 
             let mut session_done = false;
             let mut edge = edge;
+            let mut save_edge = None;
             // Consumed once per tick whether or not a rebind screen is open:
             // a key latched while none is would be stale by the next frame
             // and must not survive to be bound later. Same rule as the native
@@ -877,6 +914,7 @@ impl LegaiaRuntime {
                 // the cell the player is looking at.
                 if let FieldMenuSubsession::Save(s) = session.as_ref() {
                     edge = m.save_flow.before_tick(s, edge);
+                    save_edge = Some(edge);
                 }
                 // The shared step (with the Status screen's Triangle -> Arts
                 // editor extension); it hands back a committed rebind. A
@@ -903,6 +941,10 @@ impl LegaiaRuntime {
             // rewriting `legaia-input.toml`.
             if let Some(mapping) = rebound.as_ref() {
                 crate::pad_bindings::store_mapping(mapping);
+            }
+            // The save screen's blip, off the edge its grid let through.
+            if let Some(e) = save_edge.filter(|&e| e != 0) {
+                let _ = self.play_menu_edge_blip(e, false);
             }
             if session_done {
                 // Fold the finished session's result into the live world
@@ -2080,3 +2122,32 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
 /// Heading the list-reorder page prints, paired with the native window's
 /// constant of the same name.
 const LIST_ORDER_TITLE: &str = "ORDER";
+
+#[cfg(test)]
+mod blip_tests {
+    use super::*;
+
+    /// The menu's blip rides the edge the refusal box let through: the press
+    /// that dismisses a refusal is silent, as on the native window, and an
+    /// ordinary root-list press still blips exactly once.
+    #[test]
+    fn a_press_the_refusal_box_swallows_does_not_blip() {
+        let mut rt = LegaiaRuntime::new();
+        rt.play_menu = Some(PlayMenu::new(FieldMenuSession::new(), SceneMode::Field));
+        let down = PadButton::Down.mask();
+        let cross = PadButton::Cross.mask();
+        rt.play_menu_input(down);
+        assert_eq!(rt.sfx.menu_cue_requests, 1, "a root cursor move blips");
+        rt.play_menu
+            .as_mut()
+            .unwrap()
+            .save_flow
+            .refuse(SaveRefusal::CardWriteFailed);
+        rt.play_menu_input(cross);
+        assert_eq!(
+            rt.sfx.menu_cue_requests, 1,
+            "the dismissing press is silent"
+        );
+        assert!(rt.play_menu_blips_inline());
+    }
+}

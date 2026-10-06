@@ -1,6 +1,6 @@
 //! Battle SFX-cue router: cue id -> the 4-slot pending ring / XA voice clip.
 //!
-//! PORT: FUN_8004fe5c
+//! REF: FUN_8004fe5c (the port tag sits on [`route_sfx_cue`])
 //!
 //! `FUN_8004FE5C(id, category)` is the battle overlay's one funnel for
 //! "play this sound now": every battle cue - menu blips, hit impacts,
@@ -119,6 +119,8 @@ impl SfxCueRing {
 }
 
 /// Route one battle cue. Mirrors `FUN_8004FE5C(id, category)`.
+///
+/// PORT: FUN_8004FE5C
 pub fn route_sfx_cue(
     ring: &mut SfxCueRing,
     id: u32,

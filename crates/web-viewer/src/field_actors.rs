@@ -603,6 +603,28 @@ impl FieldActors {
         out
     }
 
+    /// `[r, g, b, ir0, ...]` per catalog entry: the actor's op-`4C 81` draw
+    /// tint as a constant cue (`World::field_npc_draw_tint`), zeros for an
+    /// untinted actor. Empty while no entry is tinted.
+    pub fn tints(&self, host: &SceneHost) -> Vec<f32> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        let mut any = false;
+        let mut out = Vec::with_capacity(n.pack.entries.len() * 4);
+        for e in &n.pack.entries {
+            match host.world.field_npc_draw_tint(e.placement.index) {
+                Some((colour, blend)) => {
+                    let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                    out.extend_from_slice(&[far[0], far[1], far[2], ir0]);
+                    any = true;
+                }
+                None => out.extend_from_slice(&[0.0; 4]),
+            }
+        }
+        if any { out } else { Vec::new() }
+    }
+
     /// `[pitch, roll, ...]` per catalog entry (`World::field_npc_tilt`).
     pub fn tilts(&self, host: &SceneHost) -> Vec<f32> {
         let Some(n) = self.npcs.as_ref() else {

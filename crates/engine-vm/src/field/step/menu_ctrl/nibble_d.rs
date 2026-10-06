@@ -4,12 +4,12 @@ use super::*;
 
 // Outer nibble 0xD - party state + camera-ish setup.
 // All 16 sub-ops are ported: sub-0 (field SE trigger, 6-byte),
-// sub-1 (linked-list lookup gate, 2-byte), sub-2 (channel-spawn
-// halt, 2-byte), sub-3 (party state setup, 14-byte), sub-4
+// sub-1 (linked-list lookup gate, 2-byte), sub-2 (channel spawn,
+// 3-byte), sub-3 (party state setup, 14-byte), sub-4
 // (VRAM STP-bit set on 16x1 rect, 6-byte), sub-5 (VRAM STP-bit
 // clear on 16x1 rect, 6-byte), sub-6 (`field_74` bitfield
-// mutation, halts at PC), sub-7 (list-walk register + halt,
-// 1-byte), sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9
+// mutation, 3-byte), sub-7 (camera-mover retire, 2-byte),
+// sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9
 // (inverted-Y mirror set, 4-byte), sub-0xA (clear mirror +
 // collision-Y refresh, 2-byte), sub-0xB (FUN_801E57F0 CLUT-fade spawn,
 // 13-byte), sub-0xC (party search-and-set, 5-byte), sub-0xD
@@ -52,21 +52,27 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 next_pc: pc + header_size + 3,
             },
         },
-        // Sub-2: 2-byte `[4C, 0xD2, b1]`. Calls the channel
-        // resolver; halts at PC after the (possibly conditional)
-        // spawn.
+        // Sub-2: 3-byte `[4C, 0xD2, b1]`. Calls the channel resolver
+        // (and spawns the placement when no context answers), then
+        // advances: both arms of `0x801E2B7C` leave through `0x801E00B8`,
+        // `addiu s8,s8,0x3`. `rugi` runs `4C D2 0F .. 4C D2 16` back to back.
         2 => {
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
             host.op4c_n_d_sub_2_channel_spawn(b1);
-            StepResult::Halt { final_pc: pc }
+            StepResult::Advance {
+                next_pc: pc + header_size + 2,
+            }
         }
-        // Sub-7: 1-byte. Register `FUN_801DC0BC` callback then
-        // halt at PC.
+        // Sub-7: 2-byte `[4C, 0xD7]`. Retires the cutscene camera movers
+        // (`FUN_801DC0BC` on actor list 0, through `FUN_8003CF40`), then
+        // advances: the arm at `0x801E2DB4` ends `addiu s8,s8,0x2`.
         7 => {
             host.op4c_n_d_sub_7_register_list_walk();
-            StepResult::Halt { final_pc: pc }
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
         }
         3 => {
             if operand + 13 > bytecode.len() {
@@ -92,8 +98,9 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 next_pc: pc + header_size + 13,
             }
         }
-        // Sub-6: 3-byte `[4C, 0xD6, b1]`. Pure ctx.field_74
-        // bitfield mutation; halts at PC.
+        // Sub-6: 3-byte `[4C, 0xD6, b1]`. Pure ctx.field_74 bitfield
+        // mutation, then advances: the arm at `0x801E2D64` leaves through
+        // `0x801E00B8`, `addiu s8,s8,0x3`.
         6 => {
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
@@ -104,7 +111,9 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 ctx.field_74 = (ctx.field_74 & 0x7CFF_FFFF) | 0x8000_0000 | (u32::from(b1) << 24);
             }
             host.op4c_n_d_sub6_field74_mutate_ack();
-            StepResult::Halt { final_pc: pc }
+            StepResult::Advance {
+                next_pc: pc + header_size + 2,
+            }
         }
         // Sub-8: 9-byte `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
         // Calls the overlay-resident `FUN_801D77F4` with `(b1, x, y, z)`

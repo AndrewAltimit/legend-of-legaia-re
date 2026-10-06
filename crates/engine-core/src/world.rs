@@ -104,7 +104,7 @@ mod types;
 mod world_map_state;
 mod world_toggles;
 
-pub use ambient_fx_state::AmbientFxState;
+pub use ambient_fx_state::{AmbientFxState, SeededVramRect};
 pub use audio_residency::{
     DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
     SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
@@ -116,7 +116,7 @@ pub use audio_state::{
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
 pub use camera_hooks::CameraZoneRequest;
 pub use camera_rig::CameraRig;
-pub use cast_fx_state::CastFxState;
+pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
 pub use cutscene_state::CutsceneState;
 pub use dialog_state::DialogState;
@@ -137,7 +137,7 @@ pub use menu_state::MenuState;
 pub use minigame_state::{FishingCaptionText, MinigameState};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
 pub use party_state::PartyState;
-pub use screen_fx_state::ScreenFxState;
+pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
 pub use seru_state::SeruState;
 pub use shop_state::ShopState;
 pub use state::*;
@@ -207,11 +207,14 @@ mod narration;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;
-pub use object_actor_height::{ObjectRampSlot, ObjectSlotRamp, tint_cue};
+pub use object_actor_height::{
+    ActorTint, ActorTintKey, ObjectRampSlot, ObjectSlotRamp, TintRamp, tint_cue,
+};
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;
 pub use retail_progression::RetailProgressionTables;
+pub use save::{FIELD_MENU_DENY_CUE, FIELD_MENU_LOCK_BIT, FIELD_SYSTEM_LOCK_BIT};
 mod save;
 mod scene_program;
 pub use scene_program::SceneProgramFrame;

@@ -69,6 +69,9 @@ MIN_SIGNABLE = 8
 # names several images instead of one, which returns `identical` and credits all
 # of them. Agreement is 99.9% at three instructions and 98.9% at one. Three is
 # where the curve flattens, so it buys the reach without the extra imprecision.
+# The floor bounds the imprecise outcome only: below it a window with exactly
+# ONE holder is still named (`unique`), because the control's failure mode -
+# several holders - cannot occur there.
 SHORT_VA_FLOOR = 3
 
 # A PROT entry's head, long enough that finding it inside another entry is the
@@ -405,7 +408,14 @@ def zero_padded(insns):
     if not insns:
         return False
     signal = sum(1 for _, mn, _ in insns if mn.lower().lstrip("_") != "nop")
-    return signal < SHORT_VA_FLOOR and signal < len(insns)
+    # A `nop` in a branch delay slot is not fill. Ghidra prints a delay-slot
+    # instruction with a leading `_`, and the zero word there is the one the
+    # preceding jump dictates, so a window like `lhu v0,0(a0); jr ra; _nop` -
+    # a whole three-word leaf - is a genuinely short window of real
+    # instructions (the `short` / at-VA path below), not zero fill. Only a
+    # plain `nop` is a word that reproduces inside any image's padding.
+    fill = sum(1 for _, mn, _ in insns if mn.lower() == "nop")
+    return signal < SHORT_VA_FLOOR and fill > 0
 
 
 def gapped(insns):
@@ -621,19 +631,45 @@ def attribute_dump(images, reloc, entry, insns, tables=None):
                         "at this VA (short window, at-VA test only)"
                         % (", ".join(names), len(toks)))
             # The at-VA test RAN and no image's own content reproduces the
-            # window. Say that, rather than repeating the floor message: the two
-            # are different findings and only one of them is about the window's
-            # length. These bytes most likely live at another VA, but a short
-            # window is exactly what the relocation search cannot be trusted
-            # with, so the extent stays residue rather than being called
-            # `misbased` on evidence that would not support it.
-            return ("short", [], "%d instructions: no image's own content "
-                                 "reproduces this window at this VA, and the "
-                                 "window is too short to search for it "
-                                 "elsewhere" % len(toks))
-        return ("short", [], "%d instructions, below the %d-instruction at-VA "
-                             "floor for naming an image"
-                             % (len(toks), SHORT_VA_FLOOR))
+            # window. That is a finding about every measured image at once, and
+            # a negative one: each was compared at this VA and each disagrees.
+            # A mismatch at a fixed offset needs no length to be believed - the
+            # floor guards a POSITIVE match against coincidence, and there is no
+            # coincidence to guard against in "these words are not those
+            # words". So the extent is `no_holder`: credited to no measured
+            # image. Where the bytes really live is a different question, and a
+            # short window is exactly what the relocation search cannot be
+            # trusted with, so the verdict does not claim `misbased`.
+            return ("no_holder", [], "%d instructions: no image's own content "
+                                     "reproduces this window at this VA, and "
+                                     "the window is too short to search for "
+                                     "it elsewhere" % len(toks))
+        # Below the floor a mismatch is as strong as ever, and a match is
+        # weaker only in one direction. The control (`--validate-short-floor`,
+        # which reports every length down to one instruction) finds no WRONG
+        # answer at one or two instructions either - the short test never
+        # names a different single image than the full window does; what it
+        # loses is precision, returning several images where the full window
+        # names one. So a SOLE holder below the floor is the answer the control
+        # always gave, and it is named `unique`; several holders are exactly
+        # the imprecise case, so they stay `short` with the holders in the
+        # image column as the only candidates left, and a consumer keeps the
+        # extent residue for those images and drops it for every other.
+        cands = [h.name for h in holders(images, entry, toks)] if toks else []
+        if toks and not cands:
+            return ("no_holder", [], "%d instructions: no image's own content "
+                                     "reproduces this window at this VA"
+                                     % len(toks))
+        if len(cands) == 1:
+            return ("unique", cands,
+                    "own content of %s, and of no other image, reproduces the "
+                    "%d-instruction window at this VA (below the at-VA floor; "
+                    "sole holder)" % (cands[0], len(toks)))
+        return ("short", cands, "%d instructions, below the %d-instruction at-VA "
+                                "floor for naming an image%s"
+                                % (len(toks), SHORT_VA_FLOOR,
+                                   "; own content of %s reproduces it here"
+                                   % ", ".join(cands) if cands else ""))
 
     hits = holders(images, entry, toks)
     if len(hits) == 1:
@@ -663,8 +699,8 @@ def attribute_dump(images, reloc, entry, insns, tables=None):
 # is the one the extent can support.
 CLASS_RANK = {
     "unique": 0, "resolved_by_table": 1, "identical": 2, "misbased": 3,
-    "unresolved": 4, "gapped": 5, "short": 6, "data": 7, "zero_window": 8,
-    "no_disassembly": 9,
+    "unresolved": 4, "short": 5, "no_holder": 6, "gapped": 7, "data": 8,
+    "zero_window": 9, "no_disassembly": 10,
 }
 
 
@@ -719,7 +755,7 @@ def validate_short_floor(images, reloc, by_extent):
             full = holders(images, entry, toks)
             if len(full) != 1:
                 continue
-            for n in range(SHORT_VA_FLOOR, MIN_SIGNABLE):
+            for n in range(1, MIN_SIGNABLE):
                 if len(toks) < n:
                     break
                 short = holders(images, entry, toks[:n])
@@ -737,7 +773,7 @@ def validate_short_floor(images, reloc, by_extent):
     print("control: short at-VA test vs the full-window verdict it should match")
     print("  agree = same single image · weaker = several, including the right "
           "one · WRONG = a different single image")
-    for n in range(SHORT_VA_FLOOR, MIN_SIGNABLE):
+    for n in range(1, MIN_SIGNABLE):
         row = {k.split()[-1]: v for k, v in trials.items()
                if k.startswith("n=%d " % n)}
         total = sum(row.values())
@@ -890,13 +926,13 @@ def main():
     print("\nattributed to exactly one image : %d (%.1f%%)"
           % (resolved, 100.0 * resolved / total if total else 0))
     print("excluded from every image       : %d (misbased + data + gapped + "
-          "zero_window)"
+          "zero_window + unresolved + no_holder + no_disassembly)"
           % (hist["misbased"] + hist["data"] + hist["gapped"]
-             + hist["zero_window"]))
+             + hist["zero_window"] + hist["unresolved"] + hist["no_holder"]
+             + hist["no_disassembly"]))
     print("stays ambiguous                 : %d (identical + divergent + "
-          "unresolved + short + no_disassembly)"
-          % (hist["identical"] + hist["divergent"] + hist["unresolved"]
-             + hist["short"] + hist["no_disassembly"]))
+          "short)"
+          % (hist["identical"] + hist["divergent"] + hist["short"]))
 
     credited = collections.Counter()
     for _, _, image, cls, _ in rows:
@@ -931,10 +967,13 @@ def main():
             if cls == "unique":
                 keep += 1 if img == name else 0
                 other += 0 if img == name else 1
-            elif cls in ("misbased", "data", "gapped", "zero_window"):
+            elif cls in ("misbased", "data", "gapped", "zero_window",
+                         "unresolved", "no_holder", "no_disassembly"):
                 excl += 1
             elif cls == "identical" and name in img.split("|"):
                 keep += 1
+            elif cls == "short" and img != "-" and name not in img.split("|"):
+                excl += 1
             else:
                 residue += 1
         amb_now = keep + other + excl + residue
@@ -944,7 +983,8 @@ def main():
             100.0 * amb_now / len(mine) if mine else 0.0,
             100.0 * residue / after_total if after_total else 0.0))
     print("  keep = bytes say this image · other = bytes say a different image")
-    print("  exclude = belongs to no image at any VA · residue = unattributable")
+    print("  exclude = no measured image holds it at this VA · residue = "
+          "unattributable")
     print("  `after` divides residue by the extents that remain in the image's "
           "set, since `other` and `exclude` leave it entirely")
 

@@ -112,7 +112,7 @@ impl InterpMode {
 /// duration `dur`. Returns `target` exactly when `target == start` or
 /// `t >= dur`. Division truncates toward zero (MIPS `div`), which is Rust `/`
 /// on `i32`.
-// PORT: FUN_801DE4C8
+// PORT: FUN_801DE4C8 (PROT 0897)
 pub fn interp(target: i32, start: i32, t: i32, dur: i32, mode: InterpMode) -> i32 {
     if target == start || dur <= t {
         return target;

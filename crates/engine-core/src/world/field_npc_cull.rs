@@ -80,6 +80,16 @@ impl World {
     /// ([`crate::world::FieldNpcState::cull_view`]). `false` while no view has
     /// been published: with no camera there is nothing to cull against.
     pub fn field_npc_culled(&self, x: i16, z: i16) -> bool {
+        // Placement radius: `+0x58` read 0 on every captured placement.
+        self.field_actor_culled_at(x, z, 0)
+    }
+
+    /// [`field_actor_culled`] for any field actor at `(x, z)` with cull
+    /// radius `radius` (`+0x58`), against the camera view a host last
+    /// published; `false` while none is. A `.MAP` placed object's actor
+    /// carries its record's `+0x1E` byte there (`FUN_80020F88`,
+    /// `0x80020FC0..0x80020FC8`).
+    pub fn field_actor_culled_at(&self, x: i16, z: i16, radius: i16) -> bool {
         let Some(view) = self.npcs.cull_view.as_ref() else {
             return false;
         };
@@ -88,8 +98,7 @@ impl World {
             .ctrl
             .as_ref()
             .is_some_and(|c| c.entry_fade.ramp != 0);
-        // Placement radius: `+0x58` read 0 on every captured placement.
-        field_actor_culled(x, z, 0, fade, view)
+        field_actor_culled(x, z, radius, fade, view)
     }
 }
 

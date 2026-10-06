@@ -25,6 +25,11 @@ pub struct FieldVmState {
     /// semantics (an initial SEAT written through the channel ctx) without
     /// touching the live free-roam / cutscene behaviour of the same op.
     pub entry_prerun: bool,
+    /// `true` while an op-`4C C3` re-seat is re-running its target's spawn
+    /// section (retail `FUN_8003CF7C` inside the `*(_DAT_801C6EA4) + 8 = 1`
+    /// bracket at `0x801E2810..0x801E282C`). Guards a section that re-seats
+    /// itself from recursing.
+    pub respawn_rerun: bool,
     /// Live eased-move records (field-VM op `0x43` sub-9 with a non-zero
     /// tick count, retail template `0x801F2840` / tick `FUN_801DD4C4`), each
     /// paired with the actor whose position triple it writes.
@@ -88,6 +93,13 @@ pub struct FieldVmState {
     /// poke) - the object twin of [`Self::executing_channel`], which never
     /// names an object bind. `None` outside such a step.
     pub executing_object: Option<u16>,
+    /// Placement indices whose context a cross-context `CFLAG_SET` bit 8
+    /// (`B1 <id> 08`, `+0x10 |= 0x100`) engaged: retail's per-actor tick
+    /// `FUN_8003BC08` runs an engaged context through `FUN_80039B7C` from
+    /// its own parked PC on the next frame (`0x8003BD10..0x8003BD38`). The
+    /// engine plays that interaction as the touch-resumed timeline
+    /// ([`crate::world::World::drain_placement_engagements`]).
+    pub pending_engagements: Vec<usize>,
     /// `true` while [`crate::world::World::run_spawned_record_slice`] is stepping a spawned
     /// partition-2 record context (the modal cutscene timeline or a
     /// concurrent helper context). Host hooks use it to distinguish a
@@ -120,6 +132,10 @@ pub struct FieldVmState {
     /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
     /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
     pub object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
+    /// Op-`4C 81` draw tints on the player, field NPCs and objects another
+    /// script tinted ([`crate::world::ActorTint`]), stepped by the per-actor
+    /// tick. Scene-scoped: retail re-spawns every actor on a scene load.
+    pub actor_tints: std::collections::HashMap<crate::world::ActorTintKey, crate::world::ActorTint>,
     /// Pending field-VM op-`0x44` SPAWN_RECORD requests: the GLOBAL record
     /// indices whose partition-2 records should spawn as new contexts.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
@@ -157,6 +173,11 @@ pub struct FieldVmState {
     /// copy. It therefore survives scene loads, and the engine keeps it on
     /// the world for the session.
     pub slot_table: [i16; 256],
+    /// The player object's `+0x42` (the object-effect gate), which
+    /// `CC F8 C2 <b>` writes through [`super::vm_hosts`]' player routing -
+    /// the player is no placement channel, so it needs its own home.
+    /// Cleared on scene entry with the actor tints.
+    pub player_field_42: u16,
 }
 
 impl FieldVmState {
@@ -165,6 +186,7 @@ impl FieldVmState {
             mode_flags: 0,
             submode_context: [0; 10],
             entry_prerun: false,
+            respawn_rerun: false,
             eased_moves: Vec::new(),
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
             helper_contexts: Vec::new(),
@@ -175,14 +197,17 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             executing_object: None,
+            pending_engagements: Vec::new(),
             in_spawned_record_slice: false,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
             object_slot_ramps: Vec::new(),
+            actor_tints: std::collections::HashMap::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,
             slot_table: [0; 256],
+            player_field_42: 0,
         }
     }
 }

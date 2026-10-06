@@ -106,10 +106,11 @@
 //!   follow-the-actor motion has no carrier yet. The streak block reads
 //!   `+0x1144` only as a projection input.
 //!
-//! A second unported prologue lane: `ctx[+0x263]` non-zero consumes the whole
-//! call - it clears the flag and bumps the actor's `+0x1F5` **and** `+0x1F6`
-//! cursors without spawning (`0x801dec08..0x801dec48`), an external
-//! "skip one record" strobe.
+//! A second prologue lane: `ctx[+0x263]` non-zero consumes the whole call -
+//! it clears the flag and bumps the actor's `+0x1F5` **and** `+0x1F6`
+//! cursors without spawning (`0x801dec08..0x801dec48`), the "skip one
+//! record" strobe the melee kernel's limb-vs-height miss raises. The engine
+//! seat is `World::consume_effect_skip_strobe`, not this stepper.
 //!
 //! REF: FUN_80050ED4, FUN_801DFDF0 - the two effect-spawn entry points.
 //! REF: FUN_80047430 - the sole retail caller, the battle anim-node tick.

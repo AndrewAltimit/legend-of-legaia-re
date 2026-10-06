@@ -41,9 +41,11 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.as_ref() else {
             return true;
         };
+        // A movie owning the screen is the native window's `cutscene` term:
+        // the readout must not sit over an in-game FMV.
         legaia_engine_core::world_map_panel_host::field_hud_suppressed(
             &h.world,
-            self.menu.is_open(),
+            self.menu.is_open() || self.fmv.is_open(),
         )
     }
 

@@ -253,7 +253,27 @@ context it raises that player bit (`0x80039DB8..0x80039DD4`), which is what
 stops the pad while a script runs.
 
 So a placement's script is a sequence of **interactions**, each running
-from where the last one's `0x21` left the PC to the next executed `0x21`. A
+from where the last one's `0x21` left the PC to the next executed `0x21`.
+
+A touch is not the only way to engage a placement. Any script can raise the
+bit on another actor with a cross-context `CFLAG_SET` (`B1 <id> 08`): the
+write lands on the actor `FUN_8003C83C` resolves `<id>` to, and the per-actor
+tick `FUN_8003BC08` runs it through `FUN_80039B7C` from its own PC on the next
+frame (`0x8003BD10..0x8003BD38`). `tunnelc`'s Xain is the case: his record
+stages the fight with `3E FF 0A`, `21` (`+0xC41`), and on the post-battle pass
+the system script tests `0x361` and runs `B1 0C 08`, which resumes his record
+at `+0xC45` - the scene after the fight, where `0x1D5` is set. The engine
+plays the engagement as the touch-resumed interaction timeline
+(`World::drain_placement_engagements`), and a talk that ends on an executed
+`0x21` leaves the placement context's PC past it, as the shared retail context
+does.
+
+A mid-talk glide on the talker itself (`37` / `41` / `47` with no target
+byte) parks the record (`+0x10 |= 0x400`) until the walk kernel's terminal
+frame clears the bit (`FUN_8003774C`). The engine's talk runner plays no walk
+leg for the talker and takes the step as done; otherwise the bit stays up and
+the dispatcher's halted-target early-out ends the talk at the next
+cross-context op (Xain's second stage, `41 07 C1` then `AC 0C 08`). A
 spawned placement starts disengaged: the spawn pre-run clears `0x100` before
 it runs the `0x24`/`0x25` spawn section (`FUN_801D3F24`), and the talk body
 after that section's `0x21` waits for a touch. The Rim Elm bee beat
@@ -261,6 +281,28 @@ after that section's `0x21` waits for a touch. The Rim Elm bee beat
 `50 00` (the scripted-loss latch), `3E FF 03`, `21`, then jumps back to its
 flag dispatch. The `21` ends the interaction in the fight's own frame, so
 the fight does not fire again until the player touches Nene again.
+
+A touch engages a placement whether or not its interaction carries text.
+Nothing on the path reads the script. The probe `FUN_801CF9F4` walks the
+actor list, skips an actor whose `+0x10 & 3` is non-zero, box-tests the rest
+and stores the hit in the player's `+0x98`; the touch post `FUN_801D5B5C`
+(`0x801D5BB0..0x801D5BBC`) then ORs `0x100` into that actor's `+0x10`
+unconditionally, and the context runner `FUN_80039B7C` steps the record from
+`+0x9E` until its `0x21` stop. A capture agrees: in `retock_field_card_boot`
+the script contexts of `retock` `P1[32]` - a stand-in seated at `(121, 14)`
+while `0x357` is set and `0x33B` clear - and of the text NPCs around it carry
+the same context flag word, `0x08020886`, and the same state, a PC parked one
+past the spawn section's `0x21` (`+0x24` for `P1[32]`). Its whole interaction section is `76 3C 08 00 44 65 21`: a spawn
+of `P2[16]`, or with `0x63C` set of `P2[33]`, Eliza's Seru-bride scene (it
+raises `0x33C`, the flag that seats `jagaroom` P1[8] where the party can reach
+it). The port installs a text-free placement's interaction when that section
+(spawn terminator to the next raw `0x21`) decodes cleanly and holds either a
+scripted menu press (a save point's `49 01`) or an op-`0x44` spawn
+(`man_field_scripts::placement_scripted_menu_record`). Beyond the save points,
+the spawn arm reaches a handful of placements disc-wide - most seated on the
+parked sentinel `(127, 127)` - and none of the records they spawn changes
+scene; the set is printed by
+`crates/engine-core/tests/field_text_free_spawn_touch_disc.rs`.
 
 The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
 too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
@@ -1338,8 +1380,12 @@ The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 Retail's handler table maps sub `03` to the name-entry handler `FUN_801F03F0`
 with no test of how the record was reached, and the port opens the screen
 wherever the sub executes - the opening install and a replay of the record
-(a card load, the comparison corpus's resume) alike. The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
-`03` sub, `00` = Vahn); the field overlay's SM runs the screen and writes
+(a card load, the comparison corpus's resume) alike, and in whichever context
+runs it: `cave01`'s Noa prompt (`49 03 01`) sits in a record that plays as a
+concurrent helper context, not as the modal timeline, and the screen opens and
+parks only that context. The operand names the party slot (`_DAT_8007B450 + 1`
+after the `03` sub: `00` = Vahn at the town01 hand-off, `01` = Noa); the
+field overlay's SM runs the screen and writes
 the typed name **live** into the character record's name field at `+0x2A7`
 (record base `0x80084708 + n*0x414`). Renderer `FUN_801E6B34`
 (`ghidra/scripts/funcs/801e6b34.txt`), cursor cell at `_DAT_8007BB88`, SM
@@ -2154,7 +2200,7 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | `9` | `0x28` | `FUN_801F1FDC` - the prompt |
 | `0xA` | `0x31` | `FUN_801ED590` |
 | `0xB` | `0x32` | `FUN_801F1E48` - the Incense wear-off notice (below) |
-| `0xC` | `0x33` | `FUN_801EDF00` |
+| `0xC` | `0x33` | `FUN_801EDF00` - the **return-to-title soft reset** `edlast` ends on ([`cutscene.md`](cutscene.md#the-ending-vignettes-refuse-the-pad)) |
 
 Rows `3` and `5` cross-validate the read: they name the name-entry screen and
 the tile-board walk, the two sub-ops identified independently elsewhere on

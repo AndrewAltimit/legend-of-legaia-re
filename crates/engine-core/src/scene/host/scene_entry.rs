@@ -610,6 +610,8 @@ impl SceneHost {
         self.world.cutscene.caption_shown_frames = 0;
         self.world.field_vm.channels.clear();
         self.world.field_vm.object_slot_ramps.clear();
+        self.world.field_vm.actor_tints.clear();
+        self.world.field_vm.player_field_42 = 0;
         self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
@@ -655,6 +657,14 @@ impl SceneHost {
         self.world.presentation.effect_tween_slot = None;
         self.world
             .retire_actors_by_handler(crate::actor_handler::ActorHandler::ColourTween);
+        // The MAN loader zeroes the clear colour on every scene load
+        // (`FUN_8003AEB0`, `0x8003B470..0x8003B48C`); the scene's own
+        // `4C 13` sets it again.
+        self.world.presentation.clear_rgb = [0; 3];
+        self.world.presentation.clear_ramp = None;
+        // The same loader resets the field light - angle trio and back
+        // colour (`0x8003B4B4..0x8003B4D8`); a scene's own `4C 8A` sets it.
+        self.world.presentation.field_light = legaia_engine_vm::field_light::FieldLight::SCENE_LOAD;
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive
@@ -676,6 +686,7 @@ impl SceneHost {
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
         // still-queued rect operands belong to the previous scene's MAN.
         self.world.ambient.script_vram_moves.clear();
+        self.world.ambient.script_vram_stp.clear();
         // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
         // adaptive resolver (`World::resolve_frame_step`) can only raise it.
         self.world.clock.frame_step_floor = if crate::scene::is_world_map_scene(name) {

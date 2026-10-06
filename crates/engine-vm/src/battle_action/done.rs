@@ -370,10 +370,10 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     let outcome = if ctx.frame_timer >= 0 || ctx.menu_open != 0 {
         stay(ctx)
     } else {
-        // `sb zero,0x288(v1)` at `0x801E6114` - the second counter-attack
-        // trigger flag is cleared on the way out, so a counter armed during
-        // this action cannot leak into the next one.
-        ctx.counter_attack = 0;
+        // `sb zero,0x288(v1)` at `0x801E6114` - the lone-monster defeat
+        // latch is cleared on the way out (the fade arm re-raises it every
+        // frame the body still draws).
+        ctx.lone_defeat_latch = 0;
         if ctx.multi_cast_gate == 0 {
             transition(ctx, ActionState::EndOfAction)
         } else {
@@ -685,17 +685,25 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     // (non-targetable, e.g. a captured monster); the enemy-ally charm
     // widen turns the monster-side mask into `0x384` (the one-word edit at
     // `0x801E6638`) so a living charmed ally counts as down.
+    //
+    // The word is the whole `+0x16E` - [`BattleActionHost::status_word`],
+    // not the actor view's `field_flags` alone. A host that keeps the status
+    // bits in a typed tracker (the engine does: `field_flags` carries only the
+    // bits nothing else owns) packs them back into that word, and `0x4` is
+    // Stone's own bit (`ori v0,v0,0x4` at `0x80041CF4`). Reading the bare
+    // field missed a petrified party: the SM looped the next actor's stale
+    // action forever while the live loop, which does count Stone, refused to
+    // hand out a turn - `koin2`'s Fatal Decision fight.
     let party_alive = (0..party_count)
         .filter(|&s| {
-            host.actor(s)
-                .is_some_and(|a| a.liveness != 0 && a.field_flags & 0x4 == 0)
+            host.actor(s).is_some_and(|a| a.liveness != 0) && host.status_word(s) & 0x4 == 0
         })
         .count();
     let monster_mask: u16 = if ctx.charm_widen { 0x384 } else { 0x4 };
     let monsters_alive = (party_count..total)
         .filter(|&s| {
-            host.actor(s)
-                .is_some_and(|a| a.liveness != 0 && a.field_flags & monster_mask == 0)
+            host.actor(s).is_some_and(|a| a.liveness != 0)
+                && host.status_word(s) & monster_mask == 0
         })
         .count();
 

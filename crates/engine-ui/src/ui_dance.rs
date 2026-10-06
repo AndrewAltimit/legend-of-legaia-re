@@ -298,6 +298,71 @@ pub fn dance_countin_prims(
     }
 }
 
+/// Widget record `GO!` draws through (`li a2,0xc` at `0x801CFCAC`).
+pub const COUNTIN_GO_WIDGET: usize = 0x0C;
+
+/// Stage seat `GO!` is centred on (`li a0,0xa0` / `li a1,0x78` at
+/// `0x801CFCA4..0x801CFCA8`).
+pub const COUNTIN_GO_CENTRE: (i32, i32) = (0xA0, 0x78);
+
+/// `GO!` between the READY banner and the song, as screen-space PSX
+/// primitives: `FUN_801cf470` states 4 / 5 emit widget `0x0C` through
+/// `FUN_801D2F38` at [`COUNTIN_GO_CENTRE`] with brightness `acc * 2`
+/// (`legaia_engine_core::dance::CountInStep::go`). The record's `+0x0F`
+/// byte is `1`, so the cell blends - the same flag the READY slide arm
+/// pokes to `1` and its hold arm clears. `art` is record `0x0C`'s.
+pub fn dance_go_prims(
+    brightness: i32,
+    art: DanceCountInArt,
+    ot_index: u32,
+) -> Vec<crate::screen_prim::ScreenPrim> {
+    let level = (0xFF_u32 * brightness.clamp(0, 0xFF) as u32) >> 8;
+    let colour = (level << 16) | (level << 8) | level;
+    let (u0, v0) = art.uv;
+    let (u1, v1) = (u0.wrapping_add(art.cell.0), v0.wrapping_add(art.cell.1));
+    let (hw, hh) = ((art.cell.0 / 2) as i16, (art.cell.1 / 2) as i16);
+    let (cx, cy) = (COUNTIN_GO_CENTRE.0 as i16, COUNTIN_GO_CENTRE.1 as i16);
+    vec![crate::screen_prim::ScreenPrim::Textured(
+        crate::screen_prim::ScreenQuad {
+            xy: [
+                (cx - hw, cy - hh),
+                (cx + hw, cy - hh),
+                (cx - hw, cy + hh),
+                (cx + hw, cy + hh),
+            ],
+            uv: [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+            clut: art.clut,
+            tpage: art.tpage + u16::from(art.abr) * 0x20,
+            color: colour,
+            gouraud: None,
+            semi_transparent: true,
+            ot_index,
+            depth: None,
+        },
+    )]
+}
+
+/// The placeholder `GO!` a host draws while the hall's HUD page is not
+/// resident (the either/or [`dance_countin_draws_for`] makes for READY).
+pub fn dance_go_draws_for(
+    font: &legaia_font::Font,
+    brightness: i32,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    let alpha = (brightness.clamp(0, 0xFF) as f32) / 255.0;
+    let mut out = text_draws_for(
+        &font.layout_ascii("GO!"),
+        (
+            COUNTIN_GO_CENTRE.0 - 12,
+            COUNTIN_GO_CENTRE.1 - COUNTIN_TEXT_HALF_H,
+        ),
+        [1.0, 1.0, 1.0, alpha],
+    );
+    scale_stage_text_draws(&mut out, origin, scale);
+    out
+}
+
 /// Stage row the practice feedback caption sits on.
 pub const TUTORIAL_FEEDBACK_Y: i32 = 0x68;
 /// Stage column it starts at.

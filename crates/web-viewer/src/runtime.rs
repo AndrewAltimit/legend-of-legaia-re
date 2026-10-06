@@ -231,6 +231,11 @@ pub struct LegaiaRuntime {
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
     pub(crate) cards: [Option<crate::cards::MountedCard>; crate::cards::CARD_SLOTS],
+    /// Per rack slot: an in-game Save wrote the card and the page has not
+    /// yet stored it back into browser storage
+    /// ([`Self::card_take_written`]). Distinct from the card's own `dirty`
+    /// bit, which means "not exported to the emulator yet".
+    pub(crate) cards_written: [bool; crate::cards::CARD_SLOTS],
     /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
     /// strike splash), serviced once per sim tick by
     /// [`Self::tick_fishing_banners`] - the browser twin of the native window's
@@ -456,6 +461,7 @@ impl LegaiaRuntime {
             boot_logos_failed: false,
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
+            cards_written: [false; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
             equip_stats: None,
@@ -1724,6 +1730,7 @@ impl LegaiaRuntime {
         };
         let name = scene.name.clone();
         let is_world_map = legaia_engine_core::scene::is_world_map_scene(&name);
+        let follow = host.world.object_floor_follow_records();
         self.field = Some(crate::play::build_field_render(
             &host.index,
             scene,
@@ -1731,6 +1738,7 @@ impl LegaiaRuntime {
             is_world_map,
             &host.world.hidden_object_records(),
             &host.world.object_render_scales(),
+            &|r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
         ));
         // Pose sources, through the one resolver the native window's
         // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).

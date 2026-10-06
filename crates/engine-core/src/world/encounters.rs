@@ -1101,40 +1101,82 @@ impl World {
         let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
             return false;
         };
-        let installed =
-            self.install_cutscene_timeline_record(&man_file, &man, 1, record as usize, false);
+        let installed = self.install_interaction_timeline(&man_file, &man, record);
         if installed {
-            // The touch resumes the placement's own parked context: start at
-            // its PC (past the spawn section the entry pre-run executed) and
-            // mark the timeline as that context, so it ends at the next
-            // executed `0x21` and the channel never runs a second copy of the
-            // same bytes (`CutsceneTimeline::interaction_slot`).
-            let span = crate::man_field_scripts::partition_record_span(
-                &man_file,
-                &man,
-                1,
-                record as usize,
-            );
-            let channel_pc = self
-                .field_vm
-                .channels
-                .iter()
-                .find(|c| !c.object_bind && c.placement_index == record as usize && !c.done)
-                .zip(span)
-                .and_then(|(c, (start, _, len))| {
-                    (c.record_offset == start && c.pc < len).then_some(c.pc)
-                });
-            if let Some(tl) = self.cutscene.timeline.as_mut() {
-                tl.interaction_slot = Some(record);
-                if let Some(pc) = channel_pc {
-                    tl.pc = pc;
-                }
-            }
             self.props.boss_stagers.remove(&slot);
             self.props.walk_touch.remove(&slot);
             log::info!("field: boss stager P1[{record}] launched as the beat timeline");
         }
         installed
+    }
+
+    /// Install placement `P1[record]`'s own context as the interaction
+    /// timeline: start at its PC (past the spawn section the entry pre-run
+    /// executed, or where its last interaction's `0x21` left it) and mark
+    /// the timeline as that context, so it ends at the next executed `0x21`
+    /// and the channel never runs a second copy of the same bytes
+    /// (`CutsceneTimeline::interaction_slot`).
+    // REF: FUN_80039B7C
+    fn install_interaction_timeline(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        record: u8,
+    ) -> bool {
+        if !self.install_cutscene_timeline_record(man_file, man, 1, record as usize, false) {
+            return false;
+        }
+        let span =
+            crate::man_field_scripts::partition_record_span(man_file, man, 1, record as usize);
+        let channel_pc = self
+            .field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == record as usize && !c.done)
+            .zip(span)
+            .and_then(|(c, (start, _, len))| {
+                (c.record_offset == start && c.pc < len).then_some(c.pc)
+            });
+        if let Some(tl) = self.cutscene.timeline.as_mut() {
+            tl.interaction_slot = Some(record);
+            if let Some(pc) = channel_pc {
+                tl.pc = pc;
+            }
+        }
+        true
+    }
+
+    /// Run each placement context a cross-context `B1 <id> 08` engaged
+    /// ([`crate::world::FieldVmState::pending_engagements`]) as its
+    /// interaction timeline, one at a time, once nothing else holds the
+    /// frame: retail's per-actor tick runs an engaged context the frame after
+    /// the write, but the engine has one modal timeline, so an engagement
+    /// waits for it.
+    // REF: FUN_8003BC08 (`0x8003BD10..0x8003BD38`), FUN_80039B7C
+    pub fn drain_placement_engagements(&mut self) {
+        if self.field_vm.pending_engagements.is_empty()
+            || !matches!(self.mode, SceneMode::Field)
+            || self.cutscene_timeline_active()
+            || self.dialogue_owns_input()
+            || self.field_scripts_held_for_battle()
+        {
+            return;
+        }
+        let Some(man) = self.field_vm.channels_man.clone() else {
+            self.field_vm.pending_engagements.clear();
+            return;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            self.field_vm.pending_engagements.clear();
+            return;
+        };
+        let placement = self.field_vm.pending_engagements.remove(0);
+        let Ok(record) = u8::try_from(placement) else {
+            return;
+        };
+        if self.install_interaction_timeline(&man_file, &man, record) {
+            log::info!("field: P1[{record}] engaged by a cross-context CFLAG_SET bit 8");
+        }
     }
 
     /// Field-step trigger. Engines call this once per "the player walked

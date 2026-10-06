@@ -100,8 +100,30 @@ impl World {
             return false;
         }
         self.step_name_entry(crate::name_entry::NameEntryInput::from_pad_edge(edge));
-        self.frame = self.frame.wrapping_add(1);
+        self.name_entry_display_frames(1);
         true
+    }
+
+    /// `steps` display frames pass under the naming prompt.
+    ///
+    /// The prompt is not a mode of its own: op `0x49` sub-3 hands off to an
+    /// actor (`func_0x80020de0(0x8007065c, ...)` on the field list), and the
+    /// field frame loop keeps running around it - only the opening's script
+    /// is parked. So the camera mover (`FUN_801DC0BC`) keeps stepping, and the
+    /// 16-frame glide the opening stages one op before the `49 03`
+    /// (`town01` P2[3] `+0x2B1`: pitch `292`, yaw `-510`, eye
+    /// `(-600, 8, 3840)`) lands under the prompt - the shot every retail
+    /// capture of the screen holds, with Vahn standing in the upper left. The
+    /// engine's two glide clocks both run on
+    /// [`crate::world::FrameClock::display_frames`], so the prompt advances
+    /// it along with the caret's [`Self::frame`]; the hosts then run their
+    /// camera half as on any frame.
+    // REF: FUN_801DC0BC
+    pub fn name_entry_display_frames(&mut self, steps: u32) {
+        self.frame = self.frame.wrapping_add(u64::from(steps));
+        self.clock.display_frames += u64::from(steps);
+        let glide = &mut self.camera.state.glide_frames;
+        *glide = (*glide - steps as i32).max(0);
     }
 
     /// Install the opening-cutscene narration presenter with `pages` (the
@@ -181,17 +203,16 @@ impl World {
             .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
     }
 
-    /// The scripted full-scene multiply tint currently in force, or `None`
-    /// for the untouched render path. This is [`crate::World::screen_tint`] -
-    /// the op `0x4C 0x12` global tint (`DAT_8007BCB8/B9/BA`), the
-    /// scene-transition fade primitive (the opening's fade-in from black).
+    /// The op `0x4C 0x12` global tint currently in force
+    /// (`DAT_8007BCB8/B9/BA`, normalized; `None` = neutral).
     ///
-    /// Hosts stage this each frame over the drawn 3D scene (multiplying the
-    /// colour-grade gold and the depth-cue far colour by it - both branches
-    /// of the shader's cue mix, so the product distributes to the final
-    /// pixel). The text/narration overlay stays bright, matching retail (the
-    /// creation crawl scrolls over the fade). `None` when no tint is active -
-    /// the identity path, byte-identical to a build without this feature.
+    /// It is **not** a frame multiply. A disc-wide reference scan finds one
+    /// reader, the fog particle update `FUN_8003F3FC` (`0x8003F558` /
+    /// `0x8003F588` / `0x8003F5B8`); every other site is the op's own ramp or
+    /// a reset. `retona_field_card_boot` holds the word at `27` mid-arrival
+    /// over a full-brightness frame. So the hosts stage it into no colour
+    /// grade: it reaches the fog sheets (`World::fog_render_step`) and the
+    /// non-retail volumetric fog, which follows it so the two fade together.
     ///
     /// The op `0x34` sub-0 screen effect is deliberately NOT composed in:
     /// the retail cold-boot capture holds the lit villager tableau across
@@ -605,6 +626,9 @@ impl World {
         }
         self.cutscene.prologue_naming_pending = true;
         self.cutscene.prologue_naming_armed = false;
+        self.cutscene.naming_owner =
+            Some(crate::field_submode_screen::Op49ParkOwner::CutsceneTimeline);
+        self.cutscene.naming_slot = 0;
         true
     }
 
@@ -1390,6 +1414,24 @@ impl World {
             }
             tl.pc = fw.resume_pc;
         }
+        // Player face-at park (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk
+        // kernel's FaceTarget leg turns the player toward the named actor,
+        // and the record resumes past the acquire on the leg's terminal
+        // frame - see `CutsceneTimeline::player_face`.
+        // REF: FUN_8003774C (the 0x4C arm)
+        if let Some((mut ramp, resume_pc, frames)) = tl.player_face.take() {
+            let done = self.step_player_face_leg(&mut ramp);
+            if !done && frames < WALK_PARK_TIMEOUT {
+                tl.player_face = Some((ramp, resume_pc, frames + 1));
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc = resume_pc;
+        }
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -1891,6 +1933,28 @@ impl World {
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
+                    // Halt-acquire of the player (`CC F8 85|8E|8F`): the
+                    // player turns to face the op's actor bind and the record
+                    // parks until the turn's terminal frame
+                    // (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
+                    // turns Vahn toward Cort this way before the evolved-Cort
+                    // fight; stepped as a plain halt on the record's own
+                    // context, the player kept facing the camera.
+                    // REF: FUN_801DE840 (0x801E2148..0x801E21DC)
+                    if let Some(mut ramp) =
+                        crate::inline_dialogue::TalkFaceRamp::from_acquire(&tl.bytecode, pc)
+                    {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        let resume_pc = pc + 6;
+                        if host.world.step_player_face_leg(&mut ramp) {
+                            tl.pc = resume_pc;
+                            continue;
+                        }
+                        tl.player_face = Some((ramp, resume_pc, 1));
+                        break;
+                    }
                     // Player seats (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..`
                     // NPC-run): `FUN_8003C83C` resolves `0xF8` to the player
                     // object, so the op runs with the PLAYER as its context
@@ -2231,8 +2295,15 @@ impl World {
                     && !glide_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
+                    // By the op's own width: the flag tests are two bytes
+                    // (three extended), but a `0x4C` park is not always -
+                    // `4C D2 <ch>` is three, and stepping it by two read its
+                    // channel byte as the next opcode (`rayman` `P2[19]`'s
+                    // `4C D2 53 .. 4C D2 59` run then lost the `44 7A` that
+                    // re-seats the village after the quake).
                     let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
-                    next_pc = pc + header_size + 1;
+                    next_pc = legaia_asset::field_disasm::decode(&tl.bytecode, pc)
+                        .map_or(pc + header_size + 1, |insn| pc + insn.size);
                     stop = false;
                 }
                 // Natural termination: the record's choreography **wrapped**.
@@ -2502,6 +2573,9 @@ impl World {
             .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
         {
             c.pc = tl.pc;
+            // The interaction's `0x21` disengages the context
+            // (`0x80039E68..0x80039EE4` clears `+0x10 & 0x100`).
+            c.ctx.flags &= !0x100;
         }
     }
 
@@ -2619,8 +2693,11 @@ impl World {
             // collision the player walks off: `chitei2`'s collapse beat leaves
             // the party on the escape platform (partition-0 record 31's mesh)
             // to run down its stairs onto the corridor floor, and yanking them to the cold spawn skipped
-            // the boulder beat that platform leads to.
-            && !self.field_collision_reaches_floor(
+            // the boulder beat that platform leads to. Nor is open ground
+            // with no floor bit at all: `taiku`'s post-boss cutscene leaves the
+            // party on the collapse escape route, and the rescue carried them
+            // back to the scene's spawn, off the route the escape timer runs.
+            && self.field_collision_boxed_in(
                 actor.move_state.world_x,
                 actor.move_state.world_z,
                 STRANDED_COLLISION_REACH,
@@ -2767,6 +2844,51 @@ impl World {
             .filter(|c| c.object_bind && c.ctx.field_72 != 0 && c.ctx.field_72 != 0x1000)
             .map(|c| (c.placement_index, c.ctx.field_72))
             .collect()
+    }
+
+    /// Flat partition-0 record indices whose **object-bind channel** carries
+    /// the actor tick's floor-follow law: `+0x10 & 0x20200` up and
+    /// `0x20000000` down. The field actor tick `FUN_8003BC08` rewrites such an
+    /// actor's Y `+0x16` with the floor sample under it (`FUN_80019278`, the
+    /// `jal` at `0x8003BC98`) on every tick the visibility cull leaves it in
+    /// view, so the record's own `y_off` - the lift the `.MAP` sweep
+    /// `FUN_8003A55C` seats it with (`lut[nibble] + y_off`, `0x8003A640`) -
+    /// lasts only until the actor is first seen. A prologue raises the class
+    /// bit with `31 11` (`CFlag.Set` bit 17): `rikuroa`'s `P0[0]`, bound to
+    /// most of the summit's props, does, and its sky panorama (pack 37,
+    /// `y_off` `2080`) draws at the `-480` floor tier in every retail capture,
+    /// which puts the cliff ring across the top of the frame.
+    ///
+    /// The `0x2000` glide variant converges on the same floor and is listed
+    /// too; the `0x20000000` law (`-(+0x8E)`) is
+    /// [`Self::object_draw_displacements`]' business.
+    // REF: FUN_8003BC08 (height arm, 0x8003BC44..0x8003BCF4), FUN_80019278
+    pub fn object_floor_follow_records(&self) -> std::collections::HashSet<usize> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| {
+                c.object_bind && c.ctx.flags & 0x2000_0000 == 0 && c.ctx.flags & 0x0002_0200 != 0
+            })
+            .map(|c| c.placement_index)
+            .collect()
+    }
+
+    /// The draw Y a placed object bound to `record` takes at world `(x, z)`:
+    /// the floor sample under it when the record follows the floor
+    /// ([`Self::object_floor_follow_records`]), else `None` (the `.MAP`
+    /// sweep's `lut[nibble] + y_off` stands).
+    // REF: FUN_8003BC08, FUN_80019278
+    pub fn object_floor_follow_y(
+        &self,
+        follow: &std::collections::HashSet<usize>,
+        record: usize,
+        x: i32,
+        z: i32,
+    ) -> Option<i32> {
+        follow
+            .contains(&record)
+            .then(|| self.sample_field_floor_height(x, z))
     }
 
     /// Flat partition-0 record index -> how far a script has moved that
@@ -3064,6 +3186,7 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) {
+        self.field_vm.pending_engagements.clear();
         self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
         self.field_vm.channels_man = if man.is_empty() {
             None
@@ -3667,7 +3790,24 @@ impl World {
                         break;
                     }
                 }
-                FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
+                FieldStepResult::Yield { resume_pc } => {
+                    id.pc = resume_pc;
+                    // The talker's own glide-step (`37` / `41` / `47` with no
+                    // target byte) parks the record (`+0x10 |= 0x400`) and
+                    // hands the step to the walk kernel, whose terminal frame
+                    // clears the bit again (`FUN_8003774C`, the 0x37 / 0x41
+                    // arm). The runner plays no walk leg for the talker, so
+                    // the bit would never clear, and every later
+                    // cross-context op of the talk would take the dispatcher's
+                    // halted-target early-out and end the conversation:
+                    // Xain's second stage (`tunnelc` P1[4], `41 07 C1` then
+                    // `AC 0C 08`) ended there, before the picker that raises
+                    // `0x325` and the fight behind it. The step is taken as
+                    // done.
+                    if matches!(b, 0x37 | 0x41 | 0x47) {
+                        id.ctx.flags &= !0x400;
+                    }
+                }
                 // op-0x4A WAIT_FRAMES halts at its own PC every tick until its
                 // frame target elapses (`ctx.wait_accum` accumulates one
                 // `frame_delta` per `step`, and `id.ctx` persists across ticks).
@@ -3809,6 +3949,41 @@ impl World {
     /// once rather than holding the talk's player-targeted ops.
     ///
     /// REF: FUN_8003774C (the kernel visit), FUN_8003BC08 (visits it on `0x400`)
+    /// One walk-kernel visit of a cutscene record's player face-at leg
+    /// (`CutsceneTimeline::player_face`): turn the player toward the actor
+    /// bind the acquire names. Returns `true` on the terminal frame, or when
+    /// there is no player or nothing the bind resolves to (the leg then
+    /// closes at once rather than holding the record).
+    ///
+    /// REF: FUN_8003774C (the 0x4C arm)
+    pub fn step_player_face_leg(
+        &mut self,
+        ramp: &mut crate::inline_dialogue::TalkFaceRamp,
+    ) -> bool {
+        let target = self.talk_face_target(ramp.program[4]);
+        let player = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get(usize::from(slot)))
+            .map(|a| {
+                (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.move_state.render_26,
+                )
+            });
+        let (Some((tx, tz)), Some((px, pz, yaw))) = (target, player) else {
+            return true;
+        };
+        let speed = self.clock.display_frame_step.max(1);
+        let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
+        if let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(usize::from(slot))
+        {
+            actor.move_state.render_26 = yaw as i16;
+        }
+        done
+    }
+
     pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
         let Some(mut ramp) = id.face_ramp else {
             return;
@@ -3920,6 +4095,27 @@ impl World {
                 && let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
             {
                 rec.entry_pc = pc;
+            }
+            // A talk that ended on an executed raw `0x21` leaves the actor's
+            // own context there too: the talk and the placement are one
+            // retail context (`actor[+0x9E]`), and an engagement of that
+            // context (`B1 <id> 08`) resumes past the `0x21`. Xain's fight
+            // (`tunnelc` P1[4]: `3E FF 0A`, `21`) is staged from a talk, and
+            // the system script's post-battle engagement runs the scene after
+            // it (`+0xC45`, which sets `0x1D5`).
+            if let Some(id) = self.dialog.inline.as_ref()
+                && id.parked_pc.is_none()
+                && let Some(slot) = id.npc_slot
+                && id.pc > 0
+                && id.bytecode.get(id.pc - 1) == Some(&0x21)
+                && id.visited.get(id.pc - 1).copied().unwrap_or(false)
+                && let Some(c) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            {
+                c.pc = id.pc;
             }
             self.dialog.inline = None;
             self.dialog.current = None;
@@ -4334,6 +4530,57 @@ mod tests {
         let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "ramp done: park released");
         assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
+    }
+
+    /// A halt-acquire of the player (`CC F8 85 <lo> <hi> <id>`) turns the
+    /// player toward the actor the bind names - the walk kernel's FaceTarget
+    /// leg - and parks the record until the turn's terminal frame. `jouine`
+    /// `P2[5]` turns Vahn toward Cort this way (`CC F8 85 0A 00 17`); the
+    /// retail capture holds the player's `+0x26` on `atan2` of the offset
+    /// plus the half-turn, engine `0x23B` for this geometry.
+    #[test]
+    fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 2368;
+        w.actors[0].move_state.world_z = 2496;
+        w.actors[0].move_state.render_26 = 0x800;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x17,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (3136, 3136));
+        let bc = vec![0xCC, 0xF8, 0x85, 0x0A, 0x00, 0x17, 0x4A, 0xFF, 0x7F];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        let parked = |w: &World| {
+            w.cutscene
+                .timeline
+                .as_ref()
+                .is_some_and(|tl| tl.player_face.is_some())
+        };
+        assert!(parked(&w), "the record waits on the turn");
+        for _ in 0..12 {
+            w.step_cutscene_timeline();
+        }
+        assert!(!parked(&w), "the turn's terminal frame released the park");
+        assert_eq!(w.actors[0].move_state.render_26, 0x23B);
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+        assert_eq!(tl.pc, 6, "record resumed past the 6-byte acquire");
     }
 
     /// A player ExecMove queues the scene-record one-shot only when its pick

@@ -155,10 +155,11 @@ pub fn fishing_small_digit(
 ///
 /// PORT: overlay_fishing_0972_801d7d44
 ///
-/// NOT WIRED: retail's one large-digit field is the catch result's points
-/// readout - `FUN_801D76E0(1, 0x20, 0x88, points, scale)` at `0x801D5640`
-/// inside the catch resolution `FUN_801D5298` - and no host's fishing draw
-/// list carries that readout yet; every HUD row is the small style.
+/// Retail's one large-digit field is the landed catch's points -
+/// `FUN_801D76E0(1, 0x20, 0x88, points, brightness)` at `0x801D5640` inside
+/// the result actor's tick `FUN_801D5298` - which reaches this through
+/// [`crate::HudDraw::LargeNumber`] in [`fishing_hud_sprite_prims`].
+// REF: FUN_801d76e0, FUN_801d5298
 pub fn fishing_large_digit(
     table: &[FishingSprite],
     x: i32,
@@ -212,6 +213,18 @@ pub fn fishing_hud_sprite_prims(items: &[HudDraw], table: &[FishingSprite]) -> V
             } => {
                 for cell in number_digit_cells(0, x, y, value) {
                     out.extend(fishing_small_digit(
+                        table, cell.x, cell.y, cell.digit, brightness, ONE,
+                    ));
+                }
+            }
+            HudDraw::LargeNumber {
+                x,
+                y,
+                value,
+                brightness,
+            } => {
+                for cell in number_digit_cells(1, x, y, value) {
+                    out.extend(fishing_large_digit(
                         table, cell.x, cell.y, cell.digit, brightness, ONE,
                     ));
                 }

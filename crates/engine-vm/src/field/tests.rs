@@ -764,6 +764,7 @@ impl FieldHost for TestHost {
     fn op4c_n_8_sub_1_set_tint(
         &mut self,
         _ctx: &mut FieldCtx,
+        _target: Option<u8>,
         model_id: u32,
         anim_frame: u16,
         tween_frames: u16,

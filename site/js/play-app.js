@@ -901,6 +901,7 @@ void main() {
       this.staticDraws = [];
       this._staticWindowStamp = undefined;
       this._viewWindowStamp = undefined;
+      this._placementCullStamp = undefined;
       this.player = null;
       this.npcs = [];
       this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
@@ -948,6 +949,10 @@ void main() {
         used.add(key);
         return meshId;
       };
+      /* The env-slot uploader, kept for `_applyObjectModels` (a motion
+       * stream's op-0x0E model swap draws a placed object with another
+       * slot's mesh). */
+      this._ensureEnvMesh = (slot) => ensure(slot, 0);
       /* Per-animated-placement mesh id space (above the shared env-slot ids and
        * the posed frame-0 variants, below the player / NPC ids). One mesh per
        * animated placement so two props sharing an env slot can sit on
@@ -964,6 +969,33 @@ void main() {
           rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
         return true;
       };
+      /* Light-source rows (TMD group flags 0x10..0x17): retail shades each
+       * corner through the GTE light against the draw's world normal, so a
+       * slot carrying them gets one shaded copy per draw rotation - the
+       * `field_lit_mesh` kernel the native window runs. `_syncFieldLight`
+       * re-shades them when the live light changes (op 4C 8A). */
+      const LIT_MESH_BASE = 1400000;
+      this.litEnvMeshes = [];
+      this._fieldLightKey = (typeof rt.field_light_key === 'function') ? rt.field_light_key() : '';
+      const litSlot = new Map(), litIds = new Map();
+      const ensureLit = (slot, ry, rx, rz) => {
+        if (typeof rt.field_mesh_lit !== 'function') return -1;
+        let has = litSlot.get(slot);
+        if (has === undefined) {
+          has = !!rt.field_mesh_has_lit_rows(slot);
+          litSlot.set(slot, has);
+        }
+        if (!has) return -1;
+        const rec = { meshId: 0, slot, rx: rx & 0xFFF, ry: ry & 0xFFF, rz: rz & 0xFFF };
+        const key = `${slot}:${rec.rx}:${rec.ry}:${rec.rz}`;
+        const known = litIds.get(key);
+        if (known !== undefined) return known;
+        rec.meshId = LIT_MESH_BASE + this.litEnvMeshes.length;
+        if (!this._uploadLitEnvMesh(rt, rec)) return -1;
+        this.litEnvMeshes.push(rec);
+        litIds.set(key, rec.meshId);
+        return rec.meshId;
+      };
       /* `floorBase` is where this list starts inside the concatenated
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
@@ -976,10 +1008,24 @@ void main() {
             /* Animated prop: its own instance, uploaded at the rest pose
              * (frame 0) and re-posed per frame from the engine's live cursor. */
             meshId = ANIM_PROP_BASE + i;
-            if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
+            /* A prop carrying light-source rows is shaded at frame 0 and
+             * at its own rotation (`field_mesh_posed_lit`); re-poses move
+             * its positions only. */
+            const litRec = (typeof rt.field_mesh_posed_lit === 'function'
+              && rt.field_mesh_has_lit_rows(slots[i]))
+              ? { meshId, slot: slots[i], anim,
+                  rx: rotsX ? (rotsX[i] & 0xFFF) : 0, ry: rots ? (rots[i] & 0xFFF) : 0,
+                  rz: rotsZ ? (rotsZ[i] & 0xFFF) : 0 }
+              : null;
+            if (litRec) {
+              if (!this._uploadLitEnvMesh(rt, litRec)) continue;
+              this.litEnvMeshes.push(litRec);
+            } else if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
             animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0 };
           } else {
-            meshId = ensure(slots[i], 0);
+            meshId = ensureLit(slots[i], rots ? rots[i] : 0,
+              rotsX ? rotsX[i] : 0, rotsZ ? rotsZ[i] : 0);
+            if (meshId < 0) meshId = ensure(slots[i], 0);
             if (meshId < 0) continue;
           }
           /* Sky domes and kilometre-wide horizon planes are scene geometry
@@ -1026,6 +1072,8 @@ void main() {
            * live mask (`_syncStaticWindow`). */
           if (placed) {
             draw.placeIdx = i;
+            /* The mesh the placement draws with no model swap live. */
+            if (!anim) draw.baseMeshId = meshId;
             /* Where the record put it, for `_applyObjectMoves`. */
             draw.baseX = draw.x;
             draw.baseZ = draw.z;
@@ -1370,12 +1418,13 @@ void main() {
          * no page-side gate, and no confirm blip. */
         let scripted = false;
         try { scripted = rt.play_menu_scripted_open_pending(); } catch (e) {}
-        if (scripted || (startEdge && this._canOpenFieldMenu())) {
+        if (scripted || startEdge) {
           try { rt.play_menu_open(); } catch (e) { return false; }
-          /* The engine can REFUSE - `play_menu_open` declines while a dialogue
-           * engagement owns the player (`World::dialogue_owns_input`), which is
-           * retail's engaged-bit branch. Take none of the follow-up on a
-           * refusal: no confirm blip, no swallowed pad edge, no menu clock. */
+          /* The engine decides - `play_menu_open` asks
+           * `World::field_menu_open_allowed`, the rule the native window asks,
+           * and on a press the menu lock refuses it queues the deny buzz
+           * itself. Take none of the follow-up on a refusal: no confirm blip,
+           * no swallowed pad edge, no menu clock. */
           let opened = false;
           try { opened = rt.play_menu_is_open(); } catch (e) {}
           if (!opened) return false;
@@ -1418,7 +1467,13 @@ void main() {
          * (`menu_cue_requests` in `play_sfx_state_json`), so the wiring stays
          * measurable. See `play_sfx::CUE_MENU_CURSOR` for the one inexactness
          * left, which is a bank choice rather than a pitch. */
-        if (edge) this.menuBlip(edge, !inSubScreen);
+        /* `play_menu_input` fires it itself now, after the save screen's
+         * refusal box and block grid have filtered the edge (the native
+         * window's order); a cached WASM without `play_menu_blips_inline`
+         * still gets the page-side blip. */
+        let inlineBlip = false;
+        try { inlineBlip = typeof rt.play_menu_blips_inline === 'function' && rt.play_menu_blips_inline(); } catch (e) {}
+        if (edge && !inlineBlip) this.menuBlip(edge, !inSubScreen);
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
@@ -1586,14 +1641,15 @@ void main() {
      * the field does, and a page-side copy of an engine rule is drift no gate
      * can see because no Rust symbol is missing.
      *
-     * What stays here is page-owned presentation state the engine has no view
-     * of: a dialog box the page is drawing, and the opening chain. */
+     * Nothing page-side is added to it. The page used to refuse on two
+     * copies of its own - a dialog box in the last HUD state, and the
+     * opening chain / narration beat - and the native window asked neither.
+     * The first was the engine's `dialogue_owns_input` read back a frame
+     * later; the second is now the engine's (`opening_chain_active`, with
+     * the crawl and title card already in the rule), so both hosts answer
+     * the same press the same way. */
     _canOpenFieldMenu() {
-      try { if (!this.rt.play_menu_can_open()) return false; } catch (e) { return false; }
-      if (this._hudState && this._hudState.dialog) return false;
-      /* The opening chain / a narration beat owns the scene - Start is inert. */
-      if (this._cut && (this._cut.locked || this._cut.chain)) return false;
-      return true;
+      try { return !!this.rt.play_menu_can_open(); } catch (e) { return false; }
     }
 
     /* Upload the pause-menu atlases (font glyphs + the disc's menu-chrome sheet)
@@ -2080,7 +2136,28 @@ void main() {
       const live = rt.field_placement_live();
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
-        d.hidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
+        d.winHidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
+        d.hidden = d.winHidden || !!d.cullHidden;
+      }
+    }
+
+    /* Every placed object is a field actor, and retail's actor tick culls it
+     * (FUN_801D79E8: outside the region box, or outside the visible tile
+     * window widened by its record's cull radius) - the draw walk then skips
+     * it. The engine answers through the same
+     * `field_view_window::placed_actor_visible` kernel the native window asks;
+     * the mask is empty while the visible-tile crop does not apply, and the
+     * page re-reads it only when the cull view moves. */
+    _syncPlacementCull(rt) {
+      if (typeof rt.field_placement_cull_stamp !== 'function') return;
+      const stamp = rt.field_placement_cull_stamp(this.debugCamera);
+      if (stamp === this._placementCullStamp) return;
+      this._placementCullStamp = stamp;
+      const culled = stamp ? rt.field_placement_culled(this.debugCamera) : [];
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        d.cullHidden = d.placeIdx < culled.length && culled[d.placeIdx] === 1;
+        d.hidden = !!d.winHidden || d.cullHidden;
       }
     }
 
@@ -2092,6 +2169,34 @@ void main() {
      * applies at retail framing only (the camera-distance preset at Retail, no
      * drag / zoom, and never under `F3`), so the default page draws the map
      * whole. */
+    /* Upload one lit env copy: slot `rec.slot` shaded at the draw rotation
+     * `(rec.rx, rec.ry, rec.rz)` under the world's live field light. */
+    _uploadLitEnvMesh(rt, rec) {
+      try {
+        if (rec.anim) rt.field_mesh_posed_lit(rec.slot, rec.anim, rec.rx, rec.ry, rec.rz);
+        else rt.field_mesh_lit(rec.slot, rec.rx, rec.ry, rec.rz);
+      }
+      catch (e) { return false; }
+      const pos = rt.field_mesh_positions();
+      const idx = rt.field_mesh_indices();
+      if (!pos.length || !idx.length) return false;
+      const flat = rt.field_mesh_flat_rgba();
+      this.renderer.uploadSceneMesh(rec.meshId, pos, rt.field_mesh_uvs(),
+        rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
+      return true;
+    }
+
+    /* Re-shade the lit env copies when the live field light moves (op
+     * 4C 8A - koin3's cutscene records drop it to black and back). */
+    _syncFieldLight(rt) {
+      if (!this.litEnvMeshes || !this.litEnvMeshes.length
+          || typeof rt.field_light_key !== 'function') return;
+      const key = rt.field_light_key();
+      if (key === this._fieldLightKey) return;
+      this._fieldLightKey = key;
+      for (const rec of this.litEnvMeshes) this._uploadLitEnvMesh(rt, rec);
+    }
+
     _syncViewWindow(rt) {
       if (typeof rt.field_view_window_stamp !== 'function') return;
       const stamp = rt.field_view_window_stamp(this.debugCamera);
@@ -2183,6 +2288,28 @@ void main() {
      * per-placement [r, g, b, ir0] or an EMPTY array while nothing is
      * tinted. The native window stages the same table
      * (`World::object_draw_tints`) on its placed draws. */
+    /* A placed object whose scripted-motion stream swapped its model (op
+     * 0x0E - koin3's video wall cycles its panels) draws with the swapped-in
+     * env slot's mesh. The engine hands back a per-placement slot (-1 =
+     * none) or an EMPTY array while no stream has swapped one; the native
+     * window draws through the same table (`World::object_live_models`). */
+    _applyObjectModels(rt) {
+      if (!rt.field_placement_models || !this._ensureEnvMesh) return;
+      const m = rt.field_placement_models();
+      if (!m.length && !this._objectModelsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined || d.baseMeshId === undefined) continue;
+        const slot = d.placeIdx < m.length ? m[d.placeIdx] : -1;
+        let id = d.baseMeshId;
+        if (slot >= 0) {
+          const swapped = this._ensureEnvMesh(slot);
+          if (swapped >= 0) id = swapped;
+        }
+        d.meshId = id;
+      }
+      this._objectModelsLive = m.length > 0;
+    }
+
     _applyObjectTints(rt) {
       if (!rt.field_placement_tints) return;
       const t = rt.field_placement_tints();
@@ -2197,6 +2324,35 @@ void main() {
         }
       }
       this._objectTintsLive = t.length > 0;
+    }
+
+    /* Object-effect clip (field-VM `4C C2` raises an actor's `+0x42`):
+     * retail clips that actor's mesh to the slab its object-effect row
+     * stages. Each placed object (`placeIdx`) and NPC (`npcSlot`) draw asks
+     * the engine's `play_effect_clip` for its mesh-space slab, handing the
+     * page model it will draw with; the native window stages the same
+     * kernel (`World::object_effect_mesh_clip`) on its draws. One cheap
+     * `play_effect_clip_live` call a frame while no actor has it raised. */
+    _applyEffectClips(rt, draws) {
+      if (typeof rt.play_effect_clip_live !== 'function') return;
+      let live = false;
+      try { live = rt.play_effect_clip_live(); } catch (e) { live = false; }
+      if (!live && !this._effectClipsLive) return;
+      for (const d of draws) {
+        let kind = -1, key = 0;
+        if (d.placeIdx !== undefined) { kind = 0; key = d.placeIdx; }
+        else if (d.npcSlot !== undefined) { kind = 1; key = d.npcSlot; }
+        else if (d.effectPlayer) { kind = 2; key = 0; }
+        if (kind < 0) continue;
+        if (!live) { delete d.effectClip; continue; }
+        const m = this.renderer.sceneMeshes && this.renderer.sceneMeshes.get(d.meshId);
+        if (!m) continue;
+        const model = this.renderer._placementModel(d, m);
+        let c = null;
+        try { c = rt.play_effect_clip(kind, key >>> 0, model); } catch (e) { c = null; }
+        if (c && c.length >= 6) d.effectClip = c; else delete d.effectClip;
+      }
+      this._effectClipsLive = live;
     }
 
     /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
@@ -2467,6 +2623,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectModels(rt);
       this._applyObjectTints(rt);
       this._applyGroundWave(rt);
 
@@ -2476,6 +2633,8 @@ void main() {
 
       /* Retail's visible-tile crop may have moved with the camera. */
       this._syncViewWindow(rt);
+      this._syncFieldLight(rt);
+      this._syncPlacementCull(rt);
 
       /* A script may have re-bound an NPC's mesh this frame. */
       this._rebindLiveNpcModels(rt);
@@ -2623,14 +2782,24 @@ void main() {
       if (this.player) {
         const posed = rt.player_mesh_positions();
         if (posed.length) this.renderer.updateSceneMeshPositions(PLAYER_MESH_ID, posed);
-        draws.push({
+        const playerDraw = {
           meshId: PLAYER_MESH_ID,
           x: pt[0], y: -pt[1], z: pt[2],
           rotY: -(pt[3] + 2048) * A2R,
           scale: 1.0,
           /* Actor draw: the occlusion fade must never dissolve the player. */
           noOccl: true,
-        });
+          /* The player's object-effect clip (`CC F8 C2`, play_effect_clip). */
+          effectPlayer: true,
+        };
+        /* The player's op `4C 81` draw tint (a cutscene's fade to black, a
+         * red flash) as a constant per-draw cue - the native window's
+         * `player_tint_cue`. Empty while untinted. */
+        const ptint = typeof rt.play_player_tint === 'function' ? rt.play_player_tint() : null;
+        if (ptint && ptint.length === 4 && ptint[3] > 0) {
+          playerDraw.cue = { far: [ptint[0], ptint[1], ptint[2]], nearZ: -1, farZ: 0, maxIr0: ptint[3] };
+        }
+        draws.push(playerDraw);
       }
 
       /* Animated environment props: advance each to the engine's live prop-bank
@@ -2815,6 +2984,7 @@ void main() {
       if (fieldVp && typeof rt.play_field_fx_sync === 'function') {
         this._fieldFxDraws(rt, fieldVp, draws);
       }
+      this._applyEffectClips(rt, draws);
       this._applySceneClear(rt);
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw

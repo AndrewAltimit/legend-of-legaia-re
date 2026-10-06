@@ -133,6 +133,37 @@ pub(super) struct MoveVmHostImpl<'a> {
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
+    /// Op `0x17` - the battle-overlay escape `FUN_801F30C4(actor, mode)`,
+    /// queued with what the burst reads off the parent (its `+0x14` position,
+    /// `+0x24` rotation trio and `+0x72` scale) for
+    /// [`World::flush_battle_bursts`]. Battle-only, as the overlay is.
+    fn ext_17(&mut self, state: &mut vm::move_vm::ActorState, arg: i16) {
+        if self.world.mode != SceneMode::Battle {
+            return;
+        }
+        self.world
+            .casting
+            .pending_bursts
+            .push(crate::world::PendingBurst {
+                mode: arg as u16 as u32,
+                pos: [state.world_x, state.world_y, state.world_z],
+                rot: [state.render_24, state.render_26, state.render_28],
+                scale: state.field_72,
+            });
+    }
+
+    /// Ext `0x17` / `0x18` / `0x1A` / `0x19`: the object-effect table
+    /// (`0x80083FF8`) a raised `+0x42` draws under.
+    fn ext_world_struct_init(&mut self, index: i16, values: [i16; 5]) {
+        self.world.object_effect.write(index, values);
+    }
+    fn ext_world_struct_write(&mut self, index: i16, values: [i16; 5]) {
+        self.world.object_effect.write(index, values);
+    }
+    fn ext_world_struct_add(&mut self, index: i16, deltas: [i16; 5]) {
+        self.world.object_effect.add(index, deltas);
+    }
+
     fn rotation_lut(&self, index: u16) -> (i16, i16) {
         let idx = index as usize % self.world.sin_lut.len().max(1);
         let s = self.world.sin_lut.get(idx).copied().unwrap_or(0);
@@ -380,6 +411,26 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
         // `0x801E01CC`): a shaped, never-negative `rand()`.
         self.world.next_rand() as i32
     }
+
+    /// `FUN_801DFDF0`'s two special ids (`0x801DFE38..0x801DFE58`): `4` and
+    /// `0x13` first seat a move-VM trigger actor, then spawn the effect as
+    /// every other id does. The overlay is battle-resident, so the side call
+    /// only exists in battle.
+    fn is_summon_effect(&self, effect_id: u8) -> bool {
+        self.world.mode == SceneMode::Battle
+            && vm::battle_burst::trigger_for_effect(effect_id).is_some()
+    }
+
+    /// `FUN_80050ED4(world_pos, &{0, angle, 0}, trigger, 0x1000)`, queued for
+    /// [`World::flush_battle_bursts`].
+    fn handle_summon(&mut self, effect_id: u8, world_pos: [i16; 3], angle: u16) {
+        if let Some(trigger) = vm::battle_burst::trigger_for_effect(effect_id) {
+            self.world
+                .casting
+                .pending_burst_triggers
+                .push((trigger, world_pos, angle));
+        }
+    }
 }
 
 // --- field VM host ---------------------------------------------------------
@@ -598,10 +649,12 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
 /// - `+0x8C`/`+0x8D` = tile column/row recomputed from the new world
 ///   position (signed `(w - 0x40) >> 7`).
 ///
-/// Not modelled (no [`FieldCtx`] counterpart): the `+0x70`/`+0x9C`/`+0x2A`/
-/// `+0x78` zeroes, the `+0x9E` script-offset rebase onto the record's first
-/// opcode (with its `'%'`-first-opcode `func_0x8003CF7C` poke), and the
-/// linked `+0x44` struct's `+0x9A = 0xFFFF` write.
+/// - `+0x78` (the tint blend) = 0.
+///
+/// The `+0x9E` rebase and the `0x25` spawn-section re-run that follow are
+/// [`FieldHostImpl::rerun_spawn_section`]. Not modelled (no [`FieldCtx`]
+/// counterpart): the `+0x70`/`+0x9C`/`+0x2A` zeroes and the linked `+0x44`
+/// struct's `+0x9A = 0xFFFF` write.
 ///
 /// Returns `false` (ctx untouched) when the record cannot be resolved.
 pub(super) fn apply_script_table_teleport(
@@ -631,6 +684,7 @@ pub(super) fn apply_script_table_teleport(
     ctx.field_72 = 0x1000;
     ctx.wait_accum = 0;
     ctx.field_8e = 0;
+    ctx.field_78 = 0;
     ctx.local_flags = 0x15;
     ctx.flags &= 0x9EBF_FAFE;
     // Tile column/row from the fresh world position - the retail signed
@@ -648,12 +702,101 @@ pub(super) fn apply_script_table_teleport(
     true
 }
 
+impl FieldHostImpl<'_> {
+    /// The second half of op `4C C3`: re-run the re-seated context's spawn
+    /// section.
+    ///
+    /// After the teleport retail rebases the context's script offset `+0x9E`
+    /// onto its record's first opcode (`0x801E2798..0x801E27A4`), and when
+    /// that opcode is `0x25` it raises the scene word `*(_DAT_801C6EA4) + 8`,
+    /// runs the context through `FUN_8003CF7C` from there and drops the word
+    /// again (`0x801E2800..0x801E282C`). `FUN_8003CF7C` executes ops until it
+    /// has run a `0x21`, the PC stops moving, or the next byte is below the
+    /// opcode band - the same slice the scene-entry install gives a
+    /// placement (`FUN_8003A1E4`), so the section's story-flag dispatch picks
+    /// the actor's seat again from the live flags. `nilboa` `P2[27]` sends
+    /// the Fire Ravine boulders home this way and their sections, finding
+    /// `0x457` set, put them back where they were pushed.
+    ///
+    /// The slice runs with the scene-entry pre-run's semantics
+    /// ([`crate::world::FieldVmState::entry_prerun`]): a seat op seats this
+    /// context and never the player. An op the section aims at another
+    /// context is stepped over by its width; the caller writes the final
+    /// position through to the actor.
+    ///
+    /// REF: FUN_8003CF7C, FUN_801DE840 (`0x801E2798..0x801E282C`)
+    fn rerun_spawn_section(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        ctx: &mut FieldCtx,
+    ) {
+        if self.world.field_vm.respawn_rerun {
+            return;
+        }
+        let Some((start, pc0, _len)) =
+            crate::man_field_scripts::flat_record_span(man_file, man, ctx.script_id as usize)
+        else {
+            return;
+        };
+        let Some(bc) = man.get(start..) else {
+            return;
+        };
+        if bc.get(pc0) != Some(&0x25) {
+            return;
+        }
+        let prev_prerun = self.world.field_vm.entry_prerun;
+        self.world.field_vm.entry_prerun = true;
+        self.world.field_vm.respawn_rerun = true;
+        let own = ctx.script_id;
+        let mut pc = pc0;
+        for _ in 0..256 {
+            let Some(&op) = bc.get(pc) else {
+                break;
+            };
+            if op & 0x7F < 0x20 {
+                break;
+            }
+            let foreign = vm::field::peek_extended(bc, pc).is_some_and(|t| u16::from(t) != own);
+            let next = if foreign {
+                match legaia_asset::field_disasm::decode(bc, pc) {
+                    Ok(insn) => pc + insn.size,
+                    Err(_) => break,
+                }
+            } else {
+                match field_step_routed(self, ctx, bc, pc) {
+                    FieldStepResult::Advance { next_pc } => next_pc,
+                    FieldStepResult::Yield { .. }
+                    | FieldStepResult::Halt { .. }
+                    | FieldStepResult::Pending { .. }
+                    | FieldStepResult::Unknown { .. } => break,
+                }
+            };
+            if op == 0x21 || next == pc {
+                break;
+            }
+            pc = next;
+        }
+        self.world.field_vm.respawn_rerun = false;
+        self.world.field_vm.entry_prerun = prev_prerun;
+    }
+}
+
 /// `true` when the op at `pc` is `CC F8 40`: op `4C` nibble-4 sub-0 (the
 /// `+0x72` write-or-ramp) aimed at the player anchor `0xF8`.
 pub(super) fn is_player_scale_op(bytecode: &[u8], pc: usize) -> bool {
     bytecode.get(pc) == Some(&0xCC)
         && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
         && bytecode.get(pc + 2) == Some(&0x40)
+}
+
+/// `true` when the op at `pc` is `CC F8 C2`: op `4C` nibble-C sub-2 (the
+/// `+0x42` byte write, `0x801E26F0..0x801E26FC`) aimed at the player anchor.
+/// Five shipped sites raise or lower the player's object-effect gate this way.
+pub(super) fn is_player_effect_gate_op(bytecode: &[u8], pc: usize) -> bool {
+    bytecode.get(pc) == Some(&0xCC)
+        && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
+        && bytecode.get(pc + 2) == Some(&0xC2)
 }
 
 /// Step one field-VM op, landing a player-aimed `+0x72` write on the player.
@@ -678,6 +821,20 @@ pub(super) fn field_step_routed(
     bytecode: &[u8],
     pc: usize,
 ) -> vm::field::StepResult {
+    // `CC F8 C2 <b>`: the player's object-effect gate `+0x42`, on the same
+    // stand-in context the scale op uses, seeded from and written back to the
+    // world's player word.
+    if is_player_effect_gate_op(bytecode, pc) {
+        let mut player_ctx = FieldCtx {
+            script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+            flags: 0x0100_0000,
+            field_42: host.world.field_vm.player_field_42,
+            ..Default::default()
+        };
+        let r = vm::field::step(host, &mut player_ctx, bytecode, pc);
+        host.world.field_vm.player_field_42 = player_ctx.field_42;
+        return r;
+    }
     let slot = host
         .world
         .player_actor_slot
@@ -779,9 +936,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // The pinned name-entry handoff (P2[3] body `0x02c6`, `49 03 00`) suspends
     // the script here; the engine opens the name-entry overlay on the Idle->arm
     // edge and keeps the op Armed (parked) until the player commits, then Done
-    // (resume). Outside the timeline (`in_cutscene_timeline == false`) and
-    // outside the opening (`prologue_naming_pending == false`) these fall back
-    // to the default Idle, so a normal field-VM op-0x49 behaves as before.
+    // (resume). Any other `49 03 <slot>` does the same in the context that
+    // ran it (`CutsceneState::naming_owner`); a context with no naming
+    // prompt pending falls back to the default Idle.
     // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
     // Op `0x4C` outer-nibble-4 sub-9 - the writer of the two globals
     // `crate::camera_ease` eases between, read off the three arms at
@@ -851,9 +1008,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// See `world::object_actor_height`.
     ///
     /// PORT: FUN_801DE840 (the nibble-8 sub-1 arm, `0x801E1FC4..0x801E2068`)
-    fn op4c_n_8_sub_1_set_tint(&mut self, ctx: &mut FieldCtx, colour: u32, blend: u16, ticks: u16) {
-        let record = self.world.field_vm.executing_object;
-        self.world.set_actor_tint(ctx, record, colour, blend, ticks);
+    fn op4c_n_8_sub_1_set_tint(
+        &mut self,
+        ctx: &mut FieldCtx,
+        target: Option<u8>,
+        colour: u32,
+        blend: u16,
+        ticks: u16,
+    ) {
+        let player = self.ctx_is_player(ctx);
+        self.world
+            .set_actor_tint(ctx, target, player, colour, blend, ticks);
     }
 
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
@@ -928,7 +1093,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             };
         }
-        if self.world.cutscene.in_timeline && self.world.cutscene.prologue_naming_armed {
+        if self.world.cutscene.prologue_naming_armed
+            && self.world.cutscene.naming_owner == Some(self.world.op49_park_owner())
+        {
             if self.world.name_entry_active() {
                 Op49State::Armed
             } else {
@@ -984,6 +1151,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.world.field_vm.submode_screen.owner == owner {
             self.world.field_vm.submode_screen.done = false;
         }
+        // A finished naming prompt outside the opening is spent with its
+        // resume, so the context's later op-0x49s park on their own screens.
+        // The opening timeline keeps its latch: its later STATE_RESUMEs have
+        // always resolved through it.
+        if self.world.cutscene.prologue_naming_armed
+            && !self.world.name_entry_active()
+            && self.world.cutscene.naming_owner == Some(owner)
+            && owner != crate::field_submode_screen::Op49ParkOwner::CutsceneTimeline
+        {
+            self.world.cutscene.prologue_naming_pending = false;
+            self.world.cutscene.prologue_naming_armed = false;
+            self.world.cutscene.naming_owner = None;
+        }
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
@@ -1006,6 +1186,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // same Idle->arm edge.
         if sub_op == 3 {
             self.world.cutscene.prologue_naming_pending = true;
+            self.world.cutscene.prologue_naming_armed = false;
+            self.world.cutscene.naming_owner = Some(self.world.op49_park_owner());
+            self.world.cutscene.naming_slot = instr.get(2).map_or(0, |&b| usize::from(b));
         }
         // Sub-7 is the casino prize-exchange counter (menu-overlay
         // sub-screen 0x20); the byte after the sub-op selects the prize
@@ -1024,14 +1207,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
     }
     fn op49_invoke_setup(&mut self) {
-        if self.world.cutscene.in_timeline
-            && self.world.cutscene.prologue_naming_pending
+        if self.world.cutscene.prologue_naming_pending
             && !self.world.cutscene.prologue_naming_armed
+            && self.world.cutscene.naming_owner == Some(self.world.op49_park_owner())
             && !self.world.name_entry_active()
         {
-            // Lead character (party slot 0 = Vahn) is the one named at the
-            // opening, matching the retail char-record pointer `_DAT_8007B450`.
-            self.world.open_name_entry(0);
+            // The slot is the operand's byte after the sub-op (retail's
+            // char-record pointer `_DAT_8007B450 + 1`): `00` = Vahn at the
+            // opening, `01` = Noa in `cave01`.
+            self.world.open_name_entry(self.world.cutscene.naming_slot);
             self.world.cutscene.prologue_naming_armed = true;
         }
     }
@@ -2284,6 +2468,26 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 current, target, frames,
             ));
         }
+        // Sub-op 0x13: the field clear colour (both draw environments'
+        // `r0 / g0 / b0`), instant or ramped by `FUN_8003C5F0` over
+        // `LE_u16(payload[3..5])` frames - see `ClearColourRamp`.
+        // REF: FUN_8003C5F0
+        if op0 == 0x13 {
+            let end = [payload[0], payload[1], payload[2]];
+            let frames = u16::from_le_bytes([payload[3], payload[4]]);
+            let p = &mut self.world.presentation;
+            if frames == 0 {
+                p.clear_rgb = end;
+                p.clear_ramp = None;
+            } else {
+                p.clear_ramp = Some(crate::world::ClearColourRamp {
+                    start: p.clear_rgb,
+                    end,
+                    total: frames,
+                    elapsed: 0,
+                });
+            }
+        }
         self.world.pending_field_events.push(FieldEvent::MenuCtrl {
             op0,
             payload: *payload,
@@ -2623,6 +2827,27 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.queue_script_vram_move(words);
     }
 
+    /// Op `4C D4` - set the mask bit on a 16x1 VRAM run's non-zero words.
+    /// `teien` `P1[0]` runs it over every CLUT of rows 505..507 before it
+    /// installs the HSV cycler (`34 30 06`) that darkens them for the night
+    /// garden; without the bit, the entries the cycler takes to black read
+    /// `0x0000` and the hedge texels behind them go transparent.
+    fn op4c_n_d_sub_4_vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
+        self.world
+            .ambient
+            .script_vram_stp
+            .push((vram_x, vram_y, true));
+    }
+
+    /// Op `4C D5` - clear the mask bit on a 16x1 VRAM run (every word but
+    /// `0x8000`).
+    fn op4c_n_d_sub_5_vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
+        self.world
+            .ambient
+            .script_vram_stp
+            .push((vram_x, vram_y, false));
+    }
+
     /// Op `0x43` sub-`0x12` - the GP0 `0x80` VRAM rectangle copy, after the
     /// VM has resolved the arm's two-page split into one or two
     /// `FUN_800468A4` calls. Queued on the world the same way the `4C 60`
@@ -2680,6 +2905,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// presses through ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]).
     fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
         self.world.dialog.auto_press = value;
+    }
+
+    /// `[4C, 0x8A, ...]` - the field light: the angle trio
+    /// `_DAT_8007B780..84` and the back colour `_DAT_8007B788` the
+    /// light-source TMD rows shade through
+    /// ([`legaia_engine_vm::field_light`]). `town01`'s `P1[0]` sets a white
+    /// back colour; `koin3`'s cutscene records drop it to black and back.
+    fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
+        self.world.presentation.field_light =
+            legaia_engine_vm::field_light::FieldLight::from_op_4c_8a(slots, packed);
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
@@ -2885,7 +3120,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
             return;
         };
-        apply_script_table_teleport(&man_file, &man, ctx);
+        if !apply_script_table_teleport(&man_file, &man, ctx) {
+            return;
+        }
+        self.rerun_spawn_section(&man_file, &man, ctx);
     }
 
     // Op 0x4C nibble-D sub-3 - arm the scripted countdown timer. The three
@@ -2962,6 +3200,28 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .actors
             .get_mut(slot as usize)
             .map(|a| &mut a.battle)
+    }
+    /// The engine plays hit reactions on a side channel beside the action
+    /// channel's `current_anim`; retail commits both through `+0x1D9`, so
+    /// the hold reads the merged id ([`World::battle_current_anim`]). The
+    /// node test is the camera's (`battle_cam_inputs`'s `node_gone`).
+    fn reaction_hold_view(&self, slot: u8) -> Option<(u8, bool)> {
+        let a = self.world.actors.get(usize::from(slot))?;
+        if !a.active {
+            return Some((0, false));
+        }
+        let gone = a.battle.render_flag == vm::battle_formulas::STATE_DEFEAT_FADE
+            && a.battle.render_color & 0x00FF_FFFF == 0;
+        // Engine choice: a target whose animation rate `+0x21D` is `0` is
+        // frozen - a starter commit stopped every slot - and its clip cannot
+        // advance until the Done band restores the rates, which is past this
+        // hold. Waiting on it would park the action forever; a queue that
+        // reaches `0x20` with a non-acting slot still frozen is one an art
+        // commit would have thawed in retail.
+        if a.battle.anim_rate.get() == 0 {
+            return Some((0, !gone));
+        }
+        Some((self.world.battle_current_anim(usize::from(slot)), !gone))
     }
     fn rng(&mut self) -> u32 {
         // Every draw the state machine takes is a retail `jal 0x80056798`.

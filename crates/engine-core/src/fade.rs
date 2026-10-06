@@ -282,10 +282,11 @@ impl FadeState {
 /// 12 = [`FadeTemplate::mode`]`[2]`) and run the loader
 /// ([`FadeState::load`] = `FUN_80020B00`) on the actor's `+0x7C` block.
 ///
-/// The engine's fade pool is **one seat**: `World::presentation.fade`, the
-/// `Option<FadeState>` both hosts composite through `World::screen_fade_draw`.
-/// A spawn replaces whatever fade holds it, so the allocation arm always
-/// succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
+/// The engine's fade pool is the world's seat `World::presentation.fade`
+/// plus the module fades beside it (`presentation.module_fades`, PROT 0905's
+/// own ramps), both composited through `World::screen_fade_draws`. A spawn
+/// into the seat replaces whatever fade holds it, so the allocation arm
+/// always succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
 /// counterpart and is not modelled. The template is copied rather than
 /// mutated in place - retail stamps a scratch buffer (a stack frame in the
 /// field overlay's `FUN_801D58F0`, `DAT_801C9070` for the battle escape) that
@@ -301,6 +302,18 @@ pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16
     let mut t = *template;
     t.mode[2] = id;
     *seat = Some(FadeState::load(&t));
+}
+
+/// [`FadeTemplate`] off the summon band's 13-word template layout
+/// (`DAT_801C9070`).
+pub fn summon_template(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> FadeTemplate {
+    FadeTemplate {
+        kind: t.kind,
+        duration: t.duration,
+        start_rgb: t.start_rgb,
+        end_rgb: t.end_rgb,
+        mode: [t.delay, t.hold, 0],
+    }
 }
 
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
@@ -444,13 +457,13 @@ impl DepthCueRamp {
 /// - **Op `0x4C 0x12`** (7-byte `[4C, 12, r, g, b, ramp_lo, ramp_hi]`): the
 ///   global multiply screen tint `DAT_8007BCB8/B9/BA = r/g/b`, optionally
 ///   ramped there over `LE_u16(ramp)` frames by the slot-job spawner
-///   `FUN_8003C5F0`. Neutral is `0x80`. This one IS the scene fade: every
-///   field scene's `P1[0]` entry script carries the arrival arm of the
-///   `0x52F`/`0x530`/`0x531` fade handshake - `4C 12 00 00 00 00 00`
-///   (black, instant) then `4C 12 80 80 80 44 00` (ramp to neutral over 68
-///   frames), the retail fade-in from black. Hosts multiply the drawn 3D
-///   scene by it ([`crate::World::scene_screen_tint`]); the narration/text
-///   overlay is a separate draw path and stays bright, matching retail.
+///   `FUN_8003C5F0`. Neutral is `0x80`. Every field scene's `P1[0]` entry
+///   script carries the arrival arm of the `0x52F`/`0x530`/`0x531`
+///   handshake - `4C 12 00 00 00 00 00` (instant) then
+///   `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - but the word
+///   is **not** a frame fade: its one reader disc-wide is the fog particle
+///   update `FUN_8003F3FC`, so it fades the fog sheets in and nothing else
+///   ([`crate::World::scene_screen_tint`]).
 /// - **Op `0x34` sub-0** (7-byte `[34, op0, r, g, b, ramp_lo, ramp_hi]`,
 ///   `FUN_801E1FB0`): the effect-layer global colour, neutral `0xFF`. The
 ///   opening timeline ramps it in the crawl gaps (`34 05 00 00 00 D2 00` =

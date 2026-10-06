@@ -61,7 +61,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
 | `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
 | `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
-| `0x20` | Attack - return | Opens on the **attacker's** committed id: while `actor[+0x1D9] != 0` (`0x801E54EC`) it only re-poses and holds - the wait for the last swing's clip to end, since `0x1F`'s gate opens when that clip *commits* and its hit events (and the combo-total apply) all land after. Then decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
+| `0x20` | Attack - return | Two holds, then `0x50`. First the **attacker's** committed id: while `actor[+0x1D9] != 0` (`0x801E54EC`) it only re-poses and holds - the wait for the last swing's clip to end, since `0x1F`'s gate opens when that clip *commits* and its hit events (and the combo-total apply) all land after. Then the **target's reaction**: see [the reaction hold](#the-state-0x20-reaction-hold). Each held pass re-poses `FUN_801D5854(actor, 7 or 8)`. Every exit is the one `0x50` store at `0x801E5588`; there is no counter-attack route out. | `0x50` (done) or stays. |
 | `0x28` | **Magic / Item - cast begin** | Resolves bearing + facing, sets the cast timer, looks up the spell-name HUD label, and deducts the (ability-bit-scaled) MP cost; capture-class spells route to `0x6E`. Full step body: [Magic / Item - cast begin (`0x28`)](#magic--item---cast-begin-0x28). | `0x29` (or `0x6E` for capture). |
 | `0x29` | Magic - pre-cast wait | Decrements `ctx[+0x6D8]` by the frame dt. When negative: party_id < 3 → `FUN_801DBF9C(party, spell_id)` ([the cast trigger](#the-party-cast-trigger-fun_801dbf9c) - anim stream, not outcome). `actor[+0x1E0] == 9` → `0x32` (summon). Then **bumps the stream cursor before reading** (`0x801E4644..0x801E4650`) and stages the byte at `+0x1DA` (`0x801E4664`) - the first anim byte is `+0x1E0`, behind the spell id; a `-1` there clears the stage → `0x50`. Else if spell_id < 0x81: a second bump, `FUN_801DC0A0(party, byte)` (the cast-effect driver), and the id-keyed cues (`0x14C / 0x144 / 0x15E` for ids `0x3F / 0x2C / 0x6A`). | `0x2A`, or `0x32` (summon), or `0x50` (done). |
 | `0x2A` | Magic - animation chain | Looks one byte **past** the cursor, `actor[+0x1DF + ctx[+0x15] + 1]` (the queue is `(clip, shot)` pairs). Not the terminator: while the clip latch `+0x1FA` is clear, steps the cursor onto the clip, stages it at `+0x1DA`, steps onto its shot and raises the latch; then calls `FUN_801DC0A0` with the byte two behind the cursor and holds. Terminator (`-1`): if the cursor is `2`, raises `+0x1FA` and `+0x1DC |= 4`. | `0x2B`. |
@@ -251,6 +251,20 @@ focus = -(actor[+0x3C], 0, actor[+0x40])
 
 A low camera beside the caster, pitched up by as much as `400` units, rising
 and swinging round as the accumulator runs; it also sets `ctx[+0x243] = 1`.
+
+The camera trails that target rather than sitting on it. The builder turns
+`a3 = 3` into a per-frame increment `ceil(rem / 3)` per component, and the
+walker task `FUN_8002149C` adds `increment * frame_step` (`0x1F800393`) a
+pass and clamps on the endpoint. At retail's 30 Hz tick (`frame_step = 2`) a
+pass covers two thirds of the gap while the target moves `16 * 2` TR y a
+pass, so the walk settles `14` units short: `freed_summon_mid_cast`'s step
+table at `ctx[+0x118C]` reads increments `16` / `16` / `39` (yaw, TR y, TR z)
+with the live globals `14` / `14` / `37` short of the endpoints. A capture on a
+dropped frame (`frame_step = 3`: `nighto_summon_mid_cast`,
+`theeder_summon_mid_cast`, `gizam_summon_mid_cast`) walks `3 * 16` and lands.
+The port steps it as `battle_cam_script::Glide::chase` - the builder's
+increment times the camera step's two frames - where it had halved `a3` into
+one camera step, a snap.
 Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
 the shared battle camera both hosts drive. The focus is the **body pair**
 (`lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` at `0x801DCD74..0x801DCD84`), not the
@@ -2163,7 +2177,28 @@ two arms are the same loop written twice, differing in nine constants that
 collapse to two exact relations. Byte-level decode, the two records, and the
 18-byte trigger programs that fire each arm:
 [`functions/battle.md`](../reference/functions/battle.md#801f30c4). Port:
-`engine-vm::battle_burst`.
+`engine-vm::battle_burst`, wired through the engine's move-VM host (op `0x17`
+queues the call) and the effect host (`FUN_801DFDF0`'s ids `4` / `0x13` seat
+the trigger), both seated by `World::flush_battle_bursts`.
+
+### The burning-body emitter at the tail of `FUN_8004998C`
+
+The per-body anim decode `FUN_8004998C` ends in a second spawn loop
+(`0x8004A5FC..0x8004A8D8`). The frame driver keeps an accumulator
+`ctx[+0x328]` - low nibble kept, `DAT_1F800393 << 3` added every battle frame
+(`FUN_80046A20`, `0x8004713C..0x80047160`) - and every body whose `+0x21F`
+impact selector is non-zero spends it `0x10` at a time. Each pass picks a
+random object of the body's current pose, turns its translation by the facing
+`+0x46`, jitters each axis by `(r >> 4) - rand % (r >> 3)` with `r` the node's
+`+0x58` size, and, when the point is at or above the floor (Y `<= 0`), hands
+it to `FUN_801DFDF0`: effect `0x0B` (fire) for selector `1` once the node
+colour's red lane reaches `0xB0`, effect `0x10` for selector `2` (which also
+sets screen-shake globals the port does not model). This is the fire
+`gimard_burning_attack` shows at the creature's mouth - two effect-`0x0B`
+masters live at `(127, -317, -1732)` / `(133, -404, -1730)` beside the red
+creature at `(143, -1606)` - and the fire a Tail-Fire-struck body sheds. Port:
+`World::emit_battle_burn_sprites` over `engine-vm::battle_impact_fx`'s
+`burn_effect` / `burn_emit_point`.
 
 This path is disjoint from the `FUN_801D8DE8` / `FUN_801DBF9C` family above -
 those spawn 2D billboard quads out of the effect pool, this seats full move-VM
@@ -2435,8 +2470,8 @@ store at `0x801E7A14`); `World::roll_battle_escape` folds it the same way, and t
 no escape counter.
 
 **Both ctx inputs are written at battle setup, not by the roll.** `ctx[+0x287]` (the
-[scripted-fight flag](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-counter-attack-byte),
-also read by the state-`0x20` counter-attack gate) is latched by the SCUS
+[scripted-fight flag](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-lone-monster-defeat-latch),
+also read by the state-`0x20` reaction hold's bypass) is latched by the SCUS
 battle-setup routine `FUN_800513F0` in its first instructions: `ctx[+0x287] = (DAT_8007BD60 >> 5)
 & 4` - it carries bit `0x80` of the battle-flags byte `DAT_8007BD60` (the same byte state `0x5A`
 masks with `&= 0x7F`), so a scripted "can't run" fight sets it to `4` at load (`0x801E5058` reads
@@ -2476,21 +2511,62 @@ when the command menu resolves Run; the staging is `World::stage_party_flee` and
 `BattleCamera::arm_escape_shot`. The port stages only the members still standing - a downed
 one stays where it fell.
 
-### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the counter-attack byte
+### The state-`0x20` reaction hold
+
+Once the attacker's own last clip has ended, `0x20` also waits out the
+**target's** reaction (`0x801E54FC..0x801E5580`), so a flinch, a knockdown and
+its get-up, or a death and its fade all play before the Done band's countdown
+starts. The target is `s8`, the actor at the attacker's `+0x1DD` (loaded at
+`0x801E29CC`, and left unloaded for a group target code `>= 8`). The band holds
+while all three read true:
+
+| test | instructions | releases when |
+|---|---|---|
+| target committed anim `+0x1D9 != 0` | `lbu v0,0x1d9(s8)` / `beq v0,zero` at `0x801E5520..0x801E5528` | the target is back on idle |
+| not a party target on entry `8` | `sltiu v0,t2,0x3`, `beq v1,v0` with `v0 = 8` at `0x801E5504..0x801E5518` | a downed party member reaches its downed loop (`4 -> 7 -> 8`) |
+| render node still drawn | `lw v0,0x74(*(s8+0x22C))`, `& 0xFFFFFF` at `0x801E5530..0x801E5544` | a dead monster's defeat fade has walked it to black |
+
+A dead monster holds its knockdown frame through the fade, so the third test is
+what ends a killing blow's hold. One bypass lets the band out with the target
+still reacting: `ctx[+0x287] != 0 && 0x8007BD0D == 0 && ctx[+0x288] != 0`
+(`0x801E554C..0x801E557C`) - a scripted lone monster whose defeat fade has
+raised the [latch](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-lone-monster-defeat-latch).
+Both exits, and the target-idle one, take the same `0x50` store at
+`0x801E5588`, which falls into the monster's KO taunt (tag `0x22`). The
+`player_steal_skeleton_banner` capture is this hold seen from outside: `ctx[7]
+== 0x20` with the attacker's clip already `0` and the killed skeleton on its
+knockdown.
+
+Port: `battle_action::attack`'s `target_reaction_holds`, reading the target
+through `BattleActionHost::reaction_hold_view` (the engine plays reactions on a
+side channel, so its host merges that channel into the committed id); the latch
+is raised by `World::tick_battle_defeat_sink`. One engine choice sits beside
+it: a target whose animation rate `+0x21D` reads `0` - frozen by a starter
+commit that no art commit thawed - does not hold the band, since its clip
+cannot advance before the Done band restores the rates.
+
+### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the lone-monster defeat latch
 
 The two bytes are adjacent and they are read together at the state-`0x20`
-gate, which is how they came to be described as one thing. They are not:
+reaction hold, which is how they came to be described as one counter-attack
+thing. Neither is one:
 
 - **`ctx[+0x287]`** is a per-**battle** property, derived once at battle init
   and never written again during the fight - `(DAT_8007BD60 >> 5) & 4`, i.e.
   bit `0x80` of the formation's per-battle flags byte. Everything it gates is
   "is this a scripted fight": the escape roll above, the two magic-capture
-  audio-duck arms (states `0x6F` / `0x70`), and the attack-return arm's
-  counter-attack precondition. Calling it a counter-attack flag makes all four
-  reads look like one feature.
-- **`ctx[+0x288]`** is the counter-attack byte proper - the second term of the
-  state-`0x20` gate (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`),
-  and the one a counter actually consumes.
+  audio-duck arms (states `0x6F` / `0x70`), the defeat fade's floor sink and
+  the reaction hold's bypass.
+- **`ctx[+0x288]`** has one writer, the tint SM's defeat-fade arm
+  `FUN_80050120` (`sb s4,0x288(v1)` with `s4 = 1` at `0x800504E8`): a monster
+  seat fading out on render flag `2`, still drawn (`node[+0x74] & 0xFFFFFF`),
+  not captured (`+0x225`), no Seru absorb staged (`ctx[+0x269]`), in a scripted
+  fight whose formation has no second monster (`gp+0x9F5` = `0x8007BD0D`
+  zero). That same predicate skips the arm's floor sink
+  (`0x80050444..0x8005045C`), so the latch reads "the lone scripted monster is
+  dying in place". Its readers are the reaction hold (`0x801E5574`) and the
+  battle camera's case 8 (`0x801D6AC8`); the Done band's menu arm clears it
+  (`0x801E6114`).
 
 The distinction is load-bearing for the port rather than cosmetic. An engine
 that seeds `+0x287` per *action* leaves the two duck arms and the attack-return
@@ -3120,11 +3196,17 @@ they are documented here rather than lifted whole into `engine-vm`.
   base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit
   glyph atlas at `0x801F6..` (`-0x7FE09BA4`), and builds one `0x09`-code sprite
   quad per digit into the OT, ramp-scaling the rect by the per-frame timer
-  `ctx[+0x85C]`. Reads actor screen position `+0x3C/+0x3E/+0x40`. Pure
-  GPU-primitive build: scope row in the `render_pipeline` section of
-  `scripts/ci/port-catalog-ignore.toml`, because the port draws its damage
-  numbers as `engine-ui` text sprites off the same accumulator rather than as
-  per-digit `0x09` quads. See `overlay_battle_action_801df6b8.txt`.
+  `ctx[+0x85C]`. The anchor is the struck actor's display trio
+  `+0x3C/+0x3E/+0x40` with Y replaced by `+0x3E / 2 - timer * 3 / 2`; the
+  timer steps `0x10` a frame and `FUN_800195A8` projects a view-space square
+  of half-extent `timer / 2` about it, so the number grows as it rises. The
+  rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to 24 px,
+  clamped to `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`, and the
+  value is zeroed once the timer passes `0x240` (37 frames). Port:
+  `engine-vm::battle_value_readout::popup_cells` (layout) and
+  `engine-ui::battle_numerals::popup_value_cells` (anchor + projection), which
+  both hosts seat their numerals through. See
+  `overlay_battle_action_801df6b8.txt`.
 - **`FUN_8005112C` - per-character signature effect trigger.** SCUS-resident
   (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party
   slot). Reads the roster char id `DAT_8007BD10[actor[+0x5A]]` (`1`/`2`/`3` =
@@ -3165,7 +3247,12 @@ leaves reached through those dispatchers.
 - The state machine does **not** own the animation. It writes `actor[+0x1DA]` (queued anim) and waits on `actor[+0x1D9]` (current anim) to converge. The convergence is performed by the SCUS anim trio - the per-frame anim-node tick `FUN_80047430` (cursor advance + end-of-clip detect) calls the commit `FUN_8004AD80` (id → action-record install, `+0x1D9 = +0x1DA` snap, reaction/end chains), and the decoder `FUN_8004998C` cross-blends the last frame toward the queued clip's frame 0. `FUN_801D5854` never touches the anim fields (see [pose driver](#fun_801d5854---per-actor-pose-driver)); the earlier note attributing the tween to it and to `FUN_80021DF4` was wrong.
 - Actions are **interruptible** only at `0x1E` (counter-attack steal). Every other transition is unconditional once the precondition fires.
 - Battle-end (`DAT_8007BD71 = 0xFE`) is set from `0x5A` (post-cleanup count of survivors, with `_DAT_8007BD2C` carrying the wipe cause) or `0x66` (the successful-escape teardown - no wipe cause byte). The mode-state-machine then unloads the battle overlay.
-- The `0x5A` **monster-wipe victory arm** stages the win pose off the acting actor's party slot, re-picking a living party member only when the acting actor is dead (the alive-skip at `0x801E6690`). Retail is safe because the wipe scan and the scheduler share the `+0x14C != 0 && !(+0x16E & 0x4)` predicate, so an alive acting actor is always a party member - but the randomizer's enemy-ally charm widens that mask to `0x384` and breaks the invariant. Full chain + the randomizer's disc-side fix (`legaia_patcher::charm_fix`, a single-word `0x801E6690` detour widening the keep-condition to a living party slot): [battle.md](battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock).
+- The `0x5A` **monster-wipe victory arm** stages the win pose off the acting actor's party slot, re-picking a living party member only when the acting actor is dead (the alive-skip at `0x801E6690`).
+  Retail is safe because the wipe scan and the scheduler share the `+0x14C != 0 && !(+0x16E & 0x4)` predicate
+  (`0x4` is Stone's own bit, so a petrified side is down; the port reads the whole word through `BattleActionHost::status_word`, because its Stone lives in the typed status tracker and not in the actor view's `field_flags`),
+  so an alive acting actor is always a party member -
+  but the randomizer's enemy-ally charm widens that mask to `0x384` and breaks the invariant.
+  Full chain + the randomizer's disc-side fix (`legaia_patcher::charm_fix`, a single-word `0x801E6690` detour widening the keep-condition to a living party slot): [battle.md](battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock).
 
 ## Decompile quirks worth knowing
 
@@ -3833,7 +3920,21 @@ follow-the-actor re-seat, not target-seeking motion; the per-target homing
 state lives in the `+0x1144` quads the terminator seeds and the move-power
 `+0x0E` list consumes. A separate prologue lane: `ctx[+0x263]` non-zero
 consumes the whole call, clearing the flag and bumping the actor's `+0x1F5`
-and `+0x1F6` cursors without spawning.
+and `+0x1F6` cursors without spawning. Its one writer is the melee kernel's
+limb-vs-height miss (`0x801EC554`,
+[battle-formulas.md](battle-formulas.md#the-limb-vs-height-miss)), ported with
+it as `World::consume_effect_skip_strobe`.
+
+The table arm reads the record's code `+0x01` into `s1` and, when it is
+`0` and the **context's active actor** (`ctx[+0x13]`, not the stepped one)
+has the dynamic art slot `0x11` committed in `+0x1D9`, replaces it with `9`
+(`0x801DF054..0x801DF094`); the CLUT map, the scale arms and the prototype
+table all read the substituted code. Codes `0` and `9` are twins - the same
+ray-burst mesh in the PROT 0871 pool, index `8` baked red-to-yellow and
+index `9` purple-to-pale - so a plain swing throws red rays and an art throws
+purple ones (`battle_melee_hit_spark`'s Somersault draws pool `9`'s colours,
+`(120, 0, 255)` cued to the captured `(52, 0, 111)`). The port applies it
+where the walk queues the spawn (`World::step_actor_effect_script`).
 
 Engine port: kernel `engine-core::action_effect_script` (stepper, rotation,
 terminator maths, `RetailRotationLut`), driven per battle frame by
@@ -3845,7 +3946,7 @@ reaches `World::audio.battle_sfx_cues` as a cue id, which is wrong for the reaso
 [below](#0x801f6418-is-a-clut-row-map-not-an-sfx-map) - the walker's own sink
 still has to be moved off the SFX queue. Not yet modeled: the mesh-header scale + the
 per-code scale specials (the engine substitutes the q12 unit and the scene
-spawner has no scale channel), the code-`0` substitution, the extra-spawn
+spawner has no scale channel), the extra-spawn
 and screen-shake specials above, and the prologue's follow-the-actor
 re-seat (`BattleEffectSpawn` carries no raw-offset channel and a staged
 scene is not identified back to its record). The terminator's
@@ -4170,11 +4271,14 @@ as `legaia_asset::monster_archive::MonsterRecord::swing_class`. It is not a rare
 186 decodable records of the archive it reads `0` for 127, `1` for one, **`2` for 52** and
 **`3` for six** - so both of the classes the two kernels branch on are ordinary enemies, and both
 arms are reachable in normal play. Two kernels read it, both
-record-direct through `0x801C9348` and never off the actor: this arm, and the damage kernel's
-apply-mode look-ahead (§3, `0x801EE080`), where a class-`2` target connects only with power bytes
-in `0x01..=0x10` and a class-`3` target only with `0x11..=0x15`. Together they read as the
-height / posture class behind retail's limb-vs-height "Miss"; the disassembly pins the two
-effects, not the name.
+record-direct through `0x801C9348` and never off the actor: this arm, and the damage kernel - in
+its head, where a party hit whose power byte is of the wrong class **misses** outright
+(`0x801EC488..0x801EC554`,
+[battle-formulas.md](battle-formulas.md#the-limb-vs-height-miss)), and in its apply-mode
+look-ahead (§3, `0x801EE080`), which asks the same question of the hits still to come. A class-`2`
+target connects only with power bytes in `0x01..=0x10` and a class-`3` target only with
+`0x11..=0x15`. Together they read as the height / posture class behind retail's limb-vs-height
+"Miss"; the disassembly pins the effects, not the name.
 
 **Port.** `legaia_engine_vm::battle_action::basic_attack_queue`, byte-for-byte including the
 two-draws / no-draws RNG split. `engine-core`'s `World::seed_basic_attack_queue` calls it from

@@ -64,11 +64,6 @@ const ENCOUNTER_BANNER_FRAMES: u16 = 90;
 /// built for, so an actor origin has to be scaled before it is projected.
 const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
 
-/// Stage rows the floating numeral's pop-in seat sits **above** the struck
-/// actor's projected origin, so the run starts over the body rather than at
-/// its feet. The native window's `VALUE_READOUT_ACTOR_LIFT`; paired here so
-/// the two hosts throw the numeral from the same height.
-const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
 /// Left margin of the battle command / arts / magic submenus.
 const MENU_X: i32 = 8;
 /// First row Y of the battle command / arts / magic submenus.
@@ -426,7 +421,7 @@ impl LegaiaRuntime {
         if let Some(defeat) = w.battle_defeat_banner() {
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            return ui::battle_defeat_windows(defeat.line.as_deref())
+            return ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y)
                 .iter()
                 .flat_map(|win| ui::menu_window_chrome_draws_for(rects, win.rect, origin, scale))
                 .collect();
@@ -442,6 +437,7 @@ impl LegaiaRuntime {
             drops: &banner.drops,
             leader: &leader,
             subject: banner.subject,
+            slide: banner.slide,
         };
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::battle_spoils_windows(&view)
@@ -471,7 +467,7 @@ impl LegaiaRuntime {
         }
 
         if let Some(defeat) = w.battle_defeat_banner() {
-            let windows = ui::battle_defeat_windows(defeat.line.as_deref());
+            let windows = ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
             let mut draws = ui::battle_result_line_draws_for(font, &windows);
@@ -486,6 +482,7 @@ impl LegaiaRuntime {
                 drops: &banner.drops,
                 leader: &leader,
                 subject: banner.subject,
+                slide: banner.slide,
             };
             let windows = ui::battle_spoils_windows(&view);
             let (origin, scale) =
@@ -1234,32 +1231,21 @@ impl LegaiaRuntime {
                 None => newest.push(p),
             }
         }
+        // Seated the way retail's renderer `FUN_801DF6B8` seats them: a
+        // view-space square over the struck actor's display trio, rising and
+        // growing with the ring timer (`battle_numerals::popup_value_cells`,
+        // the kernel the native window seats through too).
         let mut cells = Vec::new();
         for p in newest {
-            let Some(a) = world.actors.get(usize::from(p.slot)) else {
+            let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
                 continue;
             };
-            // Column-major mat4 times the scaled actor origin.
-            let w = [
-                a.move_state.world_x as f32 * BATTLE_WORLD_SCALE_LOCAL,
-                a.move_state.world_y as f32 * BATTLE_WORLD_SCALE_LOCAL,
-                a.move_state.world_z as f32 * BATTLE_WORLD_SCALE_LOCAL,
-                1.0,
-            ];
-            let mut clip = [0.0f32; 4];
-            for (i, c) in clip.iter_mut().enumerate() {
-                *c = (0..4).map(|j| vp[j * 4 + i] * w[j]).sum();
-            }
-            if clip[3] <= 0.01 {
-                continue;
-            }
-            let ax = ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32;
-            let ay = ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32;
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            cells.extend(vr::value_cells(
+            cells.extend(legaia_engine_ui::battle_numerals::popup_value_cells(
+                &vp,
+                BATTLE_WORLD_SCALE_LOCAL,
+                trio,
                 p.amount,
-                ax,
-                ay - VALUE_READOUT_ACTOR_LIFT,
                 age,
             ));
         }
@@ -1725,6 +1711,19 @@ impl LegaiaRuntime {
         host.world.force_encounter(id)
     }
 
+    /// Talk to the live scene's placement `slot` through
+    /// `World::trigger_field_interact` - the call the walk-up interaction
+    /// probe makes - so a headless driver can open a merchant's or an
+    /// innkeeper's conversation without walking to it. The native twin is the
+    /// screenshot harness's `LEGAIA_CAPTURE_TALK=<slot>@<tick>`.
+    pub fn debug_talk_to_placement(&mut self, slot: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.trigger_field_interact(0xFF, slot);
+        true
+    }
+
     /// Dispatch a cast the moment the next battle's first command prompt
     /// opens - the browser twin of the native window's
     /// `LEGAIA_BATTLE_INFLIGHT=caster,spell,target` debug seam (engine actor
@@ -1846,7 +1845,9 @@ mod live_hud_tests {
         for _ in 0..400 {
             rt.tick_frame().expect("tick");
             let labels = rt.scene_host.as_ref().is_some_and(|h| {
-                h.world.mode == SceneMode::Battle && h.world.battle.intro_names_frames > 0
+                h.world.mode == SceneMode::Battle
+                    && h.world.battle.intro_names_frames > 0
+                    && !h.world.battle_entry_sweeping()
             });
             if !labels {
                 continue;
@@ -2170,13 +2171,23 @@ impl LegaiaRuntime {
         // `world_map_markers` kernel the native window draws them with
         // (`crate::play_world_map_markers`).
         prims.extend(self.world_map_marker_prims());
+        // PROT 0948's Cross Beam while its arm 3 runs, through the
+        // `cast_beam` kernel the native window draws it with.
+        if let Some(c) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.cross_beam_draw())
+        {
+            prims.extend(legaia_engine_ui::cast_beam::cross_beam_prims(c));
+        }
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.
-        if let Some((rgb, abr, ot)) = self
+        for (rgb, abr, ot) in self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.screen_fade_draw())
+            .map(|h| h.world.screen_fade_draws())
+            .unwrap_or_default()
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
@@ -2498,7 +2509,21 @@ impl LegaiaRuntime {
             .scene_host
             .as_ref()
             .map(|h| {
-                legaia_engine_ui::screen_prim::text_layer_washes(&h.world.screen_tint_push_args())
+                let mut w = legaia_engine_ui::screen_prim::text_layer_washes(
+                    &h.world.screen_tint_push_args(),
+                );
+                // The world's one live fade washes the text too when its
+                // ordering-table id is in front of the text's bucket (a
+                // field warp's id `0`); the summon band's flashes (id `1`)
+                // stay under it. The native window makes the same split.
+                for (rgb, abr, ot) in h.world.screen_fade_draws() {
+                    if legaia_engine_ui::screen_prim::push_covers_text(
+                        i16::try_from(ot).unwrap_or(i16::MAX),
+                    ) {
+                        w.push((abr, [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]));
+                    }
+                }
+                w
             })
             .unwrap_or_default();
         serde_json::to_string(

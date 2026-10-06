@@ -223,11 +223,15 @@ prim pointer (`param_1[4]`), the vertex base (`param_1[0]`) and the loop count
 `param_1[3]`). `FUN_80029888`, the sibling that handles the lit rows (the only
 other function in `SCUS_942.54` that reads the descriptor table), issues no `NC*`
 op either: between them the two renderers run exactly one GTE colour op, `DPCS`
-(`cop2 0x780010`). So the lit rows' normals are authored but never transformed,
-and shading is the stored **colour** word modulating the texel on the GPU. See
-[`subsystems/renderer.md`](../subsystems/renderer.md#lighting). The engine port
-re-derives smooth normals from the geometry, so it decodes the indices only to
-know where the vertex block ends.
+(`cop2 0x780010`). The lit rows' normals are read by the per-prim dispatcher
+`FUN_80043390` instead, the path every measured field frame's polygons come
+from: flags `0x10..=0x17` select its `NCCS` / `NCCT` handlers, which shade each
+corner from the normal index in the packet - flat row 0 tri at `+0x0C` (before
+the vertices), flat row 0 quad at `+0x14` (after them), gouraud row 1 one per
+corner trailing the vertices. See
+[`subsystems/renderer.md`](../subsystems/renderer.md#the-light-source-rows). The
+engine's mesh builder keeps each lit corner's normal
+(`legaia_tmd::mesh::LitVertex`) for that shading.
 
 Mis-reading an untextured colour block as a texture block yields bogus `(cba,
 tsb)` and samples a random VRAM page - the historic "flat green tint / transparent

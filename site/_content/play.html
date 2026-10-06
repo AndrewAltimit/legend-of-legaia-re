@@ -1626,7 +1626,8 @@
    *
    * Cards come from the save bar above: any stored `card` session is
    * insertable. Saving in-game writes into the card image in place and marks
-   * the port dirty; Export downloads it (and re-stores it) so the player can
+   * the port dirty; the page stores it back into the browser at once, and
+   * Export downloads it so the player can
    * carry the save back to their emulator. */
 
   const cardRackEl = document.getElementById('play-card-rack');
@@ -1666,14 +1667,10 @@
     renderCardRack();
   }
 
-  /* Pull the (possibly saved-into) card image back out of the engine, store
-   * it over the session it came from, and download it. */
-  function exportCard(port) {
-    if (!runtime) return;
-    let bytes;
-    try { bytes = runtime.export_card(port); }
-    catch (err) { saveMsg(`Export failed: ${err.message || err}`, true); return; }
-    if (!bytes || !bytes.length) return;
+  /* Store card `bytes` back over the browser session that sits in `port`,
+   * re-deriving the tile's stats off the new bytes. Returns the session's
+   * meta (or `{}` when the port's card is not a stored session). */
+  function storeCardBytes(port, bytes) {
     const id = portSaveIds[port];
     const meta = id ? (LegaiaSaves.listSessions().find(s => s.id === id) || {}) : {};
     const name = meta.name || `card-slot-${port + 1}`;
@@ -1692,6 +1689,19 @@
       }, bytes);
       if (savesBar) savesBar.invalidateIcon(id);
     }
+    return meta;
+  }
+
+  /* Pull the (possibly saved-into) card image back out of the engine, store
+   * it over the session it came from, and download it. */
+  function exportCard(port) {
+    if (!runtime) return;
+    let bytes;
+    try { bytes = runtime.export_card(port); }
+    catch (err) { saveMsg(`Export failed: ${err.message || err}`, true); return; }
+    if (!bytes || !bytes.length) return;
+    const meta = storeCardBytes(port, bytes);
+    const name = meta.name || `card-slot-${port + 1}`;
     downloadBytes(bytes, `${name.replace(/[^\w.-]+/g, '-')}.${meta.format || 'mcr'}`);
     saveMsg(`Exported MEMORY CARD SLOT ${port + 1} - load it in your emulator to carry on there.`);
     renderCardRack();
@@ -1728,8 +1738,8 @@
     if (slot && slot.dirty) {
       const d = document.createElement('span');
       d.className = 'play-card-port-dirty';
-      d.textContent = '● unsaved';
-      d.title = 'This card has in-game saves you have not exported yet';
+      d.textContent = '● not exported';
+      d.title = 'This card has in-game saves (kept in this browser) you have not exported to a file yet';
       box.appendChild(d);
     }
 
@@ -1814,6 +1824,19 @@
 
   renderSavesStrip();
   renderCardRack();
+  /* An in-game Save writes the card image inside the engine. Store it back
+   * over its browser session as soon as it lands, the way the native window
+   * persists its card file on the same commit - otherwise a reload before
+   * Export drops the save. Export still downloads (and clears "not exported"). */
+  setInterval(() => {
+    if (!runtime || typeof runtime.card_take_written !== 'function') return;
+    for (let p = 0; p < CARD_PORTS; p++) {
+      if (!runtime.card_take_written(p)) continue;
+      const bytes = runtime.card_bytes(p);
+      if (bytes && bytes.length) storeCardBytes(p, bytes);
+      renderCardRack();
+    }
+  }, 500);
   window.addEventListener('legaia-saves-change', () => {
     renderSavesStrip();
     /* A deleted card must not stay in a port. */

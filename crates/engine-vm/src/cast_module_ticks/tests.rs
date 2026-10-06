@@ -408,3 +408,18 @@ fn plasma_strike_lands_the_flurry_total_and_runs_to_arm_0x10() {
     plasma_strike_tick(&mut ctx, &mut caster, &mut v, None);
     assert_eq!(v.hp, 0);
 }
+
+/// PROT 0958 walks arms `0..=25`, jumps to the terminal slot `0xFF` and is
+/// Done there; it never spins the phase through the byte's wrap.
+#[test]
+fn blazing_slash_ends_on_its_terminal_arm() {
+    let mut ctx = CastModuleCtx::default();
+    let mut victim = CastActorState::default();
+    let mut steps = 0;
+    while blazing_slash_tick(&mut ctx, &mut victim, None) == CastTickStep::Busy {
+        steps += 1;
+        assert!(steps < 300, "the phase never reached the terminal arm");
+    }
+    assert_eq!(steps, usize::from(BLAZING_SLASH_LAST_ARM) + 1);
+    assert_eq!(ctx.phase, BLAZING_SLASH_TERMINAL_ARM);
+}

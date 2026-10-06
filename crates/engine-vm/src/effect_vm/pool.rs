@@ -194,10 +194,12 @@ pub struct ChildBillboard {
     pub atlas_index: u8,
     /// The resolved 8-byte atlas entry (texel rect + CLUT + tpage).
     pub entry: SpriteAtlasEntry,
-    /// On-screen quad width before projection: `atlas.w * sprite_scale >> 8`
-    /// (retail init scalar `0xA00` makes this x10 the texel size).
+    /// The quad's half-width before projection: `atlas.w * sprite_scale >> 8`
+    /// (retail init scalar `0xA00` makes this x10 the texel size), which the
+    /// projector `FUN_800195A8` adds either side of the centre - the quad is
+    /// twice this across.
     pub world_w: i32,
-    /// On-screen quad height before projection (same scaling as `world_w`).
+    /// The quad's half-height before projection (same scaling as `world_w`).
     pub world_h: i32,
     /// Horizontal texel-corner swap. The retail emit gives the *base* U to
     /// the right-hand vertices when the child's mirror bit 0 is **clear**

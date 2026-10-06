@@ -180,15 +180,24 @@ pub trait MoveHost {
     /// hosts can model whichever is convenient. PC += 6.
     fn ext_fade_color(&mut self, _rgb: [u8; 3], _ticks: u16) {}
 
-    /// Extension sub-op 0x18/0x19/0x1A - three world-derived writes to a
-    /// shared 0x14-byte struct at `iVar16 - 0x7FF7C008` (offset-resolved by
-    /// `*op[1] * 0x14`). Hosts model the table; the VM passes index + the
-    /// 5 u16 values written. Default no-op.
+    /// Extension sub-ops 0x18 / 0x1A - writes to one row of the
+    /// **object-effect parameter table** at `0x80083FF8` (stride `0x14`,
+    /// row `op[2]`). A row carries three rotation angles at `+0/+2/+4` and
+    /// two clip words at `+0x10/+0x12`; `FUN_8001C204` composes it into the
+    /// transform of every actor whose `+0x42` is `row + 1`, and stages the
+    /// clip words at `0x1F800380/382` for `FUN_8002735C`'s clip loop
+    /// `FUN_80027F00`. `values` are the five halfwords in that order.
+    /// Default no-op.
     fn ext_world_struct_write(&mut self, _index: i16, _values: [i16; 5]) {}
 
-    /// Extension sub-op 0x17 - initial / configuration write to the same
-    /// struct as `ext_world_struct_write`. 5 u16 values from operand+6..16.
+    /// Extension sub-op 0x17 - a plain write of the five operand halfwords
+    /// into the same row as `ext_world_struct_write`
+    /// (`0x801D3BB4..0x801D3C08`).
     fn ext_world_struct_init(&mut self, _index: i16, _values: [i16; 5]) {}
+
+    /// Extension sub-op 0x19 - adds the five operand halfwords to the row's
+    /// five halfwords (`0x801D3C5C..0x801D3CDC`). Default no-op.
+    fn ext_world_struct_add(&mut self, _index: i16, _deltas: [i16; 5]) {}
 
     /// Read 4 bytes from the move-VM 16-slot scratch table at
     /// `&DAT_801F3498`. Each slot is 8 bytes wide; `dword_off` is `0` or

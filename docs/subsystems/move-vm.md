@@ -440,6 +440,8 @@ The interpreter loops: read opcode at `actor[+0x70]`, dispatch, write the new PC
 
 After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_80021DF4`) gets a "tick complete for this actor" signal. The next frame's `FUN_80021DF4` updates physics, then re-enters `FUN_80023070` from the saved PC.
 
+A part seated by a list-0 callback - the battle action SM `FUN_80046A20` driving a cast module, or the anim tick `FUN_80047430` walking an effect script - takes its first `FUN_80021DF4` on the **same** frame as the seater's VM run: the frame's list walk `FUN_80016444` runs list 0 (`lw a0,0x4(s0)` / `jal 0x8002519C` at `0x800165A4`) before list 1, where move-VM parts live (`0x800165C0`). That first tick already drains the wait the seat set, steps the channel and motion blocks, and runs the envelope tail. The port's `SummonScene::seat_run` runs it there; seating with the VM alone left every cast-clip and module part one frame behind the arm clock (`nighto_summon_mid_cast`'s ray burst read a frame young).
+
 ## Summon part interpolation (P3)
 
 > **Reconciliation:** the summon scene-graph driver below is the engine's

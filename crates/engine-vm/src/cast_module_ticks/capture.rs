@@ -75,7 +75,7 @@ pub const WHITE_SHIELD_TRAMPOLINE_ARMS: [(u8, u32); 6] = [
 /// which is how the per-image port table tells this port from the unrelated
 /// routines at the same VA.
 ///
-/// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4
+/// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4 (the trampolines of PROT 0938 / PROT 0965 / PROT 0952 / PROT 0951 / PROT 0958 / PROT 0955, in that order)
 pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 21] = [
     // `beq v1, 0x4e -> 0x801F726C` / `beq v1, 0xb7 -> 0x801F69EC`.
     CaptureTrampoline {
@@ -226,7 +226,7 @@ pub const WATER_COLUMN_TICK: u32 = 0x801F_6EDC;
 /// PROT 0945's `0xBA` arm - [`all_stats_surge_tick`].
 pub const ALL_STATS_SURGE_TICK: u32 = 0x801F_69F8;
 /// PROT 0960's `0x7B` arm - [`plasma_strike_tick`]. Its `0xA6` arm (Neo Star
-/// Slash) is `0x801F69D8`, the load base, and is unported.
+/// Slash) is `0x801F69D8`, the load base - [`NEO_STAR_SLASH_CHAIN`].
 pub const PLASMA_STRIKE_TICK: u32 = 0x801F_74E4;
 /// PROT 0957's `0x77` arm - [`summon_effect_tick_a`].
 pub const SUMMON_EFFECT_TICK_A: u32 = 0x801F_6A14;

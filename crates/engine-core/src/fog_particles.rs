@@ -608,6 +608,32 @@ impl FogPool {
         self.quads.clear();
     }
 
+    /// Replace the pool's records with a captured snapshot - capture
+    /// alignment for the retail comparison's frame, never a game path. A
+    /// card-load seed cannot reproduce where a running pool's sheets drifted
+    /// to or how old they are (every spawn draws the `rand()` stream), so the
+    /// comparison's `play-window` child installs the retail state's own
+    /// records (`LEGAIA_SEAT_FOG`) on the frame it captures. Each particle
+    /// lands in its own slot; the free stack is rebuilt from the dead ones.
+    pub fn install_snapshot(&mut self, particles: &[FogParticle]) {
+        for r in &mut self.records {
+            r.alive = false;
+        }
+        for p in particles {
+            if let Some(r) = self.records.get_mut(usize::from(p.slot)) {
+                *r = FogParticle { alive: true, ..*p };
+            }
+        }
+        let free: Vec<i16> = (0..self.records.len())
+            .filter(|&i| !self.records[i].alive)
+            .map(|i| i as i16)
+            .collect();
+        self.free_top = free.len() as i16 - 1;
+        self.free_table = free;
+        self.free_table.resize(FOG_POOL_SLOTS, 0);
+        self.live = particles.len() as u16;
+    }
+
     /// Slots currently allocated.
     pub fn allocated(&self) -> usize {
         FOG_POOL_SLOTS - (self.free_top + 1).max(0) as usize
@@ -926,6 +952,31 @@ fn emit_half(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A snapshot lands each particle in its own slot, and the free stack
+    /// pops only slots the snapshot left dead.
+    #[test]
+    fn an_installed_snapshot_owns_its_slots() {
+        let mut pool = FogPool::new();
+        let p = |slot: u8| FogParticle {
+            slot,
+            age: 0x200,
+            rate: 9,
+            x: 100 << 4,
+            z: 200 << 4,
+            grey: 0x40,
+            ..FogParticle::default()
+        };
+        pool.install_snapshot(&[p(79), p(3)]);
+        assert_eq!(pool.allocated(), 2);
+        assert!(pool.records[79].alive && pool.records[3].alive);
+        assert_eq!(pool.records[3].age, 0x200);
+        assert_eq!(pool.live, 2);
+        // A second snapshot replaces the first.
+        pool.install_snapshot(&[p(5)]);
+        assert!(!pool.records[79].alive && pool.records[5].alive);
+        assert_eq!(pool.allocated(), 1);
+    }
 
     #[test]
     fn cap_is_raised_by_man_header_bits_0_and_2_only() {

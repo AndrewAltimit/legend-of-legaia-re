@@ -20,8 +20,15 @@
 //!
 //! * the bodies whose ports already stage the caster - PROT 0938's `0x4E`
 //!   (`CHAOS_BREATH_ARM0_CLIP`), 0952's `0xB8` (Astral Slash), 0960's `0x7B`
-//!   (Plasma Strike) and the fourteen trampoline arms of
-//!   [`crate::cast_arm_ticks`];
+//!   (Plasma Strike), the fourteen trampoline arms of
+//!   [`crate::cast_arm_ticks`], and the phase-chain bodies with no row here
+//!   (PROT 0942's `0xAA`, 0959's `0x7A` - [`super::chain_bodies`]);
+//!
+//! The phase-chain bodies that **do** have a row here (0935, 0936, 0937,
+//! 0939, 0947, 0948, 0960's `0xA6`, 0961, 0963) record their caster stages in
+//! their descriptors too, but the chain runner leaves them to this table:
+//! it walks one arm per tick, and re-staging the literals there would cut
+//! the replayed wind-up short.
 //! * the bodies with **no** caster stage at all - PROT 0945's `0x54`
 //!   (Water Column), 0946 (Call Wave), 0949 (Water Crystals), 0954 (Fatal
 //!   Decision) and 0955's `0x6E` (Kiss of Death) write `+0x1DA` only on the
@@ -241,13 +248,9 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: false,
     },
-    // PROT 0966 Evil Seru Magic: `li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`.
-    CasterStageRow {
-        prot_entry: 966,
-        action_ids: &[],
-        rule: CasterClipRule::Fixed(&[0x06]),
-        approach: false,
-    },
+    // PROT 0966 Evil Seru Magic has no row: its body's port stages the
+    // caster itself (`li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`, arm 1;
+    // clip `0` at `0x801F7EA8`, arm 21) - `evil_seru_magic_seat_writes`.
 ];
 
 /// The capture-class bodies that write **no** caster `+0x1DA` at all - their

@@ -68,6 +68,7 @@ mod battle_timed_fight_strip;
 pub mod battle_trail;
 mod battle_tutorial_box;
 pub mod billboard;
+pub mod cast_beam;
 mod dialog_reading_box;
 pub mod field_party_hud;
 pub mod gte;

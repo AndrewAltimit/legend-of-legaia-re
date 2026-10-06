@@ -701,6 +701,51 @@ impl World {
         false
     }
 
+    /// Whether the collision grid boxes a walker at `(x, z)` into a pocket
+    /// with no way onto the authored walk-visible floor: the point sits in a
+    /// wall bit, or the wall-bit flood from it closes off inside `budget`
+    /// 64-unit sub-cells without reaching a sub-cell
+    /// [`Self::field_walk_component_size`] counts.
+    ///
+    /// A flood that runs past the budget is open ground, floor bit or not,
+    /// and the walker is not boxed in. Retail's locomotion reads only the
+    /// wall bits (`FUN_801CFE4C`), so open collision with no floor-cell bit is
+    /// ground the player walks off: `taiku`'s post-boss cutscene (P2[29])
+    /// ends with the party on the castle-collapse escape route, a stretch
+    /// of open collision the object grid marks no floor on.
+    pub fn field_collision_boxed_in(&self, x: i16, z: i16, budget: usize) -> bool {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN || x < 0 || z < 0 {
+            return false;
+        }
+        let stride = (FIELD_GRID_STRIDE * 2) as i32;
+        let open = |sx: i32, sz: i32| {
+            (0..stride).contains(&sx)
+                && (0..stride).contains(&sz)
+                && !self.field_tile_is_wall((sx * 64 + 32) as i16, (sz * 64 + 32) as i16)
+        };
+        let start = ((x as i32) >> 6, (z as i32) >> 6);
+        if !open(start.0, start.1) {
+            return true;
+        }
+        let mut seen = std::collections::HashSet::from([start]);
+        let mut queue = std::collections::VecDeque::from([start]);
+        while let Some((cx, cz)) = queue.pop_front() {
+            if self.field_subcell_open(cx, cz) {
+                return false;
+            }
+            if seen.len() >= budget {
+                return false;
+            }
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let n = (cx + dx, cz + dz);
+                if open(n.0, n.1) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        true
+    }
+
     /// Size (in 64-unit sub-cells) of the connected open-floor region the
     /// world point `(x, z)` stands in - `0` when the covering sub-cell is
     /// closed (off the walk-visible floor or inside a wall). The reachability
@@ -1631,6 +1676,40 @@ impl World {
             return;
         };
         let records = man_motion::motion_records(man, man_file);
+        // Streams bound to placed objects: an `actor_id` below `N0` names a
+        // partition-0 record, the bind record a `.MAP` object's actor
+        // carries in `+0x50`.
+        self.npcs.object_ambient.clear();
+        self.npcs.object_models.clear();
+        for rec in &records {
+            for b in &rec.bindings {
+                let record = usize::from(b.actor_id);
+                if record >= n0 || self.npcs.object_ambient.contains_key(&record) {
+                    continue;
+                }
+                let variants: Vec<(u16, Vec<u8>)> = man_motion::stream_variants(man, rec)
+                    .into_iter()
+                    .filter_map(|v| {
+                        man.get(v.code_offset..v.code_end)
+                            .map(|code| (v.selector, code.to_vec()))
+                    })
+                    .filter(|(_, code)| !code.is_empty())
+                    .collect();
+                if variants.is_empty() {
+                    continue;
+                }
+                let vm = vm::ambient_motion::AmbientMotion::new(u32::from(b.actor_id), 0);
+                self.npcs.object_ambient.insert(
+                    record,
+                    FieldNpcAmbient {
+                        variants,
+                        live: None,
+                        vm,
+                        walks: false,
+                    },
+                );
+            }
+        }
         for p in man_file.actor_placements(man) {
             let Ok(slot) = u8::try_from(p.index) else {
                 continue;
@@ -1723,6 +1802,7 @@ impl World {
     // `world/frame_tick.rs`'s call site already uses for the pair.
     // REF: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
     pub fn tick_field_npc_ambient(&mut self) {
+        self.tick_object_ambient();
         if self.npcs.ambient.is_empty() {
             return;
         }
@@ -1769,9 +1849,25 @@ impl World {
                 player,
                 exempt: self.field_channel_flags(slot) & 3 != 0,
             };
+            let seat = self.npcs.positions.get(&slot).copied();
             let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
                 continue;
             };
+            // Retail has one position: the walk ops read and write the live
+            // `+0x14` / `+0x18` that a script's `0x23` seat, a cross-context
+            // walk or a teleport also write. While the mirror is live the
+            // VM's copy equals the published seat unless some other writer
+            // moved the actor, so adopt the seat - otherwise the next walk
+            // step re-publishes the VM's stale coordinates and the actor
+            // snaps back to where it wandered before the script placed it
+            // (`conc3`'s cast, seated by `A3 2B 1A 1C`, was back in its
+            // off-stage wander box a few hundred frames later and walked the
+            // whole map to its mark). With the mirror off the two are
+            // allowed to drift (see above), so the seat is not adopted.
+            if live_walk && let Some((sx, sz)) = seat {
+                chan.vm.x = sx;
+                chan.vm.z = sz;
+            }
             // Split the borrow across the struct's fields so the bytecode can
             // be read while the VM is stepped - no per-frame clone.
             let FieldNpcAmbient {
@@ -2015,6 +2111,83 @@ impl World {
                 }
                 Fx::BitTargetFault => {}
             }
+        }
+    }
+
+    /// Step the placed objects' scripted-motion streams
+    /// ([`crate::world::FieldNpcState::object_ambient`]) one actor game tick.
+    /// Only the model swap (op `0x0E`) has a placed-object consumer; the
+    /// streams the disc binds to objects carry nothing else that draws.
+    ///
+    /// REF: FUN_80038158, FUN_8003BC08 (the same per-actor driver as the
+    /// placements' streams)
+    fn tick_object_ambient(&mut self) {
+        if self.npcs.object_ambient.is_empty() {
+            return;
+        }
+        let speed = self.clock.frame_step.max(1);
+        let probe = AmbientPlayerProbe {
+            player: None,
+            exempt: true,
+        };
+        let suppressed = self.flags.story_flags & crate::world::CAMERA_HOLD_FLAG != 0;
+        let records: Vec<usize> = self.npcs.object_ambient.keys().copied().collect();
+        for record in records {
+            let pick = self
+                .npcs
+                .object_ambient
+                .get(&record)
+                .and_then(|c| c.select_variant(|f| self.system_flag_test(f)));
+            let Some(pick) = pick else { continue };
+            let Some(chan) = self.npcs.object_ambient.get_mut(&record) else {
+                continue;
+            };
+            let FieldNpcAmbient {
+                variants, live, vm, ..
+            } = chan;
+            if *live != Some(pick) {
+                *live = Some(pick);
+                vm.pc = 0;
+                vm.cursor = 0;
+            }
+            let Some((_, code)) = variants.get(pick) else {
+                continue;
+            };
+            if suppressed {
+                continue;
+            }
+            vm.tick_with(code, speed, &probe);
+            for fx in std::mem::take(&mut vm.effects) {
+                if let vm::ambient_motion_ops::AmbientEffect::ModelSwap { bank, offset } = fx {
+                    use legaia_engine_vm::ambient_motion_ops::ModelBank as VmBank;
+                    let id = match bank {
+                        VmBank::Scene => offset,
+                        VmBank::Special => {
+                            offset.wrapping_add(crate::model_bank::SPECIAL_MODEL_THRESHOLD as i16)
+                        }
+                    };
+                    self.npcs.object_models.insert(record, id);
+                }
+            }
+        }
+    }
+
+    /// The live scene-bank model id each placed object's stream swapped in
+    /// (op `0x0E`), keyed by bind record. Both hosts draw a placed object
+    /// whose bind record is here with `env_pack[id]` instead of its `.MAP`
+    /// pack slot; an id at or past `0xF0` (the player bank) is never a
+    /// placed object's and is ignored.
+    pub fn object_live_models(&self) -> &std::collections::BTreeMap<usize, i16> {
+        &self.npcs.object_models
+    }
+
+    /// Capture alignment: set a placed object's live model where a motion
+    /// stream drives it (a record outside
+    /// [`crate::world::FieldNpcState::object_ambient`] is left alone). The
+    /// retail comparison's image child only.
+    pub fn seed_object_live_model(&mut self, record: usize, model: i16) {
+        if self.npcs.object_ambient.contains_key(&record) {
+            self.npcs.object_models.insert(record, model);
         }
     }
 
@@ -2460,15 +2633,38 @@ impl World {
             return;
         };
         let targets = crate::man_field_scripts::record_exempted_objects(&man_file, &man, record);
-        if targets.is_empty() {
-            return;
-        }
+        // A ride that sets the player down inside another door's contact
+        // box walks the player out of it before letting go (`balden`'s
+        // elevator cars, P0[7] / P0[14]: `CC F8 51` runs the player to the
+        // partner car, then `A2 F8 01` / `A2 F8 02` walk it out through the
+        // partner's door, with no `B1` bracket). The engine runs neither
+        // clip as motion, so a landing on the partner's centre would post
+        // its touch on the first step in any direction and ride straight
+        // back; the partner is exempt until the player has stepped off it,
+        // as a bracketed one is.
+        let landing = self
+            .player_actor_slot
+            .and_then(|p| self.actors.get(p as usize))
+            .map(|a| {
+                (
+                    i32::from(a.move_state.world_x),
+                    i32::from(a.move_state.world_z),
+                )
+            });
         let partners: Vec<(u8, (i16, i16))> = self
             .props
             .walk_touch_records
             .iter()
-            .filter(|&(&s, &r)| s != slot && targets.iter().any(|&t| usize::from(t) == r))
-            .filter_map(|(&s, _)| self.props.walk_touch.get(&s).map(|&(pos, _)| (s, pos)))
+            .filter(|&(&s, _)| s != slot)
+            .filter_map(|(&s, &r)| self.props.walk_touch.get(&s).map(|&(pos, _)| (s, r, pos)))
+            .filter(|&(_, r, (wx, wz))| {
+                targets.iter().any(|&t| usize::from(t) == r)
+                    || landing.is_some_and(|(lx, lz)| {
+                        (lx - i32::from(wx)).abs() < FIELD_PROP_BOX_HALF
+                            && (lz - i32::from(wz)).abs() < FIELD_PROP_BOX_HALF
+                    })
+            })
+            .map(|(s, _, pos)| (s, pos))
             .collect();
         for p in partners {
             if !self.props.arrival_exempt.contains(&p) {

@@ -5,6 +5,13 @@
 
 use super::*;
 
+/// The committed anim id (`+0x1D9`) the effect stepper's code substitution
+/// keys on - the dynamic art slot the anim commit remaps an art clip onto.
+const ACTION_FX_ART_SLOT: u8 = 0x11;
+/// The table-form code an art's code-`0` record becomes (`li s1,0x9` at
+/// `0x801DF094`).
+const ACTION_FX_ART_CODE: u8 = 9;
+
 impl World {
     /// Per-actor move-VM tick - clean port of `FUN_80021DF4` (lines
     /// `80022B94..80022BBC`).
@@ -295,7 +302,8 @@ impl World {
                 // it also tests has no store in the dump corpus and is taken
                 // as clear).
                 // PORT: FUN_80047430 (`0x80047A68..0x80047B2C`)
-                if player.take_natural_end() {
+                let natural_end = player.take_natural_end();
+                if natural_end {
                     let step = player.end_root_step();
                     let latched = actor
                         .battle
@@ -344,9 +352,27 @@ impl World {
                     .battle_pose_history
                     .truncate(crate::battle_afterimage::HISTORY_DEPTH);
                 actor.pose_frame = Some(pose);
-                if after < before {
-                    // Looping clip wrapped: refire the effect script next
-                    // cycle (engine cadence choice - see the cursor's docs).
+                // The loop-window rewind (`0x800477EC..0x80047878`) re-arms
+                // the effect script only for a party seat playing the art
+                // slot `0x11` whose latched id `+0x1DB` is `0x2B` or above
+                // (`sltiu v0,s1,0x3` / `li v0,0x11` / `sltiu v0,v0,0x2b`,
+                // then `sb zero,0x1f5` / `0x1f6` / `0x1f4`); any other clip
+                // fires its effect records once per commit. Re-arming every
+                // wrap re-spawned a looping cast clip's record every cycle:
+                // `freed_summon_mid_cast` drew six or seven overlapping ray
+                // bursts where retail holds one.
+                //
+                // A looping clip's *natural end* is a different path: retail
+                // has no loop counter there and re-commits the still-queued
+                // `+0x1DA` (`FUN_80047430` -> `FUN_8004AD80`), and every
+                // commit zeroes the cursor (`sb zero,0x1f5` at `0x8004B060`),
+                // so a walk re-fires its footfall records every cycle.
+                let rearm_window = after < before
+                    && i < 3
+                    && actor.battle.current_anim == 0x11
+                    && actor.battle.latched_anim >= 0x2B;
+                let recommit = natural_end && player.is_looping();
+                if rearm_window || recommit {
                     actor.battle_effect_cursor = 0;
                 }
                 Some(after)
@@ -454,12 +480,29 @@ impl World {
             map,
         );
         let cursor = step.cursor;
+        // The table arm's code substitution (`0x801DF054..0x801DF094`): code
+        // `0` reads as `9` while the context's **active** actor (`ctx[+0x13]`,
+        // not the stepped one) has the dynamic art slot `0x11` committed in
+        // `+0x1D9`. Every later read of the code - the `0x801F6418` CLUT map,
+        // the `4` / `6` scale arms, the prototype table `0x801F6324` - takes
+        // the substituted one, so an art's ray burst (code `9`, the purple
+        // pool `9` mesh) replaces the plain swing's (code `0`, the red pool
+        // `8` twin) - `battle_melee_hit_spark`'s Somersault.
+        // PORT: FUN_801DEA50 (`0x801DF054..0x801DF094`)
+        let art_slot_active = self
+            .actors
+            .get(usize::from(self.battle_ctx.active_actor))
+            .is_some_and(|a| a.battle.current_anim == ACTION_FX_ART_SLOT);
         for s in &step.spawns {
+            let mut effect = s.effect & !fx::EFFECT_DIRECT_BIT;
+            if !s.direct && effect == 0 && art_slot_active {
+                effect = ACTION_FX_ART_CODE;
+            }
             self.battle
                 .effect_spawns
                 .push(crate::battle_events::BattleEffectSpawn {
                     actor_slot: i as u8,
-                    effect: s.effect & !fx::EFFECT_DIRECT_BIT,
+                    effect,
                     direct: s.direct,
                     at: s.at,
                     facing: script_actor.facing,
@@ -867,18 +910,27 @@ impl World {
     /// its node colour (`node[+0x74]`; the port reads its fading colour
     /// word) is non-zero. Gated off by a Seru absorb staged for the action
     /// (`ctx[+0x269]`, which raises the body for the absorb instead), a
-    /// captured actor (`+0x225`) and a scripted fight (`ctx[+0x287]`; retail
-    /// lets one through on `gp+0x9F5`, which the port does not carry).
+    /// captured actor (`+0x225`) and a scripted fight (`ctx[+0x287]`) whose
+    /// formation carries no second monster (`gp+0x9F5` = `0x8007BD0D` zero;
+    /// the port reads "more than one monster seated").
+    ///
+    /// That last gate is also the one that raises the **lone-monster defeat
+    /// latch** `ctx[+0x288]` (`sb s4,0x288(v1)`, `s4 = 1`, at `0x800504E8`):
+    /// the scripted lone monster dies in place instead of sinking, and the
+    /// latch is what lets the action SM's state-`0x20` reaction hold out
+    /// without waiting for its fade (`BattleActionCtx::lone_defeat_latch`).
     ///
     /// The post-strike death re-frame forks on the height this moves
     /// (`target[+0x36] != 0` takes the ramped shot):
     /// `player_steal_skeleton_banner` reads its killed skeleton `183` down.
     ///
-    /// PORT: FUN_80050120 (arm 2's monster sink)
+    /// PORT: FUN_80050120 (arm 2's monster sink and its `ctx[+0x288]` latch)
     fn tick_battle_defeat_sink(&mut self) {
-        if self.battle_ctx.multi_cast_gate != 0 || self.battle.scripted_fight {
+        if self.battle_ctx.multi_cast_gate != 0 {
             return;
         }
+        let lone_scripted =
+            self.battle_ctx.scripted_fight != 0 && self.battle_monster_slots().len() <= 1;
         let first = self.party.party_count as usize;
         for slot in first..(first + 4).min(self.actors.len()) {
             let a = &self.actors[slot];
@@ -890,11 +942,94 @@ impl World {
             {
                 continue;
             }
+            if lone_scripted {
+                // `0x80050454..0x8005045C` skips the sink; `0x800504BC..
+                // 0x800504E8` raises the latch.
+                self.battle_ctx.lone_defeat_latch = 1;
+                continue;
+            }
             // `(size * dt) >> 2` a battle frame of `dt` vsyncs; the engine
             // ticks once a vsync.
             let sink = i16::from(self.battle_size_class_of(slot as u8)) >> 2;
             let ms = &mut self.actors[slot].move_state;
             ms.world_y = ms.world_y.wrapping_add(sink);
+        }
+    }
+
+    /// The burning-body emitter at the tail of the anim decode
+    /// `FUN_8004998C` (`0x8004A5FC..0x8004A8D8`): every body with a non-zero
+    /// `+0x21F` selector spawns one effect-pool sprite per `0x10` of the
+    /// frame's accumulator `ctx[+0x328]`, at a random object of its current
+    /// pose jittered by its size - the fire a red selector-`1` body sheds
+    /// ([`vm::battle_impact_fx::burn_effect`]): PROT 0903's arm-9 Gimard
+    /// (`gimard_burning_attack` holds two of its effect-`0x0B` puffs at the
+    /// creature's mouth) and a Tail-Fire-struck party member.
+    ///
+    /// The accumulator is the frame driver's: low nibble kept, `+8` a frame
+    /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` at one
+    /// step a tick).
+    ///
+    /// Not ported: selector `2`'s screen-shake globals (`_DAT_8007B92C` /
+    /// `_DAT_8007B930`, `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`).
+    ///
+    /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
+    pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
+        use crate::action_effect_script::RotationLut;
+        use vm::battle_impact_fx as ifx;
+        let acc = (self.battle.burn_emit_accum & 0xF) + 8;
+        self.battle.burn_emit_accum = acc;
+        let emits = acc / ifx::BURN_EMIT_QUANTUM;
+        if emits == 0 {
+            return;
+        }
+        for i in 0..self.actors.len() {
+            let a = &self.actors[i];
+            let selector = a.battle.impact_state;
+            if !a.active || selector == 0 {
+                continue;
+            }
+            let Some(objects) = a
+                .pose_frame
+                .as_ref()
+                .map(|p| p.bone_outputs.iter().map(|(t, _)| *t).collect::<Vec<_>>())
+                .filter(|o| !o.is_empty())
+            else {
+                continue;
+            };
+            let Some(plan) = self.battle_actor_draw_plan(i, None, 4.0, false) else {
+                continue;
+            };
+            let a = &self.actors[i];
+            let base = [
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+            ];
+            let facing = a.battle.facing_angle;
+            let red = plan.tint.colour as u8;
+            let lut = crate::action_effect_script::retail_rotation_lut();
+            for _ in 0..emits {
+                let idx = self.next_rand() as usize % objects.len();
+                let rands = [
+                    self.next_rand() as i32,
+                    self.next_rand() as i32,
+                    self.next_rand() as i32,
+                ];
+                let p = ifx::burn_emit_point(
+                    base,
+                    facing,
+                    objects[idx],
+                    plan.radius,
+                    rands,
+                    |a| lut.b(i32::from(a)),
+                    |a| lut.a(i32::from(a)),
+                );
+                if p[1] <= 0
+                    && let Some(fx) = ifx::burn_effect(selector, red)
+                {
+                    self.try_spawn_effect(fx, p, facing & 0xFFF);
+                }
+            }
         }
     }
 
@@ -957,6 +1092,7 @@ impl World {
             }
         }
         self.tick_battle_defeat_sink();
+        self.emit_battle_burn_sprites();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;
@@ -1298,6 +1434,25 @@ impl World {
             self.battle_ctx.arts_banner_stage = stage;
             self.battle_ctx.arts_banner_level = level;
         }
+        // The art-name label's close (`0x8004AE70..0x8004AEAC`): a party seat
+        // (`sltiu v0,s3,0x3`) whose outgoing clip sits on dynamic slot
+        // `0x11` - every art constant and the SpecialStarter install there -
+        // under an attack command (`+0x1DE == 3`), and whose latched id
+        // `+0x1DB` is not the SpecialStarter `0x1A`, destroys widget `0x21`,
+        // the label. Ahead of the latch below and of the re-commit return,
+        // as in retail. The art-constant arm re-opens it on this same commit
+        // when the incoming id names another art.
+        // REF: FUN_8004AD80
+        {
+            let b = &self.actors[i].battle;
+            if self.actors[i].battle_monster_id.is_none()
+                && b.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                && b.action_category == vm::battle_action::ActionCategory::Attack.as_byte()
+                && b.latched_anim != 0x1A
+            {
+                self.battle.move_label_closed = true;
+            }
+        }
         let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
             if let Some(p) = actor.battle_animation.as_mut() {
@@ -1407,6 +1562,13 @@ impl World {
             self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
             return;
         }
+        // The art-constant arm (`staged >= 0x1B`, `0x8004BB5C..0x8004BC40`)
+        // places and opens the name label (`FUN_8004C650`, then
+        // `FUN_801D8DE8(0x4C, 0)`) for a party seat.
+        if q >= 0x1B && actor.battle_monster_id.is_none() {
+            self.battle.move_label_closed = false;
+        }
+        let actor = &self.actors[i];
         // Resolve the clip + the committed id (post-rewrite).
         let (clip, committed) = match resolve_staged_anim(q) {
             StagedAnimTarget::ArtBank { record, slot } if actor.battle_art_bank.is_some() => {
@@ -2213,6 +2375,10 @@ impl World {
         self.mode = SceneMode::Battle;
         self.battle.entry_serial = self.battle.entry_serial.wrapping_add(1);
         self.battle.monster_flee_attempted = false;
+        // The battle scene setup re-seeds object-effect row 0
+        // (`0x80055DDC..0x80055DF8`).
+        // REF: FUN_80055B6C
+        self.object_effect.reseed_for_battle();
         // The magic-level-up queue is a per-battle oracle record, not a host
         // hand-off: the banner the level-up raises is the battle message
         // banner (`raise_magic_level_banner`, screen element `0x65`), which

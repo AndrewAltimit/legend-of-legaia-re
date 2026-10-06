@@ -1,0 +1,303 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "edlast"
+# soak-seed = 20075
+# soak-signature = "softlock|edlast|free-roam:immobile@tile(42,38)"
+# detail: no progress for 1800 frames under 28 distinct pad masks
+# fixed: `49 0C` opens slot 0x33 (FUN_801EDF00) - the records screen, a face press, the white fade and the title hand-off - instead of closing at once and leaving the party in edlast; the Cross tap at 15300 answers it
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 1175017367
+frames = 15700
+
+[[event]]
+frame = 0
+pad = 0
+
+[[event]]
+frame = 14490
+pad = 16384
+
+[[event]]
+frame = 14491
+pad = 0
+
+[[event]]
+frame = 14492
+pad = 16384
+
+[[event]]
+frame = 14493
+pad = 0
+
+[[event]]
+frame = 14494
+pad = 8192
+
+[[event]]
+frame = 14495
+pad = 0
+
+[[event]]
+frame = 14496
+pad = 8192
+
+[[event]]
+frame = 14497
+pad = 0
+
+[[event]]
+frame = 14498
+pad = 16384
+
+[[event]]
+frame = 14499
+pad = 0
+
+[[event]]
+frame = 14500
+pad = 8192
+
+[[event]]
+frame = 14501
+pad = 0
+
+[[event]]
+frame = 14502
+pad = 8192
+
+[[event]]
+frame = 14503
+pad = 0
+
+[[event]]
+frame = 14504
+pad = 16384
+
+[[event]]
+frame = 14505
+pad = 0
+
+[[event]]
+frame = 14506
+pad = 16384
+
+[[event]]
+frame = 14507
+pad = 0
+
+[[event]]
+frame = 14508
+pad = 16384
+
+[[event]]
+frame = 14509
+pad = 0
+
+[[event]]
+frame = 14510
+pad = 16384
+
+[[event]]
+frame = 14511
+pad = 0
+
+[[event]]
+frame = 14512
+pad = 8192
+
+[[event]]
+frame = 14513
+pad = 0
+
+[[event]]
+frame = 14514
+pad = 16384
+
+[[event]]
+frame = 14515
+pad = 0
+
+[[event]]
+frame = 14516
+pad = 16384
+
+[[event]]
+frame = 14517
+pad = 0
+
+[[event]]
+frame = 14518
+pad = 16384
+
+[[event]]
+frame = 14519
+pad = 0
+
+[[event]]
+frame = 14520
+pad = 16384
+
+[[event]]
+frame = 14521
+pad = 0
+
+[[event]]
+frame = 14522
+pad = 16384
+
+[[event]]
+frame = 14523
+pad = 0
+
+[[event]]
+frame = 14524
+pad = 16384
+
+[[event]]
+frame = 14525
+pad = 0
+
+[[event]]
+frame = 14526
+pad = 16384
+
+[[event]]
+frame = 14527
+pad = 0
+
+[[event]]
+frame = 14528
+pad = 8192
+
+[[event]]
+frame = 14529
+pad = 0
+
+[[event]]
+frame = 14530
+pad = 16384
+
+[[event]]
+frame = 14531
+pad = 0
+
+[[event]]
+frame = 14532
+pad = 16384
+
+[[event]]
+frame = 14533
+pad = 0
+
+[[event]]
+frame = 14534
+pad = 8192
+
+[[event]]
+frame = 14535
+pad = 0
+
+[[event]]
+frame = 14536
+pad = 8192
+
+[[event]]
+frame = 14537
+pad = 0
+
+[[event]]
+frame = 14538
+pad = 16384
+
+[[event]]
+frame = 14539
+pad = 0
+
+[[event]]
+frame = 14540
+pad = 16384
+
+[[event]]
+frame = 14541
+pad = 0
+
+[[event]]
+frame = 14542
+pad = 16384
+
+[[event]]
+frame = 14543
+pad = 0
+
+[[event]]
+frame = 14544
+pad = 16384
+
+[[event]]
+frame = 14545
+pad = 0
+
+[[event]]
+frame = 14546
+pad = 16384
+
+[[event]]
+frame = 14547
+pad = 0
+
+[[event]]
+frame = 14548
+pad = 16384
+
+[[event]]
+frame = 14549
+pad = 0
+
+[[event]]
+frame = 14550
+pad = 16384
+
+[[event]]
+frame = 14551
+pad = 0
+
+[[event]]
+frame = 14552
+pad = 16384
+
+[[event]]
+frame = 14553
+pad = 0
+
+[[event]]
+frame = 14554
+pad = 16384
+
+[[event]]
+frame = 14555
+pad = 0
+
+[[event]]
+frame = 14556
+pad = 16384
+
+[[event]]
+frame = 14557
+pad = 0
+
+[[event]]
+frame = 14558
+pad = 16384
+
+[[event]]
+frame = 14559
+pad = 0
+
+[[event]]
+frame = 15300
+pad = 16384
+
+[[event]]
+frame = 15301
+pad = 0

@@ -295,8 +295,9 @@ pub enum HubAction {
     ConfirmCue(u8),
     /// `FUN_80035B50(id)` - the entry sting.
     EntryCue(u8),
-    /// `FUN_80035A4C()` - the close sting.
-    CloseCue,
+    /// `FUN_80035A4C()` - begin closing every text-actor panel on the
+    /// `gp+0x148` list. No sound: an earlier reading named it a close sting.
+    CloseAllPanels,
     /// `FUN_80031D00()` - the per-actor draw pump.
     DrawPump,
     /// `FUN_801F1278(actor)` - the submode re-arm the dispatcher calls.
@@ -1123,15 +1124,15 @@ pub fn draw_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubF
     out
 }
 
-/// PORT: FUN_801f2134 - the close-sting draw tick.
+/// PORT: FUN_801f2134 - the close tick.
 ///
-/// [`draw_tick`]'s twin: identical but for state `0`, which plays the close
-/// sting instead of installing a panel.
+/// [`draw_tick`]'s twin: identical but for state `0`, which closes every
+/// panel (`FUN_80035A4C`) instead of installing one.
 pub fn close_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
     let mut out = HubFrame::default();
     match actor.sub {
         0 => {
-            out.act(HubAction::CloseCue);
+            out.act(HubAction::CloseAllPanels);
             actor.sub = actor.sub.wrapping_add(1);
         }
         1 => {}
@@ -1146,14 +1147,14 @@ pub fn close_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
 
 /// PORT: FUN_801f1d90 - the actor deactivate with a chosen re-arm state.
 ///
-/// Plays the close sting, pumps, then hands the actor back with `+0x50` set
+/// Closes every panel, pumps, then hands the actor back with `+0x50` set
 /// to [`HUB_SKIP_STATE`] when the first progress flag is set or the second is
 /// set *and* the cancel button is held, and to [`HUB_DEACTIVATE_STATE`]
 /// otherwise. The two arms are otherwise identical: retail writes the grid
 /// hand-back fields in both.
 pub fn deactivate(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
     let mut out = HubFrame::default();
-    out.act(HubAction::CloseCue);
+    out.act(HubAction::CloseAllPanels);
     out.act(HubAction::DrawPump);
     grid.handback = -1;
     grid.stashed_state = actor.state;
@@ -1893,7 +1894,7 @@ mod tests {
         let mut a = HubActor::default();
         let mut g = HubGrid::default();
         let f = close_tick(&mut a, &env(), &mut g);
-        assert_eq!(f.actions[0], HubAction::CloseCue);
+        assert_eq!(f.actions[0], HubAction::CloseAllPanels);
     }
 
     #[test]

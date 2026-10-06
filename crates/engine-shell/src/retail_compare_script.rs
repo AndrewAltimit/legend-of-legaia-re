@@ -55,6 +55,10 @@ pub struct RetailScript {
     pub op: u8,
     /// The record's first [`RECORD_HEAD_LEN`] bytes from its script start.
     pub head: Vec<u8>,
+    /// The system flags the record latched on its way to the PC
+    /// ([`run_latches`] over the record's own bytes in RAM): set after the
+    /// scene entry ran, so they are not what that entry saw.
+    pub latches: Vec<u16>,
 }
 
 /// The field-script observables of one retail state.
@@ -66,6 +70,10 @@ pub struct RetailScripts {
     /// Display frames left on a live camera-mover glide, when one is in
     /// flight (duration `+0x9E` less progress `+0x9C`).
     pub glide_left: Option<i32>,
+    /// How many vsyncs the displayed frame is older than the RAM
+    /// ([`crate::retail_compare_battle::display_lag_vsyncs`]): the field
+    /// double-buffers the same way the battle does.
+    pub display_lag: u16,
 }
 
 fn in_ram(p: u32) -> bool {
@@ -78,7 +86,7 @@ fn bytes_at(ram: &[u8], va: u32, len: usize) -> Option<Vec<u8>> {
 }
 
 /// Every node on the actor lists, each once, in list order.
-fn actor_nodes(ram: &[u8]) -> Vec<u32> {
+pub fn actor_nodes(ram: &[u8]) -> Vec<u32> {
     let mut seen = std::collections::BTreeSet::new();
     let mut out = Vec::new();
     for k in 0..ACTOR_LIST_SPAN {
@@ -97,7 +105,10 @@ impl RetailScripts {
     /// Read the field contexts of a retail state's RAM.
     pub fn from_ram(ram: &[u8]) -> Self {
         let player = game_anchors::player_ptr(ram);
-        let mut out = Self::default();
+        let mut out = Self {
+            display_lag: crate::retail_compare_battle::display_lag_vsyncs(ram),
+            ..Self::default()
+        };
         for node in actor_nodes(ram) {
             let tick = game_anchors::u32_at(ram, node + 0x0C);
             let flags = game_anchors::u32_at(ram, node + 0x10);
@@ -126,6 +137,9 @@ impl RetailScripts {
                 wait: game_anchors::i16_at(ram, node + 0x54),
                 op: game_anchors::u8_at(ram, base.wrapping_add(pc as u32)),
                 head,
+                latches: bytes_at(ram, base, pc + 1)
+                    .map(|body| run_latches(&body, pc))
+                    .unwrap_or_default(),
             });
         }
         out
@@ -274,6 +288,23 @@ impl ScriptGate {
         })
     }
 
+    /// The gate the capture's **displayed frame** sits at: [`Self::from_retail`]
+    /// with the wait taken back by the display lag. The RAM channels are
+    /// sampled on the RAM's phase; the frame on the TV is two game frames
+    /// older. `minigame_dance_pcsx` is parked `21` vsyncs into the `0x4A`
+    /// after a subtractive white walk-in (`34 01 FF FF FF 1E`, `27` vsyncs
+    /// after the eighth a white blend-2 target loses) on a step-`3` frame:
+    /// gated on the RAM's wait the engine frame was darkened six vsyncs past
+    /// the one retail shows.
+    pub fn displayed_from_retail(scripts: &RetailScripts) -> Option<Self> {
+        let mut g = Self::from_retail(scripts)?;
+        g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
+        if let Some(left) = g.glide_left.as_mut() {
+            *left += i32::from(scripts.display_lag);
+        }
+        Some(g)
+    }
+
     /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>]` -
     /// `LEGAIA_SCRIPT_GATE` for `play-window`.
     pub fn to_env(&self) -> String {
@@ -355,9 +386,16 @@ impl ScriptGate {
             return true;
         }
         let text = self.op & 0x7F < 0x20;
-        let glide_landed = self
-            .glide_left
-            .is_none_or(|g| world.camera.state.glide_frames <= g);
+        // A capture with no camera mover on its lists holds a landed shot:
+        // retail frees the mover (`FUN_801DC0BC`) when its glide ends. So a
+        // record parked on the gate PC is met once the engine's glide has
+        // landed too - `name_input_ui` is parked on the opening's `49 03`
+        // one op after a 16-frame glide that lands under the prompt, and the
+        // first tick on that PC is that glide's first frame.
+        let glide_landed = match self.glide_left {
+            Some(g) => world.camera.state.glide_frames <= g,
+            None => world.camera.state.glide_frames <= 0,
+        };
         let passed = |tl: &legaia_engine_core::cutscene_timeline::CutsceneTimeline| {
             head_of(&tl.bytecode) == self.head
                 && ((tl.pc == self.pc
@@ -455,6 +493,40 @@ impl ScriptGate {
     pub fn advance_pad(&self, world: &legaia_engine_core::world::World, tick: u64) -> u16 {
         if tick < SCRIPT_RESUME_TICK || !tick.is_multiple_of(2) {
             return 0;
+        }
+        // A topic menu on the way: the player picked the option whose arm
+        // leads to the capture, so steer the cursor onto the arm with the
+        // last branch target at or before the gate PC and confirm it there.
+        // `Cross` alone took option 0 every time (`v0_1_tetsu_dialogue_accept`
+        // looped on Tetsu's first topic, short of the spar arm it is captured
+        // in).
+        let inline = world
+            .dialog
+            .inline
+            .as_ref()
+            .filter(|id| !id.done && head_of(&id.bytecode) == self.head);
+        // A press while the menu still slides in commits it at its opening
+        // cursor once the pager reads the choice: hold off until it takes
+        // input.
+        if inline.is_some_and(|id| id.menu_active() && !id.picker_takes_input()) {
+            return 0;
+        }
+        if let Some(id) = inline
+            && id.picker_takes_input()
+            && let Some(p) = id.picker()
+            && let Some(want) = (0..p.n)
+                .filter_map(|i| p.jump_target(i).map(|t| (i, t)))
+                .filter(|&(_, t)| t <= self.pc)
+                .max_by_key(|&(_, t)| t)
+                .map(|(i, _)| i)
+        {
+            let cur = id.picker_cursor();
+            let b = match cur.cmp(&want) {
+                std::cmp::Ordering::Less => legaia_engine_core::input::PadButton::Down,
+                std::cmp::Ordering::Greater => legaia_engine_core::input::PadButton::Up,
+                std::cmp::Ordering::Equal => legaia_engine_core::input::PadButton::Cross,
+            };
+            return b.mask();
         }
         match self.context(world) {
             Some(c) if c.dialog_open && c.pc != self.pc => {
@@ -621,9 +693,50 @@ fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptG
         .map(|(_, rec)| rec.body.to_vec())
     {
         roll_back_run_latches(world, &body, gate.pc);
+        // A talk the capture holds past a fight it staged resumes where that
+        // fight's talk ended, not at the record's entry.
+        if let Some(pc) = post_battle_resume(&body, gate.pc)
+            && let Some(rec) = world.npcs.dialog_prologue.get_mut(&slot)
+        {
+            rec.entry_pc = pc;
+        }
     }
     world.trigger_field_interact(0, slot);
     true
+}
+
+/// The PC a placement's talk resumes at when the capture is past a fight the
+/// talk staged: the byte after the `0x21` that ends the talk on a scripted
+/// battle (`3E FF <row>`, `21`), when the linear walk from it reaches the gate
+/// PC with no other talk end on the way. Retail's talk and the placement are
+/// one context (`actor[+0x9E]`): the talk ends on that `0x21` with the PC
+/// past it, the fight runs, and the engagement after it resumes there.
+/// `town01` `P1[10]` stages the sparring fight at `+0x7F7` and ends on the
+/// `21` at `+0x7FA`; `v0_1_post_battle_tetsu_town` is captured on "You did
+/// well." at `+0x804`, which a talk opened from the entry only reaches
+/// through the fight. `None` for every other gate.
+pub fn post_battle_resume(body: &[u8], gate_pc: usize) -> Option<usize> {
+    use legaia_asset::field_disasm::decode;
+    for start in 0..gate_pc.min(64) {
+        let mut pc = start;
+        let mut prev_op = None;
+        let mut resume = None;
+        while pc < gate_pc {
+            let Ok(i) = decode(body, pc) else { break };
+            if i.size == 0 {
+                break;
+            }
+            if i.opcode == 0x21 && i.extended.is_none() {
+                resume = (prev_op == Some(0x3E)).then_some(pc + i.size);
+            }
+            prev_op = Some(i.opcode);
+            pc += i.size;
+        }
+        if pc == gate_pc {
+            return resume;
+        }
+    }
+    None
 }
 
 /// The system flags a record set on its way to `gate_pc`: every `0x5x` SET
@@ -673,7 +786,46 @@ pub fn run_latches(body: &[u8], gate_pc: usize) -> Vec<u16> {
     Vec::new()
 }
 
-/// Clear [`run_latches`] before a record is replayed toward the gate.
+/// The items a record gives (op `0x39`) on its way to `gate_pc`, in the same
+/// straight-line run [`run_latches`] reads: retail executed those grants to
+/// stand where it was captured, so the state's bag already holds them, and a
+/// replay grants them a second time. `town01` `P1[10]`'s spar arm gives item
+/// `119` at `+0x7A6`, ahead of the line `v0_1_tetsu_dialogue_accept` is
+/// captured on.
+pub fn run_grants(body: &[u8], gate_pc: usize) -> Vec<u8> {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    for start in 0..gate_pc.min(64) {
+        let mut pc = start;
+        let mut run: Vec<u8> = Vec::new();
+        let mut ok = false;
+        while pc < gate_pc {
+            let Ok(i) = decode(body, pc) else { break };
+            if i.size == 0 {
+                break;
+            }
+            match i.info {
+                InsnInfo::JmpRel { .. }
+                | InsnInfo::CondJmp { .. }
+                | InsnInfo::Picker { .. }
+                | InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                } => run.clear(),
+                InsnInfo::GiveItem { item_id } => run.push(item_id),
+                _ => {}
+            }
+            pc += i.size;
+            ok = pc == gate_pc;
+        }
+        if ok {
+            return run;
+        }
+    }
+    Vec::new()
+}
+
+/// Clear [`run_latches`] and take back [`run_grants`] before a record is
+/// replayed toward the gate.
 fn roll_back_run_latches(
     world: &mut legaia_engine_core::world::World,
     body: &[u8],
@@ -681,6 +833,18 @@ fn roll_back_run_latches(
 ) {
     for idx in run_latches(body, gate_pc) {
         world.system_flag_clear(idx);
+    }
+    for id in run_grants(body, gate_pc) {
+        let bag = &mut world.party.inventory;
+        match bag.get(&id).copied() {
+            Some(n) if n > 1 => {
+                bag.insert(id, n - 1);
+            }
+            Some(_) => {
+                bag.remove(&id);
+            }
+            None => {}
+        }
     }
 }
 
@@ -698,6 +862,29 @@ mod tests {
         assert_eq!(run_latches(&body, 14), vec![0x5C1]);
         assert_eq!(run_latches(&body, 11), vec![0x5C1]);
         assert!(run_latches(&body, 9).is_empty());
+    }
+
+    #[test]
+    fn run_grants_are_the_gives_after_the_last_branch() {
+        // 39 05 (give 5, behind the jump), 26 02 00 (jump), 39 77 (give
+        // 119), 4A 10 00 (wait), gate.
+        let body = [0x39, 0x05, 0x26, 0x02, 0x00, 0x39, 0x77, 0x4A, 0x10, 0x00];
+        assert_eq!(run_grants(&body, 10), vec![0x77]);
+        assert!(run_grants(&body, 5).is_empty());
+    }
+
+    /// A gate past a talk's `3E` / `21` fight boundary resumes after the
+    /// `21`; a later `21` with no fight before it cancels that.
+    #[test]
+    fn a_post_battle_gate_resumes_past_the_fight_end() {
+        // 4A 10 00 | 3E FF 04 | 21 | 52 0C | <gate>
+        let body = [0x4A, 0x10, 0x00, 0x3E, 0xFF, 0x04, 0x21, 0x52, 0x0C, 0x24];
+        assert_eq!(post_battle_resume(&body, 9), Some(7));
+        // 4A 10 00 | 3E FF 04 | 21 | 21 | <gate>
+        let body = [0x4A, 0x10, 0x00, 0x3E, 0xFF, 0x04, 0x21, 0x21, 0x24];
+        assert_eq!(post_battle_resume(&body, 8), None);
+        // No fight at all.
+        assert_eq!(post_battle_resume(&[0x4A, 0x10, 0x00, 0x24], 3), None);
     }
 
     #[test]
@@ -749,12 +936,25 @@ mod tests {
         w16(&mut ram, rec + 0x54, 48);
         w32(&mut ram, rec + 0x90, rec_base);
         w16(&mut ram, rec + 0x9E, 7);
-        ram[(rec_base & 0x1F_FFFF) as usize + 7] = 0x4A;
+        // `koin3` P2[6]'s run onto its last wait: `55 9C`, `51 34`, then a
+        // `4A` the PC is parked on.
+        let body = (rec_base & 0x1F_FFFF) as usize;
+        ram[body..body + 7].copy_from_slice(&[0x55, 0x9C, 0x51, 0x34, 0x4A, 0x1E, 0x00]);
+        ram[body + 7] = 0x4A;
         ram[(sys_base & 0x1F_FFFF) as usize] = 0x24;
         let s = RetailScripts::from_ram(&ram);
         assert_eq!(s.running.len(), 1);
         let r = &s.running[0];
         assert_eq!((r.flat_index, r.pc, r.wait, r.op), (13, 7, 48, 0x4A));
+        assert_eq!(r.latches, vec![0x59C, 0x134]);
+        // A non-adaptive step (mode word clear) is one vsync a frame, so the
+        // displayed frame is two vsyncs into the wait behind the RAM.
+        assert_eq!(s.display_lag, 2);
+        assert_eq!(ScriptGate::from_retail(&s).map(|g| g.wait), Some(48));
+        assert_eq!(
+            ScriptGate::displayed_from_retail(&s).map(|g| g.wait),
+            Some(46)
+        );
         // A disengaged context is not running.
         w32(&mut ram, rec + 0x10, 0);
         assert!(RetailScripts::from_ram(&ram).running.is_empty());

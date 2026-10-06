@@ -138,7 +138,7 @@ IMAGE_ROLES = {
     "field": ("Field / event VM", "Towns, dungeons, dialogue, the world map", "game"),
     "battle_action": ("Battle", "Battle state machine, damage, effects", "game"),
     "menu": ("Menu, shop + save", "Pause menu, equipment, shops, save screen", "game"),
-    "summon_render": ("Field render library", "Slot-B renderer for town scenes", "game"),
+    "summon_render": ("Field render library", "Slot-B ground + decoration renderer for field scenes", "game"),
     "world_map_render": ("World map renderer", "Kingdom-map terrain companion", "game"),
     "cutscene_str": ("FMV player", "STR / MDEC movie playback", "game"),
     "field_battle_intro": ("Battle intro", "Field-to-battle transition", "game"),
@@ -210,8 +210,21 @@ def stem_names_image(stem_label, image_label, prot_index):
     return stem_label == image_label.lower()
 
 
+# A `PROT NNNN` token in a tag's own text ("FUN_801F69D8 (PROT 0905; ...)"),
+# the form the slot-B cast-module ports use to say which of the sixty-four
+# images sharing their VA they implement.
+PROT_TOKEN_RE = re.compile(r"\bPROT\s+(\d{3,4})\b")
+
+
 def collect_port_stems():
-    """`{addr: {stem label}}` over every `// PORT:` tag in `crates/`."""
+    """`{addr: {stem label}}` over every `// PORT:` tag in `crates/`.
+
+    Besides each `overlay_<label>_<addr>` stem, a `PROT NNNN` token anywhere in
+    the tag's text names an image for every address in that tag, recorded as
+    the pseudo-stem `prot_NNNN` (which `stem_names_image` resolves through its
+    four-digit token like any stem). Stems are consulted only where an address
+    is shared between images, so prose naming an unrelated entry credits
+    nothing."""
     sys.path.insert(0, os.path.dirname(PORT_CATALOG))
     import port_tag_reader
     out = {}
@@ -228,6 +241,10 @@ def collect_port_stems():
                     continue
                 for a, labels in port_tag_reader.stem_labels(tail).items():
                     out.setdefault(a, set()).update(labels)
+                prots = {"prot_%04d" % int(n) for n in PROT_TOKEN_RE.findall(tail)}
+                if prots:
+                    for a in port_tag_reader.addresses(tail):
+                        out.setdefault(a, set()).update(prots)
     return out
 
 
@@ -282,8 +299,25 @@ def replaced_addresses(pc):
 OPEN_SINK = None
 
 
+def shared_entries(rows):
+    """Addresses the floor places in more than one image.
+
+    The attribution places one VA in two images only when each image's own
+    bytes start a routine there (`divergent`, or `unique` extents of different
+    lengths) - different code linked at the same address. A bare
+    `FUN_<addr>` tag cannot say which of them it implements, exactly as at an
+    ignore-listed aliased VA, so it is treated the same way. Without this, one
+    bare tag on a slot-B entry point credited every image that starts a
+    routine there (twenty-three of them at `0x801F69D8`)."""
+    seen, shared = set(), set()
+    for r in rows:
+        for a in {"%08x" % va for va, _b in r["floor_extents"]}:
+            (shared if a in seen else seen).add(a)
+    return shared
+
+
 def _image_row(row, ports, ignore, replaced, stems=None, scoped=None,
-               prot_index=None):
+               prot_index=None, shared=frozenset()):
     """Counts for one covered image (a `cover_image` result)."""
     stems = stems or {}
     scoped = scoped or {}
@@ -296,21 +330,28 @@ def _image_row(row, ports, ignore, replaced, stems=None, scoped=None,
     for va in entries:
         a = "%08x" % va
         cat = ignore.get(a, (None,))[0]
-        aliased = cat in NOT_AN_EXCUSE
-        # At an aliased VA a bare tag cannot say which image it ports; only a
-        # stem naming this image credits it.
+        aliased = cat in NOT_AN_EXCUSE or a in shared
+        # At an aliased VA - ignore-listed as one, or placed in several images
+        # by the floor - a bare tag cannot say which image it ports; only a
+        # stem (or a `PROT NNNN` token) naming this image credits it.
         here = any(stem_names_image(s, label, prot_index) for s in stems.get(a, ()))
         if (a in ports and not aliased) or here:
             c["functions"] += 1
             c["ported"] += 1
             c["replaced"] += a in replaced
             continue
+        if a in shared and cat is not None:
+            # The ignore list keys a verdict by bare VA, and its reason
+            # describes one image's routine; where the floor places a
+            # different routine in each of several images it cannot speak
+            # for the others. Only a per-image verdict classifies them.
+            cat = "shared_va(%s)" % cat
         cat = scoped.get((label, a), (cat,))[0]
         if cat in NOT_A_FUNCTION:
             c["not_a_function"] += 1
             continue
         c["functions"] += 1
-        if cat is None or cat in NOT_AN_EXCUSE:
+        if cat is None or cat in NOT_AN_EXCUSE or cat.startswith("shared_va("):
             c["open"] += 1
             if OPEN_SINK is not None:
                 OPEN_SINK.append((label, a, cat))
@@ -376,10 +417,11 @@ def build_image_status(funcs=None, extracted=None, with_replaced=True):
             prot[r.get("label")] = r.get("prot_index")
 
     rows, band = [], None
+    shared = shared_entries([scus] + overlays)
     for r in [scus] + overlays:
         label = r["name"]
         p = prot.get(label)
-        counts = _image_row(r, ports, ignore, replaced, stems, scoped, p)
+        counts = _image_row(r, ports, ignore, replaced, stems, scoped, p, shared)
         if p is not None and 903 <= p <= 966:
             if band is None:
                 key, name, desc, kind = CAST_BAND

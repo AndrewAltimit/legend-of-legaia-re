@@ -338,8 +338,8 @@ fn fold_battle_event_other_variants_dont_modify_state() {
 
 /// The party cast trigger (`FUN_801DBF9C`) at the host seam: a non-Seru id
 /// (`< 0x25`) stages nothing and requests nothing; a Seru id writes the summon
-/// sub-route + the `0x12` effect byte and arms the stager, whose FIRST tick
-/// (the band's `0x34` entry) requests the creature spawn behind the caster.
+/// sub-route + the `0x12` effect byte and arms the stager, which requests the
+/// creature spawn behind the caster when the module reaches its seat arm.
 #[test]
 fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn() {
     use crate::world::vm_hosts::BattleHostImpl;
@@ -382,10 +382,23 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
         world.take_pending_summon_spawn().is_none(),
         "no spawn before the stager ticks"
     );
-    // The stager's phase-0 tick (0x34 entry) seats the creature behind the
-    // caster on the party side.
+    // The stager is busy from its phase-0 tick (0x34 entry); the creature
+    // is seated behind the caster on the party side once PROT 0903 reaches
+    // its seat arm (`jal 0x801F19EC` in arm 3), not on that first tick.
     assert!(world.summon_stager_tick(), "busy from the first tick");
-    let req = world.take_pending_summon_spawn();
+    assert!(
+        world.take_pending_summon_spawn().is_none(),
+        "no seat before the module's seat arm"
+    );
+    let mut req = None;
+    for _ in 0..2000 {
+        world.summon_stager_tick();
+        req = world.take_pending_summon_spawn();
+        if req.is_some() {
+            break;
+        }
+    }
+    assert!(world.casting.module_phase >= 3, "seated in arm 3");
     assert_eq!(
         req,
         Some((
@@ -577,6 +590,32 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
     world.finish_battle();
     assert_eq!(world.battle.ap_gauges[0].base_ap, 10);
     assert_eq!(world.battle.fury_boost[0], None);
+    assert_eq!(world.actors[0].battle.spirit_shield, 0);
+}
+
+/// Fury Boost reaches the gauge the arts entry actually spends: it raises the
+/// actor's `+0x1F9` byte, and the round boundary (`FUN_801D88CC` loop A)
+/// restores the live `+0x154` gauge - the arts command pool - to
+/// `base * 7 / 5 + 8` instead of `base`.
+#[test]
+fn fury_boost_extends_the_live_arts_gauge_at_the_round_boundary() {
+    let mut world = World::new();
+    world.tables.item_catalog.insert(crate::items::ItemEntry {
+        id: 0x81,
+        name: "Fury Boost",
+        effect: crate::items::ItemEffect::ActionGauge,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    world.party.party_count = 1;
+    world.actors[0].battle.agl_base = 150;
+    world.actors[0].battle.agl = 150;
+    // A plain attack this round: the boundary would restore `base`.
+    world.actors[0].battle.action_category = 3;
+    world.use_item(0x81, 0);
+    assert_eq!(world.actors[0].battle.spirit_shield, 1);
+    crate::battle_round::BattleRound::boundary(&mut world);
+    assert_eq!(world.actors[0].battle.agl, 150 * 7 / 5 + 8);
 }
 
 #[test]

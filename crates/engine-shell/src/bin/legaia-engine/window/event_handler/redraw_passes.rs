@@ -587,17 +587,16 @@ impl PlayWindowApp {
         part_cam: Option<&legaia_engine_render::gte::PartCameraPose>,
     ) -> Vec<(UploadedVramMesh, Mat4)> {
         let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
-        // A part's placement: `T(world_pos)`, or - for a `+0x52 & 0x780`
-        // node - the camera-relative prefix `FUN_8001CF50` resolves to under
-        // this host's full-camera view. Battle models carry the per-model
-        // Y-flip, which is the frame flip the prefix conjugates by.
+        // A part's placement (`gte::part_model_place`, the browser page's
+        // too): `T(F world_pos)`, or - for a `+0x52 & 0x780` node - the
+        // camera-relative prefix `FUN_8001CF50` resolves to under this host's
+        // full-camera view. Battle models carry the per-model Y-flip, which is
+        // the frame flip `F` both the prefix and the translation take.
         let frame_flip = self.session.host.world.mode == SceneMode::Battle;
         let place = |flags: u16, pos: [f32; 3]| -> Mat4 {
-            legaia_engine_render::gte::camera_relative_model_prefix(
+            Mat4::from_cols_array(&legaia_engine_render::gte::part_model_place(
                 flags, pos, part_cam, frame_flip,
-            )
-            .map(|m| Mat4::from_cols_array(&m))
-            .unwrap_or_else(|| Mat4::from_translation(Vec3::from(pos)))
+            ))
         };
         if !self.boot_ui.is_active() && !in_world_map {
             // Summon parts and battle move-FX parts render identically
@@ -834,17 +833,35 @@ impl PlayWindowApp {
     /// the weapon as drawn.
     // REF: FUN_800485BC (packet + band order live in
     // `legaia_engine_ui::battle_trail`; this is the per-host projection)
-    /// The world's live full-screen fade as one flat quad
-    /// ([`legaia_engine_core::world::World::screen_fade_draw`] through
-    /// `fade_prim`, the kernel both hosts composite fades with): `None` while
-    /// no fade is up or its start delay is still running.
-    pub(super) fn screen_fade_screen_prim(
+    /// The world's live full-screen fades as flat quads
+    /// ([`legaia_engine_core::world::World::screen_fade_draws`] through
+    /// `fade_prim`, the kernel both hosts composite fades with): empty while
+    /// no fade is up or every start delay is still running.
+    pub(super) fn screen_fade_screen_prims(
         &self,
-    ) -> Option<legaia_engine_render::screen_overlay::ScreenPrim> {
-        let (rgb, abr, ot) = self.session.host.world.screen_fade_draw()?;
-        Some(legaia_engine_render::screen_overlay::fade_prim(
-            rgb, abr, ot,
-        ))
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        self.session
+            .host
+            .world
+            .screen_fade_draws()
+            .into_iter()
+            .map(|(rgb, abr, ot)| legaia_engine_render::screen_overlay::fade_prim(rgb, abr, ot))
+            .collect()
+    }
+
+    /// PROT 0948's Cross Beam packets while arm 3 runs
+    /// ([`legaia_engine_core::world::World::cross_beam_draw`] through
+    /// `legaia_engine_ui::cast_beam::cross_beam_prims`, the kernel the browser
+    /// play page draws them with). Empty on every other frame.
+    pub(super) fn cross_beam_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        self.session
+            .host
+            .world
+            .cross_beam_draw()
+            .map(legaia_engine_render::cast_beam::cross_beam_prims)
+            .unwrap_or_default()
     }
 
     /// This frame's field fog sheets (`legaia_engine_core::fog_particles`):

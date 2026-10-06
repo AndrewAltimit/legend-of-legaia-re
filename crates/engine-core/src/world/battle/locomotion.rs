@@ -209,8 +209,16 @@ impl World {
         let inputs = motion::RangeInputs {
             attacker_party,
             target_party,
+            // `DAT_80078878[DAT_8007BD10[slot] - 1]`: keyed on the seat's
+            // roster character. `BattleActor::character` is the arts-path
+            // lookup key and is written only when an arts queue is armed, so
+            // keying the reach on it gave every plain Attack by Noa or Gala
+            // Vahn's `+43` (a shorter reach that walked them in further).
             attacker_reach: if attacker_party {
-                motion::party_reach_offset(att.battle.character)
+                motion::PARTY_REACH_OFFSETS
+                    .get(self.party_roster_slot(usize::from(attacker)))
+                    .copied()
+                    .unwrap_or(0)
             } else {
                 0
             },
@@ -306,7 +314,7 @@ impl World {
     /// staged clip each answer their own entry - with the actor's `+0x21D`
     /// scale ([`DEFAULT_SPEED_SCALE`] when unset). `None` when no clip is
     /// playing or the playing clip carries no speed.
-    fn battle_playing_root_motion(&self, slot: usize) -> Option<(i16, u8)> {
+    pub(in crate::world) fn battle_playing_root_motion(&self, slot: usize) -> Option<(i16, u8)> {
         let a = self.actors.get(slot)?;
         let speed = a.battle_animation.as_ref()?.root_speed();
         if speed == 0 {

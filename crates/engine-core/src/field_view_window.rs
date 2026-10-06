@@ -225,10 +225,6 @@ pub fn framing_is_retail(camera: &Camera) -> bool {
 /// - the world is not in [`SceneMode::Field`]: the kingdom overworld is drawn
 ///   by the PROT 0901 library, not by the pair this module ports, and the
 ///   other modes draw no `.MAP` cells;
-/// - a cutscene timeline owns the camera: the published view is the zone
-///   follow camera's focus, while the scripted shot the hosts draw composes
-///   from the op-`0x45` parameters, so a crop against the follow focus would
-///   cut scenery out of the shot on screen;
 /// - no camera view is published yet ([`crate::world::FieldNpcState::cull_view`]
 ///   is `None` until the zone follow camera composes);
 /// - the focus tile lies outside the region box. Retail latches the box at
@@ -237,12 +233,15 @@ pub fn framing_is_retail(camera: &Camera) -> bool {
 ///   scene entered without a seat can leave the follow focus somewhere the
 ///   actor is not. Cropping then would clamp the whole window away and draw
 ///   no ground at all, so the host draws the map whole instead.
+///
+/// A cutscene shot crops too, as retail's does: the cell emitters and the
+/// actor cull read the same scratchpad window and camera globals whatever owns
+/// the camera, and a record that stages a shot sets the window for it with
+/// op `0x46` (`town0c` `P1[21]`'s `46 24 FD EC 18 03` before the Queen Bee
+/// shot; `rim_elm_queen_bee_battle` holds that window, and the cull kernel
+/// over it reproduces every placed actor's bit `1` in the capture).
 pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells> {
-    if !world.toggles.view_window_crop
-        || !retail_framing
-        || world.mode != SceneMode::Field
-        || world.cutscene_timeline_active()
-    {
+    if !world.toggles.view_window_crop || !retail_framing || world.mode != SceneMode::Field {
         return None;
     }
     let view = world.npcs.cull_view.as_ref()?;
@@ -276,6 +275,39 @@ impl CellKey {
             cull_radius: d.cull_radius,
         }
     }
+}
+
+/// The placed-object gate a host applies per draw while the visible-tile
+/// crop is on (`cells` is this frame's [`field_view_cells`]): `true` = draw
+/// it. `(x, z)` is the object's live position (the draw's translation) and
+/// `cull_radius` its record's `+0x1E` byte.
+///
+/// Every `.MAP` placed object is a field actor, and its tick `FUN_8003BC08`
+/// runs the visibility cull `FUN_801D79E8` first (`jal` at `0x8003BC34`),
+/// which sets `+0x10` bit 1 on an actor outside the region box or outside the
+/// visible tile window widened by its `+0x58` radius. The actor draw walk
+/// `FUN_8001ADA4` skips any actor carrying `flags & 0xA`
+/// (`0x8001AE4C..0x8001AE58`), so a culled object draws nothing. Over the
+/// 84 placed-object actors of each `rikuroa` capture
+/// ([`crate::world::field_npc_cull::field_actor_culled`] fed the state's
+/// focus, box and window) the kernel reproduces bit 1 for every one -
+/// including the ring of moss spires on the slopes below the summit, which
+/// retail never draws from it.
+///
+/// REF: FUN_801D79E8, FUN_8001ADA4
+pub fn placed_actor_visible(
+    world: &World,
+    cells: Option<&ViewCells>,
+    x: i32,
+    z: i32,
+    cull_radius: u8,
+) -> bool {
+    cells.is_none()
+        || !world.field_actor_culled_at(
+            x.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+            z.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+            i16::from(cull_radius),
+        )
 }
 
 /// The terrain-list gate a host applies per draw: `true` = draw it. With no

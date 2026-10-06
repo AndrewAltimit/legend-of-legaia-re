@@ -747,6 +747,26 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
 
+    // `LEGAIA_SEAT_CLUT_FX` (the retail-compare image channel): a retail
+    // state's live CLUT-cell cycler snapshots, written over the matching
+    // cycled cells so the frame shows the captured palette phase
+    // (`AmbientFxState::cell_fx_seed`).
+    if let Ok(fx) = std::env::var("LEGAIA_SEAT_CLUT_FX") {
+        session.host.world.ambient.cell_fx_seed =
+            legaia_engine_shell::retail_compare::cell_fx_from_env(&fx);
+    }
+
+    // `LEGAIA_SEAT_VRAM_RECTS=<file>` (the retail-compare image channel): a
+    // retail state's scroller rects with their captured texels, written over
+    // the engine's after every field VRAM pass
+    // (`AmbientFxState::vram_rect_seed`).
+    if let Some(bytes) =
+        std::env::var_os("LEGAIA_SEAT_VRAM_RECTS").and_then(|p| std::fs::read(p).ok())
+    {
+        session.host.world.ambient.vram_rect_seed =
+            legaia_engine_shell::retail_compare::vram_rects_from_file(&bytes);
+    }
+
     // Debug learn path: `--learn-spell 0x81` (repeatable) or the older
     // `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
     // the lead character's record, so a seeded New Game party can reach the
@@ -1420,13 +1440,22 @@ pub(super) fn cmd_play_window_with_record(
         field_placement_window_keys: Vec::new(),
         field_placement_records: Vec::new(),
         field_placement_color_records: Vec::new(),
+        field_pack_meshes: Vec::new(),
+        field_placement_stream_bound: Vec::new(),
+        field_placement_color_stream_bound: Vec::new(),
+        field_pack_color_meshes: Vec::new(),
         field_placement_color_window_keys: Vec::new(),
+        field_placement_cell_keys: Vec::new(),
+        field_placement_color_cell_keys: Vec::new(),
         field_terrain_draws: Vec::new(),
+        field_lit: Default::default(),
         field_floor_wave: Default::default(),
         coplanar_env_offsets: std::collections::HashMap::new(),
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_terrain_color_draws: Vec::new(),
+        world_map_terrain_records: Vec::new(),
+        world_map_terrain_color_records: Vec::new(),
         world_map_deco_start: (0, 0),
         ground_heightfield: None,
         ground_src: None,

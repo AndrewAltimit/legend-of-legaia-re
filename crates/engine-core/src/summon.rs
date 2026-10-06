@@ -483,6 +483,9 @@ pub struct SummonScene {
     /// is still mid-program when the creature walks in (arm 11), and drained
     /// at `frame_delta` it would be gone within a few frames.
     pub retail_wait_drain: bool,
+    /// The `frame_delta` the last [`Self::tick`] ran with - the drain a part
+    /// [`Self::seat_run`] seats after that tick takes on its first frame.
+    pub last_frame_delta: u16,
 }
 
 /// `DAT_1F800393 * DAT_1F80037D` at one vsync per frame and the rate byte's
@@ -640,6 +643,7 @@ impl SummonScene {
             frame: 0,
             channel_delta: RETAIL_CHANNEL_DELTA,
             retail_wait_drain: false,
+            last_frame_delta: RETAIL_CHANNEL_DELTA,
         }
     }
 
@@ -664,8 +668,71 @@ impl SummonScene {
             part.state.render_24 = rot[0];
             part.state.render_26 = rot[1];
             part.state.render_28 = rot[2];
+            // `andi v0,v0,0xfff` / `sh v0,0x16(a3)` at `0x80021D78`: the
+            // seater also takes `rot[1]` as the part's heading `+0x96`, the
+            // direction the motion block's `+0x98` speed runs along.
+            part.state.tween_scale_x = rot[1] & 0xFFF;
             Some(part)
         }));
+    }
+
+    /// Pose every part the way `FUN_80021B04` seats its arguments: `rot`
+    /// into the render banks `+0x24..+0x28`, `rot[1] & 0xFFF` into the
+    /// heading `+0x96` (`0x80021D78`), `scale` into `+0x72` (`0x80021DAC`) -
+    /// for a scene [`Self::spawn_parts`] seated at zeroed angles and unit
+    /// scale.
+    pub fn pose_parts(&mut self, rot: [i16; 3], scale: u16) {
+        for part in &mut self.parts {
+            part.state.render_24 = rot[0];
+            part.state.render_26 = rot[1];
+            part.state.render_28 = rot[2];
+            part.state.tween_scale_x = rot[1] & 0xFFF;
+            part.state.field_72 = scale;
+        }
+    }
+
+    /// Run the move VM once for every part no tick has run yet - the call
+    /// retail's seater makes before it returns (`FUN_80021B04`,
+    /// `li v0,0x1` / `jal 0x80023070` at `0x80021DBC..0x80021DC0`). A seated
+    /// part's program has therefore already set its colour word, scale and
+    /// first wait by the time the frame draws it; drawn unrun, a part shows
+    /// its bare mesh at full opacity for a frame (`freed_summon_mid_cast`
+    /// caught the cast close-up's additive ray burst on that frame, opaque).
+    ///
+    /// The part tick then follows on the **same** frame: the seats come from
+    /// list-0 callbacks (the action SM `FUN_80046A20` driving the module
+    /// tick, the anim tick `FUN_80047430` walking the effect script), and the
+    /// frame's list walk `FUN_80016444` runs list 0 (`lw a0,0x4(s0)` /
+    /// `jal 0x8002519C` at `0x800165A4`) before list 1, where the parts live
+    /// (`lw a0,0x8(s0)` at `0x800165C0`). Every host routes its seats after
+    /// the frame's scene-graph tick, so the parts this seats get that tick
+    /// here; returns which ones did.
+    pub fn seat_run<H: MoveHost + ?Sized>(&mut self, host: &mut H) -> Vec<usize> {
+        let mut seated = Vec::new();
+        for i in 0..self.parts.len() {
+            if self.seat_part(i, host) {
+                self.tick_part(i, host, self.last_frame_delta);
+                seated.push(i);
+            }
+        }
+        seated
+    }
+
+    /// The seater's own VM run for part `i` if no tick has run it yet;
+    /// `true` when it ran.
+    fn seat_part<H: MoveHost + ?Sized>(&mut self, i: usize, host: &mut H) -> bool {
+        let part = &mut self.parts[i];
+        let unrun = !part.finished && part.state.pc == 2 && part.state.wait_timer == -1;
+        if !unrun {
+            return false;
+        }
+        match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
+            ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
+                part.finished = true;
+            }
+            _ => {}
+        }
+        true
     }
 
     /// Advance every live part one frame through the move VM. `frame_delta` is
@@ -691,31 +758,55 @@ impl SummonScene {
     /// matching retail where both are driven off the same per-frame delta.
     pub fn tick<H: MoveHost + ?Sized>(&mut self, host: &mut H, frame_delta: u16) {
         self.frame = self.frame.wrapping_add(1);
-        for part in &mut self.parts {
+        self.last_frame_delta = frame_delta;
+        for i in 0..self.parts.len() {
+            // A part seated earlier this frame (a module arm's spawn in the
+            // world tick) gets the seater's VM run first, then this frame's
+            // part tick - the order retail's list walk gives it.
+            self.seat_part(i, host);
+            self.tick_part(i, host, frame_delta);
+        }
+    }
+
+    /// One frame of the part tick `FUN_80021DF4` for part `i`.
+    fn tick_part<H: MoveHost + ?Sized>(&mut self, i: usize, host: &mut H, frame_delta: u16) {
+        let (channel_delta, scene_origin) = (self.channel_delta, self.origin);
+        let drain = if self.retail_wait_drain {
+            channel_delta
+        } else {
+            frame_delta
+        };
+        let part = &mut self.parts[i];
+        {
             if part.finished {
-                continue;
+                return;
             }
-            let drain = if self.retail_wait_drain {
-                self.channel_delta
-            } else {
-                frame_delta
-            };
             move_vm::decrement_wait_timer(&mut part.state, drain);
             // The mode-2/6 channel block runs next in retail's part tick,
             // ahead of the move-VM call (`0x80021E78` vs `jal 0x80023070` at
             // `0x80022BA4`); it is what grows a ribbon node's `+0xC8` total.
-            move_vm::integrate_draw_channels(&mut part.state, self.channel_delta);
+            move_vm::integrate_draw_channels(&mut part.state, channel_delta);
             let camera_locked = is_camera_locked(&part.state);
-            if camera_locked && crate::part_motion::runs_motion_block(&part.state) {
+            // A part a module arm seated on its own spawn point
+            // ([`Self::push_parts`]) holds a real `+0x14..+0x18`, exactly as
+            // retail's `FUN_80021B04` left it, so it moves the way retail
+            // moves it: the motion block's velocity integration. The glide
+            // below re-seats a part on `origin + anim bank`, which only means
+            // something for the whole-set staging's summon-local offsets
+            // (`vera_summon_mid_cast`: arm 0's four glows fall `+0x3E = 24`
+            // per step from `y = -0x280` to retail's `-418`; the glide parked
+            // them at `-616`, off the top of the frame).
+            let seated = part.origin.is_some();
+            if (camera_locked || seated) && crate::part_motion::runs_motion_block(&part.state) {
                 // Retail's motion block (`0x800228A0..0x80022B90`), ahead of
                 // the VM call: `+0x3C..+0x40` are velocities integrated into
                 // `+0x14..+0x18`, never offsets from a spawn origin.
-                crate::part_motion::motion_block(&mut part.state, self.channel_delta);
+                crate::part_motion::motion_block(&mut part.state, channel_delta);
             } else if crate::part_motion::runs_motion_block(&part.state) {
                 // The block's rotation / scale / level channels run for
                 // every part; only the position terms stay with the glide
                 // below.
-                crate::part_motion::level_block(&mut part.state, self.channel_delta);
+                crate::part_motion::level_block(&mut part.state, channel_delta);
             }
             match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
                 ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
@@ -723,7 +814,7 @@ impl SummonScene {
                 }
                 _ => {}
             }
-            if is_camera_locked(&part.state) {
+            if seated || is_camera_locked(&part.state) {
                 // The `+0x52 & 0x400` arm of `FUN_8001CF50` reads `+0x14`
                 // as an eye-space offset (`+0x2C = S_b * (+0x14)`,
                 // `FUN_8003D344`), so the part keeps the position its own
@@ -737,7 +828,7 @@ impl SummonScene {
                 crate::part_motion::clamp_levels(&mut part.state);
                 apply_translation_update(
                     &mut part.state,
-                    part.origin.unwrap_or(self.origin),
+                    part.origin.unwrap_or(scene_origin),
                     frame_delta,
                 );
             }
@@ -755,9 +846,13 @@ impl SummonScene {
     pub fn part_draws(&self) -> Vec<SummonPartDraw> {
         // PSX 12-bit angle (4096 = 360°) → radians.
         const A: f32 = std::f32::consts::TAU / 4096.0;
+        // A halted part (`+0x10 |= 8`, op `0x08`) is killed by retail's list
+        // walk and never draws again: `gimard_burning_attack` holds no node
+        // for PROT 0903's breath once its program halts, where the engine
+        // kept drawing the fully grown flame until the tunnel parts ended.
         self.parts
             .iter()
-            .filter(|p| is_mesh_sel(p.model_sel))
+            .filter(|p| !p.finished && is_mesh_sel(p.model_sel))
             .map(|p| {
                 let s = &p.state;
                 SummonPartDraw {
@@ -787,6 +882,7 @@ impl SummonScene {
         const A: f32 = std::f32::consts::TAU / 4096.0;
         self.parts
             .iter()
+            .filter(|p| !p.finished)
             .filter_map(|p| {
                 let s = &p.state;
                 let mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
@@ -1050,8 +1146,11 @@ mod tests {
         bytes.extend_from_slice(&0u16.to_le_bytes()); // flags
         bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
         bytes.extend_from_slice(&0u16.to_le_bytes()); // pad to even record
-        // record 1 @ next: model_sel = 0 (mesh), program: ANIM_BANK_SET 1,2,3 ; HALT.
-        // Op 0x00 sets anim_3c/3e/40 = v << 3 -> (8, 16, 24).
+        // record 1 @ next: model_sel = 0 (mesh), program:
+        // ANIM_BANK_SET 1,2,3 ; WAIT_SET 1 ; HALT. Op 0x00 sets
+        // anim_3c/3e/40 = v << 3 -> (8, 16, 24); the one-frame wait keeps the
+        // part alive past its seat run (a part that halts there is killed
+        // before its first tick), and the seat frame's tick then halts it.
         let r1 = bytes.len();
         bytes.extend_from_slice(&0i16.to_le_bytes());
         bytes.extend_from_slice(&0u16.to_le_bytes());
@@ -1059,6 +1158,8 @@ mod tests {
         bytes.extend_from_slice(&1u16.to_le_bytes());
         bytes.extend_from_slice(&2u16.to_le_bytes());
         bytes.extend_from_slice(&3u16.to_le_bytes());
+        bytes.extend_from_slice(&0x09u16.to_le_bytes()); // WAIT_SET
+        bytes.extend_from_slice(&1u16.to_le_bytes());
         bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
 
         let overlay = SummonOverlay {

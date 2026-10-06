@@ -345,6 +345,52 @@ fn steps(cam: &mut BattleCamera, n: u64) {
     }
 }
 
+/// The battle-entry sweep against the sparring fight's two entry captures:
+/// `v0_1_battle_loading_tetsu` at counter `0x84` (pitch `60`, TR
+/// `(0, 1472, 6912)`) and `s5_tetsu_battle` at `0xAF` (pitch `16`, TR
+/// `(0, 2010, 3552)` - taken across one dropped frame, so the port's
+/// two-frame steps straddle it), then the cut to the dialogue close-up.
+#[test]
+fn the_entry_sweep_drifts_then_eases_onto_case_two_then_cuts_to_the_dialogue() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Dialogue, 0);
+    cam.start_entry_sweep();
+    assert_eq!(cam.entry_sweep_counter(), Some(ENTRY_COUNTER_START));
+    while cam.entry_sweep_counter().is_some_and(|c| c < 0x84) {
+        steps(&mut cam, 1);
+    }
+    let p = cam.pose();
+    assert_eq!((p.pitch, p.tr), (60.0, [0.0, 1472.0, 6912.0]));
+    while cam.entry_sweep_counter().is_some_and(|c| c < 0xAF) {
+        steps(&mut cam, 1);
+    }
+    let p = cam.pose();
+    assert!((p.pitch - 16.0).abs() <= 8.0, "pitch {}", p.pitch);
+    assert!((p.tr[1] - 2010.0).abs() <= 120.0, "TR y {}", p.tr[1]);
+    assert!((p.tr[2] - 3552.0).abs() <= 150.0, "TR z {}", p.tr[2]);
+    assert_eq!(p.focus, [0.0; 3], "case 2 frames the origin");
+    while cam.entry_sweep_counter().is_some() {
+        steps(&mut cam, 1);
+    }
+    assert_eq!(cam.pose(), dialogue_pose(None), "the tutorial cuts in");
+    // A fight without the sweep opens on its framing, as before.
+    let cam = BattleCamera::new(BattleCamPhase::Dialogue, 0);
+    assert_eq!(cam.entry_sweep_counter(), None);
+}
+
+/// Retail opens no surface and runs no action under the sweep; the port's
+/// battle tick can, and the first one ends the sweep.
+#[test]
+fn an_action_opened_under_the_entry_sweep_ends_it() {
+    let mut cam = traced_cam(BattleCamPhase::Menu);
+    cam.start_entry_sweep();
+    steps(&mut cam, 4);
+    assert!(cam.entry_sweep_counter().is_some());
+    cam.set_phase(BattleCamPhase::Action);
+    steps(&mut cam, 1);
+    assert_eq!(cam.entry_sweep_counter(), None);
+    assert_eq!(cam.phase(), BattleCamPhase::Action);
+}
+
 /// Battle entry on tutorial dialogue: the measured held close-up, static
 /// over any number of frames.
 #[test]
@@ -1015,11 +1061,18 @@ fn fallback_character_four_override_replaces_the_translation() {
     );
 }
 
-/// Entering the action phase glides to the case-6 framing over retail's
-/// own `a3 = 0xC` (6 camera steps); leaving it returns to the far
-/// framing over case 9's `a3 = 0xE` (7 steps) with the orbit running.
+/// Camera steps a re-armed `a3 = 0xC` chase needs to close any battle-scale
+/// gap: each step covers at least a sixth of what remains, then the last
+/// dozen units go at the walker's minimum `2` a step.
+const CHASE_SETTLE_STEPS: u64 = 60;
+
+/// Entering the action phase eases into the case-6 framing: retail re-arms
+/// the `a3 = 0xC` tween every pass, so each step covers about a sixth of
+/// what remains rather than landing after 6 steps. Leaving it returns to
+/// the far framing over case 9's `a3 = 0xE` (7 steps) with the orbit
+/// running.
 #[test]
-fn action_phase_glides_in_over_six_steps_and_out_over_seven() {
+fn action_phase_eases_in_on_the_re_armed_tween_and_out_over_seven() {
     let mut cam = traced_cam(BattleCamPhase::Menu);
     cam.set_actor(BattleCamActor {
         facing: 0,
@@ -1034,36 +1087,34 @@ fn action_phase_glides_in_over_six_steps_and_out_over_seven() {
         },
         ActionFraming::default(),
     );
+    let start_gap = (cam.framing_pose().tr[2] - want.tr[2]).abs();
     cam.set_phase(BattleCamPhase::Action);
-    steps(&mut cam, ACTION_STEPS as u64 - 1);
-    assert_ne!(cam.framing_pose().tr, want.tr, "still mid-glide");
-    steps(&mut cam, 1);
+    steps(&mut cam, u64::from(ACTION_STEPS));
+    let gap = (cam.framing_pose().tr[2] - want.tr[2]).abs();
+    assert!(gap > 0.0, "an ease-out has not landed at step 6");
+    assert!(
+        gap < start_gap / 2.0,
+        "most of the way in: {gap} of {start_gap}"
+    );
+    steps(&mut cam, CHASE_SETTLE_STEPS);
     let p = cam.framing_pose();
     assert_eq!(p.pitch, want.pitch);
     assert_eq!(p.tr, want.tr);
     assert_eq!(p.focus, want.focus);
     // The in-fight arm's yaw is `ctx[+0x6DA] - facing`, and the counter
     // advances one unit per display frame while the framing is re-armed
-    // every pass - so the yaw the glide lands on is the counter's value
-    // at the landing step (two frames per step), not the one it started
-    // from.
-    assert_eq!(cam.action_yaw_base(), 2 * ACTION_STEPS as i32);
-    assert_eq!(p.yaw.rem_euclid(4096.0), cam.action_yaw_base() as f32);
+    // every pass - so the yaw chases the counter and trails it: once the
+    // gap is inside `0xC` the walker's increment is the counter's own two
+    // units a step, and the lag holds. The three retail `0x19` parks read
+    // it eight units behind.
+    let lag =
+        |c: &BattleCamera| c.action_yaw_base() as f32 - c.framing_pose().yaw.rem_euclid(4096.0);
+    assert!((0.0..12.0).contains(&lag(&cam)), "lag {}", lag(&cam));
     // Held while the action runs - no idle orbit in the Action phase.
-    // Pitch, translation and focus stand still; the yaw keeps chasing
-    // the drifting counter (the three retail `0x19` parks read it eight
-    // units behind the counter, so the drift is retail's, not a
-    // settling residue).
     steps(&mut cam, 20);
     let held = cam.framing_pose();
     assert_eq!((held.pitch, held.tr, held.focus), (p.pitch, p.tr, p.focus));
-    // 20 steps = 40 counter units; the re-armed 6-step tween trails the
-    // moving target by a few units between its exact landings.
-    let drift = held.yaw.rem_euclid(4096.0) - p.yaw;
-    assert!(
-        (28.0..=40.0).contains(&drift),
-        "yaw chased the counter: {drift}"
-    );
+    assert!((0.0..12.0).contains(&lag(&cam)), "lag {}", lag(&cam));
     // End of action: back to the far framing over 7 steps.
     cam.set_phase(BattleCamPhase::Menu);
     steps(&mut cam, SWING_RETURN_STEPS as u64);
@@ -1167,21 +1218,22 @@ fn action_yaw_counter_drifts_one_unit_per_display_frame() {
         phase: BattleCamPhase::Action,
         ..inputs
     };
-    for f in 0..=ACTION_STEPS as u64 {
+    for f in 0..=CHASE_SETTLE_STEPS {
         drive(&mut slot, true, action, 200 + f * 2, None);
     }
     let first = slot.as_ref().unwrap().framing_pose().yaw;
     // Case 6 is re-armed on every action-SM pass, so the framing chases
     // the counter rather than freezing on its value at the phase change:
-    // 200 at entry plus the 12 display frames the glide spans.
-    assert_eq!(
-        first.rem_euclid(4096.0),
-        200.0 + (ACTION_STEPS as f32) * 2.0,
-        "yaw_base chases the live counter"
+    // 200 at entry plus the display frames since, less the chase's lag.
+    let counter = 200.0 + (CHASE_SETTLE_STEPS as f32) * 2.0;
+    let lag = counter - first.rem_euclid(4096.0);
+    assert!(
+        (0.0..12.0).contains(&lag),
+        "yaw_base chases the live counter: lag {lag}"
     );
     // A later action frames from a different angle.
     drive(&mut slot, true, inputs, 400, None);
-    for f in 0..=ACTION_STEPS as u64 {
+    for f in 0..=CHASE_SETTLE_STEPS {
         drive(&mut slot, true, action, 400 + f * 2, None);
     }
     assert_ne!(slot.as_ref().unwrap().framing_pose().yaw, first);
@@ -1298,7 +1350,7 @@ fn drive_carries_the_action_and_shake_channels() {
         ..Default::default()
     };
     let mut slot: Option<BattleCamera> = None;
-    for f in 0..=ACTION_STEPS as u64 {
+    for f in 0..=CHASE_SETTLE_STEPS {
         drive(&mut slot, true, inputs, f * 2, None);
     }
     let cam = slot.as_ref().unwrap();
@@ -2038,6 +2090,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     acting_body: None,
                     cursor: None,
                     spell_cam: None,
+                    entry_sweep: false,
                 };
                 drive(&mut slot, true, inputs, frames, None);
                 let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);
@@ -2324,6 +2377,31 @@ fn a_gone_target_takes_the_stand_off_arm() {
     assert_eq!(cam.action_yaw, 0x10, "the stand-off arm keeps the ladder");
 }
 
+/// The lone-monster defeat bypass (`0x801D6AC8..0x801D6AF0`) takes the same
+/// stand-off arm with the node still drawn.
+#[test]
+fn a_lone_scripted_monster_dying_in_place_takes_the_stand_off_arm() {
+    let mk = |node_gone: bool, lone_defeat: bool| {
+        let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+        cam.set_actor(BattleCamActor {
+            facing: 562,
+            world: [78.0, -183.0, -15.0],
+            height: None,
+        });
+        cam.target = Some(PostActionTarget {
+            world: [600.0, 0.0, 800.0],
+            live: false,
+            facing: 7,
+            node_gone,
+            lone_defeat,
+            ..PostActionTarget::default()
+        });
+        cam.action_end_pose()
+    };
+    assert_eq!(mk(false, true), mk(true, false));
+    assert_ne!(mk(false, true), mk(false, false));
+}
+
 #[test]
 fn escape_shot_cuts_to_the_reverse_angle_and_holds_it() {
     let mut cam = traced_cam(BattleCamPhase::Menu);
@@ -2597,4 +2675,33 @@ fn the_cursor_shot_glides_in_and_hands_back_to_the_far_framing() {
     run(&mut slot, BattleCamPhase::Menu, None, 7);
     let p = slot.as_ref().unwrap().pose();
     assert_eq!(p.pitch, 32.0, "back on the far framing's pitch");
+}
+
+/// `battle_gaza2_park_0x19_summon_melee`: the in-fight case-6 arm on
+/// retail's own inputs reproduces the step table's targets exactly. Gaza
+/// (seat 3) sits at `(-785, 39)` facing `1056`, `ctx[+0x6DA] = 2476`,
+/// `ctx[+0x6D0] = 3328`, style `0`; the table holds yaw `1420`, TR
+/// `(0, 0x500, ..)` and focus `(785, 0, -39)` stored negated. So the
+/// capture's camera gap is its inputs - Gaza parked mid-approach by the
+/// retail softlock the state records, and the yaw base's drift - not the
+/// framing.
+#[test]
+fn gaza2_park_action_framing_matches_the_retail_step_targets() {
+    let actor = BattleCamActor {
+        facing: 1056,
+        world: [-785.0, 0.0, 39.0],
+        height: None,
+    };
+    let f = ActionFraming {
+        party_slot: false,
+        depth_raw: 3328,
+        yaw_base: 2476,
+        ..ActionFraming::default()
+    };
+    let pose = action_framing(actor, f);
+    assert_eq!(pose.yaw, 1420.0);
+    assert_eq!(pose.pitch, 0.0);
+    assert_eq!(pose.tr[1], 1280.0);
+    assert_eq!(pose.tr[2], 5324.0, "the live TR z");
+    assert_eq!(pose.focus, [-785.0, 0.0, 39.0]);
 }

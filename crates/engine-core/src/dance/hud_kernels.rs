@@ -56,18 +56,22 @@ pub fn score_thousands_glyph_u(score: i32) -> i8 {
 
 /// PORT: FUN_801d32f8 - the multi-digit number renderer's decimal split.
 ///
-/// Retail walks eight decimal places most-significant first, storing the running
-/// quotient `value / 10^(7-i)` only when it is non-zero (leading slots stay at
-/// its `-1` sentinel and draw nothing), then per drawn slot rewrites one HUD
-/// widget's texture-U (via [`dance_score_digit_u`] / [`dance_level_digit_u`]) and
-/// x before emitting it. This is the split: `Some(digit)` per drawn slot,
-/// `None` for a suppressed leading zero. `0` renders as no digits at all, matching
-/// the retail sentinel (the drawn-slot test is "quotient non-zero").
+/// Retail fills eight slots with the `-1` sentinel, then **seeds the units
+/// slot with `0`** (`sw zero,0x34(sp)` at `0x801D3358`, the eighth word of the
+/// `sp+0x18` array), then walks the eight decimal places most-significant
+/// first, storing the running quotient `value / 10^(7-i)` only when it is
+/// non-zero. Per drawn slot it rewrites one HUD widget's texture-U (via
+/// [`dance_score_digit_u`] / [`dance_level_digit_u`]) and x before emitting
+/// it. This is the split: `Some(digit)` per drawn slot, `None` for a
+/// suppressed leading zero - so `0` draws a single `0` in the units slot, the
+/// same fill the fishing and dome digit fields share
+/// (`legaia_engine_ui::other_game_hud::decimal_slots`).
 ///
 /// Wired: the dance HUD's score readout in the play window runs through this,
 /// so a blank slot really does draw nothing there.
 pub fn dance_number_digits(value: u32) -> [Option<u8>; 8] {
     let mut out = [None; 8];
+    out[7] = Some(0);
     let mut place = 10_000_000u32; // 10^7 - the leading of eight digit slots
     for slot in out.iter_mut() {
         let quotient = value / place;

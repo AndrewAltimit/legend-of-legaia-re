@@ -35,10 +35,24 @@
 //!
 //! [`world_half_extents`] is the correction: the size a host must use when it
 //! builds the quad in world space under a camera that composes `view_scale`.
+//!
+//! ## The pass-2 size is already the half-extent
+//!
+//! The effect walker hands the projector `a1 = atlas[+2] * pool[+2] >> 8` and
+//! `a2 = atlas[+3] * pool[+2] >> 8` (`FUN_801E0080`, `0x801E082C..0x801E0880`),
+//! and the projector adds and subtracts exactly those to the centre
+//! (`subu a2,v1,s0` / `addu v1,v1,s0` with `s0 = a1`). The quad is therefore
+//! **twice** the pass-2 size across: a 64-texel puff at the retail `0xA00`
+//! scale reaches 640 view units either side of its centre. Halving it again
+//! drew every effect sprite at half its retail span - `gimard_burning_attack`'s
+//! breath cloud came out as five separate puffs where retail draws one
+//! overlapping mass.
 
 /// The world-space half-extents of one effect billboard, given the pass-2
-/// sprite size (`atlas w/h * sprite_scale >> 8`, already in retail view units)
-/// and the uniform scale the drawing camera composes ahead of the projection.
+/// sprite size (`atlas w/h * sprite_scale >> 8`, already in retail view units,
+/// and already the **half**-extent the projector adds either side of the
+/// centre) and the uniform scale the drawing camera composes ahead of the
+/// projection.
 ///
 /// `view_scale = 1.0` outside battle (the field cameras compose no scale), and
 /// `BATTLE_WORLD_SCALE` on the battle stage. A non-finite or non-positive
@@ -51,7 +65,7 @@ pub fn world_half_extents(size: [f32; 2], view_scale: f32) -> (f32, f32) {
     } else {
         1.0
     };
-    (size[0] * 0.5 / s, size[1] * 0.5 / s)
+    (size[0] / s, size[1] / s)
 }
 
 /// The centre a **battle** billboard is built around: the pool's raw retail
@@ -105,28 +119,28 @@ mod tests {
         assert!(ndc_y([0.0, -392.0, -800.0]) < feet, "the raw centre sinks");
     }
 
-    /// The field case is the identity: no camera scale, so the pass-2 size is
-    /// already the world size.
+    /// The field case is the identity: no camera scale, and the pass-2 size
+    /// is the projector's half-extent (`FUN_800195A8` forms the corners as
+    /// `centre -/+ a1`, `a1` the pass-2 width).
     #[test]
-    fn unit_scale_is_half_the_sprite_size() {
-        assert_eq!(world_half_extents([320.0, 240.0], 1.0), (160.0, 120.0));
+    fn unit_scale_is_the_pass_two_size() {
+        assert_eq!(world_half_extents([320.0, 240.0], 1.0), (320.0, 240.0));
     }
 
     /// The battle case: retail's 4x base matrix scales the centre only, so a
     /// world-space quad has to shrink by the same factor to project at the
-    /// retail size. A 32-texel puff is 320 view units, i.e. +/-40 world units
-    /// under the 4x stage camera - about a fifth of a 425-unit actor, not
-    /// three quarters of one.
+    /// retail size. A 32-texel puff reaches 320 view units either side, i.e.
+    /// +/-80 world units under the 4x stage camera.
     #[test]
     fn battle_scale_divides_the_half_extent() {
-        assert_eq!(world_half_extents([320.0, 320.0], 4.0), (40.0, 40.0));
+        assert_eq!(world_half_extents([320.0, 320.0], 4.0), (80.0, 80.0));
     }
 
     /// A degenerate camera scale must not produce an infinite quad.
     #[test]
     fn non_positive_scale_falls_back_to_unit() {
-        assert_eq!(world_half_extents([320.0, 320.0], 0.0), (160.0, 160.0));
-        assert_eq!(world_half_extents([320.0, 320.0], f32::NAN), (160.0, 160.0));
-        assert_eq!(world_half_extents([320.0, 320.0], -4.0), (160.0, 160.0));
+        assert_eq!(world_half_extents([320.0, 320.0], 0.0), (320.0, 320.0));
+        assert_eq!(world_half_extents([320.0, 320.0], f32::NAN), (320.0, 320.0));
+        assert_eq!(world_half_extents([320.0, 320.0], -4.0), (320.0, 320.0));
     }
 }

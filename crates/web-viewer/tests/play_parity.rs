@@ -48,6 +48,10 @@ fn play_render_state_matches_native_field_pipeline() {
             false,
             &hidden,
             &host.world.object_render_scales(),
+            &|r, x, z| {
+                host.world
+                    .object_floor_follow_y(&host.world.object_floor_follow_records(), r, x, z)
+            },
         );
 
         // Native reference: the play-window's exact resolver calls.
@@ -73,6 +77,12 @@ fn play_render_state_matches_native_field_pipeline() {
                 &mut native_placed,
                 binds,
                 &hidden,
+            );
+            let follow = host.world.object_floor_follow_records();
+            legaia_engine_core::field_env::follow_floor_placed_draws(
+                &mut native_placed,
+                binds,
+                |r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
             );
         }
         assert_eq!(

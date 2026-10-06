@@ -151,8 +151,9 @@ pub struct DevMenuSession {
     /// The EVENT FLAG editor's two cursors.
     pub flags: EventFlagEditor,
     /// One byte per flag-list entry (the `+2` byte of each stride-`0xA`
-    /// record), with `'X'` marking the end. Empty until a host supplies the
-    /// overlay's debug table.
+    /// record), with `'X'` marking the end. Both hosts seed it from the
+    /// field overlay's table (`SceneHost::dev_flag_list_tags`); empty when
+    /// the entry cannot be read.
     pub flag_tags: Vec<u8>,
     /// The character-parameter editor's row + character cursors.
     pub chars: DebugEditor,
@@ -199,6 +200,15 @@ impl DevMenuSession {
         Self {
             encounter_rate: DEFAULT_ENCOUNTER_RATE,
             ..Default::default()
+        }
+    }
+
+    /// A fresh screen whose EVENT FLAG list is `flag_tags` - what both hosts
+    /// open, with the projection from `SceneHost::dev_flag_list_tags`.
+    pub fn with_flag_tags(flag_tags: Vec<u8>) -> Self {
+        Self {
+            flag_tags,
+            ..Self::new()
         }
     }
 

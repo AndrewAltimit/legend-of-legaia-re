@@ -603,6 +603,30 @@ fn committed_clip_effect_script_queues_a_positioned_spawn() {
     assert_eq!(world.actors[0].battle_effect_cursor, 0);
 }
 
+/// The table arm's code substitution (`0x801DF054..0x801DF094`): a code-`0`
+/// record reads as `9` while the active actor has the art slot `0x11`
+/// committed, and stays `0` on any other clip.
+#[test]
+fn an_art_clip_turns_effect_code_zero_into_nine() {
+    for (slot, want) in [(0x11u8, 9u8), (0x0C, 0)] {
+        let mut world = World::new();
+        world.enter_battle(1, 1);
+        let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 0x20];
+        clips[0] = Some(pose_test_clip(0, 2, 0));
+        clips[usize::from(slot)] = Some(scripted_clip(slot, (1, 0x00, 0, 0, 0)));
+        world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+        world.actors[0].battle.queued_anim = slot;
+        world.commit_staged_battle_anim(0);
+        assert_eq!(world.actors[0].battle.current_anim, slot);
+        world.battle_ctx.active_actor = 0;
+        world.tick_battle_animations();
+        let spawns = world.drain_battle_effect_spawns();
+        assert_eq!(spawns.len(), 1, "slot {slot:#x}");
+        assert!(!spawns[0].direct);
+        assert_eq!(spawns[0].effect, want, "slot {slot:#x}");
+    }
+}
+
 #[test]
 fn monster_facing_rotates_the_spawn_offset_half_a_turn() {
     let mut world = World::new();
@@ -1271,4 +1295,30 @@ fn a_committed_swing_plays_its_animation_cue_track() {
         .runtime_sfx_descriptor(0x243)
         .expect("battle bank row");
     assert_eq!(row[4], 2, "the party literal category");
+}
+
+#[test]
+fn the_art_name_label_closes_when_the_art_clip_hands_off() {
+    // FUN_8004AD80: an art constant's commit opens the label; the commit
+    // that replaces that clip on slot 0x11 (attack command, latched id not
+    // the SpecialStarter) destroys it, and the next art reopens it.
+    let mut world = staged_anim_test_world();
+    world.actors[0].battle.action_category = vm::battle_action::ActionCategory::Attack.as_byte();
+    world.battle.move_label_closed = true;
+    world.actors[0].battle.queued_anim = 0x1B;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.actors[0].battle.current_anim, 0x11);
+    assert!(!world.battle.move_label_closed, "the art opens its label");
+    // The art clip ends on a plain swing: the label comes down.
+    world.actors[0].battle.queued_anim = 0x0E;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(
+        world.battle.move_label_closed,
+        "the 0x11 hand-off closes it"
+    );
+    // A swing handing off to idle leaves it as it is.
+    world.battle.move_label_closed = false;
+    world.actors[0].battle.queued_anim = 0;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(!world.battle.move_label_closed, "only slot 0x11 closes it");
 }

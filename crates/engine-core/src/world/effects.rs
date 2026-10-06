@@ -281,9 +281,21 @@ impl World {
         // write-back would clobber it.
         let mut ctx = self.battle_ctx.clone();
         let pre_state = ctx.action_state;
+        let pre_banner = ctx.levelup_banner_element;
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
+        // One host path does write the context: the summon stager's strike
+        // folds the cast inside the step, and the fold's level check stamps
+        // the banner element `ctx[+0x26]` (`sb v0,0x26(v1)` at `0x801E723C`,
+        // `World::accrue_summon_spell_xp`). Carry that store over the
+        // write-back, unless the step itself wrote the byte; clobbered, the
+        // Done band seeded its `0x3C` hold instead of `0x96` and its teardown
+        // never unloaded the banner.
+        let host_banner = self.battle_ctx.levelup_banner_element;
         self.battle_ctx = ctx;
+        if host_banner != pre_banner && self.battle_ctx.levelup_banner_element == pre_banner {
+            self.battle_ctx.levelup_banner_element = host_banner;
+        }
         // The frame driver counts the timed message's hold down straight
         // after the SM step (`FUN_80046A20`, `jal 0x801E295C` then the
         // `0x801F6964` block).
@@ -855,13 +867,9 @@ impl World {
     /// `MoveImage` onto `(224, 476)`, not a sound cue - see
     /// [`crate::battle_effect_clut`].
     ///
-    /// Still unmodelled from the same arm: the spawn-scale specials (code
-    /// `4` spawns at base scale `0xC00`, code `6` at `0x2000`, all scales
-    /// modulated by the actor's mesh-header `+0x72` word - this signature
-    /// has no scale channel and the scene seats parts at unit scale), the
-    /// code `0` -> `9` substitution when the active actor's `+0x1D9` reads
-    /// `0x11`, and the codes-`4..=6` twin extra spawns (prototypes
-    /// `0x801F5E28` / `0x801F5E6C`).
+    /// This form seats its parts at unit scale with zeroed angles - the
+    /// cue-group arm's spawn. The effect-script walk's own spawn passes the
+    /// arm's rotation and scale: [`Self::spawn_action_table_effect_posed`].
     ///
     /// No-op (returns `false`) without an installed move-power catalog /
     /// overlay (disc-free battles), for an id outside the prototype table,
@@ -870,6 +878,43 @@ impl World {
     // PORT: FUN_801DEA50 (the table-form spawn arm; the pool allocator it
     // calls, FUN_80050ED4, is modeled by the scene list + cap).
     pub fn spawn_action_table_effect(&mut self, effect_id: u8, origin: [i16; 3]) -> bool {
+        self.spawn_action_table_effect_posed(
+            effect_id,
+            origin,
+            [0; 3],
+            crate::summon::SPAWN_RENDER_SCALE,
+        )
+    }
+
+    /// The effect-script walk's table-form spawn with the arm's own pose
+    /// (`FUN_801DEA50`, `0x801DF098..0x801DF194`): the rotation trio is
+    /// `(0, actor[+0x46] + 0x800, 0)` - the spawning actor's facing turned
+    /// half a circle (`lhu v0,0x46(v0)` / `addiu v0,v0,0x800` /
+    /// `sh v0,0x1a(sp)`, the two other angles zeroed) - and the scale is
+    /// the code's base ([`action_fx_base_scale`]) times the actor's
+    /// mesh-header `+0x72` over `0x1000`. The seater `FUN_80021B04` copies
+    /// the trio into the render banks `+0x24..+0x28`, `rot[1] & 0xFFF` into
+    /// the heading `+0x96` and the scale into `+0x72`. Codes `4..=6` then
+    /// seat two more records on the same pose, the prototypes `0x801F5E28`
+    /// and `0x801F5E6C` (`0x801DF1E8..0x801DF22C`).
+    ///
+    /// Without the turn every cast-clip ray burst (`nighto_summon_mid_cast`,
+    /// `swordie_summon_mid_cast`, `freed_summon_mid_cast`) spun from yaw `0`
+    /// rather than from the caster's back-facing: the nighto capture's
+    /// node reads `+0x26 = 1376`, 26 frames after a seat at `840 + 0x800`
+    /// spinning `-56` a frame.
+    ///
+    /// The code `0` -> `9` substitution when the active actor's `+0x1D9`
+    /// reads `0x11` (`0x801DF054..0x801DF094`) happens upstream, where the
+    /// walk queues the spawn (`World::step_actor_effect_script`), so
+    /// `effect_id` arrives already substituted.
+    pub fn spawn_action_table_effect_posed(
+        &mut self,
+        effect_id: u8,
+        origin: [i16; 3],
+        rot: [i16; 3],
+        scale: u16,
+    ) -> bool {
         if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
             return false;
         }
@@ -889,22 +934,213 @@ impl World {
         let Some(all_parts) = move_power::parse_effect_proto_records(&overlay) else {
             return false;
         };
-        let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+        let mut offs: Vec<usize> = all_parts.iter().map(|p| p.record_off).collect();
+        let mut parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
             .into_iter()
             .filter(|p| p.record_off == off)
             .collect();
         if parts.is_empty() {
             return false;
         }
-        self.casting
-            .active_action_fx
-            .push(crate::summon::SummonScene::spawn_parts(
-                &parts,
+        if (4..=6).contains(&effect_id) {
+            let twins: Vec<usize> = ACTION_FX_TWIN_RECORDS
+                .iter()
+                .filter_map(|va| va.checked_sub(move_power::BATTLE_OVERLAY_BASE))
+                .map(|o| o as usize)
+                .collect();
+            offs.extend(&twins);
+            parts.extend(
+                legaia_asset::summon_overlay::parse_records_at(&overlay, &offs)
+                    .into_iter()
+                    .filter(|p| twins.contains(&p.record_off)),
+            );
+        }
+        let mut scene = crate::summon::SummonScene::spawn_parts(
+            &parts,
+            &overlay,
+            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+            origin,
+        );
+        scene.pose_parts(rot, scale);
+        self.casting.active_action_fx.push(scene);
+        true
+    }
+
+    /// Seat what the effect spawner and move-VM op `0x17` queued this step
+    /// ([`crate::world::CastFxState::pending_burst_triggers`] /
+    /// [`crate::world::CastFxState::pending_bursts`]) into the effect-script
+    /// scene list.
+    ///
+    /// A trigger is the one-part program `FUN_801DFDF0` seats ahead of effect
+    /// ids `4` / `0x13` (`WAIT_SET 0 / 0x17 mode / WAIT_SET 0 / HALT`); its
+    /// `0x17` is the burst. A burst runs `FUN_801F30C4`'s twelve spawn blocks
+    /// ([`vm::battle_burst::run_burst`]) and seats each child on the arm's
+    /// stager record at the parent's position, with the parent's rotation
+    /// trio and the block's yaw as `rot[1]`, then writes the block's scale
+    /// `+0x72`, spread `+0x3E` and tail `+0x98` over it - the sprite-arm fire
+    /// puffs `gimard_burning_attack` holds eight of (record `0x801F5DA4`,
+    /// flags `0x380`, scales `0x800` / `0x1000`). No-op without the battle
+    /// overlay image (disc-free battles).
+    pub(crate) fn flush_battle_bursts(&mut self) {
+        let triggers = std::mem::take(&mut self.casting.pending_burst_triggers);
+        let bursts = std::mem::take(&mut self.casting.pending_bursts);
+        if triggers.is_empty() && bursts.is_empty() {
+            return;
+        }
+        let Some(overlay) = self.tables.move_power_overlay.clone() else {
+            return;
+        };
+        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
+        let mut offs: Vec<usize> = move_power::parse_effect_proto_records(&overlay)
+            .unwrap_or_default()
+            .iter()
+            .map(|p| p.record_off)
+            .collect();
+        let record_at = |offs: &mut Vec<usize>, va: u32| {
+            let off = va.checked_sub(BATTLE_OVERLAY_BASE)? as usize;
+            offs.push(off);
+            legaia_asset::summon_overlay::parse_records_at(&overlay, offs)
+                .into_iter()
+                .find(|p| p.record_off == off)
+        };
+        for (va, pos, angle) in triggers {
+            let Some(part) = record_at(&mut offs, va) else {
+                continue;
+            };
+            if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
+                continue;
+            }
+            let mut scene = crate::summon::SummonScene::spawn_parts(
+                &[],
                 &overlay,
                 crate::scene::EFFECT_MODEL_LIBRARY_BASE,
-                origin,
-            ));
-        true
+                pos,
+            );
+            scene.push_parts(
+                std::slice::from_ref(&part),
+                &overlay,
+                pos,
+                [0, angle as i16, 0],
+            );
+            self.casting.active_action_fx.push(scene);
+        }
+        struct Host<'w> {
+            world: &'w mut World,
+            yaw: i16,
+            scale: u16,
+            out: Vec<vm::battle_burst::SpawnRequest>,
+        }
+        impl vm::battle_burst::BurstHost for Host<'_> {
+            fn rand(&mut self) -> i32 {
+                self.world.next_rand() as i32
+            }
+            fn sin(&self, index: u32) -> i16 {
+                vm::battle_action::motion::trig12(index as u16).0
+            }
+            fn cos(&self, index: u32) -> i16 {
+                vm::battle_action::motion::trig12(index as u16).1
+            }
+            fn parent_yaw(&self) -> i16 {
+                self.yaw
+            }
+            fn parent_scale(&self) -> u16 {
+                self.scale
+            }
+            fn spawn(
+                &mut self,
+                _record_addr: u32,
+                request: vm::battle_burst::SpawnRequest,
+            ) -> Option<u32> {
+                self.out.push(request);
+                Some(self.out.len() as u32)
+            }
+        }
+        for b in bursts {
+            let Some(mode) = vm::battle_burst::BurstMode::from_arg(b.mode) else {
+                continue;
+            };
+            let Some(part) = record_at(&mut offs, mode.record_addr()) else {
+                continue;
+            };
+            let mut host = Host {
+                world: self,
+                yaw: b.rot[1],
+                scale: b.scale,
+                out: Vec::new(),
+            };
+            vm::battle_burst::run_burst(&mut host, b.mode);
+            let requests = host.out;
+            let mut scene = crate::summon::SummonScene::spawn_parts(
+                &[],
+                &overlay,
+                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                b.pos,
+            );
+            for req in requests {
+                scene.push_parts(
+                    std::slice::from_ref(&part),
+                    &overlay,
+                    b.pos,
+                    [b.rot[0], req.yaw, b.rot[2]],
+                );
+                if let Some(child) = scene.parts.last_mut() {
+                    child.state.field_72 = req.scale as u16;
+                    child.state.anim_3e = req.spread;
+                    child.state.tween_scale_y = req.tail;
+                }
+            }
+            if self.casting.active_action_fx.len() < Self::ACTION_FX_CAP {
+                self.casting.active_action_fx.push(scene);
+            }
+        }
+    }
+
+    /// The seater's own VM run for every battle FX part seated since the
+    /// last tick ([`crate::summon::SummonScene::seat_run`]), over the
+    /// summon, move-FX and effect-script scenes. Run after each batch of
+    /// seats so no part reaches a draw before its program has.
+    pub fn seat_run_battle_fx(&mut self) {
+        let mut scenes: Vec<crate::summon::SummonScene> = Vec::new();
+        scenes.extend(self.casting.active_summon.take());
+        let summon_n = scenes.len();
+        scenes.extend(self.casting.active_move_fx.take());
+        let move_n = scenes.len();
+        scenes.append(&mut self.casting.active_action_fx);
+        let channel_delta = self.effect_channel_delta();
+        let step = self.move_vm.ramp_ratio.max(1);
+        for scene in &mut scenes {
+            scene.channel_delta = channel_delta;
+            let seated = {
+                let mut host = MoveVmHostImpl {
+                    world: self,
+                    current_slot: None,
+                    deferred_writes: std::collections::BTreeMap::new(),
+                    field_record_words: None,
+                    child_spawns: Vec::new(),
+                };
+                scene.seat_run(&mut host)
+            };
+            // The seat frame's part tick carries the envelope tail
+            // `FUN_800204F8` (`jal` at `0x80022EF4`) like any other.
+            for i in seated {
+                let part = &mut scene.parts[i];
+                if !part.finished
+                    && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+                {
+                    vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+                }
+            }
+        }
+        let mut it = scenes.into_iter();
+        if summon_n == 1 {
+            self.casting.active_summon = it.next();
+        }
+        if move_n > summon_n {
+            self.casting.active_move_fx = it.next();
+        }
+        // Any scene a seat run spawned lands behind the ones it ran.
+        let spawned = std::mem::take(&mut self.casting.active_action_fx);
+        self.casting.active_action_fx = it.chain(spawned).collect();
     }
 
     /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
@@ -926,6 +1162,10 @@ impl World {
     /// move-FX sibling of [`Self::tick_summon`]). No-op when none is playing;
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
+        // What the effect spawner queued since the last tick seats first, so
+        // its trigger runs this tick as retail's does on the frame after the
+        // seat; what this tick's op `0x17`s queue seats at the end.
+        self.flush_battle_bursts();
         let channel_delta = self.effect_channel_delta();
         // Effect-script table-form scenes: take the list, tick each, keep the
         // unfinished. Their wait timers drain at retail's own rate - the part
@@ -965,8 +1205,7 @@ impl World {
             // step - grows nothing: the captures read `0x66 * N` at wait
             // `0x278 - 8 * N`.
             let step = self.move_vm.ramp_ratio.max(1);
-            let spawn_tick = scene.frame <= 1;
-            for part in scene.parts.iter_mut().filter(|_| !spawn_tick) {
+            for part in &mut scene.parts {
                 if !part.finished
                     && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
                 {
@@ -976,6 +1215,7 @@ impl World {
         }
         action_fx.retain(|s| !s.finished());
         self.casting.active_action_fx = action_fx;
+        self.flush_battle_bursts();
 
         let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;
@@ -1512,7 +1752,11 @@ impl World {
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
     pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let moves = std::mem::take(&mut self.ambient.script_vram_moves);
-        apply_vram_moves(moves, vram)
+        let mut wrote = apply_vram_moves(moves, vram);
+        for (x, y, set) in std::mem::take(&mut self.ambient.script_vram_stp) {
+            wrote |= apply_vram_stp(vram, x, y, set);
+        }
+        wrote
     }
 
     /// Apply the battle `MoveImage`s a stage module queued
@@ -1523,6 +1767,37 @@ impl World {
         let moves = std::mem::take(&mut self.battle.vram_moves);
         apply_vram_moves(moves, vram)
     }
+}
+
+/// One `4C D4` / `4C D5` run: `StoreImage` the 16x1 rect at `(x, y)`, set the
+/// mask bit on every non-zero word (`set`) or clear it on every word but the
+/// mask-only `0x8000`, and `LoadImage` it back. The bit is what keeps a CLUT
+/// entry an HSV cycler later darkens to black opaque: a `0x0000` entry is
+/// transparent, `0x8000` is black.
+///
+/// PORT: FUN_801DE840 (`4C D4` / `4C D5` arm; `FUN_8005842C` / `FUN_800583C8`)
+fn apply_vram_stp(vram: &mut legaia_tim::Vram, x: u16, y: u16, set: bool) -> bool {
+    if usize::from(x) + 16 > 1024 || usize::from(y) >= 512 {
+        return false;
+    }
+    let mut changed = false;
+    let mut bytes = Vec::with_capacity(32);
+    for i in 0..16usize {
+        let w = vram.pixel(usize::from(x) + i, usize::from(y));
+        let n = if set {
+            if w != 0 { w | 0x8000 } else { w }
+        } else if w != 0x8000 {
+            w & 0x7FFF
+        } else {
+            w
+        };
+        changed |= n != w;
+        bytes.extend_from_slice(&n.to_le_bytes());
+    }
+    if changed {
+        vram.write_block(x, y, 16, 1, &bytes);
+    }
+    changed
 }
 
 /// The shared `MoveImage` kernel behind the field and battle queues.
@@ -1541,4 +1816,20 @@ fn apply_vram_moves(moves: Vec<ScriptVramMove>, vram: &mut legaia_tim::Vram) -> 
         wrote = true;
     }
     wrote
+}
+
+/// The two records the effect-script walk's table arm seats beside codes
+/// `4..=6` (`addiu a2,a2,0x5e28` / `0x5e6c` ahead of the two
+/// `jal 0x80050ED4` at `0x801DF210` / `0x801DF228`).
+const ACTION_FX_TWIN_RECORDS: [u32; 2] = [0x801F_5E28, 0x801F_5E6C];
+
+/// The table arm's base spawn scale for an effect code (`li s7,0x1000` at
+/// `0x801DEC74`; `0xC00` for code `4` at `0x801DF0C4`, `0x2000` for code `6`
+/// at `0x801DF0D0`), before the actor's mesh-header `+0x72` scales it.
+pub(crate) fn action_fx_base_scale(effect_id: u8) -> u16 {
+    match effect_id {
+        4 => 0xC00,
+        6 => 0x2000,
+        _ => 0x1000,
+    }
 }

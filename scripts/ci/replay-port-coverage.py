@@ -112,13 +112,16 @@ Usage:
     cargo llvm-cov clean --workspace
 
     # NO `--release` anywhere - see "a release export loses executed code"
-    # below. On the default profile the whole set (`--list-ladders`) is about an
-    # hour and a half of wall clock, and the shape of that is worth knowing:
-    # forty-six of the forty-seven ladders finish in half an hour together,
-    # and `chapter1_frontier_ladder` alone takes the other hour, because it is
-    # disc-heavy and an unoptimised build pays for every sector it walks. The
-    # optimised build would buy that back and cost executed code, so it is
-    # still the wrong trade - budget for the tail instead.
+    # below. On the default profile the whole set (`--list-ladders`) is several
+    # hours of wall clock, and the shape of that is worth knowing: almost every
+    # ladder finishes in minutes, while `full_game_ladder` (about two hours on
+    # its own) and `chapter1_frontier_ladder` (about one) are the tail, because
+    # they are disc-heavy and an unoptimised build pays for every sector and
+    # tick they walk. The optimised build would buy that back and cost
+    # executed code, so it is still the wrong trade - budget for the tail
+    # instead. Each raw export is tens of MB; on a tight disk, reduce each one
+    # to the `filenames` / per-file line span / executed bit the join reads
+    # as soon as it is written.
     # `--list-ladders` prints `<test> <package>` for every canonical entry, so
     # the recipe cannot drift from the list the report checks against.
     #
@@ -689,7 +692,9 @@ CANONICAL_LADDERS = [
     # fishing strike splash (`801d7a5c`, a cadence match in the world's
     # fishing tick), a shipped op-`0x43` sub-`0x12` rect copy drained by the
     # VRAM tail (`80057914`), and a shipped Bezier stager advanced by
-    # `World::step_world_frame_tail` (`801e45bc`).
+    # `World::step_world_frame_tail` (`801e45bc`); plus shipped `4C D4` /
+    # `4C D5` mask-bit runs through the same VRAM tail (`8005842c` /
+    # `800583c8`).
     ("w8_world_tail_ladder", "legaia-engine-core"),
     # An all-target spell committed on the play page from a played-through
     # card, so the commit log copies the whole-row label (`801d57e8`).
@@ -710,6 +715,22 @@ CANONICAL_LADDERS = [
     # The passive-ability badge column (`801d095c`), behind a party that
     # wears one of six passive bits: an accessory equipped by pad.
     ("w9_passive_badge_page", "legaia-web-viewer"),
+    # The end of the game: `edlast`'s credits, their press poll, and `49 0C`'s
+    # return-to-title soft reset (slot `0x33`, `FUN_801EDF00`) - the records
+    # screen over the field and the title hand-off.
+    ("soft_reset_records_page", "legaia-web-viewer"),
+    # The casino prize counter's Yes/No confirm (window 46, `801d603c`):
+    # coins and the clerk's `49 07` arm seeded, the pad walks a prize to it.
+    ("prize_confirm_page", "legaia-web-viewer"),
+    # A promoted oracle (record-seated, not pad-driven - the L3 members'
+    # disclosure): the effect ribbon (`801cfa48`, `effect_ribbon.rs`) and its
+    # RNG (`801d0290`) are built only for a summon whose move program issues
+    # op `0x42`, and no pad ladder casts one. This test stages each shipped
+    # carrier (PROT 0923 / 0934 / 0957 / 0964) through `World::spawn_summon`,
+    # ticks it through `World::tick_summon` and reads the ribbons off
+    # `World::active_effect_ribbons`, the list both battle hosts draw.
+    # Disc-gated; export WITHOUT `--release`.
+    ("effect_ribbon_carriers_real", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
@@ -769,6 +790,50 @@ def catalog_address_sets() -> tuple[set[str], set[str]]:
         return out
 
     return run("--live-only"), run("--not-live")
+
+
+def disclosed_dead_addresses(catalog, srcs: dict) -> dict[str, str]:
+    """Live addresses whose liveness is the permissive graph's alone and whose
+    every live anchor disclaims a host - `{addr: "NOT WIRED" | "REPLACED-BY"}`.
+
+    The catalog's `live` is the permissive graph (a name-matched call edge is
+    enough), and the receiver-gated sibling graph only feeds the
+    stale-disclosure test (`port-catalog.py --live-audit`). An address can
+    therefore be `live` on the strength of an edge the strict graph refuses,
+    while its own `PORT:` block says no host is owed a call. Such an address
+    reads "live but never entered" here and nowhere else: `--live-audit` does
+    not see it (it is live) and the stale test does not fire (the strict graph
+    agrees with the disclosure). Three instruments then agree it is dead - the
+    disclosure, the strict graph and the coverage - and listing it as reach
+    work only buries the rows a ladder could convert.
+
+    It is kept as its own bucket rather than dropped: the headline
+    never-entered count is unchanged, and a row in this bucket that a ladder
+    later enters surfaces as `disclosed_entered`, the loudest bucket.
+
+    Computed in-process with the catalog's own liveness pass - the same
+    functions `--live` runs, so there is no second copy of the verdict.
+    """
+    fns, edges = catalog.build_rust_graph(srcs)
+    roots = catalog.collect_roots(srcs)
+    reach = catalog.reachable_fns(fns, edges, roots)
+    _, edges_s = catalog.build_rust_graph(srcs, strict=True)
+    reach_s = catalog.reachable_fns(fns, edges_s, roots)
+    # Anchor uids are resolved against the graph, so collect after building it.
+    live_map = catalog.compute_live(
+        catalog.collect_port_anchors(srcs), srcs, fns, reach, reach_s
+    )
+    out: dict[str, str] = {}
+    for addr, row in live_map.items():
+        if not row["live"] or row["live_strict"]:
+            continue
+        live_anchors = [a for a in row["anchors"] if a["live"]]
+        if not live_anchors:
+            continue
+        if all(a["not_wired_tag"] or a["replaced_tag"] for a in live_anchors):
+            replaced = all(a["replaced_tag"] for a in live_anchors)
+            out[addr.lower()] = "REPLACED-BY" if replaced else "NOT WIRED"
+    return out
 
 
 class FileCoverage:
@@ -1463,7 +1528,16 @@ def main() -> int:
     inert_entered = joined["inert_entered"]
     disclosed_entered = joined["disclosed_entered"]
     live_entered = joined["live_entered"]
-    live_unentered = joined["live_unentered"]
+    # Split the never-entered set: rows whose own disclosure the strict graph
+    # confirms are not reach work (see `disclosed_dead_addresses`).
+    dead = disclosed_dead_addresses(catalog, srcs)
+    live_unentered_all = joined["live_unentered"]
+    live_unentered = [(a, x) for a, x in live_unentered_all if a.lower() not in dead]
+    unentered_disclosed = [
+        (a, {**x, "crate": f"{x['crate']} ({dead[a.lower()]})"})
+        for a, x in live_unentered_all
+        if a.lower() in dead
+    ]
     unobservable = joined["unobservable"]
     not_observable_const = joined["not_observable_const"]
     # label -> the live addresses that source entered. Drives the per-source
@@ -1484,6 +1558,11 @@ def main() -> int:
     w("")
     w(f"- ported addresses with anchors: **{len(anchors)}**")
     w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
+    w(
+        f"- live, never entered: **{len(live_unentered_all)}** - "
+        f"**{len(live_unentered)}** reach worklist, "
+        f"**{len(unentered_disclosed)}** disclosed and receiver-gated dead"
+    )
     w(f"- statically not-live: **{len(not_live)}**, of which entered anyway: **{len(inert_entered)}**")
     w(
         "- `NOT WIRED` / `REPLACED-BY`-disclosed anchors executed: "
@@ -1575,6 +1654,18 @@ def main() -> int:
         "no lines to enter, so its rows live in the bucket below instead.",
     )
     table(
+        "Live, never entered, and disclosed dead",
+        unentered_disclosed,
+        "Live only through the permissive graph: the receiver-gated graph "
+        "reaches none of the address's anchors, and every anchor the "
+        "permissive graph does reach carries a `NOT WIRED:` or `REPLACED-BY:` "
+        "disclosure. The disclosure, the strict graph and the coverage all "
+        "agree, so these are not reach work - they are counted in the "
+        "never-entered total above and listed here so they leave the worklist "
+        "without leaving the report. One that a ladder enters moves to the "
+        "disclosed-executed bucket.",
+    )
+    table(
         "Not observable in any of these binaries",
         unobservable,
         "No coverage binary in the union carries the anchor's file at all, so "
@@ -1606,7 +1697,9 @@ def main() -> int:
     print(f"not-live / entered    : {len(not_live)} / {len(inert_entered)}")
     print(f"  (observable         : {not_live_observable} / {len(not_live)})")
     print(f"NOT WIRED executed    : {len(disclosed_entered)}")
-    print(f"live never entered    : {len(live_unentered)}")
+    print(f"live never entered    : {len(live_unentered_all)}")
+    print(f"  reach worklist      : {len(live_unentered)}")
+    print(f"  disclosed dead      : {len(unentered_disclosed)}")
     print(f"not observable (const): {len(not_observable_const)}")
     print(f"not observable        : {len(unobservable)}")
     for label, _ in sources:

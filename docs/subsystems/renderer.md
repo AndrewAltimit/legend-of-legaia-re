@@ -16,9 +16,11 @@ instead.
 `crates/engine-render` draws them, emulating a 1024x512 PSX VRAM page so the
 per-primitive texture-page / CLUT selectors decode in a fragment shader.
 
-**The thing that catches people out:** retail runs **no light source** on the
-field path - shading is baked into the TMD's per-primitive colour words, and the
-GPU modulates the texel by them. The port does the same by default, so the
+**The thing that catches people out:** almost every field primitive is shaded
+by its TMD's baked per-primitive colour word, which the GPU multiplies the
+texel by - but the **light-source rows** (group flags `0x10..=0x17`) carry no
+colour word and are shaded by the GTE light against their normals
+([below](#the-light-source-rows)). The port does both by default, so the
 shading you get out of the box *is* retail's. What is not on by default is the
 strict-PS1 rasterisation: vertex snap and 15-bit dither sit behind
 [`psx_mode`](#rendering-knobs-what-is-faithful-what-is-a-choice). Summary:
@@ -74,24 +76,18 @@ only functions that *statically* consume them - via `NCCS`/`NCCT` - are the four
 handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0` (dispatch
 kinds 8..11; see the dispatch table below).
 
-**The field decoration path does not dispatch the NCC light handlers either -
-it stays on the depth-cue path.** `FUN_8002735C`/`FUN_80029888` are statically
-NCC-free; the per-scene field render library's static-object pass (`FUN_801F7088`)
-emits through the `FUN_80043390` *dispatcher*, which owns the kind-8..11 NCC handlers,
-so the field *could* light in principle. A cold-boot capture settles that it does not:
-in a live `town01` field (reached New Game → prologue → Rim Elm), a `dirty_exec_hot`
-sweep of ~46M interpreted instructions across idle + attempted walk lands **entirely**
-in the kind-19 bank-1 depth-cue body `FUN_80045584` `[0x80045584,0x800457C4)`
-(`DPCT`+`DPCS`), with **zero** hits anywhere in the kind-8..11 NCC band
-`[0x800445B0,0x80044798)` - in particular zero at the two light-op sites
-`NCCT` `0x80044724` and `NCCS` `0x80044750` (disassembled from the handler body).
-This matches the battle, summon and `map01` samples: across every robustly-sampled
-scene the field renders through `DPCS`/`DPCT` depth cue and the NCC handlers are not
-observed executing. So the retail field runs **no hardware light source** at runtime;
-the baked-colour + depth-cue model below is faithful for the object path too, and the
-kind-8..11 `NccMode` in [`prim_dispatch`](../../crates/engine-vm/src/prim_dispatch.rs)
-is a static data model with no runtime consumer (wire it only if a lit mesh path -
-e.g. a 3D world-map renderer - is ever built).
+**The field's per-prim dispatcher does run the light handlers - for the
+light-source rows.** The field object and decoration passes emit through
+`FUN_80043390`, which picks a body by `flags >> 1` (`srl s5,s7,0x11` at
+`0x800435A4`, table at `0x8007657C`): flags `0x10..=0x17` are kinds `8..=11`,
+the `NCCS` / `NCCT` handlers. Those flags are the descriptor table's rows 0 / 1,
+the textured rows that carry no colour word and a normal index per prim or per
+corner instead ([`tmd.md`](../formats/tmd.md)). Most scene packs hold few or
+none of them, but `cave01`'s rock columns are nothing else, and retail's frame
+shades them by the light - see [the light-source rows](#the-light-source-rows).
+The kind-8..11 `NccMode` in [`prim_dispatch`](../../crates/engine-vm/src/prim_dispatch.rs)
+is the static model of that table; the shading itself is
+[`engine-vm::field_light`](../../crates/engine-vm/src/field_light.rs).
 
 **A disc-wide `cop2` census closes the static half of that question.** The light
 matrix is consumed *implicitly* - by the GTE's own normal-colour commands, which
@@ -112,8 +108,8 @@ prints its own denominator with the answer, which is non-empty: 238 GTE command
 words in code over roughly two megabytes of `SCUS_942.54` plus every based
 overlay image. How many images that is depends on how much of the disc is
 mapped, not on the disc, so the number belongs in the sweep's output rather
-than on this page. So the consumer set is exactly the four handlers, and the
-capture evidence above says no observed field frame enters them.
+than on this page. So the consumer set is exactly the four handlers, and what
+reaches them on the field is the light-source rows.
 
 The sweep's own trap is worth carrying: a GTE command word is four bytes with no
 relocation, so it occurs in data at the rate any four-byte pattern does. Raw
@@ -127,22 +123,79 @@ one repeated word is the other shape that fakes company, so the count is of
 `cfc2`-shaped words in a row, each of which would otherwise vouch for the next.
 Thirty-seven GTE-shaped words fail one of the two filters.
 
-Why the earlier evidence looked open, and two instrument caveats. A lone prior
-`town01` capture (~31 K interp hits) showed the kind-11 NCC body and the fog bodies
-hot in roughly equal measure; against the cold-boot sweep's ~46 M hits with exactly
-zero NCC, that ~1500×-smaller window does not reproduce and is discounted as a
-transitional/mislabeled sample. (1) The recomp's `gte_ring` records **only**
-`RTPS`/`RTPT` - never `NCCS`/`NCCT`/`DPCS`/`DPCT` (`gte.cpp` records func `0x01`/`0x30`
-into the RTP ring and `0x11` into the INTPL ring, nothing else) - so any "zero NCC in
-a GTE-ring dump" is vacuous; only `dirty_exec_hot` (interpreted-PC histogram) is a
-valid liveness probe here. (2) The `map01`-class world map dispatches through a
-**different** jump table (`0x801F8968` → the 0901 overlay's own emit leaves at
-`0x801F76xx`, hot via `dirty_exec_hot` at `0x801F6E6C`), so it never reaches the SCUS
-NCC handlers - its "no NCC" is a different-renderer fact, not a light-path test.
-Remaining caveat: the town sweep covered the Mist-era prologue arrival area (Vahn's
-movement is script-locked there) and `map02`/`map03` are unreached; a free-roam
-multi-screen town sweep is blocked by the recomp savestate-load freeze. See
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+Why an earlier reading had the field unlit: a cold-boot `town01` sweep
+(`dirty_exec_hot`, ~46M interpreted instructions) found zero hits in
+`[0x800445B0,0x80044798)` - the kind-11 body alone, not kinds 8..10 - and the
+census above was read as closing the question. `town01` sets a white back
+colour with op `4C 8A`, so its few lit rows draw at or above neutral and a
+frame cannot tell them from baked ones; `cave01`'s dark walls can. Two
+instrument caveats still bite: (1) the recomp's `gte_ring` records **only**
+`RTPS`/`RTPT` (func `0x01`/`0x30`) and `INTPL` (`0x11`), so any "zero NCC in a
+GTE-ring dump" is vacuous; (2) the `map01`-class world map dispatches through a
+**different** jump table (`0x801F8968` -> the 0901 overlay's own emit leaves),
+so it never reaches the SCUS handlers at all.
+
+### The light-source rows
+
+A lit-row corner's colour is the GTE's `NCCS` / `NCCT` (`sf = 1`, `lm = 1`):
+
+```text
+IR   = clamp0(L * n >> 12)                  L: light matrix, n: TMD normal
+IR'  = clamp0((BK << 12) + LC * IR >> 12)   BK: back colour, LC: colour matrix
+out  = RGBC * IR' >> 12                     saturated to 0..255 per channel
+```
+
+Every input is disc data or a retail global:
+
+- **`RGBC`** is the dispatcher's colour argument times the object's `+0x18`
+  colour word, `>> 7` per channel (`0x80043404..0x8004347C`, staged only for
+  an object with normals). Both field sweeps pass `0x808080`
+  (`_DAT_8007BB48` for the decoration pass, the actor's `+0x74` for a placed
+  object), and `cave01`'s lit objects carry `0x808080`.
+- **`BK`** is `_DAT_8007B788`'s three low bytes, each `<< 4`
+  (`0x80043418..0x8004346C`).
+- **`LC`** is the static block `0x800704EC` (`FUN_8001DCF8` uploads it with
+  `SetColorMatrix`): every row `(4096, 0, 0)`, so all three channels follow
+  the first light alone.
+- **`L`** is the world light matrix `FUN_800172C0` builds each frame into
+  `0x1F8003A8` from the angle trio `_DAT_8007B780..84` with `0x800` added to
+  the first (`FUN_80026988`, `Rx * Ry * Rz`), folded with the draw's rotation
+  before `SetLightMatrix`: the placed-object draw `FUN_8001ADA4` takes
+  `L * Rot(angles)` (`0x8001B2F4..0x8001B368`), the decoration pass
+  `FUN_801F7088` turns the matrix through `Rz`, `Ry`, `Rx`
+  (`0x801F781C..0x801F7870`). A corner's intensity is therefore the light
+  against its **world** normal.
+
+Every scene load resets the trio to `(0x994, 0x9CC, -0x62C)` and the back
+colour to `0x202020` (`FUN_8003AEB0` at `0x8003B4B4..0x8003B4D8`); field-VM op
+`4C 8A` sets all four (`town01`'s `P1[0]` a white back colour, `koin3`'s
+cutscene records black and `0x582020`). Under the load default a face turned
+from the light keeps `0x80 * 0x200 >> 12 = 0x10` - an eighth of its texel -
+and a face square to it takes `0x90`. The `cave01_attached_light` state holds
+exactly the scene-load trio, back colour and matrix
+(`engine-vm::field_light`'s test pins the matrix element for element), and
+the frame's dark right wall and bright left one are this light: shaded this
+way, the port's frame of that state matches retail's to within the image
+channel's noise. Exec breakpoints settle the dispatch itself:
+`autorun_w4d_light_kind_hits.lua` (`LEGAIA_WARP_BTN=NONE`) loaded on that
+state counts 882 kind-8 and 200 kind-9 entries in 60 vsyncs, every one
+returning to `0x801F78D4` - the decoration pass's `jal 0x80043390` - with the
+depth-cue control group live beside them.
+
+Both hosts run one kernel, `engine-core::field_lit_mesh`: the mesh builder
+keeps each lit vertex's normal and object colour
+(`legaia_tmd::mesh::LitVertex`), and since the intensity depends on the
+draw's rotation, a lit mesh gets one shaded copy per `(mesh, rotation)` -
+`play-window` keys its copies by the draw matrix, the play page by the record
+angles (`field_mesh_lit`), the static site's field-scene viewer the same way
+(`field_scene_mesh_posed_lit`). A live op `4C 8A` re-shades them. A posed
+placed prop (a door, a windmill - most of `town01`'s and `bylon`'s lit rows
+sit on them) shades its frame-0 rest pose with each normal turned by its bone
+(`tmd_to_vram_mesh_posed_rot_lit`) before the draw's rotation folds in;
+`play-window` re-shades a prop off its rest pose every frame, while the two
+browser pages re-pose positions only and keep the frame-0 colours. The
+kingdom overworld packs carry no light-source rows, so the world-overview
+page has nothing to shade; the prologue legs keep their ambient restage.
 
 Field shading is instead **baked into the TMD**. Every primitive carries a
 colour word `[R][G][B][GP0 code]`, the code byte being one of `0x20` (`F3`),
@@ -169,7 +222,7 @@ colour.
 `FUN_80029888` writes the far colour from its `param_2` (each byte `<< 4`) and
 `IR0` from `param_3` - and by `FUN_80043390`, which also stages the ambient /
 background colour (`RBK`/`GBK`/`BBK`, cr13-15; consumed only by the `NC*` ops,
-so inert on the field path). An unfogged field scene passes `IR0 = 0`, making
+reaching only the light-source rows - [below](#the-light-source-rows)). An unfogged field scene passes `IR0 = 0`, making
 the depth cue the identity: a retail town0c capture's GTE register file shows
 `RGB.Raw8 = 30 30 30 34` (a `GT3` prim) and an `RGB_FIFO` of `0x30, 0x60, 0x30`
 - the prim's three baked corner colours, out of the depth-cue op byte-unchanged.
@@ -266,10 +319,8 @@ Structural facts (raw table): slots **0-7 are NULL** in every bank; **8-11 are
 bank-invariant** and the *only* handlers carrying a light source (`NCCS`/`NCCT`);
 **12-19 are bank-dependent** - bank 0 is opaque with no colour op, banks 1/2/3 add
 the `DPCS`/`DPCT` depth cue. Kinds 8..11 are the only handlers with an `NCC*` light
-op, but `dirty_exec_hot` never catches them executing on any robustly-sampled scene -
-battle, summon, `map01`, and a cold-boot `town01` field (~46M interp hits, zero NCC;
-see "no light source on the field path" above) - so treat them as the ROM's
-light-*capable* handlers, not a live light path. The presumed consumer used to be
+op, and their consumer is the field's light-source rows ([above](#the-light-source-rows));
+battle, summon and `map01` samples never catch them. The presumed consumer used to be
 named as the world-map kingdom-bundle slot-4 landmark meshes; that reading is
 **dead twice over**. Slot 4 is the world-map scene's ANM animation bank, not a mesh
 library ([`world-map-overlay.md`](../formats/world-map-overlay.md)), and a direct
@@ -655,7 +706,7 @@ is a property of the actor, not of the mode, so a state that does raise
 
 ### The disc does ship writers of `+0x42`
 
-Read the zero as a statement about the sampled modes, not about the disc: two
+Read the zero as a statement about the sampled modes, not about the disc: three
 writer families put a non-zero value in that halfword, and reading the census
 as "nothing raises it" overstates what four states measured.
 
@@ -675,8 +726,19 @@ as "nothing raises it" overstates what four states measured.
   `0x80023420`..`0x8002342C` ([`move-vm.md`](move-vm.md)). A cast or summon
   record that issues it with a non-zero operand raises the gate for its own
   actor for as long as the program leaves it up, and that is content, not a
-  dev switch. Which shipped records do so, and whether any of them is drawn
-  through one of the three brackets, is the open half.
+  dev switch.
+- **A field script raises it on a placed actor.** Field-VM `4C C2 <b>` stores
+  its operand byte into the executing (or `0x80`-prefix targeted) actor's
+  `+0x42`: `lbu v0,0x1(s6)` / `sh v0,0x42(s5)` at `0x801E26F0..0x801E26FC` in
+  `FUN_801DE840`, where `s5` is the actor the prologue resolved
+  (`0x801DE898..0x801DE8B0`). The disc-wide
+  [field-op census](../tooling/field-op-census.md) finds 50 clean
+  occurrences in nine scenes - `garmel`, `rikuroa`, `station`, `uru`, `uru2`,
+  `kor5`, `jou`, `rugi`, `noaru` - every operand `0` or `1`, raised and later
+  lowered around a scripted beat; several targets are the player (`F8`).
+  Placed field actors are drawn by `FUN_8001ADA4` / `FUN_8001B964`, so these
+  actors **are** drawn through a bracket's far arm while the byte is up. The
+  four sampled states simply sat in none of those beats.
 
 What the census does establish is narrower and still useful: across the four
 sampled states no *drawn* actor had the bit up, so those modes' geometry comes
@@ -691,6 +753,56 @@ landmark walk passes each landmark TMD "once per frame through `FUN_8002735C`",
 and that `FUN_80029888` is reached whenever `actor[+0x7A] != 0` on the overworld.
 On `map03` the case-5 gate fired 756 times in 180 vsyncs and took the near arm
 every time.
+
+### What a raised `+0x42` draws
+
+The far arm is not only a different leaf. `FUN_8001ADA4` zeroes two scratch
+triples at `0x1F8002C0` (`0x8001B570..0x8001B588`), calls `FUN_8001C204`, and
+only then hands the object to `FUN_8002735C`. `FUN_8001C204` reads `+0x42 - 1`
+as a row of the **object-effect parameter table** at `0x80083FF8` (stride
+`0x14`): it saves the GTE rotation, loads the base matrix, rotates it by the
+row's three angles (`+4`, `+2`, `+0`), transforms the actor's position through
+that, folds in the actor's own Euler `+0x24..+0x28`, and stores the result as
+the working transform at `0x1F800314` with its translation at
+`0x1F800328..0x1F800330`. It also copies the row's `+0x10` / `+0x12` to
+`0x1F800380` / `0x1F800382`, which is the bound
+`FUN_80027F00`'s clip loop reads as `[0x1F800314]+0x6C` - the only reader of
+that word disc-wide besides a store in the dev image PROT 0973. So a raised
+`+0x42` gives the actor a group rotation about the row's frame plus a
+per-actor clip bound; the row itself is written by move-VM ext sub-ops
+`0x17..0x1A` ([`move-vm-overlay-ext.md`](move-vm-overlay-ext.md#0x170x1a-write-the-object-effect-parameter-table))
+and seeded at boot as angles `0` with clip words `(-100, -20)`.
+
+Every shipped `4C C2` writes `1`, so every field use selects row 0, and each
+of the nine scenes' prescripts writes row 0 through ext `0x17` / `0x18` /
+`0x1A`. What the clip keeps is the slab `lo <= y_eff <= hi`:
+`FUN_80027F00` drops a vertex below `[0x1F800314]+0x6C` (`lo`) or above
+`+0x6E` (`hi`) and synthesises the crossing on each edge, and the effect
+point is `s * Rrow * (Ractor * v + pos)` - world space turned by the row,
+because the base `FUN_8001ADA4` stores at `0x1F8002F4` is the identity
+(`FUN_8003D178`, `0x8001B230..0x8001B238`). A zero-angle row (`garmel`'s
+`0x17`, `lo = -4096`, `hi = 0`) keeps an actor above the floor plane; the
+`0x1A` yaw seat (`+4 = 0x400`) turns the slab into a vertical plane, so the
+actor appears as it steps through a doorway - `rugi` and `noaru` seat theirs
+a few units in front of the two NPCs their beat raises.
+
+**Port.** `engine-core::object_effect` holds the table (boot seed, battle
+re-seed, the four ext writes through the field `MoveHost`) and the clip
+math; `World::object_effect_clips` lists every raised context and
+`World::object_effect_mesh_clip` turns one into a mesh-space slab for a
+draw's model matrix. Both hosts discard outside that slab per draw: the
+native mesh shaders through `EFFECT_CLIP_WGSL` (three half-float lanes of
+the draw's uniform, staged by `Renderer::set_draw_clips`), the play page
+through `u_eclip_m` / `u_eclip_b` (`play_effect_clip`). A fragment discard
+keeps the same pixels as retail's per-edge clip. A `4C C2` aimed at the
+player (`CC F8 C2`, five of the 50 sites, in `uru2`, `rugi` and `noaru`) runs
+on the same player stand-in context the `CC F8 40` scale op uses
+(`field_step_routed`) and lands in `FieldVmState::player_field_42`, so the
+player's draws clip on both hosts too - `rugi` and `noaru` raise it in the
+same beat as their two NPCs. One difference remains: an animated actor is
+clipped on its posed mesh, where `FUN_8001B964` runs the effect `MVMVA` on
+unposed object-local vertices. Disc-gated test:
+`crates/engine-core/tests/object_effect_row_disc.rs`.
 
 ## The battle per-actor draw
 
@@ -1044,7 +1156,13 @@ Both hosts honour it. Every move-VM part draw record carries the node's
 part pass - the native window's `build_summon_and_move_fx_part_draws` /
 `build_field_fx_part_draws` and the browser play page's `build_battle_fx` /
 `build_field_fx` - composes the part with
-`engine-ui::gte::camera_relative_model_prefix` in place of its translation.
+`engine-ui::gte::camera_relative_model_prefix` in place of its translation,
+through the one placement kernel `gte::part_model_place`. In battle the
+hosts' view-projection ends in the `scale(1,-1,1)` that cancels the per-model
+Y-flip, so a node at retail `+0x14 = p` is placed at `(x, -y, z)` on both the
+plain and the skip arm; placed at `p`, every off-floor battle effect drew
+mirrored through the floor (`vera_summon_mid_cast`'s glows over the target's
+raised hand rendered under the stage).
 The hosts cannot branch around their view matrix, so the kernel expresses the
 retail result under it: the skip arm is the basis `(6 / S_b) * R^T * P`
 (`P` from the port `camera_view_rotation`), the `0x400` arm is `R^T` at the
@@ -1102,8 +1220,13 @@ the curvature table bends their `SY` after projection. Test
   both pinned by `curvature_closed_form`) with a per-frame scale
   (`frame_curve_scale`: `1` under the walk camera, whose matrix carries the
   6x world scale, `6` under a `1x` scripted shot, `0` under the top-view
-  debug camera). The port bends every overworld scene draw, lit rows
-  included, and the overworld markers bend with the ground they stand on. See
+  debug camera). The port bends every overworld scene draw and the
+  overworld markers bend with the ground they stand on. That matches retail
+  on every overworld mesh the disc ships: a group's dispatch row is its
+  `flags >> 1` (`srl s5,s7,0x11` at `0x800435A4`), and no TMD in the three
+  kingdom bundles' scene entries or in the party pack PROT 0874 carries a
+  `flags 0x10..=0x17` group, so no overworld draw ever reaches lit rows
+  `8..11`. See
   `ghidra/scripts/funcs/800271a8.txt`.
 - **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
   advances. It is the CD load-kick / completion driver the asset queue drains
@@ -1660,6 +1783,21 @@ story-hidden gate's business. Like the hidden gate, the scale is baked with the
 scene's draw lists, so a script that ramps it mid-scene is not followed. Pinned
 by `crates/engine-core/tests/field_object_render_scale_disc.rs`.
 
+**A placed object can lose its `.MAP` lift.** The scene-init sweep seats a
+bound object at `lut[nibble] + y_off` (`FUN_8003A55C`, `0x8003A640`), but the
+field actor tick `FUN_8003BC08` then rewrites `+0x16` with the floor sample
+under the actor (`FUN_80019278`, `jal` at `0x8003BC98`) on every tick the
+visibility cull leaves it in view, whenever `+0x10 & 0x20200` is up and
+`0x20000000` is down. A bind prologue raises that class bit with `31 11`
+(`CFlag.Set` bit 17). `rikuroa`'s `P0[0]` does, and it binds most of the
+summit's props, the sky panorama among them: pack 37 carries `y_off = 2080`,
+and every retail capture holds its actor at the `-480` floor tier. Drawn at
+the record's lift instead, the panorama sinks 2080 units and the frame shows
+its cloud band where retail shows the cliff ring and the mist under it. Both
+hosts re-seat such draws through one kernel,
+`field_env::follow_floor_placed_draws` over
+`World::object_floor_follow_records`, when they bake the placed layer.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:
@@ -1773,12 +1911,9 @@ pre-ramp render. See
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the calibration
 measurements and the per-node residual.
 
-The scripted screen fade (field-VM op `0x4C 0x12` global tint - the scene-entry
-fade-from-black) reuses this same staging rather than adding a shader term: the host multiplies
-the fade tint into the staged grade gold (at full strength) *and* into the depth-cue far colour,
-so both branches of the shaders' cue mix carry it and the product distributes to the final
-pixel. A neutral tint stages the identity values - byte-identical to the fade-free path. See
-[`cutscene.md`](cutscene.md#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0).
+The field-VM op `0x4C 0x12` tint is **not** staged here: its one reader
+disc-wide is the fog particle update `FUN_8003F3FC`, so it never multiplies the frame. See
+[`cutscene.md`](cutscene.md#the-op-0x4c-0x12-tint-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0).
 
 ### Colour space: PSX framebuffer values end to end
 
@@ -2224,8 +2359,8 @@ plainly:
 
 **Lighting is not a `psx_mode` knob, and the default is already faithful.** The
 game's field/town meshes go through the VRAM-mesh and vertex-colour pipelines,
-which draw the TMD's baked colour words with no light source at all - exactly
-what retail does (see [Lighting](#lighting)). There is no synthetic Lambert on
+which draw the TMD's baked colour words, and the light-source rows through
+retail's own GTE light - exactly what retail does (see [Lighting](#lighting)). There is no synthetic Lambert on
 those paths. The only non-retail light is
 [enhanced lighting](#enhanced-lighting-enhancement-default-on), which the
 renderer defaults off and the interactive hosts turn on.

@@ -2506,14 +2506,19 @@ the reusable 9-slice primitive `engine-ui::menu_window_chrome_draws_for`
 via `engine-ui::scale_stage_text_draws`. The frame chrome and the navy
 **filigree interior** both come from the system-UI TIM at `PROT.DAT[0x018E0]`
 CLUT row 2 (the same sheet as the save-screen chrome and the UI-icon atlas):
-the gold-bronze 9-slice tiles plus the marbled-blue interior region
-(`OVERLAY_SYSTEM_UI_PANEL_INTERIOR`, `(128,0,32,29)`). The pause menu tiles
-the raw interior tile in **both axes** (`SaveMenuAtlasRects::panel_filigree`,
-an un-gradient-baked copy of that region) under a flat darkening tint - retail
-modulates it with a per-window gouraud gradient; the flat multiply is a close,
-non-streaking approximation. (The save/load screen keeps the gradient-baked
-`panel_interior` variant stretched to its panel height; only the pause-menu
-windows pass `tile_filigree = true` to `nine_slice_panel_into`.) The status
+the gold-bronze 9-slice tiles plus the marbled-blue interior patch, texels
+`(128, 0)` 32 x 32. The pause menu fills each window with the **class-0
+fill** retail's window drawer runs under every menu frame (`FUN_8002BDC4`):
+32-texel columns and bands of the patch (`SaveMenuAtlasRects::panel_filigree`,
+an un-baked 32 x 32 copy), each band a neutral-grey gouraud ramp from `0x40`
+at the frame's top to `0x88` at its bottom in steps of `0x900 / h`. The
+`menu_status_town` display list holds exactly that - its 204-tall status
+window draws seven bands `64, 75, 86, 97, 108, 119, 130 -> 136` - and the
+port draws it through the same kernel as the battle banners' frame,
+`battle_hud_chrome::class0_fill_draws_at`. (The save/load screen keeps the
+gradient-baked `panel_interior` variant stretched to its panel height; only
+the pause-menu windows pass `tile_filigree = true` to
+`nine_slice_panel_into`.) The status
 main panel renders
 through `engine-ui::status_screen_draws_for` at the byte-pinned offsets
 above, hung off the id-28 content origin; the satellite windows through

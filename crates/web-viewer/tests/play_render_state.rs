@@ -47,6 +47,10 @@ fn play_render_state_builds_from_the_running_host() {
             false,
             &host.world.hidden_object_records(),
             &host.world.object_render_scales(),
+            &|r, x, z| {
+                host.world
+                    .object_floor_follow_y(&host.world.object_floor_follow_records(), r, x, z)
+            },
         );
         assert!(
             !f.env_tmds.is_empty(),

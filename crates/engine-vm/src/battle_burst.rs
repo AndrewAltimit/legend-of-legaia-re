@@ -1,7 +1,7 @@
 //! The two-mode battle effect burst - move-VM opcode `0x17`.
 //!
 //! PORT: FUN_801F30C4
-//! REF: FUN_80023070, FUN_80021B04, FUN_80050ED4
+//! REF: FUN_80023070, FUN_80021B04, FUN_80050ED4, FUN_801DFDF0
 //!
 //! `(actor, mode)`. The first argument is an **actor**, not a free-standing
 //! record: the entry is the battle-side escape opcode of the move VM, so its
@@ -102,23 +102,20 @@
 //! [`reciprocal_mod`] and [`signed_shift_div`] carry the verification as tests
 //! rather than as a claim in prose.
 //!
-//! # NOT WIRED
+//! # Where the engine runs it
 //!
-//! Nothing in the engine spawns a move-VM actor, which is what this entry does
-//! twelve of. The specific missing input is the same one
-//! [`crate::move_vm::spawn::spawn_move_actor`] names: a spawn site that *starts
-//! from a move buffer*. [`BurstHost::spawn`] is the seam, and a host that wants
-//! to serve it needs two things:
-//!
-//! * an actor pool that can seat a move buffer - `impl MoveSpawnHost for World`
-//!   exists in `legaia_engine_core::actor_alloc_host`, but no live path routes a
-//!   `MoveSpawnRequest` through it; and
-//! * the arm's stager record, which [`BurstRecord::parse`] slices out of a
-//!   supplied `0898` image. It is disc data - the parser reads it at load time
-//!   and **none of its bytes are reproduced here**.
-//!
-//! `MoveHost::ext_17` is the call-in seam on the other side; it is likewise a
-//! default no-op until a host owns a pool.
+//! Two producers queue a burst and one consumer runs it. The battle move-VM
+//! host's `MoveHost::ext_17` (`legaia_engine_core::world::vm_hosts`) queues an
+//! op-`0x17` request off the executing actor, and the effect spawner's
+//! `FUN_801DFDF0` side call for effect ids `4` / `0x13`
+//! ([`trigger_for_effect`]) queues the one-part trigger program whose own
+//! `0x17` is the burst. `World::flush_battle_bursts`
+//! (`legaia_engine_core::world::effects`) drains both each battle FX step: it
+//! runs [`run_burst`] over a [`BurstHost`] whose `spawn` collects the twelve
+//! [`SpawnRequest`]s, and seats each child on the arm's stager record - sliced
+//! out of the resident `0898` image at load time, so **none of its bytes are
+//! reproduced here** - into the effect-script scene list. A disc-free battle
+//! has no `0898` image and seats nothing.
 //!
 //! ## The spawn call itself is not a boundary
 //!
@@ -445,6 +442,18 @@ pub fn run_block(
     };
     host.spawn(record_addr, req);
     req
+}
+
+/// The trigger record the effect spawner `FUN_801DFDF0` seats ahead of an
+/// effect id, if it seats one: id `4` -> `0x801F5D90` (the wide arm's
+/// trigger), id `0x13` -> `0x801F5CF8` (the narrow arm's)
+/// (`0x801DFE38..0x801DFE80`). Every other id spawns its effect alone.
+pub const fn trigger_for_effect(effect_id: u8) -> Option<u32> {
+    match effect_id {
+        4 => Some(BurstMode::Wide.trigger_addr()),
+        0x13 => Some(BurstMode::Narrow.trigger_addr()),
+        _ => None,
+    }
 }
 
 /// The whole burst (`FUN_801F30C4`).

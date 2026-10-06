@@ -157,3 +157,63 @@ fn ride(host: &mut SceneHost, d: PadButton) -> Option<(i16, i16)> {
     );
     None
 }
+
+/// `balden`'s elevator cars ride **unbracketed**: P0[7] runs the player to
+/// the upper car with `CC F8 51` and walks it out through P0[14]'s door with
+/// `A2 F8 01` / `A2 F8 02`, setting it down on P0[14]'s contact centre with
+/// no `B1`. The engine runs neither walk-off clip as motion, so the landing
+/// must exempt the partner car until the player is off its box, or the first
+/// step in any direction rides straight back down.
+#[test]
+fn balden_elevator_arrival_does_not_ride_back() {
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_field_scene("balden", 0).expect("enter balden");
+    for _ in 0..90 {
+        let _ = host.tick();
+    }
+    // Inside the lower car, short of its door P0[7] at (1472, 15296).
+    const CAR: (i16, i16) = (1472, 15160);
+    const UPPER_Z: i16 = 14000;
+    let mut tested = 0;
+    for d in DIRS {
+        host.world.set_pad(0);
+        for _ in 0..240 {
+            let _ = host.tick();
+        }
+        host.world.props.arrival_exempt.clear();
+        host.world.props.active_walk_touch = None;
+        seat(&mut host, CAR);
+        let mut landed = None;
+        for _ in 0..400 {
+            host.world.set_pad(PadButton::Up.mask());
+            let _ = host.tick();
+            let at = player_xz(&host);
+            if at.1 < UPPER_Z
+                && !host.world.cutscene_timeline_active()
+                && !host.world.dialogue_owns_input()
+            {
+                landed = Some(at);
+                break;
+            }
+        }
+        host.world.set_pad(0);
+        let Some(landing) = landed else {
+            panic!(
+                "pressing Up into the lower car never rode it up (at {:?})",
+                player_xz(&host)
+            );
+        };
+        hold(&mut host, d.mask(), 24);
+        let at = player_xz(&host);
+        eprintln!("[balden] {d:?} from {landing:?} -> {at:?}");
+        assert!(
+            at.1 < UPPER_Z,
+            "stepping {d:?} off the upper car's landing {landing:?} rode it back down (now {at:?})"
+        );
+        tested += 1;
+    }
+    assert_eq!(tested, DIRS.len());
+}

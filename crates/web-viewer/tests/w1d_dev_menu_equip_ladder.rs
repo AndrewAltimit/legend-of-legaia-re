@@ -158,6 +158,45 @@ fn w1d_dev_menu_equip_ladder() {
         "the cancel leg moved the row cursor"
     );
 
+    // EVENT FLAG page (`FUN_801DBD04` value editor, `FUN_801DB8F4` list
+    // cursor). Two Ups from EQUIP land on the row; Cross opens the page.
+    let flag_row = legaia_engine_core::dev_menu_host::DevMenuRow::ALL
+        .iter()
+        .position(|r| *r == legaia_engine_core::dev_menu_host::DevMenuRow::EventFlag)
+        .expect("EVENT_FLAG row");
+    for _ in flag_row..rows - 1 {
+        tap(&mut rt, PadButton::Up.mask());
+    }
+    tap(&mut rt, PadButton::Cross.mask());
+    // Right nudges the edited value by +1, which the row's 4-digit readout
+    // shows - the value editor ran.
+    let at_zero = dev_draws(&mut rt).to_string();
+    tap(&mut rt, PadButton::Right.mask());
+    let at_one = dev_draws(&mut rt).to_string();
+    assert_ne!(
+        at_zero, at_one,
+        "Right on the EVENT FLAG page did not step the edited value"
+    );
+    // Up walks the flag LIST when the host seeded it off the disc's table,
+    // and only falls through to the value editor (1 - 8 -> clamp 0, a visible
+    // change) when the list is empty. An unchanged readout is therefore the
+    // list branch having taken the press.
+    tap(&mut rt, PadButton::Up.mask());
+    assert_eq!(
+        at_one,
+        dev_draws(&mut rt).to_string(),
+        "Up edited the value: the flag list was not seeded from the field overlay"
+    );
+    tap(&mut rt, PadButton::Down.mask());
+    tap(&mut rt, PadButton::Circle.mask());
+    let back_on_list = dev_draws(&mut rt).to_string();
+    tap(&mut rt, PadButton::Up.mask());
+    assert_ne!(
+        back_on_list,
+        dev_draws(&mut rt).to_string(),
+        "Circle did not return the pad to the row list"
+    );
+
     rt.play_dev_menu_set_enabled(false);
     rt.tick_frame().expect("tick_frame");
     assert_eq!(

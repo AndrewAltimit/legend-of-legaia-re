@@ -54,6 +54,25 @@ pub trait BattleActionHost {
         false
     }
 
+    /// The two target reads state `0x20`'s **reaction hold** makes
+    /// (`0x801E54FC..0x801E5544`): the target's committed anim id `+0x1D9`
+    /// as the anim system holds it - a hit reaction included, since retail
+    /// stages and commits reactions through the same byte - and whether its
+    /// render node still draws (`node[+0x74] & 0xFFFFFF != 0`, which the
+    /// defeat fade walks to zero). `None` for an empty slot.
+    ///
+    /// The default reads the actor's own `current_anim` and calls a body
+    /// gone once the defeat fade (`+0x21C == 2`) has walked its colour word
+    /// to black - the engine's resting word `0` is neutral, so only the
+    /// fade's zero counts.
+    fn reaction_hold_view(&self, slot: u8) -> Option<(u8, bool)> {
+        self.actor(slot).map(|a| {
+            let gone = a.render_flag == crate::battle_formulas::STATE_DEFEAT_FADE
+                && a.render_color & 0x00FF_FFFF == 0;
+            (a.current_anim, !gone)
+        })
+    }
+
     /// Equivalent of `FUN_8004E2F0(actor, target)` - battle range / LOS
     /// check. Returns 0 = "in range," non-zero = distance metric. Default
     /// returns 0 (always in range - useful for unit tests).

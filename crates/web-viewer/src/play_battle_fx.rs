@@ -525,9 +525,10 @@ impl LegaiaRuntime {
                 0.0, 0.0, 0.0, 1.0,
             ]
         };
+        // The native battle pass's placement kernel: the frame flip on the
+        // translation as well as on the camera-relative prefix.
         let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
-            legaia_engine_ui::gte::camera_relative_model_prefix(flags, pos, Some(&part_cam), true)
-                .unwrap_or_else(|| fx_translate(pos))
+            legaia_engine_ui::gte::part_model_place(flags, pos, Some(&part_cam), true)
         };
         for em in world.active_effect_models() {
             if world.global_tmd(em.tmd_index as i16).is_none() {

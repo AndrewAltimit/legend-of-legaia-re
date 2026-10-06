@@ -130,23 +130,54 @@ fn op_4c_n_d_sub_1_jump_target_takes_ce9c_path() {
     assert_eq!(r, StepResult::Advance { next_pc: 0xABCD });
 }
 
+// The three arms below advance in retail: the nibble-D jump table at
+// `0x801CEFC8` sends sub-2 / sub-6 / sub-7 to `0x801E2B7C` / `0x801E2D64` /
+// `0x801E2DB4`; the first two leave through `0x801E00B8` (`addiu s8,s8,0x3`),
+// the third through its own `addiu s8,s8,0x2`.
 #[test]
-fn op_4c_n_d_sub_2_channel_spawn_halts_at_pc() {
+fn op_4c_n_d_sub_2_channel_spawn_advances_3() {
     let bytecode = [0x4Cu8, 0xD2, 0xFB];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
     assert_eq!(host.n_d_sub_2_channel_calls, vec![0xFBu8]);
 }
 
 #[test]
-fn op_4c_n_d_sub_7_register_list_walk_halts_at_pc() {
+fn op_4c_n_d_sub_2_back_to_back_runs_each() {
+    // `rugi` runs `4C D2 0F .. 4C D2 16` in a row: each one spawns.
+    let bytecode = [0x4Cu8, 0xD2, 0x0F, 0x4C, 0xD2, 0x10];
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    assert_eq!(
+        step(&mut host, &mut ctx, &bytecode, 0),
+        StepResult::Advance { next_pc: 3 }
+    );
+    assert_eq!(
+        step(&mut host, &mut ctx, &bytecode, 3),
+        StepResult::Advance { next_pc: 6 }
+    );
+    assert_eq!(host.n_d_sub_2_channel_calls, vec![0x0Fu8, 0x10]);
+}
+
+#[test]
+fn op_4c_n_d_sub_6_field74_advances_3() {
+    let bytecode = [0x4Cu8, 0xD6, 0x03];
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
+    assert_eq!(ctx.field_74 >> 24, 0x83);
+}
+
+#[test]
+fn op_4c_n_d_sub_7_register_list_walk_advances_2() {
     let bytecode = [0x4Cu8, 0xD7];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(host.n_d_sub_7_list_walk_regs, 1);
 }
 

@@ -1872,10 +1872,17 @@ tour. Its landing is the last player `MoveTo` before the `B1`, so the resolver
 keeps walking a bracketed record to that point instead of stopping at its
 first move.
 
+Not every ride brackets. `balden`'s elevator cars (P0[7] / P0[14]) run the
+player to the partner car with `CC F8 51` and walk it out through the
+partner's door with `A2 F8 01` / `A2 F8 02`, setting it down on the
+partner's contact centre with no `B1` at all; retail's walk-off carries the
+player off the box before the record lets go.
+
 The engine does not run the walk-off clips as motion, so it keeps the
 bracket's effect instead: `World::arm_arrival_bracket` reads the partners off
 the teleporting record (`man_field_scripts::record_exempted_objects`) into
-`FieldPropState::arrival_exempt`, the touch dispatch and the prop collision
+`FieldPropState::arrival_exempt` - together with every other bind whose
+contact box holds the landing, the unbracketed car's case - and the touch dispatch and the prop collision
 probe skip them, and an entry clears once no probe point of the player reaches
 its contact box - never while the ride's own record is still running. A
 landing the walls seal on every side (the rapid lift down sets the player at
@@ -2209,6 +2216,25 @@ This holds wherever a spawned record parks mid-script, not only after a Door. Th
 treats an active cutscene timeline as that state: `World::field_menu_open_allowed` refuses
 while one runs. `tests/door_arrival_menu_refusal_disc.rs` pins the refusal, its release and
 its length on the real `map01` record.
+
+#### The rest of the gates in front of the accept
+
+The engaged bit is one of four things that keep `FUN_801D1344` from calling the pad
+controller. The others are the scratchpad system lock `_DAT_1F800394 & 0x400`
+(`0x801D16A8..0x801D16B8`), a running kind-0 warp timer `_DAT_8007B6B0` and its post-warp
+pad hold `_DAT_8007B6B4` (`0x801D16C8..0x801D16E4`). Each is silent: the controller is
+never entered. The **menu lock** `_DAT_1F800394 & 0x8000000` is the one refusal inside
+the accept (`0x801D02C0..0x801D02E4`): the press is taken and answered with the deny buzz
+`0x23` through `FUN_80035BD0`. `town0e` and `urudre1` raise it with `2E 1B`; `urudre1`,
+`edteien` and `edbalden` drop it with `2F 1B`. No shipped script issues `2E 0A`, so the
+system lock has no field-VM writer.
+
+`World::field_menu_open_allowed` carries all of them, and `World::field_menu_press_denied`
+is the buzz both hosts call on a refused press. It also refuses while the New Game
+opening chain plays: the engine seats each leg's entry record one tick after the leg's
+scene loads, and without that arm the menu opened on that one tick of `opstati` and
+`opurud` (`tests/opening_chain_menu_refusal_disc.rs`). The browser play page used to
+refuse there through a page-side copy of the chain gate the native window lacked.
 
 #### Where the 294 vsyncs go
 

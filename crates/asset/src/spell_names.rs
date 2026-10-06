@@ -246,6 +246,14 @@ pub struct SpellEntry {
     /// breaks are `'\n'`. `None` for entries built without a SCUS image.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub desc: Option<String>,
+    /// The operand of the `0xCE` icon escape the name **opens** with, or
+    /// `None` for a bare name. A Seru spell's name carries its element plate
+    /// in front of the text (`0xCE 0x14 0x20 'G' ...` - `^A Gimard` before the
+    /// preprocessor `FUN_80036514` expanded it), and every surface that
+    /// prints the raw name - the magic-level banner, the absorb line - draws
+    /// that plate. [`Self::name`] drops the escape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<u8>,
 }
 
 impl SpellEntry {
@@ -290,6 +298,10 @@ impl SpellNameTable {
             let mp = *scus.get(stat + 3)?;
             let name_ptr = u32::from_le_bytes(scus.get(stat + 8..stat + 12)?.try_into().ok()?);
             let name = read_name(scus, &map, name_ptr);
+            let icon = map.off(name_ptr).and_then(|o| match scus.get(o..o + 2)? {
+                [0xCE, op] => Some(*op),
+                _ => None,
+            });
             // Description: the `+4` byte indexes the 0x80075DB0 pointer
             // table (index 0 = no description). REF: FUN_801d2e74.
             let desc_index = *scus.get(stat + 4)?;
@@ -309,6 +321,7 @@ impl SpellNameTable {
                 mp,
                 target,
                 desc,
+                icon,
             });
         }
         Some(Self { entries })
@@ -333,6 +346,12 @@ impl SpellNameTable {
     /// `None` when the entry carries no description.
     pub fn desc(&self, id: u8) -> Option<&str> {
         self.entries.get(id as usize)?.desc.as_deref()
+    }
+
+    /// The leading `0xCE` icon escape operand of spell `id`'s name
+    /// ([`SpellEntry::icon`]).
+    pub fn icon(&self, id: u8) -> Option<u8> {
+        self.entries.get(id as usize)?.icon
     }
 
     /// The full entry for spell `id`.

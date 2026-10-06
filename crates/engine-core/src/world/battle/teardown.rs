@@ -12,16 +12,26 @@ pub struct BattleSpoilsBanner {
     /// what retail's result window prints, not the pool.
     pub xp: u32,
     pub gold: u32,
-    /// `"<name> drop"` lines - one per item the loot roll surfaced.
+    /// The report window's drop line, one per item the loot roll surfaced
+    /// (retail's roll surfaces at most one): the executable's template with
+    /// the item name spliced in ([`World::drop_line`]), or `Got <name>` on a
+    /// host without it.
     pub drops: Vec<String>,
-    /// `"<name>'s level increased!"` lines - one per character that crossed
-    /// a threshold in this battle's XP grant. The wording is retail's own,
-    /// off the `noa_levelup_banner` framebuffer; the new level is not on
-    /// that line (the status screen carries it).
+    /// The level-up window's line - empty when nobody levelled. Retail
+    /// opens one window, element `0x44 + mask` (bit `k` = character `k`),
+    /// whose string names every character that crossed a threshold in one
+    /// line, or nobody when all three did; the port reads the seven strings
+    /// off the user's executable ([`Self::level_up_line`]). Without them (a
+    /// disc-free host) it falls back to one `"<name>'s level increased!"`
+    /// line per character. The new level is not on the line (the status
+    /// screen carries it).
     pub level_ups: Vec<String>,
     /// Who the victory line names: the lead alone when the second party seat
     /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
     pub subject: vm::battle_party_panel::ResultSubject,
+    /// `(level_up, report)` rows below rest - the windows' raise glide
+    /// ([`crate::battle_hud::battle_result_windows_dy`]).
+    pub slide: (i32, i32),
 }
 
 /// The loss window's content ([`World::battle_defeat_banner`]).
@@ -29,6 +39,8 @@ pub struct BattleSpoilsBanner {
 pub struct BattleDefeatBanner {
     /// The one line the window shows, or `None` without the disc pool.
     pub line: Option<String>,
+    /// Rows below rest - the window's raise glide, the report window's.
+    pub slide_y: i32,
 }
 
 impl World {
@@ -82,36 +94,123 @@ impl World {
             .drops
             .iter()
             .map(|&id| {
-                self.tables
+                let name = self
+                    .tables
                     .item_catalog
                     .get(id)
                     .map(|it| it.name.to_string())
-                    .unwrap_or_else(|| format!("Item {id}"))
+                    .unwrap_or_else(|| format!("Item {id}"));
+                self.drop_line(&name)
+                    .unwrap_or_else(|| format!("Got {name}"))
             })
             .collect();
-        let level_ups = r
+        let mask = r
             .level_ups
             .iter()
-            .map(|lu| {
-                let slot = lu.char_id as usize;
-                let name = self
-                    .party
-                    .roster
-                    .members
-                    .get(slot)
-                    .map(|m| m.name())
-                    .filter(|n| !n.trim().is_empty())
-                    .unwrap_or_else(|| format!("Member {}", slot + 1));
-                format!("{name}\'s level increased!")
-            })
-            .collect();
+            .filter(|lu| lu.char_id < 3)
+            .fold(0u8, |m, lu| m | (1 << lu.char_id));
+        let level_ups = if let Some(line) = self.level_up_line(mask) {
+            vec![line]
+        } else {
+            r.level_ups
+                .iter()
+                .map(|lu| {
+                    let slot = lu.char_id as usize;
+                    let name = self
+                        .party
+                        .roster
+                        .members
+                        .get(slot)
+                        .map(|m| m.name())
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| format!("Member {}", slot + 1));
+                    format!("{name}\'s level increased!")
+                })
+                .collect()
+        };
         Some(BattleSpoilsBanner {
             xp: r.xp_share,
             gold: r.gold,
             drops,
             level_ups,
             subject: self.battle_result_subject(),
+            slide: crate::battle_hud::battle_result_windows_dy(self),
         })
+    }
+
+    /// The report window's drop line for an item named `item`: the
+    /// executable's template (`legaia_asset::screen_elements::DROP_LINE_PTR_VA`)
+    /// with its `0xC2` item escape spliced, less the leading `0x7C` break
+    /// that puts it on the window's third row (the port keeps rows as
+    /// lines). `None` without the template.
+    ///
+    /// REF: FUN_8004E568 (`0x8004F5C4..0x8004F600`)
+    pub fn drop_line(&self, item: &str) -> Option<String> {
+        let raw = self.menu.text.as_ref()?.drop_line.as_ref()?;
+        let mut out = String::new();
+        let mut i = 0;
+        while i < raw.len() {
+            let b = raw[i];
+            if (0xC0..=0xCF).contains(&b) {
+                if matches!(b, 0xC2 | 0xC4) {
+                    out.push_str(item);
+                }
+                i += 2;
+                continue;
+            }
+            if (0x20..0x7F).contains(&b) && b != 0x7C {
+                out.push(b as char);
+            }
+            i += 1;
+        }
+        Some(out)
+    }
+
+    /// The level-up window's line for `mask` (bit `k` = character `k`): the
+    /// string record `0x44 + mask` points at, its `0xC1 k` name escapes
+    /// spliced with record `k`'s name (`0x63` = the party leader). `None`
+    /// for an empty mask or without the strings.
+    ///
+    /// REF: FUN_8004E568 (`0x8004F6F8..0x8004F728`, the mask and the raise)
+    pub fn level_up_line(&self, mask: u8) -> Option<String> {
+        let raw = self
+            .menu
+            .text
+            .as_ref()?
+            .level_up_lines
+            .as_ref()?
+            .get(usize::from(mask).checked_sub(1)?)?;
+        let mut out = String::new();
+        let mut i = 0;
+        while i < raw.len() {
+            let b = raw[i];
+            if (0xC0..=0xCF).contains(&b) {
+                let op = raw.get(i + 1).copied().unwrap_or(0);
+                if b == 0xC1 {
+                    let slot = if op == 0x63 {
+                        self.party_roster_slot(0)
+                    } else {
+                        usize::from(op)
+                    };
+                    let name = self
+                        .party
+                        .roster
+                        .members
+                        .get(slot)
+                        .map(|m| m.name())
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| format!("Member {}", slot + 1));
+                    out.push_str(&name);
+                }
+                i += 2;
+                continue;
+            }
+            if (0x20..0x7F).contains(&b) {
+                out.push(b as char);
+            }
+            i += 1;
+        }
+        Some(out)
     }
 
     /// The battle exit's party loop, run on every exit before the party's
@@ -189,7 +288,10 @@ impl World {
             .as_ref()
             .zip(lead)
             .map(|(t, lead)| t.compose(subject, &lead));
-        Some(BattleDefeatBanner { line })
+        Some(BattleDefeatBanner {
+            line,
+            slide_y: crate::battle_hud::battle_result_windows_dy(self).1,
+        })
     }
     /// Resolve a finished battle and return to the field.
     ///
@@ -255,6 +357,7 @@ impl World {
         // exit / escape template (`holds_at_end`) comes down here, never in
         // the world tick.
         self.presentation.fade = None;
+        self.presentation.module_fades.clear();
         // MAIN INIT's back-from-battle flag stores, run for every ending: the
         // party-survived bit `DAT_8007BD60 & 0x80` is clear only after a
         // party wipe, so every other end - a monster wipe, an escape, a
@@ -325,6 +428,10 @@ impl World {
                 let gauge = &mut self.battle.ap_gauges[idx];
                 gauge.base_ap = gauge.base_ap.saturating_sub(delta);
                 gauge.current_ap = gauge.current_ap.min(gauge.ceiling());
+                // ... and the `+0x1F9` flag the round boundary reads.
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.spirit_shield = 0;
+                }
             }
         }
         // Bank any captured Seru into learning progress (drains battle_captures).
@@ -465,5 +572,53 @@ impl crate::battle_return_flags::FlagBank for WorldFlagBank<'_> {
     }
     fn clear(&mut self, idx: u16) {
         self.0.system_flag_clear(idx);
+    }
+}
+
+#[cfg(test)]
+mod level_up_line_tests {
+    use super::*;
+
+    /// The window's line is the mask's string with its `0xC1` name escapes
+    /// spliced: record `k` for operand `k`, the leader for `0x63`. Synthetic
+    /// strings stand in for the executable's.
+    #[test]
+    fn the_level_up_line_splices_the_mask_string() {
+        let mut w = World::default();
+        w.party.roster = legaia_save::Party::zeroed(3);
+        for (k, name) in ["Ana", "Bo", "Cy"].iter().enumerate() {
+            w.party.roster.members[k].set_name(name);
+        }
+        let mut lines = vec![b"x".to_vec(); 7];
+        lines[0] = [&[0xC1, 0x00][..], b" up"].concat();
+        lines[2] = [&[0xC1, 0x00][..], b" & ", &[0xC1, 0x01], b" up"].concat();
+        lines[6] = b"all up".to_vec();
+        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+            level_up_lines: Some(lines),
+            ..Default::default()
+        });
+        assert_eq!(w.level_up_line(1).as_deref(), Some("Ana up"));
+        assert_eq!(w.level_up_line(3).as_deref(), Some("Ana & Bo up"));
+        assert_eq!(w.level_up_line(7).as_deref(), Some("all up"));
+        assert_eq!(w.level_up_line(0), None, "nobody levelled");
+        w.menu.text = None;
+        assert_eq!(
+            w.level_up_line(1),
+            None,
+            "no strings: the caller falls back"
+        );
+    }
+
+    /// The drop line is the template with its item escape spliced and the
+    /// leading row break dropped.
+    #[test]
+    fn the_drop_line_splices_the_item() {
+        let mut w = World::default();
+        assert_eq!(w.drop_line("Leaf"), None);
+        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+            drop_line: Some([&b"|Got the "[..], &[0xC2, 0x01], b"."].concat()),
+            ..Default::default()
+        });
+        assert_eq!(w.drop_line("Leaf").as_deref(), Some("Got the Leaf."));
     }
 }

@@ -70,13 +70,21 @@ fn the_victory_frames_the_pose_actor_not_the_far_orbit() {
         match seq.phase {
             VictoryPhase::Loading { frames_left } => {
                 assert_eq!(phase, BattleCamPhase::ActionEnd, "case 8 in the load");
-                if frames_left < 40 {
-                    // Settled on the stand-off arm: level, `0x400` up,
-                    // `radius * 5 / 2` back, on the leader.
-                    assert_eq!(pose.pitch, 0.0);
-                    assert_eq!(pose.tr[1], 1024.0);
-                    assert_eq!(pose.tr[2], prescale_tr_z(PARTY_BODY_RADIUS * 5 / 2));
-                    assert_eq!(pose.focus, [leader[0], 0.0, leader[2]]);
+                if frames_left < 4 {
+                    // Closing on the stand-off arm: level, `0x400` up,
+                    // `radius * 5 / 2` back, on the leader. Case 8 is
+                    // re-armed every pass, an ease-out over `a3 = 0xC`
+                    // that is still closing the last few units by the end
+                    // of the 80-frame load, so the pose is near, not on, it.
+                    let near = |a: f32, b: f32| (a - b).abs() <= 24.0;
+                    assert!(near(pose.pitch, 0.0), "{pose:?}");
+                    assert!(near(pose.tr[1], 1024.0), "{pose:?}");
+                    assert!(
+                        near(pose.tr[2], prescale_tr_z(PARTY_BODY_RADIUS * 5 / 2)),
+                        "{pose:?}"
+                    );
+                    assert!(near(pose.focus[0], leader[0]), "{pose:?}");
+                    assert!(near(pose.focus[2], leader[2]), "{pose:?}");
                     saw_load = true;
                 }
             }
@@ -88,7 +96,13 @@ fn the_victory_frames_the_pose_actor_not_the_far_orbit() {
                     assert!(pose.tr[2] <= prescale_tr_z(0x500), "{pose:?}");
                     assert_eq!(pose.focus, [leader[0], 0.0, leader[2]]);
                     let yaw = *results_yaw.get_or_insert(pose.yaw);
-                    assert_eq!(pose.yaw, yaw, "no orbit through the hold");
+                    // The re-armed tween's tail may still close a unit or
+                    // two; the orbit would turn it `4` a step, every step.
+                    assert!(
+                        (pose.yaw - yaw).abs() <= 8.0,
+                        "no orbit through the hold: {} / {yaw}",
+                        pose.yaw
+                    );
                     saw_results = true;
                 }
             }

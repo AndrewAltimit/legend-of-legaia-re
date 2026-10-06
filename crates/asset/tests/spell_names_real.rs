@@ -44,6 +44,13 @@ fn names_enemy_magic_or_skips() {
     assert_eq!(table.name(0x27), Some("Tail Fire"));
     assert_eq!(table.mp(0x27), Some(16));
 
+    // A player Seru spell's name opens with its element plate: Gimard
+    // (`0x81`) carries `0xCE 0x14` - `^A`, the fire plate - in front of the
+    // text, and the display name drops it.
+    assert_eq!(table.icon(0x81), Some(0x14));
+    assert_eq!(table.name(0x81), Some("Gimard"));
+    assert_eq!(table.icon(0x27), None, "a monster attack name is bare");
+
     // Gimard (archive id 10) is the save-state ground truth: its magic-attack
     // array carries the global id 0x27, which the table names "Tail Fire".
     let archive = std::fs::read(&archive_path).expect("read archive");

@@ -99,8 +99,10 @@ const ROWS: [(&str, u32, u32, u8, Reach); 27] = [
 /// band names twenty-odd arms plus the terminal; PROT 0910 runs its own arm
 /// timers (the `ctx[+0x6D8]` wind-up, the staggered slashes, the settle
 /// countdown - `cast_seru_ticks_b::swordie_tick`), which at a frame step of
-/// one take several hundred frames.
-const MAX_FRAMES: usize = 1024;
+/// one take several hundred frames. The capture-class bodies gate their arms
+/// on the module countdown (`cast_module_camera::capture_countdown`); PROT
+/// 0950's `0xAB` alone holds 1208 ticks.
+const MAX_FRAMES: usize = 4096;
 
 /// Scrape `(module, address)` for every `// PORT:` marker in the three
 /// sources.

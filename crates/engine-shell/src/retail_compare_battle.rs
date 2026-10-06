@@ -66,6 +66,10 @@ const SEAT_CHARS: u32 = 0x8007_BD10;
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
+/// the fight loads, `0x80..=0xC0` the entry sweep owns the camera, `0xFF`
+/// the battle tick runs (`FUN_80046A20`, `0x80046EEC..0x8004700C`).
+const ENTRY_COUNTER: u32 = 0x8007_B648;
 /// Frames a forced encounter may take to reach battle mode (the intro
 /// transition runs 132 display frames).
 const ENTRY_TICKS: u32 = 400;
@@ -107,13 +111,26 @@ pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
 /// replayed cast never reaches the capture's phase, the next seed is tried,
 /// so the state is scored at the event retail showed under some stream rather
 /// than dropped for the one stream the corpus happened to hold.
-pub const BATTLE_RNG_SEEDS: [u32; 6] = [
+///
+/// The list only ever grows at its tail: a state keeps the first seed that
+/// reaches, so an appended seed moves no state an earlier one already
+/// reaches. The tail exists for captures whose round order is a tie a draw
+/// breaks (`FUN_801DABA4`'s pick): any change in how long an action holds
+/// shifts which draw breaks it, so a state can lose every early seed to a
+/// party wipe without anything in the battle being wrong.
+pub const BATTLE_RNG_SEEDS: [u32; 12] = [
     0x1234_5678,
     0x9E37_79B9,
     0x0BAD_F00D,
     0x7F4A_7C15,
     0xC0FF_EE01,
     0x2545_F491,
+    0x6A09_E667,
+    0xBB67_AE85,
+    0x3C6E_F372,
+    0xA54F_F53A,
+    0x510E_527F,
+    0x9B05_688C,
 ];
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
@@ -178,8 +195,14 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// PROT 0903's countdown word
+    /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
+    /// meaningful while that module is resident.
+    pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
+    pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
     /// Normal `1` / Far `2`), which the action shots read. It sits in the
     /// saved game-state window, but the save lift does not carry options,
@@ -189,10 +212,20 @@ pub struct RetailBattle {
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
     pub absorbed_seru: u8,
+    /// `ctx[+0x26] == 0x65` - the summon-magic level check `FUN_801E70BC`
+    /// levelled the acting seat's cast spell this action (`sb v0,0x26(v1)`
+    /// at `0x801E723C`, beside the level byte's own `sb v0,0x729(a2)` at
+    /// `0x801E7224`), and the next action seed clears it.
+    pub magic_level_up: bool,
     /// Whether the active seat's committed queue `+0x1DF..+0x1EE` holds an
     /// art starter (`0x19` / `0x1A`): the turn was entered through the
     /// directional command entry, not the Auto swing.
     pub arts_queue: bool,
+    /// The active seat's committed queue `+0x1DF..+0x1EE` itself - the
+    /// tokenized turn the player entered ([`ActionSteer::queue`]).
+    pub committed_queue: [u8; 16],
+    /// `ctx[+0x15]` - the strike cursor into that queue.
+    pub strike_cursor: u8,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts
@@ -396,6 +429,21 @@ pub struct PhaseGate {
     /// `6 * scalar * delta` a pass. The module phase is the arm's entry; this
     /// is how far into the walk the frame is.
     pub walk_yaw: Option<u16>,
+    /// For a capture in the Done band's hold (`0x51` / `0x52`): retail's
+    /// countdown `ctx[+0x6D8]` ([`SpanGate::DoneHold`]). The band holds
+    /// `0x3C` frames, or `0x96` behind a magic level-up banner, so the state
+    /// alone places the frame at the hold's first vsync -
+    /// `shiny_refactor_gimard_levelup` was taken 46 vsyncs in.
+    pub done_hold: Option<i16>,
+    /// For a capture inside one of PROT 0903's countdown-paced arms
+    /// (`1..=10`): retail's module countdown
+    /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]). The
+    /// arm alone places the frame at the arm's first pass - the
+    /// `shiny_refactor_gimard_plus35` frame was taken at arm 9's entry, 16
+    /// vsyncs before retail's (countdown `928` against the arm's opening
+    /// value) - so the engine frame is the first one whose own countdown
+    /// has drained as far.
+    pub module_countdown: Option<i32>,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -417,6 +465,12 @@ impl PhaseGate {
         if let Some(y) = self.walk_yaw {
             s.push_str(&format!(",y{y}"));
         }
+        if let Some(d) = self.done_hold {
+            s.push_str(&format!(",d{d}"));
+        }
+        if let Some(c) = self.module_countdown {
+            s.push_str(&format!(",c{c}"));
+        }
         s
     }
 
@@ -434,6 +488,22 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let module_countdown = match parts.last() {
+            Some(t) if t.starts_with('c') => {
+                let c = t[1..].parse().ok()?;
+                parts.pop();
+                Some(c)
+            }
+            _ => None,
+        };
+        let done_hold = match parts.last() {
+            Some(t) if t.starts_with('d') => {
+                let d = t[1..].parse().ok()?;
+                parts.pop();
+                Some(d)
+            }
+            _ => None,
+        };
         let walk_yaw = match parts.last() {
             Some(t) if t.starts_with('y') => {
                 let y = t[1..].parse().ok()?;
@@ -473,6 +543,8 @@ impl PhaseGate {
             module_phase,
             cam_accum,
             walk_yaw,
+            done_hold,
+            module_countdown,
         })
     }
 
@@ -493,6 +565,14 @@ impl PhaseGate {
         if let Some(y) = self.walk_yaw
             && world.casting.module_phase <= GIMARD_WALK_ARM
             && walk_swing(world.casting.module_cam.yaw_base) < walk_swing(i32::from(y))
+        {
+            return false;
+        }
+        // Same arm, and the engine's countdown drained at least as far; a
+        // later arm has passed the frame and takes it at once.
+        if let Some(c) = self.module_countdown
+            && self.module_phase == Some(world.casting.module_phase)
+            && world.casting.module_cam.countdown.0 > c
         {
             return false;
         }
@@ -522,6 +602,11 @@ impl PhaseGate {
             if !committed || accum < u64::from(acc) {
                 return false;
             }
+        }
+        if let Some(t) = self.done_hold
+            && world.battle_ctx.frame_timer > t
+        {
+            return false;
         }
         let Some(want) = self.fade else {
             return true;
@@ -650,6 +735,17 @@ impl RetailBattle {
         if let Some(a) = g.cam_accum.as_mut() {
             *a = a.saturating_sub(u32::from(self.display_lag) * 8);
         }
+        if let Some(d) = g.done_hold.as_mut() {
+            // The countdown drains by the frame step a frame; the displayed
+            // frame is that many vsyncs older, so its countdown was higher.
+            *d = d.saturating_add(self.display_lag as i16);
+        }
+        if let Some(c) = g.module_countdown.as_mut() {
+            // The countdown drains `scalar` a vsync; the displayed frame's
+            // word was that much higher.
+            *c += i32::from(self.display_lag)
+                * legaia_engine_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
+        }
         if let Some(y) = g.walk_yaw.as_mut() {
             // `6 * scalar` a vsync, taken back no further than the seat.
             let per_vsync = 6 * legaia_engine_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
@@ -679,12 +775,22 @@ impl RetailBattle {
         // creature; its yaw base says how far in the frame is.
         let walk_yaw = (entry == GIMARD_MODULE && module_phase == Some(GIMARD_WALK_ARM))
             .then_some(self.walk_yaw_base);
+        let done_hold = match self.span_gate {
+            SpanGate::DoneHold { timer } => Some(timer),
+            _ => None,
+        };
+        // PROT 0903's countdown-paced arms: how far into the arm the frame is.
+        let module_countdown = (entry == GIMARD_MODULE
+            && module_phase.is_some_and(|p| (1..GIMARD_WALK_ARM).contains(&p)))
+        .then_some(self.gimard_countdown);
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
             module_phase,
             cam_accum,
             walk_yaw,
+            done_hold,
+            module_countdown,
         })
     }
 }
@@ -694,8 +800,8 @@ impl RetailBattle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeedPlan {
     /// The fight is still opening: `ctx[+0x06]` holds one of the entry
-    /// values below the round prompt. The engine is sampled at its
-    /// battle-mode flip, before its own opening runs.
+    /// values below the round prompt. The engine is sampled once its
+    /// entry sweep has run as far as retail's ([`entry_sweep_reached`]).
     Opening,
     /// A command-selection surface above the round prompt, on party seat
     /// `seat` (`ctx[+0x13]`, the member cursor): the engine's command flow
@@ -711,6 +817,27 @@ pub enum SeedPlan {
     Action { seat: u8, state: u8 },
     /// The round prompt: park on it and settle.
     Prompt,
+}
+
+/// Ticks an opening seed may run waiting for the engine's entry sweep to
+/// reach retail's counter ([`entry_sweep_reached`]); the sweep spans `0x41`
+/// display frames.
+const ENTRY_SWEEP_TICKS: u32 = 120;
+
+/// Whether the engine's battle-entry sweep
+/// ([`legaia_engine_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
+/// has run as far as retail's frame-driver counter `entry` reads: a counter
+/// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
+/// one past it (`0xFF`) once the engine's sweep is over, and one below it
+/// (the fight still loading) at once.
+pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) -> bool {
+    if entry < 0x80 {
+        return true;
+    }
+    world.battle.camera.as_ref().is_some_and(|c| {
+        c.entry_sweep_counter()
+            .is_none_or(|n| entry != 0xFF && n >= u32::from(entry))
+    })
 }
 
 /// `ctx[+0x06]` values below the round prompt: SCUS battle init's `0xFD`
@@ -786,10 +913,15 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                     })
                 })
                 .flatten();
+            // The yaw counter is a clock only while the action SM drifts it
+            // (any Battle Camera option but Far, `0x801E29D4`).
+            let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2)
+                .then(|| game_anchors::u16_at(ram, ctx + 0x6DA));
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),
                 accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
                 arm,
+                yaw,
             };
         }
         return SpanGate::Age {
@@ -928,9 +1060,19 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            gimard_countdown: game_anchors::u32_at(
+                ram,
+                legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
+            ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
+            entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
+            magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
+            strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
+            committed_queue: std::array::from_fn(|i| {
+                active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
+            }),
             arts_queue: active.is_some_and(|p| {
                 (0..0x10).any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A))
             }),
@@ -1365,7 +1507,7 @@ pub fn run_engine_battle(
     apply_bar_seeds(&mut session.host.world, &hp_seed);
     // Place the engine at the capture's phase ([`SeedPlan`]).
     //
-    // An opening capture is sampled at the battle-mode flip. Everything else
+    // An opening capture is sampled at retail's entry-sweep counter. Everything else
     // runs the opening (banner, intro camera, initiative) to the first round
     // prompt, the earliest point a retail capture of a running fight can
     // share with a fresh entry, and then:
@@ -1381,15 +1523,24 @@ pub fn run_engine_battle(
     //   on the capture's seat ([`BattleDrive::Action`]).
     let plan = battle.seed_plan();
     let seed = battle.inflight_cast();
-    session.host.world.battle.inflight_seed = seed;
     let mut prompt_tick = None;
     if plan != SeedPlan::Opening {
+        // Retail's battle tick runs only once the frame driver's entry sweep
+        // is over, so no capture of a running fight was taken under it. The
+        // port's tick does not wait; the seed does, and a cast is seeded to
+        // dispatch only from there.
+        let mut seeded = false;
         for t in 0..OPENING_TICKS {
+            if !seeded && entry_sweep_reached(&session.host.world, 0xFF) {
+                session.host.world.battle.inflight_seed = seed;
+                seeded = true;
+            }
             let w = &session.host.world;
-            let reached = match seed {
-                Some(_) => w.battle.inflight_seed.is_none(),
-                None => w.battle.flow != BattleFlowState::Idle,
-            };
+            let reached = seeded
+                && match seed {
+                    Some(_) => w.battle.inflight_seed.is_none(),
+                    None => w.battle.flow != BattleFlowState::Idle,
+                };
             if reached {
                 prompt_tick = Some(t);
                 break;
@@ -1408,7 +1559,18 @@ pub fn run_engine_battle(
     let mut pre_drive = None;
     let mut age_short = None;
     match (plan, battle.phase_gate()) {
-        (SeedPlan::Opening, _) => {}
+        // The entry sweep owns retail's camera until the frame driver's
+        // counter passes `0xC0`; run the engine's to the same count.
+        (SeedPlan::Opening, _) => {
+            for _ in 0..ENTRY_SWEEP_TICKS {
+                if entry_sweep_reached(&session.host.world, battle.entry_counter) {
+                    break;
+                }
+                session.tick()?;
+                session.fog_render_tick();
+                session.host.route_bgm_events(&mut director)?;
+            }
+        }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
             for t in 0..INFLIGHT_TICKS {
                 if gate.met(&session.host.world) {
@@ -1633,8 +1795,8 @@ pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleDrive {
     /// An opening capture ([`SeedPlan::Opening`]): nothing is pressed, and
-    /// the frame is the first one in battle mode - the instant the headless
-    /// seed samples. Retail's opening holds the fight on its intro (the
+    /// the frame is the first one in battle mode whose entry sweep has run
+    /// as far as retail's - the instant the headless seed samples. Retail's opening holds the fight on its intro (the
     /// tutorial's first speech, the formation reveal) while the engine's
     /// round prompt opens with it, so a frame taken past the prompt shows a
     /// surface retail had not reached.
@@ -1643,7 +1805,11 @@ pub enum BattleDrive {
     /// (`0x0C` / `0x14`): the enemy-name labels `0x0B` sweeps are gone there,
     /// so the frame waits for the engine's own intro names to clear
     /// (`World::battle.intro_names_frames`).
-    Opening { swept: bool },
+    ///
+    /// `entry` is retail's frame-driver counter `gp+0x330`: the frame also
+    /// waits for the engine's battle-entry sweep to run as far
+    /// ([`entry_sweep_reached`]).
+    Opening { swept: bool, entry: u8 },
     /// A command-selection surface on party seat `seat`: members ahead of
     /// it commit a plain Attack, the seat itself takes the arm that leads
     /// to `flow`.
@@ -1750,6 +1916,25 @@ pub enum BattleDrive {
 /// left first in the ring (`battle_vahn_tri_somersault_super`: retail row
 /// `1`, the default row `0`, which Noa's and Gala's swings had knocked far
 /// back).
+///
+/// `queue` is an arts capture's committed queue `+0x1DF..`. The string a
+/// bare confirm replays is the record's saved band, and that band is not
+/// what the player entered on the captured turn: `battle_melee_hit_spark`'s
+/// Vahn holds `0F 0E 0F 0E` (Up Down Up Down) in band A while his committed
+/// queue `0D 0F 0E 19 27` is Right Up Down Up, tokenized with Somersault -
+/// so the replay struck Up, Down, Somersault, Down and sat in `0x20` on a
+/// Down swing where retail plays the Somersault. [`BattleDrive::prime`]
+/// recovers the entered arrows from the queue ([`entered_arrows`]) and,
+/// when neither saved band holds them, writes them into both, so the replay
+/// tokenizes the captured turn.
+///
+/// `cursor` is that queue's strike cursor `ctx[+0x15]` on an
+/// [`SpanGate::Age`] capture inside the strike loop. With the queue
+/// replayed byte for byte, the age alone matches the first clip of the turn
+/// that runs as long - `battle_vahn_tri_somersault_super` sits at age `160`
+/// on the Somersault at cursor `5`, and the drive took the turn's first Down
+/// swing at cursor `3` - so the cursor names the clip the art slot's `clip`
+/// gate cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
@@ -1760,6 +1945,8 @@ pub struct ActionSteer {
     pub gauge: Option<u16>,
     pub clip: Option<u8>,
     pub aim: Option<u8>,
+    pub queue: Option<[u8; 16]>,
+    pub cursor: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1827,10 +2014,20 @@ pub enum SpanGate {
     /// phase is held until the engine's module sits in that arm with its
     /// countdown run down at least as far - the module's own clock, which
     /// places a camera shot or drift in flight.
+    ///
+    /// `yaw` is retail's yaw counter `ctx[+0x6DA]` (`None` under the Far
+    /// option, which stops it): the action seed `0x0C` stores `0x800` and
+    /// the SM's prologue adds about one a display frame, so it counts the
+    /// frames since the seed - including the ones `0x6E` spent waiting on
+    /// the drive (`FUN_8003DE7C(1)` at `0x801E4F08`) before the caster's
+    /// clip commit zeroed the accumulator. The accumulator alone cannot see
+    /// those; the three Delilas special captures sit `34` frames past the
+    /// accumulator's reading of them.
     CaptureFade {
         height: u16,
         accum: u16,
         arm: Option<(u8, i32)>,
+        yaw: Option<u16>,
     },
     /// Any other action-SM state, `accum` (`ctx[+0x87C]`) into it.
     ///
@@ -1884,6 +2081,27 @@ fn capture_accum_done(world: &legaia_engine_core::world::World, height: u16, acc
         .is_none_or(|c| c.close_up_accum() >= u32::from(want))
 }
 
+/// Whether the engine's yaw counter has run as far through `0x6E` as
+/// retail's `yaw` (`ctx[+0x6DA]`) says retail's did: the capture's value
+/// less the `0x6F` frames still to come (the depth ramps `16` a display
+/// frame against the counter's one). `None` - the Far option - holds
+/// nothing.
+fn capture_yaw_done(
+    world: &legaia_engine_core::world::World,
+    height: u16,
+    yaw: Option<u16>,
+) -> bool {
+    let Some(yaw) = yaw else {
+        return true;
+    };
+    let want = i32::from(yaw) - i32::from(capture_ramp_left(world, height) / 16);
+    world
+        .battle
+        .camera
+        .as_ref()
+        .is_none_or(|c| c.action_yaw_base() >= want)
+}
+
 /// Whether the engine's `0x6F` pull-in has come down at least as far as
 /// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps).
 fn capture_ramp_done(world: &legaia_engine_core::world::World, height: u16) -> bool {
@@ -1911,20 +2129,33 @@ impl SpanGate {
             Self::CaptureFade {
                 height,
                 accum,
-                arm: None,
-            } => format!("{height}/{accum}"),
-            Self::CaptureFade {
-                height,
-                accum,
-                arm: Some((phase, countdown)),
-            } => format!("{height}/{accum}/{phase}/{countdown}"),
+                arm,
+                yaw,
+            } => {
+                let mut s = format!("{height}/{accum}");
+                if let Some((phase, countdown)) = arm {
+                    s.push_str(&format!("/{phase}/{countdown}"));
+                }
+                if let Some(y) = yaw {
+                    s.push_str(&format!("/y{y}"));
+                }
+                s
+            }
             _ => self.to_env().1.to_string(),
         }
     }
 
     fn from_env(kind: &str, value: &str) -> Option<Self> {
         if kind.trim() == "5" {
-            let parts: Vec<&str> = value.trim().split('/').collect();
+            let mut parts: Vec<&str> = value.trim().split('/').collect();
+            let yaw = match parts.last() {
+                Some(t) if t.starts_with('y') => {
+                    let y = t[1..].parse().ok()?;
+                    parts.pop();
+                    Some(y)
+                }
+                _ => None,
+            };
             let arm = match parts.as_slice() {
                 [_, _] => None,
                 [_, _, p, c] => Some((p.parse().ok()?, c.parse().ok()?)),
@@ -1934,6 +2165,7 @@ impl SpanGate {
                 height: parts[0].parse().ok()?,
                 accum: parts[1].parse().ok()?,
                 arm,
+                yaw,
             });
         }
         let value: u16 = value.trim().parse().ok()?;
@@ -1979,7 +2211,7 @@ impl BattleDrive {
     /// `action,<seat>,<state>,<category>,<queued>[,<spare>,<absorbed>[,<end kind>,<end value>]]`.
     pub fn to_env(&self) -> String {
         match *self {
-            Self::Opening { swept } => format!("opening,{}", u8::from(swept)),
+            Self::Opening { swept, entry } => format!("opening,{},{entry}", u8::from(swept)),
             Self::Menu { flow, seat } => format!("menu,{},{seat}", flow.raw()),
             Self::Action {
                 seat,
@@ -2025,6 +2257,15 @@ impl BattleDrive {
                 if let Some(p) = steer.aim {
                     s.push_str(&format!(",p{p}"));
                 }
+                if let Some(u) = steer.cursor {
+                    s.push_str(&format!(",u{u}"));
+                }
+                if let Some(q) = steer.queue {
+                    s.push_str(",q");
+                    for b in q {
+                        s.push_str(&format!("{b:02x}"));
+                    }
+                }
                 s
             }
         }
@@ -2032,8 +2273,24 @@ impl BattleDrive {
 
     pub fn from_env(s: &str) -> Option<Self> {
         match s.trim() {
-            "opening" | "opening,0" => return Some(Self::Opening { swept: false }),
-            "opening,1" => return Some(Self::Opening { swept: true }),
+            "opening" | "opening,0" => {
+                return Some(Self::Opening {
+                    swept: false,
+                    entry: 0,
+                });
+            }
+            "opening,1" => {
+                return Some(Self::Opening {
+                    swept: true,
+                    entry: 0,
+                });
+            }
+            t if t.starts_with("opening,") => {
+                let mut it = t.split(',').skip(1);
+                let swept = it.next()? == "1";
+                let entry = it.next()?.parse().ok()?;
+                return Some(Self::Opening { swept, entry });
+            }
             _ => {}
         }
         // The tagged steering tokens ride at the end (`t<seat>`, `y<yaw>`).
@@ -2058,6 +2315,17 @@ impl BattleDrive {
                 steer.clip = Some(k.parse().ok()?);
             } else if let Some(p) = last.strip_prefix('p') {
                 steer.aim = Some(p.parse().ok()?);
+            } else if let Some(u) = last.strip_prefix('u') {
+                steer.cursor = Some(u.parse().ok()?);
+            } else if let Some(q) = last.strip_prefix('q') {
+                if q.len() != 32 {
+                    return None;
+                }
+                let mut queue = [0u8; 16];
+                for (i, b) in queue.iter_mut().enumerate() {
+                    *b = u8::from_str_radix(q.get(i * 2..i * 2 + 2)?, 16).ok()?;
+                }
+                steer.queue = Some(queue);
             } else {
                 break;
             }
@@ -2160,6 +2428,12 @@ impl BattleDrive {
                 a.battle.agl = live;
             }
         }
+        if let Self::Action { seat, steer, .. } = *self
+            && seat < 3
+            && let Some(queue) = steer.queue
+        {
+            seed_entered_arrows(world, seat, &queue);
+        }
         if let Self::Action { seat, absorbed, .. } = *self
             && absorbed != 0
             && seat < 3
@@ -2195,8 +2469,9 @@ impl BattleDrive {
         match *self {
             // The first frame whose monsters are drawable: the bodies bind
             // a few ticks after the mode flip.
-            Self::Opening { swept } => {
+            Self::Opening { swept, entry } => {
                 let ok = (!swept || world.battle.intro_names_frames == 0)
+                    && entry_sweep_reached(world, entry)
                     && world.actors.iter().enumerate().all(|(i, a)| {
                         a.battle_monster_id.is_none()
                             || !a.active
@@ -2276,8 +2551,11 @@ impl BattleDrive {
                                 || world.casting.module_phase == phase
                                     && world.casting.module_cam.countdown.0 <= countdown
                         }
-                        SpanGate::CaptureFade { height, accum, .. } if state == 0x6E => {
+                        SpanGate::CaptureFade {
+                            height, accum, yaw, ..
+                        } if state == 0x6E => {
                             capture_accum_done(world, height, accum)
+                                && capture_yaw_done(world, height, yaw)
                         }
                         SpanGate::CaptureFade { height, .. } if state == 0x6F => {
                             capture_ramp_done(world, height)
@@ -2294,6 +2572,12 @@ impl BattleDrive {
                                 && steer.clip.is_none_or(|k| {
                                     world.battle_current_anim(usize::from(engine_seat(seat, pc)))
                                         == k
+                                })
+                                && steer.cursor.is_none_or(|u| {
+                                    world
+                                        .actors
+                                        .get(usize::from(engine_seat(seat, pc)))
+                                        .is_some_and(|a| a.battle.strike_index == u)
                                 })
                         }
                         _ => true,
@@ -2360,6 +2644,9 @@ impl BattleDrive {
             }
             if steer.plate_cleared {
                 world.battle.target_plate_cleared = true;
+                // The swap's HUD: the monster seed's bar for the counterer,
+                // and no combo cluster.
+                world.battle.counter_hud = Some(engine_seat(seat, pc));
             }
         }
         if let Some(style) = style
@@ -2374,11 +2661,15 @@ impl BattleDrive {
             world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);
             return;
         }
-        let SpanGate::CaptureFade { height, accum, .. } = end else {
+        let SpanGate::CaptureFade {
+            height, accum, yaw, ..
+        } = end
+        else {
             return;
         };
-        world.audio.sound_bank_ready =
-            !(ours && state == 0x6E && !capture_accum_done(world, height, accum));
+        world.audio.sound_bank_ready = !(ours
+            && state == 0x6E
+            && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
         world.battle.prev_action_cleared =
             !(ours && state == 0x6F && !capture_ramp_done(world, height));
     }
@@ -2515,6 +2806,73 @@ fn saved_command_string(world: &legaia_engine_core::world::World, seat: u8) -> b
     })
 }
 
+/// The arrows a committed arts queue was entered as, as the swing bytes
+/// `0x0C..=0x0F` the record's saved band holds.
+///
+/// The queue builder keeps a matched art's leading arrows as swings and
+/// rewrites only its last one into the starter + constant pair (`0x19` /
+/// `0x1A`, then the art), so each pair stands for its art's final arrow and
+/// every other byte is an arrow already. `combo_of` names an art's arrows;
+/// an art it does not know - a Super or Miracle replacement, whose tail the
+/// finish rewrote whole - leaves the entry unrecoverable (`None`).
+pub fn entered_arrows(
+    queue: &[u8; 16],
+    combo_of: impl Fn(u8) -> Option<Vec<legaia_art::Command>>,
+) -> Option<[u8; 16]> {
+    let mut out = [0u8; 16];
+    let mut n = 0;
+    let mut i = 0;
+    while i < queue.len() && queue[i] != 0 {
+        let arrow = match queue[i] {
+            b @ 0x0C..=0x0F => b,
+            0x19 | 0x1A => {
+                i += 1;
+                let last = *combo_of(*queue.get(i)?)?.last()?;
+                0x0B + last as u8
+            }
+            _ => return None,
+        };
+        *out.get_mut(n)? = arrow;
+        n += 1;
+        i += 1;
+    }
+    (n > 0).then_some(out)
+}
+
+/// Make `seat`'s saved command string the arrows `queue` was entered as, so
+/// the arts entry preseeds the captured turn.
+///
+/// Which band the preseed reads is the live gauge's choice at the arts
+/// entry, which a replayed round can move after this runs (the seat's gauge
+/// restore is the drive's, not the band's). A record that already holds the
+/// arrows in either band is left alone - the capture's own preseed then
+/// reads the string retail did - and otherwise both bands take them.
+fn seed_entered_arrows(world: &mut legaia_engine_core::world::World, seat: u8, queue: &[u8; 16]) {
+    use legaia_save::character::AutoCommandBand;
+    let roster = world.party_roster_slot(usize::from(seat));
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let Some(arrows) = entered_arrows(queue, |art| {
+        let action = legaia_art::ActionConstant::from_byte(art)?;
+        world
+            .tables
+            .art_records
+            .get(&(character, action))
+            .map(|r| r.commands.clone())
+    }) else {
+        return;
+    };
+    let Some(rec) = world.party.roster.members.get_mut(roster) else {
+        return;
+    };
+    let bands = [AutoCommandBand::Primary, AutoCommandBand::Secondary];
+    if bands.iter().any(|&b| rec.auto_command_string(b) == arrows) {
+        return;
+    }
+    for band in bands {
+        rec.set_auto_command_string(band, arrows);
+    }
+}
+
 /// The member's EXP share the results sequencer hands out, `gp+0xA04`
 /// (`sw s6,0xA04(gp)` at `0x8004F684`).
 const END_XP_SHARE: u32 = 0x8007_BD1C;
@@ -2585,6 +2943,47 @@ pub fn ungrant_results_rewards(
         }
         let level = rec.level();
         rec.set_level(level.saturating_sub(1).max(1));
+    }
+}
+
+/// The magic-level-increased screen element `FUN_801E70BC` raises and stores
+/// on `ctx[+0x26]`.
+const MAGIC_LEVEL_BANNER: u8 = 0x65;
+
+/// Take a cast capture's magic level-up back off the caster it seeds.
+///
+/// The summon return's level check (`FUN_801E70BC`) bumps the cast spell's
+/// level byte (`record[+0x161 + slot]`) and raises the "magic level
+/// increased" banner, so a capture taken after it in the same action
+/// ([`RetailBattle::magic_level_up`]) holds the caster already a level up,
+/// with XP past the old threshold. The seed replays the cast from that
+/// record, and the engine's check then compares the XP against the **next**
+/// level's threshold: `shiny_refactor_gimard_levelup` levelled nothing the
+/// second time and the engine frame carried no banner. The level goes back
+/// one; the XP stays, and still clears the old threshold, so the replay's
+/// own check levels it again.
+pub fn ungrant_magic_level_up(save: &mut legaia_save::SaveFile, battle: &RetailBattle) {
+    if !battle.magic_level_up || battle.queued_category != 2 {
+        return;
+    }
+    let Some(&char_id) = battle.seat_chars.get(usize::from(battle.active_actor)) else {
+        return;
+    };
+    let Some(rec) = usize::from(char_id)
+        .checked_sub(1)
+        .and_then(|i| save.party.members.get_mut(i))
+    else {
+        return;
+    };
+    let mut list = rec.spell_list();
+    let count = usize::from(list.count).min(list.ids.len());
+    if let Some(at) = list.ids[..count]
+        .iter()
+        .position(|&id| id == battle.queued_action)
+        && list.levels[at] > 1
+    {
+        list.levels[at] -= 1;
+        rec.set_spell_list(list);
     }
 }
 
@@ -2665,13 +3064,17 @@ impl RetailBattle {
                 style: Some(self.cam_style),
                 steer: ActionSteer {
                     // A party killing blow on its victim, or a monster
-                    // cast on the party seat it aimed at.
+                    // action (a cast or a strike) on the party seat it
+                    // aimed at: the monster's pick is a draw, and a run on
+                    // another member frames another approach.
                     target: ((seat < 3
                         && self.target_code >= 3
                         && self
                             .action_victims()
                             .contains(&usize::from(self.target_code - 3)))
-                        || (seat >= 3 && self.queued_category == 2 && self.target_code < 3))
+                        || (seat >= 3
+                            && matches!(self.queued_category, 2 | 3)
+                            && self.target_code < 3))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
                     message: self.timed_message,
@@ -2684,23 +3087,47 @@ impl RetailBattle {
                         })
                         .map(|(live, _)| live),
                     clip: (seat < 3
-                        && self.caster_clip != 0
                         // Gate on the direction swing clips 0x0C..=0x0F only:
                         // retail can sit on the dynamic art slot 0x10 / 0x11
                         // while the engine holds the swing's own clip, which
                         // the gate could then never match
                         // (battle_melee_hit_spark: retail 0x11, engine 0x0E).
-                        && (0x0C..=0x0F).contains(&self.caster_clip)
+                        && ((0x0C..=0x0F).contains(&self.caster_clip)
+                            // ...and on the idle clip in the return state
+                            // `0x20`, whose first hold waits while the
+                            // attacker's `+0x1D9 != 0` (`0x801E54EC`): a
+                            // capture reading `0` there is past the last
+                            // swing, and the acting actor's idle commit is
+                            // what its accumulator counts from. Ungated, the
+                            // first tick the engine's accumulator reached the
+                            // value was inside the last art clip
+                            // (`player_steal_skeleton_banner`: the frame
+                            // showed the Somersault still landing, retail the
+                            // steal caption over an idle Vahn).
+                            || (self.caster_clip == 0 && state == 0x20))
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
                         && self.queued_category == 3
                         && (3..8).contains(&self.target_code))
                     .then(|| self.target_code - 3),
+                    queue: (seat < 3 && self.queued_category == 3 && self.arts_queue)
+                        .then_some(self.committed_queue),
+                    cursor: (seat < 3
+                        && self.queued_category == 3
+                        && self.arts_queue
+                        && matches!(state, 0x1E | 0x1F)
+                        // Only on the dynamic art slots, the clips the
+                        // `clip` gate leaves open: an idle `0` or a swing is
+                        // placed by the age and the clip already.
+                        && matches!(self.caster_clip, 0x10 | 0x11)
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.strike_cursor),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
                 swept: matches!(self.flow, 0x0C | 0x14),
+                entry: self.entry_counter,
             }),
             _ => None,
         }
@@ -2966,7 +3393,9 @@ pub fn compare_battle(
         Some(None) => "; cast replayed, phase never reached".to_string(),
     };
     let driven = match (plan, engine.driven) {
-        (_, None) if plan == SeedPlan::Opening => "; sampled at the battle-mode flip".to_string(),
+        (_, None) if plan == SeedPlan::Opening => {
+            "; sampled at the entry-sweep counter".to_string()
+        }
         (_, None) => String::new(),
         (_, Some(Some(t))) if battle.span_gate != SpanGate::None => {
             format!("; driven by pad, {:?} reached at +{t}", battle.span_gate)
@@ -3155,6 +3584,8 @@ mod tests {
                 module_phase: None,
                 cam_accum: None,
                 walk_yaw: None,
+                done_hold: None,
+                module_countdown: None,
             },
             PhaseGate {
                 action_state: 0x35,
@@ -3165,6 +3596,8 @@ mod tests {
                 module_phase: None,
                 cam_accum: None,
                 walk_yaw: None,
+                done_hold: None,
+                module_countdown: None,
             },
             PhaseGate {
                 action_state: 0x36,
@@ -3172,6 +3605,17 @@ mod tests {
                 module_phase: Some(6),
                 cam_accum: Some(72),
                 walk_yaw: Some(1497),
+                done_hold: None,
+                module_countdown: Some(-16),
+            },
+            PhaseGate {
+                action_state: 0x51,
+                fade: None,
+                module_phase: None,
+                cam_accum: None,
+                walk_yaw: None,
+                done_hold: Some(104),
+                module_countdown: None,
             },
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
@@ -3205,7 +3649,10 @@ mod tests {
     #[test]
     fn the_battle_drive_round_trips_through_its_env_form() {
         for d in [
-            BattleDrive::Opening { swept: true },
+            BattleDrive::Opening {
+                swept: true,
+                entry: 0xAF,
+            },
             BattleDrive::Menu {
                 flow: BattleFlowState::ArtsCommandEntry,
                 seat: 2,
@@ -3258,6 +3705,7 @@ mod tests {
                     height: 0xFF40,
                     accum: 344,
                     arm: Some((1, 496)),
+                    yaw: Some(0x83C),
                 },
                 style: None,
                 steer: ActionSteer::default(),
@@ -3294,6 +3742,10 @@ mod tests {
                     gauge: Some(153),
                     clip: Some(0x11),
                     aim: Some(1),
+                    queue: Some([
+                        0x0D, 0x0F, 0x0E, 0x19, 0x27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ]),
+                    cursor: Some(5),
                     ..ActionSteer::default()
                 },
             },
@@ -3301,6 +3753,30 @@ mod tests {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
         }
         assert_eq!(BattleDrive::from_env("menu,40"), None);
+    }
+
+    /// A committed arts queue reads back as the arrows that were entered:
+    /// swings as they stand, each starter + art pair as its art's last arrow.
+    /// `battle_melee_hit_spark`'s `0D 0F 0E 19 27` is Right Up Down Up when
+    /// art `0x27` is Up Down Up; a constant with no known combo (a Super
+    /// tail) or a stray byte leaves it unrecoverable.
+    #[test]
+    fn entered_arrows_undo_the_queue_builder() {
+        use legaia_art::Command::{Down, Up};
+        let combo = |a: u8| (a == 0x27).then(|| vec![Up, Down, Up]);
+        let mut q = [0u8; 16];
+        q[..5].copy_from_slice(&[0x0D, 0x0F, 0x0E, 0x19, 0x27]);
+        let mut want = [0u8; 16];
+        want[..4].copy_from_slice(&[0x0D, 0x0F, 0x0E, 0x0F]);
+        assert_eq!(entered_arrows(&q, combo), Some(want));
+        q[3] = 0x1A; // a newly-learned starter reads the same
+        assert_eq!(entered_arrows(&q, combo), Some(want));
+        q[4] = 0x2B;
+        assert_eq!(entered_arrows(&q, combo), None, "unknown art");
+        assert_eq!(entered_arrows(&[0u8; 16], combo), None, "empty queue");
+        let mut stray = [0u8; 16];
+        stray[0] = 0x2B;
+        assert_eq!(entered_arrows(&stray, combo), None, "bare constant");
     }
 
     /// Taking an absorbed Seru back off a list undoes the Done band's

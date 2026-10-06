@@ -301,6 +301,14 @@ pub struct BattleState {
     pub steal: crate::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
     pub steal_caption: Option<crate::battle_steal::StealCaption>,
+    /// The party art-name label (element `0x4C`, records 76 / 77) has been
+    /// taken down: the commit that replaces a party member's art clip on
+    /// dynamic slot `0x11` destroys widget `0x21`
+    /// (`FUN_8004AD80` `0x8004AE70..0x8004AEAC`), and the next art
+    /// constant's commit opens it again (`0x8004BC34..0x8004BC40`).
+    /// [`crate::battle_hud::battle_move_name`] answers `None` for a party
+    /// attack while it is set.
+    pub move_label_closed: bool,
     /// The field-to-battle transition entity, live only while the encounter
     /// session sits in [`crate::encounter::EncounterPhase::Transition`].
     /// `None` outside that window.
@@ -427,12 +435,27 @@ pub struct BattleState {
     pub action_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
     pub target_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The result windows' raise glide: the results frame spawns the report
+    /// (`0x41`) or loss (`0x42`) window and the level-up window
+    /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
+    /// them to seat B over the same `0x10` frames as the action plates
+    /// ([`crate::battle_hud::battle_result_windows_dy`]).
+    pub result_windows_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's content word was cleared: the strike loop's
     /// counterattack swap zeroes record `0x51`'s string and width
     /// (`sw zero,0x7AC(s1)` / `sh zero,0x79E(s1)` at `0x801E36C8` /
     /// `0x801E36CC`, `s1 = 0x80076C10`), so the counterer's strikes carry no
     /// target plaque. The next action seed's raise rewrites it.
     pub target_plate_cleared: bool,
+    /// The counterer whose strikes the counterattack swap is running, while
+    /// the HUD still holds the elements the **monster's** action seed opened.
+    /// The swap runs no seed pass, so retail keeps the readout bar the
+    /// monster's seed raised for its party target (the counterer) and never
+    /// opens the combo cluster: `battle_vahn_tri_somersault_super`'s widget
+    /// glide slots hold the bar at `(16, 192)` and the move name, and no
+    /// cluster record. Cleared with [`Self::target_plate_cleared`] by the
+    /// next action seed's raise.
+    pub counter_hud: Option<u8>,
     /// The battle side-band's state ([`crate::battle_sideband`], retail
     /// `FUN_80056208`): the stage phase cursor `ctx[+0x289]` (the sparring
     /// intro's `0` waiting / `1` caption up / `2` prompt machine live, and
@@ -619,6 +642,13 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
+    /// low nibble and adds `DAT_1F800393 << 3` every battle frame
+    /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
+    /// decode `FUN_8004998C` runs for with a non-zero `+0x21F` selector
+    /// emits one burning sprite per `0x10` of it
+    /// ([`crate::world::World::emit_battle_burn_sprites`]).
+    pub burn_emit_accum: u16,
     /// The battle ambient base as the last storing `FUN_80050120` pass left
     /// it, 8 bits a channel - what the ground grid's near colour
     /// `0x8007B7B0` (base `+ 0x404040`) and far colour `0x8007BB48`
@@ -711,6 +741,7 @@ impl BattleState {
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             steal: crate::battle_steal::StealBand::default(),
             steal_caption: None,
+            move_label_closed: false,
             player_driven: false,
             command: None,
             item_menu: None,
@@ -726,7 +757,9 @@ impl BattleState {
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
+            result_windows_glide: None,
             target_plate_cleared: false,
+            counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
             arrival: Default::default(),
@@ -753,6 +786,7 @@ impl BattleState {
             loot_applied: false,
             return_mode: SceneMode::Field,
             clip_ribbon: None,
+            burn_emit_accum: 0,
             ambient_stored: legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,
             stage_outdoor: false,

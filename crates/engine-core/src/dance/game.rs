@@ -59,6 +59,15 @@ pub struct DanceGame {
     /// choreography bank is attached ([`DanceGame::attach_clip_bank`]).
     /// `None` on a chart-only run, which falls back to the note latch.
     pub(super) clip_ticks: Option<std::collections::HashMap<(u16, u16), u32>>,
+    /// The song-end countdown's four move programs, off the overlay
+    /// ([`super::finish_programs`]); empty on a chart-only run.
+    pub(super) finish_programs: Vec<(u16, Vec<u16>)>,
+    /// States `0xB` / `0xC` while they run ([`super::FinishCountdown`]).
+    pub(super) finish: Option<super::FinishCountdown>,
+    /// State `0x14` reached: the countdown and the wipe are over.
+    pub(super) finished: bool,
+    /// Cues the countdown wrote, for the host to drain.
+    pub(super) finish_cues: Vec<u16>,
 }
 
 impl DanceGame {
@@ -104,6 +113,10 @@ impl DanceGame {
             camera: None,
             demo: None,
             clip_ticks: None,
+            finish_programs: Vec::new(),
+            finish: None,
+            finished: false,
+            finish_cues: Vec::new(),
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -181,6 +194,7 @@ impl DanceGame {
             m.class = class as u16;
         }
         game.camera = crate::dance_venue::DanceCameraTrack::from_overlay(overlay);
+        game.finish_programs = super::finish_programs(overlay);
         game.spawn_dancer_actors(&spawns);
         // PORT: FUN_801d0190 (the mode-2 Disco King spawn, 0x801D0338..0x801D0390)
         if mode == DanceMode::HowTo {
@@ -561,8 +575,102 @@ impl DanceGame {
                     out.extend(self.gauge_readout_quads(value, x, y));
                     out.extend(self.number_quads(true, value, x + 0x18, y));
                 }
-                _ => {}
+                DanceHudDraw::BeatTrack { slot, x, y } => {
+                    out.extend(self.beat_track_quads(slot, x, y));
+                }
             }
+        }
+        out
+    }
+
+    /// One dancer's beat track as widget quads, in submission order - the port of
+    /// `FUN_801D2524(slot, x, y)` (`see ghidra/scripts/funcs/overlay_dance_801d2524.txt`).
+    ///
+    /// Every prim goes to one ordering-table slot through the head-linking
+    /// `AddPrim`, so the paint order is the **reverse** of the emission order
+    /// this list keeps (the screen-prim builder reproduces the LIFO bucket):
+    ///
+    /// 1. the triangle-stock markers - widget `0x1F` at `(x + 16i, y + 0x10)`,
+    ///    one per remaining triangle of the human (`DAT_801D534C`, a fixed
+    ///    address: every track shows the human's stock);
+    /// 2. under a draw area of `[x, x + 0x50)` (the `E3` / `E4` pair at
+    ///    `0x801D28E8..0x801D2974`): twelve body tiles, widget `0x1E` at
+    ///    `(x + 8i, y)`, then eight notes - widget `sym + 0xD` at
+    ///    `x + 16i - (phase * 16 / 281 + 5) - 4`, `sym` the chart cell of
+    ///    beat `(beat + i - 1) & 31` on the row the dancer's level
+    ///    (`gauge / 1000`) selects, CLUT `0x7D0E`;
+    /// 3. the draw area back to the full screen, then the right cap
+    ///    (`0x11` at `x + 0x54`), the left cap (`0x10` at `x - 4`) and the
+    ///    marker arrow (`0x12` at `(x + 8, y - 8)`), unclipped over the body.
+    ///
+    /// The body and caps take CLUT `0x7D0D` on a flash beat and `0x7D08`
+    /// otherwise: a flash beat is `beat & 7 == 3` (`beat & 3` at level `0`)
+    /// within the first `0x46` phase units (`0x801D2620..0x801D266C`). The
+    /// second note's `0xFF` hit-flash pass (`DAT_801D558C`) is not modelled -
+    /// the engine keeps no writer of that counter - so every note draws at
+    /// `0x80`. Empty without a widget table.
+    ///
+    /// PORT: FUN_801d2524 (the emit sequence and draw area; the flash test and
+    /// note x are [`dance_combo_window_bright`] / [`dance_beat_track_note_x`])
+    pub fn beat_track_quads(&self, slot: usize, x: i16, y: i16) -> Vec<DanceHudQuad> {
+        const CLIP_W: i16 = 0x50;
+        if self.widgets.is_empty() {
+            return Vec::new();
+        }
+        let level = self.dancer_gauge(slot) / GAUGE_STEP;
+        let beat = self.phase / BEAT_PERIOD;
+        let phase_in = self.phase - beat * BEAT_PERIOD;
+        let track_clut = if dance_combo_window_bright(beat, level, phase_in) {
+            BEAT_TRACK_CLUT_COMBO
+        } else {
+            BEAT_TRACK_CLUT_IDLE
+        };
+        let quad = |id: usize, qx: i16, qy: i16, clut: Option<u16>| {
+            self.widgets.get(id).map(|(w, abr)| {
+                let mut w = *w;
+                if let Some(c) = clut {
+                    w.clut = c;
+                }
+                dance_hud_widget_quad(&w, *abr, qx, qy, id as u32, DANCE_HUD_BRIGHTNESS, 0x1000)
+            })
+        };
+        let clip = |q: DanceHudQuad| -> Option<DanceHudQuad> {
+            let (lo, hi) = (x, x + CLIP_W);
+            if q.x1 <= lo || q.x0 >= hi {
+                return None;
+            }
+            let mut q = q;
+            let cut_l = (lo - q.x0).max(0);
+            let cut_r = (q.x1 - hi).max(0);
+            q.x0 += cut_l;
+            q.x1 -= cut_r;
+            for (i, uv) in q.uv.iter_mut().enumerate() {
+                if i % 2 == 0 {
+                    uv.0 = uv.0.wrapping_add(cut_l as u8);
+                } else {
+                    uv.0 = uv.0.wrapping_sub(cut_r as u8);
+                }
+            }
+            Some(q)
+        };
+        // Emission (submission) order, as retail links the packets; the
+        // screen-prim builder paints a shared bucket last-submitted first.
+        let mut out = Vec::new();
+        out.extend(quad(0x12, x + 8, y - 8, None));
+        out.extend(quad(0x10, x - 4, y, Some(track_clut)));
+        out.extend(quad(0x11, x + 0x54, y, Some(track_clut)));
+        let row = self.chart.rows.get(level as usize);
+        for i in 0..8u32 {
+            let cell = (beat + i).wrapping_sub(1) & 31;
+            let sym = row.map_or(0, |r| r[cell as usize % r.len()]) as usize;
+            let nx = dance_beat_track_note_x(i32::from(x), i, phase_in) as i16;
+            out.extend(quad(sym + 0xD, nx, y, Some(BEAT_TRACK_CLUT_NOTE)).and_then(clip));
+        }
+        for i in 0..12 {
+            out.extend(quad(0x1E, x + 8 * i, y, Some(track_clut)).and_then(clip));
+        }
+        for i in 0..self.triangles() as i16 {
+            out.extend(quad(0x1F, x + 16 * i, y + 0x10, None));
         }
         out
     }
@@ -656,6 +764,54 @@ impl DanceGame {
         self.song_timer >= self.song_len
     }
 
+    /// `true` once the song is over **and** states `0xB` / `0xC` have run -
+    /// the `3 2 1 FINISH!` countdown and the wipe under it - which is when
+    /// retail reaches its results state `0x14`. A chart-only run (no
+    /// overlay programs) finishes with the song.
+    pub fn finished(&self) -> bool {
+        self.song_over() && (self.finished || self.finish_programs.is_empty())
+    }
+
+    /// Whether the run is in states `0xB` / `0xC` - the song over, the
+    /// countdown and wipe still running - where the award routine still
+    /// judges and a landed triangle pays [`MULT_FINALE`].
+    pub fn in_finale(&self) -> bool {
+        self.song_over() && !self.finished()
+    }
+
+    /// Whether dancer `i` landed a triangle during the finale
+    /// (`DAT_801d538c[player]`).
+    pub fn finale_landed(&self, i: usize) -> bool {
+        self.dancers.get(i).is_some_and(|d| d.finale_landed)
+    }
+
+    /// The countdown's cues since the last call (`0x206..=0x209`).
+    pub fn take_finish_cues(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.finish_cues)
+    }
+
+    /// Step states `0xB` / `0xC` `frame_delta` vsyncs once the song is over.
+    // PORT: FUN_801cf470 (states 0xB / 0xC: the countdown spawns and the wipe)
+    fn advance_finish(&mut self, frame_delta: u32) {
+        if !self.song_over() || self.finished || self.finish_programs.is_empty() {
+            return;
+        }
+        let fc = self
+            .finish
+            .get_or_insert_with(|| super::FinishCountdown::new(&self.finish_programs));
+        for _ in 0..frame_delta {
+            let s = fc.step();
+            self.finish_cues.extend(s.cues);
+            if s.done {
+                self.finished = true;
+                break;
+            }
+        }
+        if self.finished {
+            self.finish = None;
+        }
+    }
+
     // --------------------------------------------------------------- actors
 
     /// The dancer actor pool - one record per floor slot, live every frame.
@@ -699,7 +855,9 @@ impl DanceGame {
     /// quads (the shadowed arm is two of them per part) at
     /// [`SpritePartEmit`]'s screen pair, modulated by `fade`.
     pub fn sprite_part_emits(&self) -> Vec<SpritePartFrame> {
-        self.parts
+        let n = self.parts.actors().len();
+        let mut out: Vec<SpritePartFrame> = self
+            .parts
             .actors()
             .iter()
             .enumerate()
@@ -709,7 +867,28 @@ impl DanceGame {
                 fade: sprite_part_fade_weight(a.beat),
                 sprite: a.sprite,
             })
-            .collect()
+            .collect();
+        // The song-end countdown's parts, on the ticks their programs call
+        // the sprite hook - the same case-2 emit (`FUN_801D387C`).
+        if let Some(fc) = self.finish.as_ref() {
+            out.extend(
+                fc.draws()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, d)| SpritePartFrame {
+                        index: n + i,
+                        emit: sprite_part_emit(
+                            PART_DRAW_MODE,
+                            super::FINISH_SEAT.0,
+                            super::FINISH_SEAT.1,
+                            d.sprite,
+                        ),
+                        fade: d.fade,
+                        sprite: d.sprite,
+                    }),
+            );
+        }
+        out
     }
 
     // ---------------------------------------------------------------- state
@@ -874,6 +1053,7 @@ impl DanceGame {
         // The song timer saturates at the length limit (the retail clock keeps
         // counting but the run ends; clamping keeps `song_over` monotone).
         self.song_timer = self.song_timer.saturating_add(step).min(self.song_len);
+        self.advance_finish(frame_delta);
         self.feedback = self.feedback.saturating_sub(frame_delta);
 
         let beat = self.beat_index();
@@ -1022,7 +1202,7 @@ impl DanceGame {
     /// **Triangle spends a groovy-move wildcard** (three per song, any beat,
     /// worth the big multiplier only on the 4-beat combo slot, and locking input
     /// out for the length of the spin it throws the dancer into).
-    // PORT: FUN_801d1af4 (score / groove-gauge award; pad-word branches)
+    // PORT: FUN_801d1af4 (PROT 0980; score / groove-gauge award; pad-word branches)
     pub fn press(&mut self, dir: DanceDir) -> DanceEvent {
         self.award(0, dir)
     }
@@ -1138,10 +1318,11 @@ impl DanceGame {
     /// (plus a full `+1000` gauge step, which promotes the lane) and only
     /// `(lane+1) * 3` when it does not, and throws the dancer into a `lane + 1`
     /// turn spin during which no press is judged.
-    // PORT: FUN_801d1af4 (the pad-0x10 groovy-move branch)
+    // PORT: FUN_801d1af4 (PROT 0980; the pad-0x10 groovy-move branch)
     pub(super) fn spend_triangle(&mut self, i: usize, beat: u32) -> DanceEvent {
         let rows = self.chart.rows.len();
         let landed = self.on_combo_slot();
+        let finale = self.in_finale();
         let d = &mut self.dancers[i];
         if d.triangles == 0 {
             return DanceEvent::NoCharge;
@@ -1154,7 +1335,15 @@ impl DanceGame {
         d.landed = landed;
         let points = if landed {
             d.gauge = (d.gauge + GAUGE_STEP).min(GAUGE_MAX);
-            (lane + 1) * MULT_COMBO
+            // `0x801D1CE0..0x801D1D30`: in states 0xB / 0xC (`state - 0xB <
+            // 2`) the landed triangle pays `(lane + 1) * 17 << 1` and raises
+            // `DAT_801d538c[player]`; otherwise `(lane + 1) * 25`.
+            if finale {
+                d.finale_landed = true;
+                (lane + 1) * MULT_FINALE
+            } else {
+                (lane + 1) * MULT_COMBO
+            }
         } else {
             (lane + 1) * MULT_ORDINARY
         };

@@ -347,6 +347,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-throw" type="button" data-dance="3"><svg class="mg-psbtn"><use href="#btn-triangle"/></svg>Triangle<span class="mg-key">X</span></button>
           <button class="mg-btn mg-primary" type="button" id="dance-start">Start</button>
         </div>
+        <div class="mg-row">
+          <label for="dance-mode"><strong>Mode:</strong></label>
+          <select id="dance-mode" class="mg-select">
+            <option value="0">Qualifier</option>
+            <option value="1">Finals</option>
+            <option value="2">How-to (Disco King)</option>
+            <option value="3">Free play</option>
+          </select>
+        </div>
         <div class="mg-row" id="dance-jukebox-row" hidden>
           <label for="dance-track"><strong>Track:</strong></label>
           <select id="dance-track" class="mg-select"></select>
@@ -1102,7 +1111,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      * BGM 2026 = music_01 slot 26 (M26B1, the standard random-battle theme;
      * see docs/subsystems/minigame-muscle-dome.md). Fishing inherits its venue
      * scene's BGM, which the overlay doesn't pin, so it carries no track. */
-    const GAME_BGM = { baka: 2055, slot: 2018, muscle: 2026 };
+    /* The track per game is the engine's (`minigame_bgm_id`, over
+     * `MinigameSubId::standalone_bgm_id`); `-1` = none. */
+    function gameBgm(game) {
+      if (!api || typeof api.minigame_bgm_id !== 'function') return 0;
+      const id = api.minigame_bgm_id(game);
+      return id > 0 ? id : 0;
+    }
 
     function audio() {
       if (!ctx) {
@@ -1118,7 +1133,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     const prerendered = {};
     function prerender(game) {
-      const bgm = GAME_BGM[game];
+      const bgm = gameBgm(game);
       if (!bgm || prerendered[game] || !window.MgBgm2) return;
       prerendered[game] = true;
       const a = audio();
@@ -1130,7 +1145,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       stop();
       if (!soundOn() || !window.MgBgm2) return false;
       const a = audio();
-      const bgm = GAME_BGM[game];
+      const bgm = gameBgm(game);
       if (!a || !bgm) return false;
       const entry = MgBgm2.render(api, a, bgm, RENDER_SECONDS);
       const src = MgBgm2.start(a, entry, 0.5);
@@ -1249,8 +1264,17 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     sel.onchange = () => { if (danceR) danceR.setBgmTrack(parseInt(sel.value, 10)); };
   }
 
+  /* Tutorial buttons pressed since the last frame: 1 = a face button
+   * (advance / confirm), 2 = cursor back (Left), 4 = cursor on (Right). */
+  let danceTutBits = 0;
   function danceStart() {
-    if (!api || !api.dance_start(false)) {
+    const modeSel = $('dance-mode');
+    const mode = modeSel ? parseInt(modeSel.value, 10) || 0 : 0;
+    danceTutBits = 0;
+    const ok = api && (typeof api.dance_start_mode === 'function'
+      ? api.dance_start_mode(mode, false)
+      : api.dance_start(false));
+    if (!ok) {
       verdict($('dance-verdict'), 'The step chart did not decode from this disc.', 'bad');
       return;
     }
@@ -1295,7 +1319,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function danceFrame() {
     const st = JSON.parse(api.dance_state_json());
     if (st.live) {
-      /* Hold the beat clock through the READY / 1-2-3 / GO! count-in. */
+      /* Hold the beat clock through the engine's READY / GO! count-in. */
       if (!st.over && !(danceR && danceR.introGate)) api.dance_tick(1);
       else if (st.over && danceLive) {
         danceLive = false;
@@ -1325,8 +1349,37 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         '\u25b2'.repeat(st.triangles) + '\u25b3'.repeat(3 - st.triangles) +
         (st.lock ? ' (spinning)' : '');
     }
+    /* The how-to run's Disco King actor (FUN_801D0750), stepped beside the
+     * run - count-in included - as World::step_dance_tutorial does. */
+    let tutorialOn = false;
+    if (st.live && typeof api.dance_tutorial_active === 'function' && api.dance_tutorial_active()) {
+      const cue = api.dance_tutorial_step(danceTutBits);
+      danceTutBits = 0;
+      if (cue) {
+        if (cue >= 0x200) { if (danceR && danceR.playId) danceR.playId(cue); }
+        else if (api.minigame_sfx_cue) api.minigame_sfx_cue(cue);
+      }
+      tutorialOn = true;
+    }
     if (danceR) danceR.draw(st.live ? st : null, danceChart);
     else danceDrawFallback(st.live ? st : null, danceChart);
+    if (tutorialOn) danceTutorialOverlay();
+  }
+
+  /* The tutorial's captions / options / cursor through the shared
+   * ui_dance::dance_tutorial_draws_for, composited over the HUD canvas. */
+  let danceTutCanvas = null;
+  function danceTutorialOverlay() {
+    const c = $('dance-canvas');
+    if (!c || typeof api.dance_tutorial_rgba !== 'function') return;
+    const px = api.dance_tutorial_rgba(c.width, c.height);
+    if (!px.length) return;
+    if (!danceTutCanvas) danceTutCanvas = document.createElement('canvas');
+    danceTutCanvas.width = c.width;
+    danceTutCanvas.height = c.height;
+    const tg = danceTutCanvas.getContext('2d');
+    tg.putImageData(new ImageData(new Uint8ClampedArray(px), c.width, c.height), 0, 0);
+    c.getContext('2d').drawImage(danceTutCanvas, 0, 0);
   }
 
   /* The pre-art glyph highway - only drawn when the art pack didn't decode
@@ -2474,6 +2527,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
        * the printed labels on the dance buttons are static to match. */
       const DANCE_KEYS = { KeyZ: 1, KeyX: 3, KeyC: 2 };
       const m = DANCE_KEYS[e.code] || (FACE_LANES[b] <= 3 ? FACE_LANES[b] : undefined);
+      /* The how-to tutorial reads the same presses (any face button
+       * advances) plus Left / Right for its Yes / No prompt. */
+      if (m || (n >= 1 && n <= 3) || b === 'Cross' || b === 'Start') danceTutBits |= 1;
+      if (b === 'Left') { danceTutBits |= 2; e.preventDefault(); }
+      if (b === 'Right') { danceTutBits |= 4; e.preventDefault(); }
       if (m) { e.preventDefault(); dancePress(m); }
       else if (n >= 1 && n <= 3) { e.preventDefault(); dancePress(n); }
     } else if (active === 'baka') {

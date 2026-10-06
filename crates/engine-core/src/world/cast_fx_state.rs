@@ -22,6 +22,11 @@ pub struct CastFxState {
     /// host-fulfilled request because `World` is index-agnostic (same pattern
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
+    /// A creature seat the stager owes but has not requested yet: `(seat
+    /// arm, spell id, spawn point)`. A module whose tick body seats its
+    /// creature in a later arm (`cast_module_camera::module_seat_arm`) has
+    /// it requested once its phase passes that arm.
+    pub summon_seat_owed: Option<(u8, u8, [i16; 3])>,
     /// The **cast-effect pool**: the DATA half of the slot-B cast-module band
     /// (PROT 0903..0966), keyed by PROT entry. Both of PROT 0898's tick
     /// dispatchers resolve a cast into this band
@@ -69,6 +74,23 @@ pub struct CastFxState {
     /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
     /// when a cast is armed.
     pub module_ring_angle: u16,
+    /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
+    /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
+    /// `step * 2` on every call.
+    pub module_beam_counter: i32,
+    /// The beam builder ran on this module tick (arm 3 calls it every tick
+    /// it holds), so the frame draws its packets
+    /// ([`crate::world::World::cross_beam_draw`]).
+    pub module_beam_live: bool,
+    /// The phase-chain arm whose damage site has landed this pass through
+    /// it: the band folds a chain body's hit on the tick its arm first runs
+    /// (`World::run_cast_module_code`), so a settle wait after it sees the
+    /// victim react.
+    pub module_hit_arm: Option<u8>,
+    /// Ticks the current arm has held on its settle wait
+    /// (`cast_module_ticks::ChainSettle`), bounded by
+    /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
+    pub module_settle_ticks: u16,
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
     /// cast, decided **once**.
     ///
@@ -172,6 +194,25 @@ pub struct CastFxState {
     /// (the retail `FUN_8004fcc8` dispatch). Same host-fulfilled-request shape
     /// as [`pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn).
     pub pending_move_fx_cue: Option<u8>,
+    /// The move-VM actors the effect spawner `FUN_801DFDF0` seats ahead of
+    /// effect ids `4` / `0x13` (`0x801DFE60..0x801DFE88`): the trigger record
+    /// VA (`0x801F5D90` / `0x801F5CF8`), the spawn position and the angle it
+    /// hands `FUN_80050ED4` as `rot[1]`. Queued by the effect host and seated
+    /// by [`crate::world::World::flush_battle_bursts`].
+    pub pending_burst_triggers: Vec<(u32, [i16; 3], u16)>,
+    /// Move-VM op `0x17` calls a part made this step - the battle-overlay
+    /// escape `FUN_801F30C4(actor, mode)`, with the parent's position, rotation
+    /// trio and `+0x72` scale - run by [`crate::world::World::flush_battle_bursts`].
+    pub pending_bursts: Vec<PendingBurst>,
+}
+
+/// One queued move-VM op-`0x17` call ([`CastFxState::pending_bursts`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingBurst {
+    pub mode: u32,
+    pub pos: [i16; 3],
+    pub rot: [i16; 3],
+    pub scale: u16,
 }
 
 impl CastFxState {
@@ -179,6 +220,7 @@ impl CastFxState {
         Self {
             active_summon: None,
             pending_summon_spawn: None,
+            summon_seat_owed: None,
             effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
@@ -189,6 +231,10 @@ impl CastFxState {
             fatal_decision: None,
             fatal_banner: None,
             module_ring_angle: 0,
+            module_beam_counter: 0,
+            module_beam_live: false,
+            module_hit_arm: None,
+            module_settle_ticks: 0,
             module_nighto_outcome: None,
             // --- W1-D ---
             module_split_saved_target: None,
@@ -206,6 +252,8 @@ impl CastFxState {
             homing_takes_lists: false,
             module_caption: None,
             pending_move_fx_cue: None,
+            pending_burst_triggers: Vec::new(),
+            pending_bursts: Vec::new(),
         }
     }
 }

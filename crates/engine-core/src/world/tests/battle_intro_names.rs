@@ -120,3 +120,32 @@ fn a_dome_leg_opens_on_the_opponents_name() {
         crate::battle_hud::BattleHudPhase::RoundPrompt
     );
 }
+
+/// Retail's frame driver runs the battle tick - and so flow `0x0A` / `0x0B`,
+/// which raise and drain these labels - only once the entry sweep is over
+/// (`0x80046EF8` / `0x80047014`): the names neither show nor count down
+/// under the sweep, and come up for their full hold after it.
+#[test]
+fn the_names_wait_out_the_entry_sweep() {
+    use legaia_engine_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
+    let font = legaia_font::synthetic_for_tests();
+    let mut world = intro_world();
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.start_entry_sweep();
+    world.battle.camera = Some(cam);
+    world.arm_battle_intro_names();
+    assert!(world.battle_entry_sweeping());
+    for _ in 0..10 {
+        world.step_battle_intro_names();
+    }
+    assert_eq!(
+        world.battle.intro_names_frames, 0x5A,
+        "held under the sweep"
+    );
+    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    world.battle.camera = None;
+    assert_eq!(
+        crate::battle_hud::battle_intro_names(&world, &font).len(),
+        1
+    );
+}

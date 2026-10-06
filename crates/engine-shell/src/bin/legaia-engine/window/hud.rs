@@ -575,6 +575,18 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // `GO!` after READY (`FUN_801cf470` states 4 / 5), same either/or.
+        if !self.session.host.world.minigames.dance_hud_art_staged
+            && let Some(go) = self.session.host.world.minigames.dance_countin_go
+        {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            out.extend(legaia_engine_render::ui_dance::dance_go_draws_for(
+                &self.font,
+                go,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         // The shared minigame effect pool's live parts (fishing splash,
         // wander ripples, celebration bursts), in stage space. The pool is
         // `World::minigames.fx` and the builder is the one the browser hosts
@@ -659,7 +671,8 @@ impl PlayWindowApp {
                     &t.lure_names,
                     &t.lures_left,
                     &t.suffix,
-                ),
+                )
+                .with_fish_names(&t.species_names),
                 None => legaia_engine_render::FishingCaptions::placeholder(),
             };
             let mut draws = legaia_engine_render::fishing_hud_draws_for(
@@ -1510,6 +1523,11 @@ impl PlayWindowApp {
         // screen is open on the coin slot. Not a menu-runtime state - the
         // field VM owns the park.
         stage.extend(self.coin_counter_window_draws());
+        // The end-of-game soft reset (op-0x49 sub-op 0xC, handler slot 0x33,
+        // `FUN_801EDF00`): the records screen sliding in at the engine's pen.
+        if let Some(pen) = self.session.host.world.soft_reset_records_pen() {
+            stage.extend(self.records_draws_at(pen));
+        }
         // The field floor window (op-0x49 sub-op 4, handler slot 0x23 - the Uru Mais
         // warp pads): laid out by the engine off the live picker state, the
         // legend read off the field overlay, drawn through the shared line
@@ -1738,8 +1756,10 @@ impl PlayWindowApp {
                         stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
                     }
                 }
-            } else {
-                // Non-shop, non-inn menu: show current mode label.
+            } else if self.menu_runtime.prize_session.is_none() {
+                // Non-shop, non-inn menu: show current mode label. The prize
+                // exchange draws its own retail window set above and has no
+                // label row.
                 let menu_label = format!("[{}]", label);
                 let ml_layout = self.font.layout_ascii(&menu_label);
                 stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));

@@ -2,7 +2,7 @@
 //! weapon trail. The trigger + sweep/band schedule (the simulation half)
 //! is `legaia_engine_vm::battle_trail`.
 //!
-//! PORT: FUN_800485BC (per-band gouraud quad-strip emitter)
+//! REF: FUN_800485BC (the port tag sits on [`weapon_trail_prims`])
 //! REF: FUN_80048310 - the sweep driver whose band order
 //! `legaia_engine_vm::battle_trail::band_schedule` reproduces
 //!
@@ -95,6 +95,8 @@ pub fn project_stage_point_cols(vp: &[f32; 16], p: [f32; 3]) -> Option<(i16, i16
 /// second band, then the linear tint fade -
 /// `legaia_engine_vm::battle_trail::band_schedule`), each band one gouraud
 /// quad per consecutive control-point pair.
+///
+/// PORT: FUN_800485BC (per-band gouraud quad-strip emitter)
 pub fn weapon_trail_prims(
     steps: &[[(i16, i16); TRAIL_POINTS]],
     rgb: [u8; 3],

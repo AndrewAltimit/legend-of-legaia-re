@@ -16,6 +16,7 @@ struct TestHost {
     ext_debug_world_calls: Vec<(i16, i16, i16)>,
     ext_world_struct_writes: Vec<(i16, [i16; 5])>,
     ext_world_struct_inits: Vec<(i16, [i16; 5])>,
+    ext_world_struct_adds: Vec<(i16, [i16; 5])>,
     ext_set_flag_bank_calls: Vec<i16>,
     ext_clear_flag_bank_calls: Vec<i16>,
     ext_scratchpad_ramp_calls: Vec<(i16, i16, i16)>,
@@ -116,6 +117,9 @@ impl MoveHost for TestHost {
     }
     fn ext_world_struct_init(&mut self, idx: i16, vals: [i16; 5]) {
         self.ext_world_struct_inits.push((idx, vals));
+    }
+    fn ext_world_struct_add(&mut self, idx: i16, deltas: [i16; 5]) {
+        self.ext_world_struct_adds.push((idx, deltas));
     }
     fn ext_party_member_lookup(&self, _slot: i16) -> Option<[i16; 3]> {
         self.party_member
@@ -1694,6 +1698,42 @@ fn op2f_subop_18_is_five_wide_while_19_and_1a_are_eight() {
         step(&mut host, &mut state, &ext_program(sub_op));
         assert_eq!(state.pc, width, "sub-op 0x{sub_op:02X}");
     }
+}
+
+/// 0x19 adds its five operands to the object-effect row
+/// (`0x801D3C5C..0x801D3CDC`: load, `addu`, store per halfword) - it does
+/// not overwrite it.
+#[test]
+fn op2f_subop_19_adds_to_the_object_effect_row() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let mut prog = ext_program(0x19);
+    prog[2..8].copy_from_slice(&[1, 0x10, 0x20, 0x30, 0xFFFF, 5]);
+    step(&mut host, &mut state, &prog);
+    assert_eq!(
+        host.ext_world_struct_adds,
+        vec![(1, [0x10, 0x20, 0x30, -1, 5])]
+    );
+    assert!(host.ext_world_struct_writes.is_empty());
+}
+
+/// 0x1A seats a yaw row: `+0 = 0`, `+2 = (op[3] + 0x400) & 0xFFF`,
+/// `+4 = 0x400`, and offsets both clip words by
+/// `(op[5] * sin[yaw] + op[4] * cos[yaw]) >> 12` (`0x801D3CE0..0x801D3D80`).
+#[test]
+fn op2f_subop_1a_seats_a_yaw_row_with_rotated_clip_offsets() {
+    let mut host = TestHost::default();
+    // yaw = (0x0C00 + 0x400) & 0xFFF = 0; sin 0x800 (0.5), cos 0x1000 (1.0).
+    host.rotation_table.insert(0, (0x800, 0x1000));
+    let mut state = ActorState::new();
+    let mut prog = ext_program(0x1A);
+    prog[2..8].copy_from_slice(&[0, 0x0C00, 100, 40, 7, 9]);
+    step(&mut host, &mut state, &prog);
+    // v = (40 * 0x800 + 100 * 0x1000) >> 12 = 20 + 100 = 120.
+    assert_eq!(
+        host.ext_world_struct_writes,
+        vec![(0, [0, 0, 0x400, 127, 129])]
+    );
 }
 
 /// 0x1F / 0x20 are ordinary 5-halfword instructions whose three operands

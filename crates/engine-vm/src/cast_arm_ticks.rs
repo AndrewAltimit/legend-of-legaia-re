@@ -76,7 +76,9 @@
 //! countdown each body keeps in its own image (`0x801F864C` in PROT 0940,
 //! `0x801F83EC` in 0941, `0x801F7A04` in 0943, `0x801F8360` in 0944,
 //! `0x801F86B0` in 0950, `0x801F86A0` in 0956, `0x801F89AC` in 0962). It
-//! decides *when* an arm completes, not what it does.
+//! decides *when* an arm completes, not what it does, and the host runs it
+//! beside these ports: `crate::cast_module_camera::capture_countdown` for
+//! eleven of the bodies, the camera directors for `0xAC` and `0x37`.
 //!
 //! The drain is **per arm, not per module**, and the arms differ in the
 //! multiplier rather than in the quantity: every counted arm subtracts a

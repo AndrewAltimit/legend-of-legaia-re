@@ -68,6 +68,15 @@ fn world_with_somersault() -> World {
     // and retail's member walk (`FUN_801DB81C`) hands no ring to an HP-0
     // member - the per-slot seeding below has to come after.
     w.load_party(legaia_save::Party::zeroed(3));
+    // One learned art on Vahn's record (`+0x185` count, `+0x186` ids) - not
+    // the Somersault this ladder swings, so its learn-on-use still fires - so
+    // the entry's Triangle list has a page to open (`FUN_801D3748`).
+    if let Some(rec) = w.party.roster.members.get_mut(0) {
+        let mut list = rec.displayed_skills();
+        list.count = 1;
+        list.ids[0] = 0x03;
+        rec.set_displayed_skills(list);
+    }
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -134,6 +143,8 @@ struct Swing {
     /// animation passed through - the exact pair the retail facial animator
     /// is handed each frame (`FUN_80047430` -> `FUN_8004C7B4`).
     clip_frames: Vec<(u8, i16)>,
+    /// The learned-arts list page after each Triangle press the entry took.
+    list_pages: Vec<Option<u8>>,
 }
 
 /// Walk into the fight and type one art: command ring -> `Attack` -> the
@@ -157,7 +168,11 @@ fn drive_the_swing(w: &mut World) -> Swing {
     let mut out = Swing {
         shouts: Vec::new(),
         clip_frames: Vec::new(),
+        list_pages: Vec::new(),
     };
+    // Two Triangle presses ahead of the combo: open the list, then close it.
+    let mut triangles = 0usize;
+    let mut triangle_pending = false;
     let combo = [PadButton::Up, PadButton::Down, PadButton::Up];
     let mut next_dir = 0usize;
     let mut press = true;
@@ -168,7 +183,16 @@ fn drive_the_swing(w: &mut World) -> Swing {
             0
         } else if let Some(view) = w.arts_input_view() {
             opened_input = true;
+            if triangle_pending {
+                out.list_pages.push(view.list_page);
+                triangle_pending = false;
+            }
             match view.phase {
+                ArtsInputScreen::Entering if next_dir == 0 && triangles < 2 => {
+                    triangles += 1;
+                    triangle_pending = true;
+                    InputState::mask_of([PadButton::Triangle])
+                }
                 ArtsInputScreen::Entering if next_dir < combo.len() => {
                     let dir = combo[next_dir];
                     next_dir += 1;
@@ -245,6 +269,13 @@ fn w1c_arts_swing_ladder() {
         swing.shouts
     );
     assert_eq!(swing.shouts[0].cslot, 0, "Vahn's clip file (XA2)");
+    // `FUN_801D3748`: with one learned art the first press opens page 0 and
+    // the second closes the list (fewer than six arts: no second page).
+    assert_eq!(
+        swing.list_pages,
+        vec![Some(0), None],
+        "the Triangle list pager over one learned art"
+    );
     assert_eq!(swing.shouts[0].action, SOMERSAULT);
     // The clip frames are **not** asserted, and the reason is a host boundary
     // worth recording rather than papering over: `Actor::battle_animation` is

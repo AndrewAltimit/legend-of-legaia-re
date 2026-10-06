@@ -559,6 +559,10 @@ fn progress_digest(s: &BootSession) -> u64 {
     let _ = write!(h, "{:?}|{}|", w.shops.pending_shop, w.shops.shop_open);
     let _ = write!(h, "{:?}|", w.party.name_entry);
     let _ = write!(h, "{:?}|", w.cutscene.active_fmv);
+    // A cutscene camera glide counting down is the shot moving: a `4C CD`
+    // parks the script on it for the glide's whole length (`jouine`
+    // `P2[16]` pans for 2200 frames), and nothing else in the digest moves.
+    let _ = write!(h, "glide{}|", w.camera.state.glide_frames);
     // Scripted NPC glides: an actor walking off-screen is still progress.
     for (slot, m) in &w.npcs.motions {
         let _ = write!(
@@ -818,6 +822,19 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
             m.target.0,
             m.target.1
         );
+    }
+    let sub = &w.field_vm.submode_screen;
+    if sub.open {
+        let _ = write!(
+            out,
+            " submode(slot {:#04x} soft-reset {:?})",
+            sub.actor.state, sub.soft_reset
+        );
+    }
+    // `LEGAIA_SOAK_TRACE_NPC=<slot>`: that slot's position on every line,
+    // walking or not - where a placement stood before its walk started.
+    if let Some(slot) = env_u64("LEGAIA_SOAK_TRACE_NPC") {
+        let _ = write!(out, " watch{slot}@{:?}", w.npcs.positions.get(&(slot as _)));
     }
     out
 }
@@ -1654,8 +1671,10 @@ fn run_one(
                     // parks its PC for as long as the walk runs, so for it
                     // the walked bodies' positions ride along too: a long
                     // walk still stepping is the op progressing, not a stall.
+                    // A `4C CD` parks on the camera glide the same way, so
+                    // the glide countdown rides along for every op.
                     let mut h = HashWriter(std::collections::hash_map::DefaultHasher::new());
-                    let _ = write!(h, "{}|", c.frames);
+                    let _ = write!(h, "{}|{}|", c.frames, w.camera.state.glide_frames);
                     if op == 0xC7 {
                         if let Some(a) = w.actors.get(player_slot(&session)) {
                             let m = &a.move_state;

@@ -134,7 +134,7 @@ impl MonsterMesh {
         if let Some(pool) = self.texture_pool_bytes()
             && pool.len() > CLUT_REGION_BYTES
         {
-            vram.write_clut_row(0, monster_clut_row(slot), &pool[..CLUT_REGION_BYTES]);
+            vram.write_clut_row(0, monster_clut_row(slot), &battle_clut_region(pool));
 
             let page = &pool[CLUT_REGION_BYTES..];
             let bytes_per_row = page.len() / TEXTURE_HEIGHT;
@@ -169,6 +169,26 @@ const MONSTER_PAGE_TPAGE_BASE: u16 = 5;
 /// Texture-page y-origin in VRAM rows (always 256; the loader's StoreImage
 /// `RECT.y`).
 const MONSTER_PAGE_Y: u16 = 256;
+
+/// The CLUT region as the battle loader uploads it: every non-zero entry
+/// takes the STP bit (`0x8000`), the zero entry stays the transparent texel.
+///
+/// `FUN_80055468` walks the region's `0xF0` halfwords before the upload
+/// (`0x8005552C..0x8005554C`: `lh` / `beq v0,zero` / `or v0,v1,a1` with
+/// `a1 = -0x8000`, `sh`). The bit is what lets a semi-transparent draw blend
+/// the body at all - the PSX blends only STP texels of a semi-transparent
+/// prim and draws the rest opaque - so without it the near-camera ghost
+/// pass (`B + F/4`) and the defeat / capture fade drew the body solid.
+pub fn battle_clut_region(pool: &[u8]) -> Vec<u8> {
+    let mut out = pool[..CLUT_REGION_BYTES.min(pool.len())].to_vec();
+    for c in out.as_chunks_mut::<2>().0 {
+        let v = u16::from_le_bytes([c[0], c[1]]);
+        if v != 0 {
+            *c = (v | 0x8000).to_le_bytes();
+        }
+    }
+    out
+}
 
 /// VRAM row of the monster CLUT region for battle `slot`.
 fn monster_clut_row(slot: u8) -> u16 {
@@ -306,6 +326,22 @@ pub fn mesh(entry: &[u8], id: u16) -> Result<Option<MonsterMesh>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The loader's STP pass: non-zero entries take bit 15, the transparent
+    /// zero entry stays zero, and an entry already carrying the bit keeps it.
+    #[test]
+    fn the_battle_clut_region_sets_stp_on_every_non_zero_entry() {
+        let mut pool = vec![0u8; CLUT_REGION_BYTES + 4];
+        pool[2..4].copy_from_slice(&0x0A21u16.to_le_bytes());
+        pool[4..6].copy_from_slice(&0x8001u16.to_le_bytes());
+        let out = battle_clut_region(&pool);
+        assert_eq!(out.len(), CLUT_REGION_BYTES);
+        let at = |i: usize| u16::from_le_bytes([out[i * 2], out[i * 2 + 1]]);
+        assert_eq!(at(0), 0);
+        assert_eq!(at(1), 0x8A21);
+        assert_eq!(at(2), 0x8001);
+        assert!((3..CLUT_REGION_BYTES / 2).all(|i| at(i) == 0));
+    }
 
     /// `relocate_cba` keeps the palette index but re-homes the CLUT row to
     /// `484 + slot`, matching where `battle_render_mesh` writes the palettes.

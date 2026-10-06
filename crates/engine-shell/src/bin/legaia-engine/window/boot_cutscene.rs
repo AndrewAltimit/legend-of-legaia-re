@@ -141,7 +141,14 @@ impl PlayWindowApp {
                         return true;
                     }
                 }
-                Err(e) => log::warn!("save screen: load slot {slot} failed: {e:#}"),
+                Err(e) => {
+                    // A log line is not an answer to the player: raise the
+                    // shared refusal notice the card path and the browser
+                    // rack raise for the same failure.
+                    log::warn!("save screen: load slot {slot} failed: {e:#}");
+                    self.save_flow
+                        .refuse(legaia_engine_core::save_screen::SaveRefusal::CardReadFailed);
+                }
             },
             SaveCommitKind::Save => {
                 let resume = self.session.current_resume();
@@ -153,7 +160,11 @@ impl PlayWindowApp {
                         resume.scene,
                         resume.location
                     ),
-                    Err(e) => log::warn!("save screen: save slot {slot} failed: {e:#}"),
+                    Err(e) => {
+                        log::warn!("save screen: save slot {slot} failed: {e:#}");
+                        self.save_flow
+                            .refuse(legaia_engine_core::save_screen::SaveRefusal::CardWriteFailed);
+                    }
                 }
             }
         }

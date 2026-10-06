@@ -276,9 +276,88 @@ pub fn ease_actor_state(word: u32, target_rgb: [u8; 3], step_lanes: u32) -> u32 
     out
 }
 
+// ---------------------------------------------------------------------------
+// The burning-body emitter: the tail of the anim decode `FUN_8004998C`
+// ---------------------------------------------------------------------------
+
+/// The effect a selector-`1` body emits while its node colour's red lane is
+/// at least [`BURN_RED_FLOOR`] (`li a0,0xb` at `0x8004A810`): the fire puff.
+pub const BURN_EFFECT_FIRE: u8 = 0x0B;
+/// The effect a selector-`2` body emits unconditionally (`li a0,0x10` at
+/// `0x8004A828`).
+pub const BURN_EFFECT_SELECTOR_2: u8 = 0x10;
+/// `sltiu v0,v0,0xb0` on the node's `+0x74` red byte (`0x8004A804`).
+pub const BURN_RED_FLOOR: u8 = 0xB0;
+/// One emit per this much of the accumulator `ctx[+0x328]`.
+pub const BURN_EMIT_QUANTUM: u16 = 0x10;
+
+/// The effect one emit spawns for a body's `+0x21F` selector and node red
+/// lane, or `None` (`0x8004A7DC..0x8004A834`).
+pub fn burn_effect(selector: u8, node_red: u8) -> Option<u8> {
+    match selector {
+        1 if node_red >= BURN_RED_FLOOR => Some(BURN_EFFECT_FIRE),
+        2 => Some(BURN_EFFECT_SELECTOR_2),
+        _ => None,
+    }
+}
+
+/// Where one emit lands: the body's position `+0x34..+0x38` plus a random
+/// object's decoded translation `obj` (the frame's per-object table at
+/// `ctx + 0x6F4`, six halfwords an object) turned by the facing `+0x46`, each
+/// axis jittered by `(r >> 4) - rand % (r >> 3)` with `r` the node's `+0x58`
+/// body size (`0x8004A644..0x8004A7D8`). `rands` are the three jitter draws
+/// in retail's order: Y, X, Z. `sin` / `cos` are the `0x8007B81C` /
+/// `0x8007B7F8` tables. The emit only fires when the result's Y is `<= 0`
+/// (`bgtz a0` at `0x8004A7D4`), i.e. at or above the floor.
+pub fn burn_emit_point(
+    base: [i16; 3],
+    facing: u16,
+    obj: [i16; 3],
+    size: i16,
+    rands: [i32; 3],
+    sin: impl Fn(u16) -> i32,
+    cos: impl Fn(u16) -> i32,
+) -> [i16; 3] {
+    let half = i32::from(size >> 4);
+    let modulus = i32::from(size >> 3);
+    let jitter = |r: i32| half - if modulus == 0 { 0 } else { r % modulus };
+    let f = facing & 0xFFF;
+    let g = 0xFFF - f;
+    let [tx, ty, tz] = obj.map(i32::from);
+    let y = i32::from(base[1]) + ty + jitter(rands[0]);
+    let x = i32::from(base[0]) + ((sin(f) * tz) >> 12) + ((cos(g) * tx) >> 12) + jitter(rands[1]);
+    let z = i32::from(base[2]) + ((sin(g) * tx) >> 12) + ((cos(f) * tz) >> 12) + jitter(rands[2]);
+    [x as i16, y as i16, z as i16]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The burn emitter's gates: a selector-1 body emits fire only once its
+    /// red lane reaches `0xB0`; a selector-2 body always emits its own
+    /// effect; selector 0 emits nothing.
+    #[test]
+    fn the_burn_emitter_picks_its_effect_off_the_selector_and_red_lane() {
+        assert_eq!(burn_effect(1, 0xFF), Some(BURN_EFFECT_FIRE));
+        assert_eq!(burn_effect(1, 0xAF), None);
+        assert_eq!(burn_effect(2, 0), Some(BURN_EFFECT_SELECTOR_2));
+        assert_eq!(burn_effect(0, 0xFF), None);
+        // Facing 0: X takes the object's X (cos 0xFFF ~ 1), Z its Z.
+        let sin =
+            |a: u16| (f64::sin(f64::from(a) * std::f64::consts::TAU / 4096.0) * 4096.0) as i32;
+        let cos = |a: u16| sin(a.wrapping_add(0x400) & 0xFFF);
+        let p = burn_emit_point(
+            [100, 0, -500],
+            0,
+            [40, -300, 80],
+            0x200,
+            [0, 0, 0],
+            sin,
+            cos,
+        );
+        assert_eq!(p, [100 + 39 + 32, -300 + 32, -500 - 1 + 80 + 32]);
+    }
 
     /// The staged IR0 is the halfword blend over `0x1000`, unsaturated:
     /// the hit triple's `0x1000` is exactly `1.0`, the cue-group flash's

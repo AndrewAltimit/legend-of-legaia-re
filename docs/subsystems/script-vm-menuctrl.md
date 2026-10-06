@@ -149,6 +149,8 @@ Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68
 - **Sub-2** (3-byte) is `[4C, 0x82, slot]` - **full HP/MP restore of one party slot**, the primitive every inn / rest / infirmary script is built on. Against the 0x414-stride record it writes `*(u16*)(rec+0x106) = *(u16*)(rec+0x104)` and `*(u16*)(rec+0x10A) = *(u16*)(rec+0x108)`, i.e. `hp_cur = hp_max; mp_cur = mp_max`. The slot is a literal operand, not "every active member". There is no inn opcode - the charge is a separate op-`0x4E` gate plus op-`0x3A` debit, which is why the price is per-scene script data; see [field-menu.md](field-menu.md#inn-stay-there-is-no-inn-screen). (The earlier "party-page inventory mirror" reading is superseded.)
 - **Sub-1** (9-byte) sets the actor's draw **tint**: `[4C, 0x81, r, g, b, blend_lo, blend_hi, ticks_lo, ticks_hi]` writes `+0x74 = colour` (`FUN_8003CEB8`, 24-bit `0xBBGGRR`) and `+0x78 = blend` outright when `ticks` is `0`, else tweens them through `FUN_8003C5F0` - only the blend when `+0x78` was `0` (the colour is written first), the colour and blend otherwise (`0x801E1FC4..0x801E2068`). The actor draw stages the pair as the GTE far colour and `IR0` (`FUN_8001ADA4` -> `FUN_80043390`, `0x8001B46C..0x8001B474`), so `00 00 00 / 0x1000` pushes the actor fully to black - on an additive prim, invisible.
   `chitei2`'s hologram panels (partition-0 records 19..27) run exactly that in their spawn prologue once flag `0x4C5` (the generator destroyed) is up. An earlier reading named the operands "model id + animation frame". Engine: `World::set_actor_tint`, drawn on both hosts through `World::object_draw_tints`.
+  The op is not object-only. The disc issues it in every kingdom MAN and most towns, most often behind an `0x80` target byte aimed at a character - `CC F8 81 ..` tints the player, `CC <id> 81 ..` an NPC - and the dispatcher runs the arm on the actor `FUN_8003C83C` resolves, never on the caller's record. A cutscene blacks an actor out at full blend and tweens the blend back to `0` to fade it in, or washes it red at a low blend.
+  The kingdom MANs' partition-0 records tint the overworld landmarks they bind in their own prologue (map02's records 2.. go black at `0x800` or `0x1000` depending on a story flag; a retail map02 state holds records 2..28 at `0x800`). Engine: the tint follows the op's target into `FieldVmState::actor_tints`, and both hosts stage it as the same constant per-draw cue on the player (`World::player_draw_tint`), each NPC (`World::field_npc_draw_tint`) and each overworld landmark (keyed by its bind record).
 - **Sub-6** (15-byte) is `[4C, 0x86, w0..w5, actor_id]` - it **spawns the reflection controller**, not a transform write; see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown). PC always += 15 (the `addiu s8,s8,0xf` sits in the resolve's delay slot, so an unresolved actor advances too).
 - **Sub-7** (2-byte) is sub-6's **teardown**: `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)` retires every reflection controller, then PC += 2. Not a registration and not a halt - see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown).
 - **Sub-4** (3-byte) is `[4C, 0x84, amplitude]` - **the screen-shake amplitude**. The whole arm is five instructions at `0x801E2134` (jump-table slot `0x801CEF58`): `addiu s8,s8,0x3` / `lbu v1,0x1(s6)` / `lui v0,0x8008` / `j 0x801e3624` / `_sw v1,-0x49d0(v0)`, i.e. `_DAT_8007B630 = operand` as a zero-extended word. That global is the only input to the LCG camera jitter `FUN_801D9D30` (`0` = no shake, `1..=0x15` widens the sample window) and this opcode is its only non-zero writer, which makes the field script the sole source of a camera shake. The scene reset `FUN_8003A024` zeroes it on every scene load (`0x8003A07C`), so a shake a script leaves running ends at the door. Port: [`FieldHost::op4c_n8_sub4_set_b630`]; engine sink `World::camera.shake_amplitude`.
@@ -156,6 +158,8 @@ Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68
 - **Sub-B** (round 18, 5-byte) is a conditional jump: `[4C, 0x8B, type_byte, target_lo, target_hi]` jumps to absolute u16 if any actor of `type_byte` is active, else PC += 5.
 - **Sub-D** (round 18, 6-byte) is a tristate per-character actor-search: `[4C, 0x8D, char_idx, marker, target_lo, target_hi]` returns one of [`ActorSearchResult::EmptySlot`](../../crates/engine-vm/src/field.rs) (advance 6), `Found` (jump to u16 at +3..=4), or `NoMatch` (halt).
 - **Sub-5/E/F** (5-byte `[4C, op0, p0, p1, p2]`) share the standard halt-acquire idiom: on the predicate ([`FieldHost::field_halt_acquire_predicate`]: `saved_pc != 0` or the target is the player, and not already halted or the scene busy) it writes the target's `+0x94` payload pointer, clears `wait_accum`, sets the halt bit, then **advances the caller past the op** (`iVar24 = 5`, `overlay_0897_801de840.txt:6550` / `overlay_world_map_801de840.txt:7179`); on failure it halts the caller at PC (`LAB_801dee50`). Both operate on the resolved cross-context target - the cutscene timeline uses this to freeze its vignette actors, then pokes them beat by beat.
+  Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the bytes are also the walk kernel's `0x4C` FaceTarget leg (`FUN_8003774C`): the player turns toward the actor bind `<id>` over the `u16` frame budget, and the leg's terminal frame clears the halt on the player and on the caller (`0x80038004` / `0x80038028`).
+  A cutscene record therefore waits on the turn - `jouine` `P2[5]` turns Vahn toward Cort this way before the evolved-Cort fight - and a talk's later player-targeted ops wait on it. Engine: `CutsceneTimeline::player_face` and `InlineDialogue::face_ramp`, both stepping `TalkFaceRamp`.
 
 ##### `4C 86` / `4C 87` are the reflection controller's install and teardown
 
@@ -247,7 +251,25 @@ pins the three seats and the captured poses.
 Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Sub-0 is a 2-byte move-table cancel via `func_0x800204F8`; the host gates on whether a move is currently active.
 - **Sub-4** is the **camera-zone query at an explicit tile**: 4-byte `[4C, 0xC4, x, z]`, arm at `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Same load as nibble-3 sub-8 but at a tile the script names, so a scene can frame a shot from a camera-region record the player is not standing in. (The earlier "sub-tile broadcast" label named the caller's shape, not the callee.) See [the camera-zone arms](#0x4c-nibble-0x380x3e---the-camera-zone-arms).
 - **Sub-1** is the 1-byte **fog-region enable reset**: walks `_DAT_80073ED8[..count]` (stride `0xB`) - the MAN section-4 fog-region table the ambient particle spawner searches ([field-ambient-fx](field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)) - tests each record's 16-bit story-flag index at `+9..+10` through `FUN_8003CE64`, and writes `record[0] = flag set ? 0 : 1` (`0x801E2674..0x801E26EC`); PC always += 2. Most scene entry scripts carry it, so a region's fog goes out for good once its beat's flag is up: retail's `retock` inn holds every region off under `0x51C` with the gate raised and the pool empty. Engine: `FieldHostImpl::op4c_n_c_sub_1_flag_loop_reset`.
-- **Sub-3** is a 2-byte script-table teleport (resolves `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard tile-center `b * 0x80 + 0x40` formula).
+- **Sub-3** is a 2-byte script-table teleport (resolves
+  `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard
+  tile-center `b * 0x80 + 0x40` formula). It also rebases the context's script
+  offset `+0x9E` onto the record's first opcode (`0x801E2798..0x801E27A4`), and
+  when that opcode is `0x25` it runs the record from there inline through
+  `FUN_8003CF7C` (`0x801E2800..0x801E2820`) - the same op-until-`0x21` slice the
+  scene-entry install gives a placement. The spawn section's story-flag dispatch
+  therefore runs again: `nilboa` `P2[17]`'s Fire Ravine arm (and `P2[27]`,
+  the walk-on band at the boulder room's north and south mouths) sends the two
+  boulders (`P1[13]` / `P1[14]`) home with `CC 27 C3` / `CC 28 C3`, and their
+  spawn sections, finding `0x457` set, move them straight back to where they
+  were pushed. The port does both halves: `apply_script_table_teleport`
+  writes the position and the resets, and the host's
+  `rerun_spawn_section` runs the `0x25` slice on the re-seated context with
+  the scene-entry pre-run's semantics (a seat op seats that actor, never the
+  player). `rayman` `P2[17]` re-seats the whole village cast this way after
+  each of the quake beats, so the gate guard (`P1[18]`) goes back to his
+  post beside the `tunnelb` door and, once `0x1FC` is up, steps aside to
+  `(13, 44)`; that last re-seat is spawned by `P2[19]`'s closing `44 7A`.
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
   Nothing else in retail writes or clears the table, so it survives scene loads; the port keeps it as `FieldVmState::slot_table`.
@@ -316,7 +338,7 @@ scenes.
 Party state + inverted-Y mirror cluster.
 - **Sub-0** (round 18, 6-byte) is a field SE trigger with a conditional u16 pair: `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]` decodes both via [`load_u16_le`](script-vm.md#helper-functions); the original gates `func_0x8002B994(a, b)` on three flag globals (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`); PC always += 6.
 - **Sub-1** (1-byte) is a linked-list lookup gate via `FUN_8003CF04(_DAT_8007C34C, FUN_801DC0BC)` - host returns `Some(new_pc)` for the `LAB_801E360C` ce9c-jump path or `None` for PC += 4 on miss.
-- **Sub-2** (`[4C, D2, channel]`) hands the byte after the sub-op to the channel resolver `func_0x8003C83C` and conditionally spawns a script context, then halts at PC - the spawned context is what moves the parent on. The stream footprint is three bytes (`rugi` runs `4C D2 0F .. 4C D2 16` back to back), which is the width a linear walk must take.
+- **Sub-2** (`[4C, D2, channel]`, arm `0x801E2B7C`) hands the byte after the sub-op to the channel resolver `FUN_8003C83C`; when no context answers it spawns the placement through `FUN_8003A1E4` inside the `*(_DAT_801C6EA4) + 8` bracket. Both arms leave through `0x801E00B8`, `s8 += 3`: the op advances by its three bytes (`rugi` runs `4C D2 0F .. 4C D2 16` back to back), and so does the port - see [the note below](#4c-d2--4c-d6--4c-d7-advance-in-retail).
 - **Sub-3** (14-byte) is `SCHEDULE_TIMED_FLAGS` - a timed-flag scheduler:
   `[4C, 0xD3, expiry_flag: u16, below_flag: u16, duration: u32, threshold: u32]`
   writes `_DAT_800845C0 = (expiry << 16) | below`, duration into
@@ -334,8 +356,19 @@ Party state + inverted-Y mirror cluster.
   `FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer`
   drains it once per retail frame into the system-flag bank
   (`legaia_engine_vm::escape_timer::EscapeTimer`).
-- **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]`, if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte; halts at PC.
-- **Sub-7** (1-byte) registers a `FUN_801DC0BC` list-walk callback then halts at PC.
+- **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]` (arm `0x801E2D64`), if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte, then leaves through `0x801E00B8`, `s8 += 3`. The top byte is the draw's blend argument ([`field-locomotion.md`](field-locomotion.md)); `chitei2` P2[0] / P2[1] and P2[9] / P2[10] run it over the corridor lights. The port advances with it.
+- **Sub-7** (2-byte, arm `0x801E2DB4`) retires every `FUN_801DC0BC` (the cutscene camera mover) on actor list 0 through `FUN_8003CF40`, then `s8 += 2`. The port advances with it.
+
+##### `4C D2` / `4C D6` / `4C D7` advance in retail
+
+All three arms advance (the nibble-D jump table at `0x801CEFC8` sends sub-2,
+sub-6 and sub-7 to `0x801E2B7C`, `0x801E2D64` and `0x801E2DB4`; the first two
+exit through `0x801E00B8`, `addiu s8,s8,0x3`, the third through its own
+`addiu s8,s8,0x2`), and the disassembler gives sub-6 its three-byte width.
+The VM advances by the same widths. It once halted at PC on all three, which
+a cutscene timeline papered over by stepping a parked `0x4C` op past by its
+width a few frames later; a cross-context `CC <ch> D6 <b1>` held its record
+until the frame cap.
 - **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no `pending_actor_spawns` queueing. PC always += 9. What the spawner actually builds, and why `kind` / `variant` are narrower than their names, is [below](#what-the-0x4c-0xd8-spawner-builds).
 - **Sub-0xB** (13-byte) calls `FUN_801E57F0(operand)` then PC += 13 (the call site falls through to `LAB_801E2EA0: return param_2 + 0xD`); the helper itself was not decompilable (Ghidra's dump for that address shows data masquerading as code).
 - **Sub-0xC** (5-byte) and sub-0xE (5-byte) both call [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then loop over the active party records (stride `0x414`, byte at `+0x196`); on hit, both advance via the `LAB_801E360C` ce9c-jump path; sub-0xC additionally writes the matching slot. Both miss with PC += 5.
@@ -462,6 +495,26 @@ queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::Act
 
 Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
+
+#### 0x4C nibble 1 sub-3 - the field clear colour
+
+`4C 13 r g b n_lo n_hi` (`0x801E0D6C..0x801E0EAC`) is the frame's
+**background**: it stores `r g b` into `0x8007B636 / 35 / 34` and, with a
+zero frame count, straight into the `r0 / g0 / b0` bytes of both draw
+environments (`0x8007BF5D..5F` and the `+0x74` mirror), which `PutDrawEnv`
+fills the frame with wherever no primitive lands; a non-zero count instead
+schedules one `FUN_8003C5F0` slot job per byte from the live value. The MAN
+loader `FUN_8003AEB0` zeroes the pair on every scene load
+(`0x8003B470..0x8003B48C`), so a scene that issues no `4C 13` clears to
+black. `teien` `P1[0]` sets `4C 13 14 30 6C`: the garden's sea is no mesh,
+it is this colour behind the walls, and `teien_field_run` reads exactly
+`(16, 49, 107)` there (the bytes through the 15-bit buffer) with no
+primitive covering it in either ordering table of the capture. `town01`'s
+entry loop sets the cave brown `(60, 40, 20)` inside its cliff region box
+and black outside it. The census finds the op in 38 carriers. Engine:
+`World::presentation.clear_rgb` / `ClearColourRamp`, rendered by both hosts
+through `battle_stage_clear::scene_clear`; the pause menu's tint capture
+(`FUN_801ED308`, [world-map.md](world-map.md)) is the same pair.
 
 #### 0x4C nibble 1 sub-4 - the actor clone
 
@@ -681,7 +734,9 @@ the actor is counter-rotated by exactly the octant the pad gained.
 **The octant is scene-authored, not camera-derived.** Nothing anywhere computes
 it from a camera azimuth. Its complete write set disc-wide is six stores, all
 in the field overlay: this arm's `sw` at `0x801E0ED0`, a `sw zero` clear at
-`0x801E5664`, the tile-board walker's delay-slot clear and two banded stores at
+`0x801E5664` (the delay slot of the three-word leaf `FUN_801E565C`, which the
+SCUS MAN loader `FUN_8003AEB0` calls at `0x8003B710` on every ordinary scene
+change - the `_DAT_8007B8B8 != 2` arm - so a scene starts unrotated), the tile-board walker's delay-slot clear and two banded stores at
 `0x801EF8B0` / `0x801EF8B8` / `0x801EF8CC` (see
 [tile-board.md](tile-board.md#the-walkers-octant-store)), and the walker's
 restore at `0x801EFE7C`.
@@ -847,6 +902,17 @@ for (i = 0; i < 16; i++) {
 LoadImage(rect, buf16);    // FUN_800583c8 - write 16 u16 pixels back
 return iVar47 + 6;
 ```
+
+The bit matters for CLUT rows a CLUT-cell HSV cycler later darkens: the
+cycler keeps each word's STP bit and maps zero to zero, so an entry it takes
+to black reads `0x8000` (opaque black) only if this op marked it first, and
+`0x0000` (transparent) otherwise. `teien` `P1[0]`, behind flag `0x1C9`, runs
+`4C D4` over every CLUT of rows 505..507 and then installs the dusk cycler
+(`34 30 06`, H/S/V adds `-8 / -80 / -48` on those rows in
+`teien_field_run`); unmarked, the hedge texels behind the darkest entries
+went transparent and the clear colour showed through. Engine: the
+`AmbientFxState::script_vram_stp` queue, drained after the `4C 60` moves by
+`World::apply_script_vram_moves` on both hosts.
 
 `FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a from-scratch renderer that maintains its own framebuffer can emulate the read-modify-write itself.
 

@@ -130,7 +130,15 @@ impl LegaiaRuntime {
         if !h.world.name_entry_active() {
             return;
         }
-        h.world.frame = h.world.frame.wrapping_add(u64::from(steps.min(64)));
+        // The display frames pass under the prompt too (retail's frame loop
+        // keeps stepping the camera mover around it), and the camera's half
+        // runs, as `BootSession::step_name_entry_frame` does natively.
+        h.world.name_entry_display_frames(steps.min(64));
+        legaia_engine_core::frame_step::camera_after_world_tick(
+            &mut self.camera,
+            &mut h.world,
+            false,
+        );
     }
 
     /// Live overlay state for the page's status line (and headless checks):

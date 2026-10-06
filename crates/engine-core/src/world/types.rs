@@ -194,8 +194,11 @@ pub struct EffectSprite {
     /// Child world position in world units (the pool's 16.8 coordinates
     /// `>> 8`, exactly as the retail projection input truncates).
     pub world_pos: [f32; 3],
-    /// Billboard size in world units - the pass-2 sizing `atlas w/h *
-    /// sprite_scale >> 8` (x10 the texel size at the retail `0xA00` scale).
+    /// Billboard half-extents in retail view units - the pass-2 sizing
+    /// `atlas w/h * sprite_scale >> 8` (x10 the texel size at the retail
+    /// `0xA00` scale), which the projector adds either side of the centre.
+    /// Hosts size the quad through
+    /// `legaia_engine_vm::effect_billboard::world_half_extents`.
     pub size: [f32; 2],
     /// Top-left source texel within the texture page (atlas `u`, `v`).
     pub uv: [u16; 2],
@@ -762,9 +765,10 @@ pub struct Actor {
 
     /// Effect-script record cursor - the engine mirror of actor `+0x1F5`.
     /// Advanced by the per-frame walk, zeroed when a new anim record commits
-    /// (retail `FUN_8004AD80`, `0x8004B060`) and when a looping clip wraps
-    /// (engine cadence choice so a walk clip's footstep effects refire per
-    /// cycle).
+    /// (retail `FUN_8004AD80`, `0x8004B060`), and on a loop-window rewind only
+    /// for a party seat playing art slot `0x11` with latched id `>= 0x2B`
+    /// (`FUN_80047430`, `0x80047840..0x80047870`) - every other looping clip
+    /// fires its records once per commit.
     pub battle_effect_cursor: u8,
 
     /// Animation cue-track cursor - the engine mirror of actor `+0x1F6`, the

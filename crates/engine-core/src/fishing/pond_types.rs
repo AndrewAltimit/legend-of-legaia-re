@@ -145,6 +145,11 @@ pub struct PondSession {
     pub(super) strength: i32,
     /// Points awarded by the last landed catch.
     pub(super) last_award: i32,
+    /// The landed catch's result-plate counter (the result actor's `+0x1A`
+    /// in `FUN_801D5298`): `0` on the landing, `+4` per frame step, held at
+    /// `0x1000`. [`PondSession::catch_result`] derives the plate's brightness
+    /// and the name's rise from it.
+    pub(super) result_ramp: i32,
     pub(super) events: Vec<PondEvent>,
     /// The venue the lure is cast into, once a host attaches one.
     pub(super) venue_map: Option<PondVenue>,

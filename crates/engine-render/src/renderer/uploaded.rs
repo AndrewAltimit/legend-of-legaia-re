@@ -45,6 +45,12 @@ pub(super) struct MeshUniforms {
     ///
     /// Set with [`Renderer::set_texture_window`]. Defaults to all-zero so
     /// existing callers aren't affected.
+    ///
+    /// Packed: `[0]` carries the four window fields one byte each
+    /// ([`pack_tex_window`]); `[1..4]` carry the draw's object-effect clip
+    /// ([`DrawClip`], [`pack_draw_clip`]) as three `pack2x16float` pairs -
+    /// `(m0, m1)`, `(m2, enable)`, `(lo, hi)` - all zero (no clip) unless the
+    /// host staged one for the draw with [`Renderer::set_draw_clips`].
     pub(super) tex_window: [u32; 4],
     /// Full-scene colour grade - `(gold_r, gold_g, gold_b, strength)`. The
     /// textured / VRAM / colour fragment shaders cross-fade the shaded pixel
@@ -115,6 +121,67 @@ pub(super) struct MeshUniforms {
 /// staging packs one struct per aligned slot, so growing past this would
 /// silently overlap slots on 256-alignment adapters.
 const _: () = assert!(std::mem::size_of::<MeshUniforms>() == 256);
+
+/// The texture-window register `(mask_x, mask_y, off_x, off_y)` packed one
+/// byte per field into the uniform's first lane.
+pub(super) fn pack_tex_window(w: [u32; 4]) -> u32 {
+    (w[0] & 0xFF) | ((w[1] & 0xFF) << 8) | ((w[2] & 0xFF) << 16) | ((w[3] & 0xFF) << 24)
+}
+
+/// IEEE half of `v` (round to nearest), for the shader's `unpack2x16float`.
+fn f16_bits(v: f32) -> u32 {
+    let b = v.to_bits();
+    let sign = (b >> 16) & 0x8000;
+    let exp = ((b >> 23) & 0xFF) as i32 - 127 + 15;
+    let man = b & 0x7F_FFFF;
+    if v.is_nan() {
+        return 0x7E00;
+    }
+    if exp >= 0x1F {
+        return sign | 0x7C00;
+    }
+    if exp <= 0 {
+        if exp < -10 {
+            return sign;
+        }
+        let m = (man | 0x80_0000) >> (1 - exp + 13);
+        return sign | m;
+    }
+    let mut h = sign | ((exp as u32) << 10) | (man >> 13);
+    if man & 0x1000 != 0 {
+        h += 1;
+    }
+    h
+}
+
+/// A [`DrawClip`] in the uniform's three clip lanes (all zero = no clip).
+pub(super) fn pack_draw_clip(clip: Option<DrawClip>) -> [u32; 3] {
+    match clip {
+        None => [0; 3],
+        Some(c) => [
+            f16_bits(c.m[0]) | (f16_bits(c.m[1]) << 16),
+            f16_bits(c.m[2]) | (f16_bits(1.0) << 16),
+            f16_bits(c.lo) | (f16_bits(c.hi) << 16),
+        ],
+    }
+}
+
+/// One draw's **object-effect clip**, in its mesh space: the fragment is
+/// kept while `lo <= m . p <= hi` for mesh-space point `p`. Retail clips
+/// the primitives of an actor whose `+0x42` is raised against the bound of
+/// its object-effect row (`FUN_8001C204` / `FUN_80027F00`); the engine-core
+/// kernel `legaia_engine_core::object_effect` hands the host this slab per
+/// draw, and the textured / colour mesh shaders discard outside it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawClip {
+    pub m: [f32; 3],
+    pub lo: f32,
+    pub hi: f32,
+}
+
+/// The per-draw clips of one scene render: `(textured, colour)`, parallel to
+/// `Scene::draws` / `Scene::color_draws`.
+pub type DrawClipLists = (Vec<Option<DrawClip>>, Vec<Option<DrawClip>>);
 
 /// The three affine rows of `m` for [`MeshUniforms::model_rows`].
 pub(super) fn model_rows(m: &Mat4) -> [[f32; 4]; 3] {
@@ -552,4 +619,25 @@ pub struct Scene<'a> {
     /// `None` the renderer falls back to its default dark-grey clear.
     /// Used during the boot publisher-logos phase to force pure black.
     pub clear_color: Option<[f32; 4]>,
+}
+
+#[cfg(test)]
+mod clip_pack_tests {
+    use super::*;
+
+    #[test]
+    fn half_floats_round_trip_the_values_a_clip_carries() {
+        assert_eq!(f16_bits(1.0), 0x3C00);
+        assert_eq!(f16_bits(0.5), 0x3800);
+        assert_eq!(f16_bits(-4096.0), 0xEC00);
+        assert_eq!(f16_bits(0.0), 0);
+        assert_eq!(pack_draw_clip(None), [0; 3]);
+        let p = pack_draw_clip(Some(DrawClip {
+            m: [0.0, 1.0, 0.0],
+            lo: -4096.0,
+            hi: 0.0,
+        }));
+        assert_eq!(p, [0x3C00 << 16, 0x3C00 << 16, 0xEC00]);
+        assert_eq!(pack_tex_window([1, 2, 3, 4]), 0x0403_0201);
+    }
 }

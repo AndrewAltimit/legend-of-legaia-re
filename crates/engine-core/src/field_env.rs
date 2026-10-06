@@ -627,6 +627,32 @@ pub fn placed_render_scales(
         .collect()
 }
 
+/// Re-seat every placed draw whose bind record follows the floor
+/// ([`World::object_floor_follow_records`]) on the floor sample under it - the
+/// Y the field actor tick writes over the `.MAP` sweep's `lut[nibble] + y_off`
+/// once the actor is in view. `floor_y(record, x, z)` is
+/// [`World::object_floor_follow_y`] over the scene's live world; it answers
+/// `None` for a record that keeps its seat. The one kernel both play hosts
+/// run on their placed layer before baking it.
+///
+/// [`World::object_floor_follow_records`]: crate::world::World::object_floor_follow_records
+/// [`World::object_floor_follow_y`]: crate::world::World::object_floor_follow_y
+// REF: FUN_8003BC08 (height arm), FUN_80019278
+pub fn follow_floor_placed_draws(
+    draws: &mut [EnvDraw],
+    binds: &HashMap<(u8, u8), ObjectBind>,
+    floor_y: impl Fn(usize, i32, i32) -> Option<i32>,
+) {
+    for d in draws.iter_mut() {
+        let Some(b) = binds.get(&d.anchor) else {
+            continue;
+        };
+        if let Some(y) = floor_y(b.record as usize, d.world_x, d.world_z) {
+            d.world_y = y;
+        }
+    }
+}
+
 /// The bind record each placed draw's actor runs (parallel to `draws`), or
 /// `None` for an unbound draw - the key hosts look a draw's live
 /// [`World::object_draw_displacements`] entry up by.
@@ -652,6 +678,24 @@ pub fn placed_bind_records(
 /// draw's translation every frame.
 ///
 /// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+/// Which placed draws a bind record's scripted-motion stream drives: the
+/// **first** placement of each record, in `.MAP` order. The installer
+/// `FUN_8003A9D4` binds a MAN tail-section-1 stream to the field actor whose
+/// `+0x50` matches its `actor_id`, and a record a scene places twice has two
+/// such actors; the retail `minigame_dance_pcsx` state holds `koin3`
+/// `P0[8]`'s first placement on a cycled video-wall model and its second
+/// (a frame under it, another pack slot) on its own mesh, and the far hall's
+/// copies of `P0[5..=8]` on theirs. `records` is a host's per-draw bind
+/// record list ([`placed_bind_records`]).
+// REF: FUN_8003A9D4
+pub fn stream_bound_draws(records: &[Option<usize>]) -> Vec<bool> {
+    let mut seen = std::collections::BTreeSet::new();
+    records
+        .iter()
+        .map(|r| r.is_some_and(|r| seen.insert(r)))
+        .collect()
+}
+
 pub fn placed_draw_displacements(
     records: &[Option<usize>],
     record_moves: &HashMap<usize, [i32; 3]>,
@@ -1565,10 +1609,24 @@ impl PropAnimBank {
                 continue;
             };
             let program = decode_prop_program(record, pc0);
-            // An unposed bind enters as an examine target only: the touch
-            // class of a clip-less object (a door marker) is the walk-touch
-            // dispatch's, which resolves its record against the live flags.
-            if bind.anim_id == 0 && program.spawn_cflags & 0x4002_0000 == 0 {
+            // An unposed bind whose record moves the player (a door marker)
+            // is the walk-touch dispatch's, which resolves its record against
+            // the live flags. Any other clip-less bind still owns its touch:
+            // retail's static-class contact posts the touch whatever the
+            // actor draws (`FUN_801D5B5C`), and the record runs from its
+            // parked cursor. `chitei2`'s lift-cage doors (partition-0 records
+            // 6..11, a bare `31 00`) stand solid until the touch runs that
+            // `31 00`; without a bank entry they never opened, and the lift
+            // platform's way west to the deroa door stayed shut.
+            if bind.anim_id == 0
+                && program.spawn_cflags & 0x4002_0000 == 0
+                && crate::man_field_scripts::p0_record_walk_touch_event(
+                    man_file,
+                    man,
+                    bind.record as usize,
+                )
+                .is_some()
+            {
                 continue;
             }
             let mut anim = PropAnim::spawned(bind.anim_id, frames, scaled, div);
@@ -1889,6 +1947,16 @@ pub fn env_draws_world_aabb(
 
 #[cfg(test)]
 mod anim_tests {
+
+    #[test]
+    fn a_stream_drives_only_its_records_first_placement() {
+        let records = [Some(5), None, Some(8), Some(5), Some(8), Some(9)];
+        assert_eq!(
+            stream_bound_draws(&records),
+            vec![true, false, true, false, false, true]
+        );
+    }
+
     use super::*;
 
     /// A 30-frame clip - the length of Rim Elm's door / cupboard swing.
@@ -2141,6 +2209,47 @@ mod tests {
                 cell: (2, 3),
                 cull_radius: 0,
             }]
+        );
+    }
+
+    /// A bound draw whose record follows the floor takes the sampled floor Y,
+    /// dropping the record's `y_off` lift; an unbound draw and a bound draw
+    /// whose record keeps its seat stay where the sweep put them.
+    #[test]
+    fn floor_following_records_drop_their_lift() {
+        let env_tmds = vec![10, 11, 12];
+        let mut lut = [0i16; 16];
+        lut[15] = 480;
+        let mut follows = placement(Some(1), Some(15), 2080);
+        follows.anchor_col = 7;
+        let mut keeps = placement(Some(2), Some(15), -56);
+        keeps.anchor_col = 8;
+        let free = placement(Some(0), Some(15), 300);
+        let mut binds = HashMap::new();
+        binds.insert(
+            (7u8, 3u8),
+            ObjectBind {
+                record: 0,
+                anim_id: 0,
+            },
+        );
+        binds.insert(
+            (8u8, 3u8),
+            ObjectBind {
+                record: 4,
+                anim_id: 0,
+            },
+        );
+        let (mut draws, _) =
+            resolve_placed_env_draws(&env_tmds, &[follows, keeps, free], Some(lut), Some(&binds));
+        assert_eq!(
+            draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
+            [1600, -536, -180]
+        );
+        follow_floor_placed_draws(&mut draws, &binds, |r, _, _| (r == 0).then_some(-480));
+        assert_eq!(
+            draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
+            [-480, -536, -180]
         );
     }
 

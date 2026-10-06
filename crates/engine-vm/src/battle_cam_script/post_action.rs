@@ -71,6 +71,12 @@ pub struct PostActionTarget {
     /// dead monster of the `noa_levelup_banner` save state reads a zero
     /// node.
     pub node_gone: bool,
+    /// The lone-monster defeat bypass beside the node test
+    /// (`0x801D6AC8..0x801D6AF0`): `ctx[+0x287] != 0 && 0x8007BD0D == 0 &&
+    /// ctx[+0x288] != 0` - a scripted fight's only monster dying in place -
+    /// takes the stand-off arm as a gone node does. It is not read by the
+    /// focus fork, which tests the node word alone.
+    pub lone_defeat: bool,
 }
 
 /// Case 8's dead-target yaw (`0x801D6A20..0x801D6A98`), stored over the

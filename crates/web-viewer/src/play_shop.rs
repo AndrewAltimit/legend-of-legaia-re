@@ -366,7 +366,13 @@ impl LegaiaRuntime {
     /// on purpose: `ShopQuantity` legitimately contributes no rows, because
     /// the retail descriptor windows carry that screen.
     fn menu_label_stand_in(&self, font: &legaia_font::Font) -> Option<Vec<TextDraw>> {
-        if !self.menu.is_open() || self.menu.shop_session.is_some() {
+        // The prize exchange draws its own retail window set
+        // (`prize_window_draws`) and has no label row - the native window's
+        // stand-in skips it the same way.
+        if !self.menu.is_open()
+            || self.menu.shop_session.is_some()
+            || self.menu.prize_session.is_some()
+        {
             return None;
         }
         Some(ui::text_draws_for(
@@ -1246,6 +1252,17 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Arm the casino prize counter exactly as a clerk's `49 07 <block>`
+    /// does (`World::try_arm_prize_exchange` on the instruction bytes), so
+    /// the page's own drain opens it on the next frame. `false` when the
+    /// scene carries no prize block `block` (the blocks are read off the
+    /// disc at boot) or a counter is already armed.
+    pub fn debug_arm_prize_exchange(&mut self, block: u8) -> bool {
+        self.scene_host
+            .as_mut()
+            .is_some_and(|h| h.world.try_arm_prize_exchange(&[0x49, 0x07, block]))
+    }
+
     /// Arm + open a shop stocked with **equipment** ids, the rows whose
     /// buy-list confirm takes the retail `RecipientPicker` route
     /// (`shop::buy_list_confirm_route` kind `1`) instead of the quantity
@@ -1448,6 +1465,15 @@ impl LegaiaRuntime {
         gold_shop_sprites.extend(prize.sprites);
         windows.extend(prize.texts);
         windows.extend(self.coin_counter_window_draws(font));
+        // The end-of-game soft reset (op-0x49 sub-op 0xC, slot 0x33): the
+        // records screen at the engine's pen, as the native window draws it.
+        if let Some(pen) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.soft_reset_records_pen())
+        {
+            windows.extend(self.records_draws_at(font, pen));
+        }
         // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
         // the engine layout + shared line composition the native window
         // draws (`SceneHost::flag_window_lines`).

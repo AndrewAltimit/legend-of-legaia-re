@@ -59,6 +59,7 @@ impl BattleCamera {
             module_glide: None,
             escape_shot: false,
             cursor: None,
+            entry_sweep: None,
         }
     }
 
@@ -419,7 +420,7 @@ impl BattleCamera {
         };
         // Both dead-target arms start from the target-facing yaw.
         let yaw = dead_target_yaw(t.facing, self.attack.ctx.phase_cursor, f);
-        if t.node_gone {
+        if t.node_gone || t.lone_defeat {
             // The stand-off arm adds the live ladder rather than zeroing it.
             let yaw = yaw + self.action_yaw;
             let raw_z = apply_node_gone_reframe(&mut pose, actor, yaw, f.body_radius);
@@ -531,6 +532,7 @@ impl BattleCamera {
     /// REF: FUN_801D5854 (case 9), FUN_801D829C
     pub fn hand_back_from(&mut self, pose: BattleCamPose) {
         let mut from = pose;
+        self.entry_sweep = None;
         self.glides.clear();
         self.glides.push_back(Glide::linear(
             &mut from,
@@ -727,8 +729,9 @@ impl BattleCamera {
     /// then applies one step of it, so the effective law is "move toward the
     /// live target at `ceil(|delta| / duration)` per frame" - a chase with the
     /// arm's own time constant, not a fixed glide toward a frozen target. That
-    /// is what this does, on the same builder, with retail's `a3` halved into
-    /// the port's 2-frame camera step.
+    /// is what this does, on the same builder ([`Glide::chase`]: the arm's
+    /// per-frame increment times the camera step's two frames - a 3-frame arm
+    /// covers two thirds of the gap a step rather than all of it).
     pub(super) fn step_toward_attack_pose(
         &mut self,
         f: crate::battle_attack_camera::AttackCamFraming,
@@ -750,8 +753,12 @@ impl BattleCamera {
             ],
         };
         let mut from = self.pose;
-        let steps = (u32::from(f.duration_frames) / 2).max(1);
-        let g = Glide::linear(&mut from, target, i32::from(f.pose.dist[2]), steps, true);
+        let g = Glide::chase(
+            &mut from,
+            target,
+            i32::from(f.pose.dist[2]),
+            u32::from(f.duration_frames),
+        );
         self.pose = from;
         self.step_components(&g);
     }
@@ -773,21 +780,23 @@ impl BattleCamera {
     /// coordinates) the whole formation ends up outside the frustum, several
     /// combatants behind the eye.
     ///
-    /// The remaining step count is carried over from the armed segment, so a
-    /// framing whose actor never moves steps exactly as the frozen glide did
-    /// and still arrives on the target at step [`ACTION_STEPS`].
+    /// Because the step table is rebuilt every pass, the motion is not a
+    /// linear glide that lands after [`ACTION_STEPS`]: each pass covers
+    /// `frame_step * ceil(rem / 0xC)` of what remains, an ease-out that
+    /// keeps closing in on the target well past the twelfth frame
+    /// ([`Glide::chase`]). Two captures pin the law in retail's own step
+    /// table at `ctx[+0x118C]`: `nivora_duel_mid_blazing_slash` reads yaw /
+    /// TR z increments `59` / `55` with `589` / `547` still to go, and
+    /// `battle_noa_miracle_art_combo` `66` / `86` with `587` / `772` - each
+    /// exactly `ceil((rem + frame_step * step) / 0xC)`, the table one pass
+    /// old with one walk applied.
     ///
     /// REF: FUN_801D5854 (case 6), FUN_801D829C (the step-table builder)
     pub(super) fn retarget_action_glide(&mut self) {
         let live = self.action_pose();
         let raw_z = self.live_action_framing().raw_z();
-        let steps = self
-            .glides
-            .front()
-            .and_then(|g| g.steps_left)
-            .unwrap_or(ACTION_STEPS);
         let mut from = self.pose;
-        let g = Glide::linear(&mut from, live, raw_z, steps, true);
+        let g = Glide::chase(&mut from, live, raw_z, ACTION_STEPS * 2);
         self.pose = from;
         self.glides.clear();
         self.glides.push_back(g);
@@ -851,20 +860,15 @@ impl BattleCamera {
     }
 
     /// [`Self::retarget_action_glide`]'s sibling for cases `7` and `8`: rebuild
-    /// the step table against the live pose, carrying the armed segment's
-    /// remaining step count so a settled framing stays settled.
+    /// the step table against the live pose every pass on the cases' own
+    /// `a3 = 0xC`, the same ease-out chase ([`Glide::chase`]).
     ///
     /// `raw_z` is the framing's own depth in world units: case 8's death and
     /// stand-off arms move it off `ctx[+0x6D0]`, and the chase has to
     /// converge on the depth the pose took, not on the unmoved one.
     pub(super) fn retarget_post_action_glide(&mut self, live: BattleCamPose, raw_z: i32) {
-        let steps = self
-            .glides
-            .front()
-            .and_then(|g| g.steps_left)
-            .unwrap_or(POST_ACTION_STEPS);
         let mut from = self.pose;
-        let g = Glide::linear(&mut from, live, raw_z, steps, true);
+        let g = Glide::chase(&mut from, live, raw_z, POST_ACTION_STEPS * 2);
         self.pose = from;
         self.glides.clear();
         self.glides.push_back(g);
@@ -894,6 +898,10 @@ impl BattleCamera {
             self.shake.amplitude,
             &mut self.rand_state,
         );
+        // The frame driver's entry sweep runs before the battle tick does.
+        if self.step_entry_sweep() {
+            return;
+        }
         // A granted flee's shot owns the camera to the battle's end: the run
         // band and the escape teardown frame nothing of their own.
         if self.escape_shot {
@@ -921,8 +929,7 @@ impl BattleCamera {
                 let (target, raw_z) =
                     summon_cast_framing(self.actor, self.acting_body, c.accum, c.ramp);
                 let mut from = self.pose;
-                let steps = (SUMMON_CAST_TWEEN_FRAMES / 2).max(1);
-                let g = Glide::linear(&mut from, target, raw_z, steps, true);
+                let g = Glide::chase(&mut from, target, raw_z, SUMMON_CAST_TWEEN_FRAMES);
                 self.pose = from;
                 self.glides.clear();
                 self.step_components(&g);

@@ -64,30 +64,20 @@ pub(crate) fn nine_slice_panel_into(
                 sh: i32| { push_c(out, src, sx, sy, sw, sh, white) };
 
     if tile_filigree {
-        // Pause-menu interior: the marbled navy filigree tiled in BOTH axes.
-        // (The old path stretched one 29-tall tile to the full window height,
-        // smearing the pattern into vertical streaks; 2D tiling keeps it
-        // crisp.) `FILIGREE_TINT` darkens the raw tile to retail's dark navy
-        // (retail modulates it with a gouraud gradient; a flat multiply is a
-        // close, non-streaking approximation).
-        // Tuned so the tiled raw filigree lands on retail's grayer navy
-        // (~RGB 33,40,107) rather than an over-saturated blue: keep red,
-        // pull green down a little, damp blue most (desaturate).
-        const FILIGREE_TINT: [f32; 4] = [0.98, 0.84, 0.60, 1.0];
-        let (fx, fy, fw, fh) = rects.panel_filigree;
-        let (fw, fh) = (fw as i32, fh as i32);
-        let mut y_int = py;
-        while y_int < py + ph {
-            let row_h = (py + ph - y_int).min(fh);
-            let mut x_int = px;
-            while x_int < px + pw {
-                let col_w = (px + pw - x_int).min(fw);
-                let src = (fx, fy, col_w as u32, row_h as u32);
-                push_c(out, src, x_int, y_int, col_w, row_h, FILIGREE_TINT);
-                x_int += col_w;
-            }
-            y_int += row_h;
-        }
+        // Pause-menu interior: the class-0 fill retail's window drawer runs
+        // under every menu frame (`FUN_8002BDC4`) - 32-texel columns and
+        // bands of the marbled patch, each band a gouraud grey ramp from
+        // `0x40` at the frame's top to `0x88` at its bottom in steps of
+        // `0x900 / h`. The `menu_status_town` display list holds exactly
+        // that: its 204-tall status window draws seven bands
+        // `64, 75, 86, 97, 108, 119, 130 -> 136`, neutral grey on all three
+        // channels. One kernel with the battle banners' frame fill.
+        out.extend(crate::battle_hud_chrome::class0_fill_draws_at(
+            rects,
+            (px, py, pw, ph),
+            stage_origin,
+            stage_scale,
+        ));
     } else {
         // Save-screen interior: a single gradient-baked tile, tiled
         // horizontally and stretched to the panel height (byte-pinned).

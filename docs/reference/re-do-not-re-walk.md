@@ -65,6 +65,29 @@ replacements) fire in the same run. A kingdom overworld never enters the SCUS
 prim-dispatch family at all. See
 [`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
+### Op `4C 12` is the scene-entry screen fade
+
+*Falsified by a reference scan.*
+
+Every scene's arrival arm drops the op's word to `0` and ramps it back, which
+reads like a fade from black, and the port staged it as a multiply over the
+whole field frame. Its one reader disc-wide is the fog particle update
+`FUN_8003F3FC`; `retona_field_card_boot` holds the word at `27` over a
+full-brightness frame. See
+[`cutscene.md`](../subsystems/cutscene.md#the-op-0x4c-0x12-tint-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0).
+
+### The field runs no hardware light source
+
+*Falsified by a frame.*
+
+The reading rested on a `town01` sweep that sampled only the kind-11 body and
+on a GTE-opcode census that found the light handlers' consumers but not who
+reaches them. The dispatcher selects by `flags >> 1`, so every TMD group with
+flags `0x10..=0x17` goes through `NCCS` / `NCCT`; `cave01`'s walls are all such
+groups, and its retail frame is the light's. A white back colour (`town01`'s
+op `4C 8A`) is what made the town's lit rows look baked. See
+[`renderer.md`](../subsystems/renderer.md#the-light-source-rows).
+
 ## Battle / arts / level-up
 
 | Thread | Verdict | Why |
@@ -2023,7 +2046,8 @@ target-side forks at `0x801D18E0` (items) and `0x801D1C50` (spells) in PROT
 | The builder's two extra call sites are in a resident field-render module | falsified (they are PROT 0901's world-map bracket) | Plausible: the capture recorded them returning into the slot-B window during a run whose scene name looked like a field one, and slot B does host render code. Exactly one of the statically extracted overlay images holds `jal 0x800172C0` inside that window - PROT 0901, the world-map render module - and the run was a world-map one (`map01`, mode `0x03`). Both sites are one bracket in `FUN_801F73E4`: save the yaw word `_DAT_8007B792`, zero it in the first call's delay slot, draw one screen-fixed band, restore and rebuild. Neither is a frame's camera, and a field scene entry has at most the three field sites. |
 | Each landmark TMD passes once per frame through `FUN_8002735C` | falsified (the near arm takes every one) | Plausible: the renderer is the one that walks the per-mode descriptor table, landmarks are the meshes that table describes, and the dispatcher's case 5 does name it. Case 5 names it behind a gate. On `map03` the `+0x42` test fires 756 times and takes the near arm every time, so no landmark reaches it; a census over 720 vsyncs of four states records zero entries against 10621 into the per-prim leaf ([settled](re-settled-threads.md#rendering--camera)). |
 | `FUN_80029888` is reached whenever `actor[+0x7A] != 0` on the overworld | falsified (0 of 5089 gate hits) | Plausible: `+0x7A` really is the choice between the two near-arm leaves, so a reader who has found that test has found a true statement about the inner choice. It is the **inner** one: nothing reaches either near-arm leaf's env-mapped half unless the outer `+0x42` gate is non-zero, and across four sampled states every one of 5089 gate reads was zero. A per-actor flag nothing in the sampled corpus raises makes both of its arms unreachable, not just the far one. |
-| Nothing on the disc raises `actor[+0x42]`, the mesh-renderer gate | falsified (two writer families) | Plausible, and the measurement behind it is sound: 5089 gate reads across four states and three game modes, zero non-zero. It is a statement about the *sample*. The allocator `FUN_80020DE0` writes `2` at `0x80020EC0` when the world-map dev counter has bit 1 up, and move-VM op `0x10` writes its own `u16` operand into the field at `0x8002342C` - shipped programs issue it non-zero. What survives is narrower and still useful: across the sampled modes no **drawn** actor had the bit up ([settled](re-settled-threads.md#rendering--camera)). |
+| Nothing on the disc raises `actor[+0x42]`, the mesh-renderer gate | falsified (three writer families) | Plausible, and the measurement behind it is sound: 5089 gate reads across four states and three game modes, zero non-zero. It is a statement about the *sample*. The allocator `FUN_80020DE0` writes `2` at `0x80020EC0` when the world-map dev counter has bit 1 up, move-VM op `0x10` writes its own `u16` operand into the field at `0x8002342C`, and field-VM `4C C2` writes its operand byte at `0x801E26FC` - nine scenes issue it with `1`. What survives is narrower and still useful: across the sampled modes no **drawn** actor had the bit up ([settled](re-settled-threads.md#rendering--camera)). |
+| Move-VM ext `0x19` / `0x1A` are writes of five operand words into the "world struct" | falsified (`0x19` adds; `0x1A` computes a yaw row) | Plausible: `0x17`, `0x19` and `0x1A` are all eight halfwords wide and address the same `0x14`-stride row, so one "write five values" reading covered all three. `0x19` loads each halfword and `addu`s its operand (`0x801D3C5C..0x801D3CDC`); `0x1A` reads only `op[3..=7]` as a yaw and a vector, rotates the vector through the trig LUT and stores `0`, the yaw, `0x400` and two offset clip words (`0x801D3CE0..0x801D3D80`). The row is the object-effect parameter table `FUN_8001C204` reads ([settled](re-settled-threads.md#rendering--camera)). |
 | `FX_OUTLINE` draws the page's yellow strips | falsified (it is off on both hosts) | Plausible: the strips are flat untextured quads, which is the outline pass's look. `play_battle_fx.rs` sets it `false` and the native pass sits behind `LEGAIA_DIAG_FX`, so the strips have another producer. |
 | The engine's `fade::FadeState` is the retail fade ramp | falsified (the two disagreed on a ramp's last frames) | Plausible: both model the one `+0x7C` block. The engine latched on the target; retail keeps accumulating and clamps on the delta's sign, a delay of `n` suppresses `n - 1` frames, and a hold of `0` retires the frame after the ramp lands. A `REPLACED-BY` marker would have hidden that. |
 | Actor render mode `4` (`+0x56`) is set from an asset, so a census of carriers finds its users | falsified (every write of `4` is code) | Plausible: other render-mode values arrive in data. The four stores are move-VM arms `0x80023460` / `0x800237E4` / `0x80023F98` and `0x8004D574`; no carrier holds the value. |

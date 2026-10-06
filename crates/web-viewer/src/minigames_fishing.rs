@@ -60,6 +60,7 @@ impl LegaiaMinigames {
                     legaia_engine_core::world::FishingCaptionText::resolve(&raw, |id| {
                         names.and_then(|n| n.name(id)).map(str::to_string)
                     })
+                    .with_species_names(ov)
                 });
                 let venue_ok = self.fishing_spawn.is_some() && self.fishing_cadence.is_some();
                 self.fishing_species = Some(species);
@@ -161,6 +162,20 @@ fn hud_draw_json(
                 ));
             }
         }
+        HudDraw::LargeNumber {
+            x,
+            y,
+            value,
+            brightness,
+        } => {
+            // The large style: 16 px cells (`FUN_801d76e0` style 1).
+            for c in ui_fishing::number_digit_cells(1, x, y, value) {
+                out.push(format!(
+                    r#"{{"t":"digit","big":true,"x":{},"y":{},"d":{},"b":{brightness}}}"#,
+                    c.x, c.y, c.digit
+                ));
+            }
+        }
         HudDraw::Count {
             value,
             digits,
@@ -208,12 +223,14 @@ fn hud_draw_json(
                 HudCaption::RodName(i) => format!("lure{i}"),
                 HudCaption::LuresLeft => "lures_left".to_string(),
                 HudCaption::LureCountSuffix => "lure_suffix".to_string(),
+                HudCaption::FishName(_) => "fish_name".to_string(),
             };
             // The disc's own string when the overlay's row resolved.
             let txt = captions.map(|c| match text {
                 HudCaption::RodName(i) => c.lure_names.get(i as usize).cloned().unwrap_or_default(),
                 HudCaption::LuresLeft => c.lures_left.clone(),
                 HudCaption::LureCountSuffix => c.suffix.clone(),
+                HudCaption::FishName(i) => c.species_name(i as usize).to_string(),
             });
             match txt {
                 Some(t) => out.push(format!(
@@ -646,6 +663,21 @@ impl LegaiaMinigames {
                 tension: c.tension,
                 gauges_visible: c.gauges_visible,
             }));
+        }
+        // A landed catch's result plate (`FUN_801D5298`), as both play hosts
+        // compose it.
+        if let Some(r) = p.catch_result() {
+            let name_len = self
+                .fishing_captions
+                .as_ref()
+                .map_or(0, |t| t.species_name(r.species).len());
+            draws.extend(ui_fishing::catch_result_draws(
+                r.ramp,
+                r.strength,
+                r.points,
+                r.species as u32,
+                name_len,
+            ));
         }
         draws.extend(self.fishing_banners.service_frame(1));
         let mut out = Vec::new();

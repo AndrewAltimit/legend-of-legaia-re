@@ -203,7 +203,9 @@ the bytes at every live script context's PC, scripted NPC glides with their
 targets, and in battle the action state, frame timer and every actor's HP /
 display / accumulator - plus each distinct script body a timeline or helper
 runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
-default). The trace goes to the terminal only; it is never written
+default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
+every line, walking or not, which is how to find where an actor stood before a
+walk started. The trace goes to the terminal only; it is never written
 into a report.
 
 A useful first question for any `softlock` or `script_stall` is whether the
@@ -247,6 +249,11 @@ regression.
 | `station3_door_of_light_head_define` / `conc3_door_of_light_head_define` | a Door of Light used where the region record stores an all-zero return triple warped to `init_data` and failed the scene entry | a travel word inside the TOC header rows is a miss (`World::drain_staged_menu_warp`) |
 | `jouinb_long_scripted_walk` | a scripted player walk across most of the map outlasted the stall window | harness: a walk op still stepping is progress |
 | `ropeway_player_parked_on_gondola` | Octam's first-arrival cutscene (`ropeway` `P2[6]`) ended with the player seated on the gondola (`A3 F8 24 1F`), unable to step off in any direction | only the scene-init sweep's placements collide: the walk controller's candidate gather `FUN_801CF754` walks the `+0x0C` actor list, and the window sweep's placements (the gondola among them) live on `+0x24` |
+| `edlast_ending_soft_reset` | after the credits' press the party stood in `edlast` with no way out | `49 0C` runs slot `0x33`, the return-to-title soft reset, instead of closing at once |
+| `koin2_fatal_decision_stone_party` | a fight sat in Fatal Decision's capture band for 18000 frames | the `0x5A` wipe scan reads the packed `+0x16E` (`status_word`), so a petrified party wipes - the caster had been re-seeded forever |
+| `map01_overworld_beat_walk_never_steps` | `urudre2`'s hand-off beat on `map01` walked two placements with `C7` and parked on `B3 12 0A` for good | the world-map arm steps cross-context walk legs, as the field arm does |
+| `jouine_camera_glide_pan` | `jouine` `P2[16]` parked on `4C CD` for longer than the softlock window | harness: the camera glide countdown is in both digests - the pan is about 2200 frames and is the shot moving |
+| `conc3_ambient_walker_seat_snapback` | a cutscene walk ran from the walker's off-stage wander box across the whole map | an ambient walker adopts the live seat a script's `0x23` writes; it had re-published its own stale coordinates on its next step |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 
 The field-side fixes are described with their retail evidence in

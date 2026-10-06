@@ -286,6 +286,311 @@ pub struct RetailObs {
     /// handshake's frame count, `jouind`'s spawn delay), and a timer seeded
     /// at `0` instead of its captured count fires on a different frame.
     pub slot_table: Option<[i16; 256]>,
+    /// The live mode-3 CLUT-cell cyclers ([`retail_cell_fx`]), handed to the
+    /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
+    /// captured phase.
+    pub cell_fx: Vec<legaia_engine_core::clut_cell_fx::ClutCellFx>,
+    /// The live fog-pool records ([`retail_fog`]), handed to the image child
+    /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
+    pub fog: Vec<legaia_engine_core::fog_particles::FogParticle>,
+    /// The live mode-4 scroller rects and their captured texels
+    /// ([`retail_scroll_rects`]), handed to the image child as a
+    /// `LEGAIA_SEAT_VRAM_RECTS` file.
+    pub scroll_rects: Vec<SeededVramRect>,
+    /// Drawn field actors' live model ids ([`retail_object_models`]), handed
+    /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
+    /// objects a motion stream re-binds.
+    pub object_models: Vec<(u16, i16)>,
+}
+
+use legaia_engine_core::world::SeededVramRect;
+
+/// The actor tick that runs a move-VM part (`FUN_80021DF4`).
+const PART_TICK: u32 = 0x8002_1DF4;
+
+/// Every live mode-4 VRAM scroller on a retail state's actor lists - a
+/// `FUN_80021DF4` part with `+0x5A = 4`, rect `+0xD0..+0xD6`
+/// ([`legaia_engine_core::world::ambient`]'s `vram_scroll`) - with the
+/// texels the state's VRAM (`1024 x 512` BGR555 LE) holds there.
+pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
+    if vram.len() != 1024 * 512 * 2 {
+        return Vec::new();
+    }
+    let mut out: Vec<SeededVramRect> = Vec::new();
+    let step = i16::from(crate::retail_compare_battle::frame_step(ram));
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
+            || game_anchors::i16_at(ram, n + 0x5A) != 4
+        {
+            continue;
+        }
+        let rect = (
+            game_anchors::u16_at(ram, n + 0xD0),
+            game_anchors::u16_at(ram, n + 0xD2),
+            game_anchors::u16_at(ram, n + 0xD4),
+            game_anchors::u16_at(ram, n + 0xD6),
+        );
+        let (x, y, w, h) = rect;
+        if w == 0 || h == 0 || w > 1024 || h > 512 || out.iter().any(|(r, _)| *r == rect) {
+            continue;
+        }
+        let texels = (0..h)
+            .flat_map(|row| (0..w).map(move |col| (row, col)))
+            .map(|(row, col)| {
+                let o =
+                    (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
+                u16::from_le_bytes([vram[o], vram[o + 1]])
+            })
+            .collect::<Vec<u16>>();
+        // The displayed frame is two game frames older than the VRAM: take
+        // back the rotations the scroller fired in between.
+        let fires = scroll_fires_within(
+            game_anchors::i16_at(ram, n + 0xC4),
+            game_anchors::i16_at(ram, n + 0xC6),
+            step,
+            DISPLAY_LAG_FRAMES,
+        );
+        let back = |per_tick: i16, extent: u16| -> usize {
+            let e = i32::from(extent).max(1);
+            (i32::from(per_tick) * i32::from(step) * fires).rem_euclid(e) as usize
+        };
+        let (bw, bh) = (
+            back(game_anchors::i16_at(ram, n + 0xCC), w),
+            back(game_anchors::i16_at(ram, n + 0xCE), h),
+        );
+        out.push((
+            rect,
+            unrotate_rect(&texels, usize::from(w), usize::from(h), bw, bh),
+        ));
+    }
+    out
+}
+
+/// Game frames the displayed frame lags the RAM by (the double-buffer law of
+/// [`crate::retail_compare_battle::display_lag_vsyncs`], in frames).
+const DISPLAY_LAG_FRAMES: i32 = 2;
+
+/// How many times a mode-4 scroller fired over its last `lag` game ticks,
+/// from its live countdown `+0xC6` and reload `+0xC4`: the countdown drains
+/// `step` a tick and fires the tick it goes negative, reloading to the
+/// period (`vram_scroll::mode4_integrate`), so it fires every
+/// `period / step + 1` ticks and a countdown equal to the period fired on the
+/// current tick.
+fn scroll_fires_within(period: i16, countdown: i16, step: i16, lag: i32) -> i32 {
+    let (p, c, s) = (
+        i32::from(period),
+        i32::from(countdown),
+        i32::from(step.max(1)),
+    );
+    if p < 0 || c > p {
+        return 0;
+    }
+    let cycle = p / s + 1;
+    let since = (p - c) / s;
+    if since > lag - 1 {
+        0
+    } else {
+        1 + (lag - 1 - since) / cycle
+    }
+}
+
+/// Rotate a `w x h` rect **right** by `dx` and **down** by `dy` - the inverse
+/// of the scroller's left / up rotation.
+fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: usize) -> Vec<u16> {
+    if w == 0 || h == 0 || texels.len() < w * h {
+        return texels.to_vec();
+    }
+    (0..h)
+        .flat_map(|row| (0..w).map(move |col| (row, col)))
+        .map(|(row, col)| texels[((row + h - dy % h) % h) * w + (col + w - dx % w) % w])
+        .collect()
+}
+
+/// [`retail_scroll_rects`] as the bytes of a `LEGAIA_SEAT_VRAM_RECTS` file:
+/// per rect `x, y, w, h` (`u16` LE) then its `w * h` texels.
+pub fn vram_rects_file(rects: &[SeededVramRect]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for ((x, y, w, h), texels) in rects {
+        for v in [*x, *y, *w, *h].iter().chain(texels) {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    out
+}
+
+/// Inverse of [`vram_rects_file`]; a truncated tail is dropped.
+pub fn vram_rects_from_file(bytes: &[u8]) -> Vec<SeededVramRect> {
+    let words: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
+        .collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 4 <= words.len() {
+        let (x, y, w, h) = (words[i], words[i + 1], words[i + 2], words[i + 3]);
+        let n = usize::from(w) * usize::from(h);
+        let Some(texels) = words.get(i + 4..i + 4 + n) else {
+            break;
+        };
+        out.push(((x, y, w, h), texels.to_vec()));
+        i += 4 + n;
+    }
+    out
+}
+
+/// The scene model bank's pool base (`*(u16*)0x8007B6F8`): a field actor's
+/// `+0x64` is this plus its scene-bank model id (`FUN_8003A1E4`,
+/// `FUN_80024E08`).
+const MODEL_BANK_BASE: u32 = 0x8007_B6F8;
+
+/// Each bind record's `(record +0x50, scene-bank model id)`, off the
+/// **first** field actor in list order that carries it: the one a motion
+/// stream is bound to (`FUN_8003A9D4`, [`legaia_engine_core::field_env::stream_bound_draws`]),
+/// whose `+0x64` less the bank base is the model the stream's op `0x0E` last
+/// swapped in.
+pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
+    let base = i32::from(game_anchors::u16_at(ram, MODEL_BANK_BASE));
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            if !seen.insert(record) {
+                return None;
+            }
+            let id = i32::from(game_anchors::i16_at(ram, n + 0x64)) - base;
+            (0..0xF0).contains(&id).then_some((record, id as i16))
+        })
+        .collect()
+}
+
+/// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_core::fog_particles`]).
+const FOG_POOL_PTR: u32 = 0x8007_B7E0;
+
+/// Every live record of a retail state's fog pool: 80 `0x18`-byte records
+/// from pool `+0xA4`, alive byte `+0x05`
+/// ([`legaia_engine_core::fog_particles`] has the layout).
+pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_core::fog_particles::FogParticle> {
+    let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
+    if (pool & 0xFFE0_0000) != 0x8000_0000 {
+        return Vec::new();
+    }
+    (0..legaia_engine_core::fog_particles::FOG_POOL_SLOTS as u32)
+        .map(|i| pool + 0xA4 + i * 0x18)
+        .filter(|&r| game_anchors::u8_at(ram, r + 5) != 0)
+        .map(|r| legaia_engine_core::fog_particles::FogParticle {
+            age: game_anchors::u16_at(ram, r),
+            rate: game_anchors::u16_at(ram, r + 2),
+            slot: game_anchors::u8_at(ram, r + 4),
+            alive: true,
+            vx: game_anchors::u8_at(ram, r + 6) as i8,
+            vz: game_anchors::u8_at(ram, r + 7) as i8,
+            x: game_anchors::u32_at(ram, r + 8) as i32,
+            z: game_anchors::u32_at(ram, r + 0xC) as i32,
+            y: game_anchors::i16_at(ram, r + 0x10),
+            grey: game_anchors::u8_at(ram, r + 0x14),
+        })
+        .collect()
+}
+
+/// [`retail_fog`] as `LEGAIA_SEAT_FOG`: `slot,age,rate,vx,vz,x,z,y,grey` per
+/// record, `;`-separated.
+pub fn fog_env(fog: &[legaia_engine_core::fog_particles::FogParticle]) -> String {
+    fog.iter()
+        .map(|p| {
+            format!(
+                "{},{},{},{},{},{},{},{},{}",
+                p.slot, p.age, p.rate, p.vx, p.vz, p.x, p.z, p.y, p.grey
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`fog_env`]; malformed entries are dropped.
+pub fn fog_from_env(s: &str) -> Vec<legaia_engine_core::fog_particles::FogParticle> {
+    s.split(';')
+        .filter_map(|e| {
+            let v: Vec<i64> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let [slot, age, rate, vx, vz, x, z, y, grey] = <[i64; 9]>::try_from(v).ok()?;
+            Some(legaia_engine_core::fog_particles::FogParticle {
+                age: age as u16,
+                rate: rate as u16,
+                slot: slot as u8,
+                alive: true,
+                vx: vx as i8,
+                vz: vz as i8,
+                x: x as i32,
+                z: z as i32,
+                y: y as i16,
+                grey: grey as u8,
+            })
+        })
+        .collect()
+}
+
+/// Every live mode-3 CLUT-cell cycler on a retail state's actor lists, in
+/// list order: a part ticked by `FUN_80021DF4` with render mode `+0x5A = 3`
+/// past its first armed frame (`+0x9C > 1`), as the snapshot its next
+/// `FUN_80019D50` write uses - rect `+0xA0..+0xA6`, adds `+0x90/92/94`, mode
+/// `+0x9E`, white amount `+0x68` ([`legaia_engine_core::clut_cell_fx`]).
+pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_core::clut_cell_fx::ClutCellFx> {
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::i16_at(ram, n + 0x5A) == 3
+                && game_anchors::i16_at(ram, n + 0x9C) > 1
+        })
+        .map(|n| legaia_engine_core::clut_cell_fx::ClutCellFx {
+            rect: (
+                game_anchors::u16_at(ram, n + 0xA0),
+                game_anchors::u16_at(ram, n + 0xA2),
+                game_anchors::u16_at(ram, n + 0xA4),
+                game_anchors::u16_at(ram, n + 0xA6),
+            ),
+            h_add: game_anchors::i16_at(ram, n + 0x90),
+            s_add: game_anchors::i16_at(ram, n + 0x92),
+            v_add: game_anchors::i16_at(ram, n + 0x94),
+            mode: game_anchors::i16_at(ram, n + 0x9E),
+            white: game_anchors::i16_at(ram, n + 0x68),
+        })
+        .collect()
+}
+
+/// [`retail_cell_fx`] as `LEGAIA_SEAT_CLUT_FX`: `x,y,w,h,h,s,v,mode,white`
+/// per part, `;`-separated.
+pub fn cell_fx_env(fx: &[legaia_engine_core::clut_cell_fx::ClutCellFx]) -> String {
+    fx.iter()
+        .map(|f| {
+            format!(
+                "{},{},{},{},{},{},{},{},{}",
+                f.rect.0, f.rect.1, f.rect.2, f.rect.3, f.h_add, f.s_add, f.v_add, f.mode, f.white
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`cell_fx_env`]; malformed entries are dropped.
+pub fn cell_fx_from_env(s: &str) -> Vec<legaia_engine_core::clut_cell_fx::ClutCellFx> {
+    s.split(';')
+        .filter_map(|e| {
+            let v: Vec<i32> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let [x, y, w, h, hh, ss, vv, mode, white] = <[i32; 9]>::try_from(v).ok()?;
+            Some(legaia_engine_core::clut_cell_fx::ClutCellFx {
+                rect: (x as u16, y as u16, w as u16, h as u16),
+                h_add: hh as i16,
+                s_add: ss as i16,
+                v_add: vv as i16,
+                mode: mode as i16,
+                white: white as i16,
+            })
+        })
+        .collect()
 }
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
@@ -440,6 +745,7 @@ impl RetailObs {
         // which applies them again.
         if let (Some(save), Some(Ok(b))) = (save.as_mut(), battle.as_ref()) {
             crate::retail_compare_battle::ungrant_results_rewards(save, b, ram);
+            crate::retail_compare_battle::ungrant_magic_level_up(save, b);
         }
         Self {
             scene,
@@ -476,6 +782,22 @@ impl RetailObs {
             battle,
             menu,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
+            cell_fx: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_cell_fx(ram)
+            } else {
+                Vec::new()
+            },
+            fog: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_fog(ram)
+            } else {
+                Vec::new()
+            },
+            scroll_rects: Vec::new(),
+            object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_object_models(ram)
+            } else {
+                Vec::new()
+            },
             slot_table: {
                 let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
                 ram.get(lo..lo + 0x200)
@@ -504,6 +826,107 @@ pub(crate) fn hold_slot_table(session: &mut BootSession, retail: &RetailObs) {
 }
 
 impl RetailObs {
+    /// The save the seed lands: the lifted save with the gate record's own
+    /// run latches cleared ([`crate::retail_compare_script::run_latches`]).
+    ///
+    /// Retail's record set those flags after the scene entry ran, so the
+    /// entry never saw them; a card load runs the entry over the whole save
+    /// and an entry that tests one takes the arm retail did not.
+    /// `minigame_dance_pcsx` is caught on `koin3` `P2[6]` two ops past
+    /// `55 9C`, the flag the entry (`P1[0]` `+0x178`) reads as "back from
+    /// the dance floor": seeded with it up, the entry cleared it and spawned
+    /// the judging record `P2[9]` over the frame. The comparand is
+    /// [`Self::save`] unchanged.
+    ///
+    /// The seed raises them again at the settle tick
+    /// ([`Self::seed_latches`]), once the entry has run: retail's state holds
+    /// them, and a record the seed never reaches would otherwise leave the
+    /// flags channel short. Raised straight after the landing, an entry still
+    /// running read them anyway - the slot-machine floor's entry restarted
+    /// its track on one.
+    pub fn seed_save(&self) -> Option<legaia_save::SaveFile> {
+        let mut save = self.save.clone()?;
+        for idx in self.seed_latches() {
+            if let Some(b) = save
+                .ext
+                .story_flag_bits
+                .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
+            {
+                *b &= !(0x80u8 >> (idx & 7));
+            }
+        }
+        Some(save)
+    }
+
+    /// Read the field scrollers' captured rects ([`retail_scroll_rects`]).
+    fn seat_scroll_rects(&mut self, ram: &[u8], vram: Option<&[u8]>) {
+        if let Some(v) = vram
+            && matches!(self.class, StateClass::Field | StateClass::WorldMap)
+        {
+            self.scroll_rects = retail_scroll_rects(ram, v);
+        }
+    }
+
+    /// The latches [`Self::seed_save`] holds back from the scene entry.
+    pub fn seed_latches(&self) -> Vec<u16> {
+        if self.menu.is_some() || !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            return Vec::new();
+        }
+        self.scripts
+            .running
+            .first()
+            .map(|s| s.latches.clone())
+            .unwrap_or_default()
+    }
+
+    /// The capture-alignment environment the image child takes on top of
+    /// its seat: held-back latches, CLUT-cell phases, fog-pool records and
+    /// scroller rects (the last through a file beside the child's frame).
+    pub fn seat_env(&self, out_dir: Option<&Path>, label: &str) -> Vec<(&'static str, String)> {
+        let mut env: Vec<(&'static str, String)> = self.seed_latches_env().into_iter().collect();
+        if !self.cell_fx.is_empty() {
+            env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&self.cell_fx)));
+        }
+        if !self.fog.is_empty() {
+            env.push(("LEGAIA_SEAT_FOG", fog_env(&self.fog)));
+        }
+        if !self.object_models.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_OBJECT_MODELS",
+                self.object_models
+                    .iter()
+                    .map(|(r, m)| format!("{r}:{m}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ));
+        }
+        if !self.scroll_rects.is_empty() {
+            let dir = crate::retail_compare_image::work_dir(out_dir);
+            let path = dir.join(format!("{label}.vrect.bin"));
+            if std::fs::create_dir_all(&dir).is_ok()
+                && std::fs::write(&path, vram_rects_file(&self.scroll_rects)).is_ok()
+            {
+                env.push(("LEGAIA_SEAT_VRAM_RECTS", path.display().to_string()));
+            }
+        }
+        env
+    }
+
+    /// [`Self::seed_latches`] as `LEGAIA_SEAT_LATCHES` for `play-window`
+    /// (hex flag ids, comma-separated), when there are any.
+    pub fn seed_latches_env(&self) -> Option<(&'static str, String)> {
+        let l = self.seed_latches();
+        (!l.is_empty()).then(|| {
+            (
+                "LEGAIA_SEAT_LATCHES",
+                l.iter()
+                    .map(|i| format!("{i:x}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
+        })
+    }
+
     /// Name the state by the scene it is **running**, not the one a door has
     /// queued. A walked crossing writes the destination label to
     /// `0x8007050C` with the scene-change packet, frames before the field
@@ -553,12 +976,18 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 (Some(v), Some(rect)) => Frame::from_vram_display(v, rect),
                 _ => None,
             };
-            Ok(RetailObs::from_ram(ram, frame))
+            let mut obs = RetailObs::from_ram(ram, frame);
+            obs.seat_scroll_rects(ram, gpu.vram_bytes());
+            Ok(obs)
         }
         _ => {
             let (st, gpu) = legaia_pcsxr::gpu::load_with_scus(&entry.path, scus)?;
-            let frame = gpu.and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
-            Ok(RetailObs::from_ram(st.main_ram(), frame))
+            let frame = gpu
+                .as_ref()
+                .and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
+            let mut obs = RetailObs::from_ram(st.main_ram(), frame);
+            obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
+            Ok(obs)
         }
     }
 }
@@ -662,8 +1091,7 @@ pub fn run_engine_with(
     session.host.world.toggles.use_vm_dialogue = true;
     let opts = FieldLiveOpts::default();
     let save = retail
-        .save
-        .clone()
+        .seed_save()
         .context("retail state has no liftable save window")?;
     match order {
         // The engine's own card-load path: land the save's scene, then hydrate.
@@ -734,6 +1162,15 @@ pub fn run_engine_with(
                 }
                 met_at = Some(t);
                 break;
+            }
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+                // The record's own latches, held back from the entry, are
+                // retail's state again once the entry has run - the
+                // settle-window sample included; a resume takes them back
+                // before it replays the record.
+                for idx in retail.seed_latches() {
+                    session.host.world.system_flag_set(idx);
+                }
             }
             if t == SETTLE_TICKS {
                 at_settle = Some(sample_engine(&mut session, retail, &director, None));
@@ -1484,7 +1921,7 @@ fn run_one(
         opts.engine_exe,
         &retail.frame,
         retail.player,
-        retail.save.as_ref(),
+        retail.seed_save().as_ref(),
     ) {
         (Some(exe), Some(rf), seat, Some(save))
             if matches!(retail.menu, Some(Ok(_)))
@@ -1510,11 +1947,12 @@ fn run_one(
             // framed at that phase too: the child runs the same gate and
             // captures the frame it holds, with the deadline as its bound.
             let gate = engine.script.filter(|p| p.met_at.is_some()).and(
-                crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts),
+                crate::retail_compare_script::ScriptGate::displayed_from_retail(&retail.scripts),
             );
             let frame = match gate {
                 Some(g) => {
                     let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
+                    env.extend(retail.seat_env(opts.out_dir, &entry.label));
                     if let Some(n) = retail.hud_countdown {
                         env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
                     }
@@ -1549,6 +1987,7 @@ fn run_one(
                     retail.hud_countdown,
                     retail.camera_block.as_ref(),
                     retail.seat_focus,
+                    &retail.seat_env(opts.out_dir, &entry.label),
                 ),
             };
             match frame {
@@ -2101,6 +2540,44 @@ mod tests {
         let mut ram = vec![0u8; 0x20_0000];
         ram[(MENU_SUBSCREEN & 0x1F_FFFF) as usize] = sub;
         ram
+    }
+
+    /// The capture-alignment seeds survive their env forms.
+    #[test]
+    fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
+        let fx = vec![legaia_engine_core::clut_cell_fx::ClutCellFx {
+            rect: (0, 502, 16, 1),
+            h_add: 2880,
+            s_add: 0,
+            v_add: -98,
+            mode: 1,
+            white: 256,
+        }];
+        assert_eq!(cell_fx_from_env(&cell_fx_env(&fx)), fx);
+        let fog = vec![legaia_engine_core::fog_particles::FogParticle {
+            age: 0x480,
+            rate: 12,
+            slot: 77,
+            alive: true,
+            vx: -3,
+            vz: 5,
+            x: -(40 << 11),
+            z: 90 << 11,
+            y: -0x60,
+            grey: 0x5A,
+        }];
+        assert_eq!(fog_from_env(&fog_env(&fog)), fog);
+        // Period 2 on a step-3 frame fires every tick; a countdown short of
+        // the period fired on an earlier tick.
+        assert_eq!(scroll_fires_within(2, 2, 3, 2), 2);
+        assert_eq!(scroll_fires_within(8, 4, 2, 2), 0);
+        assert_eq!(scroll_fires_within(8, 6, 2, 2), 1);
+        // Rotating right/down undoes the scroller's left/up rotation.
+        let t: Vec<u16> = (0..6).collect(); // 3 wide, 2 high
+        assert_eq!(unrotate_rect(&t, 3, 2, 1, 1), vec![5, 3, 4, 2, 0, 1]);
+        let rects = vec![((0x280, 0, 2, 2), vec![1, 2, 3, 0x8004])];
+        assert_eq!(vram_rects_from_file(&vram_rects_file(&rects)), rects);
+        assert!(fog_from_env("1,2,3").is_empty());
     }
 
     fn chans(kv: &[(&str, f64)]) -> BTreeMap<String, f64> {

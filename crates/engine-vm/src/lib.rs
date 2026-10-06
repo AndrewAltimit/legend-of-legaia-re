@@ -163,6 +163,7 @@ pub mod field_actor_reflect;
 pub mod field_actor_timers;
 pub mod field_helpers;
 pub mod field_ledge_hop_arc;
+pub mod field_light;
 pub mod field_passive_hud;
 pub mod field_player_clip;
 pub mod field_state_pick;

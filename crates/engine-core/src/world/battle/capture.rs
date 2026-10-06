@@ -265,12 +265,7 @@ impl World {
             // screen element 0x65, whose content word the result-message
             // builder points at that buffer. The Done band's teardown unloads
             // it through `levelup_banner_element`, which retires the line.
-            let spell_name = self
-                .tables
-                .spell_catalog
-                .get(spell_id)
-                .map(|d| d.name.clone())
-                .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+            let spell_name = self.spell_banner_name(spell_id);
             self.raise_magic_level_banner(crate::magic_xp::magic_level_increased_message(
                 &spell_name,
             ));

@@ -163,3 +163,20 @@ fn a_talk_with_no_pending_restore_leaves_the_player_hidden() {
     assert!(w.dialog.inline.as_ref().is_some_and(|id| id.done));
     assert!(w.player_hidden());
 }
+
+/// `CC F8 C2 <b>` raises / lowers the **player's** object-effect gate
+/// `+0x42` from any script, and a raised gate hands the player a clip.
+#[test]
+fn a_player_aimed_effect_gate_lands_on_the_player() {
+    let mut w = field_world();
+    assert!(w.object_effect_clips().is_empty());
+    let r = run_on_foreign_ctx(&mut w, &[0xCC, 0xF8, 0xC2, 0x01]);
+    assert!(matches!(r, FieldStepResult::Advance { next_pc: 4 }));
+    assert_eq!(w.field_vm.player_field_42, 1);
+    let clips = w.object_effect_clips();
+    assert_eq!(clips.len(), 1);
+    assert_eq!(clips[0].0, ActorTintKey::Player);
+    run_on_foreign_ctx(&mut w, &[0xCC, 0xF8, 0xC2, 0x00]);
+    assert_eq!(w.field_vm.player_field_42, 0);
+    assert!(w.object_effect_clips().is_empty());
+}

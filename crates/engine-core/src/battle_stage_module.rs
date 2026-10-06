@@ -4,7 +4,7 @@
 //! one phase machine on the battle context's `ctx[+0x289]` byte driving the
 //! first monster seat (actor-table slot `3`).
 //!
-//! PORT: FUN_801F69F4, FUN_801F69D8
+//! PORT: overlay_battle_slot_b_0968_0968_801f69f4, overlay_battle_slot_b_0969_0969_801f69d8
 //!
 //! Both addresses are shared with the cast-module band that pages into the
 //! same slot-B window (`docs/subsystems/cast-module.md`); the two ported here

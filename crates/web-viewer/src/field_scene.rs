@@ -795,6 +795,87 @@ impl LegaiaViewer {
         Ok(slot)
     }
 
+    /// Select + build env-pack slot `slot` - posed at frame 0 of scene ANM
+    /// record `anim_id - 1` when `anim_id` is non-zero, as
+    /// [`Self::field_scene_mesh_posed`] - with its **light-source rows**
+    /// shaded for a draw at the record angles `(rot_x, rot_y, rot_z)`: the
+    /// `legaia_engine_core::field_lit_mesh` kernel both play hosts run, under
+    /// the live scene's field light (the scene-load light before the scene
+    /// runs live). Returns whether the mesh has lit rows; the page keeps one
+    /// shared upload for a slot without any.
+    pub fn field_scene_mesh_posed_lit(
+        &mut self,
+        slot: u32,
+        anim_id: u32,
+        rot_x: u32,
+        rot_y: u32,
+        rot_z: u32,
+    ) -> Result<bool, JsValue> {
+        let f = self.field_scene.as_mut().ok_or_else(|| {
+            JsValue::from_str("field_scene_mesh_posed_lit: no field scene loaded")
+        })?;
+        let s = slot as usize;
+        let Some(&res_idx) = f.env_tmds.get(s) else {
+            return Err(JsValue::from_str(&format!(
+                "field_scene_mesh_posed_lit: slot {s} >= count {}",
+                f.env_tmds.len()
+            )));
+        };
+        let light = f
+            .live
+            .as_ref()
+            .map_or(legaia_engine_vm::field_light::FieldLight::SCENE_LOAD, |l| {
+                l.host.world.presentation.field_light
+            });
+        let rtmd = &f.res.tmds[res_idx];
+        let offsets = (anim_id != 0)
+            .then(|| {
+                f.scene_anm.as_ref().and_then(|b| {
+                    legaia_engine_core::field_env::posed_prop_offsets(
+                        b,
+                        anim_id.min(u8::MAX as u32) as u8,
+                        legaia_engine_core::field_env::PropPoseKey::REST,
+                        rtmd.tmd.objects.len(),
+                    )
+                })
+            })
+            .flatten();
+        let (mut mesh, mut flat, lit) = match &offsets {
+            Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o),
+            None => {
+                legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &f.res.vram)
+            }
+        };
+        let has_lit = legaia_engine_core::field_lit_mesh::has_lit_rows(&lit);
+        if has_lit {
+            let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
+                rot_x as u16,
+                rot_y as u16,
+                rot_z as u16,
+            );
+            legaia_engine_core::field_lit_mesh::shade_lit_rows_rgba(
+                &mut mesh.colors,
+                &mut flat,
+                &lit,
+                &light,
+                &rot,
+            );
+        }
+        f.cur = Some((usize::MAX, mesh, flat));
+        Ok(has_lit)
+    }
+
+    /// Whether env-pack slot `slot` carries light-source rows.
+    pub fn field_scene_mesh_has_lit_rows(&self, slot: u32) -> bool {
+        let Some(f) = self.field_scene.as_ref() else {
+            return false;
+        };
+        f.env_tmds.get(slot as usize).is_some_and(|&res_idx| {
+            let (_, lit) = f.res.tmds[res_idx].build_filtered_vram_mesh_lit_vertices(&f.res.vram);
+            legaia_engine_core::field_lit_mesh::has_lit_rows(&lit)
+        })
+    }
+
     /// Positions of env-pack slot `slot` posed at pose key `frame`
     /// ([`Self::field_scene_placement_frames`]' value) of scene ANM record
     /// `anim_id - 1` - same vertex order as [`Self::field_scene_mesh_posed`],

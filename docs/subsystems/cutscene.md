@@ -32,7 +32,7 @@ library. The FMV dispatch table is at `0x801D0A6C`.
 - [Playback loop (`play-str`)](#playback-loop-play-str) · [frame-rate detection](#frame-rate-detection) · [CLI reference](#cli-reference)
 - [CDNAME → STR override map](#cdname--str-override-map) · [overlay residency](#strmdec-fmv-overlay-residency) · [directory-record cache](#directory-record-cache) · [post-FMV return scenes](#post-fmv-return-scenes)
 - [Field-VM FMV-trigger op](#field-vm-fmv-trigger-op) - [static trigger sites](#static-fmv-trigger-sites---exhaustive) · [trigger assignment is disc-sourced](#the-per-scene-trigger-assignment-is-disc-sourced-the-runtime-reconstructed-reading-is-falsified) · [per-STR trigger corpus](#per-str-fmv-trigger-corpus)
-- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [screen fade](#scripted-screen-fade-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
+- [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) - [the five-scene chain](#the-five-scene-chain) · [record spawn](#record-spawn-mechanisms-live-probe-pinned) · [`opdeene` timeline record](#the-opdeene-timeline-record) · [inline narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [engine port](#timeline-execution-engine-port) · [vignette actors](#per-actor-channels---the-vignette-actors) · [screen fade](#the-op-0x4c-0x12-tint-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)
 - [Field-to-battle transition](#field-to-battle-transition-the-battle-intro-overlay) - [tick + battle handoff](#transition-tick--battle-handoff---fun_801cf5bc) · [per-style emitters](#per-style-emitters-render-track-gtegpu)
 - [Script-cutscene helpers](#script-cutscene-helpers-overlay_cutscene_dialogue)
 - [Open items](#open-items) · [Provenance](#provenance)
@@ -409,7 +409,10 @@ header word to the MDEC command register (the pointer at `0x801D0E90` holds
 `0x1F801820`) and DMA-0s the `0x20`-word body (`MADR = pkt + 4`, `BCR = 0x20 | (len >> 5)
 << 16`, `CHCR = 0x01000201`). An earlier reading had it staging two double-buffered
 output rects into `0x801D0D5C` / `0x801D0D9C`; those addresses are the quant packet's
-two matrix halves, not rects, and nothing here touches the output side. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
+two matrix halves, not rects, and nothing here touches the output side. The three
+words right after it, `0x801CFD78` (`lhu v0,0(a0); jr ra; nop`), are a halfword-load
+leaf that no reference of any form reaches - linked, never called
+(`overlay_cutscene_str_0970_801cfd78.txt`). The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
 *inside* the port: it loops `StGetNext` (`FUN_8005EF40`, up to 2000 spins), sets the
 inclusive end-frame latch `DAT_801E09F8` when the demuxed frame number reaches the slot's
 `+0x0C`, and re-programs the decode rects from the sector header's own dimensions - both
@@ -1262,6 +1265,14 @@ The pad controller `FUN_801D1344` skips locomotion while the bit is up (`0x801D1
 
 The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` / `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait. The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped choreography; a loop whose body polls the held pad is exempt (`loop_polls_held_pad` in `narration.rs`), so the record keeps the pad until the press instead of being dropped after its credits. The record needs roughly 14100 vsyncs to reach that poll.
 
+After the press the record dims the scene and issues `49 0C`, whose handler slot `0x33` is `FUN_801EDF00`, the return-to-title soft reset:
+the play records (`FUN_801ED710` at `(0x20, y)`) slide up from `y = 0xE6` to `0xE` one step per game tick,
+a face button (`_DAT_8007B850 & 0x9F0`) then starts a `0x78`-frame white fade (`FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x78, -1)`), and when its counter reaches `0x78` the executable is reloaded (`FUN_80017714`).
+The screen never hands the frame back, so the op stays parked until the reboot.
+Port: slot `0x33` in `World::tick_submode_screen` (`SoftResetScreen`); both hosts draw the records at `World::soft_reset_records_pen`, and the reload raises the same title hand-off field-VM op `4C EA` does (`World::game_over`) -
+retail's reboot also replays the boot logos on the way, the port goes straight to the title.
+Before the slot was dispatched it closed on its first frame and left the party standing in `edlast`.
+
 ### Per-actor channels - the vignette actors
 
 The "characters doing things" during the narration are **per-actor script channels**.
@@ -1379,26 +1390,29 @@ by `cutscene_timeline_player_channel_door_reaches_scene_change`; the disc-gated
 `chapter1_hub_depth_oracle` drives the jou castle door through this path to
 `SceneEntered("jouina")`.
 
-### Scripted screen fade (op `0x4C 0x12`) + the effect colour (op `0x34` sub-0)
+### The op `0x4C 0x12` tint (op `0x4C 0x12`) + the effect colour (op `0x34` sub-0)
 
-**Op `0x4C 0x12`** (7 bytes `[4C, 12, r, g, b, ramp_lo, ramp_hi]`) is the retail **screen-fade
-primitive**: the global multiply tint `DAT_8007BCB8/B9/BA` (neutral `0x80`), optionally ramped
-over `LE_u16(ramp)` frames by the slot-job spawner `FUN_8003C5F0`. Every field scene's `P1[0]`
-entry script carries the arrival arm of the `0x52F`/`0x530`/`0x531` fade handshake (see
+**Op `0x4C 0x12`** (7 bytes `[4C, 12, r, g, b, ramp_lo, ramp_hi]`) sets the tint
+`DAT_8007BCB8/B9/BA` (neutral `0x80`), optionally ramped over `LE_u16(ramp)` frames by the
+slot-job spawner `FUN_8003C5F0`. Every field scene's `P1[0]` entry script carries the arrival arm
+of the `0x52F`/`0x530`/`0x531` handshake (see
 [`script-vm.md`](script-vm.md#the-0x5270x531-scene-transition-scratch-band)) -
-`4C 12 00 00 00 00 00` (instant black) then `4C 12 80 80 80 44 00` (ramp to neutral over 68
-frames), the **fade-in from black** that opens the prologue. New Game arms the handshake
-(`World::begin_new_game` sets sysflag `0x52F`, the boot-side stage retail performs before the
-field launches); the destination entry script consumes it. The engine runs the entry script's
-load-frame slice at prologue-scene entry (`World::pre_run_entry_script`), so the instant black is
-on screen before the first rendered frame, matching retail's load-frame execution. The tint
-darkens the drawn 3D scene only - the narration crawl is a separate draw path and keeps scrolling
-bright, as the retail capture shows - and persists across scene changes (retail's cross-scene
-fade continuity). Engine model: [`fade::SceneTintRamp`](../../crates/engine-core/src/fade.rs)
-(normalized, `1.0` = neutral) in `World::presentation.tint`, stepped per `World::tick`, surfaced by
-`World::scene_screen_tint`; `play-window` folds it into the colour-grade + depth-cue staging
-(both branches of the shaders' cue mix carry it, so the tint distributes to the final pixel). A
-landed non-neutral tint holds; a landed neutral drops to the identity path.
+`4C 12 00 00 00 00 00` (instant) then `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) -
+and the departure arm ramps it to `0` over 46.
+
+It is **not a screen fade**. A disc-wide reference scan (`find-gp-relative-refs.py --va` over
+SCUS, every based overlay and every PROT entry) finds one reader of the three bytes: the fog
+particle update `FUN_8003F3FC` (`lbu 0x9A0(gp)` at `0x8003F558`, `0x8003F588`, `0x8003F5B8`),
+which folds it into each sheet's colour. Every other site is the op's own store / ramp start
+(`0x801E0CF0..0x801E0D58`) or a reset (`FUN_8003AEB0`, `FUN_801D6704`). The
+`retona_field_card_boot` state agrees: caught mid-arrival with the word at `27`, its frame shows
+the cave at full brightness and only the fog sheets dim. So the arrival arm fades the fog in, and
+neither host multiplies the frame by it. Engine model:
+[`fade::SceneTintRamp`](../../crates/engine-core/src/fade.rs) (normalized, `1.0` = neutral) in
+`World::presentation.tint`, stepped per `World::tick`, read by `World::fog_render_step` (and by
+the non-retail volumetric fog, so the two fade together). It persists across scene changes. New
+Game arms the handshake (`World::begin_new_game` sets sysflag `0x52F`), and the engine runs the
+entry script's load-frame slice at prologue entry (`World::pre_run_entry_script`).
 
 **Op `0x34` sub-0** (7 bytes `[34, op0, r, g, b, ramp_lo, ramp_hi]`; the sub-0 arm at
 `0x801E1FB0` inside the field-VM dispatcher `FUN_801DE840` - a Ghidra-promoted intra-function
@@ -1609,8 +1623,7 @@ in the mesh shaders instead - exactly equivalent, because a 4/8bpp texel *is* a 
 through the exact 5-bit law, each non-neutral packet colour takes the `4C E6` curve of its
 `max` (`prologue_sepia_word`; the page shader carries the twin), exact-neutral words stay
 neutral (the ground tile kernel's runtime word, retail-verified), and the view-depth cue ramp is inert
-(no node carries `IR0` in the capture). The op `0x4C 0x12` screen tint rides the palette
-uniform's `rgb` so scene fades still multiply every graded pixel.
+(no node carries `IR0` in the capture).
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) still owns the
 scene gate (the prologue legs `opdeene` / `opstati` / `opurud`, `None` elsewhere);
 `play-window` stages the mode whenever the grade is active. With the mode off (every

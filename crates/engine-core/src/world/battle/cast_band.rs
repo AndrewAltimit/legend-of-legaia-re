@@ -90,9 +90,9 @@ const SUMMON_WALK_STEP: i16 = 12;
 /// (PROT 0903 arm 11): the yaw base has swung `0x5D9 - 0x200 = 985` at
 /// `6 * scalar` (`48`) a display frame - 20.5 frames into the walk - and the
 /// creature stands 670 units on from its arm-3 seat (`z -2276 -> -1606`),
-/// `32.7` a frame. The walk is the clip's root motion, which the engine does
-/// not integrate for the creature, so the speed is carried as the measured
-/// constant.
+/// `32.7` a frame. The walk is the clip's root motion, which the anim tick's
+/// root-motion term integrates for the creature like any body; this measured
+/// constant only walks a creature whose playing clip carries no speed.
 const SUMMON_DIRECTED_WALK_STEP: i32 = 32;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
@@ -104,6 +104,37 @@ const SUMMON_UNSEATED_GRACE: u16 = 60;
 /// `0x801F6A60` / `0x801F6A50` table's working entry. The other eight are
 /// spawn arms the pool already stages.
 pub const AOE_STAGER_WORKING_ARM: u8 = 4;
+
+/// The screen fade PROT 0966's arm `phase` spawns on its pass, each a
+/// `FUN_80024E80(0x801C9070, 1)` over the template the arm writes:
+///
+/// | arm | kind | frames | from | to | delay / hold |
+/// |---|---|---|---|---|---|
+/// | 2 (`0x801F6EE8`) | 1 | `0x10` | `(0xFF, 0x40, 0x40)` | black | - |
+/// | 4 (`0x801F6FC0`) | 1 | `0x40` | black | white | held |
+/// | 10 (`0x801F70A0`) | 1 | `0x80` | white | black | - |
+/// | 26 (`0x801F8574`) | 1 | `0x40` | black | white | `0xC0` delay, held |
+/// | 27 (`0x801F879C`) | 1 | `0x80` | white | black | - |
+///
+/// Arm 26 spawns three fades at once (a white flash, a held blue grade, and
+/// the delayed white-in); the engine has one fade seat, so it carries the
+/// last, which is the one still on screen when arm 27 fades out of it.
+fn evil_seru_magic_fade(phase: u8) -> Option<crate::fade::FadeTemplate> {
+    let (duration, start_rgb, end_rgb, mode) = match phase {
+        2 => (0x10, [0xFF, 0x40, 0x40], [0; 3], [0, 0, 0]),
+        4 => (0x40, [0; 3], [0xFF; 3], [0, -1, 0]),
+        10 | 27 => (0x80, [0xFF; 3], [0; 3], [0, 0, 0]),
+        26 => (0x40, [0; 3], [0xFF; 3], [0xC0, -1, 0]),
+        _ => return None,
+    };
+    Some(crate::fade::FadeTemplate {
+        kind: 1,
+        duration,
+        start_rgb,
+        end_rgb,
+        mode,
+    })
+}
 
 /// Combat seats in retail's actor table `DAT_801C9370` - three party rows and
 /// five monster rows. The slot-B AoE sweeps' `ctx[+0]` / `ctx[+1]` bounds are
@@ -475,8 +506,8 @@ impl World {
         // would leave the cast owed forever instead of double-applied.
         if let Some(entry) = self.cast_module_for(pc.spell_id)
             && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
-            && vm::cast_module_ticks::tick_body_owns_the_fold(body)
-            && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(body)
+            && vm::cast_module_ticks::tick_body_owns_the_fold(entry, body)
+            && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(entry, body)
             && self.casting.module_phase > arm
         {
             return;
@@ -578,6 +609,7 @@ impl World {
                 )
             })
             .unwrap_or((0, 0, -542));
+        self.casting.summon_seat_owed = None;
         // Retail's cast-start site `0x801E4B1C` zeroes `ctx+0x278` and the
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;
@@ -944,24 +976,29 @@ impl World {
         shot: Option<vm::cast_module_camera::ModuleShot>,
     ) {
         use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
-        use vm::cast_module_camera::{SpawnAnchor, SpawnRecord};
+        use vm::cast_module_camera::SpawnRecord;
         const LINK_BASE: u32 = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let creature = self
             .casting
             .module_cam
             .creature
-            .or(self.casting.module_cam.creature_live)
-            .map(|c| ([c.x, c.y, c.z], [0, c.facing as i16, 0]));
+            .or(self.casting.module_cam.creature_live);
+        let victim = self
+            .casting
+            .module_cam
+            .victim_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .map(|a| vm::cast_module_camera::ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0xFFF,
+            });
         for spawn in spawns {
-            let (pos, rot) = match spawn.anchor {
-                SpawnAnchor::Creature => match creature {
-                    Some(c) => c,
-                    None => continue,
-                },
-                SpawnAnchor::ShotFocus => match shot {
-                    Some(s) => (s.focus, s.angles),
-                    None => continue,
-                },
+            let Some((pos, rot)) =
+                vm::cast_module_camera::spawn_anchor_point(spawn.anchor, creature, victim, shot)
+            else {
+                continue;
             };
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {
@@ -1098,6 +1135,16 @@ impl World {
             if let Some(c) = r.caption {
                 self.casting.module_caption = Some(c);
             }
+            // The arm's own fades run beside the band's flash: retail's
+            // spawner takes a fresh pool actor per call.
+            if r.kills_fades {
+                self.presentation.module_fades.clear();
+            }
+            for (t, id) in r.fades {
+                let mut seat = None;
+                crate::fade::spawn_fade(&mut seat, &crate::fade::summon_template(t), *id);
+                self.presentation.module_fades.extend(seat);
+            }
         }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
@@ -1128,11 +1175,31 @@ impl World {
             };
             cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
         }
+        // The module's seat arm (`FUN_801F19EC`): a seat owed since the
+        // stager armed is requested as the module reaches it.
+        let seat_arm = run
+            .as_ref()
+            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|p| p.seat_arm);
+        if let Some((arm, spell, at)) = self.casting.summon_seat_owed
+            && (module_phase >= arm || run.is_none())
+        {
+            self.casting.summon_seat_owed = None;
+            self.casting.pending_summon_spawn = Some((spell, at));
+        }
         let busy = match st.phase {
             SummonPhase::Armed => {
                 // Phase 0: seat the creature (retail: the stager's
-                // `FUN_801F19EC` installs the streamed record as slot 7).
-                self.casting.pending_summon_spawn = Some((st.spell_id, st.spawn));
+                // `FUN_801F19EC` installs the streamed record as slot 7) -
+                // here, unless the module seats it in a later arm.
+                match seat_arm.filter(|&a| module_phase < a) {
+                    Some(arm) => {
+                        self.casting.summon_seat_owed = Some((arm, st.spell_id, st.spawn));
+                    }
+                    None => {
+                        self.casting.pending_summon_spawn = Some((st.spell_id, st.spawn));
+                    }
+                }
                 // ...and stage the module's own effect parts. This is the
                 // `0x801E4B1C` site's other half: `FUN_801F1ED4` dispatches
                 // into the paged module, whose spawn records are the cast's
@@ -1169,7 +1236,10 @@ impl World {
                 let walked = match (seat, victim) {
                     (Some(slot), Some(v)) => may_walk && self.summon_walk_to_victim(slot, v),
                     (Some(slot), None) => may_walk && self.summon_walk_step(slot as usize, st.goal),
-                    (None, _) => st.frames >= SUMMON_UNSEATED_GRACE,
+                    (None, _) => {
+                        self.casting.summon_seat_owed.is_none()
+                            && st.frames >= SUMMON_UNSEATED_GRACE
+                    }
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
@@ -1256,6 +1326,9 @@ impl World {
             }
             if let Some(d) = run.capture_drift {
                 cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                if d.tr_x != 0 {
+                    cam.drift_module_tr_x(d.tr_x);
+                }
             }
         }
         if run.tick_ported && run.busy {
@@ -1285,6 +1358,10 @@ impl World {
         self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
+        self.casting.module_beam_counter = 0;
+        self.casting.module_beam_live = false;
+        self.casting.module_hit_arm = None;
+        self.casting.module_settle_ticks = 0;
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);
@@ -1495,10 +1572,26 @@ impl World {
         // `FUN_80019B28(victim, creature) + 0x800` (`0x801F73A4..0x801F73C4`).
         let bearing = vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
         let facing = bearing.wrapping_add(0x800) & 0xFFF;
+        // The walk is the creature clip's own root motion: the anim tick's
+        // positive-speed term steps it along this facing while the range
+        // poll against its target `+0x1DD` (the victim -
+        // `gimard_burning_attack` reads `3`) still fails
+        // (`World::drive_playing_root_motion`). Stepping it here as well
+        // walked it twice - 58 units a tick against retail's ~30 (the
+        // capture's creature `+0x21D = 4` halves the clip's speed). The
+        // measured constant stays for a creature with no root speed to
+        // play (a headless seat with no clip).
+        let root_driven = self
+            .battle_playing_root_motion(usize::from(slot))
+            .is_some_and(|(speed, _)| speed > 0);
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
             a.battle.facing_angle = facing;
+            a.battle.active_target = victim;
             if a.battle.queued_anim != 1 {
                 a.battle.queued_anim = 1;
+            }
+            if root_driven {
+                return false;
             }
             let ms = &mut a.move_state;
             let (dx, dz) = (
@@ -1540,6 +1633,14 @@ impl World {
         }
     }
 
+    /// PROT 0948's beam counter while its builder ran on this module tick -
+    /// the one input `legaia_engine_ui::cast_beam::cross_beam_prims` builds
+    /// the frame's beam packets from, on both hosts. `None` outside arm 3.
+    pub fn cross_beam_draw(&self) -> Option<i32> {
+        (self.mode == SceneMode::Battle && self.casting.module_beam_live)
+            .then_some(self.casting.module_beam_counter)
+    }
+
     /// The full-screen fade quad to composite this frame, as
     /// `(rgb 0xRRGGBB, abr_mode, ot_index)` for
     /// `legaia_engine_ui::screen_prim::fade_prim` - `None` while no fade is
@@ -1548,17 +1649,34 @@ impl World {
     /// OT index the id `FUN_80024E80` stamped (`AddPrim(ot + id*4, ..)` in
     /// `FUN_80024EE4`).
     pub fn screen_fade_draw(&self) -> Option<(u32, u8, u32)> {
-        let f = self.presentation.fade.as_ref()?;
-        if !f.visible() {
-            return None;
-        }
-        let [r, g, b] = f.rgb();
-        Some((
-            (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
-            f.kind.clamp(0, 3) as u8,
-            f.mode[2].max(0) as u32,
-        ))
+        fade_draw(self.presentation.fade.as_ref()?)
     }
+
+    /// Every live full-screen fade quad this frame, the world's fade first
+    /// and then the module fades running beside it
+    /// ([`crate::world::ScreenFxState::module_fades`]), each as
+    /// [`Self::screen_fade_draw`] gives it. Both hosts composite the list.
+    pub fn screen_fade_draws(&self) -> Vec<(u32, u8, u32)> {
+        self.presentation
+            .fade
+            .iter()
+            .chain(self.presentation.module_fades.iter())
+            .filter_map(fade_draw)
+            .collect()
+    }
+}
+
+/// One fade's quad, `None` while its start delay runs.
+fn fade_draw(f: &crate::fade::FadeState) -> Option<(u32, u8, u32)> {
+    if !f.visible() {
+        return None;
+    }
+    let [r, g, b] = f.rgb();
+    Some((
+        (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
+        f.kind.clamp(0, 3) as u8,
+        f.mode[2].max(0) as u32,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1620,6 +1738,10 @@ pub struct CastModuleCodeRun {
     pub vram_move: Option<vm::cast_module_camera::ModuleVramMove>,
     /// The text the module's arm put up this frame.
     pub caption: Option<vm::cast_module_camera::ModuleCaption>,
+    /// The fades the module's arm spawned this frame, each `(template, id)`.
+    pub fades: &'static [(vm::battle_action::SummonFadeTemplate, i16)],
+    /// The arm killed the module's earlier fades first.
+    pub kills_fades: bool,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -2133,6 +2255,72 @@ impl World {
     ///
     /// Returns `None` when no band entry is resident (a disc-free host, or a
     /// spell that names no module).
+    /// Whether one seat has settled the way every settle loop in the band
+    /// tests it ([`vm::cast_module_ticks::ChainSettle`]): a live seat once its playing clip
+    /// is back to idle, a dead one once it plays the down clip - or, where
+    /// `faded` counts, once its defeat fade has run its colour word out
+    /// (retail's prim word `+0x04` at `0`).
+    ///
+    /// The engine's playing clip is the reaction channel's entry while a
+    /// reaction plays (retail commits a reaction into `+0x1D9` like any
+    /// other clip), else the committed `current_anim`. A downed party seat
+    /// holds the engine's defeat pose rather than clip `8`, so a finished
+    /// defeat pose reads as settled too.
+    fn chain_seat_settled(&self, slot: usize, faded: bool) -> bool {
+        let Some(a) = self.actors.get(slot) else {
+            return true;
+        };
+        let playing = match a.battle_reaction {
+            Some(tag) => a.battle_reaction_entry.unwrap_or(tag.max(1)),
+            None => a.battle.current_anim,
+        };
+        if a.battle.hp != 0 {
+            return playing == 0;
+        }
+        let downed = playing == vm::cast_module_ticks::SETTLE_DOWN_CLIP
+            || (a.battle_pose == Some(vm::battle_action::Pose::Defeat as u8)
+                && a.battle_animation.as_ref().is_none_or(|p| p.finished()));
+        downed || (faded && (a.battle.render_color == 0 || !a.active))
+    }
+
+    /// [`Self::chain_seat_settled`] over the seats a [`vm::cast_module_ticks::ChainSettle`]
+    /// walks.
+    fn chain_settled(
+        &self,
+        settle: vm::cast_module_ticks::ChainSettle,
+        caster: u8,
+        victim: u8,
+        ctx: &vm::cast_module_ticks::CastModuleCtx,
+    ) -> bool {
+        use vm::cast_module_ticks::ChainSettle as S;
+        let party = 0..usize::from(ctx.party_count);
+        let pc = usize::from(self.party.party_count);
+        let monsters = pc..pc + usize::from(ctx.monster_count);
+        match settle {
+            S::Victim => self.chain_seat_settled(usize::from(victim), false),
+            S::VictimOrFaded => self.chain_seat_settled(usize::from(victim), true),
+            S::PartyRow => party.into_iter().all(|s| self.chain_seat_settled(s, false)),
+            S::TargetRow => {
+                let t = self
+                    .actors
+                    .get(usize::from(caster))
+                    .map_or(0, |a| a.battle.active_target);
+                if t == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE || usize::from(t) < pc
+                {
+                    party.into_iter().all(|s| self.chain_seat_settled(s, false))
+                } else {
+                    monsters.into_iter().all(|s| {
+                        let a = self.actors.get(s);
+                        match a {
+                            Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
+                            _ => self.chain_seat_settled(s, false),
+                        }
+                    })
+                }
+            }
+        }
+    }
+
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
         // --- W1-D ---
         use vm::cast_arm_ticks as arms;
@@ -2161,7 +2349,7 @@ impl World {
         let mut caster = self.cast_actor_state(caster_slot);
         let mut victim = self.cast_actor_state(victim_slot);
         let mut seat = self.cast_actor_state(seat_slot);
-        let (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+        let (mut caster_orig, mut victim_orig, mut seat_orig) = (caster, victim, seat);
         let mut run = CastModuleCodeRun {
             prot_entry: entry,
             busy: true,
@@ -2225,6 +2413,7 @@ impl World {
         run.camera_shot = direction.and_then(|d| d.shot);
         let mut capture_held = false;
         let mut capture_arm = None;
+        let phase_in = ctx.phase;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
         if let Some(direct) = vm::cast_module_camera::capture_camera_director(
@@ -2248,11 +2437,136 @@ impl World {
             capture_held = arm.hold;
             capture_arm = Some(arm);
         }
+        // PROT 0966 (Evil Seru Magic) has no other port: its seat half rides
+        // the director's gate, on the phase the director is answering for.
+        if entry == 966
+            && let Some(arm) = capture_arm
+        {
+            let (phase, passed) = (ctx.phase, !arm.hold);
+            if passed && let Some(t) = evil_seru_magic_fade(phase) {
+                crate::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
+            }
+            // The module's own move-VM stager hit lands mid-cast, not at the
+            // fold: arm 10 spawns record `0x801F937C`, whose script waits
+            // `0x7F` (`<< 3`, drained `scalar * delta` - 127 vsyncs) and then
+            // runs op `0x20` with arm 4, the `0x100` never-kill sweep. That
+            // is arm 11's gate (`0x80` vsyncs), so it lands before arm 26's
+            // kill-capable hit, and the band's fold owes nothing more.
+            let mut stager_hits = Vec::new();
+            if passed && phase == vm::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM {
+                if let Some(r) =
+                    self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
+                {
+                    stager_hits = r.aoe_hits;
+                }
+                self.casting.module_skips_fold = true;
+            }
+            let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                .map(|s| self.cast_actor_state(s))
+                .collect();
+            let mut rolls: Vec<(u8, i32)> = Vec::new();
+            if passed && phase == vm::cast_module_camera::EVIL_SERU_MAGIC_SWEEP_ARM {
+                // Rolled only for the seats the hit visits, in seat order,
+                // so the shared RNG cursor moves as retail's does.
+                for s in 0..ctx.party_count {
+                    if seats
+                        .get(s as usize)
+                        .is_some_and(ticks::aoe_seat_is_hittable)
+                    {
+                        let r = self
+                            .capture_module_roll(
+                                &ticks::EVIL_SERU_MAGIC_SWEEP_SHAPE,
+                                caster_slot,
+                                s,
+                            )
+                            .unwrap_or(0);
+                        rolls.push((s, r));
+                    }
+                }
+                self.refresh_seat_spirit(&mut seats);
+            }
+            let take = |s: u8| {
+                rolls
+                    .iter()
+                    .find(|(seat, _)| *seat == s)
+                    .map_or(0, |(_, r)| *r)
+            };
+            let hits = ticks::evil_seru_magic_seat_writes(
+                phase,
+                passed,
+                ctx.party_count,
+                caster_slot,
+                &mut seats,
+                take,
+            );
+            for (slot, st) in seats.iter().enumerate() {
+                self.write_cast_actor_state(slot as u8, st);
+            }
+            run.aoe_hits = stager_hits;
+            run.aoe_hits.extend(hits.iter().map(|h| ticks::AoeHit {
+                seat: h.seat,
+                applied: h.applied as i32,
+            }));
+        }
+        // A capture body with no camera director still gates its arms on
+        // the module countdown: the arm's phase chain runs only on the tick
+        // the gate lets through (`cast_module_camera::capture_countdown`).
+        let arm_countdown = if capture_arm.is_none() {
+            vm::cast_module_camera::capture_arm_countdowns(
+                entry,
+                body.unwrap_or(vm::cast_module_camera::SINGLE_BODY),
+            )
+            .and_then(|t| vm::cast_module_camera::arm_countdown(t, phase_in))
+        } else {
+            None
+        };
+        if let Some(a) = arm_countdown
+            && a.holds(&mut self.casting.module_cam.countdown)
+        {
+            capture_held = true;
+        }
+        // A phase-chain body's hit lands on the tick its arm first runs -
+        // retail calls the damage wrapper inside the arm - and an arm that
+        // then waits on the hit seats' clips holds until they settle. The
+        // runner itself holds no clip state, so both happen here.
+        let chain = if has_trampoline {
+            body.and_then(|b| ticks::chain_body_for(entry, b))
+        } else {
+            ticks::direct_chain_body(entry)
+        };
+        if let Some(arm) = chain.and_then(|c| c.arm(phase_in))
+            && !capture_held
+        {
+            if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
+                self.casting.module_hit_arm = Some(phase_in);
+                self.fold_pending_cast();
+                // The arm runs on the seats the hit left (a dead victim
+                // takes PROT 0956's reaction branch, not its turn-steal).
+                caster = self.cast_actor_state(caster_slot);
+                victim = self.cast_actor_state(victim_slot);
+                seat = self.cast_actor_state(seat_slot);
+                (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+            }
+            if let Some(settle) = arm.settle {
+                let settled = self.chain_settled(settle, caster_slot, victim_slot, &ctx);
+                self.casting.module_settle_ticks =
+                    self.casting.module_settle_ticks.saturating_add(1);
+                if settled
+                    || self.casting.module_settle_ticks > vm::cast_fatal_decision::SETTLE_TICK_LIMIT
+                {
+                    self.casting.module_settle_ticks = 0;
+                } else {
+                    capture_held = true;
+                }
+            }
+        }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.vram_move = direction.and_then(|d| d.vram_move);
         run.caption = direction.and_then(|d| d.caption);
+        run.fades = direction.map_or(&[], |d| d.fades);
+        run.kills_fades = direction.is_some_and(|d| d.kills_fades);
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
@@ -2297,6 +2611,15 @@ impl World {
                     } else {
                         None
                     };
+                    // The burst is the module's one wrapper call (`jal
+                    // 0x801DD6B4` at `0x801F8168`), and its HP writes are the
+                    // cast's whole outcome beside arm `0x0C`'s flurry
+                    // landing: once it has landed here, the band's generic
+                    // fold owes nothing. Folding as well rolled the
+                    // `0x1C0` a second time through the catalog def.
+                    if hit.is_some() {
+                        self.casting.module_skips_fold = true;
+                    }
                     Some(ticks::plasma_strike_tick(
                         &mut ctx,
                         &mut caster,
@@ -2697,6 +3020,27 @@ impl World {
                     None,
                 )),
                 // --- end W1-D ---
+                // The phase-chain bodies (`cast_module_ticks::chain_bodies`):
+                // PROT 0942 `0xAA`, 0956 `0x75`, 0959, 0960 `0xA6`, 0961,
+                // 0963 and 0964 `0xB0..=0xB2`. Their hits are the fold's.
+                (e, Some(b)) if ticks::chain_body_for(e, b).is_some() => {
+                    let chain = ticks::chain_body_for(e, b).expect("guarded");
+                    let selector = if e == 964 {
+                        self.cast_element_change_last_roll()
+                    } else {
+                        0
+                    };
+                    let t = ticks::run_chain_body(
+                        chain,
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        &mut seat,
+                        selector,
+                    );
+                    run.item_refund = t.refund;
+                    Some(t.step)
+                }
                 // Every ported trampoline arm the band names. An arm whose
                 // body has no port ticks nothing, which is exactly what
                 // retail's fall-through does for an id the trampoline does
@@ -2868,6 +3212,23 @@ impl World {
                     step
                 }
                 // --- end W1-C ---
+                // The phase-chain bodies whose tick arm calls them directly
+                // (`cast_module_ticks::chain_bodies`): PROT 0919, 0935, 0936,
+                // 0937, 0939, 0947 and 0948. Their hits and heals are the
+                // fold's.
+                e if ticks::direct_chain_body(e).is_some() => {
+                    let chain = ticks::direct_chain_body(e).expect("guarded");
+                    let t = ticks::run_chain_body(
+                        chain,
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        &mut seat,
+                        0,
+                    );
+                    run.item_refund = t.refund;
+                    Some(t.step)
+                }
                 _ => None,
             }
         };
@@ -2898,6 +3259,27 @@ impl World {
             let mut live = self.cast_actor_state(slot);
             live.fold_writes(orig, view);
             self.write_cast_actor_state(slot, &live);
+        }
+        // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,
+        // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)
+        // ahead of its own gate, so it draws on every tick the arm runs.
+        self.casting.module_beam_live = false;
+        if entry == vm::cast_module_ticks::CROSS_BEAM_ENTRY {
+            if phase_in == 2 && ctx.phase != phase_in {
+                self.casting.module_beam_counter = 0;
+            }
+            if phase_in == 3 {
+                self.casting.module_beam_counter +=
+                    vm::cast_module_ticks::CROSS_BEAM_COUNTER_PER_TICK;
+                self.casting.module_beam_live = true;
+            }
+        }
+        // The arm passed: its re-arm of the countdown word.
+        if let Some(a) = arm_countdown
+            && !capture_held
+            && ctx.phase != phase_in
+        {
+            a.pass(&mut self.casting.module_cam.countdown);
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_phase = ctx.phase;
@@ -3137,6 +3519,8 @@ impl World {
             spawns: &[],
             vram_move: None,
             caption: None,
+            fades: &[],
+            kills_fades: false,
         })
     }
 

@@ -32,11 +32,11 @@ pub fn encounter_banner_draws_for(
 pub struct BattleSpoilsView<'a> {
     pub xp: u32,
     pub gold: u32,
-    /// One line per character that crossed a level threshold, already
-    /// formatted by the shell (it owns the name table).
+    /// The level-up window's line(s), already composed by the shell (it
+    /// owns the name table and the executable's strings).
     pub level_ups: &'a [String],
-    /// Item names the loot roll surfaced, resolved by the shell against the
-    /// item catalog.
+    /// The report window's drop line(s), already composed by the shell
+    /// against the item catalog and the executable's template.
     pub drops: &'a [String],
     /// The party leader, whose name opens the spoils line.
     pub leader: &'a str,
@@ -44,6 +44,9 @@ pub struct BattleSpoilsView<'a> {
     /// off the result-message build arms
     /// ([`legaia_engine_vm::battle_party_panel::result_subject`]).
     pub subject: legaia_engine_vm::battle_party_panel::ResultSubject,
+    /// `(level_up, report)` rows each window sits below its rest seat this
+    /// frame - the raise glide the results frame starts (`0` once landed).
+    pub slide: (i32, i32),
 }
 
 /// Row pitch of the post-battle report - the dialog font's own line height,
@@ -54,15 +57,19 @@ pub const SPOILS_LINE_H: i32 = 14;
 ///
 /// The measurement is the gold frame band in the `noa_levelup_banner`
 /// framebuffer at 320x240 native: the level-up window's band lies on rows
-/// `6` and `30`, the spoils window's on `154` and `208`, and both span
-/// columns `10..=310`. Retail draws them over the **live battle scene**, one
-/// above the party and one below.
+/// `6` and `30` and columns `10..=302`, the spoils window's on `154` and
+/// `208` and columns `10..=310`. Retail draws them over the **live battle
+/// scene**, one above the party and one below.
 ///
 /// The constants are those bands **outset by 2**, because
 /// [`crate::menu_window_chrome_draws_for`] seats its corner tiles two pixels
 /// inside the rect it is handed - so a rect equal to the band draws the band
 /// two pixels small on every side.
-pub const SPOILS_LEVELUP_RECT: (i32, i32, i32, i32) = (8, 4, 304, 28);
+///
+/// The two widths are the placement records': screen elements
+/// `0x45..=0x4B` (the level-up window) carry a `280`-wide content box, the
+/// report window's `0x41` a `288`-wide one.
+pub const SPOILS_LEVELUP_RECT: (i32, i32, i32, i32) = (8, 4, 296, 28);
 pub const SPOILS_REPORT_RECT: (i32, i32, i32, i32) = (8, 152, 304, 58);
 
 /// Text pen inside either window, from its frame origin. The capture puts
@@ -103,7 +110,7 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
         let (x, y, w, h) = SPOILS_LEVELUP_RECT;
         let extra = (view.level_ups.len() as i32 - 1).max(0) * SPOILS_LINE_H;
         out.push(SpoilsWindow {
-            rect: (x, y, w, h + extra),
+            rect: (x, y + view.slide.0, w, h + extra),
             lines: view.level_ups.to_vec(),
         });
     }
@@ -124,13 +131,16 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
         // caller that only wants the text reads a sentence.
         format!("Gained {} Experience and {} G.", view.xp, view.gold),
     ];
-    for drop in view.drops {
-        lines.push(format!("Got {drop}"));
-    }
+    // The drop line arrives composed (`World::battle_spoils_banner`): the
+    // executable's template, appended to the victory buffer as its third row.
+    lines.extend(view.drops.iter().cloned());
+    // Retail's box is a fixed `288 x 42` (element `0x41`): three rows - the
+    // victory line, the `Gained` row and the drop line - fit without growing
+    // it. Past three the port grows the box (retail surfaces one drop).
     let (x, y, w, h) = SPOILS_REPORT_RECT;
-    let extra = (lines.len() as i32 - 2).max(0) * SPOILS_LINE_H;
+    let extra = (lines.len() as i32 - 3).max(0) * SPOILS_LINE_H;
     out.push(SpoilsWindow {
-        rect: (x, y, w, h + extra),
+        rect: (x, y + view.slide.1, w, h + extra),
         lines,
     });
     out
@@ -214,9 +224,10 @@ pub fn battle_spoils_draws_for(
 /// window reuses that rect. `line` is the defeat message
 /// (`legaia_engine_vm::battle_party_panel::DefeatText::compose`); `None` - a
 /// disc-free host - opens the frame empty.
-pub fn battle_defeat_windows(line: Option<&str>) -> Vec<SpoilsWindow> {
+pub fn battle_defeat_windows(line: Option<&str>, slide_y: i32) -> Vec<SpoilsWindow> {
+    let (x, y, w, h) = SPOILS_REPORT_RECT;
     vec![SpoilsWindow {
-        rect: SPOILS_REPORT_RECT,
+        rect: (x, y + slide_y, w, h),
         lines: line.map(|l| vec![l.to_string()]).unwrap_or_default(),
     }]
 }
@@ -1472,6 +1483,7 @@ mod spoils_subject_tests {
             drops: &[],
             leader: "Vahn",
             subject,
+            slide: (0, 0),
         };
         battle_spoils_windows(&view)
             .last()
@@ -1488,6 +1500,25 @@ mod spoils_subject_tests {
         assert!(solo.starts_with("Vahn won"), "{solo}");
         assert!(party.starts_with("Vahn's team won"), "{party}");
     }
+
+    /// The raise glide moves each window by its own row offset: the
+    /// level-up window down from above, the report up from below.
+    #[test]
+    fn the_windows_ride_their_glide_offsets() {
+        let ups = ["A".to_string()];
+        let view = BattleSpoilsView {
+            xp: 1,
+            gold: 1,
+            level_ups: &ups,
+            drops: &[],
+            leader: "Vahn",
+            subject: result_subject([1, 0, 0]),
+            slide: (-38, 76),
+        };
+        let w = battle_spoils_windows(&view);
+        assert_eq!(w[0].rect.1, SPOILS_LEVELUP_RECT.1 - 38);
+        assert_eq!(w[1].rect.1, SPOILS_REPORT_RECT.1 + 76);
+    }
 }
 
 #[cfg(test)]
@@ -1498,11 +1529,11 @@ mod defeat_window_tests {
     /// report rect, one line, or an empty frame without the disc text.
     #[test]
     fn the_loss_window_takes_the_report_frame() {
-        let w = battle_defeat_windows(Some("A line"));
+        let w = battle_defeat_windows(Some("A line"), 0);
         assert_eq!(w.len(), 1);
         assert_eq!(w[0].rect, SPOILS_REPORT_RECT);
         assert_eq!(w[0].lines, vec!["A line".to_string()]);
-        let empty = battle_defeat_windows(None);
+        let empty = battle_defeat_windows(None, 0);
         assert_eq!(empty[0].rect, SPOILS_REPORT_RECT);
         assert!(empty[0].lines.is_empty());
     }

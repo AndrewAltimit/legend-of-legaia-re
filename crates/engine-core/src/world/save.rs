@@ -7,6 +7,15 @@ use super::*;
 /// story-flag window (`0x80085600`).
 const SYSTEM_FLAG_WINDOW: usize = 0x158;
 
+/// Scratchpad `_DAT_1F800394` bit 10, the system lock: while set the player
+/// tick skips the pad controller outright (`0x801D16A8..0x801D16B8`).
+pub const FIELD_SYSTEM_LOCK_BIT: u32 = 0x400;
+/// Scratchpad `_DAT_1F800394` bit 27, the menu lock: a menu-button press
+/// buzzes instead of opening (`0x801D02C0..0x801D02E4`).
+pub const FIELD_MENU_LOCK_BIT: u32 = 0x0800_0000;
+/// The locked press's deny buzz (`li a0,0x23` at `0x801D02DC`).
+pub const FIELD_MENU_DENY_CUE: i16 = 0x23;
+
 impl World {
     /// Whether projecting a party record onto actor `slot`
     /// ([`Self::load_party`], [`Self::set_active_party`]) may raise the slot.
@@ -718,10 +727,66 @@ impl World {
     ///    predicate - and read the pause-menu Start before its shop - so on
     ///    the page Start opened the pause menu over an open shop.
     ///
+    /// 5. The player tick calls the pad controller at all. `FUN_801D1344`
+    ///    skips `FUN_801D01B0` - and with it the menu accept - while the
+    ///    scratchpad system lock `_DAT_1F800394 & 0x400` is set
+    ///    (`0x801D16A8..0x801D16B8`), while a kind-0 warp's timer
+    ///    `_DAT_8007B6B0` runs, and while its post-warp pad hold
+    ///    `_DAT_8007B6B4` drains (`0x801D16C8..0x801D16E4`,
+    ///    [`legaia_engine_vm::field_warp_tile::pad_suppressed`]). The engine
+    ///    already held the player still through the warp; the menu button
+    ///    stayed live through it. No shipped script issues `2E 0A`, so the
+    ///    lock's writer is not a field-VM op.
+    ///
+    /// 6. The menu lock `_DAT_1F800394 & 0x8000000` is clear. Unlike every
+    ///    gate above it is tested *inside* the accept, after the press
+    ///    (`0x801D02C0..0x801D02E4`): a locked press plays the deny buzz
+    ///    `0x23` through `FUN_80035BD0` instead of opening anything - see
+    ///    [`Self::field_menu_press_denied`]. `town0e` and `urudre1` raise it
+    ///    (`2E 1B`); `urudre1`, `edteien` and `edbalden` drop it (`2F 1B`).
+    ///
+    /// 7. The New Game opening chain is not playing
+    ///    ([`crate::world::CutsceneState::opening_chain_active`]). Its legs are
+    ///    script records end to end, so retail's engaged bit stands through
+    ///    all of them; the engine seats each leg's entry record one tick
+    ///    after the scene loads, and this keeps that tick shut the way the
+    ///    record does (`tests/opening_chain_menu_refusal_disc.rs`).
+    ///
     /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
     /// REF: FUN_80039B7C (the script runner's engaged-bit raise and clear)
+    /// REF: FUN_801D1344 (`0x801D16A8..0x801D16E4`, the pad-controller gates)
     pub fn field_menu_open_allowed(&self) -> bool {
+        self.field_menu_press_reaches_accept() && self.flags.story_flags & FIELD_MENU_LOCK_BIT == 0
+    }
+
+    /// A menu-button press the accept takes but the menu lock refuses
+    /// (`0x801D02C0..0x801D02E4`): queues the deny buzz
+    /// [`FIELD_MENU_DENY_CUE`] on the SFX ring (`FUN_80035BD0(0x23)`, the
+    /// overwrite producer) and returns `true`. Every other refusal is silent -
+    /// it never reaches the accept - and returns `false` without a cue.
+    ///
+    /// Hosts call this on a menu-button edge that
+    /// [`Self::field_menu_open_allowed`] refused.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D02C0..0x801D02E4`, the locked-press buzz)
+    /// REF: FUN_80035BD0
+    pub fn field_menu_press_denied(&mut self) -> bool {
+        if self.field_menu_press_reaches_accept()
+            && self.flags.story_flags & FIELD_MENU_LOCK_BIT != 0
+        {
+            self.replace_last_sfx_cue(FIELD_MENU_DENY_CUE);
+            return true;
+        }
+        false
+    }
+
+    /// Every gate in front of the menu accept's own lock test - items 1 to 5
+    /// and 7 of [`Self::field_menu_open_allowed`].
+    fn field_menu_press_reaches_accept(&self) -> bool {
         self.scene_mode_takes_menu_open()
+            && self.flags.story_flags & FIELD_SYSTEM_LOCK_BIT == 0
+            && !legaia_engine_vm::field_warp_tile::pad_suppressed(&self.locomotion.warp)
+            && !self.cutscene.opening_chain_active
             && !self.dialogue_owns_input()
             && !self.script_context_engages_player()
             && !self.shops.shop_open

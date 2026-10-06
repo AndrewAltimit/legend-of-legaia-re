@@ -38,7 +38,8 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             let colour = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
             let blend = crate::field_helpers::load_u16_le(&bytecode[operand + 4..]);
             let ticks = crate::field_helpers::load_u16_le(&bytecode[operand + 6..]);
-            host.op4c_n_8_sub_1_set_tint(ctx, colour, blend, ticks);
+            let target = crate::field::peek_extended(bytecode, pc);
+            host.op4c_n_8_sub_1_set_tint(ctx, target, colour, blend, ticks);
             StepResult::Advance {
                 next_pc: pc + header_size + 8,
             }

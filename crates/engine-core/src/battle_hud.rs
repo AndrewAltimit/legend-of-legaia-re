@@ -1058,7 +1058,10 @@ pub fn battle_intro_names(
     if world.mode == crate::world::SceneMode::MuscleDome {
         return dome_intro_names(world, font);
     }
-    if world.mode != crate::world::SceneMode::Battle || world.battle.intro_names_frames == 0 {
+    if world.mode != crate::world::SceneMode::Battle
+        || world.battle.intro_names_frames == 0
+        || world.battle_entry_sweeping()
+    {
         return Vec::new();
     }
     // Retail holds the command flow in `0x0B` until the expiry sweep takes
@@ -1548,15 +1551,31 @@ pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String
     }
 }
 
+/// The first action state past the item band's panels: the Done band's
+/// `0x51` hold sends them off as its countdown runs out (`ctx[+0x18] = 6`
+/// read back at `0x801E6178..0x801E61B0`), so they are up through `0x51`.
+const ITEM_PANELS_CLOSE_STATE: u8 = 0x52;
+
 /// Are the resting roster panels (records 6 / 78 / 79) on screen this
 /// frame?
 ///
 /// Up at the round prompt (step 0), parked by the ring (step 1, mode 1),
 /// **back up** while the item or magic window is browsed (steps 5 and 7),
-/// parked again for their target steps (`0x12` / `0x1B`), and raised by the
-/// action seed for a party-wide target (`0x801E404C`: `t2 == 8` opens 6,
-/// `0x4E` and `0x4F` and leaves `ctx[+0x18] = 6` for the `0x51` close).
-/// Absent from every other action capture.
+/// parked again for their target steps (`0x12` / `0x1B`), and raised in an
+/// action by two openers, each for a party-wide target (`t2 == 8`), each
+/// leaving `ctx[+0x18] = 6` for the Done hold's close:
+///
+/// * the seed's plate routine `FUN_801E6D84` (every category arm of `0x0C`
+///   ends in it), only for a **monster** caster: `sltiu v0,v0,3` on the
+///   caster seat, then `t2 == 8`, then records 6 / `0x4E` / `0x4F`
+///   (`0x801E7038..0x801E7080`), and only on the arms that reach it past the
+///   Run / Arts / Spirit returns (`0x801E6DF0`, `0x801E6FA0..0x801E6FA8`);
+/// * the item band's `0x3E` arm (`0x801E404C`), reached from one branch at
+///   `0x801E3E88` off its non-gauge-extend path, for any caster.
+///
+/// A party member's magic cast on the whole party therefore raises none:
+/// `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`,
+/// and its frame shows the scene where the panels would sit.
 pub fn battle_panels_visible(world: &crate::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
@@ -1564,20 +1583,25 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
             battle_command_surface(world),
             Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)
         ),
-        // The `t2 == 8` arm sits on the `0x0C` seed, which the attack and
-        // magic arms reach; an item or spirit action pre-arms through
-        // `0x3C` instead and opens the bar for its actor, never the panels.
+        // The two `t2 == 8` openers (see above); either keeps the panels up
+        // until the Done band's `0x51` hold ends.
         BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => false,
-        BattleHudPhase::Action => world
-            .actors
-            .get(world.battle_ctx.active_actor as usize)
-            .is_some_and(|a| {
-                use legaia_engine_vm::battle_action::ActionCategory;
-                let cat = a.battle.action_category;
-                a.battle.active_target == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE
-                    && cat != ActionCategory::Item.as_byte()
-                    && cat != ActionCategory::Spirit.as_byte()
-            }),
+        BattleHudPhase::Action => {
+            let a = world.battle_ctx.active_actor;
+            world.actors.get(a as usize).is_some_and(|actor| {
+                use legaia_engine_vm::battle_action::{ActionCategory, ActionState};
+                let s = world.battle_ctx.action_state;
+                let cat = actor.battle.action_category;
+                let party_wide = actor.battle.active_target
+                    == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+                let open = s < ITEM_PANELS_CLOSE_STATE;
+                let monster_seed =
+                    a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
+                let item_band =
+                    cat == ActionCategory::Item.as_byte() && s >= ActionState::SpiritFire as u8;
+                party_wide && open && (monster_seed || item_band)
+            })
+        }
         BattleHudPhase::Idle => false,
     }
 }
@@ -1618,6 +1642,11 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
         BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => world
             .muscle_playback_tally()
             .and_then(|(attacker, _)| (attacker == 1).then_some(0)),
+        // The counterattack swap keeps the bar the monster's seed raised for
+        // its target - the counterer ([`crate::world::BattleState::counter_hud`]).
+        BattleHudPhase::Action if world.battle.counter_hud.is_some() => {
+            world.battle.counter_hud.filter(|s| *s < pc)
+        }
         BattleHudPhase::Action => {
             let a = world.battle_ctx.active_actor;
             let actor = world.actors.get(a as usize)?;
@@ -1693,7 +1722,7 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     let pc = party_count(world) as u8;
     let cat = actor.battle.action_category;
     if cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::TacticalArts.as_byte() {
-        if a >= pc {
+        if a >= pc || world.battle.move_label_closed {
             return None;
         }
         let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());
@@ -1779,6 +1808,22 @@ fn plate_glide_dy(
     (seat_a - seat_b) - (seat_a - seat_b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
 }
 
+/// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:
+/// `y = -24` -> `14`) and of the report / loss window (`0x41` / `0x42`:
+/// `236` -> `160`), off the placement table.
+const LEVEL_UP_WINDOW_SEATS_Y: (i32, i32) = (-24, 14);
+const REPORT_WINDOW_SEATS_Y: (i32, i32) = (236, 160);
+
+/// How far the level-up window and the report (or loss) window sit below
+/// their rest rows this frame, `(level_up, report)`: the raise glide the
+/// results frame starts ([`crate::world::BattleState::result_windows_glide`]).
+pub fn battle_result_windows_dy(world: &crate::world::World) -> (i32, i32) {
+    let g = world.battle.result_windows_glide.as_ref();
+    let (a, b) = LEVEL_UP_WINDOW_SEATS_Y;
+    let (c, d) = REPORT_WINDOW_SEATS_Y;
+    (plate_glide_dy(g, a, b), plate_glide_dy(g, c, d))
+}
+
 /// Seat A / seat B rows of the actor-name plaque (record `0x44`: `(16,
 /// -24)` -> `(16, 14)`, read off the placement table in every battle state).
 const ACTION_PLAQUE_SEATS_Y: (i32, i32) = (-24, 14);
@@ -1819,6 +1864,26 @@ pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
     plate_glide_dy(world.battle.target_plaque_glide.as_ref(), a, b)
 }
 
+/// Whether `FUN_801E6D84`'s target arm runs for this category: it returns
+/// early for Run (`li v0,0x5; beq` at `0x801E6DEC`) and, past the actor
+/// plaque, for categories `0` and `4` (`beq s0,zero` / `beq s0,v0` with
+/// `v0 = 4`, `0x801E6FA0..0x801E6FA8`).
+fn seed_plates_reach_the_target_arm(category: u8) -> bool {
+    !matches!(category, 0 | 4 | 5)
+}
+
+/// The three Seru-magic ids `FUN_801E6D84` sends down its **row** arm
+/// instead of the single-target plaque, whatever their target byte
+/// (`li v0,0x8d` / `0x86` / `0x82` and the three `beq` at
+/// `0x801E6E4C..0x801E6E68`): Mushura, Zenoir and Theeder. The row arm
+/// counts the living monsters and stages their names
+/// (`0x801E6E70..0x801E6F90`) and opens no plate of its own, so
+/// `theeder_summon_mid_cast`, `zenoir_summon_mid_cast` and
+/// `mushura_summon_mid_cast` hold only the actor plaque in their handle
+/// lists while the single-target casts beside them (`nighto`, `swordie`)
+/// also hold record 81.
+pub const ROW_PLATE_SPELL_IDS: [u8; 3] = [0x8D, 0x86, 0x82];
+
 /// The bottom-right target plaque (placement record 81): the monster a
 /// party member's attack is aimed at, with its element badge - or `None`.
 ///
@@ -1854,6 +1919,11 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
         && cat != ActionCategory::TacticalArts.as_byte()
         && cat != ActionCategory::Magic.as_byte()
         && cat != ActionCategory::Item.as_byte()
+    {
+        return None;
+    }
+    if cat == ActionCategory::Magic.as_byte()
+        && ROW_PLATE_SPELL_IDS.contains(&actor.battle.params[0])
     {
         return None;
     }
@@ -1925,14 +1995,20 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
 }
 
 /// The element badge a monster slot's plaque wears (`None` for none).
+///
+/// Retail's target plaque prints the actor's name payload `+0x1BC`, which
+/// battle load copies verbatim from the record's name (`FUN_80054CB0`,
+/// `0x80054D0C..0x80054D34`), so the badge is the name's own `0xCE` escape
+/// (`battle_melee_hit_spark`: `CE 14 " Gimard"`, escape `0x14` = the fire
+/// plate) - [`crate::monster_catalog::MonsterDef::plaque_badge`], the same
+/// selector [`battle_plaque_element_badge`] reads. Indexing the strip with
+/// the record's `+0x1D` element byte drew Gimard (element `2`) under the
+/// wind plate, and badged monsters whose names carry no escape.
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
-    let id = actor.battle_monster_id?;
-    let element = match actor.battle_element {
-        Some(e) => e,
-        None => world.tables.monster_catalog.get(id)?.element,
-    };
-    ((element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT).then_some(element)
+    let def = world.tables.monster_catalog.get(actor.battle_monster_id?)?;
+    def.plaque_badge
+        .filter(|b| usize::from(*b) < BATTLE_PLAQUE_BADGE_COUNT)
 }
 
 /// Character record byte the magic chip's gate reads, as an index into the
@@ -2396,6 +2472,9 @@ pub fn battle_combo_style(world: &crate::world::World) -> Option<ComboStyle> {
     // popup stream this cluster counts.
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode == crate::world::SceneMode::MuscleDome
+        // A counterattack's strikes run under the monster's seeded HUD,
+        // which opened no cluster ([`crate::world::BattleState::counter_hud`]).
+        || world.battle.counter_hud.is_some()
     {
         return None;
     }
@@ -3337,6 +3416,9 @@ mod tests {
         }
         let mut gimard = MonsterDef::new(7, "Gimard", 40, 5);
         gimard.element = 2;
+        // The disc name is `^A Gimard`: caret `A` = badge 0, the fire plate
+        // (escape `0x14`) - not the `+0x1D` element byte's index.
+        gimard.plaque_badge = Some(0);
         w.tables.monster_catalog.insert(gimard);
         w.actors[3].battle.hp = 40;
         w.actors[3].battle.max_hp = 40;
@@ -3629,10 +3711,18 @@ mod tests {
             "no party participant: no bar"
         );
         assert!(!battle_panels_visible(&w));
+        // The badge is the name's caret letter (`^A` -> cell 0, the Fire
+        // badge), not the element byte (`2`, which is the Wind cell).
         assert_eq!(
             battle_target_plaque(&w),
-            Some(("Gimard".to_string(), Some(2)))
+            Some(("Gimard".to_string(), Some(0))),
+            "the name's own badge (fire), not the element byte's strip index"
         );
+        // A name with no escape wears no badge (`Skeleton A`).
+        let mut bare = w.tables.monster_catalog.get(7).unwrap().clone();
+        bare.plaque_badge = None;
+        w.tables.monster_catalog.insert(bare);
+        assert_eq!(battle_target_plaque(&w), Some(("Gimard".to_string(), None)));
         assert_eq!(battle_combo_style(&w), Some(ComboStyle::HitTotal));
         assert!(!battle_begin_tab_visible(&w));
         assert_eq!(battle_ring_ap_plate_value(&w), None);
@@ -3685,7 +3775,7 @@ mod tests {
     }
 
     #[test]
-    fn a_party_item_shows_the_actor_bar_and_a_party_wide_cast_shows_the_panels() {
+    fn a_party_item_shows_the_actor_bar_and_a_party_wide_item_shows_the_panels() {
         use legaia_engine_vm::battle_action::ActionCategory;
         use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
         let mut w = battle_world(2);
@@ -3697,11 +3787,21 @@ mod tests {
         );
         assert!(!battle_panels_visible(&w));
         arm_action(&mut w, 1, ActionCategory::Item.as_byte(), TARGET_PARTY_WIDE);
+        w.battle_ctx.action_state = 0x3C;
         assert!(
             !battle_panels_visible(&w),
-            "a party-wide item pre-arms through 0x3C"
+            "a party-wide item pre-arms through 0x3C without the panels"
         );
         assert_eq!(battle_readout_bar_slot(&w), Some(1));
+        w.battle_ctx.action_state = 0x3E;
+        assert!(
+            battle_panels_visible(&w),
+            "the item band's 0x3E arm raises all the panels"
+        );
+        w.battle_ctx.action_state = 0x51;
+        assert!(battle_panels_visible(&w), "up through the Done hold");
+        w.battle_ctx.action_state = 0x52;
+        assert!(!battle_panels_visible(&w), "the Done hold closed them");
         arm_action(
             &mut w,
             1,
@@ -3709,10 +3809,40 @@ mod tests {
             TARGET_PARTY_WIDE,
         );
         assert!(
-            battle_panels_visible(&w),
-            "a party-wide cast raises all the panels"
+            !battle_panels_visible(&w),
+            "the magic seed opens no panels (orb_summon_mid_cast)"
         );
         assert_eq!(battle_readout_bar_slot(&w), None);
+    }
+
+    /// `FUN_801E6D84`: a monster's party-wide cast raises the panels at the
+    /// seed; the three row-arm Seru ids raise no target plaque.
+    #[test]
+    fn the_seed_plates_follow_fun_801e6d84() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+        let mut w = battle_world(1);
+        arm_action(
+            &mut w,
+            3,
+            ActionCategory::Magic.as_byte(),
+            TARGET_PARTY_WIDE,
+        );
+        assert!(battle_panels_visible(&w), "monster caster, party-wide");
+        arm_action(
+            &mut w,
+            3,
+            ActionCategory::Spirit.as_byte(),
+            TARGET_PARTY_WIDE,
+        );
+        assert!(!battle_panels_visible(&w), "spirit returns before the arm");
+        arm_action(&mut w, 0, ActionCategory::Magic.as_byte(), 3);
+        w.actors[0].battle.params[0] = 0x85;
+        assert!(battle_target_plaque(&w).is_some(), "single-target Nighto");
+        for id in ROW_PLATE_SPELL_IDS {
+            w.actors[0].battle.params[0] = id;
+            assert_eq!(battle_target_plaque(&w), None, "{id:#x}");
+        }
     }
 
     #[test]

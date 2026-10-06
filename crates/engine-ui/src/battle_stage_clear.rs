@@ -40,16 +40,22 @@ pub const BATTLE_STAGE_CLEAR: [f32; 4] = SCENE_CLEAR;
 /// PSX-style black rather than on a dark-blue clear.
 pub const BOOT_UI_CLEAR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
-/// The clear colour for one frame, given the two things that select it.
+/// The clear colour for one frame, given the things that select it.
 ///
-/// `boot_ui` wins over `stage_battle`; with neither, the scene clear stands.
-pub fn scene_clear(boot_ui: bool, stage_battle: bool) -> [f32; 4] {
+/// `boot_ui` wins over `stage_battle`; with neither, the frame clears to the
+/// field's own clear colour `field_rgb` - the draw environments' `r0 / g0 /
+/// b0`, black unless the scene's op `4C 13` set it
+/// (`World::presentation.clear_rgb`; `teien` clears to its sea blue). The
+/// bytes reach the screen through the 15-bit frame buffer, so each channel
+/// is truncated to five bits and expanded, as the display shows it.
+pub fn scene_clear(boot_ui: bool, stage_battle: bool, field_rgb: [u8; 3]) -> [f32; 4] {
     if boot_ui {
         BOOT_UI_CLEAR
     } else if stage_battle {
         BATTLE_STAGE_CLEAR
     } else {
-        SCENE_CLEAR
+        let c = |v: u8| f32::from(v >> 3) / 31.0;
+        [c(field_rgb[0]), c(field_rgb[1]), c(field_rgb[2]), 1.0]
     }
 }
 
@@ -59,9 +65,27 @@ mod tests {
 
     #[test]
     fn every_frame_clears_to_retail_black() {
-        assert_eq!(scene_clear(false, false), [0.0, 0.0, 0.0, 1.0]);
-        assert_eq!(scene_clear(true, false), BOOT_UI_CLEAR);
-        assert_eq!(scene_clear(true, true), BOOT_UI_CLEAR, "boot UI wins");
-        assert_eq!(scene_clear(false, true), [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(scene_clear(false, false, [0; 3]), [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(scene_clear(true, false, [0; 3]), BOOT_UI_CLEAR);
+        assert_eq!(
+            scene_clear(true, true, [0; 3]),
+            BOOT_UI_CLEAR,
+            "boot UI wins"
+        );
+        assert_eq!(scene_clear(false, true, [0; 3]), [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// `teien`'s `4C 13 14 30 6C` reads `(16, 49, 107)` on the retail frame:
+    /// the bytes through the 15-bit buffer.
+    #[test]
+    fn a_field_clear_colour_lands_through_fifteen_bits() {
+        let c = scene_clear(false, false, [0x14, 0x30, 0x6C]);
+        let px = c.map(|v| (v * 255.0).round() as u8);
+        assert_eq!(&px[..3], &[16, 49, 107]);
+        assert_eq!(scene_clear(true, false, [0x14, 0x30, 0x6C]), BOOT_UI_CLEAR);
+        assert_eq!(
+            scene_clear(false, true, [0x14, 0x30, 0x6C]),
+            BATTLE_STAGE_CLEAR
+        );
     }
 }
