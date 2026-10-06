@@ -105,7 +105,7 @@ pub const SFX_BANK_SPU_BYTES: u32 = legaia_engine_audio::spu_layout::SFX_REGION_
 /// One-time configuration for [`BootSession::open`].
 #[derive(Debug, Clone)]
 pub struct BootConfig {
-    /// Starting scene name (CDNAME label).
+    /// Starting scene name (CDNAME label). Empty boots no scene.
     pub scene: String,
     /// Whether to open the audio output. Set `false` for headless tests
     /// (cpal will fail to enumerate devices in CI).
@@ -270,6 +270,19 @@ pub struct BootSession<S: AudioSink> {
     host_drains_queues: bool,
     /// Queue lengths the last full [`Self::tick`] left behind.
     queue_marks: HostQueueMarks,
+    /// A compass azimuth the host's own camera input asks for this tick (the
+    /// browser page's VR / drag yaw), consumed by the next [`Self::tick`]'s
+    /// `camera_before_world_tick`. `None` publishes the camera's own.
+    pub camera_azimuth_override: Option<u16>,
+    /// `true` when the host opens and drives the pause menu itself (the
+    /// browser page's menu is opened from its own input path), so
+    /// [`Self::tick`] neither auto-opens [`Self::field_menu`] on Start nor
+    /// ticks it.
+    host_owns_pause_menu: bool,
+    /// `true` when the host plays the field's CD-XA cues on a lane of its own
+    /// (the browser page stages clips asynchronously and needs the prestage
+    /// list), so [`Self::tick`] leaves both XA queues on the world.
+    host_stages_field_xa: bool,
 }
 
 /// How much of each per-tick world queue a tick left behind.
@@ -832,8 +845,12 @@ impl<S: AudioSink> BootSession<S> {
             host.world.set_item_effects(effects);
         }
 
-        host.load_scene(&cfg.scene)
-            .with_context(|| format!("load scene '{}'", cfg.scene))?;
+        // An empty scene name boots no scene: a host that enters its first
+        // scene through its own picker (the browser page) loads none here.
+        if !cfg.scene.is_empty() {
+            host.load_scene(&cfg.scene)
+                .with_context(|| format!("load scene '{}'", cfg.scene))?;
+        }
 
         // Audio + BGM director (optional - disabled for headless tests).
         let (audio, bgm) = if cfg.enable_audio {
@@ -905,6 +922,9 @@ impl<S: AudioSink> BootSession<S> {
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
             host_drains_queues: false,
             queue_marks: HostQueueMarks::default(),
+            camera_azimuth_override: None,
+            host_owns_pause_menu: false,
+            host_stages_field_xa: false,
         })
     }
 
@@ -917,6 +937,19 @@ impl<S: AudioSink> BootSession<S> {
     pub fn set_host_drains_queues(&mut self, on: bool) {
         self.host_drains_queues = on;
         self.queue_marks = HostQueueMarks::default();
+    }
+
+    /// Declare that the caller opens and drives the pause menu itself, so
+    /// [`Self::tick`] leaves the Start edge and [`Self::field_menu`] alone.
+    pub fn set_host_owns_pause_menu(&mut self, on: bool) {
+        self.host_owns_pause_menu = on;
+    }
+
+    /// Declare that the caller plays the field's CD-XA cues itself, so
+    /// [`Self::tick`] leaves the world's field-XA cue and prestage queues for
+    /// it to drain.
+    pub fn set_host_stages_field_xa(&mut self, on: bool) {
+        self.host_stages_field_xa = on;
     }
 
     /// The fog pool's render step the play hosts run from their draw pass
@@ -1268,6 +1301,21 @@ impl<S: AudioSink> BootSession<S> {
     /// then plays whatever came due. With no audio the calls are dropped, as
     /// every other cue is.
     fn route_field_sfx(&mut self) {
+        if self.host_stages_field_xa {
+            // The host's own XA lane drains both queues; the rest of the
+            // routing is the director's.
+            if let Some(bgm) = self.bgm.as_mut() {
+                bgm.route_world_sfx(&mut self.host.world, &self.host.index);
+            } else {
+                let w = &mut self.host.world;
+                let _ = (
+                    w.take_sfx_ring_ops(),
+                    w.take_sfx_voice_stops(),
+                    w.take_sfx_voice_keys(),
+                );
+            }
+            return;
+        }
         // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
         // voice leg) - drained every tick so none outlives its frame.
         let field_xa = self.host.world.drain_field_xa_cues();
@@ -1446,10 +1494,12 @@ impl<S: AudioSink> BootSession<S> {
         // of its own (`World::scripted_menu_open_pending`): it opens the menu
         // with no Start edge and past the engagement gate the Start path
         // keeps, exactly once per arm.
-        let scripted_menu =
-            self.field_menu.is_none() && self.host.world.scripted_menu_open_pending();
+        let scripted_menu = !self.host_owns_pause_menu
+            && self.field_menu.is_none()
+            && self.host.world.scripted_menu_open_pending();
         let menu_opened_this_tick = if scripted_menu
-            || (self.field_menu.is_none()
+            || (!self.host_owns_pause_menu
+                && self.field_menu.is_none()
                 && self.host.world.field_menu_open_allowed()
                 && self.host.world.input.just_pressed(PadButton::Start))
         {
@@ -1461,7 +1511,7 @@ impl<S: AudioSink> BootSession<S> {
         } else {
             false
         };
-        if !menu_opened_this_tick && self.field_menu.is_some() {
+        if !self.host_owns_pause_menu && !menu_opened_this_tick && self.field_menu.is_some() {
             let close = self.tick_field_menu();
             if close {
                 self.close_field_menu();
@@ -1477,7 +1527,7 @@ impl<S: AudioSink> BootSession<S> {
         legaia_engine_core::frame_step::camera_before_world_tick(
             &mut self.camera,
             &mut self.host.world,
-            None,
+            self.camera_azimuth_override.take(),
         );
         let event = self.host.tick()?;
         if let Some(bgm) = self.bgm.as_mut() {
@@ -1879,5 +1929,62 @@ mod tests {
         let c = BootConfig::default();
         assert_eq!(c.scene, "town01");
         assert!(c.enable_audio);
+    }
+
+    /// A PROT image with a handful of empty entries - enough for a
+    /// [`SceneHost`] and nothing to load.
+    fn synthetic_prot() -> Vec<u8> {
+        const SECTOR: usize = 2048;
+        let mut img = vec![0u8; 8 * SECTOR];
+        img[4..8].copy_from_slice(&3u32.to_le_bytes());
+        img[8..12].copy_from_slice(&1u32.to_le_bytes());
+        for (i, l) in [1u32, 3, 5, 7, 8].iter().enumerate() {
+            let o = 8 + (i + 2) * 4;
+            img[o..o + 4].copy_from_slice(&l.to_le_bytes());
+        }
+        img
+    }
+
+    type HeadlessSession = BootSession<legaia_engine_audio::TestAudioSink>;
+
+    /// A session over a host with no scene, no audio and no disc tables.
+    fn headless_session() -> HeadlessSession {
+        let host = SceneHost::from_prot_bytes(synthetic_prot(), None).expect("synthetic host");
+        let cfg = BootConfig {
+            scene: String::new(),
+            enable_audio: false,
+        };
+        BootSession::from_host(host, None, &cfg, || {
+            Ok(legaia_engine_audio::TestAudioSink::new(
+                legaia_engine_audio::SPU_INTERNAL_RATE,
+            ))
+        })
+        .expect("an empty scene name boots no scene")
+    }
+
+    /// The camera azimuth a host hands in is consumed by the next tick.
+    #[test]
+    fn the_azimuth_override_lasts_one_tick() {
+        let mut s = headless_session();
+        s.camera_azimuth_override = Some(0x400);
+        s.tick().expect("tick");
+        assert_eq!(s.camera_azimuth_override, None);
+    }
+
+    /// A host that plays field CD-XA itself finds the cues still queued after
+    /// the session's tick; otherwise the session drains them.
+    #[test]
+    fn a_host_staged_xa_lane_keeps_the_field_xa_queue() {
+        for (host_stages, left) in [(true, 1), (false, 0)] {
+            let mut s = headless_session();
+            s.set_host_stages_field_xa(host_stages);
+            s.host.world.push_field_xa_cue(6, 4, 120);
+            s.tick().expect("tick");
+            assert_eq!(
+                s.host.world.drain_field_xa_cues().len(),
+                left,
+                "host_stages_field_xa = {host_stages}"
+            );
+        }
     }
 }
