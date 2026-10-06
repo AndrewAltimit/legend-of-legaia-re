@@ -2368,6 +2368,7 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
     AOE_HIT.with(|a| a.set(0));
     CHARGE_SEEN.with(|c| c.set(false));
+    let mut guarded = [false; 3];
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
     let party_hp = |s: &BootSession| -> Vec<u16> {
@@ -2432,10 +2433,37 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             )
         });
         let mut run = ROUND_LOSS.with(std::cell::Cell::get);
+        for (i, p) in session
+            .host
+            .world
+            .battle
+            .round_flow
+            .pending
+            .iter()
+            .enumerate()
+            .take(3)
+        {
+            if matches!(
+                p,
+                Some(legaia_engine_core::battle_round::PendingPartyAction::Spirit)
+            ) {
+                guarded[i] = true;
+            }
+        }
         if window && !was_window {
             ROUND_HISTORY.with(|h| h.borrow_mut().push(run.iter().sum()));
             if run.iter().filter(|&&l| l > 0).count() >= 2 {
-                let peak = run.iter().copied().max().unwrap_or(0);
+                // A member that took the hit in the Spirit stance took half
+                // of it: the hit itself is twice what it lost (Jette's Evil
+                // Seru Magic, 612 a guarded member, 1224 the next round
+                // unguarded - read as 612, the heal limit let the party sit
+                // at 1130 into a hit that dropped all three).
+                let peak = run
+                    .iter()
+                    .zip(guarded)
+                    .map(|(&l, g)| if g { l * 2 } else { l })
+                    .max()
+                    .unwrap_or(0);
                 AOE_HIT.with(|a| a.set(a.get().max(peak)));
             }
             if trace_hits {
@@ -2452,6 +2480,7 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
         was_window = window;
         if window {
             run = [0; 3];
+            guarded = [false; 3];
         }
         for (i, (a, b)) in party_prev.iter().zip(&party_now).enumerate().take(3) {
             run[i] += u32::from(a.saturating_sub(*b));
@@ -8066,6 +8095,15 @@ fn run_segment(
             );
         }
         tier = Tier::Loads;
+        // `LEGAIA_FGL_SEATED_RNG_SEED=<u32>`: deal the seated pass another
+        // hand, as `LEGAIA_FGL_RNG_SEED` does the pad pass - a seated boss
+        // fight (`chitei2` P2[13], Jette) is checked across streams with it.
+        if let Some(s) = std::env::var("LEGAIA_FGL_SEATED_RNG_SEED")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+        {
+            session.host.world.rng_state = s;
+        }
         let mut trail = vec![landed];
         match run_while_moving(&mut session, SCRIPT_CEILING) {
             Run::Released => tier = Tier::Enters,
