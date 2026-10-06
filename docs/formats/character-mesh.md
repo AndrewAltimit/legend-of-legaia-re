@@ -1113,9 +1113,10 @@ is identical (magic `0x80000002`).
 
 Per-character animation data is **not** in PROT 0874. The runtime per-action
 record consumed by the actor tick `FUN_80021DF4` and the overlay-resident
-per-frame animator lives in the [ANM container](anm.md) (asset type `0x06`);
-the actor receives a record pointer via `FUN_80024CFC`
-(`actor[+0x4C] = anm_base + record_offset`). Battle actions feed through a
+per-frame animator lives in the [ANM container](anm.md), loaded as the
+type-`0x05` MOVE buffer `_DAT_8007B888`; the clip driver `FUN_800204F8`
+binds a clip from it (`actor[+0x4C] = bank + record_offset`,
+`actor[+0x56] = 1`). Battle actions feed through a
 parallel consumer struct at `actor[+0x234]` - see `anm.md` § Per-actor anim
 state offsets.
 

@@ -203,9 +203,9 @@ The tick reads three fixed offsets on the per-actor record:
 
 | Offset | Type | Field | Notes |
 |---|---|---|---|
-| `+0x4C` | `u32` | `record_ptr` | Per-record byte pointer; written by `FUN_80024CFC` when a new animation is registered. |
+| `+0x4C` | `u32` | `record_ptr` | Per-record byte pointer; for a keyframe clip, written by the clip driver `FUN_800204F8` from the type-5 MOVE bank `_DAT_8007B888` ([`anm.md`](../formats/anm.md#public-entry-point---play_anm_by_id)). |
 | `+0x5A` | `u16` | `dispatch_byte` | Selects the per-opcode handler block (`0x01..=0x07`). |
-| `+0x68` | `u16` | `frame_counter` | Initialised to `100` by `FUN_80024CFC`; advanced each tick by `actor[+0x6A]` (per-actor frame delta). |
+| `+0x68` | `u16` | `frame_counter` | Advanced each tick by `actor[+0x6A]` (per-actor frame delta). The CLUT-walk spawner `FUN_80024CFC` seeds it to `100` on the walkers it allocates. |
 
 The `crates/engine-vm` constants `ACTOR_RECORD_PTR_OFFSET`, `ACTOR_DISPATCH_BYTE_OFFSET`, and `ACTOR_FRAME_COUNTER_OFFSET` mirror those addresses.
 
@@ -257,7 +257,8 @@ Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot
 | Writer | Payload | When |
 |---|---|---|
 | `FUN_801D77F4` (overlay actor allocator, field-VM `0x4C 0xD8` host hook) | VDF body bytes (`[u32 record_count][record_0]...[record_n]` where each record is 12 bytes starting `[u32 group_idx]`) | Synchronous spawn of a background actor whose mesh comes from the global TMD pool. See [`docs/subsystems/script-vm.md`](script-vm.md). |
-| `FUN_80024CFC` (ANM keyframe registrar) | Pose-output buffer (`[u8 bone_count][u8 ?][u16 1][...][u8 1][...] @ +0x0F: per-bone 8-byte data`) | Animation transition - bound when the engine starts a new keyframe arm. |
+| `FUN_800204F8` (clip driver) | Keyframe clip from the type-5 MOVE bank `_DAT_8007B888` (or `_DAT_8007B840` for ids `>= 0x400`), sets `actor[+0x56] = 1` | Animation transition - bound when the engine starts a new keyframe arm. |
+| `FUN_80024CFC` (CLUT-walk spawner) | `_DAT_8007B7C8 + table[id]` - an entry of the type-6 CLUT-walk table, with `actor[+0x56] = 0xB` (walker state) | Ambient palette-cycling walker spawn ([`field-ambient-fx.md`](field-ambient-fx.md)). |
 
 ### Readers
 
