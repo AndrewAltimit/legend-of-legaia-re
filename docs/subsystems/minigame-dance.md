@@ -458,7 +458,16 @@ Three further pieces of the retail frame run in the same host
   counter `_DAT_8007B6D0`, zero in play, so the rivals' gauge and track rows
   stay off (see [the driver](#hud-render-driver-fun_801d231c)), and builds the full
   textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
-  emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
+  emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied,
+  plus each track's `FUN_801d2524` draws as `DanceGame::beat_track_quads`).
+  The number renderer seeds its units slot with `0` before the fill
+  (`sw zero,0x34(sp)` at `0x801D3358`), so a zero score draws one `0` rather
+  than an empty box. The track's body and notes sit under a draw area of
+  `[x, x + 0x50)` that the port applies by cropping the quads; its caps,
+  arrow and stock markers draw unclipped. The body and caps flash to CLUT
+  `0x7D0D` on `beat & 7 == 3` (`beat & 3` at level `0`) inside the first
+  `0x46` phase units, and the second note's `0xFF` hit-flash pass
+  (`DAT_801D558C`) is the one part not modelled.
   The sprite page is staged on entry (see [where the HUD's texels come
   from](#where-the-huds-texels-come-from)), so the quads have a texel source:
   both hosts emit them as `POLY_GT4` screen primitives through

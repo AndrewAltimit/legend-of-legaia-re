@@ -208,11 +208,14 @@ fn the_displayed_combo_slot_is_not_the_judged_one() {
 }
 
 /// The HUD score readout goes through the retail decimal split, so leading
-/// zeros are blank slots and zero draws nothing.
+/// zeros are blank slots and zero draws one `0` (the seeded units slot).
 #[test]
 fn the_dance_score_readout_blanks_leading_zeros() {
     use legaia_engine_core::dance::dance_number_digits;
-    assert_eq!(dance_number_digits(0), [None; 8]);
+    assert_eq!(
+        dance_number_digits(0),
+        [None, None, None, None, None, None, None, Some(0)]
+    );
     let d = dance_number_digits(407);
     assert_eq!(&d[..5], &[None; 5]);
     assert_eq!(&d[5..], &[Some(4), Some(0), Some(7)]);

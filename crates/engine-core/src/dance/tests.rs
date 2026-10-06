@@ -441,8 +441,12 @@ fn number_split_suppresses_leading_zeros_and_zero_draws_nothing() {
         dance_number_digits(50),
         [None, None, None, None, None, None, Some(5), Some(0)]
     );
-    // The retail sentinel means a zero value draws no digit at all.
-    assert_eq!(dance_number_digits(0), [None; 8]);
+    // The units slot is seeded with `0` before the fill (`0x801D3358`), so a
+    // zero value draws one `0`.
+    assert_eq!(
+        dance_number_digits(0),
+        [None, None, None, None, None, None, None, Some(0)]
+    );
     // 10^7 - 1 fills the low seven slots (the eighth place is still zero).
     assert_eq!(
         dance_number_digits(9_999_999),

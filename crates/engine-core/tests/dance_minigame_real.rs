@@ -384,13 +384,31 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
     assert_eq!(xs, want);
 
     // The full HUD quad frame (the play window's per-frame list) carries the
-    // box frames plus the gauge readout pair; a zero score draws no digit
-    // quads (the number renderer's -1 sentinel suppresses every slot).
+    // box frames plus the gauge readout pair; a zero score draws one `0`
+    // digit (the number renderer seeds its units slot, `0x801D3358`), and so
+    // does the zero gauge counter beside the `Lv.` pair.
+    // Plus the human's beat track (`FUN_801D2524`): the arrow and caps, the
+    // clipped notes and body, the stock markers (submission order).
     let frame = game.hud_draw_quads(false);
+    let (tx, ty) = legaia_engine_core::dance::DANCE_TRACK_XY;
+    let track = game.beat_track_quads(0, tx, ty);
+    assert!(
+        track.len() >= 3 + 12 + 3,
+        "three stock markers, the body tiles and caps + arrow: {}",
+        track.len()
+    );
     assert_eq!(
         frame.len(),
-        3 + 2,
-        "three box frames + the Lv. label + level digit"
+        3 + 3 + 2 + 1 + track.len(),
+        "three box frames + three `0` scores + the Lv. pair + the `0` counter + the beat track"
+    );
+    // Body and notes stay inside the track's [x, x + 0x50) draw area.
+    assert!(
+        track[3..track.len() - 3]
+            .iter()
+            .filter(|q| q.y1 <= ty + 0x10)
+            .all(|q| q.x0 >= tx && q.x1 <= tx + 0x50),
+        "the body and notes are clipped to the track window"
     );
     // A non-zero score adds its style-A digit run with the glyph-U patched
     // per digit.

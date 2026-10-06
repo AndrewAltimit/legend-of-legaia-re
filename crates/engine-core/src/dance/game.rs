@@ -575,8 +575,101 @@ impl DanceGame {
                     out.extend(self.gauge_readout_quads(value, x, y));
                     out.extend(self.number_quads(true, value, x + 0x18, y));
                 }
-                _ => {}
+                DanceHudDraw::BeatTrack { slot, x, y } => {
+                    out.extend(self.beat_track_quads(slot, x, y));
+                }
             }
+        }
+        out
+    }
+
+    /// One dancer's beat track as widget quads, in submission order - the port of
+    /// `FUN_801D2524(slot, x, y)` (`see ghidra/scripts/funcs/overlay_dance_801d2524.txt`).
+    ///
+    /// Every prim goes to one ordering-table slot through the head-linking
+    /// `AddPrim`, so the paint order is the **reverse** of the emission order
+    /// this list keeps (the screen-prim builder reproduces the LIFO bucket):
+    ///
+    /// 1. the triangle-stock markers - widget `0x1F` at `(x + 16i, y + 0x10)`,
+    ///    one per remaining triangle of the human (`DAT_801D534C`, a fixed
+    ///    address: every track shows the human's stock);
+    /// 2. under a draw area of `[x, x + 0x50)` (the `E3` / `E4` pair at
+    ///    `0x801D28E8..0x801D2974`): twelve body tiles, widget `0x1E` at
+    ///    `(x + 8i, y)`, then eight notes - widget `sym + 0xD` at
+    ///    `x + 16i - (phase * 16 / 281 + 5) - 4`, `sym` the chart cell of
+    ///    beat `(beat + i - 1) & 31` on the row the dancer's level
+    ///    (`gauge / 1000`) selects, CLUT `0x7D0E`;
+    /// 3. the draw area back to the full screen, then the right cap
+    ///    (`0x11` at `x + 0x54`), the left cap (`0x10` at `x - 4`) and the
+    ///    marker arrow (`0x12` at `(x + 8, y - 8)`), unclipped over the body.
+    ///
+    /// The body and caps take CLUT `0x7D0D` on a flash beat and `0x7D08`
+    /// otherwise: a flash beat is `beat & 7 == 3` (`beat & 3` at level `0`)
+    /// within the first `0x46` phase units (`0x801D2620..0x801D266C`). The
+    /// second note's `0xFF` hit-flash pass (`DAT_801D558C`) is not modelled -
+    /// the engine keeps no writer of that counter - so every note draws at
+    /// `0x80`. Empty without a widget table.
+    pub fn beat_track_quads(&self, slot: usize, x: i16, y: i16) -> Vec<DanceHudQuad> {
+        const CLIP_W: i16 = 0x50;
+        const BODY_CLUT: u16 = 0x7D08;
+        const FLASH_CLUT: u16 = 0x7D0D;
+        const NOTE_CLUT: u16 = 0x7D0E;
+        if self.widgets.is_empty() {
+            return Vec::new();
+        }
+        let level = self.dancer_gauge(slot) / GAUGE_STEP;
+        let beat = self.phase / BEAT_PERIOD;
+        let phase_in = self.phase - beat * BEAT_PERIOD;
+        let mask = if level > 0 { 7 } else { 3 };
+        let flash = beat & mask == 3 && phase_in < 0x46;
+        let track_clut = if flash { FLASH_CLUT } else { BODY_CLUT };
+        let quad = |id: usize, qx: i16, qy: i16, clut: Option<u16>| {
+            self.widgets.get(id).map(|(w, abr)| {
+                let mut w = *w;
+                if let Some(c) = clut {
+                    w.clut = c;
+                }
+                dance_hud_widget_quad(&w, *abr, qx, qy, id as u32, DANCE_HUD_BRIGHTNESS, 0x1000)
+            })
+        };
+        let clip = |q: DanceHudQuad| -> Option<DanceHudQuad> {
+            let (lo, hi) = (x, x + CLIP_W);
+            if q.x1 <= lo || q.x0 >= hi {
+                return None;
+            }
+            let mut q = q;
+            let cut_l = (lo - q.x0).max(0);
+            let cut_r = (q.x1 - hi).max(0);
+            q.x0 += cut_l;
+            q.x1 -= cut_r;
+            for (i, uv) in q.uv.iter_mut().enumerate() {
+                if i % 2 == 0 {
+                    uv.0 = uv.0.wrapping_add(cut_l as u8);
+                } else {
+                    uv.0 = uv.0.wrapping_sub(cut_r as u8);
+                }
+            }
+            Some(q)
+        };
+        // Emission (submission) order, as retail links the packets; the
+        // screen-prim builder paints a shared bucket last-submitted first.
+        let mut out = Vec::new();
+        out.extend(quad(0x12, x + 8, y - 8, None));
+        out.extend(quad(0x10, x - 4, y, Some(track_clut)));
+        out.extend(quad(0x11, x + 0x54, y, Some(track_clut)));
+        let row = self.chart.rows.get(level as usize);
+        let off = (phase_in * 16 / BEAT_PERIOD) as i16 + 5;
+        for i in 0..8u32 {
+            let cell = (beat + i).wrapping_sub(1) & 31;
+            let sym = row.map_or(0, |r| r[cell as usize % r.len()]) as usize;
+            let nx = x + 16 * i as i16 - off - 4;
+            out.extend(quad(sym + 0xD, nx, y, Some(NOTE_CLUT)).and_then(clip));
+        }
+        for i in 0..12 {
+            out.extend(quad(0x1E, x + 8 * i, y, Some(track_clut)).and_then(clip));
+        }
+        for i in 0..self.triangles() as i16 {
+            out.extend(quad(0x1F, x + 16 * i, y + 0x10, None));
         }
         out
     }
