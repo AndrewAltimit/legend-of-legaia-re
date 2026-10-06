@@ -100,7 +100,8 @@ cheapest place to look for a claim that is still wrong.
   the ground's bucket key is `FUN_801F89B8`'s, not the mesh leaves'
   ([falsified](re-do-not-re-walk.md#rendering--camera)).
 - **The Rim Elm ambush seats its monsters from row 8, not the origin**, and
-  allows Run (open row above).
+  allows Run: the formation row's header byte is `0`
+  ([settled](re-settled-threads.md#battle--arts--level-up)).
 - **A dialog picker slides in; it does not resize.** The odd pager states
   count 24 frame-step units from off screen, and input opens only at count 0,
   26 vsyncs after the press ([falsified](re-do-not-re-walk.md#menus--ui)).
@@ -427,7 +428,8 @@ section-2 effect pool the fog page samples; retail keeps it resident under every
 field scene, and nine retail states agree cell for cell
 ([settled](re-settled-threads.md#rendering--camera)). **Which host draws Koru's
 strip** is both: the gate is formation slot 0, the limit is Koru's own AI arm,
-and only the draw order against the tab stays open (row above).
+and the draw order against the tab closed after it (the strip covers the
+plaque, above).
 
 **Does the port run retail's in-battle steal** and **how does the port step
 back to an earlier member** both closed with a wire on both hosts. The steal is
