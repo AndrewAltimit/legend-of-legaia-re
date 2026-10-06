@@ -3695,11 +3695,18 @@ mod tests {
             "no party participant: no bar"
         );
         assert!(!battle_panels_visible(&w));
+        // The badge is the name's caret letter (`^A` -> cell 0, the Fire
+        // badge), not the element byte (`2`, which is the Wind cell).
         assert_eq!(
             battle_target_plaque(&w),
             Some(("Gimard".to_string(), Some(0))),
             "the name's own badge (fire), not the element byte's strip index"
         );
+        // A name with no escape wears no badge (`Skeleton A`).
+        let mut bare = w.tables.monster_catalog.get(7).unwrap().clone();
+        bare.plaque_badge = None;
+        w.tables.monster_catalog.insert(bare);
+        assert_eq!(battle_target_plaque(&w), Some(("Gimard".to_string(), None)));
         assert_eq!(battle_combo_style(&w), Some(ComboStyle::HitTotal));
         assert!(!battle_begin_tab_visible(&w));
         assert_eq!(battle_ring_ap_plate_value(&w), None);

@@ -4874,15 +4874,17 @@ block and copied verbatim into the actor's display-name buffer `+0x1BC`. The
 `0xCE`-lead form is the *runtime-composed* HUD label string (actor `+0x29`, an
 icon index then the text) - a different producer, not this one.
 
-**Port + what is still off.** The plaque widens by `20 + 5` exactly as
-`name_plaque` lays out, and the geometry and palette decode are disc-read. The
-port's selector (`battle_hud::battle_plaque_element_badge`) is **not** retail:
-it returns the record's element byte for every monster with a valid element, so
-it (a) badges all 186 instead of the 64 whose name carries the escape, and (b)
-indexes the strip in element order where the escape orders it `A..H`, a
-different permutation (`element -> caret index` is `4, 3, 0, 2, 1, 5, 6, 7`).
-Retail's rule is one line: badge only when the name starts `^X`, at strip index
-`X - 'A'`.
+**Port.** The plaque widens by `20 + 5` exactly as `name_plaque` lays out,
+and the geometry and palette decode are disc-read. Both plaques that carry a
+badge - the top-left actor plaque (`battle_hud::battle_plaque_element_badge`)
+and the bottom-right target plaque (`battle_hud::battle_target_plaque`) - read
+the caret letter `legaia_asset::monster_archive` lifts off the name
+(`MonsterDef::plaque_badge`), never the `+0x1D` element byte. The target
+plaque's payload is the actor's name buffer `+0x29`, where the text engine
+carries the leading `^X` as the `0xCE` icon escape (`0xCE 0x14 0x20 'G' ...`
+for `^A Gimard`), so it is the same markup. Read off the element byte, Fire
+Gimard (element `2`) wore strip cell `2` - the green Wind badge - and every
+unescaped monster wore one, where retail draws `Skeleton A` bare.
 
 ### Four ids are not on this sheet at all - they are the save-slot portraits
 
