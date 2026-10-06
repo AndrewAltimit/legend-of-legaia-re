@@ -91,6 +91,46 @@ pub const RECORDS_PARTY_PANEL: [usize; 3] = [6, 78, 79];
 /// up / left / right / down order (interior 48, around `(228, 70)`).
 pub const RECORDS_COMMAND_CHIP: [usize; 4] = [8, 9, 10, 11];
 
+/// The post-battle **level-up window**: element `0x44 + mask`, where the
+/// results frame `FUN_8004E568` builds `mask` from the three per-character
+/// level-up bytes `ctx[+0xE..=+0x10]` (bit `k` = character `k`,
+/// `0x8004F6F8..0x8004F728`). Records `0x45..=0x4B` (masks `1..=7`) share one
+/// box - content `280 x 12`, sliding from `(16, -24)` to `(16, 14)` - and
+/// differ only in the string their `+0x14` word points at: one line naming
+/// the characters through the `0xC1` name escape (`0xC1 k` = record `k`),
+/// and for all three a line that names nobody.
+pub const RECORD_LEVEL_UP_BASE: usize = 0x44;
+
+/// The NUL-terminated MES string record `index`'s `+0x14` payload points at
+/// in the SCUS data segment, raw: `0xC0..=0xCF` escapes keep their operand
+/// byte (so `0xC1 0x00` - a name escape for record `0` - is not cut at its
+/// zero operand). `None` for a record with no payload or one outside the
+/// image.
+pub fn payload_string(scus: &[u8], index: usize) -> Option<Vec<u8>> {
+    let map = ExeMap::parse(scus)?;
+    let rec = ScreenElementTable::from_scus(scus)?.get(index)?;
+    if rec.payload == 0 {
+        return None;
+    }
+    let start = map.off(rec.payload)?;
+    let mut out = Vec::new();
+    let mut i = start;
+    loop {
+        let b = *scus.get(i)?;
+        if b == 0 {
+            break;
+        }
+        out.push(b);
+        if (0xC0..=0xCF).contains(&b) {
+            out.push(*scus.get(i + 1)?);
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    Some(out)
+}
+
 /// PSX-EXE `t_addr` -> file-offset resolver for `SCUS_942.54`'s data segment.
 pub(crate) struct ExeMap {
     t_addr: u32,

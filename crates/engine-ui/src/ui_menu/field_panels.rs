@@ -54,15 +54,19 @@ pub const SPOILS_LINE_H: i32 = 14;
 ///
 /// The measurement is the gold frame band in the `noa_levelup_banner`
 /// framebuffer at 320x240 native: the level-up window's band lies on rows
-/// `6` and `30`, the spoils window's on `154` and `208`, and both span
-/// columns `10..=310`. Retail draws them over the **live battle scene**, one
-/// above the party and one below.
+/// `6` and `30` and columns `10..=302`, the spoils window's on `154` and
+/// `208` and columns `10..=310`. Retail draws them over the **live battle
+/// scene**, one above the party and one below.
 ///
 /// The constants are those bands **outset by 2**, because
 /// [`crate::menu_window_chrome_draws_for`] seats its corner tiles two pixels
 /// inside the rect it is handed - so a rect equal to the band draws the band
 /// two pixels small on every side.
-pub const SPOILS_LEVELUP_RECT: (i32, i32, i32, i32) = (8, 4, 304, 28);
+///
+/// The two widths are the placement records': screen elements
+/// `0x45..=0x4B` (the level-up window) carry a `280`-wide content box, the
+/// report window's `0x41` a `288`-wide one.
+pub const SPOILS_LEVELUP_RECT: (i32, i32, i32, i32) = (8, 4, 296, 28);
 pub const SPOILS_REPORT_RECT: (i32, i32, i32, i32) = (8, 152, 304, 58);
 
 /// Text pen inside either window, from its frame origin. The capture puts

@@ -14,10 +14,14 @@ pub struct BattleSpoilsBanner {
     pub gold: u32,
     /// `"<name> drop"` lines - one per item the loot roll surfaced.
     pub drops: Vec<String>,
-    /// `"<name>'s level increased!"` lines - one per character that crossed
-    /// a threshold in this battle's XP grant. The wording is retail's own,
-    /// off the `noa_levelup_banner` framebuffer; the new level is not on
-    /// that line (the status screen carries it).
+    /// The level-up window's line - empty when nobody levelled. Retail
+    /// opens one window, element `0x44 + mask` (bit `k` = character `k`),
+    /// whose string names every character that crossed a threshold in one
+    /// line, or nobody when all three did; the port reads the seven strings
+    /// off the user's executable ([`Self::level_up_line`]). Without them (a
+    /// disc-free host) it falls back to one `"<name>'s level increased!"`
+    /// line per character. The new level is not on the line (the status
+    /// screen carries it).
     pub level_ups: Vec<String>,
     /// Who the victory line names: the lead alone when the second party seat
     /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
@@ -89,22 +93,30 @@ impl World {
                     .unwrap_or_else(|| format!("Item {id}"))
             })
             .collect();
-        let level_ups = r
+        let mask = r
             .level_ups
             .iter()
-            .map(|lu| {
-                let slot = lu.char_id as usize;
-                let name = self
-                    .party
-                    .roster
-                    .members
-                    .get(slot)
-                    .map(|m| m.name())
-                    .filter(|n| !n.trim().is_empty())
-                    .unwrap_or_else(|| format!("Member {}", slot + 1));
-                format!("{name}\'s level increased!")
-            })
-            .collect();
+            .filter(|lu| lu.char_id < 3)
+            .fold(0u8, |m, lu| m | (1 << lu.char_id));
+        let level_ups = if let Some(line) = self.level_up_line(mask) {
+            vec![line]
+        } else {
+            r.level_ups
+                .iter()
+                .map(|lu| {
+                    let slot = lu.char_id as usize;
+                    let name = self
+                        .party
+                        .roster
+                        .members
+                        .get(slot)
+                        .map(|m| m.name())
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| format!("Member {}", slot + 1));
+                    format!("{name}\'s level increased!")
+                })
+                .collect()
+        };
         Some(BattleSpoilsBanner {
             xp: r.xp_share,
             gold: r.gold,
@@ -112,6 +124,53 @@ impl World {
             level_ups,
             subject: self.battle_result_subject(),
         })
+    }
+
+    /// The level-up window's line for `mask` (bit `k` = character `k`): the
+    /// string record `0x44 + mask` points at, its `0xC1 k` name escapes
+    /// spliced with record `k`'s name (`0x63` = the party leader). `None`
+    /// for an empty mask or without the strings.
+    ///
+    /// REF: FUN_8004E568 (`0x8004F6F8..0x8004F728`, the mask and the raise)
+    pub fn level_up_line(&self, mask: u8) -> Option<String> {
+        let raw = self
+            .menu
+            .text
+            .as_ref()?
+            .level_up_lines
+            .as_ref()?
+            .get(usize::from(mask).checked_sub(1)?)?;
+        let mut out = String::new();
+        let mut i = 0;
+        while i < raw.len() {
+            let b = raw[i];
+            if (0xC0..=0xCF).contains(&b) {
+                let op = raw.get(i + 1).copied().unwrap_or(0);
+                if b == 0xC1 {
+                    let slot = if op == 0x63 {
+                        self.party_roster_slot(0)
+                    } else {
+                        usize::from(op)
+                    };
+                    let name = self
+                        .party
+                        .roster
+                        .members
+                        .get(slot)
+                        .map(|m| m.name())
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| format!("Member {}", slot + 1));
+                    out.push_str(&name);
+                }
+                i += 2;
+                continue;
+            }
+            if (0x20..0x7F).contains(&b) {
+                out.push(b as char);
+            }
+            i += 1;
+        }
+        Some(out)
     }
 
     /// The battle exit's party loop, run on every exit before the party's
@@ -465,5 +524,40 @@ impl crate::battle_return_flags::FlagBank for WorldFlagBank<'_> {
     }
     fn clear(&mut self, idx: u16) {
         self.0.system_flag_clear(idx);
+    }
+}
+
+#[cfg(test)]
+mod level_up_line_tests {
+    use super::*;
+
+    /// The window's line is the mask's string with its `0xC1` name escapes
+    /// spliced: record `k` for operand `k`, the leader for `0x63`. Synthetic
+    /// strings stand in for the executable's.
+    #[test]
+    fn the_level_up_line_splices_the_mask_string() {
+        let mut w = World::default();
+        w.party.roster = legaia_save::Party::zeroed(3);
+        for (k, name) in ["Ana", "Bo", "Cy"].iter().enumerate() {
+            w.party.roster.members[k].set_name(name);
+        }
+        let mut lines = vec![b"x".to_vec(); 7];
+        lines[0] = [&[0xC1, 0x00][..], b" up"].concat();
+        lines[2] = [&[0xC1, 0x00][..], b" & ", &[0xC1, 0x01], b" up"].concat();
+        lines[6] = b"all up".to_vec();
+        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+            level_up_lines: Some(lines),
+            ..Default::default()
+        });
+        assert_eq!(w.level_up_line(1).as_deref(), Some("Ana up"));
+        assert_eq!(w.level_up_line(3).as_deref(), Some("Ana & Bo up"));
+        assert_eq!(w.level_up_line(7).as_deref(), Some("all up"));
+        assert_eq!(w.level_up_line(0), None, "nobody levelled");
+        w.menu.text = None;
+        assert_eq!(
+            w.level_up_line(1),
+            None,
+            "no strings: the caller falls back"
+        );
     }
 }

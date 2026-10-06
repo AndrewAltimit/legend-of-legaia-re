@@ -617,8 +617,8 @@ one battle:
   print the roster ordinal (`P3`), which is an index only the codebase knows.
 - The **post-battle report** (`engine-ui::battle_spoils_windows` +
   `battle_spoils_draws_for`) is retail's own pair of framed windows: a
-  level-up window above the party carrying one `<name>'s level increased!`
-  line per level-up, and a spoils window below it carrying
+  level-up window above the party carrying **one** line however many
+  members levelled, and a spoils window below it carrying
   `<leader>'s team won the battle!` and `Gained N Experience and M G.` with
   both figures right-aligned inside the sentence, plus a line per drop.
 
@@ -723,14 +723,31 @@ One thing the pair still gets wrong:
   writes `current_level_up_banner` inside its per-member loop, so a battle that
   levels three characters overwrites the slot twice in one frame and shows one
   banner. The banner needs a queue the world drains one at a time; the report
-  window's per-character lines are what makes the loss visible rather than
-  silent.
+  window's line, which names every member who levelled, is what makes the
+  loss visible rather than silent.
+
 Both surfaces now draw over the **battle**, on the results frame of the
 end-of-battle sequence and for as long as retail keeps them up - the
 sequencer `FUN_8004E568`'s timeline, the leader's victory pose and the exit
 gate are in [battle.md](battle.md#battle-end-retails-way---the-results-sequencer).
 The earlier shape - XP granted after the mode had flipped back, so the
 windows landed on the returned field - is gone.
+
+### The level-up window is one element per party mask
+
+The results frame raises the level-up window as screen element
+`0x44 + mask`, the mask built from the three per-character level-up bytes
+`ctx[+0xE..=+0x10]` (bit `k` = character `k`, `0x8004F6F8..0x8004F728`). The
+seven records `0x45..=0x4B` share one box - content `280 x 12`, sliding from
+`(16, -24)` to `(16, 14)`, so the band ends at column `302` where the report
+window's `288`-wide `0x41` ends at `310` - and differ only in the string their
+`+0x14` word points at: one line naming the masked characters through the
+`0xC1 k` name escape (`0xC1 k` = character record `k`), or, for all three, a
+line that names nobody. The port reads the seven strings off the user's
+executable (`legaia_asset::screen_elements::payload_string`, held as
+`MenuTextTables::level_up_lines`), splices the names in
+`World::level_up_line`, and draws the window at `SPOILS_LEVELUP_RECT`; a
+disc-free host falls back to one `<name>'s level increased!` line per member.
 
 ## See also
 

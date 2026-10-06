@@ -125,3 +125,29 @@ fn placement_table_decodes_and_seats_the_battle_chrome() {
     assert_eq!(right.0 - left.0, 88, "diamond width = 2 * dx");
     assert_eq!(down.1 - up.1, 64, "diamond height = 2 * dy");
 }
+
+/// The level-up window, elements `0x44 + mask`: masks `1..=7` share one
+/// `280 x 12` box sliding `(16, -24)` -> `(16, 14)` (narrower than the report
+/// window's `288`), and each string names exactly the characters its mask
+/// carries through `0xC1 k` escapes - none at all for all three.
+#[test]
+fn the_level_up_window_records_name_their_mask() {
+    use legaia_asset::screen_elements::{RECORD_LEVEL_UP_BASE, payload_string};
+    let Some(scus) = scus() else {
+        eprintln!("skip: no LEGAIA_DISC_BIN / extracted/SCUS_942.54");
+        return;
+    };
+    let table = ScreenElementTable::from_scus(&scus).expect("table");
+    assert_eq!(table.get(0x41).unwrap().width, 288, "the report window");
+    for mask in 1u8..=7 {
+        let r = table.get(RECORD_LEVEL_UP_BASE + usize::from(mask)).unwrap();
+        assert_eq!((r.seat, r.alt_seat, r.width), ((16, -24), (16, 14), 280));
+        let s = payload_string(&scus, RECORD_LEVEL_UP_BASE + usize::from(mask)).expect("line");
+        let named: u8 = s
+            .windows(2)
+            .filter(|w| w[0] == 0xC1)
+            .fold(0, |m, w| m | (1 << w[1]));
+        let want = if mask == 7 { 0 } else { mask };
+        assert_eq!(named, want, "mask {mask} names its characters");
+    }
+}
