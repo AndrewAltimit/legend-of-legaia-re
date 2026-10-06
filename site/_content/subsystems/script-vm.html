@@ -11,7 +11,7 @@
     <dt>Scripts come from</dt><dd>Each scene's <strong>MAN</strong>, the script-and-data bundle shipped with the scene: record 0 is the scene's own script, records 1.. belong to NPCs, a second partition holds cutscenes spawned on demand.</dd>
     <dt>Opcode space</dt><dd>43 opcodes <code>0x21</code>-<code>0x4F</code> (gap <code>0x27</code>-<code>0x2A</code>), plus every byte in <code>0x50</code>-<code>0x7F</code> as a "wide" story-flag op. Bit <code>0x80</code> on any opcode aims it at another actor's script.</dd>
     <dt>Dialogue</dt><dd>Has <strong>no opcode</strong> - talking pages the NPC's own inline text (<a href="#dialogue">below</a>).</dd>
-    <dt>Engine</dt><dd><code>crates/engine-vm/src/field.rs</code> (executing VM); <code>legaia_asset::field_disasm</code> (side-effect-free disassembler; CLI <code>field-disasm</code>).</dd>
+    <dt>Engine</dt><dd><code>crates/engine-vm/src/field.rs</code> (executing VM); <code>legaia_asset::field_disasm</code> (side-effect-free disassembler; CLI <code>asset field-disasm</code>).</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly of the overlay dump plus live captures (<a href="#how-we-know">how we know</a>).</dd>
   </dl>
 </section>
@@ -320,7 +320,7 @@
   </details>
 
   <details class="disclosure">
-    <summary>FMV trigger sites and the <code>field-disasm</code> tool</summary>
+    <summary>FMV trigger sites and the <code>asset field-disasm</code> tool</summary>
     <div class="disclosure-body">
       <table>
         <thead><tr><th>Site</th><th>Function</th><th>Mode write</th><th>Movie id</th></tr></thead>
@@ -331,8 +331,8 @@
         </tbody>
       </table>
       <p>Eight scenes carry a <code>4C E2</code> op (town01, garmel, deroa, chitei2, dohaty, town0d, uru, jouine); the operands sit LZS-compressed inside each MAN and decode statically (<a href="cutscene.html">cutscenes</a>). <code>FUN_801E30E4</code> is a label inside the dispatcher, not a callee.</p>
-      <pre><code>cargo run -p legaia-engine-vm --bin field-disasm -- file &lt;PATH&gt;
-cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot --disc &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
+      <pre><code>cargo run -p legaia-asset --bin asset -- field-disasm file &lt;PATH&gt;
+cargo run -p legaia-asset --bin asset -- field-disasm scan-prot --prot &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
       <p>The walker mirrors the executing VM's widths without side effects, so any byte buffer is safe input. <code>scene-event-scripts</code> / <code>scan-prot</code> walk the move-VM prescript table, so a <code>4C E2</code> hit inside a prescript record is a false positive.</p>
     </div>
   </details>

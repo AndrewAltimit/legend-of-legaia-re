@@ -12,7 +12,7 @@
     <div class="num">3</div><div class="layer">Play the movies</div><div class="desc">FMV with its XA audio in sync.</div><div class="crate">play-str</div>
     <div class="num">4</div><div class="layer">Minigames, audio, saves</div><div class="desc">Fishing, dance, slots, Baka Fighter, Muscle Dome from any live scene.</div><div class="crate">play-window keys</div>
     <div class="num">5</div><div class="layer">Record + replay</div><div class="desc">Deterministic session files that need no disc to play back.</div><div class="crate">record / replay</div>
-    <div class="num">6</div><div class="layer">Browse + read</div><div class="desc">Asset viewer, script disassembler, the browser build.</div><div class="crate">asset-viewer / field-disasm</div>
+    <div class="num">6</div><div class="layer">Browse + read</div><div class="desc">Asset viewer, script disassembler, the browser build.</div><div class="crate">asset-viewer / asset field-disasm</div>
   </div>
   <h3>Where the data comes from</h3>
   <p>Every subcommand accepts the disc directly via <code>--disc</code> - no extraction step required to play. Without <code>--disc</code>, tools read an <code>extracted/</code> tree (<code>--extracted-root</code>, default <code>extracted</code>, resolved against the current directory) produced by <code>legaia-extract</code> (<a href="getting-started.html">getting started</a>).</p>
@@ -180,8 +180,8 @@
 <section class="doc-section" id="scripts">
   <h2>9 &middot; Read the game's scripts</h2>
   <p>Every scene - who says what, which door leads where, what a chest holds - is driven by the field/event VM's bytecode. Its disassembler is a release binary too:</p>
-  <div class="cli"><code>./field-disasm scan-prot --prot extracted/PROT.DAT</code></div>
-  <div class="cli"><code>./field-disasm file &lt;extracted-script-body&gt;</code></div>
+  <div class="cli"><code>./asset field-disasm scan-prot --prot extracted/PROT.DAT</code></div>
+  <div class="cli"><code>./asset field-disasm file &lt;extracted-script-body&gt;</code></div>
   <p><code>scan-prot</code> sweeps the archive for event scripts and FMV triggers; <code>file</code> walks one raw script linearly. For a specific scene's per-scene scripts (LZS-compressed inside the scene's MAN sub-asset), the engine has the direct path:</p>
   <div class="cli"><code>./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"</code></div>
   <div class="see-also">

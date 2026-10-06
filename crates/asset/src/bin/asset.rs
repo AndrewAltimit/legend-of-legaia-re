@@ -17,6 +17,8 @@ mod common;
 mod dispatch;
 #[path = "asset/field_census.rs"]
 mod field_census;
+#[path = "asset/field_disasm_cli.rs"]
+mod field_disasm_cli;
 #[path = "asset/minigame.rs"]
 mod minigame;
 #[path = "asset/overlay.rs"]
@@ -1048,6 +1050,16 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Disassemble field-VM bytecode (the `FUN_801DE840` opcode set): a raw
+    /// script body, a prescript container's records, or a PROT.DAT sweep for
+    /// FMV triggers. Inputs come from the extraction pipeline. A scene's
+    /// genuine per-scene scripts live LZS-packed in its MAN sub-asset, not in
+    /// the prescript containers - read those with
+    /// `legaia-engine man-scripts --scene NAME --disc <bin>`.
+    FieldDisasm {
+        #[command(subcommand)]
+        cmd: field_disasm_cli::FieldDisasmCmd,
+    },
     /// Disc-wide field-VM **opcode census**: walk every scene MAN (the
     /// bundle's and every streaming variant's) plus every raw event-script
     /// carrier, decode the bytecode, and count occurrences per opcode - with
@@ -1531,6 +1543,7 @@ fn main() -> Result<()> {
             max_regions,
         } => man_one(&input, with_encounter, max_formations, max_regions),
         Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
+        Cmd::FieldDisasm { cmd } => field_disasm_cli::field_disasm(cmd),
         Cmd::FieldOpCensus {
             dir,
             cdname,

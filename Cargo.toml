@@ -42,7 +42,7 @@ legaia-engine-session = { path = "crates/engine-session" }
 legaia-parity = { path = "crates/parity" }
 legaia-engine-shell = { path = "crates/engine-shell" }
 legaia-engine-ui = { path = "crates/engine-ui" }
-legaia-engine-vm = { path = "crates/engine-vm", default-features = false }
+legaia-engine-vm = { path = "crates/engine-vm" }
 legaia-font = { path = "crates/font", default-features = false }
 legaia-gamedata = { path = "crates/gamedata", default-features = false }
 legaia-iso = { path = "crates/iso", default-features = false }

@@ -414,8 +414,8 @@ The field/event VM ([script-vm.md](../subsystems/script-vm.md)) drives every
 scene. Its disassembler is a release binary too:
 
 ```bash
-./field-disasm scan-prot --prot extracted/PROT.DAT     # sweep for event scripts + FMV triggers
-./field-disasm file <extracted-script-body>            # walk one raw script linearly
+./asset field-disasm scan-prot --prot extracted/PROT.DAT  # sweep for event scripts + FMV triggers
+./asset field-disasm file <extracted-script-body>         # walk one raw script linearly
 ```
 
 For a specific scene's per-scene scripts (LZS-compressed inside the scene's

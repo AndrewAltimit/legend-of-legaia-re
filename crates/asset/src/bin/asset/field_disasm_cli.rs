@@ -1,4 +1,4 @@
-//! field-disasm: walk field-VM bytecode and print mnemonics.
+//! `asset field-disasm` - walk field-VM bytecode and print mnemonics.
 //!
 //! Modes:
 //!
@@ -31,40 +31,17 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 
-use legaia_asset::scene_event_scripts;
-use legaia_engine_vm::field_disasm::{
+use legaia_asset::field_disasm::{
     InsnInfo, LinearWalker, MenuCtrlKind, find_fmv_triggers, format_instruction,
 };
+use legaia_asset::scene_event_scripts;
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
 
-#[derive(Parser, Debug)]
-#[command(
-    author,
-    version,
-    about = "Disassemble field-VM bytecode (FUN_801DE840 opcode set)",
-    long_about = "Disassemble field-VM bytecode (the FUN_801DE840 opcode set).\n\n\
-        Inputs come from the extraction pipeline: `scan-prot` reads an \
-        `extracted/PROT.DAT` produced by `disc-extract extract <bin> out/` \
-        (or `legaia-extract`), while `file` / `scene-event-scripts` read \
-        individual extracted files.\n\n\
-        For a specific scene's genuine per-scene scripts (which live \
-        LZS-compressed inside the scene's MAN sub-asset, not in the \
-        prescript containers this tool scans), use \
-        `legaia-engine man-scripts --scene NAME --disc <bin>` instead. \
-        To locate a scene's script entry on disk: `legaia-engine list-scenes` \
-        prints each scene's PROT range start, and extraction filenames are \
-        numbered CDNAME define minus 2."
-)]
-struct Cli {
-    #[command(subcommand)]
-    cmd: Cmd,
-}
-
 #[derive(Subcommand, Debug)]
-enum Cmd {
+pub(crate) enum FieldDisasmCmd {
     /// Treat `path` as a raw field-VM script body and walk it linearly.
     File {
         path: String,
@@ -122,32 +99,21 @@ enum Cmd {
     },
 }
 
-/// Restore the default SIGPIPE disposition so piping the (potentially very
-/// long) disassembly into `head` terminates quietly instead of panicking
-/// with "failed printing to stdout: Broken pipe".
-fn reset_sigpipe() {
-    #[cfg(unix)]
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
-}
-
-fn main() -> Result<()> {
-    reset_sigpipe();
-    let cli = Cli::parse();
-    match cli.cmd {
-        Cmd::File {
+/// Run one `asset field-disasm` subcommand.
+pub(crate) fn field_disasm(cmd: FieldDisasmCmd) -> Result<()> {
+    match cmd {
+        FieldDisasmCmd::File {
             path,
             fmv_only,
             max_insns,
         } => cmd_file(&path, fmv_only, max_insns),
-        Cmd::SceneEventScripts {
+        FieldDisasmCmd::SceneEventScripts {
             path,
             fmv_only,
             summary,
             record,
         } => cmd_scene_event_scripts(&path, fmv_only, summary, record),
-        Cmd::ScanProt {
+        FieldDisasmCmd::ScanProt {
             prot,
             cdname,
             scene,
@@ -251,7 +217,7 @@ fn cmd_scene_event_scripts(
                     "  0x{:04X}  FmvTrigger fmv_id={} ({})",
                     pc + opcode_start,
                     fmv_id,
-                    legaia_engine_vm::field_disasm::fmv_filename(fmv_id)
+                    legaia_asset::field_disasm::fmv_filename(fmv_id)
                 );
             }
             continue;
@@ -391,7 +357,7 @@ fn cmd_scan_prot(
                 rec_str,
                 pc,
                 fmv_id,
-                legaia_engine_vm::field_disasm::fmv_filename(fmv_id)
+                legaia_asset::field_disasm::fmv_filename(fmv_id)
             );
         }
     }
