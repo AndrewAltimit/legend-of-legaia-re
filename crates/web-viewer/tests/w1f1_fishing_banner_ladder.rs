@@ -109,6 +109,10 @@ struct Seen {
     samples: Vec<(i64, i64, i64, i64)>,
     /// Highest tension any fight in the run reached.
     peak_tension: i64,
+    /// Large-style digits (the landed catch's points) seen, and the
+    /// result plate's species-name captions.
+    big_digits: usize,
+    fish_names: BTreeSet<String>,
 }
 
 impl Seen {
@@ -116,6 +120,16 @@ impl Seen {
         for g in banner_glyphs(hud) {
             self.ids.insert(g.0);
             self.samples.push(g);
+        }
+        let v: serde_json::Value = serde_json::from_str(hud).expect("hud json");
+        for d in v.as_array().expect("hud array") {
+            if d["t"] == "digit" && d["big"] == true {
+                self.big_digits += 1;
+            }
+            if d["t"] == "cap" && d["k"] == "fish_name" {
+                self.fish_names
+                    .insert(d["txt"].as_str().unwrap_or_default().to_string());
+            }
         }
     }
     fn xs(&self, id: i64) -> Vec<i64> {
@@ -237,6 +251,21 @@ fn the_hook_reel_in_and_splash_banners_all_run_on_a_played_venue() {
         seen.ids.contains(&GLYPH_CONVERGE),
         "the auxiliary banner never ran off the recast edge: {:?}",
         seen.ids
+    );
+
+    // A landed catch raises the result plate (`FUN_801D5298`): the label
+    // glyph, the points in the large digit style, and the species name off
+    // the disc.
+    assert!(
+        seen.ids.contains(&0x417) && seen.ids.contains(&0x817),
+        "the result plate's label glyph never drew: {:?}",
+        seen.ids
+    );
+    assert!(seen.big_digits > 0, "no large-style points digit drew");
+    assert!(
+        seen.fish_names.iter().any(|n| !n.is_empty()),
+        "the result plate drew no species name: {:?}",
+        seen.fish_names
     );
 
     // The two slide banners travel in opposite directions and meet at the
