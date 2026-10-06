@@ -3394,8 +3394,9 @@ function called from a 1332-byte parameter-prep wrapper:
 | `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
 | `0x801C2B2C` (phantom VA) | **Not a relocation copy.** It is `FUN_801D1344` printed `0xE818` low (PROT 0897 bases at `0x801CE818`; the dump was imported at `0x801C0000`), so its "`jal 0x801D8258` at `0x801C2C58`" is the same call `FUN_801D1344` makes at `0x801D1470`. PSX overlays are not relocated. See [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md). |
 
-The gate flag `_DAT_801F351C` is in the persistent `0x801F0000+` region,
-so it survives overlay swaps. One routine reads and clears it,
+The gate flag `_DAT_801F351C` is field-overlay data - PROT 0897's image
+runs to `0x801F3817` - so it is reloaded with the overlay rather than
+surviving a swap. One routine reads and clears it,
 `FUN_801D7EA0`; the "0897 sibling `FUN_801C9688`" earlier pages named is the
 same body printed `0xE818` low, compared with itself.
 
@@ -3413,7 +3414,7 @@ same body printed `0xE818` low, compared with itself.
 | `_DAT_8007B6B8` | Game-mode discriminator (value `0x20` = alternate sprite path). |
 | `_DAT_80083808` | World-map entity activation gate. |
 | `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
-| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` clears it after one emission (`0x801C9688` is the same body at a phantom VA, not a sibling). Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
+| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` clears it after one emission (`0x801C9688` is the same body at a phantom VA, not a sibling). Field-overlay data inside PROT 0897's image (which runs to `0x801F3817`), reloaded with the overlay rather than surviving a swap. |
 | `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the **sine** LUT at `0x8007B81C`. |
 | `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
