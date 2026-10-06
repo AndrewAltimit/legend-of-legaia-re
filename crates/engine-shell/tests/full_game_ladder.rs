@@ -1951,6 +1951,18 @@ fn wanted_mp_item(
     .map(|(_, id)| (id, actor))
 }
 
+/// Whether `actor`'s Miracle marker is armed (a Ra-Seru equipped): the queue
+/// builder replaces a typed Miracle string with the Miracle row only then.
+fn miracle_armed(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let roster = w.party_roster_slot(usize::from(actor));
+    w.party.roster.members.get(roster).is_some_and(|m| {
+        legaia_engine_vm::battle_action::miracle_marker_armed(
+            (roster as u8).wrapping_add(1),
+            &m.equipment().slots,
+        )
+    })
+}
+
 /// The Magic row worth casting: the strongest affordable damage spell.
 fn wanted_spell(
     w: &legaia_engine_core::world::World,
@@ -1969,34 +1981,90 @@ fn wanted_spell(
         .map(|(i, _)| i)
 }
 
-/// The arts string worth entering: the longest of the character's arts that
-/// the command pool pays for, repeated while it fits, then the cheapest plain
-/// direction until nothing more is affordable. Whether a matched art fires is
-/// the queue builder's call (it pays out of the Spirit gauge); an unpaid one
-/// still swings.
+thread_local! {
+    /// Each character's Super Art physical inputs ([`arts_plan`]), derived
+    /// once per process.
+    static SUPER_INPUTS: std::cell::RefCell<
+        HashMap<legaia_art::Character, Vec<Vec<legaia_art::Command>>>,
+    > = Default::default();
+}
+
+/// The arts string worth entering, the way the queue builder will read it
+/// (`FUN_801EED1C`, `World::build_arts_action_queue`):
+///
+/// - the character's **Miracle Art** string, when the slot's Miracle marker
+///   is armed (a Ra-Seru equipped) and the command pool pays for all of it -
+///   the builder replaces the whole queue with the Miracle row;
+/// - else a **Super Art**'s physical input ([`legaia_art::derive_super_input`]
+///   over the trigger table's `find` pattern), the longest the pool pays for;
+/// - else the longest **normal** arts (constants `0x1F` up, two arrows or
+///   more) the pool pays for, repeated while they fit, then the cheapest
+///   plain direction until nothing more is affordable.
+///
+/// The Miracle and the three Hyper arts (constants `0x1B..=0x1E`) never
+/// tokenize as arts on their own strings - the builder only reaches them
+/// through the Miracle copy and the Super tail-replace - so typing a Hyper
+/// art's string swings plain arrows. The fighter did exactly that for Vahn
+/// (Fiery Miyawaki, `2 3 1 3 1`) and Noa (Illusion Kick), whose "arts" never
+/// spent the gauge.
 fn arts_plan(
     w: &legaia_engine_core::world::World,
     s: &legaia_engine_core::arts_command_input::ArtsCommandInputSession,
 ) -> Vec<u8> {
-    use legaia_art::queue::Command;
+    use legaia_art::Command;
     // Nine: each character's Miracle Art is a nine-command string
     // (`art-data.md`), and a cap below it kept the hand from ever entering
     // one. The pool still decides what fits; this only stops the plan.
     const MAX_ENTRY: usize = 9;
+    const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
     // The occupying character's table: the actor's `character` key is only
     // written by the first arts commit, so before it every member reads
     // Vahn's.
-    let character = legaia_engine_core::battle_arts::character_for_slot(
-        w.party_roster_slot(usize::from(s.actor)) as u8,
-    );
+    let roster = w.party_roster_slot(usize::from(s.actor));
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
     let cost = |cmds: &[Command]| -> u16 { cmds.iter().map(|&c| s.cost_of(c)).sum() };
-    let arts: Vec<&[Command]> = w
+    let mut normal: Vec<(legaia_art::ActionConstant, &[Command])> = w
         .tables
         .art_records
         .iter()
-        .filter(|((c, _), r)| *c == character && r.commands.len() >= 3)
-        .map(|(_, r)| r.commands.as_slice())
+        .filter(|((c, a), r)| {
+            *c == character && r.commands.len() >= 2 && a.as_byte() >= NORMAL_ART_MIN_CONSTANT
+        })
+        .map(|((_, a), r)| (*a, r.commands.as_slice()))
         .collect();
+    normal.sort_by_key(|(a, _)| a.as_byte());
+    let bytes = |cmds: &[Command]| cmds.iter().map(|c| c.as_byte()).collect::<Vec<u8>>();
+    if miracle_armed(w, s.actor)
+        && let Some(m) = legaia_art::MIRACLE_ARTS
+            .iter()
+            .find(|m| m.character == character)
+        && cost(m.commands) <= s.pool_max
+        && m.commands.len() <= MAX_ENTRY
+    {
+        return bytes(m.commands);
+    }
+    // The derivation searches up to `4^12` strings, and the hand re-plans on
+    // every pad poll of the entry: derive each character's Super inputs once.
+    let supers = SUPER_INPUTS.with(|c| {
+        c.borrow_mut()
+            .entry(character)
+            .or_insert_with(|| {
+                legaia_art::SUPER_ARTS
+                    .iter()
+                    .filter(|sa| sa.character == character)
+                    .filter_map(|sa| legaia_art::derive_super_input(&normal, sa.find))
+                    .collect()
+            })
+            .clone()
+    });
+    if let Some(input) = supers
+        .into_iter()
+        .filter(|inp| inp.len() <= MAX_ENTRY && cost(inp) <= s.pool_max)
+        .max_by_key(|inp| inp.len())
+    {
+        return bytes(&input);
+    }
+    let arts: Vec<&[Command]> = normal.iter().map(|(_, c)| *c).collect();
     let mut plan: Vec<Command> = Vec::new();
     let mut pool = s.pool_max;
     loop {
