@@ -8,6 +8,7 @@
 //! (`self.scene_host.host_mut()`), which borrows that one field and so stays
 //! disjoint from the runtime's other fields.
 
+use crate::play_sfx::PageDirector;
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::mode::ModeSeat;
 use legaia_engine_core::scene::SceneHost;
@@ -31,10 +32,15 @@ pub(crate) type PageSession = legaia_engine_session::BootSession<crate::play_sfx
 /// table (`_DAT_8007B83C`) is the session's `BootSession::mode_seat` once one
 /// exists, and the slot's own before - the page runs its boot title against
 /// the scaffold world before any disc is loaded.
+///
+/// And so does the audio director ([`crate::play_sfx::PageDirector`], the
+/// native `AudioBgmDirector`): `BootSession::bgm` once a session exists, the
+/// slot's before (off wasm one is built on first use, disc or no disc).
 pub(crate) struct HostSlot {
     session: Option<PageSession>,
     camera: Camera,
     seat: ModeSeat,
+    director: Option<PageDirector>,
 }
 
 impl HostSlot {
@@ -45,7 +51,38 @@ impl HostSlot {
             session: None,
             camera,
             seat: ModeSeat::new_at_boot(),
+            director: None,
         }
+    }
+
+    /// The audio director, once built.
+    pub(crate) fn director(&self) -> Option<&PageDirector> {
+        match self.session.as_ref() {
+            Some(s) => s.bgm.as_ref(),
+            None => self.director.as_ref(),
+        }
+    }
+
+    /// The audio director, mutably.
+    pub(crate) fn director_mut(&mut self) -> Option<&mut PageDirector> {
+        match self.session.as_mut() {
+            Some(s) => s.bgm.as_mut(),
+            None => self.director.as_mut(),
+        }
+    }
+
+    /// Install (or drop, with `None`) the audio director.
+    pub(crate) fn set_director(&mut self, director: Option<PageDirector>) {
+        match self.session.as_mut() {
+            Some(s) => s.bgm = director,
+            None => self.director = director,
+        }
+    }
+
+    /// The scene host and the audio director together, once both exist.
+    pub(crate) fn host_director_mut(&mut self) -> Option<(&mut SceneHost, &mut PageDirector)> {
+        let s = self.session.as_mut()?;
+        Some((&mut s.host, s.bgm.as_mut()?))
     }
 
     /// The mode seat.
@@ -149,9 +186,14 @@ impl HostSlot {
         if let Some(mut old) = self.session.take() {
             self.camera = old.camera.clone();
             self.seat = std::mem::replace(&mut old.mode_seat, ModeSeat::new_at_boot());
+            self.director = old.bgm.take();
         }
         session.camera = std::mem::replace(&mut self.camera, Camera::new());
         session.mode_seat = std::mem::replace(&mut self.seat, ModeSeat::new_at_boot());
+        // The director is the page's, built over its own output; the
+        // session's `audio` stays `None`, so dropping the session never
+        // detaches the page's sequencer.
+        session.bgm = self.director.take();
         session.set_host_drains_queues(true);
         session.set_host_owns_pause_menu(true);
         session.set_host_stages_field_xa(true);

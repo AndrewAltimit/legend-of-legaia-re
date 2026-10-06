@@ -290,11 +290,6 @@ pub struct LegaiaRuntime {
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
-    /// The page's audio director - the native window's `AudioBgmDirector`
-    /// over [`crate::play_sfx::PageSink`]: BGM sequencer and bank, resident SFX
-    /// banks, cue scheduler, duck. Built on wasm once audio is up, off wasm on
-    /// first use ([`Self::audio_director`]).
-    pub(crate) director: Option<crate::play_sfx::PageDirector>,
     /// The live party-wipe hand-off, when a wipe raised one: the same
     /// [`legaia_engine_core::game_over::GameOverSession`] the native window
     /// builds, holding for the same number of frames and resolving to the
@@ -444,7 +439,6 @@ impl LegaiaRuntime {
             precise_movement_override: None,
             scus: None,
             sfx: Default::default(),
-            director: None,
             game_over: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
@@ -772,7 +766,7 @@ impl LegaiaRuntime {
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();
-        if let Some(d) = self.director.as_mut() {
+        if let Some(d) = self.scene_host.director_mut() {
             d.last_started = None;
         }
         // A card Load's score hand-off lands here: stop whatever was
@@ -893,7 +887,7 @@ impl LegaiaRuntime {
     pub fn begin_new_game(&mut self) {
         // The title theme hands the score to the field: stop it so the
         // prologue's own BGM (or its scripted silence) owns the audio.
-        if let Some(d) = self.director.as_mut() {
+        if let Some(d) = self.scene_host.director_mut() {
             use legaia_engine_core::scene::BgmDirector;
             d.stop();
         }
@@ -1200,8 +1194,8 @@ impl LegaiaRuntime {
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
         let playing = self
-            .director
-            .as_ref()
+            .scene_host
+            .director()
             .and_then(|d| d.last_started)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
@@ -1294,7 +1288,7 @@ impl LegaiaRuntime {
                     self.audio_out = Some(out);
                     // The director is built over the new output and staged
                     // at once.
-                    self.director = None;
+                    self.scene_host.set_director(None);
                     let _ = self.audio_director();
                     // Every start routed before this was dropped with no
                     // director to hear it: bring the scene's track up now.
@@ -1342,7 +1336,7 @@ impl LegaiaRuntime {
         else {
             return false;
         };
-        let Some(d) = self.director.as_mut() else {
+        let Some(d) = self.scene_host.director_mut() else {
             return false;
         };
         d.start_owned_vab(id, &entry);
@@ -1940,7 +1934,7 @@ impl LegaiaRuntime {
         if self.audio_director().is_none() {
             return;
         }
-        let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.host_mut()) else {
+        let Some((host, d)) = self.scene_host.host_director_mut() else {
             return;
         };
         if let Err(e) = host.route_bgm_events(d) {

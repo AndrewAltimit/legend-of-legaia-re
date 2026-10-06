@@ -401,7 +401,7 @@ impl LegaiaRuntime {
     /// Stop the score through the page's BGM director - the same `stop` the
     /// native window's director runs for the attract.
     fn fmv_stop_score(&mut self) {
-        if let Some(d) = self.director.as_mut() {
+        if let Some(d) = self.scene_host.director_mut() {
             use legaia_engine_core::scene::BgmDirector;
             d.stop();
         }

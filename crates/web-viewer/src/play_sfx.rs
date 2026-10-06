@@ -354,17 +354,16 @@ impl LegaiaRuntime {
     /// slot-2 / slot-6 region's bank for the current mode - the native boot's
     /// staging. `None` on wasm until audio is up.
     pub(crate) fn audio_director(&mut self) -> Option<&mut PageDirector> {
-        if self.director.is_none() {
+        if self.scene_host.director().is_none() {
             let sink = self.page_sink()?;
             let mut d = PageDirector::new(sink);
             d.set_sfx_bank(self.sfx.bank.clone());
             d.set_sfx_cue_slots(self.sfx.cue_slots.clone());
-            self.director = Some(d);
+            self.scene_host.set_director(Some(d));
             self.sfx.resident_staged = false;
         }
-        let d = self.director.as_mut()?;
         if !self.sfx.resident_staged
-            && let Some(host) = self.scene_host.host_mut()
+            && let Some((host, d)) = self.scene_host.host_director_mut()
         {
             self.sfx.resident_staged = true;
             let staged = host
@@ -378,7 +377,7 @@ impl LegaiaRuntime {
             let index = &host.index;
             d.sync_shared_region(want, |e| index.entry_bytes_extended(e).ok());
         }
-        Some(d)
+        self.scene_host.director_mut()
     }
 
     /// Decode the SFX descriptor table out of the disc executable - both
@@ -394,7 +393,7 @@ impl LegaiaRuntime {
                     .map(|(id, d)| (id, d.program, d.tone, d.note, d.flags)),
             );
             self.sfx.cue_slots = table.cue_slots().collect();
-            if let Some(d) = self.director.as_mut() {
+            if let Some(d) = self.scene_host.director_mut() {
                 d.set_sfx_bank(self.sfx.bank.clone());
                 d.set_sfx_cue_slots(self.sfx.cue_slots.clone());
             }
@@ -422,7 +421,7 @@ impl LegaiaRuntime {
     /// Cues queued against the departing scene's timing must not fire into
     /// the next one. Neither tail borrower is dropped: a door stages no bank.
     pub(crate) fn on_scene_change_audio(&mut self) {
-        if let Some(d) = self.director.as_mut() {
+        if let Some(d) = self.scene_host.director_mut() {
             d.clear_sfx();
         }
     }
@@ -536,7 +535,7 @@ impl LegaiaRuntime {
             }
             return;
         }
-        if let (Some(host), Some(d)) = (self.scene_host.host_mut(), self.director.as_mut()) {
+        if let Some((host, d)) = self.scene_host.host_director_mut() {
             d.route_world_sfx(&mut host.world, &host.index);
         }
     }
@@ -664,7 +663,7 @@ impl LegaiaRuntime {
     /// descriptor table decoded and a program bank staged into the live SPU
     /// (on wasm: once audio is up).
     pub fn play_sfx_ready(&self) -> bool {
-        !self.sfx.bank.is_empty() && self.director.as_ref().is_some_and(|d| d.has_sfx_vab())
+        !self.sfx.bank.is_empty() && self.scene_host.director().is_some_and(|d| d.has_sfx_vab())
     }
 
     /// The channel's state for the page's readout:
@@ -683,7 +682,7 @@ impl LegaiaRuntime {
     /// slot-6 region holds for the current mode (PROT 0876 in slot 6 in the
     /// field, PROT 0869 in slot 2 in battle).
     pub fn play_sfx_state_json(&self) -> String {
-        let d = self.director.as_ref();
+        let d = self.scene_host.director();
         let idle = d
             .map(|d| d.audio().with_spu(|spu| spu.idle_voice_count()))
             .unwrap_or(0);
@@ -896,7 +895,7 @@ mod tests {
         let queued_before = rt.sfx.queued;
         let _ = rt.play_sfx(u32::from(RETAIL_MENU_CURSOR_CUE));
         assert_eq!(rt.sfx.queued, queued_before + 1, "the request is counted");
-        let pending = |rt: &LegaiaRuntime| rt.director.as_ref().unwrap().sfx_pending();
+        let pending = |rt: &LegaiaRuntime| rt.scene_host.director().unwrap().sfx_pending();
         assert_eq!(pending(&rt), 1, "only the delayed cue waits");
         // 2 -> 1 -> 0 -> fire: three overlay steps, none spent by the blip.
         rt.play_tick_overlay_sfx();

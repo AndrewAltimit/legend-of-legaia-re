@@ -48,7 +48,7 @@ impl LegaiaRuntime {
         // director exists to hear them.
         self.sfx.queued += cues.len() as u32;
         if self.audio_director().is_some()
-            && let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.host())
+            && let Some((host, d)) = self.scene_host.host_director_mut()
         {
             if let Some(pct) = duck_pct {
                 d.set_duck_pct(pct);
