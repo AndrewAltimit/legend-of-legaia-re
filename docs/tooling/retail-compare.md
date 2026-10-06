@@ -730,7 +730,13 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   committed clip `+0x1D9` (art clips on their dynamic slot `0x10` / `0x11`,
   which both sides store). A party seat's idle `0` is not gated - between
   the approach and the first strike retail commits it and the engine holds
-  the walk clip.
+  the walk clip - except in the return state `0x20`, whose first hold waits
+  while the attacker's `+0x1D9 != 0` (`0x801E54EC`): a capture reading `0`
+  there is past the last swing, and its accumulator counts from the idle
+  commit. Ungated, the first tick the engine's accumulator reached the value
+  was inside the last art clip (`player_steal_skeleton_banner` framed the
+  Somersault still landing; `rim_elm_gimard_seru_capture_before` the swing
+  rather than the knocked-down Gimard).
   While the engine holds the capture's state, the acting action's framing
   style `ctx[+0xD]` - a draw the action seed rolls, which the post-strike
   cases fork on - is set to retail's, the camera twin of the orbit-yaw

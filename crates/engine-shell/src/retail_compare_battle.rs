@@ -3087,13 +3087,24 @@ impl RetailBattle {
                         })
                         .map(|(live, _)| live),
                     clip: (seat < 3
-                        && self.caster_clip != 0
                         // Gate on the direction swing clips 0x0C..=0x0F only:
                         // retail can sit on the dynamic art slot 0x10 / 0x11
                         // while the engine holds the swing's own clip, which
                         // the gate could then never match
                         // (battle_melee_hit_spark: retail 0x11, engine 0x0E).
-                        && (0x0C..=0x0F).contains(&self.caster_clip)
+                        && ((0x0C..=0x0F).contains(&self.caster_clip)
+                            // ...and on the idle clip in the return state
+                            // `0x20`, whose first hold waits while the
+                            // attacker's `+0x1D9 != 0` (`0x801E54EC`): a
+                            // capture reading `0` there is past the last
+                            // swing, and the acting actor's idle commit is
+                            // what its accumulator counts from. Ungated, the
+                            // first tick the engine's accumulator reached the
+                            // value was inside the last art clip
+                            // (`player_steal_skeleton_banner`: the frame
+                            // showed the Somersault still landing, retail the
+                            // steal caption over an idle Vahn).
+                            || (self.caster_clip == 0 && state == 0x20))
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
