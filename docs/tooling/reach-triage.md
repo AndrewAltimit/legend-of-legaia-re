@@ -2332,9 +2332,11 @@ address instead of against the anchor, both are ordinary production code:
   anchor is one of eleven addresses on two `//! PORT:` lines and says nothing
   about this routine at all.
 
-So the work these two name is a **tag** move (onto the routine each address
-implements), not a fixture. Until then, read either row against the function
-anchor.
+So the work these two named was a **tag** move, not a fixture, and both have
+moved: `sfx_cue.rs`'s module line is a `REF:` and the `PORT:` sits on
+`route_sfx_cue`, and `battle_action.rs` lists `FUN_801D5854` as a `REF:`,
+leaving the address to the function tags on its arms (`apply_death_reframe`
+among them).
 
 ## Rows no ladder converts, and why
 
