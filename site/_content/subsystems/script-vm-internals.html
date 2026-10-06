@@ -1,0 +1,322 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="script-vm.html">field / event script VM</a> &middot; internals</div>
+  <h1>Script VM internals</h1>
+  <p class="lede">The reference half of the <a href="script-vm.html">field / event script VM</a>: the context record, every opcode with its byte width, the sub-op tables of the sub-dispatchers, all sixteen <code>0x4C</code> nibbles, and the traps that catch anyone reading the dump. Widths are in bytes and include the opcode; an <code>0x80</code>-flagged (targeted) form adds one target byte after the opcode.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Dispatcher</dt><dd><code>FUN_801DE840(buffer, pc, ctx)</code> in PROT 0897, returns the new PC. Dump <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>.</dd>
+    <dt>Three exits</dt><dd><strong>Advance</strong> (add the op's width), <strong>halt at PC</strong> (return the PC unchanged, so the op re-runs next frame - how every wait works), <strong>halt-acquire</strong> (freeze another actor by setting its halt bit and parking its resume pointer).</dd>
+    <dt>PC</dt><dd>A signed 16-bit halfword at <code>ctx+0x9E</code>: every relative jump is <code>(base + delta) mod 0x10000</code>, so <code>0xFFFE</code> is "back 2".</dd>
+    <dt>In the port</dt><dd><code>engine-vm::field</code> (<code>step.rs</code> per opcode), <code>engine-vm::field_helpers</code> (the pure leaf helpers), <code>legaia_asset::field_disasm</code> (widths for every opcode and every <code>0x4C</code> nibble).</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="context-struct">
+  <h2>The context record</h2>
+  <p>Each running script has a context, which for a placement is the actor record itself. Selected fields:</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Offset</th><th>Type</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x10</code></td><td>u32</td><td>Flag word: <code>0x100</code> engaged (the script runs), <code>0x400</code> halted (mid-walk or halt-acquired), bits 0/1 collision- and touch-exempt (a door runs <code>31 00</code> as its swing starts), <code>0x20000</code> / <code>0x40000000</code> the contact class (button-gated props), <code>0x1000</code> animating</td></tr>
+      <tr><td><code>+0x14/16/18</code></td><td>i16</td><td>World X / Y / Z; a tile byte <code>b</code> becomes <code>(b &amp; 0x7F) &times; 0x80 + 0x40</code>, plus <code>0x40</code> if the high bit is set</td></tr>
+      <tr><td><code>+0x26</code></td><td>u16</td><td>Heading (12-bit angle)</td></tr>
+      <tr><td><code>+0x50</code></td><td>u16</td><td>Script id / bind index (<code>0xFB</code> = system)</td></tr>
+      <tr><td><code>+0x54</code></td><td>u16</td><td>Wait accumulator: cleared by a motion park, ticked by <code>WAIT_FRAMES</code></td></tr>
+      <tr><td><code>+0x5C</code></td><td>i16</td><td>Move-table index (<code>EXEC_MOVE</code>)</td></tr>
+      <tr><td><code>+0x62</code></td><td>u16</td><td>Local flag bank, 16 bits; also the clip-control word whose bit 8 the clip tick latches at a clip's end</td></tr>
+      <tr><td><code>+0x72</code></td><td>u16</td><td>Render scale, <code>0x1000</code> = 1.0; <code>0</code> = invisible (trigger gizmos run <code>4C 40 00 00</code>)</td></tr>
+      <tr><td><code>+0x74</code> / <code>+0x78</code></td><td>u32 / u16</td><td>Draw word (tint colour + mode bits) and tint blend, written by <code>4C 81</code></td></tr>
+      <tr><td><code>+0x90</code></td><td>u32</td><td>Script buffer base</td></tr>
+      <tr><td><code>+0x94</code></td><td>u32</td><td>Resume pointer of a parked motion op (or a halt-acquire payload)</td></tr>
+      <tr><td><code>+0x9C</code></td><td>u8</td><td>Dialog state: <code>1</code> waiting for the box, <code>2</code> owns the box</td></tr>
+      <tr><td><code>+0x9E</code></td><td>i16</td><td>Program counter</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The player context pointer is <code>_DAT_8007C364</code>; many opcodes branch on "is the context the player". The full field table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#context-struct" target="_blank" rel="noopener"><code>script-vm.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="opcode-table">
+  <h2>Every opcode</h2>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Op</th><th>Mnemonic</th><th>Bytes</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>21 24 25 48</code></td><td>NOP</td><td>1</td><td>One shared handler. <code>0x21</code> also ends the slice and the interaction pass (the runner clears the engaged bit)</td></tr>
+      <tr><td><code>22</code></td><td>EXEC_MOVE</td><td>2</td><td>Play move-table record <code>id</code> on the actor (<code>99</code> = cancel); hands off to the <a href="move-vm.html">move VM</a></td></tr>
+      <tr><td><code>23</code></td><td>MOVE_TO</td><td>3</td><td>Teleport to tile <code>(x, z)</code>; the player path also snaps the camera, the NPC path re-runs the visibility cull</td></tr>
+      <tr><td><code>26</code></td><td>JMP_REL</td><td>3</td><td>Unconditional relative jump, <code>pc + 1 + u16</code>, 16-bit wrap</td></tr>
+      <tr><td><code>2B 2C 2D</code></td><td>LFLAG set / clr / test</td><td>2</td><td>Local bank <code>ctx+0x62</code>. The test <em>spins</em> (holds the PC) while the bit is clear</td></tr>
+      <tr><td><code>2E 2F 30</code></td><td>GFLAG set / clr / test</td><td>2</td><td>The 32-bit scratchpad word <code>0x1F800394</code>: transient, not saved, partly engine state (bit 22 enables per-frame camera-zone re-query)</td></tr>
+      <tr><td><code>31 32 33</code></td><td>CFLAG set / clr / test</td><td>2</td><td>The context flag word. <code>31 08</code> copies <code>+0x26</code> to <code>+0x5A</code> instead of setting; <code>32 0x400</code> (un-halt) is the one op allowed through a halted target; <code>33</code> spins while the bit is set</td></tr>
+      <tr><td><code>34</code></td><td>EFFECT</td><td>var</td><td>Sub-ops on <code>op0 &gt;&gt; 4</code> (<a href="#op-34">below</a>)</td></tr>
+      <tr><td><code>35</code></td><td>BGM</td><td>4</td><td>Eleven sub-ops (<a href="#op-35">below</a>)</td></tr>
+      <tr><td><code>36</code></td><td>SOUND_CUE</td><td>5</td><td>XA voice clips, SFX cues and the side-band sound bank (<a href="#op-36">below</a>); the legacy <code>SCENE_FADE</code> label is wrong - every arm is sound</td></tr>
+      <tr><td><code>37 41</code></td><td>GLIDE</td><td>3</td><td>Motion op: compass glide. Parks the script (halt bit, resume pointer at <code>+0x94</code>) and the <a href="motion-vm.html">walk kernel</a> reads the op bytes in place each frame; <code>0x41</code> is half speed</td></tr>
+      <tr><td><code>38</code></td><td>CAM_CFG (facing)</td><td>3</td><td>Set the actor's heading from the 8-direction compass at <code>0x80073F04</code>, or halt-acquire it; despite the legacy name it is not a camera op</td></tr>
+      <tr><td><code>39</code></td><td>GIVE_ITEM</td><td>2</td><td>Add one of item <code>id</code> - the treasure-chest path; the id is the inline byte, not a per-scene table (the chest's "There is a ..." text names the item separately)</td></tr>
+      <tr><td><code>3A</code></td><td>ADD_MONEY</td><td>4</td><td>Signed 24-bit gold delta, clamped to <code>0..9,999,999</code></td></tr>
+      <tr><td><code>3B</code></td><td>SET_ITEM_COUNT</td><td>3</td><td>Write one per-character inventory byte, then refresh the display</td></tr>
+      <tr><td><code>3C 3D</code></td><td>PARTY_ADD / REMOVE</td><td>2</td><td>Sorted insert / remove, cap 4, leader fix-up</td></tr>
+      <tr><td><code>3E</code></td><td>BATTLE / MINIGAME</td><td>3+</td><td><code>op0 == 0xFF</code> or <code>&lt; 100</code>: scripted battle on formation row <code>op1</code>; <code>op0 &ge; 100</code>: minigame door-warp (<a href="#op-3e">below</a>)</td></tr>
+      <tr><td><code>3F</code></td><td>SCENE_CHANGE</td><td>7 + len</td><td>Named warp <code>[idx:i16][len][name][x][z][dir]</code>: destination scene name, entry tile and arrival facing</td></tr>
+      <tr><td><code>40</code></td><td>DATA_BLOCK</td><td>2 + len</td><td>Skip <code>len</code> inline data bytes (payloads that other ops capture)</td></tr>
+      <tr><td><code>42</code></td><td>COND_JMP</td><td>5</td><td>Mode 0 tests a bit of a global flag word; mode 1 the held pad (compass direction for <code>op1 &lt; 8</code>, Circle / Cross / Square / Triangle for 8..11, always taken from 12). Taken = <code>pc + 3 + u16</code>, else skip 5</td></tr>
+      <tr><td><code>43</code></td><td>ACTOR_CTRL</td><td>var</td><td>22 sub-ops (<a href="#op-43">below</a>)</td></tr>
+      <tr><td><code>44</code></td><td>SPAWN_RECORD</td><td>2</td><td>Spawn partition-2 record <code>global_index</code> as a new context if its flag gates pass (the opening scenes launch their timelines this way)</td></tr>
+      <tr><td><code>45</code></td><td>CAMERA</td><td>var</td><td>Four arms on <code>op0 &amp; 0xC0</code> (<a href="#op-45">below</a>)</td></tr>
+      <tr><td><code>46</code></td><td>VIEW_WINDOW</td><td>3 / 6</td><td>The camera's visible-tile window at <code>0x1F8003E8..EB</code>: long form <code>46 24 n0 n1 f0 f1</code> writes the four signed tile offsets, short form a half-width window. Not fog</td></tr>
+      <tr><td><code>47</code></td><td>WALK_TO</td><td>4</td><td>Motion op: walk to tile at base step <code>4 &lt;&lt; (b2 &amp; 7)</code>, approach mode <code>b2 &gt;&gt; 4</code></td></tr>
+      <tr><td><code>49</code></td><td>STATE_RESUME</td><td>var</td><td>Idle / armed / done machine that opens a menu-class screen and waits for it (<a href="#op-49">below</a>)</td></tr>
+      <tr><td><code>4A</code></td><td>WAIT_FRAMES</td><td>2</td><td>Add the frame-skip factor to <code>ctx+0x54</code>; halt at PC until it reaches the operand</td></tr>
+      <tr><td><code>4B</code></td><td>ANIMATE</td><td>3 + 4n</td><td>Arm <code>n</code> VDF morph lanes (sub-entry, up / down ramp rates) and set the animating bit - the field sibling of move-VM op <code>0x0A</code>, not a clip select</td></tr>
+      <tr><td><code>4C</code></td><td>MENU_CTRL</td><td>var</td><td>Sixteen sub-dispatchers on the high nibble of <code>op0</code> (<a href="#menu-ctrl">below</a>)</td></tr>
+      <tr><td><code>4D</code></td><td>BBOX_TEST</td><td>7</td><td>Player inside the tile box: advance 7; outside: jump by the trailing <code>u16</code></td></tr>
+      <tr><td><code>4E</code></td><td>INVENTORY_CMP</td><td>7 / 9</td><td>Compare-and-skip on party state (<a href="#op-4e">below</a>)</td></tr>
+      <tr><td><code>4F</code></td><td>SCENE_REGISTER_WRITE</td><td>7</td><td>Three <code>u16</code> writes into the scene record at <code>+0x10/+0x12/+0x14</code></td></tr>
+      <tr><td><code>5x 6x 7x</code></td><td>SYSFLAG set / clr / test</td><td>2 / 2 / 4</td><td>The persistent story-flag bank (<a href="script-vm.html#default-route">tour</a>); the test jumps when the flag is set</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Any other masked opcode halts at PC. A <code>?</code> (<code>0x3F</code>) inside message text is what makes a naive linear walk "see" scene changes in dialogue.</p>
+</section>
+
+<section class="doc-section" id="sub-ops">
+  <h2>Sub-dispatchers</h2>
+
+  <h3 id="op-34">0x34 EFFECT</h3>
+  <table class="data-table">
+    <thead><tr><th>Sub (<code>op0 &gt;&gt; 4</code>)</th><th>Bytes</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>7</td><td>Effect-global colour and intensity (the fade pipeline)</td></tr>
+      <tr><td><code>1</code></td><td>13</td><td>Attached light: a coloured rim on a target actor, extents in view-space units</td></tr>
+      <tr><td><code>2</code></td><td>2</td><td>Capture-and-yield: if the next op is a <code>0x40</code> block, capture its payload and yield</td></tr>
+      <tr><td><code>3</code></td><td>4</td><td>Spawn a scene-local 3D animation from the scene's prescript window at the actor</td></tr>
+      <tr><td>other</td><td>-</td><td>Halts at PC</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="op-35">0x35 BGM <code>[35 lo hi sub]</code></h3>
+  <table class="data-table">
+    <thead><tr><th>Sub</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>1</code></td><td>Start field BGM <code>id</code> (the loader resolves it asynchronously, <a href="#bgm-table">ids</a>)</td></tr>
+      <tr><td><code>2</code> / <code>3</code></td><td>Pause (detach the slot) / harder pause (stop the bound voice)</td></tr>
+      <tr><td><code>4</code></td><td>Resume (re-attach the slot)</td></tr>
+      <tr><td><code>5</code></td><td>Arm a timed sound-source auto-release after <code>id</code> vsyncs</td></tr>
+      <tr><td><code>6</code> / <code>7</code></td><td>Flag set / target-sound-set</td></tr>
+      <tr><td><code>8</code></td><td>Re-attach and re-apply the field volume</td></tr>
+      <tr><td><code>9</code></td><td>Start behind a load barrier - how a cutscene changes music part-way</td></tr>
+      <tr><td><code>0xA</code></td><td>Swap-commit: wait for the load to settle, release the paused slot</td></tr>
+      <tr><td><code>0xB</code></td><td>Arm sub-op 9's barrier</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="op-36">0x36 SOUND_CUE <code>[36 sel:i16 arg:i16]</code></h3>
+  <table class="data-table">
+    <thead><tr><th><code>sel</code></th><th>Arm</th></tr></thead>
+    <tbody>
+      <tr><td><code>0xFFFF</code></td><td>Wait on the load flag</td></tr>
+      <tr><td>bit 15 clear, non-zero</td><td>Start a CD-XA voice clip <code>(arg &gt;&gt; 3, arg &amp; 7)</code></td></tr>
+      <tr><td>bit 15 clear, zero</td><td>Wait while the clip is playing</td></tr>
+      <tr><td>bit 15 set, sub 0 / 4</td><td>Queue SFX cue <code>arg</code> / give the parked cue a delay</td></tr>
+      <tr><td>bit 15 set, sub 1 / 2 / 3</td><td>Request, wait for and tear down the side-band sound bank</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="op-3e">0x3E battles and minigames</h3>
+  <p>Every <code>op0 &lt; 100</code> (and <code>0xFF</code>) runs one body: re-derive the player's region (backdrop, Door of Light / Wind gates, world-map return point), point the system context at formation row <code>op1</code>, re-roll the step counter and request battle mode. <code>3E 00 02</code> installs row 2 exactly as <code>3E FF 02</code> would. <code>op0 &ge; 100</code> enters minigame <code>op0 &minus; 100</code> through mode 24, which backs up the current scene name and restores it on exit:</p>
+  <table class="data-table">
+    <thead><tr><th>Sub-id</th><th>Overlay</th><th>Minigame</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>PROT 0972</td><td>Fishing</td></tr>
+      <tr><td><code>1</code> / <code>2</code></td><td>0973 / 0974</td><td>Dev modules <code>OTHER2</code> / <code>OTHER3</code></td></tr>
+      <tr><td><code>3</code></td><td>0975</td><td>Casino slot machine</td></tr>
+      <tr><td><code>4</code></td><td>0976</td><td>Baka Fighter</td></tr>
+      <tr><td><code>5</code></td><td>0977</td><td>Monster-roster arena hub</td></tr>
+      <tr><td><code>6</code></td><td>0980</td><td>Noa's dance</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="op-43">0x43 ACTOR_CTRL</h3>
+  <table class="data-table">
+    <thead><tr><th>Sub</th><th>Bytes</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0 1 A B</code></td><td>var</td><td>Scripted arc jump (halt-acquire, target tile, floor lookup)</td></tr>
+      <tr><td><code>2</code></td><td>8</td><td>Three-actor talk</td></tr>
+      <tr><td><code>3..6</code></td><td>10</td><td>Camera-register zone ramp: while the player is in a tile box, lerp pitch / yaw / depth / projection on his Z. Every disc site is sub-3, a field-of-view ramp</td></tr>
+      <tr><td><code>7</code> / <code>8</code></td><td>17 / 2</td><td>Face / body rotation setup / reset</td></tr>
+      <tr><td><code>9</code></td><td>10</td><td>Position: immediate, or an eased move over <code>ticks</code></td></tr>
+      <tr><td><code>C</code></td><td>5</td><td>Shutter blackout: two black bars close, hold and open</td></tr>
+      <tr><td><code>D</code> / <code>F</code></td><td>6</td><td>Allocate an actor</td></tr>
+      <tr><td><code>E</code></td><td>2</td><td>Mark the iterating actor (flag bit 8)</td></tr>
+      <tr><td><code>10..15</code></td><td>21 / 12 / 14 / 14 / 10 / 14</td><td>Screen widgets of the ending scenes: sprite, iris mask, VRAM rect copy, image panel, panel move / scale, letterbox</td></tr>
+      <tr><td><code>16+</code></td><td>-</td><td>Halts at PC</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="op-45">0x45 CAMERA</h3>
+  <table class="data-table">
+    <thead><tr><th><code>op0 &amp; 0xC0</code></th><th>Arm</th><th>Bytes</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x00</code></td><td>Configure: write the staged camera fields named by a mask, optionally glide</td><td><code>5 + 2 &times; set bits</code></td></tr>
+      <tr><td><code>0x40</code></td><td>Load a saved shot</td><td>20</td></tr>
+      <tr><td><code>0x80</code></td><td>Save the current shot</td><td>2</td></tr>
+      <tr><td><code>0xC0</code></td><td>Apply: compose the follow shot for the player and commit it (a release, not a jump - its <code>s16</code> is a glide length)</td><td>4</td></tr>
+    </tbody>
+  </table>
+  <p>A record that issues no <code>0x45</code> leaves the field camera's follow shot alone; a scripted camera only owns the frame once some beat has staged a shot.</p>
+
+  <h3 id="op-49">0x49 STATE_RESUME</h3>
+  <p>Idle: spawn the subsystem actor and park the operand pointer. Armed: return the same PC every frame. Done (the screen wrote <code>1</code>): clear and advance. The sub-op picks the screen:</p>
+  <table class="data-table">
+    <thead><tr><th>Sub-op</th><th>Screen</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>No screen of its own; carries the town-shop stock record <code>[count][ids..][name\0]</code></td></tr>
+      <tr><td><code>1</code>, <code>7</code>, <code>D</code></td><td>No screen (the save point's <code>49 01</code> opens the menu session)</td></tr>
+      <tr><td><code>2</code></td><td>Code lock (five-symbol code in the operands)</td></tr>
+      <tr><td><code>3 n</code></td><td>Name entry for party slot <code>n</code> (<a href="#name-entry">below</a>)</td></tr>
+      <tr><td><code>5</code></td><td>Tile-board walk</td></tr>
+      <tr><td><code>6</code></td><td>Casino coin counter</td></tr>
+      <tr><td><code>8</code> / <code>9</code></td><td>Start / confirm menu; a prompt</td></tr>
+      <tr><td><code>B</code></td><td>Incense wear-off notice (reached from the walk tick, not a script)</td></tr>
+      <tr><td><code>C</code></td><td>Return-to-title soft reset (the ending)</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="op-4e">0x4E INVENTORY_CMP</h3>
+  <table class="data-table">
+    <thead><tr><th>Sub-op</th><th>Compares</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code> / <code>1</code></td><td>A character's HP / MP against a fraction of its max</td></tr>
+      <tr><td><code>2</code></td><td>Level</td></tr>
+      <tr><td><code>3</code></td><td>Gold against a <code>u16</code> - the inn's price gate</td></tr>
+      <tr><td><code>4</code></td><td>A random byte (chance branch)</td></tr>
+      <tr><td><code>5..8</code></td><td>Script counter slot <code>sub &minus; 5</code> (written by <code>4C CA / CB / CC</code>)</td></tr>
+      <tr><td><code>9</code></td><td>Casino coins against a <code>u16</code></td></tr>
+      <tr><td><code>10</code> / <code>11</code></td><td>Gold / coins against a <code>u32</code> (9 bytes)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="menu-ctrl">
+  <h2>0x4C MENU_CTRL: sixteen dispatchers in one opcode</h2>
+  <p>Despite the name, <code>0x4C</code> is not a menu op. The high nibble of <code>op0</code> indexes a 16-entry jump table, most arms index a second table on the low nibble, and every sub-op has its own width - which is why a linear disassembler has to know all of them.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Nibble</th><th>Theme</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>Party-leader change</td></tr>
+      <tr><td><code>1</code></td><td>Five sub-ops only (<code>10</code>..<code>14</code>): a global write, the screen tint, the field clear colour (<code>13</code> - the colour where no polygon lands, such as the garden's sea), and the actor clone (<code>14</code>, an after-image trail)</td></tr>
+      <tr><td><code>2</code></td><td>Camera octant / pad-rotation setter (<code>gp+0x2D8 = sub &amp; 7</code>)</td></tr>
+      <tr><td><code>3</code></td><td>The ambient-particle master gate (<code>30</code> / <code>31</code>, not an input lock), the camera-zone query arms (<code>38</code>..<code>3E</code>), player resync, party-state clear</td></tr>
+      <tr><td><code>4</code></td><td>Write-or-ramp: render scale (<code>40</code>), a scalar, mirrored Y</td></tr>
+      <tr><td><code>5</code></td><td>Model set, NPC move-to-tile (<code>51</code>, which also sets facing), <strong>TAKE_ITEM</strong> (<code>52</code>), two dialog polls</td></tr>
+      <tr><td><code>6</code></td><td>VRAM <code>MoveImage</code> (face-frame stamps) and a CLUT-cell halt-acquire</td></tr>
+      <tr><td><code>7</code></td><td>Rectangular wall paint into the walkability grid: <code>col &isin; [col0, col1+1)</code>, <code>row &isin; [row0+1, row1+2)</code> - story-conditional collision (<a href="field-locomotion.html#grid-source">locomotion</a>)</td></tr>
+      <tr><td><code>8</code></td><td>Party heal, actor tint (<code>81</code>), screen shake (<code>84</code>, the only source of camera shake), the reflection controller (<code>86</code> install, <code>87</code> retire), actor-search jumps</td></tr>
+      <tr><td><code>9</code></td><td>Floor-height ladder: <code>9E</code> installs all sixteen elevation rungs, <code>90</code>..<code>92</code> set one oscillating, <code>9F</code> retires the oscillators. Not a fade</td></tr>
+      <tr><td><code>A</code></td><td>Jump on a context / local / global flag bit</td></tr>
+      <tr><td><code>B</code></td><td>Error printer - no valid sub-op</td></tr>
+      <tr><td><code>C</code></td><td>Move cancel, fog-region reset, script teleport, camera-zone query at a tile, camera focus override and glide wait, script counters (<code>CA</code> set, <code>CB</code> add, <code>CC</code> subtract)</td></tr>
+      <tr><td><code>D</code></td><td>Field SE, camera-mover gate, synchronous spawn, timed flags (<code>D3</code>), VRAM STP bits (<code>D4</code> / <code>D5</code>), retire camera movers, morph-actor spawn (<code>D8</code>), party search</td></tr>
+      <tr><td><code>E</code></td><td>Text balloon, <strong>FMV trigger</strong> (<code>4C E2 lo hi</code>), AABB branch, camera animate / zoom, casino coin delta</td></tr>
+      <tr><td><code>F</code></td><td>Error printer; only <code>4C FF</code> passes through</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <details class="disclosure">
+    <summary><code>4C D3</code> timed flags and <code>4C D4 / D5</code> STP bits</summary>
+    <div class="disclosure-body">
+      <p><strong><code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code></strong> (14 bytes) schedules a countdown in the save block. The per-tick consumer <code>FUN_801D2EBC</code> sets the expiry flag at zero and the below flag while under the threshold. Retail use: <code>chitei2</code>'s collapsing-dungeon escape (flag <code>0x4C7</code>, 2400, threshold 910). A mid-timer save keeps it.</p>
+      <p><strong><code>4C D4 / D5 x:u16 y:u16</code></strong> (6 bytes) read a 16&times;1 VRAM strip, set (<code>D4</code>, non-zero pixels) or clear (<code>D5</code>) the transparency bit, and write it back. It decides whether a CLUT entry a colour cycler later takes to black reads as opaque black or as transparent - <code>teien</code> marks its hedge CLUTs before installing the dusk cycler.</p>
+    </div>
+  </details>
+  <p>Every sub-op body and width: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><code>script-vm-menuctrl.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="bgm-table">
+  <h2>BGM ids</h2>
+  <p>A script's "play track 2016" is an offset into one bank, not a table lookup.</p>
+  <table class="data-table">
+    <thead><tr><th>Id</th><th>Resolves to</th></tr></thead>
+    <tbody>
+      <tr><td><code>&gt;= 2000</code></td><td>The global <code>music_01</code> bank in sound-test order: <code>2000 + i</code> = sound-test track <code>i</code> (<a href="../reference/music-tracks.html">names</a>)</td></tr>
+      <tr><td><code>&lt; 2000</code></td><td><em>Not</em> a scene-block entry: the resolver uses the block index only as its change test and loads global slot 2 (the track 2002 plays). Retail stages no scene bank (<a href="audio.html#bgm-dispatch">audio</a>)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="name-entry">
+  <h2>The name-entry screen (<code>49 03 n</code>)</h2>
+  <p>The field overlay's state machine runs the screen (renderer <code>FUN_801E6B34</code>, cursor cell <code>_DAT_8007BB88</code>, state <code>_DAT_8007BB94</code>: 1 editing, 4 confirm) and writes the typed name live into the character record at <code>+0x2A7</code>. Geometry in 320&times;240 pixels:</p>
+  <table class="data-table">
+    <thead><tr><th>Element</th><th>Geometry</th></tr></thead>
+    <tbody>
+      <tr><td>Grid window / name window</td><td><code>(24, 91, 272, 120)</code> / <code>(196, 71, 88, 28)</code>, pause-menu skin</td></tr>
+      <tr><td>Charset</td><td>7 rows &times; 17; glyphs from <code>base + (4, 4)</code>, 15 px column pitch, 14 px row pitch</td></tr>
+      <tr><td>Working name</td><td><code>(208, 79)</code>; teal caret 6 px after, 75%-duty blink</td></tr>
+      <tr><td>Control bar</td><td><code>y = 191</code>: BS, the default name (restores the template; there is no space key), Select</td></tr>
+      <tr><td>Prompts</td><td>"Select your name." at <code>(176, 32)</code>; the confirm prompt at <code>(172, 24)</code>, cursor opens on No</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="reading-the-dump">
+  <h2>Reading the dump</h2>
+  <ul class="bullets">
+    <li><strong>Label-calls.</strong> Ghidra renders the shared epilogue as a call. In the assembly each arm exits with <code>addiu s8, s8, N</code> in the delay slot of <code>j 0x801df09c</code>, and that <code>N</code> is the op's PC advance. Labels promoted to fake functions: <code>0x801df098</code> (+2), <code>0x801df09c</code> (+0), <code>0x801df8dc</code> (+6), <code>0x801e00b8</code> (+3), <code>0x801e212c</code> (+7), <code>0x801e3614</code> (BBOX outside), <code>0x801e3620</code> (+4). Grep the address in the dump before treating it as a callee.</li>
+    <li><strong>Delay slots hide advances.</strong> The motion ops advance past themselves for every target (<code>li s7, 4</code> in a delay slot); only a player target also parks the caller. The decompiled C hides this.</li>
+    <li><strong>16-bit jumps.</strong> <code>[21] [26 FE FF]</code> is the park-here idiom. A port that adds the delta in a wider integer turns every backward jump into a forward overrun.</li>
+    <li><strong>Pure helpers.</strong> <code>packet_length</code> (<code>FUN_8003CA38</code>), <code>party_flag_test</code> (<code>FUN_8003CE64</code>), <code>small_table_search</code> (<code>FUN_80042EE0</code>), the little-endian loaders (<code>FUN_8003CE9C / CEB8 / CED8</code>) and the inlined <code>tile_center</code> are ported as functions in <code>engine-vm::field_helpers</code>.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="flag-census">
+  <h2>Flag census: when a row lies</h2>
+  <p>The census walks bytecode linearly, and four things mislead it. A marked row means "check the record disassembly", never "discard".</p>
+  <ul class="bullets">
+    <li><strong>Text aliases.</strong> Dialogue bytes land on the flag ops: <code>S..W</code> read as Set, <code>a..g</code> as Clear, <code>q..w</code> as Test. Rows carry <code>clean</code> and <code>text_alias</code> marks; a non-printable operand cannot be minted by prose.</li>
+    <li><strong>Width blindness.</strong> A wrong sub-op width desyncs the walk and hides a real site behind a phantom; every <code>0x4C</code> nibble decodes with the executing VM's widths.</li>
+    <li><strong>Variant carriers.</strong> The census walks the bundle MAN and the streaming variant MANs (<code>--variant &lt;entry&gt;</code>); <code>--p2-gates</code> prints the partition-2 spawn conditions.</li>
+    <li><strong>Developer flag menus.</strong> Several shipped records carry a debug picker whose options write the scene's flags (<code>Set all flags</code> / <code>Clear</code> / <code>Exit</code> in Jeremi's inn). Their rows are clean and real, and mean "an option nobody picks in retail play"; they carry <code>debug_menu</code>.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="fmv-sites">
+  <h2>FMV triggers and the disassembler</h2>
+  <p>Only two code paths start a movie: the field op <code>4C E2</code> (its <code>u16</code> operand is the FMV id) and the title attract loop (movie 0). Eight scenes carry a <code>4C E2</code>: town01, garmel, deroa, chitei2, dohaty, town0d, uru, jouine; the operands decode statically from each MAN (<a href="cutscene.html">cutscenes</a>).</p>
+  <pre class="cli"><code>asset field-disasm file &lt;PATH&gt;
+asset field-disasm scan-prot --prot &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
+  <p>The walker mirrors the executing VM's widths without side effects, so any byte buffer is safe input. A <code>4C E2</code> hit inside a move-VM prescript record is a false positive.</p>
+</section>
+
+<section class="doc-section" id="history">
+  <h2>Readings this page replaced</h2>
+  <ul class="bullets">
+    <li>The prescript table was read as field-VM bytecode; it is move-VM stager records.</li>
+    <li>Op <code>0x39</code> was labelled <code>PLAY_SFX</code>; it is the item give. Op <code>0x36</code> was labelled <code>SCENE_FADE</code>; every arm is sound. Op <code>0x3E</code> with <code>op0 &lt; 100</code> was read as an NPC-interaction opener; it is the scripted-battle install.</li>
+    <li><code>4C 30</code> was read as an input lock; it raises the ambient-particle gate. Nibble 9 was read as a fade family; it is the floor-height ladder.</li>
+    <li>The story-flag base was mislabelled <code>DAT_80086D70</code> by double-counting the save-block displacement.</li>
+  </ul>
+  <p>More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM (tour)</a>
+    <a href="motion-vm.html">Motion VMs</a>
+    <a href="move-vm.html">Move-table VM</a>
+    <a href="field-locomotion.html">Field locomotion</a>
+    <a href="audio.html">Audio</a>
+    <a href="cutscene.html">Cutscenes</a>
+    <a href="../formats/mes.html">MES dialog</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
+  </div>
+</section>
