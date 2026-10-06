@@ -4372,6 +4372,12 @@ party-wide cast, raises all three panels instead), and the Item / Spirit
 pre-arm `0x3C` (`0x801E3DA0`) raises it for the acting member. A party
 member's attack on a monster therefore shows **no** readout at all; a monster's
 cast on a member shows that member's bar.
+A counterattack runs no seed of its own: the strike loop's swap hands the
+monster's action to the counterer, so the elements the monster's seed opened
+stay up - the bar for its party target, the counterer - and the combo cluster
+is never opened (`battle_vahn_tri_somersault_super`'s glide slots hold the bar
+at `(16, 192)` and the move name, and no cluster record). Port:
+`BattleState::counter_hud`, read by the bar and combo-style predicates.
 
 The handle lists of the catalogued states agree with the table, element for
 element: `v0_1_battle_command_menu` (`0x1E`) holds `Begin`, `Run` and one panel
