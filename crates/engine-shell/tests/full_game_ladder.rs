@@ -1575,7 +1575,16 @@ fn wants_aoe_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         let big = |x: u32| peak > 0 && x * 3 >= peak;
         h.last().is_some_and(|&l| big(l)) && !h.windows(2).any(|p| big(p[0]) && big(p[1]))
     });
-    aoe > 0 && !quiet_next && aoe * 5 >= max * 2 && hp > aoe * 5 / 8 && hp <= aoe + aoe / 8
+    // And never at nine tenths of full or above: a hit that drops even a
+    // healthy member is the heal arm's to answer after it lands, and guarding
+    // against it at full strength guards every round (`chitei2` P2[13]: all
+    // three in the stance at ~1600/1700 HP until the battle cap).
+    aoe > 0
+        && !quiet_next
+        && aoe * 5 >= max * 2
+        && hp * 10 < max * 9
+        && hp > aoe * 5 / 8
+        && hp <= aoe + aoe / 8
 }
 
 /// [`wants_aoe_guard`], taken ahead of a heal: the member is the one in
@@ -1873,6 +1882,75 @@ fn wanted_item(
         .map(|&(_, id)| (id, worst as u8))
 }
 
+/// The MP the member's strongest damaging spell costs, if it knows one.
+fn best_spell_cost(w: &legaia_engine_core::world::World, actor: u8) -> Option<u32> {
+    use legaia_engine_core::spells::SpellEffect;
+    let m = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))?;
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| {
+            let d = w.tables.spell_catalog.get(id)?;
+            match d.effect {
+                SpellEffect::Damage { base_power, .. } => Some((base_power, u32::from(d.mp_cost))),
+                _ => None,
+            }
+        })
+        .max()
+        .map(|(_, cost)| cost)
+}
+
+/// The MP restorative worth drinking now, and who for: in a fight that
+/// forbids running, a member who can no longer afford its strongest damage
+/// spell drinks the largest MP item the bag offers. Against a boss whose
+/// HP dwarfs the party's swings (Songi, 48000), a drink and a Gilium every
+/// other turn outdamage two Arts strings.
+fn wanted_mp_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+    actor: u8,
+) -> Option<(u8, u8)> {
+    use legaia_engine_core::items::ItemEffect;
+    if !w.battle.no_escape || solo_duel(w) {
+        return None;
+    }
+    // Only against a foe of twenty times the party's largest HP or more
+    // (Songi, 48000 to ~1950): in a shorter fight the drinks cost turns the
+    // Arts and heals win it with (Van Saryu at 11x lost two seeds in ten).
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let ours = (0..n)
+        .map(|i| u32::from(w.actors[i].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    if !(n..w.actors.len()).any(|i| {
+        let a = &w.actors[i].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 20
+    }) {
+        return None;
+    }
+    let cost = best_spell_cost(w, actor)?;
+    let mp = u32::from(w.actors.get(usize::from(actor))?.battle.mp);
+    if mp >= cost {
+        return None;
+    }
+    ids.filter_map(|id| {
+        let e = w.tables.item_catalog.get(id)?;
+        match e.effect {
+            ItemEffect::HealMp { amount } if e.usable_in_battle => Some((amount, id)),
+            _ => None,
+        }
+    })
+    // The smallest drink that pays for the spell, else the largest.
+    .filter(|&(a, _)| mp + u32::from(a) >= cost)
+    .min()
+    .map(|(_, id)| (id, actor))
+}
+
 /// The Magic row worth casting: the strongest affordable damage spell.
 fn wanted_spell(
     w: &legaia_engine_core::world::World,
@@ -2006,12 +2084,15 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .and_then(|&k| menu.items.get(k))
                 .copied()
         };
-        let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed));
         let actor = w
             .battle
             .command
             .as_ref()
             .map_or(w.battle_ctx.active_actor, |c| c.actor);
+        let want =
+            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed)).or_else(|| {
+                wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+            });
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
                 Some((id, _)) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
@@ -2083,6 +2164,17 @@ fn fight_pad(session: &BootSession) -> u16 {
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
         let magic = || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor));
+        let drink = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_mp_item(w, bag.into_iter(), cmd.actor).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
         return match &cmd.phase {
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => {
                 PadButton::Up.mask()
@@ -2098,6 +2190,8 @@ fn fight_pad(session: &BootSession) -> u16 {
                 PadButton::Down.mask()
             }
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
+            // Out of MP for its best spell in a boss fight: a drink.
+            CommandPhase::Menu { .. } if lesson.is_none() && drink() => PadButton::Up.mask(),
             // One party-wide hit from death with nothing to heal: the stance.
             CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
