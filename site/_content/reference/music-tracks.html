@@ -4,6 +4,8 @@
   <p class="lede">What is this track actually called? The tune that plays in Rim Elm has a working title in the game's own debug sound test, a place it plays, a name on the published soundtrack album, and a proposed English title - and the four do not line up one-to-one. This page is the cross-reference: every BGM cue across all four naming spaces, plus the join that ties the sound-test order to the actual files on the disc.</p>
 </header>
 
+<style>.mt-filter { margin: 0 0 0.75rem; } .mt-filter input { background: var(--bg-card); color: var(--text); border: 1px solid var(--border-hi); border-radius: 4px; padding: 0.35rem 0.55rem; font: inherit; max-width: 100%; }</style>
+
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
@@ -51,33 +53,24 @@
   </table>
   <h3>The bank is piecewise, not a flat base</h3>
   <p>The <em>physical</em> <code>music_01</code> bank is not a single linear PROT run. Sound-test index maps onto two contiguous extraction ranges with a two-entry gap between them:</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="music-bank-title" style="width:100%;height:auto;font-family:'JetBrains Mono',monospace">
-      <title id="music-bank-title">Sound-test index to extraction PROT entry: two runs with a two-entry gap</title>
-      <rect x="20" y="30" width="580" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
-      <text x="310" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 0..=67</text>
-      <text x="310" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">extraction 988 + i  (988..=1055)</text>
-      <rect x="612" y="30" width="92" height="40" rx="4" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3"/>
-      <text x="658" y="48" text-anchor="middle" font-size="11" fill="var(--text-muted)">gap</text>
-      <text x="658" y="63" text-anchor="middle" font-size="10" fill="var(--text-muted)">1056, 1057</text>
-      <rect x="716" y="30" width="150" height="40" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
-      <text x="791" y="48" text-anchor="middle" font-size="12" fill="currentColor">tracks 68..=80</text>
-      <text x="791" y="63" text-anchor="middle" font-size="11" fill="var(--text-muted)">990 + i  (1058..=1070)</text>
-      <text x="20" y="100" font-size="11" fill="var(--text-muted)">988 = the first two entries whose filename label reads "monster_test" (CDNAME +2 skew)</text>
-      <text x="20" y="120" font-size="11" fill="var(--text-muted)">1056 = a VAB-only sound bank, no score; 1057 = an entry not in the sound-test list</text>
-      <text x="20" y="140" font-size="11" fill="var(--text-muted)">1066..=1069 = the four placeholder-filled slots = dev-leftover rows #76..=79</text>
-    </svg>
-    <figcaption>Global BGM id <code>2000 + i</code> is one flat id space; the files behind it are two runs.</figcaption>
+  <figure class="diagram">
+    <div class="byte-map" role="img" aria-label="Sound-test tracks 0 to 67 at extraction 988 plus i, a gap at entries 1056 and 1057, then tracks 68 to 80 at extraction 990 plus i">
+      <div class="bm-cell bm-accent" style="--w:68"><span class="bm-off">988..=1055</span><span class="bm-name">tracks 0..=67</span><span class="bm-size">entry = 988 + i</span></div>
+      <div class="bm-cell bm-pad" style="--w:7"><span class="bm-off">1056, 1057</span><span class="bm-name">gap</span><span class="bm-size">not tracks</span></div>
+      <div class="bm-cell bm-accent" style="--w:20"><span class="bm-off">1058..=1070</span><span class="bm-name">tracks 68..=80</span><span class="bm-size">entry = 990 + i</span></div>
+    </div>
+    <figcaption>Global BGM id <code>2000 + i</code> is one flat id space; the files behind it are two runs. Entry 1056 is a VAB-only sound bank with no score and 1057 is an entry outside the sound-test list; the four placeholder-filled slots <code>1066..=1069</code> are the dev-leftover rows #76..=79.</figcaption>
   </figure>
   <p>The low range starts at extraction <strong>988</strong>: the first two tracks (<code>M01</code>/<code>M02</code>) live in the entries whose extraction filename reads <code>monster_test</code>, because CDNAME <code>#define</code> numbers are raw TOC indices and the named content sits two entries earlier (<a href="../formats/cdname.html">the +2 filename skew</a>).</p>
-  <p>Scenes carry <strong>no local SEQ data</strong>: apart from a dev bank and one scene-local copy of <code>M01</code>, every music sequence on the disc lives in this bank plus the boot/battle banks, so the scene-local id space (<code>&lt; 2000</code>) is the rare exception. The engine's resolver <code>legaia_engine_core::music_labels</code> owns the piecewise map; the play-window HUD names the playing track and the asset-viewer <code>seq</code> command names a bank slot's file through it.</p>
+  <p>Scenes carry <strong>no local SEQ data</strong>: apart from a dev bank and one scene-local copy of <code>M01</code>, every music sequence on the disc lives in this bank plus the boot/battle banks, so the scene-local id space (<code>&lt; 2000</code>) is the rare exception.</p>
+  <p class="hint">In the port: <code>legaia_engine_core::music_labels</code> holds the piecewise map.</p>
   <details class="disclosure" id="how-we-know">
     <summary>How we know: script census, on-disc residency, runtime corroboration</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Script census.</strong> The global pool resolves through <code>FUN_800243F0</code> (<a href="../subsystems/script-vm.html">script VM</a>). Walking every scene's field-VM op-<code>0x35</code> starts and joining each id against this table lands the right label across the corpus (<code>engine-core/tests/scene_bgm_labels_disc.rs</code>).</li>
+        <li><strong>Script census.</strong> The global pool resolves through <code>FUN_800243F0</code> (<a href="../subsystems/script-vm.html">script VM</a>). Walking every scene's field-VM op-<code>0x35</code> starts and joining each id against this table lands the right label across the corpus.</li>
         <li><strong>Pochi alignment.</strong> The four placeholder-filled slots (extraction <code>1066..=1069</code>) land exactly on the four dev-leftover rows (#76..=79 - the M13 flute, <code>M117</code>, <code>MPIANO</code> and the row whose romaji is <code>LEVELUP</code>), still holding their sound-test slots on the retail NA disc.</li>
-        <li><strong>Battle-bank copies.</strong> The ten boot/battle-bank SEQ copies (extraction <code>877..886</code>) resolve, under this map, to exactly the ten battle/boss themes (#26, #27, #28, #30, #31, #32, #51, #61, #67, #73) - a coherent battle bank only when the low range is based at 988. The title theme #65 sits at extraction <code>1053</code> and is <strong>not</strong> in the battle bank. Pinned by on-disc SEQ residency (<code>engine-core/tests/music_bank_residency_disc.rs</code>).</li>
+        <li><strong>Battle-bank copies.</strong> The ten boot/battle-bank SEQ copies (extraction <code>877..886</code>) resolve, under this map, to exactly the ten battle/boss themes (#26, #27, #28, #30, #31, #32, #51, #61, #67, #73) - a coherent battle bank only when the low range is based at 988. The title theme #65 sits at extraction <code>1053</code> and is <strong>not</strong> in the battle bank. Pinned by which SEQ data is resident on the disc at each entry.</li>
         <li><strong>Runtime corroboration.</strong> Playthrough captures show the live BGM global agreeing with the join wherever the scene name itself names the track: <code>2022</code> in <code>doman</code> (#22 "Doctor Doman's laboratory"), <code>2054</code> in <code>nilboa</code> (#54 "Nivora"), <code>2021</code> in <code>dolk2</code> (#21 "Dolk Castle revived") against <code>2010</code> in mist-era <code>dolk</code> (#10 "mist outbreak"), <code>2063</code> in <code>opdeene</code> (#63 opening act 1), <code>2038</code> in <code>taiku</code> (#38 Soren flight). These are played values, independent of the script census.</li>
       </ul>
     </div>
@@ -104,7 +97,9 @@
 <section class="doc-section" id="table">
   <h2>Track table</h2>
   <p><code>#</code> is the debug sound-test order. <code>-</code> marks a column the source leaves blank. &ldquo;OST gloss&rdquo; is the English reading of the OST title; &ldquo;Relocalization&rdquo; is Stann0x's proposed English title.</p>
-  <table>
+  <div class="mt-filter"><label>Filter <input type="search" id="mt-filter" placeholder="id, scene, title" autocomplete="off"></label> <span id="mt-count" class="hint"></span></div>
+  <div class="table-wrap">
+  <table id="mt-table">
     <thead><tr><th>#</th><th>ID</th><th>Debug title (JP)</th><th>Debug romaji</th><th>Debug gloss</th><th>In-game context</th><th>OST title (JP)</th><th>OST romaji</th><th>OST gloss</th><th>Relocalization</th></tr></thead>
     <tbody>
       <tr><td>0</td><td>M01</td><td>霧のあるフィールド</td><td>KIRI NO ARU FĪRUDO</td><td>Field with mist</td><td>Overworld with mist</td><td>霧の荒野</td><td>KIRI NO KŌYA</td><td>The misty wasteland</td><td>The Misty Barren Fields</td></tr>
@@ -190,6 +185,7 @@
       <tr><td>80</td><td>M26A</td><td>A</td><td>A</td><td>A</td><td>A? Another test file maybe? <em>(uncertain)</em></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -203,3 +199,19 @@
     <a href="../guides/extracting-assets.html#seq-bgm">Extracting BGM</a>
   </div>
 </section>
+
+<script>
+(function () {
+  var input = document.getElementById('mt-filter');
+  var count = document.getElementById('mt-count');
+  if (!input) return;
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#mt-table tbody tr'));
+  rows.forEach(function (r) { r._t = r.textContent.toLowerCase(); });
+  function apply() {
+    var q = input.value.trim().toLowerCase(), n = 0;
+    rows.forEach(function (r) { var ok = !q || r._t.indexOf(q) >= 0; r.hidden = !ok; if (ok) n++; });
+    count.textContent = q ? n + ' of ' + rows.length + ' tracks' : '';
+  }
+  input.addEventListener('input', apply);
+})();
+</script>

@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>What it is</dt><dd>One row per <code>CDNAME.TXT</code> block, in disc order, from <code>data/gamedata/scenes.toml</code>.</dd>
-    <dt>Ground truth</dt><dd>The scene's own <strong>banner</strong> - the name the game draws on entering it and writes into a save slot (<a href="../formats/place-names.html">place names</a>, site 3). A disc-gated test holds every banner in the table to the disc byte for byte.</dd>
+    <dt>Ground truth</dt><dd>The scene's own <strong>banner</strong> - the name the game draws on entering it and writes into a save slot (<a href="../formats/place-names.html">place names</a>, site 3). Every banner in the table is checked against the disc byte for byte.</dd>
     <dt>Where a banner is shared</dt><dd>Thirteen Sol scenes all say "Sol Tower"; the table adds a qualifier - <em>Sol Tower (stairs A)</em> - so no two playable scenes share a name.</dd>
     <dt>Who reads it</dt><dd>The play page's scene picker, the asset viewer's scene filter, the world and NPC pages, and <code>gamedata-tool list scenes</code>.</dd>
     <dt>Contributor</dt><dd>Scene identifications by <a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Stann0x</a>; his reading of each scene is kept in its own column.</dd>
@@ -21,11 +21,61 @@
     <label>Filter <input type="search" id="sn-filter" placeholder="id or name" autocomplete="off"></label>
     <label style="margin-left:0.75rem"><input type="checkbox" id="sn-all"> include battle / audio / system blocks</label>
   </p>
+  <div class="table-wrap">
   <table id="sn-table">
     <thead><tr><th>Scene id</th><th>Name</th><th>Banner on the disc</th><th>Stann0x's reading</th><th>Note</th></tr></thead>
     <tbody><tr><td colspan="5">Loading&hellip;</td></tr></tbody>
   </table>
+  </div>
   <p>A blank banner means the scene carries none the game can draw: an empty name, an untranslated Shift-JIS one (the <code>ed*</code> endings), or no scene script at all.</p>
+</section>
+
+<section class="doc-section" id="name-source">
+  <h2>Where a name comes from</h2>
+  <p>The banner is MAN section 2 - the name the loader puts on screen as the player walks in and the one the save screen writes into a slot. <strong>Name</strong> keeps its spelling; where several scenes share one banner (the Sol Tower floors, the Bio Castle interiors, Rim Elm's story-state variants) the name adds a qualifier. Where a scene has no readable banner, the name rests on its contents - dialogue, shops, doors - and the note says what pinned it; the other two <a href="../formats/place-names.html">place-name carriers</a>, the quick-travel cells and the world-map labels, supply the spelling (<em>Usha Research Center</em>, <em>Hunter's Spring</em>).</p>
+</section>
+
+<section class="doc-section" id="misleading-labels">
+  <h2>Labels that mislead</h2>
+  <p>A label is a developer abbreviation, often of the Japanese name, and several read as a different place:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scene</th><th>Is</th><th>Pinned by</th></tr></thead>
+    <tbody>
+      <tr><td><code>vell</code></td><td>West Voz Forest</td><td>banner; the Bridge Grass beat</td></tr>
+      <tr><td><code>station</code></td><td>Octam Station</td><td>no banner; the fare board and the Sebucus guidebook</td></tr>
+      <tr><td><code>station3</code></td><td>Karisto Station</td><td>banner</td></tr>
+      <tr><td><code>ropeway</code>, <code>ropeway2</code></td><td>Octam (surface, after the Mist)</td><td>banner on <code>ropeway</code>; the returned townsfolk and inn in both</td></tr>
+      <tr><td><code>rayman</code>, <code>rayman2</code></td><td>Octam's underground city</td><td>banner "Octam (Underground)" on <code>rayman2</code>; Hari in both</td></tr>
+      <tr><td><code>taiku</code>, <code>taiku2</code></td><td>Zora's Floating Castle</td><td>banner on <code>taiku2</code>; the throne-room lever puzzle in both</td></tr>
+      <tr><td><code>chitei2</code></td><td>Jette's Fortress</td><td>banner; the Rapid Transport System switches</td></tr>
+      <tr><td><code>deroa</code></td><td>Jette's Fortress entrance</td><td>banner; dialogue calls it the Absolute Fortress</td></tr>
+      <tr><td><code>dolk</code>, <code>dolk2</code></td><td>Drake Castle (with / after the Mist)</td><td>banner on <code>dolk</code>; <code>map01</code> picks one on flag <code>0x142</code></td></tr>
+      <tr><td><code>suimon</code> / <code>jiji</code> / <code>garmel</code></td><td>Water Gate / Ancient Wind Cave / Zeto's Dungeon</td><td>banners</td></tr>
+      <tr><td><code>bubu1</code> / <code>bubu2</code></td><td>Buma (thawed) / Buma (frozen)</td><td>both bannered Buma; <code>bubu2</code>'s doors are frozen shut, <code>bubu1</code> carries the shops</td></tr>
+      <tr><td><code>conc</code>, <code>conc2</code>, <code>conc3</code> / <code>concnow</code></td><td>Conkram in the past / in the present</td><td>banners "Conkram (Past)" / "Conkram"</td></tr>
+      <tr><td><code>jou</code></td><td>Rim Elm under the Juggernaut</td><td>banner "Rim Elm"; its door leads into <code>jouina</code></td></tr>
+      <tr><td><code>jouina</code>..<code>jouine</code>, <code>juui1</code>, <code>juui2</code></td><td>Bio Castle (inside the Juggernaut)</td><td>banner on the five <code>jouin*</code>; the Ra-Seru farewell in <code>juui*</code></td></tr>
+      <tr><td><code>kor*</code>, <code>koin*</code>, <code>korout</code></td><td>Sol Tower</td><td>banner on all thirteen; <code>koin1</code> hosts the Muscle Dome and Baka Fighter doors, <code>koin3</code> the dance</td></tr>
+      <tr><td><code>edbubu</code> / <code>eddoman</code></td><td>Buma's ending / Usha's ending</td><td>the label</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="reading-vs-disc">
+  <h2>Where the contributor's reading and the disc differ</h2>
+  <p>Both are kept; the disc wins the name column. They differ only in spelling, or in which of two in-game names is used:</p>
+  <ul class="bullets">
+    <li><code>bylon</code> - <em>Byron</em> in the reading, <strong>Biron Monastery</strong> everywhere on the disc.</li>
+    <li><code>stone</code> - <em>Gate of Shadow(s)</em> in dialogue, <strong>Shadow Gate</strong> in the banner and world-map label.</li>
+    <li><code>keikoku</code> - <em>Valleys of Mist</em> in the reading; the banner is just <strong>Ravine</strong>.</li>
+    <li><code>tower</code> / <code>teien</code> - <em>Jeremi Tower / Garden</em> in the reading, <strong>Sky Gardens Tower / Sky Gardens</strong> on the disc.</li>
+    <li><code>tunnela</code> / <code>tunnelb</code> / <code>tunnelc</code> - <em>Underground Path</em> in the reading, <strong>Ancient Path</strong> / <strong>Fire Path</strong> in the banners.</li>
+    <li><code>dohaty</code> - <em>Sebucus Mist Generator</em> in the reading; the generator is inside <strong>Dohati's Castle</strong>, the banner.</li>
+    <li><code>deroa</code>, <code>chitei2</code> - both <strong>Jette's Fortress</strong> by banner, whatever dialogue or the reading calls them.</li>
+    <li><code>ropeway2</code> - the reading follows the label (<em>Rope Way</em>); the scene is surface <strong>Octam</strong> again. <code>conc2</code> - the banner is <strong>Conkram (Past)</strong>.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="crashing-slots">
