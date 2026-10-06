@@ -20,35 +20,28 @@
 <section class="doc-section" id="overview">
   <h2>What this solves</h2>
   <p>You have played to a moment - an item pickup, a level-up, the step before an encounter - and want to know which bytes of RAM that moment changed. Save a state before, a state after, diff them: every differing byte was written by code that ran in the gap. Cluster the changes into regions and you have a ranked list of structures to look up writers for in Ghidra.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 150" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pipeline: a before state and an after state bracket one gameplay event; mednafen-state diff clusters the changed bytes into regions, and Ghidra names the writer of the largest region">
-      <style>
-        .md-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .md-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .md-lab { font: 12px sans-serif; fill: currentColor; }
-        .md-sub { font: 10px monospace; fill: var(--text-muted); }
-        .md-arr { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#md-head); }
-      </style>
-      <defs><marker id="md-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="20" y="20" width="130" height="50" class="md-box"/>
-      <text x="85" y="41" text-anchor="middle" class="md-lab">State: before</text>
-      <text x="85" y="59" text-anchor="middle" class="md-sub">2 MiB RAM</text>
-      <rect x="20" y="85" width="130" height="50" class="md-box"/>
-      <text x="85" y="106" text-anchor="middle" class="md-lab">State: after</text>
-      <text x="85" y="124" text-anchor="middle" class="md-sub">2 MiB RAM</text>
-      <path d="M150,45 L200,45 L200,70" class="md-arr"/>
-      <path d="M150,110 L200,110 L200,86" class="md-arr"/>
-      <rect x="210" y="52" width="170" height="50" class="md-soft"/>
-      <text x="295" y="73" text-anchor="middle" class="md-lab">mednafen-state diff</text>
-      <text x="295" y="91" text-anchor="middle" class="md-sub">--start --end --top</text>
-      <path d="M380,77 L440,77" class="md-arr"/>
-      <rect x="442" y="52" width="170" height="50" class="md-soft"/>
-      <text x="527" y="73" text-anchor="middle" class="md-lab">Changed regions</text>
-      <text x="527" y="91" text-anchor="middle" class="md-sub">ranked by bytes</text>
-      <path d="M612,77 L672,77" class="md-arr"/>
-      <rect x="674" y="52" width="166" height="50" class="md-box"/>
-      <text x="757" y="73" text-anchor="middle" class="md-lab">Writer in Ghidra</text>
-      <text x="757" y="91" text-anchor="middle" class="md-sub">find_lui_writers.py</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 150" role="img" aria-label="Pipeline: a before state and an after state bracket one gameplay event; mednafen-state diff clusters the changed bytes into regions, and Ghidra names the writer of the largest region">
+      <defs><marker id="md-head" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="20" y="20" width="130" height="50" class="dg-node-accent"/>
+      <text x="85" y="41" text-anchor="middle" class="dg-label">State: before</text>
+      <text x="85" y="59" text-anchor="middle" class="dg-sub">2 MiB RAM</text>
+      <rect x="20" y="85" width="130" height="50" class="dg-node-accent"/>
+      <text x="85" y="106" text-anchor="middle" class="dg-label">State: after</text>
+      <text x="85" y="124" text-anchor="middle" class="dg-sub">2 MiB RAM</text>
+      <path d="M150,45 L200,45 L200,70" class="dg-edge" marker-end="url(#md-head)"/>
+      <path d="M150,110 L200,110 L200,86" class="dg-edge" marker-end="url(#md-head)"/>
+      <rect x="210" y="52" width="170" height="50" class="dg-node"/>
+      <text x="295" y="73" text-anchor="middle" class="dg-label">mednafen-state diff</text>
+      <text x="295" y="91" text-anchor="middle" class="dg-sub">--start --end --top</text>
+      <path d="M380,77 L440,77" class="dg-edge" marker-end="url(#md-head)"/>
+      <rect x="442" y="52" width="170" height="50" class="dg-node"/>
+      <text x="527" y="73" text-anchor="middle" class="dg-label">Changed regions</text>
+      <text x="527" y="91" text-anchor="middle" class="dg-sub">ranked by bytes</text>
+      <path d="M612,77 L672,77" class="dg-edge" marker-end="url(#md-head)"/>
+      <rect x="674" y="52" width="166" height="50" class="dg-node-accent"/>
+      <text x="757" y="73" text-anchor="middle" class="dg-label">Writer in Ghidra</text>
+      <text x="757" y="91" text-anchor="middle" class="dg-sub">find_lui_writers.py</text>
     </svg>
     <figcaption>One sister pair, one event: the largest changed region is the structure to look up writers for.</figcaption>
   </figure>

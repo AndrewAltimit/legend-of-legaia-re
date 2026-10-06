@@ -19,41 +19,16 @@
 
 <section class="doc-section" id="workflow">
   <h2>Workflow</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 120" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Translation pipeline: your disc, export, working pack, fill and stats, strip, shipped pack, import back onto a disc copy">
-      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5">
-        <rect x="8" y="30" width="112" height="52" rx="6"/>
-        <rect x="138" y="30" width="112" height="52" rx="6"/>
-        <rect x="268" y="30" width="112" height="52" rx="6"/>
-        <rect x="398" y="30" width="112" height="52" rx="6"/>
-        <rect x="528" y="30" width="112" height="52" rx="6"/>
-        <rect x="658" y="30" width="112" height="52" rx="6"/>
-        <rect x="788" y="30" width="104" height="52" rx="6"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="64" y="56">your disc</text>
-        <text x="194" y="49">export<tspan x="194" dy="15">to YAML</tspan></text>
-        <text x="324" y="49">working pack<tspan x="324" dy="15">(local only)</tspan></text>
-        <text x="454" y="49">fill + stats<tspan x="454" dy="15">(any editor)</tspan></text>
-        <text x="584" y="49">strip<tspan x="584" dy="15">source text</tspan></text>
-        <text x="714" y="49">shipped pack<tspan x="714" dy="15">(committable)</tspan></text>
-        <text x="840" y="49">import<tspan x="840" dy="15">to copy</tspan></text>
-      </g>
-      <g stroke="var(--text-muted)" stroke-width="1.5" fill="var(--text-muted)">
-        <line x1="120" y1="56" x2="134" y2="56"/><polygon points="134,52 140,56 134,60"/>
-        <line x1="250" y1="56" x2="264" y2="56"/><polygon points="264,52 270,56 264,60"/>
-        <line x1="380" y1="56" x2="394" y2="56"/><polygon points="394,52 400,56 394,60"/>
-        <line x1="510" y1="56" x2="524" y2="56"/><polygon points="524,52 530,56 524,60"/>
-        <line x1="640" y1="56" x2="654" y2="56"/><polygon points="654,52 660,56 654,60"/>
-        <line x1="770" y1="56" x2="784" y2="56"/><polygon points="784,52 790,56 784,60"/>
-      </g>
-      <g fill="var(--text-muted)" font-size="11" text-anchor="middle">
-        <text x="324" y="104">holds the game script - never share</text>
-        <text x="714" y="104">coordinates + your text only</text>
-      </g>
-    </svg>
-    <figcaption>Only the first and last steps need a disc; everything in between is text editing.</figcaption>
-  </figure>
+  <ol class="steps">
+    <li><b>Your disc</b><span>The USA image you own.</span></li>
+    <li><b>Export</b><span>Every catalogued line to YAML.</span></li>
+    <li><b>Working pack</b><span>Holds the game script beside your text - local only, never share.</span></li>
+    <li><b>Fill + stats</b><span>Any text editor; <code>stats</code> dry-runs against the disc.</span></li>
+    <li><b>Strip</b><span>Drops the <code>source:</code> text.</span></li>
+    <li><b>Shipped pack</b><span>Disc coordinates + your text only: committable.</span></li>
+    <li><b>Import</b><span>Onto a copy of the disc (plus a PPF).</span></li>
+  </ol>
+  <p class="hint">Only the first and last steps need a disc; everything in between is text editing.</p>
   <table>
     <thead><tr><th>Step</th><th>Command</th><th>Does</th></tr></thead>
     <tbody>

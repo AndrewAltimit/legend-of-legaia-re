@@ -19,12 +19,12 @@
 <section class="doc-section" id="why">
   <h2>What this solves</h2>
   <p>A save-state capture answers "what is in RAM right now" - and that is also its weakness. The 256 KB overlay window is a buffer, not a container: a capture holds the overlay that is up <em>plus</em> the tails of whatever loaded before it, and several overlays load at the very same address, so a bare <code>FUN_801xxxxx</code> can name a battle routine in one capture and a menu routine in another. The static pipeline gives you an overlay's <em>clean</em> bytes (exactly one PROT entry), a disc-pinned identity for every function, and a result anyone can reproduce from their own disc - including overlays nobody has captured live.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">PROT entry</span><span class="desc">the overlay's on-disc bytes, exactly <code>[entry start, next entry start)</code></span><span class="crate">legaia-prot</span>
-    <span class="num">2</span><span class="layer">Recover the base</span><span class="desc">vote <code>B = jal_target - prologue_offset</code> over the internal call graph; cross-check with an anchor function</span><span class="crate">asset overlay scan</span>
-    <span class="num">3</span><span class="layer">Pin identity</span><span class="desc">row in <code>static-overlays.toml</code>: entry, base, eligibility, sha256 of the as-loaded bytes</span><span class="crate">asset overlay generate / verify</span>
-    <span class="num">4</span><span class="layer">Import into Ghidra</span><span class="desc">each blob at its base, program named <code>overlay_&lt;label&gt;</code>; functions land at their real addresses</span><span class="crate">asset overlay ghidra</span>
-  </div>
+  <ol class="steps">
+    <li><b>PROT entry</b><span>the overlay's on-disc bytes, exactly <code>[entry start, next entry start)</code> <code>legaia-prot</code></span></li>
+    <li><b>Recover the base</b><span>vote <code>B = jal_target - prologue_offset</code> over the internal call graph; cross-check with an anchor function <code>asset overlay scan</code></span></li>
+    <li><b>Pin identity</b><span>row in <code>static-overlays.toml</code>: entry, base, eligibility, sha256 of the as-loaded bytes <code>asset overlay generate / verify</code></span></li>
+    <li><b>Import into Ghidra</b><span>each blob at its base, program named <code>overlay_&lt;label&gt;</code>; functions land at their real addresses <code>asset overlay ghidra</code></span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="quick-start">
@@ -55,13 +55,7 @@
     <li><strong>Subtract aliased regions first.</strong> When an image carries bytes of a known overlay - a previous slot occupant, or a neighbour in an over-read window - those bytes are self-consistent at their <em>own</em> base and fix the vote by construction. Restricted to its own entry, a sparse-call-graph overlay may yield no landslide; the map then records a <code>capture</code> or <code>cross_ref</code> base instead. Do not read a low resolution <em>ratio</em> as "no base fits": that metric rewards a base that catches few pairs.</li>
     <li><strong>Loader census.</strong> A full-image scan of both overlay loaders' call sites finds no site that can produce param 0 or 1, so extraction entries 0895/0896 are unreachable from any static loader call. 0895 is the boot <code>init.pak</code> bundle; 0896 is a Japanese options / character-status image that links at <code>0x801D4DF0</code> and that <em>no</em> loader on this disc reaches - a foreign build, not an unidentified one: zero of its 322 calls into the executable's address range land on a function entry here.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the PROT 0896 cautionary tale</summary>
-    <div class="disclosure-body">
-      <p>PROT 0896 was once labelled the options/menu overlay: recovered over the old over-reading PROT window it returned a convincing 60-vote base - but the votes came from the <em>field</em> overlay's bytes carried in 0896's over-read tail, whose self-consistency at <code>0x801CE818</code> fixes the result by construction. A live mode-24 capture also refuted the "mode-24 OTHER overlay" reading: 0896's bytes appear nowhere in RAM across the window. Moral: subtract the aliased region before trusting a recovered base.</p>
-      <p>Two later readings of the same image were wrong in the other direction, and both are corrected now. "Scanned over its own entry it yields no landslide, so 0896's true link base is unrecovered" was measured over the <em>old</em> over-reading window; over the corrected <code>0x9000</code>-byte entry the call graph recovers <code>0x801D4DF0</code> on ten of eleven distinct internal <code>jal</code> targets, all 218 internal <code>j</code> targets land in file there, and three in-image pointer regions resolve every word. And "a <code>lui</code>-pair resolution ratio shows no base fits" is not a base test at all: it is one-sided, and on this image it ranks the refuted slot-A base first. The image is imported at <code>0x801D4DF0</code> and its whole code region is dumped. Falsified readings: <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
+  <p class="hint">Subtract any aliased region before trusting a recovered base: votes cast by another overlay's bytes in an image's tail are self-consistent by construction. The PROT 0896 misreadings that taught this are on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
 </section>
 
 <section class="doc-section" id="slots">
@@ -104,19 +98,7 @@
       <p><code>pointer_resolution</code> is one-sided: it counts any in-window hit for pointers whose <code>lui</code> half matches the candidate base, so an overlay that densely references fixed structures of a co-resident overlay in the rival slot's VA band can score high at a base it never loads to. The GAME OVER overlay (0902) proved it: 44/48 of its pointers are external references to battle-band structures that fall inside the slot-B window, scoring 91% there - but its true base is slot A <code>0x801CE818</code>, pinned by the mode-18 loader chain and in-file string anchors. The hardened check, <code>static_overlay::string_anchor_votes</code>, counts pointers that decode to the <em>start</em> of one of the file's own string literals - a vote only the true base can win - and the reproducibility test fails any anchor-less row the rival slot out-votes. Caveat: a co-resident overlay's head string table can alias onto this file's own head strings at matching small offsets, so a pinned prologue anchor outranks the raw vote count.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: how the slot labels were corrected (do not re-walk)</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li><strong>"Slot machine = 0973 with a <code>0x4000</code> over-read prefix"</strong> - a phantom base; the canonical entry is 0975, which recovers <code>0x801CE818</code> and is what the warp streams.</li>
-        <li><strong>"Gimard = 0905"</strong> - an off-by-2 from reading the loader math as <code>param + 0x381</code>; the correct math is <code>param + 0x37F</code>, Gimard's stager is 0903.</li>
-        <li><strong>"0907 = Disco King dance song"</strong> - refuted; the head title is Nighto's attack display name, and the dance overlay has no slot-B loader callsite.</li>
-        <li><strong>"GAME OVER (0902) is a slot-B overlay"</strong> - the pointer-resolution false positive dissected above; it is a slot-A row.</li>
-        <li><strong>"0957 = a dance song"</strong> - its head is a summon string table.</li>
-      </ul>
-      <p>The project-wide list is <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
+  <p class="hint">Superseded slot labels (0973 as the slot machine, 0905 as Gimard, 0902 and 0957 as slot-B images, 0907 as a dance song) are recorded on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
 </section>
 
 <section class="doc-section" id="map">
@@ -141,14 +123,20 @@
 
 <section class="doc-section" id="cli">
   <h2>CLI reference</h2>
-<pre><code>asset overlay list                                     # inspect the map
-asset overlay scan extracted/PROT.DAT --from 895 --to 985   # recover bases + leading dev strings
-asset overlay find-sig extracted/PROT.DAT "1e80043c a046838c e0ffbd27" --anchor-va 0x801DC6B4
-                                                       # locate a function-head signature, infer host base
-asset overlay verify extracted/PROT.DAT                # assert every committed fingerprint reproduces
-asset overlay extract extracted/PROT.DAT --out extracted/overlays
-asset overlay ghidra --out extracted/overlays          # emit per-overlay import scripts + driver
-asset overlay generate extracted/PROT.DAT --index 897  # regenerate map rows; review before committing</code></pre>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>asset overlay list</code></td><td>Inspect the map</td></tr>
+      <tr><td><code>asset overlay scan extracted/PROT.DAT --from 895 --to 985</code></td><td>Recover bases + leading dev strings</td></tr>
+      <tr><td><code>asset overlay find-sig extracted/PROT.DAT "1e80043c a046838c e0ffbd27" --anchor-va 0x801DC6B4</code></td><td>Locate a function-head signature, infer host base</td></tr>
+      <tr><td><code>asset overlay verify extracted/PROT.DAT</code></td><td>Assert every committed fingerprint reproduces</td></tr>
+      <tr><td><code>asset overlay extract extracted/PROT.DAT --out extracted/overlays</code></td><td>Write each eligible overlay as loaded</td></tr>
+      <tr><td><code>asset overlay ghidra --out extracted/overlays</code></td><td>Emit per-overlay import scripts + driver</td></tr>
+      <tr><td><code>asset overlay generate extracted/PROT.DAT --index 897</code></td><td>Regenerate map rows; review before committing</td></tr>
+    </tbody>
+  </table>
+  </div>
   <p>The extracted <code>.bin</code>s are Sony overlay code (gitignored); only the map and docs are committed. Verification closes the loop: a statically-extracted overlay reproduces the same functions at the same addresses as the captured dumps - anchors asserted against the disc bytes in <code>crates/asset/tests/static_overlay_extract.rs</code> and against live RAM in the clean-copy test.</p>
 </section>
 
@@ -160,12 +148,7 @@ asset overlay generate extracted/PROT.DAT --index 897  # regenerate map rows; re
     <li><strong>The fingerprint covers exactly the entry span</strong> - it changes if and only if the entry's own bytes change; sector padding is harmless noise in the disassembly.</li>
     <li><strong>It does not address runtime values.</strong> For <code>$gp</code>-relative globals, watchpoint results, and anything the overlay constructs at run time, the <a href="overlay-capture.html">dynamic captures</a> and <a href="pcsx-redux-automation.html">PCSX-Redux probes</a> remain authoritative.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: what the over-reading entry window cost</summary>
-    <div class="disclosure-body">
-      <p>The superseded PROT entry-size expression read past each entry into its neighbour. <code>FUN_801F5748</code> was long read as the field overlay's inventory hub: <code>0x801F5748 - 0x801CE818 = 0x26F30</code> is <code>0x1F30</code> past where 0897 ends, so those bytes are PROT 0898's battle dispatcher <code>FUN_801D0748</code> - a real routine at a phantom address. The dump was correctly <em>based</em>; the over-read image answered for a VA it does not own. Any function dump or <code>(entry, offset)</code> coordinate taken from an over-read image carries that flaw - re-derive it from the entry rather than trusting the printed VA.</p>
-    </div>
-  </details>
+  <p class="hint">Any function dump or (entry, offset) coordinate taken from an image read past its entry's end can name bytes the entry does not own - a real routine at a phantom address. Re-derive it from the entry rather than trusting the printed VA (<a href="../formats/prot.html">PROT.DAT</a>).</p>
 </section>
 
 <section class="doc-section" id="see-also">
