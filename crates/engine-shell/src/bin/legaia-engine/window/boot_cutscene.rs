@@ -280,7 +280,7 @@ impl PlayWindowApp {
     /// the pause menu would otherwise wait for the menu to close to sound.
     pub(super) fn tick_menu_sfx(&mut self) {
         if let Some(bgm) = self.session.bgm.as_mut() {
-            for (id, voice) in bgm.tick_sfx_frame() {
+            for (id, voice) in bgm.tick_sfx_frame().fired {
                 log::debug!("menu SFX cue {id:#04x} fired on voice {voice}");
             }
         }

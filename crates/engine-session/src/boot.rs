@@ -1268,7 +1268,6 @@ impl<S: AudioSink> BootSession<S> {
     /// then plays whatever came due. With no audio the calls are dropped, as
     /// every other cue is.
     fn route_field_sfx(&mut self) {
-        let ops = self.host.world.take_sfx_ring_ops();
         // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
         // voice leg) - drained every tick so none outlives its frame.
         let field_xa = self.host.world.drain_field_xa_cues();
@@ -1277,6 +1276,13 @@ impl<S: AudioSink> BootSession<S> {
         // clip's span synchronously on first use, so the list is dropped.
         let _ = self.host.world.drain_field_xa_prestage();
         let Some(bgm) = self.bgm.as_mut() else {
+            // No audio: the producer queues are dropped, as every cue is.
+            let w = &mut self.host.world;
+            let _ = (
+                w.take_sfx_ring_ops(),
+                w.take_sfx_voice_stops(),
+                w.take_sfx_voice_keys(),
+            );
             return;
         };
         for xa in &field_xa {
@@ -1289,57 +1295,7 @@ impl<S: AudioSink> BootSession<S> {
                 if fired { "playing" } else { "not staged" }
             );
         }
-        let world = &self.host.world;
-        // One `World::tick` is one vsync, and the director's scheduler ticks
-        // once per `World::tick`, so the ring ages by the vsyncs one tick
-        // spans (`display_frame_step`, always 1) - not by the game-tick
-        // cadence `frame_step`, which retail applies once per *game tick* of
-        // that many vsyncs. The two schedules are the same in wall time.
-        bgm.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
-        let field_family = matches!(
-            world.mode,
-            legaia_engine_core::world::SceneMode::Field
-                | legaia_engine_core::world::SceneMode::WorldMap
-        );
-        let side_band = world.tail_side_band_bank();
-        let index = &self.host.index;
-        // A slot-6 side-band bank is not a tail borrower: retail streams it
-        // over the field bank in the shared region, and the residency below
-        // carries it.
-        let side_band = side_band.filter(|b| b.slot != 6);
-        bgm.sync_field_sfx(
-            world.runtime_sfx_bundle(),
-            field_family,
-            side_band,
-            |entry| index.entry_bytes_extended(entry).ok(),
-        );
-        // The slot-2 / slot-6 region follows the mode: the field bank in the
-        // field, the class-2 bank in battle, a minigame's own in its mode.
-        let shared = self.host.world.sync_sfx_residency();
-        bgm.sync_shared_region(shared, |entry| index.entry_bytes_extended(entry).ok());
-        // The battle's two monster.snd banks (VAB slots 7 / 8).
-        let monster_banks = self.host.world.battle_monster_sound_banks();
-        bgm.sync_battle_monster_banks(&monster_banks, || {
-            index
-                .entry_bytes_extended(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
-                .ok()
-        });
-        bgm.stop_sfx_voices(&self.host.world.take_sfx_voice_stops());
-        // A minigame's directly keyed voices (the slot machine's reel motor),
-        // after the stops so a release and a re-key in one tick end keyed.
-        for k in self.host.world.take_sfx_voice_keys() {
-            let keyed = bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
-                k.voice,
-                k.vab_program_tone,
-                k.note_and_fine,
-                k.volume,
-            ));
-            log::debug!(
-                "direct voice {:#04x} {:?} keyed: {keyed}",
-                k.voice,
-                k.vab_program_tone
-            );
-        }
+        bgm.route_world_sfx(&mut self.host.world, &self.host.index);
     }
 
     /// The session-side half of a scene swap under the host: the camera

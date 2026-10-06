@@ -108,46 +108,8 @@ impl PlayWindowApp {
         // clips out of its boot-staged bank on demand, so it has nothing to
         // stage ahead. Drained so the list does not grow.
         let _ = self.session.host.world.drain_battle_xa_prestage();
-        // The level-up jingle's bank (PROT 0889, cue `0x50`, category 11)
-        // is loaded at results time in retail and lives nowhere resident in
-        // the port's SFX region; stage it transiently behind the battle
-        // theme the moment the results frame asks for it.
-        let wants_reward_bank = cues
-            .iter()
-            .any(|c| c.kind == legaia_engine_core::world::LEVEL_UP_CUE);
-        if wants_reward_bank
-            && let Some(bgm) = self.session.bgm.as_mut()
-            && !bgm.has_sfx_vab_slot(legaia_engine_shell::bgm::TRANSIENT_REWARD_SLOT)
-        {
-            match self
-                .session
-                .host
-                .index
-                .entry_bytes_extended(legaia_asset::sfx_table::SLOT11_REWARD_BANK_PROT_INDEX)
-            {
-                Ok(bytes) => {
-                    let ok = bgm.stage_transient_sfx_vab(
-                        legaia_engine_shell::bgm::TRANSIENT_REWARD_SLOT,
-                        &bytes,
-                    );
-                    log::info!(
-                        "level-up jingle bank (PROT 0889) {}",
-                        if ok {
-                            "staged behind the BGM"
-                        } else {
-                            "did not fit behind the BGM"
-                        }
-                    );
-                }
-                Err(e) => log::warn!("level-up jingle bank (PROT 0889) read: {e:#}"),
-            }
-        }
         let duck_ref = self.session.host.world.audio.levels.configured_level;
         if let Some(bgm) = self.session.bgm.as_mut() {
-            // The duck rests on the world's configured level - a loaded
-            // save's `_DAT_8008457C` - and takes its percentage of it.
-            bgm.set_duck_reference(duck_ref);
-            bgm.tick_duck();
             for xa in &xa_cues {
                 let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
                 log::debug!(
@@ -158,10 +120,8 @@ impl PlayWindowApp {
                     if fired { "playing" } else { "not staged" }
                 );
             }
-            for cue in &cues {
-                bgm.enqueue_sfx(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
-            }
-            for (id, voice) in bgm.tick_sfx_frame() {
+            bgm.enqueue_battle_cues(&cues, &self.session.host.index);
+            for (id, voice) in bgm.tick_audio_frame(duck_ref).fired {
                 log::debug!("battle SFX cue {id:#04x} fired on voice {voice}");
             }
             for shout in &shouts {
