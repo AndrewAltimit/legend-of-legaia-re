@@ -9,7 +9,7 @@
   <p>Pages are grouped the way the disc is layered, outermost first: the disc and its one big archive, then how the game unpacks and routes what it loads, then the individual asset types, the stat tables baked into the executable, the bundles a scene loads as a unit, and the archive entries that hold code. New here? Start with <a href="disc.html">disc geometry</a> and <a href="prot.html">PROT.DAT</a> - every other page assumes those two.</p>
   <p>Each page carries a badge for how solid its decode is. The badge is a claim about <em>evidence</em>, not page length; a page's own confidence row is authoritative over the badge here.</p>
   <ul class="bullets">
-    <li><span class="tag tag-done">Confirmed</span> - verified end-to-end against real on-disc data, with passing tests.</li>
+    <li><span class="tag tag-done">Confirmed</span> - traced in the game's own code and verified end-to-end against real on-disc data.</li>
     <li><span class="tag tag-partial">Inferred</span> - deduced from byte patterns; structurally consistent but not exhaustively validated.</li>
   </ul>
 </section>
@@ -110,7 +110,7 @@
     </a>
     <a class="card" id="anm" href="anm.html">
       <div class="card-title"><span>ANM animation</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Skeletal animation container (asset type 6): count + byte offsets + per-(bone, frame) 8-byte records. Keyframe pose decoder in <code>legaia_anm::AnimPlayer</code>.</div>
+      <div class="card-body">The field animation container for party, NPCs and props: count + byte offsets, then frame-major records of 8-byte (bone, frame) entries - nibble-packed translations and byte angles, posed per object with no bone hierarchy. Rides asset type 5 (MOVE) despite the name.</div>
     </a>
     <a class="card" id="character-mesh" href="character-mesh.html">
       <div class="card-title"><span>Player-character meshes</span> <span class="tag tag-done">Confirmed</span></div>
@@ -184,7 +184,7 @@
   <div class="card-grid">
     <a class="card" href="data-field.html">
       <div class="card-title"><span>DATA_FIELD streaming</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The typed-chunk multi-asset container parsed by <code>crates/asset::parse_streaming</code>; a sister detector catches the shape whose final chunk walks past EOF.</div>
+      <div class="card-body">The typed-chunk multi-asset container: a chain of <code>(type &lt;&lt; 24) | size</code> headers each followed by raw, uncompressed data, ended by a zero-size header. Carries the battle-form character / effect run and a family of scene bundles.</div>
     </a>
     <a class="card" href="scene-bundles.html">
       <div class="card-title"><span>Scene bundles</span> <span class="tag tag-done">Confirmed</span></div>
