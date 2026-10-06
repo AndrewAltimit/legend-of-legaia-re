@@ -302,7 +302,7 @@ the other two are rows:
 
 | address | bucket | why |
 |---|---|---|
-| `801cfa48` | (a) | wired on both battle hosts (`World::active_effect_ribbons`), but no union member drives a battle whose move program issues op `0x42`, so no ribbon is built. Its `801d0290` row is the same gap: the ribbon is that generator's only consumer |
+| `801cfa48` | (a), **promoted** | wired on both battle hosts (`World::active_effect_ribbons`), but no pad ladder drives a battle whose move program issues op `0x42`. The oracle that does already existed: `effect_ribbon_carriers_real` stages all four shipped carriers (PROT 0923 / 0934 / 0957 / 0964) through `World::spawn_summon` and `World::tick_summon` and reads the list both hosts draw, so it is a canonical member now, under the promoted-oracle disclosure. Its `801d0290` row is the same gap: the ribbon is that generator's only consumer |
 | `801d9110` | (a), **converted** | `w7_pause_learned_content_ladder` seeds a learned field heal, MP and a hurt lead, confirms caster and spell by pad, and requires the phase the spell's `+2` flag selects plus an HP rise |
 | `801dba90` | (d) | `reward_banner`, live only through the Muscle Dome session's reward path. Retail reaches the routine from nowhere ([`battle_cast_dispatch.rs`'s note](#engine-vm)), so no retail situation owes it a ladder; the dome's own reward rung is where it would convert |
 

@@ -689,7 +689,9 @@ CANONICAL_LADDERS = [
     # fishing strike splash (`801d7a5c`, a cadence match in the world's
     # fishing tick), a shipped op-`0x43` sub-`0x12` rect copy drained by the
     # VRAM tail (`80057914`), and a shipped Bezier stager advanced by
-    # `World::step_world_frame_tail` (`801e45bc`).
+    # `World::step_world_frame_tail` (`801e45bc`); plus shipped `4C D4` /
+    # `4C D5` mask-bit runs through the same VRAM tail (`8005842c` /
+    # `800583c8`).
     ("w8_world_tail_ladder", "legaia-engine-core"),
     # An all-target spell committed on the play page from a played-through
     # card, so the commit log copies the whole-row label (`801d57e8`).
@@ -717,6 +719,15 @@ CANONICAL_LADDERS = [
     # The casino prize counter's Yes/No confirm (window 46, `801d603c`):
     # coins and the clerk's `49 07` arm seeded, the pad walks a prize to it.
     ("prize_confirm_page", "legaia-web-viewer"),
+    # A promoted oracle (record-seated, not pad-driven - the L3 members'
+    # disclosure): the effect ribbon (`801cfa48`, `effect_ribbon.rs`) and its
+    # RNG (`801d0290`) are built only for a summon whose move program issues
+    # op `0x42`, and no pad ladder casts one. This test stages each shipped
+    # carrier (PROT 0923 / 0934 / 0957 / 0964) through `World::spawn_summon`,
+    # ticks it through `World::tick_summon` and reads the ribbons off
+    # `World::active_effect_ribbons`, the list both battle hosts draw.
+    # Disc-gated; export WITHOUT `--release`.
+    ("effect_ribbon_carriers_real", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
