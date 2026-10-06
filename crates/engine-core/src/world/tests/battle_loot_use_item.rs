@@ -338,8 +338,8 @@ fn fold_battle_event_other_variants_dont_modify_state() {
 
 /// The party cast trigger (`FUN_801DBF9C`) at the host seam: a non-Seru id
 /// (`< 0x25`) stages nothing and requests nothing; a Seru id writes the summon
-/// sub-route + the `0x12` effect byte and arms the stager, whose FIRST tick
-/// (the band's `0x34` entry) requests the creature spawn behind the caster.
+/// sub-route + the `0x12` effect byte and arms the stager, which requests the
+/// creature spawn behind the caster when the module reaches its seat arm.
 #[test]
 fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn() {
     use crate::world::vm_hosts::BattleHostImpl;
@@ -382,10 +382,23 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
         world.take_pending_summon_spawn().is_none(),
         "no spawn before the stager ticks"
     );
-    // The stager's phase-0 tick (0x34 entry) seats the creature behind the
-    // caster on the party side.
+    // The stager is busy from its phase-0 tick (0x34 entry); the creature
+    // is seated behind the caster on the party side once PROT 0903 reaches
+    // its seat arm (`jal 0x801F19EC` in arm 3), not on that first tick.
     assert!(world.summon_stager_tick(), "busy from the first tick");
-    let req = world.take_pending_summon_spawn();
+    assert!(
+        world.take_pending_summon_spawn().is_none(),
+        "no seat before the module's seat arm"
+    );
+    let mut req = None;
+    for _ in 0..2000 {
+        world.summon_stager_tick();
+        req = world.take_pending_summon_spawn();
+        if req.is_some() {
+            break;
+        }
+    }
+    assert!(world.casting.module_phase >= 3, "seated in arm 3");
     assert_eq!(
         req,
         Some((

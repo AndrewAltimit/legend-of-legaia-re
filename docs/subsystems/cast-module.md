@@ -1105,10 +1105,30 @@ the wrapper roll with the module's own baked `a0`: the per-module damage
 shapes, and for the bodies without one `CAPTURE_SITE_POWERS` - the immediate
 ahead of each body's `jal 0x801DD4B0` / `0x801DD6B4` (PROT 0935 Earthquake
 `0x1AE` at `0x801F7AFC`, and so on). A body with no damage site (Glare,
-Fatal Decision) folds no damage. The fold runs at the band's exit into
-`0x50`, after the caster's stages and the module's arms - not at the
-`0x28 -> 0x6E` edge, which sits above `0x50` in the state space but is the
-door *into* the band.
+Fatal Decision) folds no damage. A phase-chain body (`chain_bodies`) folds
+on the tick its hit arm first runs - the arm that holds the wrapper `jal` -
+so the victim reacts where retail's does and a settle wait after it has a
+reaction to wait on. Every other body folds at the band's exit into `0x50`,
+after the caster's stages and the module's arms - not at the `0x28 -> 0x6E`
+edge, which sits above `0x50` in the state space but is the door *into* the
+band.
+
+#### The creature is seated in an arm
+
+A summon module seats its creature itself: one arm of its tick body calls
+`FUN_801F19EC`, which installs the streamed creature as actor slot 7. In
+about half the modules that arm also polls the stream (`FUN_8003F2B8(1)`)
+and seats on its first pass with the stream resident; in the rest an earlier
+arm polls and exits, and the seat arm runs after it (PROT 0905 polls in arm
+3 and seats in arm 5). `zenoir_summon_mid_cast` holds phase 3 with slot 7
+still empty (`+0x14C` zero, the seat at the origin), one arm short of its
+seat in arm 4. The arms, read off each image's own phase dispatch, are
+`cast_module_camera::module_seat_arm`; Viguro's seat sits in a routine
+(`FUN_801F7AF4`) nothing in its image references, so it has none. The
+engine's stream is resident at once, so a module with a seat arm has its
+creature requested as its phase reaches the arm instead of on the stager's
+first tick. Four camera-only directors (PROT 0917, 0928, 0929, 0931) park
+short of their seat arm, so theirs keep the first-tick seat.
 
 #### A module that reports its spawns
 
@@ -2038,9 +2058,23 @@ row says how it is carried:
 - PROT 0935's arms 1 and 3 hold on the caster's `+0x21B` and on its model's
   `+0x68`, which no table carries; the rows keep only their seeds.
 
-The settle waits (a terminal arm holding until its victim's, or the whole
-row's, `+0x1D9` is back at rest) are not carried: the fold lands the hit
-after the band, so the reaction they wait on has not been staged yet.
+The settle waits are carried (`ChainSettle`, held by the band's caller,
+which owns the clip state the runner does not). Each one tests a seat the
+same way - live (`+0x14C != 0`) once its playing clip `+0x1D9` is back at
+`0`, dead once it reads the down clip `8` - and they differ only in the seats
+they walk and in what settles a dead monster:
+
+| Body | Arm | Seats | Dead monster |
+|---|---|---|---|
+| PROT 0935 Earthquake | 6 | the row the caster's `+0x1DD` names | prim word `+0x04` at `0` |
+| PROT 0936 Hyper Crush, 0960 `0xA6` | 8, 6 | party seats `0 .. ctx[+0x00]` | - |
+| PROT 0937, 0939, 0956 `0x75` | 7, 5, 3 | the victim | clip `8` |
+| PROT 0947, 0948 | 5, 5 | the victim | clip `8` or prim word `0` |
+
+Retail's waits have no bound; the port lets go after the Fatal Decision
+bound (`SETTLE_TICK_LIMIT`), since an engine clip that never reports the id
+retail waits for would hold the band for good. The engine's prim word is
+its colour word: a monster's defeat fade has run out when it reads `0`.
 PROT 0919 (Spoon) stays ungated - it is a summon-band module, and the stager
 decides that band's length.
 

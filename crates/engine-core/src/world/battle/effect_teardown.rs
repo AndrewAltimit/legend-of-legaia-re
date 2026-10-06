@@ -67,6 +67,7 @@ impl World {
             out.push("cast_band");
         }
         if c.pending_summon_spawn.is_some()
+            || c.summon_seat_owed.is_some()
             || c.pending_move_fx_spawn.is_some()
             || c.pending_move_fx_cue.is_some()
         {

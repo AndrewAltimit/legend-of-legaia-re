@@ -1226,3 +1226,50 @@ fn every_gated_chain_body_finishes() {
     }
     assert!(stuck.is_empty(), "never finished: {stuck:x?}");
 }
+
+/// A module that seats its creature in a later arm (`module_seat_arm`) has
+/// the seat requested as the module reaches that arm, never on the
+/// stager's first tick, and always before the stager lets go.
+#[test]
+fn a_module_seats_its_creature_in_its_seat_arm() {
+    let mut checked = 0usize;
+    for id in 0x81u8..=0xA0 {
+        let mut world = module_code_world();
+        world.party.party_count = 3;
+        let Some(entry) = world.cast_module_for(id) else {
+            continue;
+        };
+        let Some(arm) =
+            legaia_engine_vm::cast_module_camera::module_profile(entry).and_then(|p| p.seat_arm)
+        else {
+            continue;
+        };
+        world.battle_ctx.active_actor = 0;
+        world.actors[0].battle.active_target = 3;
+        for i in 0..8 {
+            world.actors[i].battle.hp = 9000;
+            world.actors[i].battle.max_hp = 9000;
+        }
+        world.arm_summon_stager(0, id);
+        let mut seated_at = None;
+        for t in 0..20_000 {
+            let busy = world.summon_stager_tick();
+            if seated_at.is_none() && world.take_pending_summon_spawn().is_some() {
+                seated_at = Some((t, world.casting.module_phase));
+            }
+            if !busy {
+                break;
+            }
+        }
+        let Some((t, phase)) = seated_at else {
+            panic!("PROT {entry:04} id {id:#04X}: the creature was never seated");
+        };
+        assert!(t > 0, "PROT {entry:04}: seated on the stager's first tick");
+        assert!(
+            phase >= arm,
+            "PROT {entry:04}: seated at phase {phase} before its seat arm {arm}"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 10, "only {checked} modules carry a seat arm");
+}

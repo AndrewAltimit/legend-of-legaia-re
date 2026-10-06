@@ -34,7 +34,13 @@
 //! it is called; the caller calls it only on the tick the arm's module
 //! countdown lets through, from the per-body tables in
 //! `crate::cast_module_camera::capture_countdown` (every body here but PROT
-//! 0919's). The clip-confirm and settle waits are not carried.
+//! 0919's). The settle waits are data ([`ChainArm::settle`]) the caller
+//! tests, since only it holds the seats' clip state; the clip-confirm
+//! waits are not carried.
+//!
+//! **The fold lands on the hit arm.** The band folds a chain body's cast on
+//! the tick its [`ChainArm::wrapper_site`] arm first runs, so the reaction a
+//! settle wait holds on is the hit's own.
 //!
 //! **Not ported**, and disclosed per body: the GPU-packet and camera arms
 //! (PROT 0948's beam excepted - `legaia_engine_ui::cast_beam`), and the
@@ -176,6 +182,35 @@ pub enum ChainEffect {
     },
 }
 
+/// The seats an arm waits on before it leaves: their clips settling after
+/// the hit. Every settle loop in the band tests one seat the same way - a
+/// live seat (`+0x14C != 0`) is settled once its playing clip `+0x1D9` is
+/// back to `0` (idle), a downed party seat once it reads
+/// [`SETTLE_DOWN_CLIP`] - and differs only in which seats it walks and
+/// what settles a dead **monster**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainSettle {
+    /// The derived victim alone; a dead one has settled on clip `8`
+    /// (PROT 0937 arm 7 `0x801F77B4`, 0939 arm 5 `0x801F7428`, 0956's
+    /// `0x75` arm 3 `0x801F71B4`).
+    Victim,
+    /// The derived victim alone; a dead one has settled on clip `8` **or**
+    /// once its prim word `+0x04` reads `0` - a monster's defeat fade run out
+    /// (PROT 0947 arm 5 `0x801F7774`, 0948 arm 5 `0x801F70E0`).
+    VictimOrFaded,
+    /// Party seats `0 .. ctx[+0x00]`, dead ones on clip `8` (PROT 0936 arm 8
+    /// `0x801F7B18`, 0960's `0xA6` arm 6 `0x801F7408`).
+    PartyRow,
+    /// The row the caster's target `+0x1DD` named: the party row as
+    /// [`Self::PartyRow`] when it is `8` or below `3`, else the monster row
+    /// `3 .. 3 + ctx[+0x01]`, where a dead seat has settled once its prim
+    /// word reads `0` (PROT 0935 arm 6, `0x801F7E2C..0x801F7F50`).
+    TargetRow,
+}
+
+/// The playing-clip id a downed party seat settles on.
+pub const SETTLE_DOWN_CLIP: u8 = 8;
+
 /// One arm of a [`ChainBody`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChainArm {
@@ -198,6 +233,10 @@ pub struct ChainArm {
     pub wrapper_site: Option<u32>,
     /// Any other simulation write.
     pub effect: Option<ChainEffect>,
+    /// The seats whose clips the arm waits on before it leaves. The runner
+    /// does not test it - it holds no actor clip state - so the band's
+    /// caller holds the arm instead (`World`'s cast band).
+    pub settle: Option<ChainSettle>,
 }
 
 /// An arm with nothing but its exit.
@@ -212,6 +251,7 @@ const fn arm(phase: u8, entry: u32, exit: ChainExit) -> ChainArm {
         clears_0d: false,
         wrapper_site: None,
         effect: None,
+        settle: None,
     }
 }
 
@@ -238,6 +278,10 @@ impl ChainArm {
     }
     const fn effect(mut self, e: ChainEffect) -> Self {
         self.effect = Some(e);
+        self
+    }
+    const fn settles(mut self, s: ChainSettle) -> Self {
+        self.settle = Some(s);
         self
     }
 }
@@ -443,8 +487,9 @@ pub const SPOON_CHAIN: ChainBody = ChainBody {
 /// seat's rate to `8` and clears the busy register (`0x801F7FBC`).
 ///
 /// Not ported: the packet and camera arms, the party-row presentation
-/// stores, the holds of arms 1 and 3 (caster `+0x21B`, model `+0x68`) and
-/// arm 6's row settle. Countdowns: `capture_countdown::EARTHQUAKE`.
+/// stores and the holds of arms 1 and 3 (caster `+0x21B`, model `+0x68`).
+/// Countdowns: `capture_countdown::EARTHQUAKE`; arm 6's settle:
+/// [`ChainSettle::TargetRow`].
 ///
 /// PORT: FUN_801F69D8 (PROT 0935; phase chain + caster staging; packet arms unported)
 pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
@@ -463,7 +508,7 @@ pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
                 reaction(One, 0x801F_7B70),
             ])
             .hit(0x801F_7AFC),
-        arm(6, 0x801F_7D88, Set(DONE)),
+        arm(6, 0x801F_7D88, Set(DONE)).settles(ChainSettle::TargetRow),
         arm(DONE, 0x801F_7F60, Finish).rates(&[rate(Caster, 8, 0x801F_7FA8)]),
     ],
 };
@@ -478,8 +523,9 @@ pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
 /// with its own reaction. Arm 8 waits for the row to settle and stores
 /// `0xFF`; `0xFF` only clears the busy register.
 ///
-/// Not ported: the packet and camera arms, arm 4's tick-counter hold and
-/// arm 8's row settle. Countdowns: `capture_countdown::HYPER_CRUSH`.
+/// Not ported: the packet and camera arms and arm 4's tick-counter hold.
+/// Countdowns: `capture_countdown::HYPER_CRUSH`; arm 8's settle:
+/// [`ChainSettle::PartyRow`].
 ///
 /// PORT: FUN_801F69D8 (PROT 0936; phase chain + caster staging; packet arms unported)
 pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
@@ -500,7 +546,7 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
             ])
             .hit(0x801F_797C),
         arm(7, 0x801F_7A54, Advance),
-        arm(8, 0x801F_7AE4, Set(DONE)),
+        arm(8, 0x801F_7AE4, Set(DONE)).settles(ChainSettle::PartyRow),
         arm(DONE, 0x801F_7BA0, Finish),
     ],
 };
@@ -515,7 +561,7 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
 /// and the victim settles the arm stores `0xFF`; `0xFF` clears the busy
 /// register and the caster's stage (`+0x1DA = 0`, no bump, `0x801F7814`).
 ///
-/// Not ported: the packet and camera arms, the victim settle, and the
+/// Not ported: the packet and camera arms and the
 /// four-hit split (the fold lands the cast's outcome as one). Countdowns:
 /// `capture_countdown::HYPER_LIGHTNING`, arm 7's hit cadence included.
 ///
@@ -534,7 +580,8 @@ pub const HYPER_LIGHTNING_CHAIN: ChainBody = ChainBody {
         arm(6, 0x801F_7500, Advance),
         arm(7, 0x801F_757C, Set(DONE))
             .stages(&[reaction(One, 0x801F_775C)])
-            .hit(0x801F_76AC),
+            .hit(0x801F_76AC)
+            .settles(ChainSettle::Victim),
         arm(DONE, 0x801F_77F8, Finish).stages(&[stage(Caster, Literal(0), Untouched, 0x801F_7814)]),
     ],
 };
@@ -550,7 +597,7 @@ pub const HYPER_LIGHTNING_CHAIN: ChainBody = ChainBody {
 /// `+0x1F1`. Arm 5 waits for the victim to settle and stores `0xFF`; `0xFF`
 /// clears the busy register (`fp`).
 ///
-/// Not ported: the packet arms, the victim settle, and the per-hit status
+/// Not ported: the packet arms and the per-hit status
 /// rolls (the fold lands the cast's outcome as one hit). Countdowns:
 /// `capture_countdown::SPORE_GAS`.
 ///
@@ -567,7 +614,7 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
         arm(4, 0x801F_6FD0, Advance)
             .stages(&[reaction(One, 0x801F_73C8)])
             .hit(0x801F_70E0),
-        arm(5, 0x801F_7428, Set(DONE)),
+        arm(5, 0x801F_7428, Set(DONE)).settles(ChainSettle::Victim),
         arm(DONE, 0x801F_746C, Finish),
     ],
 };
@@ -619,8 +666,8 @@ pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
 /// shape A, the victim staged with its reaction. Arm 5 is terminal: it waits
 /// for the victim to settle, zeroes `ctx[+0x0D]` and clears the busy word.
 ///
-/// Not ported: the packet arms, the hide/show stores, and the countdown and
-/// settle gates.
+/// Not ported: the packet arms and the hide/show stores. Countdowns:
+/// `capture_countdown`; arm 5's settle: [`ChainSettle::VictimOrFaded`].
 ///
 /// PORT: FUN_801F69F0 (PROT 0947; phase chain + caster staging; packet arms unported)
 pub const V_WINDHASH_CHAIN: ChainBody = ChainBody {
@@ -635,7 +682,9 @@ pub const V_WINDHASH_CHAIN: ChainBody = ChainBody {
             .stages(&[reaction(One, 0x801F_74B8)])
             .hit(0x801F_7414),
         arm(4, 0x801F_74EC, Advance),
-        arm(5, 0x801F_773C, Finish).clears_0d(),
+        arm(5, 0x801F_773C, Finish)
+            .clears_0d()
+            .settles(ChainSettle::VictimOrFaded),
     ],
 };
 
@@ -660,7 +709,8 @@ pub const CROSS_BEAM_COUNTER_PER_TICK: i32 = 2;
 /// counter and both hosts build its packets through
 /// `legaia_engine_ui::cast_beam`. The countdown gates are
 /// `cast_module_camera::capture_countdown::CROSS_BEAM`. Not ported: the
-/// camera shots, the hide/show stores, and arm 5's settle wait.
+/// camera shots and the hide/show stores. Arm 5's settle:
+/// [`ChainSettle::VictimOrFaded`].
 ///
 /// PORT: FUN_801F69F0 (PROT 0948; phase chain + caster staging + countdown gates; beam drawn)
 pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
@@ -677,7 +727,8 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
         arm(4, 0x801F_7048, Advance),
         arm(5, 0x801F_70A8, Finish)
             .stages(&[stage(Caster, Literal(0), Bump, 0x801F_7238)])
-            .clears_0d(),
+            .clears_0d()
+            .settles(ChainSettle::VictimOrFaded),
     ],
 };
 
@@ -692,13 +743,14 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
 /// Arm 3 ramps `0x801F86A8` and stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`,
 /// restores every live seat and returns zero.
 ///
-/// The port runs the mark and the steal on a live victim. It cannot see the
-/// record's two immunity bits, and the victim's liveness is read before the
-/// fold lands the hit rather than after it as retail does.
+/// The port runs the mark and the steal on a live victim, read after the
+/// fold has landed the hit as retail reads it. It cannot see the record's
+/// two immunity bits.
 ///
 /// Not ported: the packet arms, the per-character effect pointer
-/// (`0x800774AC`) and `FUN_801D8DE8(0x5B, 0)` banner, and the victim
-/// settle. Countdowns: `capture_countdown::PARALYZING_WAVE`.
+/// (`0x800774AC`) and `FUN_801D8DE8(0x5B, 0)` banner. Countdowns:
+/// `capture_countdown::PARALYZING_WAVE`; arm 3's settle:
+/// [`ChainSettle::Victim`].
 ///
 /// PORT: FUN_801F69D8 (PROT 0956; the `0x75` arm's phase chain + the mark and turn steal; packet arms unported)
 pub const WATER_HAZARD_75_CHAIN: ChainBody = ChainBody {
@@ -715,7 +767,7 @@ pub const WATER_HAZARD_75_CHAIN: ChainBody = ChainBody {
                 flag: 0x0400,
                 site: 0x801F_6FC4,
             }),
-        arm(3, 0x801F_70E4, Set(DONE)),
+        arm(3, 0x801F_70E4, Set(DONE)).settles(ChainSettle::Victim),
         arm(DONE, 0x801F_7200, Finish).clears_0d(),
     ],
 };
@@ -794,8 +846,8 @@ pub const MEGATON_PRESS_CHAIN: ChainBody = ChainBody {
 ///
 /// Rate left out under the module's rate rule: arm 4's caster
 /// `+0x21D = 0` (`0x801F6F8C`) is never restored inside the body. Not
-/// ported: the packet arms, the party-row presentation stores, and the
-/// countdown and settle gates.
+/// ported: the packet arms and the party-row presentation stores.
+/// Countdowns: `capture_countdown`; arm 6's settle: [`ChainSettle::PartyRow`].
 ///
 /// PORT: FUN_801F69D8 (PROT 0960; the `0xA6` arm's phase chain + caster staging; packet arms unported)
 pub const NEO_STAR_SLASH_CHAIN: ChainBody = ChainBody {
@@ -813,7 +865,7 @@ pub const NEO_STAR_SLASH_CHAIN: ChainBody = ChainBody {
         arm(5, 0x801F_7048, Advance)
             .stages(&[reaction(One, 0x801F_72F4)])
             .hit(0x801F_7280),
-        arm(6, 0x801F_73A8, Set(DONE)),
+        arm(6, 0x801F_73A8, Set(DONE)).settles(ChainSettle::PartyRow),
         arm(DONE, 0x801F_7490, Finish).clears_0d(),
     ],
 };

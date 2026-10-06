@@ -609,6 +609,7 @@ impl World {
                 )
             })
             .unwrap_or((0, 0, -542));
+        self.casting.summon_seat_owed = None;
         // Retail's cast-start site `0x801E4B1C` zeroes `ctx+0x278` and the
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;
@@ -1164,11 +1165,31 @@ impl World {
             };
             cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
         }
+        // The module's seat arm (`FUN_801F19EC`): a seat owed since the
+        // stager armed is requested as the module reaches it.
+        let seat_arm = run
+            .as_ref()
+            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|p| p.seat_arm);
+        if let Some((arm, spell, at)) = self.casting.summon_seat_owed
+            && (module_phase >= arm || run.is_none())
+        {
+            self.casting.summon_seat_owed = None;
+            self.casting.pending_summon_spawn = Some((spell, at));
+        }
         let busy = match st.phase {
             SummonPhase::Armed => {
                 // Phase 0: seat the creature (retail: the stager's
-                // `FUN_801F19EC` installs the streamed record as slot 7).
-                self.casting.pending_summon_spawn = Some((st.spell_id, st.spawn));
+                // `FUN_801F19EC` installs the streamed record as slot 7) -
+                // here, unless the module seats it in a later arm.
+                match seat_arm.filter(|&a| module_phase < a) {
+                    Some(arm) => {
+                        self.casting.summon_seat_owed = Some((arm, st.spell_id, st.spawn));
+                    }
+                    None => {
+                        self.casting.pending_summon_spawn = Some((st.spell_id, st.spawn));
+                    }
+                }
                 // ...and stage the module's own effect parts. This is the
                 // `0x801E4B1C` site's other half: `FUN_801F1ED4` dispatches
                 // into the paged module, whose spawn records are the cast's
@@ -1205,7 +1226,10 @@ impl World {
                 let walked = match (seat, victim) {
                     (Some(slot), Some(v)) => may_walk && self.summon_walk_to_victim(slot, v),
                     (Some(slot), None) => may_walk && self.summon_walk_step(slot as usize, st.goal),
-                    (None, _) => st.frames >= SUMMON_UNSEATED_GRACE,
+                    (None, _) => {
+                        self.casting.summon_seat_owed.is_none()
+                            && st.frames >= SUMMON_UNSEATED_GRACE
+                    }
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
@@ -1326,6 +1350,8 @@ impl World {
         self.casting.module_cam = Default::default();
         self.casting.module_beam_counter = 0;
         self.casting.module_beam_live = false;
+        self.casting.module_hit_arm = None;
+        self.casting.module_settle_ticks = 0;
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);
@@ -2198,6 +2224,72 @@ impl World {
     ///
     /// Returns `None` when no band entry is resident (a disc-free host, or a
     /// spell that names no module).
+    /// Whether one seat has settled the way every settle loop in the band
+    /// tests it ([`vm::cast_module_ticks::ChainSettle`]): a live seat once its playing clip
+    /// is back to idle, a dead one once it plays the down clip - or, where
+    /// `faded` counts, once its defeat fade has run its colour word out
+    /// (retail's prim word `+0x04` at `0`).
+    ///
+    /// The engine's playing clip is the reaction channel's entry while a
+    /// reaction plays (retail commits a reaction into `+0x1D9` like any
+    /// other clip), else the committed `current_anim`. A downed party seat
+    /// holds the engine's defeat pose rather than clip `8`, so a finished
+    /// defeat pose reads as settled too.
+    fn chain_seat_settled(&self, slot: usize, faded: bool) -> bool {
+        let Some(a) = self.actors.get(slot) else {
+            return true;
+        };
+        let playing = match a.battle_reaction {
+            Some(tag) => a.battle_reaction_entry.unwrap_or(tag.max(1)),
+            None => a.battle.current_anim,
+        };
+        if a.battle.hp != 0 {
+            return playing == 0;
+        }
+        let downed = playing == vm::cast_module_ticks::SETTLE_DOWN_CLIP
+            || (a.battle_pose == Some(vm::battle_action::Pose::Defeat as u8)
+                && a.battle_animation.as_ref().is_none_or(|p| p.finished()));
+        downed || (faded && (a.battle.render_color == 0 || !a.active))
+    }
+
+    /// [`Self::chain_seat_settled`] over the seats a [`vm::cast_module_ticks::ChainSettle`]
+    /// walks.
+    fn chain_settled(
+        &self,
+        settle: vm::cast_module_ticks::ChainSettle,
+        caster: u8,
+        victim: u8,
+        ctx: &vm::cast_module_ticks::CastModuleCtx,
+    ) -> bool {
+        use vm::cast_module_ticks::ChainSettle as S;
+        let party = 0..usize::from(ctx.party_count);
+        let pc = usize::from(self.party.party_count);
+        let monsters = pc..pc + usize::from(ctx.monster_count);
+        match settle {
+            S::Victim => self.chain_seat_settled(usize::from(victim), false),
+            S::VictimOrFaded => self.chain_seat_settled(usize::from(victim), true),
+            S::PartyRow => party.into_iter().all(|s| self.chain_seat_settled(s, false)),
+            S::TargetRow => {
+                let t = self
+                    .actors
+                    .get(usize::from(caster))
+                    .map_or(0, |a| a.battle.active_target);
+                if t == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE || usize::from(t) < pc
+                {
+                    party.into_iter().all(|s| self.chain_seat_settled(s, false))
+                } else {
+                    monsters.into_iter().all(|s| {
+                        let a = self.actors.get(s);
+                        match a {
+                            Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
+                            _ => self.chain_seat_settled(s, false),
+                        }
+                    })
+                }
+            }
+        }
+    }
+
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
         // --- W1-D ---
         use vm::cast_arm_ticks as arms;
@@ -2226,7 +2318,7 @@ impl World {
         let mut caster = self.cast_actor_state(caster_slot);
         let mut victim = self.cast_actor_state(victim_slot);
         let mut seat = self.cast_actor_state(seat_slot);
-        let (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+        let (mut caster_orig, mut victim_orig, mut seat_orig) = (caster, victim, seat);
         let mut run = CastModuleCodeRun {
             prot_entry: entry,
             busy: true,
@@ -2401,6 +2493,41 @@ impl World {
             && a.holds(&mut self.casting.module_cam.countdown)
         {
             capture_held = true;
+        }
+        // A phase-chain body's hit lands on the tick its arm first runs -
+        // retail calls the damage wrapper inside the arm - and an arm that
+        // then waits on the hit seats' clips holds until they settle. The
+        // runner itself holds no clip state, so both happen here.
+        let chain = if has_trampoline {
+            body.and_then(|b| ticks::chain_body_for(entry, b))
+        } else {
+            ticks::direct_chain_body(entry)
+        };
+        if let Some(arm) = chain.and_then(|c| c.arm(phase_in))
+            && !capture_held
+        {
+            if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
+                self.casting.module_hit_arm = Some(phase_in);
+                self.fold_pending_cast();
+                // The arm runs on the seats the hit left (a dead victim
+                // takes PROT 0956's reaction branch, not its turn-steal).
+                caster = self.cast_actor_state(caster_slot);
+                victim = self.cast_actor_state(victim_slot);
+                seat = self.cast_actor_state(seat_slot);
+                (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+            }
+            if let Some(settle) = arm.settle {
+                let settled = self.chain_settled(settle, caster_slot, victim_slot, &ctx);
+                self.casting.module_settle_ticks =
+                    self.casting.module_settle_ticks.saturating_add(1);
+                if settled
+                    || self.casting.module_settle_ticks > vm::cast_fatal_decision::SETTLE_TICK_LIMIT
+                {
+                    self.casting.module_settle_ticks = 0;
+                } else {
+                    capture_held = true;
+                }
+            }
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);

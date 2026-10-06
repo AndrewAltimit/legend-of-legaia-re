@@ -22,6 +22,11 @@ pub struct CastFxState {
     /// host-fulfilled request because `World` is index-agnostic (same pattern
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
+    /// A creature seat the stager owes but has not requested yet: `(seat
+    /// arm, spell id, spawn point)`. A module whose tick body seats its
+    /// creature in a later arm (`cast_module_camera::module_seat_arm`) has
+    /// it requested once its phase passes that arm.
+    pub summon_seat_owed: Option<(u8, u8, [i16; 3])>,
     /// The **cast-effect pool**: the DATA half of the slot-B cast-module band
     /// (PROT 0903..0966), keyed by PROT entry. Both of PROT 0898's tick
     /// dispatchers resolve a cast into this band
@@ -77,6 +82,15 @@ pub struct CastFxState {
     /// it holds), so the frame draws its packets
     /// ([`crate::world::World::cross_beam_draw`]).
     pub module_beam_live: bool,
+    /// The phase-chain arm whose damage site has landed this pass through
+    /// it: the band folds a chain body's hit on the tick its arm first runs
+    /// (`World::run_cast_module_code`), so a settle wait after it sees the
+    /// victim react.
+    pub module_hit_arm: Option<u8>,
+    /// Ticks the current arm has held on its settle wait
+    /// (`cast_module_ticks::ChainSettle`), bounded by
+    /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
+    pub module_settle_ticks: u16,
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
     /// cast, decided **once**.
     ///
@@ -206,6 +220,7 @@ impl CastFxState {
         Self {
             active_summon: None,
             pending_summon_spawn: None,
+            summon_seat_owed: None,
             effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
@@ -218,6 +233,8 @@ impl CastFxState {
             module_ring_angle: 0,
             module_beam_counter: 0,
             module_beam_live: false,
+            module_hit_arm: None,
+            module_settle_ticks: 0,
             module_nighto_outcome: None,
             // --- W1-D ---
             module_split_saved_target: None,

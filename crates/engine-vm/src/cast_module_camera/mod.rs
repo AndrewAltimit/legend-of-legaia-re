@@ -486,6 +486,12 @@ pub struct ModuleProfile {
     /// pass its arm makes the call, instead of seating the module's whole
     /// record set on the stager's first tick.
     pub stages_spawns: bool,
+    /// The phase arm whose pass seats the creature (`jal 0x801F19EC`,
+    /// [`module_seat_arm`]). The host seats it once the module's phase
+    /// reaches this arm rather than on the stager's first tick. `None` where
+    /// the module seats it at once, or where a camera-only director parks
+    /// before the arm.
+    pub seat_arm: Option<u8>,
 }
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
@@ -499,6 +505,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             walk_arm: Some(GIMARD_WALK_ARM),
             owns_phase: true,
             stages_spawns: true,
+            seat_arm: module_seat_arm(903),
         }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
@@ -506,6 +513,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             walk_arm: None,
             owns_phase: true,
             stages_spawns: true,
+            seat_arm: module_seat_arm(905),
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
@@ -513,22 +521,26 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             walk_arm: None,
             owns_phase: true,
             stages_spawns: false,
+            seat_arm: module_seat_arm(908),
         }),
-        914 => Some(ModuleProfile::camera_only(gola_gola_direct)),
-        915 => Some(ModuleProfile::camera_only(mushura_direct)),
+        // A camera-only director seats on its module's seat arm only where
+        // it reaches it: PROT 0917, 0928, 0929 and 0931's park short of
+        // theirs, so their creature is seated on the stager's first tick.
+        914 => Some(ModuleProfile::camera_only(gola_gola_direct).seated_at(914)),
+        915 => Some(ModuleProfile::camera_only(mushura_direct).seated_at(915)),
         917 => Some(ModuleProfile::camera_only(barra_direct)),
-        920 => Some(ModuleProfile::camera_only(slippery_direct)),
-        923 => Some(ModuleProfile::camera_only(gilium_direct)),
+        920 => Some(ModuleProfile::camera_only(slippery_direct).seated_at(920)),
+        923 => Some(ModuleProfile::camera_only(gilium_direct).seated_at(923)),
         928 => Some(ModuleProfile::camera_only(palma_direct)),
-        930 => Some(ModuleProfile::camera_only(horn_direct)),
+        930 => Some(ModuleProfile::camera_only(horn_direct).seated_at(930)),
         931 => Some(ModuleProfile::camera_only(jedo_direct)),
-        916 => Some(ModuleProfile::camera_only(aluru_direct)),
-        921 => Some(ModuleProfile::camera_only(iota_direct)),
+        916 => Some(ModuleProfile::camera_only(aluru_direct).seated_at(916)),
+        921 => Some(ModuleProfile::camera_only(iota_direct).seated_at(921)),
         929 => Some(ModuleProfile::camera_only(mule_direct)),
-        932 => Some(ModuleProfile::camera_only(meta_direct)),
-        933 => Some(ModuleProfile::camera_only(terra_direct)),
-        934 => Some(ModuleProfile::camera_only(ozma_direct)),
-        913 => Some(ModuleProfile::camera_beside(nova_direct)),
+        932 => Some(ModuleProfile::camera_only(meta_direct).seated_at(932)),
+        933 => Some(ModuleProfile::camera_only(terra_direct).seated_at(933)),
+        934 => Some(ModuleProfile::camera_only(ozma_direct).seated_at(934)),
+        913 => Some(ModuleProfile::camera_beside(nova_direct).seated_at(913)),
         _ => None,
     }
 }
@@ -541,7 +553,13 @@ impl ModuleProfile {
             walk_arm: None,
             owns_phase: true,
             stages_spawns: false,
+            seat_arm: None,
         }
+    }
+
+    const fn seated_at(mut self, prot_entry: u32) -> Self {
+        self.seat_arm = module_seat_arm(prot_entry);
+        self
     }
 
     const fn camera_beside(direct: ModuleDirector) -> Self {
@@ -551,6 +569,7 @@ impl ModuleProfile {
             walk_arm: None,
             owns_phase: false,
             stages_spawns: false,
+            seat_arm: None,
         }
     }
 
@@ -559,6 +578,53 @@ impl ModuleProfile {
     pub const fn paces_band(&self) -> bool {
         self.hit_arm.is_some()
     }
+}
+
+/// The phase arm of a summon module's tick body that seats its creature:
+/// the arm holding `jal 0x801F19EC` (which installs the streamed creature
+/// as actor slot 7), read off each image's own phase dispatch at slot-B base
+/// `0x801F69D8`. Where the arm also polls the stream (`FUN_8003F2B8(1)`)
+/// the seat is on its first pass with the stream resident; elsewhere an
+/// earlier arm polls and exits, and the seat arm runs after it. The engine's
+/// stream is resident at once, so the creature appears as the module enters
+/// this arm. `zenoir_summon_mid_cast` holds phase 3 with slot 7
+/// still empty (`+0x14C == 0`, the seat at `(0, 0, 0)`), one arm short.
+///
+/// PROT 0909 (Viguro) is absent: its seat lives in `FUN_801F7AF4`, which
+/// no reference in its image calls.
+///
+/// REF: FUN_801F19EC
+pub const fn module_seat_arm(prot_entry: u32) -> Option<u8> {
+    Some(match prot_entry {
+        903 => 3, // 0x801F6D3C
+        904 => 4, // 0x801F6EC4
+        905 => 5, // 0x801F7284
+        906 => 4, // 0x801F6D10
+        907 => 6, // 0x801F76C0
+        908 => 4, // 0x801F6FC0
+        910 => 2, // 0x801F6D10
+        911 => 3, // 0x801F70B0
+        912 => 2, // 0x801F6C34
+        913 => 2, // 0x801F6D24
+        914 => 3, // 0x801F6CA8
+        915 => 5, // 0x801F6E5C
+        916 => 4, // 0x801F7074
+        917 => 3, // 0x801F6E38
+        919 => 2, // 0x801F6DA8
+        920 => 2, // 0x801F6CFC
+        921 => 3, // 0x801F6FA4
+        922 => 3, // 0x801F6DFC
+        923 => 3, // 0x801F6DB0
+        927 => 2, // 0x801F6D9C
+        928 => 4, // 0x801F744C
+        929 => 5, // 0x801F7080
+        930 => 3, // 0x801F6E98
+        931 => 4, // 0x801F6E28
+        932 => 4, // 0x801F6EB0
+        933 => 2, // 0x801F6D70
+        934 => 5, // 0x801F7034
+        _ => return None,
+    })
 }
 
 /// The director for a player-Seru module, by owning PROT entry.
