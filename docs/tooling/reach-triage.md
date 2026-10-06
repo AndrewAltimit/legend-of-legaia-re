@@ -44,8 +44,8 @@ addresses in the *not observable* bucket plus 2 const anchors, outside all
 three). Of the 27, 19 are [disclosed and receiver-gated
 dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 8 are
 the reach worklist, every one of which carries a verdict below: `8004629c`
-and `800485bc` (b), `801dd4c4` (a), `801f2134` (c), and `801d31b0`,
-`801d553c`, `801dba90`, `801f1a00` (d).
+and `800485bc` (b), `801f2134` (c), and `801d31b0`, `801d553c`,
+`801dba90`, `801dd4c4`, `801f1a00` (d).
 
 The ladder count belongs in the same breath as the other three, because none
 of them is a property of the port: every ladder that lands moves all three,
@@ -2222,7 +2222,7 @@ part worth keeping rather than the fact that it emptied:
 | `800485bc` | (b) | the [`engine-ui` table](#engine-ui), on the weapon-trail content gate `801e1ab0` already names |
 | `801d32bc` `801d57e8` `801d5778` | (c) | the [`engine-vm` table](#engine-vm), disclosed, with no caller of any kind |
 | `801d9ae8` | - | leaves the page: `REPLACED-BY`, no host owed |
-| `801dd4c4` `801dd784` | (a) | the [`engine-vm` table](#engine-vm), on the op that spawns each timer |
+| `801dd4c4` `801dd784` | (a), then split | the [`engine-vm` table](#engine-vm), on the op that spawns each timer: the wipe `801dd784` is entered now, and the tween `801dd4c4` is (d) - its only spawn, `43 09`, has no carrier on the disc |
 | `8004fe5c` `801d5854` | measurement | neither is a gap - see below |
 
 A later refresh added four more, and the first reading of them - that each is
