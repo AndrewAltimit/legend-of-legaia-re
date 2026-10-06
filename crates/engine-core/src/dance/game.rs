@@ -609,20 +609,22 @@ impl DanceGame {
     /// second note's `0xFF` hit-flash pass (`DAT_801D558C`) is not modelled -
     /// the engine keeps no writer of that counter - so every note draws at
     /// `0x80`. Empty without a widget table.
+    ///
+    /// PORT: FUN_801d2524 (the emit sequence and draw area; the flash test and
+    /// note x are [`dance_combo_window_bright`] / [`dance_beat_track_note_x`])
     pub fn beat_track_quads(&self, slot: usize, x: i16, y: i16) -> Vec<DanceHudQuad> {
         const CLIP_W: i16 = 0x50;
-        const BODY_CLUT: u16 = 0x7D08;
-        const FLASH_CLUT: u16 = 0x7D0D;
-        const NOTE_CLUT: u16 = 0x7D0E;
         if self.widgets.is_empty() {
             return Vec::new();
         }
         let level = self.dancer_gauge(slot) / GAUGE_STEP;
         let beat = self.phase / BEAT_PERIOD;
         let phase_in = self.phase - beat * BEAT_PERIOD;
-        let mask = if level > 0 { 7 } else { 3 };
-        let flash = beat & mask == 3 && phase_in < 0x46;
-        let track_clut = if flash { FLASH_CLUT } else { BODY_CLUT };
+        let track_clut = if dance_combo_window_bright(beat, level, phase_in) {
+            BEAT_TRACK_CLUT_COMBO
+        } else {
+            BEAT_TRACK_CLUT_IDLE
+        };
         let quad = |id: usize, qx: i16, qy: i16, clut: Option<u16>| {
             self.widgets.get(id).map(|(w, abr)| {
                 let mut w = *w;
@@ -658,12 +660,11 @@ impl DanceGame {
         out.extend(quad(0x10, x - 4, y, Some(track_clut)));
         out.extend(quad(0x11, x + 0x54, y, Some(track_clut)));
         let row = self.chart.rows.get(level as usize);
-        let off = (phase_in * 16 / BEAT_PERIOD) as i16 + 5;
         for i in 0..8u32 {
             let cell = (beat + i).wrapping_sub(1) & 31;
             let sym = row.map_or(0, |r| r[cell as usize % r.len()]) as usize;
-            let nx = x + 16 * i as i16 - off - 4;
-            out.extend(quad(sym + 0xD, nx, y, Some(NOTE_CLUT)).and_then(clip));
+            let nx = dance_beat_track_note_x(i32::from(x), i, phase_in) as i16;
+            out.extend(quad(sym + 0xD, nx, y, Some(BEAT_TRACK_CLUT_NOTE)).and_then(clip));
         }
         for i in 0..12 {
             out.extend(quad(0x1E, x + 8 * i, y, Some(track_clut)).and_then(clip));
