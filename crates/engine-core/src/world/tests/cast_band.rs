@@ -1123,3 +1123,56 @@ fn no_seru_or_summon_tick_writes_hp_beside_its_fold() {
     eprintln!("[ok] {checked} Seru / summon casts tick without touching HP");
     assert!(checked >= 10, "only {checked} casts reached a module");
 }
+
+/// A world with Koru-style casting set up for PROT 0961: party of three at
+/// seats `0..3`, the caster at seat 3 (formation slot 0) carrying `lead`.
+fn dead_end_crisis_world(lead: u16) -> World {
+    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    world.battle_ctx.active_actor = 3;
+    world.actors[3].battle_monster_id = Some(lead);
+    world.set_battle_attack(3, 300);
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[0xA1].class = CAPTURE_CLASS;
+    entries[0xA1].sub_class = 0x1A;
+    entries[0xA1].mp = 0;
+    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    world
+}
+
+/// PROT 0961 outside the evolved-Cort fight is Koru's scripted wipe: arm 3
+/// keeps the `9999` it loaded (`0x801F739C`) and calls no wrapper, so the
+/// fold empties every party seat and draws nothing from the RNG.
+#[test]
+fn dead_end_crisis_wipes_the_party_outside_the_cort_fight() {
+    let mut world = dead_end_crisis_world(0xB6);
+    assert_eq!(world.cast_module_for(0xA1), Some(961));
+    assert!(world.dead_end_crisis_wipes(0xA1));
+    let rng_before = world.rng_state;
+    world.casting.pending_cast = Some(crate::world::PendingCast {
+        caster: 3,
+        spell_id: 0xA1,
+        targets: vec![0, 1, 2],
+    });
+    world.fold_pending_cast();
+    for seat in 0..3 {
+        assert_eq!(world.actors[seat].battle.hp, 0, "seat {seat} survived");
+    }
+    assert_eq!(world.rng_state, rng_before, "the wipe drew from the RNG");
+}
+
+/// In the evolved-Cort fight (`0x8007BD0C == 0xB5`) the same body rolls its
+/// wrapper instead.
+#[test]
+fn dead_end_crisis_rolls_in_the_cort_fight() {
+    let world = dead_end_crisis_world(0xB5);
+    assert!(!world.dead_end_crisis_wipes(0xA1));
+}

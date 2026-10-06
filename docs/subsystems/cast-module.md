@@ -1973,10 +1973,15 @@ Four of the bodies need more than a descriptor:
   initiative clear, `ctx[+0x1A]` bump, `0x801F6FC4..0x801F70A8`). The record
   immunity bits (`+0x6BC & 0x18000000`) that spare a victim are not visible
   to the port.
-- **PROT 0961 is two casts.** In formation `0xB5` it rolls
-  `FUN_801DD4B0(0x880)` per party seat. In any other formation it writes a
-  flat `9999` with no wrapper and forces battle state 5. The port carries the
-  `0xB5` path.
+- **PROT 0961 is two casts.** In formation `0xB5` (the evolved Cort) it
+  rolls `FUN_801DD4B0(0x880)` per party seat. In any other formation - the
+  one other caster is Koru, whose round-4 finisher is `0xA1` - arm 3 keeps
+  the `9999` it loaded in the `bne` delay slot (`0x801F739C`), calls no
+  wrapper and draws no RNG, so every party seat goes to zero. Arm 5 then
+  finds no one standing and raises the party-wipe end itself (signal `0xFE`,
+  cause `5`), the same end the action SM's `0x5A` gate raises. The port
+  lands both through the fold (`World::dead_end_crisis_wipes`), and the
+  engine's own wipe scan ends the fight.
 - **PROT 0919 heals.** It writes `+0x14C` directly, with no wrapper.
 
 The hit on every one of these bodies is the fold's (the

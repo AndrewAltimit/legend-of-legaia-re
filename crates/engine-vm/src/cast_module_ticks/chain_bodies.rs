@@ -797,6 +797,18 @@ pub const NEO_STAR_SLASH_CHAIN: ChainBody = ChainBody {
     ],
 };
 
+/// Extraction PROT entry of the Dead End Crisis / Final Crisis module.
+pub const DEAD_END_CRISIS_ENTRY: u32 = 961;
+
+/// The first formation monster (`0x8007BD0C`) for which PROT 0961's party
+/// sweep rolls its wrapper: the evolved Cort (`li v0,0xb5` /
+/// `bne v1,v0` at `0x801F7394..0x801F7398`).
+pub const DEAD_END_CRISIS_ROLL_FORMATION: u8 = 0xB5;
+
+/// What PROT 0961's sweep writes per party seat in any other fight
+/// (`li s0,0x270f` at `0x801F739C`), clamped to the seat's HP.
+pub const DEAD_END_CRISIS_WIPE_DAMAGE: u16 = 9999;
+
 /// PROT 0961 (`0xA1` / `0xB4`) tick body, `0x801F69D8..0x801F78A4`. The
 /// body never reads the caster's `+0x1DF`, so both ids run it identically;
 /// it forks on the formation id `0x8007BD0C == 0xB5` instead.
@@ -809,15 +821,19 @@ pub const NEO_STAR_SLASH_CHAIN: ChainBody = ChainBody {
 /// own reaction. Arm 5 clears the caster's stage with a bump when a party
 /// seat is still standing. Arm 6 stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`.
 ///
-/// The port carries the formation-`0xB5` path, the one whose wrapper power
-/// the fold rolls. Outside `0xB5` the body is a scripted wipe - a flat
-/// `9999` on every party seat (`0x801F739C`) with no wrapper, then battle
-/// state 5 - which the port does not reproduce. Rate left out under the
-/// module's rate rule: arm 1's caster `+0x21D = 3` (`0x801F6D5C`). Not
-/// ported: the packet arms, the seat line-up and its restore, and the
-/// countdown gates.
+/// Both outcomes are the fold's. In formation `0xB5` it rolls the wrapper
+/// power; anywhere else - Koru's round-4 finisher - arm 3 keeps the `9999`
+/// it loaded in the `bne` delay slot (`0x801F739C`) and calls no wrapper, so
+/// the fold lands [`DEAD_END_CRISIS_WIPE_DAMAGE`] per party seat, clamped to
+/// its HP (`World::dead_end_crisis_wipes`). Arm 5's no-one-standing branch
+/// (`0x801F76E4..0x801F774C`: seat rates `0`, the HUD actors retired, the
+/// battle-end signal `0xFE` with cause `5`) is the same party-wipe end the
+/// action SM's `0x5A` gate raises, which the engine reaches on its own once
+/// the fold has emptied the party. Rate left out under the module's rate
+/// rule: arm 1's caster `+0x21D = 3` (`0x801F6D5C`). Not ported: the packet
+/// arms, the seat line-up and its restore.
 ///
-/// PORT: FUN_801F69D8 (PROT 0961; phase chain + caster staging, formation 0xB5 path; packet arms unported)
+/// PORT: FUN_801F69D8 (PROT 0961; phase chain + caster staging, both formation paths; packet arms unported)
 pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
     prot_entry: 961,
     body: 0x801F_69D8,

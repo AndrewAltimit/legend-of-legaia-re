@@ -358,6 +358,11 @@ impl World {
             DamageFinish, SummonRollActor, arts_physical_predamage_lazy, damage_finish_lazy,
         };
 
+        // PROT 0961's party sweep rolls its wrapper only in the evolved-Cort
+        // fight; anywhere else it is a scripted wipe with no roll at all.
+        if self.dead_end_crisis_wipes(move_id) {
+            return Some(vm::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
+        }
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
             let power = self.baked_module_power(move_id).unwrap_or(power);
             return self.capture_bypass_predamage(attacker, target, power);
@@ -634,6 +639,32 @@ impl World {
         vm::cast_module_ticks::baked_power_for(entry)
             .or_else(|| vm::cast_module_ticks::capture_site_power(entry, move_id))
             .map(i32::from)
+    }
+
+    /// `true` when `move_id` runs PROT 0961's body (Dead End Crisis `0xA1`,
+    /// Final Crisis `0xB4`) in a fight whose first formation monster is not
+    /// the evolved Cort (`0x8007BD0C != 0xB5`).
+    ///
+    /// Arm 3 of that body (`0x801F7098`) loads `s0 = 9999` (`li s0,0x270f`
+    /// in the `bne` delay slot at `0x801F7398..0x801F739C`) and calls
+    /// `FUN_801DD4B0(0x880, ..)` to replace it only when the formation cell
+    /// reads `0xB5`. So Koru's round-4 finisher - the one other caster -
+    /// writes a flat 9999 per party seat, clamped to its HP, with no wrapper
+    /// and no RNG draw: the timed fight's game over.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0961 arm 3, `0x801F738C..0x801F740C`)
+    pub(in crate::world) fn dead_end_crisis_wipes(&self, move_id: u8) -> bool {
+        if self.cast_module_for(move_id) != Some(vm::cast_module_ticks::DEAD_END_CRISIS_ENTRY) {
+            return false;
+        }
+        let lead = self
+            .battle_monster_slots()
+            .into_iter()
+            .find(|&(_, _, slot)| slot == 0)
+            .map(|(_, id, _)| id);
+        lead != Some(u16::from(
+            vm::cast_module_ticks::DEAD_END_CRISIS_ROLL_FORMATION,
+        ))
     }
 
     /// The magnitude seed for a capture-class special a **monster** casts:
