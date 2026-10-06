@@ -518,7 +518,7 @@ gate:
 
 | Area | State |
 |---|---|
-| Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and `play_shop::shop_trade_draws` is the twin of the native `draw_shop_trade`. |
+| Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and both hosts draw the trade screens through the one shared composition (`legaia_engine_screens`). |
 | Options screen | Half closed. Edits persist for the session; a page reload still starts from defaults, where the native window reloads `legaia-options.toml`. |
 | Inn prompt | Closed. Neither host opens an inn session (the retail inn is an ordinary field-VM dialogue), and both draw the prompt when one is up: `play_shop`'s inn arm ports the native `window/hud.rs` arm. |
 | Load / Save rows | Closed at the model. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/` - but both build the slot from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |

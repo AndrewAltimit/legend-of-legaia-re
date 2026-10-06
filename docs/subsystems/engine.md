@@ -103,14 +103,17 @@ engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
 engine-session → engine-core, engine-audio, engine-vm (+ parser crates)  (BootSession + BGM director; no wgpu / winit / cpal)
+engine-screens → engine-core, engine-ui, asset, font  (shop / prize / inn / banner screens both hosts draw; no wgpu)
 parity       → engine-session, engine-core, engine-vm, engine-render, engine-audio (+ parser crates, mednafen, pcsxr)  (parity oracles + retail-compare)
-engine-shell  → parity, engine-session, engine-core, engine-vm, engine-render, engine-audio (+ parser crates)
+engine-shell  → parity, engine-session, engine-screens, engine-core, engine-vm, engine-render, engine-audio (+ parser crates)
 asset-viewer  → engine-*, all parser crates
 ```
 
 Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic - they produce typed in-memory representations. The engine layer turns those into GPU resources / audio buffers. `engine-core` sits *above* `engine-vm` (it implements the per-VM `Host` traits on `World`), while `engine-render` / `engine-audio` are leaf presentation crates the shell composes with the core - they do not depend on `engine-core`.
 
 `engine-ui` is the wgpu-free leaf under `engine-render`: it builds the renderer-agnostic UI draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser target consume them without linking wgpu. `engine-render` re-exports its items at their historical crate-root paths, so native callers see no difference.
+
+`engine-ui` deliberately does not link `engine-core`, so projecting engine state into its builders is a layer of its own. `engine-screens` is that layer for the shop-family screens - the gold shop and its descriptor windows, the casino prize exchange and coin counter, the inn / seru-trade fallback panel and the post-action banners: both play hosts (`engine-shell`, `web-viewer`) call its `shop_overlay_frame` and keep only the input assembly, the stage scale and the upload.
 
 Sequenced music is covered by `crates/seq` (the SEQ parser) plus the `engine-audio` `Sequencer`; the `.dpk / .MAP / .PCH` family decodes through `legaia_asset::sound_pack`. Battle / menu modules live inside `engine-vm` / `engine-core` next to the actor + field VMs rather than as separate crates.
 

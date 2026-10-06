@@ -1076,7 +1076,7 @@ about the cells that outlived their own fixtures.
 | `publisher_logos.rs` | 1 | `801cefd4` | Closed: `w3c_boot_logos_ladder` (`crates/web-viewer/tests/`) opens the logo phase on the browser play page and steps the sequencer to its end on a neutral pad, then again with Start. It is the only union member that starts **before** the title card, which is why one rung was enough |
 | `menu_arrange.rs` | 1 | `801d64a8` | Closed: `w1f2_menu_depth_ladder`'s Items rung picks command-window row 2. It named that step before it reached it - the rung drove Arrange on a bag its own Throw Out leg had emptied, so retail's buzz-on-empty dispatch swallowed the confirm; Arrange runs first now |
 | `save_subscreen.rs` (sub-`0x15` list source) | 1 | `801da2a0` | Closed by seeding its gate: `w7_pause_learned_content_ladder` prepends one Seru spell to the lead record (plus the Ra-Seru the list length is gated on) and drives Status -> Cross -> the page's latch/exchange by pad, and the exchange reaches the record |
-| `ui_menu_window_painters.rs` (window 37) | 1 | `801d5944` | Closed: `w1f2_menu_depth_ladder`'s sell rung drives the root picker's Sell row to the quantity screen. It was a pure reach gap on **both** hosts - `sell_quantity_draws_for` has a `play_shop.rs` and a `window/shop_windows.rs` call site, each filtering window id 37 - and the union's other shop rungs all buy |
+| `ui_menu_window_painters.rs` (window 37) | 1 | `801d5944` | Closed: `w1f2_menu_depth_ladder`'s sell rung drives the root picker's Sell row to the quantity screen. It was a pure reach gap on **both** hosts - `sell_quantity_draws_for` has one call site both hosts reach (`legaia_engine_screens::shop_window_draws`, filtering window id 37) - and the union's other shop rungs all buy |
 | `ui_menu/records_screen.rs` | 1 | `801ed710` | Closed: `play_compose_ladder`'s dev-menu rung taps Square for the Records page and asserts it drew, which is the one row selection the cell asked for |
 
 Every row in the table is converted but one, and that one left as a **gate**
@@ -1610,7 +1610,7 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `battle_trail.rs` | 1 | (b) | the weapon-trail gate, the same one `801e1ab0` names: a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`). `weapon_trail_prims` is called on **both** hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`), so this is content, not a host gap. The tag used to be a `//!` block, scored by the [next function with regions](#a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions) - `project_stage_point`, the native window's projection - rather than by the emitter; it sits on `weapon_trail_prims` now, and over the union neither projection nor the emitter runs, so the gate verdict stands |  `800485bc` |
-| `ui_menu_window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`window/shop_windows.rs`, `play_shop.rs`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
+| `ui_menu_window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`legaia_engine_screens::prize_window_draws`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
 | `gte/math.rs` | 1 | (b) | wired, not disclosed: `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, but only for a part whose `+0x52` skips pitch or roll and **keeps** yaw. The flag kinds the library's flagged nodes carry are `0x380`, `0x100` / `0x180` and `0x400` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)) - each skips yaw or takes the saved-matrix arm first - so no captured part reaches the yaw factor. Content, not a host gap | `8004629c` |
 
 The crate used to be the largest one-reason cluster on this page: with no
@@ -2272,10 +2272,10 @@ thing here that tells the two apart.
 is called from the browser play page and from no native site, so "no ladder
 entered it" and "one host cannot enter it" were both true of the address and
 only the first was a reach verdict. **The host half of that is wrong.**
-`sell_quantity_draws_for` has a native call site in
-`window/shop_windows.rs`, in the same block as the buy-side painter and
-filtering the same descriptor id 37, and it has had one since long before the
-row was written. What survives is the distinction the row was drawn to make:
+`sell_quantity_draws_for` had a native call site in the same block as the
+buy-side painter, filtering the same descriptor id 37, since long before the
+row was written; today that block is the shared
+`legaia_engine_screens::shop_window_draws` both hosts call. What survives is the distinction the row was drawn to make:
 a reach bucket answers what a fixture would do, whether the other host owes a
 call is [`host-drift.md`](host-drift.md)'s question, and conflating them would
 let a drift row be closed by writing a ladder. What does not survive is this

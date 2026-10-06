@@ -140,7 +140,7 @@ randomizer's swaps, keyed to the shop you're standing in.
 The native window is library code: [`window`](src/window.rs) + `src/window/`
 holds the winit + wgpu drivers - the `play-window` / `record` engine viewer
 (`PlayWindowApp`, its `event_handler/` for input and the redraw passes, and
-per-screen modules such as `battle`, `hud`, `minigames`, `shop_windows`) and
+per-screen modules such as `battle`, `hud`, `minigames`, `screens`) and
 the `play-str` movie player (`str_player`), plus their geometry / asset
 helpers - and [`host_setup`](src/host_setup.rs) the session helpers it shares
 with the headless subcommands. The binary is split into modules under

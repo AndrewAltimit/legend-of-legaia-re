@@ -115,6 +115,16 @@ are graph nodes only; nothing classifies them.
 Per builder: **both hosts** → ok; **native only** → DRIFT (fails);
 **web only** → informational; **neither** → ORPHAN (fails).
 
+**A shared composer counts for the hosts that call it.** Some builders have no
+host call site at all: the shop-family screens' only caller is
+[`crates/engine-screens`](../../crates/engine-screens/README.md), the
+projection both hosts share. The gate's `SHARED_COMPOSERS` table names each
+such crate with its entry points, and a builder named in the crate's source is
+credited to exactly the hosts that **call** an entry (`shop_overlay_frame`).
+The credit is per host, not per crate: a host that stops calling the entry
+loses every builder behind it, so a one-host composition still reads as
+`DRIFT`.
+
 Every orphan is named on stdout, waived or not. A bare count cannot tell "the
 same six as yesterday" from "a builder's last caller was deleted this
 morning", which is how deleting `RecipientWindowRects::active_compare`
@@ -800,8 +810,9 @@ remaining difference, the page advancing its clip players inside the step.
 
 This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
-reaches. Engine means the five wgpu-free crates both hosts link
-(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`, `engine-session`). A host's own
+reaches. Engine means the six wgpu-free crates both hosts link
+(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`, `engine-session`,
+`engine-screens`). A host's own
 helpers are followed transitively, so a step spelled as five private methods
 is compared against a twin that inlines them.
 
@@ -2952,10 +2963,12 @@ was assembled inline inside the text pass - so the sprite pass had no row count
 to size a frame from, and adding one meant either duplicating the panel build
 or moving it.
 
-The fix is the move: `shop_overlay_stage_draws` is a `&self` builder both
-passes call, and the rect comes from `shop_panel_rows` (distinct baselines in
-the text) plus `shop_panel_frame_rect` (pen, inset, width, row pitch), both in
-engine-ui and both called by both hosts. Sizing off the text rather than off
+The fix is the move: the shop-family overlay is one frame
+(`legaia_engine_screens::shop_overlay_frame`) the native redraw builds once
+and hands to both passes, and the rect comes from `shop_panel_rows` (distinct
+baselines in the text) plus `shop_panel_frame_rect` (pen, inset, width, row
+pitch), counted over the fallback panel's own rows only - not over the floor
+window or the code lock riding the same stage group. Sizing off the text rather than off
 the session is what lets a screen that grows a row grow its frame on both
 hosts, without either re-deriving a row count from a session shape the other
 does not hold.
@@ -3713,8 +3726,9 @@ or the deviating host adopting the other's behaviour.
   (`PondSession::status_rows`).
 - **A nameless item in the shop.** On a load without the executable the
   native shop printed `item 42` and the page `Item 2A`, each spelling its own
-  fallback. Both shop label helpers read `MenuState::item_label` now, the
-  engine's `Item 2A` form, and a `SIM_PAIRS` row holds them to it.
+  fallback. One shop label helper reads `MenuState::item_label` now, the
+  engine's `Item 2A` form, in the composition both hosts call
+  (`legaia_engine_screens`).
 - **The damage numerals' font fallback on the page.** Both hosts sample
   retail's 24x24 cells off the battle VRAM once it exists and fall back to the
   font before. The page's fallback could never draw: its layout read the
@@ -3770,7 +3784,8 @@ or the deviating host adopting the other's behaviour.
   row holds both `arm_battle_intro` sites to it.
 - **The Seru-trade screen's text.** The offer list's title, owner rows and
   empty-list line and the confirm question were formatted once per host.
-  `seru_trade::trade_screen_text` is the text now, under a `SIM_PAIRS` row.
+  `seru_trade::trade_screen_text` is the text now, read by the one trade
+  draw both hosts reach (`legaia_engine_screens`).
 - **The shop root and Options row models.** Each host mapped
   `shop_menu_rows` onto its own label and ink table, and both left Quit
   white where retail's root window (`FUN_801D4868`) greys it with Sell on an
@@ -3778,7 +3793,9 @@ or the deviating host adopting the other's behaviour.
   engine-only Trade row takes the same rule. The Options screen's rows, the
   hand's row offset and the Key Config rows come from
   `OptionsSession::screen_model`; a host only borrows them into the view
-  types and places the popup. Two `SIM_PAIRS` rows.
+  types and places the popup, under a `SIM_PAIRS` row. The shop root needs
+  none: its one reader is the shared shop composition
+  (`legaia_engine_screens`).
 - **The save-select overlay sequence.** Each host sequenced the screen's
   overlays itself - the pills and their hand, the "Now checking" beat, the
   preview grid and info panel or its caption, the confirm messagebox - with

@@ -141,9 +141,9 @@
 # as `web_missing`, each with its closing call spelled out. Both calls are made
 # and both waivers are gone. `World` carries the `point_card` bank (retail
 # `_DAT_800845B4`), `MenuRuntime` accrues on the `ShopConfirm` buy commit and
-# holds `point_card_toast` until a press, and each host resolves id 31 off the
-# same disc-parsed window table - `window/shop_windows.rs` and
-# `web-viewer/src/play_shop.rs`, with the Items-screen arm in
+# holds `point_card_toast` until a press, and both hosts resolve id 31 off the
+# same disc-parsed window table through the shared shop composition
+# (`crates/engine-screens/src/shop.rs`), with the Items-screen arm in
 # `window/menu_draws.rs` and `web-viewer/src/play_menu.rs`.
 #
 # Which window the beat opens was disc-sourced rather than inferred: both retail

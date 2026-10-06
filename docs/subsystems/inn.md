@@ -216,9 +216,9 @@ installs nothing for free-rest scenes) or directly by `open_inn(cost)`.
   through one, so wiring a host into it would *replace* faithful innkeeper
   dialogue with an invented panel rather than fill a gap. It stays as the
   direct entry for tests and tooling. Both hosts **draw** the `InnConfirm` /
-  `InnSleep` panels when that entry opens one - the native window in
-  `window/hud.rs`, the browser play page in `play_shop.rs`'s
-  `inn_stage_draws`. This page used to record that the browser "deliberately
+  `InnSleep` panels when that entry opens one, through the one shared
+  fallback panel (`legaia_engine_screens::fallback_panel_draws`, in the
+  retail menu ink). This page used to record that the browser "deliberately
   mirrors" the native window by not drawing them, which was false in the
   direction that matters: the native window does draw them, so the browser was
   one host short of a screen rather than in agreement with it. Deleting the

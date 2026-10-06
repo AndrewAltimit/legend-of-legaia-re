@@ -457,11 +457,11 @@ and world-agnostic:
 - Line 1 (yellow): `LEVEL UP! (char N -> Lv M)`
 - Line 2 (green): `HP +X  MP +Y`
 
-Both hosts draw it at the same anchor `(8, 60)` - the native `play-window`
-through `LEVEL_UP_BANNER_PEN` in `window/hud.rs`, and the browser play page
-through its `LEVEL_UP_PEN` twin in `web-viewer::play_shop`. The two pens are
-paired constants: the [host-drift](../tooling/host-drift.md) gate is what keeps
-a change to one from leaving the other behind.
+Both hosts draw it at the same anchor `(8, 60)` in the 320x240 stage, scaled
+to the surface with the rest of the stage text: the pen is one constant,
+`legaia_engine_screens::LEVEL_UP_PEN`, and the banner is one call
+(`legaia_engine_screens::banner_stage_draws`) both the native `play-window`
+and the browser play page reach.
 
 The hosts substitute the character's roster name for the builder's `char N`
 ordinal when the roster carries one, falling back to `P<n>` only for an unnamed
