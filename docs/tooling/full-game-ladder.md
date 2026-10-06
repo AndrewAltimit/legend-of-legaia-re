@@ -640,14 +640,19 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   and branches on the picked row to one scene change per floor; a pad is a
   door to every scene a visible row names, and the pad hand moves the
   highlight to that row. On the way from `sol_tower` the pad rooms are shut:
-  their doors (`kor3` P0[3..6]) refuse with a power-out line while `0x403` /
-  `0x0007` are clear, the lattice reads them as doors a press opens, and the
-  walk stalls at the door. `kor3`'s door to `kor`, `(115, 11)`, sits behind
-  the teleport `(115, 12)` that returns the west doorway's landing
-  `(115, 13)` to `(19, 39)`; the lattice counts a door gap with a teleport
-  tile in it as unwalkable, and the crossing that lands north of that door,
-  `koin1` P2[4], lies in another walk component of `koin1`.
-  `sol_tower -> sol_tower_b2` stalls there.
+  their doors `kor3` P0[3] / P0[5] answer "The power is out." while `0x403`
+  is clear (the debug flag menu labels it Genesis Tree Resurrection), and a
+  walk toward a pad stalls on that line. A band that turns the walk back
+  under the live flags is remembered for the segment, and the hop tries the
+  scene's other doors toward the same destination first.
+- The way down `kor3` is the stair: the west doorway's teleport `(18..19, 39)`
+  lands at `(115, 13)`, and the door to `kor`, `(115..116, 11)`, is reached
+  around the pillar from the north, not across `(115, 12)`, which teleports
+  back to the doorway. The corridor round the pillar crosses `(113, 5..6)`,
+  the walk-on band of P2[14] (the Cara and Grantes beat into `koin1b`),
+  whose C1 gate is `0x426`: once that is set the band is floor. A hop's
+  hazard set holds only the doors whose records the live flags let spawn,
+  so a spent beat's band does not wall off the corridor it lies in.
 - Waypoints are hand-set in the spine from the anchors' flag differences; a
   stretch whose retail path left no flag the census can place has none.
 - Chapter-1 anchors come from several sessions, some with cheat-seeded

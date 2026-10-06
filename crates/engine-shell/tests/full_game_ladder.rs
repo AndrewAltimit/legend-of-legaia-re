@@ -3502,7 +3502,7 @@ fn door_in_reach(session: &BootSession, graph: &DiscGraph, dest: &str) -> bool {
 /// band. `kor3`'s corridor from the west doorway (18..19, 39) lands at
 /// (115, 13); the door to `kor` is (115, 11), and (115, 12) between them
 /// teleports back to the doorway, so the door is reached from the north,
-/// out of `koin1` (its P2[4] lands at (116, 9)).
+/// round the pillar over the spent P2[14] band at (113, 5..6).
 fn door_approachable(session: &BootSession, end: (i16, i16), goal: (i16, i16)) -> bool {
     let d = i32::from((end.0 - goal.0).abs() + (end.1 - goal.1).abs());
     if d > DOOR_APPROACH_SLACK {
@@ -4056,8 +4056,20 @@ fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> {
         && let Ok((p, f)) = scene.field_tile_triggers(index)
     {
         let triggers: Vec<TileTrigger> = p.into_iter().chain(f).collect();
+        // A band whose record's spawn gates fail under the live flags is
+        // floor: `kor3`'s P2[14] at (113, 5..6), the Cara and Grantes beat
+        // into `koin1b`, spawns only while `0x426` is clear, and once it is
+        // set the corridor to the door to `kor` runs over that band.
+        let live = |rec: u8| {
+            legaia_engine_core::man_field_scripts::partition2_record_gates(
+                &mf,
+                &man,
+                usize::from(rec),
+            )
+            .is_none_or(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2))
+        };
         for s in overworld_portal_sites(&mf, &man, &triggers) {
-            if s.scene_name != dest {
+            if s.scene_name != dest && live(s.record) {
                 out.insert((i32::from(s.overworld_x), i32::from(s.overworld_z)));
             }
         }
@@ -4228,6 +4240,19 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
         .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
         .collect();
     tiles.sort_by_key(|t| (t.0 - me0.0).abs() + (t.1 - me0.1).abs());
+    // A band that turned the walk back under the live flags is tried last.
+    let here_name = scene_name(session);
+    let flags_now = flags_of_world(session);
+    let refused = |t: &(i16, i16)| {
+        REFUSED_DOORS.with(|r| {
+            r.borrow().iter().any(|((s, d), f)| {
+                *s == here_name && *f == flags_now && (d.0 - t.0).abs() + (d.1 - t.1).abs() <= 2
+            })
+        })
+    };
+    if tiles.iter().any(|t| !refused(t)) {
+        tiles.retain(|t| !refused(t));
+    }
     let mut picked: Vec<(i16, i16)> = Vec::new();
     for t in tiles {
         if picked.len() < 6
@@ -4333,7 +4358,30 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     {
         return Ok(s);
     }
-    match pad_walk(session, goal, &walk_avoid, 0)? {
+    let walked = match pad_walk(session, goal, &walk_avoid, 0) {
+        Err(e) if e.contains("changed nothing") && scene_name(session) == here_name => {
+            let first = REFUSED_DOORS.with(|r| {
+                r.borrow_mut()
+                    .insert((here_name.clone(), goal), flags_of_world(session))
+                    .is_none()
+            });
+            // Another band of the scene leads to `dest`: walk to that one.
+            if first
+                && doors.iter().any(|d| {
+                    let t = (i16::from(d.tile.0), i16::from(d.tile.1));
+                    !refused(&t) && (t.0 - goal.0).abs() + (t.1 - goal.1).abs() > 2
+                })
+            {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [hop] door {goal:?} to {dest} refused ({e}); trying another");
+                }
+                return pad_hop(session, graph, dest);
+            }
+            return Err(e);
+        }
+        other => other?,
+    };
+    match walked {
         Walk::Entered(s) => Ok(s),
         Walk::Arrived => {
             // On the band: keep pressing into the door while its record
@@ -5542,6 +5590,20 @@ fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
         );
     }
     used && window > 0
+}
+
+/// `(scene, door tile)` -> the flags the band refused under.
+type RefusedDoors = HashMap<(String, (i16, i16)), BTreeSet<u16>>;
+
+thread_local! {
+    /// Door bands a pad walk was turned back from this segment - a script
+    /// on the approach fired and fired and changed nothing (`kor3`'s warp
+    /// pad rooms: P0[3] / P0[5] answer "The power is out." while `0x403` is
+    /// clear) - each with the flags it refused under. [`pad_hop`] tries the
+    /// scene's other doors toward the same destination before it gives the
+    /// hop up; new flags re-open the band.
+    static REFUSED_DOORS: std::cell::RefCell<RefusedDoors> =
+        std::cell::RefCell::new(HashMap::new());
 }
 
 thread_local! {
@@ -7020,6 +7082,7 @@ fn traverse(
     // with pad input only ([`PAD_HAND`]).
     PAD_HAND.with(|h| h.set(pad));
     RESTED.with(|r| r.borrow_mut().clear());
+    REFUSED_DOORS.with(|r| r.borrow_mut().clear());
     let mut via = 0usize;
     let vias: &[String] = &target.via;
     // Edges whose hop failed even after the scene's beats ran: the ladder
