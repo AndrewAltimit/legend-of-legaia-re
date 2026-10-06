@@ -90,9 +90,9 @@ struct CastTrace {
     /// (`0x70`), and the stretch in progress.
     band_ticks: u32,
     band_run: u32,
-    /// The cast runs a capture body ported whole and paced by its own
-    /// countdowns (PROT 0954's roulette), whose band is the choreography
-    /// rather than the stage guard.
+    /// The cast runs a capture body paced by its own countdowns (PROT 0954's
+    /// roulette, or any body with a `capture_arm_countdowns` table), whose
+    /// band is the choreography rather than the stage guard.
     owns_band: bool,
     /// The cast pages PROT 0966 (Evil Seru Magic).
     evil_seru_magic: bool,
@@ -295,8 +295,17 @@ fn cast(
             legaia_engine_vm::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0).is_none()
         });
     t.evil_seru_magic = w.cast_module_for(spell) == Some(EVIL_SERU_MAGIC_ENTRY);
-    t.owns_band = w.cast_module_for(spell)
-        == Some(legaia_engine_vm::cast_fatal_decision::FATAL_DECISION_ENTRY);
+    // PROT 0954's roulette, and every body whose arms the band paces on
+    // the module's own countdown table (`capture_arm_countdowns`): their
+    // band is the choreography's retail length, which runs past the guard
+    // (Genocidal Cannon ~1750 ticks, Dead End Crisis ~1540).
+    t.owns_band = w.cast_module_for(spell).is_some_and(|entry| {
+        use legaia_engine_vm::cast_module_camera as cam;
+        let body = legaia_engine_vm::cast_module_ticks::capture_tick_body(entry, spell)
+            .unwrap_or(cam::SINGLE_BODY);
+        entry == legaia_engine_vm::cast_fatal_decision::FATAL_DECISION_ENTRY
+            || cam::capture_arm_countdowns(entry, body).is_some()
+    });
     let mut start = (0i32, 0i32);
     t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
         legaia_engine_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
