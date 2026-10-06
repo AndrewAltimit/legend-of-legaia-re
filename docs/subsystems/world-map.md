@@ -2073,7 +2073,7 @@ The remaining hub legs, one level deep, decoded + driven by the disc-gated
   `0x44D` door is passed the deep castle is open. The oracle's part F drives
   `jou -> jouina -> jouinb -> jouinc` end-to-end in one session (the door
   cutscene completes through the player-channel model) - the deepest driven
-  interior chain in the engine. `jouinc`/`jouind` decode is an open thread.
+  interior chain in the engine. `jouinc`/`jouind`'s partition-2 records are door-choreography families (a `0x00F` busy-mutex and a per-visit `0x4BE..0x4C2` band), not story gates - see [`script-vm.md`](script-vm.md#door-choreography-record-families-the-0x00f-busy-mutex--the-jouind-per-visit-band).
 - **Decoder asymmetry (pinned):** the partition-1 destination-table scan
   under-reports doors carried only by `P2` records (`jouinb`'s `jouina`
   return door) - the reverse of the `jou` `P2[5]` blind spot; the `P2`
