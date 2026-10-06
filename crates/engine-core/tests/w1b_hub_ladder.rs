@@ -473,7 +473,7 @@ fn the_deactivate_handler_picks_its_re_arm_state_from_the_progress_flags() {
     };
     let f = hub::deactivate(&mut actor, &env, &mut grid);
     assert_eq!(actor.state, hub::HUB_SKIP_STATE);
-    assert!(f.actions.contains(&HubAction::CloseCue));
+    assert!(f.actions.contains(&HubAction::CloseAllPanels));
 }
 
 /// A back-out is a confirm for the screens whose confirm mask is the OR of
