@@ -336,6 +336,52 @@ pub const VERA_RESTORE_SPAWNS: [ModuleSpawn; 5] = module_spawns(
 /// The phase arm PROT 0905 restores its target in.
 pub const VERA_RESTORE_ARM: u8 = 9;
 
+/// PROT 0905's arm-2 fade (`0x801F6DF4..0x801F6E5C`): once the countdown
+/// has run out the arm requests the creature stream and spawns an additive
+/// ramp black -> white over `0x20` vsyncs, held until killed, id `1`, and
+/// keeps its actor at `ctx[+0x102C]`. The kind is the busy word the routine
+/// returns (`sp+0x38`, `1` while it runs). `vera_summon_mid_cast` holds it
+/// eight vsyncs in beside the band's flash-out.
+pub const VERA_RISE_FADE: crate::battle_action::SummonFadeTemplate =
+    crate::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x20,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        delay: 0,
+        hold: -1,
+    };
+
+/// PROT 0905's arm-4 pair (`0x801F6F30..0x801F6FC4`): the arm kills the
+/// arm-2 fade and four effect actors, then spawns a warm additive flash
+/// `(0xFF, 0xE0, 0x80)` -> black over `0x40` vsyncs and a blue one
+/// `(0, 0x1F, 0x7F)` -> black over `0x20`, both id `1` and done when they
+/// land.
+pub const VERA_CUT_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 2] = [
+    (
+        crate::battle_action::SummonFadeTemplate {
+            kind: 1,
+            duration: 0x40,
+            start_rgb: [0xFF, 0xE0, 0x80],
+            end_rgb: [0, 0, 0],
+            delay: 0,
+            hold: 0,
+        },
+        1,
+    ),
+    (
+        crate::battle_action::SummonFadeTemplate {
+            kind: 1,
+            duration: 0x20,
+            start_rgb: [0, 0x1F, 0x7F],
+            end_rgb: [0, 0, 0],
+            delay: 0,
+            hold: 0,
+        },
+        1,
+    ),
+];
+
 /// `trunc(v / d)` - the reciprocal-`mult` / `sra` / `subu sign` idiom and the
 /// `bgez; addiu d-1; sra` idiom both round toward zero.
 fn div0(v: i16, d: i32) -> i32 {
@@ -350,9 +396,9 @@ fn div0(v: i16, d: i32) -> i32 {
 /// |---:|---|---|
 /// | 0 | - | snap: pitch `0`, yaw `0x60C - f`, TR `(0, 0x5E0, 0x800)`, focus a 24th of a unit along `g` from the target (`0x801F6BDC`); countdown `= scalar << 6` |
 /// | 1 | one drain | pitch `-0x60`, yaw `0x9F4 - f`, TR `(0, 0x580, 0x80)`, the same focus, over `0x60` frames (`0x801F6D88`) |
-/// | 2 | while non-negative, drain; hold while still non-negative | the creature stream load and a fade, taken as ready |
+/// | 2 | while non-negative, drain; hold while still non-negative | the creature stream load, taken as ready; the white rise ([`VERA_RISE_FADE`]) |
 /// | 3 | - | countdown `= scalar << 5` |
-/// | 4 | drain, hold while non-negative | snap: pitch `0`, yaw `-f`, TR `(0, 0x600, 0x800)`, focus a 16th of a unit along `f` past the target (`0x801F7074`); countdown `+= scalar * 60` |
+/// | 4 | drain, hold while non-negative | snap: pitch `0`, yaw `-f`, TR `(0, 0x600, 0x800)`, focus a 16th of a unit along `f` past the target (`0x801F7074`); kills the rise, spawns [`VERA_CUT_FADES`]; countdown `+= scalar * 60` |
 /// | 5 | drain, hold while non-negative | seats the creature a 16th of a unit along `g` from the target, facing `g`; countdown `+= scalar * 180`; the phase jumps by **3**, so arms 6 and 7 are never reached |
 /// | 8 | drift; drain, hold while non-negative | snap: pitch `0`, yaw `0x800 - facing`, TR `(0, 0xA00, 0x200)`, focus the creature (`0x801F7994`); countdown `+= scalar * 112` |
 /// | 9 | drift; drain, hold while non-negative | the restore; countdown `+= scalar * 112` |
@@ -405,7 +451,10 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if st.countdown.0 >= 0 && st.countdown.drain_non_negative() {
                 return ArmDirection::HOLD;
             }
-            ArmDirection::PASS
+            ArmDirection {
+                fades: &[(VERA_RISE_FADE, 1)],
+                ..ArmDirection::PASS
+            }
         }
         3 => {
             st.countdown.arm(5);
@@ -419,6 +468,8 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             let (sin, cos) = trig12(f);
             ArmDirection {
                 spawns: &VERA_CUT_SPAWNS,
+                fades: &VERA_CUT_FADES,
+                kills_fades: true,
                 ..ArmDirection::shot(ModuleShot {
                     angles: [0, yaw_from(0, f), 0],
                     tr: [0, 0x600, 0x800],

@@ -2170,10 +2170,11 @@ impl LegaiaRuntime {
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.
-        if let Some((rgb, abr, ot)) = self
+        for (rgb, abr, ot) in self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.screen_fade_draw())
+            .map(|h| h.world.screen_fade_draws())
+            .unwrap_or_default()
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
@@ -2502,12 +2503,12 @@ impl LegaiaRuntime {
                 // ordering-table id is in front of the text's bucket (a
                 // field warp's id `0`); the summon band's flashes (id `1`)
                 // stay under it. The native window makes the same split.
-                if let Some((rgb, abr, ot)) = h.world.screen_fade_draw()
-                    && legaia_engine_ui::screen_prim::push_covers_text(
+                for (rgb, abr, ot) in h.world.screen_fade_draws() {
+                    if legaia_engine_ui::screen_prim::push_covers_text(
                         i16::try_from(ot).unwrap_or(i16::MAX),
-                    )
-                {
-                    w.push((abr, [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]));
+                    ) {
+                        w.push((abr, [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]));
+                    }
                 }
                 w
             })

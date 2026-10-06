@@ -234,6 +234,13 @@ pub struct ArmDirection {
     pub vram_move: Option<ModuleVramMove>,
     /// The text the arm put up on this pass (`FUN_8003541C`), if any.
     pub caption: Option<ModuleCaption>,
+    /// The full-screen fades the arm spawned on this pass
+    /// (`FUN_80024E80(0x801C9070, id)` over the template it wrote), in call
+    /// order, each `(template, id)`.
+    pub fades: &'static [(crate::battle_action::SummonFadeTemplate, i16)],
+    /// The arm killed the module's earlier fades (`ori 0x8` into each fade
+    /// actor's flag word) before it spawned its own.
+    pub kills_fades: bool,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -380,6 +387,8 @@ impl ArmDirection {
         spawns: &[],
         vram_move: None,
         caption: None,
+        fades: &[],
+        kills_fades: false,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -390,6 +399,8 @@ impl ArmDirection {
         spawns: &[],
         vram_move: None,
         caption: None,
+        fades: &[],
+        kills_fades: false,
     };
     pub(super) const PARK: Self = Self {
         hold: true,
@@ -400,6 +411,8 @@ impl ArmDirection {
         spawns: &[],
         vram_move: None,
         caption: None,
+        fades: &[],
+        kills_fades: false,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {

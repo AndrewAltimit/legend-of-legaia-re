@@ -1304,6 +1304,9 @@ impl World {
         {
             self.presentation.fade = None;
         }
+        self.presentation
+            .module_fades
+            .retain_mut(|f| f.step() || f.holds_at_end());
         // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp
         // that lands on a non-neutral target HOLDS there (a screen faded to
         // black stays black until a new op replaces it); one that lands on

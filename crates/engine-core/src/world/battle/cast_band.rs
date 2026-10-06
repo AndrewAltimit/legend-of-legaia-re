@@ -1135,6 +1135,16 @@ impl World {
             if let Some(c) = r.caption {
                 self.casting.module_caption = Some(c);
             }
+            // The arm's own fades run beside the band's flash: retail's
+            // spawner takes a fresh pool actor per call.
+            if r.kills_fades {
+                self.presentation.module_fades.clear();
+            }
+            for (t, id) in r.fades {
+                let mut seat = None;
+                crate::fade::spawn_fade(&mut seat, &crate::fade::summon_template(t), *id);
+                self.presentation.module_fades.extend(seat);
+            }
         }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
@@ -1639,17 +1649,34 @@ impl World {
     /// OT index the id `FUN_80024E80` stamped (`AddPrim(ot + id*4, ..)` in
     /// `FUN_80024EE4`).
     pub fn screen_fade_draw(&self) -> Option<(u32, u8, u32)> {
-        let f = self.presentation.fade.as_ref()?;
-        if !f.visible() {
-            return None;
-        }
-        let [r, g, b] = f.rgb();
-        Some((
-            (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
-            f.kind.clamp(0, 3) as u8,
-            f.mode[2].max(0) as u32,
-        ))
+        fade_draw(self.presentation.fade.as_ref()?)
     }
+
+    /// Every live full-screen fade quad this frame, the world's fade first
+    /// and then the module fades running beside it
+    /// ([`crate::world::ScreenFxState::module_fades`]), each as
+    /// [`Self::screen_fade_draw`] gives it. Both hosts composite the list.
+    pub fn screen_fade_draws(&self) -> Vec<(u32, u8, u32)> {
+        self.presentation
+            .fade
+            .iter()
+            .chain(self.presentation.module_fades.iter())
+            .filter_map(fade_draw)
+            .collect()
+    }
+}
+
+/// One fade's quad, `None` while its start delay runs.
+fn fade_draw(f: &crate::fade::FadeState) -> Option<(u32, u8, u32)> {
+    if !f.visible() {
+        return None;
+    }
+    let [r, g, b] = f.rgb();
+    Some((
+        (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
+        f.kind.clamp(0, 3) as u8,
+        f.mode[2].max(0) as u32,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1711,6 +1738,10 @@ pub struct CastModuleCodeRun {
     pub vram_move: Option<vm::cast_module_camera::ModuleVramMove>,
     /// The text the module's arm put up this frame.
     pub caption: Option<vm::cast_module_camera::ModuleCaption>,
+    /// The fades the module's arm spawned this frame, each `(template, id)`.
+    pub fades: &'static [(vm::battle_action::SummonFadeTemplate, i16)],
+    /// The arm killed the module's earlier fades first.
+    pub kills_fades: bool,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -2534,6 +2565,8 @@ impl World {
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.vram_move = direction.and_then(|d| d.vram_move);
         run.caption = direction.and_then(|d| d.caption);
+        run.fades = direction.map_or(&[], |d| d.fades);
+        run.kills_fades = direction.is_some_and(|d| d.kills_fades);
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
@@ -3486,6 +3519,8 @@ impl World {
             spawns: &[],
             vram_move: None,
             caption: None,
+            fades: &[],
+            kills_fades: false,
         })
     }
 

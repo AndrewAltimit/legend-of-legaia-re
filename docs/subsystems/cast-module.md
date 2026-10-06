@@ -1130,6 +1130,18 @@ creature requested as its phase reaches the arm instead of on the stager's
 first tick. Four camera-only directors (PROT 0917, 0928, 0929, 0931) park
 short of their seat arm, so theirs keep the first-tick seat.
 
+#### A module's fades run beside the band's
+
+The fade spawner `FUN_80024E80` takes a fresh pool actor per call, so a
+module's own ramps run beside the summon band's flash rather than replacing
+it. PROT 0905 (Vera) spawns a white rise in arm 2 (`0x20` vsyncs, additive,
+held) and in arm 4 kills it and spawns a warm `(0xFF, 0xE0, 0x80)` and a blue
+`(0, 0x1F, 0x7F)` flash decaying to black. `vera_summon_mid_cast` holds the
+rise eight vsyncs in beside the band's flash-out, and the frame is their
+sum. The engine keeps such fades in `presentation.module_fades`
+(`ArmDirection::fades`) and both hosts composite every live fade through
+`World::screen_fade_draws`.
+
 #### A module that reports its spawns
 
 Seating every record on the stager's first tick puts each program on the

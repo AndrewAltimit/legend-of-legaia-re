@@ -3272,7 +3272,7 @@ impl PlayWindowApp {
             // (id `1`, the text's own bucket) draw under the battle HUD, a
             // field warp's fade (id `0`) over it. The browser play page
             // makes the same split (`play_text_layer_washes_json`).
-            if let Some(p) = self.screen_fade_screen_prim() {
+            for p in self.screen_fade_screen_prims() {
                 let ot = i16::try_from(p.ot_index()).unwrap_or(i16::MAX);
                 if legaia_engine_render::screen_prim::push_covers_text(ot) {
                     screen_prims.push(p);

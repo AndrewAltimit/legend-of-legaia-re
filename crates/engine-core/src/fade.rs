@@ -282,10 +282,11 @@ impl FadeState {
 /// 12 = [`FadeTemplate::mode`]`[2]`) and run the loader
 /// ([`FadeState::load`] = `FUN_80020B00`) on the actor's `+0x7C` block.
 ///
-/// The engine's fade pool is **one seat**: `World::presentation.fade`, the
-/// `Option<FadeState>` both hosts composite through `World::screen_fade_draw`.
-/// A spawn replaces whatever fade holds it, so the allocation arm always
-/// succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
+/// The engine's fade pool is the world's seat `World::presentation.fade`
+/// plus the module fades beside it (`presentation.module_fades`, PROT 0905's
+/// own ramps), both composited through `World::screen_fade_draws`. A spawn
+/// into the seat replaces whatever fade holds it, so the allocation arm
+/// always succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
 /// counterpart and is not modelled. The template is copied rather than
 /// mutated in place - retail stamps a scratch buffer (a stack frame in the
 /// field overlay's `FUN_801D58F0`, `DAT_801C9070` for the battle escape) that
@@ -301,6 +302,18 @@ pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16
     let mut t = *template;
     t.mode[2] = id;
     *seat = Some(FadeState::load(&t));
+}
+
+/// [`FadeTemplate`] off the summon band's 13-word template layout
+/// (`DAT_801C9070`).
+pub fn summon_template(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> FadeTemplate {
+    FadeTemplate {
+        kind: t.kind,
+        duration: t.duration,
+        start_rgb: t.start_rgb,
+        end_rgb: t.end_rgb,
+        mode: [t.delay, t.hold, 0],
+    }
 }
 
 /// A persistent full-scene colour grade - the warm gold/sepia the opening

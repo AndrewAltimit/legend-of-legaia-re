@@ -833,17 +833,20 @@ impl PlayWindowApp {
     /// the weapon as drawn.
     // REF: FUN_800485BC (packet + band order live in
     // `legaia_engine_ui::battle_trail`; this is the per-host projection)
-    /// The world's live full-screen fade as one flat quad
-    /// ([`legaia_engine_core::world::World::screen_fade_draw`] through
-    /// `fade_prim`, the kernel both hosts composite fades with): `None` while
-    /// no fade is up or its start delay is still running.
-    pub(super) fn screen_fade_screen_prim(
+    /// The world's live full-screen fades as flat quads
+    /// ([`legaia_engine_core::world::World::screen_fade_draws`] through
+    /// `fade_prim`, the kernel both hosts composite fades with): empty while
+    /// no fade is up or every start delay is still running.
+    pub(super) fn screen_fade_screen_prims(
         &self,
-    ) -> Option<legaia_engine_render::screen_overlay::ScreenPrim> {
-        let (rgb, abr, ot) = self.session.host.world.screen_fade_draw()?;
-        Some(legaia_engine_render::screen_overlay::fade_prim(
-            rgb, abr, ot,
-        ))
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        self.session
+            .host
+            .world
+            .screen_fade_draws()
+            .into_iter()
+            .map(|(rgb, abr, ot)| legaia_engine_render::screen_overlay::fade_prim(rgb, abr, ot))
+            .collect()
     }
 
     /// PROT 0948's Cross Beam packets while arm 3 runs

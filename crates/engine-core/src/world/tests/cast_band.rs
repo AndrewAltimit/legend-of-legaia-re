@@ -1388,3 +1388,42 @@ fn every_summon_stager_lets_go() {
     );
     assert!(stuck.is_empty(), "never let go: {stuck:x?}");
 }
+
+/// PROT 0905 (Vera) runs its own fades beside the band's flash: arm 2's
+/// white rise, killed by arm 4, which spawns its warm and blue pair. Both
+/// hosts draw them through `screen_fade_draws`.
+#[test]
+fn vera_runs_its_fades_beside_the_band_flash() {
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 1;
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    world.presentation.fade = Some(crate::fade::FadeState::load(&crate::fade::summon_template(
+        &legaia_engine_vm::battle_action::SUMMON_FLASH_OUT,
+    )));
+    world.arm_summon_stager(0, 0x83);
+    let mut rise = false;
+    let mut pair = false;
+    for _ in 0..4000 {
+        world.summon_stager_tick();
+        let _ = world.take_pending_summon_spawn();
+        let fades = &world.presentation.module_fades;
+        if fades.len() == 1 && fades[0].target_rgb() == [0xFF; 3] {
+            rise = true;
+        }
+        if fades.len() == 2 {
+            pair = true;
+            break;
+        }
+    }
+    assert!(rise, "arm 2 spawns the white rise");
+    assert!(pair, "arm 4 replaces it with its pair");
+    assert!(
+        world.screen_fade_draws().len() >= 2,
+        "drawn beside the band flash"
+    );
+}

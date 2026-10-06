@@ -17,6 +17,12 @@ pub struct ScreenFxState {
     /// [`crate::world::World::tick`]; dropped when the ramp completes. Hosts draw an
     /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
     pub fade: Option<crate::fade::FadeState>,
+    /// Further full-screen fades running beside [`Self::fade`]: retail's
+    /// fade spawner allocates a pool actor per call, so a module can run its
+    /// own ramps while the summon band's flash is still up (PROT 0905's
+    /// white rise over the band's flash-out). Stepped and drawn like
+    /// [`Self::fade`], dropped as each lands; cleared with the battle.
+    pub module_fades: Vec<crate::fade::FadeState>,
     /// The live **screen-effect colour tween** the field VM's op `0x34`
     /// sub-0 arm installs - the pool slot retail keeps in `_DAT_8007B62C`.
     ///
@@ -120,6 +126,7 @@ impl ScreenFxState {
         Self {
             pending_fade: None,
             fade: None,
+            module_fades: Vec::new(),
             effect_tween_slot: None,
             effect_target_rgb: [0; 3],
             effect_blend: 0,
