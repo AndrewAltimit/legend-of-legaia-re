@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
   <h1>Inn</h1>
-  <p class="lede">Pay the innkeeper, the screen fades, and the party wakes with full HP and MP. Retail Legaia has no inn <em>system</em> behind that: no dedicated code, no price table, no "this is an inn" flag. Every inn is an ordinary conversation in its town's script, and the price is a number typed into that script. That is what makes the stay portable and editable - and what makes finding a price a byte scan rather than a table lookup. <span class="tag tag-done">Fully ported</span></p>
+  <p class="lede">Pay the innkeeper, the screen fades, and the party wakes with full HP and MP. Retail Legaia has no inn <em>system</em> behind that: no dedicated code, no price table, no "this is an inn" flag. Every inn is an ordinary conversation in its town's script, and the price is a number typed into that script. That is what makes the stay portable and editable - and what makes finding a price a byte scan rather than a table lookup.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -18,28 +18,51 @@
 
 <section class="doc-section" id="flow">
   <h2>One stay, six script steps</h2>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Talk</span><span class="desc">the innkeeper greets, quotes the price, asks the question</span><span class="crate">text pages</span>
-    <span class="num">2</span><span class="layer">Yes / No</span><span class="desc">a 2-option picker; the Yes entry jumps straight to the gold gate</span><span class="crate">op 0x2A</span>
-    <span class="num">3</span><span class="layer">Gate</span><span class="desc">if gold &lt; price, skip to the can't-afford line</span><span class="crate">op 0x4E sub-3</span>
-    <span class="num">4</span><span class="layer">Debit</span><span class="desc">subtract the price from the purse</span><span class="crate">op 0x3A</span>
-    <span class="num">5</span><span class="layer">Sleep</span><span class="desc">release the music, fade, wait</span><span class="crate">ops 0x35 / 0x34 / 0x4A</span>
-    <span class="num">6</span><span class="layer">Restore</span><span class="desc">refill HP and MP, one op per party slot; some inns then warp to a dream scene</span><span class="crate">4C 82 &lt;slot&gt;</span>
-  </div>
-  <p>Every step is a plain script instruction, so two inns in two towns differ only in the price literal. The No answer and the can't-afford skip both land on refusal lines inside the same record; a stay never leaves the script VM.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One inn stay inside the innkeeper's script record: the greeting and price lines, a two-option picker whose Yes entry jumps to the gold gate; the gate skips to a can't-afford line when gold is short, otherwise the debit takes the price, the sleep fades the screen, and the restore refills HP and MP one party slot at a time. No and can't-afford both land on refusal lines in the same record.">
+      <defs><marker id="inn-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="8" y="8" width="844" height="204" rx="8"/>
+      <text class="dg-edge-label" x="20" y="26">one dialogue record in the town's MAN script</text>
+      <rect class="dg-node" x="20" y="40" width="120" height="56" rx="5"/>
+      <text class="dg-label" x="80" y="64">Talk</text><text class="dg-sub" x="80" y="82">price line</text>
+      <rect class="dg-node-accent" x="160" y="40" width="120" height="56" rx="5"/>
+      <text class="dg-label" x="220" y="64">Yes / No</text><text class="dg-sub" x="220" y="82">op 0x2A picker</text>
+      <rect class="dg-node-accent" x="300" y="40" width="120" height="56" rx="5"/>
+      <text class="dg-label" x="360" y="64">Gold gate</text><text class="dg-sub" x="360" y="82">op 0x4E sub-3</text>
+      <rect class="dg-node" x="440" y="40" width="120" height="56" rx="5"/>
+      <text class="dg-label" x="500" y="64">Debit</text><text class="dg-sub" x="500" y="82">op 0x3A</text>
+      <rect class="dg-node" x="580" y="40" width="120" height="56" rx="5"/>
+      <text class="dg-label" x="640" y="64">Sleep</text><text class="dg-sub" x="640" y="82">music off, fade</text>
+      <rect class="dg-node-ok" x="720" y="40" width="120" height="56" rx="5"/>
+      <text class="dg-label" x="780" y="64">Restore</text><text class="dg-sub" x="780" y="82">4C 82 per slot</text>
+      <rect class="dg-node-warn" x="160" y="140" width="260" height="56" rx="5"/>
+      <text class="dg-label" x="290" y="164">Refusal lines</text><text class="dg-sub" x="290" y="182">"No" or can't afford</text>
+      <path class="dg-edge" d="M140 68 L158 68" marker-end="url(#inn-arrow)"/>
+      <path class="dg-edge" d="M280 68 L298 68" marker-end="url(#inn-arrow)"/>
+      <path class="dg-edge" d="M420 68 L438 68" marker-end="url(#inn-arrow)"/>
+      <path class="dg-edge" d="M560 68 L578 68" marker-end="url(#inn-arrow)"/>
+      <path class="dg-edge" d="M700 68 L718 68" marker-end="url(#inn-arrow)"/>
+      <path class="dg-edge-dim" d="M220 96 L220 138" marker-end="url(#inn-arrow)"/>
+      <path class="dg-edge-dim" d="M360 96 L360 138" marker-end="url(#inn-arrow)"/>
+      <text class="dg-edge-label" x="228" y="126">No</text>
+      <text class="dg-edge-label" x="368" y="126">gold &lt; price</text>
+    </svg>
+    <figcaption>Every step is a plain script instruction, so two inns in two towns differ only in the price literal. Some inns append a warp to a dream scene after the restore.</figcaption>
+  </figure>
+  <p>The No answer and the can't-afford skip both land on refusal lines inside the same record; a stay never leaves the script VM.</p>
 </section>
 
 <section class="doc-section" id="trigger">
   <h2>The trigger is the picker's jump</h2>
   <p>Nothing marks a dialogue as an inn. The hand-off from the offer to the restore is the option picker's per-option relative jump: the record is laid out so that answering <em>Yes</em> lands on the gold gate. Two details of that layout trip up a port - either alone makes every inn unreachable.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Detail</th><th>What it is</th><th>What goes wrong if misread</th></tr></thead>
     <tbody>
       <tr><td>Menu open byte <code>0x2A</code></td><td>A 2-option picker that animates the box first and clamps (does not wrap) the cursor. Handled by the same arm as <code>0x27..0x29</code>.</td><td>A decoder that stops at <code>0x29</code> finds no inn menu - and misses a large share of the game's other menus.</td></tr>
       <tr><td><code>A2 F8 &lt;clip&gt;</code> / <code>AC F8 08</code> / <code>AD F8 08</code></td><td>"Play a clip on the <em>player</em>, clear the end latch, spin until it re-latches." Bit 8 of the actor's clip-control word is the end flag; <code>F8</code> retargets the player.</td><td>Treating the spin as "conversation over" stops one instruction into the Yes branch, before the gate.</td></tr>
     </tbody>
   </table>
-  <p>In the port, <code>World::trigger_field_interact</code> steps the innkeeper's record through the field VM; the gate reads the live purse, the debit is the record's own <code>ADD_MONEY</code>, and the restore is its own <code>4C 82</code> ops. The runner parks on the clip spin until the player's clip cursor latches the end by itself.</p>
+  <p>The port runs the innkeeper's own record through its field VM: the gate reads the live purse, the debit is the record's own <code>ADD_MONEY</code>, the restore is its own <code>4C 82</code> ops, and the runner parks on the clip spin until the player's clip latches its end.</p>
   <details class="disclosure">
     <summary>Record layout, as read off the <code>retock</code> innkeeper</summary>
     <div class="disclosure-body">
@@ -63,7 +86,7 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
   <h2>Where the price lives</h2>
   <p>The price is a <strong>gold-gate + debit pair</strong>: op <code>0x4E</code> sub-op 3 compares the party's gold against a u16 literal and skips when gold is short; op <code>0x3A</code> (<code>ADD_MONEY</code>) then applies the negative of that literal. A 32-bit sibling (sub-op 10) exists for prices above 65,535 and is used only by the casino's gold-to-coin counters.</p>
   <p><code>legaia_asset::inn_costs</code> finds the pair by byte scan - a literal in a gold compare that reappears as a debit within a few instructions - which survives the picker jump tables that desync a linear walk. The engine runs that scan at scene load. Free rests (Rim Elm's bed, Biron) have no pair at all.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Scene family</th><th>Charge</th><th>Form</th></tr></thead>
     <tbody>
       <tr><td><code>ropeway</code>, <code>balden</code>, <code>rayman2</code> inns</td><td>200 G</td><td>sub-3, u16</td></tr>
@@ -74,14 +97,9 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
   </table>
 </section>
 
-<section class="doc-section" id="engine-session">
-  <h2>The engine's spare prompt</h2>
-  <p>The port also carries <code>InnSession</code> (<code>engine-core::inn</code>): a menu-style cost window with <code>InnConfirm</code> / <code>InnSleep</code> sub-screens and its own commit kernel. Nothing on the playable path opens it - retail has no such screen, so wiring it in would replace the innkeeper's real dialogue with an invented panel. It remains a direct entry for tests and tooling; the <code>DREAM</code> warp some inns append after the restore is not reached by the port yet.</p>
-</section>
-
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Field VM op <code>0x4E</code> inner jump table</td><td><code>0x801CEE30</code> (12 entries)</td><td>Sub-3 arm at <code>0x801E0AEC</code> loads party gold <code>_DAT_8008459C</code>; sub-9 at <code>0x801E0B34</code> loads the casino coin bank <code>_DAT_800845A4</code>. Read from the disassembly - the decompiled C collapses these arms.</td><td><code>overlay_0897_801de840.txt</code></td></tr>
@@ -89,8 +107,7 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
       <tr><td>Picker cursor handler</td><td><code>0x801D941C</code></td><td>Option count comes off the active state (<code>0x18</code> = 4, <code>0x16</code> = 3, else 2); <code>0x2A</code> enters state <code>0x11</code> and clamps.</td><td>field overlay dump</td></tr>
       <tr><td>Actor tick</td><td><code>FUN_800204F8</code></td><td>Latches bit 8 of <code>actor+0x62</code> when a clip ends - the bit the <code>AD F8 08</code> spin waits on.</td><td><code>800204f8.txt</code></td></tr>
       <tr><td>Cross-context id resolver</td><td><code>FUN_8003C83C</code></td><td>Id <code>F8</code> short-circuits to the live player object <code>_DAT_8007C364</code>.</td><td><code>8003c83c.txt</code></td></tr>
-      <tr><td>Disc sweep</td><td><code>crates/asset/tests/inn_costs_disc.rs</code></td><td>The gate + debit pair resolves in every inn / paid-lodging scene and nowhere a rest is free.</td><td>-</td></tr>
-      <tr><td>Engine oracle</td><td><code>crates/engine-core/tests/inn_stay_field_vm_disc.rs</code></td><td>Drives the real <code>retock</code> record from the interact call; checks the gold delta and party pools on Yes, No and can't-afford.</td><td>-</td></tr>
+      <tr><td>Disc sweep</td><td>every scene MAN</td><td>The gate + debit pair resolves in every inn / paid-lodging scene and nowhere a rest is free; the real <code>retock</code> record, run through the port's field VM, moves the gold and the party pools on Yes and leaves both alone on No and can't-afford.</td><td>-</td></tr>
     </tbody>
   </table>
   <details class="disclosure">
