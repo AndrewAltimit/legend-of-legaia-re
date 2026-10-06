@@ -81,6 +81,15 @@ pub struct AmbientFxState {
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
     pub vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
+    /// Capture alignment for the retail comparison's frame: a retail state's
+    /// live mode-3 cycler snapshots (adds, mode and white amount per captured
+    /// rect), written over the matching parts' own values when
+    /// [`crate::world::World::step_ambient_fx`] rewrites the cells. A
+    /// cycler's phase is time since the scene entry, which a card-load seed
+    /// cannot reproduce; `jouine`'s flesh walls hue-cycle through green, so
+    /// the same frame scored by luck of the phase. Empty everywhere but the
+    /// comparison's `play-window` child (`LEGAIA_SEAT_CLUT_FX`).
+    pub cell_fx_seed: Vec<crate::clut_cell_fx::ClutCellFx>,
 }
 
 impl AmbientFxState {
@@ -100,6 +109,7 @@ impl AmbientFxState {
             script_vram_moves: Vec::new(),
             script_vram_stp: Vec::new(),
             vram_rect_copies: Vec::new(),
+            cell_fx_seed: Vec::new(),
         }
     }
 }

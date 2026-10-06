@@ -86,7 +86,7 @@ fn bytes_at(ram: &[u8], va: u32, len: usize) -> Option<Vec<u8>> {
 }
 
 /// Every node on the actor lists, each once, in list order.
-fn actor_nodes(ram: &[u8]) -> Vec<u32> {
+pub fn actor_nodes(ram: &[u8]) -> Vec<u32> {
     let mut seen = std::collections::BTreeSet::new();
     let mut out = Vec::new();
     for k in 0..ACTOR_LIST_SPAN {

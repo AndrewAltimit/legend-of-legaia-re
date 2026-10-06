@@ -201,6 +201,18 @@ engine verdict:
   (`hud_countdown_cap`); without the clamp no overworld capture drew the
   readout retail's frame shows.
 
+  The palette the mode-3 CLUT-cell cyclers write is aligned too. A cycler
+  is a move-VM part (`FUN_80021DF4`, render mode `+0x5A = 3`) whose
+  `FUN_80019D50` rewrite of its captured rect reads only its adds
+  `+0x90/92/94`, its mode `+0x9E` and its white amount `+0x68`
+  ([field-ambient-fx](../subsystems/field-ambient-fx.md)); the state's live
+  parts are read off the actor lists (`retail_cell_fx`) and handed to the
+  child as `LEGAIA_SEAT_CLUT_FX`, which writes them over the matching rects'
+  own values (`AmbientFxState::cell_fx_seed`). The parts' move programs
+  still run - only the written cell is the captured one. `jouine`'s flesh
+  walls hue-cycle through green, and `cort_evolved_pre_battle` had scored
+  its walls by the luck of the phase.
+
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter
 through `enter_scene_live` directly (no resume landing, no saved seat),
 hydrate again. Comparing its report with the default isolates what the
@@ -287,7 +299,10 @@ started from:
   ops before the wait `minigame_dance_pcsx` is parked on, and the entry
   `P1[0]` reads that flag as "back from the dance floor" (`+0x178`): seeded
   with it up, the entry cleared it and spawned the judging record `P2[9]`,
-  whose dialogue box sat over the frame. The comparand keeps the latches.
+  whose dialogue box sat over the frame. They are raised again at the
+  settle tick, once the entry has run, so a record the seed never reaches
+  still scores retail's flags; raised straight after the landing, an entry
+  still running read them anyway. The comparand keeps the latches.
   A record the scene's
   own script **spawns** (op `0x44`) may be scored by the spawning arm rather
   than by itself: `rikuroa`'s `P1[0]` starts `2025` and spawns `44 5C`

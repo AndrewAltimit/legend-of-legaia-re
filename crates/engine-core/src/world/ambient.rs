@@ -766,7 +766,16 @@ impl World {
         if !self.toggles.reduce_flashing && !self.ambient.flash_applied.is_empty() {
             self.ambient.flash_applied.clear();
         }
-        for f in fx {
+        for mut f in fx {
+            if let Some(seed) = self
+                .ambient
+                .cell_fx_seed
+                .iter()
+                .rev()
+                .find(|s| s.rect == f.rect)
+            {
+                f = *seed;
+            }
             let (x, y, w, h) = f.rect;
             if w == 0 || h == 0 || w > 256 || h > 64 {
                 continue;

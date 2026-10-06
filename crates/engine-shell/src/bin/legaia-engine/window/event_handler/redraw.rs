@@ -148,6 +148,13 @@ impl PlayWindowApp {
                 // A script-gated capture resumes the retail record when the
                 // entry did not start it, and pages its dialog boxes - the
                 // same drive the headless seed runs.
+                if self.tick_no == legaia_engine_shell::retail_compare_script::SCRIPT_RESUME_TICK
+                    && let Some(sc) = self.screenshot.as_ref()
+                {
+                    for &idx in &sc.seat_latches {
+                        self.session.host.world.system_flag_set(idx);
+                    }
+                }
                 let gate = self
                     .screenshot
                     .as_ref()

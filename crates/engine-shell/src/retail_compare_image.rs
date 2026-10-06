@@ -240,7 +240,8 @@ pub enum FrameEntry<'a> {
 /// the state's camera parameter block, handed over as
 /// `LEGAIA_SEAT_CAMERA_BLOCK` so the seat's snap composes from it, and
 /// `seat_focus` retail's focus pair when it is not on the player, handed
-/// over as `LEGAIA_SEAT_FOCUS` (see `RetailObs::seat_focus`).
+/// over as `LEGAIA_SEAT_FOCUS` (see `RetailObs::seat_focus`). `extra_env` is
+/// passed through as is (`LEGAIA_SEAT_LATCHES`).
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame(
     exe: &Path,
@@ -254,6 +255,7 @@ pub fn engine_frame(
     hud_countdown: Option<i16>,
     camera_block: Option<&legaia_engine_core::camera_zone::CameraZoneConfig>,
     seat_focus: Option<[i32; 2]>,
+    extra_env: &[(&str, String)],
 ) -> Result<Frame> {
     let env: Vec<(&str, String)> = hud_countdown
         .map(|n| ("LEGAIA_HUD_COUNTDOWN", n.to_string()))
@@ -265,6 +267,7 @@ pub fn engine_frame(
             )
         }))
         .chain(seat_focus.map(|[fx, fz]| ("LEGAIA_SEAT_FOCUS", format!("{fx},{fz}"))))
+        .chain(extra_env.iter().cloned())
         .collect();
     engine_frame_with(
         exe,

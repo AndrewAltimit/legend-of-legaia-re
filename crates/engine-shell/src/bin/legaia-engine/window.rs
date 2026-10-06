@@ -85,6 +85,12 @@ pub(crate) struct ScreenshotConfig {
     /// the record from its start when nothing runs it and paging its dialog
     /// boxes on the way. `capture_tick` is the deadline.
     pub script_gate: Option<legaia_engine_shell::retail_compare_script::ScriptGate>,
+    /// `LEGAIA_SEAT_LATCHES=59c,134` (hex): the system flags a captured
+    /// record latched after the scene entry ran. The seed lands the save
+    /// without them so the entry does not read them, and they are raised at
+    /// the settle tick, where retail's state holds them
+    /// (`RetailObs::seed_save`).
+    pub seat_latches: Vec<u16>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -375,6 +381,13 @@ impl ScreenshotConfig {
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
+            seat_latches: std::env::var("LEGAIA_SEAT_LATCHES")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|i| u16::from_str_radix(i.trim(), 16).ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
             battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE").ok().and_then(|v| {
                 legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
             }),

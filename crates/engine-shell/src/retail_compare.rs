@@ -286,6 +286,74 @@ pub struct RetailObs {
     /// handshake's frame count, `jouind`'s spawn delay), and a timer seeded
     /// at `0` instead of its captured count fires on a different frame.
     pub slot_table: Option<[i16; 256]>,
+    /// The live mode-3 CLUT-cell cyclers ([`retail_cell_fx`]), handed to the
+    /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
+    /// captured phase.
+    pub cell_fx: Vec<legaia_engine_core::clut_cell_fx::ClutCellFx>,
+}
+
+/// The actor tick that runs a move-VM part (`FUN_80021DF4`).
+const PART_TICK: u32 = 0x8002_1DF4;
+
+/// Every live mode-3 CLUT-cell cycler on a retail state's actor lists, in
+/// list order: a part ticked by `FUN_80021DF4` with render mode `+0x5A = 3`
+/// past its first armed frame (`+0x9C > 1`), as the snapshot its next
+/// `FUN_80019D50` write uses - rect `+0xA0..+0xA6`, adds `+0x90/92/94`, mode
+/// `+0x9E`, white amount `+0x68` ([`legaia_engine_core::clut_cell_fx`]).
+pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_core::clut_cell_fx::ClutCellFx> {
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::i16_at(ram, n + 0x5A) == 3
+                && game_anchors::i16_at(ram, n + 0x9C) > 1
+        })
+        .map(|n| legaia_engine_core::clut_cell_fx::ClutCellFx {
+            rect: (
+                game_anchors::u16_at(ram, n + 0xA0),
+                game_anchors::u16_at(ram, n + 0xA2),
+                game_anchors::u16_at(ram, n + 0xA4),
+                game_anchors::u16_at(ram, n + 0xA6),
+            ),
+            h_add: game_anchors::i16_at(ram, n + 0x90),
+            s_add: game_anchors::i16_at(ram, n + 0x92),
+            v_add: game_anchors::i16_at(ram, n + 0x94),
+            mode: game_anchors::i16_at(ram, n + 0x9E),
+            white: game_anchors::i16_at(ram, n + 0x68),
+        })
+        .collect()
+}
+
+/// [`retail_cell_fx`] as `LEGAIA_SEAT_CLUT_FX`: `x,y,w,h,h,s,v,mode,white`
+/// per part, `;`-separated.
+pub fn cell_fx_env(fx: &[legaia_engine_core::clut_cell_fx::ClutCellFx]) -> String {
+    fx.iter()
+        .map(|f| {
+            format!(
+                "{},{},{},{},{},{},{},{},{}",
+                f.rect.0, f.rect.1, f.rect.2, f.rect.3, f.h_add, f.s_add, f.v_add, f.mode, f.white
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`cell_fx_env`]; malformed entries are dropped.
+pub fn cell_fx_from_env(s: &str) -> Vec<legaia_engine_core::clut_cell_fx::ClutCellFx> {
+    s.split(';')
+        .filter_map(|e| {
+            let v: Vec<i32> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let [x, y, w, h, hh, ss, vv, mode, white] = <[i32; 9]>::try_from(v).ok()?;
+            Some(legaia_engine_core::clut_cell_fx::ClutCellFx {
+                rect: (x as u16, y as u16, w as u16, h as u16),
+                h_add: hh as i16,
+                s_add: ss as i16,
+                v_add: vv as i16,
+                mode: mode as i16,
+                white: white as i16,
+            })
+        })
+        .collect()
 }
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
@@ -477,6 +545,11 @@ impl RetailObs {
             battle,
             menu,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
+            cell_fx: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_cell_fx(ram)
+            } else {
+                Vec::new()
+            },
             slot_table: {
                 let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
                 ram.get(lo..lo + 0x200)
@@ -516,26 +589,52 @@ impl RetailObs {
     /// the dance floor": seeded with it up, the entry cleared it and spawned
     /// the judging record `P2[9]` over the frame. The comparand is
     /// [`Self::save`] unchanged.
+    ///
+    /// The seed raises them again at the settle tick
+    /// ([`Self::seed_latches`]), once the entry has run: retail's state holds
+    /// them, and a record the seed never reaches would otherwise leave the
+    /// flags channel short. Raised straight after the landing, an entry still
+    /// running read them anyway - the slot-machine floor's entry restarted
+    /// its track on one.
     pub fn seed_save(&self) -> Option<legaia_save::SaveFile> {
         let mut save = self.save.clone()?;
-        if self.menu.is_none() && matches!(self.class, StateClass::Field | StateClass::WorldMap) {
-            for &idx in self
-                .scripts
-                .running
-                .first()
-                .map(|s| s.latches.as_slice())
-                .unwrap_or(&[])
+        for idx in self.seed_latches() {
+            if let Some(b) = save
+                .ext
+                .story_flag_bits
+                .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
             {
-                if let Some(b) = save
-                    .ext
-                    .story_flag_bits
-                    .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
-                {
-                    *b &= !(0x80u8 >> (idx & 7));
-                }
+                *b &= !(0x80u8 >> (idx & 7));
             }
         }
         Some(save)
+    }
+
+    /// The latches [`Self::seed_save`] holds back from the scene entry.
+    pub fn seed_latches(&self) -> Vec<u16> {
+        if self.menu.is_some() || !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            return Vec::new();
+        }
+        self.scripts
+            .running
+            .first()
+            .map(|s| s.latches.clone())
+            .unwrap_or_default()
+    }
+
+    /// [`Self::seed_latches`] as `LEGAIA_SEAT_LATCHES` for `play-window`
+    /// (hex flag ids, comma-separated), when there are any.
+    pub fn seed_latches_env(&self) -> Option<(&'static str, String)> {
+        let l = self.seed_latches();
+        (!l.is_empty()).then(|| {
+            (
+                "LEGAIA_SEAT_LATCHES",
+                l.iter()
+                    .map(|i| format!("{i:x}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
+        })
     }
 
     /// Name the state by the scene it is **running**, not the one a door has
@@ -767,6 +866,15 @@ pub fn run_engine_with(
                 }
                 met_at = Some(t);
                 break;
+            }
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+                // The record's own latches, held back from the entry, are
+                // retail's state again once the entry has run - the
+                // settle-window sample included; a resume takes them back
+                // before it replays the record.
+                for idx in retail.seed_latches() {
+                    session.host.world.system_flag_set(idx);
+                }
             }
             if t == SETTLE_TICKS {
                 at_settle = Some(sample_engine(&mut session, retail, &director, None));
@@ -1548,6 +1656,10 @@ fn run_one(
             let frame = match gate {
                 Some(g) => {
                     let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
+                    env.extend(retail.seed_latches_env());
+                    if !retail.cell_fx.is_empty() {
+                        env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&retail.cell_fx)));
+                    }
                     if let Some(n) = retail.hud_countdown {
                         env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
                     }
@@ -1582,6 +1694,14 @@ fn run_one(
                     retail.hud_countdown,
                     retail.camera_block.as_ref(),
                     retail.seat_focus,
+                    &retail
+                        .seed_latches_env()
+                        .into_iter()
+                        .chain(
+                            (!retail.cell_fx.is_empty())
+                                .then(|| ("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&retail.cell_fx))),
+                        )
+                        .collect::<Vec<_>>(),
                 ),
             };
             match frame {

@@ -747,6 +747,15 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
 
+    // `LEGAIA_SEAT_CLUT_FX` (the retail-compare image channel): a retail
+    // state's live CLUT-cell cycler snapshots, written over the matching
+    // cycled cells so the frame shows the captured palette phase
+    // (`AmbientFxState::cell_fx_seed`).
+    if let Ok(fx) = std::env::var("LEGAIA_SEAT_CLUT_FX") {
+        session.host.world.ambient.cell_fx_seed =
+            legaia_engine_shell::retail_compare::cell_fx_from_env(&fx);
+    }
+
     // Debug learn path: `--learn-spell 0x81` (repeatable) or the older
     // `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
     // the lead character's record, so a seeded New Game party can reach the
