@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle action FSM</div>
   <h1>Battle action state machine</h1>
-  <p class="lede">The layer between &ldquo;the player picked Attack&rdquo; and &ldquo;the sword has landed and HP has been deducted&rdquo;. An action takes many frames - turn, run in, swing, damage pop, walk back - so the game tracks it as one state byte advanced once per frame, with a band of states per command category. Tactical Arts are not a separate band: they run through the ordinary attack states and only differ in which power byte each swing stages.</p>
+  <p class="lede">The layer between &ldquo;the player picked Attack&rdquo; and &ldquo;the sword has landed and HP has been deducted&rdquo;. An action takes many frames - turn, run in, swing, damage pop, walk back - so the game tracks it as one state byte advanced once per frame, with a band of states per command category. A Tactical Art is not a band of its own: its arrows and art bytes ride in the same action queue as a plain Attack and play out through the attack states, each swing staging its own power byte.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -12,90 +12,116 @@
     <dt>Band key</dt><dd>The actor&rsquo;s category byte <code>+0x1DE</code>, read once at the seed state <code>0x0C</code></dd>
     <dt>Damage</dt><dd>Not in the state bodies - one power byte per animation hit event, through the <a href="battle-formulas.html">battle formulas</a></dd>
     <dt>Turn end</dt><dd>Done band <code>0x50..0x52</code>, then the end gate <code>0x5A</code>, which also detects a party or monster wipe</dd>
-    <dt>Port</dt><dd><code>engine-vm::battle_action</code> (<code>ActionState</code>, <code>step</code>, <code>BattleActionHost</code>); composed by <code>engine-core::World</code></dd>
     <dt>Confidence</dt><dd>Confirmed - every state body read from the disassembly; queue, summon loads and trigger tables capture-validated</dd>
     <dt>Used by</dt><dd><a href="battle.html">battle loader</a>, <a href="../arts.html">Arts browser</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> battle tuning</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="how-it-works">
-  <h2>How it works</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 960 340" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ba-bands-title">
-      <title id="ba-bands-title">Battle action state bands: the seed state fans out into one band per command category, every band funnels into the Done band and the end gate, and the end gate hands the turn to the next combatant</title>
-      <defs><marker id="ba-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="20" y="120" width="140" height="60" rx="4" stroke="var(--accent)"/>
-        <rect x="240" y="10" width="220" height="40" rx="4"/>
-        <rect x="240" y="60" width="220" height="40" rx="4"/>
-        <rect x="240" y="110" width="220" height="40" rx="4"/>
-        <rect x="240" y="160" width="220" height="40" rx="4"/>
-        <rect x="240" y="210" width="220" height="40" rx="4"/>
-        <rect x="240" y="260" width="220" height="40" rx="4"/>
-        <rect x="560" y="120" width="140" height="60" rx="4" stroke="var(--accent)"/>
-        <rect x="780" y="120" width="160" height="60" rx="4" stroke="var(--accent)"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="90" y="142">Seed</text>
-        <text x="90" y="160" fill="var(--text-muted)">0x0A..0x0C</text>
-        <text x="350" y="24">Attack / Arts</text><text x="350" y="40" fill="var(--text-muted)">0x14..0x20, cat 3 / 0</text>
-        <text x="350" y="74">Magic / Item</text><text x="350" y="90" fill="var(--text-muted)">0x28..0x2E, cat 2 / 1</text>
-        <text x="350" y="124">Summon</text><text x="350" y="140" fill="var(--text-muted)">0x32..0x38, spell 0x81+</text>
-        <text x="350" y="174">Spirit</text><text x="350" y="190" fill="var(--text-muted)">0x3C..0x40, 0x46..0x48</text>
-        <text x="350" y="224">Run</text><text x="350" y="240" fill="var(--text-muted)">0x64..0x67, cat 5</text>
-        <text x="350" y="274">Capture</text><text x="350" y="290" fill="var(--text-muted)">0x6E..0x71, class c</text>
-        <text x="630" y="142">Done</text>
-        <text x="630" y="160" fill="var(--text-muted)">0x50..0x52</text>
-        <text x="860" y="142">End gate</text>
-        <text x="860" y="160" fill="var(--text-muted)">0x5A, wipe scans</text>
-      </g>
-      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ba-arrow)">
-        <path d="M160 150 C200 150 200 30 238 30"/>
-        <path d="M160 150 C200 150 200 80 238 80"/>
-        <path d="M160 150 C200 150 200 130 238 130"/>
-        <path d="M160 150 C200 150 200 180 238 180"/>
-        <path d="M160 150 C200 150 200 230 238 230"/>
-        <path d="M160 150 C200 150 200 280 238 280"/>
-      </g>
-      <g fill="none" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#ba-arrow)">
-        <path d="M460 30 C510 30 510 150 558 150"/>
-        <path d="M460 80 C510 80 510 150 558 150"/>
-        <path d="M460 130 C510 130 510 150 558 150"/>
-        <path d="M460 180 C510 180 510 150 558 150"/>
-        <path d="M460 230 C510 230 510 150 558 150"/>
-        <path d="M460 280 C510 280 510 150 558 150"/>
-      </g>
-      <path d="M700 150 L778 150" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ba-arrow)"/>
-      <path d="M860 180 L860 312 L90 312 L90 182" fill="none" stroke="var(--text-muted)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ba-arrow)"/>
-      <text x="475" y="330" text-anchor="middle" fill="var(--text-muted)">next combatant, or 0xFD / 0xFF at a round boundary</text>
+  <h2>The state machine</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle action state machine: the seed state reads the action category and branches into Attack, Magic, Item, Spirit, monster flee or party run bands; Magic can detour through the summon band or a paged cast module; every band funnels into the Done band and the 0x5A end-of-action gate, which hands the turn to the next actor, ends the round at 0xFF, or raises the battle-end signal on a wipe; a successful party run raises the same signal">
+      <defs><marker id="ba-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="300" y="16" width="280" height="56" rx="4"/>
+      <text class="dg-label" x="440" y="39">Action begin + seed</text>
+      <text class="dg-sub" x="440" y="58">0x00 &#8594; 0x0A &#8594; 0x0C, reads +0x1DE</text>
+      <path class="dg-edge" d="M440 72 L440 96 M80 96 L800 96"/>
+      <path class="dg-edge" d="M80 96 L80 118" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M224 96 L224 118" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M368 96 L368 118" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M512 96 L512 118" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M656 96 L656 118" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M800 96 L800 118" marker-end="url(#ba-arrow)"/>
+      <rect class="dg-node" x="20" y="120" width="120" height="64" rx="4"/>
+      <rect class="dg-node" x="164" y="120" width="120" height="64" rx="4"/>
+      <rect class="dg-node" x="308" y="120" width="120" height="64" rx="4"/>
+      <rect class="dg-node" x="452" y="120" width="120" height="64" rx="4"/>
+      <rect class="dg-node" x="596" y="120" width="120" height="64" rx="4"/>
+      <rect class="dg-node" x="740" y="120" width="120" height="64" rx="4"/>
+      <text class="dg-label" x="80" y="141">Attack / Arts</text><text class="dg-sub" x="80" y="158">category 3</text><text class="dg-sub" x="80" y="174">0x14&#8211;0x20</text>
+      <text class="dg-label" x="224" y="141">Magic</text><text class="dg-sub" x="224" y="158">category 2</text><text class="dg-sub" x="224" y="174">0x28&#8211;0x2E</text>
+      <text class="dg-label" x="368" y="141">Item</text><text class="dg-sub" x="368" y="158">category 1</text><text class="dg-sub" x="368" y="174">0x3C&#8211;0x40</text>
+      <text class="dg-label" x="512" y="141">Spirit</text><text class="dg-sub" x="512" y="158">category 4</text><text class="dg-sub" x="512" y="174">0x46&#8211;0x48</text>
+      <text class="dg-label" x="656" y="141">Monster flee</text><text class="dg-sub" x="656" y="158">category 5</text><text class="dg-sub" x="656" y="174">0x68&#8211;0x6B</text>
+      <text class="dg-label" x="800" y="141">Party run</text><text class="dg-sub" x="800" y="158">category 5</text><text class="dg-sub" x="800" y="174">0x64&#8211;0x66</text>
+      <rect class="dg-node" x="92" y="220" width="120" height="50" rx="4"/>
+      <rect class="dg-node" x="236" y="220" width="120" height="50" rx="4"/>
+      <text class="dg-label" x="152" y="240">Summon</text><text class="dg-sub" x="152" y="258">0x32&#8211;0x38</text>
+      <text class="dg-label" x="296" y="240">Cast module</text><text class="dg-sub" x="296" y="258">0x6E&#8211;0x71</text>
+      <path class="dg-edge-dim" d="M200 184 L160 218" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge-dim" d="M248 184 L288 218" marker-end="url(#ba-arrow)"/>
+      <text class="dg-edge-label" x="86" y="204">Seru spell</text>
+      <text class="dg-edge-label" x="290" y="202">capture</text>
+      <rect class="dg-node-accent" x="20" y="320" width="560" height="52" rx="4"/>
+      <text class="dg-label" x="300" y="341">Done 0x50&#8211;0x52</text>
+      <text class="dg-sub" x="300" y="359">auto-revive, Spirit pay-in, poses, HUD teardown</text>
+      <path class="dg-edge" d="M80 184 L80 318" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M224 184 L224 318" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M152 270 L152 318" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M296 270 L296 318" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M368 184 L368 318" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M512 184 L512 318" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge-dim" d="M760 184 L760 296 L560 296 L560 318" marker-end="url(#ba-arrow)"/>
+      <text class="dg-edge-label" x="708" y="290" text-anchor="middle">fails</text>
+      <rect class="dg-node-accent" x="180" y="420" width="240" height="56" rx="4"/>
+      <text class="dg-label" x="300" y="442">End-of-action gate 0x5A</text>
+      <text class="dg-sub" x="300" y="460">count the living on both sides</text>
+      <path class="dg-edge" d="M300 372 L300 418" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M656 184 L656 448 L422 448" marker-end="url(#ba-arrow)"/>
+      <rect class="dg-node" x="20" y="520" width="180" height="56" rx="4"/>
+      <rect class="dg-node-ok" x="230" y="520" width="200" height="56" rx="4"/>
+      <rect class="dg-node-warn" x="600" y="520" width="260" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="542">Next actor</text><text class="dg-sub" x="110" y="560">turn cursor +1, back to 0x0A</text>
+      <text class="dg-label" x="330" y="542">Round end 0xFF</text><text class="dg-sub" x="330" y="560">menu machine back to 0x14</text>
+      <text class="dg-label" x="730" y="542">Battle-end signal</text><text class="dg-sub" x="730" y="560">DAT_8007BD71 = 0xFE</text>
+      <path class="dg-edge" d="M210 476 L210 496 L110 496 L110 518" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M330 476 L330 518" marker-end="url(#ba-arrow)"/>
+      <path class="dg-edge" d="M420 466 L720 466 L720 518" marker-end="url(#ba-arrow)"/>
+      <text class="dg-edge-label" x="560" y="484" text-anchor="middle">a side is wiped</text>
+      <path class="dg-edge" d="M800 184 L800 518" marker-end="url(#ba-arrow)"/>
+      <text class="dg-edge-label" x="808" y="400">escaped</text>
+      <path class="dg-edge-dim" d="M20 548 L8 548 L8 44 L298 44" marker-end="url(#ba-arrow)"/>
     </svg>
-    <figcaption>One byte walks a band per command category and always funnels through Done and the <code>0x5A</code> end gate, which counts survivors on both sides before handing the turn on.</figcaption>
+    <figcaption>One byte walks a band per command category and always funnels through the <code>0x5A</code> gate, which counts survivors before handing the turn on. Battle end is a separate <em>signal</em> byte, never a state value: <code>0xFF</code> only means the round is over. Category 0 (an arts chain already recorded by the input flow) jumps straight to Done.</figcaption>
   </figure>
   <p>The driver runs every frame from the <a href="battle.html">battle main dispatcher</a>. It resolves the active combatant through the 8-slot actor pointer table and pumps the action through three keys:</p>
   <table class="data-table">
     <thead><tr><th>Key</th><th>Field</th><th>Values</th></tr></thead>
     <tbody>
       <tr><td>Action category</td><td><code>actor[+0x1DE]</code></td><td>0 Tactical Arts, 1 Item, 2 Magic, 3 Attack, 4 Spirit, 5 Run / Defend</td></tr>
-      <tr><td>Execution phase</td><td><code>ctx[7]</code></td><td>the bands in the figure, plus terminal <code>0xFD</code> / <code>0xFF</code>; any unhandled byte falls to the shared epilogue as a no-op</td></tr>
-      <tr><td>Per-actor sub-state</td><td><code>actor[+0x1DC]</code> + scratch</td><td>flag bits; <code>+0x1D9</code> current anim, <code>+0x1DA</code> queued anim, <code>+0x1DF..+0x1F2</code> the action-parameter byte stream</td></tr>
+      <tr><td>Execution phase</td><td><code>ctx[7]</code></td><td>the bands in the figure, plus <code>0xFD</code> (idle hold) and <code>0xFF</code> (round end); any unhandled byte falls to the shared epilogue as a no-op</td></tr>
+      <tr><td>Per-actor sub-state</td><td><code>actor[+0x1DC]</code> + scratch</td><td>flag bits (<code>0x01</code> windup done, <code>0x02</code> advance done, <code>0x04</code> exit); <code>+0x1D9</code> current anim, <code>+0x1DA</code> queued anim, <code>+0x1DF..+0x1F2</code> the action queue</td></tr>
     </tbody>
   </table>
   <ul class="bullets">
     <li><strong>Not a bytecode VM.</strong> No opcode table, no program counter. Each state body waits on a per-actor condition - animation matched, timer expired, range check passed - and writes the next state when ready.</li>
-    <li><strong>Run band.</strong> <code>0x65</code> branches on the roll: a failed run returns to <code>0x50</code> (turn consumed, battle continues); a success enters <code>0x66</code>, which stages a 64-frame black-to-white fade, sets the battle-end signal <code>DAT_8007BD71 = 0xFE</code> and parks in <code>0x67</code>. Engine: <code>ActionState::RunEscape</code> &rarr; <code>BattleEndCause::Escaped</code>.</li>
-    <li><strong>Wipe arm.</strong> The <code>0x5A</code> victory arm stages the win pose off the acting actor&rsquo;s party slot, re-picking a living member only when the actor is dead. Retail is safe because the wipe scan and the scheduler share one liveness predicate; the randomizer&rsquo;s enemy-ally charm widens that mask and breaks it (<a href="battle.html#status-effects">charm softlock</a>).</li>
+    <li><strong>Magic and Item cross over.</strong> Magic seeds <code>0x28</code> but a low-class, low-id spell (class byte <code>&lt; 0x14</code> and id <code>&lt; 0x65</code>) takes <code>0x3C</code>; Item seeds <code>0x3C</code> but items <code>0x98</code> / <code>0x99</code> take <code>0x28</code>. Player Seru magic (<code>0x81+</code>) always takes <code>0x28</code>. The choice picks animation and timing, not cost.</li>
+    <li><strong>Run.</strong> <code>0x64</code> rolls the <a href="battle-formulas.html#escape-example">escape</a>. A failed run returns to <code>0x50</code> (turn consumed, battle continues); a success enters <code>0x66</code>, which stages a 64-frame fade, raises the battle-end signal and parks.</li>
+    <li><strong>Wipe arm.</strong> The <code>0x5A</code> victory arm stages the win pose off the acting actor&rsquo;s party slot, re-picking a living member only when the actor is dead. Retail is safe because the wipe scan and the scheduler share one liveness predicate; the randomizer&rsquo;s enemy-ally charm widens that mask and breaks it (<a href="battle.html#charm-softlock">charm softlock</a>).</li>
     <li><strong>Effects are indirect.</strong> The machine calls the UI-element spawner with an element id (<code>0x07</code>, <code>0x0F</code>, <code>0x34</code>, &hellip;) and the <a href="effect-vm.html">effect VM</a> resolves it to sprite spawns. That path draws the 2D layer; the 3D summon is a separate mechanism below.</li>
     <li><strong>Two known parks.</strong> The <code>0x51</code> HP-bar settle gate and the <code>0x19</code> attack-approach range poll can wait forever under the wrong seeding; both are dissected in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener">full doc</a> and the <a href="../writeups/gaza-orbit-softlock.html">Gaza write-up</a>.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the 0x66 &ldquo;run failed&rdquo; reading</summary>
-    <div class="disclosure-body"><p>State <code>0x66</code> was once labelled &ldquo;run failed, battle continues&rdquo;. The battle-end signal it writes falsifies that: <code>0x66</code> is the successful-escape teardown, and the failed run is the <code>0x65</code> branch back to <code>0x50</code>.</p></div>
-  </details>
+</section>
+
+<section class="doc-section" id="attack-walkthrough">
+  <h2>One attack, state by state</h2>
+  <p>The attack band is the one most turns take. A party member's committed Attack plays out like this:</p>
+  <ol class="steps">
+    <li><b>0x14 Face</b><span>turn toward the target, range check; already in reach skips to the strike loop</span></li>
+    <li><b>0x19 Close in</b><span>hold until the range check passes (a monster walks via <code>0x15</code>&ndash;<code>0x18</code>, its walk clip&rsquo;s root motion carrying it)</span></li>
+    <li><b>0x1E Strike loop</b><span>one queue byte per swing clip: direction, art starter or art; a counterattack can redirect here</span></li>
+    <li><b>0x1F Recover</b><span>recover pose; wait for the advance-done flag to clear</span></li>
+    <li><b>0x20 Return</b><span>hold for the last swing&rsquo;s clip, then the target&rsquo;s reaction</span></li>
+    <li><b>0x50&ndash;0x52 Done</b><span>auto-revive, Spirit +8, HUD teardown, multi-cast tail</span></li>
+    <li><b>0x5A Gate</b><span>wipe check, then the next actor or the round end</span></li>
+  </ol>
+  <p>When the monster&rsquo;s action table has no walk entry it falls back to the party&rsquo;s <code>0x19</code> path, which has no movement code and no timeout: if nothing else closes the distance it waits forever - the root of the <code>0x19</code> park. On arrival a walking monster shoves its <em>target</em> back to the range boundary, not itself forward. A counterattack fires on the attacker&rsquo;s first frame when the target chose Attack, carries the Counterattack passive and won the picker&rsquo;s coin flip: the target becomes the active actor and swings first.</p>
 </section>
 
 <section class="doc-section" id="summon-overlay">
   <h2>Seru-magic summons</h2>
   <p>When a character casts a Seru spell, the creature that appears is not in the battle overlay: the cast state pages a small <strong>per-summon code overlay</strong> off the disc into slot B (<code>0x801F69D8</code>, above the resident battle overlay) while the cast band waits. That is why every summon has its own PROT entry and why a mid-cast save state holds an extra chunk of code.</p>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Cast</th><th>Spell ids</th><th>Loader argument</th><th>Extraction entries</th></tr></thead>
     <tbody>
@@ -105,12 +131,13 @@
       <tr><td>Enemy specials</td><td>move id</td><td><code>id + 895</code></td><td>Delilas 958 / 959 / 960, Zeto 946, Cort 938 / 940 / 944 / 961 / 962 / 966</td></tr>
     </tbody>
   </table>
+  </div>
   <p>The loader resolves its argument in the raw TOC (<code>+ 0x381</code>), which is extraction entry <code>+ 0x37F</code> (<a href="../formats/prot.html">PROT</a>). The player and enemy arms of the same spell ship separate stagers. What a stager contains:</p>
   <ul class="bullets">
     <li><strong>No mesh geometry.</strong> The meshes are the separately loaded 30-entry model library <code>etmd.dat</code> (extraction 0871) that the battle loader registers at battle init; the flame atlas <code>etim.dat</code> is 0870 (<a href="../formats/effect.html#befect-cluster">effect cluster</a>).</li>
     <li><strong>Part records</strong> - <code>[i16 model_sel][u16 reserved][move-VM bytecode]</code> - handed to the executable&rsquo;s part-stager, which spawns a part-actor per record: <code>model_sel &ge; 0</code> seats a library mesh, <code>-1</code> is a transform node, <code>0x4000</code> / <code>0x4001</code> are special render modes. Parser <code>legaia_asset::summon_overlay</code>.</li>
     <li><strong>Motion is geometric.</strong> Gimard&rsquo;s flame is eight RNG-seeded part-actors moving; the palette is byte-identical across animation-distinct frames.</li>
-    <li><strong>The player summon draws as an ordinary battle actor</strong> through the TRS-keyframe pipeline; the engine renders it that way (<code>monster_archive::battle_render_mesh</code> + <code>MonsterAnimPlayer</code>) and keeps the part records as the on-disc stager model.</li>
+    <li><strong>The player summon draws as an ordinary battle actor</strong> through the TRS-keyframe pipeline, like any monster; the part records drive the stager, not the draw.</li>
   </ul>
   <details class="disclosure">
     <summary>Details: stager internals, enemy stagers, the record-table trim</summary>
@@ -151,42 +178,19 @@
       <tr><td>Byte codes</td><td>-</td><td><code>0x0C</code> / <code>0x0D</code> / <code>0x0E</code> / <code>0x0F</code> = Left / Right / Down / Up; <code>0x19</code> art starter; <code>0x1A</code> SpecialStarter</td></tr>
     </tbody>
   </table>
-  <p>Every string is capture-validated byte for byte against <code>legaia_art</code>&rsquo;s tables, and a Vahn Tri-Somersault capture&rsquo;s queue tail <code>19 27 0F 19 1F 0E 1A 2B 2B 2B</code> equals its modelled <code>replace</code>. Ports: <code>MiracleMatcher</code> / <code>SuperMatcher</code> in <code>legaia_art</code> supply the tables; the live path runs the byte-exact appliers in <code>battle_action::queue_applier</code>. The Super pass applies <strong>once</strong> and takes the first matching row in resident-table order &mdash; not to a fixpoint, and not the longest match.</p>
-  <p><strong>In the live Arts submenu</strong> (<code>engine-core::battle_arts</code>) an art is a saved directional chain. A Miracle is recognised by exact string match; a Super by tokenising the chain into named arts and tail-matching the art ordering, because the connector direction after each art is per-combo data (Vahn&rsquo;s <code>0x27</code> is followed by <code>0F</code> in Tri-Somersault but <code>0E</code> in Power Slash) that a saved chain does not carry. Both flag the menu row with the combo name and resolve the strike profile from the replacement queue.</p>
-  <p><strong>Strikes.</strong> In the attack chain (state <code>0x1A</code>) the host receives <code>apply_art_strike(ArtStrikeInfo)</code> - per-strike power byte, damage timing, hit cue, status effect - alongside <code>apply_damage</code>. <code>engine-core::art_strike</code> folds it into an HP delta, a status flag and scheduled SFX cues; <code>World::fold_battle_event</code> applies HP / status and queues the cues, which the host plays through the scene VAB at the cue&rsquo;s frame delay.</p>
-  <details class="disclosure">
+  <p>Every string is capture-validated byte for byte against <code>legaia_art</code>&rsquo;s tables, and a Vahn Tri-Somersault capture&rsquo;s queue tail <code>19 27 0F 19 1F 0E 1A 2B 2B 2B</code> equals its modelled <code>replace</code>. The Super pass applies <strong>once</strong> and takes the first matching row in resident-table order &mdash; not to a fixpoint, and not the longest match.</p>
+  <p><strong>Why a saved chain is not enough.</strong> The connector direction after each art is per-combo data - Vahn&rsquo;s <code>0x27</code> is followed by <code>0F</code> in Tri-Somersault but <code>0E</code> in Power Slash - so recognising a Super from a list of named arts means tokenising the arrows into arts first and tail-matching the art ordering, not comparing raw strings.</p>  <p><strong>Strikes.</strong> The attack chain walks the queue one swing per animation clip. Each swing stages its own power byte, hit timing, hit cue and status effect; damage lands on the clip&rsquo;s authored hit events through the <a href="battle-formulas.html#physical-damage">melee kernel</a>, never in the state body.</p>  <details class="disclosure">
     <summary>History: the ctx[+0x274] queue hypothesis</summary>
     <div class="disclosure-body"><p>The queue was once placed at <code>ctx[+0x274]</code>. A capture showed that word is the turn-order active-actor index; the queue is the per-actor stream at <code>actor[+0x1DF..+0x1F2]</code>, confirmed by the Noa Miracle and Vahn Tri-Somersault captures (<a href="../tooling/index.html">super-art queue capture</a>).</p></div>
   </details>
-  <h3 id="spirit-run-live-menu">Spirit and Run in the live command menu</h3>
-  <p>The engine&rsquo;s command menu carries all six commands. <strong>Spirit</strong> charges the caster&rsquo;s AP gauge (+5) and raises a guard stance - the engine model of the pending-action byte <code>+0x1DE == 4</code> that the damage finisher&rsquo;s guard-halve reads - until that actor&rsquo;s next turn. <strong>Run</strong> arms the run band; success tears the battle down as <code>Escaped</code> (no loot, downed members floored at 1 HP), failure consumes the turn.</p>
-  <table class="data-table">
-    <thead><tr><th>Escape roll</th><th>Rule</th></tr></thead>
-    <tbody>
-      <tr><td>party score</td><td>sum over slots (downed included) of <code>(SPD &times; 3) &gt;&gt; 1 + missingHP &gt;&gt; 4</code></td></tr>
-      <tr><td>enemy score</td><td>sum of <code>SPD + missingHP &gt;&gt; 5</code></td></tr>
-      <tr><td>outcome</td><td>two BIOS-rand draws modulo each score; caught iff <code>roll_p &lt; roll_e</code>, or the scripted-fight flag <code>ctx+0x287</code> is set (the same per-battle byte the audio ducks and the counter-attack gate read)</td></tr>
-      <tr><td>Chicken Heart (passive <code>0x34</code>)</td><td>party roll &times;1.5, from living members only</td></tr>
-      <tr><td>Chicken King (passive <code>0x37</code>)</td><td>forces a tie - assured escape, still blocked by <code>ctx+0x287</code>, hence &ldquo;non-boss&rdquo;</td></tr>
-    </tbody>
-  </table>
-  <p>Ported as <code>battle_formulas::escape_roll</code>, rolled by <code>World::roll_battle_escape</code>.</p>
+  <h3 id="spirit-run-live-menu">Spirit and Run</h3>
+  <p><strong>Spirit</strong> (category 4, states <code>0x46</code>&ndash;<code>0x48</code>) is a gauge move, not an attack. <code>0x46</code> stages two targets off the actor&rsquo;s own AGL and Spirit gauge: next turn&rsquo;s arts bar becomes <code>min(base AGL &times; 7/5 + 8, 288)</code>, and the Spirit gauge climbs by 32 (35 or 40 with the AP Boost passives), capped at 100. <code>0x47</code> grows both bars on screen; <code>0x48</code> finishes the ramp. The pending category byte <code>+0x1DE == 4</code> is also what the damage kernels read as the guard stance until the round&rsquo;s sweep clears it.</p>
+  <p><strong>Run</strong> (category 5) rolls the <a href="battle-formulas.html#escape-example">escape formula</a> in <code>0x64</code>. On success every downed party member is floored at 1 HP before the teardown - which is why fleeing cures Stone - and the battle ends with no loot. Chicken Heart (passive <code>0x34</code>) scales the party roll &times;1.5 and Chicken King (<code>0x37</code>) forces a tie, both only from <em>living</em> wearers; the scripted-fight flag <code>ctx+0x287</code> blocks both.</p>
 </section>
 
 <section class="doc-section" id="engine-port">
-  <h2>Engine port</h2>
-  <p>The port keeps one enum value per retail state byte, so a transition trace from the engine lines up against a retail capture line by line.</p>
-  <table class="data-table">
-    <thead><tr><th>Item</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>ActionState</code> / <code>ActionCategory</code></td><td>every named state byte and category; <code>from_byte</code> returns <code>None</code> for unmapped values, surfaced as <code>StepOutcome::UnknownState</code></td></tr>
-      <tr><td><code>BattleActor</code> / <code>BattleActionCtx</code></td><td>the per-actor and context fields the machine touches; names mirror the <code>+0xNNN</code> offsets</td></tr>
-      <tr><td><code>BattleActionHost</code></td><td>callbacks for every cited helper (<code>pose</code>, <code>ui_element</code>, <code>range_check</code>, <code>recompute_battle_order</code>, <code>camera_bounds</code>, <code>party_setup</code> / <code>monster_setup</code>, <code>rng</code>, <code>art_record</code>); all default so a minimal host compiles</td></tr>
-      <tr><td><code>step(host, ctx)</code></td><td>one frame of dispatch: <code>Stay</code>, <code>Transition</code>, <code>BattleComplete</code> or <code>UnknownState</code></td></tr>
-      <tr><td><code>validate_action</code></td><td>the 18-arm action validator from the executable: heal / revive / MP targets, status presence, stat caps, the per-slot validity byte discipline; its 224-slot inventory gate is <code>item_count_gate</code></td></tr>
-      <tr><td><code>pool_ops</code></td><td>pure ports of the actor-pool leaf helpers (below)</td></tr>
-    </tbody>
-  </table>
+  <h2>In the port</h2>
+  <p><code>engine-vm::battle_action</code> keeps one enum value per retail state byte (<code>ActionState</code>), so an engine transition trace lines up against a retail capture line by line. <code>step(host, ctx)</code> runs one frame of dispatch; <code>BattleActionHost</code> carries a callback per helper the state bodies call; <code>validate_action</code> ports the executable&rsquo;s 18-arm action validator. <code>engine-core::World</code> composes it into the battle tick.</p>
   <details class="disclosure" id="pool-helpers">
     <summary>Details: actor-pool leaf helpers</summary>
     <div class="disclosure-body">
@@ -209,6 +213,7 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -224,6 +229,7 @@
       <tr><td>victory arm</td><td><code>0x801E6690</code></td><td>the alive-skip that assumes the acting actor is a party member</td><td>-</td></tr>
     </tbody>
   </table>
+  </div>
   <p>The full per-state table - every case body, what it runs and where it goes next - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action.md</code></a>, along with the turn cursor <code>ctx[+0x1A]</code>, the two park analyses, the Magic arm&rsquo;s class discriminator and the battle voice cues.</p>
 </section>
 

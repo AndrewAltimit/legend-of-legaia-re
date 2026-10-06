@@ -11,7 +11,7 @@
     <dt>Size</dt><dd>256 slots &times; 2 bytes: <code>[item id][count]</code>; id <code>0</code> = free; stacks cap at 99</dd>
     <dt>Window</dt><dd>Three halfwords <code>gp[+0x2D2]</code> start, <code>gp[+0x2D4]</code> end, <code>gp[+0x2D6]</code> span - one writer</dd>
     <dt>Accessors</dt><dd>Five <code>SCUS_942.54</code> helpers (add / consume / capacity / reserve / normalize); 125 references disc-wide across six images, and only two of them - both cast modules - skip the window</dd>
-    <dt>Engine</dt><dd><code>engine-core</code> inventory kernel (<code>apply_battle_loot</code>, <code>buy_from_shop</code>, field-VM <code>GIVE_ITEM</code>)</dd>
+    <dt>In the port</dt><dd><code>ItemBag</code> over retail's own 256-slot array, window included; the accessor family is ported once in <code>legaia_save::retail_inventory</code></dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly of every helper plus a live three-member window read</dd>
     <dt>Used by</dt><dd><a href="field-menu.html">Field menu</a>, <a href="shop.html">Shop</a>, <a href="script-vm.html">Field script VM</a>, <a href="battle.html#inventory">Battle item use</a></dd>
   </dl>
@@ -20,32 +20,87 @@
 <section class="doc-section" id="what-players-see">
   <h2>What players see</h2>
   <p>Open the menu and the bag looks like a handful of tabbed pages. Play a segment where one character is alone and the bag seems cut in half: items the party had are gone, and what the loner picks up never shows up once everyone regroups. Both impressions come from one array and one window. The pages are views; the halves are access rules; nothing is ever physically moved.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 200" width="100%" style="max-width: 880px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="inv-window-title">
-      <title id="inv-window-title">The inventory array and its three possible active windows</title>
-      <text x="20" y="22" fill="var(--text-muted)">0x80085958 - 256 slots x [id][count]</text>
-      <rect x="20" y="32" width="840" height="36" fill="var(--bg-raised)" stroke="var(--border)"/>
-      <line x1="440" y1="32" x2="440" y2="68" stroke="var(--border)" stroke-dasharray="3 3"/>
-      <text x="230" y="50" text-anchor="middle" dominant-baseline="middle" fill="currentColor">slots 0 .. 127</text>
-      <text x="650" y="50" text-anchor="middle" dominant-baseline="middle" fill="currentColor">slots 128 .. 255</text>
-      <g stroke="var(--accent)" stroke-width="3" fill="none">
-        <line x1="20" y1="100" x2="860" y2="100"/>
-        <line x1="20" y1="136" x2="440" y2="136"/>
-        <line x1="440" y1="172" x2="860" y2="172"/>
-      </g>
-      <g fill="var(--text-muted)">
-        <text x="20" y="92">party of 2+ (or story flag 20 set): window [0, 256)</text>
-        <text x="20" y="128">Vahn alone: window [0, 128)</text>
-        <text x="440" y="164">any other lone character: window [128, 256)</text>
-      </g>
+  <figure class="diagram">
+    <svg viewBox="0 0 544 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 256-slot bag drawn as sixteen rows of sixteen slots, three times: with two or more party members the whole bag is the active window; with Vahn alone only the first 128 slots are; with any other character alone only the last 128 slots are">
+      <text class="dg-label" x="126" y="18">Party of 2+</text><text class="dg-sub" x="126" y="35">window [0, 256)</text>
+      <rect class="dg-node-accent" x="56" y="48" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="59" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="70" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="81" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="92" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="103" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="114" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="125" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="144" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="155" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="166" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="177" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="188" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="199" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="210" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="56" y="221" width="140" height="9" rx="2"/>
+      <text class="dg-sub" x="126" y="248">the whole bag</text>
+      <text class="dg-label" x="294" y="18">Vahn alone</text><text class="dg-sub" x="294" y="35">window [0, 128)</text>
+      <rect class="dg-node-accent" x="224" y="48" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="59" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="70" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="81" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="92" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="103" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="114" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="224" y="125" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="144" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="155" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="166" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="177" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="188" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="199" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="210" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="224" y="221" width="140" height="9" rx="2"/>
+      <text class="dg-sub" x="294" y="248">the early-game bag</text>
+      <text class="dg-label" x="462" y="18">Anyone else alone</text><text class="dg-sub" x="462" y="35">window [128, 256)</text>
+      <rect class="dg-node" x="392" y="48" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="59" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="70" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="81" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="92" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="103" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="114" width="140" height="9" rx="2"/>
+      <rect class="dg-node" x="392" y="125" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="144" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="155" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="166" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="177" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="188" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="199" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="210" width="140" height="9" rx="2"/>
+      <rect class="dg-node-accent" x="392" y="221" width="140" height="9" rx="2"/>
+      <text class="dg-sub" x="462" y="248">an isolated pocket</text>
+      <text class="dg-edge-label" x="50" y="57" text-anchor="end">0</text>
+      <text class="dg-edge-label" x="50" y="134" text-anchor="end">127</text>
+      <text class="dg-edge-label" x="50" y="153" text-anchor="end">128</text>
+      <text class="dg-edge-label" x="50" y="230" text-anchor="end">255</text>
+      <rect class="dg-node-accent" x="56" y="264" width="14" height="10" rx="2"/><text class="dg-edge-label" x="76" y="273">inside the window: add, consume and merge all work</text>
+      <rect class="dg-node" x="56" y="282" width="14" height="10" rx="2"/><text class="dg-edge-label" x="76" y="291">outside: still in RAM, invisible to every helper (one row = 16 slots)</text>
     </svg>
-    <figcaption>The five inventory helpers only ever look between <code>start</code> and <code>end</code>. A lone character gets one half; a party gets the whole array.</figcaption>
+    <figcaption>One array, three access rules. The helpers only ever look between the window's <code>start</code> and <code>end</code>; nothing is ever moved between the halves. A lone character with story flag 20 set gets the whole bag.</figcaption>
   </figure>
 </section>
 
 <section class="doc-section" id="storage">
   <h2>Storage and access</h2>
-  <p>Every access materialises the block base inline and indexes by slot. Chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all mutate through the same small helper family, passing item ids or helper-returned slot numbers, and so does the pause menu with one exception: its Throw Out confirm (<code>FUN_801D8734</code> in PROT 0899) zeroes the selected slot&rsquo;s id and count with two <code>sb</code> of its own at <code>0x801D88FC</code> / <code>0x801D8910</code>. The field, battle and menu overlays also read slots directly. There is no raw-index sort or swap primitive anywhere in retail. The reference census is closed rather than sampled: the array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline. Two capture-class cast modules are the exception to the window - PROT 0941 (Steal) clamps its random slot against a live count, PROT 0954 (Fatal Decision) samples all 256 slots unclamped.</p>
+  <p>Each slot is two bytes, and the array is a plain run of them inside the live game-state block, so it rides verbatim into every memory-card save:</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">item id</span><span class="bm-size">u8, 0 = free</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">count</span><span class="bm-size">u8, cap 99</span></div>
+    <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">+2 .. +0x1FF</span><span class="bm-name">slots 1..255</span><span class="bm-size">same shape</span></div>
+  </div>
+  <p>Chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all change the bag through one small helper family, passing item ids or helper-returned slot numbers. The field, battle and menu overlays also read slots directly. There is no raw-index sort or swap primitive anywhere in retail.</p>
+  <ul class="bullets">
+    <li><strong>One direct write.</strong> The pause menu&rsquo;s Throw Out confirm (<code>FUN_801D8734</code> in PROT 0899) zeroes the selected slot&rsquo;s id and count with two <code>sb</code> of its own (<code>0x801D88FC</code> / <code>0x801D8910</code>).</li>
+    <li><strong>Two readers ignore the window.</strong> Both are capture-class cast modules: PROT 0941 (Steal) clamps its random slot against a live count; PROT 0954 (Fatal Decision) samples all 256 slots unclamped - the only reader that reaches the key-item band without going through a window.</li>
+    <li><strong>The census is closed, not sampled.</strong> The array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline.</li>
+  </ul>
   <table class="data-table">
     <thead><tr><th>Helper</th><th>What it does</th></tr></thead>
     <tbody>
@@ -76,6 +131,15 @@
     <li><strong>Consequence.</strong> A solo character has an isolated pocket of the bag: they can neither see nor spend the party&rsquo;s items, and what they pick up alone never reaches the party inventory.</li>
     <li><strong>Design intent.</strong> Vahn owns the lower half because the game opens with Vahn alone - the early-game bag simply <em>is</em> <code>[0, 128)</code> until the party forms. Once two members are present the full 256 opens.</li>
     <li><strong>Bounds.</strong> <code>end</code> is only ever 128 or 256. Slots outside the window exist in RAM but are invisible to add, consume, capacity and normalize alike.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="slot-order">
+  <h2>Why slot order matters</h2>
+  <p>Because the bag is never compacted behind the player&rsquo;s back, holes are real, and two consumers address it by <em>slot</em> rather than by item:</p>
+  <ul class="bullets">
+    <li><strong>The pause item list.</strong> The selected row&rsquo;s payload is a bag slot index. The list hides empty slots, and nothing compacts the bag when the menu opens (the normalize helper has one call site, a guarded field-VM arm), so the row number and the slot number part ways as soon as a hole sits above the selection. Throw Out zeroes the slot the row names.</li>
+    <li><strong>The enemy Steal.</strong> PROT 0941 draws random slots over the whole array and accepts only a slot with an id, a count and a non-zero <em>shop price</em> - 96 of the 256 item ids are unpriced, so quest and found-only items can never be stolen. The removal, though, goes through the windowed consume helper: a steal that lands in the half the window does not cover announces an item the party keeps.</li>
   </ul>
 </section>
 
