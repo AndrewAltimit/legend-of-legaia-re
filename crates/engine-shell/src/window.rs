@@ -7,7 +7,7 @@ use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_audio::AudioSink;
-use legaia_engine_core::menu_runtime::{MenuRuntime, MenuState};
+use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene::Scene;
 use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
@@ -15,9 +15,8 @@ use legaia_engine_core::scene_resources::{
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_render::{
     CaptureImage, ColorSceneDraw, HudPopupView, HudSlotMeta, HudSlotView, RenderTarget,
-    Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay, UploadedColorMesh,
-    UploadedFontAtlas, UploadedVram, UploadedVramMesh, battle_hud_draws_for,
-    capture_banner_draws_for, encounter_banner_draws_for, level_up_draws_for, shop_draws_for,
+    Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedColorMesh, UploadedFontAtlas,
+    UploadedVram, UploadedVramMesh, battle_hud_draws_for, encounter_banner_draws_for,
     text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
@@ -1566,8 +1565,8 @@ mod record;
 mod run;
 #[path = "window/save_select_helpers.rs"]
 mod save_select_helpers;
-#[path = "window/shop_windows.rs"]
-mod shop_windows;
+#[path = "window/screens.rs"]
+mod screens;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]

@@ -754,7 +754,7 @@ impl LegaiaRuntime {
     /// banner carrying a level-up / Seru-capture line, which the port raises
     /// after the fight has already handed the frame back to the field. Its
     /// text half rides the glyph array in
-    /// [`crate::play_shop`]'s `banner_stage_draws`. The native window has
+    /// `legaia_engine_screens::banner_stage_draws`. The native window has
     /// drawn that frame all along; this page returned empty here and dropped
     /// the banner's text in the same breath, so a field-side level-up showed
     /// nothing at all.

@@ -264,6 +264,17 @@ HOSTS = {
     "web": [REPO / "crates" / "web-viewer" / "src"],
 }
 
+# Shared **composition** crates: engine code that projects engine-core state
+# into engine-ui builders on both hosts' behalf, so a builder may have its only
+# call site there. Each maps its source root to the entry points a host calls.
+# A builder named in the crate's (non-test) source is credited to exactly the
+# hosts that call one of those entries - so a host that stops calling the
+# entry loses every builder behind it, and the reachability claim stays a
+# claim about each host rather than about the crate.
+SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
+    REPO / "crates" / "engine-screens" / "src": ("shop_overlay_frame",),
+}
+
 # A draw builder is a public fn whose return type mentions one of engine-ui's
 # own draw-record types - that is exactly "projects a view into
 # renderer-agnostic geometry", i.e. one screen's (or one screen fragment's)
@@ -396,21 +407,6 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
     # test, which asserts the same rects against its own literal list rather
     # than against this constant.
     {
-        "what": "field shop / inn overlay pen - shop_draws_for's `pen` argument",
-        "native": (NATIVE_HUD, "SHOP_OVERLAY_PEN"),
-        "web": (WEB_PLAY_SHOP, "SHOP_PEN"),
-    },
-    {
-        "what": "level-up banner pen - level_up_draws_for's `pen` argument",
-        "native": (NATIVE_HUD, "LEVEL_UP_BANNER_PEN"),
-        "web": (WEB_PLAY_SHOP, "LEVEL_UP_PEN"),
-    },
-    {
-        "what": "capture banner pen - capture_banner_draws_for's `pen` argument",
-        "native": (NATIVE_HUD, "CAPTURE_BANNER_PEN"),
-        "web": (WEB_PLAY_SHOP, "CAPTURE_PEN"),
-    },
-    {
         "what": "dev-menu list pen - the origin both hosts hand to "
         "dev_menu_list_draws_for / dev_menu_cursor_xy for the developer row "
         "list",
@@ -540,7 +536,6 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
-NATIVE_SHOP_WINDOWS = "crates/engine-shell/src/window/shop_windows.rs"
 NATIVE_KEYBOARD = "crates/engine-shell/src/window/event_handler/keyboard.rs"
 NATIVE_BATTLE = "crates/engine-shell/src/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
@@ -726,37 +721,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["arm_for_battle"],
     },
     {
-        "what": "seru-trade screen text, native vs play page - the offer "
-        "list's title and owner rows and the confirm question were formatted "
-        "once per host (the page even kept its own copy of the title and "
-        "empty-row strings). Both trade draws must read "
-        "`seru_trade::trade_screen_text`",
-        "sites": {
-            "native": (
-                "crates/engine-shell/src/window/menu_draws.rs",
-                "draw_shop_trade",
-            ),
-            "web": (WEB_PLAY_SHOP, "shop_trade_draws"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["trade_screen_text"],
-    },
-    {
-        "what": "shop root picker rows, native vs play page - each host "
-        "mapped `shop_menu_rows` onto its own label + ink table (and both "
-        "left Quit white where retail greys it with Sell on an empty bag). "
-        "Both shop builders must read `menu_runtime::shop_root_labels`",
-        "sites": {
-            "native": (
-                "crates/engine-shell/src/window/hud.rs",
-                "shop_overlay_stage_draws",
-            ),
-            "web": (WEB_PLAY_SHOP, "shop_stage_draws"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["shop_root_labels"],
-    },
-    {
         "what": "Options screen model, native vs play page - the rows, the "
         "hand's row offset and the Key Config rows were derived once per "
         "host from the session. Both Options builders must read "
@@ -770,18 +734,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["screen_model"],
-    },
-    {
-        "what": "shop item label, native vs play page - a nameless id (a "
-        "load without the executable) printed `item 42` in the native shop "
-        "and `Item 2A` on the page, each host spelling its own fallback. Both "
-        "shop label helpers must read `MenuState::item_label`",
-        "sites": {
-            "native": (NATIVE_SHOP_WINDOWS, "shop_item_name"),
-            "web": (WEB_PLAY_SHOP, "shop_item_label"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["item_label"],
     },
     {
         "what": "camera-occlusion fade gate, native vs play page - the gate "
@@ -958,6 +910,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["stage_transform", "scale_stage_text_draws"],
+    },
+    {
+        "what": "shop / prize / inn / banner overlay composition, native vs "
+        "play page - the screens' projection of engine-core state into "
+        "engine-ui draw lists lived once per host, line for line, and the "
+        "copies drifted (ink, toast, pictogram fallback, frame sizing, banner "
+        "scale). It lives once now, in `legaia_engine_screens`, and each host "
+        "frame must build the group through its entry. The native window "
+        "builds it in the redraw (once, for the text pass and the sprite "
+        "pass) and hands it to `build_hud`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_SHOP, "play_overlay_draws_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["shop_overlay_frame"],
     },
     {
         "what": "field / overworld / cutscene camera, native vs play page - "
@@ -1874,7 +1842,36 @@ def collect_uses(names: set[str]) -> dict[str, set[str]]:
                 body = strip_comments(path.read_text(encoding="utf-8"))
                 for name in word_set(body) & names:
                     uses[name].add(host)
+    for root, entries in SHARED_COMPOSERS.items():
+        callers = composer_callers(entries)
+        if not callers or not root.is_dir():
+            continue
+        for path in root.rglob("*.rs"):
+            if is_test_source(path):
+                continue
+            body = strip_comments(path.read_text(encoding="utf-8"))
+            for name in word_set(body) & names:
+                uses[name] |= callers
     return uses
+
+
+def composer_callers(entries: tuple[str, ...]) -> set[str]:
+    """Host labels whose shipped sources call one of a composer's entries.
+
+    A CALL (`entry(` after `.` / `::`), not a mention: a host defining a
+    same-named wrapper method does not count unless it also calls through."""
+    pattern = re.compile(r"[.:]\s*(?:" + "|".join(map(re.escape, entries)) + r")\s*\(")
+    out: set[str] = set()
+    for host, roots in HOSTS.items():
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for path in root.rglob("*.rs"):
+                if is_test_source(path):
+                    continue
+                if pattern.search(strip_comments(path.read_text(encoding="utf-8"))):
+                    out.add(host)
+    return out
 
 
 def load_waivers() -> dict[str, dict]:
@@ -4042,7 +4039,15 @@ def _selftest_frame_case(
 # row is `len`, which is a report nobody reads.
 # `engine-session` is engine surface too: both play hosts hold its
 # `BootSession` and tick it, so a call into it is a call both can make.
-ENGINE_API_CRATES = ("engine-core", "engine-vm", "engine-ui", "engine-audio", "engine-session")
+# `engine-screens` likewise: the shop-family composition both hosts call.
+ENGINE_API_CRATES = (
+    "engine-core",
+    "engine-vm",
+    "engine-ui",
+    "engine-audio",
+    "engine-session",
+    "engine-screens",
+)
 
 # Names a `.name(` call cannot be attributed to the engine by name alone.
 # Ordinary std / core / collection / iterator methods that an engine type

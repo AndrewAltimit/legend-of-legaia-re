@@ -10,7 +10,7 @@
     <dt>Where</dt><dd>PROT extraction entries <strong>0863..0866</strong> (Vahn / Noa / Gala / Terra); in-RAM TOC index <code>char_id + 0x360</code>. The <code>edstati3</code> filename labels on 0863/0864 are the <a href="cdname.html#numbering-space">CDNAME +2 label shift</a>.</dd>
     <dt>Size</dt><dd>338 / 303 / 222 / 47 sectors. Header 16 bytes, descriptor entries 12 bytes, slot region from file offset <code>0x8000</code>.</dd>
     <dt>Magic</dt><dd>None - detected by shape (header words ordered <code>clut_a &lt; clut_b &lt; budget</code>, descriptor chain contiguous).</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::battle_data_pack</code> (walker), <code>::battle_char_palette</code> (palette chain), <code>::battle_char_assembly</code> (splice, poses, uploads), <code>::equip_transplant</code> (editing).</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::battle_data_pack</code> (walker), <code>::battle_char_palette</code> (palette chain), <code>::battle_char_assembly</code> (splice, poses, uploads), editing in <code>legaia_patcher::equip_transplant</code>.</dd>
     <dt>Confidence</dt><dd>Confirmed - loader disassembly plus byte-exact captures of the assembled mesh, VRAM bands and palette.</dd>
     <dt>Used by</dt><dd><a href="character-mesh.html">Character meshes</a>, <a href="../characters.html">characters page</a>, <a href="../tooling/randomizer.html">patcher equipment editor</a>, <a href="../subsystems/battle.html">battle scene</a>.</dd>
   </dl>
@@ -19,51 +19,20 @@
 
 <section class="doc-section" id="file-layout">
   <h2>File layout</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 190" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of one player battle file: 16-byte header, LZS record 0, descriptor table, padding to 0x8000, then the slot region holding five equipment sections">
-      <style>
-        .bl-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .bl-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .bl-sec { fill: none; stroke: var(--text-muted); stroke-width: 1; }
-        .bl-lab { font: 12px sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .bl-sub { font: 11px sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
-        .bl-off { font: 11px monospace; fill: var(--accent); }
-      </style>
-      <rect x="20" y="30" width="80" height="44" class="bl-box"/>
-      <rect x="100" y="30" width="230" height="44" class="bl-box"/>
-      <rect x="330" y="30" width="170" height="44" class="bl-box"/>
-      <rect x="500" y="30" width="80" height="44" class="bl-dim"/>
-      <rect x="580" y="30" width="300" height="44" class="bl-box"/>
-      <text x="60" y="46" class="bl-lab">header</text>
-      <text x="60" y="62" class="bl-sub">4 words</text>
-      <text x="215" y="46" class="bl-lab">record[0] (LZS)</text>
-      <text x="215" y="62" class="bl-sub">anims + art bank + 2 palettes</text>
-      <text x="415" y="46" class="bl-lab">descriptor table</text>
-      <text x="415" y="62" class="bl-sub">12-byte [id, off, size]</text>
-      <text x="540" y="52" class="bl-sub">zero pad</text>
-      <text x="730" y="46" class="bl-lab">slot region</text>
-      <text x="730" y="62" class="bl-sub">[dec_size][LZS] per slot</text>
-      <text x="20" y="92" class="bl-off">+0x00</text>
-      <text x="100" y="92" class="bl-off">+0x10</text>
-      <text x="330" y="92" class="bl-off">+desc_off</text>
-      <text x="580" y="92" class="bl-off">+0x8000</text>
-      <text x="880" y="92" class="bl-off" text-anchor="end">footprint</text>
-      <line x1="580" y1="104" x2="580" y2="126" class="bl-sec"/>
-      <line x1="880" y1="104" x2="880" y2="126" class="bl-sec"/>
-      <rect x="580" y="126" width="60" height="36" class="bl-sec"/>
-      <rect x="640" y="126" width="60" height="36" class="bl-sec"/>
-      <rect x="700" y="126" width="60" height="36" class="bl-sec"/>
-      <rect x="760" y="126" width="60" height="36" class="bl-sec"/>
-      <rect x="820" y="126" width="60" height="36" class="bl-sec"/>
-      <text x="610" y="144" class="bl-sub">body</text>
-      <text x="670" y="144" class="bl-sub">head</text>
-      <text x="730" y="144" class="bl-sub">weapon</text>
-      <text x="790" y="144" class="bl-sub">Ra-Seru</text>
-      <text x="850" y="144" class="bl-sub">feet</text>
-      <text x="450" y="178" class="bl-sub" text-anchor="middle">one section per slot: a default + one record per item id</text>
-    </svg>
-    <figcaption>The 16-sector prologue (header, <code>record[0]</code>, descriptor table) is read in one go; slots are then streamed by seeking from one selected slot to the next.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="One player battle file: 16-byte header, LZS record 0, descriptor table, zero padding to 0x8000, then the slot region">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">header</span><span class="bm-size">16 B</span></div>
+    <div class="bm-cell" style="--w:7"><span class="bm-off">+0x10</span><span class="bm-name">record[0] (LZS)</span><span class="bm-size">anims, art bank, 2 image blocks</span></div>
+    <div class="bm-cell" style="--w:5"><span class="bm-off">+desc_off</span><span class="bm-name">descriptor table</span><span class="bm-size">12 B &times; n</span></div>
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off"></span><span class="bm-name">zero pad</span><span class="bm-size">to 0x8000</span></div>
+    <div class="bm-cell bm-accent" style="--w:9"><span class="bm-off">+0x8000</span><span class="bm-name">slot region</span><span class="bm-size">[dec_size][LZS] per slot</span></div>
+  </div>
+  <p>The 16-sector prologue (header, <code>record[0]</code>, descriptor table) is read in one go; slots are then streamed by seeking from one selected slot to the next. The header itself is four words:</p>
+  <div class="byte-map" role="img" aria-label="Header: descriptor offset, image block A offset, image block B offset, record 0 decoded size">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">desc_off</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">clut_a_off</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">clut_b_off</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">budget</span><span class="bm-size">u32</span></div>
+  </div>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -90,6 +59,11 @@
 
 <section class="doc-section" id="descriptor-table">
   <h2>Descriptor table: one section per equipment slot</h2>
+  <div class="byte-map" role="img" aria-label="Descriptor entry: item id, slot offset from 0x8000, slot size">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">id</span><span class="bm-size">u32 item id</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">offset</span><span class="bm-size">u32 from 0x8000</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">size</span><span class="bm-size">u32, sector-aligned</span></div>
+  </div>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -138,44 +112,29 @@
 <section class="doc-section" id="slot-region">
   <h2>Inside a slot</h2>
   <p>Each slot is <code>[u32 dec_size][LZS stream]</code>; the decoder stops on the output count, so give it a generous input slice. Decoded, every slot is a 32-byte header, a loader frame wrapping a <a href="tmd.html">Legaia TMD</a>, and a texture pool.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 200" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One equipment slot: sector-aligned LZS stream on disc, decoding to header, loader frame, TMD and texture pool">
-      <style>
-        .ss-lab  { font: 11px sans-serif; fill: var(--text-muted); }
-        .ss-addr { font: 11px monospace; fill: var(--accent); }
-        .ss-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .ss-dim  { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .ss-seg  { font: 11px sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .ss-segd { font: 11px sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
-        .ss-line { stroke: var(--border); stroke-width: 1; }
-      </style>
-      <text x="20" y="42" class="ss-lab">on disc</text>
-      <rect x="120" y="22" width="80" height="32" class="ss-box"/>
-      <rect x="200" y="22" width="540" height="32" class="ss-box"/>
-      <rect x="740" y="22" width="120" height="32" class="ss-dim"/>
-      <text x="160" y="38" class="ss-segd">dec_size</text>
-      <text x="470" y="38" class="ss-seg">LZS stream</text>
-      <text x="800" y="38" class="ss-segd">pad to 0x800</text>
-      <text x="120" y="70" class="ss-addr">0x8000 + offset</text>
-      <text x="860" y="70" class="ss-addr" text-anchor="end">+ size</text>
-      <line x1="470" y1="78" x2="470" y2="104" class="ss-line"/>
-      <text x="480" y="96" class="ss-lab">decode (budget = dec_size)</text>
-      <text x="20" y="136" class="ss-lab">decoded</text>
-      <rect x="120" y="116" width="80" height="32" class="ss-box"/>
-      <rect x="200" y="116" width="100" height="32" class="ss-box"/>
-      <rect x="300" y="116" width="340" height="32" class="ss-box"/>
-      <rect x="640" y="116" width="220" height="32" class="ss-box"/>
-      <text x="160" y="132" class="ss-segd">header 32 B</text>
-      <text x="250" y="132" class="ss-segd">loader frame</text>
-      <text x="470" y="132" class="ss-seg">Legaia TMD</text>
-      <text x="750" y="132" class="ss-seg">texture pool</text>
-      <text x="120" y="166" class="ss-addr">+0x00</text>
-      <text x="200" y="166" class="ss-addr">+frame_off</text>
-      <text x="640" y="166" class="ss-addr">+tmd_body_end</text>
-      <text x="860" y="188" class="ss-lab" text-anchor="end">pool = [clut_x][clut_n][clut_n x BGR555][4bpp pixels], uploaded only if upload_flag != 0</text>
-    </svg>
-    <figcaption>The header's self-relative offsets locate everything else; <code>frame_off = 0x14 + 4 &times; attach_obj_count</code> in every retail slot.</figcaption>
-  </figure>
+  <p><strong>On disc</strong>, at <code>0x8000 + offset</code>:</p>
+  <div class="byte-map" role="img" aria-label="Slot on disc: decoded size word, LZS stream, padding to the sector">
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">dec_size</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:12"><span class="bm-off">+0x04</span><span class="bm-name">LZS stream</span><span class="bm-size">decode budget = dec_size</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off"></span><span class="bm-name">pad</span><span class="bm-size">to 0x800</span></div>
+  </div>
+  <p><strong>Decoded</strong> - the header's self-relative offsets locate everything else:</p>
+  <div class="byte-map" role="img" aria-label="Decoded slot: 32-byte header, loader frame, Legaia TMD, texture pool">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">slot header</span><span class="bm-size">32 B</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+frame_off</span><span class="bm-name">loader frame</span><span class="bm-size">attach + bone ids</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+frame_off+0x0C</span><span class="bm-name">Legaia TMD</span><span class="bm-size"></span></div>
+    <div class="bm-cell bm-dim" style="--w:5"><span class="bm-off">+tmd_body_end</span><span class="bm-name">texture pool</span><span class="bm-size">[clut_x][clut_n][BGR555][4bpp]</span></div>
+  </div>
+  <div class="byte-map" role="img" aria-label="Slot header: frame offset, two swing record offsets, TMD body end, attach object count, upload flag, attach object offsets">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">frame_off</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">swing_rec_a</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">swing_rec_b</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">tmd_body_end</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x10</span><span class="bm-name">attach_n</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x12</span><span class="bm-name">upload</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-dim" style="--w:6"><span class="bm-off">+0x14</span><span class="bm-name">attach_obj_off[]</span><span class="bm-size">4 &times; n</span></div>
+  </div>
+  <p><code>frame_off = 0x14 + 4 &times; attach_obj_count</code> in every retail slot; the pool is uploaded only when <code>upload_flag != 0</code>.</p>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -214,7 +173,7 @@
       <tr><td>section 4 feet</td><td><code>0x60</code></td><td><code>0x80</code></td><td><code>0x20</code></td><td><code>0x80</code></td></tr>
     </tbody>
   </table>
-  <p>Port: <code>battle_char_assembly::{SECTION_TEXTURE_RECTS, RECORD0_TEXTURE_RECTS, character_texture_uploads}</code>; validated against captured battle VRAM at 99.7-100 % per member (the residual is the facial animator's current frame).</p>
+  <p>Port: <code>battle_char_assembly::{SECTION_TEXTURE_RECTS, RECORD0_TEXTURE_RECTS, character_texture_uploads}</code>. It matches captured battle VRAM per member except for the facial animator's current frame.</p>
 </section>
 
 <section class="doc-section" id="battle-animations">
@@ -264,7 +223,7 @@
   <details class="disclosure">
     <summary>Sizes and the annex allocator</summary>
     <div class="disclosure-body">
-      <p>Vahn's Astral Sword record for Noa comes out at 7 sectors. Retail files tile their footprints exactly; the optimal LZS parse frees 4 / 2 / 5 sectors in Vahn's / Noa's / Gala's files and none in Terra's, and the patcher moves the boundaries between entries 863..865 before falling back to the annex. <code>legaia_asset::player_file_annex</code> recognises an annexed table (chain starts at a non-zero sector-aligned offset) and materialises the retail-shaped file for every parser; <code>DiscPatcher::{annex_player_file, read_player_file, patch_player_file}</code> are the disc side, with a bump allocator whose <code>LGAX</code> marker lives in <code>DMY.DAT</code>'s last sector. Verified in PCSX-Redux from a pre-battle save on the patched disc.</p>
+      <p>Vahn's Astral Sword record for Noa comes out at 7 sectors. Retail files tile their footprints exactly; the optimal LZS parse frees 4 / 2 / 5 sectors in Vahn's / Noa's / Gala's files and none in Terra's, and the patcher moves the boundaries between entries 863..865 before falling back to the annex. <code>legaia_asset::player_file_annex</code> recognises an annexed table (chain starts at a non-zero sector-aligned offset) and materialises the retail-shaped file for every parser; <code>DiscPatcher::{annex_player_file, read_player_file, patch_player_file}</code> are the disc side, with a bump allocator whose <code>LGAX</code> marker lives in <code>DMY.DAT</code>'s last sector.</p>
     </div>
   </details>
 </section>
@@ -284,6 +243,9 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the loader, assembler and animation routines</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -300,6 +262,8 @@
       <tr><td>Live captures</td><td>-</td><td>Assembled mesh vertex pools byte-match the selected sections; VRAM bands match the rect table; <code>mednafen-state clut-trace</code> byte-matches decoded pools to captured VRAM.</td><td>-</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>Closed: the <code>record[0] +0x5C</code> word is vestigial</summary>
     <div class="disclosure-body">

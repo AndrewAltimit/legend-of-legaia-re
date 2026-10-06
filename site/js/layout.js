@@ -116,6 +116,7 @@ const NAV = [
       { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
       { href: 'subsystems/history-world-map.html', text: 'Chapter-1 hub sweep (history)', key: 'subsystems/history-world-map', indent: true },
       { href: 'subsystems/world-overview-viewer.html', text: 'World-overview viewer', key: 'subsystems/world-overview-viewer' },
+      { href: 'subsystems/vr-mode.html',        text: 'VR mode (WebXR)',          key: 'subsystems/vr-mode', indent: true },
       { href: 'subsystems/save-screen.html',    text: 'Save screen',              key: 'subsystems/save-screen' },
       { href: 'subsystems/shop.html',           text: 'Shop',                     key: 'subsystems/shop' },
       { href: 'subsystems/inn.html',            text: 'Inn',                      key: 'subsystems/inn' },
@@ -125,6 +126,7 @@ const NAV = [
       // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
+      { href: 'subsystems/renderer-internals.html', text: 'Renderer: internals',  key: 'subsystems/renderer-internals', indent: true },
       { href: 'subsystems/shading.html',        text: 'Shading and palettes',     key: 'subsystems/shading', indent: true },
       { href: 'subsystems/engine.html',         text: 'Engine port plan',         key: 'subsystems/engine' },
     ],

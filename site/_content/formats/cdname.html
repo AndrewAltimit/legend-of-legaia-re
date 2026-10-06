@@ -10,7 +10,7 @@
     <dt>Where</dt><dd><code>CDNAME.TXT</code> at the disc root; ASCII, one <code>#define name N</code> per line. Retail loads it into a 16-byte-record table at RAM <code>0x80088758</code></dd>
     <dt>Numbering</dt><dd><code>N</code> is a raw TOC index; the content lives at extraction entry <code>N &minus; 2</code></dd>
     <dt>Parser</dt><dd><code>crates/prot/src/cdname.rs</code>: <code>parse_str</code> (tolerant), <code>parse_retail_str</code> / <code>retail_name_table</code> (byte-exact), <code>block_for_extraction_index</code> (applies the &minus;2 rule)</dd>
-    <dt>Confidence</dt><dd>Confirmed - loader traced; the shift is pinned by four retail loader constants and a disc-gated test</dd>
+    <dt>Confidence</dt><dd>Confirmed - loader traced; the shift is pinned by four retail loader constants and the v12-sidecar placement (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">Asset loader</a>, <code>prot-extract</code> filenames, every scene window in the engine, <a href="../subsystems/boot.html">boot</a></dd>
   </dl>
 </section>
@@ -154,7 +154,13 @@
 
 <section class="doc-section" id="the-loader-mangles-long-names">
   <h2>What retail holds in RAM: long names are mangled</h2>
-  <p>The boot loader copies each name into a 16-byte record and <em>then</em> stores the index over bytes 12-13 of the same record. There is no length check and no NUL is ever written. Consequences:</p>
+  <p>The boot loader copies each name into a 16-byte record and <em>then</em> stores the index over bytes 12-13 of the same record. The table is BSS, so it starts zeroed; there is no length check and no NUL is ever written.</p>
+  <div class="byte-map" role="img" aria-label="One 16-byte name record: name bytes 0 to 11, the u16 index stored over bytes 12 and 13, then name bytes 14 and 15">
+    <div class="bm-cell bm-accent" style="--w:12"><span class="bm-off">+0x00</span><span class="bm-name">name bytes 0..11</span><span class="bm-size">char[12]</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x0C</span><span class="bm-name">index</span><span class="bm-size">u16, stored last</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x0E</span><span class="bm-name">name 14..15</span><span class="bm-size">survives</span></div>
+  </div>
+  <p>Read back as a C string, a record therefore holds:</p>
   <table>
     <thead><tr><th>Name length</th><th>What the record holds</th></tr></thead>
     <tbody>
@@ -191,8 +197,11 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the loader and the four index constants</summary>
+    <div class="disclosure-body">
   <table>
-    <thead><tr><th>Function / test</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <thead><tr><th>Function / evidence</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>CDNAME loader</td><td><code>FUN_8001D8FC</code></td><td>16-byte records at <code>0x80088758</code>; unbounded copy at <code>0x8001D980</code>, index stores at <code>0x8001DA78</code>/<code>0x8001DA90</code></td><td><code>8001d8fc.txt</code></td></tr>
       <tr><td>Source flag write</td><td><code>0x80015F08</code> in <code>main()</code></td><td><code>sh v0,0x5aa(gp)</code> stores the <code>1</code> returned by a two-instruction leaf; the only writer among 70 access sites across 84 images, the other 69 all reads</td><td>SCUS disassembly</td></tr>
@@ -202,9 +211,10 @@
       <tr><td>Side-band loader</td><td><code>FUN_801F17F8</code></td><td><code>0x37F</code>/<code>0x380</code> = <code>bat_back_dat 895</code>; RAM&harr;disc byte-verified at extraction 893/894</td><td><code>overlay_battle_801f17f8.txt</code></td></tr>
       <tr><td>Overlay pager</td><td><code>FUN_8003EBE4</code> / <code>FUN_8003EC70</code></td><td><code>param + 0x381</code> = <code>xxx_dat 897</code>; param 2 = extraction 0897</td><td><code>8003ec70.txt</code></td></tr>
       <tr><td>Structural check</td><td><a href="scene-v12-table.html">v12 tables</a></td><td>All 96 scene-region sidecars sit at block slot 1 only at shift &minus;2 (scene blocks vary 7..11 slots)</td><td><code>scripts/asset-investigation/cdname_shift_analysis.py</code></td></tr>
-      <tr><td>Disc-gated test</td><td><code>cdname_retail_parse_disc</code></td><td>Each shipped name against an independent byte-level record model</td><td><code>crates/prot</code></td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/cdname.md" target="_blank" rel="noopener"><code>docs/formats/cdname.md</code></a>.</p>
 </section>
 

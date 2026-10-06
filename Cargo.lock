@@ -1371,6 +1371,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-screens"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-core",
+ "legaia-engine-ui",
+ "legaia-font",
+]
+
+[[package]]
 name = "legaia-engine-session"
 version = "0.1.0"
 dependencies = [
@@ -1404,6 +1414,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-render",
+ "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-vm",
  "legaia-font",
@@ -1728,6 +1739,7 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-audio",
  "legaia-engine-core",
+ "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-ui",
  "legaia-engine-vm",

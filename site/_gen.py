@@ -539,6 +539,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/inventory.html",  "Inventory",                     "subsystems/inventory",       "subsystems/inventory.html"),
     ("subsystems/audio.html",      "Audio",                         "subsystems/audio",           "subsystems/audio.html"),
     ("subsystems/renderer.html",   "Renderer",                      "subsystems/renderer",        "subsystems/renderer.html"),
+    ("subsystems/renderer-internals.html","Renderer: internals",     "subsystems/renderer-internals","subsystems/renderer-internals.html"),
     ("subsystems/shading.html",    "Shading and palettes",          "subsystems/shading",         "subsystems/shading.html"),
     ("subsystems/world-map.html",  "World map",                     "subsystems/world-map",       "subsystems/world-map.html"),
     ("subsystems/history-world-map.html","Chapter-1 hub sweep (history)","subsystems/history-world-map","subsystems/history-world-map.html"),

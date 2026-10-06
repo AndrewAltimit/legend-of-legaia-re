@@ -19,39 +19,43 @@
 <section class="doc-section" id="table-layout">
   <h2>Record layout</h2>
   <p>A cue id indexes the table at an 8-byte stride. The field names are the designer's own, recovered from a runtime debug format string (<code>p / t / l / n / id</code>).</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <div class="byte-map" role="img" aria-label="SFX descriptor: program, tone, note, voices, category, three zero bytes">
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">p program</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">t tone</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+2</span><span class="bm-name">l note</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+3</span><span class="bm-name">n voices</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+4</span><span class="bm-name">id category</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+5</span><span class="bm-name">zero</span><span class="bm-size">3 B</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0</code></td><td>1</td><td><code>p</code> program</td><td>Program (instrument) index in the bank</td></tr>
-      <tr><td><code>+1</code></td><td>1</td><td><code>t</code> tone</td><td>Tone index within the program; a multi-voice cue uses consecutive tones (<code>+i</code> per voice). Named by <strong>index</strong>, never resolved by key range</td></tr>
-      <tr><td><code>+2</code></td><td>1</td><td><code>l</code> note</td><td>MIDI-style note (clusters near 60)</td></tr>
-      <tr><td><code>+3</code></td><td>1</td><td><code>n</code> voices</td><td>Low 5 bits = voice count (<code>1..=3</code> in retail); bit <code>0x20</code> = sustained mode</td></tr>
-      <tr><td><code>+4</code></td><td>1</td><td><code>id</code> category</td><td>Selects a 12-byte mixer record, and through it the <strong>VAB slot</strong> the cue keys (<a href="#program-bank">below</a>)</td></tr>
-      <tr><td><code>+5..7</code></td><td>3</td><td>-</td><td>Zero; no reader</td></tr>
+      <tr><td><code>p</code> program</td><td>Program (instrument) index in the bank</td></tr>
+      <tr><td><code>t</code> tone</td><td>Tone index within the program; a multi-voice cue uses consecutive tones (<code>+i</code> per voice). Named by <strong>index</strong>, never resolved by key range</td></tr>
+      <tr><td><code>l</code> note</td><td>MIDI-style note (clusters near 60)</td></tr>
+      <tr><td><code>n</code> voices</td><td>Low 5 bits = voice count (<code>1..=3</code> in retail); bit <code>0x20</code> = sustained mode</td></tr>
+      <tr><td><code>id</code> category</td><td>Selects a 12-byte mixer record, and through it the <strong>VAB slot</strong> the cue keys (<a href="#program-bank">below</a>)</td></tr>
+      <tr><td><code>+5..7</code></td><td>Zero across the table; no reader</td></tr>
     </tbody>
   </table>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 120" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A cue id resolves through its descriptor's category byte to a mixer record, then to a VAB slot, then to a PROT entry">
-      <style>
-        .sx-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .sx-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .sx-sub { font: 11px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .sx-arr { stroke: var(--accent); stroke-width: 1.2; fill: none; }
-      </style>
-      <rect x="10" y="30" width="130" height="40" class="sx-box"/><text x="75" y="50" class="sx-seg">cue id</text>
-      <text x="75" y="92" class="sx-sub">0x00..0x63</text>
-      <path class="sx-arr" d="M140 50 L188 50 M182 45 L188 50 L182 55"/>
-      <rect x="190" y="30" width="150" height="40" class="sx-box"/><text x="265" y="50" class="sx-seg">8-byte descriptor</text>
-      <text x="265" y="92" class="sx-sub">byte +4 = category</text>
-      <path class="sx-arr" d="M340 50 L388 50 M382 45 L388 50 L382 55"/>
-      <rect x="390" y="30" width="150" height="40" class="sx-box"/><text x="465" y="50" class="sx-seg">mixer record</text>
-      <text x="465" y="92" class="sx-sub">0x80091508 + 12n</text>
-      <path class="sx-arr" d="M540 50 L588 50 M582 45 L588 50 L582 55"/>
-      <rect x="590" y="30" width="130" height="40" class="sx-box"/><text x="655" y="50" class="sx-seg">VAB slot</text>
-      <text x="655" y="92" class="sx-sub">slot = category</text>
-      <path class="sx-arr" d="M720 50 L768 50 M762 45 L768 50 L762 55"/>
-      <rect x="770" y="30" width="120" height="40" class="sx-box"/><text x="830" y="50" class="sx-seg">PROT bank</text>
-      <text x="830" y="92" class="sx-sub">0868 / 0869 / ...</text>
+  <p>Row <code>0x64</code> onward is unrelated rodata (a dev-path string), so the readers' <code>&lt; 0x200</code> gate is a bound, not the table size.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 110" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A cue id resolves through its descriptor's category byte to a mixer record, then to a VAB slot, then to a PROT entry">
+      <defs><marker id="sfx-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="10" y="20" width="130" height="44" rx="5" class="dg-node"/><text x="75" y="46" class="dg-label">cue id</text>
+      <text x="75" y="88" class="dg-sub">0x00..0x63</text>
+      <path class="dg-edge" d="M140 42 L186 42" marker-end="url(#sfx-arrow)"/>
+      <rect x="190" y="20" width="150" height="44" rx="5" class="dg-node-accent"/><text x="265" y="46" class="dg-label">8-byte descriptor</text>
+      <text x="265" y="88" class="dg-sub">byte +4 = category</text>
+      <path class="dg-edge" d="M340 42 L386 42" marker-end="url(#sfx-arrow)"/>
+      <rect x="390" y="20" width="150" height="44" rx="5" class="dg-node"/><text x="465" y="46" class="dg-label">mixer record</text>
+      <text x="465" y="88" class="dg-sub">0x80091508 + 12n</text>
+      <path class="dg-edge" d="M540 42 L586 42" marker-end="url(#sfx-arrow)"/>
+      <rect x="590" y="20" width="130" height="44" rx="5" class="dg-node"/><text x="655" y="46" class="dg-label">VAB slot</text>
+      <text x="655" y="88" class="dg-sub">slot = category</text>
+      <path class="dg-edge" d="M720 42 L766 42" marker-end="url(#sfx-arrow)"/>
+      <rect x="770" y="20" width="120" height="44" rx="5" class="dg-node-ok"/><text x="830" y="46" class="dg-label">PROT bank</text>
+      <text x="830" y="88" class="dg-sub">0868 / 0869 / ...</text>
     </svg>
     <figcaption>The category byte is a bank selector: the sound initialiser writes <code>slot = record index</code> into every mixer record, so a cue always names its own bank.</figcaption>
   </figure>
@@ -99,8 +103,11 @@
     <li>Four slots, each an <code>i16</code> cue id plus a <code>u32</code> countdown in vsyncs. A producer writes the id with timer 0 into a round-robin cursor slot; a fifth pending cue <em>replaces</em> one.</li>
     <li>An ager decrements every timer by the adaptive frame step and floors at zero; a slot at zero with no id becomes <code>-1</code>.</li>
     <li>The drainer plays a slot only when its timer is exactly zero and its id is still <code>&ge; 0</code>. A cue armed with timer <code>N</code> plays on the frame the countdown first reads zero.</li>
+    <li><strong>Who writes it in the field:</strong> field-VM op <code>0x36</code> (sub 0 pushes a cue id, sub 4 sets its delay in vsyncs - scripts pair them) and the motion VM's op <code>0x09</code>. Both pass the id straight from bytecode, static ids and per-scene ids <code>&ge; 0x200</code> alike.</li>
     <li>The ring value <strong>is</strong> the descriptor index; overlays that write the ring directly write ids as-is. The move-power cue path stores <code>id - 1</code> for <code>id &lt; 0x40</code>.</li>
   </ul>
+  <h3 id="side-band">The side-band bank a script selects</h3>
+  <p>Category 3 keys the side-band slot, and field-VM op <code>0x36</code> sub 1 picks which bank fills it: a request id <code>2000..=2999</code> streams the <code>vab_01</code> block's entry <code>id - 2000</code> into slot 3, <code>&ge; 3000</code> streams <code>id - 3000</code> into slot 6, and <code>0x1000</code> parks the request without loading anything. Shipped scripts use only those three forms.</p>
   <h3 id="voices">Voice allocation</h3>
   <table>
     <thead><tr><th>Mode</th><th>Voices</th><th>Rule</th></tr></thead>
@@ -124,26 +131,31 @@
   <details class="disclosure" id="spu-budget">
     <summary>SPU budget: both pinned banks in one region</summary>
     <div class="disclosure-body">
-      <p>The engine stages slot 0 plus the current mode's slot-2 / slot-6 bank together; the BGM region is what remains of the console's 512 KiB of sound RAM.</p>
+      <p>A port that stages slot 0 plus the current mode's slot-2 / slot-6 bank together has this much sound RAM left for music out of the console's 512 KiB:</p>
       <table>
         <thead><tr><th>Region</th><th>Bytes</th></tr></thead>
         <tbody>
           <tr><td>PROT 0868 VAG bodies</td><td>59 136</td></tr>
           <tr><td>PROT 0869 VAG bodies</td><td>188 128</td></tr>
-          <tr><td>Reserved SFX region (<code>SFX_BANK_SPU_BYTES</code>)</td><td>249 856 (<code>0x3D000</code>)</td></tr>
+          <tr><td>Reserved SFX region</td><td>249 856 (<code>0x3D000</code>)</td></tr>
           <tr><td>BGM region (512 KiB &minus; <code>0x1000</code> scratch &minus; the above)</td><td>270 336</td></tr>
           <tr><td>Largest scene BGM VAB staged</td><td>269 632</td></tr>
         </tbody>
       </table>
-      <p>One step larger silences music that plays; one step smaller does not fit slot 0 plus PROT 0869. Slot 6 <em>is</em> slot 2's region in retail, and both play hosts refill it per mode the way retail's inits do: PROT 0876 (the field bank) in the field and on the world map, PROT 0869 in battle, a minigame's own bank in its mode. A cue whose slot is closed is silent, as retail's drainer skips it.</p>
+      <p>One step larger silences music that plays; one step smaller does not fit slot 0 plus PROT 0869. Slot 6 <em>is</em> slot 2's region in retail, refilled per mode: PROT 0876 (the field bank) in the field and on the world map, PROT 0869 in battle, a minigame's own bank in its mode. A cue whose slot is closed is silent, as retail's drainer skips it.</p>
     </div>
   </details>
   <details class="disclosure" id="ids-above-0x200">
     <summary>Ids <code>&ge; 0x200</code>: the current bundle's record 0</summary>
     <div class="disclosure-body">
-<pre><code>id &lt;  0x200:  desc = table + id*8                       ; this page
-id &gt;= 0x200:  desc = bundle + offsets[0] + (id - 0x200)*8 ; current sound bundle, record 0</code></pre>
-      <p>Both readers resolve the high arm through the sound subsystem's current-bundle pointer, and it has two occupants. In the field the loader repoints it at the scene's prescript bundle on every scene load, so the high bank is the <strong>scene's own record 0</strong>, sized per scene (jou reserves 96 rows and fills 40; rugi carries 21). In battle it is <code>bse.dat</code> (<a href="sound-driver.html">sound-driver formats</a>) - loaded at <strong>battle-scene setup</strong>, not at boot: its one caller anywhere on the disc is inside battle init <code>FUN_800513F0</code>. This page previously said "at init".</p>
+      <table>
+        <thead><tr><th>Cue id</th><th>Descriptor address</th></tr></thead>
+        <tbody>
+          <tr><td><code>&lt; 0x200</code></td><td><code>table + id*8</code> - this page</td></tr>
+          <tr><td><code>&ge; 0x200</code></td><td><code>bundle + offsets[0] + (id - 0x200)*8</code> - the current sound bundle's record 0</td></tr>
+        </tbody>
+      </table>
+      <p>Both readers resolve the high arm through the sound subsystem's current-bundle pointer, and it has two occupants. In the field the loader repoints it at the scene's prescript bundle on every scene load, so the high bank is the <strong>scene's own record 0</strong>, sized per scene (jou reserves 96 rows and fills 40; rugi carries 21). In battle it is <code>bse.dat</code> (<a href="sound-driver.html">sound-driver formats</a>) - loaded at <strong>battle-scene setup</strong>, not at boot: its one caller anywhere on the disc is inside battle init <code>FUN_800513F0</code>.</p>
       <p>One column is not static in battle. Before enqueueing a cue the battle cue router <code>FUN_8004FE5C</code> overwrites byte <code>+4</code> (<code>id</code>, the category) of <code>record[cue_id - 0x200]</code> from a per-actor byte, reaching the bank through its own saved pointer <code>gp+0x678</code> rather than through the current-bundle slot. So a live cue's VAB slot is chosen by the actor that fired it, and the authored category is a default.</p>
     </div>
   </details>
@@ -157,7 +169,8 @@ id &gt;= 0x200:  desc = bundle + offsets[0] + (id - 0x200)*8 ; current sound bun
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <details class="disclosure"><summary>Provenance by function</summary>
+  <div class="table-wrap"><table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Per-actor trigger</td><td><code>FUN_800250D4</code> (<code>0x800250F4..14C</code>)</td><td>8-byte stride at <code>DAT_8006F198</code>; <code>&lt; 0x200</code> gate; voice-count key-on</td><td><code>funcs/800250d4.txt</code></td></tr>
@@ -166,11 +179,12 @@ id &gt;= 0x200:  desc = bundle + offsets[0] + (id - 0x200)*8 ; current sound bun
       <tr><td>Sound initialiser</td><td><code>FUN_8001D424</code></td><td>Writes <code>+8 = record index</code> into all 16 mixer records at <code>0x80091508</code>: category = slot</td><td><code>funcs/8001d424.txt</code></td></tr>
       <tr><td>Bank open gate</td><td><code>FUN_80068B98</code></td><td>Rejects slot <code>&ge; 0x10</code> or a closed bank (<code>_DAT_801CE368[id] != 1</code>); repoints the libsnd current-bank globals</td><td><code>funcs/80068b98.txt</code></td></tr>
       <tr><td>Bank loaders</td><td><code>FUN_8001FC00</code> + <code>FUN_8001E54C</code>; callers <code>FUN_800520F0</code>, <code>FUN_801CF00C</code>, <code>FUN_801D6704</code>, <code>FUN_8004E568</code>, <code>FUN_800243F0</code></td><td>Which PROT entry reaches which slot; SPU bases from <code>FUN_800265E8</code></td><td>per-function dumps</td></tr>
-      <tr><td>Byte matches</td><td>PROT 0868 / 0876 / 0889</td><td>Live slot-0 <code>VagAtr</code> page occurs verbatim at 0868 <code>+4</code>; 0876 holds 30 VAGs for 30 category-6 cues; 0889 populates only program 10, which cue <code>0x50</code> names</td><td><code>sfx_table_real</code>, <code>sfx_table_live</code></td></tr>
+      <tr><td>Byte matches</td><td>PROT 0868 / 0876 / 0889</td><td>Live slot-0 <code>VagAtr</code> page occurs verbatim at 0868 <code>+4</code>; 0876 holds 30 VAGs for 30 category-6 cues; 0889 populates only program 10, which cue <code>0x50</code> names</td><td>disc + save-state comparison</td></tr>
       <tr><td>Footstep probe</td><td><code>FUN_80018DB0</code> + producers</td><td>Standing vs walking for the same vsyncs: no voice program</td><td><code>funcs/80018db0.txt</code></td></tr>
     </tbody>
-  </table>
-  <p id="provenance">Parser: <code>SfxTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image; <code>from_table_bytes</code> parses a RAM window. The routing law lives beside it (<code>slot_for_category</code>, <code>prot_index_for_slot</code>, <code>spu_base_for_slot</code>, <code>SLOT_ALIASES</code>). Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/sfx-table.md" target="_blank" rel="noopener"><code>docs/formats/sfx-table.md</code></a>.</p>
+  </table></div>
+  </details>
+  <p id="provenance">In the port: <code>SfxTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image; <code>from_table_bytes</code> parses a RAM window. The routing law lives beside it (<code>slot_for_category</code>, <code>prot_index_for_slot</code>, <code>spu_base_for_slot</code>, <code>SLOT_ALIASES</code>). Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/sfx-table.md" target="_blank" rel="noopener"><code>docs/formats/sfx-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

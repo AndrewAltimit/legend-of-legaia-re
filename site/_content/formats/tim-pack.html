@@ -1,71 +1,35 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; standalone tim-pack format</div>
   <h1>Standalone TIM-pack format <span class="tag tag-done">Confirmed</span></h1>
-  <p><strong>Not a distinct container.</strong> The <code>byte[3] == 0x01</code> marker and the <code>word_index * 4 + 4</code> member math are a DATA_FIELD <code>TIM_LIST</code> chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> followed by an ordinary <a href="pack.html">pack</a>, read with the 4-byte header skipped; every retail member is a scene texture pack at raw-TOC <code>+4</code> of its block, and the classifier now files them as streams or packs. The reader stays correct.</p>
-  <p class="lede">A container that bundles several TIMs (the PlayStation's standard texture image) into one entry of <code>PROT.DAT</code>, the disc's main asset archive. "Standalone" distinguishes it from the near-identical <a href="pack.html">pack format</a> found <em>inside</em> streaming chunks - same idea, different header math. Its most notable instance is the pair of hidden entries at the very head of the archive holding the cursor, menu glyphs and sprite sheets you see from the title screen onward.</p>
+  <p class="lede">The &ldquo;TIM-pack&rdquo; is a reader, not a container of its own. The entries it opens - each scene's bundle of textures, and the two hidden entries at the head of <code>PROT.DAT</code> holding the cursor, menu glyphs and UI sprite sheets - are an ordinary <a href="pack.html">pack</a> sitting behind a 4-byte DATA_FIELD <code>TIM_LIST</code> chunk header. The reader skips that header, and its &ldquo;marker byte&rdquo; and <code>+4</code> offset math are simply the header seen from the inside.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Magic</dt><dd>none proper - a discriminator pair <code>byte[3] == 0x01</code>, <code>byte[2] &lt; 0x10</code></dd>
-    <dt>Where on disc</dt><dd>certain standalone <code>PROT.DAT</code> entries; raw TOC entries 0 and 1 (the boot-UI region before extraction entry 0000)</dd>
-    <dt>Offset math</dt><dd><code>byte_offset = word_index * 4 + 4</code> - the <code>+4</code> is what separates it from the other two pack layouts</dd>
-    <dt>Parser</dt><dd><code>crates/prot/src/timpack.rs</code> (<code>is_tim_pack</code>, <code>detected_ext</code>); the boot instance via <code>legaia_asset::system_ui_bundle</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - retail uploader traced (<a href="#how-we-know">how we know</a>); disc pins + VRAM parity oracle</dd>
+    <dt>What it really is</dt><dd>chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> + an <a href="pack.html">asset::pack</a> of TIMs</dd>
+    <dt>Where on disc</dt><dd>each scene's texture pack at raw-TOC <code>+4</code> of its CDNAME block; raw TOC entries 0 and 1 (the boot-UI bundle)</dd>
+    <dt>Offset math</dt><dd><code>byte_offset = word_index * 4 + 4</code></dd>
+    <dt>Parser</dt><dd><code>legaia_prot::timpack</code> (<code>is_tim_pack</code>, <code>detected_ext</code>); boot bundle <code>legaia_asset::system_ui_bundle</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - retail uploader traced, layout pinned on the real disc</dd>
     <dt>Used by</dt><dd><a href="../subsystems/boot.html">boot sequence</a>, <a href="../subsystems/field-menu.html">pause menu</a> glyphs, <a href="../viewer.html">asset viewer</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <p>A TIM-pack is a tiny index in front of a run of textures: an 8-byte header saying how many members there are, a table of where each one starts, then the members back to back. The only thing to get right is the header shape and the offset arithmetic, because the disc has <a href="pack.html#distinction-from-the-standalone-tim-pack">three look-alike pack layouts</a> and this one adds a constant <code>+4</code> the others do not.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 130" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TIM-pack byte layout: 8-byte header, word-offset table, then members back to back">
-      <style>
-        .tp-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .tp-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .tp-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-        .tp-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .tp-dim { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .tp-arrow { stroke: var(--accent); stroke-width: 1.2; fill: none; }
-      </style>
-      <rect x="20"  y="30" width="130" height="34" class="tp-box"/>
-      <rect x="150" y="30" width="130" height="34" class="tp-box"/>
-      <rect x="280" y="30" width="200" height="34" class="tp-box"/>
-      <rect x="480" y="30" width="120" height="34" class="tp-dim"/>
-      <rect x="600" y="30" width="120" height="34" class="tp-dim"/>
-      <rect x="720" y="30" width="140" height="34" class="tp-dim"/>
-      <text x="85"  y="51" class="tp-seg" dominant-baseline="middle">discriminator</text>
-      <text x="215" y="51" class="tp-seg" dominant-baseline="middle">tim_num</text>
-      <text x="380" y="51" class="tp-seg" dominant-baseline="middle">word_index[tim_num]</text>
-      <text x="540" y="51" class="tp-seg" dominant-baseline="middle">member 0</text>
-      <text x="660" y="51" class="tp-seg" dominant-baseline="middle">member 1</text>
-      <text x="790" y="51" class="tp-seg" dominant-baseline="middle">&hellip;</text>
-      <text x="85"  y="20" class="tp-off">+0x00</text>
-      <text x="215" y="20" class="tp-off">+0x04</text>
-      <text x="380" y="20" class="tp-off">+0x08</text>
-      <path d="M 340 64 L 340 92 L 532 92 L 532 72" class="tp-arrow"/>
-      <path d="M 526 78 L 532 72 L 538 78" class="tp-arrow"/>
-      <text x="400" y="110" class="tp-note">byte_offset = word_index * 4 + 4</text>
-    </svg>
-    <figcaption>Word offsets, not byte offsets - and shifted <code>+4</code> relative to the pack start.</figcaption>
-  </figure>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>u8</td><td><code>magic_lo</code></td><td>arbitrary</td></tr>
-      <tr><td><code>+0x01</code></td><td>u8</td><td><code>magic_hi</code></td><td>arbitrary</td></tr>
-      <tr><td><code>+0x02</code></td><td>u8</td><td><code>disc</code></td><td>discriminator byte, <code>&lt; 0x10</code> - NOT the count</td></tr>
-      <tr><td><code>+0x03</code></td><td>u8</td><td><code>marker</code></td><td><code>== 0x01</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>u32</td><td><code>tim_num</code></td><td>member count</td></tr>
-      <tr><td><code>+0x08</code></td><td>u32 &times; <code>tim_num</code></td><td><code>word_index[]</code></td><td>per-member word offsets; <code>byte_offset = word_index * 4 + 4</code></td></tr>
-    </tbody>
-  </table>
+  <p>Read as a TIM-pack, the first eight bytes are a discriminator and a member count; read as what they are, they are a chunk header whose top byte is the <code>TIM_LIST</code> type (<code>0x01</code>) and whose low 24 bits are the payload length, followed by the pack's own <code>u32 count</code>.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">payload_len (low 24 bits)</span><span class="bm-size">u8 &times; 3</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">0x01</span><span class="bm-size">type</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">tim_num</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+0x08</span><span class="bm-name">word_index[tim_num]</span><span class="bm-size">u32 each</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">&hellip;</span><span class="bm-name">members back to back</span><span class="bm-size">TIMs</span></div>
+  </div>
   <ul class="bullets">
-    <li>Detection (<code>is_tim_pack</code>) checks the signature pair, that <code>tim_num</code> is positive, and that the offset table fits within the blob.</li>
-    <li>The constant <code>+4</code> suggests offsets are relative to the end of the count word rather than the start of the pack.</li>
-    <li>Member typing (<code>detected_ext</code>): first byte <code>0x10</code> (PSX TIM magic) &rarr; <code>"TIM"</code>, else <code>"BIN"</code>. The boot bundle below is why the "else" branch exists: six of its members are bare image blocks with no TIM header.</li>
+    <li><strong>Detection</strong> (<code>is_tim_pack</code>): <code>byte[3] == 0x01</code> and <code>byte[2] &lt; 0x10</code> (the type byte, and the top of a payload length under 1&nbsp;MB), <code>tim_num</code> positive, and the offset table inside the blob. <code>byte[2]</code> is <em>not</em> the count.</li>
+    <li><strong>Offsets</strong> are word indices relative to the pack, which starts four bytes in - hence <code>byte_offset = word_index * 4 + 4</code>. The <a href="pack.html">pack</a> reader computes the same offsets from the pack's own start.</li>
+    <li><strong>Member typing</strong> (<code>detected_ext</code>): first byte <code>0x10</code> (TIM magic) &rarr; <code>"TIM"</code>, else <code>"BIN"</code>. The boot bundle below is why the &ldquo;else&rdquo; branch exists.</li>
   </ul>
 </section>
 
@@ -88,7 +52,7 @@
     </tbody>
   </table>
   <p>Raw entry 1's single TIM is a UI page at image <code>(640,0)</code> with a 256-entry CLUT declared <code>(0,480,256,1)</code>.</p>
-  <p>Because the bundle never leaves VRAM, field environment meshes can reference palette cells on row 510 that no scene TIM ever uploads (<code>town01</code> env slots 21/26/74, <code>rikuroa</code> slots 50/51/63). The engine mirrors the upload in its scene VRAM pre-pass (<code>SceneResources::build_targeted_with_options</code> + <code>BuildOptions::system_ui</code>), byte-exact under the VRAM static-mask parity oracle.</p>
+  <p>Because the bundle never leaves VRAM, field environment meshes can reference palette cells on row 510 that no scene TIM ever uploads (<code>town01</code> env slots 21/26/74, <code>rikuroa</code> slots 50/51/63). In the port, the scene VRAM pre-pass uploads the bundle the same way (<code>SceneResources</code> with <code>BuildOptions::system_ui</code>), byte-exact against retail VRAM.</p>
   <details class="disclosure" id="deviating-shapes">
     <summary>Two member shapes that deviate from a plain TIM list</summary>
     <div class="disclosure-body">
@@ -102,14 +66,11 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
-    <thead><tr><th>Evidence</th><th>Address / test</th><th>What it proves</th></tr></thead>
-    <tbody>
-      <tr><td>Per-TIM uploader</td><td><code>FUN_800198E0</code>; <code>funcs/800198e0.txt</code></td><td>Walks the pack with the <code>word_index * 4 + 4</code> arithmetic and uploads each member's CLUT as a flat strip.</td></tr>
-      <tr><td>Disc pins</td><td><code>crates/asset/tests/system_ui_bundle_real.rs</code></td><td>Member offsets, VRAM placements and the six row-patch shapes on the real disc.</td></tr>
-      <tr><td>VRAM parity</td><td>static-mask parity oracle</td><td>Engine's boot upload is byte-exact against retail VRAM captures.</td></tr>
-    </tbody>
-  </table>
+  <details class="disclosure"><summary>Provenance</summary>
+    <div class="disclosure-body">
+      <p>The retail per-TIM uploader <code>FUN_800198E0</code> (<code>ghidra/scripts/funcs/800198e0.txt</code>) walks the pack with the <code>word_index * 4 + 4</code> arithmetic and uploads each member's CLUT as a flat strip. Member offsets, VRAM placements and the six row-patch shapes are pinned on the real disc, and the engine's boot upload matches retail VRAM captures byte for byte.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

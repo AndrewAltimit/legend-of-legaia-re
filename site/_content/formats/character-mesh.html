@@ -91,7 +91,16 @@
 
 <section class="doc-section" id="on-disc-layout">
   <h2>Field form - PROT 0874</h2>
-  <p>PROT 0874 is a three-section <a href="lzs.html">LZS</a> container (<a href="asset-descriptor.html"><code>parse_player_lzs(buf, 3)</code></a> shape): &sect;0 the mesh pack, &sect;1 the party locomotion <a href="anm.html">ANM</a> bundle, &sect;2 the textures. Section 0 decompresses to a canonical <a href="pack.html">pack</a> with five Legaia TMDs, shared by every field scene:</p>
+  <p>PROT 0874 is a three-section <a href="lzs.html">LZS</a> container (<a href="asset-descriptor.html"><code>parse_player_lzs(buf, 3)</code></a> shape): &sect;0 the mesh pack, &sect;1 the party locomotion <a href="anm.html">ANM</a> bundle, &sect;2 the textures. The entry opens with the ordinary <a href="asset-descriptor.html">asset-descriptor</a> header:</p>
+  <div class="byte-map" role="img" aria-label="PROT 0874 header: count 3, total decompressed size 0x2CBA0, then three type_size / data_offset pairs from +0x08">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">count = 3</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">0x2CBA0 = size sum</span><span class="bm-size">u32 &middot; never read</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">&sect;0 type_size</span><span class="bm-size">0x0100B49C</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">&sect;0 offset</span><span class="bm-size">0x20</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+0x10</span><span class="bm-name">&sect;1, &sect;2 pairs</span><span class="bm-size">2 &times; 8 B</span></div>
+    <div class="bm-cell bm-pad" style="--w:6"><span class="bm-off">+0x20</span><span class="bm-name">three LZS streams</span><span class="bm-size">mesh / ANM / TIMs</span></div>
+  </div>
+  <p>Section 0 decompresses to a canonical <a href="pack.html">pack</a> with five Legaia TMDs, shared by every field scene:</p>
   <table class="layout">
     <thead><tr><th>Slot</th><th>Body offset</th><th><code>nobj</code> (disc)</th><th>Body bytes (runtime)</th><th>Role</th></tr></thead>
     <tbody>
@@ -102,7 +111,13 @@
       <tr><td>4</td><td><code>0xB084</code></td><td>2</td><td>1 048</td><td>Auxiliary actor</td></tr>
     </tbody>
   </table>
-  <p>The runtime byte count is what the size-bounded LZS decode produces (~46 KB total), so slot 4 receives only its TMD prefix. Each body is a standard Legaia TMD: 12-byte header, then <code>nobj &times; 0x1C</code> group descriptors.</p>
+  <p>The runtime byte count is what the size-bounded LZS decode produces (~46 KB total), so slot 4 receives only its TMD prefix. Each body is a standard Legaia TMD:</p>
+  <div class="byte-map" role="img" aria-label="Field TMD body: magic, flags, nobj, then nobj group descriptors of 0x1C bytes">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">magic 0x80000002</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">flags</span><span class="bm-size">u32 &middot; 1 after fixup</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">nobj</span><span class="bm-size">12 / 12 / 12 / 3 / 2</span></div>
+    <div class="bm-cell bm-pad" style="--w:10"><span class="bm-off">+0x0C</span><span class="bm-name">group descriptors</span><span class="bm-size">nobj &times; 0x1C</span></div>
+  </div>
 
   <h3 id="10-group-cap--equipment-conditional-swap">10-group cap + equipment swap</h3>
   <p>In the field, equipping a weapon changes one thing: a single group toggles between two pre-baked variants. The field player loader overwrites the three party TMDs' group count to <strong>10</strong> after install; disc groups 10 and 11 are never drawn directly - they are the templates the per-frame patch loop copies over the visible group:</p>
@@ -132,13 +147,14 @@
   <p>A main-game battle renders no disc TMD directly. At battle setup the engine <strong>builds</strong> each party member's mesh from that character's <a href="battle-data-pack.html">player battle file</a>, picking one section per equipment slot by the character's <strong>equipped item ids</strong> (character record <code>+0x196..+0x19A</code>), and installs the merged TMD into pool slots <code>[0..=2]</code>. A section is not an accessory bolted on: it carries whole re-sculpted bone objects (a fist with the sword modelled into it), so equipping something swaps limbs, not attachments.</p>
 
   <h3 id="assembly-chain">Assembly chain</h3>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Stream</span><span class="desc">Open <code>PLAYER&lt;n&gt;</code>; select five sections by matching descriptor ids against the equipped-item bytes (<code>id = 0</code> = default).</span><span class="crate">battle_char_assembly</span>
-    <span class="num">2</span><span class="layer">Decode</span><span class="desc">LZS-decode <code>record[0]</code> (palette + battle animations) and the five sections; open an empty merged TMD.</span><span class="crate">assemble</span>
-    <span class="num">3</span><span class="layer">Splice &times;5</span><span class="desc">Append each section's object entries with relocated offsets and one bone-id byte each; objects past the attach list are the equipment extras. This step grows <code>nobj</code>.</span><span class="crate">splice</span>
-    <span class="num">4</span><span class="layer">Retag + sort</span><span class="desc">Extras get tags 200/201 and 100+ with their attach bone recorded; the table is sorted by tag so object index == bone tag.</span><span class="crate">retag + sort</span>
-    <span class="num">5</span><span class="layer">Install</span><span class="desc">Register the blob in the pool slot; rewrite texpage / CLUT into the slot's band.</span><span class="crate">relocate_tsb_cba</span>
-  </div>
+  <ol class="steps">
+    <li><b>Stream</b><span>Open <code>PLAYER&lt;n&gt;</code>; select five sections by matching descriptor ids against the equipped-item bytes (<code>id = 0</code> = default).</span></li>
+    <li><b>Decode</b><span>LZS-decode <code>record[0]</code> (palette + battle animations) and the five sections; open an empty merged TMD.</span></li>
+    <li><b>Splice &times;5</b><span>Append each section's objects with relocated offsets and one bone-id byte each; objects past the attach list are equipment extras. This grows <code>nobj</code>.</span></li>
+    <li><b>Retag + sort</b><span>Extras get tags 200/201 and 100+ with their attach bone recorded; sorting by tag makes object index == bone tag.</span></li>
+    <li><b>Install</b><span>Register the blob in its pool slot; rewrite texpage / CLUT into the slot's band.</span></li>
+  </ol>
+  <p class="hint">In the port: <code>legaia_asset::battle_char_assembly</code> (<code>assemble</code>, <code>splice</code>, <code>relocate_tsb_cba</code>).</p>
   <p>Runtime <code>nobj</code> = skeleton bones + equipment extras: Vahn's 15 bones + weapon + Ra-Seru = 17.</p>
 
   <h3 id="battle-pose-source">Where each rest pose comes from</h3>
@@ -148,11 +164,14 @@
   <h3 id="battle-render">Load-time texpage / CLUT relocation</h3>
   <p>The texpage and CLUT words on disc are an <strong>authoring layout</strong> (the one Baka Fighter renders directly). A normal battle rewrites every textured primitive into a per-party-slot band: CLUT row <code>481 + slot</code>, texpages <code>(512 + 128*slot, 256)</code> and the page beside it - on the player-file meshes a uniform <code>+3</code> texpage / <code>+0x40</code> CLUT-id rewrite. Textures come from the player file itself, loaded into the band at static per-section rects (<a href="battle-data-pack.html#texture-pool-vram-placement">placement</a>); the palette is rebuilt at battle load from the file's CLUT structs, one 16-colour sub-CLUT per object, with the STP bit set on every non-zero colour (the disc source is bit-15-clear). Port <code>legaia_asset::battle_char_palette</code>.</p>
   <h3 id="baka-fighter-pack">PROT 1204 + 1205 - the default-equipment sibling pack</h3>
-  <p>The <strong>Baka Fighter</strong> minigame lets you play <em>as</em> Vahn / Noa / Gala, so it loads pre-assembled copies of the same characters with default equipment. PROT 1204 is a flat streaming container with five TMD2 chunks (Vahn / Noa / Gala + two extra fighters); PROT 1205 holds eight character atlases with CLUTs at rows 490..497 (the authoring palette a normal battle never uses); PROT 1203 is the matching ANM rig. Its default-section geometry is byte-shared with the player files, which is what makes it look like the battle source. The engine keeps it as the per-member <em>fallback</em>; <code>play-window</code> assembles the real thing. Chunk table in the <a href="#pack-1204-layout">details</a>; parser <code>battle_char_pack</code>.</p>
+  <p>The <strong>Baka Fighter</strong> minigame lets you play <em>as</em> Vahn / Noa / Gala, so it loads pre-assembled copies of the same characters with default equipment. PROT 1204 is a flat streaming container with five TMD2 chunks (Vahn / Noa / Gala + two extra fighters); PROT 1205 holds eight character atlases with CLUTs at rows 490..497 (the authoring palette a normal battle never uses); PROT 1203 is the matching ANM rig. Its default-section geometry is byte-shared with the player files, which is what makes it look like the battle source. The port uses it only as a per-member fallback when a player file cannot be assembled. Chunk table in the <a href="#pack-1204-layout">details</a>; parser <code>battle_char_pack</code>.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the loaders, the assembler and the battle install, function by function</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -162,13 +181,15 @@
       <tr><td>Texture upload</td><td><code>FUN_800198e0</code></td><td>Uploads <code>(clut_x, clut_y, w*h, 1)</code> - the flat-strip CLUT rows; STP only when <code>_DAT_8007b998 != 0</code>.</td><td><code>funcs/800198e0.txt</code></td></tr>
       <tr><td>Player-file streaming SM</td><td><code>FUN_80052770</code></td><td>Case 1 opens <code>PLAYER&lt;n&gt;</code> by TOC index <code>member_id + 0x360</code>; case 4 selects sections by item id; slot ctx <code>0x801C92F0 + slot*0x1C</code>.</td><td><code>funcs/80052770.txt</code></td></tr>
       <tr><td>Assembler / splice / post-pass</td><td><code>FUN_80052FA0</code> / <code>FUN_800536BC</code> / <code>FUN_80053898</code></td><td>Merged TMD at <code>ctx+0x50</code> (magic at <code>blob+0x18</code>); splice grows <code>nobj</code>; retag, attach bones at <code>blob + nobj</code>, sort by tag.</td><td><code>funcs/80052fa0.txt</code>, <code>800536bc.txt</code>, <code>80053898.txt</code></td></tr>
-      <tr><td>Battle-form install</td><td><code>FUN_800513F0</code> / <code>FUN_800542C8</code></td><td>Register <code>blob + 0x18</code> into <code>DAT_8007C018[slot]</code>; write-watchpoint across a live field&rarr;battle transition (indirectly dispatched, so no static cross-reference).</td><td><code>funcs/800513f0.txt</code>, <code>800542c8.txt</code>; probe <code>scripts/pcsx-redux/autorun_battle_party_mesh_install.lua</code></td></tr>
+      <tr><td>Battle-form install</td><td><code>FUN_800513F0</code> / <code>FUN_800542C8</code></td><td>Register <code>blob + 0x18</code> into <code>DAT_8007C018[slot]</code>; write-watchpoint across a live field&rarr;battle transition (indirectly dispatched, so no static cross-reference).</td><td><code>funcs/800513f0.txt</code>, <code>800542c8.txt</code>; PCSX-Redux write-watch</td></tr>
       <tr><td>Texpage / CLUT relocation</td><td><code>FUN_80053A28</code></td><td>CBA row <code>0x1E1 + slot</code>, texpage <code>0x18/0x19 + 2*slot</code>.</td><td><code>funcs/80053a28.txt</code></td></tr>
       <tr><td>Palette build</td><td><code>FUN_80053B9C</code></td><td><code>[u16 base][u16 count][BGR555]</code> structs into a <code>0x1E0</code>-stride block, STP set, row <code>481 + slot</code>.</td><td><code>funcs/80053b9c.txt</code></td></tr>
       <tr><td>Battle anim contexts</td><td><code>FUN_80047430</code> &rarr; <code>FUN_8004AD80</code></td><td><code>node +0x4C</code> points at <code>record0 + action_table[0] + 0xAC</code>; byte-matches the disc decode; no 1203 record resident.</td><td>full-party battle saves</td></tr>
-      <tr><td>Byte-equality oracles</td><td>-</td><td>All 17 Vahn object pools byte-match PLAYER1 sections (<a href="#provenance">details</a>); pose extents in <code>battle_pose_orientation_real.rs</code>.</td><td>disc-gated tests</td></tr>
+      <tr><td>Byte equality</td><td>-</td><td>All 17 of Vahn's assembled object pools byte-match PLAYER1 sections (<a href="#provenance">details</a>); posed frame-0 extents measured per character (<a href="#pose-shape">table</a>).</td><td>full-party battle saves</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="details">
@@ -179,7 +200,7 @@
     <div class="disclosure-body">
       <p><code>meta[1]</code> (<code>0x2CBA0</code>) is the sum of the three descriptors' decompressed sizes (<code>0xB49C + 0x41E0 + 0x1D524</code>) - the ordinary scene-bundle <code>+0x04</code> word, which nothing reads. It was read as "the byte offset of a VDF data tail past the LZS payload inside this entry", and the entry's own size refutes that: the raw-TOC gap makes it exactly <code>0x19800</code> bytes, so <code>0x2CBA0</code> is 78 KB past the end.</p>
       <p>The loop that produced the misreading is real, but walks another entry. <code>FUN_800520F0</code> hands each <code>base + offset</code> of a flat <code>[count][offsets]</code> pack to <code>FUN_8001FBCC</code>, the append for the VDF pointer table at <code>0x80083E58</code>. Its four load constants <code>0x368 / 0x369 / 0x36a / 0x36b</code> are <strong>raw TOC</strong> indices 872..875 = extraction entries 870..873, the <code>befect_data</code> block's <code>etim</code> / <code>etmd</code> / <code>vdf</code> / <code>efect</code>. The pack walked is <code>vdf</code> (extraction 872), whose header is a genuine flat pack: count <code>0x20</code>, then 32 ascending offsets. The character pack is extraction 874 = <strong>raw 876</strong> - the same number in the other index space, which is how the two entries were fused.</p>
-      <p>The editing contract is unchanged: <code>legaia_patcher::party_swap::fieldize</code> keeps the first four words byte-exact and pins &sect;0's decoded size at 46 236 bytes. A rebuild that changed that size was observed to hang the next battle load on a wild read at <code>0x808425F8</code>. With the VDF-pointer mechanism falsified, the shape of that address is now narrowed rather than unexplained: it is not a materialised constant, because <strong>no <code>lui</code> anywhere on the disc carries an immediate of <code>0x8084</code> or <code>0x8085</code></strong> (all 84 images, 2.1 MB), so it is computed - a base plus a word read out of the container. The battle loader's two pack walks were the standing candidates and both are now out: a mid-battle save state shows one walking the <code>vdf</code> pack and the other the <code>etmd</code> pack, neither of which is this container. The walk that <em>does</em> read it is the one inside the boot-time <code>player_data</code> loader, over &sect;0's own decoded pack, and the observed address sits a whole word offset above that buffer's measured base. The container's buffer is also sized from its own header at boot rather than from a constant, so a rebuild that keeps the header byte-exact while changing what the stream decodes to gets a <em>truncated</em> pack - which is how an offset word past the table becomes mesh payload read as an offset.</p>
+      <p>The editing contract: <code>legaia_patcher::party_swap::fieldize</code> keeps the first four words byte-exact and pins &sect;0's decoded size at 46 236 bytes (padding the pack tail, as retail itself does in slot 4). A rebuild that changed that size hangs the next battle load on a wild read at <code>0x808425F8</code>. That address is computed, not materialised - no <code>lui</code> anywhere on the disc carries an immediate of <code>0x8084</code> or <code>0x8085</code> - so it is a base plus a word read out of a container. Neither battle-loader pack walk reads this entry (a battle save state shows them walking the <code>vdf</code> and <code>etmd</code> packs). The walk that does read it is the boot-time <code>player_data</code> loader, over &sect;0's own decoded pack, and its buffer is sized from the container header rather than a constant: a rebuild that keeps the header byte-exact while the stream decodes to a different length gets a <em>truncated</em> pack, whose offset table then reads mesh payload as offsets.</p>
     </div>
   </details>
 
@@ -213,7 +234,7 @@
   <details class="disclosure" id="scroll-residue">
     <summary>Why a live VRAM dump can differ from the TIM</summary>
     <div class="disclosure-body">
-      <p>Each strip carries authored alternate-face frames (blink / mouth variants) below the live texel rows. Cutscene scripts stamp them over the live cell with the field-VM op <code>4C 60</code>, a literal-operand <code>MoveImage</code> whose six u16 operands sit at arbitrary byte parity (read through <code>FUN_8003CE9C</code>; handler at <code>0x801E1B28..0x801E1B90</code> inside <code>FUN_801DE840</code>). A script that stamps once and never stamps back leaves the cell parked on the alternate frame until the band is re-uploaded. The engine queues the same stamps (<code>World::queue_script_vram_move</code> / <code>apply_script_vram_moves</code>). The actor wrap-scroll (<code>FUN_80021DF4</code>, installed by move-VM opcode <code>0x1E</code>) scrolls water and ambient cells but never the character atlas.</p>
+      <p>Each strip carries authored alternate-face frames (blink / mouth variants) below the live texel rows. Cutscene scripts stamp them over the live cell with the field-VM op <code>4C 60</code>, a literal-operand <code>MoveImage</code> whose six u16 operands sit at arbitrary byte parity (read through <code>FUN_8003CE9C</code>; handler at <code>0x801E1B28..0x801E1B90</code> inside <code>FUN_801DE840</code>). A script that stamps once and never stamps back leaves the cell parked on the alternate frame until the band is re-uploaded. The port replays the same stamps from the field VM. The actor wrap-scroll (<code>FUN_80021DF4</code>, installed by move-VM opcode <code>0x1E</code>) scrolls water and ambient cells but never the character atlas.</p>
       <p>Per-character animation is otherwise not in the pack: the actor tick consumes a record pointer at <code>actor[+0x4C]</code> installed by <code>FUN_80024CFC</code>, and battle actions feed a parallel struct at <code>actor[+0x234]</code> - see <a href="anm.html">ANM</a>.</p>
     </div>
   </details>

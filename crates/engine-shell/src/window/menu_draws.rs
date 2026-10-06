@@ -811,46 +811,6 @@ impl PlayWindowApp {
         };
         pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Arts(args)))
     }
-
-    /// Render the seru-trade screens of the shop menu: the offer list
-    /// (`ShopTrade`) or the yes/no confirm (`ShopTradeConfirm`). Each offer is
-    /// labelled "give (owner) -> receive" with names from the boot SCUS.
-    pub(super) fn draw_shop_trade(
-        &self,
-        out: &mut Vec<TextDraw>,
-        state: Option<MenuState>,
-        cursor: usize,
-    ) {
-        if !matches!(
-            state,
-            Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
-        ) {
-            return;
-        }
-        // The screen's text is the engine's (`seru_trade::trade_screen_text`,
-        // the browser play page's call too).
-        let pending = self.menu_runtime.pending_trade_offer();
-        let text = legaia_engine_core::seru_trade::trade_screen_text(
-            self.menu_runtime.trade_session.as_ref(),
-            pending.as_ref(),
-            state == Some(MenuState::ShopTradeConfirm),
-            &self.session.host.world.party.roster.members,
-            self.seru_names.as_ref(),
-        );
-        let rows: Vec<ShopRow<'_>> = text
-            .rows
-            .iter()
-            .map(|l| ShopRow::new(l.as_str(), None))
-            .collect();
-        out.extend(shop_draws_for(
-            &self.font,
-            &text.title,
-            &rows,
-            cursor,
-            None,
-            super::hud::SHOP_OVERLAY_PEN,
-        ));
-    }
 }
 
 /// Borrow the shared `engine-core` Equip screen model into the shared

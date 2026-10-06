@@ -2856,7 +2856,10 @@ impl PlayWindowApp {
             // sample the system-UI atlas and ride the sprite slot below, the
             // names ride the glyph layer here.
             let field_hud_draws = self.field_party_hud_draws(w, h);
-            let mut hud = self.build_hud(w, h);
+            // The shop-family overlay (shop / prize / inn / banners), built
+            // once and read by both the text pass and the chrome sprite pass.
+            let screens = self.shop_overlay_frame(w, h);
+            let mut hud = self.build_hud(w, h, &screens);
             hud.extend(field_hud_draws.text.iter().copied());
             // Post-battle spoils panel. The XP / gold / drops a victory
             // credits used to land with no on-screen acknowledgement at all
@@ -2921,12 +2924,11 @@ impl PlayWindowApp {
                 save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
             }
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
-            // The shop / inn panel's gold 9-slice frame, sized off the same
-            // stage text `build_hud` scales. The browser play page has framed
-            // this panel since it gained the chrome atlas; the window drew the
-            // rows bare because the frame belongs to this `&self` sprite pass
-            // and nothing here could size it.
-            save_chrome_draw_vec.extend(self.shop_overlay_chrome_sprite_draws(w, h));
+            // The shop-family overlay's sprites: the gold shop / prize
+            // exchange window frames and atlas markers, and the fallback
+            // panel's gold frame - the same frame `build_hud` drew the texts
+            // of.
+            save_chrome_draw_vec.extend(screens.sprites);
             // Dialog-window chrome (gradient fill + gold frame + hand
             // cursors) shares the system-UI atlas slot; a dialog box
             // and the boot/menu chrome are mutually exclusive states.

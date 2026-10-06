@@ -1,0 +1,15 @@
+[package]
+name = "legaia-engine-screens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_screens"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-asset.workspace = true
+legaia-engine-core.workspace = true
+legaia-engine-ui.workspace = true
+legaia-font.workspace = true

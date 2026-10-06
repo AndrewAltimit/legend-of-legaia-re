@@ -11,7 +11,7 @@
     <dt>Where</dt><dd><code>DAT_80074368</code>, 12-byte stride, 256 ids; name pointers read as <code>PTR_DAT_8007436C[id*3]</code></dd>
     <dt>Id range</dt><dd><code>0x00..=0xFF</code>; <code>id 0</code> = "no item"</dd>
     <dt>Parser</dt><dd><code>legaia_asset::item_names::ItemNameTable</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - index form read off the MES substitution dispatch; prices verified live; disc-gated <code>item_names_real</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - index form read off the MES substitution dispatch; prices verified live against the shop UI</dd>
     <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (drop / steal names), <a href="../shops.html">Shops page</a>, <a href="../subsystems/shop.html">Shop subsystem</a>, <a href="../subsystems/inventory.html">Inventory</a></dd>
   </dl>
 </section>
@@ -19,33 +19,14 @@
 <section class="doc-section" id="table-layout">
   <h2>Record layout</h2>
   <p class="hint"><code>DAT_80xxxxxx</code> / <code>PTR_DAT_80xxxxxx</code> are Ghidra labels for fixed RAM addresses; the table is static data, so each maps one-to-one back to bytes in the <code>SCUS_942.54</code> file on the disc.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 100" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One 12-byte item record: kind, per-kind index, price, name pointer, description pointer">
-      <style>
-        .it-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .it-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .it-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-        .it-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-      </style>
-      <rect x="20"  y="30" width="110" height="34" class="it-box"/>
-      <rect x="130" y="30" width="130" height="34" class="it-box"/>
-      <rect x="260" y="30" width="160" height="34" class="it-box"/>
-      <rect x="420" y="30" width="220" height="34" class="it-box"/>
-      <rect x="640" y="30" width="220" height="34" class="it-box"/>
-      <text x="75"  y="51" class="it-seg" dominant-baseline="middle">kind</text>
-      <text x="195" y="51" class="it-seg" dominant-baseline="middle">index</text>
-      <text x="340" y="51" class="it-seg" dominant-baseline="middle">price (u16)</text>
-      <text x="530" y="51" class="it-seg" dominant-baseline="middle">name_ptr (u32)</text>
-      <text x="750" y="51" class="it-seg" dominant-baseline="middle">desc_ptr (u32)</text>
-      <text x="75"  y="20" class="it-off">+0</text>
-      <text x="195" y="20" class="it-off">+1</text>
-      <text x="340" y="20" class="it-off">+2</text>
-      <text x="530" y="20" class="it-off">+4</text>
-      <text x="750" y="20" class="it-off">+8</text>
-      <text x="440" y="88" class="it-note">one record per item id, 12 bytes, 256 records from DAT_80074368</text>
-    </svg>
-    <figcaption>One item record. The MES text engine indexes the table 4 bytes in, at the name pointer.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="One 12-byte item record: kind at +0, per-kind index at +1, price at +2, name pointer at +4, description pointer at +8">
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">kind</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">index</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+2</span><span class="bm-name">price</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+4</span><span class="bm-name">name_ptr</span><span class="bm-size">u32 &middot; MES indexes here</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+8</span><span class="bm-name">desc_ptr</span><span class="bm-size">u32</span></div>
+  </div>
+  <p class="hint">One record per item id, 12 bytes, 256 records from <code>DAT_80074368</code>.</p>
   <table class="layout">
   <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
@@ -70,16 +51,20 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the MES lookup, the info-window renderer, live prices</summary>
+    <div class="disclosure-body">
   <table>
-    <thead><tr><th>Evidence</th><th>Address / test</th><th>What it proves</th></tr></thead>
+    <thead><tr><th>Evidence</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
       <tr><td>MES substitution dispatch</td><td><code>0xC2</code>/<code>0xC4</code> opcode handlers</td><td>The <code>PTR_DAT_8007436C[id*3]</code> index form - table base, stride, and that this is the game's own name lookup.</td></tr>
       <tr><td>Item info-window renderer</td><td><code>FUN_801D0F1C</code> (menu overlay); <code>funcs/overlay_menu_801d0f1c.txt</code></td><td>Draws the <code>+4</code> name at the window origin and the <code>+8</code> string one text row below (<code>WY + 0x10</code>) - <code>+8</code> is the description pointer.</td></tr>
       <tr><td>Live price checks</td><td>buy/sell UI captures</td><td>The <code>+2</code> halfword is the charged price.</td></tr>
-      <tr><td>Disc-gated test</td><td><code>item_names_real</code></td><td>Pins a span of ids against the real executable through <code>ItemNameTable</code>'s PSX-EXE <code>t_addr</code> &rarr; file-offset resolver.</td></tr>
     </tbody>
   </table>
-  <p>Consumers in the project: the web viewer's enemy table joins drop ids to names through the parser; the shop randomizer reads the price slot (<code>legaia_asset::item_names::price_slot</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
+    </div>
+  </details>
+  <p><strong>In the port:</strong> <code>legaia_asset::item_names::ItemNameTable</code> resolves the table from the executable through its PSX-EXE <code>t_addr</code> &rarr; file-offset map. Consumers: the web viewer's enemy table joins drop ids to names through the parser; the shop randomizer reads the price slot (<code>legaia_asset::item_names::price_slot</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
 </section>
 
 <section class="doc-section" id="see-also">

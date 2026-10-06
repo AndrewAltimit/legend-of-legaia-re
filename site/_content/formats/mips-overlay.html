@@ -20,32 +20,12 @@
   <h2>Layout</h2>
   <p>Nothing on the disc labels these entries as code - they look like any other binary blob. Every compiled MIPS function opens by moving the stack pointer down to make room for its locals, so a blob that <em>begins</em> with that instruction is a code image whose entry function starts at byte 0.</p>
 
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 132" width="100%" style="max-width: 760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A MIPS overlay blob: the first word is the stack adjust addiu sp, sp, -X, the second word is a prologue follow-up such as sw ra, and the rest is code">
-      <style>
-        .mo-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .mo-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
-        .mo-lab  { font: 12px sans-serif; fill: currentColor; }
-        .mo-sub  { font: 11px monospace; fill: var(--text-muted); }
-        .mo-off  { font: 11px monospace; fill: var(--accent); }
-      </style>
-      <text class="mo-off" x="16" y="18">+0x00</text>
-      <text class="mo-off" x="216" y="18">+0x04</text>
-      <text class="mo-off" x="416" y="18">+0x08</text>
-      <rect class="mo-box" x="16" y="26" width="200" height="64" rx="3"/>
-      <text class="mo-lab" x="116" y="52" text-anchor="middle">stack adjust</text>
-      <text class="mo-sub" x="116" y="72" text-anchor="middle">addiu sp, sp, -X</text>
-      <rect class="mo-box" x="216" y="26" width="200" height="64" rx="3"/>
-      <text class="mo-lab" x="316" y="52" text-anchor="middle">prologue follow-up</text>
-      <text class="mo-sub" x="316" y="72" text-anchor="middle">sw ra / addiu / lui / lw</text>
-      <rect class="mo-soft" x="416" y="26" width="328" height="64" rx="3"/>
-      <text class="mo-lab" x="580" y="52" text-anchor="middle">code (14-37 KB)</text>
-      <text class="mo-sub" x="580" y="72" text-anchor="middle">position-dependent on load base</text>
-      <text class="mo-sub" x="16" y="118">0x27BDFFxx</text>
-      <text class="mo-sub" x="216" y="118">0xAFB?00xx or similar</text>
-    </svg>
-    <figcaption>The detector reads only the first two words; everything after them is the overlay body.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="A MIPS overlay blob: the first word is the stack adjust addiu sp, sp, -X, the second word a prologue follow-up such as sw ra, then the code body">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">addiu sp, sp, -X</span><span class="bm-size">0x27BDFFxx</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">prologue follow-up</span><span class="bm-size">sw ra / addiu / lui / lw</span></div>
+    <div class="bm-cell bm-pad" style="--w:10"><span class="bm-off">+0x08</span><span class="bm-name">code body</span><span class="bm-size">14-37 KB &middot; position-dependent on its load base</span></div>
+  </div>
+  <p class="hint">The detector reads only the first two words; everything after them is the overlay body.</p>
 
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
@@ -89,7 +69,7 @@ if let Some(m) = mips_overlay::detect(buf) {
   <table>
     <thead><tr><th>Failure mode</th><th>Where it bites</th><th>What the arbiter reports</th></tr></thead>
     <tbody>
-      <tr><td>Mis-recovered base</td><td>The <code>bat_back_dat</code> (PROT 0896) dump family, neither import of which is at the image's own base</td><td>Field / battle bodies or interior fragments - never a standalone 0896 function at the printed VA</td></tr>
+      <tr><td>Mis-recovered base</td><td>The <code>bat_back_dat</code> (PROT 0896) dump family, neither import of which is at the image's own base <code>0x801D4DF0</code></td><td>Field / battle bodies or interior fragments - never a standalone 0896 function at the printed VA</td></tr>
       <tr><td>Relocation duplicate</td><td>Debug-menu (0971), minigame (0977 / 0978) and menu (0899) overlays re-image a shared library at a different base per mode</td><td><code>DUPLICATE</code> of the canonical VA in 0970 / 0972 / 0899</td></tr>
       <tr><td>Inherited CDNAME label</td><td>The <code>other_game</code> block opens at extraction 0972 and its name carries forward to 0977</td><td>Name by extraction index: 0977 is the Muscle Dome door/init slot, not a fishing overlay; 0978 opens <code>monster_test</code></td></tr>
       <tr><td>Inherited CDNAME label, again</td><td>The <code>monster_test</code> block opens at extraction 0978 and its names carry forward too</td><td>Extraction 0981 wears the label while its code is the world-map top-view debug image at <code>0x801CE818</code> - entry <code>0x801CE850</code>, operands <code>DAT_80073EE0</code> / <code>uRam8007b970</code> / <code>_DAT_80089118</code></td></tr>
@@ -109,6 +89,9 @@ if let Some(m) = mips_overlay::detect(buf) {
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the detector, the overlay window, per-blob bases, attestation</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Claim</th><th>Evidence</th><th>Where</th></tr></thead>
     <tbody>
@@ -118,6 +101,8 @@ if let Some(m) = mips_overlay::detect(buf) {
       <tr><td>Address attestation rules</td><td>Byte-match of each dumped body against every image</td><td><code>scripts/ghidra-analysis/classify-worklist.py</code>, <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md"><code>docs/tooling/dump-corpus-integrity.md</code></a></td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

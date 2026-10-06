@@ -1,6 +1,6 @@
 # Sound-driver path-string cluster
 
-The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the file extensions the sound subsystem appends to scene-asset paths. The dispatch chain *into* these formats is fully traced; the byte-level layout of the individual files is still TBD.
+The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the file extensions the sound subsystem appends to scene-asset paths. The dispatch chain *into* these formats is traced; the one retail file format among them, the per-scene `.dpk` pack, is a VAB + SEQ pair in a streaming-chunk container ([below](#the-dpk--sound_data2-payload-is-a-vab--seq-bundle)). The `.MAP` / `.PCH` intermediates are not on the retail disc.
 
 ## Cluster layout
 
@@ -34,7 +34,7 @@ Two SCUS functions touch the cluster (located via [`ghidra/scripts/find_sound_pa
 
 Both `FUN_8001FA88` and `FUN_8001FC00` carry a `_DAT_8007B8C2` (debug-flag) carve-out:
 
-- **Retail branch** (`_DAT_8007B8C2 != 0`, the value retail boots with) loads sound data via PROT indices. `FUN_8001FA88`'s retail branch loads index `0x37A` (= `sound_data2`) plus `param_1 + 5` for per-scene variations, via the index-based loader (`FUN_8003EB98`).
+- **Retail branch** (`_DAT_8007B8C2 != 0`, the value retail boots with) loads sound data via PROT indices. `FUN_8001FA88`'s retail branch loads raw TOC index `0x37A` (= extraction 888, `bse.dat`) plus `param_1 + 5` for the per-scene `.dpk`, via the index-based loader (`FUN_8003EB98`).
 - **Dev branch** (`_DAT_8007B8C2 == 0`) opens an `h:\` path through `FUN_8003E6BC`. That helper does no name resolution - it is `strcpy`, then `FUN_800608F0` (`break 0x103`, a dev-station host trap), then fseek/fread/fclose. Retail hardware cannot service it.
 
 Only the retail branch runs on a real disc; the dev branch is a build-time artefact whose paths are not present in the filesystem. The same dev/retail split appears in [`FUN_800255B8`](../subsystems/asset-loader.md), so it's a pattern that repeats across asset-loading subsystems.
