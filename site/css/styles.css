@@ -3716,6 +3716,19 @@ figure.diagram .dg-arrow path  { fill: var(--accent); }
 .byte-map .bm-name { color: var(--text-bright); overflow-wrap: anywhere; }
 .byte-map .bm-size { color: var(--text-muted); font-size: 0.68rem; }
 
+/* Tags never break mid-word inside narrow table cells. */
+td .tag, th .tag { white-space: nowrap; }
+.byte-map .bm-name { overflow-wrap: break-word; word-break: normal; hyphens: manual; }
+
+/* Phones: a diagram keeps a legible minimum width and scrolls inside its
+   frame instead of shrinking its 11-12px text to ~5px. A diagram that is
+   genuinely narrow opts out with .dg-fit. */
+@media (max-width: 720px) {
+  figure.diagram:not(.dg-fit) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  figure.diagram:not(.dg-fit) > svg { min-width: 600px; }
+  figure.diagram:not(.dg-fit) > figcaption { position: sticky; left: 0; max-width: calc(100vw - 4rem); }
+}
+
 @media (max-width: 720px) {
   .byte-map { flex-direction: column; }
   .byte-map .bm-cell {
