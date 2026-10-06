@@ -74,6 +74,7 @@ pub enum HudDraw {
     /// whose cells sit 16 px apart and draw through the large-digit emitter
     /// `FUN_801d7d44` (two passes, additive then subtractive). Retail's one
     /// such field is the landed catch's points ([`catch_result_draws`]).
+    // REF: FUN_801d7d44
     LargeNumber {
         x: i32,
         y: i32,

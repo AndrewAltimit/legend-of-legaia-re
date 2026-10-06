@@ -159,6 +159,7 @@ pub fn fishing_small_digit(
 /// `FUN_801D76E0(1, 0x20, 0x88, points, brightness)` at `0x801D5640` inside
 /// the result actor's tick `FUN_801D5298` - which reaches this through
 /// [`crate::HudDraw::LargeNumber`] in [`fishing_hud_sprite_prims`].
+// REF: FUN_801d76e0, FUN_801d5298
 pub fn fishing_large_digit(
     table: &[FishingSprite],
     x: i32,

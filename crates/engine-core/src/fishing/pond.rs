@@ -597,6 +597,7 @@ impl PondSession {
     /// `DAT_801D9294` at `0x801D5208`), a beat the engine does not model, so
     /// the plate's `0x180`-unit dark lead-in is the only delay before it
     /// fades up.
+    // REF: FUN_801d5298 (the `+0x1A` counter), FUN_801d4948 (the lift that seats it)
     pub fn catch_result(&self) -> Option<PondCatchResult> {
         if self.phase != PondPhase::Landed {
             return None;
