@@ -3518,12 +3518,6 @@ impl PlayWindowApp {
     }
 }
 
-/// Where a landed hit's numeral starts, above the struck actor's own origin,
-/// in stage pixels. Retail's start seat is captured only once
-/// (`battle_melee_hit_spark`, top edge 49 with the actor mid-frame), so the
-/// lift is engine-chosen; the row it rises **to** is pinned.
-const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
-
 impl PlayWindowApp {
     /// One sim tick of ANIMATE-cue handling through the shared kernel
     /// (`World::drain_field_anim_cues`): the player's scripted gestures land
@@ -3889,18 +3883,24 @@ impl PlayWindowApp {
                 None => newest.push(p),
             }
         }
+        // Seated the way retail's renderer `FUN_801DF6B8` seats them: a
+        // view-space square over the struck actor's display trio, rising and
+        // growing with the ring timer (`battle_numerals::popup_value_cells`,
+        // the kernel the browser play page seats through too).
+        let vp = cam.to_cols_array();
+        let world = &self.session.host.world;
         let mut runs = Vec::new();
         for p in newest {
-            let Some((ax, ay)) = self.actor_stage_point(usize::from(p.slot), cam) else {
+            let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            runs.push(vr::value_cells(
-                p.amount,
-                ax,
-                ay - VALUE_READOUT_ACTOR_LIFT,
-                age,
-            ));
+            let cells = legaia_engine_render::battle_numerals::popup_value_cells(
+                &vp, 1.0, trio, p.amount, age,
+            );
+            if !cells.is_empty() {
+                runs.push(cells);
+            }
         }
         Some((cluster, runs))
     }

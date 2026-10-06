@@ -64,11 +64,6 @@ const ENCOUNTER_BANNER_FRAMES: u16 = 90;
 /// built for, so an actor origin has to be scaled before it is projected.
 const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
 
-/// Stage rows the floating numeral's pop-in seat sits **above** the struck
-/// actor's projected origin, so the run starts over the body rather than at
-/// its feet. The native window's `VALUE_READOUT_ACTOR_LIFT`; paired here so
-/// the two hosts throw the numeral from the same height.
-const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
 /// Left margin of the battle command / arts / magic submenus.
 const MENU_X: i32 = 8;
 /// First row Y of the battle command / arts / magic submenus.
@@ -1236,32 +1231,21 @@ impl LegaiaRuntime {
                 None => newest.push(p),
             }
         }
+        // Seated the way retail's renderer `FUN_801DF6B8` seats them: a
+        // view-space square over the struck actor's display trio, rising and
+        // growing with the ring timer (`battle_numerals::popup_value_cells`,
+        // the kernel the native window seats through too).
         let mut cells = Vec::new();
         for p in newest {
-            let Some(a) = world.actors.get(usize::from(p.slot)) else {
+            let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
                 continue;
             };
-            // Column-major mat4 times the scaled actor origin.
-            let w = [
-                a.move_state.world_x as f32 * BATTLE_WORLD_SCALE_LOCAL,
-                a.move_state.world_y as f32 * BATTLE_WORLD_SCALE_LOCAL,
-                a.move_state.world_z as f32 * BATTLE_WORLD_SCALE_LOCAL,
-                1.0,
-            ];
-            let mut clip = [0.0f32; 4];
-            for (i, c) in clip.iter_mut().enumerate() {
-                *c = (0..4).map(|j| vp[j * 4 + i] * w[j]).sum();
-            }
-            if clip[3] <= 0.01 {
-                continue;
-            }
-            let ax = ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32;
-            let ay = ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32;
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            cells.extend(vr::value_cells(
+            cells.extend(legaia_engine_ui::battle_numerals::popup_value_cells(
+                &vp,
+                BATTLE_WORLD_SCALE_LOCAL,
+                trio,
                 p.amount,
-                ax,
-                ay - VALUE_READOUT_ACTOR_LIFT,
                 age,
             ));
         }

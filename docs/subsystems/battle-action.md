@@ -3196,11 +3196,17 @@ they are documented here rather than lifted whole into `engine-vm`.
   base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit
   glyph atlas at `0x801F6..` (`-0x7FE09BA4`), and builds one `0x09`-code sprite
   quad per digit into the OT, ramp-scaling the rect by the per-frame timer
-  `ctx[+0x85C]`. Reads actor screen position `+0x3C/+0x3E/+0x40`. Pure
-  GPU-primitive build: scope row in the `render_pipeline` section of
-  `scripts/ci/port-catalog-ignore.toml`, because the port draws its damage
-  numbers as `engine-ui` text sprites off the same accumulator rather than as
-  per-digit `0x09` quads. See `overlay_battle_action_801df6b8.txt`.
+  `ctx[+0x85C]`. The anchor is the struck actor's display trio
+  `+0x3C/+0x3E/+0x40` with Y replaced by `+0x3E / 2 - timer * 3 / 2`; the
+  timer steps `0x10` a frame and `FUN_800195A8` projects a view-space square
+  of half-extent `timer / 2` about it, so the number grows as it rises. The
+  rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to 24 px,
+  clamped to `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`, and the
+  value is zeroed once the timer passes `0x240` (37 frames). Port:
+  `engine-vm::battle_value_readout::popup_cells` (layout) and
+  `engine-ui::battle_numerals::popup_value_cells` (anchor + projection), which
+  both hosts seat their numerals through. See
+  `overlay_battle_action_801df6b8.txt`.
 - **`FUN_8005112C` - per-character signature effect trigger.** SCUS-resident
   (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party
   slot). Reads the roster char id `DAT_8007BD10[actor[+0x5A]]` (`1`/`2`/`3` =

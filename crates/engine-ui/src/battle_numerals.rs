@@ -180,9 +180,91 @@ pub fn arts_banner_prims(
         .collect()
 }
 
+/// Project `FUN_801DF6B8`'s view-space square through a host camera:
+/// `vp` is the column-major view-projection matrix the host draws the battle
+/// with, `world_scale` what the host multiplies a PSX world coordinate by
+/// before it. The square's half-extent is laid along the camera's own right
+/// axis (row 0 of `vp`, normalised), which is how a view-space offset reads
+/// in world space; retail's square is square on screen, so the vertical
+/// half-extent is the horizontal one. `None` behind the eye.
+pub fn popup_rect(
+    vp: &[f32; 16],
+    world_scale: f32,
+    anchor: [i32; 3],
+    half: i32,
+) -> Option<(i32, i32, i32, i32)> {
+    let stage = |p: [f32; 3]| -> Option<(f32, f32)> {
+        let mut clip = [0.0f32; 4];
+        for (i, c) in clip.iter_mut().enumerate() {
+            *c = vp[i] * p[0] + vp[4 + i] * p[1] + vp[8 + i] * p[2] + vp[12 + i];
+        }
+        (clip[3] > 0.01).then(|| {
+            (
+                (clip[0] / clip[3] * 0.5 + 0.5) * 320.0,
+                (0.5 - clip[1] / clip[3] * 0.5) * 240.0,
+            )
+        })
+    };
+    let c = anchor.map(|v| v as f32 * world_scale);
+    let (cx, cy) = stage(c)?;
+    let right = [vp[0], vp[4], vp[8]];
+    let len = (right[0] * right[0] + right[1] * right[1] + right[2] * right[2]).sqrt();
+    if len <= f32::EPSILON {
+        return None;
+    }
+    let off = half as f32 * world_scale / len;
+    let (ex, ey) = stage([
+        c[0] + right[0] * off,
+        c[1] + right[1] * off,
+        c[2] + right[2] * off,
+    ])?;
+    let hp = ((ex - cx).powi(2) + (ey - cy).powi(2)).sqrt();
+    let (cx, cy) = (cx.round() as i32, cy.round() as i32);
+    let hp = hp.round() as i32;
+    Some((cx - hp, cy - hp, cx + hp, cy + hp))
+}
+
+/// One landed hit's numeral, `age` frames after its push, as retail's
+/// renderer `FUN_801DF6B8` lays it out over the struck actor's display trio
+/// (`World::battle_display_trio`) - empty once the ring entry has expired
+/// ([`vr::popup_live`]). Both hosts seat their popups through this.
+pub fn popup_value_cells(
+    vp: &[f32; 16],
+    world_scale: f32,
+    trio: [f32; 3],
+    amount: u16,
+    age: u16,
+) -> Vec<vr::ValueCell> {
+    if !vr::popup_live(age) {
+        return Vec::new();
+    }
+    let (anchor, half) = vr::popup_anchor(trio.map(|v| v as i32), age);
+    let Some(rect) = popup_rect(vp, world_scale, anchor, half) else {
+        return Vec::new();
+    };
+    vr::popup_cells(amount, rect, vr::popup_timer(age))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An identity-like camera: the square's projected half-extent follows
+    /// the timer, and the numeral expires after 37 frames.
+    #[test]
+    fn popup_cells_grow_with_age_and_expire() {
+        // x/z scaled to NDC over a fixed w: 1 world unit = 1/1000 NDC.
+        let mut vp = [0.0f32; 16];
+        vp[0] = 0.001;
+        vp[5] = -0.001;
+        vp[10] = 0.001;
+        vp[15] = 1.0;
+        let small = popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 0);
+        let big = popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 20);
+        assert_eq!(small.len(), 1);
+        assert!(big[0].w > small[0].w);
+        assert!(popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 37).is_empty());
+    }
 
     fn quad(p: &ScreenPrim) -> ScreenQuad {
         match p {
