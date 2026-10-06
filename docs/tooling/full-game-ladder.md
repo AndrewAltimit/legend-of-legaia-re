@@ -665,3 +665,19 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   west lane is held by P2[7] at `(42, 89)` until `0x142`, the Caruban beat.
   That is why `west_voz_forest` sits after `drake_castle_revisited`, where
   the pad hand drains `suimon` and crosses `bylon` to the `vell` door.
+- From `nivora_late`, `map03`'s door out of `nilboa` (P2[34], `(10..14, 9)`)
+  lands on the overworld's north half, and `son`'s portal `(45, 84)` lies on
+  the south half with no walkable join. The retail run did not walk it: the
+  `zora_castle` anchor carries `nilboa` P2[25]'s `0x56D` (the scene's
+  exit after the Delilas duels, a `0x3F` to `map03` with a parked entry) and flags from
+  `bubu1`, `deene` (P2[14], `0x60B` / `0x60C`, the same pair `son`'s
+  P1[4] and `map03`'s P2[13] / P2[14] set on their crossings) and
+  `dream`, none of them a waypoint. The spine names only `son`, so the pad
+  hand leaves by the walk-on door and stalls on the north half.
+- `chitei2` joins its parts through moving machinery the planner does not
+  model: the transporter at `(100, 102)` (P2[7], a cutscene that runs the
+  party onto the pad prop P0[12] at `(94, 24)`, whose own touch sends it
+  back) and the Rapid Transport System, with its three switches (P0[32..34])
+  and the walk-on pairs (P2[0] / P2[1]) that issue `4C D6` to actors 5..11.
+  The `jette_fortress_late` and `noaru_valley` pad stalls sit in these
+  stretches.
