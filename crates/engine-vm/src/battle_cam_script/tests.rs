@@ -2676,3 +2676,32 @@ fn the_cursor_shot_glides_in_and_hands_back_to_the_far_framing() {
     let p = slot.as_ref().unwrap().pose();
     assert_eq!(p.pitch, 32.0, "back on the far framing's pitch");
 }
+
+/// `battle_gaza2_park_0x19_summon_melee`: the in-fight case-6 arm on
+/// retail's own inputs reproduces the step table's targets exactly. Gaza
+/// (seat 3) sits at `(-785, 39)` facing `1056`, `ctx[+0x6DA] = 2476`,
+/// `ctx[+0x6D0] = 3328`, style `0`; the table holds yaw `1420`, TR
+/// `(0, 0x500, ..)` and focus `(785, 0, -39)` stored negated. So the
+/// capture's camera gap is its inputs - Gaza parked mid-approach by the
+/// retail softlock the state records, and the yaw base's drift - not the
+/// framing.
+#[test]
+fn gaza2_park_action_framing_matches_the_retail_step_targets() {
+    let actor = BattleCamActor {
+        facing: 1056,
+        world: [-785.0, 0.0, 39.0],
+        height: None,
+    };
+    let f = ActionFraming {
+        party_slot: false,
+        depth_raw: 3328,
+        yaw_base: 2476,
+        ..ActionFraming::default()
+    };
+    let pose = action_framing(actor, f);
+    assert_eq!(pose.yaw, 1420.0);
+    assert_eq!(pose.pitch, 0.0);
+    assert_eq!(pose.tr[1], 1280.0);
+    assert_eq!(pose.tr[2], 5324.0, "the live TR z");
+    assert_eq!(pose.focus, [-785.0, 0.0, 39.0]);
+}

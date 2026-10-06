@@ -1571,7 +1571,32 @@ is checkable even where the pose is not. Two seeding limits follow.
   seat (pitch `34`, TR z `5017` against `5324`). Under the old linear glide
   the camera had landed by frame twelve, so the frame scored better against
   a pose retail reached only by parking. Reproducing the park would mean
-  reproducing the defect that froze it.
+  reproducing the defect that froze it. The framing itself is exact: case 6
+  on the state's own inputs (Gaza at `(-785, 39)` facing `1056`, yaw base
+  `2476`, depth `3328`) gives the step table's yaw `1420`, TR `(0, 0x500,
+  5324)` and focus to the unit
+  (`gaza2_park_action_framing_matches_the_retail_step_targets`). What the
+  `camera` channel reads is the engine's Gaza still walking - its focus at
+  `z = 830` against the parked `39` - and the yaw base's drift.
+- **A glide starts where the last one left it.**
+  `nivora_duel_mid_blazing_slash` (Gi's cast, state `0x6E`) is part-way
+  through case 6's ease onto its target, and the target is the engine's to
+  the unit (yaw `0x6DA - facing = 2058 - 2103`, step-table yaw `4051`, TR z
+  `4915`). The two eases also stand at the same point - the live TR z reads
+  `4368` on both sides. The yaw differs because the ease starts elsewhere: the
+  step table's increments put retail's start near `1720`, a shortest arc
+  *down* through the wrap to `4051`, while the drive hands `0x6E` the engine's
+  `0x0C` framing at `2620`, a shortest arc up. No word in the state records
+  the camera before the cast, so the start is a seeding limit.
+- **An effect's life against the flash.** In `meta_summon_mid_cast`
+  (`0x34`, the flash-in nine vsyncs into its ramp) retail still draws the
+  invoke clip's ray fan (21 `POLY_GT3` on the battle effect page `0x27`,
+  CLUT `0x770E`) over the flash. The engine's fan is one table-form action
+  scene that spawns on the cue tick, a tick before the flash, and its last
+  ray draws at scene frame `29`: the gated frame is frame `30`, one past it.
+  Both clocks run in vsyncs (the fade one per tick, the scene's waits drained
+  `8` a tick), so the fan's program ends earlier than retail's for a reason
+  the capture cannot show; the gate lands one frame after it.
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
   caster every pass and holds until the sound bank is resident
