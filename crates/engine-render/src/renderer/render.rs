@@ -684,6 +684,17 @@ impl Renderer {
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         self.encode_frame(target, &view)?;
+        // Let the frame's own submission finish before the copy is encoded.
+        // The queue orders the two, but under heavy GPU contention a
+        // retail-compare readback has come back with whole 32-px-wide tile
+        // columns of its top rows still zero - a black band of 1 to 15 rows
+        // whose lower edge steps every 32 columns, the rest of the frame
+        // byte-identical. Waiting here keeps the copy off tiles the frame
+        // is still writing; the screenshot harness also re-reads until two
+        // readbacks agree.
+        self.device
+            .poll(wgpu::PollType::wait())
+            .context("poll device for the captured frame")?;
 
         // copy_texture_to_buffer requires bytes_per_row aligned to 256.
         let bpp = 4u32;

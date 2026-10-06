@@ -83,18 +83,29 @@ impl Frame {
     }
 
     /// Box-filter an engine capture (`width x height` RGBA) down to the
-    /// compared frame, using its top `224 * scale` rows.
+    /// compared frame: the top `224 * scale` rows of the 320x240 stage the
+    /// window drew the scene into.
+    ///
+    /// The stage is not always at the capture's origin. `play-window`
+    /// captures at its live surface size and centres the stage on the
+    /// largest integer scale that fits (`pause_menu::stage_transform`, the
+    /// geometry `scene_viewport_for` draws the 3D pass with), so a surface
+    /// the window manager resized off `960 x 720` puts the stage `(h - 720)
+    /// / 2` rows down, or at a smaller scale; reading from the origin at a
+    /// fixed 3x would compare the bars and a misscaled picture.
     pub fn from_engine_capture(rgba: &[u8], width: usize, height: usize) -> Result<Self> {
-        if !width.is_multiple_of(FRAME_W) {
-            bail!("engine capture width {width} is not a multiple of {FRAME_W}");
-        }
-        let s = width / FRAME_W;
-        if height < FRAME_H * s {
+        let ((x0, y0), s) =
+            legaia_engine_render::pause_menu::stage_transform(width as u32, height as u32);
+        let (x0, y0, s) = (x0.max(0) as usize, y0.max(0) as usize, s as usize);
+        if x0 + FRAME_W * s > width || y0 + FRAME_H * s > height || rgba.len() < width * height * 4
+        {
             bail!(
-                "engine capture {width}x{height} is shorter than {} rows",
-                FRAME_H * s
+                "engine capture {width}x{height} holds no {}x{} stage at scale {s}",
+                FRAME_W,
+                FRAME_H
             );
         }
+        let rgba = &rgba[(y0 * width + x0) * 4..];
         let mut rgb = Vec::with_capacity(FRAME_W * FRAME_H * 3);
         for y in 0..FRAME_H {
             for x in 0..FRAME_W {
@@ -364,6 +375,15 @@ pub fn engine_frame_with(
         }
     }
     let out = cmd.output().context("spawn play-window")?;
+    let retries = String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .filter(|l| l.contains("screenshot readback"))
+        .count();
+    if retries > 0 {
+        eprintln!(
+            "retail-compare: {label}: {retries} screenshot readback(s) disagreed and were re-read"
+        );
+    }
     // `LEGAIA_RC_CHILD_LOG=1` keeps the child's stderr beside its frame, for
     // the trace hooks the capture gates carry, and the child's environment
     // and arguments beside that, so a frame can be re-run by hand.
@@ -399,6 +419,9 @@ pub fn engine_frame_with(
         );
     }
     let (rgba, w, h) = read_png_rgba(&shot)?;
+    if (w, h) != (FRAME_W * 3, 720) {
+        eprintln!("retail-compare: {label}: play-window captured at {w}x{h}, not 960x720");
+    }
     Frame::from_engine_capture(&rgba, w, h)
 }
 
@@ -473,6 +496,22 @@ mod tests {
                 let o = (y * w + x) * 4;
                 let v = if y < 672 { 90 } else { 255 };
                 rgba[o..o + 4].copy_from_slice(&[v, v, v, 255]);
+            }
+        }
+        let f = Frame::from_engine_capture(&rgba, w, h).unwrap();
+        assert!(f.rgb.iter().all(|&v| v == 90));
+    }
+
+    /// A surface taller than the 3x stage centres it; the band above it is
+    /// the window's clear, not the frame.
+    #[test]
+    fn engine_capture_reads_the_centred_stage() {
+        let (w, h) = (960usize, 730usize);
+        let mut rgba = vec![0u8; w * h * 4];
+        for y in 5..5 + 672 {
+            for x in 0..w {
+                let o = (y * w + x) * 4;
+                rgba[o..o + 4].copy_from_slice(&[90, 90, 90, 255]);
             }
         }
         let f = Frame::from_engine_capture(&rgba, w, h).unwrap();

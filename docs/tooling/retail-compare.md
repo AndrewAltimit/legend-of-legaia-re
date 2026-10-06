@@ -1117,6 +1117,22 @@ The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay
 gitignored (`captures/` is).
 
+### A black band across the top is a readback race
+
+An engine frame whose top rows came back pure black - up to fifteen rows,
+the lower edge stepping every 32 columns, every other pixel byte-identical
+to a clean run of the same state - is a GPU readback race, not a frame the
+scene drew: the step is the GPU's tile width, and the same child re-run
+never reproduces it. It showed on a few runs in ten under heavy machine
+load. `Renderer::capture_rgba` waits for the frame's own submission before
+it encodes the copy, and the screenshot harness re-reads until two
+consecutive readbacks agree (each disagreement is logged by the child and
+counted by the parent), so a capture is always one a second readback
+reproduces. The frame is also cropped from the stage rect the window drew
+into (`pause_menu::stage_transform`), not from the capture's origin, so a
+surface the window manager resized off `960 x 720` still compares the
+picture.
+
 ## The ratchet
 
 `scripts/ci/retail-compare-baseline.json` holds, per state label, each
