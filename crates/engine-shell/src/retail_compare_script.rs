@@ -299,6 +299,9 @@ impl ScriptGate {
     pub fn displayed_from_retail(scripts: &RetailScripts) -> Option<Self> {
         let mut g = Self::from_retail(scripts)?;
         g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
+        if let Some(left) = g.glide_left.as_mut() {
+            *left += i32::from(scripts.display_lag);
+        }
         Some(g)
     }
 

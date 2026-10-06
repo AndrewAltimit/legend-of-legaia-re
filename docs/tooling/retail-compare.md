@@ -282,7 +282,9 @@ white blend-`2` target loses its eighth), on a step-`3` frame; gated on the
 RAM's wait the engine frame was darkened six vsyncs further than the one
 on screen, and on the displayed wait the lit dancers match retail's to a
 grey level. `rikuroa_post_caruban`'s Genesis tree, mid-morph six vsyncs into
-a wait, had grown past the sapling retail shows.
+a wait, had grown past the sapling retail shows. A camera glide in flight is
+taken back the same way: the displayed frame had `2 * step` more vsyncs of
+glide left (`kor5_post_436_organic`'s closing shot).
 
 A capture parked on the PC right after a record's `0x3F` scene change is
 inside the departing scene's transition hold: the record spins on its
