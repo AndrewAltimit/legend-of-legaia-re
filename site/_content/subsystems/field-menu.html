@@ -11,10 +11,10 @@
     <dt>Record</dt><dd>0x10 bytes: content id, park edge, window class (2 tab / 3 standard / 4 list), content rect <code>x,y,w,h</code>, renderer VA</dd>
     <dt>Choreography</dt><dd>Windows slide in / out via the <a href="actor-vm.html">window-widget VM</a>; a closed window parks offscreen at its park edge</dd>
     <dt>Data read</dt><dd>The live <code>0x414</code>-byte character records at <code>0x80084708</code> - the same block the save file copies</dd>
-    <dt>Engine port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::pause_screens</code></dd>
+    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::pause_screens</code></dd>
     <dt>Confidence</dt><dd>Confirmed - table byte-matched disc-vs-RAM; layouts pinned by GPU-prim scans of menu captures (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Question</th><th>Short answer</th><th>Section</th></tr></thead>
     <tbody>
       <tr><td>Where do the windows come from?</td><td>One table row per window: rect + content renderer.</td><td><a href="#window-table">Window table</a></td></tr>
@@ -23,6 +23,50 @@
       <tr><td>Where are the options stored?</td><td>Straight into the live config words the audio and pad code read.</td><td><a href="#options-screen">Options</a></td></tr>
     </tbody>
   </table>
+</section>
+
+<section class="doc-section" id="screen-tree">
+  <h2>The screen tree</h2>
+  <p>Press Start in the field and the root command list slides in beside a money / play-time box and a party panel. Its seven rows are the whole menu; each opens one screen, and every screen is assembled from the same window table described below.</p>
+  <figure class="diagram fm-tree">
+    <svg viewBox="0 0 860 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The pause menu's screen tree. Start in the field opens the root command list with seven rows in retail order: Items, Magic, Equip, Status, Options, Load and Save. Each row opens its own screen: Items leads to Use, Throw Out and Arrange; Magic to the spell list and a target; Equip to slot rows, candidates and Best Equipment; Status to the status, skills, magic and moves pages; Options to eight settings with value popups; Load and Save to the memory-card flow, Save only on the overworld.">
+      <defs><marker id="fm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="180" width="150" height="60" rx="5"/>
+      <text class="dg-label" x="95" y="206">Pause menu</text><text class="dg-sub" x="95" y="224">Start in the field</text>
+      <path class="dg-edge" d="M170 210 L200 210 M200 39 L200 381"/>
+      <path class="dg-edge" d="M200 39 L228 39" marker-end="url(#fm-arrow)"/>
+      <a href="#items-use-flows"><rect class="dg-node" x="230" y="16" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="43">Items</text></a>
+      <path class="dg-edge-dim" d="M380 39 L418 39" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="16" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="43">Use on a target, Throw Out, Arrange</text>
+      <path class="dg-edge" d="M200 97 L228 97" marker-end="url(#fm-arrow)"/>
+      <a href="#list-kernel"><rect class="dg-node" x="230" y="74" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="101">Magic</text></a>
+      <path class="dg-edge-dim" d="M380 97 L418 97" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="74" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="101">spell list; cast on a party target</text>
+      <path class="dg-edge" d="M200 155 L228 155" marker-end="url(#fm-arrow)"/>
+      <a href="#equip-screen"><rect class="dg-node" x="230" y="132" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="159">Equip</text></a>
+      <path class="dg-edge-dim" d="M380 155 L418 155" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="132" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="159">slot rows, candidate list, Best Equipment, stat compare</text>
+      <path class="dg-edge" d="M200 213 L228 213" marker-end="url(#fm-arrow)"/>
+      <a href="#submenu-dispatch"><rect class="dg-node" x="230" y="190" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="217">Status</text></a>
+      <path class="dg-edge-dim" d="M380 213 L418 213" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="190" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="217">status page, Skills, Magic and Moves pages via the pager</text>
+      <path class="dg-edge" d="M200 271 L228 271" marker-end="url(#fm-arrow)"/>
+      <a href="#options-screen"><rect class="dg-node" x="230" y="248" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="275">Options</text></a>
+      <path class="dg-edge-dim" d="M380 271 L418 271" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="248" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="275">settings rows, each with a value popup</text>
+      <path class="dg-edge" d="M200 329 L228 329" marker-end="url(#fm-arrow)"/>
+      <a href="save-screen.html"><rect class="dg-node" x="230" y="306" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="333">Load</text></a>
+      <path class="dg-edge-dim" d="M380 329 L418 329" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="306" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="333">the card load flow; greyed in one script context</text>
+      <path class="dg-edge" d="M200 387 L228 387" marker-end="url(#fm-arrow)"/>
+      <a href="save-screen.html"><rect class="dg-node-warn" x="230" y="364" width="150" height="46" rx="5"/><text class="dg-label" x="305" y="391">Save</text></a>
+      <path class="dg-edge-dim" d="M380 387 L418 387" marker-end="url(#fm-arrow)"/>
+      <rect class="dg-node" x="420" y="364" width="420" height="46" rx="5"/><text class="dg-sub" x="630" y="391">the card save flow; greyed off the overworld</text>
+    </svg>
+    <figcaption>Two levels: confirming a row suspends the root list and the routed screen owns the pad until it finishes, then the root list resumes. A blocked row still takes the cursor; it draws grey and buzzes on confirm. Click a row for its section.</figcaption>
+  </figure>
+
+  <p>The menu opens in any scene the field walk controller runs - which includes the three kingdom overworlds, ordinary field scenes as far as the game is concerned - but not while a dialogue is up. While it is open the game is in the <code>CARD</code> mode, whose handler runs no frame driver, so nothing in the world moves (<a href="boot.html#game-mode">game modes</a>).</p>
 </section>
 
 <section class="doc-section" id="window-table">
@@ -51,7 +95,7 @@
     </svg>
     <figcaption>One screen = one window-id list. Each id resolves through the 52-record table to a content rect and a renderer; the gold frame is drawn 8 px outside the rect by the caller.</figcaption>
   </figure>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Screen</th><th>Windows (draw order)</th></tr></thead>
     <tbody>
       <tr><td>Top-level pause menu</td><td>50 command list <code>(24,24,104,94)</code>; 49 money / play-time box <code>(24,178,104,24)</code>; 51 right party panel <code>(144,24,152,180)</code></td></tr>
@@ -66,7 +110,7 @@
 <section class="doc-section" id="submenu-dispatch">
   <h2>Submenu dispatch and the status pages</h2>
   <p>The main panel's page is a submenu index (raw ids 6..10 alias onto 1..5):</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Id</th><th>Page</th></tr></thead>
     <tbody>
       <tr><td>0 or 5</td><td>Full status: name + LV + HP/MP + AP gauge + 6 stats + 7 equip slots + XP / Next Level</td></tr>
@@ -103,7 +147,7 @@
 <section class="doc-section" id="options-screen">
   <h2>Options screen</h2>
   <p>The settings rows are data-driven too: a display-layout table joined to 8-byte row descriptors, each naming the <em>live config word</em> the row edits. Confirm opens a value popup positioned under the row; a choice commits <strong>directly into the config word</strong> - edits are already live, backing out reverts nothing.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Row</th><th>Choices</th><th>Config word</th></tr></thead>
     <tbody>
       <tr><td>Battle Camera</td><td>Close / Normal / Far</td><td><code>0x800846C0</code></td></tr>
@@ -156,14 +200,8 @@
 </section>
 
 <section class="doc-section" id="engine-port">
-  <h2>Engine port</h2>
-  <p>Every draw builder lives in <code>legaia-engine-ui</code> - the renderer-agnostic, wgpu-free leaf - which is what lets the browser play page build these same menus without linking wgpu (<code>engine-render</code> re-exports the crate). The engine parses the window table off the user's disc at boot, frames each screen with the reusable 9-slice chrome, and renders:</p>
-  <ul class="bullets">
-    <li>The status main panel and satellites at the byte-pinned offsets, icon sprites ported verbatim from the UI-icon table and pixel-verified against golden menu captures - LV / HP / MP labels, the AP gauge with its gouraud meter fill, the equipment-slot pictograms, tab plaques, element badges.</li>
-    <li>The top-level menu (command rows, money box, party panel) and the Equip screen's four-window set at the traced offsets, HP / MP numbers through the ported health-tier inks (red at 0, orange &le; max/4, gold &le; max/2, white above; retail also re-inks gold when the record&rsquo;s battle-status halfword is set, which only reaches the band above max/4). MP has no zero case, so an empty bar inks orange rather than red.</li>
-    <li>The Items and Magic screens with real bag counts and the executable's text tables - 12-row pages, PAGE header, page-turn arrows, description windows - on both hosts; the Use flow's target panel with the Water previews; Throw Out / Arrange through their traced state machines; the Door of Light and Incense confirm windows.</li>
-    <li>Engine-styled rather than pinned: the Equip item-picker rows. Unrouted: Door of Wind's destination list.</li>
-  </ul>
+  <h2>In the port</h2>
+  <p>The engine parses the window table off the player's disc at boot and frames each screen with the same 9-slice chrome. The menu's two-level stack lives on the session (<code>engine-core::field_menu</code>, <code>pause_screens</code>), so both hosts walk identical screens; every draw builder lives in <code>engine-ui</code>, the wgpu-free leaf, which is what lets the browser play page draw the same menus without linking wgpu. Panels are drawn at the byte-pinned offsets and checked against menu captures pixel by pixel.</p>
   <details class="disclosure">
     <summary>Deep dive: shared draw primitives and CLUT staging</summary>
     <div class="disclosure-body"><p>Three primitives render everything: the proportional string (<code>FUN_80036888</code>, MES control tokens <code>0x7C/0xCE/0xCF</code>), the UI-icon sprite (<code>FUN_8002C488</code>, UV/CLUT from the 12-byte-stride table at <code>0x800732A4</code>), and decimal digits (<code>FUN_80034B78</code>). The palette-staging global <code>DAT_8007B454</code> is read <strong>only</strong> by the string primitive - icons and numbers carry their own CLUT, so a write before an icon draw is really staging the <em>next string's</em> palette. Staged index N selects the 16-colour CLUT at VRAM <code>(16&times;(6+N), 510)</code>; main ink is entry 15 - 7 white <code>(206,206,206)</code>, 5 teal <code>(66,222,222)</code>, 6 gold <code>(231,173,0)</code>, 9 orange, 2 red.</p></div>
@@ -172,7 +210,7 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
       <tr><td>Window table</td><td><code>0x801E4738</code> (PROT 0899 <code>0x15F20</code>)</td><td>52 records, byte-matched disc-vs-resident across six catalogued menu-open save states; only two fields differ at runtime.</td></tr>
