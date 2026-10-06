@@ -5,7 +5,7 @@
 # detail: no progress for 1800 frames under 31 distinct pad masks
 # fixed: the WorldMap arm steps cross-context walk legs (FUN_8003774C) - urudre2's hand-off beat on map01 walks placements 0x12 / 0x13 with C7 and waits on B3 12 0A
 # soak-min-distinct = 1
-# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 2425688480

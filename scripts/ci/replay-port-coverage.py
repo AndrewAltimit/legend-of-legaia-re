@@ -137,7 +137,7 @@ Usage:
     # the build artifacts in place so this is not 26 rebuilds.
     scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
         cargo llvm-cov clean --profraw-only
-        cargo llvm-cov -p "$pkg" --test "$t" --no-report
+        cargo llvm-cov -p "$pkg" --test integration --no-report "${t}::"
         cargo llvm-cov report --json --output-path "target/cov-$t.json"
     done
 
@@ -311,7 +311,7 @@ CANONICAL_LADDERS = [
     #
     #     cargo llvm-cov clean --workspace
     #     cargo llvm-cov -p legaia-engine-shell \
-    #         --test w5_native_minigame_ladder --no-report -- --test-threads=1
+    #         --test integration w5_native_minigame_ladder:: --no-report -- --test-threads=1
     #     cargo llvm-cov report --json \
     #         --output-path target/cov-w5_native_minigame_ladder.json
     #

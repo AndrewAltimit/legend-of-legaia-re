@@ -3,6 +3,8 @@ name = "legaia-prot"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_prot"
@@ -29,3 +31,7 @@ serde_json.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

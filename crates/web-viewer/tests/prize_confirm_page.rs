@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! cargo llvm-cov clean --profraw-only
-//! cargo llvm-cov -p legaia-web-viewer --test prize_confirm_page --no-report
+//! cargo llvm-cov -p legaia-web-viewer --test integration prize_confirm_page:: --no-report
 //! cargo llvm-cov report --json --output-path target/cov-prize_confirm_page.json
 //! ```
 //!

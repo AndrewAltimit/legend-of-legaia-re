@@ -3,6 +3,8 @@ name = "legaia-engine-audio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_audio"
@@ -66,3 +68,7 @@ legaia-prot.workspace = true
 # prot/lzs/tim/tmd/vab/seq and never on engine-audio, so this dev-only edge is
 # acyclic.
 legaia-asset.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

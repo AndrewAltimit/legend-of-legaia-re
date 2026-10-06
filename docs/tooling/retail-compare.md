@@ -1191,7 +1191,7 @@ scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the ba
 scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
-  cargo test -p legaia-engine-shell --profile release-test --test retail_compare_corpus -- --nocapture
+  cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
 ```
 
 The driver builds `legaia-engine` under the `release-test` profile first

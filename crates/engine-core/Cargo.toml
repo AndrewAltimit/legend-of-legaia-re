@@ -3,6 +3,8 @@ name = "legaia-engine-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_core"
@@ -51,3 +53,7 @@ legaia-prot.workspace = true
 # (u16-offset RAM form at _DAT_8007B8D0). mednafen depends on no engine
 # crate, so this dev-only edge is acyclic.
 legaia-mednafen.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

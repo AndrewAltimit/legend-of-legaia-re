@@ -3,6 +3,8 @@ name = "legaia-pcsxr"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_pcsxr"
@@ -30,3 +32,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 legaia-art.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

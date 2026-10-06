@@ -3,6 +3,8 @@ name = "legaia-patcher"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_patcher"
@@ -43,3 +45,7 @@ encoding_rs = "0.8"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

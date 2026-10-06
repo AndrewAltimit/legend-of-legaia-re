@@ -3,6 +3,8 @@ name = "legaia-asset"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_asset"
@@ -51,3 +53,7 @@ libc = { workspace = true, optional = true }
 
 [dev-dependencies]
 legaia-seq.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

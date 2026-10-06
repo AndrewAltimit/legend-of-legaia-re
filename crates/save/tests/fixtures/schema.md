@@ -22,7 +22,7 @@ If the writer changes intentionally, regenerate both fixtures by
 running the test with `LEGAIA_UPDATE_FIXTURES=1`:
 
 ```
-LEGAIA_UPDATE_FIXTURES=1 cargo test -p legaia-save --test schema_fixture
+LEGAIA_UPDATE_FIXTURES=1 cargo test -p legaia-save --test integration schema_fixture::
 ```
 
 Then `git diff` and `git add` the changed `.bin` files alongside the

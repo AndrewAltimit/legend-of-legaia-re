@@ -270,6 +270,7 @@ cargo clippy --all-targets --workspace -- -D warnings    # CI gate (warnings = f
 cargo test --workspace --profile release-test           # CI's test profile: release opt-level, no LTO
 cargo test -p legaia-asset                               # single-crate
 cargo test --workspace test_name                         # single test by name
+cargo test -p legaia-engine-core --test integration foo::  # one tests/foo.rs (each crate's tests/*.rs build as one `integration` binary)
 ```
 
 Top-level pipeline (recommended for end-to-end runs):

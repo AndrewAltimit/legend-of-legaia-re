@@ -3,6 +3,8 @@ name = "legaia-engine-shell"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [[bin]]
 name = "legaia-engine"
@@ -70,3 +72,7 @@ legaia-pcsxr.workspace = true
 # `legaia-web-viewer` never depends on this crate, so the edge is acyclic, and
 # it is dev-only: the shipped `legaia-engine` binary links none of it.
 legaia-web-viewer.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

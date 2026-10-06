@@ -3,6 +3,8 @@ name = "legaia-engine-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_ui"
@@ -23,3 +25,7 @@ serde_json.workspace = true
 # `tests/camera_relative_retail_oracle.rs` reads retail save states (skips
 # and passes without the library).
 legaia-mednafen.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

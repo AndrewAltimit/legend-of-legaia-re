@@ -16,7 +16,7 @@
 //! inn floor) and koin4 (whose wall sliver the lift pass manufactured itself
 //! and now repairs), both clean. The full-corpus sweep is the
 //! diagnostic mode: `DIAG_ALL=1 cargo test -p legaia-engine-core --release
-//! --test coplanar_residual_disc -- --nocapture` prints per-scene survivor
+//! --test integration coplanar_residual_disc:: -- --nocapture` prints per-scene survivor
 //! tables (`DIAG_SCENE=<name>` narrows that to one scene); known residual
 //! classes live with the open threads in
 //! `docs/reference/open-rev-eng-threads.md`.

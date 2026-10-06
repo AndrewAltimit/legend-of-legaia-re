@@ -141,6 +141,11 @@ jobs:
       - name: Shell observer traps
         run: python3 scripts/ci/check-shell-observer-traps.py
 
+      # Each crate's tests/*.rs build as one `integration` binary, so a file
+      # its tests/integration.rs does not declare never compiles or runs.
+      - name: Integration-test declarations
+        run: python3 scripts/ci/check-integration-tests.py
+
       - name: UI host drift
         run: python3 scripts/ci/check-ui-host-drift.py
 
