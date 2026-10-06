@@ -9,17 +9,17 @@ name = "legaia_engine_ui"
 path = "src/lib.rs"
 
 [dependencies]
-bytemuck = { version = "1", features = ["derive"] }
+bytemuck.workspace = true
 glam.workspace = true
-legaia-asset = { path = "../asset" }
-legaia-engine-vm = { path = "../engine-vm" }
-legaia-font = { path = "../font" }
-legaia-tim = { path = "../tim" }
-legaia-tmd = { path = "../tmd" }
+legaia-asset.workspace = true
+legaia-engine-vm.workspace = true
+legaia-font.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 # `tests/camera_relative_retail_oracle.rs` reads retail save states (skips
 # and passes without the library).
-legaia-mednafen = { path = "../mednafen" }
+legaia-mednafen.workspace = true

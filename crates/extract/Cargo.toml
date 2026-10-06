@@ -13,15 +13,15 @@ anyhow.workspace = true
 clap.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
-sha2 = "0.10"
-legaia-iso = { path = "../iso" }
-legaia-prot = { path = "../prot" }
-legaia-asset = { path = "../asset" }
-legaia-lzs = { path = "../lzs" }
-legaia-tim = { path = "../tim" }
-legaia-tmd = { path = "../tmd" }
-legaia-xa = { path = "../xa" }
-legaia-font = { path = "../font" }
+sha2.workspace = true
+legaia-iso.workspace = true
+legaia-prot.workspace = true
+legaia-asset.workspace = true
+legaia-lzs.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+legaia-xa.workspace = true
+legaia-font.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc.workspace = true

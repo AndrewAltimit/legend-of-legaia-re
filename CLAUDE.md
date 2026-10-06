@@ -210,7 +210,7 @@ How the runtime engine works.
 
 ### Crates - [`crates/`](crates/)
 
-Each crate has a one-page `README.md` describing its scope, format coverage, and how it composes into the pipeline. Crate naming: package `legaia-foo`, lib `legaia_foo`. Internal deps go through workspace path entries (`legaia-asset = { path = "../asset" }`).
+Each crate has a one-page `README.md` describing its scope, format coverage, and how it composes into the pipeline. Crate naming: package `legaia-foo`, lib `legaia_foo`. Every dependency, internal or external, is declared once in the root `[workspace.dependencies]` and taken as `legaia-asset.workspace = true` - never a per-crate `path =` or version pin. A crate's command-line binary sits behind its default-on `cli` feature (`required-features = ["cli"]`, `clap` / `libc` optional); the workspace table lists those crates with `default-features = false`, which keeps CLI dependencies out of library builds and the wasm bundle.
 
 **Track 1 - preservation (asset → PNG / WAV / OBJ / JSON)**
 

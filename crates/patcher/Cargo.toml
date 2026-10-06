@@ -11,26 +11,35 @@ path = "src/lib.rs"
 [[bin]]
 name = "legaia-patcher"
 path = "src/bin/legaia-patcher/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
-legaia-lzs = { path = "../lzs" }
-legaia-asset = { path = "../asset" }
-legaia-mes = { path = "../mes" }
-legaia-tim = { path = "../tim" }
-legaia-tmd = { path = "../tmd" }
-legaia-vab = { path = "../vab" }
-legaia-xa = { path = "../xa" }
-legaia-art = { path = "../art" }
-legaia-prot = { path = "../prot" }
-legaia-iso = { path = "../iso" }
-legaia-gamedata = { path = "../gamedata" }
-legaia-font = { path = "../font" }
+clap = { workspace = true, optional = true }
+legaia-lzs.workspace = true
+legaia-asset.workspace = true
+legaia-mes.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+legaia-vab.workspace = true
+legaia-xa.workspace = true
+legaia-art.workspace = true
+legaia-prot.workspace = true
+legaia-iso.workspace = true
+legaia-gamedata.workspace = true
+legaia-font.workspace = true
 serde.workspace = true
 serde_yaml = "0.9"
 serde_json.workspace = true
 encoding_rs = "0.8"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true, optional = true }

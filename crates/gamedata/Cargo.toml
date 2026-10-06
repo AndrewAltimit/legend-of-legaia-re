@@ -12,17 +12,26 @@ path = "src/lib.rs"
 [[bin]]
 name = "gamedata-tool"
 path = "src/bin/gamedata-tool.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-toml = { version = "0.8", default-features = false, features = ["parse"] }
-legaia-art = { path = "../art" }
+clap = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+legaia-art.workspace = true
 
 [dev-dependencies]
-legaia-asset = { path = "../asset" }
+legaia-asset.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true, optional = true }

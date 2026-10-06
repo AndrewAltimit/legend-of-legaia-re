@@ -10,44 +10,44 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-log = "0.4"
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-toml = "0.8"
-legaia-engine-vm = { path = "../engine-vm" }
-legaia-asset = { path = "../asset" }
-legaia-font = { path = "../font" }
-legaia-iso = { path = "../iso" }
-legaia-lzs = { path = "../lzs" }
-legaia-mdt = { path = "../mdt" }
-legaia-mes = { path = "../mes" }
-legaia-prot = { path = "../prot" }
-legaia-seq = { path = "../seq" }
-legaia-tim = { path = "../tim" }
-legaia-tmd = { path = "../tmd" }
-legaia-vab = { path = "../vab" }
-legaia-anm = { path = "../anm" }
-legaia-art = { path = "../art" }
-legaia-save = { path = "../save" }
-legaia-cheats = { path = "../cheats" }
-legaia-gamedata = { path = "../gamedata" }
+toml = { workspace = true, features = ["display"] }
+legaia-engine-vm.workspace = true
+legaia-asset.workspace = true
+legaia-font.workspace = true
+legaia-iso.workspace = true
+legaia-lzs.workspace = true
+legaia-mdt.workspace = true
+legaia-mes.workspace = true
+legaia-prot.workspace = true
+legaia-seq.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+legaia-vab.workspace = true
+legaia-anm.workspace = true
+legaia-art.workspace = true
+legaia-save.workspace = true
+legaia-cheats.workspace = true
+legaia-gamedata.workspace = true
 legaia-bytes.workspace = true
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true
 # Disc-gated runtime oracle for the chest randomizer: patch a real disc's MAN in
 # memory, then drive the patched bytes through the field VM. legaia-patcher depends only
 # on asset/lzs/prot/iso (never engine-core), so this dev-only edge is acyclic.
-legaia-patcher = { path = "../patcher" }
+legaia-patcher.workspace = true
 # Disc-gated field-state oracles: load a cataloged PCSX-Redux playthrough anchor's
 # main RAM and assert the engine reproduces the captured retail facts. pcsxr
 # depends only on mednafen (never engine-core), so this dev-only edge is acyclic.
-legaia-pcsxr = { path = "../pcsxr" }
+legaia-pcsxr.workspace = true
 # Disc-gated dance-minigame oracle: re-extract the dance overlay (PROT 0980) and
 # drive the real parsed step chart through the dance rules engine. prot depends
 # only on iso/lzs (never engine-core), so this dev-only edge is acyclic.
-legaia-prot = { path = "../prot" }
+legaia-prot.workspace = true
 # Save-library-gated live pin for the prescript stager-table relocation
 # (u16-offset RAM form at _DAT_8007B8D0). mednafen depends on no engine
 # crate, so this dev-only edge is acyclic.
-legaia-mednafen = { path = "../mednafen" }
+legaia-mednafen.workspace = true

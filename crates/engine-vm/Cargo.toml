@@ -11,19 +11,28 @@ path = "src/lib.rs"
 [[bin]]
 name = "field-disasm"
 path = "src/bin/field_disasm.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
-legaia-art = { path = "../art" }
-legaia-anm = { path = "../anm" }
-legaia-asset = { path = "../asset" }
-legaia-prot = { path = "../prot" }
+clap = { workspace = true, optional = true }
+legaia-art.workspace = true
+legaia-anm.workspace = true
+legaia-asset.workspace = true
+legaia-prot.workspace = true
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The camera-mover recomp oracle parses the external frame-tagged JSONL
@@ -31,4 +40,4 @@ libc = "0.2"
 serde_json.workspace = true
 # The ambient-motion disc oracle LZS-decodes each scene bundle's MAN to
 # re-derive the facing-op census (disc-gated; no bytes committed).
-legaia-lzs = { path = "../lzs" }
+legaia-lzs.workspace = true

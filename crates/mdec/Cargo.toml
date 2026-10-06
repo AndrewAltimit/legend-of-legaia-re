@@ -11,15 +11,24 @@ path = "src/lib.rs"
 [[bin]]
 name = "mdec"
 path = "src/bin/mdec.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
-png = "0.17"
+clap = { workspace = true, optional = true }
+png.workspace = true
 
 [dev-dependencies]
-legaia-iso = { path = "../iso" }
-legaia-prot = { path = "../prot" }
+legaia-iso.workspace = true
+legaia-prot.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true, optional = true }

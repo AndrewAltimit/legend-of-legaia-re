@@ -21,7 +21,8 @@ playback in sync without tearing down the stream.
 The `audio-webaudio` cargo feature (off by default) adds `WebAudioOut`, a
 `ScriptProcessorNode`-backed twin of the `AudioOut` API for `wasm32` targets.
 It must be opened from inside a user-gesture handler; the browser play page
-enables the feature and drives it.
+enables the feature and drives it. `AudioOut` (in `src/native_out.rs`) and its `cpal` dependency exist only
+off `wasm32`, so the browser bundle never links cpal.
 
 ## Note-level tracing
 

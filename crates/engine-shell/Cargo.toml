@@ -17,36 +17,36 @@ path = "src/bin/legaia-launch.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-log = "0.4"
-env_logger = "0.11"
-legaia-art = { path = "../art" }
-legaia-asset = { path = "../asset" }
-legaia-cheats = { path = "../cheats" }
-legaia-engine-core = { path = "../engine-core" }
-legaia-engine-vm = { path = "../engine-vm" }
-legaia-engine-audio = { path = "../engine-audio" }
-legaia-engine-render = { path = "../engine-render" }
-legaia-lzs = { path = "../lzs" }
-legaia-prot = { path = "../prot" }
-legaia-save = { path = "../save" }
-legaia-seq = { path = "../seq" }
-legaia-vab = { path = "../vab" }
-legaia-tim = { path = "../tim" }
-legaia-tmd = { path = "../tmd" }
-legaia-font = { path = "../font" }
-legaia-mdec = { path = "../mdec" }
-legaia-mednafen = { path = "../mednafen" }
+log.workspace = true
+env_logger.workspace = true
+legaia-art.workspace = true
+legaia-asset.workspace = true
+legaia-cheats.workspace = true
+legaia-engine-core.workspace = true
+legaia-engine-vm.workspace = true
+legaia-engine-audio.workspace = true
+legaia-engine-render.workspace = true
+legaia-lzs.workspace = true
+legaia-prot.workspace = true
+legaia-save.workspace = true
+legaia-seq.workspace = true
+legaia-vab.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+legaia-font.workspace = true
+legaia-mdec.workspace = true
+legaia-mednafen.workspace = true
 # retail-compare reads PCSX-Redux library states (RAM + VRAM) as well as mednafen ones.
-legaia-pcsxr = { path = "../pcsxr" }
-legaia-iso = { path = "../iso" }
-legaia-xa = { path = "../xa" }
+legaia-pcsxr.workspace = true
+legaia-iso.workspace = true
+legaia-xa.workspace = true
 glam.workspace = true
-png = "0.17"
-winit = "0.30"
-serde = { version = "1", features = ["derive"] }
+png.workspace = true
+winit.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-toml = "0.8"
-sha2 = "0.10"
+toml = { workspace = true, features = ["display"] }
+sha2.workspace = true
 # First-run launcher (`legaia-engine` with no subcommand): the platform config
 # dir for the remembered disc path, and a native file picker. rfd's Linux
 # backend here is the xdg-desktop-portal (D-Bus, no GTK link), which keeps the
@@ -57,16 +57,16 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc.workspace = true
 
 [dev-dependencies]
-tempfile = "3"
-legaia-mes = { path = "../mes" }
+tempfile.workspace = true
+legaia-mes.workspace = true
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.
-legaia-pcsxr = { path = "../pcsxr" }
+legaia-pcsxr.workspace = true
 # `mode_seat_host_parity` drives the BROWSER host beside this one, so the two
 # mode traces are compared by running both rather than by transcribing one.
 # `legaia-web-viewer` never depends on this crate, so the edge is acyclic, and
 # it is dev-only: the shipped `legaia-engine` binary links none of it.
-legaia-web-viewer = { path = "../web-viewer" }
+legaia-web-viewer.workspace = true

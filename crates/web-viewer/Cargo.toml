@@ -8,28 +8,28 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-legaia-tim = { path = "../tim" }
-legaia-prot = { path = "../prot" }
-legaia-asset = { path = "../asset" }
-legaia-lzs = { path = "../lzs" }
-legaia-iso = { path = "../iso" }
-legaia-patcher = { path = "../patcher" }
-legaia-tmd = { path = "../tmd" }
-legaia-art = { path = "../art" }
-legaia-gamedata = { path = "../gamedata" }
-legaia-mes = { path = "../mes" }
-legaia-seq = { path = "../seq" }
-legaia-vab = { path = "../vab" }
-legaia-xa = { path = "../xa" }
-legaia-mdec = { path = "../mdec" }
-legaia-engine-vm = { path = "../engine-vm" }
-legaia-engine-ui = { path = "../engine-ui" }
+legaia-tim.workspace = true
+legaia-prot.workspace = true
+legaia-asset.workspace = true
+legaia-lzs.workspace = true
+legaia-iso.workspace = true
+legaia-patcher.workspace = true
+legaia-tmd.workspace = true
+legaia-art.workspace = true
+legaia-gamedata.workspace = true
+legaia-mes.workspace = true
+legaia-seq.workspace = true
+legaia-vab.workspace = true
+legaia-xa.workspace = true
+legaia-mdec.workspace = true
+legaia-engine-vm.workspace = true
+legaia-engine-ui.workspace = true
 glam.workspace = true
-legaia-font = { path = "../font" }
-legaia-save = { path = "../save" }
-legaia-engine-core = { path = "../engine-core" }
-legaia-engine-audio = { path = "../engine-audio", features = ["audio-webaudio"] }
-legaia-mednafen = { path = "../mednafen" }
+legaia-font.workspace = true
+legaia-save.workspace = true
+legaia-engine-core.workspace = true
+legaia-engine-audio = { workspace = true, features = ["audio-webaudio"] }
+legaia-mednafen.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 wasm-bindgen = "0.2"
@@ -51,8 +51,8 @@ features = [
 ]
 
 [dev-dependencies]
-sha2 = "0.10"
-toml = { version = "0.8", default-features = false, features = ["parse"] }
+sha2.workspace = true
+toml.workspace = true
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
