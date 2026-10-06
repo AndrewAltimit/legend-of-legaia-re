@@ -14,7 +14,7 @@
     <dt>Where</dt><dd>The PROT entries every CDNAME scene block seats: <code>[.MAP][.PCH trigger sidecar][prescript][asset bundle]</code> for towns; battle stages as bare-TMD streams; BGM as VAB streams</dd>
     <dt>Magic</dt><dd>None shared - each shape is told apart by the content at <code>+4</code> (Legaia TMD <code>0x80000002</code>, <code>VABp</code>, a descriptor count, a <code>u16</code> record count)</dd>
     <dt>Parser</dt><dd><code>legaia_asset::{scene_tmd_stream, scene_vab_stream, scene_v12_table, scene_asset_table, scene_event_scripts}</code>; <code>categorize</code> runs the detectors in order</dd>
-    <dt>Confidence</dt><dd>Confirmed - each walker is read off its retail consumer; corpus tiling asserted by disc-gated tests</dd>
+    <dt>Confidence</dt><dd>Confirmed - each walker is read off its retail consumer; corpus tiling checked against every entry</dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">Asset loader</a>, <a href="../subsystems/battle.html">Battle scene</a>, <a href="../world.html">Field scene viewer</a></dd>
   </dl>
   <table>
@@ -71,16 +71,14 @@
 <section class="doc-section" id="scene-tmd-stream-bare-tmd-prefix">
   <h2>scene_tmd_stream - bare-TMD prefix</h2>
   <p>The battle-stage layout: a 3D mesh up front, textures behind it. TMD is the PlayStation's model format (Legaia's own variant, see <a href="tmd.html">tmd</a>); TIM is its texture format. The battle loader's custom walker reads it - <strong>not</strong> the standard streaming dispatcher, even though the chunk-header packing is identical.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td><code>u32 chunk0</code></td><td><code>(type 0x00 &lt;&lt; 24) | tmd_size</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>Legaia TMD</td><td>magic <code>0x80000002</code>, flags 0, <code>1..=64</code> objects; fills <code>tmd_size</code> bytes</td></tr>
-      <tr><td><code>+0x04 + size</code></td><td>tail chunks</td><td><code>[u32 header][payload]</code> each; type <code>0x01</code> = one bare TIM upload, type <code>0x02</code> or size 0 = stop, anything else skipped</td></tr>
-      <tr><td>after stop</td><td>zero padding</td><td>to the entry's sector-aligned end</td></tr>
-    </tbody>
-  </table>
-  <p>An entry holds <strong>exactly one</strong> stream: the walker returns past the terminator and its single caller (battle init) calls it once. The type-<code>0x01</code> meaning differs from the standard dispatcher, where <code>0x01</code> is a TIM <em>list</em> - the crash trap in the lede. The engine's field loader uses <code>battle_tim_chunks</code> to <em>skip</em> these battle-only TIMs; the row-479 <a href="npc-palette.html">NPC palettes</a> are not field-resident, matching retail.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">chunk0 = (0 &lt;&lt; 24) | tmd_size</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:14"><span class="bm-off">+0x04</span><span class="bm-name">Legaia TMD (magic 0x80000002, 1..64 objects)</span><span class="bm-size">tmd_size</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+0x04+size</span><span class="bm-name">tail chunks: [hdr][TIM]&hellip;</span><span class="bm-size">type 1 = TIM</span></div>
+    <div class="bm-cell bm-pad" style="--w:4"><span class="bm-off"></span><span class="bm-name">stop (type 2 / size 0), zero pad</span><span class="bm-size"></span></div>
+  </div>
+  <p>Each tail chunk is <code>[u32 header][payload]</code>: type <code>0x01</code> uploads <strong>one bare TIM</strong>, type <code>0x02</code> or size 0 stops, anything else is skipped. Zero padding runs to the entry's sector-aligned end.</p>
+  <p>An entry holds <strong>exactly one</strong> stream: the walker returns past the terminator and its single caller (battle init) calls it once. The type-<code>0x01</code> meaning differs from the standard dispatcher, where <code>0x01</code> is a TIM <em>list</em> - the crash trap in the lede. These TIMs (including the row-479 <a href="npc-palette.html">NPC palettes</a>) are battle-only; a field loader skips them.</p>
   <h3 id="half-shell">The leading TMD is a half shell, drawn twice</h3>
   <p>Rendered raw, one of these meshes looks like half a bowl - sky dome, mountain ring and far ground cut along a plane through the origin. That is what the entry authors: battle init registers the TMD once but links <strong>two</strong> background actors to it, the second under a per-stage transform that closes the circle. Object 0 is the shell; object 1 never draws. In all 182 entries the open side is <code>-X</code> (129), <code>-Z</code> (49) or <code>+X</code> (4) - never <code>+Z</code>, where the party sits. Placement lives in <code>legaia_asset::battle_backdrop</code> (<a href="../subsystems/battle.html">battle</a>); <code>scene_tmd_stream::shell_shape</code> returns the object-0 box plus its open side.</p>
   <details class="disclosure">
@@ -107,35 +105,31 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 
 <section class="doc-section" id="scene-vab-stream-vab-prefix">
   <h2>scene_vab_stream - VAB-prefix</h2>
-  <p>Same outer wrapper, but the leading chunk is a Sony VAB (a sound bank: instrument programs plus sample data) and the tail chunks are standard <a href="data-field.html">DATA_FIELD</a> chunks - usually the SEQ that plays on the bank. The single largest VAB carrier on the disc, about 17% of all entries.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td><code>u32 chunk0</code></td><td>type <code>0x00</code>, size <code>N</code> (low byte always <code>0x20</code>: 32-byte aligned)</td></tr>
-      <tr><td><code>+0x04</code></td><td><code>VABp</code></td><td>magic <code>0x56414270</code></td></tr>
-      <tr><td><code>+0x08</code></td><td>version</td><td>7 in retail; gate accepts <code>&lt;= 10</code>, <code>&lt;= 128</code> programs and tones</td></tr>
-      <tr><td><code>+0x0C..</code></td><td>VAB body</td><td>header tail, programs, tones, VAG offsets (<a href="vab.html">vab</a>)</td></tr>
-      <tr><td><code>+0x04 + N</code></td><td>tail chunks</td><td>standard chunks until terminator or end of file - the SEQ sits here at a non-zero offset (<a href="seq.html">seq</a>)</td></tr>
-    </tbody>
-  </table>
-  <p>Carriers: 119 of the 123 entries in the CDNAME <code>vab_01</code> cluster, 53 in <code>sound_data2</code>, 19 in <code>music_01</code>, 14 across <code>monster_data</code> / <code>battle_data</code>, plus scattered hits. Read with <code>scene_vab_stream::detect</code> then <code>legaia_vab::parse_header(buf, s.vab_range().start)</code>.</p>
+  <p>Same outer wrapper, but the leading chunk is a Sony VAB (a sound bank: instrument programs plus sample data) and the tail chunks are standard <a href="data-field.html">DATA_FIELD</a> chunks - usually the SEQ that plays on the bank. The single largest VAB carrier on the disc: 218 of the 1233 entries.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">chunk0 = (0 &lt;&lt; 24) | N</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">VABp</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">version (7)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:10"><span class="bm-off">+0x0C</span><span class="bm-name">header tail, programs, tones, VAG offsets</span><span class="bm-size"></span></div>
+    <div class="bm-cell" style="--w:10"><span class="bm-off">+0x04+N</span><span class="bm-name">DATA_FIELD chunks: VAG bodies, SEQ&hellip;</span><span class="bm-size"></span></div>
+  </div>
+  <p>The chunk-0 size's low byte is always <code>0x20</code> (32-byte aligned). The gate accepts version <code>&lt;= 10</code> and <code>&lt;= 128</code> programs and tones. The bank is carried as <strong>two</strong> chunks - the header part up front, the VAG sample bodies in a later chunk - and the SEQ sits in a tail chunk at a non-zero offset; six entries put the SEQ <em>before</em> the body chunk (<a href="vab.html">vab</a>, <a href="seq.html">seq</a>).</p>
+  <p>Carriers: 119 of the 123 entries in the CDNAME <code>vab_01</code> cluster, 77 in <code>music_01</code>, 11 in <code>sound_data2</code>, and a few pairs and singles elsewhere (<code>teien</code>, <code>monster_test</code>, <code>other1</code>, <code>battle_data</code>, &hellip;). Read with <code>scene_vab_stream::detect</code>, then <code>legaia_vab::parse_header(buf, s.vab_range().start)</code>.</p>
 </section>
 
 <section class="doc-section" id="scene-v12-table-scene-header-event-script-bundle">
   <h2>scene_v12_table - the <code>.PCH</code> walk-on trigger sidecar</h2>
   <p>When you step onto a doorway tile, something has to know that tile is special. This one-sector entry is that table: a four-kind sub-table directory whose only populated kind holds the scene's walk-on trigger records. One per scene, 97 on the disc; full field semantics on <a href="scene-v12-table.html">scene-v12-table</a>.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>u16</td><td><code>N + 4</code></td><td>directory end offset</td></tr>
-      <tr><td><code>+0x02</code></td><td>u16 &times; 2</td><td><code>0x0012</code>, <code>0</code></td><td>kind-0 offset + count (empty)</td></tr>
-      <tr><td><code>+0x06</code></td><td>u16 &times; 2</td><td><code>0x0014</code>, <code>param</code></td><td>kind-1 offset + count (<code>0..=192</code>) - the records</td></tr>
-      <tr><td><code>+0x0A</code></td><td>u16 &times; 2</td><td><code>N</code>, <code>0</code></td><td>kind-2 (empty)</td></tr>
-      <tr><td><code>+0x0E</code></td><td>u16 + u32</td><td><code>N + 2</code>, <code>0</code></td><td>kind-3 (empty) + pad</td></tr>
-      <tr><td><code>+0x14</code></td><td><code>param &times; 4</code></td><td>records</td><td>trigger records, grouped by byte 2 into regions; byte 3 always <code>0x01</code></td></tr>
-      <tr><td>&hellip; <code>0x800</code></td><td></td><td>padding</td><td>the entry ends at <code>0x800</code>; the prescript that follows is the <strong>next PROT entry</strong></td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">N+4</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x02</span><span class="bm-name">kind 0: 0x12, 0</span><span class="bm-size">4 B</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x06</span><span class="bm-name">kind 1: 0x14, param</span><span class="bm-size">4 B</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x0A</span><span class="bm-name">kind 2: N, 0</span><span class="bm-size">4 B</span></div>
+    <div class="bm-cell bm-dim" style="--w:6"><span class="bm-off">+0x0E</span><span class="bm-name">kind 3: N+2, 0, pad</span><span class="bm-size">6 B</span></div>
+    <div class="bm-cell bm-accent" style="--w:10"><span class="bm-off">+0x14</span><span class="bm-name">param &times; 4-byte trigger records</span><span class="bm-size"></span></div>
+    <div class="bm-cell bm-pad" style="--w:4"><span class="bm-off"></span><span class="bm-name">pad to 0x800</span><span class="bm-size"></span></div>
+  </div>
+  <p>Only kind 1 is populated: <code>param</code> (<code>0..=192</code>) four-byte records, grouped by byte 2 into regions, byte 3 always <code>0x01</code>. The entry ends at <code>0x800</code>; the prescript that follows is the <strong>next PROT entry</strong>.</p>
   <p>The three tied words (<code>N = 4 * param + 22</code>) make the detector exact: 97 hits, zero false positives. The scene's real field-VM scripts are not here - they live in the scene MAN (<a href="../subsystems/script-vm.html">script VM</a>).</p>
   <details class="disclosure">
     <summary>History: "prescript at +0x800 of the v12 entry"</summary>
@@ -146,15 +140,14 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 <section class="doc-section" id="scene-asset-table-count-prefixed-asset-bundle">
   <h2>scene_asset_table - the town / dungeon bundle</h2>
   <p>The bundle the field loader reads when entering a scene: a count-prefixed descriptor table, then one LZS-compressed payload per descriptor (LZS is Legaia's compression, see <a href="lzs.html">lzs</a>).</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td><code>u32 count</code></td><td>6 or 7 descriptors</td></tr>
-      <tr><td><code>+0x04</code></td><td><code>u32 total_decompressed_size</code></td><td>the sum of the descriptors' decompressed sizes (see below)</td></tr>
-      <tr><td><code>+0x08</code></td><td><code>count &times; (u32 type_size, u32 data_offset)</code></td><td><code>type_size = (type &lt;&lt; 24) | decompressed_size</code>, the packing the <a href="asset-type.html">asset-type dispatcher</a> takes directly; <code>data_offset</code> is file-relative</td></tr>
-      <tr><td><code>+8 + count*8</code></td><td>payloads</td><td>descriptor 0 starts here; later ones often run past the TOC-indexed end into the trailing sectors</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">count</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">total decompressed size</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:8"><span class="bm-off">+0x08</span><span class="bm-name">descriptor 0: (type&lt;&lt;24 | size), offset</span><span class="bm-size">8 B</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off"></span><span class="bm-name">descriptors 1..count-1</span><span class="bm-size">8 each</span></div>
+    <div class="bm-cell" style="--w:10"><span class="bm-off">+8+count&times;8</span><span class="bm-name">LZS payloads</span><span class="bm-size"></span></div>
+  </div>
+  <p><code>type_size = (type &lt;&lt; 24) | decompressed_size</code> is the packing the <a href="asset-type.html">asset-type dispatcher</a> takes directly; <code>data_offset</code> is file-relative. Descriptor 0's payload starts right after the table, and later payloads often run past the TOC-indexed end into the trailing sectors.</p>
   <p>Slot <code>i</code> is the <code>i</code>-th descriptor; there is no separate indirection table. The runtime walker reads <code>count</code>, then dispatches each payload by <code>type_size &gt;&gt; 24</code> (chain pinned under <a href="../subsystems/asset-loader.html">asset loader</a>). The seven canonical kinds: <code>TimList</code> (textures), <code>Tmd</code> (meshes), <code>Man</code> (the scene's map data - encounter tables, actor placements, field scripts), <code>Mes</code> (dialog), <code>Move</code> (animation programs), <code>Anm</code>, <code>Vdf</code>.</p>
   <table>
     <thead><tr><th>Type tuple</th><th>Notes</th></tr></thead>
@@ -169,7 +162,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
       <tr><td><code>(1, 3, 5, 6, 0x14)</code></td><td>count-5 (<code>bubu1</code>, <code>edbubu</code>): the canonical seven minus Tmd and Vdf, MAN at index 1</td></tr>
     </tbody>
   </table>
-  <p>The <code>count</code> word is not always 6 or 7, and retail bounds it nowhere - the walker reads it and loops that many descriptors, so any bound in a reader is a heuristic. The strong signal is the anchor: descriptor 0's offset equals <code>8 + count &times; 8</code>. Two scenes ship a count-5 table and both carry a MAN, so a 6-or-7-only bound made <code>bubu1</code> and <code>edbubu</code> resolve no MAN and read as unloadable while every structural check on them passed. The detector now admits <code>count</code> down to 4, but a short table only when it carries a MAN descriptor - which disc-wide is exactly those two, leaving the thirteen MAN-less short tables in the class they already had. Those thirteen walk exactly the way the count-6/7 ones do, so <code>scene_asset_table::descriptor_bundle_walk</code> transcribes the runtime walk with no count window at all - and one detail of it is easy to lose by reading the decompiled C, because the payload pointer is formed in the <code>jal</code>'s delay slot.</p>
+  <p><strong>Retail bounds <code>count</code> nowhere</strong> - the walker reads it and loops that many descriptors, so any bound in a reader is a heuristic. The strong signal is the anchor: descriptor 0's offset equals <code>8 + count &times; 8</code>. Two scenes, <code>bubu1</code> and <code>edbubu</code>, ship a count-5 table that carries a MAN; a 6-or-7-only reader finds no MAN for them. Thirteen more short tables (the MAN-less count-4 dungeon form, e.g. <code>dolk2</code>, <code>rikuroa</code>, <code>taiku</code>) walk exactly like the long ones. One detail is easy to lose in the decompiled C: the payload pointer is formed in the <code>jal</code>'s delay slot.</p>
   <h3 id="header-total-decompressed-size">+0x04 is the bundle's total decompressed size</h3>
   <p>The header's second word equals <code>sum(descriptor[i].size)</code> exactly - each size being that descriptor's
   <em>decompressed</em> byte count - so it records how many bytes the bundle unpacks to. The identity holds in every
@@ -180,21 +173,15 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
   <code>+0x08</code>, and a sweep of every dumped function for a load off the table base finds reads at offset
   <code>0x0</code> only. So it is an authoring total - a consistency check an editor must maintain
   (<code>SceneAssetTable::total_size_is_consistent</code>), not something the game enforces.</p>
+  <h3 id="bytes-after-last-stream">The bytes after the last stream are not the bundle's</h3>
+  <p>A bundle's content ends where its last LZS stream stops being consumed, inside the entry's last sector. The non-zero bytes above that look like data but are an <strong>earlier PROT entry's bytes at the same file offsets</strong>: the packer wrote every entry out of one buffer, in TOC order, without clearing it. That prediction reproduces the slack of every bundle byte for byte. An editor can write zeros there, and a parser should never read it (<a href="../tooling/byte-accounting.html">byte accounting</a>).</p>
   <h3 id="flag-slot-is-the-pochi-fill-file">The FLAG slot is the pochi fill file</h3>
-  <p>A type-<code>0x14</code> <code>FLAG</code> descriptor declares 1927 bytes, and the 239-byte stream behind
-  it decompresses to the <a href="pochi.html">pochi fill file</a> - byte-identical to the fill in all 266 filler
-  slots. The slot is <strong>not</strong> a count-4/5 marker: of the 105 count-prefixed tables on the disc, 28
-  carry one and in every case it is the table's <em>last</em> descriptor - 9 of 10 count-4 (the tenth is a
-  character pack, not a scene), 4 of 4 count-5, 3 of 8 count-6 and 12 of 80 count-7, so the count-6/7 bundles
-  hold 15 of the 28. All 28 payloads decompress to the same bytes, and three of the four leading
-  <code>Flag(0x0A)</code> descriptors are that file again. Nothing reads any of them: the dispatcher answers a
-  <code>0x14</code> without touching the payload, so the slot is never decompressed at runtime. It is what the
-  authoring tool put in a reserved descriptor.</p>
+  <p>A type-<code>0x14</code> <code>FLAG</code> descriptor declares 1927 bytes, and the 239-byte stream behind it decompresses to the <a href="pochi.html">pochi fill file</a> - byte-identical to the fill in every filler slot. It is always the table's <em>last</em> descriptor (28 of the 105 count-prefixed tables carry one), it is not a count-4/5 marker, and the dispatcher answers <code>0x14</code> without touching the payload, so it is never decompressed at runtime. Three of the four leading <code>Flag(0x0A)</code> descriptors are that file again.</p>
   <p>One <code>FLAG</code> descriptor is data-bearing. <code>urudre1</code>'s descriptor 0 is typed
   <code>0x0A</code> but declares 343,480 bytes, and its stream really does unpack to that length - opening with
   a <a href="pack.html">pack</a> header of 85 members, in the slot its sibling count-7 bundles give their
   texture list. The dispatcher answers <code>0x0A</code> the same way it answers the fill, so the descriptor
-  walk never unpacks it.</p>
+  walk never unpacks it - and it is a byte-identical second copy of the live texture pack that ships as the next entry, <code>0456</code>, which the loader streams instead.</p>
   <h3 id="flag-descriptor-streams-a-file">A Flag descriptor streams an extra file</h3>
   <p>Types <code>0x0A</code> / <code>0x0F</code> / <code>0x14</code> allocate nothing: the
   <a href="asset-type.html">dispatcher</a> returns <code>(case &lt;&lt; 8)</code> and exits. The walker ORs every
@@ -207,14 +194,14 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
   <code>Flag</code> reserve the slot with a <a href="pochi.html">pochi filler</a>. Details:
   <a href="field-pack.html">field-pack</a>.</p>
   <h3 id="mesh-pool-descriptor-walk">The mesh pool is the descriptor walk</h3>
-  <p>The <code>Tmd</code> descriptor is an <a href="pack.html"><code>asset::pack</code></a> of every static mesh in the scene (<code>town01</code>: 121 meshes). The runtime mesh pool gains one slot per pack member, in pack order, after the five resident party / save-point meshes - Rim Elm is 5 + 114 = 119 slots. Placement of those meshes comes from the field map object table (<a href="../subsystems/field-locomotion.html">field locomotion</a>). A byte sweep for TMD magic is <em>not</em> a substitute: a scene block's bytes carry meshes the walk never registers. Parser <code>scene_asset_table::mesh_pool</code>.</p>
+  <p>The <code>Tmd</code> descriptor is an <a href="pack.html"><code>asset::pack</code></a> of every static mesh in the scene (<code>town01</code>: 121 meshes). The runtime mesh pool gains one slot per pack member, in pack order, after the five resident party / save-point meshes - Rim Elm is 5 + 114 = 119 slots. Placement of those meshes comes from the field map object table (<a href="../subsystems/field-locomotion.html">field locomotion</a>). A byte sweep for TMD magic is <em>not</em> a substitute: a scene block's bytes carry meshes the walk never registers. A <code>Flag(0x14)</code> table's meshes also include its streamed <code>.pac</code>: the mode-<code>0x14</code> stream registers any TMD-pack chunk's members behind the table's own, and ten scenes with no mesh slot (e.g. <code>chitei2</code>, <code>balden</code>, <code>bubu1</code>) get their whole environment that way. Parser <code>scene_asset_table::mesh_pool</code> / <code>pac_mesh_pool</code>.</p>
   <details class="disclosure">
     <summary>Extended footprint, v12-embedded tables, and the kingdom bundles</summary>
     <div class="disclosure-body">
       <p><strong>Extended footprint.</strong> Descriptor offsets address the bundle's on-disc footprint including the trailing sectors the per-PROT TOC crops off, so <code>Scene::load</code> fetches bundle and <code>lzs_container</code> entries with <code>ProtIndex::entry_bytes_extended</code>. The <code>lzs_container</code> case is the dungeon shape: <code>rikuroa</code> ships its environment pack as a standalone container (extraction 156, 77 TMDs) whose streams start inside the TOC window and run into the trailing sectors.</p>
-      <p><strong>v12-embedded tables.</strong> Some dungeon scenes carry a whole asset table inside their <code>scene_v12_table</code> entry at <code>0x1000</code>. <code>find_bundle</code> scans a v12 entry's <code>0x800</code>-aligned offsets for the first table with a MAN descriptor (<code>BundleSource::V12Embedded</code>). The v12-family dungeons <code>rikuroa</code> and <code>dolk2</code> have no MAN-bearing bundle at all: their scene MAN is the type-3 chunk of the block's standalone <code>data_field_streaming</code> entry (extraction 157 / 70), resolved by <code>field_man_payload</code>. Coverage: <code>engine-core/tests/v12_bundle_man_disc.rs</code>.</p>
+      <p><strong>v12-embedded tables.</strong> Some dungeon scenes carry a whole asset table inside their <code>scene_v12_table</code> entry at <code>0x1000</code>. <code>find_bundle</code> scans a v12 entry's <code>0x800</code>-aligned offsets for the first table with a MAN descriptor (<code>BundleSource::V12Embedded</code>). The v12-family dungeons <code>rikuroa</code> and <code>dolk2</code> have no MAN-bearing bundle at all: their scene MAN is the type-3 chunk of the block's standalone <code>data_field_streaming</code> entry (extraction 157 / 70), resolved by <code>field_man_payload</code>.</p>
       <p><strong>Kingdom bundles</strong> (PROT 0086 / 0245 / 0392). Slot 5 (type 6) is not a field-actor ANM pack but the <strong>CLUT-walk animation table</strong>: a 516-byte LZS table, identical across the three kingdoms, of eight 16&times;1 walker entries (ocean head + shoreline shimmer) - <a href="../subsystems/world-map.html">world map</a>, parser <code>clut_walk</code>. Their slot-0 TIM list also interleaves non-TIM raw CLUT-block records (<code>[u32, u32]</code> prefix + a bare CLUT, no <code>0x10</code> magic) - the walk's parked strips at VRAM rows 498..505 (<code>clut_walk::park_strips</code>).</p>
-      <p><strong>Reading code.</strong> <code>scene_asset_table::resolve(buf)</code> returns the table plus its base; <code>slots()</code> reproduces the positional walk and <code>payload_range(slot, base)</code> resolves a slot's span. Verified against every classified entry by <code>scene_asset_table_walk_real</code>; the runtime mesh pool by <code>scene_mesh_pool_walk_disc</code>.</p>
+      <p><strong>Reading code.</strong> <code>scene_asset_table::resolve(buf)</code> returns the table plus its base; <code>slots()</code> reproduces the positional walk and <code>payload_range(slot, base)</code> resolves a slot's span.</p>
       <p>History: a strict <code>count == 7</code> detector missed the count-6 towns, and its <code>{6, 7}</code> successor missed the two count-5 scenes, producing the "no MAN in the static bundle" reading; a runtime write-watchpoint on the MAN buffer settled it. The "v12 entry embeds the MAN at <code>0x1000</code>" reading for rikuroa/dolk2 decoded the next block through the over-read; see <a href="scene-v12-table.html#embedded-man-over-read">scene-v12-table</a>.</p>
     </div>
   </details>
@@ -222,7 +209,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 
 <section class="doc-section" id="scene-scripted-asset-table-scripted-prefix-canonical-bundle">
   <h2>scene_scripted_asset_table - a shape retail does not have</h2>
-  <p>A composite pairing a prescript at offset 0 with a 7-asset table at the next sector boundary. <strong>It matches no retail entry</strong>: the real layout seats the prescript and the bundle as separate entries. The detector stays, pinned at zero matches by <code>extract/tests/validation_suite.rs</code>, so a reader regression fails a test instead of resurrecting the phantom.</p>
+  <p>A composite pairing a prescript at offset 0 with a 7-asset table at the next sector boundary. <strong>It matches no retail entry</strong>: the real layout seats the prescript and the bundle as separate entries. The detector is kept only as a guard that must match nothing.</p>
   <details class="disclosure">
     <summary>History: the composite that ~6% of entries once matched</summary>
     <div class="disclosure-body"><p>Every historical match was an over-read: the "table at the next 0x800 boundary" was the next PROT entry's ordinary offset-0 table seen through a window that ran past the entry (<a href="prot.html">prot</a>). The detector's gate: <code>u16[0]</code> count in <code>1..=4096</code>, <code>offsets[0] = 2 + count*2</code>, monotonic in-bounds offsets, and a valid count-7 table at the next <code>0x800</code>-aligned position.</p></div>
@@ -232,35 +219,33 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 <section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">
   <h2>tmd_size_prefix - truncated TMD-prefix</h2>
   <p>Sister of <code>scene_tmd_stream</code> for the truncated case: same header, but the claimed total size is larger than the on-disc payload. All object pointers fall inside the claimed size, so the file is a genuine prefix of a larger resource, not a broken header. 34 entries, all 12 KB (6 sectors), 2 or 4 objects each.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td><code>u32 total_size</code></td><td>claimed in-memory size, larger than the entry</td></tr>
-      <tr><td><code>+0x04</code></td><td>TMD header</td><td>magic, flags 0, <code>1..=8</code> objects, 28-byte object table</td></tr>
-      <tr><td>after table</td><td>primitives</td><td>truncated at the sector boundary</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">total_size (&gt; entry)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">+0x04</span><span class="bm-name">TMD header, 1..=8 objects</span><span class="bm-size"></span></div>
+    <div class="bm-cell" style="--w:6"><span class="bm-off"></span><span class="bm-name">28-byte object table</span><span class="bm-size"></span></div>
+    <div class="bm-cell bm-dim" style="--w:10"><span class="bm-off"></span><span class="bm-name">primitives, cut at the sector boundary</span><span class="bm-size"></span></div>
+  </div>
+
   <p>Confidence: the shape is Confirmed, the consumer Unknown - the loader probably allocates <code>total_size</code> and either zero-fills the tail or streams the rest from another entry.</p>
 </section>
 
 <section class="doc-section" id="scene-event-scripts-prescript-only">
   <h2>scene_event_scripts - the prescript</h2>
   <p>The entry a scene block seats between its <code>.PCH</code> sidecar and its bundle: a <code>[u16 count][u16 offsets[count]]</code> table whose records stage the scene's ambient props - a swaying sign, a spinning windmill - for the <a href="../subsystems/move-vm.html">move VM</a>. 101 entries, 100 of them at slot 2 of a CDNAME block.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td><code>u16 count</code></td><td>retail <code>2..=71</code></td></tr>
-      <tr><td><code>+0x02</code></td><td><code>u16 offsets[count]</code></td><td><code>offsets[0] = 2 + count*2</code>, non-decreasing, in-bounds</td></tr>
-      <tr><td><code>+offsets[i]</code></td><td>record</td><td>16-bit-word-aligned move-VM stager: <code>[i16 model_sel][u16 reserved][bytecode]</code>; most open <code>0xFFFF 0x0000</code> (a transform node) and end with the <code>0x0008</code> Halt word</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">count (2..=71)</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">+0x02</span><span class="bm-name">offsets[count]</span><span class="bm-size">u16 each</span></div>
+    <div class="bm-cell" style="--w:6"><span class="bm-off">2+count&times;2</span><span class="bm-name">record 0</span><span class="bm-size"></span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off"></span><span class="bm-name">records 1..</span><span class="bm-size"></span></div>
+  </div>
+  <p><code>offsets[0] = 2 + count*2</code>, non-decreasing, in-bounds. Each record is a 16-bit-word-aligned move-VM stager: <code>[i16 model_sel][u16 reserved][bytecode]</code>; most open <code>0xFFFF 0x0000</code> (a transform node) and end with the <code>0x0008</code> Halt word.</p>
   <p class="hint"><strong>These records are not field-VM bytecode</strong>, however natural that looks. They are the per-scene sibling of the per-summon stagers (<code>legaia_asset::summon_overlay</code>): same record format, same consumer. Record 0 on towns is the scene's <em>master ambient stager</em> - a fixed 768-byte run of 8-byte spawn rows. The scene's field-VM scripts live in the MAN.</p>
   <p>The runtime chain: a MAN script installs a record by id through the stager installer, which reads <code>base + 2 + id*2</code> from the bundle relocated to RAM; the part-stager attaches it to an actor; the move VM runs <code>record + 4</code> each frame. Walking every scene MAN for the install op shows this is the bundle's <strong>only</strong> consumer: partition-1 effect actors install record 0 on entry, partition-2 cutscene timelines install per-shot ids.</p>
   <details class="disclosure">
     <summary>Detection tiers and evidence</summary>
     <div class="disclosure-body">
       <p><code>detect</code> (the read every consumer uses) requires the table shape with <code>count &gt;= 3</code> and at least 45% of records opening with the <code>0xFFFF 0x0000</code> sentinel. <code>detect_structural</code> is the format's true boundary: <code>count &gt;= 2</code>, word-aligned offsets, non-empty last record - 101 hits, zero false positives. At <code>count == 1</code> the anchor collapses to "the second u16 is 4", byte-identical to a <code>bse_bank</code> header, so the floor is 2. Twenty-three carriers sit under the rate floor (<code>geremi</code>, <code>tunnela</code>, <code>tunnelb</code>, <code>edson</code> carry no transform node at all), which is why the categorizer runs the structural tier last, after <code>bse_bank</code>.</p>
-      <p>Running the field-VM disassembler over these records yields a 65-88% decode-error rate; the words are 16-bit aligned with the high byte zero on about 83% of body words, and the opcodes sit below the field VM's <code>0x22</code> floor. Pinned by <code>scene_event_records_word_aligned_real</code>, <code>prescript_move_stager_records_real</code> (78 entries / 1855 records, all valid stager leads) and the consumer census <code>scene_prescript_consumer_census_disc.rs</code>; parser <code>scene_event_scripts::move_stager_records</code>, scanner <code>man_field_scripts::scene_stager_installs</code>.</p>
+      <p>Running the field-VM disassembler over these records yields a 65-88% decode-error rate; the words are 16-bit aligned with the high byte zero on about 83% of body words, and the opcodes sit below the field VM's <code>0x22</code> floor. Parser <code>scene_event_scripts::move_stager_records</code>, scanner <code>man_field_scripts::scene_stager_installs</code>.</p>
     </div>
   </details>
 </section>
