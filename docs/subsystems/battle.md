@@ -4375,11 +4375,13 @@ The steps the menu SM runs, with the records that decide the party surfaces
 
 So the roster **card** is the round prompt's and the browsed windows'; the
 full-width **pill** is the ring's and the target steps'; and the ring alone
-carries the AP plate. The action SM's openers are two: the `0x0C` seed
-(`0x801E2F24`, again `0x801E401C`) reads the acting actor's target byte
-`+0x1DD` and raises the bar for it when it is a party slot (`t2 == 8`, a
-party-wide cast, raises all three panels instead), and the Item / Spirit
-pre-arm `0x3C` (`0x801E3DA0`) raises it for the acting member. A party
+carries the AP plate. The action SM's openers are three: the `0x0C` seed
+(`0x801E2F24`) reads the acting actor's target byte `+0x1DD` and raises the
+bar for it when it is a party slot; the Item pre-arm `0x3C` (`0x801E3DA0`)
+raises it for the acting member; and the item band's `0x3E` arm
+(`0x801E401C`) raises it for a member target again, or all three panels for
+a party-wide one (`t2 == 8`) - the only place an action raises the panels
+(see the roster-panel note above). A party
 member's attack on a monster therefore shows **no** readout at all; a monster's
 cast on a member shows that member's bar.
 A counterattack runs no seed of its own: the strike loop's swap hands the
