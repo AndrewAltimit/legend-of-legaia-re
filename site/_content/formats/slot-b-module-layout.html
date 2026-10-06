@@ -20,26 +20,26 @@
 
 <section class="doc-section" id="regions">
   <h2>The regions</h2>
-  <p>An image reads, bottom to top, as up to four regions. Each is recovered from the image's own bytes:</p>
+  <p>An image reads, from its first byte, as up to four regions. Each is recovered from the image's own bytes:</p>
   <figure class="diagram">
-    <svg viewBox="0 0 860 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A slot-B image from file start: head jump table, framed code, spawn-record band, then an inherited tail copied from another image">
-      <rect x="10" y="20" width="120" height="56" rx="4" class="dg-node-accent"/>
-      <text x="70" y="44" class="dg-label">head table</text><text x="70" y="62" class="dg-sub">0..256 words</text>
-      <rect x="130" y="20" width="280" height="56" rx="4" class="dg-node"/>
-      <text x="270" y="44" class="dg-label">code</text><text x="270" y="62" class="dg-sub">phase machine, spawn stager, trampolines</text>
-      <rect x="410" y="20" width="240" height="56" rx="4" class="dg-node-ok"/>
-      <text x="530" y="44" class="dg-label">spawn-record band</text><text x="530" y="62" class="dg-sub">[model_sel][reserved][bytecode] ...</text>
-      <rect x="650" y="20" width="200" height="56" rx="4" class="dg-node-warn"/>
-      <text x="750" y="44" class="dg-label">inherited tail</text><text x="750" y="62" class="dg-sub">another image's bytes</text>
-      <text x="10" y="100" class="dg-edge-label">file +0 = VA 0x801F69D8</text>
-      <text x="650" y="100" class="dg-edge-label">own-content cut</text>
-      <path class="dg-edge-dim" d="M650 10 L650 120"/>
-      <text x="70" y="134" class="dg-sub">leading address run</text>
-      <text x="270" y="134" class="dg-sub">frame matching</text>
-      <text x="530" y="134" class="dg-sub">the spawn call's pointer</text>
-      <text x="750" y="134" class="dg-sub">byte match vs earlier entry</text>
+    <svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A slot-B image from file start: head jump table, framed code, spawn-record band, then an inherited tail copied from another image; each region with how it is recovered">
+      <text x="10" y="16" class="dg-edge-label">file +0 = VA 0x801F69D8</text>
+      <text x="420" y="16" class="dg-edge-label">recovered by</text>
+      <rect x="10" y="28" width="380" height="54" rx="4" class="dg-node-accent"/>
+      <text x="200" y="51" class="dg-label">head table</text><text x="200" y="69" class="dg-sub">0..256 in-image words</text>
+      <text x="420" y="60" class="dg-edge-label">leading address run</text>
+      <rect x="10" y="90" width="380" height="54" rx="4" class="dg-node"/>
+      <text x="200" y="113" class="dg-label">code</text><text x="200" y="131" class="dg-sub">phase machine, stager, trampolines</text>
+      <text x="420" y="122" class="dg-edge-label">frame matching</text>
+      <rect x="10" y="152" width="380" height="54" rx="4" class="dg-node-ok"/>
+      <text x="200" y="175" class="dg-label">spawn-record band</text><text x="200" y="193" class="dg-sub">part records + bytecode</text>
+      <text x="420" y="184" class="dg-edge-label">the spawn call's pointer</text>
+      <rect x="10" y="214" width="380" height="54" rx="4" class="dg-node-warn"/>
+      <text x="200" y="237" class="dg-label">inherited tail</text><text x="200" y="255" class="dg-sub">an earlier image's bytes</text>
+      <text x="420" y="246" class="dg-edge-label">byte match</text>
+      <path class="dg-edge-dim" d="M4 214 L396 214"/><text x="420" y="218" class="dg-sub" style="text-anchor:start">own-content cut</text>
     </svg>
-    <figcaption>The idealised order. The bottom row is how each region is found. Real images can break the order (below).</figcaption>
+    <figcaption>The idealised order, from file start down; on the right, how each region is found. Real images can break the order (below).</figcaption>
   </figure>
   <table>
     <thead><tr><th>Region</th><th>Contents</th><th>Recovered by</th></tr></thead>
