@@ -1928,14 +1928,20 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
 }
 
 /// The element badge a monster slot's plaque wears (`None` for none).
+///
+/// Retail's target plaque prints the actor's name payload `+0x1BC`, which
+/// battle load copies verbatim from the record's name (`FUN_80054CB0`,
+/// `0x80054D0C..0x80054D34`), so the badge is the name's own `0xCE` escape
+/// (`battle_melee_hit_spark`: `CE 14 " Gimard"`, escape `0x14` = the fire
+/// plate) - [`crate::monster_catalog::MonsterDef::plaque_badge`], the same
+/// selector [`battle_plaque_element_badge`] reads. Indexing the strip with
+/// the record's `+0x1D` element byte drew Gimard (element `2`) under the
+/// wind plate, and badged monsters whose names carry no escape.
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
-    let id = actor.battle_monster_id?;
-    let element = match actor.battle_element {
-        Some(e) => e,
-        None => world.tables.monster_catalog.get(id)?.element,
-    };
-    ((element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT).then_some(element)
+    let def = world.tables.monster_catalog.get(actor.battle_monster_id?)?;
+    def.plaque_badge
+        .filter(|b| usize::from(*b) < BATTLE_PLAQUE_BADGE_COUNT)
 }
 
 /// Character record byte the magic chip's gate reads, as an index into the
@@ -3340,6 +3346,9 @@ mod tests {
         }
         let mut gimard = MonsterDef::new(7, "Gimard", 40, 5);
         gimard.element = 2;
+        // The disc name is `^A Gimard`: caret `A` = badge 0, the fire plate
+        // (escape `0x14`) - not the `+0x1D` element byte's index.
+        gimard.plaque_badge = Some(0);
         w.tables.monster_catalog.insert(gimard);
         w.actors[3].battle.hp = 40;
         w.actors[3].battle.max_hp = 40;
@@ -3634,7 +3643,8 @@ mod tests {
         assert!(!battle_panels_visible(&w));
         assert_eq!(
             battle_target_plaque(&w),
-            Some(("Gimard".to_string(), Some(2)))
+            Some(("Gimard".to_string(), Some(0))),
+            "the name's own badge (fire), not the element byte's strip index"
         );
         assert_eq!(battle_combo_style(&w), Some(ComboStyle::HitTotal));
         assert!(!battle_begin_tab_visible(&w));
