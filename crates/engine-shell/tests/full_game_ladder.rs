@@ -1407,6 +1407,8 @@ thread_local! {
     /// members lost HP: the size of the foe's party-wide hit (Van Saryu's
     /// Earthquake). See [`wanted_item`]'s backup heal.
     static AOE_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Whether a foe has shown a charge latch this battle ([`foe_charged`]).
+    static CHARGE_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Whether the coming round is the foe's heavy one, read off its cadence the
@@ -1455,15 +1457,7 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     // cast through the same body is the party-wide punch. A player who sees
     // the charge guards the turn it lands, before any heavy round is on
     // record.
-    let n = w.party.party_count.clamp(1, 3) as usize;
-    let charged = (n..w.actors.len()).any(|i| {
-        w.actors[i].battle.hp > 0
-            && w.battle
-                .monster_ai_state
-                .dat
-                .get(i - n + 4)
-                .is_some_and(|&v| v != 0)
-    });
+    let charged = foe_charged(w);
     // The charge round itself is quiet; a latch the foe holds while it
     // keeps hitting (an AI ability cooldown such as ids `0x97` / `0x98`
     // re-arm every turn) is not a wind-up, and guarding through it starves
@@ -1473,6 +1467,76 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         return true;
     }
     hp > 0 && threat * 5 >= max * 2 && hp > threat / 2 + threat / 8 && big_round_due()
+}
+
+/// Whether `actor` should take the Spirit stance against a party-wide hitter
+/// (Van Saryu's Earthquake): in a fight that forbids running, a member whose
+/// HP the foe's party-wide hit ([`AOE_HIT`]) would take to zero, but whom the
+/// stance's halving lets live through it, guards rather than attacks. A
+/// member below even the halved hit is the heal arm's; the guard is for the
+/// band between, where it turns a death into a scratch whichever way the
+/// round's turn order falls.
+fn wants_aoe_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    // A foe that telegraphs its party-wide hit (a charge latch) is guarded on
+    // the tell ([`wants_guard`]); guarding on HP alone against it spends the
+    // rounds between charges in the stance, and Xain outlasted the battle
+    // cap that way with every member alive.
+    if !w.battle.no_escape || CHARGE_SEEN.with(std::cell::Cell::get) {
+        return false;
+    }
+    let aoe = AOE_HIT.with(std::cell::Cell::get);
+    let Some(&hp) = projected_hp(w).get(usize::from(actor)) else {
+        return false;
+    };
+    // Only against a hit that takes two fifths of the member or more (an
+    // Earthquake is over half of a level-20 Vahn). Against lighter
+    // party-wide hits the stance only costs the swings: Rogue (`rugi`
+    // P2[38]) and the `chitei2` P2[13] fight both ran out the battle cap
+    // with the party healthy.
+    let max = u32::from(w.actors[usize::from(actor)].battle.max_hp);
+    // Nor on the round after a heavy one from a foe that has never hit hard
+    // twice running: Rogue's party-wide hit comes every other round, the
+    // round after it is quiet, and guarding through it as well (every member
+    // sits inside one unguarded hit) left nobody swinging - the cadence arm
+    // ([`wants_guard`]) covers its heavy rounds.
+    let quiet_next = ROUND_HISTORY.with(|h| {
+        let h = h.borrow();
+        let peak = h.iter().copied().max().unwrap_or(0);
+        let big = |x: u32| peak > 0 && x * 3 >= peak;
+        h.last().is_some_and(|&l| big(l)) && !h.windows(2).any(|p| big(p[0]) && big(p[1]))
+    });
+    aoe > 0 && !quiet_next && aoe * 5 >= max * 2 && hp > aoe * 5 / 8 && hp <= aoe + aoe / 8
+}
+
+/// [`wants_aoe_guard`], taken ahead of a heal: the member is the one in
+/// danger and no ally is worse off (down, or below even the halved hit). The
+/// stance is up from the commit, so it covers a foe that acts first; a heal
+/// on itself lands only on the member's own turn, which the round's drawn
+/// order may put behind the Earthquake that drops it.
+fn guard_before_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if !wants_aoe_guard(w, actor) {
+        return false;
+    }
+    let aoe = AOE_HIT.with(std::cell::Cell::get);
+    projected_hp(w)
+        .iter()
+        .enumerate()
+        .all(|(i, &h)| i == usize::from(actor) || h > aoe * 5 / 8)
+}
+
+/// Whether a living foe holds its ability latch - the wind-up of a charge
+/// body (Xain's Bull Charge) before the party-wide hit it sets up. See
+/// [`wants_guard`].
+fn foe_charged(w: &legaia_engine_core::world::World) -> bool {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (n..w.actors.len()).any(|i| {
+        w.actors[i].battle.hp > 0
+            && w.battle
+                .monster_ai_state
+                .dat
+                .get(i - n + 4)
+                .is_some_and(|&v| v != 0)
+    })
 }
 
 /// A **solo duel**: one party member against a no-escape fight whose foe
@@ -1608,7 +1672,34 @@ fn wanted_item(
         })
         .count();
     let raw: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
+    // The backup never repeats the committed item when the bag holds only a
+    // few: a second Healing Fruit behind the first spends one of two on what
+    // the first already does whenever its owner acts ahead of the foe, and
+    // the next Earthquake then finds the bag without one. An item the bag
+    // holds by the dozen (a Healing Flower) is a fair backup. Nor does it
+    // aim a second single heal or revive at the member the first one is for:
+    // the backup is for someone else the hit would drop (Xain's single-target
+    // swings drew two Flowers onto one member round after round, and the
+    // fight ran out the pad budget on heals).
+    let mut spent: Vec<u8> = Vec::new();
+    let mut covered: Vec<usize> = Vec::new();
     if committed == 1 && aoe > 0 && raw.iter().any(|&h| h > 0 && h <= aoe + aoe / 8) {
+        for (actor, p) in w.battle.round_flow.pending.iter().enumerate().take(n) {
+            let Some(legaia_engine_core::battle_round::PendingPartyAction::Item {
+                item_id, ..
+            }) = p
+            else {
+                continue;
+            };
+            if w.party.inventory.get(item_id).copied().unwrap_or(0) < 10 {
+                spent.push(*item_id);
+            }
+            if !w.tables.item_catalog.is_all_party(*item_id)
+                && let Some(t) = ITEM_TARGET.with(|t| t.borrow()[actor])
+            {
+                covered.push(usize::from(t));
+            }
+        }
         hp = raw;
     }
     let threat = BIGGEST_HIT.with(std::cell::Cell::get);
@@ -1629,18 +1720,23 @@ fn wanted_item(
     // A member a committed revive brings back is still down while the
     // window is open, and the target cursor refuses a heal on it (the
     // confirm bounces): it is not a heal target until it stands.
-    let danger = |i: usize| hp[i] > 0 && w.actors[i].battle.hp > 0 && hp[i] < limit(i);
-    let dead: Vec<usize> = (0..n).filter(|&i| hp[i] == 0).collect();
+    let danger = |i: usize| {
+        hp[i] > 0 && w.actors[i].battle.hp > 0 && hp[i] < limit(i) && !covered.contains(&i)
+    };
+    let dead: Vec<usize> = (0..n)
+        .filter(|&i| hp[i] == 0 && !covered.contains(&i))
+        .collect();
     let hurt: Vec<usize> = (0..n).filter(|&i| danger(i)).collect();
     if dead.is_empty() && hurt.is_empty() {
         return None;
     }
     let ids: Vec<u8> = ids
         .filter(|&id| {
-            w.tables
-                .item_catalog
-                .get(id)
-                .is_some_and(|e| e.usable_in_battle)
+            !spent.contains(&id)
+                && w.tables
+                    .item_catalog
+                    .get(id)
+                    .is_some_and(|e| e.usable_in_battle)
         })
         .collect();
     if let Some(&d) = dead.first() {
@@ -1925,7 +2021,14 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
+            CommandPhase::Menu { .. } if lesson.is_none() && guard_before_heal(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
+            // One party-wide hit from death with nothing to heal: the stance.
+            CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
             // A solo duel builds its gauge between Arts turns.
             CommandPhase::Menu { .. } if lesson.is_none() && duel_wants_spirit(w, cmd.actor) => {
                 PadButton::Down.mask()
@@ -2097,6 +2200,7 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
     ROUND_LOSS.with(|r| r.set([0; 3]));
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
     AOE_HIT.with(|a| a.set(0));
+    CHARGE_SEEN.with(|c| c.set(false));
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
     let party_hp = |s: &BootSession| -> Vec<u16> {
@@ -2144,6 +2248,9 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
         if let Err(e) = session.tick() {
             return Some(Run::Error(format!("{e:#}")));
         }
+        if foe_charged(&session.host.world) {
+            CHARGE_SEEN.with(|c| c.set(true));
+        }
         let foe_now = foe_hp(session);
         if foe_now < foe_prev {
             foe_dropped_at = t;
@@ -2166,10 +2273,13 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             }
             if trace_hits {
                 eprintln!(
-                    "    [round] t={t} history {:?} due {}",
+                    "    [round] t={t} history {:?} due {} aoe {} hp {:?}",
                     ROUND_HISTORY.with(|h| h.borrow().clone()),
-                    big_round_due()
+                    big_round_due(),
+                    AOE_HIT.with(std::cell::Cell::get),
+                    party_hp(session),
                 );
+                last_cmd = Default::default();
             }
         }
         was_window = window;
@@ -2187,6 +2297,9 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             for (i, p) in w.battle.round_flow.pending.iter().enumerate() {
                 if let Some(p) = p {
                     let s: String = format!("{p:?}").chars().take(70).collect();
+                    if last_cmd[i] != s {
+                        eprintln!("    [commit] t={t} actor {i}: {s}");
+                    }
                     last_cmd[i] = s;
                 }
             }
@@ -6280,6 +6393,11 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 Run::Released | Run::Parked(_) => {}
             }
         }
+        let boss_band_live = first_tile.keys().any(|&rec| {
+            record_stages_fight(&mf, &man, 2, usize::from(rec))
+                && partition2_record_gates(&mf, &man, usize::from(rec))
+                    .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2))
+        });
         for (&rec, &tile) in &first_tile {
             if let Some(w) = wiped(session) {
                 return Err(w);
@@ -6303,6 +6421,14 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             walked.insert(rec);
             let f0 = flags_of_world(session);
             ran += 1;
+            // A walk-on that stages a fight (`jagaroom` P2[9], Van Saryu) is
+            // a boss approach like a stager's: a player tops the party up
+            // before stepping on. So is any walk in a scene where such a band
+            // is live, since the route to another beat can cross it: the
+            // walk to `jagaroom` P2[4] runs over P2[9]'s tiles.
+            if pad_hand() && boss_band_live {
+                pad_field_heal(session, 900);
+            }
             let r = if pad_hand() {
                 // A band is often several tiles wide and walled on some of
                 // them (`retockin` P2[42], Lord Saryu's audience, spans

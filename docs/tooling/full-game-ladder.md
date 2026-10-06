@@ -445,7 +445,22 @@ heavy, quiet (no two heavy rounds back to back all battle), the coming round
 is the heavy one: a member whose HP, once the round's committed heals land,
 the guard's halving lets live through it takes Spirit instead of attacking
 (Rogue alternates Element Change with a party-wide hit, off its picker's
-round parity). A foe on any other cycle gets no guard. A fight runs at least
+round parity). A foe on any other cycle gets no guard on cadence, but once a
+party-wide hit has taken two fifths of a member or more (Van Saryu's
+Earthquake), a member that hit would drop and the guard would not takes
+Spirit, ahead of healing itself when no ally is worse off; not on the round
+after a heavy one from a foe that has never hit hard twice running, and never
+against a foe that telegraphs its hit with a charge latch.
+
+The heals follow the bag. A second member backs up a committed heal while
+someone stands within one party-wide hit of death (turn order is drawn per
+round, so the first may act after the foe), but never with the same item
+when the bag holds fewer than ten, and never on the member the first single
+heal or revive is already for. A walk in a scene with a live fight-staging
+band (`jagaroom` P2[9]) starts at full strength too, since the route to
+another beat can cross the band.
+
+A fight runs at least
 60 000 ticks and goes on past that while a foe's HP is still dropping, up to
 240 000; it is unresolved only once 12 000 ticks pass with no foe losing HP.
 
