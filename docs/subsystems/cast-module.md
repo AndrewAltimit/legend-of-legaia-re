@@ -1942,6 +1942,70 @@ Cort's first form fights the first half of his HP behind a halved-damage
 shield, and his Evil Seru Magic only opens after it breaks. The engine carries
 the word as `MonsterAiState::flag_bd84` (`World::tick_mystic_shield_break`).
 
+### The fourteen phase-chain bodies
+
+The tables above leave fourteen tick bodies, each read off its owning image.
+Seven sit behind a trampoline arm: PROT 0942 `0xAA`, 0956 `0x75`, 0959
+`0x7A`, 0960 `0xA6` (Neo Star Slash), 0961 `0xA1` / `0xB4`, 0963 `0xB3`
+and 0964 `0xB0..=0xB2`. The other seven are called directly by their tick
+arm: PROT 0919 (Spoon), 0935, 0936, 0937, 0939, 0947 and 0948. Their
+simulation footprint is the band's skeleton and nothing more. Each has a head
+over the module phase, arms that stage clips and set `+0x21D` rates and
+`ctx[+0x278]`, an exit per arm (advance, a literal phase, or the terminal
+clear of the returned register), and at most one damage site per arm. So the
+port is data rather than code. `legaia_engine_vm::cast_module_ticks::CHAIN_BODIES`
+holds one descriptor per body, with every arm's landing VA and every stage,
+rate and wrapper site. `run_chain_body` interprets the descriptors, and
+`World::run_cast_module_code` drives it. The disc-gated
+`crates/engine-vm/tests/cast_chain_bodies_real.rs` re-derives each descriptor
+from the owning image: the 0898 arm that names the body, the head reaching
+every arm, and the instruction at every cited site.
+
+Four of the bodies need more than a descriptor:
+
+- **PROT 0964 forks three ways inside the body.** Its three ids run the same
+  code, and nothing in it reads `+0x1DF`. Arm 1 instead picks one of three
+  six-arm variants (phases `2..`, `0x32..`, `0x64..`) from `0x801C8FE4`,
+  which holds the roll the module's own `0xAF` Element Change body last
+  accepted.
+- **PROT 0956 `0x75` steals a turn.** After its hit it sets
+  `+0x16E |= 0x400` on a live victim and runs the turn-steal idiom (refund,
+  initiative clear, `ctx[+0x1A]` bump, `0x801F6FC4..0x801F70A8`). The record
+  immunity bits (`+0x6BC & 0x18000000`) that spare a victim are not visible
+  to the port.
+- **PROT 0961 is two casts.** In formation `0xB5` it rolls
+  `FUN_801DD4B0(0x880)` per party seat. In any other formation it writes a
+  flat `9999` with no wrapper and forces battle state 5. The port carries the
+  `0xB5` path.
+- **PROT 0919 heals.** It writes `+0x14C` directly, with no wrapper.
+
+The hit on every one of these bodies is the fold's (the
+[one-owner rule](#tick-abi-caster-victim-staging)). The fold seeds the hit with the baked
+power, and the descriptor records the hit's site without applying it.
+
+**Two rules come with the runner.**
+
+1. **Caster stages.** A body with a `CAPTURE_CASTER_STAGES` row has its
+   caster clips replayed ahead of its arms, each to its clip's end. The
+   runner walks one arm per tick, and staging the same literals again would
+   cut that wind-up short, so it leaves those bodies' caster stages to the
+   replay.
+2. **Rates.** A `+0x21D` store is carried only when the body itself returns
+   the actor to rate `8`. PROT 0942's `0xAA`, 0960's `0xA6`, 0961 and 0963
+   leave their caster slowed or frozen and rely on a reset outside the
+   module.
+
+**The fold waiver is keyed on `(entry, body)`.** Six images put a body at the
+load base `0x801F69D8`, and one of them is PROT 0965's Doomsday, a whole-row
+sweep that owns its fold. `tick_body_owns_the_fold` used to match the VA
+alone. Once these bodies walked their phase past Doomsday's sweep arm
+(`0x0B`), the fold waived the hit of 0956's `0x75`, 0961 and 0964's
+`0xB0..=0xB2`, and their casts dealt nothing.
+
+PROT 0948's other routine, `0x801F726C`, is not a second body. It is the
+beam's packet builder, called only from arm 3 of the 0948 body
+(`0x801F6EF4`), and it writes no actor or context state.
+
 ### The player Seru band's tick bodies are code, not data
 
 The verdict table above answers for each module's **stager** - the

@@ -506,8 +506,8 @@ impl World {
         // would leave the cast owed forever instead of double-applied.
         if let Some(entry) = self.cast_module_for(pc.spell_id)
             && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
-            && vm::cast_module_ticks::tick_body_owns_the_fold(body)
-            && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(body)
+            && vm::cast_module_ticks::tick_body_owns_the_fold(entry, body)
+            && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(entry, body)
             && self.casting.module_phase > arm
         {
             return;
@@ -2850,6 +2850,27 @@ impl World {
                     None,
                 )),
                 // --- end W1-D ---
+                // The phase-chain bodies (`cast_module_ticks::CHAIN_BODIES`):
+                // PROT 0942 `0xAA`, 0956 `0x75`, 0959, 0960 `0xA6`, 0961,
+                // 0963 and 0964 `0xB0..=0xB2`. Their hits are the fold's.
+                (e, Some(b)) if ticks::chain_body_for(e, b).is_some() => {
+                    let chain = ticks::chain_body_for(e, b).expect("guarded");
+                    let selector = if e == 964 {
+                        self.cast_element_change_last_roll()
+                    } else {
+                        0
+                    };
+                    let t = ticks::run_chain_body(
+                        chain,
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        &mut seat,
+                        selector,
+                    );
+                    run.item_refund = t.refund;
+                    Some(t.step)
+                }
                 // Every ported trampoline arm the band names. An arm whose
                 // body has no port ticks nothing, which is exactly what
                 // retail's fall-through does for an id the trampoline does
@@ -3021,6 +3042,23 @@ impl World {
                     step
                 }
                 // --- end W1-C ---
+                // The phase-chain bodies whose tick arm calls them directly
+                // (`cast_module_ticks::CHAIN_BODIES`): PROT 0919, 0935, 0936,
+                // 0937, 0939, 0947 and 0948. Their hits and heals are the
+                // fold's.
+                e if ticks::direct_chain_body(e).is_some() => {
+                    let chain = ticks::direct_chain_body(e).expect("guarded");
+                    let t = ticks::run_chain_body(
+                        chain,
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        &mut seat,
+                        0,
+                    );
+                    run.item_refund = t.refund;
+                    Some(t.step)
+                }
                 _ => None,
             }
         };

@@ -970,6 +970,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
     let mut checked = 0usize;
     let mut tick_owned = Vec::new();
     let mut fold_owned = 0usize;
+    let mut lost = Vec::new();
     // Each cast runs from arm 0; PROT 0960's Plasma Strike runs a second
     // time from its burst arm, because its earlier arms wait on clips this
     // synthetic world never plays, so the walk from 0 never reaches the burst.
@@ -1031,6 +1032,9 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
                 }
             }
             let after_tick = hp(&world);
+            // A branch with no damage site (PROT 0953's charge) waives the
+            // fold on purpose; that is not a lost hit.
+            let waived = world.casting.module_skips_fold;
             world.fold_pending_cast();
             let after_fold = hp(&world);
             let tick_hit = start != after_tick;
@@ -1044,11 +1048,23 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
                 tick_owned.push((entry, id));
             } else if fold_hit {
                 fold_owned += 1;
+            } else if start_arm == 0
+                && !waived
+                && legaia_engine_vm::cast_module_ticks::capture_site_power(entry, id).is_some()
+            {
+                // A body with a baked damage site owes its hit through one
+                // owner or the other; landing it through neither is the
+                // fold waived by a sweep arm another image's body wears.
+                lost.push((entry, id));
             }
             checked += 1;
         }
     }
     eprintln!("[ok] {checked} casts; tick-owned {tick_owned:?}; fold-owned {fold_owned}");
+    assert!(
+        lost.is_empty(),
+        "damaging casts that landed through neither owner: {lost:x?}"
+    );
     assert!(checked >= 32, "the walk reached only {checked} casts");
     assert!(
         tick_owned.iter().any(|&(e, _)| e == 960),

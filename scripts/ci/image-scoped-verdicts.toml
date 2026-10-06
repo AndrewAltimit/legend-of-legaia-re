@@ -93,3 +93,9 @@
 
 [cast_chaos_flare]
 "801f81dc" = ["slot_b_spawn_stagers", "PROT 0951's move-VM spawn stager (the ignore list's row at this VA): four spawn calls, no damage wrapper, output staged by legaia_asset::cast_effect_pool. PROT 0910's different routine at this VA is ported (its tag names 0910)."]
+
+[cast_terio_punch]
+"801f7624" = ["slot_b_spawn_stagers", "PROT 0953's move-VM spawn stager, the 0x801F6734 row 50 for that entry (0x801F7624..0x801F77C8, 420 B, read from 0953's own bytes): three arms on a1 - 0 and 1 one FUN_80021B04 spawn each (records 0x801F78FC / 0x801F794C), 2 three loops of three spawns (records 0x801F7D70 / 0x801F7DB4 / 0x801F7E08). No damage wrapper; its only stores are to the stack and to +0x3E of the records it just spawned, so its whole output is spawn records, staged by legaia_asset::cast_effect_pool through World::spawn_cast_module_fx. Unlike the other rows of the category it also draws six times from the shared RNG (two rand() per arm-2 loop, 0x801F76B4 / 0x801F7704) to jitter those records. The VA is not a function in PROT 0900 (an interior GTE load) or PROT 0943 (its trampoline)."]
+
+[cast_cross_beam]
+"801f726c" = ["prim_builder", "Cross Beam's beam packet builder in PROT 0948 (0x801F726C..0x801F8504, a prologue head in 0948's own bytes). Its one reference of any form in 0948 or 0898 is the jal at 0x801F6EF4 in the tick body's arm 3 (FUN_801F69F0, ported as cast_module_ticks::CROSS_BEAM_CHAIN). It takes primitives from the scratchpad packet cursor 0x1F8003A0, fills them and links them with FUN_8003D2C4 (x12) and FUN_80059010 (x2); it writes no actor or battle-context state. The engine draws the cast through the effect pool and does not reproduce this beam's packets - a presentation gap, not a simulation one."]

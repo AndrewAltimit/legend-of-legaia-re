@@ -171,17 +171,27 @@ pub fn sweep_damage_shape_for(body: u32) -> Option<&'static CastDamageShape> {
         .map(|(_, s)| s)
 }
 
-/// Does this tick body own its cast's HP outcome outright - i.e. does the
-/// module write `actor+0x14C` itself, so the band's generic fold must not
-/// also run? True for exactly the three whole-row sweeps.
-pub fn tick_body_owns_the_fold(body: u32) -> bool {
-    sweep_damage_shape_for(body).is_some()
+/// Does the tick body PROT `prot_entry` runs at `body` own its cast's HP
+/// outcome outright - i.e. does the module write `actor+0x14C` itself, so
+/// the band's generic fold must not also run? True for exactly the three
+/// whole-row sweeps.
+///
+/// The entry is part of the key: `0x801F69D8` is PROT 0965's Doomsday and
+/// also a body in five other images (0956's `0x75`, 0960's `0xA6`, 0961,
+/// 0962's `0xA5`, 0964's `0xB0..=0xB2`), none of which owns its fold. Keyed
+/// on the VA alone, every one of them waived its hit once its phase passed
+/// Doomsday's sweep arm.
+pub fn tick_body_owns_the_fold(prot_entry: u32, body: u32) -> bool {
+    sweep_damage_shape_for(body).is_some_and(|s| s.prot_entry == prot_entry)
 }
 
 /// The module phase a whole-row sweep body applies its damage on - the one
 /// arm that reaches the wrapper. A caller deciding whether the module has
 /// already folded compares the live phase against this.
-pub fn sweep_arm_for(body: u32) -> Option<u8> {
+pub fn sweep_arm_for(prot_entry: u32, body: u32) -> Option<u8> {
+    if !tick_body_owns_the_fold(prot_entry, body) {
+        return None;
+    }
     match body {
         CHAOS_BREATH_TICK => Some(CHAOS_BREATH_SWEEP_ARM),
         MYSTIC_CIRCLE_TICK => Some(MYSTIC_CIRCLE_SWEEP_ARM),
