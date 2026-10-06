@@ -258,7 +258,7 @@
     {
       "key": "summon_render",
       "name": "Field render library",
-      "desc": "Slot-B renderer for town scenes",
+      "desc": "Slot-B ground + decoration renderer for field scenes",
       "kind": "game",
       "prot": "0900",
       "functions": 12,

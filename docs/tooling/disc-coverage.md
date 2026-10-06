@@ -1318,6 +1318,17 @@ Read a warning as "the published number is behind this tree", never as "the
 number is wrong": the tiles were correct when they were written, and the drift
 is the interval since.
 
+The four structural tiles saturate, so the homepage leads with a second row
+that still moves: how far the port plays. `site/_gen.py` reads it at build time
+from two committed instrument baselines, so it needs no disc and cannot go
+stale against the tree:
+
+- the [full-game ladder](full-game-ladder.md)'s contiguous milestone counts at
+  tier `progresses` and tier `pad`, each over the baseline's own segment count;
+- the [retail compare](retail-compare.md) `image` channel's **mean** over the
+  baselined states that carry a scored frame, with that N printed beside it -
+  the mean rather than the median, so a few badly drawn states move the figure.
+
 ### Per-image port status
 
 The four tiles are whole-project figures, and three of them saturate: once the

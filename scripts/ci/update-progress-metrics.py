@@ -138,7 +138,7 @@ IMAGE_ROLES = {
     "field": ("Field / event VM", "Towns, dungeons, dialogue, the world map", "game"),
     "battle_action": ("Battle", "Battle state machine, damage, effects", "game"),
     "menu": ("Menu, shop + save", "Pause menu, equipment, shops, save screen", "game"),
-    "summon_render": ("Field render library", "Slot-B renderer for town scenes", "game"),
+    "summon_render": ("Field render library", "Slot-B ground + decoration renderer for field scenes", "game"),
     "world_map_render": ("World map renderer", "Kingdom-map terrain companion", "game"),
     "cutscene_str": ("FMV player", "STR / MDEC movie playback", "game"),
     "field_battle_intro": ("Battle intro", "Field-to-battle transition", "game"),

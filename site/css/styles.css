@@ -3186,6 +3186,20 @@ kbd {
 .stats-foot { margin-top: 0.55rem; text-align: right; font-size: 0.82rem; font-weight: 600; }
 @media (max-width: 1000px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 540px) { .stats { grid-template-columns: 1fr; } }
+.stats-group {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.stats-group:first-child { margin-top: 0; }
+.stats.stats-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 540px) { .stats.stats-3 { grid-template-columns: 1fr; } }
+a.stat-link { color: inherit; text-decoration: none; transition: border-color 0.15s; }
+a.stat-link:hover, a.stat-link:focus-visible { border-color: var(--border-hi); }
+a.stat-link:hover .lbl { color: var(--text); }
 
 /* ---------- Per-image port status (below the stat strip) ---------- */
 .ip-block { margin-top: 2rem; }
@@ -3200,8 +3214,14 @@ kbd {
 .ip-count { font-size: 0.8rem; color: var(--text-dim); }
 .ip-lede { margin: 0.5rem 0 0.9rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.55; max-width: 72ch; }
 .ip-key { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin: 0 0.3em 0 0.1em; vertical-align: baseline; }
+/* One hue, three lightness steps (ordinal ramp validated against --bg-card):
+   ported is the strongest, then engine-native, then no retail behaviour. The
+   empty track is what is open. The old native fill was --accent-line, a 38%
+   alpha blue that composited to near the track colour, so a 100% card whose
+   functions were mostly native read as a third-full bar. */
 .ip-key.p, .ip-bar .p { background: var(--acc); }
-.ip-key.n, .ip-bar .n { background: var(--accent-line); }
+.ip-key.n, .ip-bar .n { background: #86aef2; }
+.ip-key.b, .ip-bar .b { background: #c3d6f8; }
 .ip-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr));
@@ -3217,7 +3237,7 @@ kbd {
   flex-direction: column;
 }
 .ip-card.done { border-color: rgba(70, 201, 141, 0.35); }
-.ip-top { display: flex; align-items: center; gap: 0.5rem; justify-content: space-between; }
+.ip-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; justify-content: space-between; }
 .ip-name { font-weight: 700; font-size: 0.9rem; color: var(--text-bright); overflow-wrap: anywhere; }
 .ip-badge {
   flex: none;
@@ -3236,8 +3256,8 @@ kbd {
 .ip-num { margin-top: 0.55rem; font-size: 1.35rem; font-weight: 800; color: var(--text-bright); line-height: 1; letter-spacing: -0.02em; }
 .ip-num small { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
 .ip-of { margin-left: 0.45rem; font-size: 0.72rem; font-weight: 500; letter-spacing: 0; color: var(--text-dim); }
-.ip-bar { display: flex; margin: 0.5rem 0 0.5rem; height: 4px; border-radius: 4px; background: var(--line-soft); overflow: hidden; }
-.ip-bar i { display: block; height: 100%; }
+.ip-bar { display: flex; gap: 2px; margin: 0.5rem 0 0.5rem; height: 6px; border-radius: 4px; background: #262c38; overflow: hidden; }
+.ip-bar i { display: block; height: 100%; flex: 0 1 auto; min-width: 2px; }
 .ip-foot { margin-top: auto; font-size: 0.72rem; color: var(--text-dim); line-height: 1.5; }
 .ip-open { color: var(--warn); font-weight: 600; }
 .ip-more { margin-top: 0.8rem; }
