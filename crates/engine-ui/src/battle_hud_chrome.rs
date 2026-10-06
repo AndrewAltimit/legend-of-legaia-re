@@ -291,12 +291,37 @@ pub fn class0_frame_draws_at(
     out
 }
 
+/// One banner line as the text engine lays it: the authoring escape `^X`
+/// becomes the runtime icon escape `0xCE (X - 0x2D)`, the preprocessor
+/// `FUN_80036514`'s rewrite, so a spell name carrying its element plate
+/// (`^A Gimard` - [`legaia_font::Font::layout`] places escape `0x14`, the
+/// fire plate, and advances its `20`) draws the plate in front of the text.
+/// Every other byte passes through.
+///
+/// REF: FUN_80036514
+pub fn banner_line_bytes(line: &str) -> Vec<u8> {
+    let b = line.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'^' && i + 1 < b.len() && b[i + 1] >= 0x2D {
+            out.push(legaia_font::ESCAPE_GLYPH_BYTE);
+            out.push(b[i + 1] - 0x2D);
+            i += 2;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    out
+}
+
 /// The banner's text rows, in stage pixels: the message laid out at
 /// [`BANNER_PEN`] on the [`BANNER_ROW_PITCH`].
 pub fn message_banner_text_draws_for(font: &legaia_font::Font, text: &str) -> Vec<TextDraw> {
     let mut out = Vec::new();
     for (i, line) in text.lines().enumerate() {
-        let layout = font.layout_ascii(line);
+        let layout = font.layout(&banner_line_bytes(line));
         out.extend(text_draws_for(
             &layout,
             (BANNER_PEN.0, BANNER_PEN.1 + i as i32 * BANNER_ROW_PITCH),
@@ -312,7 +337,7 @@ pub fn message_banner_text_draws_for(font: &legaia_font::Font, text: &str) -> Ve
 pub fn message_banner_content(font: &legaia_font::Font, text: &str) -> (i32, i32) {
     let w = text
         .lines()
-        .map(|l| font.layout_ascii(l).advance_x as i32)
+        .map(|l| font.layout(&banner_line_bytes(l)).advance_x as i32)
         .max()
         .unwrap_or(0)
         .max(BANNER_BOX_W);
@@ -388,6 +413,17 @@ impl BattleBadgeRects {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `^X` is the authoring form of the icon escape: `FUN_80036514` turns
+    /// it into `0xCE (X - 0x2D)`, so `^A` is the fire plate `0x14`.
+    #[test]
+    fn a_banner_line_expands_the_caret_icon_escape() {
+        assert_eq!(
+            banner_line_bytes("^A Gimard's"),
+            [&[0xCE, 0x14][..], b" Gimard's"].concat()
+        );
+        assert_eq!(banner_line_bytes("No effect."), b"No effect.".to_vec());
+    }
 
     /// The packet-pinned frames: content pen `(16, 12)` with the record's
     /// 280-wide box frames `(8, 4)` 296x28 (`noa_levelup_banner`), and the

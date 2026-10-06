@@ -266,8 +266,13 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         banner.element,
         legaia_engine_core::world::MAGIC_LEVEL_BANNER_ELEMENT
     );
-    assert_eq!(
-        banner.text,
-        legaia_engine_core::magic_xp::magic_level_increased_message(&name)
+    // The line opens with the name's element plate when the spell table
+    // carries one (`^A Gimard...`), which the banner layout draws.
+    assert!(
+        banner
+            .text
+            .ends_with(&legaia_engine_core::magic_xp::magic_level_increased_message(&name)),
+        "{:?}",
+        banner.text
     );
 }
