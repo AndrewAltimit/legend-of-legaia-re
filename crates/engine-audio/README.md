@@ -69,7 +69,7 @@ Capture, diff and the retail side are documented in
 
 | Module | Surface |
 |---|---|
-| [`spu`](src/spu/mod.rs) | Top-level `Spu` struct with `tick`, `key_on_mask`, `key_off_mask`, `find_idle_voice`. |
+| [`spu`](src/spu.rs) | Top-level `Spu` struct with `tick`, `key_on_mask`, `key_off_mask`, `find_idle_voice`. |
 | [`spu::voice`](src/spu/voice.rs) | Per-voice `Voice` (sample addr, loop addr, pitch, ADSR, L/R volume). Resamples through the hardware's 4-point Gaussian interpolator. |
 | [`spu::gauss`](src/spu/gauss.rs) | The SPU's 512-entry Gaussian interpolation coefficient ROM + the 4-tap mix (published hardware spec; matters because Legaia's 22.05 kHz VAGs make every voice run at a non-unity pitch step). |
 | [`spu::adsr`](src/spu/adsr.rs) | 5-phase envelope state machine matching the PSX `(adsr1, adsr2)` word layout (linear / exponential / increase / decrease). |

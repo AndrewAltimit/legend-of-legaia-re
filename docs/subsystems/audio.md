@@ -1115,7 +1115,7 @@ A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, readin
 - **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across the corpus and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
 - **The output depth is `0x3264` on both sides**, in battle and field states alike. `vLOUT` / `vROUT` (SPU `0x1F801D84` / `0x86`) are what libspu's `SpuSetReverbDepth` writes, and they sit *outside* the 32-register preset block, so matching the Studio C coefficients says nothing about them. `mBASE` reads `0xF204`, i.e. a work area at `0x79020` of size `0x6FE0`, which is Studio C's own size - a second, independent confirmation of the preset.
 
-The engine installs that global half once at SPU init with [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this, for the native and browser hosts alike): `ReverbMode::StudioC` at the measured depth `reverb::RETAIL_OUTPUT_VOL`.
+The engine installs that global half once at SPU init with [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu.rs) (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this, for the native and browser hosts alike): `ReverbMode::StudioC` at the measured depth `reverb::RETAIL_OUTPUT_VOL`.
 
 #### Per-voice reverb send is the tone's mode bit 2
 
@@ -1352,7 +1352,7 @@ for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 
 | Module | Maps to |
 |---|---|
-| [`spu::Spu`](../../crates/engine-audio/src/spu/mod.rs) | The 24-voice mixer (one [`Voice`] per slot) + master volume + the [`spu::reverb`] network. |
+| [`spu::Spu`](../../crates/engine-audio/src/spu.rs) | The 24-voice mixer (one [`Voice`] per slot) + master volume + the [`spu::reverb`] network. |
 | [`spu::voice::Voice`](../../crates/engine-audio/src/spu/voice.rs) | Per-voice state: sample address, loop point, pitch, ADSR, L/R volume - the libspu `SpuSetVoiceAttr` surface. |
 | [`spu::adsr`](../../crates/engine-audio/src/spu/adsr.rs) | The 5-phase ADSR envelope (Attack-Decay-Sustain-Release-Off) with linear / exponential / increase / decrease modes per the standard PSX formula. Increasing phases step by the `+7..+4` (`7 - step_bits`) StepValue table; every *decreasing* phase (decay, linear/exponential release, sustain-decrease) steps by the `-8..-5` (`-8 + step_bits`) table - the two sign tables differ by one unit, so a decreasing phase driven from the increase table fades ~one step slow. The `(adsr1, adsr2)` words are read verbatim off the VAB tone metadata (a decoded tone's ADSR word equals the SPU `ADSRControl` register libspu writes at key-on - no transform). |
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
