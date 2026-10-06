@@ -3914,7 +3914,10 @@ follow-the-actor re-seat, not target-seeking motion; the per-target homing
 state lives in the `+0x1144` quads the terminator seeds and the move-power
 `+0x0E` list consumes. A separate prologue lane: `ctx[+0x263]` non-zero
 consumes the whole call, clearing the flag and bumping the actor's `+0x1F5`
-and `+0x1F6` cursors without spawning.
+and `+0x1F6` cursors without spawning. Its one writer is the melee kernel's
+limb-vs-height miss (`0x801EC554`,
+[battle-formulas.md](battle-formulas.md#the-limb-vs-height-miss)), ported with
+it as `World::consume_effect_skip_strobe`.
 
 Engine port: kernel `engine-core::action_effect_script` (stepper, rotation,
 terminator maths, `RetailRotationLut`), driven per battle frame by
@@ -4251,11 +4254,14 @@ as `legaia_asset::monster_archive::MonsterRecord::swing_class`. It is not a rare
 186 decodable records of the archive it reads `0` for 127, `1` for one, **`2` for 52** and
 **`3` for six** - so both of the classes the two kernels branch on are ordinary enemies, and both
 arms are reachable in normal play. Two kernels read it, both
-record-direct through `0x801C9348` and never off the actor: this arm, and the damage kernel's
-apply-mode look-ahead (§3, `0x801EE080`), where a class-`2` target connects only with power bytes
-in `0x01..=0x10` and a class-`3` target only with `0x11..=0x15`. Together they read as the
-height / posture class behind retail's limb-vs-height "Miss"; the disassembly pins the two
-effects, not the name.
+record-direct through `0x801C9348` and never off the actor: this arm, and the damage kernel - in
+its head, where a party hit whose power byte is of the wrong class **misses** outright
+(`0x801EC488..0x801EC554`,
+[battle-formulas.md](battle-formulas.md#the-limb-vs-height-miss)), and in its apply-mode
+look-ahead (§3, `0x801EE080`), which asks the same question of the hits still to come. A class-`2`
+target connects only with power bytes in `0x01..=0x10` and a class-`3` target only with
+`0x11..=0x15`. Together they read as the height / posture class behind retail's limb-vs-height
+"Miss"; the disassembly pins the effects, not the name.
 
 **Port.** `legaia_engine_vm::battle_action::basic_attack_queue`, byte-for-byte including the
 two-draws / no-draws RNG split. `engine-core`'s `World::seed_basic_attack_queue` calls it from

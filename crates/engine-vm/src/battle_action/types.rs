@@ -916,6 +916,18 @@ pub struct BattleActionCtx {
     ///
     /// REF: FUN_801E295C (`0x801E3A20`), FUN_801EC3E4 (`0x801EE0C0`)
     pub attack_x2_pass: u8,
+    /// `[+0x263]` - the **effect-record skip strobe**. The melee kernel's
+    /// limb-vs-height miss arm raises it (`sb v0,0x263(v1)` at `0x801EC554`,
+    /// [`crate::battle_action::limb_misses`]), and the next effect-script
+    /// call consumes it whole (`FUN_801DEA50`, `0x801DEBF4..0x801DEC48`):
+    /// it clears the byte and bumps the stepped actor's `+0x1F5` effect and
+    /// `+0x1F6` cue cursors without walking a record. The anim tick calls
+    /// the two routines back to back for the same actor (`0x800478A0` /
+    /// `0x800478B8`), so the missed swing loses the record it would have
+    /// fired next - its impact spark.
+    ///
+    /// REF: FUN_801EC3E4 (`0x801EC548`), FUN_801DEA50 (`0x801DEBF4`)
+    pub effect_skip_strobe: u8,
     /// `[+0x19]` - the **Spirit-action counter**, bumped once per Spirit
     /// action at the action seed (`lbu v0,0x8(s5)` / `addiu v0,v0,0x1` /
     /// `sb v0,0x8(s5)` at `0x801E2FF0..0x801E3000`, in the `jal 0x80056798`

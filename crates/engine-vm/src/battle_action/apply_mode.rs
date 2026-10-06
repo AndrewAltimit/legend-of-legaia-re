@@ -222,6 +222,54 @@ pub fn apply_mode(
     mode
 }
 
+/// The power-byte floor at and above which a hit connects with every target
+/// class (`sltiu a1,a0,0x16` / `beq a1,zero` at `0x801EC49C..0x801EC4A0`).
+pub const LIMB_MISS_CONNECTS_ALL: u8 = 0x16;
+/// The split between the two limb classes (`sltiu v0,a0,0x11` at
+/// `0x801EC4CC` and `0x801EC53C`): bytes below it are class bit
+/// [`CLASS_BIT_LOW`], bytes from it up to [`LIMB_MISS_CONNECTS_ALL`] are
+/// [`CLASS_BIT_HIGH`] - the same split the look-ahead classifies on.
+pub const LIMB_MISS_SPLIT: u8 = 0x11;
+
+/// Whether a **party** strike's hit misses a monster on the limb-vs-height
+/// law - the head gate of the melee kernel, which runs before the block roll
+/// and before any damage arithmetic.
+///
+/// The gate reads the hit's own power byte (`entry[actor[+0x1F4]]`,
+/// `0x801EC494`) and the target's record `+0x1E` swing class, record-direct
+/// through `0x801C9348[target - 3]` (`0x801EC4A8..0x801EC4C0`):
+///
+/// ```text
+/// 0x801EC488  if attacker >= 3      -> normal  (monsters never limb-miss)
+/// 0x801EC49C  if byte >= 0x16       -> normal  (connects with everything)
+/// 0x801EC4C4  class == 2 && byte >= 0x11 -> MISS
+/// 0x801EC500  class == 3 && byte <  0x11 -> MISS
+/// 0x801EC548  MISS: ctx[+0x263] = 1; j 0x801EECC0 (the +0x1F4 bump only)
+/// ```
+///
+/// So a class-`2` target connects only with bytes below `0x11` and a
+/// class-`3` target only with `0x11..=0x15` - the pair the apply-mode
+/// look-ahead ([`apply_mode`]) tests for "can anything left still connect".
+/// A miss rolls nothing (no `rand` draw), accumulates nothing, applies
+/// nothing and raises no flinch; the only side effect besides the hit-index
+/// bump is the `ctx[+0x263]` strobe that makes the action's effect script
+/// skip its next record (`FUN_801DEA50`, `0x801DEBF4..0x801DEC48`).
+///
+/// `attacker_is_party` stands in for retail's `attacker < 3` slot test (the
+/// port compacts party seating).
+///
+/// PORT: FUN_801EC3E4 (`0x801EC488..0x801EC554`)
+pub fn limb_misses(attacker_is_party: bool, power_byte: u8, target_swing_class: u8) -> bool {
+    if !attacker_is_party || power_byte >= LIMB_MISS_CONNECTS_ALL {
+        return false;
+    }
+    match target_swing_class {
+        MISS_CLASS_LOW => power_byte >= LIMB_MISS_SPLIT,
+        MISS_CLASS_HIGH => power_byte < LIMB_MISS_SPLIT,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod apply_mode_tests {
     use super::*;
@@ -358,5 +406,38 @@ mod apply_mode_tests {
         );
         // Without the bit the counter is inert.
         assert_eq!(apply_mode(0, 0, 0, 0), APPLY_MODE_NORMAL);
+    }
+
+    #[test]
+    fn the_limb_miss_gate_is_the_lookahead_connect_law() {
+        // Class 2 connects only below 0x11; class 3 only in 0x11..=0x15.
+        assert!(!limb_misses(true, 0x10, MISS_CLASS_LOW));
+        assert!(limb_misses(true, 0x11, MISS_CLASS_LOW));
+        assert!(limb_misses(true, 0x15, MISS_CLASS_LOW));
+        assert!(limb_misses(true, 0x10, MISS_CLASS_HIGH));
+        assert!(!limb_misses(true, 0x11, MISS_CLASS_HIGH));
+        assert!(!limb_misses(true, 0x15, MISS_CLASS_HIGH));
+        // 0x16 and up connect with every class.
+        for class in 0..=3 {
+            assert!(!limb_misses(true, 0x16, class));
+            assert!(!limb_misses(true, 0x1D, class));
+        }
+        // Classes 0 / 1 never miss; a monster attacker never misses.
+        assert!(!limb_misses(true, 0x12, 0));
+        assert!(!limb_misses(true, 0x05, 1));
+        assert!(!limb_misses(false, 0x12, MISS_CLASS_LOW));
+        assert!(!limb_misses(false, 0x05, MISS_CLASS_HIGH));
+        // Consistency with the look-ahead: a lone byte misses exactly when
+        // the apply mode finds nothing left that connects.
+        for b in 0x01..0x16u8 {
+            let bits = remaining_hit_class_bits(&[b, 0, 0, 0], 0, &[0u8; 16], 0xFF, no_entries);
+            for class in [MISS_CLASS_LOW, MISS_CLASS_HIGH] {
+                assert_eq!(
+                    limb_misses(true, b, class),
+                    apply_mode(bits, class, 0, 0) == APPLY_MODE_EARLY,
+                    "byte {b:#04x} class {class}"
+                );
+            }
+        }
     }
 }

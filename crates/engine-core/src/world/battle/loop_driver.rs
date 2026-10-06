@@ -1512,13 +1512,32 @@ impl World {
             )
         };
         let art = staged_art_constant(latched, chosen, party);
+        let Some(target) = self.resolve_attack_target(attacker) else {
+            return;
+        };
+        // The limb-vs-height miss (`0x801EC488..0x801EC554`): ahead of the
+        // equipment fold, the block roll and every damage stage, a party
+        // hit whose power byte cannot reach the target's `+0x1E` class does
+        // nothing but raise the effect-skip strobe and take the epilogue's
+        // `+0x1F4` bump (already taken by the caller). No accumulate, no
+        // apply, no flinch, no hit event - the earlier hit's apply-mode
+        // look-ahead has already landed any total this one could strand.
+        if vm::battle_action::limb_misses(party, hit.power_byte, self.attack_swing_class_of(target))
+        {
+            self.battle_ctx.effect_skip_strobe = 1;
+            self.consume_effect_skip_strobe(attacker as usize);
+            log::debug!(
+                "battle hit: slot {attacker} -> {target} hit {} pb {:#04x} MISS (class {})",
+                hit.hit_index,
+                hit.power_byte,
+                self.attack_swing_class_of(target)
+            );
+            return;
+        }
         {
             let mut host = BattleHostImpl { world: self };
             fold_weapon_atk_on_hit(&mut host, attacker, state, &hit);
         }
-        let Some(target) = self.resolve_attack_target(attacker) else {
-            return;
-        };
         let cursor_parked =
             self.actors[attacker as usize].battle.strike_index == STRIKE_CURSOR_PARKED;
         let last_of_clip = hit.hit_index >= 3
@@ -1577,6 +1596,28 @@ impl World {
                 applied,
                 is_art: art.is_some(),
             });
+    }
+
+    /// Consume the effect-record skip strobe `ctx[+0x263]` on `slot`: clear
+    /// it and bump the actor's effect (`+0x1F5`) and cue (`+0x1F6`) cursors
+    /// without walking a record - `FUN_801DEA50`'s `0x801DEBF4..0x801DEC48`
+    /// arm. Retail's consumer is the effect-script call the anim tick makes
+    /// for the same actor right after the kernel (`0x800478A0` ->
+    /// `0x800478B8`); the engine walks the effect script earlier in the frame
+    /// ([`Self::tick_battle_animations`]), so the strobe is consumed here, on
+    /// the actor whose hit raised it, instead of on the next frame's first
+    /// walk - which would be another seat's.
+    ///
+    /// PORT: FUN_801DEA50 (`0x801DEBF4..0x801DEC48`, the skip arm)
+    pub(in crate::world) fn consume_effect_skip_strobe(&mut self, slot: usize) {
+        if self.battle_ctx.effect_skip_strobe == 0 {
+            return;
+        }
+        self.battle_ctx.effect_skip_strobe = 0;
+        if let Some(a) = self.actors.get_mut(slot) {
+            a.battle_effect_cursor = a.battle_effect_cursor.wrapping_add(1);
+            a.battle_anim_cue_cursor = a.battle_anim_cue_cursor.wrapping_add(1);
+        }
     }
 
     /// The apply mode of one admitted hit - retail's `s2`
@@ -1732,6 +1773,16 @@ impl World {
         let n = hits.len();
         for (i, power) in hits.into_iter().enumerate() {
             let applied = next_is_end && i + 1 == n;
+            // The limb-vs-height miss gate (`vm::battle_action::limb_misses`)
+            // holds here too. Retail's apply-mode look-ahead lands a total
+            // early when nothing after it connects; the fallback has no
+            // look-ahead, so a missed last hit lands what is already there.
+            if vm::battle_action::limb_misses(party, power, self.attack_swing_class_of(target)) {
+                if applied {
+                    self.apply_combo_total(target);
+                }
+                continue;
+            }
             let dmg = self.land_melee_hit(attacker, target, power, staged, art.is_some(), applied);
             if let Some(art) = art {
                 self.apply_art_hit_side_data(attacker, target, art, i as u8, dmg);
@@ -1828,8 +1879,9 @@ impl World {
     /// selector-9 roll, which the port used to gate this strike on, is the
     /// **queued-action interrupt** check - a stun, not a miss. Retail's
     /// "Miss" on a normal attack is the limb-vs-height mismatch (`+0x1E`
-    /// class 2 / 3 against the power byte's class, `0x801EC494..0x801EC554`),
-    /// which the port does not model yet.
+    /// class 2 / 3 against the power byte's class, `0x801EC488..0x801EC554`,
+    /// [`vm::battle_action::limb_misses`]), which the callers test before
+    /// they get here.
     ///
     /// PORT: FUN_801EC3E4 (the accumulating body; the head is
     /// `legaia_engine_vm::battle_action::hit_event_admits`)
@@ -2930,6 +2982,62 @@ mod melee_cue_tests {
         a.battle_effect_script = Some(head);
         // The anim tick's `+0x1F7` write for the seated clip.
         a.battle_juggle_window = World::juggle_window_open(a);
+    }
+
+    /// The limb-vs-height miss (`0x801EC488..0x801EC554`): a party hit whose
+    /// power byte cannot reach the target's `+0x1E` class does no damage,
+    /// accumulates nothing, surfaces no hit event and consumes one effect
+    /// record and one cue - while a byte of the reachable class, or one at
+    /// `0x16` and above, resolves as before.
+    #[test]
+    fn a_limb_mismatched_party_hit_misses() {
+        use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+        let seat = |class: u8| {
+            let mut w = duel();
+            let mut cat = MonsterCatalog::new();
+            let mut def = MonsterDef::new(7, "Floater", 500, 10);
+            def.swing_class = class;
+            cat.insert(def);
+            w.set_monster_catalog(cat);
+            w.actors[1].battle_monster_id = Some(7);
+            w
+        };
+        let hit = |power_byte| vm::battle_action::HitEvent {
+            hit_index: 0,
+            power_byte,
+            event_frame: 4,
+        };
+        let frames = [4u8, 0, 0, 0];
+        for (class, pb, misses) in [
+            (vm::battle_action::MISS_CLASS_LOW, 0x12u8, true),
+            (vm::battle_action::MISS_CLASS_LOW, 0x0Cu8, false),
+            (vm::battle_action::MISS_CLASS_HIGH, 0x0Cu8, true),
+            (vm::battle_action::MISS_CLASS_HIGH, 0x12u8, false),
+            (vm::battle_action::MISS_CLASS_LOW, 0x18u8, false),
+            (0, 0x12u8, false),
+        ] {
+            let mut w = seat(class);
+            w.resolve_hit_event(0, hit(pb), [pb, 0, 0, 0], frames);
+            let events = std::mem::take(&mut w.battle.hit_events);
+            assert_eq!(
+                events.is_empty(),
+                misses,
+                "class {class} byte {pb:#04x}: {events:?}"
+            );
+            if misses {
+                assert_eq!(w.actors[1].battle.damage_accum, 0);
+                assert_eq!(w.actors[1].battle.hp, 500);
+                assert_eq!(w.actors[0].battle_effect_cursor, 1);
+                assert_eq!(w.actors[0].battle_anim_cue_cursor, 1);
+                assert_eq!(w.battle_ctx.effect_skip_strobe, 0, "consumed");
+            } else {
+                assert_eq!(w.actors[0].battle_effect_cursor, 0);
+            }
+        }
+        // A monster attacker never limb-misses, whatever the party seat reads.
+        let mut w = seat(vm::battle_action::MISS_CLASS_LOW);
+        w.resolve_hit_event(1, hit(0x12), [0x12, 0, 0, 0], frames);
+        assert_eq!(w.battle.hit_events.len(), 1);
     }
 
     /// A blocked hit skips the damage body (`bne s7,zero,0x801EE6D4`): no

@@ -2179,8 +2179,10 @@ refill the sole writer; the stage bump sits in the same block and was missed
 ([`battle-action.md`](../subsystems/battle-action.md#the-war-god-icons-per-stage-bump)).
 Monster record `+0x1E` is the limb-vs-height **swing class**, read through
 `0x801C9348` by `FUN_801EED1C` (class `2` gets one low swing) and by
-`FUN_801EC3E4`'s apply-mode look-ahead (class `2` connects only with power bytes
-`0x01..=0x10`, class `3` only with `0x11..=0x15`); across the archive's 186
+`FUN_801EC3E4` twice - its head miss gate (`0x801EC488..0x801EC554`: a party hit
+of the wrong class does nothing but raise `ctx[+0x263]`) and its apply-mode
+look-ahead (class `2` connects only with power bytes `0x01..=0x10`, class `3`
+only with `0x11..=0x15`); across the archive's 186
 records it reads `0` x127, `1` x1, `2` x52, `3` x6, so both arms are ordinary
 play. Both kernel copies gate everything on a monster target. Grade
 `disassembly` + measurement.

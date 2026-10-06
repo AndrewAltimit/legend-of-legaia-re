@@ -343,7 +343,7 @@ straight from the PROT `0898` bytes at their link addresses.
 | Distance is 30 for a straight first-hit walk-in, 0 after | **Confirmed shape; 30 is a measurement** | `ctx[+0x6D4] += *(u8*)0x1F800393` per approach step (`0x801E35DC..0x801E35EC`); zeroed after the first hit (`0x801EC88C`). The value is runtime scratchpad state, not a constant in the code. |
 | A minimum damage is enforced when Defense exceeds Offense | **Confirmed, and richer** | The underdog rewrite (`0x801ED308..0x801ED3E0`) plus the chip floor (`0x801ED4A0..0x801ED5C4`) - a rebuilt roll that scales with ATK, not a fixed floor. |
 | The random numbers are 2 bytes | **Corrected** | `FUN_80056798` is a veneer onto BIOS `rand`, which returns 15 bits (`0..0x7FFF`). Immaterial after the `% (x/8 + 1)` reduction. |
-| Blocking and status are separate | **Confirmed** | Venom / Toxic are the `x9/10` / `x7/10` scales above; the Spirit stance is the Defense triple; a petrified defender takes zero. The limb-height "Miss" is a size-class gate outside this routine. |
+| Blocking and status are separate | **Confirmed** | Venom / Toxic are the `x9/10` / `x7/10` scales above; the Spirit stance is the Defense triple; a petrified defender takes zero. The limb-height "Miss" is a separate gate in this routine's head, ahead of both (`0x801EC488..0x801EC554`, [below](#the-limb-vs-height-miss)). |
 
 What the engine got wrong before this check: it seeded a party member's
 attack from the **menu** aggregate (base plus every equipped item's full ATK)
@@ -439,6 +439,45 @@ different record now drops them; and, as an engine choice, any combo total
 still on a target when the band leaves `0x20` is landed there, so a clip set
 that breaks the guarantee can no longer leave live HP and the bar's display
 apart with the `0x51` settle gate (`FUN_801E7250`) holding forever.
+
+#### The limb-vs-height miss
+
+A party strike can **miss** a monster outright, and the test is the first
+thing the melee kernel does after its head guards - ahead of the block roll,
+the equipment fold and every damage stage
+(`overlay_0898_801ec3e4.txt`, `0x801EC488..0x801EC554`):
+
+```
+0x801EC488  sltiu v0,a3,0x3        ; attacker slot < 3 (party) - else no gate
+0x801EC494  lbu   a0,0x0(a1)       ; the hit's power byte, entry[+0x1F4]
+0x801EC49C  sltiu a1,a0,0x16       ; byte >= 0x16 connects with everything
+0x801EC4C0  lbu   v1,0x1e(v0)      ; target record +0x1E, via 0x801C9348[tgt-3]
+            class 2: byte >= 0x11  -> miss   (0x801EC4C4..0x801EC4D8)
+            class 3: byte <  0x11  -> miss   (0x801EC500..0x801EC540)
+0x801EC554  sb    v0,0x263(ctx)    ; ctx[+0x263] = 1
+0x801EC550  j     0x801EECC0       ; the epilogue: actor[+0x1F4] += 1, nothing else
+```
+
+So a class-`2` target is reachable only by power bytes below `0x11`, a
+class-`3` target only by `0x11..=0x15`, and bytes from `0x16` up reach every
+class - the same partition the apply-mode look-ahead tests when it asks
+whether anything left in the action can still connect
+([battle-action.md](battle-action.md), the `s2` arms), which is why a missed
+last hit never strands a total. A miss draws no `rand`, accumulates nothing,
+writes no HP and plays no flinch. Its only trace is `ctx[+0x263]`, which the
+effect-script stepper `FUN_801DEA50` - called for the same actor straight
+after the kernel (`0x800478A0` / `0x800478B8`) - consumes whole: it clears the
+byte and bumps the actor's `+0x1F5` effect and `+0x1F6` cue cursors without
+walking a record (`0x801DEBF4..0x801DEC48`), so the swing loses the record it
+would have fired next. Monster attackers never take this gate; a monster
+strike that does no damage is the [block](#a-zero-damage-enemy-strike-is-a-block-keyed-on-the-swings-own-power-byte).
+
+**Port.** `legaia_engine_vm::battle_action::limb_misses` is the gate;
+`World::resolve_hit_event` tests it before the weapon fold and the roll, and
+`World::consume_effect_skip_strobe` applies the `ctx[+0x263]` skip to the
+attacker at once - the engine walks the effect script earlier in the frame
+than retail does, so the strobe is spent on the actor that raised it rather
+than on the next frame's first walk.
 
 #### The melee roll pair and the underdog rewrite
 
@@ -1217,9 +1256,7 @@ this roll and does not miss on it. The `+0x16C` the refund tests is the
 **initiative key**, not a cooldown - `0` means "has acted this round / dead"
 (see [the initiative seeder](#initiative-key-seeding-fun_801da780)), so the refund fires only
 while the queued Item action is still owed a turn. Retail's "Miss" on a normal attack is the
-limb-vs-height mismatch (an LDF-target swing at a floating enemy, a UDF-target
-swing at a short one - see `legaia_art::power`), a size-class gate the port does
-not model yet.
+[limb-vs-height mismatch](#the-limb-vs-height-miss) in the melee kernel's head.
 
 **Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; the
 `battle_session` resolver still applies it per strike. `World::apply_basic_attack`
