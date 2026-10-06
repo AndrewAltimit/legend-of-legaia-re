@@ -429,7 +429,12 @@ impl World {
         let written = vm::battle_action::basic_attack_queue(&mut queue, swing_class, &mut || {
             self.next_rand()
         });
+        let character = self.caster_character(self.party_roster_slot(actor as usize) as u8);
         if let Some(a) = self.actors.get_mut(actor as usize) {
+            // Keep the seat's character key truthful on the plain-Attack path
+            // too: the arts arming is otherwise its only writer, so every
+            // party seat that only ever attacked read as Vahn.
+            a.battle.character = character;
             let len = a.battle.params.len().min(queue.len());
             a.battle.params[..len].copy_from_slice(&queue[..len]);
             a.battle.strike_index = 0;

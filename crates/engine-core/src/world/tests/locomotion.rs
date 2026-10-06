@@ -869,3 +869,32 @@ fn locomotion_frozen_through_the_encounter_transition() {
     assert!(world.dialog.inline.is_none());
     assert_eq!(world.actors[0].move_state.flags & 0x0008_0000, 0);
 }
+
+/// The battle range metric keys a party attacker's reach on the seat's
+/// roster character (`DAT_80078878[char_id - 1]`), not on the arts-path
+/// `BattleActor::character` - which a plain Attack never writes, so every
+/// seat used to read Vahn's `+43`.
+#[test]
+fn battle_reach_is_keyed_on_the_seats_character() {
+    let mut world = World::new();
+    world.enter_battle(3, 1);
+    for i in 0..4 {
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    // Every party seat stands at the same spot against the monster's seat,
+    // with the arts key left at its default.
+    let (mx, mz) = (0i16, 800i16);
+    world.actors[3].battle.seat = Some((mx, mz));
+    for i in 0..3 {
+        world.actors[i].move_state.world_x = 0;
+        world.actors[i].move_state.world_z = 0;
+        world.actors[i].battle.character = legaia_art::Character::Vahn;
+    }
+    let m: Vec<u16> = (0..3).map(|i| world.battle_range_metric(i, 3)).collect();
+    // Vahn +43, Noa 0, Gala -53: three different distances.
+    assert_ne!(m[0], m[1], "{m:?}");
+    assert_ne!(m[1], m[2], "{m:?}");
+    assert_ne!(m[0], m[2], "{m:?}");
+}
