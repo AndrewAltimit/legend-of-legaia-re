@@ -829,6 +829,33 @@ impl LegaiaRuntime {
         if any { out } else { Vec::new() }
     }
 
+    /// Per-placement **live model** (parallel to
+    /// [`Self::field_placement_slots`]): the env-pack slot a placed object's
+    /// scripted-motion stream swapped in with op `0x0E` (koin3's video
+    /// wall), or `-1` for a placement drawing its own slot. **Empty** while
+    /// no stream has swapped a model. The same `World::object_live_models`
+    /// table the native play-window draws its placed objects through.
+    pub fn field_placement_models(&self) -> Vec<i32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let models = h.world.object_live_models();
+        if models.is_empty() {
+            return Vec::new();
+        }
+        let bound = field_env::stream_bound_draws(&f.placement_records);
+        f.placement_records
+            .iter()
+            .zip(bound)
+            .map(|(r, bound)| {
+                r.filter(|_| bound)
+                    .and_then(|r| models.get(&r))
+                    .filter(|&&id| (0..0xF0).contains(&id))
+                    .map_or(-1, |&id| i32::from(id))
+            })
+            .collect()
+    }
+
     /// Per-placement **live** mask (parallel to [`Self::field_placement_slots`]):
     /// `1` = draw it this frame, `0` = the placement is a sub-area window
     /// sweep's whose actor is not on the world's windowed static-object list.

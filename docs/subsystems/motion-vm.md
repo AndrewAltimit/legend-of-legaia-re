@@ -1116,6 +1116,19 @@ the compare.
 Both bases index one array, and it is not a per-scene pack - see the next
 section.
 
+A stream need not be bound to a partition-1 placement. `FUN_8003A9D4` matches
+a record's `actor_id` against `+0x50`, and a `.MAP` placed object's actor
+carries its bind record there, so an `actor_id` below the partition-0 count
+binds a **placed object**. `koin3` binds four such streams to `P0[5..=8]`,
+the dance hall's video-wall panels: the default variant swaps the panel's
+mesh through scene-bank ids `0x14`..`0x1E` every twelve ticks, and the
+contest variant (system flag `0x4F3`) holds it on `0x1B`. Only the first
+actor with that `+0x50` takes the stream - the retail
+`minigame_dance_pcsx` state holds `P0[8]`'s first placement on a cycled model
+and its second, a frame under it, on its own mesh. Engine:
+`FieldNpcState::object_ambient` / `World::object_live_models`, drawn on the
+record's first placement (`field_env::stream_bound_draws`) by both hosts.
+
 ### The model pool both bases index
 
 `DAT_8007C018` is a flat array of registered TMD pointers, and `FUN_80026B4C`

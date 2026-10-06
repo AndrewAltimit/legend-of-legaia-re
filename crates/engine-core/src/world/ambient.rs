@@ -739,7 +739,7 @@ impl World {
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
     pub fn step_ambient_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
-        if self.ambient.fx.is_empty() {
+        if self.ambient.fx.is_empty() && self.ambient.cell_fx_seed.is_empty() {
             return false;
         }
         let mut wrote = false;
@@ -753,7 +753,7 @@ impl World {
         // Whatever a headless tick banked up (a host that ticked without a
         // VRAM surface) still lands, in queue order.
         wrote |= self.apply_ambient_scrolls(vram);
-        let fx: Vec<ClutCellFx> = self
+        let mut fx: Vec<ClutCellFx> = self
             .ambient
             .fx
             .iter()
@@ -763,6 +763,14 @@ impl World {
                     .flatten()
             })
             .collect();
+        // A seeded cycler the engine has no part for (a part a later script
+        // beat spawns) still writes its cell: the seed is what the state's
+        // own part wrote there.
+        for seed in &self.ambient.cell_fx_seed {
+            if !fx.iter().any(|f| f.rect == seed.rect) {
+                fx.push(*seed);
+            }
+        }
         if !self.toggles.reduce_flashing && !self.ambient.flash_applied.is_empty() {
             self.ambient.flash_applied.clear();
         }

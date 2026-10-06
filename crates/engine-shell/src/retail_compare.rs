@@ -297,6 +297,10 @@ pub struct RetailObs {
     /// ([`retail_scroll_rects`]), handed to the image child as a
     /// `LEGAIA_SEAT_VRAM_RECTS` file.
     pub scroll_rects: Vec<SeededVramRect>,
+    /// Drawn field actors' live model ids ([`retail_object_models`]), handed
+    /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
+    /// objects a motion stream re-binds.
+    pub object_models: Vec<(u16, i16)>,
 }
 
 use legaia_engine_core::world::SeededVramRect;
@@ -374,6 +378,33 @@ pub fn vram_rects_from_file(bytes: &[u8]) -> Vec<SeededVramRect> {
         i += 4 + n;
     }
     out
+}
+
+/// The scene model bank's pool base (`*(u16*)0x8007B6F8`): a field actor's
+/// `+0x64` is this plus its scene-bank model id (`FUN_8003A1E4`,
+/// `FUN_80024E08`).
+const MODEL_BANK_BASE: u32 = 0x8007_B6F8;
+
+/// Each bind record's `(record +0x50, scene-bank model id)`, off the
+/// **first** field actor in list order that carries it: the one a motion
+/// stream is bound to (`FUN_8003A9D4`, [`legaia_engine_core::field_env::stream_bound_draws`]),
+/// whose `+0x64` less the bank base is the model the stream's op `0x0E` last
+/// swapped in.
+pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
+    let base = i32::from(game_anchors::u16_at(ram, MODEL_BANK_BASE));
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            if !seen.insert(record) {
+                return None;
+            }
+            let id = i32::from(game_anchors::i16_at(ram, n + 0x64)) - base;
+            (0..0xF0).contains(&id).then_some((record, id as i16))
+        })
+        .collect()
 }
 
 /// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_core::fog_particles`]).
@@ -702,6 +733,11 @@ impl RetailObs {
                 Vec::new()
             },
             scroll_rects: Vec::new(),
+            object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_object_models(ram)
+            } else {
+                Vec::new()
+            },
             slot_table: {
                 let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
                 ram.get(lo..lo + 0x200)
@@ -793,6 +829,16 @@ impl RetailObs {
         }
         if !self.fog.is_empty() {
             env.push(("LEGAIA_SEAT_FOG", fog_env(&self.fog)));
+        }
+        if !self.object_models.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_OBJECT_MODELS",
+                self.object_models
+                    .iter()
+                    .map(|(r, m)| format!("{r}:{m}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ));
         }
         if !self.scroll_rects.is_empty() {
             let dir = crate::retail_compare_image::work_dir(out_dir);

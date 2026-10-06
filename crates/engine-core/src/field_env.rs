@@ -678,6 +678,24 @@ pub fn placed_bind_records(
 /// draw's translation every frame.
 ///
 /// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+/// Which placed draws a bind record's scripted-motion stream drives: the
+/// **first** placement of each record, in `.MAP` order. The installer
+/// `FUN_8003A9D4` binds a MAN tail-section-1 stream to the field actor whose
+/// `+0x50` matches its `actor_id`, and a record a scene places twice has two
+/// such actors; the retail `minigame_dance_pcsx` state holds `koin3`
+/// `P0[8]`'s first placement on a cycled video-wall model and its second
+/// (a frame under it, another pack slot) on its own mesh, and the far hall's
+/// copies of `P0[5..=8]` on theirs. `records` is a host's per-draw bind
+/// record list ([`placed_bind_records`]).
+// REF: FUN_8003A9D4
+pub fn stream_bound_draws(records: &[Option<usize>]) -> Vec<bool> {
+    let mut seen = std::collections::BTreeSet::new();
+    records
+        .iter()
+        .map(|r| r.is_some_and(|r| seen.insert(r)))
+        .collect()
+}
+
 pub fn placed_draw_displacements(
     records: &[Option<usize>],
     record_moves: &HashMap<usize, [i32; 3]>,
@@ -1929,6 +1947,16 @@ pub fn env_draws_world_aabb(
 
 #[cfg(test)]
 mod anim_tests {
+
+    #[test]
+    fn a_stream_drives_only_its_records_first_placement() {
+        let records = [Some(5), None, Some(8), Some(5), Some(8), Some(9)];
+        assert_eq!(
+            stream_bound_draws(&records),
+            vec![true, false, true, false, false, true]
+        );
+    }
+
     use super::*;
 
     /// A 30-frame clip - the length of Rim Elm's door / cupboard swing.

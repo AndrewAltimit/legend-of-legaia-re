@@ -855,6 +855,27 @@ impl PlayWindowApp {
         self.field_placement_color_cell_keys = placement_color_cell_keys;
         self.field_placement_records = placement_records;
         self.field_placement_color_records = placement_color_records;
+        // Pack slot -> uploaded mesh, for the placed objects a motion
+        // stream re-binds (`World::object_live_models`).
+        let env_tmds = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .map(|s| legaia_engine_core::field_env::env_pack_tmd_indices(s, &res))
+            .unwrap_or_default();
+        let bridge = |src: &[usize]| -> Vec<Option<usize>> {
+            env_tmds
+                .iter()
+                .map(|&r| src.iter().position(|&s| s == r))
+                .collect()
+        };
+        self.field_pack_meshes = bridge(&tmd_src_index);
+        self.field_pack_color_meshes = bridge(&color_tmd_src_index);
+        self.field_placement_stream_bound =
+            legaia_engine_core::field_env::stream_bound_draws(&self.field_placement_records);
+        self.field_placement_color_stream_bound =
+            legaia_engine_core::field_env::stream_bound_draws(&self.field_placement_color_records);
         // The ladder those four lists were baked against, plus their per-draw
         // rungs: `handle_redraw` folds any later movement into the matrices.
         let floor_base = self.session.host.scene.as_ref().and_then(|s| {

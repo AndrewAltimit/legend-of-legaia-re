@@ -1676,6 +1676,40 @@ impl World {
             return;
         };
         let records = man_motion::motion_records(man, man_file);
+        // Streams bound to placed objects: an `actor_id` below `N0` names a
+        // partition-0 record, the bind record a `.MAP` object's actor
+        // carries in `+0x50`.
+        self.npcs.object_ambient.clear();
+        self.npcs.object_models.clear();
+        for rec in &records {
+            for b in &rec.bindings {
+                let record = usize::from(b.actor_id);
+                if record >= n0 || self.npcs.object_ambient.contains_key(&record) {
+                    continue;
+                }
+                let variants: Vec<(u16, Vec<u8>)> = man_motion::stream_variants(man, rec)
+                    .into_iter()
+                    .filter_map(|v| {
+                        man.get(v.code_offset..v.code_end)
+                            .map(|code| (v.selector, code.to_vec()))
+                    })
+                    .filter(|(_, code)| !code.is_empty())
+                    .collect();
+                if variants.is_empty() {
+                    continue;
+                }
+                let vm = vm::ambient_motion::AmbientMotion::new(u32::from(b.actor_id), 0);
+                self.npcs.object_ambient.insert(
+                    record,
+                    FieldNpcAmbient {
+                        variants,
+                        live: None,
+                        vm,
+                        walks: false,
+                    },
+                );
+            }
+        }
         for p in man_file.actor_placements(man) {
             let Ok(slot) = u8::try_from(p.index) else {
                 continue;
@@ -1768,6 +1802,7 @@ impl World {
     // `world/frame_tick.rs`'s call site already uses for the pair.
     // REF: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
     pub fn tick_field_npc_ambient(&mut self) {
+        self.tick_object_ambient();
         if self.npcs.ambient.is_empty() {
             return;
         }
@@ -2076,6 +2111,83 @@ impl World {
                 }
                 Fx::BitTargetFault => {}
             }
+        }
+    }
+
+    /// Step the placed objects' scripted-motion streams
+    /// ([`crate::world::FieldNpcState::object_ambient`]) one actor game tick.
+    /// Only the model swap (op `0x0E`) has a placed-object consumer; the
+    /// streams the disc binds to objects carry nothing else that draws.
+    ///
+    /// REF: FUN_80038158, FUN_8003BC08 (the same per-actor driver as the
+    /// placements' streams)
+    fn tick_object_ambient(&mut self) {
+        if self.npcs.object_ambient.is_empty() {
+            return;
+        }
+        let speed = self.clock.frame_step.max(1);
+        let probe = AmbientPlayerProbe {
+            player: None,
+            exempt: true,
+        };
+        let suppressed = self.flags.story_flags & crate::world::CAMERA_HOLD_FLAG != 0;
+        let records: Vec<usize> = self.npcs.object_ambient.keys().copied().collect();
+        for record in records {
+            let pick = self
+                .npcs
+                .object_ambient
+                .get(&record)
+                .and_then(|c| c.select_variant(|f| self.system_flag_test(f)));
+            let Some(pick) = pick else { continue };
+            let Some(chan) = self.npcs.object_ambient.get_mut(&record) else {
+                continue;
+            };
+            let FieldNpcAmbient {
+                variants, live, vm, ..
+            } = chan;
+            if *live != Some(pick) {
+                *live = Some(pick);
+                vm.pc = 0;
+                vm.cursor = 0;
+            }
+            let Some((_, code)) = variants.get(pick) else {
+                continue;
+            };
+            if suppressed {
+                continue;
+            }
+            vm.tick_with(code, speed, &probe);
+            for fx in std::mem::take(&mut vm.effects) {
+                if let vm::ambient_motion_ops::AmbientEffect::ModelSwap { bank, offset } = fx {
+                    use legaia_engine_vm::ambient_motion_ops::ModelBank as VmBank;
+                    let id = match bank {
+                        VmBank::Scene => offset,
+                        VmBank::Special => {
+                            offset.wrapping_add(crate::model_bank::SPECIAL_MODEL_THRESHOLD as i16)
+                        }
+                    };
+                    self.npcs.object_models.insert(record, id);
+                }
+            }
+        }
+    }
+
+    /// The live scene-bank model id each placed object's stream swapped in
+    /// (op `0x0E`), keyed by bind record. Both hosts draw a placed object
+    /// whose bind record is here with `env_pack[id]` instead of its `.MAP`
+    /// pack slot; an id at or past `0xF0` (the player bank) is never a
+    /// placed object's and is ignored.
+    pub fn object_live_models(&self) -> &std::collections::BTreeMap<usize, i16> {
+        &self.npcs.object_models
+    }
+
+    /// Capture alignment: set a placed object's live model where a motion
+    /// stream drives it (a record outside
+    /// [`crate::world::FieldNpcState::object_ambient`] is left alone). The
+    /// retail comparison's image child only.
+    pub fn seed_object_live_model(&mut self, record: usize, model: i16) {
+        if self.npcs.object_ambient.contains_key(&record) {
+            self.npcs.object_models.insert(record, model);
         }
     }
 

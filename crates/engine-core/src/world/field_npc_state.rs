@@ -160,6 +160,17 @@ pub struct FieldNpcState {
     /// tick by [`crate::world::World::tick_field_npc_ambient`]. Without it a standing town
     /// NPC holds one heading forever where retail NPCs slowly look around.
     pub ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
+    /// The scripted-motion streams bound to **placed objects**: MAN
+    /// tail-section-1 records whose `actor_id` is a partition-0 record index
+    /// (`FUN_8003A9D4` matches it against `+0x50`, which a `.MAP` object's
+    /// actor carries as its bind record). Keyed by that record index. The
+    /// koin3 dance hall's video wall is one: records `P0[5..=8]` cycle their
+    /// panels' meshes with op `0x0E` every twelve ticks.
+    pub object_ambient: std::collections::BTreeMap<usize, FieldNpcAmbient>,
+    /// The live scene-bank model id an object's stream last swapped in
+    /// (op `0x0E`), keyed by bind record; both hosts draw the record's
+    /// placed objects with that mesh instead of the `.MAP` pack slot.
+    pub object_models: std::collections::BTreeMap<usize, i16>,
     /// Publish the ambient tail-section-1 streams' walk steps
     /// ([`crate::world::World::tick_field_npc_ambient`]) - the villagers'
     /// authored wandering. The bare `World` default is off (NPCs rest at their
@@ -256,6 +267,8 @@ impl FieldNpcState {
             motions: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
+            object_ambient: std::collections::BTreeMap::new(),
+            object_models: std::collections::BTreeMap::new(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),
             morphs: std::collections::BTreeMap::new(),

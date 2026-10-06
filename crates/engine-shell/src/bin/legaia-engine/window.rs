@@ -91,6 +91,10 @@ pub(crate) struct ScreenshotConfig {
     /// the settle tick, where retail's state holds them
     /// (`RetailObs::seed_save`).
     pub seat_latches: Vec<u16>,
+    /// `LEGAIA_SEAT_OBJECT_MODELS=<record>:<model>,..`: a retail state's
+    /// drawn actors' live model ids, written over the placed objects' stream
+    /// swaps (`World::object_live_models`) on the capture frame.
+    pub seat_object_models: Vec<(usize, i16)>,
     /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
@@ -390,6 +394,16 @@ impl ScreenshotConfig {
                     .ok()
                     .map(|v| legaia_engine_shell::retail_compare::fog_from_env(&v)),
             ),
+            seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (r, m) = e.split_once(':')?;
+                            Some((r.trim().parse().ok()?, m.trim().parse().ok()?))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             seat_latches: std::env::var("LEGAIA_SEAT_LATCHES")
                 .map(|v| {
                     v.split(',')
@@ -841,6 +855,16 @@ struct PlayWindowApp {
     /// (`World::object_draw_displacements` - `chitei2`'s falling boulder).
     field_placement_records: Vec<Option<usize>>,
     field_placement_color_records: Vec<Option<usize>>,
+    /// Scene-bank model id (= env-pack slot) -> uploaded mesh, for a placed
+    /// object whose motion stream swapped its model (op `0x0E`,
+    /// `World::object_live_models`); textured and colour bridges.
+    field_pack_meshes: Vec<Option<usize>>,
+    /// Parallel to `field_placement_records` / `_color_records`: the draw
+    /// is its record's first placement, the one a motion stream drives
+    /// (`field_env::stream_bound_draws`).
+    field_placement_stream_bound: Vec<bool>,
+    field_placement_color_stream_bound: Vec<bool>,
+    field_pack_color_meshes: Vec<Option<usize>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense

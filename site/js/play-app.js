@@ -949,6 +949,10 @@ void main() {
         used.add(key);
         return meshId;
       };
+      /* The env-slot uploader, kept for `_applyObjectModels` (a motion
+       * stream's op-0x0E model swap draws a placed object with another
+       * slot's mesh). */
+      this._ensureEnvMesh = (slot) => ensure(slot, 0);
       /* Per-animated-placement mesh id space (above the shared env-slot ids and
        * the posed frame-0 variants, below the player / NPC ids). One mesh per
        * animated placement so two props sharing an env slot can sit on
@@ -1068,6 +1072,8 @@ void main() {
            * live mask (`_syncStaticWindow`). */
           if (placed) {
             draw.placeIdx = i;
+            /* The mesh the placement draws with no model swap live. */
+            if (!anim) draw.baseMeshId = meshId;
             /* Where the record put it, for `_applyObjectMoves`. */
             draw.baseX = draw.x;
             draw.baseZ = draw.z;
@@ -2280,6 +2286,28 @@ void main() {
      * per-placement [r, g, b, ir0] or an EMPTY array while nothing is
      * tinted. The native window stages the same table
      * (`World::object_draw_tints`) on its placed draws. */
+    /* A placed object whose scripted-motion stream swapped its model (op
+     * 0x0E - koin3's video wall cycles its panels) draws with the swapped-in
+     * env slot's mesh. The engine hands back a per-placement slot (-1 =
+     * none) or an EMPTY array while no stream has swapped one; the native
+     * window draws through the same table (`World::object_live_models`). */
+    _applyObjectModels(rt) {
+      if (!rt.field_placement_models || !this._ensureEnvMesh) return;
+      const m = rt.field_placement_models();
+      if (!m.length && !this._objectModelsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined || d.baseMeshId === undefined) continue;
+        const slot = d.placeIdx < m.length ? m[d.placeIdx] : -1;
+        let id = d.baseMeshId;
+        if (slot >= 0) {
+          const swapped = this._ensureEnvMesh(slot);
+          if (swapped >= 0) id = swapped;
+        }
+        d.meshId = id;
+      }
+      this._objectModelsLive = m.length > 0;
+    }
+
     _applyObjectTints(rt) {
       if (!rt.field_placement_tints) return;
       const t = rt.field_placement_tints();
@@ -2593,6 +2621,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectModels(rt);
       this._applyObjectTints(rt);
       this._applyGroundWave(rt);
 

@@ -707,6 +707,14 @@ impl PlayWindowApp {
             if due && let Some(fog) = sc.seat_fog.take() {
                 self.session.host.world.fog.install_snapshot(&fog);
             }
+            if due {
+                for &(record, model) in &sc.seat_object_models {
+                    self.session
+                        .host
+                        .world
+                        .seed_object_live_model(record, model);
+                }
+            }
         }
         // Capture harness: phase-align the battle idle orbit to the retail
         // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
@@ -2101,6 +2109,7 @@ impl PlayWindowApp {
                     // table `World::object_draw_tints`; the browser play page
                     // reads the same one (`field_placement_tints`).
                     let object_tints = self.session.host.world.object_draw_tints();
+                    let object_models = self.session.host.world.object_live_models().clone();
                     let object_cue = |record: Option<usize>| {
                         let &(colour, blend) = object_tints.get(&record?)?;
                         tint_draw_cue((colour, blend))
@@ -2148,15 +2157,30 @@ impl PlayWindowApp {
                             ) {
                                 continue;
                             }
-                            let mesh = self.field_morph_live.get(mesh_idx).or_else(|| {
-                                self.field_lit
-                                    .placement
-                                    .get(di)
-                                    .copied()
-                                    .flatten()
-                                    .and_then(|v| self.field_lit.meshes.get(v))
-                                    .or_else(|| self.meshes.get(*mesh_idx))
-                            });
+                            // A motion stream's model swap (op `0x0E`) draws
+                            // the record's object with the swapped-in mesh.
+                            let swapped = record
+                                .filter(|_| {
+                                    self.field_placement_stream_bound
+                                        .get(di)
+                                        .copied()
+                                        .unwrap_or(false)
+                                })
+                                .and_then(|r| object_models.get(&r))
+                                .and_then(|&id| usize::try_from(id).ok())
+                                .and_then(|id| self.field_pack_meshes.get(id).copied().flatten())
+                                .and_then(|m| self.meshes.get(m));
+                            let mesh = swapped
+                                .or_else(|| self.field_morph_live.get(mesh_idx))
+                                .or_else(|| {
+                                    self.field_lit
+                                        .placement
+                                        .get(di)
+                                        .copied()
+                                        .flatten()
+                                        .and_then(|v| self.field_lit.meshes.get(v))
+                                        .or_else(|| self.meshes.get(*mesh_idx))
+                                });
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2253,7 +2277,20 @@ impl PlayWindowApp {
                             if place_near_culled(&mvp) {
                                 continue;
                             }
-                            if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                            let color_idx = record
+                                .filter(|_| {
+                                    self.field_placement_color_stream_bound
+                                        .get(di)
+                                        .copied()
+                                        .unwrap_or(false)
+                                })
+                                .and_then(|r| object_models.get(&r))
+                                .and_then(|&id| usize::try_from(id).ok())
+                                .and_then(|id| {
+                                    self.field_pack_color_meshes.get(id).copied().flatten()
+                                })
+                                .unwrap_or(*mesh_idx);
+                            if let Some(mesh) = self.color_meshes.get(color_idx) {
                                 if let Some(c) =
                                     object_key(record).and_then(|k| effect_clip(k, model))
                                 {

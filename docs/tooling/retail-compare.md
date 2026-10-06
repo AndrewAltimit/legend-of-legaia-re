@@ -1471,15 +1471,18 @@ under any box, the order retail's ordering table gives a kind-2/8 push
 (`FUN_80024EE4` links at bucket `a0`, the MES glyphs at bucket 1 -
 [cutscene](../subsystems/cutscene.md)), and is framed at the displayed wait.
 
-What still parts the frames is the stage. Retail's back wall is black but
-for a single large figure where the engine draws the three framed poster
-panels (placed objects, lit to their baked colours), its floor glows green
-under a yellow beam where the engine's tiles are unlit, and its VRAM holds
-a band of sprite strips at `(448..512, 256..500)` and a block at
-`(384..448, 128..256)` that the scene's own targeted upload does not write
-(`vram-oracle --tiles`; every texture page the upload does write matches
-retail exactly). That is the hall's state while the contest is staged, not
-anything the card-load entry reaches.
+What still parts the frames is the stage. The back wall's three poster
+panels are a video wall: `koin3`'s motion streams on `P0[5..=8]` cycle each
+panel's mesh with op `0x0E` ([motion-vm](../subsystems/motion-vm.md#op-0x0e---the-model-swap)),
+and the state holds the centre panel on a model whose nine cells tile one
+large image of Mary. The engine runs those streams, and the image child seeds
+each record's captured model (`retail_object_models`,
+`LEGAIA_SEAT_OBJECT_MODELS`) on the frame it captures. The dance floor's
+palette cells are on the strobe the photosensitivity section describes
+([field-ambient-fx](../subsystems/field-ambient-fx.md#photosensitivity-guard)),
+re-keyed every game tick, so the CLUT in the state's VRAM is not the one the
+displayed frame drew with: retail's floor glows green where the engine's,
+seeded from that CLUT, stays dark.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
