@@ -290,10 +290,78 @@ pub struct RetailObs {
     /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
     /// captured phase.
     pub cell_fx: Vec<legaia_engine_core::clut_cell_fx::ClutCellFx>,
+    /// The live fog-pool records ([`retail_fog`]), handed to the image child
+    /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
+    pub fog: Vec<legaia_engine_core::fog_particles::FogParticle>,
 }
 
 /// The actor tick that runs a move-VM part (`FUN_80021DF4`).
 const PART_TICK: u32 = 0x8002_1DF4;
+
+/// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_core::fog_particles`]).
+const FOG_POOL_PTR: u32 = 0x8007_B7E0;
+
+/// Every live record of a retail state's fog pool: 80 `0x18`-byte records
+/// from pool `+0xA4`, alive byte `+0x05`
+/// ([`legaia_engine_core::fog_particles`] has the layout).
+pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_core::fog_particles::FogParticle> {
+    let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
+    if (pool & 0xFFE0_0000) != 0x8000_0000 {
+        return Vec::new();
+    }
+    (0..legaia_engine_core::fog_particles::FOG_POOL_SLOTS as u32)
+        .map(|i| pool + 0xA4 + i * 0x18)
+        .filter(|&r| game_anchors::u8_at(ram, r + 5) != 0)
+        .map(|r| legaia_engine_core::fog_particles::FogParticle {
+            age: game_anchors::u16_at(ram, r),
+            rate: game_anchors::u16_at(ram, r + 2),
+            slot: game_anchors::u8_at(ram, r + 4),
+            alive: true,
+            vx: game_anchors::u8_at(ram, r + 6) as i8,
+            vz: game_anchors::u8_at(ram, r + 7) as i8,
+            x: game_anchors::u32_at(ram, r + 8) as i32,
+            z: game_anchors::u32_at(ram, r + 0xC) as i32,
+            y: game_anchors::i16_at(ram, r + 0x10),
+            grey: game_anchors::u8_at(ram, r + 0x14),
+        })
+        .collect()
+}
+
+/// [`retail_fog`] as `LEGAIA_SEAT_FOG`: `slot,age,rate,vx,vz,x,z,y,grey` per
+/// record, `;`-separated.
+pub fn fog_env(fog: &[legaia_engine_core::fog_particles::FogParticle]) -> String {
+    fog.iter()
+        .map(|p| {
+            format!(
+                "{},{},{},{},{},{},{},{},{}",
+                p.slot, p.age, p.rate, p.vx, p.vz, p.x, p.z, p.y, p.grey
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`fog_env`]; malformed entries are dropped.
+pub fn fog_from_env(s: &str) -> Vec<legaia_engine_core::fog_particles::FogParticle> {
+    s.split(';')
+        .filter_map(|e| {
+            let v: Vec<i64> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let [slot, age, rate, vx, vz, x, z, y, grey] = <[i64; 9]>::try_from(v).ok()?;
+            Some(legaia_engine_core::fog_particles::FogParticle {
+                age: age as u16,
+                rate: rate as u16,
+                slot: slot as u8,
+                alive: true,
+                vx: vx as i8,
+                vz: vz as i8,
+                x: x as i32,
+                z: z as i32,
+                y: y as i16,
+                grey: grey as u8,
+            })
+        })
+        .collect()
+}
 
 /// Every live mode-3 CLUT-cell cycler on a retail state's actor lists, in
 /// list order: a part ticked by `FUN_80021DF4` with render mode `+0x5A = 3`
@@ -547,6 +615,11 @@ impl RetailObs {
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
             cell_fx: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_cell_fx(ram)
+            } else {
+                Vec::new()
+            },
+            fog: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_fog(ram)
             } else {
                 Vec::new()
             },
@@ -1660,6 +1733,9 @@ fn run_one(
                     if !retail.cell_fx.is_empty() {
                         env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&retail.cell_fx)));
                     }
+                    if !retail.fog.is_empty() {
+                        env.push(("LEGAIA_SEAT_FOG", fog_env(&retail.fog)));
+                    }
                     if let Some(n) = retail.hud_countdown {
                         env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
                     }
@@ -1700,6 +1776,10 @@ fn run_one(
                         .chain(
                             (!retail.cell_fx.is_empty())
                                 .then(|| ("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&retail.cell_fx))),
+                        )
+                        .chain(
+                            (!retail.fog.is_empty())
+                                .then(|| ("LEGAIA_SEAT_FOG", fog_env(&retail.fog))),
                         )
                         .collect::<Vec<_>>(),
                 ),
@@ -2254,6 +2334,34 @@ mod tests {
         let mut ram = vec![0u8; 0x20_0000];
         ram[(MENU_SUBSCREEN & 0x1F_FFFF) as usize] = sub;
         ram
+    }
+
+    /// The capture-alignment seeds survive their env forms.
+    #[test]
+    fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
+        let fx = vec![legaia_engine_core::clut_cell_fx::ClutCellFx {
+            rect: (0, 502, 16, 1),
+            h_add: 2880,
+            s_add: 0,
+            v_add: -98,
+            mode: 1,
+            white: 256,
+        }];
+        assert_eq!(cell_fx_from_env(&cell_fx_env(&fx)), fx);
+        let fog = vec![legaia_engine_core::fog_particles::FogParticle {
+            age: 0x480,
+            rate: 12,
+            slot: 77,
+            alive: true,
+            vx: -3,
+            vz: 5,
+            x: -(40 << 11),
+            z: 90 << 11,
+            y: -0x60,
+            grey: 0x5A,
+        }];
+        assert_eq!(fog_from_env(&fog_env(&fog)), fog);
+        assert!(fog_from_env("1,2,3").is_empty());
     }
 
     fn chans(kv: &[(&str, f64)]) -> BTreeMap<String, f64> {

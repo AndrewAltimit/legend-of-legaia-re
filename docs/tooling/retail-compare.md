@@ -185,8 +185,8 @@ engine verdict:
 - **Actor state.** NPC positions, animation phases, open doors and live
   effects are whatever the engine's own entry produces.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
-  after entry. Ambient animation, fog-pool population and water CLUT phases
-  cannot be phase-aligned. The one phase the channel does align is the field
+  after entry. Ambient animation and water CLUT-walk phases cannot be
+  phase-aligned. The one phase the channel does align is the field
   party HUD's idle countdown (`_DAT_801F348C`, `FUN_801D0D38`): the settle
   window outlasts the `0x28`-frame near idle, while a card-load state is
   typically caught two or three frames into it, so an unaligned stationary
@@ -212,6 +212,17 @@ engine verdict:
   still run - only the written cell is the captured one. `jouine`'s flesh
   walls hue-cycle through green, and `cort_evolved_pre_battle` had scored
   its walls by the luck of the phase.
+
+  So is the fog pool. Where its sheets have drifted to and how old they
+  are is the `rand()` stream's history since the entry, which no seed
+  replays; the image child installs the state's own live records (pool
+  `_DAT_8007B7E0`, `retail_fog`, `LEGAIA_SEAT_FOG`) on the frame it
+  captures (`FogPool::install_snapshot`), and the frame's render step ages,
+  drifts and draws them as retail's did. With the records installed, the
+  overworld mist of `field_walled_collision_pin` matches retail's frame to
+  within the metric's noise - the sheet renderer is exact, and the spread
+  was only where the pool had put its sheets. The headless seed keeps its
+  own pool: its spawns draw the stream the battle half aligns on.
 
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter
 through `enter_scene_live` directly (no resume landing, no saved seat),

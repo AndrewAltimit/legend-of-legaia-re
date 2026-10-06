@@ -693,6 +693,21 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
+        // Capture harness: on the frame the capture is taken, the fog pool
+        // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`), installed
+        // before this frame's draw pass runs the pool's render step.
+        if let Some(sc) = self.screenshot.as_ref() {
+            let gated =
+                sc.phase_gate.is_some() || sc.script_gate.is_some() || sc.battle_drive.is_some();
+            let due = if gated {
+                self.capture_phase_met()
+            } else {
+                self.tick_no >= sc.capture_tick
+            };
+            if due && let Some(fog) = sc.seat_fog.take() {
+                self.session.host.world.fog.install_snapshot(&fog);
+            }
+        }
         // Capture harness: phase-align the battle idle orbit to the retail
         // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
         if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)

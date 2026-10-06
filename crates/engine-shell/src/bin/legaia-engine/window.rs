@@ -91,6 +91,10 @@ pub(crate) struct ScreenshotConfig {
     /// the settle tick, where retail's state holds them
     /// (`RetailObs::seed_save`).
     pub seat_latches: Vec<u16>,
+    /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
+    /// over the pool on the frame the capture is taken
+    /// (`FogPool::install_snapshot`); taken once.
+    pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_core::fog_particles::FogParticle>>>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -381,6 +385,11 @@ impl ScreenshotConfig {
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
+            seat_fog: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_FOG")
+                    .ok()
+                    .map(|v| legaia_engine_shell::retail_compare::fog_from_env(&v)),
+            ),
             seat_latches: std::env::var("LEGAIA_SEAT_LATCHES")
                 .map(|v| {
                     v.split(',')
