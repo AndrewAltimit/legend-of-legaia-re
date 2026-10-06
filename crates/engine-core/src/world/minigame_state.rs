@@ -363,6 +363,11 @@ pub struct FishingCaptionText {
     pub lure_names: [String; 3],
     pub lures_left: String,
     pub suffix: String,
+    /// The species names, by species id - each record's `+0x00` string
+    /// (`legaia_asset::fishing_species`), which the landed catch's result
+    /// plate draws (`FUN_801D5298` -> `FUN_801D73B8`). Empty until
+    /// [`Self::with_species_names`] resolves them.
+    pub species_names: Vec<String>,
 }
 
 impl FishingCaptionText {
@@ -383,6 +388,25 @@ impl FishingCaptionText {
             lure_names: raw.lure_items.map(|id| item_name(id).unwrap_or_default()),
             lures_left: ascii(&raw.lures_left),
             suffix: ascii(&raw.suffix),
+            species_names: Vec::new(),
         }
+    }
+
+    /// Species `id`'s name; empty when it did not resolve.
+    pub fn species_name(&self, id: usize) -> &str {
+        self.species_names.get(id).map(String::as_str).unwrap_or("")
+    }
+
+    /// The same text with the species names resolved out of the as-loaded
+    /// fishing overlay. A record whose name pointer does not resolve keeps
+    /// an empty name, so the indices stay species ids.
+    pub fn with_species_names(mut self, overlay: &[u8]) -> Self {
+        use legaia_asset::fishing_species;
+        self.species_names = fishing_species::parse(overlay)
+            .unwrap_or_default()
+            .iter()
+            .map(|sp| sp.name(overlay).unwrap_or_default().to_string())
+            .collect();
+        self
     }
 }

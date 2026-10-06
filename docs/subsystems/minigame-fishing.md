@@ -100,6 +100,17 @@ A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). T
 `points = (fish_base_value * (DAT_801d91b8 + 0x9c0)) / 0x32000`,
 where `fish_base_value` is the species record's `+0x04` field (`&DAT_801d81a8 + DAT_801d91cc*0x28`) and `DAT_801d91b8` is the accumulated pull / strength for the fight. The points are added to the persistent counter `_DAT_8008444c` (clamped to `999999`), guarded by a per-catch latch at actor `+0x2a` so a single fish is scored once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
 
+### The result plate
+
+`FUN_801d5298` is the tick of the result actor, which the landed fish's lift `FUN_801d4948` seats when it raises `DAT_801d9294` (`0x801D5208`); the driver clearing that word retires it. Each frame adds `frame_step * 4` to the actor's `+0x1A` counter (held at `0x1000`), and `lift = clamp(+0x1A - 0x180, 0, 0x100)` drives the whole draw, every sprite at brightness `lift / 2`:
+
+- a **rank plate** at `(0xA0, 0x78)`, ids `| 0x400` then `| 0x800`, picked from the fight strength by a threshold ladder (`0x801D5448..0x801D54B4`): `0x15` below `0xC9`, `0x13` from `0xC9`, `0x12` from `0x259`, `0x11` from `0x321`, `0x14` from `0x4B1`;
+- the **points** at `(0x20, 0x88)` in the large digit style, `FUN_801d76e0(1, ..)` (`0x801D5640`) - the overlay's only call of that style;
+- a label glyph `0x17` at `(0xC0, 0x98)`, as `0x417` then `0x817`;
+- the **species name** (the record's `+0x00` string) through `FUN_801d73b8(name, 0xA0, 0x1A0 - lift)`, which centres it by `13 * (len - 1) / 4`, draws it at `y + 7`, and skips it while `y >= 0xF1` - so the name rises into view as the plate fades up.
+
+When `lift` reaches `0x100` the best-catch update runs and `DAT_801d90bc` is raised; the driver reads that word as its next-state accept. The port draws the plate on all three hosts through one builder, `legaia_engine_ui::catch_result_draws`, fed by `PondSession::catch_result`. The engine does not model the lift, so its counter starts on the landing frame and the `0x180` lead-in is the only delay before the plate fades up; it does not gate the recast on `DAT_801d90bc` either.
+
 ### The two reel buttons are not a speed choice (port reconstruction)
 
 Retail pins the two divisors but not what loses a fight; the port's

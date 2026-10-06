@@ -1,7 +1,7 @@
 //! The two-mode battle effect burst - move-VM opcode `0x17`.
 //!
 //! PORT: FUN_801F30C4
-//! REF: FUN_80023070, FUN_80021B04, FUN_80050ED4
+//! REF: FUN_80023070, FUN_80021B04, FUN_80050ED4, FUN_801DFDF0
 //!
 //! `(actor, mode)`. The first argument is an **actor**, not a free-standing
 //! record: the entry is the battle-side escape opcode of the move VM, so its

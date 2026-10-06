@@ -1032,6 +1032,22 @@ impl PlayWindowApp {
                 },
             ));
         }
+        // A landed catch's result plate (`FUN_801D5298`): rank, points in
+        // the large digits, label and the rising species name.
+        if let Some(r) = s.catch_result() {
+            let name_len = world
+                .minigames
+                .fishing_captions
+                .as_ref()
+                .map_or(0, |t| t.species_name(r.species).len());
+            items.extend(legaia_engine_render::catch_result_draws(
+                r.ramp,
+                r.strength,
+                r.points,
+                r.species as u32,
+                name_len,
+            ));
+        }
         // This frame's live banners, serviced in the redraw handler.
         items.extend(self.fishing_banner_draws.iter().copied());
         items

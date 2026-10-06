@@ -70,6 +70,16 @@ pub enum HudDraw {
         value: i32,
         brightness: i32,
     },
+    /// A number in the **large** digit style: `FUN_801d76e0` with style `1`,
+    /// whose cells sit 16 px apart and draw through the large-digit emitter
+    /// `FUN_801d7d44` (two passes, additive then subtractive). Retail's one
+    /// such field is the landed catch's points ([`catch_result_draws`]).
+    LargeNumber {
+        x: i32,
+        y: i32,
+        value: i32,
+        brightness: i32,
+    },
     /// A single sprite-quad glyph via the shared emitter `FUN_801d63b0`,
     /// drawn at `0x1000` (1.0) scale. `layer` is the emitter's first argument
     /// (`1` on the HUD rows, `0` on the banner sprites; a draw-class selector,
@@ -142,6 +152,9 @@ pub enum HudCaption {
     LuresLeft,
     /// The trailing caption drawn after the lure count.
     LureCountSuffix,
+    /// The landed species' name (the species record's `+0x00` string),
+    /// indexed by species id ([`catch_result_draws`]).
+    FishName(u32),
 }
 /// The persistent fishing HUD (drawn every frame by the mode driver's shared
 /// tail): the best-catch row (glyph `0x1a`), the capped point-total row
@@ -511,6 +524,82 @@ pub fn strike_splash_draws(frame: i32) -> Option<[HudDraw; 2]> {
     Some([glyph(0x416), glyph(0x816)])
 }
 
+/// The result plate's rank glyph for a fight of accumulated `strength`
+/// (`DAT_801D91B8`): `FUN_801D5298`'s threshold ladder
+/// (`0x801D5448..0x801D54B4`) - `0x15` below `0xC9`, then `0x13`, `0x12` and
+/// `0x11` from `0xC9`, `0x259` and `0x321`, and `0x14` from `0x4B1`.
+pub fn catch_rank_glyph(strength: i32) -> u32 {
+    match strength {
+        i32::MIN..=0xC8 => 0x15,
+        0xC9..=0x258 => 0x13,
+        0x259..=0x320 => 0x12,
+        0x321..=0x4B0 => 0x11,
+        _ => 0x14,
+    }
+}
+
+/// The landed catch's result plate for one frame - the draw half of the
+/// result actor's tick `FUN_801D5298`.
+///
+/// `ramp` is the actor's `+0x1A` counter (`+4` per frame step from the
+/// landing, held at `0x1000`); `lift = clamp(ramp - 0x180, 0, 0x100)` drives
+/// everything, and every sprite draws at brightness `lift / 2`:
+///
+/// - the rank plate [`catch_rank_glyph`] at `(0xA0, 0x78)`, as ids `| 0x400`
+///   then `| 0x800` (`0x801D5534..0x801D558C`);
+/// - the points in the large digit style at `(0x20, 0x88)`
+///   (`FUN_801D76E0(1, 0x20, 0x88, points, lift / 2)`, `0x801D5640`);
+/// - the label glyph `0x17` at `(0xC0, 0x98)`, as `0x417` then `0x817`;
+/// - the species name through `FUN_801D73B8(name, 0xA0, 0x1A0 - lift)`, which
+///   centres it on `x = 0xA0` by `13 * (len - 1) / 4` (its length times a
+///   13-unit pitch, not the glyph widths), draws it 7 px below the `y` it is
+///   given, and skips it while that `y` is `>= 0xF1` - so the name rises
+///   into view from below as the plate fades up. `name_len` is the name's
+///   byte length; `0` draws no name.
+// PORT: FUN_801d5298 (result plate draw: rank glyph, large points, label, rising name)
+// REF: FUN_801d73b8 (centred caption at y + 7, skipped at y >= 0xF1)
+pub fn catch_result_draws(
+    ramp: i32,
+    strength: i32,
+    points: i32,
+    species: u32,
+    name_len: usize,
+) -> Vec<HudDraw> {
+    let lift = (ramp - 0x180).clamp(0, 0x100);
+    let brightness = lift / 2;
+    let rank = catch_rank_glyph(strength);
+    let glyph = |id: u32, x: i32, y: i32| HudDraw::Glyph {
+        layer: 0,
+        id,
+        x,
+        y,
+        brightness,
+    };
+    let mut d = vec![
+        glyph(rank | 0x400, 0xA0, 0x78),
+        glyph(rank | 0x800, 0xA0, 0x78),
+        HudDraw::LargeNumber {
+            x: 0x20,
+            y: 0x88,
+            value: points,
+            brightness,
+        },
+        glyph(0x417, 0xC0, 0x98),
+        glyph(0x817, 0xC0, 0x98),
+    ];
+    let name_y = 0x1A0 - lift;
+    if name_len > 0 && name_y < 0xF1 {
+        // `addiu s0,v0,-1` then `13 * s0`, `/ 4` rounding toward zero.
+        let half = (13 * (name_len as i32 - 1)) / 4;
+        d.push(HudDraw::Caption {
+            text: HudCaption::FishName(species),
+            x: 0xA0 - half,
+            y: name_y + 7,
+        });
+    }
+    d
+}
+
 /// One digit cell of an expanded [`HudDraw::Number`]: the digit value and the
 /// screen slot it occupies. Retail draws these through a digit primitive
 /// (`FUN_801d7dd8` / `FUN_801d7d44`) that is separate from the glyph emitter,
@@ -832,6 +921,9 @@ pub struct FishingCaptions<'a> {
     pub lures_left: &'a str,
     /// Caption drawn after the lure count.
     pub lure_count_suffix: &'a str,
+    /// The species names a [`HudCaption::FishName`] indexes; empty draws no
+    /// name.
+    pub fish_names: &'a [String],
 }
 
 impl<'a> FishingCaptions<'a> {
@@ -843,7 +935,15 @@ impl<'a> FishingCaptions<'a> {
             rod_names: [&lure_names[0], &lure_names[1], &lure_names[2]],
             lures_left,
             lure_count_suffix: suffix,
+            fish_names: &[],
         }
+    }
+
+    /// The same captions with the species names a landed catch's plate
+    /// draws ([`HudCaption::FishName`]).
+    pub fn with_fish_names(mut self, fish_names: &'a [String]) -> Self {
+        self.fish_names = fish_names;
+        self
     }
 }
 
@@ -856,6 +956,7 @@ impl FishingCaptions<'static> {
             rod_names: ["Old Rod", "Deluxe Rod", "Legendary Rod"],
             lures_left: "Lures",
             lure_count_suffix: "left",
+            fish_names: &[],
         }
     }
 }
@@ -996,7 +1097,8 @@ pub fn fishing_hud_draws_for(
 
     for item in items {
         match *item {
-            HudDraw::Number { .. } | HudDraw::Glyph { .. } if atlas.sprites_drawn => {}
+            HudDraw::Number { .. } | HudDraw::LargeNumber { .. } | HudDraw::Glyph { .. }
+                if atlas.sprites_drawn => {}
             HudDraw::Number {
                 x,
                 y,
@@ -1004,6 +1106,18 @@ pub fn fishing_hud_draws_for(
                 brightness,
             } => {
                 for cell in number_digit_cells(0, x, y, value) {
+                    let digit = [b'0' + cell.digit as u8];
+                    let s = core::str::from_utf8(&digit).unwrap_or("0");
+                    text_at(&mut out, s, cell.x, cell.y, brightness);
+                }
+            }
+            HudDraw::LargeNumber {
+                x,
+                y,
+                value,
+                brightness,
+            } => {
+                for cell in number_digit_cells(1, x, y, value) {
                     let digit = [b'0' + cell.digit as u8];
                     let s = core::str::from_utf8(&digit).unwrap_or("0");
                     text_at(&mut out, s, cell.x, cell.y, brightness);
@@ -1034,6 +1148,11 @@ pub fn fishing_hud_draws_for(
                     }
                     HudCaption::LuresLeft => captions.lures_left,
                     HudCaption::LureCountSuffix => captions.lure_count_suffix,
+                    HudCaption::FishName(i) => captions
+                        .fish_names
+                        .get(i as usize)
+                        .map(String::as_str)
+                        .unwrap_or(""),
                 };
                 text_at(&mut out, s, x, y, HUD_BRIGHTNESS);
             }
@@ -1394,6 +1513,84 @@ mod tests {
             power: 0x800,
             step: 0xc
         }));
+    }
+
+    /// `FUN_801D5298`'s rank ladder, at each threshold's two sides.
+    #[test]
+    fn catch_rank_glyph_follows_the_strength_ladder() {
+        for (strength, rank) in [
+            (0, 0x15),
+            (0xC8, 0x15),
+            (0xC9, 0x13),
+            (0x258, 0x13),
+            (0x259, 0x12),
+            (0x320, 0x12),
+            (0x321, 0x11),
+            (0x4B0, 0x11),
+            (0x4B1, 0x14),
+        ] {
+            assert_eq!(catch_rank_glyph(strength), rank, "strength {strength:#x}");
+        }
+    }
+
+    /// The plate's draws: dark through the `0x180` lead-in, half the lift
+    /// once it climbs, the points in the large style, and the name rising
+    /// into view only once its `y` argument drops below `0xF1`.
+    #[test]
+    fn catch_result_plate_fades_up_and_the_name_rises() {
+        let at = |ramp| catch_result_draws(ramp, 0x300, 1234, 4, 9);
+        // Lead-in: every sprite at brightness 0, the name still below.
+        let d = at(0x100);
+        assert_eq!(d.len(), 5);
+        assert!(d.iter().all(|i| match *i {
+            HudDraw::Glyph { brightness, .. } | HudDraw::LargeNumber { brightness, .. } =>
+                brightness == 0,
+            _ => false,
+        }));
+        assert_eq!(
+            d[0],
+            HudDraw::Glyph {
+                layer: 0,
+                id: 0x412,
+                x: 0xA0,
+                y: 0x78,
+                brightness: 0
+            }
+        );
+        assert_eq!(
+            d[2],
+            HudDraw::LargeNumber {
+                x: 0x20,
+                y: 0x88,
+                value: 1234,
+                brightness: 0
+            }
+        );
+        // `y = 0x1A0 - lift` reaches `0xF0` at lift `0xB0`: the first frame
+        // the name draws, centred by `13 * 8 / 4 = 26`, 7 px below `y`.
+        assert_eq!(at(0x180 + 0xAF).len(), 5);
+        let d = at(0x180 + 0xB0);
+        assert_eq!(
+            d[5],
+            HudDraw::Caption {
+                text: HudCaption::FishName(4),
+                x: 0xA0 - 26,
+                y: 0xF0 + 7
+            }
+        );
+        // Fully lifted: brightness `0x80`, name at `0xA0 + 7`.
+        let d = at(0x1000);
+        assert!(matches!(
+            d[3],
+            HudDraw::Glyph {
+                id: 0x417,
+                brightness: 0x80,
+                ..
+            }
+        ));
+        assert!(matches!(d[5], HudDraw::Caption { y: 0xA7, .. }));
+        // No resolved name, no caption.
+        assert_eq!(catch_result_draws(0x1000, 0, 5, 0, 0).len(), 5);
     }
 
     #[test]

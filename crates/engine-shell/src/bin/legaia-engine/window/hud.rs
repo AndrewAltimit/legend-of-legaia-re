@@ -671,7 +671,8 @@ impl PlayWindowApp {
                     &t.lure_names,
                     &t.lures_left,
                     &t.suffix,
-                ),
+                )
+                .with_fish_names(&t.species_names),
                 None => legaia_engine_render::FishingCaptions::placeholder(),
             };
             let mut draws = legaia_engine_render::fishing_hud_draws_for(

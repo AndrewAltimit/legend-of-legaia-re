@@ -43,6 +43,7 @@ impl PondSession {
             gauge: TensionGauge::new(0),
             strength: 0,
             last_award: 0,
+            result_ramp: 0,
             events: Vec::new(),
             venue_map: None,
             lure_actor: None,
@@ -416,6 +417,7 @@ impl PondSession {
                     let award = sp.score_for(self.strength);
                     self.record.credit(sp.index, award);
                     self.last_award = award;
+                    self.result_ramp = 0;
                     self.events.push(PondEvent::Landed(award));
                     self.phase = PondPhase::Landed;
                     // So does the reel-in arm (`0x801D3CB4`).
@@ -425,6 +427,12 @@ impl PondSession {
                 }
             }
             PondPhase::Landed | PondPhase::Snapped => {
+                if self.phase == PondPhase::Landed {
+                    // `FUN_801D5298`: `+0x1A += frame_step * 4`
+                    // (`0x801D52F4..0x801D5314`), held at `0x1000`
+                    // (`0x801D54B8..0x801D54CC`).
+                    self.result_ramp = (self.result_ramp + 4 * fs).min(0x1000);
+                }
                 if input.cast_edge {
                     self.fight_species = None;
                     self.line_record = 0;
@@ -579,6 +587,29 @@ impl PondSession {
         }
     }
 
+    /// The landed catch's result plate this frame (`FUN_801D5298`, the
+    /// result actor's tick), while [`PondPhase::Landed`] holds; `None`
+    /// otherwise. One derivation for all three hosts, which pass it to
+    /// `legaia_engine_ui::ui_fishing::catch_result_draws`.
+    ///
+    /// The counter starts on the landing. Retail seats the result actor at
+    /// the end of the landed fish's lift (`FUN_801D4948`, which raises
+    /// `DAT_801D9294` at `0x801D5208`), a beat the engine does not model, so
+    /// the plate's `0x180`-unit dark lead-in is the only delay before it
+    /// fades up.
+    pub fn catch_result(&self) -> Option<PondCatchResult> {
+        if self.phase != PondPhase::Landed {
+            return None;
+        }
+        let species = self.fight_species?;
+        Some(PondCatchResult {
+            ramp: self.result_ramp,
+            strength: self.strength,
+            points: self.last_award,
+            species,
+        })
+    }
+
     /// The host status rows - a phase line and a key hint - both play hosts
     /// print above the retail HUD while the fishing sprite page is undecoded.
     /// Engine affordance text, not retail; one copy so the hosts agree.
@@ -612,6 +643,20 @@ impl PondSession {
         };
         (line, hint)
     }
+}
+
+/// The landed catch's result-plate inputs, host-neutral
+/// ([`PondSession::catch_result`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PondCatchResult {
+    /// The result actor's `+0x1A` counter, `0..=0x1000`.
+    pub ramp: i32,
+    /// The fight's accumulated strength `DAT_801D91B8` - the rank plate's key.
+    pub strength: i32,
+    /// The awarded points (`s4` in `FUN_801D5298`).
+    pub points: i32,
+    /// The caught species' table index (`DAT_801D91CC`).
+    pub species: usize,
 }
 
 /// The catch HUD's inputs, host-neutral (the `engine-ui` `CatchHudState`

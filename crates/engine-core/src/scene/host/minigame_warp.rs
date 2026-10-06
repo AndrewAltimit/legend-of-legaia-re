@@ -162,6 +162,7 @@ impl SceneHost {
                 crate::world::FishingCaptionText::resolve(&raw, |id| {
                     names.and_then(|n| n.name(id)).map(str::to_string)
                 })
+                .with_species_names(loaded)
             });
         true
     }

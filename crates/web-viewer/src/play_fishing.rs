@@ -287,6 +287,22 @@ impl LegaiaRuntime {
                 gauges_visible: c.gauges_visible,
             }));
         }
+        // A landed catch's result plate (`FUN_801D5298`), as the native
+        // window composes it.
+        if let Some(r) = s.catch_result() {
+            let name_len = self
+                .scene_host
+                .as_ref()
+                .and_then(|h| h.world.minigames.fishing_captions.as_ref())
+                .map_or(0, |t| t.species_name(r.species).len());
+            items.extend(ui::catch_result_draws(
+                r.ramp,
+                r.strength,
+                r.points,
+                r.species as u32,
+                name_len,
+            ));
+        }
         items.extend(self.fishing_banner_draws.iter().copied());
         items
     }
@@ -475,7 +491,8 @@ impl LegaiaRuntime {
             .as_ref()
             .and_then(|h| h.world.minigames.fishing_captions.clone());
         let captions = match disc_captions.as_ref() {
-            Some(t) => FishingCaptions::from_disc(&t.lure_names, &t.lures_left, &t.suffix),
+            Some(t) => FishingCaptions::from_disc(&t.lure_names, &t.lures_left, &t.suffix)
+                .with_fish_names(&t.species_names),
             None => FishingCaptions::placeholder(),
         };
         let mut texts = ui::fishing_hud_draws_for(font, &items, &captions, &atlas, (0, 0));
