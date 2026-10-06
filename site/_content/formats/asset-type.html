@@ -70,6 +70,11 @@
 <section class="doc-section" id="calling-convention">
   <h2>Calling convention</h2>
 <pre><code>result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_only);</code></pre>
+  <p>The second argument is the same little-endian word a <a href="data-field.html">DATA_FIELD</a> chunk header stores, so in memory it reads size first, type last:</p>
+  <div class="byte-map" role="img" aria-label="type_and_size word: bytes 0 to 2 are the 24-bit size, byte 3 is the type byte">
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">size (bits 0-23)</span><span class="bm-size">u24</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">type (bits 24-31)</span><span class="bm-size">u8</span></div>
+  </div>
   <ul class="bullets">
     <li><code>type_and_size</code> packs <strong>type</strong> in the high 8 bits, <strong>size</strong> in the low 24 bits.</li>
     <li><code>copy_only != 0</code> &rarr; the asset is uncompressed and is copied into its buffer.</li>
@@ -103,8 +108,8 @@
     <summary>Type-byte details: the MOVE / ANM label swap, and VDF</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong><code>0x05 MOVE</code></strong> is where the per-scene player ANM bundle lives on disc: a canonical ANM container with <code>marker_1 = 0x080C</code> records (<a href="anm.html">ANM</a>). The dispatcher's "ANM malloc-err" string at case 6 indexes this type, not type <code>0x06</code>.</li>
-        <li><strong><code>0x06 ANM</code></strong> carries the CLUT-walk <code>MoveImage</code> walker table: case 6 installs it at <code>DAT_8007B7C8</code> and <code>FUN_8001ADA4</code> case <code>0xB</code> steps it. Populated in 12 bundles - the 3 kingdoms plus 9 water / waterfall field scenes - and a 4-byte <code>count = 0</code> placeholder everywhere else. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md">field ambient FX</a>; parser <code>legaia_asset::clut_walk::from_scene_bundle</code>.</li>
+        <li><strong><code>0x05 MOVE</code></strong> is where the per-scene player ANM bundle lives on disc: a canonical ANM container with <code>marker_1 = 0x080C</code> records (<a href="anm.html">ANM</a>). Its arm allocates with the <code>move_malloc_err</code> string into <code>_DAT_8007B888</code>, the buffer the clip driver <code>FUN_800204F8</code> binds clips from.</li>
+        <li><strong><code>0x06 ANM</code></strong> carries the CLUT-walk <code>MoveImage</code> walker table despite its <code>anm_malloc_err</code> label: case 6 installs it at <code>DAT_8007B7C8</code>, <code>FUN_80024CFC</code> spawns one walker actor per entry (state <code>0xB</code>), and <code>FUN_8001ADA4</code> case <code>0xB</code> steps it. Populated in 12 bundles - the 3 kingdoms plus 9 water / waterfall field scenes - and a 4-byte <code>count = 0</code> placeholder everywhere else. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md">field ambient FX</a>; parser <code>legaia_asset::clut_walk::from_scene_bundle</code>.</li>
         <li><strong><code>0x07 VDF</code></strong> is installed at <code>DAT_8007B7DC</code> and post-processed by <code>FUN_8001FBCC</code> per sub-entry (pointer table <code>0x80083E58</code>). Populated in 61 scene bundles; parser <code>legaia_asset::scene_vdf</code>.</li>
       </ul>
     </div>
@@ -114,29 +119,17 @@
 <section class="doc-section" id="return-value-bitfield">
   <h2>Return-value bitfield</h2>
   <p>Every return is a small bitfield - one bit per data-bearing type, and <code>type &lt;&lt; 8</code> for the markers. Both callers (the streaming walker and the descriptor walker) <strong>OR every return into one accumulator</strong>, so the result summarises what a whole stream contained:</p>
-<pre><code>return_value &amp; 0x00FF  = bit per data-bearing asset type seen
-return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
+<div class="byte-map" role="img" aria-label="Accumulated return value: low byte is one bit per data-bearing type seen, second byte is the FLAG marker type">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">bits 0-7</span><span class="bm-name">one bit per data-bearing type seen (<code>&amp; 0x00FF</code>)</span><span class="bm-size">TIM 0x01 &middot; TMD 0x02 &middot; MAN 0x04 &middot; MES 0x08 &middot; MOVE 0x10 &middot; ANM 0x20 &middot; VDF 0x40 &middot; SIN 0x80</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">bits 8-15</span><span class="bm-name">FLAG markers seen (<code>&amp; 0xFF00</code>)</span><span class="bm-size">type &lt;&lt; 8: 0x0A, 0x0F, 0x14 OR together</span></div>
+  </div>
   <h3 id="why-flag-types-exist">Why FLAG types exist</h3>
   <p>The FLAG cases let the dispatcher accept chunks whose type byte falls outside the data-bearing range without aborting the streaming walk. The walker still skips the data bytes (<code>advance = 4 + (size &amp; ~3)</code>), but the dispatcher never reads them. FLAG chunks are <strong>stream-level out-of-band markers</strong>: any caller that looks at the returned bitfield can detect "this stream contained a <code>0x14</code>-typed marker" without the marker carrying a parsed asset. Where the markers are consumed is open - possibly by code that reads past the streaming terminator (the <a href="data-field.html#trailer-data">DATA_FIELD trailer</a>).</p>
 </section>
 
 <section class="doc-section" id="assettype-rust-enum">
-  <h2><code>AssetType</code> Rust enum</h2>
-<pre><code>pub enum AssetType {
-    Tim,        // 0
-    TimList,    // 1
-    Tmd,        // 2
-    Man,        // 3
-    Mes,        // 4
-    Move,       // 5
-    Anm,        // 6
-    Vdf,        // 7
-    Sin,        // 8
-    Tmd2,       // 9
-    Move2,      // 0xB
-    Flag(u8),   // 0xA, 0xF, 0x14
-    Unknown(u8),
-}</code></pre>
+  <h2>In the port</h2>
+  <p><code>legaia_asset::AssetType</code> mirrors the table one variant per type byte, with <code>Flag(u8)</code> for the three markers and <code>Unknown(u8)</code> for everything else - the same silent no-op the retail dispatcher performs (below).</p>
 </section>
 
 <section class="doc-section" id="where-the-dispatcher-actually-gets-called">
@@ -147,7 +140,7 @@ return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
     <tbody>
       <tr><td>Streaming walker, <code>0x14</code> (DATA_FIELD) branch</td><td><code>FUN_8002541C</code></td><td><code>SCUS_942.54</code> static call graph</td></tr>
       <tr><td>Descriptor-pair walker</td><td><code>FUN_80020224</code></td><td>Town/field overlay: <code>FUN_801D6704</code> &rarr; <code>0x801D6B0C</code> with <code>a0 = 0</code>; see <a href="asset-descriptor.html">asset descriptor</a></td></tr>
-      <tr><td>In-overlay DATA_FIELD walk</td><td><code>0x801D4DA8</code></td><td>PROT 0976, the Baka Fighter minigame overlay. It re-implements the same walk, passes <code>copy_only = 1</code>, and discards the return value &mdash; so the flag bitfield below is a property of the two SCUS callers only.</td></tr>
+      <tr><td>In-overlay DATA_FIELD walk</td><td><code>0x801D4DA8</code></td><td>PROT 0976, the Baka Fighter minigame overlay. It re-implements the same walk, passes <code>copy_only = 1</code>, and discards the return value &mdash; so the flag bitfield above is a property of the two SCUS callers only.</td></tr>
     </tbody>
   </table>
 </section>
@@ -160,6 +153,9 @@ return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the dispatcher, its two decode paths, and the malloc-error strings</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -170,7 +166,9 @@ return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
       <tr><td>Malloc-error strings</td><td><code>s_Tim_Malloc_Err_800104E8</code>, <code>s_tmd_malloc_err_80010504</code>, &hellip;</td><td>The developers' own name for each type byte</td><td><code>SCUS_942.54</code> string table</td></tr>
     </tbody>
   </table>
-  <p>Full page: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/asset-type.md">docs/formats/asset-type.md</a>.</p>
+    </div>
+  </details>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/asset-type.md" target="_blank" rel="noopener"><code>docs/formats/asset-type.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

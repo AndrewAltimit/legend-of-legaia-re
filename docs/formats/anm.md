@@ -57,18 +57,24 @@ to recover it from the record size when it fits the equation exactly.
 
 ## Public entry point - `play_anm_by_id`
 
-`FUN_80024CFC` (`play_anm_by_id(id, actor, ?)` in SCUS) is the writer
-that primes an actor for animation playback:
+`FUN_80024CFC` (historically `play_anm_by_id(id, actor, ?)`) is **not** a clip
+entry point. It reads the type-`0x06` buffer `_DAT_8007B7C8 + (id*4) + 4`,
+stores `base + offset` in `actor[+0x4C]`, and writes `0xB` to `actor[+0x56]`
+and `100` to `actor[+0x68]`. The type-6 buffer is the scene's CLUT-walk
+table ([`asset-type.md`](asset-type.md#type-table)), and state `0xB` in the
+per-actor tick `FUN_8001ADA4` is the CLUT-walk step (per-entry frame counter
+plus a 16x1 `MoveImage` per frame, `case 0xb` of `8001ada4.txt`) - so the
+routine spawns palette-cycling walkers
+([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)).
 
-1. Calls `FUN_80020DE0` (actor allocator).
-2. Reads the per-record offset from the ANM payload at `_DAT_8007B7C8 + (id*4) + 4`.
-3. Stores `(anm_base + record_offset)` in `actor[+0x4C]` (the per-actor anim record pointer).
-4. Writes `0xB` to `actor[+0x56]` (animation state byte) and `100` to `actor[+0x68]` (frame counter).
-
-The actor tick `FUN_80021DF4` then reads `actor[+0x4C]` whenever
-`actor[+0x5A]` is `2` or `6` and runs the keyframe interpolation pass
-described above. Other animation opcodes (set in `actor[+0x5A]`) gate
-different per-record body layouts; only opcode `6` is fully traced today.
+Clips bind elsewhere: the clip driver `FUN_800204F8` loads the bank from
+`_DAT_8007B888` at `0x8002055C` - the type-`0x05` buffer the dispatcher
+allocates with `move_malloc_err` (store at `0x8001F3A8`) - or from
+`_DAT_8007B840` for ids `>= 0x400`, or `DAT_8007B75C` when actor flag
+`+0x10` bit `0x01000000` is set, then writes `actor[+0x4C]`, resets the
+cursor and sets `actor[+0x56] = 1`. The actor tick `FUN_80021DF4` reads
+`actor[+0x4C]` whenever `actor[+0x5A]` is `2` or `6` and runs the keyframe
+interpolation pass described above.
 
 ## Connection to other systems
 
@@ -133,8 +139,7 @@ per-arm breakdown.
 
 The per-frame interpreter for non-opcode-6 records is **partially
 overlay-resident**.
-`FUN_80024CFC` only primes the actor (`actor[+0x4C]` = record pointer,
-`actor[+0x56] = 0xB`); a handler in the town overlay (`FUN_801DE840`,
+The clip driver `FUN_800204F8` binds the record (`actor[+0x4C]`); a handler in the town overlay (`FUN_801DE840`,
 overlay 0897) reads `actor[+0x4C]` at `801e260c` via a sub-dispatch table
 at `0x801CEF88` (routes by `opcode & 0xF`, 16 entries):
 
@@ -466,14 +471,13 @@ first, entry-major, then a stream chunk. Without the stream form every
 `rikuroa` clip id went unresolved and its multi-object actors were
 withheld from the catalog.
 
-The mismatch between the asset type byte (`0x05` = "MOVE") and the
-`ghidra/scripts/funcs/8001f05c.txt` (which
-allocates `_DAT_8007B7C8` with the `anm_malloc_err` string and labeled
-**ANM** dispatch) is a documented quirk; the runtime case selector indexes
-asset bytes differently than the [`AssetType`] enum's display label
-suggests.
+The clip bundle carries type byte `0x05` ("MOVE"), and the dispatcher
+allocates it into `_DAT_8007B888` with the `move_malloc_err` string
+(`ghidra/scripts/funcs/8001f05c.txt`, store at `0x8001F3A8`). The
+`anm_malloc_err` arm is type `0x06`, whose buffer `_DAT_8007B7C8` holds the
+CLUT-walk table: the enum labels and the contents are crossed.
 
-Confirmed corpus (byte-equality against live `DAT_8007B7C8` in the
+Confirmed corpus (byte-equality against the live clip bank in the
 [`v0_1_pre_battle_tetsu`](../../scripts/scenarios.toml) field-mode save
 state, mc7):
 
@@ -743,8 +747,8 @@ character viewer.
 
 ## Allocator preamble
 
-When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd
-buffer at `_DAT_8007B7C8` carries a 16-byte allocator preamble before
+When the dispatcher (`FUN_8001f05c` case 5) loads the clip bundle, the malloc'd
+buffer at `_DAT_8007B888` carries a 16-byte allocator preamble before
 the payload:
 
 ```
