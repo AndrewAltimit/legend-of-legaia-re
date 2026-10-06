@@ -1711,6 +1711,19 @@ impl LegaiaRuntime {
         host.world.force_encounter(id)
     }
 
+    /// Talk to the live scene's placement `slot` through
+    /// `World::trigger_field_interact` - the call the walk-up interaction
+    /// probe makes - so a headless driver can open a merchant's or an
+    /// innkeeper's conversation without walking to it. The native twin is the
+    /// screenshot harness's `LEGAIA_CAPTURE_TALK=<slot>@<tick>`.
+    pub fn debug_talk_to_placement(&mut self, slot: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.trigger_field_interact(0xFF, slot);
+        true
+    }
+
     /// Dispatch a cast the moment the next battle's first command prompt
     /// opens - the browser twin of the native window's
     /// `LEGAIA_BATTLE_INFLIGHT=caster,spell,target` debug seam (engine actor

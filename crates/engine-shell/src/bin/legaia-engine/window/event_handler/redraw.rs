@@ -139,6 +139,11 @@ impl PlayWindowApp {
             // Screenshot harness: inject the scripted one-tick pad edge for
             // this tick (overriding keyboard). Ticks with no script entry get
             // a neutral pad so the previous press releases (edge resets).
+            if let Some((t, slot)) = self.screenshot.as_ref().and_then(|sc| sc.talk_at)
+                && t == self.tick_no
+            {
+                self.session.host.world.trigger_field_interact(0xFF, slot);
+            }
             if self.screenshot.is_some() {
                 let scripted_pad = self
                     .screenshot

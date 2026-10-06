@@ -65,6 +65,12 @@ pub(crate) struct ScreenshotConfig {
     /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
     /// the retail-compare image channel from the state's own RAM.
     pub hud_countdown: Option<i16>,
+    /// `LEGAIA_CAPTURE_TALK=<slot>@<tick>`: at that world tick, talk to the
+    /// scene's placement `slot` through `World::trigger_field_interact` - the
+    /// call the walk-up interaction probe makes - so a capture can open a
+    /// merchant's or innkeeper's conversation without walking to it. The
+    /// browser twin is `LegaiaRuntime::debug_talk_to_placement`.
+    pub talk_at: Option<(u64, u8)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_engine_shell::retail_compare_battle::PhaseGate`]) instead of
@@ -377,6 +383,10 @@ impl ScreenshotConfig {
             sweep,
             pad_script: script,
             key_script: keys,
+            talk_at: std::env::var("LEGAIA_CAPTURE_TALK").ok().and_then(|v| {
+                let (slot, tick) = v.trim().split_once('@')?;
+                Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
+            }),
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
