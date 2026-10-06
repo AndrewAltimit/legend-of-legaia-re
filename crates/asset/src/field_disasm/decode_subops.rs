@@ -862,21 +862,23 @@ pub(super) fn decode_menu_ctrl(
                 },
             )
         }
-        // Nibble D - heterogeneous. Encoded widths per sub: 2/6/7/A = 1
-        // (sub-2/6/7 halt at PC; footprint width), D/F = 2, 1/9 = 3,
+        // Nibble D - heterogeneous. Encoded widths per sub: 7/A = 1,
+        // 2/6/D/F = 2 (sub-2 and sub-6 leave through `0x801E00B8`,
+        // `s8 += 3`), 1/9 = 3,
         // C/E = 4 (party search; linear walk uses the miss width), 0/4/5 = 5,
         // 8 = 8, B = 12, 3 = 13 (SCHEDULE_TIMED_FLAGS - the timed
         // flag-scheduler write the flag census must be able to walk).
         0xD => {
             let sub = op0 & 0x0F;
             let encoded = match sub {
-                6 | 7 | 0xA => 1,
-                // Sub-2 (`[4C, D2, channel]`): the arm hands `operand + 1`
-                // to the channel resolver (port `op4c_n_d_sub_2_channel_spawn`)
-                // and halts at PC - the spawned context is what moves the
-                // parent on. The linear-walk width is the 3-byte footprint:
-                // `rugi` runs `4C D2 0F .. 4C D2 16` back to back.
-                2 | 0xD | 0xF => 2,
+                7 | 0xA => 1,
+                // Sub-2 (`[4C, D2, channel]`) spawns the channel's placement
+                // when nothing answers to it and advances by 3 (`rugi` runs
+                // `4C D2 0F .. 4C D2 16` back to back); sub-6
+                // (`[4C, D6, b1]`) writes `+0x74` and advances by 3
+                // (`chitei2` P2[0] / P2[1] run `CC <ch> D6 <b1>` over seven
+                // channels).
+                2 | 6 | 0xD | 0xF => 2,
                 1 | 9 => 3,
                 0xC | 0xE => 4,
                 0 | 4 | 5 => 5,

@@ -987,7 +987,9 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
     if !takes {
         return Some(0);
     }
-    let want = split_stay_option(session).unwrap_or((visit - 1) % n);
+    let want = split_stay_option(session)
+        .or_else(|| beat_progress_option(session))
+        .unwrap_or((visit - 1) % n);
     Some(if cursor < want {
         PadButton::Down.mask()
     } else if cursor > want {
@@ -995,6 +997,74 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
     } else {
         PadButton::Cross.mask()
     })
+}
+
+thread_local! {
+    /// The partition-2 record of the walk-on beat [`play_beats`] is walking
+    /// onto, while it does.
+    static PLAYING_BEAT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
+}
+
+/// On the walk-on beat being played, the option of its own picker that
+/// carries the story on: the first whose branch spawns a record (`0x44`)
+/// and changes no scene before its first `0x21`. `nilboa` P2[20] ("We have
+/// to jump down to where Koru is! Are you ready?") spawns the Delilas
+/// family's challenge P2[21] only on "I'm ready", and the band is walked
+/// once per visit, so the rotation's first answer, "Now wait a second!",
+/// left the chain - and the party's way off the north half - unplayed.
+fn beat_progress_option(session: &BootSession) -> Option<usize> {
+    let beat = PLAYING_BEAT.with(std::cell::Cell::get)?;
+    if timeline_p2_record(session) != Some(beat) {
+        return None;
+    }
+    let (count, targets, bc) = open_picker(session)?;
+    let spawns = |mut at: usize| {
+        for _ in 0..48 {
+            let Ok(i) = legaia_asset::field_disasm::decode(&bc, at) else {
+                return false;
+            };
+            match bc[at] & 0x7F {
+                0x44 => return true,
+                0x3F | 0x21 => return false,
+                _ => {}
+            }
+            at = match i.info {
+                legaia_asset::field_disasm::InsnInfo::JmpRel { target, .. } => target,
+                _ => at + i.size.max(1),
+            };
+        }
+        false
+    };
+    (0..count.min(4)).find(|&k| spawns(targets[k]))
+}
+
+/// The picker the modal timeline (or the first spawned record with a box)
+/// has open: option count, branch targets and the record's bytes.
+fn open_picker(session: &BootSession) -> Option<(usize, [usize; 4], Vec<u8>)> {
+    use legaia_asset::field_disasm::{InsnInfo, decode};
+    let w = &session.host.world;
+    let tl = w
+        .cutscene
+        .timeline
+        .iter()
+        .filter(|t| t.dialog.is_some())
+        .chain(
+            w.field_vm
+                .helper_contexts
+                .iter()
+                .filter(|t| t.dialog.is_some()),
+        )
+        .next()?;
+    let bc = tl.bytecode.as_slice();
+    let mut pc = tl.pc;
+    for _ in 0..16 {
+        let Ok(i) = decode(bc, pc) else { break };
+        if let InsnInfo::Picker { count, targets, .. } = i.info {
+            return Some((count as usize, targets, bc.to_vec()));
+        }
+        pc += i.size.max(1);
+    }
+    None
 }
 
 /// While a three-actor talk holds the party split (`43 02`, `nilboa`'s Three
@@ -2841,13 +2911,17 @@ thread_local! {
         std::cell::RefCell::new((String::new(), HashMap::new()));
     /// The loaded field scene's **ledge hops**, decoded once per scene: see
     /// [`ledge_hops`].
-    static LEDGE_HOPS: std::cell::RefCell<(String, Vec<LedgeHop>)> =
-        const { std::cell::RefCell::new((String::new(), Vec::new())) };
+    static LEDGE_HOPS: std::cell::RefCell<(String, Vec<LedgeHop>, Vec<ForkedHop>)> =
+        const { std::cell::RefCell::new((String::new(), Vec::new(), Vec::new())) };
 }
 
 /// One ledge hop: trigger tile, landing cell, and the record's C1 / C2
 /// story gates (retail `FUN_8003BDE0`).
 type LedgeHop = ((i32, i32), Cell, Vec<u16>, Vec<u16>);
+
+/// A walk-on record whose landing hangs on story flags: trigger tile, body,
+/// first-opcode offset and C1 / C2 gates ([`flag_path_landing`]).
+type ForkedHop = ((i32, i32), Vec<u8>, usize, Vec<u16>, Vec<u16>);
 
 /// The loaded field scene's **ledge hops** under the live flags: gate-1
 /// walk-on tiles whose partition-2 record the flags let spawn and whose
@@ -2868,6 +2942,7 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
         let mut t = t.borrow_mut();
         if t.0 != name {
             let mut hops = Vec::new();
+            let mut forked = Vec::new();
             if let Some((mf, man, triggers)) = scene_man_and_triggers(session) {
                 for tr in triggers.iter().filter(|t| t.gate == 1) {
                     let rec = usize::from(tr.record);
@@ -2879,7 +2954,20 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                     let mut leaves = false;
                     let mut forks = false;
                     let body = &man[start..start + len];
+                    // Op `0x47` walk-to-tile legs on the player (`C7 F8 x z
+                    // mode`, the kernel `FUN_8003774C` case `0x47`): a
+                    // transporter pad carries the walker across a wall
+                    // (`deroa` P2[12] / P2[14], the platforms between its
+                    // shaft rooms).
+                    let mut walks = Vec::new();
                     for insn in LinearWalker::new(body, pc0).flatten() {
+                        if insn.opcode == 0x47
+                            && insn.extended == Some(0xF8)
+                            && let (Some(&x), Some(&z)) =
+                                (body.get(insn.pc + 2), body.get(insn.pc + 3))
+                        {
+                            walks.push((x, z));
+                        }
                         match insn.info {
                             InsnInfo::ActorCtrl {
                                 kind: ActorCtrlKind::ArcJump { tile_x, tile_z, .. },
@@ -2928,6 +3016,11 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                         // where its last arc does.
                         ([.., (x, z)], []) if !forks => Some(cell_of(at(*x), at(*z))),
                         ([], [(x, z)]) if !leaves => Some(cell_of(*x, *z)),
+                        // A fork-free run of player walk legs ends where its
+                        // last leg does.
+                        ([], []) if !forks && !leaves => {
+                            walks.last().map(|&(x, z)| cell_of(at(x), at(z)))
+                        }
                         _ => None,
                     };
                     if let Some(land) = land
@@ -2935,10 +3028,19 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                     {
                         let (c1, c2) = partition2_record_gates(&mf, &man, rec).unwrap_or_default();
                         hops.push(((i32::from(tr.tile_x), i32::from(tr.tile_z)), land, c1, c2));
+                    } else if land.is_none() && forks && !branches && !leaves && !walks.is_empty() {
+                        let (c1, c2) = partition2_record_gates(&mf, &man, rec).unwrap_or_default();
+                        forked.push((
+                            (i32::from(tr.tile_x), i32::from(tr.tile_z)),
+                            body.to_vec(),
+                            pc0,
+                            c1,
+                            c2,
+                        ));
                     }
                 }
             }
-            *t = (name, hops);
+            *t = (name, hops, forked);
         }
         let w = &session.host.world;
         let mut map = HashMap::new();
@@ -2947,8 +3049,76 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                 map.entry(*tile).or_insert(*land);
             }
         }
+        for (tile, body, pc0, c1, c2) in &t.2 {
+            if w.p2_record_gates_pass(c1, c2)
+                && let Some(land) = flag_path_landing(w, body, *pc0)
+            {
+                map.entry(*tile).or_insert(land);
+            }
+        }
         map
     })
+}
+
+/// Where a walk-on record whose only forks are story-flag tests walks the
+/// player under the live flags: the run is followed from its first opcode
+/// (a `SysFlag.Test` jumps when its flag is set - the same reading
+/// [`legaia_engine_core::man_field_scripts::placement_spawn_relocation`]
+/// makes), and the last player walk leg (`C7 F8 x z`) or arc on it is the
+/// landing. `deroa`'s transporter hub P2[11] sends its platform to one of
+/// three shaft rooms by the switch flags `0x4EF` / `0x4F0`.
+fn flag_path_landing(
+    w: &legaia_engine_core::world::World,
+    body: &[u8],
+    pc0: usize,
+) -> Option<Cell> {
+    use legaia_asset::field_disasm::{ActorCtrlKind, FlagKind, InsnInfo, decode};
+    let at = |b: u8| i16::from(b & 0x7F) * 128 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 };
+    let mut pc = pc0;
+    let mut seen = HashSet::new();
+    let mut last = None;
+    while seen.insert(pc) {
+        let &op = body.get(pc)?;
+        if op == 0x21 {
+            break;
+        }
+        let insn = decode(body, pc).ok()?;
+        if insn.opcode == 0x47
+            && insn.extended == Some(0xF8)
+            && let (Some(&x), Some(&z)) = (body.get(pc + 2), body.get(pc + 3))
+        {
+            last = Some(cell_of(at(x), at(z)));
+        }
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                if w.system_flag_test(idx) {
+                    pc = target & 0xFFFF;
+                    continue;
+                }
+            }
+            InsnInfo::JmpRel { target, .. } => {
+                pc = target & 0xFFFF;
+                continue;
+            }
+            InsnInfo::ActorCtrl {
+                kind: ActorCtrlKind::ArcJump { tile_x, tile_z, .. },
+                ..
+            } if insn.extended == Some(0xF8) && (tile_x, tile_z) != (0, 0) => {
+                last = Some(cell_of(at(tile_x), at(tile_z)));
+            }
+            InsnInfo::BBoxTest { .. } | InsnInfo::CondJmp { .. } | InsnInfo::Picker { .. } => {
+                return None;
+            }
+            _ => {}
+        }
+        pc += insn.size.max(1);
+    }
+    last
 }
 
 /// The loaded field scene's kind-0 intra-scene teleports (`.MAP` trigger
@@ -4611,8 +4781,23 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     {
         return Ok(s);
     }
+    // A walk that stalls against the door's own frame is a door this side
+    // cannot enter (`concnow`'s door to `conc2` at (15, 41) is entered from
+    // the north; from (15, 42) its threshold is a wall): like a refusal, the
+    // scene's other door to `dest` is tried.
+    let at_frame = |e: &str| {
+        e.contains("pad walk stalled")
+            && e.split(" tiles short")
+                .next()
+                .and_then(|h| h.rsplit(' ').next())
+                .and_then(|n| n.parse::<u32>().ok())
+                .is_some_and(|n| n <= 2)
+    };
     let walked = match pad_walk(session, goal, &walk_avoid, 0) {
-        Err(e) if e.contains("changed nothing") && scene_name(session) == here_name => {
+        Err(e)
+            if (e.contains("changed nothing") || at_frame(&e))
+                && scene_name(session) == here_name =>
+        {
             let first = REFUSED_DOORS.with(|r| {
                 r.borrow_mut()
                     .insert((here_name.clone(), goal), flags_of_world(session))
@@ -5265,6 +5450,22 @@ fn pad_walk(
                 path = plan_around(session, cell, goal, avoid, &doors);
                 if path.is_empty() {
                     path = unwedge(session, cell);
+                }
+                // A route over a band that stages a fight walks into a boss:
+                // a party under two thirds is topped up first, as before a
+                // stager (`taiku` P2[27], the F9 boss on the way out, met
+                // at 56% after a fled encounter).
+                if !path.is_empty() && party_hp_permille(session) < 667 {
+                    let fights = fight_band_tiles(session);
+                    if path.iter().any(|&c| {
+                        let (x, z) = cell_center(c);
+                        fights.contains(&dispatch_tile(x, z))
+                    }) && pad_field_heal(session, 900) > 0
+                    {
+                        planned_from = None;
+                        path.clear();
+                        continue;
+                    }
                 }
             }
             planned_from = Some(cell);
@@ -6432,6 +6633,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             if pad_hand() && boss_band_live {
                 pad_field_heal(session, 900);
             }
+            PLAYING_BEAT.with(|b| b.set(Some(rec)));
             let r = if pad_hand() {
                 // A band is often several tiles wide and walled on some of
                 // them (`retockin` P2[42], Lord Saryu's audience, spans
@@ -6491,6 +6693,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 step_onto(session, tile);
                 run_while_moving(session, DEEP_EXIT_TICKS)
             };
+            PLAYING_BEAT.with(|b| b.set(None));
             let r = fight_committed(session, r);
             // A band no member could walk to stays on the list: a later
             // beat may open the way (`nilboa` P2[39], the warp at the far
@@ -7034,6 +7237,29 @@ fn talk_beats(
     slots
 }
 
+/// The live walk-on tiles of the loaded field scene whose record stages a
+/// fight ([`record_stages_fight`]).
+fn fight_band_tiles(session: &BootSession) -> HashSet<(i32, i32)> {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return HashSet::new();
+    };
+    let w = &session.host.world;
+    let mut fights: HashMap<u8, bool> = HashMap::new();
+    triggers
+        .iter()
+        .filter(|t| t.gate == 1)
+        .filter(|t| {
+            *fights.entry(t.record).or_insert_with(|| {
+                partition2_record_gates(&mf, &man, usize::from(t.record))
+                    .is_none_or(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2))
+                    && record_stages_fight(&mf, &man, 2, usize::from(t.record))
+            })
+        })
+        .map(|t| (i32::from(t.tile_x), i32::from(t.tile_z)))
+        .collect()
+}
+
 /// Whether record `(part, rec)`, or a partition-2 record it spawns, installs
 /// a scripted battle (op `0x3E` with `op0 == 0xFF` or `< 100`).
 fn record_stages_fight(
@@ -7506,6 +7732,7 @@ fn traverse(
     REFUSED_DOORS.with(|r| r.borrow_mut().clear());
     TURNBACK.with(|t| t.borrow_mut().clear());
     RAN_ON_WALK.with(|t| t.borrow_mut().clear());
+    PLAYING_BEAT.with(|b| b.set(None));
     // Each pass answers pickers from a fresh rotation: a count carried over
     // from the seated pass (or an earlier segment) made the pad hand's
     // first answer depend on what else had run in the process (`nilboa`

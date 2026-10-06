@@ -338,7 +338,7 @@ scenes.
 Party state + inverted-Y mirror cluster.
 - **Sub-0** (round 18, 6-byte) is a field SE trigger with a conditional u16 pair: `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]` decodes both via [`load_u16_le`](script-vm.md#helper-functions); the original gates `func_0x8002B994(a, b)` on three flag globals (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`); PC always += 6.
 - **Sub-1** (1-byte) is a linked-list lookup gate via `FUN_8003CF04(_DAT_8007C34C, FUN_801DC0BC)` - host returns `Some(new_pc)` for the `LAB_801E360C` ce9c-jump path or `None` for PC += 4 on miss.
-- **Sub-2** (`[4C, D2, channel]`) hands the byte after the sub-op to the channel resolver `func_0x8003C83C` and conditionally spawns a script context, then halts at PC - the spawned context is what moves the parent on. The stream footprint is three bytes (`rugi` runs `4C D2 0F .. 4C D2 16` back to back), which is the width a linear walk must take.
+- **Sub-2** (`[4C, D2, channel]`, arm `0x801E2B7C`) hands the byte after the sub-op to the channel resolver `FUN_8003C83C`; when no context answers it spawns the placement through `FUN_8003A1E4` inside the `*(_DAT_801C6EA4) + 8` bracket. Both arms leave through `0x801E00B8`, `s8 += 3`: the op advances by its three bytes (`rugi` runs `4C D2 0F .. 4C D2 16` back to back). The port still halts at PC and relies on the cutscene timeline's step-past - see [the note below](#4c-d2--4c-d6--4c-d7-advance-in-retail).
 - **Sub-3** (14-byte) is `SCHEDULE_TIMED_FLAGS` - a timed-flag scheduler:
   `[4C, 0xD3, expiry_flag: u16, below_flag: u16, duration: u32, threshold: u32]`
   writes `_DAT_800845C0 = (expiry << 16) | below`, duration into
@@ -356,8 +356,19 @@ Party state + inverted-Y mirror cluster.
   `FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer`
   drains it once per retail frame into the system-flag bank
   (`legaia_engine_vm::escape_timer::EscapeTimer`).
-- **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]`, if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte; halts at PC.
-- **Sub-7** (1-byte) registers a `FUN_801DC0BC` list-walk callback then halts at PC.
+- **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]` (arm `0x801E2D64`), if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte, then leaves through `0x801E00B8`, `s8 += 3`. The top byte is the draw's blend argument ([`field-locomotion.md`](field-locomotion.md)); `chitei2` P2[0] / P2[1] and P2[9] / P2[10] run it over the corridor lights. The port halts at PC.
+- **Sub-7** (2-byte, arm `0x801E2DB4`) retires every `FUN_801DC0BC` (the cutscene camera mover) on actor list 0 through `FUN_8003CF40`, then `s8 += 2`. The port halts at PC.
+
+##### `4C D2` / `4C D6` / `4C D7` advance in retail
+
+All three arms advance (the nibble-D jump table at `0x801CEFC8` sends sub-2,
+sub-6 and sub-7 to `0x801E2B7C`, `0x801E2D64` and `0x801E2DB4`; the first two
+exit through `0x801E00B8`, `addiu s8,s8,0x3`, the third through its own
+`addiu s8,s8,0x2`), and the disassembler gives sub-6 its three-byte width.
+The VM still halts at PC on all three: a cutscene timeline steps a parked
+`0x4C` op past by its width, so a modal record reaches the same next op a few
+frames later, but a cross-context `CC <ch> D6 <b1>` holds its record until
+the frame cap.
 - **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no `pending_actor_spawns` queueing. PC always += 9. What the spawner actually builds, and why `kind` / `variant` are narrower than their names, is [below](#what-the-0x4c-0xd8-spawner-builds).
 - **Sub-0xB** (13-byte) calls `FUN_801E57F0(operand)` then PC += 13 (the call site falls through to `LAB_801E2EA0: return param_2 + 0xD`); the helper itself was not decompilable (Ghidra's dump for that address shows data masquerading as code).
 - **Sub-0xC** (5-byte) and sub-0xE (5-byte) both call [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then loop over the active party records (stride `0x414`, byte at `+0x196`); on hit, both advance via the `LAB_801E360C` ce9c-jump path; sub-0xC additionally writes the matching slot. Both miss with PC += 5.

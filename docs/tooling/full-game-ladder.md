@@ -267,6 +267,13 @@ map as its street:
   movie - is an edge the same way. Rogue Tower's floors join only through
   these: `rugi` P2[0..37] fade out, test `0x462`, and snap the party to one
   landing on either branch.
+- a **transporter** - the same kind of record whose player moves are walk
+  legs (op `0x47` on the `0xF8` channel, `C7 F8 x z mode`) - is an edge to
+  its last leg's tile: `deroa`'s shaft platforms (P2[12] / P2[13] / P2[14])
+  carry the walker across the walls between its rooms. A record whose only
+  forks are story-flag tests is followed under the live flags: the hub
+  P2[11] sends its platform to one of three rooms by the `chitei2` Rapid
+  Transport switches' `0x4EF` / `0x4F0`.
 
 The follower leaves a cross-axis offset of a few units alone while the
 other axis still has ground to cover: chasing its own overshoot flips the
@@ -686,6 +693,16 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   because the port re-runs their spawn sections.
 - Each pass answers pickers from a fresh rotation, so a segment's pad tier
   does not depend on what its seated pass, or an earlier segment, opened.
+  On the walk-on beat being played, its own picker is answered with the
+  first option whose branch spawns a record: `nilboa` P2[20] spawns the
+  Delilas family's challenge P2[21] only on "I'm ready!", and a band is
+  walked once per visit.
+- A route that crosses a band whose record stages a fight is a walk into a
+  boss: a party under two thirds of its HP is healed first (`taiku` P2[27],
+  the F9 boss on the way out, met after a fled encounter).
+- A pad hop whose walk stalls against the door's own frame (two tiles or
+  less short) treats the door as refused and tries the scene's other door
+  to the same place, as for a door that turns the walk back.
 - The pad hand heals only with items it already carries and with a free
   or affordable rest in a scene that rolls no encounters, and wards off
   encounters only with an Incense it carries; it does not buy items or use
