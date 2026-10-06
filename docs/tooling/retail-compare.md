@@ -1482,6 +1482,17 @@ is checkable even where the pose is not. Two seeding limits follow.
   camera reads exact on both sides; what moves the frame is Tetsu's idle
   clip, sampled at whatever phase of its loop that elapsed time lands on.
   The capture holds no word that pins the idle phase.
+- **A capture after the action replays it from its end.**
+  `player_steal_skeleton_banner` is saved in `0x20` with Vahn back on his
+  idle clip, the skeleton dead and the steal caption up. The seed stands
+  every combatant on the capture's ground pairs and drives the whole art
+  again, so the art's own drift and the knockback land a second time - the
+  engine's skeleton ends some 600 units past retail's - and the replayed
+  round draws its own initiative and steal roll: with Vahn seeded at his
+  captured `17` HP the skeletons kill him first under most of the seeds, and
+  the one seed that reaches the state does not roll the steal. The engine's
+  caption and the frame's timing are not what this state measures; nothing
+  in the capture recovers the pre-action ground or the round's draws.
 
 ## See also
 
