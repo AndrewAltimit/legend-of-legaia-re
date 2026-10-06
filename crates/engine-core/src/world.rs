@@ -104,7 +104,7 @@ mod types;
 mod world_map_state;
 mod world_toggles;
 
-pub use ambient_fx_state::AmbientFxState;
+pub use ambient_fx_state::{AmbientFxState, SeededVramRect};
 pub use audio_residency::{
     DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
     SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,

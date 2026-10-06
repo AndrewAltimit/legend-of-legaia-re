@@ -300,10 +300,7 @@ pub fn engine_frame_with(
     label: &str,
     entry: FrameEntry<'_>,
 ) -> Result<Frame> {
-    let base: PathBuf = out_dir
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| std::env::temp_dir().join("legaia-retail-compare"));
-    let work = base.join("engine");
+    let work = work_dir(out_dir);
     std::fs::create_dir_all(&work)?;
     // The window's interactive default frames the field further out than
     // retail (`CameraDistance::Far`); the comparand is retail's own frame,
@@ -403,6 +400,14 @@ pub fn engine_frame_with(
     }
     let (rgba, w, h) = read_png_rgba(&shot)?;
     Frame::from_engine_capture(&rgba, w, h)
+}
+
+/// The scratch directory the `play-window` child runs in.
+pub fn work_dir(out_dir: Option<&Path>) -> PathBuf {
+    out_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::temp_dir().join("legaia-retail-compare"))
+        .join("engine")
 }
 
 /// Write `retail | engine | |diff|` as one PNG for a human reader.

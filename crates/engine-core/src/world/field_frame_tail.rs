@@ -135,7 +135,8 @@ impl World {
         let copied = self.apply_vram_rect_copies(vram, back_buffer);
         let ambient = self.step_ambient_fx(vram);
         let clut = self.step_clut_fx(vram);
-        moved | copied | ambient | clut
+        let seeded = self.apply_vram_rect_seed(vram);
+        moved | copied | ambient | clut | seeded
     }
 
     /// Whether a host advances its field-NPC clip players this tick.

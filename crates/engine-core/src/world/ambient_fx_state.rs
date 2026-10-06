@@ -3,6 +3,10 @@
 //! Split out of the composite [`World`] so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
+/// One captured VRAM rect `(x, y, w, h)` and its `w * h` texels
+/// ([`AmbientFxState::vram_rect_seed`]).
+pub type SeededVramRect = ((u16, u16, u16, u16), Vec<u16>);
+
 /// Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
 pub struct AmbientFxState {
     /// Live **ambient** move-VM effect parts - the scene-entry effect tree
@@ -90,6 +94,15 @@ pub struct AmbientFxState {
     /// the same frame scored by luck of the phase. Empty everywhere but the
     /// comparison's `play-window` child (`LEGAIA_SEAT_CLUT_FX`).
     pub cell_fx_seed: Vec<crate::clut_cell_fx::ClutCellFx>,
+    /// Capture alignment, the scroller sibling of [`Self::cell_fx_seed`]: a
+    /// retail state's mode-4 scroller rects `(x, y, w, h)` with the texels
+    /// its VRAM held there, written over the engine's after every field
+    /// VRAM pass ([`crate::world::World::step_field_vram_effects`]). A
+    /// scroller's rotation count is time since the entry, and `jouine`'s
+    /// flesh columns, `keikoku`'s waterfall and `korout`'s cloud sea are
+    /// these rects. Empty everywhere but the comparison's `play-window`
+    /// child (`LEGAIA_SEAT_VRAM_RECTS`).
+    pub vram_rect_seed: Vec<SeededVramRect>,
 }
 
 impl AmbientFxState {
@@ -110,6 +123,7 @@ impl AmbientFxState {
             script_vram_stp: Vec::new(),
             vram_rect_copies: Vec::new(),
             cell_fx_seed: Vec::new(),
+            vram_rect_seed: Vec::new(),
         }
     }
 }

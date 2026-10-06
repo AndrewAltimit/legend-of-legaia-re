@@ -756,6 +756,17 @@ pub(super) fn cmd_play_window_with_record(
             legaia_engine_shell::retail_compare::cell_fx_from_env(&fx);
     }
 
+    // `LEGAIA_SEAT_VRAM_RECTS=<file>` (the retail-compare image channel): a
+    // retail state's scroller rects with their captured texels, written over
+    // the engine's after every field VRAM pass
+    // (`AmbientFxState::vram_rect_seed`).
+    if let Some(bytes) =
+        std::env::var_os("LEGAIA_SEAT_VRAM_RECTS").and_then(|p| std::fs::read(p).ok())
+    {
+        session.host.world.ambient.vram_rect_seed =
+            legaia_engine_shell::retail_compare::vram_rects_from_file(&bytes);
+    }
+
     // Debug learn path: `--learn-spell 0x81` (repeatable) or the older
     // `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
     // the lead character's record, so a seeded New Game party can reach the

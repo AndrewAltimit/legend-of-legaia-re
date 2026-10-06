@@ -224,6 +224,14 @@ engine verdict:
   was only where the pool had put its sheets. The headless seed keeps its
   own pool: its spawns draw the stream the battle half aligns on.
 
+  The mode-4 VRAM scrollers get the same treatment: their rotation count
+  is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
+  rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the
+  texels retail's VRAM holds there, through a `LEGAIA_SEAT_VRAM_RECTS` file,
+  and are written over the engine's after every field VRAM pass
+  (`AmbientFxState::vram_rect_seed`). `korout`'s cloud sea under
+  `sol_to_karisto_worldmap` is one.
+
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter
 through `enter_scene_live` directly (no resume landing, no saved seat),
 hydrate again. Comparing its report with the default isolates what the

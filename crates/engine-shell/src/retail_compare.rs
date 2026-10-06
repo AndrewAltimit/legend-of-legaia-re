@@ -293,10 +293,88 @@ pub struct RetailObs {
     /// The live fog-pool records ([`retail_fog`]), handed to the image child
     /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
     pub fog: Vec<legaia_engine_core::fog_particles::FogParticle>,
+    /// The live mode-4 scroller rects and their captured texels
+    /// ([`retail_scroll_rects`]), handed to the image child as a
+    /// `LEGAIA_SEAT_VRAM_RECTS` file.
+    pub scroll_rects: Vec<SeededVramRect>,
 }
+
+use legaia_engine_core::world::SeededVramRect;
 
 /// The actor tick that runs a move-VM part (`FUN_80021DF4`).
 const PART_TICK: u32 = 0x8002_1DF4;
+
+/// Every live mode-4 VRAM scroller on a retail state's actor lists - a
+/// `FUN_80021DF4` part with `+0x5A = 4`, rect `+0xD0..+0xD6`
+/// ([`legaia_engine_core::world::ambient`]'s `vram_scroll`) - with the
+/// texels the state's VRAM (`1024 x 512` BGR555 LE) holds there.
+pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
+    if vram.len() != 1024 * 512 * 2 {
+        return Vec::new();
+    }
+    let mut out: Vec<SeededVramRect> = Vec::new();
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
+            || game_anchors::i16_at(ram, n + 0x5A) != 4
+        {
+            continue;
+        }
+        let rect = (
+            game_anchors::u16_at(ram, n + 0xD0),
+            game_anchors::u16_at(ram, n + 0xD2),
+            game_anchors::u16_at(ram, n + 0xD4),
+            game_anchors::u16_at(ram, n + 0xD6),
+        );
+        let (x, y, w, h) = rect;
+        if w == 0 || h == 0 || w > 1024 || h > 512 || out.iter().any(|(r, _)| *r == rect) {
+            continue;
+        }
+        let texels = (0..h)
+            .flat_map(|row| (0..w).map(move |col| (row, col)))
+            .map(|(row, col)| {
+                let o =
+                    (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
+                u16::from_le_bytes([vram[o], vram[o + 1]])
+            })
+            .collect();
+        out.push((rect, texels));
+    }
+    out
+}
+
+/// [`retail_scroll_rects`] as the bytes of a `LEGAIA_SEAT_VRAM_RECTS` file:
+/// per rect `x, y, w, h` (`u16` LE) then its `w * h` texels.
+pub fn vram_rects_file(rects: &[SeededVramRect]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for ((x, y, w, h), texels) in rects {
+        for v in [*x, *y, *w, *h].iter().chain(texels) {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    out
+}
+
+/// Inverse of [`vram_rects_file`]; a truncated tail is dropped.
+pub fn vram_rects_from_file(bytes: &[u8]) -> Vec<SeededVramRect> {
+    let words: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
+        .collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 4 <= words.len() {
+        let (x, y, w, h) = (words[i], words[i + 1], words[i + 2], words[i + 3]);
+        let n = usize::from(w) * usize::from(h);
+        let Some(texels) = words.get(i + 4..i + 4 + n) else {
+            break;
+        };
+        out.push(((x, y, w, h), texels.to_vec()));
+        i += 4 + n;
+    }
+    out
+}
 
 /// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_core::fog_particles`]).
 const FOG_POOL_PTR: u32 = 0x8007_B7E0;
@@ -623,6 +701,7 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            scroll_rects: Vec::new(),
             slot_table: {
                 let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
                 ram.get(lo..lo + 0x200)
@@ -683,6 +762,15 @@ impl RetailObs {
         Some(save)
     }
 
+    /// Read the field scrollers' captured rects ([`retail_scroll_rects`]).
+    fn seat_scroll_rects(&mut self, ram: &[u8], vram: Option<&[u8]>) {
+        if let Some(v) = vram
+            && matches!(self.class, StateClass::Field | StateClass::WorldMap)
+        {
+            self.scroll_rects = retail_scroll_rects(ram, v);
+        }
+    }
+
     /// The latches [`Self::seed_save`] holds back from the scene entry.
     pub fn seed_latches(&self) -> Vec<u16> {
         if self.menu.is_some() || !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
@@ -693,6 +781,29 @@ impl RetailObs {
             .first()
             .map(|s| s.latches.clone())
             .unwrap_or_default()
+    }
+
+    /// The capture-alignment environment the image child takes on top of
+    /// its seat: held-back latches, CLUT-cell phases, fog-pool records and
+    /// scroller rects (the last through a file beside the child's frame).
+    pub fn seat_env(&self, out_dir: Option<&Path>, label: &str) -> Vec<(&'static str, String)> {
+        let mut env: Vec<(&'static str, String)> = self.seed_latches_env().into_iter().collect();
+        if !self.cell_fx.is_empty() {
+            env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&self.cell_fx)));
+        }
+        if !self.fog.is_empty() {
+            env.push(("LEGAIA_SEAT_FOG", fog_env(&self.fog)));
+        }
+        if !self.scroll_rects.is_empty() {
+            let dir = crate::retail_compare_image::work_dir(out_dir);
+            let path = dir.join(format!("{label}.vrect.bin"));
+            if std::fs::create_dir_all(&dir).is_ok()
+                && std::fs::write(&path, vram_rects_file(&self.scroll_rects)).is_ok()
+            {
+                env.push(("LEGAIA_SEAT_VRAM_RECTS", path.display().to_string()));
+            }
+        }
+        env
     }
 
     /// [`Self::seed_latches`] as `LEGAIA_SEAT_LATCHES` for `play-window`
@@ -759,12 +870,18 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 (Some(v), Some(rect)) => Frame::from_vram_display(v, rect),
                 _ => None,
             };
-            Ok(RetailObs::from_ram(ram, frame))
+            let mut obs = RetailObs::from_ram(ram, frame);
+            obs.seat_scroll_rects(ram, gpu.vram_bytes());
+            Ok(obs)
         }
         _ => {
             let (st, gpu) = legaia_pcsxr::gpu::load_with_scus(&entry.path, scus)?;
-            let frame = gpu.and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
-            Ok(RetailObs::from_ram(st.main_ram(), frame))
+            let frame = gpu
+                .as_ref()
+                .and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
+            let mut obs = RetailObs::from_ram(st.main_ram(), frame);
+            obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
+            Ok(obs)
         }
     }
 }
@@ -1729,13 +1846,7 @@ fn run_one(
             let frame = match gate {
                 Some(g) => {
                     let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
-                    env.extend(retail.seed_latches_env());
-                    if !retail.cell_fx.is_empty() {
-                        env.push(("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&retail.cell_fx)));
-                    }
-                    if !retail.fog.is_empty() {
-                        env.push(("LEGAIA_SEAT_FOG", fog_env(&retail.fog)));
-                    }
+                    env.extend(retail.seat_env(opts.out_dir, &entry.label));
                     if let Some(n) = retail.hud_countdown {
                         env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
                     }
@@ -1770,18 +1881,7 @@ fn run_one(
                     retail.hud_countdown,
                     retail.camera_block.as_ref(),
                     retail.seat_focus,
-                    &retail
-                        .seed_latches_env()
-                        .into_iter()
-                        .chain(
-                            (!retail.cell_fx.is_empty())
-                                .then(|| ("LEGAIA_SEAT_CLUT_FX", cell_fx_env(&retail.cell_fx))),
-                        )
-                        .chain(
-                            (!retail.fog.is_empty())
-                                .then(|| ("LEGAIA_SEAT_FOG", fog_env(&retail.fog))),
-                        )
-                        .collect::<Vec<_>>(),
+                    &retail.seat_env(opts.out_dir, &entry.label),
                 ),
             };
             match frame {
@@ -2361,6 +2461,8 @@ mod tests {
             grey: 0x5A,
         }];
         assert_eq!(fog_from_env(&fog_env(&fog)), fog);
+        let rects = vec![((0x280, 0, 2, 2), vec![1, 2, 3, 0x8004])];
+        assert_eq!(vram_rects_from_file(&vram_rects_file(&rects)), rects);
         assert!(fog_from_env("1,2,3").is_empty());
     }
 

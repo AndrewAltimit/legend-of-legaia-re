@@ -921,6 +921,24 @@ fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16
     out
 }
 
+impl World {
+    /// Write [`crate::world::AmbientFxState::vram_rect_seed`] over the
+    /// engine's VRAM; `true` when a texel changed. Capture alignment only.
+    pub(crate) fn apply_vram_rect_seed(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let mut wrote = false;
+        for ((x, y, w, h), texels) in &self.ambient.vram_rect_seed {
+            if texels.len() != usize::from(*w) * usize::from(*h) {
+                continue;
+            }
+            if read_rect(vram, *x, *y, *w, *h) != *texels {
+                write_rect(vram, *x, *y, *w, texels);
+                wrote = true;
+            }
+        }
+        wrote
+    }
+}
+
 /// Write a `w`-wide halfword rect into the software VRAM.
 fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
     for (row, chunk) in texels.chunks(usize::from(w.max(1))).enumerate() {
