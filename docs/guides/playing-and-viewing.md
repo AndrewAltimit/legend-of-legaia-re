@@ -115,7 +115,8 @@ the engine's diagnostic text rows (off by default), `F2` mutes audio, `F3`
 swaps the field camera for the wide debug orbit, `F4` toggles the
 camera-occlusion fade (on by default: walls between the camera and your
 character dissolve to a dither so you can always see yourself;
-`--no-occlusion-fade` starts with it off).
+`--no-occlusion-fade` starts with it off), `F9` toggles the volumetric ground
+fog (on by default; `--no-volumetric-fog` starts with it off).
 
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,

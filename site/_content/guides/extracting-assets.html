@@ -210,15 +210,18 @@
 <section class="doc-section" id="manual-chain">
   <h2>The manual chain (when you want one stage at a time)</h2>
   <p><code>legaia-extract</code> is these stages composed; each also runs standalone. The first two build the <code>extracted/</code> tree; the rest operate on one PROT entry at a time:</p>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">Disc &rarr; files</div><div class="desc"><code>./disc-extract extract "/path/to/disc.bin" extracted/</code></div><div class="crate">disc-extract</div>
-    <div class="num">2</div><div class="layer">PROT.DAT &rarr; entries</div><div class="desc"><code>./prot-extract extract extracted/PROT.DAT extracted/PROT --cdname extracted/CDNAME.TXT</code></div><div class="crate">prot-extract</div>
-    <div class="num">3</div><div class="layer">Classify every entry</div><div class="desc"><code>./asset categorize extracted/PROT</code> - run this first.</div><div class="crate">asset</div>
-    <div class="num">4</div><div class="layer">Is it LZS?</div><div class="desc"><code>./lzs-decode probe extracted/PROT/&lt;entry&gt;.BIN</code></div><div class="crate">lzs-decode</div>
-    <div class="num">5</div><div class="layer">Decompress every section</div><div class="desc"><code>./lzs-decode container extracted/PROT/&lt;entry&gt;.BIN out_dir/</code></div><div class="crate">lzs-decode</div>
-    <div class="num">6</div><div class="layer">One section</div><div class="desc"><code>./asset decode extracted/PROT/&lt;entry&gt;.BIN --type-size 0x.. --offset 0x.. --mode lzs</code></div><div class="crate">asset</div>
-    <div class="num">7</div><div class="layer">Streaming container</div><div class="desc"><code>./asset stream &lt;entry&gt;.BIN</code> lists chunks; <code>./asset extract &lt;entry&gt;.BIN --out out_dir/</code> unpacks the sub-assets.</div><div class="crate">asset</div>
-  </div>
+  <ol class="steps">
+    <li><b>Disc &rarr; files</b><span><code>./disc-extract extract "/path/to/disc.bin" extracted/</code></span></li>
+    <li><b>PROT.DAT &rarr; entries</b><span><code>./prot-extract extract extracted/PROT.DAT extracted/PROT --cdname extracted/CDNAME.TXT</code></span></li>
+    <li><b>Classify every entry</b><span><code>./asset categorize extracted/PROT</code> - run this before picking a decoder.</span></li>
+    <li><b>Decode one entry</b><span>LZS: <code>lzs-decode probe</code> / <code>container</code>, or <code>asset decode</code> for one section. Streaming: <code>asset stream</code> / <code>asset extract</code>.</span></li>
+  </ol>
+  <p>The per-entry commands, with the arguments each takes:</p>
+  <div class="cli"><code>./lzs-decode probe extracted/PROT/&lt;entry&gt;.BIN</code></div>
+  <div class="cli"><code>./lzs-decode container extracted/PROT/&lt;entry&gt;.BIN out_dir/</code></div>
+  <div class="cli"><code>./asset decode extracted/PROT/&lt;entry&gt;.BIN --type-size 0x.. --offset 0x.. --mode lzs</code></div>
+  <div class="cli"><code>./asset stream extracted/PROT/&lt;entry&gt;.BIN</code></div>
+  <div class="cli"><code>./asset extract extracted/PROT/&lt;entry&gt;.BIN --out out_dir/</code></div>
 
   <h3>Which <code>&lt;entry&gt;</code> do I pass?</h3>
   <p><code>&lt;entry&gt;</code> is a filename from <code>extracted/PROT/</code>, and every file there is named <code>NNNN_&lt;name&gt;.BIN</code> where <code>NNNN</code> is the zero-padded PROT index. A catalog or site label that reads <code>PROT 46</code> means entry <strong>46</strong>, i.e. <code>0046_vell.BIN</code> - not <code>0446</code>. The four-digit prefix <em>is</em> the index; don't add or drop digits. When a label and a filename disagree on the <code>&lt;name&gt;</code> half, trust the number: CDNAME names are shifted +2 against the <code>#define</code> numbers (<a href="../formats/cdname.html">CDNAME</a>).</p>

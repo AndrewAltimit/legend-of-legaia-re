@@ -6,11 +6,15 @@
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">Download + verify the archive</div><div class="desc">One archive per platform, checked against <code>SHA256SUMS</code>.</div><div class="crate">sha256sum</div>
-    <div class="num">2</div><div class="layer">Check your disc image</div><div class="desc">Confirms the dump is the USA build the tools target.</div><div class="crate">disc-extract verify</div>
-    <div class="num">3</div><div class="layer">Extract everything</div><div class="desc">About five seconds, roughly 1.1 GB, one <code>extracted/</code> tree.</div><div class="crate">legaia-extract</div>
-    <div class="num">4</div><div class="layer">Pick a tool</div><div class="desc">Per-format extractors, the engine, the viewer, the patcher.</div><div class="crate">see the tool index</div>
+  <ol class="steps">
+    <li><b>Download + verify</b><span>One archive per platform, checked against <code>SHA256SUMS</code>.</span></li>
+    <li><b>Check your disc image</b><span><code>disc-extract verify</code> confirms the USA build the tools target.</span></li>
+    <li><b>Extract everything</b><span><code>legaia-extract</code>: about five seconds, roughly 1.1&nbsp;GB, one <code>extracted/</code> tree.</span></li>
+    <li><b>Pick a tool</b><span>Per-format extractors, the engine, the viewer, the patcher.</span></li>
+  </ol>
+  <div class="notice">
+    <div class="notice-title">Just want to play?</div>
+    <p>Start <code>legaia-engine</code> with no arguments - or double-click <code>Legend of Legaia.exe</code> on Windows, <code>Legend of Legaia.app</code> on macOS. A window asks for your disc image once, remembers it, and opens the title screen; see <a href="playing-and-viewing.html#launcher">the launcher</a>. The rest of this page is about the extraction tools.</p>
   </div>
   <div class="notice">
     <div class="notice-title">Bring your own disc</div>
@@ -26,11 +30,15 @@
     <li><code>legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz</code> (Linux, glibc 2.28+)</li>
     <li><code>legaia-tools-&lt;version&gt;-aarch64-unknown-linux-gnu.tar.gz</code> (Linux on ARM)</li>
     <li><code>legaia-tools-&lt;version&gt;-x86_64-pc-windows-gnu.zip</code> (Windows)</li>
+    <li><code>legaia-tools-&lt;version&gt;-universal-apple-darwin.tar.gz</code> (macOS 11+, Apple silicon and Intel in one binary)</li>
   </ul>
+  <p>Every archive carries every binary plus the two license files, <code>README-PLAY.txt</code> (how to start the game) and a short <code>README.txt</code>.</p>
   <p>Verify and unpack:</p>
-  <div class="cli"><code>sha256sum -c SHA256SUMS --ignore-missing</code></div>
-  <div class="cli"><code>tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz &amp;&amp; cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu</code></div>
-  <div class="cli"><code>./legaia-extract --version</code></div>
+  <ol class="steps">
+    <li><b>Check the download</b><span><code>sha256sum -c SHA256SUMS --ignore-missing</code> (on a Mac: <code>shasum -a 256 -c SHA256SUMS --ignore-missing</code>)</span></li>
+    <li><b>Unpack</b><span><code>tar -xzf legaia-tools-&lt;version&gt;-&lt;target&gt;.tar.gz</code>, then <code>cd</code> into the directory it creates</span></li>
+    <li><b>Smoke test</b><span><code>./legaia-extract --version</code></span></li>
+  </ol>
   <p>Every binary answers <code>--version</code> and <code>--help</code>; subcommand help (<code>./asset monster-archive --help</code>) states where each input comes from.</p>
 </section>
 
