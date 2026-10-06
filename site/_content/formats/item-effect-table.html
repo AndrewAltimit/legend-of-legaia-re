@@ -16,7 +16,7 @@
     <dt>Lives in</dt><dd>SCUS VA <code>DAT_800752C0</code> (file <code>0x65AC0</code>), 130 &times; 4-byte records, ending where the <a href="spell-table.html">spell table</a> begins; heal amounts at <code>0x8007655C</code></dd>
     <dt>Retail readers</dt><dd>menu-usability gate, field list builder, apply handler (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Parser</dt><dd><code>legaia_asset::item_effect::ItemEffectTable</code> (<code>from_scus</code>, <code>heal_amounts</code>, <code>restore_amount</code>, <code>stat_effect</code>)</dd>
-    <dt>Confidence</dt><dd>Confirmed - Ghidra-traced readers; disc-gated <code>item_effect_real</code> pins the bytes and cross-checks each against its on-disc description</dd>
+    <dt>Confidence</dt><dd>Confirmed - Ghidra-traced readers; the parsed bytes cross-check against each item's on-disc description string</dd>
   </dl>
 </section>
 
@@ -27,22 +27,28 @@
     <p>This table holds <strong>class + tier + flags</strong>. "Healing Leaf restores 200 HP" is split in two: this table says <code>(class = heal-HP, tier = 0)</code>, and the <code>tier &rarr; 200</code> mapping is the separate, also-static <a href="#heal-amounts">heal-amount table</a>. Stat-up and buff magnitudes (classes 5/6/7) are inline immediates in the apply handler.</p>
   </div>
   <p>It is the sibling of the <a href="item-table.html">item-name table</a> and the <a href="spell-table.html">spell table</a>: the three are contiguous static data. The lookup is double-indirected - an item id resolves to a <em>subtype</em> byte in its name-table record, and the subtype picks a descriptor here - so many items share one descriptor, and "key items are unusable" is not a special case at all: a key item simply resolves to a descriptor with neither usability bit set.</p>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">item id</div><div class="desc"><code>item_name_table[id].byte(+1)</code> - the subtype</div><div class="crate"><code>item_table</code></div>
-    <div class="num">2</div><div class="layer">descriptor</div><div class="desc"><code>DAT_800752C0[subtype * 4]</code> - class, tier, flags, passive index</div><div class="crate"><code>item_effect</code></div>
-    <div class="num">3</div><div class="layer">amount</div><div class="desc">HP / MP classes read the tier tables; stat classes use handler immediates</div><div class="crate"><code>heal_amounts</code></div>
-  </div>
+  <ol class="steps">
+    <li><b>item id &rarr; subtype</b><span><code>item_name_table[id].byte(+1)</code> (<a href="item-table.html">item table</a>)</span></li>
+    <li><b>subtype &rarr; descriptor</b><span><code>DAT_800752C0[subtype * 4]</code> - class, tier, flags, passive index</span></li>
+    <li><b>descriptor &rarr; amount</b><span>HP / MP classes read the <a href="#heal-amounts">tier tables</a>; stat classes use handler immediates</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="table-layout">
   <h2>Record layout (4 bytes, 130 records)</h2>
+  <div class="byte-map" role="img" aria-label="Item-effect record: class, tier, flags, passive index, one byte each">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">class</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">tier</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+2</span><span class="bm-name">flags</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+3</span><span class="bm-name">passive index</span><span class="bm-size">u8</span></div>
+  </div>
   <table class="layout">
-  <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><code>+0</code></td><td>1</td><td><strong>class</strong></td><td>effect class - the action-validator arm (<a href="#class-map">table below</a>)</td></tr>
-    <tr><td><code>+1</code></td><td>1</td><td><strong>tier</strong></td><td>per-class sub-case; heal-HP <code>0/1/2</code> = 200 / 800 / full, stat-up = which stat, book = level</td></tr>
-    <tr><td><code>+2</code></td><td>1</td><td><strong>flags</strong></td><td>populated / info-panel / all-party / battle-usable / field-usable bits (below)</td></tr>
-    <tr><td><code>+3</code></td><td>1</td><td>passive-effect index</td><td><code>0x00..=0x3F</code> for accessory / quest-item rows (the <a href="accessory-passive-table.html">accessory-passive table</a>); <code>0x41</code> = no-passive sentinel on consumable rows</td></tr>
+    <tr><td><strong>class</strong></td><td>effect class - the action-validator arm (<a href="#class-map">table below</a>)</td></tr>
+    <tr><td><strong>tier</strong></td><td>per-class sub-case; heal-HP <code>0/1/2</code> = 200 / 800 / full, stat-up = which stat, arts book = the art id granted</td></tr>
+    <tr><td><strong>flags</strong></td><td>populated / info-panel / all-party / battle-usable / field-usable bits (below)</td></tr>
+    <tr><td>passive-effect index</td><td><code>0x00..=0x3F</code> for accessory / quest-item rows (the <a href="accessory-passive-table.html">accessory-passive table</a>); <code>0x41</code> = no-passive sentinel on consumable rows</td></tr>
   </tbody>
   </table>
   <h3 id="flags">Flag byte (<code>+2</code>)</h3>
@@ -80,10 +86,12 @@
     <tr><td><code>130</code></td><td>reduce encounter rate</td><td>Incense</td></tr>
   </tbody>
   </table>
+  <h3 id="arts-books">Arts books: the tier is an art id</h3>
+  <p>Classes <code>11</code>/<code>12</code>/<code>13</code> write the tier byte verbatim into a per-character learned-art list (kept sorted by id), so the tier <em>is</em> the art the book grants, not a book level. The character comes from the class alone - <code>class - 11</code> is the roster slot (0 / 1 / 2) - and the target the menu highlights is never read, so a Fire Book always lands on the same roster slot. The field VM's grant arm <code>4C C7</code> calls the same applier with the slot plus <code>0xB</code>. On disc the nine books carry tiers Fire <code>3/2/1</code>, Wind <code>5/4/1</code>, Thunder <code>3/2/1</code> for I/II/III, all with flag <code>0x83</code> (field use only).</p>
   <details class="disclosure">
     <summary>Class 14: the Point Card strike nothing sells</summary>
     <div class="disclosure-body">
-      <p>The class-14 arm of the apply handler takes <code>min(points_bank, 9999)</code> off the Point Card bank and applies it as battle damage - a strike scaling with how much the player has shopped. Decoding all 256 item records finds no item carrying class 14, so retail never opens the arm; the <code>LEGAIA_POINT_CARD_MAX</code> probe knob reaches it only by forcing the bank. Unused content, not a missing item.</p>
+      <p>The class-14 arm of the apply handler takes <code>min(points_bank, 9999)</code> off the Point Card bank and applies it as battle damage - a strike scaling with how much the player has shopped. Decoding all 256 item records finds no item carrying class 14, so retail never opens the arm. Unused content, not a missing item.</p>
     </div>
   </details>
 </section>
@@ -147,6 +155,9 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>The readers behind each field</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -155,14 +166,16 @@
       <tr><td>Apply handler</td><td><code>FUN_800402F4</code>; HP arm <code>0x800404B8</code>, MP arm <code>0x80040DC0</code>, revive arm <code>0x80040F58</code></td><td>The tier-table reads, deficit clamp, revive formula, and the class 5/6/7 immediates. One handler serves field menu and battle (branching on <code>game_mode == 0x15</code>).</td><td><code>funcs/800402f4.txt</code></td></tr>
       <tr><td>Jump-table callers</td><td>table at <code>0x80014FA0</code> (132 entries); callers <code>0x801D84B4</code>, <code>0x801D9280</code>, <code>0x801E40DC</code></td><td>What indexes the handler depends on the caller: descriptor class (field item use), the item record's own kind byte, or the battle actor's <code>+0x1E8</code>.</td><td>overlay dumps</td></tr>
       <tr><td>Target-panel preview</td><td><code>FUN_801D6A54</code></td><td>Gates on <code>kind == 2</code> and <code>class == 6</code> before mapping tier to a preview mode - the sibling kind-byte selector.</td><td><code>funcs/overlay_menu_801d6a54.txt</code></td></tr>
-      <tr><td>Disc-gated test</td><td><code>item_effect_real</code></td><td>Pins Leaf 200, Flower 800, Berry full, Magic Leaf 50 MP, Magic Fruit 200 MP, Healing Shroom 200; cross-checks each class against its on-disc description string.</td><td>-</td></tr>
+      <tr><td>Arts-book arm</td><td><code>0x80041FC0</code> (<code>class - 0xB</code>), <code>0x80042064</code> (<code>sb</code> tier at <code>+0x74E</code>)</td><td>Tier = art id; character = class-derived roster slot; picked target unused.</td><td><code>funcs/800402f4.txt</code></td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="parser">
-  <h2>Parser + engine consumption</h2>
-  <p><code>ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map). The engine installs the flags over its curated catalog via <code>ItemCatalog::apply_effect_flags</code> (usability gates + <code>is_all_party</code>: Healing Bloom / Fruit skip target-select and fan across every living ally), seeds the Water line via <code>apply_stat_items</code>, the Elixirs via <code>apply_buff_items</code>, and Fury Boost via <code>apply_action_gauge_items</code>. The engine mirror of the usability gate (<code>inventory_use::item_has_valid_target</code>) greys a heal at full HP, a cure with no matching status, a revive with nobody fallen. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/item-effect-table.md" target="_blank" rel="noopener"><code>docs/formats/item-effect-table.md</code></a>.</p>
+  <h2>In the port</h2>
+  <p><code>legaia_asset::item_effect::ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image; <code>engine-core::items::ItemCatalog</code> installs the usability and all-party flags and seeds the stat-up, buff and Fury Boost items from it, and <code>engine-core::inventory_use</code> mirrors the retail menu-usability gate (a heal greys out when nobody would benefit). Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/item-effect-table.md" target="_blank" rel="noopener"><code>docs/formats/item-effect-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
