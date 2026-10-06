@@ -3362,9 +3362,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     return;
   }
 
-  const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
-    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
-  ));
 
   /* ---- Sol Tower floors ---- */
   const $floors = document.getElementById('sol-tower-floors');

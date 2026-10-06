@@ -39,10 +39,7 @@ async function ensureWasm() {
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
-function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+const esc = window.escapeHtml;
 
 function download(text, name) {
   const blob = new Blob([text], { type: 'text/yaml' });

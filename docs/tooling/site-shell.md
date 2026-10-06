@@ -223,6 +223,11 @@ because a dynamic import is keyed by its URL - two call sites on one page that
 spell it differently instantiate the bundle twice. Never `import()` the glue
 directly from a page or script.
 
+Helpers every page shares sit in one classic head script the same way:
+[`site/js/site-util.js`](../../site/js/site-util.js) defines `window.escapeHtml`
+(the five HTML entities; `null` renders empty), which inline page scripts,
+classic scripts and modules call instead of carrying a copy each.
+
 ## A case fold binds to one operand, not to the concatenation
 
 A filter box has two halves that must agree on case: the query, and the

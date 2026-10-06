@@ -259,12 +259,6 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
     miracle: 'One per character. Fixed 99 AP cost; unlocks the most powerful unique animation.',
   };
 
-  function escapeHtml(s) {
-    return String(s ?? '').replace(/[&<>"']/g, c => (
-      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
-    ));
-  }
-
   function arrowSvg(dir, color) {
     const base = DIR_ID[dir];
     if (!base) return '';

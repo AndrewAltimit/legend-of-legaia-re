@@ -594,12 +594,6 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     }).join(', ');
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
-  }
-
   function render() {
     const tableEl = tableWrap.querySelector('table.enemy-table');
     if (tableEl) tableEl.classList.toggle('show-inbattle', statView !== 'raw');

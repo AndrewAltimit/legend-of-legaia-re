@@ -754,9 +754,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   return { load, clear, collect };
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+const escapeHtml = window.escapeHtml;
 
 // --- Prices & names: structured editors over the disc's own tables ----------
 // Friendly rows over the same `fishing_prices` / `location_renames` strings

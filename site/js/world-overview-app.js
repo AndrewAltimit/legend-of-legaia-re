@@ -1462,9 +1462,6 @@
       ).join('');
     }
   }
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
   function drawScatter() {
     if (!$canvas2d) return;
     const ctx = $canvas2d.getContext('2d');

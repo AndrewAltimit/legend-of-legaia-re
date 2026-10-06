@@ -444,6 +444,7 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
     layout_js = "../" * depth + "js/layout.js"
     main_js = "../" * depth + "js/main.js"
     wasm_js = "../" * depth + "js/wasm-loader.js"
+    util_js = "../" * depth + "js/site-util.js"
     favicon = "../" * depth + "img/favicon.svg"
     if active_key in WIDE_PAGES:
         content_cls = "content wide-page"
@@ -463,6 +464,7 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
   <link rel="icon" href="{favicon}" type="image/svg+xml">
   <link rel="stylesheet" href="{css}">
   <script>window.LEGAIA_WASM_V="{_wasm_version()}";</script>
+  <script src="{util_js}"></script>
   <script src="{wasm_js}"></script>
   {extra_head}
 </head>

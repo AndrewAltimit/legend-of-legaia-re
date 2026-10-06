@@ -40,8 +40,7 @@
     thunder: '#d0bb3a', light: '#d9d4c0', dark: '#8a5ad0', neutral: '#8a8aa0',
   };
 
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const esc = window.escapeHtml;
 
   const hex2 = (n) => '0x' + Number(n).toString(16).toUpperCase().padStart(2, '0');
 

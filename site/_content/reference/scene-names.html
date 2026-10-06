@@ -45,11 +45,7 @@
   var allEl = document.getElementById('sn-all');
   var rows = [];
   var PLAYABLE = { town: 1, field: 1, world_map: 1, cutscene: 1 };
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
-    });
-  }
+  var esc = window.escapeHtml;
   function render() {
     var f = (filterEl.value || '').trim().toLowerCase();
     var html = rows
