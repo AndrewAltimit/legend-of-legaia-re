@@ -998,15 +998,16 @@ a consumer empties" and "a typed channel narrowed at one host" are decidable
 per instance and not from a source pattern, which is why they are written up
 here and not gated.
 
-**Same override set, different bodies (tier 4's declared blind spot, now
-a worked example).** `WebBgmDirector` and `AudioBgmDirector` overrode the
-same six `BgmDirector` methods, and the browser's duplicate-start guard was
-id-only where the native one also asks "unpaused, and a sequencer is live" -
-so a track that ended or was paused never restarted on the field VM's
-re-emit, and the field music did not return after a battle. The same pass
-found the sequencer master volume unset (127 against native's 100), the
-loop policy hard-coded, and `stop` leaving the pause gate closed. The tier
-cannot see any of these; only the paired bodies can.
+**Same override set, different bodies (tier 4's declared blind spot, as a
+worked example).** Two `BgmDirector` implementations, one per host, can
+override the same six methods and still disagree inside them: a
+duplicate-start guard that asks only for the id, where the other also asks
+"unpaused, and a sequencer is live", never restarts a track that ended or was
+paused, so the field music does not return after a battle; an unset sequencer
+master volume plays 127 against 100; a `stop` that leaves the pause gate
+closed silences the next start. The tier cannot see any of these; only the
+paired bodies can. The shape is closed for BGM by having one body: both play
+hosts run `engine-session`'s `AudioBgmDirector`.
 
 **A `SceneMode` with no `engine-ui` builder is invisible to tier 1.** Four
 minigame sessions install themselves on both hosts from a scene's own door
@@ -1807,8 +1808,9 @@ there and what carries the voice now.
 The cast-audio dispatcher `FUN_801F3990` (ported as
 `engine-vm::battle_cast_cue::cast_audio_cue`) still emits its cue band - the
 player leg `char_kind * 0x10 + 0xF8 ..`, the enemy leg `0x20C..0x20E` - and
-both hosts still classify it at fire time and decline it (`bgm.rs` logs and
-`continue`s, `play_sfx.rs` counts it on `voice_cues_dropped`). That band was
+both hosts still classify it at fire time and decline it (the shared
+director reports it as `voice_declined`, which the page counts on
+`voice_cues_dropped`). That band was
 not raised on either measured retail cast (`capture`, N = 2, exec
 breakpoints on all three routines - [`../subsystems/cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice)),
 so voicing it would add a sound retail does not make. Its decline is the
@@ -3028,18 +3030,17 @@ harness provides, and the retail references (`v0_1_tetsu_dialogue_accept`
 for the dialogue box: border rows 9 and 63, columns 31..287, the same
 `(206, 206, 206)` ink) have no port frame to pair with.
 
-## The field SFX ring: one producer queue, two replays
+## The field SFX ring: one producer queue, one replay
 
 The field scripts' cue producers (field-VM op `0x36` sub `0` / `4`, the motion
 VM's op `0x09`) run inside `World::tick`, but the ring they write lives with
 the SPU, on the host side of the `engine-core` / `engine-audio` boundary. The
-world therefore queues each call as a `SfxRingOp` and **both** hosts replay the
-queue: the native `BootSession::route_field_sfx` into `AudioBgmDirector`, the
-browser play page's `route_field_sfx` into `PlaySfx::sched`. The two share the
-other halves too - the side-band bank resolver
-(`World::side_band_bank`) and the runtime-row lookup
-(`runtime_sfx_descriptor_in`) are engine functions, and each host only stages
-and keys. The minigames page has no field and no queue to drain.
+world therefore queues each call as a `SfxRingOp`, and one routine replays the
+queue for both play hosts: `AudioBgmDirector::route_world_sfx`, called from the
+native `BootSession::route_field_sfx` and the browser page's `route_field_sfx`.
+The side-band bank resolver (`World::side_band_bank`) and the runtime-row
+lookup (`runtime_sfx_descriptor_in`) are engine functions under it. The
+minigames page has no field and no queue to drain.
 
 Two things a one-host reading of this would get wrong. The ring ages by the
 vsyncs one host tick spans (`display_frame_step`, one), not by the game-tick
@@ -3049,21 +3050,19 @@ routed through `classify_cue` - the scheduler returns ring cues in their own
 list - because every runtime-bank id (`>= 0x200`) would otherwise land on the
 CD-XA voice leg and be declined.
 
-## The slot-2 / slot-6 SFX region: one residency, two restagers
+## The slot-2 / slot-6 SFX region: one residency, one restager
 
 Which bank the SPU region VAB slots `2` and `6` share holds is decided once, in
 the engine: `World::sync_sfx_residency` models retail's field-bank latch
 `0x8007BAFC` and the region's occupant off the world's mode edges (field and
 world map load PROT 0876 into slot 6, battle and the Baka duel PROT 0869 into
 slot 2, fishing / slot machine / dance their own banks), and field-VM op `0x36`
-sub `3` runs `World::release_field_audio`. Each play host only restages: the
-native `AudioBgmDirector::sync_shared_region` and the browser play page's
-`LegaiaRuntime::sync_shared_region`, both called from their `route_field_sfx`
-every tick, both placing the bank above the slot-0 system bank inside the same
-`SFX_BANK_SPU_BYTES` window. Both resolve a routed cue to its own slot or to
-silence (`bgm::resolve_sfx_slot` / `PlaySfx::resolve_slot`) - a class-2
-fallback on one host only would make a field cue audible there and silent on
-the other.
+sub `3` runs `World::release_field_audio`. The restage is the director's
+`AudioBgmDirector::sync_shared_region`, run every tick from `route_world_sfx`
+on both play hosts, placing the bank above the slot-0 system bank inside the
+`SFX_BANK_SPU_BYTES` window. A routed cue resolves to its own slot or to
+silence (`bgm::resolve_sfx_slot`); with one resolver, a class-2 fallback
+cannot make a field cue audible on one host and silent on the other.
 
 The minigames page keeps its own lazy per-slot staging
 (`LegaiaMinigames::stage_sfx_slot`, `prot_index_for_slot`), so its slot 2 is
@@ -3549,12 +3548,10 @@ region above it.
   now lays a bank too large for the region across the SFX region, as retail
   opens VAB 10 at slot 0's base
   ([`audio.md`](../subsystems/audio.md#where-the-credits-bank-lands-in-spu-ram)).
-  While it is resident both hosts drop their resident SFX banks and key no cue
-  against the credits bank: the native director at the upload
-  (`AudioBgmDirector::reclaim_sfx_region`), the page at the next cue
-  (`LegaiaRuntime::reconcile_sfx_region`, the check the reward bank already
-  used). The next track that fits re-stages them through the same kernel on
-  both.
+  While it is resident the director drops its resident SFX banks and keys no cue
+  against the credits bank (`AudioBgmDirector::reclaim_sfx_region`, at the
+  upload); the next track that fits re-stages them. Both play hosts run that
+  director.
 - **No scene bank.** Both hosts staged the scene block's first VAB-bearing
   entry on every scene entry, and skipped it under a carried global track
   (`scene_bank_restage_wanted`). Retail stages no scene bank: a bank loads only

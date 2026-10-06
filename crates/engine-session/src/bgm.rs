@@ -295,6 +295,11 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         }
     }
 
+    /// The audio output the director keys into.
+    pub fn audio(&self) -> &Arc<S> {
+        &self.audio
+    }
+
     /// Install the arts-voice shout bank (demuxed + decoded from the user's
     /// disc at boot; see [`crate::boot::read_arts_shout_bank`]).
     pub fn set_shout_bank(&mut self, bank: ArtsShoutBank) {

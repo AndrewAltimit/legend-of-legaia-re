@@ -3736,8 +3736,8 @@ Resume/Stop labels on 3/4 describe each other's arm.
 
 Port: `SceneHost::route_bgm_events` routes sub-op 10 to
 `BgmDirector::unhalt_pause` (release the source only while the pause latch
-is set, then clear the latch unconditionally), overridden by the native
-`AudioBgmDirector` and the browser `WebBgmDirector`; both starts also clear
+is set, then clear the latch unconditionally), overridden by `AudioBgmDirector`
+(the one director both play hosts run); its starts also clear
 the pause gate, as retail's sub-op 1 arm does. Pinned disc-side by
 `crates/engine-core/tests/bgm_midscene_change_disc.rs` (town01's cutscene
 records carry the op). `see ghidra/scripts/funcs/800243f0.txt`,

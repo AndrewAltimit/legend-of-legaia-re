@@ -364,11 +364,7 @@ NATIVE_DEV_MENU = "crates/engine-shell/src/bin/legaia-engine/window/dev_menu.rs"
 WEB_PLAY_DEV_MENU = "crates/web-viewer/src/play_dev_menu.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
-NATIVE_BGM = "crates/engine-session/src/bgm.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
-# The play page's BGM director (the browser twin of NATIVE_BGM's
-# `AudioBgmDirector`), carved out of runtime.rs so the audio lanes own it.
-WEB_BGM = "crates/web-viewer/src/play_bgm.rs"
 # The occlusion-fade tunables are the one paired set whose web half is a
 # plain script rather than a wasm crate - the browser play page holds them
 # in its GLSL module. `const NAME = <value>;` parses identically either way,
@@ -439,15 +435,6 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "duplicate)",
         "native": (NATIVE_DEV_MENU, "RECORDS_LABELS"),
         "web": (WEB_PLAY_DEV_MENU, "RECORDS_LABELS"),
-    },
-    {
-        "what": "BGM transition click-guard ramp - the `fade_in_samples` "
-        "argument each host's BGM director hands to swap_bgm. Long enough and "
-        "the incoming track's intro is inaudible, which on a cutscene sting is "
-        "the whole cue; the browser held a 22050-sample serial cross-fade here "
-        "long after the native host had measured that down to two frames",
-        "native": (NATIVE_BGM, "TRANSITION_FADE_IN_SAMPLES"),
-        "web": (WEB_BGM, "TRANSITION_FADE_IN_SAMPLES"),
     },
     # The camera-occlusion fade is not an engine-ui screen - the shared
     # kernel here is a pair of hand-written twin shaders, so these four
@@ -1337,22 +1324,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["GameOverOutcome::ReturnToTitle"],
-    },
-    {
-        "what": "BGM start - a music change must install the incoming track "
-        "immediately. `swap_bgm` does; `crossfade_to` is a serial fade that "
-        "parks the new sequencer and rolls the old one down to silence first, "
-        "so the track has not begun a fade-length after the script asked for "
-        "it. The browser held the crossfade long after the native host had "
-        "measured it out, and the two calls live in different crates, so the "
-        "difference is invisible in a diff - audible only on a cutscene sting, "
-        "which is nearly all intro",
-        "sites": {
-            "native": (NATIVE_BGM, "start_inner"),
-            "web": (WEB_BGM, "play"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["swap_bgm"],
     },
     {
         "what": "dev-menu tick - both hosts drive the shared `DevMenuSession` "
@@ -4083,6 +4054,13 @@ SELF_FIELD_METHOD_RE = re.compile(r"\bself\.actors\.([a-z_][a-z_0-9]*)\s*\(")
 # How far a host helper chain is followed out of a kernel body.
 CONTENT_DEPTH = 8
 
+# Host fns the walk does not enter. The play page's `audio_director` builds
+# the shared `AudioBgmDirector` the first time anything needs it and stages
+# its resident banks against the disc - the native session's boot staging,
+# which no native frame kernel reaches either. Following it would charge
+# that one-time install to every frame step that fires a cue.
+CONTENT_WALK_STOPS = {"audio_director"}
+
 
 def engine_api_names() -> set[str]:
     """Every `pub fn` name the four shared engine crates define, minus the
@@ -4144,7 +4122,7 @@ def kernel_engine_calls(
                 if c in api and c not in own:
                     calls.add(c)
             for c in SELF_METHOD_RE.findall(body) + SELF_FIELD_METHOD_RE.findall(body):
-                if c in own:
+                if c in own and c not in CONTENT_WALK_STOPS:
                     stack.append((c, depth + 1))
     return calls, len(seen), found
 

@@ -1701,6 +1701,7 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-audio",
  "legaia-engine-core",
+ "legaia-engine-session",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",

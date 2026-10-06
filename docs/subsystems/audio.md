@@ -607,9 +607,8 @@ fills, and slot `80` is a bank with no score, so those six have no pair to play
 space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
 `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
 uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
-rather than the scene VAB the field path stages. Both play hosts' owned-VAB staging
-(`AudioBgmDirector` and the audio-trace director natively, `WebBgmDirector` on the play
-page) split the entry with `engine-core::chunk_install::owned_bank_offsets` - the
+rather than the scene VAB the field path stages. Every owned-VAB staging
+(`AudioBgmDirector`, which both play hosts run, and the audio-trace director) splits the entry with `engine-core::chunk_install::owned_bank_offsets` - the
 installer walk's type-0 bank and type-2 score - rather than hunting it for the two magics;
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
@@ -1395,9 +1394,9 @@ the motion VM's op `0x09` call the ring enqueue `FUN_80035B50` with the id
 straight from their bytecode, and op `0x36` sub `4` sets that slot's
 countdown through `FUN_80035BAC`
 ([`sfx-table.md`](../formats/sfx-table.md#the-fields-producers-op-0x36-and-the-motion-vms-op-0x09)).
-The engine queues each call on the world as a `SfxRingOp`; the native
-`BootSession::route_field_sfx` and the browser play page's `route_field_sfx`
-replay the queue onto their scheduler's four-slot ring every tick, and the
+The engine queues each call on the world as a `SfxRingOp`;
+`AudioBgmDirector::route_world_sfx`, which both play hosts call every tick,
+replays the queue onto the scheduler's four-slot ring, and the
 scheduler returns due ring cues in `SfxFireBatch::ring`, apart from the router
 queue. A ring id is keyed as the drainer `FUN_80016B6C` keys it: below `0x200`
 through the static table and its category's bank, at or above it through the
@@ -1532,10 +1531,8 @@ memo on every scene change as well. A door stages no bank, so the free tail is
 unchanged and the retry could never succeed; the memo now survives a door on
 both hosts, as retail's side-band request does.
 
-The native director calls `observe_bgm_end` after its own upload; the page's
-upload site (`WebBgmDirector::stage_owned`) does not see the SFX channel, so the
-page calls it before every read of the tail - each tick, each fire and each
-stage. The call is idempotent, so the two timings reach the same state.
+The director calls `observe_bgm_end` after every track upload and before each
+tail placement; the call is idempotent.
 
 ### The scheduler under a menu-overlay screen
 

@@ -98,24 +98,18 @@ sim-tick clip cadence, and the opening-chain staging below.
 
 ## Scene BGM (`runtime`)
 
-The play page plays the scene's music through the from-scratch SPU + sequencer,
-the browser twin of the native `AudioBgmDirector`. `audio_init()` opens a
+The play page plays its music and sound effects through the native window's
+own director, `legaia_engine_session::AudioBgmDirector`, over the browser's
+audio output (`play_sfx::PageDirector`). `audio_init()` opens a
 `legaia_engine_audio::WebAudioOut` (must run inside a user gesture - browser
-autoplay policy) and stages the scene's VAB bank; every `tick_frame()` then
-routes the field VM's op-`0x35` BGM events through a `WebBgmDirector` that
-implements `legaia_engine_core::scene::BgmDirector`. Scene-local starts
-(`bgm_id < 2000`) play their SEQ through the pre-staged scene bank; global-pool
-tracks (`>= 2000`, the path most real Legaia BGM takes) carry their own
-`[chunk][pBAV VAB][pQES SEQ]` and upload it before playing - the same
-`SceneHost::route_bgm_events` / `bgm_seq_bytes` / `music_bank_entry_bytes`
-selection the native window uses, no new mapping. Tracks loop to the start and
-cross-fade in; a redundant op-`0x35` re-emit of the same id is suppressed so
-the playhead survives. `audio_resume()` (browsers open the context suspended),
-`audio_set_gain()`, and `audio_ready()` round out the JS surface; routing and
-staging no-op until audio is live, so the field VM's events stay queued until
-the user enables sound. Not built into a disc-gated parity test - the SPU
-render path is exercised by the media page (`audio_api`) and the native
-`audio-trace` oracle.
+autoplay policy), builds the director over it and stages the resident SFX
+banks at once; every `tick_frame()` then routes the field VM's op-`0x35` BGM
+events into it (`SceneHost::route_bgm_events`, the native call) and runs the
+director's per-tick SFX routing. A track the script started before audio was
+up is started on `audio_init()` from `World::audio.current_bgm`. Off wasm the
+director runs over a headless `TestAudioSink`, so the tests exercise the same
+staging and firing path. `audio_resume()` (browsers open the context
+suspended), `audio_set_gain()`, and `audio_ready()` round out the JS surface.
 
 ### Output level
 

@@ -306,15 +306,11 @@ pub struct LegaiaRuntime {
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
-    /// The resident SFX program banks keyed by **VAB slot**, uploaded into a
-    /// shared region at the top of SPU RAM the first time a cue fires. A cue's
-    /// `+4` category names its slot, so this is a map rather than one bank:
-    /// slot 0 = PROT 0868 (shared UI), slot 2 = PROT 0869 (battle / duel). Both
-    /// come out of one allocator so they pack. Separate from
-    /// [`Self::bgm_bank`], whose allocator is capped below this region so a
-    /// scene change cannot stomp the SFX samples.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) sfx_vabs: std::collections::BTreeMap<u8, legaia_engine_audio::VabBank>,
+    /// The page's audio director - the native window's `AudioBgmDirector`
+    /// over [`crate::play_sfx::PageSink`]: BGM sequencer and bank, resident SFX
+    /// banks, cue scheduler, duck. Built on wasm once audio is up, off wasm on
+    /// first use ([`Self::audio_director`]).
+    pub(crate) director: Option<crate::play_sfx::PageDirector>,
     /// The live party-wipe hand-off, when a wipe raised one: the same
     /// [`legaia_engine_core::game_over::GameOverSession`] the native window
     /// builds, holding for the same number of frames and resolving to the
@@ -325,7 +321,7 @@ pub struct LegaiaRuntime {
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
     /// BGM sequencer feeds - one mixer, as on hardware.
     #[cfg(target_arch = "wasm32")]
-    pub(crate) audio_out: Option<WebAudioOut>,
+    pub(crate) audio_out: Option<std::sync::Arc<WebAudioOut>>,
     /// The parsed `SCUS_942.54` equipment stat-bonus table
     /// (`DAT_80074F68`), kept for the shop's retail descriptor windows:
     /// the sell-detail panel's passive chain reads the equip record's `+5`
@@ -362,25 +358,6 @@ pub struct LegaiaRuntime {
     /// native `persist_and_apply_options` leg for leg: apply the live audio
     /// side effects, then write the state out.
     pub(crate) options_state: legaia_engine_core::options::OptionsState,
-    /// Scene-local BGM sound bank, staged from the scene's first VAB entry
-    /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
-    /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
-    /// through this bank; a global-pool track (`>= 2000`) brings its own VAB
-    /// and replaces it. `None` until a scene is staged with audio running.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) bgm_bank: Option<legaia_engine_audio::VabBank>,
-    /// Last BGM id handed to [`WebAudioOut`], for the field VM's redundant
-    /// op-`0x35` re-emit suppression - re-attaching the same track would drop
-    /// the playhead. Reset on a deliberate [`Self::enter_field`] so re-booting
-    /// a scene restarts its music; preserved across door transitions so an
-    /// unchanged track keeps playing.
-    ///
-    /// `pub(crate)` because the BGM director's own module reaches it too:
-    /// [`crate::play_bgm`] owns the title -> load hand-off, which is a
-    /// `stop` plus a replay of the world's track and so has to touch the
-    /// same latch this module's starts do.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) bgm_last_started: Option<u16>,
     /// A title -> load score hand-off the page asked for before entering the
     /// save's scene ([`crate::play_bgm`]'s `play_bgm_title_handoff`): run by
     /// the scene entry once the save has landed, or by the next tick when
@@ -485,15 +462,10 @@ impl LegaiaRuntime {
             precise_movement_override: None,
             scus: None,
             sfx: Default::default(),
-            #[cfg(target_arch = "wasm32")]
-            sfx_vabs: Default::default(),
+            director: None,
             game_over: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
-            #[cfg(target_arch = "wasm32")]
-            bgm_bank: None,
-            #[cfg(target_arch = "wasm32")]
-            bgm_last_started: None,
             bgm_handoff_pending: false,
         }
     }
@@ -875,9 +847,8 @@ impl LegaiaRuntime {
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.bgm_last_started = None;
+        if let Some(d) = self.director.as_mut() {
+            d.last_started = None;
         }
         // A card Load's score hand-off lands here: stop whatever was
         // sounding (the title theme), then restore the track the entry
@@ -995,19 +966,11 @@ impl LegaiaRuntime {
     /// a card import or a picker visit a "New game" kept the old roster,
     /// gold and story flags.
     pub fn begin_new_game(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            // The title theme hands the score to the field: stop it so the
-            // prologue's own BGM (or its scripted silence) owns the audio.
+        // The title theme hands the score to the field: stop it so the
+        // prologue's own BGM (or its scripted silence) owns the audio.
+        if let Some(d) = self.director.as_mut() {
             use legaia_engine_core::scene::BgmDirector;
-            if let Some(out) = self.audio_out.as_ref() {
-                let mut director = crate::play_bgm::WebBgmDirector {
-                    out,
-                    bank: &mut self.bgm_bank,
-                    last_started: &mut self.bgm_last_started,
-                };
-                director.stop();
-            }
+            d.stop();
         }
         let Some(host) = self.scene_host.as_mut() else {
             self.world.begin_new_game();
@@ -1116,8 +1079,7 @@ impl LegaiaRuntime {
         // a bank the SFX pass staged against the outgoing track.
         let scene_swapped =
             matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty();
-        #[cfg(target_arch = "wasm32")]
-        self.route_bgm_wasm();
+        self.route_bgm();
         if scene_swapped {
             self.on_scene_change_audio();
         }
@@ -1312,13 +1274,12 @@ impl LegaiaRuntime {
             .and_then(|h| h.world.audio.current_bgm)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
-        #[cfg(target_arch = "wasm32")]
         let playing = self
-            .bgm_last_started
+            .director
+            .as_ref()
+            .and_then(|d| d.last_started)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
-        #[cfg(not(target_arch = "wasm32"))]
-        let playing = serde_json::Value::Null;
         serde_json::json!({ "requested": requested, "playing": playing })
     }
 
@@ -1397,7 +1358,13 @@ impl LegaiaRuntime {
             match WebAudioOut::new() {
                 Ok(out) => {
                     out.set_gain(BGM_DEFAULT_GAIN);
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    let out = std::sync::Arc::new(out);
                     self.audio_out = Some(out);
+                    // The director is built over the new output and staged
+                    // at once.
+                    self.director = None;
+                    let _ = self.audio_director();
                     // Every start routed before this was dropped with no
                     // director to hear it: bring the scene's track up now.
                     self.start_current_bgm_on_late_audio();
@@ -1433,27 +1400,25 @@ impl LegaiaRuntime {
     /// outlives the battle. `false` when audio is down or the disc entry
     /// doesn't resolve - the stop still ran, leaving silence rather than
     /// the stale track.
-    #[cfg(target_arch = "wasm32")]
     pub fn play_title_bgm(&mut self) -> bool {
         use legaia_engine_core::scene::BgmDirector;
         let id = legaia_engine_core::music_labels::TITLE_THEME_BGM_ID;
-        let Some(out) = self.audio_out.as_ref() else {
+        let Some(d) = self.audio_director() else {
             return false;
         };
-        let mut director = crate::play_bgm::WebBgmDirector {
-            out,
-            bank: &mut self.bgm_bank,
-            last_started: &mut self.bgm_last_started,
-        };
-        director.stop();
-        let Some(host) = self.scene_host.as_ref() else {
+        d.stop();
+        let Some(Ok(Some(entry))) = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.music_bank_entry_bytes(id))
+        else {
             return false;
         };
-        let Ok(Some(entry)) = host.music_bank_entry_bytes(id) else {
+        let Some(d) = self.director.as_mut() else {
             return false;
         };
-        director.start_owned_vab(id, &entry);
-        self.bgm_last_started == Some(id)
+        d.start_owned_vab(id, &entry);
+        d.last_started == Some(id)
     }
 
     /// Set the BGM output gain in page-slider units: `1.0` is the page
@@ -2060,27 +2025,19 @@ impl LegaiaRuntime {
         host.world.set_field_player_anim(anim);
     }
 
-    /// Drain this tick's field-VM BGM events into [`WebAudioOut`] via a
-    /// [`WebBgmDirector`]. Runs only while audio is live; until then the field
-    /// VM's music events stay on the world queue (they are not consumed here),
-    /// so enabling audio later still catches the scene's track on its next
-    /// op-`0x35` re-emit. The borrows are disjoint fields of `self`.
-    #[cfg(target_arch = "wasm32")]
-    fn route_bgm_wasm(&mut self) {
-        let out = match self.audio_out.as_ref() {
-            Some(o) => o,
-            None => return,
+    /// Drain this tick's field-VM BGM events into the page's director.
+    /// Runs only while a director exists (on wasm: audio is up); until then
+    /// the events are dropped by `drain_and_route_field_events_web`, as an
+    /// unheard retail op-`0x35` would be, and the late-audio start
+    /// (`start_current_bgm_on_late_audio`) brings the scene's track up.
+    fn route_bgm(&mut self) {
+        if self.audio_director().is_none() {
+            return;
+        }
+        let (Some(d), Some(host)) = (self.director.as_mut(), self.scene_host.as_mut()) else {
+            return;
         };
-        let host = match self.scene_host.as_mut() {
-            Some(h) => h,
-            None => return,
-        };
-        let mut director = crate::play_bgm::WebBgmDirector {
-            out,
-            bank: &mut self.bgm_bank,
-            last_started: &mut self.bgm_last_started,
-        };
-        if let Err(e) = host.route_bgm_events(&mut director) {
+        if let Err(e) = host.route_bgm_events(d) {
             crate::console_log(&format!("play BGM: route failed: {e:#}"));
         }
     }
@@ -2090,7 +2047,7 @@ impl LegaiaRuntime {
     /// Consume this tick's remaining field-VM events - the browser twin of
     /// the native window's `drain_and_route_field_events`
     /// (`window/boot_cutscene.rs`). BGM events are normally consumed by
-    /// `route_bgm_wasm` first; while audio is down (no `WebAudioOut` yet) they
+    /// `route_bgm` first; while audio is down (no `WebAudioOut` yet) they
     /// come through here and are dropped, exactly as an unheard retail
     /// op-`0x35` would be. `ActorSpawned` is noted for the page's dynamic
     /// mesh upload; everything else is presentation this host reads off the
@@ -2101,8 +2058,7 @@ impl LegaiaRuntime {
         // pass after the scene tick (a battle-presentation or minigame swap,
         // a dance song ending) before the drain below drops whatever is left.
         // The native `drain_and_route_field_events` opens with the same pass.
-        #[cfg(target_arch = "wasm32")]
-        self.route_bgm_wasm();
+        self.route_bgm();
         let Some(host) = self.scene_host.as_mut() else {
             self.world.drain_field_events();
             return;

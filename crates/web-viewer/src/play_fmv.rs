@@ -401,15 +401,9 @@ impl LegaiaRuntime {
     /// Stop the score through the page's BGM director - the same `stop` the
     /// native window's director runs for the attract.
     fn fmv_stop_score(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
+        if let Some(d) = self.director.as_mut() {
             use legaia_engine_core::scene::BgmDirector;
-            let mut director = crate::play_bgm::WebBgmDirector {
-                out,
-                bank: &mut self.bgm_bank,
-                last_started: &mut self.bgm_last_started,
-            };
-            director.stop();
+            d.stop();
         }
     }
 
