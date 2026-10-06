@@ -572,6 +572,24 @@ reach, `dolk` P2[9] (the bed behind the inn's stair door), wipes on 14 of
 before it sets out, no region rolls between `dolk` and Rim Elm, and the
 pad tier clears on the default stream and on seeds 1..40 alike.
 
+### A boss the pad hand cannot out-damage
+
+`noaru_valley -> bio_castle` meets the third Songi fight (48000 HP, UDF
+`402`) on the walk out of `noaru`, and the pad tier loses it on every seed
+with Songi still holding a large share of its HP. The pad hand commits
+plain Attack and nothing else - no arts, no Seru magic, no Spirit - so its
+damage is the swing kernel's against one of the game's highest
+defences, a hand a retail player does not play. That makes the wipe a
+property of the driver before it is a property of the damage path.
+
+What would make it the damage path is a per-hit figure that disagrees with
+retail, and the library cannot supply one: its battle states are almost all
+early fights, and the popup ring `ctx[+0x83C]` holds a live party hit in
+only a handful of them. Until a capture of a late-game party hit exists,
+read this stall as the hand's, and check a change to it against the
+formula pages ([`battle-formulas.md`](../subsystems/battle-formulas.md)),
+not against the ladder.
+
 ## Seeding
 
 The seed goes through the host's own resume path,
