@@ -3241,8 +3241,20 @@ impl PlayWindowApp {
             screen_prims.extend(self.cross_beam_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
-            // the intro fades use so the ABR mode is honoured.
-            screen_prims.extend(self.screen_fade_screen_prim());
+            // the intro fades use so the ABR mode is honoured, and split at
+            // the text layer by its ordering-table id exactly as the
+            // screen-effect pushes below are: the summon band's flashes
+            // (id `1`, the text's own bucket) draw under the battle HUD, a
+            // field warp's fade (id `0`) over it. The browser play page
+            // makes the same split (`play_text_layer_washes_json`).
+            if let Some(p) = self.screen_fade_screen_prim() {
+                let ot = i16::try_from(p.ot_index()).unwrap_or(i16::MAX);
+                if legaia_engine_render::screen_prim::push_covers_text(ot) {
+                    screen_prims.push(p);
+                } else {
+                    light_prims.push(p);
+                }
+            }
             // A shop opening: the field fades to black under the menu's
             // subtractive full-screen quad before its windows slide in
             // (`MenuRuntime::shop_fade_level`; the browser page draws the

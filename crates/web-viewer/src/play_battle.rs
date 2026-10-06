@@ -2509,7 +2509,21 @@ impl LegaiaRuntime {
             .scene_host
             .as_ref()
             .map(|h| {
-                legaia_engine_ui::screen_prim::text_layer_washes(&h.world.screen_tint_push_args())
+                let mut w = legaia_engine_ui::screen_prim::text_layer_washes(
+                    &h.world.screen_tint_push_args(),
+                );
+                // The world's one live fade washes the text too when its
+                // ordering-table id is in front of the text's bucket (a
+                // field warp's id `0`); the summon band's flashes (id `1`)
+                // stay under it. The native window makes the same split.
+                if let Some((rgb, abr, ot)) = h.world.screen_fade_draw()
+                    && legaia_engine_ui::screen_prim::push_covers_text(
+                        i16::try_from(ot).unwrap_or(i16::MAX),
+                    )
+                {
+                    w.push((abr, [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]));
+                }
+                w
             })
             .unwrap_or_default();
         serde_json::to_string(
