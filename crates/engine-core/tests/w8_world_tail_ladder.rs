@@ -1,4 +1,4 @@
-//! Reach ladder: three routines no canonical ladder entered, each driven
+//! Reach ladder: four routines no canonical ladder entered, each driven
 //! through the **world tick and its frame tail** rather than through a direct
 //! call of the routine.
 //!
@@ -6,6 +6,7 @@
 //! |---|---|---|
 //! | `801d7a5c` | `fishing_chrome::splash_burst` | `World::tick` in `SceneMode::Fishing`, a reel gesture matching a cadence template -> `PondEvent::Splash` -> the world's strike-splash spawn |
 //! | `80057914` | `vram_rect_copy::build_packet` | a shipped op-`0x43` sub-`0x12` instruction stepped by the field VM -> `World::step_field_vram_effects` (the VRAM half of the hosts' frame tail) |
+//! | `8005842c` / `800583c8` | `effects::apply_vram_stp` | a shipped field-VM `4C D4` (and `4C D5`) stepped by the field VM -> the same VRAM tail |
 //! | `801e45bc` | `move_vm::ext::write_bezier_world` | a shipped prescript stager whose move program issues ext sub-op `0x0E` / `0x12`, spawned and advanced by `World::step_world_frame_tail` |
 //!
 //! The fishing rung is disc-free: its species and cadence tables are
@@ -220,6 +221,99 @@ fn a_shipped_vram_rect_copy_runs_through_the_frame_tail() {
         "{scene}: the instruction queued a rect copy the VRAM tail must drain \
          into a packet and apply"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 8005842c / 800583c8 - op 4C D4 / 4C D5, shipped carriers, through the VRAM tail
+// ---------------------------------------------------------------------------
+
+/// The first clean shipped `4C <op0>` instruction: `(scene, record body, pc)`.
+fn shipped_menu_ctrl(index: &ProtIndex, op0: u8) -> Option<(String, Vec<u8>, usize)> {
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(index, &name) else {
+            continue;
+        };
+        for carrier in scene_man_carriers(index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            for partition in 0..3 {
+                let count = (*man_file
+                    .header
+                    .partition_counts
+                    .get(partition)
+                    .unwrap_or(&0))
+                .max(0) as usize;
+                for record in 0..count {
+                    let Some((start, pc0, len)) =
+                        partition_record_span(&man_file, man, partition, record)
+                    else {
+                        continue;
+                    };
+                    let body = &man[start..start + len];
+                    let mut ok_run = CLEAN_RESYNC_INSNS;
+                    for insn in LinearWalker::new(body, pc0) {
+                        let Ok(insn) = insn else {
+                            ok_run = 0;
+                            continue;
+                        };
+                        let clean = ok_run >= CLEAN_RESYNC_INSNS;
+                        ok_run += 1;
+                        if clean
+                            && matches!(insn.info, InsnInfo::MenuCtrl { op0: o, .. } if o == op0)
+                        {
+                            return Some((name.clone(), body.to_vec(), insn.pc));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `4C D4` sets the mask bit on a 16x1 run's non-zero words and `4C D5`
+/// clears it; both are queued by the field VM and applied by the VRAM half
+/// of the frame tail. The run is seeded with words that change under the op
+/// (opaque colours for the set, masked ones for the clear), so the tail
+/// answering "VRAM changed" is the op's own effect and not a vacuous pass.
+#[test]
+fn shipped_mask_bit_runs_apply_through_the_frame_tail() {
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    for (op0, set) in [(0xD4u8, true), (0xD5u8, false)] {
+        let (scene, body, pc) = shipped_menu_ctrl(&index, op0)
+            .unwrap_or_else(|| panic!("a shipped scene carries op 4C {op0:02X}"));
+        eprintln!("[4C {op0:02X}] {scene} pc={pc:#x}");
+        let mut world = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        world.party.roster = legaia_save::Party::zeroed(3);
+        world.load_field_script_at(body, pc);
+        world
+            .step_field()
+            .unwrap_or_else(|| panic!("step the shipped `4C {op0:02X}`"));
+        let &(x, y, s) = world
+            .ambient
+            .script_vram_stp
+            .first()
+            .unwrap_or_else(|| panic!("{scene}: `4C {op0:02X}` queued no mask-bit run"));
+        assert_eq!(s, set, "{scene}: `4C {op0:02X}` queued the wrong direction");
+        let mut vram = legaia_tim::Vram::new();
+        let seed: u16 = if set { 0x1524 } else { 0x9524 };
+        let row: Vec<u8> = (0..16).flat_map(|_| seed.to_le_bytes()).collect();
+        vram.write_block(x, y, 16, 1, &row);
+        assert!(
+            world.step_field_vram_effects(&mut vram, false),
+            "{scene}: the queued `4C {op0:02X}` run must change the seeded row"
+        );
+        let want = if set { 0x9524 } else { 0x1524 };
+        assert_eq!(vram.pixel(usize::from(x), usize::from(y)), want);
+    }
 }
 
 // ---------------------------------------------------------------------------
