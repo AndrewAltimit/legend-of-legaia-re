@@ -674,7 +674,7 @@ fn op_4c_n_d_sub_6_b1_eq_4_clears_top_bit_only() {
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
     assert_eq!(ctx.field_74, 0x7FFF_FFFF);
     assert_eq!(host.n_d_sub6_acks, 1);
 }
@@ -688,7 +688,7 @@ fn op_4c_n_d_sub_6_b1_neq_4_sets_high_byte() {
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
     // Sets bit 0x80000000 + (0x12 << 24) = 0x92000000.
     assert_eq!(ctx.field_74, 0x9200_0000);
 }
