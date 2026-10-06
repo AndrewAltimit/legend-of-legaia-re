@@ -626,6 +626,9 @@ impl World {
         }
         self.cutscene.prologue_naming_pending = true;
         self.cutscene.prologue_naming_armed = false;
+        self.cutscene.naming_owner =
+            Some(crate::field_submode_screen::Op49ParkOwner::CutsceneTimeline);
+        self.cutscene.naming_slot = 0;
         true
     }
 
@@ -2643,8 +2646,11 @@ impl World {
             // collision the player walks off: `chitei2`'s collapse beat leaves
             // the party on the escape platform (partition-0 record 31's mesh)
             // to run down its stairs onto the corridor floor, and yanking them to the cold spawn skipped
-            // the boulder beat that platform leads to.
-            && !self.field_collision_reaches_floor(
+            // the boulder beat that platform leads to. Nor is open ground
+            // with no floor bit at all: `taiku`'s post-boss cutscene leaves the
+            // party on the collapse escape route, and the rescue carried them
+            // back to the scene's spawn, off the route the escape timer runs.
+            && self.field_collision_boxed_in(
                 actor.move_state.world_x,
                 actor.move_state.world_z,
                 STRANDED_COLLISION_REACH,

@@ -1380,8 +1380,12 @@ The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 Retail's handler table maps sub `03` to the name-entry handler `FUN_801F03F0`
 with no test of how the record was reached, and the port opens the screen
 wherever the sub executes - the opening install and a replay of the record
-(a card load, the comparison corpus's resume) alike. The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
-`03` sub, `00` = Vahn); the field overlay's SM runs the screen and writes
+(a card load, the comparison corpus's resume) alike, and in whichever context
+runs it: `cave01`'s Noa prompt (`49 03 01`) sits in a record that plays as a
+concurrent helper context, not as the modal timeline, and the screen opens and
+parks only that context. The operand names the party slot (`_DAT_8007B450 + 1`
+after the `03` sub: `00` = Vahn at the town01 hand-off, `01` = Noa); the
+field overlay's SM runs the screen and writes
 the typed name **live** into the character record's name field at `+0x2A7`
 (record base `0x80084708 + n*0x414`). Renderer `FUN_801E6B34`
 (`ghidra/scripts/funcs/801e6b34.txt`), cursor cell at `_DAT_8007BB88`, SM

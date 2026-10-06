@@ -642,6 +642,7 @@ impl World {
         self.terrain.floor_tier_bobs.clear();
         self.cutscene.prologue_naming_pending = false;
         self.cutscene.prologue_naming_armed = false;
+        self.cutscene.naming_owner = None;
         self.cutscene.entering_town01_opening = false;
         self.field_vm.pending_record_spawns.clear();
         self.cutscene.opening_chain_active = false;

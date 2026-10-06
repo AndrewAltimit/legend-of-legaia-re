@@ -853,9 +853,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // The pinned name-entry handoff (P2[3] body `0x02c6`, `49 03 00`) suspends
     // the script here; the engine opens the name-entry overlay on the Idle->arm
     // edge and keeps the op Armed (parked) until the player commits, then Done
-    // (resume). Outside the timeline (`in_cutscene_timeline == false`) and
-    // outside the opening (`prologue_naming_pending == false`) these fall back
-    // to the default Idle, so a normal field-VM op-0x49 behaves as before.
+    // (resume). Any other `49 03 <slot>` does the same in the context that
+    // ran it (`CutsceneState::naming_owner`); a context with no naming
+    // prompt pending falls back to the default Idle.
     // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
     // Op `0x4C` outer-nibble-4 sub-9 - the writer of the two globals
     // `crate::camera_ease` eases between, read off the three arms at
@@ -1010,7 +1010,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             };
         }
-        if self.world.cutscene.in_timeline && self.world.cutscene.prologue_naming_armed {
+        if self.world.cutscene.prologue_naming_armed
+            && self.world.cutscene.naming_owner == Some(self.world.op49_park_owner())
+        {
             if self.world.name_entry_active() {
                 Op49State::Armed
             } else {
@@ -1066,6 +1068,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.world.field_vm.submode_screen.owner == owner {
             self.world.field_vm.submode_screen.done = false;
         }
+        // A finished naming prompt outside the opening is spent with its
+        // resume, so the context's later op-0x49s park on their own screens.
+        // The opening timeline keeps its latch: its later STATE_RESUMEs have
+        // always resolved through it.
+        if self.world.cutscene.prologue_naming_armed
+            && !self.world.name_entry_active()
+            && self.world.cutscene.naming_owner == Some(owner)
+            && owner != crate::field_submode_screen::Op49ParkOwner::CutsceneTimeline
+        {
+            self.world.cutscene.prologue_naming_pending = false;
+            self.world.cutscene.prologue_naming_armed = false;
+            self.world.cutscene.naming_owner = None;
+        }
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
@@ -1088,6 +1103,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // same Idle->arm edge.
         if sub_op == 3 {
             self.world.cutscene.prologue_naming_pending = true;
+            self.world.cutscene.prologue_naming_armed = false;
+            self.world.cutscene.naming_owner = Some(self.world.op49_park_owner());
+            self.world.cutscene.naming_slot = instr.get(2).map_or(0, |&b| usize::from(b));
         }
         // Sub-7 is the casino prize-exchange counter (menu-overlay
         // sub-screen 0x20); the byte after the sub-op selects the prize
@@ -1106,14 +1124,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
     }
     fn op49_invoke_setup(&mut self) {
-        if self.world.cutscene.in_timeline
-            && self.world.cutscene.prologue_naming_pending
+        if self.world.cutscene.prologue_naming_pending
             && !self.world.cutscene.prologue_naming_armed
+            && self.world.cutscene.naming_owner == Some(self.world.op49_park_owner())
             && !self.world.name_entry_active()
         {
-            // Lead character (party slot 0 = Vahn) is the one named at the
-            // opening, matching the retail char-record pointer `_DAT_8007B450`.
-            self.world.open_name_entry(0);
+            // The slot is the operand's byte after the sub-op (retail's
+            // char-record pointer `_DAT_8007B450 + 1`): `00` = Vahn at the
+            // opening, `01` = Noa in `cave01`.
+            self.world.open_name_entry(self.world.cutscene.naming_slot);
             self.world.cutscene.prologue_naming_armed = true;
         }
     }
