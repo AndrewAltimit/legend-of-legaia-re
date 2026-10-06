@@ -499,39 +499,16 @@ impl LegaiaRuntime {
         };
         let mut host = SceneHost::from_prot_bytes(prot_bytes, cdname_resolved)
             .map_err(|e| JsValue::from_str(&format!("load_disc: {e}")))?;
-        // Retail new-game defaults from the disc's own executable: a cold
-        // scene entry (the page's scene picker, no save imported) seeds the
-        // template party + starting bag, so the engine never runs a zeroed
-        // scaffold roster. Best-effort - a PROT.DAT-only load has no SCUS and
-        // keeps the old behaviour.
         // Item-name labels for the field menu's Item screen (executable-only;
         // a PROT.DAT load has no SCUS and the menu shows raw ids instead).
         self.item_names = scus
             .as_ref()
             .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
-        // Pause-menu text tables (item names + descriptions, spell names /
-        // descriptions, accessory passive lines) - what the Items / Magic
-        // pause screens' info windows print. Executable-only, like above.
+        // The seru-trade offers' display names. The trade config itself, the
+        // menu text and the static progression tables are the session's
+        // installs (`BootSession::from_host`, below), as on the native boot.
         if let Some(s) = scus.as_ref() {
-            host.world.install_menu_text(s);
-            // The randomizer's seru-trade config (the `--seru-trade` blob in
-            // preserved rodata) plus the display-name table the offers are
-            // labelled with. Vanilla ships the config disabled, so this is a
-            // no-op on an unpatched disc; on a patched one it is what makes
-            // the shop's "Trade Seru" row appear. The native boot installs
-            // the same pair (`BootSession::open_with_source` +
-            // `ensure_seru_names`), and without it the browser page silently
-            // dropped the whole feature - a shop root row short.
-            host.world.install_seru_trade_config(s);
             self.seru_names = legaia_asset::spell_names::SpellNameTable::from_scus(s);
-            // The static progression tables (XP curve + correction divisors,
-            // stat growth, victory pose, XA cue durations, magic-XP
-            // thresholds, accessory passives) - the same single engine install
-            // the native boot calls. Without it this host levelled on the flat
-            // placeholder growth, never levelled a summon, granted no
-            // accessory passives, dropped every melee grunt / cast voice and
-            // skipped the victory pose's `rand()`.
-            host.world.install_retail_progression_tables(s);
         }
         // Sound-effect descriptors from the same executable (`DAT_8006F198`,
         // see docs/formats/sfx-table.md). Data only - the program bank uploads
@@ -577,17 +554,6 @@ impl LegaiaRuntime {
                         }
                     })
             });
-        // Every cold entry on this page is a scene-picker entry (a New Game
-        // seeds its own Vahn-alone roster before entering), so the cold seed
-        // stands up the full Vahn / Noa / Gala party.
-        if let Some(mut defaults) = scus
-            .as_ref()
-            .and_then(|s| legaia_engine_core::new_game::NewGameDefaults::from_scus(s))
-        {
-            defaults.picker_party = true;
-            host.new_game_defaults = Some(defaults);
-        }
-
         // Install the equipment / spell / item catalogs on the host world so the
         // pause menu's Equip / Magic / Items sub-screens read real disc data -
         // the same tables the native `play-window` boot installs in
@@ -659,40 +625,15 @@ impl LegaiaRuntime {
         {
             host.world.set_item_effects(effects);
         }
-        // Gold-shop item data (per-id buy price + "names a real item" mask),
-        // the twin of the native boot's `read_shop_item_data`. Without it
-        // `World::try_arm_field_shop` fails its priced-record validation and
-        // every field-VM merchant is silently inert. Lands with
-        // [`crate::play_shop`], which owns the UI the armed shop suspends the
-        // field VM on - installing the catalog without that screen would park
-        // the script at the first merchant.
-        if let Some(shop_data) = scus
-            .as_ref()
-            .and_then(|s| legaia_engine_core::shop_catalog::ShopItemData::from_scus(s))
-        {
-            host.world.shops.item_shop_data = Some(shop_data);
-        }
-
-        // Battle chip / banner labels off the user's own disc - the
-        // `Ambushed!` and `surprised the enemy` lines, `Spirit`, and the
-        // per-character Ra-Seru name the command ring's magic arm carries.
-        // Twin of the native window's read in `window/run.rs`; without it the
-        // browser draws the port's own fallback wording instead.
-        // Both halves - this overlay read and the SCUS words below - come
-        // through the one builder the native boot calls.
-        host.world.battle.ui_strings = legaia_engine_core::battle_open::battle_ui_strings_for_disc(
-            &host.index,
-            scus.as_deref(),
-        );
-        // The party cast trigger's per-spell anim-pair lists, off the same
-        // battle-overlay image - twin of the native window's read.
-        host.world.battle.spell_anim_pairs =
-            legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&host.index);
-
         // Keep the executable bytes for the battle render's per-stage SCUS
         // tables (mirror list / outdoor-cue list). Nothing leaves the browser.
         self.scus = scus;
 
+        // The session over the host: the native boot's own installs (menu
+        // text, seru-trade config, progression tables, battle UI strings and
+        // spell anim pairs, gold-shop item data, item effects, the new-game
+        // defaults and the CDNAME map-id resolver) run here, through the one
+        // constructor both hosts share.
         let count = host.index.entry_count() as u32;
         self.scene_host
             .install(host, self.scus.as_deref())

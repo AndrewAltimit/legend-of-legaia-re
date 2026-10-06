@@ -4293,6 +4293,12 @@ def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
 # with a reason. The cure for the six was one engine entry both boots call
 # (`World::install_retail_progression_tables`), which is also what keeps this
 # list short.
+#
+# The page now builds the native session type over its host
+# (`BootSession::from_host`), so every install inside `from_host` runs on the
+# page too and counts as the page's: a page source that calls `from_host(`
+# inherits that body's installs. The ones outside it (`enter_field_live`'s
+# catalogs, ...) still need a page call of their own.
 # ---------------------------------------------------------------------------
 
 BOOT_NATIVE = REPO / "crates/engine-session/src/boot.rs"
@@ -4311,21 +4317,36 @@ def boot_install_calls(text: str) -> set[str]:
     return set(BOOT_INSTALL_RE.findall(strip_all_comments(text)))
 
 
+def session_from_host_installs(boot_src: str) -> set[str]:
+    """The installs inside `BootSession::from_host`'s body - the ones a host
+    that builds its session through `from_host` runs without a call of its
+    own."""
+    m = re.search(r"\bpub fn from_host\s*\(", boot_src)
+    if not m:
+        return set()
+    brace = signature_end(boot_src, m.start())
+    if brace < 0:
+        return set()
+    start, end = brace_block(boot_src, brace)
+    return boot_install_calls(boot_src[start:end])
+
+
 def check_boot_installs() -> tuple[list[str], list[str], int]:
     """Tier 13. `(problems, waived_notes, native_installs_checked)`."""
     if not BOOT_NATIVE.is_file():
         return [f"boot installs: {BOOT_NATIVE.relative_to(REPO)} missing"], [], 0
-    native = boot_install_calls(BOOT_NATIVE.read_text(encoding="utf-8"))
+    native_src = BOOT_NATIVE.read_text(encoding="utf-8")
+    native = boot_install_calls(native_src)
     web: set[str] = set()
+    page_builds_session = False
     for path in sorted(BOOT_WEB_ROOT.rglob("*.rs")):
         if is_test_source(path):
             continue
-        web |= set(
-            re.findall(
-                r"\.\s*((?:install|set)_[a-z0-9_]+)\s*\(",
-                strip_all_comments(path.read_text(encoding="utf-8")),
-            )
-        )
+        text = strip_all_comments(path.read_text(encoding="utf-8"))
+        web |= set(re.findall(r"\.\s*((?:install|set)_[a-z0-9_]+)\s*\(", text))
+        page_builds_session |= bool(re.search(r"\bfrom_host\s*\(", text))
+    if page_builds_session:
+        web |= session_from_host_installs(native_src)
     waivers: dict[str, dict] = {}
     if WAIVERS.is_file():
         for row in tomllib.loads(WAIVERS.read_text(encoding="utf-8")).get("boot_install", []):
