@@ -428,6 +428,10 @@ impl World {
                 let gauge = &mut self.battle.ap_gauges[idx];
                 gauge.base_ap = gauge.base_ap.saturating_sub(delta);
                 gauge.current_ap = gauge.current_ap.min(gauge.ceiling());
+                // ... and the `+0x1F9` flag the round boundary reads.
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.spirit_shield = 0;
+                }
             }
         }
         // Bank any captured Seru into learning progress (drains battle_captures).

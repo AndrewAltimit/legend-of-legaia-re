@@ -590,6 +590,32 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
     world.finish_battle();
     assert_eq!(world.battle.ap_gauges[0].base_ap, 10);
     assert_eq!(world.battle.fury_boost[0], None);
+    assert_eq!(world.actors[0].battle.spirit_shield, 0);
+}
+
+/// Fury Boost reaches the gauge the arts entry actually spends: it raises the
+/// actor's `+0x1F9` byte, and the round boundary (`FUN_801D88CC` loop A)
+/// restores the live `+0x154` gauge - the arts command pool - to
+/// `base * 7 / 5 + 8` instead of `base`.
+#[test]
+fn fury_boost_extends_the_live_arts_gauge_at_the_round_boundary() {
+    let mut world = World::new();
+    world.tables.item_catalog.insert(crate::items::ItemEntry {
+        id: 0x81,
+        name: "Fury Boost",
+        effect: crate::items::ItemEffect::ActionGauge,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    world.party.party_count = 1;
+    world.actors[0].battle.agl_base = 150;
+    world.actors[0].battle.agl = 150;
+    // A plain attack this round: the boundary would restore `base`.
+    world.actors[0].battle.action_category = 3;
+    world.use_item(0x81, 0);
+    assert_eq!(world.actors[0].battle.spirit_shield, 1);
+    crate::battle_round::BattleRound::boundary(&mut world);
+    assert_eq!(world.actors[0].battle.agl, 150 * 7 / 5 + 8);
 }
 
 #[test]
