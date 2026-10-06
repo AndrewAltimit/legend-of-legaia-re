@@ -690,9 +690,50 @@ fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptG
         .map(|(_, rec)| rec.body.to_vec())
     {
         roll_back_run_latches(world, &body, gate.pc);
+        // A talk the capture holds past a fight it staged resumes where that
+        // fight's talk ended, not at the record's entry.
+        if let Some(pc) = post_battle_resume(&body, gate.pc)
+            && let Some(rec) = world.npcs.dialog_prologue.get_mut(&slot)
+        {
+            rec.entry_pc = pc;
+        }
     }
     world.trigger_field_interact(0, slot);
     true
+}
+
+/// The PC a placement's talk resumes at when the capture is past a fight the
+/// talk staged: the byte after the `0x21` that ends the talk on a scripted
+/// battle (`3E FF <row>`, `21`), when the linear walk from it reaches the gate
+/// PC with no other talk end on the way. Retail's talk and the placement are
+/// one context (`actor[+0x9E]`): the talk ends on that `0x21` with the PC
+/// past it, the fight runs, and the engagement after it resumes there.
+/// `town01` `P1[10]` stages the sparring fight at `+0x7F7` and ends on the
+/// `21` at `+0x7FA`; `v0_1_post_battle_tetsu_town` is captured on "You did
+/// well." at `+0x804`, which a talk opened from the entry only reaches
+/// through the fight. `None` for every other gate.
+pub fn post_battle_resume(body: &[u8], gate_pc: usize) -> Option<usize> {
+    use legaia_asset::field_disasm::decode;
+    for start in 0..gate_pc.min(64) {
+        let mut pc = start;
+        let mut prev_op = None;
+        let mut resume = None;
+        while pc < gate_pc {
+            let Ok(i) = decode(body, pc) else { break };
+            if i.size == 0 {
+                break;
+            }
+            if i.opcode == 0x21 && i.extended.is_none() {
+                resume = (prev_op == Some(0x3E)).then_some(pc + i.size);
+            }
+            prev_op = Some(i.opcode);
+            pc += i.size;
+        }
+        if pc == gate_pc {
+            return resume;
+        }
+    }
+    None
 }
 
 /// The system flags a record set on its way to `gate_pc`: every `0x5x` SET
@@ -827,6 +868,20 @@ mod tests {
         let body = [0x39, 0x05, 0x26, 0x02, 0x00, 0x39, 0x77, 0x4A, 0x10, 0x00];
         assert_eq!(run_grants(&body, 10), vec![0x77]);
         assert!(run_grants(&body, 5).is_empty());
+    }
+
+    /// A gate past a talk's `3E` / `21` fight boundary resumes after the
+    /// `21`; a later `21` with no fight before it cancels that.
+    #[test]
+    fn a_post_battle_gate_resumes_past_the_fight_end() {
+        // 4A 10 00 | 3E FF 04 | 21 | 52 0C | <gate>
+        let body = [0x4A, 0x10, 0x00, 0x3E, 0xFF, 0x04, 0x21, 0x52, 0x0C, 0x24];
+        assert_eq!(post_battle_resume(&body, 9), Some(7));
+        // 4A 10 00 | 3E FF 04 | 21 | 21 | <gate>
+        let body = [0x4A, 0x10, 0x00, 0x3E, 0xFF, 0x04, 0x21, 0x21, 0x24];
+        assert_eq!(post_battle_resume(&body, 8), None);
+        // No fight at all.
+        assert_eq!(post_battle_resume(&[0x4A, 0x10, 0x00, 0x24], 3), None);
     }
 
     #[test]

@@ -333,6 +333,14 @@ started from:
   headless seed runs talks on the inline runner as both play hosts do
   (`WorldToggles::use_vm_dialogue`); without it the record never left its
   idle channel and the innkeeper states were sampled with no box on screen.
+  A capture past a fight its talk staged is engaged where that fight's talk
+  ended: retail's talk and the placement are one context, the talk ends on
+  the `21` after the `3E` with the PC past it, and the engagement after the
+  fight resumes there (`post_battle_resume`). `v0_1_post_battle_tetsu_town`
+  is held on "You did well." at `town01` `P1[10]` `+0x804`, past the
+  sparring fight's `3E FF 04` / `21` at `+0x7F7`; opened at the entry, the
+  talk only reached that line through the fight, and the frame was sampled
+  with no box.
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
   the player made to page the conversation to where it was captured. A
