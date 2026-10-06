@@ -78,6 +78,12 @@
       <tr><td>back-reference</td><td>2</td><td><code>b0[7:0]</code> + <code>b1[7:4]</code> = 12-bit window position; <code>b1[3:0]</code> = length &minus; 3</td><td>Copy 3..18 bytes starting at the absolute window position, each also written at the cursor.</td></tr>
     </tbody>
   </table>
+  <p>A back-reference packs a 12-bit absolute window position and a 4-bit length into two bytes:</p>
+  <div class="byte-map" role="img" aria-label="Back-reference token: byte 0 is position bits 7..0; byte 1 high nibble is position bits 11..8; byte 1 low nibble is length minus 3">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">b0 [7:0]</span><span class="bm-name">position low 8 bits</span><span class="bm-size">8 bits</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">b1 [7:4]</span><span class="bm-name">position high 4 bits</span><span class="bm-size">4 bits</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">b1 [3:0]</span><span class="bm-name">length &minus; 3</span><span class="bm-size">4 bits</span></div>
+  </div>
 </section>
 
 <section class="doc-section" id="pseudocode">
@@ -126,7 +132,7 @@ while !done {
   <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>crates/lzs::compress</code> is an encoder written fresh for re-packing edited assets - it is what lets the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> put a modified monster, script or texture back into the same slot on the disc:</p>
   <ul class="bullets">
     <li>An LZSS matcher with one-step lazy matching (defer a match by a byte when the next position yields a strictly longer one) whose output the retail decoder accepts byte-for-byte - <strong>not</strong> a bit-exact clone of Sony's packer.</li>
-    <li>Correctness criterion: <code>decompress(compress(x)) == x</code>, validated by a disc-gated round-trip over the real PROT corpus.</li>
+    <li>Correctness criterion: <code>decompress(compress(x)) == x</code>, checked by round-tripping every compressed entry on the disc.</li>
     <li>The lazy step matters for in-place editing: it packs tightly enough that a re-packed asset fits its original footprint even where that footprint has no compressed slack (every scene MAN but one fits its exact original span; a purely greedy parse overshot each by a handful of bytes).</li>
   </ul>
   <p>A linear-history match at distance <code>d</code> maps onto the ring-buffer back-reference base <code>(0xFEE + i - d) &amp; 0xFFF</code>; capping the emitted distance at <code>4096 - MAX_MATCH</code> keeps every in-copy read (including the self-overlapping RLE case where <code>d &lt; len</code>) unambiguous. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's <code>0x14000</code>-byte records - the story told in <a href="../writeups/disc-patching/b-lzs-slots.html">the disc-patching write-up on LZS slots</a>.</p>
@@ -139,14 +145,20 @@ while !done {
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <p>The algorithm is read straight off the retail decoder's disassembly, and the from-scratch decoder and encoder round-trip every LZS entry on the disc.</p>
+  <details class="disclosure">
+    <summary>Provenance: functions and dumps</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Retail decoder</td><td><code>FUN_8001A55C</code></td><td>The complete algorithm above - ring size, <code>0xFEE</code> start, control-byte order, token encoding</td><td><code>funcs/8001a55c.txt</code></td></tr>
       <tr><td>Asset-type dispatcher</td><td><code>FUN_8001F05C</code></td><td>When the LZS path is taken (<code>copy_only == 0</code>)</td><td><code>funcs/8001f05c.txt</code></td></tr>
-      <tr><td>Round-trip validation</td><td><code>crates/lzs</code> disc-gated tests</td><td><code>decompress(compress(x)) == x</code> over the whole PROT corpus; re-packed MANs fit their original spans</td><td>-</td></tr>
+      <tr><td>Round-trip validation</td><td><code>crates/lzs</code></td><td><code>decompress(compress(x)) == x</code> over the whole PROT corpus; re-packed MANs fit their original spans</td><td>-</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/lzs.md" target="_blank" rel="noopener"><code>docs/formats/lzs.md</code></a>.</p>
 </section>
 
