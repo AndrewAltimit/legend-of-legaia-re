@@ -846,6 +846,21 @@ impl PlayWindowApp {
         ))
     }
 
+    /// PROT 0948's Cross Beam packets while arm 3 runs
+    /// ([`legaia_engine_core::world::World::cross_beam_draw`] through
+    /// `legaia_engine_ui::cast_beam::cross_beam_prims`, the kernel the browser
+    /// play page draws them with). Empty on every other frame.
+    pub(super) fn cross_beam_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        self.session
+            .host
+            .world
+            .cross_beam_draw()
+            .map(legaia_engine_render::cast_beam::cross_beam_prims)
+            .unwrap_or_default()
+    }
+
     /// This frame's field fog sheets (`legaia_engine_core::fog_particles`):
     /// the pool's render step (`FUN_8003F348` / `FUN_8003F3FC`, run from
     /// retail's field render pass) through the follow camera this frame

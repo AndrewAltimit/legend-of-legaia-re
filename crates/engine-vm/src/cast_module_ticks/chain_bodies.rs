@@ -30,12 +30,16 @@
 //! is recorded with [`ChainStage::on_hit`] and skipped, since the fold stages
 //! the reaction of the hit it lands.
 //!
-//! **Not ported**, and disclosed per body: the GPU-packet and camera arms,
-//! the party-row presentation stores (`+0x04` tint, `+0x21C` hide/show,
-//! per-seat `+0x21D` on a sweep), and the per-arm gating (module countdowns,
-//! clip-confirm compares, settle waits) that decides *when* an arm leaves.
-//! The runner leaves each arm on its first tick, the convention every other
-//! countdown-gated body in the band follows.
+//! **When an arm leaves is the band's.** The runner leaves an arm on the tick
+//! it is called; the caller calls it only on the tick the arm's module
+//! countdown lets through, from the per-body tables in
+//! `crate::cast_module_camera::capture_countdown` (every body here but PROT
+//! 0919's). The clip-confirm and settle waits are not carried.
+//!
+//! **Not ported**, and disclosed per body: the GPU-packet and camera arms
+//! (PROT 0948's beam excepted - `legaia_engine_ui::cast_beam`), and the
+//! party-row presentation stores (`+0x04` tint, `+0x21C` hide/show,
+//! per-seat `+0x21D` on a sweep).
 //!
 //! **The caster's literal stages belong to the band's pre-pass** where one
 //! exists. A body with a row in [`CAPTURE_CASTER_STAGES`] has its caster
@@ -439,7 +443,8 @@ pub const SPOON_CHAIN: ChainBody = ChainBody {
 /// seat's rate to `8` and clears the busy register (`0x801F7FBC`).
 ///
 /// Not ported: the packet and camera arms, the party-row presentation
-/// stores, and the countdown / animation-progress gates.
+/// stores, the holds of arms 1 and 3 (caster `+0x21B`, model `+0x68`) and
+/// arm 6's row settle. Countdowns: `capture_countdown::EARTHQUAKE`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0935; phase chain + caster staging; packet arms unported)
 pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
@@ -473,7 +478,8 @@ pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
 /// with its own reaction. Arm 8 waits for the row to settle and stores
 /// `0xFF`; `0xFF` only clears the busy register.
 ///
-/// Not ported: the packet and camera arms, and the countdown gates.
+/// Not ported: the packet and camera arms, arm 4's tick-counter hold and
+/// arm 8's row settle. Countdowns: `capture_countdown::HYPER_CRUSH`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0936; phase chain + caster staging; packet arms unported)
 pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
@@ -509,8 +515,9 @@ pub const HYPER_CRUSH_CHAIN: ChainBody = ChainBody {
 /// and the victim settles the arm stores `0xFF`; `0xFF` clears the busy
 /// register and the caster's stage (`+0x1DA = 0`, no bump, `0x801F7814`).
 ///
-/// Not ported: the packet and camera arms, the countdown gates, and the
-/// four-hit split (the fold lands the cast's outcome as one).
+/// Not ported: the packet and camera arms, the victim settle, and the
+/// four-hit split (the fold lands the cast's outcome as one). Countdowns:
+/// `capture_countdown::HYPER_LIGHTNING`, arm 7's hit cadence included.
 ///
 /// PORT: FUN_801F69D8 (PROT 0937; phase chain + caster staging; packet arms unported)
 pub const HYPER_LIGHTNING_CHAIN: ChainBody = ChainBody {
@@ -543,8 +550,9 @@ pub const HYPER_LIGHTNING_CHAIN: ChainBody = ChainBody {
 /// `+0x1F1`. Arm 5 waits for the victim to settle and stores `0xFF`; `0xFF`
 /// clears the busy register (`fp`).
 ///
-/// Not ported: the packet arms, the countdown gates, and the per-hit status
-/// rolls (the fold lands the cast's outcome as one hit).
+/// Not ported: the packet arms, the victim settle, and the per-hit status
+/// rolls (the fold lands the cast's outcome as one hit). Countdowns:
+/// `capture_countdown::SPORE_GAS`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0939; phase chain + caster staging; packet arms unported)
 pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
@@ -577,7 +585,8 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
 /// Rates left out under the module's rate rule: the caster ends at `2`
 /// (`+0x21D = 4` at `0x801F6B50`, `2` at `0x801F6DEC`) with no restore in the
 /// body. Not ported: the packet arms, the party-row moves and presentation
-/// stores, the monster-AI block bytes `+0x84..+0x86`, and the countdown gates.
+/// stores and the monster-AI block bytes `+0x84..+0x86`. Countdowns:
+/// `capture_countdown::POWER_UP_AA`.
 ///
 /// PORT: FUN_801F69F4 (PROT 0942; the `0xAA` arm's phase chain + caster staging; packet arms unported)
 pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
@@ -630,6 +639,13 @@ pub const V_WINDHASH_CHAIN: ChainBody = ChainBody {
     ],
 };
 
+/// Extraction PROT entry of the Cross Beam module.
+pub const CROSS_BEAM_ENTRY: u32 = 948;
+
+/// What the beam builder `FUN_801F726C` adds to its counter per call: `step
+/// * 2` (`0x801F72B8..0x801F72D4`), at the engine's one-vsync frame step.
+pub const CROSS_BEAM_COUNTER_PER_TICK: i32 = 2;
+
 /// PROT 0948 (Cross Beam, `0x58`) tick body, `0x801F69F0..0x801F726C`.
 ///
 /// `sltiu 6` through the table at `0x801F69D8`. Arm 0 stages caster clip `8`
@@ -640,10 +656,13 @@ pub const V_WINDHASH_CHAIN: ChainBody = ChainBody {
 /// `ctx[+0x0D]`, clears the caster's stage with a bump (`0x801F7238`) and the
 /// busy register.
 ///
-/// Not ported: the packet arms (the `0x801F726C` beam included), the
-/// hide/show stores, and the countdown and settle gates.
+/// The beam is drawn: `World::run_cast_module_code` keeps the builder's
+/// counter and both hosts build its packets through
+/// `legaia_engine_ui::cast_beam`. The countdown gates are
+/// `cast_module_camera::capture_countdown::CROSS_BEAM`. Not ported: the
+/// camera shots, the hide/show stores, and arm 5's settle wait.
 ///
-/// PORT: FUN_801F69F0 (PROT 0948; phase chain + caster staging; packet arms unported)
+/// PORT: FUN_801F69F0 (PROT 0948; phase chain + caster staging + countdown gates; beam drawn)
 pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
     prot_entry: 948,
     body: 0x801F_69F0,
@@ -678,7 +697,8 @@ pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {
 /// fold lands the hit rather than after it as retail does.
 ///
 /// Not ported: the packet arms, the per-character effect pointer
-/// (`0x800774AC`) and `FUN_801D8DE8(0x5B, 0)` banner, and the countdown gates.
+/// (`0x800774AC`) and `FUN_801D8DE8(0x5B, 0)` banner, and the victim
+/// settle. Countdowns: `capture_countdown::PARALYZING_WAVE`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0956; the `0x75` arm's phase chain + the mark and turn steal; packet arms unported)
 pub const WATER_HAZARD_75_CHAIN: ChainBody = ChainBody {
@@ -713,7 +733,8 @@ pub const WATER_HAZARD_75_CHAIN: ChainBody = ChainBody {
 /// victim stages it `0` with a bump, puts both actors back at rate `8` and
 /// stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`.
 ///
-/// Not ported: the packet and camera arms, the countdown gates, arm `0x11`'s
+/// Countdowns: `capture_countdown::MEGATON_PRESS`. Not ported: the packet
+/// and camera arms, arm `0x11`'s
 /// dead-victim branch (which forces battle state 5), and the victim's
 /// presentation rates between the hits.
 ///
@@ -868,7 +889,7 @@ pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
 /// Rates left out under the module's rate rule: arms 6..0x0B alternate the
 /// caster between `3` and `4` and the body leaves it at `4`. Not ported: the
 /// packet arms, the lighting and camera-record writes, the party-row
-/// presentation stores, and the countdown gates.
+/// presentation stores. Countdowns: `capture_countdown::GENOCIDAL_CANNON`.
 ///
 /// PORT: FUN_801F6A20 (PROT 0963; phase table + caster staging; packet arms unported)
 pub const GENOCIDAL_CANNON_CHAIN: ChainBody = ChainBody {
@@ -920,8 +941,8 @@ pub const GENOCIDAL_CANNON_CHAIN: ChainBody = ChainBody {
 /// stages the seat `0` with a bump and clears the busy flag.
 ///
 /// Not ported: the packet arms, the creature's seating (`FUN_801F19EC`),
-/// its effect retire and HP zero, the per-variant `+0x04` tints, and the
-/// countdown gates.
+/// its effect retire and HP zero, and the per-variant `+0x04` tints.
+/// Countdowns: `capture_countdown::ELEMENT_STRIKE`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0964; the `0xB0`..`0xB2` arms' phase chain + the variant fork + seat staging; packet arms unported)
 pub const ELEMENT_STRIKE_CHAIN: ChainBody = ChainBody {

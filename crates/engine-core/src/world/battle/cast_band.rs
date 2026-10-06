@@ -1324,6 +1324,8 @@ impl World {
         self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
+        self.casting.module_beam_counter = 0;
+        self.casting.module_beam_live = false;
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);
@@ -1593,6 +1595,14 @@ impl World {
             a.battle.queued_anim = 0;
             a.battle.current_anim = 0;
         }
+    }
+
+    /// PROT 0948's beam counter while its builder ran on this module tick -
+    /// the one input `legaia_engine_ui::cast_beam::cross_beam_prims` builds
+    /// the frame's beam packets from, on both hosts. `None` outside arm 3.
+    pub fn cross_beam_draw(&self) -> Option<i32> {
+        (self.mode == SceneMode::Battle && self.casting.module_beam_live)
+            .then_some(self.casting.module_beam_counter)
     }
 
     /// The full-screen fade quad to composite this frame, as
@@ -3089,6 +3099,20 @@ impl World {
             let mut live = self.cast_actor_state(slot);
             live.fold_writes(orig, view);
             self.write_cast_actor_state(slot, &live);
+        }
+        // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,
+        // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)
+        // ahead of its own gate, so it draws on every tick the arm runs.
+        self.casting.module_beam_live = false;
+        if entry == vm::cast_module_ticks::CROSS_BEAM_ENTRY {
+            if phase_in == 2 && ctx.phase != phase_in {
+                self.casting.module_beam_counter = 0;
+            }
+            if phase_in == 3 {
+                self.casting.module_beam_counter +=
+                    vm::cast_module_ticks::CROSS_BEAM_COUNTER_PER_TICK;
+                self.casting.module_beam_live = true;
+            }
         }
         // The arm passed: its re-arm of the countdown word.
         if let Some(a) = arm_countdown

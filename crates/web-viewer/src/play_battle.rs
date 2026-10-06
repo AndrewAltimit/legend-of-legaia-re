@@ -2172,6 +2172,15 @@ impl LegaiaRuntime {
         // `world_map_markers` kernel the native window draws them with
         // (`crate::play_world_map_markers`).
         prims.extend(self.world_map_marker_prims());
+        // PROT 0948's Cross Beam while its arm 3 runs, through the
+        // `cast_beam` kernel the native window draws it with.
+        if let Some(c) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.cross_beam_draw())
+        {
+            prims.extend(legaia_engine_ui::cast_beam::cross_beam_prims(c));
+        }
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.

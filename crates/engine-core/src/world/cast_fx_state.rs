@@ -69,6 +69,14 @@ pub struct CastFxState {
     /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
     /// when a cast is armed.
     pub module_ring_angle: u16,
+    /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
+    /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
+    /// `step * 2` on every call.
+    pub module_beam_counter: i32,
+    /// The beam builder ran on this module tick (arm 3 calls it every tick
+    /// it holds), so the frame draws its packets
+    /// ([`crate::world::World::cross_beam_draw`]).
+    pub module_beam_live: bool,
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
     /// cast, decided **once**.
     ///
@@ -208,6 +216,8 @@ impl CastFxState {
             fatal_decision: None,
             fatal_banner: None,
             module_ring_angle: 0,
+            module_beam_counter: 0,
+            module_beam_live: false,
             module_nighto_outcome: None,
             // --- W1-D ---
             module_split_saved_target: None,

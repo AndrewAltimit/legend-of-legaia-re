@@ -1788,6 +1788,9 @@ retail rather than fitted to it. At the engine's one-vsync tick the same seeds
 give the same wall time, which is several seconds per special rather than the
 handful of frames an ungated chain took.
 
+The fourteen phase-chain bodies carry the same kind of table
+([below](#the-fourteen-phase-chain-bodies)).
+
 PROT 0962's three bodies stay ungated: no arm of theirs drains a module word
 on the shape above (PROT 0962's `0xA3` counts one **up**
 to `0x41`, and the others wait on the scene).
@@ -2007,9 +2010,43 @@ alone. Once these bodies walked their phase past Doomsday's sweep arm
 (`0x0B`), the fold waived the hit of 0956's `0x75`, 0961 and 0964's
 `0xB0..=0xB2`, and their casts dealt nothing.
 
-PROT 0948's other routine, `0x801F726C`, is not a second body. It is the
-beam's packet builder, called only from arm 3 of the 0948 body
-(`0x801F6EF4`), and it writes no actor or context state.
+**The arms are gated.** Every capture-class body of the fourteen opens its
+arms on the band's countdown shape (one module word, a per-arm drain, a
+re-arm as the arm passes), and its table sits beside the measured set's in
+`cast_module_camera::capture_countdown`, keyed the way the band looks it up -
+`(entry, body)` behind a trampoline, the entry alone otherwise. The drain is
+the product on every body but PROT 0963, which drains the bare step and
+re-arms literals. Four arms do not fit the one-word shape, and each table
+row says how it is carried:
+
+- PROT 0956's `0x75` arm 3 leaves on a ramp (`0x801F86A8 += (scalar *
+  step) << 2`) reaching `0x1000` long before its countdown would, so the row
+  runs the arm at the ramp's rate.
+- PROT 0937's arm 7 paces its four hits on a second word that arm 6 zeroes;
+  the row carries that cadence on the main word.
+- PROT 0936's arm 4 holds on its own tick counter reaching `6` while it
+  drains the word untested; the row passes it at once and carries the six
+  drains forward.
+- PROT 0935's arms 1 and 3 hold on the caster's `+0x21B` and on its model's
+  `+0x68`, which no table carries; the rows keep only their seeds.
+
+The settle waits (a terminal arm holding until its victim's, or the whole
+row's, `+0x1D9` is back at rest) are not carried: the fold lands the hit
+after the band, so the reaction they wait on has not been staged yet.
+PROT 0919 (Spoon) stays ungated - it is a summon-band module, and the stager
+decides that band's length.
+
+**PROT 0948's beam is drawn.** Its other routine, `0x801F726C`, is not a
+second body. It is the beam's packet builder, called only from arm 3 of the
+0948 body (`0x801F6EF4`), ahead of the arm's gate, so it draws on every tick
+the arm holds. It writes no actor or context state: it advances its own
+counter (`0x801F8858`, zeroed by arm 2) by `step * 2` and builds every
+packet from that counter and the sine table - two `POLY_G4` beams swept up
+from the bottom corners along `(sin[16 i] / 12, 0xE0 - sin[12 i] / 32)`,
+each a red-to-yellow head and a trail of core, glow and flare quads that
+dims by `2` per segment, the right beam the left's mirror run `0x20` steps
+behind, all under ABR 1. `World::cross_beam_draw` carries the counter and
+`legaia_engine_ui::cast_beam` builds the packets for both hosts.
 
 ### The player Seru band's tick bodies are code, not data
 
