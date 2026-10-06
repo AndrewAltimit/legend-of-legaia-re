@@ -18,73 +18,61 @@
 <section class="doc-section" id="where-it-lives">
   <h2>Where it lives</h2>
   <p>Each monster's decoded archive block is: stat record with its <code>+0x4C</code> action-offset array, name, TMD mesh, the per-action entries, then the texture pool. The <code>+0x4A</code> count says how many entries there are. Each entry is an action descriptor - not just a spell - with a semantic tag, costs, effect and sound cue scripts, and a packed keyframe stream at <code>+0x8C</code>.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 150" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of one action entry: tag byte, event frames, effect script, sound cues, cost and rate bytes, then the packed keyframe stream of frames times parts 9-byte records">
-      <style>
-        .ma-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .ma-run { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .ma-lab { font: 12px sans-serif; fill: currentColor; }
-        .ma-off { font: 11px monospace; fill: var(--text-muted); }
-      </style>
-      <!-- header strip y=30..74 -->
-      <rect class="ma-box" x="10"  y="30" width="60"  height="44"/>
-      <rect class="ma-run" x="70"  y="30" width="60"  height="44"/>
-      <rect class="ma-box" x="130" y="30" width="80"  height="44"/>
-      <rect class="ma-box" x="210" y="30" width="150" height="44"/>
-      <rect class="ma-box" x="360" y="30" width="130" height="44"/>
-      <rect class="ma-box" x="490" y="30" width="110" height="44"/>
-      <rect class="ma-box" x="600" y="30" width="150" height="44"/>
-      <text class="ma-lab" x="40"  y="48" text-anchor="middle">tag</text>
-      <text class="ma-lab" x="100" y="48" text-anchor="middle">ptrs</text>
-      <text class="ma-lab" x="170" y="48" text-anchor="middle">beats</text>
-      <text class="ma-lab" x="285" y="48" text-anchor="middle">effect script</text>
-      <text class="ma-lab" x="425" y="48" text-anchor="middle">sound cues</text>
-      <text class="ma-lab" x="545" y="48" text-anchor="middle">cost / rate</text>
-      <text class="ma-lab" x="675" y="48" text-anchor="middle">keyframes</text>
-      <text class="ma-off" x="40"  y="66" text-anchor="middle">u8</text>
-      <text class="ma-off" x="100" y="66" text-anchor="middle">0 on disc</text>
-      <text class="ma-off" x="170" y="66" text-anchor="middle">u8[4]</text>
-      <text class="ma-off" x="285" y="66" text-anchor="middle">8 x 8 bytes</text>
-      <text class="ma-off" x="425" y="66" text-anchor="middle">8 x u16 pair</text>
-      <text class="ma-off" x="545" y="66" text-anchor="middle">+0x74 / +0x78</text>
-      <text class="ma-off" x="675" y="66" text-anchor="middle">to end</text>
-      <text class="ma-off" x="10"  y="20">+0x00</text>
-      <text class="ma-off" x="70"  y="20">+0x04</text>
-      <text class="ma-off" x="130" y="20">+0x10</text>
-      <text class="ma-off" x="210" y="20">+0x14</text>
-      <text class="ma-off" x="360" y="20">+0x54</text>
-      <text class="ma-off" x="490" y="20">+0x74</text>
-      <text class="ma-off" x="600" y="20">+0x8C</text>
-      <!-- keyframe zoom y=100..140 -->
-      <rect class="ma-box" x="10"  y="100" width="70"  height="34"/>
-      <rect class="ma-box" x="80"  y="100" width="80"  height="34"/>
-      <rect class="ma-run" x="160" y="100" width="590" height="34"/>
-      <text class="ma-off" x="45"  y="121" text-anchor="middle">u8 parts</text>
-      <text class="ma-off" x="120" y="121" text-anchor="middle">u8 frames</text>
-      <text class="ma-off" x="455" y="121" text-anchor="middle">frames x parts records, 9 bytes each = 6 packed 12-bit fields (tx ty tz rx ry rz)</text>
-      <text class="ma-off" x="600" y="92">+0x8C expanded:</text>
-    </svg>
-    <figcaption>One per-action entry. Everything before <code>+0x8C</code> is the head; the keyframe stream runs to the entry's end.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="Action entry head (widths not to scale), first half: tag, runtime pointers, root speed, end step, event frames, effect script">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">action tag</span><span class="bm-size">u8 (+3)</span></div>
+    <div class="bm-cell bm-pad" style="--w:5"><span class="bm-off">+0x04</span><span class="bm-name">runtime ptrs</span><span class="bm-size">u32 &times; 2</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x0C</span><span class="bm-name">root speed</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x0E</span><span class="bm-name">end step</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x10</span><span class="bm-name">event frames</span><span class="bm-size">u8[4]</span></div>
+    <div class="bm-cell" style="--w:10"><span class="bm-off">+0x14</span><span class="bm-name">effect script</span><span class="bm-size">8 &times; 8 B</span></div>
+  </div>
+  <div class="byte-map" role="img" aria-label="Action entry head, second half: sound cues, cost and selector bytes, loop window, solo flag, then the keyframe stream">
+    <div class="bm-cell" style="--w:9"><span class="bm-off">+0x54</span><span class="bm-name">sound cues</span><span class="bm-size">8 &times; [u16 frame, u16 cue]</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">+0x74</span><span class="bm-name">cost, sub-id, rate, selector</span><span class="bm-size">u8 fields</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x7B</span><span class="bm-name">&hellip;</span><span class="bm-size"></span></div>
+    <div class="bm-cell" style="--w:5"><span class="bm-off">+0x84</span><span class="bm-name">loop hold, window, solo</span><span class="bm-size">u8 &times; 4</span></div>
+    <div class="bm-cell bm-pad" style="--w:4"><span class="bm-off">+0x88</span><span class="bm-name">stream ptr</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:5"><span class="bm-off">+0x8C</span><span class="bm-name">keyframes &rarr; end</span><span class="bm-size">varies</span></div>
+  </div>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>u8</td><td>action tag</td><td>Semantic tag (idle / walk / flinch / knockdown / attack &hellip;), <em>not</em> an index - <a href="#action-tags">table below</a></td></tr>
       <tr><td><code>+0x04</code>, <code>+0x08</code>, <code>+0x88</code></td><td>u32</td><td>runtime pointers</td><td>Zero on disc; the loader fills them, <code>+0x88</code> pointing at the <code>+0x8C</code> stream</td></tr>
+      <tr><td><code>+0x0C</code></td><td>i16</td><td>root speed</td><td>Signed per-tick drive of the actor along its facing while the clip plays</td></tr>
+      <tr><td><code>+0x0E</code></td><td>i16</td><td>end step</td><td>How far the clip leaves the body from where it began (<a href="#end-step">below</a>); 0 on every idle</td></tr>
       <tr><td><code>+0x10</code></td><td>u8[4]</td><td>event frames</td><td>Zero-terminated ascending list of the clip's beats; drives the juggle window</td></tr>
       <tr><td><code>+0x14</code></td><td>8 &times; 8</td><td>effect script</td><td>Up to eight <code>[gate][effect][x][y][z]</code> records placing the action's visual effects</td></tr>
       <tr><td><code>+0x54</code></td><td>8 &times; 4</td><td>sound cues</td><td><code>[u16 frame][u16 cue]</code> pairs, truncated at the first zero cue</td></tr>
       <tr><td><code>+0x74</code></td><td>u8</td><td>AGL cost</td><td>Action cost</td></tr>
-      <tr><td><code>+0x77</code></td><td>u8</td><td>sub-id</td><td></td></tr>
+      <tr><td><code>+0x76</code></td><td>u8</td><td>event gate</td><td>Zero lets a queued clip commit mid-clip at the first beat</td></tr>
+      <tr><td><code>+0x77</code></td><td>u8</td><td>sub-id</td><td>Also the after-image ring id (<code>+0x10</code>)</td></tr>
       <tr><td><code>+0x78</code></td><td>u8</td><td>rate</td><td>Playback rate (1 or 2 across the retail corpus); a clip lasts <code>frames &times; 8 / rate</code> ticks</td></tr>
+      <tr><td><code>+0x7A</code></td><td>u8</td><td>status / impact selector</td><td>Tint flash + status roll on the struck actor; the same enum as a <a href="move-power.html">move-power</a> record's <code>+0x0A</code></td></tr>
+      <tr><td><code>+0x84</code></td><td>u8</td><td>loop hold</td><td>Seeds a finite loop-hold budget on the actor</td></tr>
+      <tr><td><code>+0x85</code>, <code>+0x86</code></td><td>u8 &times; 2</td><td>loop window</td><td>First / last frame of a window the clip parks or replays inside (tested before the natural end)</td></tr>
+      <tr><td><code>+0x87</code></td><td>u8</td><td>solo flag</td><td>Non-zero freezes every other actor for the clip (the "spotlight" during a special) - <em>not</em> a sound cue</td></tr>
       <tr><td><code>+0x8C</code></td><td>-</td><td>packed stream</td><td><code>[u8 parts][u8 frames]</code> then <code>frames &times; parts</code> 9-byte records</td></tr>
     </tbody>
   </table>
+  <h3 id="slot-transfer">The archive slot moves whole</h3>
+  <p>The archive is a flat array of fixed <code>0x14000</code>-byte slots, <code>slot = (id - 1) &times; 0x14000</code>. The loader reads the slot's full <code>0x28</code> sectors whatever the block costs, then LZS-decodes from <code>slot + 4</code> until the stream's own terminator. The run between a block's compressed stream and the slot end is transferred and never interpreted - declared slack, not a hidden format. Slots whose head word is <code>0x10</code> hold a raw PSX TIM instead of a monster.</p>
 </section>
 
 <section class="doc-section" id="packed-stream">
   <h2>Keyframe records</h2>
   <p>Each part record is 9 bytes holding six 12-bit fields. Low bytes sit at <code>[0,1,3,4,6,7]</code>; the high nibbles pack into <code>[2,5,8]</code>:</p>
+  <div class="byte-map" role="img" aria-label="Nine-byte keyframe record: tx low, ty low, high nibbles of tx and ty, tz low, rx low, their high nibbles, ry low, rz low, their high nibbles">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">0</span><span class="bm-name">tx lo</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">1</span><span class="bm-name">ty lo</span></div>
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">2</span><span class="bm-name">ty|tx hi</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">3</span><span class="bm-name">tz lo</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">4</span><span class="bm-name">rx lo</span></div>
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">5</span><span class="bm-name">rx|tz hi</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">6</span><span class="bm-name">ry lo</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">7</span><span class="bm-name">rz lo</span></div>
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">8</span><span class="bm-name">rz|ry hi</span></div>
+  </div>
 <pre><code>tx = b0 | (b2 &amp; 0x0f) &lt;&lt; 8      ty = b1 | (b2 &amp; 0xf0) &lt;&lt; 4
 tz = b3 | (b5 &amp; 0x0f) &lt;&lt; 8      rx = b4 | (b5 &amp; 0xf0) &lt;&lt; 4
 ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</code></pre>
@@ -120,6 +108,17 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
     <li>The damage primitive stages the target's reaction from this map; the anim commit chains a finished knockdown into the get-up while the actor lives.</li>
     <li>Attack animations (tags <code>0x20</code> / <code>1</code> / <code>0x21</code> / <code>0x22</code>) use a different, <em>first</em>-match search with a <code>0xFF</code> not-found sentinel (ported as <code>find_action_by_tag</code>). Do not build the reaction map from it.</li>
   </ul>
+  <h3 id="cast-clip">Which clip a monster's spell plays</h3>
+  <p>A cast's clip is not looked up by spell id. The AI picker counts the record's live magic slots, rolls <code>k = rand() % count</code>, and takes the <code>k</code>-th entry tagged <code>0x23</code> (counting from index 2) as the clip - the spell is magic slot <code>count - 1 - k</code>, so the pairing runs in reverse. It writes the clip to both <code>+0x1E0</code> and <code>+0x1E7</code>, and the cast route decides which is played:</p>
+  <table>
+    <thead><tr><th>Route</th><th>Taken when</th><th>Caster clip</th></tr></thead>
+    <tbody>
+      <tr><td>action phase <code>0x28 &rarr; 0x29</code></td><td>spell class <code>&ge; 0x14</code> (or id <code>&ge; 0x65</code>), not <code>0x63</code></td><td><code>+0x1E0</code></td></tr>
+      <tr><td>Spirit band <code>0x3C</code></td><td>class <code>&lt; 0x14</code> and id <code>&lt; 0x65</code> - heals and buffs</td><td><code>+0x1E7</code></td></tr>
+      <tr><td>capture band <code>0x28 &rarr; 0x6E</code></td><td>class <code>0x63</code> - most monster specials</td><td>neither: the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a> stages literal entry indices of its own</td></tr>
+    </tbody>
+  </table>
+  <p>Because the capture modules hard-code entry indices, a module only lines up with the monsters built for it; some stage nothing on the caster, which then holds its idle through the cast in retail too.</p>
   <h3 id="anim-selection">The anim id is the entry index</h3>
   <p>Per actor, <code>+0x1DA</code> is the queued anim id and <code>+0x1D9</code> the current one. The id <em>is</em> the entry index - the commit routine installs <code>entry = offsets[id]</code> with no remap table. Retail's idle id is 0. Party ids <code>&ge; 0x10</code> take the dynamic-slot path of the <a href="battle-data-pack.html">player battle files</a>.</p>
   <details class="disclosure">
@@ -161,11 +160,14 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
 <section class="doc-section" id="playback">
   <h2>Playback</h2>
   <p>The battle draw keeps a 12.4 fixed-point phase per actor: frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xF</code>. The decoder interpolates between frame <code>i</code> and the next entry (<code>i+1</code>, the loop window's start, or the queued clip's frame 0) - <strong>linear</strong> for translation, <strong>shortest-path wrap</strong> for rotation - into a pose buffer of six shorts per object. When a part's three angle steps total more than <code>0xC00</code> it blends the angles again against the next frame's equivalent Euler triple <code>(x+0x800, -(y+0x800), z+0x800)</code>, the same retry the field blender runs; about one blended part sample in ninety on the disc takes it, which the draw loop applies per object through the GTE. Each tick advances <code>phase += (frame_dt &times; speed_scale &times; rate) &gt;&gt; 1</code>, where the actor's speed scale is normally 8 and <code>rate</code> is the entry's <code>+0x78</code> byte.</p>
-  <p>The engine mirrors this: <code>battle_anim::MonsterAnimPlayer</code> decodes each monster's idle clip into a loop cursor whose <code>tick()</code> blends through the decoder's own kernel (<code>engine-vm::battle_pose_blend</code>, retry included) into a <code>PoseFrame</code> - the same shape the field ANM player produces - and the renderer poses the mesh with <code>R&middot;v + T</code> about each object's local origin. The reaction staging and the knockdown &rarr; get-up chain are played; the cross-blend into a queued clip is a known simplification.</p>
+  <p>On the last frame of a clip the decoder cross-blends toward frame 0 of the <em>queued</em> entry, so transitions tween rather than snap. A clip with a loop window (<code>+0x85..+0x86</code>) parks or replays inside it before the natural-end test runs; the hold is a finite budget seeded from <code>+0x84</code>, and a cast module can end a park early - timing choreography, not a terminal hold. The decoder also leaves the pose <strong>centroid</strong> on the actor: the average part translation, rotated by the facing and scaled, is added to the live position to give the body position the range checks measure.</p>
+  <h3 id="end-step">The end-of-clip step (<code>+0x0E</code>)</h3>
+  <p>A lunge ends one step forward without a snap. The decoder adds <code>+0x0E</code> to the Z delta of the last frame's blend into the queued frame 0, carrying the body forward in model space; at the natural end the anim tick moves the actor by the same step along its facing (<code>+0x34 += sin &middot; step &gt;&gt; 12</code>, <code>+0x38 += cos &middot; step &gt;&gt; 12</code>) and the pose snaps back to frame 0 at the new position. An event-cut clip moves it pro-rated by <code>frame / frames</code>. The tick skips the move while the root latch is up or a dead actor has no Seru staged.</p>
+  <p class="caption">In the port: <code>engine-core::battle_anim::MonsterAnimPlayer</code> (blend kernel <code>engine-vm::battle_pose_blend</code>), end-step kernels <code>engine-vm::battle_action::motion</code>.</p>
   <details class="disclosure">
     <summary>Vertex-blend variants</summary>
     <div class="disclosure-body">
-      <p>Two sibling routines write the decoded pose onto the object vertices in the per-actor draw buffer. One is a straight copy. The other is a <strong>morph</strong> variant: it derives a 12-bit blend factor from the phase against a per-object frame-range table (bytes <code>[1..=4]</code> of the entry) and lerps each vertex toward its next-frame target - sub-keyframe morphing on top of the rigid decode. The port keeps to the rigid decode (<code>engine-vm/anim_vm.rs</code>) and leaves morphing to the renderer.</p>
+      <p>Two sibling routines write the decoded pose onto the object vertices in the per-actor draw buffer. One is a straight copy. The other is a <strong>morph</strong> variant: it derives a 12-bit blend factor from the phase against a per-object frame-range table (bytes <code>[1..=4]</code> of the entry) and lerps each vertex toward its next-frame target - sub-keyframe morphing on top of the rigid decode.</p>
     </div>
   </details>
 </section>
@@ -184,6 +186,9 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Decoder, installer and commit routines</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -198,9 +203,13 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
       <tr><td>Effect-script walker</td><td><code>FUN_801DEA50</code> (battle overlay)</td><td>Gate / effect / offset semantics</td><td><code>overlay_battle_action_801dea50.txt</code></td></tr>
       <tr><td>Vertex blend</td><td><code>FUN_800495C8</code> / <code>FUN_80049858</code> / <code>FUN_8005B038</code></td><td>Morph vs straight copy</td><td><code>800495c8.txt</code>, <code>80049858.txt</code></td></tr>
       <tr><td>Texture-pool loader</td><td><code>FUN_80055468</code></td><td>15 palettes + 4bpp page</td><td><code>80055468.txt</code></td></tr>
-      <tr><td>Capture</td><td><code>autorun_delilas_enemy_cast_watch.lua</code></td><td>Entry chains of the Delilas casts; the two writers of <code>+0x1F7</code></td><td><code>scripts/pcsx-redux/</code></td></tr>
+      <tr><td>Slot loader</td><td><code>FUN_800542C8</code></td><td><code>(id-1) &times; 0x14000</code> slot, literal <code>0x28</code>-sector read at <code>0x80054608</code>, LZS from <code>slot + 4</code></td><td><code>800542c8.txt</code></td></tr>
+      <tr><td>AI cast pick</td><td><code>FUN_801E9FD4</code> (battle overlay)</td><td>Reverse slot pairing; clip written to <code>+0x1E7</code> / <code>+0x1E0</code> at <code>0x801EA53C</code> / <code>0x801EA540</code></td><td>overlay dump</td></tr>
+      <tr><td>Runtime capture</td><td>PCSX-Redux watch of the Delilas casts</td><td>Entry chains of the casts; the two writers of <code>+0x1F7</code></td><td><a href="../tooling/pcsx-redux-automation.html">probe harness</a></td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
   <p>Open: the caller of the anim-node tick is not in the dump corpus. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/monster-animation.md" target="_blank" rel="noopener"><code>docs/formats/monster-animation.md</code></a>.</p>
 </section>
 
