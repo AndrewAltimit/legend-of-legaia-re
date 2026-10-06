@@ -80,7 +80,7 @@ fn parse_party_spec(spec: &str) -> Result<Vec<u8>> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cmd_play_window(
+pub fn cmd_play_window(
     scene: &str,
     extracted_root: &Path,
     disc: Option<&Path>,
@@ -353,7 +353,7 @@ pub(super) fn build_window_scene_resources(session: &BootSession) -> Result<Scen
     // transitions, then build with the targeted VRAM-upload
     // heuristic. Without this every prim sampled non-uploaded
     // VRAM regions and the filter dropped 100% of the mesh.
-    let shared_scenes = crate::shared::load_shared_scenes(&session.host.index, |name, e| {
+    let shared_scenes = crate::host_setup::load_shared_scenes(&session.host.index, |name, e| {
         log::warn!("play-window: shared block '{name}' not loaded: {e:#}");
     });
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
@@ -494,7 +494,7 @@ pub(super) fn cmd_play_window_with_record(
     // heuristic default) and, when neither `--str-file` nor `--disc` was
     // given, the auto-resolved `op*` / `ed*` MV*.STR on disk. `cutscene_map`
     // is reused below for disc-mode STR lookup. Shared with `cmd_play`.
-    let (cutscene_map, auto_str) = crate::shared::resolve_cutscene_map_and_str(
+    let (cutscene_map, auto_str) = crate::host_setup::resolve_cutscene_map_and_str(
         cutscene_map_path,
         scene,
         extracted_root,
@@ -538,7 +538,8 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
 
-    let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    let mut session =
+        crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?;
     // The window drains every per-tick world queue itself, right after each
     // session tick (`drain_and_log_battle_events` / `drain_and_route_field_events`).
     session.set_host_drains_queues(true);
@@ -574,7 +575,7 @@ pub(super) fn cmd_play_window_with_record(
         std::env::var_os("LEGAIA_SMART_MONSTERS").is_some();
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
-    let field_live_opts = legaia_engine_shell::boot::FieldLiveOpts {
+    let field_live_opts = crate::boot::FieldLiveOpts {
         live_loop,
         player_battle,
         battle_bgm,

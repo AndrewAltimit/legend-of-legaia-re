@@ -7,7 +7,7 @@
 use super::*;
 use legaia_engine_audio::AudioSink;
 
-pub(crate) fn cmd_play_str(
+pub fn cmd_play_str(
     str_file: &Path,
     disc: Option<&Path>,
     win_width: u32,
@@ -29,9 +29,7 @@ pub(crate) fn play_str_in(
     _win_width: u32,
     _win_height: u32,
 ) -> Result<()> {
-    use legaia_engine_shell::cutscene_av::{
-        CutsceneAudio, decode_str_av_from_disc, decode_str_video_only,
-    };
+    use crate::cutscene_av::{CutsceneAudio, decode_str_av_from_disc, decode_str_video_only};
     use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 
     // With a disc image the STR is read as raw 2352-byte sectors so its
@@ -135,7 +133,7 @@ struct StrPlayerApp {
     audio_out: Option<legaia_engine_audio::AudioOut>,
     /// The decoded audio track, staged into `audio_out` on the first redraw so
     /// the audio cursor and the video start together. Taken once.
-    pending_audio: Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+    pending_audio: Option<crate::cutscene_av::CutsceneAudio>,
 }
 
 impl ApplicationHandler for StrPlayerApp {
@@ -174,7 +172,7 @@ impl ApplicationHandler for StrPlayerApp {
                 let start = *self.clock.get_or_insert(now);
                 let wall = now.duration_since(start).as_secs_f64();
                 let audio_secs = self.audio_out.as_ref().and_then(|o| o.xa_cursor_secs());
-                let due = legaia_engine_shell::cutscene_av::due_video_frame(
+                let due = crate::cutscene_av::due_video_frame(
                     audio_secs,
                     wall,
                     self.frame_period.as_secs_f64(),

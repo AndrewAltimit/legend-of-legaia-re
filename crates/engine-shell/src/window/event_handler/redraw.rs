@@ -326,7 +326,7 @@ impl PlayWindowApp {
                     } else {
                         // The open blips as a confirm, as on the browser page;
                         // a refused open blips nothing.
-                        self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
+                        self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
                     }
                     self.tick_menu_sfx();
                     self.boot_ui = BootUiState::FieldMenu { sub: None };
@@ -1257,9 +1257,7 @@ impl PlayWindowApp {
                 if world.board.draw_list.is_empty() {
                     self.tile_slots_queued.clear();
                 } else {
-                    for slot in
-                        legaia_engine_shell::tile_board_draws::tile_actor_slots_needing_mesh(world)
-                    {
+                    for slot in crate::tile_board_draws::tile_actor_slots_needing_mesh(world) {
                         if self.tile_slots_queued.insert(slot) {
                             self.drained_spawn_slots.remove(&slot);
                             self.pending_dynamic_mesh_slots.push(slot);
@@ -2515,7 +2513,7 @@ impl PlayWindowApp {
                     // would render an unrelated scene mesh, and unresolved
                     // templates (no `tmd_ref`) never upload - both degrade
                     // to "no draw".
-                    for d in legaia_engine_shell::tile_board_draws::tile_board_actor_draws(w) {
+                    for d in crate::tile_board_draws::tile_board_actor_draws(w) {
                         if !self.drained_spawn_slots.contains(&d.slot) {
                             continue;
                         }
@@ -2655,10 +2653,7 @@ impl PlayWindowApp {
                     // only holds the LAST repositioned cell (and a slot the
                     // drain hasn't uploaded still wears the naive pre-bind).
                     // The player (tile table slot 0) stays on this path.
-                    if legaia_engine_shell::tile_board_draws::is_tile_actor_slot(
-                        &self.session.host.world,
-                        i,
-                    ) {
+                    if crate::tile_board_draws::is_tile_actor_slot(&self.session.host.world, i) {
                         continue;
                     }
                     // The `opdeene` prologue cutscene is an abstract vignette

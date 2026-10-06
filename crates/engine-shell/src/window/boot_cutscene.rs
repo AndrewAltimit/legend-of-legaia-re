@@ -99,8 +99,8 @@ impl PlayWindowApp {
     /// move.
     ///
     /// A **Save** records the loaded scene as the file's resume point
-    /// ([`legaia_engine_shell::boot::BootSession::current_resume`]). A
-    /// **Load** resumes through [`legaia_engine_shell::boot::BootSession::resume_save`],
+    /// ([`crate::boot::BootSession::current_resume`]). A
+    /// **Load** resumes through [`crate::boot::BootSession::resume_save`],
     /// the landing order the browser page's `play_resume_save` shares
     /// (`legaia_engine_core::resume::land_save`): the save's own scene - retail
     /// resumes a save where it was written - else the scene already running,
@@ -1108,7 +1108,7 @@ impl PlayWindowApp {
             .entry_bytes(STR_OVERLAY_PROT_INDEX)
             .ok()
             .and_then(|b| FmvTable::from_str_overlay(&b[..]));
-        legaia_engine_shell::cutscene_av::fmv_segment_window(
+        crate::cutscene_av::fmv_segment_window(
             table.as_ref().and_then(|t| t.entry(fmv_id)),
             file_lba,
             file_sectors,
@@ -1132,9 +1132,9 @@ impl PlayWindowApp {
     ) -> Option<(
         Vec<legaia_mdec::VideoFrame>,
         std::time::Duration,
-        Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+        Option<crate::cutscene_av::CutsceneAudio>,
     )> {
-        use legaia_engine_shell::cutscene_av::{decode_str_av_from_disc, decode_str_video_only};
+        use crate::cutscene_av::{decode_str_av_from_disc, decode_str_video_only};
         if let Some(disc_path) = self.disc_path.as_ref() {
             match resolve_iso_file(disc_path, Path::new(rel)) {
                 Ok((lba, size)) => {
@@ -1205,7 +1205,7 @@ impl PlayWindowApp {
         decoded: (
             Vec<legaia_mdec::VideoFrame>,
             std::time::Duration,
-            Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+            Option<crate::cutscene_av::CutsceneAudio>,
         ),
     ) {
         let (frames, frame_period, audio) = decoded;
@@ -1327,7 +1327,7 @@ impl PlayWindowApp {
             } else {
                 None
             };
-            let due = legaia_engine_shell::cutscene_av::due_video_frame(
+            let due = crate::cutscene_av::due_video_frame(
                 audio_secs,
                 elapsed,
                 c.frame_period.as_secs_f64(),

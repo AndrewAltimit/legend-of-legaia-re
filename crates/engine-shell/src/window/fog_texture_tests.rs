@@ -18,7 +18,7 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
 use super::run::build_window_scene_resources;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use crate::boot::{BootConfig, BootSession, FieldLiveOpts};
 use std::path::PathBuf;
 
 /// Retail hash of VRAM `x 448..464, y 0x40..0x70` - the fog wisps.

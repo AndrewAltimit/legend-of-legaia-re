@@ -2422,7 +2422,7 @@ The divide truncates, which is the fingerprint to look for: traced `TR.z` values
 
 The fourth argument is a **frame count**, not a speed - the stored word is the per-frame increment and the tween lasts that many vsyncs. The submenu call passes `0xC` (12 frames = the 6 measured camera steps at 2 vsyncs each); the action-camera sites pass `1` (instant cut) and `0x30`. Under a speed reading the submenu tween would take 436 steps.
 
-The engine port of the framing rules lives at `crates/engine-shell/src/bin/legaia-engine/window/battle_cam.rs` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`); the fixed-point tween kernel is `legaia_engine_vm::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios, and the window camera consumes it as the look-at target, so a non-Vahn seat frames on the acting member rather than on the formation centre.
+The engine port of the framing rules lives at `crates/engine-shell/src/window/battle_cam.rs` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`); the fixed-point tween kernel is `legaia_engine_vm::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios, and the window camera consumes it as the look-at target, so a non-Vahn seat frames on the acting member rather than on the formation centre.
 
 ### `FUN_801EED1C` / `FUN_801E7320` - party / monster setup hooks
 

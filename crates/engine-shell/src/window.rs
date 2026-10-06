@@ -2,6 +2,8 @@
 //! viewer (`PlayWindowApp`) and the `play-str` MDEC movie player
 //! (`StrPlayerApp`), plus their geometry/asset helpers.
 
+use crate::BootSession;
+use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_audio::AudioSink;
@@ -19,8 +21,6 @@ use legaia_engine_render::{
     text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
-use legaia_engine_shell::BootSession;
-use legaia_engine_shell::replay::{PadEvent, ReplayFile, ReplayMeta};
 use legaia_font::Font;
 use std::path::Path;
 use winit::application::ApplicationHandler;
@@ -36,7 +36,7 @@ use winit::window::WindowId;
 /// pad mask (one-tick edges, or held ranges via `FIRST-LAST:BUTTON`) so a
 /// capture run can auto-open + navigate a menu - or hold a direction to
 /// walk somewhere - without `xdotool`.
-pub(crate) struct ScreenshotConfig {
+pub struct ScreenshotConfig {
     /// Single-shot output (`--screenshot`). `None` when only the periodic
     /// sweep is requested.
     pub path: Option<std::path::PathBuf>,
@@ -143,7 +143,7 @@ pub(crate) struct ScreenshotConfig {
 /// winning with `0x321` - course 2 plus
 /// `SPECIAL_MAGIC_FORBIDDEN`.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct DebugSeeds {
+pub struct DebugSeeds {
     /// `--learn-spell <ID>`, repeatable: spell ids prepended (level 1) to the
     /// lead party member's learned list, the same path the pre-existing
     /// `LEGAIA_LEARN_SPELLS` env var takes.
@@ -152,7 +152,7 @@ pub(crate) struct DebugSeeds {
     /// shared bank `DAT_80085758`.
     pub story_flags: Vec<u16>,
     /// `--resume-save <PATH>`: an LGSF file to land the way a card Load
-    /// does ([`legaia_engine_shell::boot::BootSession::resume_save`]) in
+    /// does ([`crate::boot::BootSession::resume_save`]) in
     /// place of the `--scene` door entry.
     pub resume_save: Option<std::path::PathBuf>,
     /// `--cheat-*`: the player cheats applied once the scene is entered.
@@ -163,7 +163,7 @@ pub(crate) struct DebugSeeds {
 /// Cheats panel (its "No encounters" switch is `--no-live-loop` here, and
 /// `F7` at runtime). Every write is `legaia_engine_core::cheats`'.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct PlayCheats {
+pub struct PlayCheats {
     pub level: Option<u8>,
     pub gold: Option<u32>,
     pub coins: Option<u32>,
@@ -245,13 +245,13 @@ impl PlayCheats {
 
 impl DebugSeeds {
     /// Attach the `--cheat-*` operands.
-    pub(crate) fn with_cheats(mut self, cheats: PlayCheats) -> Self {
+    pub fn with_cheats(mut self, cheats: PlayCheats) -> Self {
         self.cheats = cheats;
         self
     }
 
     /// Parse the two repeatable operands. Each accepts decimal or `0x` hex.
-    pub(crate) fn from_args(
+    pub fn from_args(
         learn_spell: &[String],
         set_flag: &[String],
         resume_save: Option<std::path::PathBuf>,
@@ -288,7 +288,7 @@ impl DebugSeeds {
 /// Periodic capture sweep for `play-window`: one PNG (`tick_%05d.png`) into
 /// [`Self::dir`] every [`Self::every`] ticks; the run exits after the
 /// capture at/past [`Self::last_tick`] (or when the window closes).
-pub(crate) struct ScreenshotSweep {
+pub struct ScreenshotSweep {
     pub dir: std::path::PathBuf,
     pub every: u64,
     pub last_tick: Option<u64>,
@@ -303,7 +303,7 @@ impl ScreenshotConfig {
     /// `--key-script` alone is enough to build a config: it is the scripted
     /// half of a capture run and dropping it silently when no PNG was asked
     /// for would make a scripted run look like it simply did nothing.
-    pub(crate) fn from_args(
+    pub fn from_args(
         path: Option<std::path::PathBuf>,
         capture_tick: u64,
         every: Option<u64>,
@@ -510,7 +510,7 @@ fn key_from_name(name: &str) -> Option<KeyCode> {
 
 /// Write a [`CaptureImage`] (RGBA8, row-major) to a PNG file. Used by the
 /// `--screenshot` harness in the redraw path.
-pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
+pub fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating screenshot dir {}", dir.display()))?;
@@ -634,7 +634,7 @@ struct WindowedCutscene {
     /// audio output on the first render so its cursor (the video clock for A/V
     /// sync) starts with the picture. `None` for a video-only (extract-sourced)
     /// cutscene. Taken once.
-    pending_audio: Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+    pending_audio: Option<crate::cutscene_av::CutsceneAudio>,
     /// `true` once an audio track has been staged - the render loop then reads
     /// the audio cursor as the master clock instead of wall-clock.
     has_audio: bool,
@@ -1451,7 +1451,7 @@ struct PlayWindowApp {
     /// captured at startup, so the boot-UI NEW GAME handler can re-enter the
     /// opening cutscene scene (`opdeene`) with the same arming the startup
     /// `enter_field_live` used.
-    field_live_opts: legaia_engine_shell::boot::FieldLiveOpts,
+    field_live_opts: crate::boot::FieldLiveOpts,
     /// Extracted-root directory, retained so the in-flow cutscene driver can
     /// resolve a field-VM FMV trigger's `MV*.STR` file (mirrors the headless
     /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
@@ -1573,7 +1573,7 @@ mod str_player;
 #[path = "window/title_save_draws.rs"]
 mod title_save_draws;
 
-pub(crate) use record::cmd_record;
+pub use record::cmd_record;
 use record::{RecordLog, RecordTarget};
 // Re-export the extracted geometry / driver / save-select / str-player
 // items so the sibling window submodules (which `use super::*`) still see
@@ -1586,7 +1586,7 @@ pub(crate) use geometry::{
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
 pub(crate) use legaia_asset::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
-pub(crate) use run::cmd_play_window;
+pub use run::cmd_play_window;
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules
 // that `use super::*` still resolve them unqualified.
@@ -1595,7 +1595,8 @@ pub(crate) use save_select_helpers::{
     MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card, read_slot_save,
     scan_save_dir, write_slot_save,
 };
-pub(crate) use str_player::{cmd_play_str, play_str_in, resolve_iso_file};
+pub use str_player::cmd_play_str;
+pub(crate) use str_player::{play_str_in, resolve_iso_file};
 
 impl PlayWindowApp {
     /// Maximum number of battle-event log lines kept in the HUD ring.

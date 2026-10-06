@@ -412,9 +412,11 @@ Three more structural exclusions matter as much and are easy to misread as port
 gaps:
 
 **No `#[test]` can *call* into a `bin/` target - but it can still cover one.**
-The call half is a real exclusion: `crates/engine-shell/src/bin/legaia-engine/`
-holds the native window's whole composition layer and no integration test links
-against it, so nothing there can be invoked directly.
+The call half is a real exclusion for what a `bin/` target keeps - the `mdec
+str-plan` subcommand, the `legaia-engine` argument dispatch - since no
+integration test links against a binary. The native window's composition layer
+is not among them: it is library code (`crates/engine-shell/src/window/`), so a
+test can link it, though running it needs a wgpu surface.
 
 The coverage half of that claim was wrong and is corrected here, because it is
 the half that put rows on this page. `LLVM_PROFILE_FILE` is **inherited by

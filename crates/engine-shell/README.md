@@ -137,8 +137,15 @@ randomizer's swaps, keyed to the shop you're standing in.
 
 ### Binary source layout
 
-The binary is split into modules under `src/bin/legaia-engine/` (the crate
-root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
+The native window is library code: [`window`](src/window.rs) + `src/window/`
+holds the winit + wgpu drivers - the `play-window` / `record` engine viewer
+(`PlayWindowApp`, its `event_handler/` for input and the redraw passes, and
+per-screen modules such as `battle`, `hud`, `minigames`, `shop_windows`) and
+the `play-str` movie player (`str_player`), plus their geometry / asset
+helpers - and [`host_setup`](src/host_setup.rs) the session helpers it shares
+with the headless subcommands. The binary is split into modules under
+`src/bin/legaia-engine/` (the crate root `src/bin/legaia-engine.rs` keeps only
+`main` + the clap dispatch):
 
 - `cli.rs` - the clap `Cli` / `Cmd` / `ConfigCmd` definitions (the help text
   doubles as the user-facing per-subcommand docs).
@@ -146,12 +153,6 @@ root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
   (`info`, `run`, `replay`, `trace`, `vram`, `sessions`, `export_glb`: scene
   inspection, the oracle drivers, save/load, and the synthetic-session
   drivers).
-- `window.rs` + `window/` - the winit + wgpu drivers: the `play-window` /
-  `record` engine viewer (`PlayWindowApp`, its `event_handler/` for input and
-  the redraw passes, and per-screen modules such as `battle`, `hud`,
-  `minigames`, `shop_windows`) and the `play-str` movie player
-  (`str_player`), plus their geometry / asset helpers.
-- `shared.rs` - helpers both halves use.
 - `launcher_window.rs` - the no-subcommand launcher's picker window (engine
   text overlay + `rfd` native file dialog). Its settings / validation /
   decision logic is the library module `launcher` (`src/launcher.rs`), unit

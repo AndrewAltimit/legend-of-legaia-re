@@ -23,10 +23,12 @@ pub mod boot {
     pub type BootSession = legaia_engine_session::boot::BootSession<legaia_engine_audio::AudioOut>;
 }
 pub mod cutscene_av;
+pub mod host_setup;
 pub mod launcher;
 pub mod replay;
 pub mod scenarios;
 pub mod tile_board_draws;
+pub mod window;
 pub mod xa_clip;
 
 pub use bgm::AudioBgmDirector;

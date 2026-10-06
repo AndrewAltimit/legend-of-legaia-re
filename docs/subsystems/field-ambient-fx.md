@@ -794,7 +794,7 @@ A host whose scene VRAM lacks the pool draws the fog quads against zero
 words, and a textured fragment on a zero word is transparent: the pool is
 live, the quads are emitted, and nothing reaches the frame. That was the
 native window's state until its scene build gained the underlay
-(`crates/engine-shell/src/bin/legaia-engine/window/run.rs`, disc-gated
+(`crates/engine-shell/src/window/run.rs`, disc-gated
 `window/fog_texture_tests.rs`, which pins both retail hashes).
 
 ### Pool density against retail

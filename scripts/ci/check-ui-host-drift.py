@@ -358,9 +358,9 @@ LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
 
 # Host source files the paired-constant check reads. Named here rather than
 # discovered, because a pair is a claim about two specific declarations.
-NATIVE_WINDOW = "crates/engine-shell/src/bin/legaia-engine/window.rs"
-NATIVE_HUD = "crates/engine-shell/src/bin/legaia-engine/window/hud.rs"
-NATIVE_DEV_MENU = "crates/engine-shell/src/bin/legaia-engine/window/dev_menu.rs"
+NATIVE_WINDOW = "crates/engine-shell/src/window.rs"
+NATIVE_HUD = "crates/engine-shell/src/window/hud.rs"
+NATIVE_DEV_MENU = "crates/engine-shell/src/window/dev_menu.rs"
 WEB_PLAY_DEV_MENU = "crates/web-viewer/src/play_dev_menu.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
@@ -528,30 +528,30 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # `None` means the whole file is the site, which is right when a host's
 # injection is a call made from a place the pairing should not pin.
 NATIVE_BOOT = "crates/engine-session/src/boot.rs"
-NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
-NATIVE_ASSETS = "crates/engine-shell/src/bin/legaia-engine/window/assets.rs"
+NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_select_helpers.rs"
+NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
-NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
-NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
-NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
-NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
+NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/window/boot_cutscene.rs"
+NATIVE_REDRAW = "crates/engine-shell/src/window/event_handler/redraw.rs"
+NATIVE_FIELD_RENDER = "crates/engine-shell/src/window/field_render.rs"
+NATIVE_GEOMETRY = "crates/engine-shell/src/window/geometry.rs"
 WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle/exports.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
 NATIVE_REDRAW_PASSES = (
-    "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs"
+    "crates/engine-shell/src/window/event_handler/redraw_passes.rs"
 )
-NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
+NATIVE_CAMERA_MOD = "crates/engine-shell/src/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
-NATIVE_SHOP_WINDOWS = "crates/engine-shell/src/bin/legaia-engine/window/shop_windows.rs"
-NATIVE_KEYBOARD = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs"
-NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
+NATIVE_SHOP_WINDOWS = "crates/engine-shell/src/window/shop_windows.rs"
+NATIVE_KEYBOARD = "crates/engine-shell/src/window/event_handler/keyboard.rs"
+NATIVE_BATTLE = "crates/engine-shell/src/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 NATIVE_TITLE_SAVE = (
-    "crates/engine-shell/src/bin/legaia-engine/window/title_save_draws.rs"
+    "crates/engine-shell/src/window/title_save_draws.rs"
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
@@ -575,7 +575,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "opaque. Each billboard builder must take `EffectSprite::packet_tsb`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs",
+                "crates/engine-shell/src/window/geometry.rs",
                 "effect_billboard_mesh",
             ),
             "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
@@ -591,7 +591,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "kernel `fog_volume::stage_luminance` and stores it on the world",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/battle.rs",
+                "crates/engine-shell/src/window/battle.rs",
                 "enter_battle_render",
             ),
             "web": ("crates/web-viewer/src/play_battle_render.rs", "enter_battle_render"),
@@ -607,7 +607,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "keep a bank (or a scene table) of its own",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs",
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
                 "stage_fog_volume",
             ),
             "web": ("crates/web-viewer/src/play_fog_volume.rs", "fog_volume_frame"),
@@ -694,7 +694,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "(`MuscleDomeSurface::frame`, held as `muscle_surface`)",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "crates/engine-shell/src/window/minigames.rs",
                 "refresh_muscle_dome_gpu",
             ),
             "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_frame"),
@@ -708,7 +708,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "never a host-side orbit framing",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "crates/engine-shell/src/window/minigames.rs",
                 "refresh_muscle_dome_gpu",
             ),
             "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_vp"),
@@ -737,7 +737,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`seru_trade::trade_screen_text`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "crates/engine-shell/src/window/menu_draws.rs",
                 "draw_shop_trade",
             ),
             "web": (WEB_PLAY_SHOP, "shop_trade_draws"),
@@ -752,7 +752,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "Both shop builders must read `menu_runtime::shop_root_labels`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/hud.rs",
+                "crates/engine-shell/src/window/hud.rs",
                 "shop_overlay_stage_draws",
             ),
             "web": (WEB_PLAY_SHOP, "shop_stage_draws"),
@@ -767,7 +767,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`OptionsSession::screen_model`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "crates/engine-shell/src/window/menu_draws.rs",
                 "field_menu_sub_draws",
             ),
             "web": ("crates/web-viewer/src/play_menu.rs", "build_config"),
@@ -3237,7 +3237,7 @@ def check_enum_coverage(
 # path has it", and no tier above can tell those apart, because both end at a
 # live call site. This one asks a different question: for every `World`
 # method the native window's keyboard arms call, is there a call site anywhere
-# outside the native `bin/` tree - the shared engine, or the browser hosts?
+# outside the native window - the shared engine, or the browser hosts?
 # If not, the phase exists in the engine and only a key press reaches it.
 #
 # Derived over the hotkey sources, so a new hotkey arm joins the measurement
@@ -3247,15 +3247,15 @@ def check_enum_coverage(
 # Scope:
 #
 # * it DOES prove every `world.<method>()` the hotkey arms call has (or does
-#   not have) a call site outside `crates/engine-shell/src/bin/`;
+#   not have) a call site in `SHARED_CALLER_ROOTS` (outside the native window);
 # * it does NOT prove that site is player-reachable, that it passes the same
 #   arguments, or that a phase with no hotkey arm at all is wired.
 
 # The native window's key-driven arms. `--key-script` delivers scripted keys
 # through these same handlers, which is why they are the tier's denominator.
 HOTKEY_SOURCES = [
-    "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs",
-    "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+    "crates/engine-shell/src/window/event_handler/keyboard.rs",
+    "crates/engine-shell/src/window/minigames.rs",
 ]
 
 # Where a shared (i.e. not hotkey-only) caller may live: the engine crates the

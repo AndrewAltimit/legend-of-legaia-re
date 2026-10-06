@@ -373,7 +373,7 @@ impl PickerApp {
         if let Some(path) = self.screenshot.take() {
             match r
                 .capture_rgba(RenderTarget::TextOnly(&overlay))
-                .and_then(|img| crate::window::write_capture_png(&path, &img))
+                .and_then(|img| legaia_engine_shell::window::write_capture_png(&path, &img))
             {
                 Ok(()) => println!("[ok] launcher screenshot {}", path.display()),
                 Err(e) => eprintln!("launcher screenshot failed: {e:#}"),

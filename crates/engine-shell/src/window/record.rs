@@ -8,7 +8,7 @@ use super::*;
 /// on `PlayWindowApp` and flushed to `out` as a `j-replay-v1` file on
 /// window close.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cmd_record(
+pub fn cmd_record(
     out: &Path,
     scene: &str,
     extracted_root: &Path,
@@ -178,7 +178,7 @@ impl RecordLog {
     /// leaves a truncated replay - the previous checkpoint survives.
     fn write_file(&self) -> Result<(usize, u64)> {
         let meta = ReplayMeta {
-            schema: legaia_engine_shell::replay::REPLAY_SCHEMA_V1.to_string(),
+            schema: crate::replay::REPLAY_SCHEMA_V1.to_string(),
             scenario: self.scenario.clone(),
             rng_seed: self.rng_seed,
             frames: self.last_frame,
