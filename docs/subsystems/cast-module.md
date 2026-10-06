@@ -1953,7 +1953,7 @@ simulation footprint is the band's skeleton and nothing more. Each has a head
 over the module phase, arms that stage clips and set `+0x21D` rates and
 `ctx[+0x278]`, an exit per arm (advance, a literal phase, or the terminal
 clear of the returned register), and at most one damage site per arm. So the
-port is data rather than code. `legaia_engine_vm::cast_module_ticks::CHAIN_BODIES`
+port is data rather than code. `legaia_engine_vm::cast_module_ticks::chain_bodies`
 holds one descriptor per body, with every arm's landing VA and every stage,
 rate and wrapper site. `run_chain_body` interprets the descriptors, and
 `World::run_cast_module_code` drives it. The disc-gated

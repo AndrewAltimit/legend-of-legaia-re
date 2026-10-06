@@ -2850,7 +2850,7 @@ impl World {
                     None,
                 )),
                 // --- end W1-D ---
-                // The phase-chain bodies (`cast_module_ticks::CHAIN_BODIES`):
+                // The phase-chain bodies (`cast_module_ticks::chain_bodies`):
                 // PROT 0942 `0xAA`, 0956 `0x75`, 0959, 0960 `0xA6`, 0961,
                 // 0963 and 0964 `0xB0..=0xB2`. Their hits are the fold's.
                 (e, Some(b)) if ticks::chain_body_for(e, b).is_some() => {
@@ -3043,7 +3043,7 @@ impl World {
                 }
                 // --- end W1-C ---
                 // The phase-chain bodies whose tick arm calls them directly
-                // (`cast_module_ticks::CHAIN_BODIES`): PROT 0919, 0935, 0936,
+                // (`cast_module_ticks::chain_bodies`): PROT 0919, 0935, 0936,
                 // 0937, 0939, 0947 and 0948. Their hits and heals are the
                 // fold's.
                 e if ticks::direct_chain_body(e).is_some() => {

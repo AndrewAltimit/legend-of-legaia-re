@@ -11,7 +11,7 @@
 //! is what lets the drive loop proceed. For the bodies here that skeleton,
 //! plus one damage site whose outcome the band's fold owns, is the whole
 //! simulation, so the port is one runner ([`run_chain_body`]) over one
-//! descriptor per body ([`CHAIN_BODIES`]). Each descriptor carries its own
+//! descriptor per body ([`chain_bodies`]). Each descriptor carries its own
 //! `PORT:` tag naming its owning image.
 //!
 //! **What a descriptor records** is read off the owning image's own bytes at
@@ -365,7 +365,7 @@ pub fn run_chain_body(
 
 /// The chain body PROT `prot_entry` runs for a cast reaching tick `body`.
 pub fn chain_body_for(prot_entry: u32, body: u32) -> Option<&'static ChainBody> {
-    CHAIN_BODIES
+    chain_bodies()
         .iter()
         .find(|b| b.prot_entry == prot_entry && b.body == body)
 }
@@ -373,7 +373,7 @@ pub fn chain_body_for(prot_entry: u32, body: u32) -> Option<&'static ChainBody> 
 /// The chain body of a module with **no** trampoline - its tick arm calls
 /// the body directly, so the entry alone names it.
 pub fn direct_chain_body(prot_entry: u32) -> Option<&'static ChainBody> {
-    CHAIN_BODIES
+    chain_bodies()
         .iter()
         .find(|b| b.prot_entry == prot_entry && capture_trampoline_for(prot_entry).is_none())
 }
@@ -967,22 +967,29 @@ pub const ELEMENT_STRIKE_CHAIN: ChainBody = ChainBody {
 };
 
 /// Every phase-chain body, keyed `(prot_entry, body)`.
-pub const CHAIN_BODIES: [ChainBody; 14] = [
-    SPOON_CHAIN,
-    EARTHQUAKE_CHAIN,
-    HYPER_CRUSH_CHAIN,
-    HYPER_LIGHTNING_CHAIN,
-    SPORE_GAS_CHAIN,
-    POWER_UP_AA_CHAIN,
-    V_WINDHASH_CHAIN,
-    CROSS_BEAM_CHAIN,
-    WATER_HAZARD_75_CHAIN,
-    MEGATON_PRESS_CHAIN,
-    NEO_STAR_SLASH_CHAIN,
-    DEAD_END_CRISIS_CHAIN,
-    GENOCIDAL_CANNON_CHAIN,
-    ELEMENT_STRIKE_CHAIN,
-];
+///
+/// A function rather than a `const` table so each descriptor's `PORT:` tag
+/// is referenced from a reachable function body, which is what the port
+/// catalog's liveness reading keys on.
+pub fn chain_bodies() -> &'static [ChainBody] {
+    static ALL: [ChainBody; 14] = [
+        SPOON_CHAIN,
+        EARTHQUAKE_CHAIN,
+        HYPER_CRUSH_CHAIN,
+        HYPER_LIGHTNING_CHAIN,
+        SPORE_GAS_CHAIN,
+        POWER_UP_AA_CHAIN,
+        V_WINDHASH_CHAIN,
+        CROSS_BEAM_CHAIN,
+        WATER_HAZARD_75_CHAIN,
+        MEGATON_PRESS_CHAIN,
+        NEO_STAR_SLASH_CHAIN,
+        DEAD_END_CRISIS_CHAIN,
+        GENOCIDAL_CANNON_CHAIN,
+        ELEMENT_STRIKE_CHAIN,
+    ];
+    &ALL
+}
 
 #[cfg(test)]
 mod chain_tests {
@@ -1022,7 +1029,7 @@ mod chain_tests {
     /// arms only - rather than falling off the head.
     #[test]
     fn every_chain_body_walks_to_its_terminal_arm() {
-        for b in &CHAIN_BODIES {
+        for b in chain_bodies() {
             for sel in 0..3 {
                 let mut ctx = CastModuleCtx::default();
                 let (mut c, mut v, mut s) = (actor(), actor(), actor());
@@ -1048,7 +1055,7 @@ mod chain_tests {
     /// normal rate, since the port has no reset outside the module.
     #[test]
     fn every_chain_body_leaves_its_actors_at_the_normal_rate() {
-        for b in &CHAIN_BODIES {
+        for b in chain_bodies() {
             for sel in 0..3 {
                 let (_, c, v, _) = walk(b, sel);
                 assert_eq!(
@@ -1069,7 +1076,7 @@ mod chain_tests {
     /// stage runs.
     #[test]
     fn no_chain_body_writes_hp() {
-        for b in &CHAIN_BODIES {
+        for b in chain_bodies() {
             let (_, c, v, s) = walk(b, 0);
             for a in [c, v, s] {
                 assert_eq!(a.hp, 500, "PROT {:04}", b.prot_entry);
@@ -1082,7 +1089,7 @@ mod chain_tests {
     /// caster itself; one without such a row does.
     #[test]
     fn caster_stages_go_to_the_pre_pass_where_it_has_a_row() {
-        for b in &CHAIN_BODIES {
+        for b in chain_bodies() {
             let (_, c, _, _) = walk(b, 0);
             let stages_caster = b
                 .arms
@@ -1141,8 +1148,8 @@ mod chain_tests {
     /// Bodies are keyed by `(entry, body)`: six images share `0x801F69D8`.
     #[test]
     fn keys_are_unique_and_disjoint_from_the_other_ports() {
-        for (i, a) in CHAIN_BODIES.iter().enumerate() {
-            for b in &CHAIN_BODIES[i + 1..] {
+        for (i, a) in chain_bodies().iter().enumerate() {
+            for b in &chain_bodies()[i + 1..] {
                 assert!((a.prot_entry, a.body) != (b.prot_entry, b.body));
             }
             if capture_trampoline_for(a.prot_entry).is_some() {

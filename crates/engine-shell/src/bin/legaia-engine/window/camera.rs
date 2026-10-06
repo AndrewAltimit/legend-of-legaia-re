@@ -1036,8 +1036,10 @@ mod battle_cam_shared_tests {
         assert!(inputs.action.party_slot, "slot 0 is a party seat");
         assert_eq!(inputs.action.char_id, 1, "DAT_8007BD10[0]");
 
+        // The re-armed tween eases out (each pass closes a share of the
+        // remaining gap), so drive past the settle before reading the pose.
         let mut slot = None;
-        for f in 0..=6u64 {
+        for f in 0..=120u64 {
             script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let pose = slot.as_ref().unwrap().pose();

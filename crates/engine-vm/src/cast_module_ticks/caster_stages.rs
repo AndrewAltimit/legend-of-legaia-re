@@ -22,7 +22,7 @@
 //!   (`CHAOS_BREATH_ARM0_CLIP`), 0952's `0xB8` (Astral Slash), 0960's `0x7B`
 //!   (Plasma Strike), the fourteen trampoline arms of
 //!   [`crate::cast_arm_ticks`], and the phase-chain bodies with no row here
-//!   (PROT 0942's `0xAA`, 0959's `0x7A` - [`super::CHAIN_BODIES`]);
+//!   (PROT 0942's `0xAA`, 0959's `0x7A` - [`super::chain_bodies`]);
 //!
 //! The phase-chain bodies that **do** have a row here (0935, 0936, 0937,
 //! 0939, 0947, 0948, 0960's `0xA6`, 0961, 0963) record their caster stages in

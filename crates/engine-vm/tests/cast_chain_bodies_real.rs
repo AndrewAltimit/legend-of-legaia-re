@@ -1,5 +1,5 @@
 //! Disc-gated: every phase-chain tick body
-//! (`legaia_engine_vm::cast_module_ticks::CHAIN_BODIES`) checked against its
+//! (`legaia_engine_vm::cast_module_ticks::chain_bodies`) checked against its
 //! **owning** image's own bytes at slot-B base `0x801F69D8`.
 //!
 //! The descriptors are hand-read off the disassembly, and a band image ends
@@ -21,7 +21,7 @@
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use legaia_engine_vm::cast_module_ticks::{
-    CAST_MODULE_LINK_BASE, CHAIN_BODIES, ChainBody, ChainClip, capture_trampoline_for,
+    CAST_MODULE_LINK_BASE, ChainBody, ChainClip, capture_trampoline_for, chain_bodies,
 };
 use std::path::PathBuf;
 
@@ -253,12 +253,12 @@ fn every_chain_body_matches_its_owning_image() {
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let battle = read_image(&mut archive, 898, BATTLE_BASE);
     let mut sites = 0;
-    for body in &CHAIN_BODIES {
+    for body in chain_bodies() {
         let img = read_image(&mut archive, body.prot_entry, CAST_MODULE_LINK_BASE);
         sites += check(body, &img, &battle);
     }
     println!(
         "[ran] {} chain bodies, {sites} stage / rate / wrapper sites matched",
-        CHAIN_BODIES.len()
+        chain_bodies().len()
     );
 }
