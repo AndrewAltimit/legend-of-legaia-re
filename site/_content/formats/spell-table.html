@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Where</dt><dd><code>SCUS_942.54</code>, RAM <code>DAT_800754C8</code>; the name pointers are read through the shifted base <code>DAT_800754D0</code> (= stats base + 8)</dd>
     <dt>Size</dt><dd>190 records (ids <code>0x00..=0xBD</code>), 12 bytes each. Ends exactly where the description-pointer table <code>0x80075DB0</code> begins</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::spell_names</code> (<code>SPELL_COUNT = 190</code>); CLI <code>asset spell-names &lt;SCUS&gt; [--json]</code>; engine mirror <code>engine-core::retail_magic</code></dd>
+    <dt>In the port</dt><dd><code>legaia_asset::spell_names</code> (<code>SPELL_COUNT = 190</code>); CLI <code>asset spell-names &lt;SCUS&gt; [--json]</code>; engine mirror <code>engine-core::retail_magic</code></dd>
     <dt>Confidence</dt><dd>Confirmed - readers traced in the battle and menu overlays; the curated magic chart joins byte-exact on MP</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">Battle-action SM</a> (cast + banner), <a href="../subsystems/field-menu.html">field menu</a> (descriptions), <a href="../tooling/randomizer.html#spell-cost">spell-cost slider</a>, <a href="../magic.html">Magic viewer</a></dd>
   </dl>
@@ -18,59 +18,26 @@
 <section class="doc-section" id="table-layout">
   <h2>Record layout</h2>
   <p>Record <code>id</code> sits at <code>base + id &times; 12</code>. Every record has the same shape:</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 120" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of one 12-byte spell record: class, sub-index, target, MP, description index, three padding bytes, then a 4-byte name pointer">
-      <style>
-        .sp-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .sp-pad { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .sp-lab { font: 12px sans-serif; fill: currentColor; }
-        .sp-off { font: 11px monospace; fill: var(--text-muted); }
-      </style>
-      <!-- 12 bytes, 60 px each, starting at x=10 -->
-      <rect class="sp-box" x="10"  y="30" width="60" height="44"/>
-      <rect class="sp-box" x="70"  y="30" width="60" height="44"/>
-      <rect class="sp-box" x="130" y="30" width="60" height="44"/>
-      <rect class="sp-box" x="190" y="30" width="60" height="44"/>
-      <rect class="sp-box" x="250" y="30" width="60" height="44"/>
-      <rect class="sp-pad" x="310" y="30" width="180" height="44"/>
-      <rect class="sp-box" x="490" y="30" width="240" height="44"/>
-      <text class="sp-lab" x="40"  y="48" text-anchor="middle">class</text>
-      <text class="sp-lab" x="100" y="48" text-anchor="middle">sub</text>
-      <text class="sp-lab" x="160" y="48" text-anchor="middle">target</text>
-      <text class="sp-lab" x="220" y="48" text-anchor="middle">MP</text>
-      <text class="sp-lab" x="280" y="48" text-anchor="middle">desc</text>
-      <text class="sp-lab" x="400" y="48" text-anchor="middle">padding (zero)</text>
-      <text class="sp-lab" x="610" y="48" text-anchor="middle">name pointer</text>
-      <text class="sp-off" x="40"  y="66" text-anchor="middle">u8</text>
-      <text class="sp-off" x="100" y="66" text-anchor="middle">u8</text>
-      <text class="sp-off" x="160" y="66" text-anchor="middle">u8</text>
-      <text class="sp-off" x="220" y="66" text-anchor="middle">u8</text>
-      <text class="sp-off" x="280" y="66" text-anchor="middle">u8</text>
-      <text class="sp-off" x="400" y="66" text-anchor="middle">3 bytes</text>
-      <text class="sp-off" x="610" y="66" text-anchor="middle">u32 &rarr; C string</text>
-      <text class="sp-off" x="10"  y="20">+0</text>
-      <text class="sp-off" x="70"  y="20">+1</text>
-      <text class="sp-off" x="130" y="20">+2</text>
-      <text class="sp-off" x="190" y="20">+3</text>
-      <text class="sp-off" x="250" y="20">+4</text>
-      <text class="sp-off" x="310" y="20">+5</text>
-      <text class="sp-off" x="490" y="20">+8</text>
-      <text class="sp-off" x="730" y="20" text-anchor="end">+12</text>
-      <text class="sp-off" x="10"  y="100">stats base DAT_800754C8 reads +0..+4</text>
-      <text class="sp-off" x="730" y="100" text-anchor="end">name base DAT_800754D0 reads +8</text>
-    </svg>
-    <figcaption>One 12-byte record. The stats reader and the name reader use two base pointers 8 bytes apart over the same rows.</figcaption>
-  </figure>
-  <table class="layout">
-  <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <div class="byte-map" role="img" aria-label="12-byte spell record: class, sub-index, target, MP, description index, three padding bytes, name pointer">
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">class</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">sub</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+2</span><span class="bm-name">target</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+3</span><span class="bm-name">MP</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+4</span><span class="bm-name">desc</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+5</span><span class="bm-name">zero</span><span class="bm-size">3 B</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+8</span><span class="bm-name">name pointer &rarr; C string</span><span class="bm-size">u32</span></div>
+  </div>
+  <p class="hint">The stats reader uses base <code>DAT_800754C8</code> and reads <code>+0..+4</code>; the name reader uses <code>DAT_800754D0</code>, 8 bytes on, over the same rows.</p>
+  <table>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><code>+0</code></td><td>u8</td><td>cast class</td><td><code>0x32</code> player summon, <code>0x14</code> plain cast, <code>0x63</code> (<code>'c'</code>) capture-class module (<a href="#cast-classes">below</a>)</td></tr>
-    <tr><td><code>+1</code></td><td>u8</td><td>sub-index</td><td>Within the class; for capture-class records the module index (PROT <code>935 + sub</code>)</td></tr>
-    <tr><td><code>+2</code></td><td>u8</td><td>target shape</td><td>Side / scope bits (<a href="#target-shape">below</a>)</td></tr>
-    <tr><td><code>+3</code></td><td>u8</td><td><strong>MP cost</strong></td><td>Deducted from the caster when the cast starts</td></tr>
-    <tr><td><code>+4</code></td><td>u8</td><td>description index</td><td>Into the pause-menu description pointer array; <code>0</code> = none</td></tr>
-    <tr><td><code>+5</code></td><td>3</td><td>padding</td><td>Zero on every record - there is no power byte hiding here</td></tr>
-    <tr><td><code>+8</code></td><td>u32</td><td><code>name_ptr</code></td><td>Display-name C string, prefixed by a colour-control code (<code>0xCE</code>, element colour, space)</td></tr>
+    <tr><td>cast class</td><td><code>0x32</code> player summon, <code>0x14</code> plain cast, <code>0x63</code> (<code>'c'</code>) capture-class module (<a href="#cast-classes">below</a>)</td></tr>
+    <tr><td>sub-index</td><td>Within the class; for capture-class records the module index (PROT <code>935 + sub</code>)</td></tr>
+    <tr><td>target shape</td><td>Side / scope bits (<a href="#target-shape">below</a>)</td></tr>
+    <tr><td><strong>MP cost</strong></td><td>Deducted from the caster when the cast starts</td></tr>
+    <tr><td>description index</td><td>Into the pause-menu description pointer array; <code>0</code> = none</td></tr>
+    <tr><td>padding</td><td>Zero on every record - there is no power byte hiding here</td></tr>
+    <tr><td><code>name_ptr</code></td><td>Display-name C string, prefixed by a colour-control code (<code>0xCE</code>, element colour, space)</td></tr>
   </tbody>
   </table>
   <div class="notice warn">
@@ -110,7 +77,7 @@
     <tr><td><code>0x8B</code></td><td>Nova</td><td>wind</td><td>48</td><td>one enemy</td><td><code>0x32</code></td><td><code>0x00</code></td></tr>
   </tbody>
   </table>
-  <p>The nine enemy-side spells share <code>+0 = 0x32, +1 = 0x00</code>: the table cannot tell Gimard from Nova, which is the first sign that damage lives elsewhere. The block is <strong>not</strong> uniform, though - an earlier revision of this page said the whole block shared that pair, and the two ally-side spells break it (<code>0x83</code> Vera is <code>0x00 / 0x03</code>, <code>0x89</code> Orb is <code>0x01 / 0x04</code>). Which Seru teaches which id is wired in <code>engine-core::seru_learning::SeruRegistry::retail</code>.</p>
+  <p>The nine enemy-side spells share <code>+0 = 0x32, +1 = 0x00</code>: the table cannot tell Gimard from Nova, which is the first sign that damage lives elsewhere. The two ally-side spells break the pattern (<code>0x83</code> Vera is <code>0x00 / 0x03</code>, <code>0x89</code> Orb is <code>0x01 / 0x04</code>).</p>
 </section>
 
 <section class="doc-section" id="target-shape">
@@ -180,12 +147,12 @@
 <section class="doc-section" id="enemy-casts">
   <h2>How an enemy's cast lands in the same id space</h2>
   <p>An enemy is named exactly like a party caster. Two selection mechanisms both end in the same byte on the live actor, and the banner reads the row that byte names:</p>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">Record array</div><div class="desc">The AI picker reads a global spell id from the monster record's three-slot magic-attack array.</div><div class="crate"><code>monster_archive</code></div>
-    <div class="num">2</div><div class="layer">Special-cast switch</div><div class="desc">The picker's tail runs a hardcoded switch on the monster's formation id - about 30 boss and species cases gated on HP fraction, MP, round counter, RNG cadence and a not-charmed check.</div><div class="crate"><code>engine-vm</code></div>
-    <div class="num">3</div><div class="layer">Queue</div><div class="desc">The chosen id is written to the actor's action byte.</div><div class="crate"><code>battle-action</code></div>
-    <div class="num">4</div><div class="layer">Banner</div><div class="desc">The action SM reads this table at that id - the same row a party cast would use.</div><div class="crate"><code>spell_names</code></div>
-  </div>
+  <ol class="steps">
+    <li><b>Record array</b><span>The AI picker reads a global spell id from the monster record's three-slot magic-attack array.</span></li>
+    <li><b>Special-cast switch</b><span>The picker's tail runs a hardcoded switch on the monster's formation id - about 30 boss and species cases gated on HP fraction, MP, round counter, RNG cadence and a not-charmed check.</span></li>
+    <li><b>Queue</b><span>The chosen id is written to the actor's action byte.</span></li>
+    <li><b>Banner</b><span>The action SM reads this table at that id - the same row a party cast would use.</span></li>
+  </ol>
   <p>The monster archive's own local action ids (<code>0x0C..=0x1F</code>) only gate action cost - they are <strong>not</strong> this table's id space. Two spells, Curse <code>0x40</code> and Curse All <code>0x53</code>, are sourced by neither mechanism and are casterless in retail.</p>
   <details class="disclosure">
     <summary>Notable special-cast switch cases</summary>
@@ -240,7 +207,6 @@
     <li><strong>Capture-class casts</strong> carry baked constants in their <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a>.</li>
     <li>The per-move power scalar that <em>does</em> exist - the <a href="move-power.html">move-power table</a> - feeds the arts / physical branch and shares this id space (<code>0x25..=0x74</code> are the named monster attacks).</li>
   </ul>
-  <p>The <code>base_power</code> figures in <code>engine-core::retail_magic</code> are MP-scaled placeholders until the summon roll runs in a live battle context.</p>
   <details class="disclosure">
     <summary>History: the summon jump-table hypothesis</summary>
     <div class="disclosure-body"><p>"The magnitude is in the summon jump table" is falsified: the table at <code>0x801F69D8</code> resolves into the resident render overlay - staggered entry points into one per-frame routine that blends animation banks and emits GPU packets, with no multiply and no HP write. The <code>0xC5</code>-entry substitution table at <code>DAT_80075EC4</code>, once mistaken for a spell-name source, is the Tactical Arts name table. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
@@ -249,7 +215,8 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <details class="disclosure"><summary>Provenance by function</summary>
+  <div class="table-wrap"><table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Battle-action SM, cast states <code>0x28</code> / <code>0x3C</code></td><td><code>FUN_801E295C</code> (PROT 0898)</td><td>MP at <code>+3</code>, class at <code>+0</code>, name via <code>DAT_800754D0 + id*0xC</code>; no power read</td><td><code>overlay_battle_action_801e295c.txt</code></td></tr>
@@ -258,9 +225,10 @@
       <tr><td>Melee kernel</td><td><code>FUN_801EC3E4</code></td><td>Returns early unless the queued action is a physical id - magic never reaches it</td><td><code>overlay_battle_action_801ec3e4.txt</code></td></tr>
       <tr><td>Summon damage kernels</td><td><code>FUN_801DD0AC</code> / <code>FUN_801DD864</code> / <code>FUN_801DDB30</code></td><td>Summon magnitude is battle-state-derived</td><td><code>overlay_battle_action_801dd0ac.txt</code> + siblings</td></tr>
       <tr><td>Overlay pager</td><td><code>FUN_8003EC70</code></td><td>Capture-class <code>sub + 0x28</code> and summon <code>id - 0x79</code> resolve to PROT 935.. / 903..</td><td><code>8003ec70.txt</code></td></tr>
-      <tr><td>Disc-gated tests</td><td><code>spell_catalog_disc</code>, <code>magic_vs_disc</code></td><td>All 11 pinned targets + MP byte-exact; curated chart joins on MP for 21 Seru + 7 Ra-Seru</td><td><code>crates/engine-core</code>, <code>crates/gamedata</code></td></tr>
+      <tr><td>Disc join</td><td>-</td><td>All 11 pinned targets + MP byte-exact; the curated chart joins on MP for 21 Seru + 7 Ra-Seru</td><td>-</td></tr>
     </tbody>
-  </table>
+  </table></div>
+  </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/spell-table.md" target="_blank" rel="noopener"><code>docs/formats/spell-table.md</code></a>.</p>
 </section>
 
