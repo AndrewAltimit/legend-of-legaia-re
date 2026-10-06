@@ -769,6 +769,7 @@ impl World {
     /// [`Self::field_menu_open_allowed`] refused.
     ///
     /// REF: FUN_801D01B0 (`0x801D02C0..0x801D02E4`, the locked-press buzz)
+    /// REF: FUN_80035BD0
     pub fn field_menu_press_denied(&mut self) -> bool {
         if self.field_menu_press_reaches_accept()
             && self.flags.story_flags & FIELD_MENU_LOCK_BIT != 0
