@@ -692,10 +692,11 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   P1[4] and `map03`'s P2[13] / P2[14] set on their crossings) and
   `dream`, none of them a waypoint. The spine names only `son`, so the pad
   hand leaves by the walk-on door and stalls on the north half.
-- `chitei2` joins its parts through moving machinery the planner does not
-  model: the transporter at `(100, 102)` (P2[7], a cutscene that runs the
-  party onto the pad prop P0[12] at `(94, 24)`, whose own touch sends it
-  back) and the Rapid Transport System, with its three switches (P0[32..34])
-  and the walk-on pairs (P2[0] / P2[1]) that issue `4C D6` to actors 5..11.
-  The `jette_fortress_late` and `noaru_valley` pad stalls sit in these
-  stretches.
+- `chitei2` joins its parts through machinery as well as walls. The
+  transporter at `(100, 102)` is a kind-0 teleport to `(94, 24)` and the
+  planner rides it. The cages along row 102 (partition-0 records 6..11, each a
+  bare `31 00` with no clip) are doors the touch opens; the lift platform
+  reaches the `deroa` door through them. The Rapid Transport System, with its
+  three switches (P0[32..34]) and the walk-on pairs (P2[0] / P2[1]) that issue
+  `4C D6` to actors 5..11, is not modelled, and the `jette_fortress_late` pad
+  stall (`0x3C8` / `0x470` unset) sits on it.
