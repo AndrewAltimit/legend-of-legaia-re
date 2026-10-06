@@ -80,7 +80,8 @@ pub struct WorldGlb {
     /// component-wise median of the placed objects - the village centre, not
     /// the map-grid centre (see the field-scene page's VR spawn note).
     pub spawn: [f32; 3],
-    /// Ground heightfield quad count (0 = scene had no walk floor grid).
+    /// Ground heightfield quads with at least one triangle exported (0 =
+    /// scene had no walk floor grid).
     pub ground_quads: usize,
     /// Meshes that carry baked VDF morph targets (the ambient vertex-morph
     /// bake - Rim Elm's shoreline). `0` = the scene has no armed pulse.
@@ -120,7 +121,7 @@ fn frame_bone_offsets(
 }
 
 /// A walk-ground cell's horizontal run (one 128-unit tile), the steepness
-/// bound past which a sloped far-bucket cell is a sheet, not a ramp.
+/// bound past which a far-bucket ground triangle is a sheet, not a ramp.
 const GROUND_CELL_RUN: f32 = 128.0;
 
 /// Bake the assembled scene's static map into one `.glb`: ground + terrain
@@ -143,32 +144,28 @@ pub fn export_world_glb(
     if let Some(hf) = &a.ground {
         // A glb has no ordering table to sink a sloped far-bucket cell under
         // the cliff in front of it (`field_ground::flat_refs`). A gentle
-        // ramp still reads right depth-tested, but a cell rising more than
-        // its own run stands as a stray sheet of ground texture retail never
-        // shows (town01's cell (30, 38)). Leave those quads out.
+        // ramp still reads right depth-tested, but a face rising more than a
+        // cell's run stands as a stray sheet of ground texture retail never
+        // shows (town01's cell (30, 38)). Judged per TRIANGLE: such a cell
+        // is often one flat half and one vertical half, and dropping the
+        // whole quad holes the floor where the flat half was.
         let refs = crate::field_ground::flat_refs(hf, &hf.positions);
-        let sheet = |q: &[u32; 6]| {
-            let v = q[0] as usize;
-            if !refs
-                .get(v)
-                .is_some_and(crate::field_ground::is_far_bucket_ref)
-            {
-                return false;
-            }
-            let ys = q.iter().map(|&i| hf.positions[i as usize][1]);
-            let rise = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
-            rise > GROUND_CELL_RUN
+        let sheet = |far: bool, t: &[u32]| {
+            let ys = t.iter().map(|&i| hf.positions[i as usize][1]);
+            far && ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min)
+                > GROUND_CELL_RUN
         };
-        let indices: Vec<u32> = hf
-            .indices
-            .as_chunks::<6>()
-            .0
-            .iter()
-            .filter(|q| !sheet(q))
-            .flatten()
-            .copied()
-            .collect();
-        ground_quads = indices.len() / 6;
+        let mut indices: Vec<u32> = Vec::with_capacity(hf.indices.len());
+        for q in hf.indices.as_chunks::<6>().0 {
+            let far = refs
+                .get(q[0] as usize)
+                .is_some_and(crate::field_ground::is_far_bucket_ref);
+            let before = indices.len();
+            for t in q.as_chunks::<3>().0.iter().filter(|t| !sheet(far, *t)) {
+                indices.extend_from_slice(t);
+            }
+            ground_quads += usize::from(indices.len() > before);
+        }
         // Ground sinks below the env pack's authored floor art (see
         // `coplanar_draws::GROUND_SINK`), same as the page's ground stream.
         let mut positions = Vec::with_capacity(hf.positions.len() * 3);

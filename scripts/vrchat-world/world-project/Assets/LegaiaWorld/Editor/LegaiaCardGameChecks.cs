@@ -23,8 +23,14 @@
 //     Unity.exe -batchmode -nographics -projectPath <copy>
 //         -executeMethod LegaiaWorld.LegaiaCardGameChecks.Soak
 //         [-legaiaCardSeconds 150] [-legaiaCardScale 2]
-//         [-legaiaCardNight 1]
+//         [-legaiaCardNight 1] [-legaiaCardWorldScale 1.5]
 //         [-legaiaScene Assets/Scenes/<scene>.unity] -logFile <log>
+//
+//   The scene is built at 1x and then grown to the settings'
+//   `world_scale` (navmesh re-baked) exactly as the builder does, so the
+//   villagers sit at the scale people play at; `-legaiaCardWorldScale`
+//   overrides it. Every metre threshold below is judged in the stool's
+//   frame (times that scale).
 //
 //   Enters play mode with nobody at the table and lets the villagers play
 //   themselves (there is no local player at all in a headless editor -
@@ -997,12 +1003,18 @@ namespace LegaiaWorld
             object manifest = MiniJson.Parse(File.ReadAllText(manifestPath));
             var settings = LegaiaSceneSettings.Load(sceneName);
             string manifestDir = "Assets/LegaiaImports/" + sceneName;
+            // The passes run at 1x, whatever the saved scene is at.
+            LegaiaWorldScale.Unapply(root);
             settings.ApplyNpcOverrides(manifest, manifestDir, root);
             LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, root, sceneName, settings);
             if (LegaiaLivingTown.Apply(root, manifest, sceneName,
                     new LegaiaLivingTownOptions(), settings) == null)
                 Fail("the living-town pass built nothing - no villagers to play cards");
             BuildPrefabs(spawn, sceneName);
+            settings.worldScale = ParseFloat(Arg("-legaiaCardWorldScale",
+                settings.worldScale.ToString(CultureInfo.InvariantCulture)), settings.worldScale);
+            LegaiaWorldScale.Finish(root, sceneName, settings, new LegaiaLivingTownOptions());
+            Debug.Log("[Legaia] CARDS: world scale " + LegaiaWorldScale.Current(root) + ".");
 
             LegaiaSoak.StripRendering();
             float seconds = ParseFloat(Arg("-legaiaCardSeconds", "200"), 200f);
@@ -1048,6 +1060,12 @@ namespace LegaiaWorld
         // (+Z of the instance through its full matrix), once the pose has
         // had a second to blend in. Legged rigs only.
         static float[] s_seatedSince;
+        // Since when the villager on each stool has been Seated() by its
+        // brain (the game deals it in on that) without the HOST having
+        // posed it sitting - the "dealt in, standing beside the stool" bug.
+        static float[] s_dealtStanding;
+        // The world scale the table stands at; metre thresholds times this.
+        static float s_world = 1f;
         static int s_kneeSamples;
         static float s_minKneeDot = 2f;
         static System.Type s_wanderType;
@@ -1141,6 +1159,10 @@ namespace LegaiaWorld
             s_prevBrain = new Component[4];
             s_prevDist = new float[4];
             s_seatedSince = new float[4];
+            s_dealtStanding = new float[4];
+            s_world = s_stools[0] != null ? Mathf.Abs(s_stools[0].lossyScale.y) : 1f;
+            if (s_world < 1e-3f)
+                s_world = 1f;
             s_kneeSamples = 0;
             s_minKneeDot = 2f;
             s_geomSeen.Clear();
@@ -1255,7 +1277,8 @@ namespace LegaiaWorld
                 // reason, and fail on the loop shape (the same villager
                 // giving up on the same stool again and again - what
                 // nearest-first summoning did to Vahn beside the table).
-                if (s_prevNpc[i] != null && npc != s_prevNpc[i] && s_prevDist[i] > 0.35f)
+                float reach = 0.35f * s_world;
+                if (s_prevNpc[i] != null && npc != s_prevNpc[i] && s_prevDist[i] > reach)
                 {
                     string loop = NoteGiveUp(i, s_prevNpc[i], s_prevBrain[i], s_prevDist[i]);
                     if (loop != null)
@@ -1268,10 +1291,37 @@ namespace LegaiaWorld
                 {
                     s_prevNpc[i] = null;
                     s_prevBrain[i] = null;
+                    s_dealtStanding[i] = 0f;
                     continue;
                 }
                 if (s_prevNpc[i] != npc)
+                {
                     s_prevBrain[i] = Var(s_stations[i], "currentBrain") as Component;
+                    s_dealtStanding[i] = 0f;
+                }
+                // The brain's Seated() (at a station, states 2 / 11, and
+                // this stool is a kind-2 one) is what the game reads to
+                // deal the villager in; the host must have posed it
+                // sitting within a couple of seconds of that.
+                int bs = VarInt(s_prevBrain[i], "state", -1);
+                if ((bs == 2 || bs == 11) && !Seated(npc))
+                {
+                    if (s_dealtStanding[i] == 0f)
+                        s_dealtStanding[i] = Time.time;
+                    else if (Time.time - s_dealtStanding[i] > 3f)
+                    {
+                        Vector3 off = npc.position - s_stools[i].position;
+                        off.y = 0f;
+                        Finish(1, npc.name + " has been at stool_" + i + " (brain state " +
+                            bs + ", dealt in by the game) for " +
+                            (Time.time - s_dealtStanding[i]).ToString("0.0") +
+                            " s but the host never seated it - standing " +
+                            off.magnitude.ToString("0.00") + " m from the stool centre");
+                        return;
+                    }
+                }
+                else
+                    s_dealtStanding[i] = 0f;
                 Vector3 d = npc.position - s_stools[i].position;
                 float lift = d.y;
                 d.y = 0f;
@@ -1283,19 +1333,19 @@ namespace LegaiaWorld
                 if (s_prevNpc[i] == npc)
                 {
                     float closed = s_prevDist[i] - d.magnitude;
-                    if (closed > 3f * Mathf.Max(dt, 0.02f) + 0.4f)
+                    if (closed > (3f * Mathf.Max(dt, 0.02f) + 0.4f) * s_world)
                     {
                         Finish(1, npc.name + " jumped " + closed.ToString("0.0") +
                             " m toward stool_" + i + " in " + dt.ToString("0.00") +
                             " s - teleported, not walked");
                         return;
                     }
-                    if (s_prevDist[i] > 0.35f && d.magnitude <= 0.35f)
+                    if (s_prevDist[i] > reach && d.magnitude <= reach)
                         s_walkedIn++;   // watched one arrive on foot
                 }
                 s_prevNpc[i] = npc;
                 s_prevDist[i] = d.magnitude;
-                if (d.magnitude > 0.35f)
+                if (d.magnitude > reach)
                     continue;   // still walking up
                 s_seatedSamples++;
                 // The built pose is judged only once the HOST has seated
@@ -1316,13 +1366,13 @@ namespace LegaiaWorld
                 }
                 s_minSeatY = Mathf.Min(s_minSeatY, lift);
                 s_maxSeatY = Mathf.Max(s_maxSeatY, lift);
-                if (lift < -0.03f)
+                if (lift < -0.03f * s_world)
                 {
                     Finish(1, npc.name + " sits " + (-lift).ToString("0.00") +
                         " m BELOW the floor of stool_" + i);
                     return;
                 }
-                if (lift > 0.5f)
+                if (lift > 0.5f * s_world)
                 {
                     Finish(1, npc.name + " stands " + lift.ToString("0.00") +
                         " m above stool_" + i + "'s floor - on the seat, not in it");
@@ -1721,7 +1771,7 @@ namespace LegaiaWorld
             if (dot < 0.5f)
                 why = "seated with the knee " + (dot < -0.5f ? "BEHIND" : "beside") +
                       " the hip (dot " + dot.ToString("0.00") + ")";
-            else if (drop > 0.12f)
+            else if (drop > 0.12f * s_world)
                 why = "seated with the thigh hanging " + drop.ToString("0.00") +
                       " m below the hip - not turned forward";
             if (why == null)
@@ -1747,7 +1797,8 @@ namespace LegaiaWorld
             var lo = Var(w, "legLower") as Transform[];
             float floor = stool.position.y;
             float origin = npc.position.y - floor;
-            float seat = s_host != null && Var(s_host, "seatHeight") is float sh ? sh : 0.475f;
+            float seat = (s_host != null && Var(s_host, "seatHeight") is float sh ? sh : 0.475f) *
+                         Mathf.Abs(stool.lossyScale.y);
             string key = npc.name + "|" + i;
             bool first = s_geomSeen.Add(key);
             if (up == null || lo == null || up.Length == 0 || lo.Length == 0 ||
@@ -1772,10 +1823,10 @@ namespace LegaiaWorld
                           ", knee " + knee.ToString("0.00") + ", sole " + sole.ToString("0.00") +
                           " m above the stool floor; seat top " + seat.ToString("0.00") +
                           ", hipHeight " + Var(w, "hipHeight"));
-            if (Mathf.Abs(hip - seat) > 0.06f)
+            if (Mathf.Abs(hip - seat) > 0.06f * s_world)
                 return "seated with the hip " + hip.ToString("0.00") + " m above the stool floor (seat top " +
                        seat.ToString("0.00") + ")";
-            if (sole < float.MaxValue && sole > seat - 0.05f)
+            if (sole < float.MaxValue && sole > seat - 0.05f * s_world)
                 return "seated with the sole " + sole.ToString("0.00") + " m above the stool floor - the feet do not hang below the seat (" +
                        seat.ToString("0.00") + ")";
             return null;

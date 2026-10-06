@@ -47,10 +47,12 @@ with, so the export matches the on-screen pages:
 
 - **World glb** - `engine-core::scene_assembly::assemble_field_scene` (the
   field-scene page's build): ground heightfield (with the shared
-  `GROUND_SINK`, minus the steep sloped far-bucket cells - see
-  `field_ground::flat_refs`; a glb has no ordering table to draw them
-  under the cliff that hides them in retail, and a cell rising more than
-  its 128-unit run is a stray sheet, not a ramp), terrain tiles, and
+  `GROUND_SINK`, minus the steep triangles of sloped far-bucket cells -
+  see `field_ground::flat_refs`; a glb has no ordering table to draw them
+  under the cliff that hides them in retail, and a triangle rising more
+  than a cell's 128-unit run is a stray sheet, not a ramp. The filter is
+  per triangle because such a cell is often one vertical half over one
+  flat half that is real floor), terrain tiles, and
   placed objects with coplanar lifts
   applied, each instanced at its resolved `.MAP` transform. Placements
   whose object bind names a clip are posed at **frame 0** (the native

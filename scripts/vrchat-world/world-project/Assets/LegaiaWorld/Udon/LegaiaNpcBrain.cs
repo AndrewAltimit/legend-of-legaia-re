@@ -377,6 +377,12 @@ namespace LegaiaWorld
 
         // --- Night host ----------------------------------------------------------
         private LegaiaNpcStation nightStation;
+        // True from the director's first move of a night shift until dawn
+        // lets it go. The night station is also an ordinary daytime stool,
+        // so "walking to / sitting on the night station" alone cannot tell
+        // a shift from a day game - reading it that way had the dawn
+        // release pull the host off every daytime summon to that stool.
+        private bool onShift;
         private Vector3 hostWaitLook;
         // Night idle (state 9): where it waits and whether it got there.
         private Vector3 nightIdleLook;
@@ -504,7 +510,16 @@ namespace LegaiaWorld
         /// waiting beside it.
         public bool NightHostBusy()
         {
-            return NightHostWaiting() || NightHostWalking() || NightHostSeated();
+            return onShift &&
+                   (NightHostWaiting() || NightHostWalking() || NightHostSeated());
+        }
+
+        /// The director is running this villager's night shift (called on
+        /// every shift move; the first one starts it).
+        public void BeginNightShift()
+        {
+            if (nightStation != null)
+                onShift = true;
         }
 
         /// Wait a couple of metres off the station, facing it, until it is
@@ -519,6 +534,7 @@ namespace LegaiaWorld
                 return;
             ReleaseStation();
             DropDaytime();
+            onShift = true;
             hostWaitLook = lookAt;
             state = 30;
             giveUpAt = Time.time + walkTimeout;
@@ -537,8 +553,9 @@ namespace LegaiaWorld
         /// Dawn: off the stool, back to the village.
         public void EndNightHost()
         {
-            if (!IsNightHost())
+            if (!IsNightHost() || !onShift)
                 return;
+            onShift = false;
             if (state != 30 && !(station != null && station == nightStation))
                 return;
             ReleaseStation();

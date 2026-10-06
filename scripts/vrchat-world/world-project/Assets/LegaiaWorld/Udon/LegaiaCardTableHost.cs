@@ -49,6 +49,18 @@
 // villager standing within `sitRadius` of the stool. Beyond that it is
 // left alone to walk (or to be sent somewhere else); a rig that pops onto
 // the felt from two metres away reads as a bug, not as sitting down.
+// The radius is never tighter than the villager's own arrive radius: the
+// brain reports Seated() the moment its walk lands inside THAT, so a
+// stricter stool test left villagers dealt in by the game but standing
+// beside the stool for the whole hand.
+//
+// Scale: `seatHeight`, `sitRadius` and `cardAwayRadius` are metres on the
+// builder's 1x stool. The world-scale pass grows the table with a
+// transform and grows the villagers' own metre fields by the same factor,
+// but these are measured against the stool, so they are multiplied by the
+// stool's (the deck anchor's) lossy scale here at runtime - a 1.5x world
+// otherwise aimed every hip at a seat a third lower than the real one and
+// demanded a 0.35 m stop of a villager that arrives anywhere within 0.45.
 //
 // Facing: the seated rig is turned toward the table through
 // LegaiaNpcWander.FaceToward, never by writing a rotation here. The
@@ -218,7 +230,7 @@ namespace LegaiaWorld
             float hip = w != null ? w.HipHeight() : -1f;
             if (hip < 0f)
                 hip = h * Mathf.Clamp01(hipFraction);
-            float y = stand.y + Mathf.Max(0f, seatHeight - hip);
+            float y = stand.y + Mathf.Max(0f, seatHeight * StoolScale(i) - hip);
             npc.position = new Vector3(stand.x, y, stand.z);
             if (w != null)
             {
@@ -260,7 +272,19 @@ namespace LegaiaWorld
         {
             Vector3 d = npc.position - seats[i].StandPosition();
             d.y = 0f;
-            return d.sqrMagnitude <= sitRadius * sitRadius;
+            float r = sitRadius * StoolScale(i);
+            LegaiaNpcWander w = npc.GetComponent<LegaiaNpcWander>();
+            if (w != null)
+                r = Mathf.Max(r, w.arriveRadius + 0.05f * StoolScale(i));
+            return d.sqrMagnitude <= r * r;
+        }
+
+        /// The world scale the stool stands at (1 in a 1x build).
+        float StoolScale(int i)
+        {
+            Transform t = seats[i] != null ? seats[i].transform : transform;
+            float s = Mathf.Abs(t.lossyScale.y);
+            return s > 1e-4f ? s : 1f;
         }
 
         bool AnyPlayerSeated()
@@ -278,7 +302,8 @@ namespace LegaiaWorld
             if (cards == null || deckAnchor == null)
                 return false;
             Vector3 a = deckAnchor.position;
-            float r2 = cardAwayRadius * cardAwayRadius;
+            float r = cardAwayRadius * Mathf.Abs(deckAnchor.lossyScale.y);
+            float r2 = r * r;
             for (int i = 0; i < cards.Length; i++)
             {
                 if (cards[i] == null)
