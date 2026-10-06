@@ -2666,6 +2666,7 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                     let mut lands = Vec::new();
                     let mut branches = false;
                     let mut leaves = false;
+                    let mut forks = false;
                     let body = &man[start..start + len];
                     for insn in LinearWalker::new(body, pc0).flatten() {
                         match insn.info {
@@ -2676,6 +2677,16 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                                 lands.push((tile_x, tile_z));
                             }
                             InsnInfo::BBoxTest { .. } => branches = true,
+                            InsnInfo::CondJmp { .. }
+                            | InsnInfo::Picker { .. }
+                            | InsnInfo::SystemFlag {
+                                kind: legaia_asset::field_disasm::FlagKind::Test,
+                                ..
+                            }
+                            | InsnInfo::GFlag {
+                                kind: legaia_asset::field_disasm::FlagKind::Test,
+                                ..
+                            } => forks = true,
                             InsnInfo::SceneChange { .. }
                             | InsnInfo::MenuCtrl {
                                 kind: MenuCtrlKind::FmvTrigger { .. },
@@ -2700,6 +2711,11 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                     snaps.dedup();
                     let land = match (&lands[..], &snaps[..]) {
                         ([(x, z)], []) => Some(cell_of(at(*x), at(*z))),
+                        // A chain of arcs with no fork in the record - the
+                        // stepping-stone hops (`nilboa` P2[8] / P2[9] /
+                        // P2[12] / P2[13], two or three arcs each) - lands
+                        // where its last arc does.
+                        ([.., (x, z)], []) if !forks => Some(cell_of(at(*x), at(*z))),
                         ([], [(x, z)]) if !leaves => Some(cell_of(*x, *z)),
                         _ => None,
                     };
@@ -4743,6 +4759,15 @@ fn pad_walk(
                 .map(|(s, (c, e))| format!("{s}@{c:?}:{e:?}"))
                 .collect::<Vec<_>>()
         );
+        // The scene's tile triggers: `(x,z)g<gate>r<record>`, gate 1 the
+        // partition-2 walk-on bands, gate 0 the partition-0 object binds.
+        if let Some((_, _, triggers)) = scene_man_and_triggers(session) {
+            let list: Vec<String> = triggers
+                .iter()
+                .map(|t| format!("({},{})g{}r{}", t.tile_x, t.tile_z, t.gate, t.record))
+                .collect();
+            eprintln!("      [triggers] {}", list.join(" "));
+        }
         for (s, ((x, z), _)) in &w.props.walk_touch {
             let near: Vec<String> = w
                 .props

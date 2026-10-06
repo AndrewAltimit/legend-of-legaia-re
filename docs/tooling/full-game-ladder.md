@@ -255,7 +255,11 @@ map as its street:
   `0x43` sub-0/1/A/B on the `0xF8` channel) - is an edge like a teleport. A
   mountain joins its terraces this way: the way down from `rikuroa`'s summit
   is a kind-0 teleport into the west strip and then the P2[6..25] hops. A
-  record that hops more than once, or box-tests the player first, is left
+  chain of hops in a record with no branch of its own lands where its last
+  arc does: `nilboa`'s stepping stones (P2[8], P2[9], P2[12], P2[13], two or
+  three arcs each) join the ledge pocket below Nivora's summit to the
+  teleports on toward the `map03` door. A record that box-tests the player
+  first, or forks (a flag test, a picker) around more than one arc, is left
   out: its landing is not one place.
 - a **warp pad** - the same kind of walk-on record with no arc, whose
   player-channel snaps (`0x23` MOVE_TO / `4C 51`, on every story-flag branch)
@@ -327,7 +331,7 @@ A pad segment has a frame budget (`PAD_SEGMENT_FRAMES`); a segment the hand
 cannot finish inside it stalls with `pad frame budget (N) spent` rather than holding
 the run. `LEGAIA_FGL_TRACE` prints each pad segment's frames and planner cost,
 and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
-teleports and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
+teleports, tile triggers and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
 edge the planner adds, and `LEGAIA_FGL_COMP_DEBUG` prints the tile map of every
 walk component a plan failed inside (`o` reached, `A` avoided door tile, `b`
 actor box, `G` the goal) with the overworld's installed entities, and a
