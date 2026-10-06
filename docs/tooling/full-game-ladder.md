@@ -257,6 +257,12 @@ map as its street:
   is a kind-0 teleport into the west strip and then the P2[6..25] hops. A
   record that hops more than once, or box-tests the player first, is left
   out: its landing is not one place.
+- a **warp pad** - the same kind of walk-on record with no arc, whose
+  player-channel snaps (`0x23` MOVE_TO / `4C 51`, on every story-flag branch)
+  all land on one tile and which leaves the scene by neither `0x3F` nor a
+  movie - is an edge the same way. Rogue Tower's floors join only through
+  these: `rugi` P2[0..37] fade out, test `0x462`, and snap the party to one
+  landing on either branch.
 
 The follower leaves a cross-axis offset of a few units alone while the
 other axis still has ground to cover: chasing its own overshoot flips the

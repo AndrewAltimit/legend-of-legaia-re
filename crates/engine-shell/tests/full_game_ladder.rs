@@ -2647,7 +2647,7 @@ type LedgeHop = ((i32, i32), Cell, Vec<u16>, Vec<u16>);
 /// more than once, or tests where the player stands first, is left out: its
 /// landing is not one place.
 fn ledge_hops(session: &BootSession) -> WarpMap {
-    use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
+    use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker, MenuCtrlKind};
     use legaia_engine_core::man_field_scripts::{partition_record_span, partition2_record_gates};
     if session.host.world.mode != SceneMode::Field {
         return HashMap::new();
@@ -2665,7 +2665,9 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                     };
                     let mut lands = Vec::new();
                     let mut branches = false;
-                    for insn in LinearWalker::new(&man[start..start + len], pc0).flatten() {
+                    let mut leaves = false;
+                    let body = &man[start..start + len];
+                    for insn in LinearWalker::new(body, pc0).flatten() {
                         match insn.info {
                             InsnInfo::ActorCtrl {
                                 kind: ActorCtrlKind::ArcJump { tile_x, tile_z, .. },
@@ -2674,22 +2676,38 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
                                 lands.push((tile_x, tile_z));
                             }
                             InsnInfo::BBoxTest { .. } => branches = true,
+                            InsnInfo::SceneChange { .. }
+                            | InsnInfo::MenuCtrl {
+                                kind: MenuCtrlKind::FmvTrigger { .. },
+                                ..
+                            } => leaves = true,
                             _ => {}
                         }
                     }
-                    if let [(x, z)] = lands[..]
+                    let at = |b: u8| {
+                        i16::from(b & 0x7F) * 128 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                    };
+                    // A warp pad: no arc, and every player-channel snap the
+                    // record carries (`0x23` MOVE_TO / `4C 51`, on whichever
+                    // story-flag branch) lands on one tile. Rogue Tower's
+                    // floors join only through these (`rugi` P2[0..37]).
+                    let mut snaps: Vec<(i16, i16)> =
+                        legaia_engine_core::man_field_scripts::player_moves_in_region(body, pc0)
+                            .into_iter()
+                            .filter(|m| m.is_teleport())
+                            .map(|m| (m.world_x, m.world_z))
+                            .collect();
+                    snaps.dedup();
+                    let land = match (&lands[..], &snaps[..]) {
+                        ([(x, z)], []) => Some(cell_of(at(*x), at(*z))),
+                        ([], [(x, z)]) if !leaves => Some(cell_of(*x, *z)),
+                        _ => None,
+                    };
+                    if let Some(land) = land
                         && !branches
                     {
-                        let at = |b: u8| {
-                            i16::from(b & 0x7F) * 128 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
-                        };
                         let (c1, c2) = partition2_record_gates(&mf, &man, rec).unwrap_or_default();
-                        hops.push((
-                            (i32::from(tr.tile_x), i32::from(tr.tile_z)),
-                            cell_of(at(x), at(z)),
-                            c1,
-                            c2,
-                        ));
+                        hops.push(((i32::from(tr.tile_x), i32::from(tr.tile_z)), land, c1, c2));
                     }
                 }
             }
