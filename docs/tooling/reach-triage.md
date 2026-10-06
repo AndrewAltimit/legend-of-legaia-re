@@ -38,7 +38,7 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **898 live / 848 entered / 27
+page verdicts. Over the current union they are **899 live / 849 entered / 27
 never entered, across 91 ladders**, with both defect lists empty (and 21
 addresses in the *not observable* bucket plus 2 const anchors, outside all
 three). Of the 27, 19 are [disclosed and receiver-gated
