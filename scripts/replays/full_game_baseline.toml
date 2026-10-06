@@ -20,8 +20,8 @@
 
 [headline]
 contiguous_progresses = 35
-contiguous_pad = 24
-tier_sum = 134
+contiguous_pad = 25
+tier_sum = 135
 
 [segments]
 rim_elm = 4
@@ -48,7 +48,7 @@ sol_tower = 4
 sol_tower_b2 = 4
 usha_research = 4
 nivora = 4
-nivora_late = 3
+nivora_late = 4
 zora_castle = 3
 conkram_past = 3
 rogue_tower = 4
