@@ -1711,7 +1711,10 @@ fn wanted_item(
     let limit = |i: usize| {
         let max = u32::from(w.actors[i].battle.max_hp);
         let pct = max * HEAL_BELOW_PCT / 100;
-        let hit = (threat + threat / 8).min(max * 95 / 100);
+        // A party-wide hit's per-member share swings by a tenth or more
+        // between casts (Van Saryu's Earthquake: 550, then 609 on a 690-HP
+        // Gala), so the margin over it is a quarter.
+        let hit = (threat + threat / 8).max(aoe + aoe / 4).min(max * 95 / 100);
         if duel {
             return pct.max(hit).max(max * 3 / 5);
         }
@@ -7677,6 +7680,13 @@ fn traverse(
                 return Err(e);
             }
         }
+    }
+    // The last hop's landing is read like every other: the loop tests
+    // `reached` at the top of a pass, and a hop that lands on the milestone
+    // as the budget runs out (`kor5`, the Sol Tower summit, entered on the
+    // sixteenth) would otherwise be called lost on arrival.
+    if via >= vias.len() && reached(session, target) {
+        return Ok(());
     }
     Err(format!("gave up after {MAX_HOPS} hops"))
 }
