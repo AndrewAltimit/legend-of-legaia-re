@@ -2936,17 +2936,24 @@ fn door_openings(session: &BootSession) -> HashMap<(u8, u8), Option<TileBox>> {
     let Ok(mf) = legaia_asset::man_section::parse(man) else {
         return HashMap::new();
     };
-    // The touch resumes the record past its spawn prologue (the first `21`);
+    // The touch resumes the record past its spawn prologue (the first `21`),
+    // or at its first op when it has none (`FUN_8003A55C` runs a prologue
+    // only behind the `24` / `25` marker: `chitei2`'s lift-cage doors,
+    // partition-0 records 6..11, are a bare `31 00` the touch runs);
     // the door opens itself only when the `31 00` comes before anything
     // that can branch around it, or behind one box test of the player.
     // A story-flag test on the way is followed against the live flags, as
     // the touch runs it: `ropeway2` P0[16], the elevator door, opens only
     // once `0x1D5` (the power cut) is set.
     let opens = |body: &[u8], pc0: usize| -> Option<Option<TileBox>> {
-        let mut pc = LinearWalker::new(body, pc0)
-            .map_while(Result::ok)
-            .find(|i| i.opcode == 0x21)
-            .map(|i| i.pc + i.size)?;
+        let mut pc = if matches!(body.get(pc0), Some(0x24 | 0x25)) {
+            LinearWalker::new(body, pc0)
+                .map_while(Result::ok)
+                .find(|i| i.opcode == 0x21)
+                .map(|i| i.pc + i.size)?
+        } else {
+            pc0
+        };
         let mut boxed = None;
         let mut seen = HashSet::new();
         while seen.insert(pc) {

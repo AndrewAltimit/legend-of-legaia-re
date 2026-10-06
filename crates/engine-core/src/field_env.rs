@@ -1591,10 +1591,24 @@ impl PropAnimBank {
                 continue;
             };
             let program = decode_prop_program(record, pc0);
-            // An unposed bind enters as an examine target only: the touch
-            // class of a clip-less object (a door marker) is the walk-touch
-            // dispatch's, which resolves its record against the live flags.
-            if bind.anim_id == 0 && program.spawn_cflags & 0x4002_0000 == 0 {
+            // An unposed bind whose record moves the player (a door marker)
+            // is the walk-touch dispatch's, which resolves its record against
+            // the live flags. Any other clip-less bind still owns its touch:
+            // retail's static-class contact posts the touch whatever the
+            // actor draws (`FUN_801D5B5C`), and the record runs from its
+            // parked cursor. `chitei2`'s lift-cage doors (partition-0 records
+            // 6..11, a bare `31 00`) stand solid until the touch runs that
+            // `31 00`; without a bank entry they never opened, and the lift
+            // platform's way west to the deroa door stayed shut.
+            if bind.anim_id == 0
+                && program.spawn_cflags & 0x4002_0000 == 0
+                && crate::man_field_scripts::p0_record_walk_touch_event(
+                    man_file,
+                    man,
+                    bind.record as usize,
+                )
+                .is_some()
+            {
                 continue;
             }
             let mut anim = PropAnim::spawned(bind.anim_id, frames, scaled, div);
