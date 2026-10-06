@@ -2367,7 +2367,12 @@ renderer defaults off and the interactive hosts turn on.
 
 **Affine UVs are not gated either - they are always on.** `@interpolate(linear)`
 is a static qualifier on the vertex-output struct, not a uniform-driven branch,
-so every path interpolates UVs affinely on every frame. `psx_mode` produces
+so every path interpolates UVs affinely on every frame. The browser's WebGL2
+twin (`site/js/webgl-shaders.js`) has no such qualifier - GLSL ES 3.00 lacks
+`noperspective` - so its vertex shader writes the UV and the gouraud colour
+premultiplied by clip `w`, alongside `w`, and the fragment shader divides:
+perspective-correct interpolation of `a * w` over `w` is the screen-linear
+interpolation of `a`. `psx_mode` produces
 exactly one value, `snap`, which drives the vertex snap and is shared as the
 dither enable.
 

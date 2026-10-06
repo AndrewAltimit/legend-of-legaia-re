@@ -440,10 +440,16 @@ in vec4 a_ground_ref_y;
  * default (0, 0, 0), which the light treats as "use the facet normal". */
 in vec3 a_normal;
 
-out vec2 v_uv;          /* interpolated linearly across the triangle */
+/* Affine (screen-linear) UV and gouraud colour, as the PSX rasteriser and
+ * native's @interpolate(linear) draw them. GLSL ES 3.00 has no
+ * noperspective, so each is written premultiplied by clip w alongside w
+ * itself; perspective-correct interpolation of (a * w) / w is the
+ * screen-linear interpolation of a. The fragment shader divides. */
+out vec2 v_uv_pw;
+out vec4 v_flat_rgba_pw;
+out float v_affine_w;
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
-out vec4 v_flat_rgba;
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 out float v_depth_w;   /* the w the log-depth write keys on */
 /* 1 on a sloped far-bucket field ground cell (fieldFarBucket), else 0. */
@@ -455,9 +461,8 @@ out vec3 v_world;      /* page-frame world position (enhanced lighting's point l
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
   v_world = world_pos.xyz;
-  v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
-  v_flat_rgba = vec4(overworldGroundCue(a_flat_rgba.rgb, u_mvp * u_model,
+  vec4 flat_rgba = vec4(overworldGroundCue(a_flat_rgba.rgb, u_mvp * u_model,
                                         a_ground_ref_xz, a_ground_ref_y),
                      a_flat_rgba.a);
   /* Mirror the per-vertex Z_far the overlay leaves compute. The retail
@@ -486,6 +491,9 @@ void main() {
    * volume: no area, nothing rasterised. */
   if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   v_view_z = gl_Position.w;
+  v_affine_w = gl_Position.w;
+  v_uv_pw = a_uv_byte * gl_Position.w;
+  v_flat_rgba_pw = flat_rgba * gl_Position.w;
   /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
    * representative w on a continent cell, the vertex's own clip w elsewhere.
    * Perspective interpolation of w is exact. */
@@ -634,10 +642,15 @@ uniform highp sampler2DArrayShadow u_shadow_maps;
 uniform mat4 u_light_vp[8];
 uniform vec4 u_shadow;
 
-in vec2 v_uv;
+in vec2 v_uv_pw;
+in vec4 v_flat_rgba_pw;
+in float v_affine_w;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
-in vec4 v_flat_rgba;
+/* The screen-linear UV and colour, recovered from their w-premultiplied
+ * varyings at the top of main() (see the vertex shader). */
+vec2 v_uv;
+vec4 v_flat_rgba;
 in float v_view_z;
 in float v_depth_w;
 flat in float v_far_bucket;
@@ -943,6 +956,8 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
+  v_uv = v_uv_pw / v_affine_w;
+  v_flat_rgba = v_flat_rgba_pw / v_affine_w;
   if (u_eclip_m.w > 0.5) {
     float ey = dot(u_eclip_m.xyz, v_obj_pos);
     if (ey < u_eclip_b.x || ey > u_eclip_b.y) discard;
