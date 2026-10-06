@@ -757,6 +757,14 @@ executable (`legaia_asset::screen_elements::payload_string`, held as
 `World::level_up_line`, and draws the window at `SPOILS_LEVELUP_RECT`; a
 disc-free host falls back to one `<name>'s level increased!` line per member.
 
+Every window the results frame opens - the report (`0x41`) or loss (`0x42`)
+window and the level-up window - spawns at its record's seat A, off screen
+(`y = 236` and `-24`), and glides to seat B (`160` and `14`) over the
+`0x10` frames `FUN_801D9BBC` steps every tracked widget by; the battle main
+dispatcher keeps calling it under the sequencer. The port arms one glide on
+the results frame (`BattleState::result_windows_glide`) and both hosts offset
+the windows by `battle_hud::battle_result_windows_dy`.
+
 ## See also
 
 **Reference** -

@@ -86,6 +86,23 @@ fn a_wipe_after_a_win_does_not_reshow_the_old_spoils() {
     assert!(world.battle_defeat_banner().is_some());
 }
 
+/// The window spawns at its seat A (`y = 236`, record `0x42`) and glides to
+/// its rest seat (`160`) over `0x10` frames; the stepper is the battle
+/// frame's, which keeps running under the results sequence.
+#[test]
+fn the_loss_window_glides_up_from_below_the_screen() {
+    let mut world = loss_world(1, 0);
+    wipe(&mut world);
+    assert_eq!(world.battle_defeat_banner().expect("up").slide_y, 76);
+    world.live_battle_tick();
+    let first = world.battle_defeat_banner().expect("up").slide_y;
+    assert!(0 < first && first < 76, "moving: {first}");
+    for _ in 0..16 {
+        world.live_battle_tick();
+    }
+    assert_eq!(world.battle_defeat_banner().expect("up").slide_y, 0);
+}
+
 #[test]
 fn without_the_disc_pool_the_window_opens_empty() {
     let mut world = loss_world(1, 0);

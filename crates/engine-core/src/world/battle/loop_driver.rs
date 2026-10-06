@@ -253,6 +253,13 @@ impl World {
             // the locomotion pass stays with the SM.
             // REF: FUN_8004998C
             self.refresh_battle_body_pairs();
+            // The battle main dispatcher still runs ahead of the sequencer
+            // and steps every tracked widget glide (`FUN_801D9BBC` at
+            // `0x801D0B2C`) - the result windows' raise among them.
+            // REF: FUN_801D9BBC
+            if let Some(g) = self.battle.result_windows_glide.as_mut() {
+                g.step(self.clock.frame_step.max(1));
+            }
             self.tick_battle_end_sequence();
             return None;
         }

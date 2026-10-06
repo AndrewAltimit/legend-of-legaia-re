@@ -1808,6 +1808,22 @@ fn plate_glide_dy(
     (seat_a - seat_b) - (seat_a - seat_b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
 }
 
+/// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:
+/// `y = -24` -> `14`) and of the report / loss window (`0x41` / `0x42`:
+/// `236` -> `160`), off the placement table.
+const LEVEL_UP_WINDOW_SEATS_Y: (i32, i32) = (-24, 14);
+const REPORT_WINDOW_SEATS_Y: (i32, i32) = (236, 160);
+
+/// How far the level-up window and the report (or loss) window sit below
+/// their rest rows this frame, `(level_up, report)`: the raise glide the
+/// results frame starts ([`crate::world::BattleState::result_windows_glide`]).
+pub fn battle_result_windows_dy(world: &crate::world::World) -> (i32, i32) {
+    let g = world.battle.result_windows_glide.as_ref();
+    let (a, b) = LEVEL_UP_WINDOW_SEATS_Y;
+    let (c, d) = REPORT_WINDOW_SEATS_Y;
+    (plate_glide_dy(g, a, b), plate_glide_dy(g, c, d))
+}
+
 /// Seat A / seat B rows of the actor-name plaque (record `0x44`: `(16,
 /// -24)` -> `(16, 14)`, read off the placement table in every battle state).
 const ACTION_PLAQUE_SEATS_Y: (i32, i32) = (-24, 14);

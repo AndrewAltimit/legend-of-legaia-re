@@ -435,6 +435,11 @@ impl World {
             seq.cause,
             BattleEndCause::MonsterWipe | BattleEndCause::PartyWipe
         ) && self.special_battle_word() == 0;
+        // Every window this frame opens spawns at its seat A and glides in
+        // (`FUN_801D8DE8`'s default tail arms `FUN_801DB7B0`).
+        self.battle.result_windows_glide = seq
+            .window_opened
+            .then(|| vm::battle_commit_log::LogLaunch::new(false));
         match seq.cause {
             BattleEndCause::MonsterWipe => {
                 // `FUN_8003CE08(0x35)` + the round bump (`0x8004EEE4`).

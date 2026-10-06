@@ -29,6 +29,9 @@ pub struct BattleSpoilsBanner {
     /// Who the victory line names: the lead alone when the second party seat
     /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
     pub subject: vm::battle_party_panel::ResultSubject,
+    /// `(level_up, report)` rows below rest - the windows' raise glide
+    /// ([`crate::battle_hud::battle_result_windows_dy`]).
+    pub slide: (i32, i32),
 }
 
 /// The loss window's content ([`World::battle_defeat_banner`]).
@@ -36,6 +39,8 @@ pub struct BattleSpoilsBanner {
 pub struct BattleDefeatBanner {
     /// The one line the window shows, or `None` without the disc pool.
     pub line: Option<String>,
+    /// Rows below rest - the window's raise glide, the report window's.
+    pub slide_y: i32,
 }
 
 impl World {
@@ -129,6 +134,7 @@ impl World {
             drops,
             level_ups,
             subject: self.battle_result_subject(),
+            slide: crate::battle_hud::battle_result_windows_dy(self),
         })
     }
 
@@ -282,7 +288,10 @@ impl World {
             .as_ref()
             .zip(lead)
             .map(|(t, lead)| t.compose(subject, &lead));
-        Some(BattleDefeatBanner { line })
+        Some(BattleDefeatBanner {
+            line,
+            slide_y: crate::battle_hud::battle_result_windows_dy(self).1,
+        })
     }
     /// Resolve a finished battle and return to the field.
     ///

@@ -1629,7 +1629,8 @@ impl PlayWindowApp {
     /// same panel from the exact same model.
     pub(super) fn battle_spoils_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
         if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
-            let windows = legaia_engine_render::battle_defeat_windows(defeat.line.as_deref());
+            let windows =
+                legaia_engine_render::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             let mut draws =
                 legaia_engine_render::battle_result_line_draws_for(&self.font, &windows);
@@ -1647,6 +1648,7 @@ impl PlayWindowApp {
             drops: &banner.drops,
             leader: &leader,
             subject: banner.subject,
+            slide: banner.slide,
         };
         let windows = legaia_engine_render::battle_spoils_windows(&view);
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
@@ -1669,12 +1671,15 @@ impl PlayWindowApp {
         // The loss window (screen element `0x42`) shares the report frame.
         if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            return legaia_engine_render::battle_defeat_windows(defeat.line.as_deref())
-                .iter()
-                .flat_map(|w| {
-                    legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
-                })
-                .collect();
+            return legaia_engine_render::battle_defeat_windows(
+                defeat.line.as_deref(),
+                defeat.slide_y,
+            )
+            .iter()
+            .flat_map(|w| {
+                legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+            })
+            .collect();
         }
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
@@ -1687,6 +1692,7 @@ impl PlayWindowApp {
             drops: &banner.drops,
             leader: &leader,
             subject: banner.subject,
+            slide: banner.slide,
         };
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
         legaia_engine_render::battle_spoils_windows(&view)

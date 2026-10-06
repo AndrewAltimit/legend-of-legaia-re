@@ -426,7 +426,7 @@ impl LegaiaRuntime {
         if let Some(defeat) = w.battle_defeat_banner() {
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            return ui::battle_defeat_windows(defeat.line.as_deref())
+            return ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y)
                 .iter()
                 .flat_map(|win| ui::menu_window_chrome_draws_for(rects, win.rect, origin, scale))
                 .collect();
@@ -442,6 +442,7 @@ impl LegaiaRuntime {
             drops: &banner.drops,
             leader: &leader,
             subject: banner.subject,
+            slide: banner.slide,
         };
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::battle_spoils_windows(&view)
@@ -471,7 +472,7 @@ impl LegaiaRuntime {
         }
 
         if let Some(defeat) = w.battle_defeat_banner() {
-            let windows = ui::battle_defeat_windows(defeat.line.as_deref());
+            let windows = ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
             let mut draws = ui::battle_result_line_draws_for(font, &windows);
@@ -486,6 +487,7 @@ impl LegaiaRuntime {
                 drops: &banner.drops,
                 leader: &leader,
                 subject: banner.subject,
+                slide: banner.slide,
             };
             let windows = ui::battle_spoils_windows(&view);
             let (origin, scale) =

@@ -435,6 +435,12 @@ pub struct BattleState {
     pub action_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
     pub target_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The result windows' raise glide: the results frame spawns the report
+    /// (`0x41`) or loss (`0x42`) window and the level-up window
+    /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
+    /// them to seat B over the same `0x10` frames as the action plates
+    /// ([`crate::battle_hud::battle_result_windows_dy`]).
+    pub result_windows_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's content word was cleared: the strike loop's
     /// counterattack swap zeroes record `0x51`'s string and width
     /// (`sw zero,0x7AC(s1)` / `sh zero,0x79E(s1)` at `0x801E36C8` /
@@ -751,6 +757,7 @@ impl BattleState {
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
+            result_windows_glide: None,
             target_plate_cleared: false,
             counter_hud: None,
             sideband: Default::default(),
