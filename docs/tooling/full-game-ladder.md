@@ -622,6 +622,19 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   of those flags but the last is in the next anchor, so a flag-reach test
   alone never picks the controller. A crossing whose beat changed scene lets
   the landing's arrival run before the position is read.
+- Inside an armed three-actor talk (`43 02`) each party member stands in
+  its own part of the map, and the pad hand presses Square - the edge the
+  talk controller `FUN_801D27E0` reads - to hand control to the next member
+  when a walk-on beat is out of the leader's walk component. It does not
+  solve the co-operative puzzles such a split carries. `nilboa`'s Three
+  Tunnels need two members on pressure plates at once (`P1[0]` raises
+  `0x4F2` only while the player and actor `0x31` both stand in its boxes)
+  before the boulders `P1[13]` / `P1[14]` can be pushed, and its tunnel
+  mouth `P2[4]` offers "go back outside?" to a walk that crosses it, so
+  `nivora -> nivora_late` stops with only the Thunder Ravine member's goal
+  (`P2[38]`, `0x50E`) reached.
+- Each pass answers pickers from a fresh rotation, so a segment's pad tier
+  does not depend on what its seated pass, or an earlier segment, opened.
 - The pad hand heals only with items it already carries and with a free
   or affordable rest in a scene that rolls no encounters, and wards off
   encounters only with an Incense it carries; it does not buy items or use

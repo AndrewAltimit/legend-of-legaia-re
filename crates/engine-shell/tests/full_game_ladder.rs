@@ -5339,6 +5339,43 @@ fn tap_pad(session: &mut BootSession, mask: u16) {
     let _ = session.tick();
 }
 
+/// Hand control to the next party member inside an armed three-actor talk:
+/// press Square, the newly-pressed bit the talk controller's state-0 arm gate
+/// reads (`FUN_801D27E0`, `_DAT_8007B874 & 0x80`), and wait out the
+/// fade-swap-fade cycle. `true` when the leader changed.
+fn swap_leader(session: &mut BootSession) -> bool {
+    let armed = |s: &BootSession| {
+        s.host
+            .world
+            .dialog
+            .three_actor_talk
+            .as_ref()
+            .is_some_and(|t| t.swap.phase == 0)
+    };
+    if !armed(session) || !released(session) {
+        return false;
+    }
+    let before = session.host.world.party.party_leader_slot;
+    tap_pad(session, PadButton::Square.mask());
+    for _ in 0..240 {
+        if armed(session) && session.host.world.party.party_leader_slot != before {
+            break;
+        }
+        if session.tick().is_err() {
+            break;
+        }
+    }
+    let now = session.host.world.party.party_leader_slot;
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        let (x, z) = player_xz(session);
+        eprintln!(
+            "    [swap] leader {before:?} -> {now:?}, now at {:?}",
+            tile_of(x, z)
+        );
+    }
+    now != before
+}
+
 /// The weakest living party member's HP as a fraction of its maximum, in
 /// per-mille. `1000` for a party at full health.
 fn party_hp_permille(session: &BootSession) -> u32 {
@@ -6046,7 +6083,13 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 });
                 tiles.insert(0, tile);
                 let mut r = Run::Parked("band has no tile".into());
-                for t in tiles {
+                // A band out of the leader's walk component may be in another
+                // party member's: inside an armed three-actor talk (`nilboa`'s
+                // Three Tunnels, `43 02`) each member stands in its own tunnel
+                // and Square hands control to the next ([`swap_leader`]).
+                let mut swaps = 0;
+                let mut queue: VecDeque<(u8, u8)> = tiles.iter().copied().collect();
+                while let Some(t) = queue.pop_front() {
                     pad_budget(session)?;
                     r = match pad_step_onto(session, t) {
                         Ok(Walk::Entered(s)) => Run::Entered(s),
@@ -6069,6 +6112,10 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                     // (`0x52A`); only the record's own run ends the search.
                     if !unreached {
                         break;
+                    }
+                    if queue.is_empty() && swaps < 2 && swap_leader(session) {
+                        swaps += 1;
+                        queue.extend(tiles.iter().copied());
                     }
                 }
                 r
@@ -7083,6 +7130,11 @@ fn traverse(
     PAD_HAND.with(|h| h.set(pad));
     RESTED.with(|r| r.borrow_mut().clear());
     REFUSED_DOORS.with(|r| r.borrow_mut().clear());
+    // Each pass answers pickers from a fresh rotation: a count carried over
+    // from the seated pass (or an earlier segment) made the pad hand's
+    // first answer depend on what else had run in the process (`nilboa`
+    // P2[0]'s "are you ready?" opened on its second option, "No").
+    PICKS.with(|p| *p.borrow_mut() = (HashMap::new(), None));
     let mut via = 0usize;
     let vias: &[String] = &target.via;
     // Edges whose hop failed even after the scene's beats ran: the ladder

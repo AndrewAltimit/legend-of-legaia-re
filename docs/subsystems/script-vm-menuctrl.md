@@ -249,7 +249,21 @@ pins the three seats and the captured poses.
 Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Sub-0 is a 2-byte move-table cancel via `func_0x800204F8`; the host gates on whether a move is currently active.
 - **Sub-4** is the **camera-zone query at an explicit tile**: 4-byte `[4C, 0xC4, x, z]`, arm at `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Same load as nibble-3 sub-8 but at a tile the script names, so a scene can frame a shot from a camera-region record the player is not standing in. (The earlier "sub-tile broadcast" label named the caller's shape, not the callee.) See [the camera-zone arms](#0x4c-nibble-0x380x3e---the-camera-zone-arms).
 - **Sub-1** is the 1-byte **fog-region enable reset**: walks `_DAT_80073ED8[..count]` (stride `0xB`) - the MAN section-4 fog-region table the ambient particle spawner searches ([field-ambient-fx](field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)) - tests each record's 16-bit story-flag index at `+9..+10` through `FUN_8003CE64`, and writes `record[0] = flag set ? 0 : 1` (`0x801E2674..0x801E26EC`); PC always += 2. Most scene entry scripts carry it, so a region's fog goes out for good once its beat's flag is up: retail's `retock` inn holds every region off under `0x51C` with the gate raised and the pool empty. Engine: `FieldHostImpl::op4c_n_c_sub_1_flag_loop_reset`.
-- **Sub-3** is a 2-byte script-table teleport (resolves `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard tile-center `b * 0x80 + 0x40` formula).
+- **Sub-3** is a 2-byte script-table teleport (resolves
+  `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard
+  tile-center `b * 0x80 + 0x40` formula). It also rebases the context's script
+  offset `+0x9E` onto the record's first opcode (`0x801E2798..0x801E27A4`), and
+  when that opcode is `0x25` it runs the record from there inline through
+  `FUN_8003CF7C` (`0x801E2800..0x801E2820`) - the same op-until-`0x21` slice the
+  scene-entry install gives a placement. The spawn section's story-flag dispatch
+  therefore runs again: `nilboa` `P2[17]`'s Fire Ravine arm sends the two
+  boulders (`P1[13]` / `P1[14]`) home with `CC 27 C3` / `CC 28 C3`, and their
+  spawn sections, finding `0x457` set, move them straight back to where they
+  were pushed. The port's `apply_script_table_teleport` writes the position and
+  leaves the rebase and the re-run out: modelled as a slice re-run once the
+  channel set returns, it re-seats the whole `rayman` cast after the `P2[6]`
+  village beat, and the walk-on door to `tunnelb` (`P2[16]`) then no longer
+  fires on the seated route.
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
   Nothing else in retail writes or clears the table, so it survives scene loads; the port keeps it as `FieldVmState::slot_table`.
