@@ -54,5 +54,9 @@ features = [
 sha2.workspace = true
 toml.workspace = true
 
+# Strip only. The name section (function names for stack traces) is about
+# 1.5 MB of the bundle and stripping it costs seconds; a full `-O` pass takes
+# over twenty minutes on this bundle for a further ~2% gzipped, which no deploy
+# budget pays for.
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+wasm-opt = ["--strip-debug", "--strip-producers"]
