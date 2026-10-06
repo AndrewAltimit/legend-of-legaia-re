@@ -230,7 +230,17 @@ engine verdict:
   texels retail's VRAM holds there, through a `LEGAIA_SEAT_VRAM_RECTS` file,
   and are written over the engine's after every field VRAM pass
   (`AmbientFxState::vram_rect_seed`). `korout`'s cloud sea under
-  `sol_to_karisto_worldmap` is one.
+  `sol_to_karisto_worldmap` is one. The rects are taken back by the
+  display lag first: a scroller whose countdown `+0xC6` drains `step` a
+  tick and reloads to its period `+0xC4` fires every `period / step + 1`
+  ticks, so the rotations it fired over the last two game frames are
+  undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
+  columns, period `2` on a step-`3` frame, fire every tick.
+
+  The `cort_evolved_pre_battle` walls that still read differently are not
+  a scroller's: they sample texture page `(512, 0)` through CLUT
+  `(16, 502)` (the state's display list), outside both `jouine` scroller
+  rects (`x = 576`), and that CLUT cell has no live cycler on either side.
 
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter
 through `enter_scene_live` directly (no resume landing, no saved seat),

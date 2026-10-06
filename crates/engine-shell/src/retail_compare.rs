@@ -317,6 +317,7 @@ pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
         return Vec::new();
     }
     let mut out: Vec<SeededVramRect> = Vec::new();
+    let step = i16::from(crate::retail_compare_battle::frame_step(ram));
     for n in crate::retail_compare_script::actor_nodes(ram) {
         if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
             || game_anchors::i16_at(ram, n + 0x5A) != 4
@@ -340,10 +341,69 @@ pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
                     (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
                 u16::from_le_bytes([vram[o], vram[o + 1]])
             })
-            .collect();
-        out.push((rect, texels));
+            .collect::<Vec<u16>>();
+        // The displayed frame is two game frames older than the VRAM: take
+        // back the rotations the scroller fired in between.
+        let fires = scroll_fires_within(
+            game_anchors::i16_at(ram, n + 0xC4),
+            game_anchors::i16_at(ram, n + 0xC6),
+            step,
+            DISPLAY_LAG_FRAMES,
+        );
+        let back = |per_tick: i16, extent: u16| -> usize {
+            let e = i32::from(extent).max(1);
+            (i32::from(per_tick) * i32::from(step) * fires).rem_euclid(e) as usize
+        };
+        let (bw, bh) = (
+            back(game_anchors::i16_at(ram, n + 0xCC), w),
+            back(game_anchors::i16_at(ram, n + 0xCE), h),
+        );
+        out.push((
+            rect,
+            unrotate_rect(&texels, usize::from(w), usize::from(h), bw, bh),
+        ));
     }
     out
+}
+
+/// Game frames the displayed frame lags the RAM by (the double-buffer law of
+/// [`crate::retail_compare_battle::display_lag_vsyncs`], in frames).
+const DISPLAY_LAG_FRAMES: i32 = 2;
+
+/// How many times a mode-4 scroller fired over its last `lag` game ticks,
+/// from its live countdown `+0xC6` and reload `+0xC4`: the countdown drains
+/// `step` a tick and fires the tick it goes negative, reloading to the
+/// period (`vram_scroll::mode4_integrate`), so it fires every
+/// `period / step + 1` ticks and a countdown equal to the period fired on the
+/// current tick.
+fn scroll_fires_within(period: i16, countdown: i16, step: i16, lag: i32) -> i32 {
+    let (p, c, s) = (
+        i32::from(period),
+        i32::from(countdown),
+        i32::from(step.max(1)),
+    );
+    if p < 0 || c > p {
+        return 0;
+    }
+    let cycle = p / s + 1;
+    let since = (p - c) / s;
+    if since > lag - 1 {
+        0
+    } else {
+        1 + (lag - 1 - since) / cycle
+    }
+}
+
+/// Rotate a `w x h` rect **right** by `dx` and **down** by `dy` - the inverse
+/// of the scroller's left / up rotation.
+fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: usize) -> Vec<u16> {
+    if w == 0 || h == 0 || texels.len() < w * h {
+        return texels.to_vec();
+    }
+    (0..h)
+        .flat_map(|row| (0..w).map(move |col| (row, col)))
+        .map(|(row, col)| texels[((row + h - dy % h) % h) * w + (col + w - dx % w) % w])
+        .collect()
 }
 
 /// [`retail_scroll_rects`] as the bytes of a `LEGAIA_SEAT_VRAM_RECTS` file:
@@ -2507,6 +2567,14 @@ mod tests {
             grey: 0x5A,
         }];
         assert_eq!(fog_from_env(&fog_env(&fog)), fog);
+        // Period 2 on a step-3 frame fires every tick; a countdown short of
+        // the period fired on an earlier tick.
+        assert_eq!(scroll_fires_within(2, 2, 3, 2), 2);
+        assert_eq!(scroll_fires_within(8, 4, 2, 2), 0);
+        assert_eq!(scroll_fires_within(8, 6, 2, 2), 1);
+        // Rotating right/down undoes the scroller's left/up rotation.
+        let t: Vec<u16> = (0..6).collect(); // 3 wide, 2 high
+        assert_eq!(unrotate_rect(&t, 3, 2, 1, 1), vec![5, 3, 4, 2, 0, 1]);
         let rects = vec![((0x280, 0, 2, 2), vec![1, 2, 3, 0x8004])];
         assert_eq!(vram_rects_from_file(&vram_rects_file(&rects)), rects);
         assert!(fog_from_env("1,2,3").is_empty());
