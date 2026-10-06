@@ -26,6 +26,31 @@ fn travel_scene(names: &legaia_prot::cdname::IndexMap, word: u32) -> Option<Stri
 }
 
 impl World {
+    /// The colour the frame is cleared to this tick - the one both hosts hand
+    /// their clear (`battle_stage_clear::scene_clear`'s field input).
+    ///
+    /// The field's draw-environment clear (`presentation.clear_rgb`, op
+    /// `4C 13`) outside four minigame modes. Under the slot machine, Baka
+    /// Fighter, the Muscle Dome and the dance the frame clears to **black**:
+    /// every retail state of those four holds `r0 / g0 / b0 = 0` at
+    /// `0x8007BF5D..5F` and a `0x0000` display background around its HUD
+    /// (`minigame_slot_machine`, `minigame_baka_fighter`,
+    /// `minigame_muscle_dome`, `minigame_dance_noa`), entered from a town
+    /// whose own states carry a non-zero clear. The port suspends the field
+    /// instead of reloading over it, so without this the town's colour
+    /// showed behind the cabinet and the attract card. Fishing keeps the
+    /// field's word: its venue (`other1`) writes its own sky colour, which
+    /// the retail fishing state carries.
+    pub fn frame_clear_rgb(&self) -> [u8; 3] {
+        match self.mode {
+            SceneMode::SlotMachine
+            | SceneMode::BakaFighter
+            | SceneMode::MuscleDome
+            | SceneMode::Dance => [0; 3],
+            _ => self.presentation.clear_rgb,
+        }
+    }
+
     /// Advance the wall-clock play-time counter by `delta_seconds`. Engines
     /// drive this from the frame loop's wall-clock delta. Mirrors the
     /// retail "play time" field shown on the save screen.

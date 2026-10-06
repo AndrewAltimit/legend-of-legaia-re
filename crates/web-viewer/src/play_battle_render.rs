@@ -748,7 +748,7 @@ impl LegaiaRuntime {
         let field_rgb = self
             .scene_host
             .as_ref()
-            .map_or([0; 3], |h| h.world.presentation.clear_rgb);
+            .map_or([0; 3], |h| h.world.frame_clear_rgb());
         legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle, field_rgb).to_vec()
     }
 

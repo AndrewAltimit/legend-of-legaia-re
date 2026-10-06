@@ -3037,7 +3037,7 @@ impl PlayWindowApp {
             let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
                 boot_ui_clear,
                 stage_battle,
-                self.session.host.world.presentation.clear_rgb,
+                self.session.host.world.frame_clear_rgb(),
             ));
 
             // Slot 1: logos OR title-art bands (title still

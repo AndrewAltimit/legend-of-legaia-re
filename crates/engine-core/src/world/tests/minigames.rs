@@ -781,3 +781,24 @@ fn leaving_the_dance_drops_the_press_edge_too() {
     assert!(!world.input.just_pressed(input::PadButton::Circle));
     assert!(world.input.pressed(input::PadButton::Circle), "still held");
 }
+
+/// Four minigame modes clear the frame to black over whatever colour the
+/// suspended field's `4C 13` left; fishing and the field keep that colour.
+#[test]
+fn minigame_frames_clear_to_black_over_the_suspended_field_colour() {
+    let mut world = World::new();
+    world.presentation.clear_rgb = [0x3C, 0x28, 0x14];
+    world.mode = SceneMode::Field;
+    assert_eq!(world.frame_clear_rgb(), [0x3C, 0x28, 0x14]);
+    for mode in [
+        SceneMode::SlotMachine,
+        SceneMode::BakaFighter,
+        SceneMode::MuscleDome,
+        SceneMode::Dance,
+    ] {
+        world.mode = mode;
+        assert_eq!(world.frame_clear_rgb(), [0; 3], "{mode:?}");
+    }
+    world.mode = SceneMode::Fishing;
+    assert_eq!(world.frame_clear_rgb(), [0x3C, 0x28, 0x14]);
+}
