@@ -38,12 +38,14 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **895 live / 840 entered / 26
-never entered, across 90 ladders**, with both defect lists empty (and 34
+page verdicts. Over the current union they are **898 live / 848 entered / 27
+never entered, across 91 ladders**, with both defect lists empty (and 21
 addresses in the *not observable* bucket plus 2 const anchors, outside all
-three). Of the 26, 14 are [disclosed and receiver-gated
-dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 12 are
-the reach worklist.
+three). Of the 27, 19 are [disclosed and receiver-gated
+dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 8 are
+the reach worklist, every one of which carries a verdict below: `8004629c`
+and `800485bc` (b), `801dd4c4` (a), `801f2134` (c), and `801d31b0`,
+`801d553c`, `801dba90`, `801f1a00` (d).
 
 The ladder count belongs in the same breath as the other three, because none
 of them is a property of the port: every ladder that lands moves all three,
