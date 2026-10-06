@@ -17,50 +17,21 @@
     <dt>Driver</dt><dd><code>legaia-extract</code> (<code>crates/extract</code>) runs every stage; each stage is also its own binary.</dd>
     <dt>Stages</dt><dd>verify &rarr; disc &rarr; PROT &rarr; categorize &rarr; streaming extract &rarr; PNG &rarr; CD-XA demux &rarr; TIM catalogs &rarr; dialog font.</dd>
     <dt>Consumers</dt><dd><code>legaia-engine</code>, <code>asset-viewer</code>, the <a href="../viewer.html">web viewer</a>, Ghidra (mounts <code>extracted/</code> read-only).</dd>
-    <dt>Tests</dt><dd>Disc-gated on <code>LEGAIA_DISC_BIN</code>; skip and pass without it.</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="top-level-pipeline">
   <h2>Quick start: the one-command pipeline</h2>
   <div class="cli"><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></div>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 150" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Extraction pipeline: disc image, PROT.DAT entries, classify, LZS decode, sub-assets, exports; one binary per stage">
-      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5">
-        <rect x="8" y="34" width="132" height="52" rx="6"/>
-        <rect x="160" y="34" width="132" height="52" rx="6"/>
-        <rect x="312" y="34" width="132" height="52" rx="6"/>
-        <rect x="464" y="34" width="132" height="52" rx="6"/>
-        <rect x="616" y="34" width="132" height="52" rx="6"/>
-        <rect x="768" y="34" width="124" height="52" rx="6"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="74" y="53">disc image<tspan x="74" dy="15">ISO9660 walk</tspan></text>
-        <text x="226" y="53">PROT.DAT<tspan x="226" dy="15">1233 entries</tspan></text>
-        <text x="378" y="53">classify<tspan x="378" dy="15">by magic bytes</tspan></text>
-        <text x="530" y="53">LZS decode<tspan x="530" dy="15">magic-checked</tspan></text>
-        <text x="682" y="53">sub-assets<tspan x="682" dy="15">chunk by chunk</tspan></text>
-        <text x="830" y="53">exports<tspan x="830" dy="15">PNG OBJ WAV</tspan></text>
-      </g>
-      <g stroke="var(--text-muted)" stroke-width="1.5" fill="var(--text-muted)">
-        <line x1="140" y1="60" x2="154" y2="60"/><polygon points="154,56 160,60 154,64"/>
-        <line x1="292" y1="60" x2="306" y2="60"/><polygon points="306,56 312,60 306,64"/>
-        <line x1="444" y1="60" x2="458" y2="60"/><polygon points="458,56 464,60 458,64"/>
-        <line x1="596" y1="60" x2="610" y2="60"/><polygon points="610,56 616,60 610,64"/>
-        <line x1="748" y1="60" x2="762" y2="60"/><polygon points="762,56 768,60 762,64"/>
-      </g>
-      <g fill="var(--text-muted)" font-size="11" text-anchor="middle">
-        <text x="74" y="112">disc-extract</text>
-        <text x="226" y="112">prot-extract</text>
-        <text x="378" y="112">asset categorize</text>
-        <text x="530" y="112">lzs-decode</text>
-        <text x="682" y="112">asset extract</text>
-        <text x="830" y="112">tim tmd vab xa</text>
-        <text x="450" y="138">CD-XA audio is demuxed straight from the raw disc, bypassing the walk</text>
-      </g>
-    </svg>
-    <figcaption>Each stage is a standalone binary under <code>target/release/</code>; <code>legaia-extract</code> chains them.</figcaption>
-  </figure>
+  <ol class="steps">
+    <li><b>Disc image</b><span>ISO9660 walk, fingerprint check. <code>disc-extract</code></span></li>
+    <li><b>PROT.DAT</b><span>1233 entries, named via <code>CDNAME.TXT</code>. <code>prot-extract</code></span></li>
+    <li><b>Classify</b><span>Each entry's format class, by magic bytes. <code>asset categorize</code></span></li>
+    <li><b>Decompress</b><span>LZS sections, output magic-checked. <code>lzs-decode</code></span></li>
+    <li><b>Sub-assets</b><span>DATA_FIELD chunks split out. <code>asset extract</code></span></li>
+    <li><b>Exports</b><span>PNG, OBJ, WAV, TIM catalogs, dialog font. <code>tim tmd vab xa</code></span></li>
+  </ol>
+  <p class="hint">Each stage is a standalone binary; <code>legaia-extract</code> chains them. CD-XA audio skips the walk entirely and is demuxed straight from the raw disc (see below).</p>
   <table>
     <thead><tr><th>Flag</th><th>Skips</th></tr></thead>
     <tbody>
@@ -103,7 +74,7 @@
     <tbody>
       <tr><td><code>disc-extract</code></td><td>disc &rarr; files</td><td><code>extract DISC.bin extracted/</code></td><td><a href="../formats/disc.html">disc</a></td></tr>
       <tr><td><code>prot-extract</code></td><td>PROT.DAT &rarr; entries</td><td><code>extract</code>, <code>list</code>, <code>locate</code>, <code>retail-names</code></td><td><a href="../formats/prot.html">PROT</a>, <a href="../formats/cdname.html">CDNAME</a></td></tr>
-      <tr><td><code>lzs-decode</code></td><td>decompress</td><td><code>raw --size N</code>, <code>container</code></td><td><a href="../formats/lzs.html">LZS</a></td></tr>
+      <tr><td><code>lzs-decode</code></td><td>decompress</td><td><code>probe</code>, <code>container</code>, <code>raw --size N</code></td><td><a href="../formats/lzs.html">LZS</a></td></tr>
       <tr><td><code>asset</code></td><td>classify + sub-assets</td><td><code>categorize</code>, <code>extract</code>, <code>stream</code>, <code>describe</code>, <code>tim-scan</code>, <code>tmd-scan</code>, <code>tim-catalog</code>, <code>tim-deep-catalog</code></td><td><a href="../formats/asset-type.html">asset type</a></td></tr>
       <tr><td><code>tim</code></td><td>texture &rarr; PNG</td><td><code>info</code>, <code>convert [--clut N | --all-cluts]</code>, <code>convert-dir</code></td><td><a href="../formats/tim.html">TIM</a></td></tr>
       <tr><td><code>tmd</code></td><td>mesh &rarr; OBJ</td><td><code>info</code>, <code>dump-obj</code>, <code>validate-prims</code></td><td><a href="../formats/tmd.html">TMD</a></td></tr>
@@ -123,10 +94,10 @@
   <details class="disclosure">
     <summary>Details: <code>prot-extract</code> subcommands and the two TIM catalogs</summary>
     <div class="disclosure-body">
-<pre><code>prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT
-prot-extract list   extracted/PROT.DAT --cdname extracted/CDNAME.TXT
-prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT
-prot-extract retail-names extracted/CDNAME.TXT</code></pre>
+      <div class="cli"><code>prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT</code></div>
+      <div class="cli"><code>prot-extract list extracted/PROT.DAT --cdname extracted/CDNAME.TXT</code></div>
+      <div class="cli"><code>prot-extract locate extracted/PROT.DAT 0x17855 --in-entry 866 --cdname extracted/CDNAME.TXT</code></div>
+      <div class="cli"><code>prot-extract retail-names extracted/CDNAME.TXT</code></div>
       <ul class="bullets">
         <li><code>extract</code> also writes <code>manifest.json</code> and an unpacked <code>tim/&lt;entry&gt;/</code> dir per TIM-pack entry.</li>
         <li><code>list</code> prints each size next to <code>decl_span</code>, the superseded over-reading expression, flagging <code>ovr</code> where it overshoots; <code>locate</code> re-keys coordinates measured under it.</li>
@@ -173,17 +144,14 @@ xa convert &lt;file.xa&gt; [-o out.wav]                       # single Form-1 du
 
 <section class="doc-section" id="disc-gated-tests">
   <h2>How we know</h2>
-  <p>The pipeline is pinned by disc-gated tests that run only when <code>LEGAIA_DISC_BIN</code> points at a valid <code>.bin</code>; without it every one skips and passes, so CI needs no Sony data. Do not change that gating.</p>
+  <p>The pipeline is pinned by tests that run only when <code>LEGAIA_DISC_BIN</code> points at a valid <code>.bin</code>; without it every one skips and passes, so CI needs no Sony data. Do not change that gating.</p>
   <div class="cli"><code>LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace</code></div>
-  <table>
-    <thead><tr><th>Test</th><th>What it proves</th></tr></thead>
-    <tbody>
-      <tr><td><code>crates/iso/tests/disc_pipeline.rs</code></td><td>Disc walk, file count, key-file SHA-256s.</td></tr>
-      <tr><td><code>crates/iso/tests/ecc_real.rs</code></td><td>Sector write-back keeps EDC/ECC valid.</td></tr>
-      <tr><td><code>crates/prot/tests/archive_tiling_real.rs</code></td><td>Entry footprints tile <code>PROT.DAT</code> exactly - the sector-gap size matches retail's own span routine (<code>FUN_8003E68C</code>).</td></tr>
-      <tr><td><code>crates/extract/tests/validation_suite.rs</code></td><td>Full pipeline: entry count, sub-asset totals, TIM round-trip, catalog digests.</td></tr>
-    </tbody>
-  </table>
+  <ul class="bullets">
+    <li><strong>The disc walk</strong> - file count and the key files' SHA-256s.</li>
+    <li><strong>Sector write-back</strong> - re-encoded sectors keep valid EDC/ECC.</li>
+    <li><strong>Archive tiling</strong> - entry footprints tile <code>PROT.DAT</code> exactly, and the sector-gap size matches retail's own span routine (<code>FUN_8003E68C</code>).</li>
+    <li><strong>The full pipeline</strong> - entry count, sub-asset totals, TIM round-trip, catalog digests.</li>
+  </ul>
   <p>Find every disc-gated test with <code>grep -rl LEGAIA_DISC_BIN crates/*/tests</code>.</p>
 </section>
 

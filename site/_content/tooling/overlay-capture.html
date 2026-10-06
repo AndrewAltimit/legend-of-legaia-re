@@ -19,23 +19,20 @@
 <section class="doc-section" id="overview">
   <h2>What this solves</h2>
   <p>Disassembling <code>SCUS_942.54</code> alone gives you the loader, the renderer wrappers and the sound driver - and a wall of <code>jal 0x801Dxxxx</code> calls into code that is not on the disc as a file Ghidra can open. Overlay capture is the dynamic answer. Reach for it when a function you are tracing lives at <code>0x801C0000+</code> and no static image contains it, when you need the <em>runtime values</em> around that code (initialised globals, filled tables), or when you want the exact list of archive entries a scene requested from the loader (the <a href="#asset-loader-csv">asset-loader CSV</a>).</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Play to the moment</span><span class="desc">the overlay you want is resident (town, battle, menu, minigame)</span><span class="crate">emulator</span>
-    <span class="num">2</span><span class="layer">Save state</span><span class="desc">a frozen snapshot of the console's full 2 MiB RAM</span><span class="crate">PCSX-Redux / mednafen / Duckstation</span>
-    <span class="num">3</span><span class="layer">Slice the window</span><span class="desc"><code>0x801C0000..0x80200000</code> out of the state; fingerprint which overlay it is</span><span class="crate">auto-name-overlay.py</span>
-    <span class="num">4</span><span class="layer">Import at base</span><span class="desc">a named program at <code>0x801C0000</code>, MIPS LE, auto-analysed</span><span class="crate">import-overlay-named.sh</span>
-    <span class="num">5</span><span class="layer">Dump functions</span><span class="desc">disassembly + decompiled C per entry point into <code>ghidra/scripts/funcs/</code></span><span class="crate">dump_&lt;label&gt;_overlay.py</span>
-  </div>
+  <ol class="steps">
+    <li><b>Play to the moment</b><span>The overlay you want is resident: town, battle, menu, minigame.</span></li>
+    <li><b>Save state</b><span>A frozen snapshot of the console's full 2 MiB RAM (PCSX-Redux, mednafen or Duckstation).</span></li>
+    <li><b>Slice the window</b><span><code>0x801C0000..0x80200000</code> out of the state, fingerprinted. <code>auto-name-overlay.py</code></span></li>
+    <li><b>Import at base</b><span>A named Ghidra program at <code>0x801C0000</code>, MIPS LE. <code>import-overlay-named.sh</code></span></li>
+    <li><b>Dump functions</b><span>Disassembly per entry point into <code>ghidra/scripts/funcs/</code>. <code>dump_&lt;label&gt;_overlay.py</code></span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="quick-start">
   <h2>Quick start</h2>
   <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ghidra-analysis/auto-name-overlay.py"><code>auto-name-overlay.py</code></a> detects the save-state format from the magic bytes (mednafen gzip+<code>MDFNSVST</code> or Duckstation <code>DUCCS</code>+zstd), extracts the overlay window, fingerprints which overlay is loaded against an anchor-function table, and emits both the binary slice and a stub <code>dump_&lt;label&gt;_overlay.py</code> Ghidra script with the largest function entry points pre-seeded.</p>
   <div class="cli"><code>scripts/ghidra-analysis/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0"</code></div>
-<pre><code># [info] format: mednafen; sliced 262,144 bytes
-# [info] auto-detected label: world_map  (world_map=4, field=3)
-# [ok]   /tmp/overlay_world_map.bin
-# [ok]   ghidra/scripts/dump_world_map_overlay.py</code></pre>
+  <p>It reports the format, the slice size, the label it detected with the anchor votes behind it (e.g. <code>world_map=4, field=3</code>), and the two files it wrote: <code>/tmp/overlay_&lt;label&gt;.bin</code> and <code>ghidra/scripts/dump_&lt;label&gt;_overlay.py</code>.</p>
   <p>Then import the slice (slice path first, label second - both required) and run the stub:</p>
   <div class="cli"><code>scripts/ghidra-analysis/import-overlay-named.sh /tmp/overlay_&lt;label&gt;.bin &lt;label&gt;</code></div>
   <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process overlay_&lt;label&gt;.bin -noanalysis -postScript /scripts/dump_&lt;label&gt;_overlay.py</code></div>
@@ -48,7 +45,7 @@
   <aside class="notice">
     <span class="notice-title">The trap: a capture is a snapshot of a buffer, not a file.</span> Everything above the resident overlay's own footprint is the <em>previous</em> occupant, still in RAM - plus streaming buffers (SEQ data), multi-pak loads, and runtime BSS with no on-disc counterpart. PROT 0971 (<code>debug_menu</code>) carries only <code>0x1800</code> bytes, so most of what an <code>overlay_debug_menu_</code> filename claims is actually fishing (0972) bytes. Resolve the image with <code>locate-entry-image.py</code> before trusting a filename prefix; genuine aliasing is much rarer than a shared base suggests (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/overlay-va-aliases.md">overlay-va-aliases</a>).
   </aside>
-  <h3>Capture status</h3>
+  <h3>Captured overlays</h3>
   <p>Committed function dumps land under <code>ghidra/scripts/funcs/</code> as <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code>. Several rows share one on-disc source: the save screen and the shop are the <em>menu</em> overlay (0899) captured in different states; the world map and scripted dialogue are the <em>field</em> overlay (0897) resident in different modes.</p>
 <table>
 <thead><tr><th>Overlay</th><th>Named program</th><th>Disc source</th><th>Key functions</th></tr></thead>
@@ -91,16 +88,7 @@
       <p>Per-character growth is not in this <em>display</em> overlay - it is in static <code>SCUS_942.54</code> (<code>DAT_800769CC</code> curves + <code>DAT_80076918</code> param block), applied by <code>FUN_801E9504</code>. See <a href="../subsystems/level-up.html#stat-gains">level-up</a>. The "HP grant at Seru <code>+0x74</code>" reading is falsified: <code>+0x74</code> is the actor's colour word.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: attributions the capture table used to carry</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>The menu overlay was once attributed to PROT <code>0896</code>; that entry is not a slot-A overlay at all - its once-recovered base was an over-read artifact of the superseded PROT entry-size expression (see <a href="../formats/prot.html">prot</a>).</li>
-        <li>An old PROT 0973 attribution for a hub minigame was its image in 0973's over-read tail; the pinned sources are 0972 / 0975 / 0976 / 0980.</li>
-        <li>Earlier readings of the minigame "main entries" and the Muscle Dome "round dispatcher" are collected on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</li>
-      </ul>
-    </div>
-  </details>
+  <p class="hint">Superseded attributions (menu overlay as PROT 0896, a hub minigame as 0973, earlier "main entry" readings) are recorded on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; both PROT misreadings came from the old over-reading entry-size expression (<a href="../formats/prot.html">PROT.DAT</a>).</p>
 </section>
 
 <section class="doc-section" id="capturing-with-pcsx-redux">

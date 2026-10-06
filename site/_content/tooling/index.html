@@ -53,6 +53,10 @@
       <div class="card-title">Translation / language packs</div>
       <div class="card-body"><code>legaia-patcher translate</code> exports a disc's text as an editable YAML pack and applies a filled pack back as a same-size patch. Built for community translations.</div>
     </a>
+    <a class="card" href="translation-workbench.html">
+      <div class="card-title">Translation workbench</div>
+      <div class="card-body">Edit a language pack line by line in the browser, with live byte, on-screen-width and scene-fit feedback against your own disc.</div>
+    </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener">
       <div class="card-title">Official PAL localizations</div>
       <div class="card-body">How the official French / German / Italian discs align to the USA coordinate space, and how their text is lifted onto it.</div>
@@ -143,8 +147,24 @@
 
 <section class="doc-section" id="more">
   <h2>More tooling docs (on GitHub)</h2>
-  <p>These live in <code>docs/tooling/</code> only: the CI gates that keep a measurement honest and the per-row triage ledgers behind the port catalog.</p>
+  <p>These live in <code>docs/tooling/</code> only: the parity and playthrough instruments, the CI gates that keep a measurement honest, and the per-row triage ledgers behind the port catalog.</p>
   <div class="card-grid">
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">
+      <div class="card-title">Retail comparison corpus</div>
+      <div class="card-body">Seed the engine from every catalogued retail save state and score scene, camera, BGM, party, flags, battle state and the frame against the state's own RAM and VRAM, worst first.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/full-game-ladder.md" target="_blank" rel="noopener">
+      <div class="card-title">Full-game ladder</div>
+      <div class="card-body">New Game to credits as segmented story milestones; a stall names the parked script op, the failing door gates and the unset flags with their disc setters.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md" target="_blank" rel="noopener">
+      <div class="card-title">Soak harness</div>
+      <div class="card-body">Seeded, game-shaped random pad input over every playable scene and minigame, with panic / softlock / stall detectors and reduced replay repros.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">
+      <div class="card-title">Field-op census</div>
+      <div class="card-body">Disc-wide field-VM opcode census: does any shipped scene issue op X, and where. Its zeros separate "no fixture drives this" from "the disc has nothing to drive it".</div>
+    </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md" target="_blank" rel="noopener">
       <div class="card-title">Worklist classification</div>
       <div class="card-body">Whether a missing-port row is a portable function entry at all (<code>REAL</code> / <code>INTERIOR</code> / <code>SHARED_TAIL</code> / <code>DUPLICATE</code> / <code>VA_ALIASED</code> / ...), so the worklist reads as work rather than addresses.</div>
