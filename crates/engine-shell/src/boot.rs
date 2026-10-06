@@ -15,6 +15,7 @@
 //! CI mode, no window). [`BootSession::tick`] is the per-frame driver
 //! callable from either path.
 
+use legaia_engine_audio::AudioSink;
 use std::path::Path;
 use std::sync::Arc;
 

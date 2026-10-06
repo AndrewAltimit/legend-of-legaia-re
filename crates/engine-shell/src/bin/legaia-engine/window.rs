@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
+use legaia_engine_audio::AudioSink;
 use legaia_engine_core::menu_runtime::{MenuRuntime, MenuState};
 use legaia_engine_core::scene::Scene;
 use legaia_engine_core::scene_resources::{

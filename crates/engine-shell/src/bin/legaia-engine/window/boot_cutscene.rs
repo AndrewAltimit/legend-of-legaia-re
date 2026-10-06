@@ -1,6 +1,7 @@
 //! Extracted from `window.rs` (mechanical split; behavior-preserving).
 
 use super::*;
+use legaia_engine_audio::AudioSink;
 // `AudioBgmDirector::stop` is a `BgmDirector` trait item; the title/boot
 // hand-offs below stop the score through it.
 use legaia_engine_core::scene::BgmDirector as _;

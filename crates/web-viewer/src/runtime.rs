@@ -21,6 +21,8 @@
 //! assembles the render state [`crate::play`] serves to the page.
 
 #[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
+#[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::WebAudioOut;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene::{SceneHost, SceneTickEvent};

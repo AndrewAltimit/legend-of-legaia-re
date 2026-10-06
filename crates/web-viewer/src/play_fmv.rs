@@ -69,6 +69,8 @@
 //! was taken and brings the title theme back after the attract.
 
 use legaia_asset::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 use legaia_engine_core::cutscene::fmv_is_skippable;
 use legaia_engine_core::input::InputState;
 #[cfg(test)]

@@ -20,6 +20,8 @@
 //! ids instead of inventing art (same contract as the slot machine section).
 
 use super::*;
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 
 use legaia_asset::baka_opponents::{self as baka};
 use legaia_asset::{DecodeMode, decode as decode_descriptor, pack as asset_pack, parse_player_lzs};

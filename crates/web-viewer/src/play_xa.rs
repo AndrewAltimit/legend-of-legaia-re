@@ -45,6 +45,8 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_art::arts_voice::{ArtsVoiceTable, clip_file};
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 use legaia_engine_audio::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip, XaClip, XaClipBank};
 use legaia_xa::demux::{
     AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET, parse_subheader,

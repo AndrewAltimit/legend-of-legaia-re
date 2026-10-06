@@ -62,6 +62,8 @@ use crate::runtime::LegaiaRuntime;
 use legaia_asset::sfx_table::{
     FALLBACK_VAB_SLOT, SLOT0_SYSTEM_BANK_PROT_INDEX, SLOT11_REWARD_BANK_PROT_INDEX,
 };
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 use legaia_engine_audio::bgm_tail::{BgmTail, TailBorrow};
 use legaia_engine_audio::{CueDispatch, PendingCue, SfxBank, SfxScheduler, classify_cue};
 use legaia_engine_core::world::SceneMode;

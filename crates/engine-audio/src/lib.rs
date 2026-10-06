@@ -37,6 +37,7 @@ pub mod sequencer;
 pub mod sfx;
 pub mod sfx_ring;
 pub mod shout;
+pub mod sink;
 pub mod spu;
 pub mod spu_layout;
 pub mod test_sink;
@@ -67,6 +68,7 @@ pub use sfx::{
 };
 pub use sfx_ring::{CueDrainState, CueSlot, CueVoice, CueVoicePlan, SfxCueRing, plan_cue_voices};
 pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};
+pub use sink::AudioSink;
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
@@ -318,7 +320,10 @@ fn mix_stereo(a: (i16, i16), b: (i16, i16)) -> (i16, i16) {
 /// Output-side resampler that drains the SPU at 44.1 kHz and produces samples
 /// at the host device rate. Linear interpolation; one-pole IIR is overkill
 /// for the use case (asset-viewer playback + scene BGM) and adds latency.
-struct StreamResampler {
+///
+/// Public only as the type [`AudioSink::with_core`] lends out; its state is
+/// crate-private and reached through the [`AudioSink`] methods.
+pub struct StreamResampler {
     spu: Spu,
     /// Optional active sequencer. Ticked once per SPU sample so timing is
     /// locked to the audio clock instead of frame timing.

@@ -10,6 +10,8 @@
 //! `WebAudioOut`, which only exists in a browser.
 
 use crate::runtime::LegaiaRuntime;
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]

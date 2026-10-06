@@ -2,6 +2,7 @@
 //! `music_01` bank files.
 
 use anyhow::{Context, Result};
+use legaia_engine_audio::AudioSink;
 use legaia_engine_audio::{AudioOut, Sequencer};
 use std::path::Path;
 use std::time::Instant;

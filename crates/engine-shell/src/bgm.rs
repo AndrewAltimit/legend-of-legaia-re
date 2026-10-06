@@ -16,6 +16,7 @@
 //! bytes and the active VAB is staged once per scene. This adapter is the
 //! join point.
 
+use legaia_engine_audio::AudioSink;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

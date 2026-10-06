@@ -5,6 +5,7 @@
 //! driver.
 
 use super::*;
+use legaia_engine_audio::AudioSink;
 
 pub(crate) fn cmd_play_str(
     str_file: &Path,
