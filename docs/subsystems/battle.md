@@ -1337,6 +1337,21 @@ predicate `+0x5A & 0xE` (`8001afd8`) negates the per-object rotation argument
 and swaps the draw-call mode word from `0x40000000` to `0x48000000` - the
 winding compensation a negative-determinant transform needs.
 
+The compensation is to stop culling, not to flip a winding. The mode word is
+ORed into the node's `+0x74` and handed to the prim dispatcher `FUN_80043390`
+as its colour argument (`0x8001B014..0x8001B024`), and the dispatcher reads
+bit `0x08000000` as "both sides": the NCLIP mask it stores at `-0x2D8(t2)` is
+`0xFFFFFFFF` without it and `0x7FFFFFFF` with it (`0x80043520..0x80043540`),
+and every prim leaf ANDs the signed area with that mask before its sign test
+(`and s2,s2,s3` / `bltz` at `0x80043E78` in the GT3 leaf `FUN_80043DD4`). So
+copy A, and copy B under the half turn, are back-face culled; the mirrored
+copy B draws both sides. The two backdrop nodes of
+`nivora_duel_pre_megaton_press` read `+0x74 = 0`, one with `+0x5A = 2`. The
+port draws every battle mesh both-sided (`camera_view::nclip_cull_mode` is `0`
+in battle); on that capture the difference is invisible - the shell's
+`0x7640` additive group, which no retail packet of the frame carries, covers
+no pixel of the port's frame either.
+
 #### The per-stage table
 
 Which transform a stage gets comes from the zero-terminated `u16` table at
