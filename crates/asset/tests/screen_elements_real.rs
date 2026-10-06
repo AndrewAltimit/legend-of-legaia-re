@@ -150,4 +150,13 @@ fn the_level_up_window_records_name_their_mask() {
         let want = if mask == 7 { 0 } else { mask };
         assert_eq!(named, want, "mask {mask} names its characters");
     }
+    // The drop line the results frame appends to the victory buffer: a row
+    // break, then one item escape for the dropped id.
+    let drop = legaia_asset::screen_elements::drop_line_template(&scus).expect("drop line");
+    assert_eq!(drop.first(), Some(&0x7C), "it opens the window's third row");
+    assert_eq!(
+        drop.windows(2).filter(|w| w[0] == 0xC2).count(),
+        1,
+        "one item escape"
+    );
 }

@@ -112,9 +112,31 @@ pub fn payload_string(scus: &[u8], index: usize) -> Option<Vec<u8>> {
     if rec.payload == 0 {
         return None;
     }
-    let start = map.off(rec.payload)?;
+    mes_string_at(scus, &map, rec.payload)
+}
+
+/// The SCUS word (`gp + 0x384`) that points at the report window's **drop
+/// line** template. The results frame `FUN_8004E568` patches the template's
+/// `0xC2` item escape operand with the dropped item id (`FUN_8003CBF8` finds
+/// the token, `sb s2,0x1(v0)` at `0x8004F5E0`) and appends the whole string,
+/// which opens with a `0x7C` line break, to the victory message buffer
+/// `ctx + 0xA9` (`0x8004F5E4..0x8004F600`): the drop is the report window's
+/// third line, under `... won the battle!` and the `Gained ...` row.
+pub const DROP_LINE_PTR_VA: u32 = 0x8007_B69C;
+
+/// The drop line template [`DROP_LINE_PTR_VA`] points at, raw MES bytes
+/// (escape operands kept, as in [`payload_string`]).
+pub fn drop_line_template(scus: &[u8]) -> Option<Vec<u8>> {
+    let map = ExeMap::parse(scus)?;
+    let o = map.off(DROP_LINE_PTR_VA)?;
+    let va = u32::from_le_bytes(scus.get(o..o + 4)?.try_into().ok()?);
+    mes_string_at(scus, &map, va)
+}
+
+/// The NUL-terminated MES string at `va`, escape operands kept.
+fn mes_string_at(scus: &[u8], map: &ExeMap, va: u32) -> Option<Vec<u8>> {
     let mut out = Vec::new();
-    let mut i = start;
+    let mut i = map.off(va)?;
     loop {
         let b = *scus.get(i)?;
         if b == 0 {

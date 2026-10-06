@@ -620,7 +620,15 @@ one battle:
   level-up window above the party carrying **one** line however many
   members levelled, and a spoils window below it carrying
   `<leader>'s team won the battle!` and `Gained N Experience and M G.` with
-  both figures right-aligned inside the sentence, plus a line per drop.
+  both figures right-aligned inside the sentence, plus the drop line. The
+  victory text is one buffer (`ctx + 0xA9`): the second row is the overlay's
+  `Gained` sentence with blanks the two number draws fill, and a drop
+  appends the SCUS template `gp + 0x384` points at - a `0x7C` row break and a
+  `0xC2` item escape the results frame patches with the item id
+  (`0x8004F5C4..0x8004F600`) - as a third row inside the same fixed `288 x
+  42` box. The port reads the template off the user's executable
+  (`legaia_asset::screen_elements::drop_line_template`) and splices the item
+  name in `World::drop_line`.
 
   `N` is **one member's share**, not the battle's EXP: `FUN_8004E568` stores
   the share `s6` (the pool scaled by 3/4, ceiling-divided among the living

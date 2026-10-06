@@ -32,11 +32,11 @@ pub fn encounter_banner_draws_for(
 pub struct BattleSpoilsView<'a> {
     pub xp: u32,
     pub gold: u32,
-    /// One line per character that crossed a level threshold, already
-    /// formatted by the shell (it owns the name table).
+    /// The level-up window's line(s), already composed by the shell (it
+    /// owns the name table and the executable's strings).
     pub level_ups: &'a [String],
-    /// Item names the loot roll surfaced, resolved by the shell against the
-    /// item catalog.
+    /// The report window's drop line(s), already composed by the shell
+    /// against the item catalog and the executable's template.
     pub drops: &'a [String],
     /// The party leader, whose name opens the spoils line.
     pub leader: &'a str,
@@ -128,11 +128,14 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
         // caller that only wants the text reads a sentence.
         format!("Gained {} Experience and {} G.", view.xp, view.gold),
     ];
-    for drop in view.drops {
-        lines.push(format!("Got {drop}"));
-    }
+    // The drop line arrives composed (`World::battle_spoils_banner`): the
+    // executable's template, appended to the victory buffer as its third row.
+    lines.extend(view.drops.iter().cloned());
+    // Retail's box is a fixed `288 x 42` (element `0x41`): three rows - the
+    // victory line, the `Gained` row and the drop line - fit without growing
+    // it. Past three the port grows the box (retail surfaces one drop).
     let (x, y, w, h) = SPOILS_REPORT_RECT;
-    let extra = (lines.len() as i32 - 2).max(0) * SPOILS_LINE_H;
+    let extra = (lines.len() as i32 - 3).max(0) * SPOILS_LINE_H;
     out.push(SpoilsWindow {
         rect: (x, y, w, h + extra),
         lines,

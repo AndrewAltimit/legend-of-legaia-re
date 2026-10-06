@@ -12,7 +12,10 @@ pub struct BattleSpoilsBanner {
     /// what retail's result window prints, not the pool.
     pub xp: u32,
     pub gold: u32,
-    /// `"<name> drop"` lines - one per item the loot roll surfaced.
+    /// The report window's drop line, one per item the loot roll surfaced
+    /// (retail's roll surfaces at most one): the executable's template with
+    /// the item name spliced in ([`World::drop_line`]), or `Got <name>` on a
+    /// host without it.
     pub drops: Vec<String>,
     /// The level-up window's line - empty when nobody levelled. Retail
     /// opens one window, element `0x44 + mask` (bit `k` = character `k`),
@@ -86,11 +89,14 @@ impl World {
             .drops
             .iter()
             .map(|&id| {
-                self.tables
+                let name = self
+                    .tables
                     .item_catalog
                     .get(id)
                     .map(|it| it.name.to_string())
-                    .unwrap_or_else(|| format!("Item {id}"))
+                    .unwrap_or_else(|| format!("Item {id}"));
+                self.drop_line(&name)
+                    .unwrap_or_else(|| format!("Got {name}"))
             })
             .collect();
         let mask = r
@@ -124,6 +130,34 @@ impl World {
             level_ups,
             subject: self.battle_result_subject(),
         })
+    }
+
+    /// The report window's drop line for an item named `item`: the
+    /// executable's template (`legaia_asset::screen_elements::DROP_LINE_PTR_VA`)
+    /// with its `0xC2` item escape spliced, less the leading `0x7C` break
+    /// that puts it on the window's third row (the port keeps rows as
+    /// lines). `None` without the template.
+    ///
+    /// REF: FUN_8004E568 (`0x8004F5C4..0x8004F600`)
+    pub fn drop_line(&self, item: &str) -> Option<String> {
+        let raw = self.menu.text.as_ref()?.drop_line.as_ref()?;
+        let mut out = String::new();
+        let mut i = 0;
+        while i < raw.len() {
+            let b = raw[i];
+            if (0xC0..=0xCF).contains(&b) {
+                if matches!(b, 0xC2 | 0xC4) {
+                    out.push_str(item);
+                }
+                i += 2;
+                continue;
+            }
+            if (0x20..0x7F).contains(&b) && b != 0x7C {
+                out.push(b as char);
+            }
+            i += 1;
+        }
+        Some(out)
     }
 
     /// The level-up window's line for `mask` (bit `k` = character `k`): the
@@ -559,5 +593,18 @@ mod level_up_line_tests {
             None,
             "no strings: the caller falls back"
         );
+    }
+
+    /// The drop line is the template with its item escape spliced and the
+    /// leading row break dropped.
+    #[test]
+    fn the_drop_line_splices_the_item() {
+        let mut w = World::default();
+        assert_eq!(w.drop_line("Leaf"), None);
+        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+            drop_line: Some([&b"|Got the "[..], &[0xC2, 0x01], b"."].concat()),
+            ..Default::default()
+        });
+        assert_eq!(w.drop_line("Leaf").as_deref(), Some("Got the Leaf."));
     }
 }

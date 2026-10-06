@@ -57,6 +57,9 @@ pub struct MenuTextTables {
     /// `mask - 1` (screen elements `0x45..=0x4B`,
     /// [`legaia_asset::screen_elements::RECORD_LEVEL_UP_BASE`]).
     pub level_up_lines: Option<Vec<Vec<u8>>>,
+    /// The report window's drop line template, raw MES bytes
+    /// ([`legaia_asset::screen_elements::drop_line_template`]).
+    pub drop_line: Option<Vec<u8>>,
 }
 
 impl MenuTextTables {
@@ -76,6 +79,7 @@ impl MenuTextTables {
                     )
                 })
                 .collect(),
+            drop_line: legaia_asset::screen_elements::drop_line_template(scus),
         }
     }
 
