@@ -342,7 +342,7 @@ pub(crate) enum Cmd {
     /// **Asymmetry.** The engine port doesn't model the 28-mode
     /// dispatcher yet, so engine-emitted frames have `game_mode = null`
     /// in the JSONL. Retail snapshots fill it from `_DAT_8007B83C`.
-    /// See `crates/engine-shell/src/mode_trace_oracle.rs` for the
+    /// See `crates/parity/src/mode_trace_oracle.rs` for the
     /// long-form rationale.
     #[command(display_order = 24)]
     ModeTrace {
@@ -1405,7 +1405,7 @@ pub(crate) enum Cmd {
     },
     /// Retail comparison corpus (`docs/tooling/retail-compare.md`).
     #[command(display_order = 29)]
-    RetailCompare(legaia_engine_shell::retail_compare_cli::RetailCompareArgs),
+    RetailCompare(legaia_parity::retail_compare_cli::RetailCompareArgs),
 }
 
 #[derive(Subcommand, Debug)]

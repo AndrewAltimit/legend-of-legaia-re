@@ -2,7 +2,7 @@
 """Run the retail comparison corpus and write the human report.
 
 Thin driver over `legaia-engine retail-compare`
-(`crates/engine-shell/src/retail_compare*.rs`): resolves the gitignored data
+(`crates/parity/src/retail_compare*.rs`): resolves the gitignored data
 (the save library and the extracted disc) - which in a git worktree live in
 the main checkout, not beside the worktree - builds the engine binary unless
 told not to, and runs the corpus with the report under a gitignored

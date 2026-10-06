@@ -33,11 +33,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_shell::mode_trace_oracle::{
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::mode_trace_oracle::{
     build_engine_mode_trace_field_live, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
-use legaia_mednafen::ScenarioManifest;
 
 /// How many engine frames to tick before the comparison. 60 = one
 /// retail second; enough for boot-time scene transitions (field-VM

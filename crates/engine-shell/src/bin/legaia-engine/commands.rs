@@ -15,21 +15,21 @@ use anyhow::{Context, Result};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
-use legaia_engine_shell::audio_trace_oracle::{
+use legaia_engine_shell::replay::ReplayFile;
+use legaia_parity::audio_trace_oracle::{
     AudioTraceFrame, audio_trace_to_jsonl, engine_trace_from_paths, first_audio_trace_divergence,
     first_audio_trace_divergence_multi, load_runtime_audio_trace_from_save,
     load_runtime_audio_trace_jsonl,
 };
-use legaia_engine_shell::mode_trace_oracle::{
+use legaia_parity::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, mode_trace_to_jsonl,
 };
-use legaia_engine_shell::pcm_oracle::{
+use legaia_parity::pcm_oracle::{
     EnginePcmTrace, PcmStats, build_engine_pcm_trace, first_pcm_divergence, pcm_stats,
     retail_reference_pcm, write_wav,
 };
-use legaia_engine_shell::replay::ReplayFile;
-use legaia_engine_shell::vram_oracle::{
+use legaia_parity::vram_oracle::{
     TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
     load_runtime_vram_from_save, vram_to_le_bytes,
 };

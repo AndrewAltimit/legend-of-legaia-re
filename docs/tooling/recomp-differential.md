@@ -13,7 +13,7 @@ Four moving parts:
 |---|---|---|
 | `probe.py` | [`scripts/recomp/`](../../scripts/recomp/probe.py) | Client library + CLI for the recomp's TCP debug server, protocol traps baked in |
 | `trace_capture.py` | [`scripts/recomp/`](../../scripts/recomp/trace_capture.py) | Frame-tagged capture of named RAM address maps into the canonical JSONL |
-| `legaia-engine sim-trace` | [`crates/engine-shell`](../../crates/engine-shell/src/sim_trace.rs) | The engine side: ticks a `BootSession` and emits the same JSONL in retail units |
+| `legaia-engine sim-trace` | [`crates/parity`](../../crates/parity/src/sim_trace.rs) | The engine side: ticks a `BootSession` and emits the same JSONL in retail units |
 | `trace_diff.py` | [`scripts/recomp/`](../../scripts/recomp/trace_diff.py) | Aligns two traces and reports the first divergence per channel |
 
 **Captured traces are Sony-derived** (retail game RAM values) and must stay
@@ -404,7 +404,7 @@ the windowed host arms them; `--no-field-live` samples the plain
 `frames + 1` canonical records. Per-tick emission of existing sim state
 only - the subcommand adds no simulation features.
 
-Retail-unit mapping (see [`sim_trace.rs`](../../crates/engine-shell/src/sim_trace.rs)
+Retail-unit mapping (see [`sim_trace.rs`](../../crates/parity/src/sim_trace.rs)
 module docs for the full table): every `cam.*` channel is read from the
 engine's live retail camera globals
 ([`Camera::globals`](../../crates/engine-core/src/camera.rs)), which are the

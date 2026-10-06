@@ -103,7 +103,8 @@ engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
 engine-session → engine-core, engine-audio, engine-vm (+ parser crates)  (BootSession + BGM director; no wgpu / winit / cpal)
-engine-shell  → engine-session, engine-core, engine-vm, engine-render, engine-audio (+ parser crates, mednafen, pcsxr)
+parity       → engine-session, engine-core, engine-vm, engine-render, engine-audio (+ parser crates, mednafen, pcsxr)  (parity oracles + retail-compare)
+engine-shell  → parity, engine-session, engine-core, engine-vm, engine-render, engine-audio (+ parser crates)
 asset-viewer  → engine-*, all parser crates
 ```
 
@@ -121,7 +122,7 @@ The diagram below traces data-flow from the top-level binary through crate bound
 graph LR
     BIN["legaia-engine"]
 
-    subgraph shell ["engine-shell"]
+    subgraph session ["engine-session"]
         BS["BootSession"]
         BGM["AudioBgmDirector"]
     end

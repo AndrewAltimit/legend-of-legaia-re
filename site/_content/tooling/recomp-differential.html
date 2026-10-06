@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Retail side</dt><dd>psxrecomp static recomp of <code>SCUS_942.54</code>, driven over its JSON-over-TCP debug server by <code>scripts/recomp/probe.py</code></dd>
-    <dt>Engine side</dt><dd><code>legaia-engine sim-trace</code> (<code>crates/engine-shell/src/sim_trace.rs</code>) ticking a <code>BootSession</code></dd>
+    <dt>Engine side</dt><dd><code>legaia-engine sim-trace</code> (<code>crates/parity/src/sim_trace.rs</code>) ticking a <code>BootSession</code></dd>
     <dt>Trace shape</dt><dd>One JSON object per frame; angles 12-bit (4096 = full turn), positions in retail world units, mode = the retail game-mode word</dd>
     <dt>Diff</dt><dd><code>trace_diff.py</code> (state), <code>note_diff.py</code> (BGM key-ons); non-zero exit on any divergence</dd>
     <dt>Environment</dt><dd><code>LEGAIA_RECOMP_DIR</code>, <code>LEGAIA_RECOMP_BIOS</code>, <code>LEGAIA_RECOMP_PORT</code> - each overridable per call</dd>

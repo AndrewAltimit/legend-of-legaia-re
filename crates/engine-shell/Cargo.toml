@@ -28,8 +28,8 @@ legaia-engine-core.workspace = true
 legaia-engine-vm.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-session.workspace = true
+legaia-parity.workspace = true
 legaia-engine-render.workspace = true
-legaia-lzs.workspace = true
 legaia-prot.workspace = true
 legaia-save.workspace = true
 legaia-seq.workspace = true
@@ -39,8 +39,6 @@ legaia-tmd.workspace = true
 legaia-font.workspace = true
 legaia-mdec.workspace = true
 legaia-mednafen.workspace = true
-# retail-compare reads PCSX-Redux library states (RAM + VRAM) as well as mednafen ones.
-legaia-pcsxr.workspace = true
 legaia-iso.workspace = true
 legaia-xa.workspace = true
 glam.workspace = true
@@ -64,6 +62,7 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+legaia-lzs.workspace = true
 legaia-mes.workspace = true
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.

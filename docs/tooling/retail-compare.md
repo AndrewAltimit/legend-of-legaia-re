@@ -16,11 +16,11 @@ way `mednafen-state vram-dump --display-crop` reads it.
 
 | Piece | Lives in | Role |
 |---|---|---|
-| corpus + channels + ratchet | [`retail_compare.rs`](../../crates/engine-shell/src/retail_compare.rs) | Enumerate the library, read retail, seed the engine, score |
-| battle half | [`retail_compare_battle.rs`](../../crates/engine-shell/src/retail_compare_battle.rs) | Read the encounter out of a battle state, enter it, score the battle channels |
-| script phase | [`retail_compare_script.rs`](../../crates/engine-shell/src/retail_compare_script.rs) | Read the running field contexts off the actor lists, run the engine to the same script phase |
-| frame channel | [`retail_compare_image.rs`](../../crates/engine-shell/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
-| `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/engine-shell/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
+| corpus + channels + ratchet | [`retail_compare.rs`](../../crates/parity/src/retail_compare.rs) | Enumerate the library, read retail, seed the engine, score |
+| battle half | [`retail_compare_battle.rs`](../../crates/parity/src/retail_compare_battle.rs) | Read the encounter out of a battle state, enter it, score the battle channels |
+| script phase | [`retail_compare_script.rs`](../../crates/parity/src/retail_compare_script.rs) | Read the running field contexts off the actor lists, run the engine to the same script phase |
+| frame channel | [`retail_compare_image.rs`](../../crates/parity/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
+| `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/parity/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
 | PCSX-Redux GPU reader | [`legaia_pcsxr::gpu`](../../crates/pcsxr/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
 | driver | [`scripts/ci/retail-compare.py`](../../scripts/ci/retail-compare.py) | Resolves the gitignored data, builds, runs, blesses / checks |
 | ratchet test | [`retail_compare_corpus.rs`](../../crates/engine-shell/tests/retail_compare_corpus.rs) | Disc-gated; fails on any per-state channel drop |

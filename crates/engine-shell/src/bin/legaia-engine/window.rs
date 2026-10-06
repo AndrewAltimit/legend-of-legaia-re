@@ -74,10 +74,10 @@ pub(crate) struct ScreenshotConfig {
     pub talk_at: Option<(u64, u8)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
-    /// ([`legaia_engine_shell::retail_compare_battle::PhaseGate`]) instead of
+    /// ([`legaia_parity::retail_compare_battle::PhaseGate`]) instead of
     /// at a fixed tick; `capture_tick` becomes the deadline, past which the
     /// run exits without a PNG. Set by the retail-compare image channel.
-    pub phase_gate: Option<legaia_engine_shell::retail_compare_battle::PhaseGate>,
+    pub phase_gate: Option<legaia_parity::retail_compare_battle::PhaseGate>,
     /// `LEGAIA_BATTLE_ORBIT_YAW=<yaw>`: the battle idle orbit's azimuth the
     /// capture must show, held while the orbit owns yaw
     /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
@@ -88,10 +88,10 @@ pub(crate) struct ScreenshotConfig {
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
-    /// ([`legaia_engine_shell::retail_compare_script::ScriptGate`]), resuming
+    /// ([`legaia_parity::retail_compare_script::ScriptGate`]), resuming
     /// the record from its start when nothing runs it and paging its dialog
     /// boxes on the way. `capture_tick` is the deadline.
-    pub script_gate: Option<legaia_engine_shell::retail_compare_script::ScriptGate>,
+    pub script_gate: Option<legaia_parity::retail_compare_script::ScriptGate>,
     /// `LEGAIA_SEAT_LATCHES=59c,134` (hex): the system flags a captured
     /// record latched after the scene entry ran. The seed lands the save
     /// without them so the entry does not read them, and they are raised at
@@ -110,21 +110,21 @@ pub(crate) struct ScreenshotConfig {
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
     /// frame that holds it
-    /// ([`legaia_engine_shell::retail_compare_battle::BattleDrive`]), the
+    /// ([`legaia_parity::retail_compare_battle::BattleDrive`]), the
     /// same driver the headless seed runs. `capture_tick` becomes the
     /// deadline. Set by the retail-compare image channel.
-    pub battle_drive: Option<legaia_engine_shell::retail_compare_battle::BattleDrive>,
+    pub battle_drive: Option<legaia_parity::retail_compare_battle::BattleDrive>,
     /// Whether the drive's one-shot world seed has been armed (it is armed
     /// on the first battle tick).
     pub battle_drive_primed: std::cell::Cell<bool>,
     /// Ticks the drive's phase has held so far; the capture waits for
-    /// [`legaia_engine_shell::retail_compare_battle::BattleDrive::hold_ticks`]
+    /// [`legaia_parity::retail_compare_battle::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
     pub battle_drive_held: std::cell::Cell<u32>,
     /// `LEGAIA_BATTLE_BARS=slot:hp:mp,...`: the capture's mid-fight HP / MP,
     /// seeded on the first battle tick as the headless seed seeds them
-    /// ([`legaia_engine_shell::retail_compare_battle::apply_bar_seeds`]).
-    pub battle_bars: Vec<legaia_engine_shell::retail_compare_battle::BarSeed>,
+    /// ([`legaia_parity::retail_compare_battle::apply_bar_seeds`]).
+    pub battle_bars: Vec<legaia_parity::retail_compare_battle::BarSeed>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
 }
@@ -393,17 +393,17 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok()),
             phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
                 .ok()
-                .and_then(|v| legaia_engine_shell::retail_compare_battle::PhaseGate::from_env(&v)),
+                .and_then(|v| legaia_parity::retail_compare_battle::PhaseGate::from_env(&v)),
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
-                .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
+                .and_then(|v| legaia_parity::retail_compare_script::ScriptGate::from_env(&v)),
             seat_fog: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_FOG")
                     .ok()
-                    .map(|v| legaia_engine_shell::retail_compare::fog_from_env(&v)),
+                    .map(|v| legaia_parity::retail_compare::fog_from_env(&v)),
             ),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
@@ -422,13 +422,13 @@ impl ScreenshotConfig {
                         .collect()
                 })
                 .unwrap_or_default(),
-            battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE").ok().and_then(|v| {
-                legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
-            }),
+            battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE")
+                .ok()
+                .and_then(|v| legaia_parity::retail_compare_battle::BattleDrive::from_env(&v)),
             battle_drive_primed: std::cell::Cell::new(false),
             battle_drive_held: std::cell::Cell::new(0),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
-                .map(|v| legaia_engine_shell::retail_compare_battle::bar_seeds_from_env(&v))
+                .map(|v| legaia_parity::retail_compare_battle::bar_seeds_from_env(&v))
                 .unwrap_or_default(),
             battle_bars_seeded: std::cell::Cell::new(false),
         }))

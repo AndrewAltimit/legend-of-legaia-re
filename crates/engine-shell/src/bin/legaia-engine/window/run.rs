@@ -723,7 +723,7 @@ pub(super) fn cmd_play_window_with_record(
             // parameter block instead of a tile re-query.
             match std::env::var("LEGAIA_SEAT_CAMERA_BLOCK")
                 .ok()
-                .and_then(|b| legaia_engine_shell::retail_compare::camera_block_from_env(&b))
+                .and_then(|b| legaia_parity::retail_compare::camera_block_from_env(&b))
             {
                 Some(block) => session.camera.zone.arm_arrival_over(block),
                 None => session.camera.zone.arm_arrival(),
@@ -753,7 +753,7 @@ pub(super) fn cmd_play_window_with_record(
     // (`AmbientFxState::cell_fx_seed`).
     if let Ok(fx) = std::env::var("LEGAIA_SEAT_CLUT_FX") {
         session.host.world.ambient.cell_fx_seed =
-            legaia_engine_shell::retail_compare::cell_fx_from_env(&fx);
+            legaia_parity::retail_compare::cell_fx_from_env(&fx);
     }
 
     // `LEGAIA_SEAT_VRAM_RECTS=<file>` (the retail-compare image channel): a
@@ -764,7 +764,7 @@ pub(super) fn cmd_play_window_with_record(
         std::env::var_os("LEGAIA_SEAT_VRAM_RECTS").and_then(|p| std::fs::read(p).ok())
     {
         session.host.world.ambient.vram_rect_seed =
-            legaia_engine_shell::retail_compare::vram_rects_from_file(&bytes);
+            legaia_parity::retail_compare::vram_rects_from_file(&bytes);
     }
 
     // Debug learn path: `--learn-spell 0x81` (repeatable) or the older

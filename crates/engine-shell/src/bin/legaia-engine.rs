@@ -64,7 +64,7 @@ fn main() -> Result<()> {
         },
     };
     match cmd {
-        Cmd::RetailCompare(args) => legaia_engine_shell::retail_compare_cli::run(args),
+        Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
         Cmd::Info {
             scene,
             extracted_root,

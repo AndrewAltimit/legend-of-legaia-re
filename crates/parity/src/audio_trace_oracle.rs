@@ -211,7 +211,7 @@ impl Default for AudioTraceBuildOptions {
 
 /// Headless [`BgmDirector`] used by [`build_engine_audio_trace`].
 ///
-/// Mirrors [`crate::bgm::AudioBgmDirector`] but doesn't hold an
+/// Mirrors [`legaia_engine_session::AudioBgmDirector`] but doesn't hold an
 /// [`legaia_engine_audio::AudioOut`] (cpal is unavailable in CI). It owns
 /// the same three things the cpal director owns behind its `AudioOut` - the
 /// [`Spu`], the active [`VabBank`], and the attached [`Sequencer`] - so the
@@ -343,7 +343,7 @@ impl TraceBgmDirector {
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
     /// upload the entry's **own** VAB into the private SPU, make it the
     /// active bank, and return the SEQ bytes. Mirrors
-    /// [`crate::bgm::AudioBgmDirector`]'s `stage_owned_vab` byte for byte,
+    /// [`legaia_engine_session::AudioBgmDirector`]'s `stage_owned_vab` byte for byte,
     /// including its allocator region, so the two directors program the same
     /// `start_addr` for the same track.
     fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {

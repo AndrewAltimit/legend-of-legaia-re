@@ -187,7 +187,7 @@ end = 0x801F3818</code></pre>
       <tr><td>Widget class table</td><td><code>0x800732A4</code> in <code>SCUS_942.54</code></td><td>Both SCUS sprite draw routines copy <code>(u,v,w,h)</code> verbatim, so the sprite join is exact</td><td><a href="../subsystems/battle.html">battle - widget class table</a></td></tr>
       <tr><td>Per-prim renderer dispatch</td><td><code>FUN_80043390</code>; tables <code>0x8007657C</code>, <code>0x801F8968</code></td><td>Which routine draws each primitive mode</td><td><code>crates/mednafen/tests/dispatch_table.rs</code></td></tr>
       <tr><td>Save-state layout</td><td>Mednafen section table; <code>&amp;GPURAM[0][0]</code> blob</td><td>Where main RAM and VRAM sit in the file</td><td><code>crates/mednafen</code> README</td></tr>
-      <tr><td>RAM fingerprint</td><td><code>legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint</code></td><td>Slot drift is detectable without an emulator run</td><td><code>crates/engine-shell</code></td></tr>
+      <tr><td>RAM fingerprint</td><td><code>legaia_parity::mode_trace_oracle::save_ram_fingerprint</code></td><td>Slot drift is detectable without an emulator run</td><td><code>crates/parity</code></td></tr>
     </tbody>
   </table>
 </section>

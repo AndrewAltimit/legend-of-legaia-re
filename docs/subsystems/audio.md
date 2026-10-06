@@ -2004,7 +2004,7 @@ busy level and has no drive to seek.
 Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, with the same `AudioTraceFrame` JSONL wire format on both:
 
 1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`. Convergence is "did any engine frame in the window match retail's voice mask?".
-2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/engine-shell/src/audio_trace_oracle.rs).
+2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/parity/src/audio_trace_oracle.rs).
 
 The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. The private SPU is configured through `set_retail_reverb` exactly as the shipped cpal host configures its own - an oracle whose engine differs from the engine cannot report a difference. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
 
@@ -2029,7 +2029,7 @@ Two known asymmetries the diff function explicitly models:
 
 Entry points:
 
-- Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
+- Library: [`legaia_parity::audio_trace_oracle`](../../crates/parity/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
 - CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), or `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture).
 - Disc-gated tests:
   - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
@@ -2104,7 +2104,7 @@ window, so the allocator is not the gap either.
 `first_audio_trace_divergence_multi` asks whether some engine frame's mask
 *covers* a retail frame's, which two windows taken at different moments of the
 same track can fail while playing identically. The per-voice comparison
-([`compare_voice_allocation`](../../crates/engine-shell/src/audio_trace_oracle.rs),
+([`compare_voice_allocation`](../../crates/parity/src/audio_trace_oracle.rs),
 `legaia-engine audio-trace --per-voice`) asks a different question: what were
 the sounding voices *doing*.
 
@@ -2153,13 +2153,13 @@ playthrough parked it. Pairing frame 0 of each therefore compares two
 different bars of one piece and reports the difference between the bars as a
 difference between the sides.
 
-[`best_alignment_offset`](../../crates/engine-shell/src/audio_trace_oracle.rs)
+[`best_alignment_offset`](../../crates/parity/src/audio_trace_oracle.rs)
 slides the retail window over the engine trace and scores each offset by the
 mean per-frame **Jaccard** of the two frames' sounding-pitch multisets. The
 symmetry matters: an intersection-only score ranks the busiest engine window
 first whatever it is playing, because a window with more voices contains more
 of retail's pitches by construction.
-[`compare_voice_allocation_aligned`](../../crates/engine-shell/src/audio_trace_oracle.rs)
+[`compare_voice_allocation_aligned`](../../crates/parity/src/audio_trace_oracle.rs)
 is `compare_voice_allocation` over the window that scores highest, and
 `audio-trace --per-voice` reports the offset it used.
 

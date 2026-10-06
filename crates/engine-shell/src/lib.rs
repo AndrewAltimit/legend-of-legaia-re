@@ -3,8 +3,10 @@
 //! Houses the `legaia-engine` binary plus a small wiring layer that bridges
 //! [`legaia_engine_core`] and [`legaia_engine_audio`] (the BGM director) so
 //! the binary and any embedding can share the same per-scene plumbing.
+//!
+//! The parity oracles and the retail comparison corpus live in
+//! `legaia-parity`, which the binary's trace subcommands drive.
 
-pub mod audio_trace_oracle;
 /// The BGM / SFX director lives in `legaia-engine-session` (shared with the
 /// browser host); this host instantiates it over the cpal output.
 pub mod bgm {
@@ -22,18 +24,9 @@ pub mod boot {
 }
 pub mod cutscene_av;
 pub mod launcher;
-pub mod mode_trace_oracle;
-pub mod pcm_oracle;
 pub mod replay;
-pub mod retail_compare;
-pub mod retail_compare_battle;
-pub mod retail_compare_cli;
-pub mod retail_compare_image;
-pub mod retail_compare_script;
 pub mod scenarios;
-pub mod sim_trace;
 pub mod tile_board_draws;
-pub mod vram_oracle;
 pub mod xa_clip;
 
 pub use bgm::AudioBgmDirector;

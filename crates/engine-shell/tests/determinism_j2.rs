@@ -29,8 +29,8 @@
 //! a J3 invariant.
 
 use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_shell::mode_trace_oracle::{ModeTraceFrame, mode_trace_to_jsonl};
 use legaia_engine_shell::replay::{ReplayFile, ReplayMeta};
+use legaia_parity::mode_trace_oracle::{ModeTraceFrame, mode_trace_to_jsonl};
 use sha2::{Digest, Sha256};
 
 /// Build a deterministic starting world. Mirrors the
