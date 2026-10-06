@@ -526,6 +526,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/boot-internals.html","Boot path: internals",       "subsystems/boot-internals",  "subsystems/boot-internals.html"),
     ("subsystems/asset-loader.html","Asset loader",                 "subsystems/asset-loader",    "subsystems/asset-loader.html"),
     ("subsystems/script-vm.html",  "Field / event script VM",       "subsystems/script-vm",       "subsystems/script-vm.html"),
+    ("subsystems/script-vm-internals.html","Script VM: internals",  "subsystems/script-vm-internals","subsystems/script-vm-internals.html"),
     ("subsystems/field-locomotion.html","Field locomotion",          "subsystems/field-locomotion","subsystems/field-locomotion.html"),
     ("subsystems/actor-vm.html",   "Actor / sprite VM",             "subsystems/actor-vm",        "subsystems/actor-vm.html"),
     ("subsystems/move-vm.html",    "Move-table VM",                 "subsystems/move-vm",         "subsystems/move-vm.html"),

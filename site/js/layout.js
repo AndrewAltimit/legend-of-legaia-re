@@ -101,6 +101,7 @@ const NAV = [
       { href: 'subsystems/asset-loader.html',   text: 'Asset loader',             key: 'subsystems/asset-loader' },
       // Runtime VMs
       { href: 'subsystems/script-vm.html',      text: 'Field / event VM',         key: 'subsystems/script-vm' },
+      { href: 'subsystems/script-vm-internals.html', text: 'Script VM: internals', key: 'subsystems/script-vm-internals', indent: true },
       { href: 'subsystems/field-locomotion.html', text: 'Field locomotion',       key: 'subsystems/field-locomotion' },
       { href: 'subsystems/actor-vm.html',       text: 'Actor / sprite VM',        key: 'subsystems/actor-vm' },
       { href: 'subsystems/move-vm.html',        text: 'Move-table VM',            key: 'subsystems/move-vm' },

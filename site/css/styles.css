@@ -3618,10 +3618,13 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
    .steps          - an HTML pipeline (ol > li > b + span) that wraps into a
                      vertical list on a phone; prefer it over SVG for a plain
                      linear sequence.
+                     Add .steps-vertical for long procedures.
    .byte-map       - an HTML record / sector layout: one .bm-cell per field,
                      style="--w:N" = its width in bytes (relative flex grow),
                      children .bm-off (offset), .bm-name, .bm-size. Add
-                     .bm-accent / .bm-dim / .bm-pad to a cell to tint it. */
+                     .bm-accent / .bm-dim / .bm-pad to a cell to tint it.
+   .dg-note        - muted caption line under a byte-map or table.
+   On phones a figure.diagram scrolls inside its frame; .dg-fit opts out. */
 figure.diagram {
   margin: 1.5rem 0;
   border: 1px solid var(--border);
@@ -3715,6 +3718,13 @@ figure.diagram .dg-arrow path  { fill: var(--accent); }
 .byte-map .bm-off  { color: var(--text-dim); font-size: 0.68rem; }
 .byte-map .bm-name { color: var(--text-bright); overflow-wrap: anywhere; }
 .byte-map .bm-size { color: var(--text-muted); font-size: 0.68rem; }
+
+/* Long procedures: one step per row instead of a wrapping card strip. */
+.steps.steps-vertical { flex-direction: column; }
+.steps.steps-vertical > li { flex: none; }
+
+/* Muted one-line caption under a byte-map / table ("not to scale", units). */
+.dg-note { color: var(--text-dim); font-size: 0.8rem; margin: -0.75rem 0 1.25rem; }
 
 /* Tags never break mid-word inside narrow table cells. */
 td .tag, th .tag { white-space: nowrap; }
