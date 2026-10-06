@@ -1334,7 +1334,9 @@ impl<S: AudioSink> BootSession<S> {
             return;
         };
         for xa in &field_xa {
-            let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+            let fired = bgm
+                .play_xa_clip(xa.clip, xa.channel, xa.duration_sectors)
+                .is_some();
             log::debug!(
                 "field XA clip slot {} ch {} dur {} -> {}",
                 xa.clip,

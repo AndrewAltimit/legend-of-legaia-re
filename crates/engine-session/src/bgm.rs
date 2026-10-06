@@ -394,48 +394,69 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     /// delay. A request while a clip is sounding queues behind it (the
     /// mixer's back-to-back path). A `(slot, channel)` the bank does not
     /// hold is staged from the disc first when a lazy source is set
-    /// ([`Self::set_xa_lazy_source`]) - the cast voices' path. Returns
-    /// `false` when nothing is staged for the request.
+    /// ([`Self::set_xa_lazy_source`]) - the cast voices' path. Returns the
+    /// frames played, `None` when nothing is staged for the request.
     // REF: FUN_8003D53C
-    pub fn play_xa_clip(&mut self, clip_slot: u32, channel: u32, duration_sectors: u32) -> bool {
+    pub fn play_xa_clip(
+        &mut self,
+        clip_slot: u32,
+        channel: u32,
+        duration_sectors: u32,
+    ) -> Option<u32> {
         let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
-            return false;
+            return None;
         };
         let staged = self
             .xa_clip_bank
             .as_ref()
             .is_some_and(|b| b.is_staged(slot, ch));
         if !staged && !self.stage_xa_channel_lazily(slot, ch, duration_sectors) {
-            return false;
+            return None;
         }
-        let Some(bank) = self.xa_clip_bank.as_ref() else {
-            return false;
-        };
-        let Some(clip) = bank.clip(slot, ch) else {
-            return false;
-        };
-        let frames = bank
-            .cut_frames(slot, ch, duration_sectors)
-            .unwrap_or(0)
-            .max(1);
-        let take = if clip.stereo { frames * 2 } else { frames };
-        let pcm = clip.pcm[..take.min(clip.pcm.len())].to_vec();
-        if pcm.is_empty() {
-            return false;
-        }
+        let clip = self
+            .xa_clip_bank
+            .as_ref()?
+            .cut(slot, ch, duration_sectors)?;
+        let frames = (if clip.stereo {
+            clip.pcm.len() / 2
+        } else {
+            clip.pcm.len()
+        }) as u32;
         let channels = if clip.stereo {
             legaia_xa::Channels::Stereo
         } else {
             legaia_xa::Channels::Mono
         };
         self.audio.play_xa_shout(
-            pcm,
+            clip.pcm,
             clip.sample_rate,
             channels,
             0x4000,
             SHOUT_CD_RESPONSE_DELAY,
         );
-        true
+        Some(frames)
+    }
+
+    /// The arts-voice shout bank, once staged.
+    pub fn shout_bank(&self) -> Option<&ArtsShoutBank> {
+        self.shout_bank.as_ref()
+    }
+
+    /// The arts-voice shout bank, created empty on first use - for a host
+    /// that installs it file by file.
+    pub fn shout_bank_mut(&mut self) -> &mut ArtsShoutBank {
+        self.shout_bank.get_or_insert_with(ArtsShoutBank::new)
+    }
+
+    /// The CD-XA clip bank, once staged.
+    pub fn xa_clip_bank(&self) -> Option<&XaClipBank> {
+        self.xa_clip_bank.as_ref()
+    }
+
+    /// The CD-XA clip bank, created empty on first use - for a host that
+    /// installs it file by file or span by span.
+    pub fn xa_clip_bank_mut(&mut self) -> &mut XaClipBank {
+        self.xa_clip_bank.get_or_insert_with(XaClipBank::new)
     }
 
     /// Set the audio duck's target as a percentage of the reference level

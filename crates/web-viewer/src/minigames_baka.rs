@@ -936,9 +936,7 @@ impl LegaiaMinigames {
     /// the retail read span, through the XA path the play page's clips take.
     /// Silent when the line did not stage or audio is off.
     pub(crate) fn play_baka_xa(&mut self, xa: legaia_engine_core::baka_fighter_chrome::XaCue) {
-        let Some(pcm) =
-            crate::play_xa::cut_clip(&self.baka_xa, xa.clip, xa.chan, u32::from(xa.dur))
-        else {
+        let Some(pcm) = self.baka_xa.cut(xa.clip, xa.chan, u32::from(xa.dur)) else {
             return;
         };
         self.baka_xa_fired = self.baka_xa_fired.wrapping_add(1);

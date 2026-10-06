@@ -111,7 +111,9 @@ impl PlayWindowApp {
         let duck_ref = self.session.host.world.audio.levels.configured_level;
         if let Some(bgm) = self.session.bgm.as_mut() {
             for xa in &xa_cues {
-                let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+                let fired = bgm
+                    .play_xa_clip(xa.clip, xa.channel, xa.duration_sectors)
+                    .is_some();
                 log::debug!(
                     "battle XA clip slot {} ch {} dur {} -> {}",
                     xa.clip,

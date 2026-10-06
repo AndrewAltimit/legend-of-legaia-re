@@ -359,6 +359,14 @@ impl LegaiaRuntime {
             let mut d = PageDirector::new(sink);
             d.set_sfx_bank(self.sfx.bank.clone());
             d.set_sfx_cue_slots(self.sfx.cue_slots.clone());
+            // The XA lane's banks, installed from the disc before the
+            // director existed, become the director's.
+            if let Some(b) = self.sfx.xa.shout_bank.take() {
+                d.set_shout_bank(b);
+            }
+            if let Some(b) = self.sfx.xa.clip_bank.take() {
+                d.set_xa_clip_bank(b);
+            }
             self.scene_host.set_director(Some(d));
             self.sfx.resident_staged = false;
         }

@@ -714,7 +714,9 @@ impl PlayWindowApp {
         if let Some(xa) = frame.xa
             && let Some(bgm) = self.session.bgm.as_mut()
         {
-            let fired = bgm.play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur));
+            let fired = bgm
+                .play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur))
+                .is_some();
             log::debug!(
                 "baka chrome: announcer XA clip {} chan {} ({}) -> {}",
                 xa.clip,
@@ -1443,11 +1445,13 @@ impl PlayWindowApp {
         if let Some(c) = frame.xa
             && let Some(bgm) = self.session.bgm.as_mut()
         {
-            let fired = bgm.play_xa_clip(
-                u32::from(c.clip),
-                u32::from(c.channel),
-                u32::from(c.duration_sectors),
-            );
+            let fired = bgm
+                .play_xa_clip(
+                    u32::from(c.clip),
+                    u32::from(c.channel),
+                    u32::from(c.duration_sectors),
+                )
+                .is_some();
             log::debug!(
                 "dome hub XA clip slot {} ch {} dur {} -> {}",
                 c.clip,

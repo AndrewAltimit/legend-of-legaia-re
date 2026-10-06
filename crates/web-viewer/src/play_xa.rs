@@ -33,12 +33,16 @@
 //!   [`XaClipBank`] keyed `(slot, channel)` - the raw space the retail clip
 //!   starter `FUN_8003D53C(clip_slot, channel, duration_sectors)` takes.
 //!
-//! Both play through `WebAudioOut::play_xa_shout`, the same
-//! `StreamResampler` staging the native cpal path uses: the modelled
-//! CD-response start delay ([`SHOUT_CD_RESPONSE_DELAY`]) so the voice trails
-//! the animation, the one-deep back-to-back queue, and a mix point **before**
-//! the page's post-mixer gain, so a shout sits against the music at the same
-//! ratio as under the native window.
+//! Both banks belong to the page's audio director once it exists (the native
+//! window's `AudioBgmDirector`), and both play through its `play_art_shout` /
+//! `play_xa_clip` - the native calls, over the page's output: the modelled
+//! CD-response start delay so the voice trails the animation, the one-deep
+//! back-to-back queue, and a mix point **before** the page's post-mixer gain,
+//! so a shout sits against the music at the same ratio as under the native
+//! window. What this lane keeps is the page's side: installing the files the
+//! page slices off its disc bytes (the banks live here until a director
+//! takes them), the deferred span staging a cast voice rides, and the
+//! readout's counters.
 //!
 //! REF: FUN_8004C140 (arts-voice cue selector), FUN_8003D53C (CD-XA clip
 //! starter both banks stand in for).
@@ -47,7 +51,7 @@ use crate::runtime::LegaiaRuntime;
 use legaia_art::arts_voice::{ArtsVoiceTable, clip_file};
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
-use legaia_engine_audio::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip, XaClip, XaClipBank};
+use legaia_engine_audio::{ArtsShoutBank, ShoutClip, XaClip, XaClipBank};
 use legaia_xa::demux::{
     AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET, parse_subheader,
 };
@@ -80,6 +84,7 @@ pub(crate) const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[
 ];
 
 /// Unity XA gain (Q1.14), what both native XA players pass.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub(crate) const XA_GAIN_UNITY: u16 = 0x4000;
 
 /// Trailing samples under this magnitude are channel-padding silence, trimmed
@@ -300,29 +305,26 @@ impl LegaiaRuntime {
     /// channel, or `None` when the bank is absent or the art is unvoiced.
     /// Off wasm the resolution runs and is counted; nothing sounds.
     pub(crate) fn play_art_shout(&mut self, cslot: u8, action: u8) -> Option<u8> {
-        let Some(bank) = self.sfx.xa.shout_bank.as_mut() else {
-            self.sfx.xa.shouts_unvoiced += 1;
-            return None;
+        // Through the director once one exists (it keys the mixer); before
+        // that the lane's own bank resolves the pick and nothing sounds.
+        let fired = match self.scene_host.director_mut() {
+            Some(d) => d.play_art_shout(cslot, action),
+            None => self
+                .sfx
+                .xa
+                .shout_bank
+                .as_mut()
+                .and_then(|b| b.shout(cslot, action))
+                .map(|(channel, _)| channel),
         };
-        let Some((channel, clip)) = bank.shout(cslot, action) else {
-            self.sfx.xa.shouts_unvoiced += 1;
-            return None;
-        };
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
-            out.play_xa_shout(
-                clip.pcm.clone(),
-                clip.sample_rate,
-                legaia_xa::Channels::Mono,
-                XA_GAIN_UNITY,
-                SHOUT_CD_RESPONSE_DELAY,
-            );
+        match fired {
+            Some(channel) => {
+                self.sfx.xa.shouts_fired += 1;
+                self.sfx.xa.last_shout = Some((cslot, action, channel));
+            }
+            None => self.sfx.xa.shouts_unvoiced += 1,
         }
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = (clip, XA_GAIN_UNITY, SHOUT_CD_RESPONSE_DELAY);
-        self.sfx.xa.shouts_fired += 1;
-        self.sfx.xa.last_shout = Some((cslot, action, channel));
-        Some(channel)
+        fired
     }
 
     /// Play one CD-XA clip request - the engine's `FUN_8003D53C(clip,
@@ -349,12 +351,9 @@ impl LegaiaRuntime {
             self.sfx.xa.clips_unstaged += 1;
             return false;
         };
-        let Some(pcm) = self
-            .sfx
-            .xa
-            .clip_bank
-            .as_ref()
-            .and_then(|b| cut_clip(b, slot, ch, duration_sectors))
+        let Some(cut) = self
+            .xa_clip_bank()
+            .and_then(|b| b.cut(slot, ch, duration_sectors))
         else {
             if self.defer_xa_clip(slot, ch, duration_sectors, true) {
                 self.sfx.xa.clips_deferred += 1;
@@ -363,29 +362,55 @@ impl LegaiaRuntime {
             }
             return false;
         };
-        let frames = (if pcm.stereo {
-            pcm.pcm.len() / 2
+        let frames = (if cut.stereo {
+            cut.pcm.len() / 2
         } else {
-            pcm.pcm.len()
+            cut.pcm.len()
         }) as u32;
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
-            let channels = if pcm.stereo {
-                legaia_xa::Channels::Stereo
-            } else {
-                legaia_xa::Channels::Mono
-            };
-            out.play_xa_shout(
-                pcm.pcm,
-                pcm.sample_rate,
-                channels,
-                XA_GAIN_UNITY,
-                SHOUT_CD_RESPONSE_DELAY,
-            );
+        // The director cuts and plays the same span; before one exists the
+        // request is counted and nothing sounds.
+        if let Some(d) = self.scene_host.director_mut() {
+            let _ = d.play_xa_clip(clip_slot, channel, duration_sectors);
         }
         self.sfx.xa.clips_fired += 1;
         self.sfx.xa.last_clip = Some((slot, ch, frames));
         true
+    }
+
+    /// The shout bank: the director's once one exists, the lane's own before.
+    pub(crate) fn xa_shout_bank(&self) -> Option<&ArtsShoutBank> {
+        match self.scene_host.director() {
+            Some(d) => d.shout_bank(),
+            None => self.sfx.xa.shout_bank.as_ref(),
+        }
+    }
+
+    /// The shout bank, created empty on first use.
+    fn xa_shout_bank_mut(&mut self) -> &mut ArtsShoutBank {
+        match self.scene_host.director_mut() {
+            Some(d) => d.shout_bank_mut(),
+            None => self
+                .sfx
+                .xa
+                .shout_bank
+                .get_or_insert_with(ArtsShoutBank::new),
+        }
+    }
+
+    /// The clip bank: the director's once one exists, the lane's own before.
+    pub(crate) fn xa_clip_bank(&self) -> Option<&XaClipBank> {
+        match self.scene_host.director() {
+            Some(d) => d.xa_clip_bank(),
+            None => self.sfx.xa.clip_bank.as_ref(),
+        }
+    }
+
+    /// The clip bank, created empty on first use.
+    fn xa_clip_bank_mut(&mut self) -> &mut XaClipBank {
+        match self.scene_host.director_mut() {
+            Some(d) => d.xa_clip_bank_mut(),
+            None => self.sfx.xa.clip_bank.get_or_insert_with(XaClipBank::new),
+        }
     }
 }
 
@@ -402,11 +427,8 @@ impl LegaiaRuntime {
             return;
         };
         let held = self
-            .sfx
-            .xa
-            .clip_bank
-            .as_ref()
-            .is_some_and(|b| cut_clip(b, slot, ch, duration_sectors).is_some());
+            .xa_clip_bank()
+            .is_some_and(|b| b.cut(slot, ch, duration_sectors).is_some());
         if !held {
             self.defer_xa_clip(slot, ch, duration_sectors, false);
         }
@@ -510,10 +532,7 @@ impl LegaiaRuntime {
             self.sfx.xa.clips_unstaged += 1;
             return false;
         };
-        self.sfx
-            .xa
-            .clip_bank
-            .get_or_insert_with(XaClipBank::new)
+        self.xa_clip_bank_mut()
             .insert_lazy(req.slot, ch, clip, width);
         self.sfx.xa.lazy_installed += 1;
         if req.replay {
@@ -521,28 +540,6 @@ impl LegaiaRuntime {
         }
         true
     }
-}
-
-/// The staged clip cut at the retail read span, or `None` when it is not
-/// in the bank / cuts to nothing.
-pub(crate) fn cut_clip(
-    bank: &XaClipBank,
-    slot: u8,
-    ch: u8,
-    duration_sectors: u32,
-) -> Option<XaClip> {
-    let clip = bank.clip(slot, ch)?;
-    let frames = bank
-        .cut_frames(slot, ch, duration_sectors)
-        .unwrap_or(0)
-        .max(1);
-    let take = if clip.stereo { frames * 2 } else { frames };
-    let pcm = clip.pcm[..take.min(clip.pcm.len())].to_vec();
-    (!pcm.is_empty()).then_some(XaClip {
-        pcm,
-        sample_rate: clip.sample_rate,
-        stereo: clip.stereo,
-    })
 }
 
 #[wasm_bindgen]
@@ -594,11 +591,7 @@ impl LegaiaRuntime {
                         .collect()
                 })
                 .unwrap_or_default();
-            let bank = self
-                .sfx
-                .xa
-                .shout_bank
-                .get_or_insert_with(ArtsShoutBank::new);
+            let bank = self.xa_shout_bank_mut();
             let n = clips.len() as u32;
             for (ch, clip) in clips {
                 bank.insert_clip(cslot, ch, clip);
@@ -614,7 +607,7 @@ impl LegaiaRuntime {
             if clips.is_empty() {
                 return false;
             }
-            let bank = self.sfx.xa.clip_bank.get_or_insert_with(XaClipBank::new);
+            let bank = self.xa_clip_bank_mut();
             bank.set_channel_count(*slot, width);
             let n = clips.len() as u32;
             for (ch, clip) in clips {
@@ -648,8 +641,8 @@ impl LegaiaRuntime {
         serde_json::json!({
             "wanted": wanted_files(),
             "installed": xa.installed,
-            "shout_bank": xa.shout_bank.as_ref().is_some_and(|b| b.has_clips()),
-            "clip_bank": xa.clip_bank.as_ref().is_some_and(|b| b.has_clips()),
+            "shout_bank": self.xa_shout_bank().is_some_and(|b| b.has_clips()),
+            "clip_bank": self.xa_clip_bank().is_some_and(|b| b.has_clips()),
             "voice_tables": self.arts_voice_table().is_some(),
             "shouts_fired": xa.shouts_fired,
             "shouts_unvoiced": xa.shouts_unvoiced,
@@ -675,7 +668,7 @@ impl LegaiaRuntime {
         let (Ok(cslot), Ok(action)) = (u8::try_from(cslot), u8::try_from(action)) else {
             return 0;
         };
-        let Some(mut bank) = self.sfx.xa.shout_bank.clone() else {
+        let Some(mut bank) = self.xa_shout_bank().cloned() else {
             return 0;
         };
         bank.shout(cslot, action)
@@ -696,11 +689,8 @@ impl LegaiaRuntime {
         let (Ok(slot), Ok(ch)) = (u8::try_from(slot), u8::try_from(channel)) else {
             return 0;
         };
-        self.sfx
-            .xa
-            .clip_bank
-            .as_ref()
-            .and_then(|b| cut_clip(b, slot, ch, duration_sectors))
+        self.xa_clip_bank()
+            .and_then(|b| b.cut(slot, ch, duration_sectors))
             .map(|c| {
                 (if c.stereo {
                     c.pcm.len() / 2
@@ -872,7 +862,7 @@ mod tests {
         assert_eq!(rt.sfx.xa.lazy_installed, 1);
         assert_eq!(rt.sfx.xa.clips_fired, 1, "the deferred request replayed");
         assert_eq!(rt.sfx.xa.last_clip.map(|(s, c, _)| (s, c)), Some((6, 4)));
-        let bank = rt.sfx.xa.clip_bank.as_ref().unwrap();
+        let bank = rt.xa_clip_bank().unwrap();
         assert!(bank.is_staged(6, 4));
         assert_eq!(bank.channel_count(6), 8);
         // Staged now: the next request plays at once.
