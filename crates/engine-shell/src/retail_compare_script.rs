@@ -55,6 +55,10 @@ pub struct RetailScript {
     pub op: u8,
     /// The record's first [`RECORD_HEAD_LEN`] bytes from its script start.
     pub head: Vec<u8>,
+    /// The system flags the record latched on its way to the PC
+    /// ([`run_latches`] over the record's own bytes in RAM): set after the
+    /// scene entry ran, so they are not what that entry saw.
+    pub latches: Vec<u16>,
 }
 
 /// The field-script observables of one retail state.
@@ -66,6 +70,10 @@ pub struct RetailScripts {
     /// Display frames left on a live camera-mover glide, when one is in
     /// flight (duration `+0x9E` less progress `+0x9C`).
     pub glide_left: Option<i32>,
+    /// How many vsyncs the displayed frame is older than the RAM
+    /// ([`crate::retail_compare_battle::display_lag_vsyncs`]): the field
+    /// double-buffers the same way the battle does.
+    pub display_lag: u16,
 }
 
 fn in_ram(p: u32) -> bool {
@@ -97,7 +105,10 @@ impl RetailScripts {
     /// Read the field contexts of a retail state's RAM.
     pub fn from_ram(ram: &[u8]) -> Self {
         let player = game_anchors::player_ptr(ram);
-        let mut out = Self::default();
+        let mut out = Self {
+            display_lag: crate::retail_compare_battle::display_lag_vsyncs(ram),
+            ..Self::default()
+        };
         for node in actor_nodes(ram) {
             let tick = game_anchors::u32_at(ram, node + 0x0C);
             let flags = game_anchors::u32_at(ram, node + 0x10);
@@ -126,6 +137,9 @@ impl RetailScripts {
                 wait: game_anchors::i16_at(ram, node + 0x54),
                 op: game_anchors::u8_at(ram, base.wrapping_add(pc as u32)),
                 head,
+                latches: bytes_at(ram, base, pc + 1)
+                    .map(|body| run_latches(&body, pc))
+                    .unwrap_or_default(),
             });
         }
         out
@@ -272,6 +286,20 @@ impl ScriptGate {
             glide_left: scripts.glide_left,
             retire_watch: std::cell::Cell::new((false, false)),
         })
+    }
+
+    /// The gate the capture's **displayed frame** sits at: [`Self::from_retail`]
+    /// with the wait taken back by the display lag. The RAM channels are
+    /// sampled on the RAM's phase; the frame on the TV is two game frames
+    /// older. `minigame_dance_pcsx` is parked `21` vsyncs into the `0x4A`
+    /// after a subtractive white walk-in (`34 01 FF FF FF 1E`, `27` vsyncs
+    /// after the eighth a white blend-2 target loses) on a step-`3` frame:
+    /// gated on the RAM's wait the engine frame was darkened six vsyncs past
+    /// the one retail shows.
+    pub fn displayed_from_retail(scripts: &RetailScripts) -> Option<Self> {
+        let mut g = Self::from_retail(scripts)?;
+        g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
+        Some(g)
     }
 
     /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>]` -
@@ -850,12 +878,25 @@ mod tests {
         w16(&mut ram, rec + 0x54, 48);
         w32(&mut ram, rec + 0x90, rec_base);
         w16(&mut ram, rec + 0x9E, 7);
-        ram[(rec_base & 0x1F_FFFF) as usize + 7] = 0x4A;
+        // `koin3` P2[6]'s run onto its last wait: `55 9C`, `51 34`, then a
+        // `4A` the PC is parked on.
+        let body = (rec_base & 0x1F_FFFF) as usize;
+        ram[body..body + 7].copy_from_slice(&[0x55, 0x9C, 0x51, 0x34, 0x4A, 0x1E, 0x00]);
+        ram[body + 7] = 0x4A;
         ram[(sys_base & 0x1F_FFFF) as usize] = 0x24;
         let s = RetailScripts::from_ram(&ram);
         assert_eq!(s.running.len(), 1);
         let r = &s.running[0];
         assert_eq!((r.flat_index, r.pc, r.wait, r.op), (13, 7, 48, 0x4A));
+        assert_eq!(r.latches, vec![0x59C, 0x134]);
+        // A non-adaptive step (mode word clear) is one vsync a frame, so the
+        // displayed frame is two vsyncs into the wait behind the RAM.
+        assert_eq!(s.display_lag, 2);
+        assert_eq!(ScriptGate::from_retail(&s).map(|g| g.wait), Some(48));
+        assert_eq!(
+            ScriptGate::displayed_from_retail(&s).map(|g| g.wait),
+            Some(46)
+        );
         // A disengaged context is not running.
         w32(&mut ram, rec + 0x10, 0);
         assert!(RetailScripts::from_ram(&ram).running.is_empty());

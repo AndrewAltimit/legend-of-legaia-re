@@ -505,6 +505,39 @@ pub(crate) fn hold_slot_table(session: &mut BootSession, retail: &RetailObs) {
 }
 
 impl RetailObs {
+    /// The save the seed lands: the lifted save with the gate record's own
+    /// run latches cleared ([`crate::retail_compare_script::run_latches`]).
+    ///
+    /// Retail's record set those flags after the scene entry ran, so the
+    /// entry never saw them; a card load runs the entry over the whole save
+    /// and an entry that tests one takes the arm retail did not.
+    /// `minigame_dance_pcsx` is caught on `koin3` `P2[6]` two ops past
+    /// `55 9C`, the flag the entry (`P1[0]` `+0x178`) reads as "back from
+    /// the dance floor": seeded with it up, the entry cleared it and spawned
+    /// the judging record `P2[9]` over the frame. The comparand is
+    /// [`Self::save`] unchanged.
+    pub fn seed_save(&self) -> Option<legaia_save::SaveFile> {
+        let mut save = self.save.clone()?;
+        if self.menu.is_none() && matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            for &idx in self
+                .scripts
+                .running
+                .first()
+                .map(|s| s.latches.as_slice())
+                .unwrap_or(&[])
+            {
+                if let Some(b) = save
+                    .ext
+                    .story_flag_bits
+                    .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
+                {
+                    *b &= !(0x80u8 >> (idx & 7));
+                }
+            }
+        }
+        Some(save)
+    }
+
     /// Name the state by the scene it is **running**, not the one a door has
     /// queued. A walked crossing writes the destination label to
     /// `0x8007050C` with the scene-change packet, frames before the field
@@ -663,8 +696,7 @@ pub fn run_engine_with(
     session.host.world.toggles.use_vm_dialogue = true;
     let opts = FieldLiveOpts::default();
     let save = retail
-        .save
-        .clone()
+        .seed_save()
         .context("retail state has no liftable save window")?;
     match order {
         // The engine's own card-load path: land the save's scene, then hydrate.
@@ -1485,7 +1517,7 @@ fn run_one(
         opts.engine_exe,
         &retail.frame,
         retail.player,
-        retail.save.as_ref(),
+        retail.seed_save().as_ref(),
     ) {
         (Some(exe), Some(rf), seat, Some(save))
             if matches!(retail.menu, Some(Ok(_)))
@@ -1511,7 +1543,7 @@ fn run_one(
             // framed at that phase too: the child runs the same gate and
             // captures the frame it holds, with the deadline as its bound.
             let gate = engine.script.filter(|p| p.met_at.is_some()).and(
-                crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts),
+                crate::retail_compare_script::ScriptGate::displayed_from_retail(&retail.scripts),
             );
             let frame = match gate {
                 Some(g) => {

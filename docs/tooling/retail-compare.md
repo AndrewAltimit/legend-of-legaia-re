@@ -239,6 +239,20 @@ frame. The run has a deadline of 9000 ticks; a gate it never
 meets keeps the settle-window sample, and the `script` detail says which
 it was.
 
+The frame is gated two game frames earlier than the RAM. The field
+double-buffers exactly as the battle does
+([below](#replayed-casts)): the display scans out the frame built two
+frames before the one the RAM holds, so the image child's gate takes
+`2 * step` vsyncs off the retail wait (`ScriptGate::displayed_from_retail`,
+the step rebuilt from the frame-duration history). The state channels keep
+the RAM's wait. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
+after `34 01 FF FF FF 1E`, a subtractive white walk-in (`27` vsyncs once a
+white blend-`2` target loses its eighth), on a step-`3` frame; gated on the
+RAM's wait the engine frame was darkened six vsyncs further than the one
+on screen, and on the displayed wait the lit dancers match retail's to a
+grey level. `rikuroa_post_caruban`'s Genesis tree, mid-morph six vsyncs into
+a wait, had grown past the sapling retail shows.
+
 A capture parked on the PC right after a record's `0x3F` scene change is
 inside the departing scene's transition hold: the record spins on its
 `26 FF FF` tail while the streaming actor (`FUN_8001FD44`) holds the old
@@ -267,7 +281,14 @@ started from:
   `P1[21]` sets `0x5C1` at `+0x7A` and tests it at `+0x76`; replayed with it
   up, the record went straight to the Queen Bee fight, past the shot
   `rim_elm_queen_bee_battle` is captured on. Engagement clears the same
-  latches. A record the scene's
+  latches. They are also taken out of the save the seed lands
+  (`RetailObs::seed_save`), so the scene entry never sees them: the
+  record set them after that entry ran. `koin3` `P2[6]` sets `0x59C` two
+  ops before the wait `minigame_dance_pcsx` is parked on, and the entry
+  `P1[0]` reads that flag as "back from the dance floor" (`+0x178`): seeded
+  with it up, the entry cleared it and spawned the judging record `P2[9]`,
+  whose dialogue box sat over the frame. The comparand keeps the latches.
+  A record the scene's
   own script **spawns** (op `0x44`) may be scored by the spawning arm rather
   than by itself: `rikuroa`'s `P1[0]` starts `2025` and spawns `44 5C`
   (`P2[50]`, the post-Caruban record) behind its `0x289` test, a marker
@@ -1380,13 +1401,25 @@ centre at `(6144, 13248)`, the four dancers present) and the frame reads as
 "dancers placed wrong". It is script progress, not placement; the retail
 frame is also partway into the load fade.
 
-The settled engine frame also holds the record's dialog box over a scene the
-screen push has darkened, where retail's frame is lit and boxless. The engine
-draws that push under the box, the order retail's ordering table gives a
-kind-2/8 push (`FUN_80024EE4` links at bucket `a0`, the MES glyphs at bucket
-1 - [cutscene](../subsystems/cutscene.md)); an engine that washed every push
-over its text drew a near-black frame here, which the block metric scored
-above the box. The gap is the script's timing, not the wash.
+The box an earlier engine frame held over the darkened scene was not this
+record's. Record 6 sets `0x59C` just before the wait the state is parked on,
+and the entry script reads that flag as the return from the dance floor; a
+card load over the captured flags spawned the judging record `P2[9]` ("Now
+for the judges' decision."). The seed now lands the save without the
+record's own latches ([above](#mid-script-states)). The push itself is drawn
+under any box, the order retail's ordering table gives a kind-2/8 push
+(`FUN_80024EE4` links at bucket `a0`, the MES glyphs at bucket 1 -
+[cutscene](../subsystems/cutscene.md)), and is framed at the displayed wait.
+
+What still parts the frames is the stage. Retail's back wall is black but
+for a single large figure where the engine draws the three framed poster
+panels (placed objects, lit to their baked colours), its floor glows green
+under a yellow beam where the engine's tiles are unlit, and its VRAM holds
+a band of sprite strips at `(448..512, 256..500)` and a block at
+`(384..448, 128..256)` that the scene's own targeted upload does not write
+(`vram-oracle --tiles`; every texture page the upload does write matches
+retail exactly). That is the hall's state while the contest is staged, not
+anything the card-load entry reaches.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
