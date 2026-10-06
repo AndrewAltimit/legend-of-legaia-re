@@ -50,10 +50,13 @@ tick.)
 
 ## Opcodes
 
-The 13 jump-table slots (`0x801CED70`) decode to: open-at-home, open-at
-packed position, style-byte write, close, global tick, motion-word clear,
-slide-to, and a close/re-open/slide-back composite; slots `0x07` and
-`0x0B..=0x0D` fall through as no-ops. Full opcode table + Rust port:
+The 13 jump-table slots (`0x801CED70`) decode to: open and slide home
+(`0x01`), open and slide to a packed position (`0x02`), style-byte write
+(`0x03`), begin-close (`0x04`), close-all (`0x05`), motion-word clear
+(`0x06`), immediate destroy (`0x08`), open and snap to a packed position or
+home (`0x09`), and a destroy / re-create / snap-back-in-place composite
+(`0x0A`); slots `0x07` and `0x0B..=0x0D` fall through as no-ops (helper
+names as in the overview above, read off the arms at `0x801D66A8..0x801D6850`). Full opcode table + Rust port:
 `crates/engine-vm/src/lib.rs`.
 
 ## Where the programs live
