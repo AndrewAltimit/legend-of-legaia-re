@@ -5294,6 +5294,25 @@ fn beside(session: &BootSession, tile: (i16, i16)) -> Vec<(i16, i16)> {
     let claimed = claimed_tiles(session);
     let (px, pz) = player_xz(session);
     let me = dispatch_tile(px, pz);
+    // A side whose shared edge with the band is a wall goes last: `taiku`'s
+    // P2[15] (16, 28) lies in a corridor whose west wall the open collision
+    // outside runs along, and the band is reached up the corridor, never
+    // across the wall. The test is the locomotion's own leading-edge probe
+    // (`FUN_801CFE4C`) swept over the half tile from the side's centre to the
+    // shared edge. Its corner probes also catch the side walls of a one-tile
+    // passage, so a walled side is demoted, not dropped.
+    let w = &session.host.world;
+    let walled = |from: (i16, i16)| {
+        let (ax, az) = tile_center(from);
+        let (sx, sz) = (tile.0 - from.0, tile.1 - from.1);
+        let dir = match (sx, sz) {
+            (0, -1) => 0,
+            (-1, 0) => 1,
+            (0, 1) => 2,
+            _ => 3,
+        };
+        (0..=4).any(|k| w.field_dir_blocked(ax + sx * 16 * k, az + sz * 16 * k, dir))
+    };
     let mut out: Vec<(i16, i16)> = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)]
         .iter()
         .map(|&(dx, dz)| (tile.0 + dx, tile.1 + dz))
@@ -5301,7 +5320,12 @@ fn beside(session: &BootSession, tile: (i16, i16)) -> Vec<(i16, i16)> {
             (0..128).contains(&x) && (0..128).contains(&z) && !claimed.contains(&(x as u8, z as u8))
         })
         .collect();
-    out.sort_by_key(|t| (i32::from(t.0) - me.0).abs() + (i32::from(t.1) - me.1).abs());
+    out.sort_by_key(|&t| {
+        (
+            w.mode == SceneMode::Field && walled(t),
+            (i32::from(t.0) - me.0).abs() + (i32::from(t.1) - me.1).abs(),
+        )
+    });
     out
 }
 
@@ -5321,9 +5345,39 @@ fn pad_step_onto(session: &mut BootSession, tile: (u8, u8)) -> Result<Walk, Stri
             }
         }
         let onto = pad_avoid(session, Some(goal));
-        return pad_walk(session, goal, &onto, 0);
+        match pad_walk(session, goal, &onto, 0) {
+            Err(e) if !on_tile(session, goal) => {
+                last = e;
+                break;
+            }
+            r => return r,
+        }
+    }
+    // No side reaches it: a teleport whose landing is the band is a tile
+    // change onto it too. `taiku`'s exit band P2[15] (16, 28) sits in a
+    // walled corridor whose only way in is the pad at (84, 59).
+    let mut sources: Vec<(i16, i16)> = teleports(session)
+        .iter()
+        .filter(|&(_, &c)| tile_of(cell_center(c).0, cell_center(c).1) == goal)
+        .map(|(&(x, z), _)| (x as i16, z as i16))
+        .collect();
+    sources.sort_unstable();
+    for src in sources {
+        let onto = pad_avoid(session, Some(src));
+        match pad_walk(session, src, &onto, 0) {
+            Ok(Walk::Entered(s)) => return Ok(Walk::Entered(s)),
+            Ok(Walk::Arrived) => return Ok(Walk::Arrived),
+            Err(_) if on_tile(session, goal) => return Ok(Walk::Arrived),
+            Err(e) => last = format!("{last}; by the teleport at {src:?}: {e}"),
+        }
     }
     Err(format!("pad step onto {tile:?}: {last}"))
+}
+
+/// Whether the player stands on `tile`'s dispatch tile.
+fn on_tile(session: &BootSession, tile: (i16, i16)) -> bool {
+    let (x, z) = player_xz(session);
+    dispatch_tile(x, z) == (i32::from(tile.0), i32::from(tile.1))
 }
 
 // ---------------------------------------------------------------------------
