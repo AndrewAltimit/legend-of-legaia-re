@@ -258,14 +258,18 @@ Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger
   when that opcode is `0x25` it runs the record from there inline through
   `FUN_8003CF7C` (`0x801E2800..0x801E2820`) - the same op-until-`0x21` slice the
   scene-entry install gives a placement. The spawn section's story-flag dispatch
-  therefore runs again: `nilboa` `P2[17]`'s Fire Ravine arm sends the two
+  therefore runs again: `nilboa` `P2[17]`'s Fire Ravine arm (and `P2[27]`,
+  the walk-on band at the boulder room's north and south mouths) sends the two
   boulders (`P1[13]` / `P1[14]`) home with `CC 27 C3` / `CC 28 C3`, and their
   spawn sections, finding `0x457` set, move them straight back to where they
-  were pushed. The port's `apply_script_table_teleport` writes the position and
-  leaves the rebase and the re-run out: modelled as a slice re-run once the
-  channel set returns, it re-seats the whole `rayman` cast after the `P2[6]`
-  village beat, and the walk-on door to `tunnelb` (`P2[16]`) then no longer
-  fires on the seated route.
+  were pushed. The port does both halves: `apply_script_table_teleport`
+  writes the position and the resets, and the host's
+  `rerun_spawn_section` runs the `0x25` slice on the re-seated context with
+  the scene-entry pre-run's semantics (a seat op seats that actor, never the
+  player). `rayman` `P2[17]` re-seats the whole village cast this way after
+  each of the quake beats, so the gate guard (`P1[18]`) goes back to his
+  post beside the `tunnelb` door and, once `0x1FC` is up, steps aside to
+  `(13, 44)`; that last re-seat is spawned by `P2[19]`'s closing `44 7A`.
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
   Nothing else in retail writes or clears the table, so it survives scene loads; the port keeps it as `FieldVmState::slot_table`.

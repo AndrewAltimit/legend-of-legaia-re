@@ -25,6 +25,11 @@ pub struct FieldVmState {
     /// semantics (an initial SEAT written through the channel ctx) without
     /// touching the live free-roam / cutscene behaviour of the same op.
     pub entry_prerun: bool,
+    /// `true` while an op-`4C C3` re-seat is re-running its target's spawn
+    /// section (retail `FUN_8003CF7C` inside the `*(_DAT_801C6EA4) + 8 = 1`
+    /// bracket at `0x801E2810..0x801E282C`). Guards a section that re-seats
+    /// itself from recursing.
+    pub respawn_rerun: bool,
     /// Live eased-move records (field-VM op `0x43` sub-9 with a non-zero
     /// tick count, retail template `0x801F2840` / tick `FUN_801DD4C4`), each
     /// paired with the actor whose position triple it writes.
@@ -181,6 +186,7 @@ impl FieldVmState {
             mode_flags: 0,
             submode_context: [0; 10],
             entry_prerun: false,
+            respawn_rerun: false,
             eased_moves: Vec::new(),
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
             helper_contexts: Vec::new(),

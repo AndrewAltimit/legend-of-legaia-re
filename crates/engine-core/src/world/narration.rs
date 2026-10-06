@@ -2295,8 +2295,15 @@ impl World {
                     && !glide_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
+                    // By the op's own width: the flag tests are two bytes
+                    // (three extended), but a `0x4C` park is not always -
+                    // `4C D2 <ch>` is three, and stepping it by two read its
+                    // channel byte as the next opcode (`rayman` `P2[19]`'s
+                    // `4C D2 53 .. 4C D2 59` run then lost the `44 7A` that
+                    // re-seats the village after the quake).
                     let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
-                    next_pc = pc + header_size + 1;
+                    next_pc = legaia_asset::field_disasm::decode(&tl.bytecode, pc)
+                        .map_or(pc + header_size + 1, |insn| pc + insn.size);
                     stop = false;
                 }
                 // Natural termination: the record's choreography **wrapped**.

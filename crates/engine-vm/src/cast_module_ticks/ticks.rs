@@ -271,10 +271,26 @@ pub fn summon_effect_tick_b(ctx: &mut CastModuleCtx, victim: &mut CastActorState
     })
 }
 
+/// PROT 0958's last chained arm: once its countdown at `0x801F8BF8..
+/// 0x801F8C04` runs out it stores `0xFF` to the phase (`addiu v0,zero,0xff;
+/// sb v0,0x0(s6)`, `s6 = ctx + 0x279`, at `0x801F8CB0..0x801F8CB8`) instead
+/// of advancing it.
+pub const BLAZING_SLASH_LAST_ARM: u8 = 25;
+/// PROT 0958's terminal arm, table slot `0xFF` (`0x801F8CBC`): it clears the
+/// return register (`sw zero,0x28(sp)` at `0x801F8CF4`), the module's one
+/// Done.
+pub const BLAZING_SLASH_TERMINAL_ARM: u8 = 0xFF;
+
 /// PROT 0958 (Blazing Slash, Gi Delilas) tick body.
 ///
-/// 256 phase arms behind `sltiu v1, 0x100` through the table filling file
-/// `0x0..0x400` (default arm `0x801F8CFC`). Six `FUN_801DD6B4` sites, powers
+/// The table filling file `0x0..0x400` has 256 slots behind `sltiu v1,
+/// 0x100`, but only arms `0..=25` and `0xFF` are real; the other 229 slots
+/// point at the default exit `0x801F8CFC`, which returns Busy without
+/// advancing. Arm 25 jumps the phase to [`BLAZING_SLASH_TERMINAL_ARM`], and
+/// that arm is the Done. The bound is the full byte range, so the phase can
+/// never fall past it: a body that only advanced spun the phase through the
+/// wrap forever and held state `0x70` with it (Gi Delilas' cast in
+/// `nilboa`'s Three Tunnels). Six `FUN_801DD6B4` sites, powers
 /// [`BLAZING_SLASH_POWERS`], each followed by the shape-A clamp against
 /// `actor_table[0]` - the seat-0 hardcode the module docs name.
 ///
@@ -290,7 +306,11 @@ pub fn blazing_slash_tick(
     victim: &mut CastActorState,
     hit: Option<(usize, i32)>,
 ) -> CastTickStep {
-    run_tick(ctx, 0x100, |_| {
+    if ctx.phase == BLAZING_SLASH_TERMINAL_ARM {
+        return CastTickStep::Done;
+    }
+    let last = ctx.phase == BLAZING_SLASH_LAST_ARM;
+    let step = run_tick(ctx, 0x100, |_| {
         if let Some((site, roll)) = hit
             && site < BLAZING_SLASH_POWERS.len()
         {
@@ -299,7 +319,11 @@ pub fn blazing_slash_tick(
             stage_clip(victim, knockdown);
         }
         false
-    })
+    });
+    if last {
+        ctx.phase = BLAZING_SLASH_TERMINAL_ARM;
+    }
+    step
 }
 
 /// PROT 0945 (Water Column) tick body.

@@ -45,6 +45,14 @@ from outside the image - see [the entry tables](#the-entry-tables-and-where-the-
 | PROT 959 | `0x3000` B | 6-entry head table (`0x801F8290, 82C4, 8478, 850C, 8600, 878C`), its own **stager** dispatcher at `0x801F8250` | `0x801F87F4` | `0x801F69F0` = file `+0x18`, 6240 B |
 | PROT 960 | `0x2800` B | none - code at file `+0` | `0x801F8638` | `0x801F74E4` (`0x7B` Plasma Strike, 4436 B) / `0x801F69D8` (`0xA6` Neo Star Slash, 2828 B) |
 
+958's 256 slots hold only 27 arms: `0..=25` and `0xFF` (`0x801F8CBC`); the
+other 229 point at the default exit, which returns busy without advancing.
+Arm 25, once its countdown runs out, stores `0xFF` to the phase
+(`0x801F8CB0..0x801F8CB8`), and arm `0xFF` clears the return register
+(`sw zero,0x28(sp)` at `0x801F8CF4`) - the module's one Done. The bound
+`sltiu 0x100` covers the whole byte, so a port that only advanced the phase
+spun it through the wrap and held state `0x70` forever.
+
 Two figures in that table **correct** earlier entries here. 958's tick body is
 file `+0x400` (the first word past the head table), not `+0x4C4` - `0x801F6E9C`
 is 0xC4 bytes INTERIOR to it, inside the register-save block. 959's was given as

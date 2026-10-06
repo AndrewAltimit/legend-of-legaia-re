@@ -16,6 +16,14 @@ use crate::world::vm_hosts::apply_script_table_teleport;
 /// buffer. Partition 0 is empty, so a context's flat `+0x50` id equals its
 /// placement index.
 fn man_bytes_with_placement_records(headers: &[[u8; 4]]) -> Vec<u8> {
+    let records: Vec<([u8; 4], Vec<u8>)> = headers.iter().map(|h| (*h, vec![0x21])).collect();
+    man_bytes_with_scripted_records(&records)
+}
+
+/// [`man_bytes_with_placement_records`] with each record's script body (the
+/// bytes after the placement header) given.
+fn man_bytes_with_scripted_records(records: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
+    let headers: Vec<[u8; 4]> = records.iter().map(|r| r.0).collect();
     let mut man = vec![0u8; 0x2B + headers.len() * 3];
     // Partition counts at +0x22: N0 = 0, N1 = record count, N2 = 0.
     man[0x24] = headers.len() as u8;
@@ -28,7 +36,7 @@ fn man_bytes_with_placement_records(headers: &[[u8; 4]]) -> Vec<u8> {
         bodies.push(0x01); // N = 1 local pair
         bodies.extend_from_slice(&[0xAA, 0xBB]); // the local pair
         bodies.extend_from_slice(h); // 4-byte placement header
-        bodies.push(0x21); // halt opcode (pc0 = 1 + 2 + 4 = 7)
+        bodies.extend_from_slice(&records[i].1); // script body (pc0 = 1 + 2 + 4 = 7)
     }
     // u24_at_28: the section chain starts right after the record bodies.
     let sec_off = bodies.len() as u32;
@@ -141,4 +149,48 @@ fn field_vm_op_4c_c3_teleports_through_the_host() {
     let r = vm::field::step(&mut host, &mut ctx, &code, 0);
     assert!(matches!(r, FieldStepResult::Advance { next_pc: 2 }));
     assert_eq!(ctx.world_x, 0x777);
+}
+
+/// The `0x25` spawn section re-runs after the re-seat (`0x801E2800..
+/// 0x801E282C`, `FUN_8003CF7C`): a section that seats its actor elsewhere
+/// (here a bare `0x23` MoveTo) leaves it there, not on the header tile, and
+/// the slice stops at its `0x21` - the move after it never runs.
+#[test]
+fn a_0x25_spawn_section_reruns_after_the_reseat() {
+    let man = man_bytes_with_scripted_records(&[(
+        [0x00, 0, 0x03, 0x04],
+        vec![0x25, 0x23, 0x05, 0x06, 0x21, 0x23, 0x07, 0x07, 0x21],
+    )]);
+    let mut world = World::new();
+    world.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    let mut ctx = FieldCtx::default();
+    let code = [0x4C, 0xC3, 0x00];
+    let mut host = FieldHostImpl { world: &mut world };
+    let r = vm::field::step(&mut host, &mut ctx, &code, 0);
+    assert!(matches!(r, FieldStepResult::Advance { next_pc: 2 }));
+    assert_eq!(
+        (ctx.world_x, ctx.world_z),
+        (5 * 0x80 + 0x40, 6 * 0x80 + 0x40)
+    );
+    assert!(!world.field_vm.entry_prerun && !world.field_vm.respawn_rerun);
+}
+
+/// Only a `0x25` first opcode re-runs (`li v0,0x25; bne v1,v0` at
+/// `0x801E2804..0x801E2808`); a `0x24` record keeps the header seat.
+#[test]
+fn a_record_opening_on_0x24_is_not_rerun() {
+    let man = man_bytes_with_scripted_records(&[(
+        [0x00, 0, 0x03, 0x04],
+        vec![0x24, 0x23, 0x05, 0x06, 0x21],
+    )]);
+    let mut world = World::new();
+    world.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    let mut ctx = FieldCtx::default();
+    let code = [0x4C, 0xC3, 0x00];
+    let mut host = FieldHostImpl { world: &mut world };
+    let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    assert_eq!(
+        (ctx.world_x, ctx.world_z),
+        (3 * 0x80 + 0x40, 4 * 0x80 + 0x40)
+    );
 }
