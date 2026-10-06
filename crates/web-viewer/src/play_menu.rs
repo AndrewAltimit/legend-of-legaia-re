@@ -661,7 +661,9 @@ impl LegaiaRuntime {
         // not at the next tick's reconcile - the same call
         // `BootSession::close_field_menu` makes, so the two hosts hold the
         // same word in the frames between the close and the next tick.
-        self.mode_seat.adopt_scene_mode(menu.resume_mode);
+        self.scene_host
+            .seat_mut()
+            .adopt_scene_mode(menu.resume_mode);
     }
 
     /// Whether a Start edge would open the pause menu right now:

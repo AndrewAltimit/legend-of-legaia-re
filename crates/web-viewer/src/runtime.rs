@@ -134,15 +134,6 @@ pub struct LegaiaRuntime {
     /// voice bank, a `MOV/MV*.STR` movie) out of the bytes it still holds
     /// without the runtime keeping a second 700 MB copy.
     pub(crate) disc_files: Vec<crate::disc::FileEntry>,
-    /// The port's seat at the retail mode table (`_DAT_8007B83C`) - the same
-    /// `legaia_engine_core::mode::ModeSeat` `engine-shell`'s `BootSession`
-    /// holds. This host used to run its whole front end without a mode word,
-    /// so the two hosts could not be compared on it and only one of them
-    /// could take the battle-intro hand-off edge. Reconciled once per
-    /// [`Self::tick_frame`] through [`Self::tick_mode_seat`], which calls the
-    /// same two seat entry points the native session calls, so neither host
-    /// owns a copy of the rule.
-    pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
@@ -410,7 +401,6 @@ impl LegaiaRuntime {
             minigame_ui: Default::default(),
             battle_vram: Default::default(),
             disc_files: Vec::new(),
-            mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
@@ -1468,9 +1458,9 @@ impl LegaiaRuntime {
     pub fn mode_state_json(&self) -> String {
         serde_json::json!({
             "word": self.mode_word(),
-            "name": self.mode_seat.mode_name(),
-            "entry_word": self.mode_seat.entry_word(),
-            "edges": self.mode_seat.edges(),
+            "name": self.scene_host.seat().mode_name(),
+            "entry_word": self.scene_host.seat().entry_word(),
+            "edges": self.scene_host.seat().edges(),
         })
         .to_string()
     }
@@ -1497,30 +1487,18 @@ impl LegaiaRuntime {
     /// battle-intro hold, so a browser encounter takes the mode edge at the
     /// end of the spin exactly as the native window does.
     pub(crate) fn tick_mode_seat(&mut self) {
-        // `world_mut` picks the scene host's world once a disc is loaded, so
-        // the seat follows the same world every other tick step does. The
-        // seat is moved out for the duration because both calls want a
-        // `&mut World` off `self`.
-        let mut seat = std::mem::replace(
-            &mut self.mode_seat,
-            legaia_engine_core::mode::ModeSeat::new_at_boot(),
-        );
-        {
-            let world = self.world_mut();
-            let _ = seat.frame(world);
-        }
-        {
-            let world = self.world_mut();
-            let _ = seat.adopt_world_mode(world);
-        }
-        self.mode_seat = seat;
+        // The seat follows the same world every other tick step does: the
+        // session's once a disc is loaded, the scaffold before.
+        let (world, seat) = self.scene_host.world_seat_mut(&mut self.world);
+        let _ = seat.frame(world);
+        let _ = seat.adopt_world_mode(world);
     }
 
     /// The live retail mode word (`_DAT_8007B83C`) - the 28-entry mode
     /// table's index, which is what the native mode-trace oracle samples off
     /// its own seat (`ModeSeat::game_mode`).
     pub(crate) fn mode_word(&self) -> u32 {
-        self.mode_seat.game_mode().as_index() as u32
+        self.scene_host.seat().game_mode().as_index() as u32
     }
 
     /// Enter an INIT mode **now**, against the active world - the browser's
@@ -1535,22 +1513,12 @@ impl LegaiaRuntime {
     /// what previously delivered the Start press that opened the pause menu to
     /// the menu as its own first input on this host and not on the native one.
     ///
-    /// The seat is moved out for the duration because [`Self::world_mut`] and
-    /// the seat are two `&mut` borrows off `self`.
     pub(crate) fn seat_enter(
         &mut self,
         mode: legaia_engine_core::mode::GameMode,
     ) -> Option<legaia_engine_core::mode::ModeInitPlan> {
-        let mut seat = std::mem::replace(
-            &mut self.mode_seat,
-            legaia_engine_core::mode::ModeSeat::new_at_boot(),
-        );
-        let plan = {
-            let world = self.world_mut();
-            seat.enter(mode, world)
-        };
-        self.mode_seat = seat;
-        plan
+        let (world, seat) = self.scene_host.world_seat_mut(&mut self.world);
+        seat.enter(mode, world)
     }
 
     /// The pause menu's open juncture: retail opens the menu by writing the
@@ -1560,7 +1528,7 @@ impl LegaiaRuntime {
     ///
     /// Twin of `BootSession::open_field_menu`'s own pair of calls.
     pub(crate) fn seat_open_card_menu(&mut self) {
-        self.mode_seat.request_card_mode();
+        self.scene_host.seat_mut().request_card_mode();
         let plan = self.seat_enter(legaia_engine_core::mode::GameMode::CardInit);
         debug_assert!(
             plan.is_none(),

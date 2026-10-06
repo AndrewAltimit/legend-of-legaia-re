@@ -9,7 +9,9 @@
 //! disjoint from the runtime's other fields.
 
 use legaia_engine_core::camera::Camera;
+use legaia_engine_core::mode::ModeSeat;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::world::World;
 use legaia_engine_session::BootConfig;
 
 /// The engine session the page runs, over the page's audio output.
@@ -24,17 +26,53 @@ pub(crate) type PageSession = legaia_engine_session::BootSession<crate::play_sfx
 /// (`BootSession::camera`, the one its tick drives); before a disc is loaded
 /// the slot holds it, so the page's camera exports answer from the first
 /// frame.
+///
+/// The mode seat follows the same rule: the port's seat at the retail mode
+/// table (`_DAT_8007B83C`) is the session's `BootSession::mode_seat` once one
+/// exists, and the slot's own before - the page runs its boot title against
+/// the scaffold world before any disc is loaded.
 pub(crate) struct HostSlot {
     session: Option<PageSession>,
     camera: Camera,
+    seat: ModeSeat,
 }
 
 impl HostSlot {
-    /// An empty slot holding `camera` until a session takes it.
+    /// An empty slot holding `camera` and a boot-time mode seat until a
+    /// session takes them.
     pub(crate) fn new(camera: Camera) -> Self {
         Self {
             session: None,
             camera,
+            seat: ModeSeat::new_at_boot(),
+        }
+    }
+
+    /// The mode seat.
+    pub(crate) fn seat(&self) -> &ModeSeat {
+        match self.session.as_ref() {
+            Some(s) => &s.mode_seat,
+            None => &self.seat,
+        }
+    }
+
+    /// The mode seat, mutably.
+    pub(crate) fn seat_mut(&mut self) -> &mut ModeSeat {
+        match self.session.as_mut() {
+            Some(s) => &mut s.mode_seat,
+            None => &mut self.seat,
+        }
+    }
+
+    /// The active world and the mode seat together: the session's world once
+    /// a disc is loaded, `scaffold` (the page's disc-free world) before.
+    pub(crate) fn world_seat_mut<'a>(
+        &'a mut self,
+        scaffold: &'a mut World,
+    ) -> (&'a mut World, &'a mut ModeSeat) {
+        match self.session.as_mut() {
+            Some(s) => (&mut s.host.world, &mut s.mode_seat),
+            None => (scaffold, &mut self.seat),
         }
     }
 
@@ -107,10 +145,13 @@ impl HostSlot {
         // The camera carries over: the page's framing knobs (yaw bias, follow
         // distance, the user's orbit / tilt / zoom) belong to the page, not
         // to the disc.
-        if let Some(old) = self.session.take() {
+        // So does the mode seat: the word the page's boot title left it on.
+        if let Some(mut old) = self.session.take() {
             self.camera = old.camera.clone();
+            self.seat = std::mem::replace(&mut old.mode_seat, ModeSeat::new_at_boot());
         }
         session.camera = std::mem::replace(&mut self.camera, Camera::new());
+        session.mode_seat = std::mem::replace(&mut self.seat, ModeSeat::new_at_boot());
         session.set_host_drains_queues(true);
         session.set_host_owns_pause_menu(true);
         session.set_host_stages_field_xa(true);

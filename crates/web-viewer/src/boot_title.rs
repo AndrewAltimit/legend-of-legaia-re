@@ -13,7 +13,7 @@
 //! **The mode word is held here too.** `engine-shell`'s `BootSession` holds
 //! the port's seat at the retail mode table (`engine-core::mode::ModeSeat`)
 //! and carries `_DAT_8007B83C` through the boot chain; this page holds one on
-//! [`LegaiaRuntime`] (`mode_seat`), reconciled once per frame by
+//! [`LegaiaRuntime`] (its host slot's `seat()`), reconciled once per frame by
 //! `LegaiaRuntime::tick_mode_seat` through the same two seat entry points -
 //! so the battle-intro mode hand-off and the mode-change edge land on the same
 //! frame on both hosts, and the page can report the word
