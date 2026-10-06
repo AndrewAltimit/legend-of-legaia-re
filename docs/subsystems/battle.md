@@ -4322,6 +4322,16 @@ active-actor bar takes over, the panels do not stop drawing - they move to
 `y = 230`, below the 228-line display window, the same park row the arts
 input screen uses ([`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned)).
 
+Inside an action the panels come back up in one place only: the item band's
+`0x3E` arm, for a party-wide target. Its opener (`t2 == 8` at `0x801E404C`
+raises records 6, `0x4E` and `0x4F` and leaves `6` for the Done hold's close)
+is reached from a single branch at `0x801E3E88`, off the arm's
+non-gauge-extend path; the action seed `0x0C` opens record 7 for a member
+target and nothing else. So a party-wide magic cast keeps them parked -
+`orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`, and
+its frame shows the scene where the panels would sit - and `battle_hud::battle_panels_visible` raises them for a party-wide item from
+`0x3E` through `0x51`.
+
 ### The per-phase rule - what the sub-draw script builds
 
 Retail's battle HUD is not drawn per frame. It is a list of retained text

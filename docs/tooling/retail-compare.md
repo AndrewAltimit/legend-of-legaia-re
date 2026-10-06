@@ -1441,7 +1441,12 @@ is checkable even where the pose is not. Two seeding limits follow.
   the lag. The engine runs a fixed step `2`, so on a step-`3` capture it shows
   the lag retail did not have. Seeding retail's step into the engine clock
   would change every actor's cadence, not only the camera, so the corpus
-  keeps it as a seeding limit.
+  keeps it as a seeding limit. On `theeder_summon_mid_cast` the lag is most
+  of what the `image` channel reads: the close-up's eye sits `76` units
+  further back (TR z `2392` against `2316`), so the caster draws smaller and
+  higher, and the monster seated between the camera and the caster - a
+  near-camera ghost on both sides (`+0x08 = 0x83000000`, `B + F/4`) - spans
+  more of the frame.
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`

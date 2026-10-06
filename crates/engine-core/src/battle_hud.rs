@@ -1551,15 +1551,29 @@ pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String
     }
 }
 
+/// The first action state past the item band's panels: the Done band's
+/// `0x51` hold sends them off as its countdown runs out (`ctx[+0x18] = 6`
+/// read back at `0x801E6178..0x801E61B0`), so they are up through `0x51`.
+const ITEM_PANELS_CLOSE_STATE: u8 = 0x52;
+
 /// Are the resting roster panels (records 6 / 78 / 79) on screen this
 /// frame?
 ///
 /// Up at the round prompt (step 0), parked by the ring (step 1, mode 1),
 /// **back up** while the item or magic window is browsed (steps 5 and 7),
-/// parked again for their target steps (`0x12` / `0x1B`), and raised by the
-/// action seed for a party-wide target (`0x801E404C`: `t2 == 8` opens 6,
-/// `0x4E` and `0x4F` and leaves `ctx[+0x18] = 6` for the `0x51` close).
-/// Absent from every other action capture.
+/// parked again for their target steps (`0x12` / `0x1B`), and raised in an
+/// action only by the **item** band's `0x3E` arm for a party-wide target.
+///
+/// The opener (`0x801E404C`: `t2 == 8` opens 6, `0x4E` and `0x4F` and leaves
+/// `ctx[+0x18] = 6` for the `0x51` close) is reached from one branch,
+/// `bne v1,v0,0x801E401C` at `0x801E3E88`, inside state `0x3E` - the arm
+/// that waits for the item clip to settle (`0x801E3E14..0x801E3E28`), retires
+/// HUD actor `0x21` and sends the move name `0x4C` off - and only off its
+/// non-gauge-extend path. The action seed `0x0C` opens record 7 for a
+/// member target and nothing else (`0x801E2F24..0x801E2F50`), so a magic
+/// cast on the whole party raises no panels: `orb_summon_mid_cast` holds
+/// `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`, and its frame shows the
+/// scene where the panels would sit.
 pub fn battle_panels_visible(world: &crate::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
@@ -1567,19 +1581,18 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
             battle_command_surface(world),
             Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)
         ),
-        // The `t2 == 8` arm sits on the `0x0C` seed, which the attack and
-        // magic arms reach; an item or spirit action pre-arms through
-        // `0x3C` instead and opens the bar for its actor, never the panels.
+        // The `t2 == 8` arm sits in the item band's `0x3E` (see above); the
+        // panels stay up from there until the Done band's `0x51` hold ends.
         BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => false,
         BattleHudPhase::Action => world
             .actors
             .get(world.battle_ctx.active_actor as usize)
             .is_some_and(|a| {
-                use legaia_engine_vm::battle_action::ActionCategory;
-                let cat = a.battle.action_category;
+                use legaia_engine_vm::battle_action::{ActionCategory, ActionState};
+                let s = world.battle_ctx.action_state;
                 a.battle.active_target == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE
-                    && cat != ActionCategory::Item.as_byte()
-                    && cat != ActionCategory::Spirit.as_byte()
+                    && a.battle.action_category == ActionCategory::Item.as_byte()
+                    && (ActionState::SpiritFire as u8..ITEM_PANELS_CLOSE_STATE).contains(&s)
             }),
         BattleHudPhase::Idle => false,
     }
@@ -3706,7 +3719,7 @@ mod tests {
     }
 
     #[test]
-    fn a_party_item_shows_the_actor_bar_and_a_party_wide_cast_shows_the_panels() {
+    fn a_party_item_shows_the_actor_bar_and_a_party_wide_item_shows_the_panels() {
         use legaia_engine_vm::battle_action::ActionCategory;
         use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
         let mut w = battle_world(2);
@@ -3718,11 +3731,21 @@ mod tests {
         );
         assert!(!battle_panels_visible(&w));
         arm_action(&mut w, 1, ActionCategory::Item.as_byte(), TARGET_PARTY_WIDE);
+        w.battle_ctx.action_state = 0x3C;
         assert!(
             !battle_panels_visible(&w),
-            "a party-wide item pre-arms through 0x3C"
+            "a party-wide item pre-arms through 0x3C without the panels"
         );
         assert_eq!(battle_readout_bar_slot(&w), Some(1));
+        w.battle_ctx.action_state = 0x3E;
+        assert!(
+            battle_panels_visible(&w),
+            "the item band's 0x3E arm raises all the panels"
+        );
+        w.battle_ctx.action_state = 0x51;
+        assert!(battle_panels_visible(&w), "up through the Done hold");
+        w.battle_ctx.action_state = 0x52;
+        assert!(!battle_panels_visible(&w), "the Done hold closed them");
         arm_action(
             &mut w,
             1,
@@ -3730,8 +3753,8 @@ mod tests {
             TARGET_PARTY_WIDE,
         );
         assert!(
-            battle_panels_visible(&w),
-            "a party-wide cast raises all the panels"
+            !battle_panels_visible(&w),
+            "the magic seed opens no panels (orb_summon_mid_cast)"
         );
         assert_eq!(battle_readout_bar_slot(&w), None);
     }
