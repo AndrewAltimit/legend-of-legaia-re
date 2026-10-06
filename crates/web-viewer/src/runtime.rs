@@ -947,73 +947,63 @@ impl LegaiaRuntime {
         // The same for a score hand-off armed alongside it: with no entry to
         // run it, it runs now, over the scene still open.
         self.run_pending_bgm_handoff();
-        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
+        // The audio director exists before the session ticks (off wasm it is
+        // built on first use; on wasm once audio is up), so the session's
+        // field SFX routing has it to route into.
+        let _ = self.audio_director();
+        let Some(session) = self.scene_host.session_mut() else {
             self.world.tick();
             return Ok(String::new());
         };
+        // The naming prompt is modal: the field is frozen under it, and the
+        // page's overlay steps it (`play_name_entry`). A catch-up tick that
+        // lands while it is up runs nothing, so no stray pad edge reaches
+        // the prompt through the session's own name-entry arm.
+        if session.host.world.name_entry_active() {
+            return Ok(String::new());
+        }
         // A movie owns the frame. The native window freezes every world tick
-        // under one (`run_ticks = 0` while its decoder handle is live) and
-        // this host did not, so a cutscene's field VM, actors, effect pool
-        // and clocks all kept running behind the picture - and the world
-        // arrived at the far side of a 40-second movie 2400 ticks ahead of
-        // where the native window leaves it. The FMV service below still
-        // runs: it is what advances the picture and ends the cutscene.
+        // under one (`run_ticks = 0` while its decoder handle is live), and so
+        // does this host: under a movie the session does not tick. The FMV
+        // service below still runs: it is what advances the picture and ends
+        // the cutscene.
         let movie_held = self.fmv.armed_for().is_some();
         let event = if movie_held {
             SceneTickEvent::Stepped
         } else {
-            // The camera's half before the world tick, in the native
-            // session's order (`frame_step::camera_before_world_tick`): the
-            // azimuth this tick's locomotion reads is published before it
-            // runs. This host used to publish it after the tick, so the d-pad
-            // remap ran one tick behind the camera.
-            legaia_engine_core::frame_step::camera_before_world_tick(
-                camera,
-                &mut host.world,
-                self.camera_azimuth_override.take(),
-            );
-            host.tick()
+            // The native session's frame (`BootSession::tick`): the mode
+            // seat's frame, the camera's half before the world tick (with the
+            // page's own azimuth), the world tick, the tick's BGM events, the
+            // camera's half after it, the SFX queue dropped on a door, the
+            // field SFX routing, and the mode word adopted. The page owns the
+            // pause menu, the field CD-XA lane and the per-tick queue drains,
+            // which the session was told at install.
+            session.camera_azimuth_override = self.camera_azimuth_override.take();
+            session
+                .tick()
                 .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?
         };
         // FMV beats: the movie path lives in [`crate::play_fmv`]; it hands
-        // back the scene label when the post-movie hand-off entered one.
+        // back the scene label when the post-movie hand-off entered one (the
+        // session's hand-off, which resets the camera globals and drops the
+        // SFX queue as a door does).
         let fmv_handoff_scene = self.service_cutscene_fmv();
         // ...and the rest of the frame tail is the world's, so it freezes
-        // with the scene tick. The native window runs zero sim ticks while
-        // its movie plays, which skips every step below at once; this host
-        // only gated the scene tick, so under a movie the effect
-        // scene-graphs, the CLUT / VRAM effects, NPC clips, the camera and
-        // the SFX scheduler all kept running. A movie that ends this frame
-        // falls through, as it does natively (the finish is drained before
-        // the window counts its ticks).
+        // with the scene tick. A movie that ends this frame falls through, as
+        // it does natively (the finish is drained before the window counts
+        // its ticks).
         if movie_held && fmv_handoff_scene.is_empty() && self.fmv.armed_for().is_some() {
             return Ok(String::new());
         }
-        // Audio in the native session's order (`BootSession::tick`): the
-        // tick's BGM events first, then - on a scene swap, a door or the
-        // post-movie hand-off - the SFX queue dropped, and only then this
-        // tick's ring ops replayed ([`Self::tick_sfx`], below). Clearing
-        // after the replay instead fired the new scene's zero-delay entry
-        // cues and dropped its delayed ones, and routing the BGM last placed
-        // a bank the SFX pass staged against the outgoing track.
-        let scene_swapped =
-            matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty();
-        self.route_bgm();
-        if scene_swapped {
-            self.on_scene_change_audio();
+        // A scene swap - a door or the post-movie hand-off - restarts the
+        // between-beat cutscene glide; the camera globals' reset is the
+        // session's.
+        if matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty() {
+            self.cutscene_glide.reset();
         }
         // Advance the world's play clock off the page's wall clock, the same
-        // delta-against-a-high-water-mark the native window runs. The `host`
-        // borrow is dead from here, so this can re-borrow.
+        // delta-against-a-high-water-mark the native window runs.
         self.tick_play_clock();
-        // The engine camera's half after the tick, in the native session's
-        // order (`BootSession::tick`): op-`0x45` event routing, then the
-        // per-frame globals advance. The post-FMV hand-off swaps the scene outside the field VM's
-        // transition op (no `SceneEntered`), and is a scene entry all the
-        // same: the camera globals reset on it too, as on a door.
-        self.tick_camera(
-            matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty(),
-        );
         // Effect scene-graphs, ticked exactly where the native window ticks
         // them: drain the two production spawn requests (a player Seru-magic
         // cast, and a non-summon move whose power record carries a spawnable
@@ -1057,10 +1047,6 @@ impl LegaiaRuntime {
         // Party wipe: raise the game-over panel on the `World::game_over`
         // edge, the same probe the native window's redraw loop runs.
         self.poll_game_over();
-        // Reconcile the retail mode word with wherever the scene session left
-        // the world - the browser twin of `BootSession::tick`'s own call, and
-        // the same kernel, so the battle-intro hold applies on both hosts.
-        self.tick_mode_seat();
         // Field party-status HUD countdown, ticked where the native window
         // ticks it (`FUN_801D0D38`); the draw pass reads the decision back.
         self.tick_field_party_hud();
@@ -1470,22 +1456,6 @@ impl LegaiaRuntime {
             Some(h) => &mut h.world,
             None => &mut self.world,
         }
-    }
-
-    /// Advance the mode seat one frame and reconcile it with the live world.
-    ///
-    /// Mirrors `BootSession::tick`: `ModeSeat::frame` takes any pending edge
-    /// (which is what clears `World::clock.frame_begin_skip` and performs retail's
-    /// transition-block bookkeeping), then `adopt_world_mode` moves the word
-    /// to wherever the scene session left the world - honouring the
-    /// battle-intro hold, so a browser encounter takes the mode edge at the
-    /// end of the spin exactly as the native window does.
-    pub(crate) fn tick_mode_seat(&mut self) {
-        // The seat follows the same world every other tick step does: the
-        // session's once a disc is loaded, the scaffold before.
-        let (world, seat) = self.scene_host.world_seat_mut(&mut self.world);
-        let _ = seat.frame(world);
-        let _ = seat.adopt_world_mode(world);
     }
 
     /// The live retail mode word (`_DAT_8007B83C`) - the 28-entry mode

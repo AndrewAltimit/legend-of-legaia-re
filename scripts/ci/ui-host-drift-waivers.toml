@@ -367,29 +367,55 @@ skips = [
 
 [[frame_arm]]
 host = "web"
-arm = "let Some((host, camera)) = self.scene_host.host_cam_mut() else"
+arm = "let Some(session) = self.scene_host.session_mut() else"
 reason = """
-No scene host: no disc has been loaded, or the page is on its boot title. The
-arm ticks the bare `World` and returns. Every kernel in the list reads scene
-state that does not exist yet, and the page's overlay draws the title / disc
-chooser rather than any of their outputs.
+No engine session: no disc has been loaded, or the page is on its boot title.
+The arm ticks the bare `World` and returns. Every kernel in the list reads
+scene state that does not exist yet, and the page's overlay draws the title /
+disc chooser rather than any of their outputs.
 """
 skips = [
     "drain_and_route_field_events_web",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
-    "route_bgm",
     "service_cutscene_fmv",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
-    "tick_camera",
     "tick_dev_menu",
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
-    "tick_mode_seat",
+    "tick_passive_hud",
+    "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
+]
+
+[[frame_arm]]
+host = "web"
+arm = "if session.host.world.name_entry_active()"
+reason = """
+The naming prompt is modal: the field is frozen under it, as it is natively
+(`BootSession::tick` steps only the prompt while it is up and returns). The
+page's overlay steps the prompt from its own frame path (`play_name_entry`),
+so a catch-up tick that lands while it is up runs nothing - no stray pad edge
+reaches the prompt, and nothing behind it advances.
+"""
+skips = [
+    "drain_and_route_field_events_web",
+    "drive_npc_clips",
+    "poll_field_shop",
+    "poll_game_over",
+    "service_cutscene_fmv",
+    "step_field_vram_fx",
+    "tick_battle_intro",
+    "tick_battle_presentation",
+    "tick_dev_menu",
+    "tick_field_party_hud",
+    "tick_fishing_banners",
+    "tick_minigame_ui",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -412,16 +438,13 @@ skips = [
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
-    "route_bgm",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
-    "tick_camera",
     "tick_dev_menu",
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
-    "tick_mode_seat",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -485,22 +508,20 @@ tick, so a stale decision cannot reach the screen. Any kernel added to
 treatment, and this row is where that is recorded.
 """
 skips = [
+    "audio_director",
     "drain_and_route_field_events_web",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
-    "route_bgm",
     "run_pending_bgm_handoff",
     "service_cutscene_fmv",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
-    "tick_camera",
     "tick_dev_menu",
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
-    "tick_mode_seat",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -604,12 +625,6 @@ reason = "The page's FMV beat service. The native window runs the same beat abov
 
 [[frame_kernel]]
 host = "web"
-kernel = "tick_camera"
-host_only = true
-reason = "The page drives the engine camera itself; the native window gets the same sequence inside `BootSession::tick`, which the page does not use."
-
-[[frame_kernel]]
-host = "web"
 kernel = "tick_world_effects"
 host_only = true
 reason = "One page-side wrapper over the effect steps the native loop spells out inline: the two spawn-request drains, then the shared `World::tick_effect_scene_graphs` kernel (summon / move-FX / field-FX) both hosts call."
@@ -634,21 +649,15 @@ reason = "The party-wipe probe. The native window runs the identical probe inlin
 
 [[frame_kernel]]
 host = "web"
-kernel = "tick_mode_seat"
-host_only = true
-reason = "Reconciles the retail mode word with the world's scene mode. The native window reaches the same `ModeSeat::adopt_world_mode` through `BootSession::tick`."
-
-[[frame_kernel]]
-host = "web"
 kernel = "tick_passive_hud"
 host_only = true
 reason = "The passive-ability badge column's projection. The page's draw pass has no camera and no `&mut self`, so the anchor is resolved on the tick and cached; the native window projects inside `passive_hud_draws`, which is handed the frame's camera matrix."
 
 [[frame_kernel]]
 host = "web"
-kernel = "route_bgm"
+kernel = "audio_director"
 host_only = true
-reason = "Routes the field VM's op-`0x35` BGM events into the page's `AudioBgmDirector` (the native one, over the WebAudio output). The native session routes the same events from `BootSession::tick`, outside its window's frame path."
+reason = "Builds the page's audio director on first use (off wasm; on wasm once the user has enabled sound) and stages its resident banks, so the session's tick has a director to route into. The native session opens its output and stages the same banks once, at boot (`BootSession::from_host`)."
 
 [[frame_kernel]]
 host = "web"

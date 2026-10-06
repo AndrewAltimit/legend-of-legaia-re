@@ -1354,7 +1354,9 @@ about these is contested.
 
 ### The frame loop rules are engine-side
 
-Each host owns its display loop (winit's redraw natively, `requestAnimationFrame` on the page), and each used to spell out the rules that turn display frames into ticks. Four of those rules are kernels in `engine-core::frame_step` now, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
+Both play hosts run one engine frame: `legaia_engine_session::BootSession::tick` - the mode seat's frame, the camera's half before the world tick, the world tick, the tick's BGM events, the camera's half after it, the SFX queue dropped on a door, the field SFX routing, and the mode word adopted. The browser page holds a `BootSession` over its own audio output and declares at install what it does itself (the pause menu, the field CD-XA lane, the per-tick queue drains).
+
+What remains host-side is each host's display loop (winit's redraw natively, `requestAnimationFrame` on the page) and the steps it runs around the session's tick. Four of the rules that turn display frames into ticks are kernels in `engine-core::frame_step`, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
 | Rule | Was | Kernel |
 |---|---|---|
@@ -3499,11 +3501,11 @@ kernel both hosts call, so the two cannot drift on it again.
   latch under it, so the scene's own start restarted the track. The call now
   arms the hand-off and the page's scene entry performs it after the save
   lands - the native enter, load, then stop and restore order.
-- **Door-tick order.** The page replayed the new scene's entry ring ops before
-  it cleared the SFX queue (zero-delay entry cues fired, delayed ones were
-  dropped) and routed the BGM last. It now routes the BGM after the scene
-  tick, clears on the swap, and only then replays the ring - the native
-  `BootSession::tick` order.
+- **Door-tick order.** Replaying the new scene's entry ring ops before the
+  SFX queue is cleared fires its zero-delay entry cues into the old queue and
+  drops its delayed ones, and routing the BGM last stages a bank against the
+  outgoing track. Both hosts now run `BootSession::tick`, which routes the BGM
+  after the scene tick, clears on the swap, and only then replays the ring.
 - **Late audio.** The page's output exists only after a user gesture, and
   every start routed before it was dropped; the scene stayed silent until its
   script started music again. `audio_init` now starts the world's current

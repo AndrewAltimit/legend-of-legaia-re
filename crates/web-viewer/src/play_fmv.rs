@@ -531,11 +531,11 @@ impl LegaiaRuntime {
         if self.fmv.armed_for() != Some((FmvOrigin::Cutscene, fmv_id)) {
             self.fmv_arm(fmv_id, FmvOrigin::Cutscene);
         }
-        let Some(host) = self.scene_host.host_mut() else {
+        let Some(session) = self.scene_host.session_mut() else {
             return fmv_handoff_scene;
         };
         // Retail's pad abort: the attract id only, on a face button / Select.
-        if skip_edge_from_input(fmv_id, &host.world.input) {
+        if skip_edge_from_input(fmv_id, &session.host.world.input) {
             self.fmv.request_finish();
         }
         let mut finished = false;
@@ -543,7 +543,7 @@ impl LegaiaRuntime {
             FmvPoll::Hold => {}
             FmvPoll::Finished { played } => {
                 finished = true;
-                host.world.finish_cutscene();
+                session.host.world.finish_cutscene();
                 if !played {
                     crate::console_log(&format!("cutscene: fmv_id={fmv_id} finished unplayed"));
                 }
@@ -553,8 +553,9 @@ impl LegaiaRuntime {
                 // without this left the page in the trigger scene - a
                 // different place from where the other two hosts land. Same
                 // shared kernel, same one-shot `World::take_finished_fmv`
-                // edge.
-                if let Some(outcome) = host.apply_pending_fmv_handoff() {
+                // edge. The session's hand-off also runs the scene swap's
+                // camera-globals reset and SFX-queue clear, as on a door.
+                if let Some(outcome) = session.apply_pending_fmv_handoff() {
                     if let legaia_engine_core::scene::FmvHandoffOutcome::Entered { scene, .. } =
                         &outcome
                     {

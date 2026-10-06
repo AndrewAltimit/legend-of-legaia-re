@@ -19,10 +19,14 @@ Both types are generic over the audio output. `engine-shell` names the
 native instantiations (`legaia_engine_shell::BootSession` =
 `BootSession<AudioOut>`).
 
-The browser play page holds an `AudioBgmDirector` over its WebAudio output
-(`crates/web-viewer/src/play_sfx.rs`), and the per-tick audio routing both
-hosts run is the director's own (`route_world_sfx`, `enqueue_battle_cues`,
-`tick_audio_frame`). It does not hold a `BootSession` yet: it still runs its
-own frame order (`crates/web-viewer/src/runtime.rs`). Moving it onto this
-crate is what retires the frame-order tiers of
-[`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md).
+Both play hosts run it. The browser play page holds a `BootSession` over its
+WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with
+`from_host` over the scene host it assembles in memory, and its `tick_frame`
+calls `BootSession::tick`. A host declares what it does itself:
+`set_host_drains_queues` (the per-tick presentation queues),
+`set_host_owns_pause_menu` (the Start edge and `field_menu`) and
+`set_host_stages_field_xa` (the field CD-XA queues, for a host with an
+asynchronous XA lane); an empty `BootConfig::scene` boots no scene, and
+`camera_azimuth_override` hands the next tick a host yaw. The per-tick audio
+routing is the director's own (`route_world_sfx`, `enqueue_battle_cues`,
+`tick_audio_frame`).

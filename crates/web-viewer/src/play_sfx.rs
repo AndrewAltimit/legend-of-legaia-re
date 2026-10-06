@@ -456,9 +456,10 @@ impl LegaiaRuntime {
         }
     }
 
-    /// One sim tick of the SFX channel: feed the footstep cadence, route the
-    /// world's field-side sources, then the director's frame tail - the duck
-    /// ramp and the scheduler / ring drain. Called from `tick_frame`.
+    /// One sim tick of the SFX channel: feed the footstep cadence, play the
+    /// field's CD-XA, then the director's frame tail - the duck ramp and the
+    /// scheduler / ring drain. Called from `tick_frame`, after the session's
+    /// tick has routed the world's field-side SFX sources.
     pub(crate) fn tick_sfx(&mut self) {
         // The cadence only runs in field-style modes; a suspended scene (menu,
         // minigame, cutscene) is not walking, and retail's field audio update
@@ -481,7 +482,7 @@ impl LegaiaRuntime {
                 self.enqueue_sfx(cue, 0);
             }
         }
-        self.route_field_sfx();
+        self.route_field_xa();
         // The duck rests on the world's configured level - a loaded save's
         // own - and ramps in every mode (the ramp back to full outlives the
         // battle).
@@ -500,43 +501,27 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Route this tick's field-side audio: the field's CD-XA one-shots first
-    /// (op `0x36`'s XA arm) on the page's XA lane, then the director's
-    /// `route_world_sfx` - ring ops, runtime rows, side-band and shared-region
-    /// residency, monster banks, voice stops and keys - the native session's
-    /// `route_field_sfx` order. With no director the producer queues are
-    /// dropped, as every unheard cue is.
-    // REF: FUN_80035B50, FUN_80035BAC, FUN_80035BD0
-    pub(crate) fn route_field_sfx(&mut self) {
+    /// Play this tick's field CD-XA on the page's XA lane: the scene's
+    /// prestage list (filled at scene load) staged ahead of the ops that will
+    /// ask for them - this page decodes a clip the bank lacks one request per
+    /// frame, and a line first asked for at its op sounded late - then the
+    /// field's one-shots (op `0x36`'s XA arm, the scripted-scene voice leg).
+    /// The rest of the field-side SFX routing is the session's
+    /// (`BootSession::tick` -> `AudioBgmDirector::route_world_sfx`); the page
+    /// was declared as staging field XA itself, so the session leaves these
+    /// two queues for it. The native window reads a clip's span synchronously
+    /// and drops the prestage list.
+    pub(crate) fn route_field_xa(&mut self) {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         let field_xa = host.world.drain_field_xa_cues();
-        // The scene's CD-XA prestage list (filled at scene load): staged
-        // ahead of the ops that will ask for them, since this page decodes a
-        // clip the bank lacks one request per frame and a line first asked
-        // for at its op sounded late. The native window reads the span
-        // synchronously and drops the list.
         let prestage = host.world.drain_field_xa_prestage();
         for xa in &prestage {
             self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
         }
         for xa in &field_xa {
             self.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
-        }
-        if self.audio_director().is_none() {
-            if let Some(host) = self.scene_host.host_mut() {
-                let w = &mut host.world;
-                let _ = (
-                    w.take_sfx_ring_ops(),
-                    w.take_sfx_voice_stops(),
-                    w.take_sfx_voice_keys(),
-                );
-            }
-            return;
-        }
-        if let Some((host, d)) = self.scene_host.host_director_mut() {
-            d.route_world_sfx(&mut host.world, &host.index);
         }
     }
 

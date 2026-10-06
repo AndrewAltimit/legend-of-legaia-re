@@ -24,28 +24,6 @@ use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
-    /// The engine camera's half after a world tick, in the native session's
-    /// order (`BootSession::tick`), through the shared kernel
-    /// ([`legaia_engine_core::frame_step::camera_after_world_tick`]): route
-    /// this tick's op-`0x45` events into the controller, advance the retail
-    /// globals, and on a scene entry reset them so a departing scene's shot
-    /// cannot leak its focus or eye depth into the next one (`FUN_80025C24`).
-    /// The half before the tick (free-roam reset + the compass azimuth) runs
-    /// in [`Self::tick_frame`] ahead of the scene tick.
-    pub(crate) fn tick_camera(&mut self, scene_entered: bool) {
-        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
-            return;
-        };
-        legaia_engine_core::frame_step::camera_after_world_tick(
-            camera,
-            &mut host.world,
-            scene_entered,
-        );
-        if scene_entered {
-            self.cutscene_glide.reset();
-        }
-    }
-
     /// Does a scripted shot own this frame's camera? The gate
     /// [`Self::resolve_camera_frame`] runs, without its side effects: that
     /// one advances the cutscene glide and drains the snap-beat bank, so an
