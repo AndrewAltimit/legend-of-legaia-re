@@ -361,7 +361,7 @@ a ladder, not wiring anything - and until one does, the row's reach verdict is
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
-audio device and no draw list; `crates/engine-shell/src/boot.rs` names neither
+audio device and no draw list; `crates/engine-session/src/boot.rs` names neither
 `engine-ui` nor `engine-render`. Under their union alone, four whole crates
 report **zero** executed regions - which is a fact about the harness, not the
 port, and it is what kept the largest NO-LADDER cluster on this page invisible

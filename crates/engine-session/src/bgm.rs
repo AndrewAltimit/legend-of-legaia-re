@@ -1,5 +1,7 @@
-//! Concrete [`legaia_engine_core::scene::BgmDirector`] adapter that drives a
-//! cpal-backed [`legaia_engine_audio::AudioOut`].
+//! The [`legaia_engine_core::scene::BgmDirector`] both hosts run: one director
+//! generic over the audio output ([`legaia_engine_audio::AudioSink`]) - the
+//! native cpal [`legaia_engine_audio::AudioOut`] or the browser's
+//! `WebAudioOut`.
 //!
 //! The director owns the audio output handle plus the active scene's
 //! [`legaia_engine_audio::VabBank`] (uploaded into the SPU at scene-load
@@ -16,7 +18,6 @@
 //! bytes and the active VAB is staged once per scene. This adapter is the
 //! join point.
 
-use legaia_engine_audio::AudioSink;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -24,8 +25,8 @@ use anyhow::{Context, Result};
 use legaia_asset::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_engine_audio::bgm_tail::{BgmTail, TailBorrow};
 use legaia_engine_audio::{
-    ArtsShoutBank, AudioOut, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank, SfxScheduler,
-    VabBank, XaClipBank,
+    ArtsShoutBank, AudioSink, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank,
+    SfxScheduler, VabBank, XaClipBank,
 };
 use legaia_engine_core::scene::BgmDirector;
 use legaia_engine_core::world::{SfxRingOp, SharedRegionBank, SideBandBank};
@@ -42,10 +43,10 @@ pub const RETAIL_MENU_CONFIRM_CUE: u16 = legaia_engine_core::menu_cues::MENU_CON
 pub const RETAIL_MENU_CANCEL_CUE: u16 = legaia_engine_core::menu_cues::MENU_CANCEL_CUE as u16;
 
 /// BGM director that routes [`BgmDirector`] events into a live
-/// [`AudioOut`]. The director holds a clone of the audio handle (cpal stream
+/// audio output ([`AudioSink`]). The director holds a clone of the audio handle (cpal stream
 /// is reference-counted internally via `Arc`) plus the active VAB bank.
-pub struct AudioBgmDirector {
-    audio: Arc<AudioOut>,
+pub struct AudioBgmDirector<S: AudioSink> {
+    audio: Arc<S>,
     bank: Option<VabBank>,
     /// Master volume forwarded to every freshly-attached sequencer. Engines
     /// bump this when the user adjusts the music slider.
@@ -252,8 +253,8 @@ pub fn read_xa_channel_span(
     XaLazySource::open(disc)?.channel_span(clip_slot, channel, duration_sectors)
 }
 
-impl AudioBgmDirector {
-    pub fn new(audio: Arc<AudioOut>) -> Self {
+impl<S: AudioSink> AudioBgmDirector<S> {
+    pub fn new(audio: Arc<S>) -> Self {
         Self {
             audio,
             bank: None,
@@ -274,7 +275,7 @@ impl AudioBgmDirector {
             runtime_sfx_bundle: Vec::new(),
             tail: BgmTail::default(),
             shared_region: None,
-            shared_region_base: crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES,
+            shared_region_base: legaia_engine_audio::spu_layout::SFX_REGION_BASE,
             resident_slot0: None,
             sfx_evicted: false,
         }
@@ -298,7 +299,7 @@ impl AudioBgmDirector {
     /// ([`SHOUT_CD_RESPONSE_DELAY`]), so the shout starts *after* the art
     /// animation that requested it - never before. A second shout while one
     /// is sounding queues behind it (the back-to-back no-drop path in
-    /// [`AudioOut::play_xa_shout`]). Returns the fired channel, or `None`
+    /// [`AudioSink::play_xa_shout`]). Returns the fired channel, or `None`
     /// when the bank is absent or the art is unvoiced.
     pub fn play_art_shout(&mut self, cslot: u8, action: u8) -> Option<u8> {
         let bank = self.shout_bank.as_mut()?;
@@ -765,7 +766,7 @@ impl AudioBgmDirector {
             return false;
         };
         let base = self.shared_region_base;
-        let room = crate::boot::SPU_RAM_BYTES.saturating_sub(base);
+        let room = legaia_engine_audio::spu_layout::SPU_RAM_BYTES.saturating_sub(base);
         let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
         if body_total > room {
             log::debug!(
@@ -1121,7 +1122,7 @@ impl AudioBgmDirector {
     }
 }
 
-impl BgmDirector for AudioBgmDirector {
+impl<S: AudioSink> BgmDirector for AudioBgmDirector<S> {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         // Suppress duplicate starts for the same BGM id - the field VM's
         // op 0x35 occasionally re-emits without a state change (we'd lose
@@ -1217,7 +1218,7 @@ impl BgmDirector for AudioBgmDirector {
 /// id past it) still falls back to [`FALLBACK_VAB_SLOT`] when that is staged.
 ///
 /// Free function rather than a method so it is testable without a cpal device
-/// (an [`AudioBgmDirector`] needs a live [`AudioOut`]).
+/// (an [`AudioBgmDirector`] needs a live audio output).
 pub(crate) fn resolve_sfx_slot<T>(
     cue_slots: &BTreeMap<u8, u8>,
     staged: &BTreeMap<u8, T>,
@@ -1282,7 +1283,7 @@ mod tests {
     #[test]
     fn director_has_no_deferred_start_slot() {
         fn assert_director<T: BgmDirector>() {}
-        assert_director::<AudioBgmDirector>();
+        assert_director::<AudioBgmDirector<legaia_engine_audio::AudioOut>>();
         let _ = empty_bank(); // touch path so unused-import lint stays clean
     }
 }

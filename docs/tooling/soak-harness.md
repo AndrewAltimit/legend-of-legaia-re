@@ -16,7 +16,7 @@ deterministically, reduced to the input that matters.
 ## The driver
 
 One run is `(scene, seed, frames)`. Each run opens a fresh
-[`BootSession`](../../crates/engine-shell/src/boot.rs), seeds the retail
+[`BootSession`](../../crates/engine-session/src/boot.rs), seeds the retail
 New Game party, mounts an empty two-port card rack, seeds the world RNG from
 the run seed, and enters the scene live (`enter_scene_live`) with the random
 encounter loop and player-driven battles armed. It then ticks `frames`

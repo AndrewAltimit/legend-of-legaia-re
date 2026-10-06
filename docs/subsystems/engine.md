@@ -102,7 +102,8 @@ engine-core   → engine-vm + the parser crates
 engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
-engine-shell  → engine-core, engine-vm, engine-render, engine-audio (+ parser crates, mednafen, pcsxr)
+engine-session → engine-core, engine-audio, engine-vm (+ parser crates)  (BootSession + BGM director; no wgpu / winit / cpal)
+engine-shell  → engine-session, engine-core, engine-vm, engine-render, engine-audio (+ parser crates, mednafen, pcsxr)
 asset-viewer  → engine-*, all parser crates
 ```
 

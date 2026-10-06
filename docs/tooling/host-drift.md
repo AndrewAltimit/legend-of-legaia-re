@@ -3275,7 +3275,7 @@ engine entry, `World::install_retail_progression_tables`, and
 `load_disc` against it.
 
 This one is gated: **tier 13** takes every `world.install_*` / `world.set_*`
-call in `crates/engine-shell/src/boot.rs` and requires a shipped
+call in `crates/engine-session/src/boot.rs` and requires a shipped
 `crates/web-viewer` source to call the same method, or a `[[boot_install]]`
 waiver in `ui-host-drift-waivers.toml`. Run over the old boot it fails on
 `install_magic_xp_thresholds` and `set_accessory_passives`. It cannot see the

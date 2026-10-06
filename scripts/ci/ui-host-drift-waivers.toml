@@ -700,7 +700,7 @@ reason = "The sub-step table in docs/tooling/host-drift.md is this row in long f
 
 # --- boot installs: a World table the native boot installs (tier 13) ---
 # `[[boot_install]]` rows name a `world.install_*` / `world.set_*` call in
-# crates/engine-shell/src/boot.rs that no shipped crates/web-viewer source
+# crates/engine-session/src/boot.rs that no shipped crates/web-viewer source
 # makes. A row goes stale (and fails) when the page starts calling it or the
 # native boot stops.
 

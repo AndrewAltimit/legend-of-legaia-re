@@ -260,6 +260,10 @@ HOSTS = {
     "native": [
         REPO / "crates" / "engine-shell" / "src",
         REPO / "crates" / "engine-render" / "src",
+        # The session (`BootSession`) and its BGM director: wgpu-free and built
+        # for both targets, but driven only by the native window until the
+        # page holds one too - then it joins `ENGINE_API_CRATES` instead.
+        REPO / "crates" / "engine-session" / "src",
     ],
     "web": [REPO / "crates" / "web-viewer" / "src"],
 }
@@ -360,7 +364,7 @@ NATIVE_DEV_MENU = "crates/engine-shell/src/bin/legaia-engine/window/dev_menu.rs"
 WEB_PLAY_DEV_MENU = "crates/web-viewer/src/play_dev_menu.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
-NATIVE_BGM = "crates/engine-shell/src/bgm.rs"
+NATIVE_BGM = "crates/engine-session/src/bgm.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
 # The play page's BGM director (the browser twin of NATIVE_BGM's
 # `AudioBgmDirector`), carved out of runtime.rs so the audio lanes own it.
@@ -536,7 +540,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # A row's `sites` map a host label to `(repo-relative path, fn name or None)`.
 # `None` means the whole file is the site, which is right when a host's
 # injection is a call made from a place the pairing should not pin.
-NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
+NATIVE_BOOT = "crates/engine-session/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/bin/legaia-engine/window/assets.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
@@ -4297,7 +4301,7 @@ def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
 # Tier 13 - boot installs: does the page's disc load install every World
 # table the native boot does?
 #
-# The native boot (`crates/engine-shell/src/boot.rs`) installs disc tables
+# The native boot (`crates/engine-session/src/boot.rs`) installs disc tables
 # onto the world one call at a time, and the page's `load_disc` repeats the
 # list by hand. Nothing failed when the page's copy fell behind: every
 # consumer has a disc-free fallback, so six progression tables (XP curve +
@@ -4313,7 +4317,7 @@ def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
 # list short.
 # ---------------------------------------------------------------------------
 
-BOOT_NATIVE = REPO / "crates/engine-shell/src/boot.rs"
+BOOT_NATIVE = REPO / "crates/engine-session/src/boot.rs"
 BOOT_WEB_ROOT = REPO / "crates/web-viewer/src"
 BOOT_INSTALL_RE = re.compile(r"\bworld\s*\.\s*((?:install|set)_[a-z0-9_]+)\s*\(")
 

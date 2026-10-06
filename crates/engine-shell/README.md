@@ -16,11 +16,13 @@ straight out of a `.bin` image; `--extracted-root <dir>` reads the output of
 
 The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
 
-- [`BootSession`](src/boot.rs) / `BootConfig` - the boot flow. Opens the
+- [`BootSession`](../engine-session/src/boot.rs) / `BootConfig` - the boot flow
+  (defined in `legaia-engine-session`, re-exported here over the cpal output). Opens the
   PROT + CDNAME map, loads a starting scene (`town01` by default), uploads
   the scene's primary VAB to the SPU, then drives world + camera + event
   routing each frame. Mirrors the retail boot sequence.
-- [`AudioBgmDirector`](src/bgm.rs) - concrete
+- [`AudioBgmDirector`](../engine-session/src/bgm.rs) - (defined in
+  `legaia-engine-session`, generic over the audio output) the
   `legaia_engine_core::scene::BgmDirector` that parses the SEQ bytes the
   field VM resolves through the BGM table, builds a sequencer, and feeds a
   cpal-backed audio output. Field-VM op `0x35` (BGM start) routes here.

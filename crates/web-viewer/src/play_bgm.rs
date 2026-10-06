@@ -1,5 +1,5 @@
 //! The play page's BGM director - the browser twin of the native
-//! `AudioBgmDirector` (`crates/engine-shell/src/bgm.rs`). Implements
+//! `AudioBgmDirector` (`crates/engine-session/src/bgm.rs`). Implements
 //! `legaia_engine_core::scene::BgmDirector` over the live `WebAudioOut`, so
 //! the field VM's op-`0x35` events start / pause / stop the same tracks on
 //! both hosts.

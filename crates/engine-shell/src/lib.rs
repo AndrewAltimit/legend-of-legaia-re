@@ -5,8 +5,21 @@
 //! the binary and any embedding can share the same per-scene plumbing.
 
 pub mod audio_trace_oracle;
-pub mod bgm;
-pub mod boot;
+/// The BGM / SFX director lives in `legaia-engine-session` (shared with the
+/// browser host); this host instantiates it over the cpal output.
+pub mod bgm {
+    pub use legaia_engine_session::bgm::*;
+    /// The director over the native cpal output.
+    pub type AudioBgmDirector =
+        legaia_engine_session::bgm::AudioBgmDirector<legaia_engine_audio::AudioOut>;
+}
+/// The session `BootSession` lives in `legaia-engine-session` (shared with the
+/// browser host); this host instantiates it over the cpal output.
+pub mod boot {
+    pub use legaia_engine_session::boot::*;
+    /// The session over the native cpal output.
+    pub type BootSession = legaia_engine_session::boot::BootSession<legaia_engine_audio::AudioOut>;
+}
 pub mod cutscene_av;
 pub mod launcher;
 pub mod mode_trace_oracle;

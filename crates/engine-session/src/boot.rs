@@ -15,12 +15,14 @@
 //! CI mode, no window). [`BootSession::tick`] is the per-frame driver
 //! callable from either path.
 
-use legaia_engine_audio::AudioSink;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use legaia_engine_audio::AudioOut;
+use legaia_engine_audio::AudioSink;
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
@@ -79,10 +81,10 @@ impl FieldLiveOpts {
 pub const DEFAULT_BOOT_SCENE: &str = "town01";
 
 /// Total SPU RAM in bytes (PSX hardware constant).
-pub(crate) const SPU_RAM_BYTES: u32 = 512 * 1024;
+pub const SPU_RAM_BYTES: u32 = 512 * 1024;
 /// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
-pub(crate) const SPU_RESERVED_BYTES: u32 = legaia_engine_audio::spu_layout::SPU_RESERVED_BYTES;
+pub const SPU_RESERVED_BYTES: u32 = legaia_engine_audio::spu_layout::SPU_RESERVED_BYTES;
 /// SPU RAM reserved at the TOP of the map for the resident SFX banks: the
 /// slot-0 system bank, and above it the region VAB slots `2` and `6` share
 /// (one SPU base in retail, refilled per game mode). Carving a dedicated top
@@ -122,19 +124,19 @@ impl Default for BootConfig {
 /// Source of PROT.DAT + CDNAME.TXT bytes for a [`BootSession::open*`]
 /// call. Internal - public construction is via the typed entry points
 /// [`BootSession::open`] and [`BootSession::open_disc`].
+#[cfg(not(target_arch = "wasm32"))]
 enum SceneSource<'a> {
     Extracted(&'a Path),
-    #[cfg(not(target_arch = "wasm32"))]
     Disc(&'a Path),
 }
 
 /// Per-frame session bundle. The binary owns one of these and calls
 /// [`tick`](Self::tick) every frame.
-pub struct BootSession {
+pub struct BootSession<S: AudioSink> {
     pub host: SceneHost,
     pub camera: Camera,
-    pub audio: Option<Arc<AudioOut>>,
-    pub bgm: Option<AudioBgmDirector>,
+    pub audio: Option<Arc<S>>,
+    pub bgm: Option<AudioBgmDirector<S>>,
     /// Wall-clock frame counter, separate from `host.world.frame` (which
     /// includes pause-time skips when those land).
     pub frames: u64,
@@ -353,45 +355,20 @@ impl HostQueueMarks {
 /// `SCUS_942.54`. Returns `None` (not an error) when the executable isn't
 /// reachable or doesn't parse, so a boot never fails just because the seed
 /// data is unavailable.
-fn read_starting_party(source: &SceneSource<'_>) -> Option<legaia_asset::new_game::StartingParty> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    legaia_asset::new_game::StartingParty::from_scus(&scus)
+fn read_starting_party(scus: &[u8]) -> Option<legaia_asset::new_game::StartingParty> {
+    legaia_asset::new_game::StartingParty::from_scus(scus)
 }
 
 /// Read + decode the new-game starting-inventory seed from a boot source's
 /// `SCUS_942.54` (`FUN_80034A6C`). Returns `None` when the executable isn't
 /// reachable or doesn't decode, so a boot never fails on missing seed data.
-fn read_starting_inventory(
-    source: &SceneSource<'_>,
-) -> Option<legaia_asset::new_game::StartingInventory> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    legaia_asset::new_game::StartingInventory::from_scus(&scus)
+fn read_starting_inventory(scus: &[u8]) -> Option<legaia_asset::new_game::StartingInventory> {
+    legaia_asset::new_game::StartingInventory::from_scus(scus)
 }
 
 /// Read the raw `SCUS_942.54` bytes from a boot source. Returns `None`
 /// (not an error) when the executable isn't reachable.
+#[cfg(not(target_arch = "wasm32"))]
 fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
     use legaia_engine_core::Vfs;
     match source {
@@ -418,7 +395,7 @@ fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
 /// when either half is unreachable.
 fn read_dialog_font(
     index: &legaia_engine_core::scene::ProtIndex,
-    source: &SceneSource<'_>,
+    scus: &[u8],
 ) -> Option<legaia_font::Font> {
     let tim = index
         .prot_dat_raw_bytes(
@@ -426,9 +403,8 @@ fn read_dialog_font(
             legaia_font::FONT_TIM_LEN,
         )
         .ok()?;
-    let scus = read_scus(source)?;
-    let font = legaia_font::Font::from_disc_tim_and_scus(&tim, &scus).ok()?;
-    Some(attach_escape_icons(font, index, &scus))
+    let font = legaia_font::Font::from_disc_tim_and_scus(&tim, scus).ok()?;
+    Some(attach_escape_icons(font, index, scus))
 }
 
 /// Attach the `0xCE` escape sprites (controller buttons, icons) to `font`
@@ -452,22 +428,8 @@ pub fn attach_escape_icons(
 /// executable isn't reachable or the table doesn't decode, so a boot never
 /// fails on missing SFX data - the director just keeps its empty bank and
 /// resolved cues no-op until one is staged.
-fn read_sfx_bank(
-    source: &SceneSource<'_>,
-) -> Option<(legaia_engine_audio::SfxBank, Vec<(u8, u8)>)> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    let table = legaia_asset::sfx_table::SfxTable::from_scus(&scus)?;
+fn read_sfx_bank(scus: &[u8]) -> Option<(legaia_engine_audio::SfxBank, Vec<(u8, u8)>)> {
+    let table = legaia_asset::sfx_table::SfxTable::from_scus(scus)?;
     let bank = legaia_engine_audio::SfxBank::from_descriptors(
         table
             .active()
@@ -640,22 +602,8 @@ pub fn read_battle_xa_clip_bank(disc: &Path) -> Option<legaia_engine_audio::XaCl
 /// executable isn't reachable or its item table doesn't parse, so a boot never
 /// fails on missing shop data - the engine then leaves shop stock host-supplied
 /// and unpriced. See [`legaia_engine_core::shop_catalog`].
-fn read_shop_item_data(
-    source: &SceneSource<'_>,
-) -> Option<legaia_engine_core::shop_catalog::ShopItemData> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    legaia_engine_core::shop_catalog::ShopItemData::from_scus(&scus)
+fn read_shop_item_data(scus: &[u8]) -> Option<legaia_engine_core::shop_catalog::ShopItemData> {
+    legaia_engine_core::shop_catalog::ShopItemData::from_scus(scus)
 }
 
 /// Read + parse the static item-effect descriptor table (`DAT_800752C0`, see
@@ -663,22 +611,8 @@ fn read_shop_item_data(
 /// when the executable isn't reachable or the table doesn't parse, so a boot
 /// never fails on missing item-effect data - the engine then keeps the curated
 /// usability flags on its item catalog.
-fn read_retail_item_effects(
-    source: &SceneSource<'_>,
-) -> Option<legaia_asset::item_effect::ItemEffectTable> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    legaia_asset::item_effect::ItemEffectTable::from_scus(&scus)
+fn read_retail_item_effects(scus: &[u8]) -> Option<legaia_asset::item_effect::ItemEffectTable> {
+    legaia_asset::item_effect::ItemEffectTable::from_scus(scus)
 }
 
 /// Read the static equipment stat-bonus table (`DAT_80074F68`, see
@@ -690,31 +624,19 @@ fn read_retail_item_effects(
 /// equipment data - the engine then falls back to the (fabricated-id) vanilla
 /// equipment catalog.
 fn read_retail_equip_tables(
-    source: &SceneSource<'_>,
+    scus: &[u8],
 ) -> Option<(
     legaia_engine_core::battle_stats::EquipmentTable,
     legaia_engine_core::equipment::DiscEquipInfo,
     legaia_asset::equip_stats::EquipStatTable,
 )> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus)?;
+    let table = legaia_asset::equip_stats::EquipStatTable::from_scus(scus)?;
     let modifiers = legaia_engine_core::equipment::equip_modifier_table_from_disc(&table);
     let mut restrictions = legaia_engine_core::equipment::DiscEquipInfo::from_disc(&table);
     // The Goods candidate lists are class-2 ids the equipment stat table does
     // not contain, so their index comes from the item-effect table instead -
     // without it the equip screen's three Goods rows browse an empty list.
-    if let Some(effects) = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus) {
+    if let Some(effects) = legaia_asset::item_effect::ItemEffectTable::from_scus(scus) {
         restrictions.install_goods(&effects);
     }
     // The raw records travel too: the Throw Out list builder reads each
@@ -726,60 +648,97 @@ fn read_retail_equip_tables(
 /// table, see `spell-table.md`) from a boot source's `SCUS_942.54`. Returns
 /// `None` when the executable isn't reachable or doesn't parse, so a boot falls
 /// back to the pinned `retail_seru_magic_catalog`.
-fn read_retail_spell_catalog(
-    source: &SceneSource<'_>,
-) -> Option<legaia_engine_core::spells::SpellCatalog> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+fn read_retail_spell_catalog(scus: &[u8]) -> Option<legaia_engine_core::spells::SpellCatalog> {
+    legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)
 }
 
-impl BootSession {
+/// The native constructors: a session over the cpal output.
+#[cfg(not(target_arch = "wasm32"))]
+impl BootSession<AudioOut> {
     /// Open an extracted disc tree and load the configured scene. Errors if
     /// the directory isn't an extracted PROT or the scene name isn't in
     /// CDNAME.TXT.
     pub fn open(extracted_root: &Path, cfg: &BootConfig) -> Result<Self> {
-        Self::open_with_source(SceneSource::Extracted(extracted_root), cfg)
+        Self::open_with_source(SceneSource::Extracted(extracted_root), cfg, AudioOut::new)
     }
 
     /// Open the engine straight from a `.bin` disc image. The disc is walked
     /// once to extract `PROT.DAT` and `CDNAME.TXT`; no on-disk extraction
-    /// step is required. Native targets only.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// step is required.
     pub fn open_disc(disc_bin: &Path, cfg: &BootConfig) -> Result<Self> {
-        Self::open_with_source(SceneSource::Disc(disc_bin), cfg)
+        Self::open_with_source(SceneSource::Disc(disc_bin), cfg, AudioOut::new)
     }
+}
 
-    fn open_with_source(source: SceneSource<'_>, cfg: &BootConfig) -> Result<Self> {
-        // Parse the new-game starting-party template from the same source
-        // (best-effort; never fails the boot).
-        let starting_party = read_starting_party(&source);
-        let starting_inventory = read_starting_inventory(&source);
-        let (equip_modifier_table, equip_restrictions, equip_stats) =
-            match read_retail_equip_tables(&source) {
-                Some((m, r, s)) => (Some(m), Some(r), Some(s)),
-                None => (None, None, None),
-            };
-        let spell_catalog = read_retail_spell_catalog(&source);
-        let steal_table = read_scus(&source)
-            .and_then(|scus| legaia_asset::steal_table::StealTable::from_scus(&scus));
-        let mut host = match source {
+impl<S: AudioSink> BootSession<S> {
+    /// `open_audio` opens the host's output; it runs only when
+    /// `cfg.enable_audio` is set.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn open_with_source(
+        source: SceneSource<'_>,
+        cfg: &BootConfig,
+        open_audio: impl FnOnce() -> Result<S>,
+    ) -> Result<Self> {
+        let scus = read_scus(&source);
+        let host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
             #[cfg(not(target_arch = "wasm32"))]
             SceneSource::Disc(path) => SceneHost::open_disc(path)
                 .with_context(|| format!("open disc image {}", path.display()))?,
         };
+        #[allow(unused_mut)]
+        let mut session = Self::from_host(host, scus.as_deref(), cfg, open_audio)?;
+        // Demux + decode the arts-voice shout banks (XA2/XA4/XA6) and the
+        // SCUS cue tables. Disc-image boots only (channel demux needs the
+        // raw CD-XA subheaders). Best-effort - an absent bank leaves arts
+        // silent.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (SceneSource::Disc(path), Some(director)) = (&source, session.bgm.as_mut()) {
+            match read_arts_shout_bank(path) {
+                Some(bank) => director.set_shout_bank(bank),
+                None => log::warn!("arts-voice shout bank not staged"),
+            }
+            // The battle's one-shot clips (`XA27` stings, `XA30` grunts) -
+            // the melee kernel's two sound sites.
+            match read_battle_xa_clip_bank(path) {
+                Some(bank) => director.set_xa_clip_bank(bank),
+                None => log::warn!("battle CD-XA clip bank not staged"),
+            }
+            // The cast voices (seventeen files) are not decoded here: the
+            // director stages one channel span from the disc the first time
+            // a cast names it.
+            let n = director.set_xa_lazy_source(path);
+            if n == 0 {
+                log::warn!("no XA<n>.XA files resolved; cast voices stay silent");
+            }
+        }
+        Ok(session)
+    }
+
+    /// Build a session over an already-open [`SceneHost`] and the disc's
+    /// `SCUS_942.54` (`None` on a disc-free boot), then load `cfg.scene`.
+    /// The path constructors ([`BootSession::open`] / `open_disc`) land
+    /// here, and so does a host that assembled its `SceneHost` from bytes
+    /// in memory (the browser). `open_audio` opens the host's output and
+    /// runs only when `cfg.enable_audio` is set.
+    pub fn from_host(
+        mut host: SceneHost,
+        scus: Option<&[u8]>,
+        cfg: &BootConfig,
+        open_audio: impl FnOnce() -> Result<S>,
+    ) -> Result<Self> {
+        // Parse the new-game starting-party template from the same source
+        // (best-effort; never fails the boot).
+        let starting_party = scus.and_then(read_starting_party);
+        let starting_inventory = scus.and_then(read_starting_inventory);
+        let (equip_modifier_table, equip_restrictions, equip_stats) =
+            match scus.and_then(read_retail_equip_tables) {
+                Some((m, r, s)) => (Some(m), Some(r), Some(s)),
+                None => (None, None, None),
+            };
+        let spell_catalog = scus.and_then(read_retail_spell_catalog);
+        let steal_table = scus.and_then(legaia_asset::steal_table::StealTable::from_scus);
         // Wire the CDNAME-derived map-id resolver so field-VM scene
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
@@ -791,14 +750,14 @@ impl BootSession {
 
         // Retail proportional dialog font off the disc (no save state). See
         // `BootSession::dialog_font`.
-        let dialog_font = read_dialog_font(&host.index, &source);
-        let escape_icons = read_scus(&source).and_then(|scus| {
+        let dialog_font = scus.and_then(|scus| read_dialog_font(&host.index, scus));
+        let escape_icons = scus.and_then(|scus| {
             use legaia_font::escape_icons::{EscapeIcons, ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
             let head = host
                 .index
                 .prot_dat_raw_bytes(ICON_PROT_DAT_OFFSET, ICON_PROT_DAT_LEN)
                 .ok()?;
-            EscapeIcons::from_disc(&head, &scus).ok()
+            EscapeIcons::from_disc(&head, scus).ok()
         });
         if dialog_font.is_none() {
             log::warn!(
@@ -831,16 +790,13 @@ impl BootSession {
         // browser play page's `load_disc` calls too. Best-effort: absent on a
         // disc-free build, where each consumer keeps its default. Persists
         // across New Game.
-        let scus = read_scus(&source);
         // Both halves of the battle chip / caption labels - the overlay half
         // (banner sentences, `Spirit`, `Escape`, the Ra-Seru names) and the
         // SCUS half (`Begin`, `Run`, `Attack`, ... and the sparring fight's
         // opening caption) - through the one builder the browser runtime's
         // `load_disc` calls too.
-        host.world.battle.ui_strings = legaia_engine_core::battle_open::battle_ui_strings_for_disc(
-            &host.index,
-            scus.as_deref(),
-        );
+        host.world.battle.ui_strings =
+            legaia_engine_core::battle_open::battle_ui_strings_for_disc(&host.index, scus);
         // The party cast trigger's anim-pair lists and the monster casts'
         // opening camera shots, off the same battle-overlay image, for every
         // session - headless ones included, since a monster cast stages its
@@ -848,23 +804,23 @@ impl BootSession {
         host.world.battle.spell_anim_pairs =
             legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&host.index);
         if let Some(scus) = scus {
-            host.world.install_retail_progression_tables(&scus);
+            host.world.install_retail_progression_tables(scus);
             // Pause-menu text: item names + info-window descriptions,
             // spell names / descriptions, accessory passive lines. The
             // Items / Magic pause screens resolve their strings here.
-            host.world.install_menu_text(&scus);
+            host.world.install_menu_text(scus);
             // Install the randomizer's seru-trade config (the `--seru-trade`
             // blob in preserved rodata). No-op / disabled on a vanilla disc;
             // when present, vendors offer seru-for-seru trades. Persists across
             // New Game.
-            host.world.install_seru_trade_config(&scus);
+            host.world.install_seru_trade_config(scus);
         }
 
         // Install the gold-shop item data (per-id buy price + name mask) from the
         // SCUS item table, so each field scene's merchant offers its real stock
         // at real prices (populated per scene by `enter_field_scene`). Persists
         // across New Game; absent on disc-free builds (stock stays host-supplied).
-        if let Some(shop_data) = read_shop_item_data(&source) {
+        if let Some(shop_data) = scus.and_then(read_shop_item_data) {
             host.world.shops.item_shop_data = Some(shop_data);
         }
 
@@ -872,7 +828,7 @@ impl BootSession {
         // field/battle usability gating matches retail (e.g. cure/revive items
         // are battle-only). Best-effort: absent on disc-free builds, where the
         // catalog keeps its curated usability flags.
-        if let Some(effects) = read_retail_item_effects(&source) {
+        if let Some(effects) = scus.and_then(read_retail_item_effects) {
             host.world.set_item_effects(effects);
         }
 
@@ -881,9 +837,9 @@ impl BootSession {
 
         // Audio + BGM director (optional - disabled for headless tests).
         let (audio, bgm) = if cfg.enable_audio {
-            match AudioOut::new() {
+            match open_audio() {
                 Ok(audio) => {
-                    // AudioOut owns a cpal::Stream which is Send but not Sync.
+                    // The native AudioOut owns a cpal::Stream which is Send but not Sync.
                     // BootSession is single-threaded (binary + WASM both
                     // tick on one thread); the Arc just gives the BGM
                     // director a refcounted handle.
@@ -899,7 +855,7 @@ impl BootSession {
                     // for each cue id, and the VAB slot each cue's category
                     // routes to. Best-effort - an empty bank just no-ops
                     // resolved cues.
-                    if let Some((sfx, slots)) = read_sfx_bank(&source) {
+                    if let Some((sfx, slots)) = scus.and_then(read_sfx_bank) {
                         director.set_sfx_bank(sfx);
                         director.set_sfx_cue_slots(slots);
                     }
@@ -909,30 +865,6 @@ impl BootSession {
                     // whatever BGM VAB is open. Best-effort.
                     if let Err(e) = stage_sfx_vab(&mut director, &host) {
                         log::warn!("resident SFX banks not staged: {e:#}");
-                    }
-                    // Demux + decode the arts-voice shout banks (XA2/XA4/XA6)
-                    // and the SCUS cue tables. Disc-image boots only (channel
-                    // demux needs the raw CD-XA subheaders). Best-effort - an
-                    // absent bank leaves arts silent.
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if let SceneSource::Disc(path) = &source {
-                        match read_arts_shout_bank(path) {
-                            Some(bank) => director.set_shout_bank(bank),
-                            None => log::warn!("arts-voice shout bank not staged"),
-                        }
-                        // The battle's one-shot clips (`XA27` stings, `XA30`
-                        // grunts) - the melee kernel's two sound sites.
-                        match read_battle_xa_clip_bank(path) {
-                            Some(bank) => director.set_xa_clip_bank(bank),
-                            None => log::warn!("battle CD-XA clip bank not staged"),
-                        }
-                        // The cast voices (seventeen files) are not decoded
-                        // here: the director stages one channel span from
-                        // the disc the first time a cast names it.
-                        let n = director.set_xa_lazy_source(path);
-                        if n == 0 {
-                            log::warn!("no XA<n>.XA files resolved; cast voices stay silent");
-                        }
                     }
                     (Some(audio), Some(director))
                 }
@@ -1895,7 +1827,7 @@ impl BootSession {
     }
 }
 
-impl Drop for BootSession {
+impl<S: AudioSink> Drop for BootSession<S> {
     fn drop(&mut self) {
         self.shutdown();
     }
@@ -1903,12 +1835,12 @@ impl Drop for BootSession {
 
 /// The native window's half of a card load
 /// ([`legaia_engine_core::resume::resume_card_load`]).
-struct NativeCardLoad<'a> {
-    session: &'a mut BootSession,
+struct NativeCardLoad<'a, S: AudioSink> {
+    session: &'a mut BootSession<S>,
     opts: &'a FieldLiveOpts,
 }
 
-impl legaia_engine_core::resume::CardLoadHost for NativeCardLoad<'_> {
+impl<S: AudioSink> legaia_engine_core::resume::CardLoadHost for NativeCardLoad<'_, S> {
     fn card_load_world(&mut self) -> &mut legaia_engine_core::world::World {
         &mut self.session.host.world
     }
@@ -1956,7 +1888,7 @@ impl legaia_engine_core::resume::CardLoadHost for NativeCardLoad<'_> {
 ///
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
-fn stage_sfx_vab(director: &mut AudioBgmDirector, host: &SceneHost) -> Result<()> {
+fn stage_sfx_vab<S: AudioSink>(director: &mut AudioBgmDirector<S>, host: &SceneHost) -> Result<()> {
     use legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
     use legaia_engine_core::world::SharedRegionBank;
 
