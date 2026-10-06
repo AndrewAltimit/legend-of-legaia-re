@@ -13,11 +13,12 @@ contiguously in main RAM at `0x80084708 + slot * 0x414`:
 The display name sits at record offset `+0x2A7` (9 bytes, NUL-padded),
 bounded by the active-spell table at `+0x2B0`.
 
-Slot 3's `0x414` footprint runs into the global story-flag bitmap
-(RAM `0x80085600`, record offset `+0x2BC`) and inventory, so only its
-leading fields (name, live stats `+0x104`, RecordStats `+0x11C`) are
-exclusive; the tail aliases the globals. This is benign - Terra is never
-saved as an active member.
+Slot 3's `0x414` footprint ends exactly where the fourth flag bank
+begins (`0x80085344 + 0x414 = 0x80085758`); the item bag starts further
+up, at `0x80085958`. Neither overlaps the record. The cheat database's
+"story-flag" window starts at `0x80085600`, which is slot 3 `+0x2BC` -
+inside Terra's record, not inside the flag bank (see
+[`memory-map.md`](../reference/memory-map.md)).
 
 The on-disc save block (PSX memory-card record) is a verbatim dump of
 this resident region: record `n`'s base is `block + 0x5C8 + n*0x414`
