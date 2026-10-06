@@ -59,6 +59,7 @@ impl World {
             // content is behind it.
             self.battle.action_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
+            self.battle.counter_hud = None;
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;

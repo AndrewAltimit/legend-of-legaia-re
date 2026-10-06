@@ -80,6 +80,11 @@ fn the_strike_loop_hands_the_monsters_strike_to_the_counterer() {
     assert_ne!(world.actors[0].battle.queued_anim, 0, "Vahn's first swing");
     assert!(world.battle.target_plate_cleared);
     assert_eq!(crate::battle_hud::battle_target_plaque(&world), None);
+    // The HUD stays the monster's seed's: the bar for its target (Vahn),
+    // and no combo cluster (`battle_vahn_tri_somersault_super`).
+    assert_eq!(world.battle.counter_hud, Some(0));
+    assert_eq!(crate::battle_hud::battle_combo_style(&world), None);
+    assert_eq!(crate::battle_hud::battle_readout_bar_slot(&world), Some(0));
 }
 
 /// Without a committed attack there is nothing to counter with.

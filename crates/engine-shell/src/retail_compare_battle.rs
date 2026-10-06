@@ -2644,6 +2644,9 @@ impl BattleDrive {
             }
             if steer.plate_cleared {
                 world.battle.target_plate_cleared = true;
+                // The swap's HUD: the monster seed's bar for the counterer,
+                // and no combo cluster.
+                world.battle.counter_hud = Some(engine_seat(seat, pc));
             }
         }
         if let Some(style) = style

@@ -1621,6 +1621,11 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
         BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => world
             .muscle_playback_tally()
             .and_then(|(attacker, _)| (attacker == 1).then_some(0)),
+        // The counterattack swap keeps the bar the monster's seed raised for
+        // its target - the counterer ([`crate::world::BattleState::counter_hud`]).
+        BattleHudPhase::Action if world.battle.counter_hud.is_some() => {
+            world.battle.counter_hud.filter(|s| *s < pc)
+        }
         BattleHudPhase::Action => {
             let a = world.battle_ctx.active_actor;
             let actor = world.actors.get(a as usize)?;
@@ -2405,6 +2410,9 @@ pub fn battle_combo_style(world: &crate::world::World) -> Option<ComboStyle> {
     // popup stream this cluster counts.
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode == crate::world::SceneMode::MuscleDome
+        // A counterattack's strikes run under the monster's seeded HUD,
+        // which opened no cluster ([`crate::world::BattleState::counter_hud`]).
+        || world.battle.counter_hud.is_some()
     {
         return None;
     }

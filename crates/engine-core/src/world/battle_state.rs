@@ -433,6 +433,15 @@ pub struct BattleState {
     /// `0x801E36CC`, `s1 = 0x80076C10`), so the counterer's strikes carry no
     /// target plaque. The next action seed's raise rewrites it.
     pub target_plate_cleared: bool,
+    /// The counterer whose strikes the counterattack swap is running, while
+    /// the HUD still holds the elements the **monster's** action seed opened.
+    /// The swap runs no seed pass, so retail keeps the readout bar the
+    /// monster's seed raised for its party target (the counterer) and never
+    /// opens the combo cluster: `battle_vahn_tri_somersault_super`'s widget
+    /// glide slots hold the bar at `(16, 192)` and the move name, and no
+    /// cluster record. Cleared with [`Self::target_plate_cleared`] by the
+    /// next action seed's raise.
+    pub counter_hud: Option<u8>,
     /// The battle side-band's state ([`crate::battle_sideband`], retail
     /// `FUN_80056208`): the stage phase cursor `ctx[+0x289]` (the sparring
     /// intro's `0` waiting / `1` caption up / `2` prompt machine live, and
@@ -734,6 +743,7 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             target_plate_cleared: false,
+            counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
             arrival: Default::default(),
