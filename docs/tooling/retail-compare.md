@@ -572,6 +572,20 @@ base `+0x156` (a Spirit turn the replay does not play extended it), the drive
 restores it before the round: the extension selects the saved string's band
 and pays for its arrows (`player_steal_skeleton_banner`'s five-arrow
 `0F 0E 19 27 0E 19 27` needs the `153` gauge over the `104` base).
+The saved string is not always the turn the player entered, though: retail
+left `battle_melee_hit_spark`'s Vahn with `0F 0E 0F 0E` in band A while his
+committed queue `0D 0F 0E 19 27` is Right Up Down Up, so the bare confirm
+struck Up, Down, Somersault, Down and sat in `0x20` on the last Down swing
+where retail plays the Somersault. The drive therefore carries the committed
+queue, reads it back as entered arrows (swings as they stand, each starter +
+art pair as its art's last arrow) and, when neither band holds them, writes
+them into both before the round; a queue the reading cannot invert (a Super
+or Miracle tail) keeps the saved string. On a strike-loop age capture whose
+clip is a dynamic art slot (`0x10` / `0x11`) - the clips the swing-clip gate
+leaves open - the strike cursor `ctx[+0x15]` is gated too, since the age alone
+matches the turn's first clip that runs as long
+(`battle_vahn_tri_somersault_super`'s Somersault sits at cursor `5`; the age
+took the first Down swing at `3`).
 A party attack capture's target byte `+0x1DD` is the monster the player
 picked, so the drive walks the target cursor (the command picker's, or the
 arts entry's) onto that row before confirming, rather than taking the

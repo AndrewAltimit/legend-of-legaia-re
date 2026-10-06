@@ -221,6 +221,11 @@ pub struct RetailBattle {
     /// art starter (`0x19` / `0x1A`): the turn was entered through the
     /// directional command entry, not the Auto swing.
     pub arts_queue: bool,
+    /// The active seat's committed queue `+0x1DF..+0x1EE` itself - the
+    /// tokenized turn the player entered ([`ActionSteer::queue`]).
+    pub committed_queue: [u8; 16],
+    /// `ctx[+0x15]` - the strike cursor into that queue.
+    pub strike_cursor: u8,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts
@@ -1064,6 +1069,10 @@ impl RetailBattle {
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
+            strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
+            committed_queue: std::array::from_fn(|i| {
+                active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
+            }),
             arts_queue: active.is_some_and(|p| {
                 (0..0x10).any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A))
             }),
@@ -1907,6 +1916,25 @@ pub enum BattleDrive {
 /// left first in the ring (`battle_vahn_tri_somersault_super`: retail row
 /// `1`, the default row `0`, which Noa's and Gala's swings had knocked far
 /// back).
+///
+/// `queue` is an arts capture's committed queue `+0x1DF..`. The string a
+/// bare confirm replays is the record's saved band, and that band is not
+/// what the player entered on the captured turn: `battle_melee_hit_spark`'s
+/// Vahn holds `0F 0E 0F 0E` (Up Down Up Down) in band A while his committed
+/// queue `0D 0F 0E 19 27` is Right Up Down Up, tokenized with Somersault -
+/// so the replay struck Up, Down, Somersault, Down and sat in `0x20` on a
+/// Down swing where retail plays the Somersault. [`BattleDrive::prime`]
+/// recovers the entered arrows from the queue ([`entered_arrows`]) and,
+/// when neither saved band holds them, writes them into both, so the replay
+/// tokenizes the captured turn.
+///
+/// `cursor` is that queue's strike cursor `ctx[+0x15]` on an
+/// [`SpanGate::Age`] capture inside the strike loop. With the queue
+/// replayed byte for byte, the age alone matches the first clip of the turn
+/// that runs as long - `battle_vahn_tri_somersault_super` sits at age `160`
+/// on the Somersault at cursor `5`, and the drive took the turn's first Down
+/// swing at cursor `3` - so the cursor names the clip the art slot's `clip`
+/// gate cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
@@ -1917,6 +1945,8 @@ pub struct ActionSteer {
     pub gauge: Option<u16>,
     pub clip: Option<u8>,
     pub aim: Option<u8>,
+    pub queue: Option<[u8; 16]>,
+    pub cursor: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -2227,6 +2257,15 @@ impl BattleDrive {
                 if let Some(p) = steer.aim {
                     s.push_str(&format!(",p{p}"));
                 }
+                if let Some(u) = steer.cursor {
+                    s.push_str(&format!(",u{u}"));
+                }
+                if let Some(q) = steer.queue {
+                    s.push_str(",q");
+                    for b in q {
+                        s.push_str(&format!("{b:02x}"));
+                    }
+                }
                 s
             }
         }
@@ -2276,6 +2315,17 @@ impl BattleDrive {
                 steer.clip = Some(k.parse().ok()?);
             } else if let Some(p) = last.strip_prefix('p') {
                 steer.aim = Some(p.parse().ok()?);
+            } else if let Some(u) = last.strip_prefix('u') {
+                steer.cursor = Some(u.parse().ok()?);
+            } else if let Some(q) = last.strip_prefix('q') {
+                if q.len() != 32 {
+                    return None;
+                }
+                let mut queue = [0u8; 16];
+                for (i, b) in queue.iter_mut().enumerate() {
+                    *b = u8::from_str_radix(q.get(i * 2..i * 2 + 2)?, 16).ok()?;
+                }
+                steer.queue = Some(queue);
             } else {
                 break;
             }
@@ -2377,6 +2427,12 @@ impl BattleDrive {
             if let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc))) {
                 a.battle.agl = live;
             }
+        }
+        if let Self::Action { seat, steer, .. } = *self
+            && seat < 3
+            && let Some(queue) = steer.queue
+        {
+            seed_entered_arrows(world, seat, &queue);
         }
         if let Self::Action { seat, absorbed, .. } = *self
             && absorbed != 0
@@ -2516,6 +2572,12 @@ impl BattleDrive {
                                 && steer.clip.is_none_or(|k| {
                                     world.battle_current_anim(usize::from(engine_seat(seat, pc)))
                                         == k
+                                })
+                                && steer.cursor.is_none_or(|u| {
+                                    world
+                                        .actors
+                                        .get(usize::from(engine_seat(seat, pc)))
+                                        .is_some_and(|a| a.battle.strike_index == u)
                                 })
                         }
                         _ => true,
@@ -2739,6 +2801,73 @@ fn saved_command_string(world: &legaia_engine_core::world::World, seat: u8) -> b
         rec.auto_command_string(AutoCommandBand::Primary)[0] != 0
             || rec.auto_command_string(AutoCommandBand::Secondary)[0] != 0
     })
+}
+
+/// The arrows a committed arts queue was entered as, as the swing bytes
+/// `0x0C..=0x0F` the record's saved band holds.
+///
+/// The queue builder keeps a matched art's leading arrows as swings and
+/// rewrites only its last one into the starter + constant pair (`0x19` /
+/// `0x1A`, then the art), so each pair stands for its art's final arrow and
+/// every other byte is an arrow already. `combo_of` names an art's arrows;
+/// an art it does not know - a Super or Miracle replacement, whose tail the
+/// finish rewrote whole - leaves the entry unrecoverable (`None`).
+pub fn entered_arrows(
+    queue: &[u8; 16],
+    combo_of: impl Fn(u8) -> Option<Vec<legaia_art::Command>>,
+) -> Option<[u8; 16]> {
+    let mut out = [0u8; 16];
+    let mut n = 0;
+    let mut i = 0;
+    while i < queue.len() && queue[i] != 0 {
+        let arrow = match queue[i] {
+            b @ 0x0C..=0x0F => b,
+            0x19 | 0x1A => {
+                i += 1;
+                let last = *combo_of(*queue.get(i)?)?.last()?;
+                0x0B + last as u8
+            }
+            _ => return None,
+        };
+        *out.get_mut(n)? = arrow;
+        n += 1;
+        i += 1;
+    }
+    (n > 0).then_some(out)
+}
+
+/// Make `seat`'s saved command string the arrows `queue` was entered as, so
+/// the arts entry preseeds the captured turn.
+///
+/// Which band the preseed reads is the live gauge's choice at the arts
+/// entry, which a replayed round can move after this runs (the seat's gauge
+/// restore is the drive's, not the band's). A record that already holds the
+/// arrows in either band is left alone - the capture's own preseed then
+/// reads the string retail did - and otherwise both bands take them.
+fn seed_entered_arrows(world: &mut legaia_engine_core::world::World, seat: u8, queue: &[u8; 16]) {
+    use legaia_save::character::AutoCommandBand;
+    let roster = world.party_roster_slot(usize::from(seat));
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let Some(arrows) = entered_arrows(queue, |art| {
+        let action = legaia_art::ActionConstant::from_byte(art)?;
+        world
+            .tables
+            .art_records
+            .get(&(character, action))
+            .map(|r| r.commands.clone())
+    }) else {
+        return;
+    };
+    let Some(rec) = world.party.roster.members.get_mut(roster) else {
+        return;
+    };
+    let bands = [AutoCommandBand::Primary, AutoCommandBand::Secondary];
+    if bands.iter().any(|&b| rec.auto_command_string(b) == arrows) {
+        return;
+    }
+    for band in bands {
+        rec.set_auto_command_string(band, arrows);
+    }
 }
 
 /// The member's EXP share the results sequencer hands out, `gp+0xA04`
@@ -2968,6 +3097,18 @@ impl RetailBattle {
                         && self.queued_category == 3
                         && (3..8).contains(&self.target_code))
                     .then(|| self.target_code - 3),
+                    queue: (seat < 3 && self.queued_category == 3 && self.arts_queue)
+                        .then_some(self.committed_queue),
+                    cursor: (seat < 3
+                        && self.queued_category == 3
+                        && self.arts_queue
+                        && matches!(state, 0x1E | 0x1F)
+                        // Only on the dynamic art slots, the clips the
+                        // `clip` gate leaves open: an idle `0` or a swing is
+                        // placed by the age and the clip already.
+                        && matches!(self.caster_clip, 0x10 | 0x11)
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.strike_cursor),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -3587,6 +3728,10 @@ mod tests {
                     gauge: Some(153),
                     clip: Some(0x11),
                     aim: Some(1),
+                    queue: Some([
+                        0x0D, 0x0F, 0x0E, 0x19, 0x27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    ]),
+                    cursor: Some(5),
                     ..ActionSteer::default()
                 },
             },
@@ -3594,6 +3739,30 @@ mod tests {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
         }
         assert_eq!(BattleDrive::from_env("menu,40"), None);
+    }
+
+    /// A committed arts queue reads back as the arrows that were entered:
+    /// swings as they stand, each starter + art pair as its art's last arrow.
+    /// `battle_melee_hit_spark`'s `0D 0F 0E 19 27` is Right Up Down Up when
+    /// art `0x27` is Up Down Up; a constant with no known combo (a Super
+    /// tail) or a stray byte leaves it unrecoverable.
+    #[test]
+    fn entered_arrows_undo_the_queue_builder() {
+        use legaia_art::Command::{Down, Up};
+        let combo = |a: u8| (a == 0x27).then(|| vec![Up, Down, Up]);
+        let mut q = [0u8; 16];
+        q[..5].copy_from_slice(&[0x0D, 0x0F, 0x0E, 0x19, 0x27]);
+        let mut want = [0u8; 16];
+        want[..4].copy_from_slice(&[0x0D, 0x0F, 0x0E, 0x0F]);
+        assert_eq!(entered_arrows(&q, combo), Some(want));
+        q[3] = 0x1A; // a newly-learned starter reads the same
+        assert_eq!(entered_arrows(&q, combo), Some(want));
+        q[4] = 0x2B;
+        assert_eq!(entered_arrows(&q, combo), None, "unknown art");
+        assert_eq!(entered_arrows(&[0u8; 16], combo), None, "empty queue");
+        let mut stray = [0u8; 16];
+        stray[0] = 0x2B;
+        assert_eq!(entered_arrows(&stray, combo), None, "bare constant");
     }
 
     /// Taking an absorbed Seru back off a list undoes the Done band's
