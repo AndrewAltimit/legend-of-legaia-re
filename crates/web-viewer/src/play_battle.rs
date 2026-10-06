@@ -1846,7 +1846,9 @@ mod live_hud_tests {
         for _ in 0..400 {
             rt.tick_frame().expect("tick");
             let labels = rt.scene_host.as_ref().is_some_and(|h| {
-                h.world.mode == SceneMode::Battle && h.world.battle.intro_names_frames > 0
+                h.world.mode == SceneMode::Battle
+                    && h.world.battle.intro_names_frames > 0
+                    && !h.world.battle_entry_sweeping()
             });
             if !labels {
                 continue;

@@ -1058,7 +1058,10 @@ pub fn battle_intro_names(
     if world.mode == crate::world::SceneMode::MuscleDome {
         return dome_intro_names(world, font);
     }
-    if world.mode != crate::world::SceneMode::Battle || world.battle.intro_names_frames == 0 {
+    if world.mode != crate::world::SceneMode::Battle
+        || world.battle.intro_names_frames == 0
+        || world.battle_entry_sweeping()
+    {
         return Vec::new();
     }
     // Retail holds the command flow in `0x0B` until the expiry sweep takes

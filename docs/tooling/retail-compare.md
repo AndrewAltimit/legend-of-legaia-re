@@ -1420,13 +1420,12 @@ is checkable even where the pose is not. Two seeding limits follow.
   a pose retail reached only by parking. Reproducing the park would mean
   reproducing the defect that froze it.
 - **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
-  `0x14`) is taken once the engine's entry sweep is over, as retail's flow
-  cannot reach `0x14` before it. The camera reads exact on both sides; what
-  moved the frame is Tetsu's idle clip, sampled `66` frames later than at the
-  battle-mode flip, at a different phase of its loop. Retail runs its intro
-  names after the sweep and the engine runs them under it, so neither sample
-  point is retail's elapsed time; the idle phase is not pinned by any word in
-  the capture.
+  `0x14`, past the intro timer) is taken once the engine's entry sweep and
+  then its intro-name hold are over - the order retail runs them in, since
+  the battle tick that owns the names starts only after the sweep. The
+  camera reads exact on both sides; what moves the frame is Tetsu's idle
+  clip, sampled at whatever phase of its loop that elapsed time lands on.
+  The capture holds no word that pins the idle phase.
 
 ## See also
 

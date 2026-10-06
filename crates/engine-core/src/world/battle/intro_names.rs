@@ -45,9 +45,27 @@ impl World {
         };
     }
 
+    /// Whether the battle camera's entry sweep still owns the opening
+    /// (`BattleCamera::start_entry_sweep`). Retail's frame driver
+    /// `FUN_80046A20` calls the battle tick `FUN_801D0748` - whose flow
+    /// states `0x0A` / `0x0B` compose and drain these labels - only once its
+    /// entry counter `gp+0x330` reads `0xFF` (`beq a0,v0,0x80047014` at
+    /// `0x80046EF8`, `jal 0x801D0748` at `0x80047014`), so the names come up
+    /// after the sweep, never under it.
+    pub fn battle_entry_sweeping(&self) -> bool {
+        self.battle
+            .camera
+            .as_ref()
+            .is_some_and(|c| c.entry_sweep_counter().is_some())
+    }
+
     /// One frame of the intro timer: `ctx[+0x6D6] -= 0x1F800393`, expiring
-    /// at or below zero (`0x801D0E3C..0x801D0E58`).
+    /// at or below zero (`0x801D0E3C..0x801D0E58`). The timer holds while
+    /// the entry sweep runs ([`Self::battle_entry_sweeping`]).
     pub(in crate::world) fn step_battle_intro_names(&mut self) {
+        if self.battle_entry_sweeping() {
+            return;
+        }
         let step = u16::from(self.clock.frame_step.max(1));
         self.battle.intro_names_frames = self.battle.intro_names_frames.saturating_sub(step);
     }
