@@ -1,87 +1,94 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle formulas</div>
   <h1>Battle formulas</h1>
-  <p class="lede">How much a hit does, what a Tactical Art multiplies, what the defender's numbers subtract - and the smaller rolls around them: turn order, fleeing, MP costs, the RNG. Every formula is traced from the game's own code and mirrored in the from-scratch engine. The Offense Value / Defense Value shape follows ZetaPhoenix's community analysis, which corrected Meth962's earlier forum write-ups - see <a href="#credits">credits</a>.</p>
+  <p class="lede">How much a hit does, how a Seru spell is rolled, and whether you get away - plus the smaller rolls around them: turn order, MP costs, spoils, the RNG. Every formula is traced from the game's own code. The Offense Value / Defense Value shape follows ZetaPhoenix's community analysis, which corrected Meth962's earlier forum write-ups - see <a href="#credits">credits</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Melee kernel</dt><dd><code>FUN_801EC3E4</code> in the battle overlay (PROT 0898) - every direction-command and Art hit</dd>
-    <dt>Magic kernel</dt><dd><code>FUN_801DD0AC</code> - Seru magic, monster specials, boss casts (INT-driven, separate finisher)</dd>
-    <dt>Applicator</dt><dd><code>FUN_800402F4</code> in <code>SCUS_942.54</code> - the selector dispatch every HP / status / buff change funnels through</dd>
+    <dt>Physical hits</dt><dd><code>FUN_801EC3E4</code> in the battle overlay (PROT 0898) - every direction command and Art strike</dd>
+    <dt>Magic</dt><dd><code>FUN_801DD0AC</code> + finisher <code>FUN_801DDB30</code> - Seru magic, monster specials, boss casts; INT-driven</dd>
+    <dt>Applicator</dt><dd><code>FUN_800402F4</code> in <code>SCUS_942.54</code> - the selector dispatch most HP / status / buff changes funnel through</dd>
     <dt>RNG</dt><dd>Standard PsyQ <code>rand()</code>: <code>seed &times; 1103515245 + 12345</code>, top 15 bits</dd>
-    <dt>Engine mirror</dt><dd><code>crates/engine-vm/src/battle_formulas.rs</code> - pure functions, retail RNG draw order</dd>
-    <dt>Confidence</dt><dd>Confirmed against the disassembly, hit by hit (<a href="#how-we-know">how we know</a>)</dd>
+    <dt>In the port</dt><dd><code>engine-vm::battle_formulas</code> - pure functions, drawing <code>rand()</code> in retail order</dd>
+    <dt>Confidence</dt><dd>Confirmed against the disassembly, term by term (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <ul class="bullets">
     <li><strong>Your attack</strong> is <strong>base ATK</strong> (the unequipped number) plus <strong>half</strong> the gear the command uses, folded at swing time - never at battle load.</li>
     <li><strong>An Art multiplies by 1.3</strong> (1.4 with War Soul) and takes the element factor <em>twice</em>.</li>
     <li><strong>Damage = Offense &minus; Defense</strong>, capped at 9999 - with an underdog rewrite instead of a floor-at-1 when the defense would win outright.</li>
+    <li><strong>Magic ignores ATK and DEF.</strong> A Seru spell is the summoned creature's HP and INT plus twice the caster's INT, against the target's INT and a sliver of its HP and defences.</li>
   </ul>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 210" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="bf-pipe-title">
-      <title id="bf-pipe-title">How one physical hit is computed: base offense, offense roll, multipliers and defense roll meet in the damage subtraction, then the finisher applies the guard halve, the 9999 cap and the spirit gauge fill</title>
-      <defs><marker id="bf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="10" y="20" width="160" height="70" rx="4"/>
-        <rect x="200" y="20" width="210" height="70" rx="4"/>
-        <rect x="440" y="20" width="210" height="70" rx="4"/>
-        <rect x="200" y="120" width="210" height="70" rx="4"/>
-      </g>
-      <g fill="var(--bg-raised)" stroke="var(--accent)">
-        <rect x="680" y="20" width="190" height="70" rx="4"/>
-        <rect x="680" y="120" width="190" height="70" rx="4"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle">
-        <text x="90" y="42" font-weight="600">Base Offense</text>
-        <text x="90" y="62" fill="var(--text-muted)">base ATK</text>
-        <text x="90" y="79" fill="var(--text-muted)">+ one slot / 2</text>
-        <text x="305" y="42" font-weight="600">Offense roll</text>
-        <text x="305" y="62" fill="var(--text-muted)">x Rnd x Power/16</text>
-        <text x="305" y="79" fill="var(--text-muted)">+ HP/256 +juggle +angle</text>
-        <text x="545" y="42" font-weight="600">Multipliers</text>
-        <text x="545" y="62" fill="var(--text-muted)">Art x1.3 (War Soul 1.4)</text>
-        <text x="545" y="79" fill="var(--text-muted)">element x1.04 / x0.96</text>
-        <text x="305" y="142" font-weight="600">Defense roll</text>
-        <text x="305" y="162" fill="var(--text-muted)">UDF or LDF x Rnd</text>
-        <text x="305" y="179" fill="var(--text-muted)">+ distance; Spirit x3</text>
-        <text x="775" y="42" font-weight="600">Damage</text>
-        <text x="775" y="62" fill="var(--text-muted)">Offense - Defense</text>
-        <text x="775" y="79" fill="var(--text-muted)">underdog rewrite</text>
-        <text x="775" y="142" font-weight="600">Finisher</text>
-        <text x="775" y="162" fill="var(--text-muted)">guard halve, cap 9999</text>
-        <text x="775" y="179" fill="var(--text-muted)">spirit gauge fill</text>
-      </g>
-      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#bf-arrow)">
-        <path d="M170 55 L198 55"/>
-        <path d="M410 55 L438 55"/>
-        <path d="M650 55 L678 55"/>
-        <path d="M410 155 C560 155 600 90 678 68"/>
-        <path d="M775 90 L775 118"/>
-      </g>
-    </svg>
-    <figcaption>The attacker's side folds one equipment slot at half strength <em>at swing time</em>, rolls, scales by the move's power, then takes the Art and element multipliers; the defender's side rolls too; the difference is the number that pops.</figcaption>
-  </figure>
 </section>
 
 <section class="doc-section" id="physical-damage">
-  <h2>Physical damage - Offense Value and Defense Value</h2>
-  <p>One routine, two rolls, subtracted. Integer arithmetic throughout; <code>Rnd(1..1.125)</code> is shorthand for <code>x + rand() % (x/8 + 1)</code>.</p>
-  <pre><code>Base Offense = Base ATK + Equipment ATK / 2
+  <h2>A physical hit</h2>
+  <p>One routine, two rolls, subtracted. Integer arithmetic throughout; <code>Rnd(1..1.125)</code> is shorthand for <code>x + rand() % (x/8 + 1)</code> - a random 0-12.5% nudge, drawn separately for each side.</p>
+<pre><code>Base Offense = Base ATK + Equipment ATK / 2
 
-Offense = [ Base Offense * Rnd(1..1.125) * Power / 16
+Offense = [ Base Offense &times; Rnd(1..1.125) &times; Power / 16
           + Current HP / 256
-          + Base Offense * Juggle / 64
-          + Base Offense * Angle / 65536 ]
-          * Arts Modifier * Element * (Element again for an Art)
+          + Base Offense &times; Juggle / 64
+          + Base Offense &times; Angle / 65536 ]
+          &times; Arts Modifier &times; Element  (&times; Element again for an Art)
 
-Defense = Base DEF * Rnd(1..1.125) + Base DEF * Distance / 1024
+Defense = Base DEF &times; Rnd(1..1.125) + Base DEF &times; Distance / 1024
 
-Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</code></pre>
-  <h3>Base Offense: base ATK plus half of one slot</h3>
+Damage  = Offense &minus; Defense                 (cap 9999; underdog rewrite below)</code></pre>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How one physical hit is computed: base offense, offense roll and multipliers on the attacker's side, a defense roll on the defender's side, meeting in the damage subtraction, then the finisher applies the guard halve, the 9999 cap and the spirit gauge fill">
+      <defs><marker id="bf-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="160" height="70" rx="4"/>
+      <rect class="dg-node" x="200" y="20" width="210" height="70" rx="4"/>
+      <rect class="dg-node" x="440" y="20" width="200" height="70" rx="4"/>
+      <rect class="dg-node" x="200" y="120" width="210" height="70" rx="4"/>
+      <rect class="dg-node-accent" x="670" y="20" width="200" height="70" rx="4"/>
+      <rect class="dg-node-accent" x="670" y="120" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="90" y="44">Base Offense</text>
+      <text class="dg-sub" x="90" y="63">base ATK</text>
+      <text class="dg-sub" x="90" y="79">+ one slot / 2</text>
+      <text class="dg-label" x="305" y="44">Offense roll</text>
+      <text class="dg-sub" x="305" y="63">x Rnd x Power/16</text>
+      <text class="dg-sub" x="305" y="79">+ HP/256 + juggle + angle</text>
+      <text class="dg-label" x="540" y="44">Multipliers</text>
+      <text class="dg-sub" x="540" y="63">Art x1.3 (War Soul 1.4)</text>
+      <text class="dg-sub" x="540" y="79">element x1.04 / x0.96</text>
+      <text class="dg-label" x="305" y="144">Defense roll</text>
+      <text class="dg-sub" x="305" y="163">UDF or LDF x Rnd</text>
+      <text class="dg-sub" x="305" y="179">+ distance; Spirit x3</text>
+      <text class="dg-label" x="770" y="44">Damage</text>
+      <text class="dg-sub" x="770" y="63">Offense - Defense</text>
+      <text class="dg-sub" x="770" y="79">underdog rewrite</text>
+      <text class="dg-label" x="770" y="144">Finisher</text>
+      <text class="dg-sub" x="770" y="163">guard halve, cap 9999</text>
+      <text class="dg-sub" x="770" y="179">spirit gauge fill</text>
+      <path class="dg-edge" d="M170 55 L198 55" marker-end="url(#bf-arrow)"/>
+      <path class="dg-edge" d="M410 55 L438 55" marker-end="url(#bf-arrow)"/>
+      <path class="dg-edge" d="M640 55 L668 55" marker-end="url(#bf-arrow)"/>
+      <path class="dg-edge" d="M410 155 C560 155 600 90 668 70" marker-end="url(#bf-arrow)"/>
+      <path class="dg-edge" d="M770 90 L770 118" marker-end="url(#bf-arrow)"/>
+    </svg>
+    <figcaption>The attacker's side folds one equipment slot at half strength <em>at swing time</em>, rolls, scales by the move's power, then takes the Art and element multipliers; the defender's side rolls too; the difference is the number that pops.</figcaption>
+  </figure>
+
+  <h3 id="worked-example">Worked example - Vahn vs Evil Fly</h3>
+  <p>ZetaPhoenix's playtest: Vahn at base ATK 188, weapon ATK 98, footwear ATK 86, Ra-Seru ATK 100, HP 2747; an Evil Fly with UDF 42 / LDF 49, neutral element. The combo is Left arm, Right arm, then Hyper Elbow (a 20-power, LDF-targeting Art); the random draws are the observed ones.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Hit</th><th>Base Offense</th><th>Rnd</th><th>Offense terms</th><th>Offense</th><th>Defense</th><th>Damage</th></tr></thead>
+    <tbody>
+      <tr><td>1 - Left arm</td><td><code>188 + 98/2 = 237</code></td><td>+7 &rarr; 244</td><td><code>244&times;20/16 = 305</code>, HP 10, juggle 1 &rarr; 3, angle 0</td><td>318</td><td>UDF 42 +1, distance +1 = 44</td><td><strong>274</strong></td></tr>
+      <tr><td>2 - Right arm</td><td><code>188 + 100/2 = 238</code></td><td>+10 &rarr; 248</td><td><code>248&times;20/16 = 310</code>, HP 10, juggle 2 &rarr; 7</td><td>327</td><td>UDF 42 +2 = 44</td><td><strong>283</strong></td></tr>
+      <tr><td>3 - Hyper Elbow</td><td><code>188 + (98+86+100)/2 = 330</code></td><td>+20 &rarr; 350</td><td><code>350&times;20/16 = 437</code>, HP 10, juggle 1 &rarr; 5; sum 452, <code>&times;13/10</code></td><td>587</td><td>LDF 49 +2 = 51</td><td><strong>536</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Total 274 + 283 + 536 = <strong>1086</strong>, matching the in-game figure. The second hit's juggle 2 is why it out-damages the first from a near-identical base, and the Art takes all three gear ATKs at half and then the &times;1.3 - which is where most of an Art's advantage comes from.</p>
+
+  <h3>Which gear a command reads</h3>
   <p><strong>Base ATK</strong> is the character's ATK with nothing equipped - the battle loader copies it into the actor with no equipment folded in (it folds UDF / LDF / SPD, and skips ATK). The menu's ATK figure is base plus <em>all</em> gear, so the two never match. The equipment half is added at swing time, per command:</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Command</th><th>Slot read</th><th>Fold</th></tr></thead>
     <tbody>
       <tr><td>Left arm</td><td>slot 2</td><td><code>atk[2] / 2</code></td></tr>
@@ -92,15 +99,67 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
     </tbody>
   </table>
   <p class="hint">The arms are keyed by <strong>slot</strong>, not item type: Vahn and Gala carry the weapon in slot 2 and the Ra-Seru in slot 3; Noa carries Terra in slot 2 and her claws in slot 3, so hers are swapped. The Art arm sums body and head too - those normally carry no ATK, so in practice it is weapon + Ra-Seru + footwear.</p>
-  <h3>Term by term</h3>
-  <table>
+</section>
+
+<section class="doc-section" id="magic-damage">
+  <h2>A Seru spell</h2>
+  <p>Seru magic does not use ATK, DEF or a per-spell power number. The summoned creature is a real battle actor (slot 7), and the roll is built from live stats - its own, the caster's and the target's - in three stages:</p>
+<pre><code>Attack  = rand(0..summon INT) + summon HP + 2 &times; caster INT
+Defense = rand(0..target INT/2) + target HP/256 + UDF/16 + LDF/16 + 2 &times; target INT
+
+Attack  = Attack &times; affinity[summon element][target element] / 100
+Attack  = Attack + Attack &times; (magic level &minus; 1) / 8          (level 1..9)
+if Defense + summon HP &gt; Attack:  Attack = Defense + rand(0..summon INT/2) + summon HP
+
+Damage  = (Attack &minus; Defense) &times; caster power % / 100           (cap 9999)</code></pre>
+  <p>Venom / Toxic scale either side by 9/10 / 7/10, and a defender in the Spirit stance doubles its Defense. The finisher then halves the damage for a party defender wearing the matching elemental guard, halves it again for a guarding target, and replaces a fully-mitigated hit with <code>rand() % 9 + 8</code>.</p>
+  <h3 id="magic-example">Worked example (illustrative numbers)</h3>
+  <p>Round numbers chosen to show the shape, not a specific spell: a summon with INT 60 and HP 200, cast by a character with INT 80 at magic level 5, against a monster with INT 40, HP 1000, UDF 120, LDF 100, neutral element.</p>
+  <ol class="steps">
+    <li><b>Attack roll</b><span>draw 30 + 200 + 2&times;80 = <strong>390</strong></span></li>
+    <li><b>Defense roll</b><span>draw 10 + 3 + 7 + 6 + 2&times;40 = <strong>106</strong></span></li>
+    <li><b>Element</b><span>neutral, &times;100/100 = 390</span></li>
+    <li><b>Magic level 5</b><span>390 + 390&times;4/8 = <strong>585</strong></span></li>
+    <li><b>Re-roll check</b><span>106 + 200 = 306, not above 585 - kept</span></li>
+    <li><b>Damage</b><span>585 &minus; 106 = <strong>479</strong> at 100% caster power</span></li>
+  </ol>
+  <p>The target's INT counts twice, so a high-INT monster shrugs off magic that would flatten a brute of the same HP. Magic level is the big lever: level 9 doubles the attack roll.</p>
+  <p><strong>Caster power.</strong> Each caster summons their own element at 100% and their opposed element weakest - Vahn fire 100 / water 40, Noa wind 100 / earth 40, Gala thunder 100 / dark 60, everything else 70-95. The same Seru in Vahn's hands and Noa's hands hits differently. Table at <code>0x801F5468</code> (PROT 0898 file <code>0x26C50</code>).</p>
+  <p><strong>Recovery summons skip the roll.</strong> Vera heals <code>32 &times; level + 224</code> (256 at level 1, 512 at level 9), capped at the missing HP; Orb heals <code>64 &times; level + 448</code> across the party row. A levelled Seru spell also stages an element-keyed stat debuff - see <a href="#seru-side-effects">Seru-magic side-effects</a>.</p>
+</section>
+
+<section class="doc-section" id="escape-example">
+  <h2>Running away</h2>
+  <p>A Run is one draw for each side, compared. Every party slot counts (downed members included), and missing HP raises <em>both</em> sides' scores - a hurt party slips away more easily, a hurt pack pursues harder.</p>
+<pre><code>party score = &Sigma; party   SPD &times; 3/2 + missing HP / 16
+enemy score = &Sigma; enemies SPD       + missing HP / 32
+
+roll_p = rand() % party score        roll_e = rand() % enemy score
+Chicken Heart (passive 0x34):         roll_p = roll_p &times; 3/2
+Chicken King (0x37) or pre-emptive:   roll_p = roll_e        (forced tie)
+
+caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pre>
+  <h3>Worked example</h3>
+  <ol class="steps">
+    <li><b>Party</b><span>three members, SPD 40 each, unhurt: 3 &times; 60 = <strong>180</strong></span></li>
+    <li><b>Enemies</b><span>two, SPD 50 each, unhurt: <strong>100</strong></span></li>
+    <li><b>Draws</b><span><code>roll_p</code> in 0..179, <code>roll_e</code> in 0..99</span></li>
+    <li><b>Caught</b><span>when <code>roll_p &lt; roll_e</code>: 27.5% of the time</span></li>
+    <li><b>Escape</b><span><strong>72.5%</strong>; about 81.5% with Chicken Heart</span></li>
+  </ol>
+  <p>The tie arms guarantee only that the compare cannot fail: both run before the scripted-fight test, so neither Chicken King nor a pre-emptive strike gets you out of a boss fight. A back attack is not the mirror image - it never touches this roll and only costs the party its first-round turns. On success the battle ends with no loot and downed members floored at 1 HP (which is how fleeing cures Stone); on failure the turn is spent and the battle continues.</p>
+</section>
+
+<section class="doc-section" id="physical-terms">
+  <h2>The physical hit, term by term</h2>
+  <table class="data-table">
     <thead><tr><th>Term</th><th>What it is</th></tr></thead>
     <tbody>
       <tr><td><code>Rnd(1..1.125)</code></td><td><code>x + rand() % (x/8 + 1)</code> - between <code>x</code> and <code>x + x/8</code>. Drawn separately for attack and defense.</td></tr>
       <tr><td>Power</td><td>The move's power tier: 20 for a normal direction hit; each Art strike carries its own from <code>[12, 18, 20, 22, 28]</code>. Applied as <code>&times; Power / 16</code>.</td></tr>
       <tr><td>Current HP / 256</td><td>The <em>attacker's</em> current HP, shifted down.</td></tr>
       <tr><td>Juggle</td><td>1 on a chain's first hit, +1 per further hit that lands while the defender is still reeling; back to 1 otherwise, and always 1 against a block. Applied as <code>&times; ATK / 64</code>. See <a href="#juggle-window">the juggle window</a>.</td></tr>
-      <tr><td>Angle</td><td>The folded facing difference between attacker and defender, 0 face-on; only a chain's first hit carries it. Applied as <code>&times; ATK / 65536</code>.</td></tr>
+      <tr><td>Angle</td><td>The folded facing difference between attacker and defender, 0 face-on; only a chain's first hit carries it, bounded at <code>ATK / 32</code>. Applied as <code>&times; ATK / 65536</code>.</td></tr>
       <tr><td>Arts Modifier</td><td><code>&times;13/10</code> for an Art; <code>&times;14/10</code> with the <strong>War Soul</strong> accessory (Arts Power passive); <code>&times;1</code> for a plain hit.</td></tr>
       <tr><td>Element</td><td>From the 8&times;8 matchup matrix: same element 96/100, opposed pairs (fire-water, earth-wind, light-dark) 104/100, else 100/100. Applied once per hit and a <em>second</em> time inside the Art arm.</td></tr>
       <tr><td>Base DEF</td><td>Defender UDF for a high-class strike, LDF for a low-class one. Party defenders <em>do</em> get their equipment's defence bytes here.</td></tr>
@@ -110,19 +169,7 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
     </tbody>
   </table>
 
-  <h3 id="worked-example">Worked example - Vahn vs Evil Fly</h3>
-  <p>ZetaPhoenix's playtest: Vahn at base ATK 188, weapon ATK 98, footwear ATK 86, Ra-Seru ATK 100, HP 2747; an Evil Fly with UDF 42 / LDF 49, neutral element. The combo is Left arm, Right arm, then Hyper Elbow (a 20-power, LDF-targeting Art); the random draws are the observed ones.</p>
-  <table>
-    <thead><tr><th>Hit</th><th>Base Offense</th><th>Rnd</th><th>Offense terms</th><th>Offense</th><th>Defense</th><th>Damage</th></tr></thead>
-    <tbody>
-      <tr><td>1 - Left arm</td><td><code>188 + 98/2 = 237</code></td><td>+7 &rarr; 244</td><td><code>244&times;20/16 = 305</code>, HP 10, juggle 1 &rarr; 3, angle 0</td><td>318</td><td>UDF 42 +1, distance +1 = 44</td><td><strong>274</strong></td></tr>
-      <tr><td>2 - Right arm</td><td><code>188 + 100/2 = 238</code></td><td>+10 &rarr; 248</td><td><code>248&times;20/16 = 310</code>, HP 10, juggle 2 &rarr; 7</td><td>327</td><td>UDF 42 +2 = 44</td><td><strong>283</strong></td></tr>
-      <tr><td>3 - Hyper Elbow</td><td><code>188 + (98+86+100)/2 = 330</code></td><td>+20 &rarr; 350</td><td><code>350&times;20/16 = 437</code>, HP 10, juggle 1 &rarr; 5; sum 452, <code>&times;13/10</code></td><td>587</td><td>LDF 49 +2 = 51</td><td><strong>536</strong></td></tr>
-    </tbody>
-  </table>
-  <p>Total 274 + 283 + 536 = <strong>1086</strong>, matching the in-game figure. The second hit's juggle 2 is why it out-damages the first from a near-identical base, and the Art takes all three gear ATKs at half and then the &times;1.3 - which is where most of an Art's advantage comes from.</p>
-
-  <h3>The underdog floor</h3>
+  <h3 id="underdog-floor">The underdog floor</h3>
   <p>When Offense does not clear the defense, the routine does not floor the hit at 1 - it <em>rebuilds</em> the attack on top of the defense: <code>Defense + (3/4 &times; Offense + rand() % (Offense/4 + 1)) &times; Power / 64</code> plus the juggle terms, re-applies a reduced Art multiplier (&times;11/10, or &times;12/10 with War Soul) and the element pass, and finally a chip floor guarantees a few points (<code>rand()%3 + 3</code> plain, <code>rand()%4 + 5</code> for an Art). The "minimum damage" against a heavily-armoured enemy is therefore a fraction of your own roll, not a constant. A petrified defender takes nothing; the whole hit caps at 9999.</p>
 
   <h3 id="juggle-window">The juggle window - what makes a monster "juggleable"</h3>
@@ -132,7 +179,7 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
     <li><strong>It restarts on every hit that lands inside it</strong>, so what matters is the gap between consecutive hits, never the length of the string.</li>
     <li><strong>An Art's slow-motion halves or quarters everyone's play speed</strong>, which doubles or quadruples every window while it runs - part of why Arts chain so well.</li>
   </ul>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Defender</th><th>Flinch beat/rate</th><th>Window</th><th>Read as</th></tr></thead>
     <tbody>
       <tr><td>Rogue</td><td><code>1/2</code></td><td>2 ticks</td><td>effectively un-jugglable</td></tr>
@@ -153,22 +200,20 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
       <p><strong>Live checks.</strong> Against Gilium (<code>f8/2</code>) the counter reads 2, 3, 4 on hits 8-12 ticks apart during an Art (window doubled to 32 by slow-motion), 1 on every hit after the drop; Vahn's own <code>f3/1</code> = 12-tick window measured three times against Gobu Gobu's three hits 24-26 ticks apart, counter 1 each time. Side effects of "whichever clip the actor is in": an actor struck during its own wind-up counts as juggled, and one Cort's beat lies past its 7-frame flinch, so its byte holds for the whole clip.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: the port once seeded attack from the menu aggregate</summary>
-    <div class="disclosure-body"><p>The port once seeded a party member's attack from the <em>menu</em> aggregate (base plus every item's full ATK), over-stating Vahn's first hit above from 237 to 472 before the roll. It seeds the base and folds the halved slot per command (<code>World::battle.equip_atk</code>, <code>arms_weapon_atk_fold</code>); <code>physical_predamage</code> ports the roll pair, the Art and element passes, the status scales, the underdog rewrite and the chip floor, drawing <code>rand()</code> in retail order.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="small-formulas">
   <h2>The smaller formulas</h2>
-  <table>
+  <div class="table-wrap">
+  <table class="data-table">
     <thead><tr><th>Formula</th><th>Expression</th><th>Worked example</th></tr></thead>
     <tbody>
       <tr><td>Accuracy / evasion</td><td><code>rand() % (acc + eva)</code>; hit when <code>eva &lt; roll</code> - hit chance <code>acc / (acc + eva)</code></td><td>acc 120 vs eva 40: hits 75% of the time</td></tr>
       <tr><td>Turn order</td><td>initiative key = <code>SPD + rand(0..SPD/2) + 1</code> per round; highest living key acts</td><td>SPD 60 draws 61..91 - a SPD 40 actor (41..61) can still edge a bad roll</td></tr>
+      <tr><td>Back attack / pre-emptive</td><td>compare the two sides' mean SPD, each blurred by a random spread; then a 1-in-16 gate (1-in-2 for pre-emptive with the pre-emptive passive, 1-in-64 for a back attack with the guard passive)</td><td>the side caught out faces away and loses its round-one turns; skipped entirely in a scripted fight</td></tr>
       <tr><td>MP cost</td><td>MP-half passive: <code>base - (base &gt;&gt; 1)</code>; MP-quarter: <code>base - (base &gt;&gt; 2)</code>; half wins when both are worn</td><td>a 5-MP spell costs <strong>3</strong> with MP-half (rounds up, not down); 40 &rarr; 30 with MP-quarter</td></tr>
-      <tr><td>Spirit super-art damage</td><td><code>target_HP &times; 7 / 5 + 8</code>, cap 288 (large arts) / 100 (small)</td><td>a 150-HP target: <code>218</code>, under the cap</td></tr>
-      <tr><td>Escape (Run)</td><td>party score = &Sigma; <code>(SPD&times;3)/2 + missingHP/16</code>; enemy score = &Sigma; <code>SPD + missingHP/32</code>; one rand each; caught iff <code>roll_p &lt; roll_e</code> or the no-escape flag</td><td>a fast, wounded party out-rolls a slow healthy pack most rounds; Chicken Heart / King bits tilt it further</td></tr>
+      <tr><td>Spirit turn</td><td>next turn's arts bar = <code>min(base AGL &times; 7/5 + 8, 288)</code>; Spirit gauge <code>+32</code> (every other action pays <code>+8</code>), cap 100; the guard stance triples Defense against a physical hit and halves magic damage</td><td>AGL 150: the bar grows from 150 to <strong>218</strong> AP for the next Arts input</td></tr>
+      <tr><td>Escape (Run)</td><td>see <a href="#escape-example">running away</a></td><td>a fast, wounded party out-rolls a slow healthy pack most rounds</td></tr>
       <tr><td>Stat buff</td><td>working stat <code>&times; 6/5</code>, clamp <code>0xFFFF</code>; each stat is a working/base halfword pair</td><td>ATK 300 &rarr; 360 for the fight</td></tr>
       <tr><td>Seru-magic stat debuff</td><td><code>stat - stat &times; pct / 100</code> per hit, <code>pct</code> = 5 / 10 / 15 / 20 by magic-level band 3-4 / 5-6 / 7-8 / 9; the stat is picked by the summon's element (<a href="#seru-side-effects">below</a>)</td><td>two level-5 Gimard hits: ATK 300 &rarr; 270 &rarr; 243</td></tr>
       <tr><td>Victory gold</td><td>&Sigma; <code>gold/2</code> over dead enemies, &times;1.25 with the gold passive, then halved; lone enemy <code>floor((gold/2)/2)</code></td><td>Gimard (record gold 60) credits exactly <strong>+15</strong></td></tr>
@@ -176,22 +221,23 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
       <tr><td>RNG</td><td><code>seed = seed &times; 1103515245 + 12345; return (seed &gt;&gt; 16) &amp; 0x7FFF</code></td><td>range 0..32767 - the standard PsyQ <code>rand()</code></td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="stat-mapping">
   <h2>Actor stats and the monster record</h2>
   <p>The per-actor stat block runs <code>+0x14C..+0x16A</code>, each stat a <strong>pair</strong> of halfwords (working value, base). The loader copies each monster-record halfword into it; the names come from the formulas that consume each slot:</p>
-  <table class="layout">
+  <table class="data-table">
     <thead><tr><th>Record</th><th>Actor pair</th><th>Stat</th><th>Consumed by</th></tr></thead>
     <tbody>
       <tr><td><code>+0x0C</code></td><td><code>+0x14C</code></td><td>HP</td><td>the applicator's HP delta</td></tr>
       <tr><td><code>+0x10</code></td><td><code>+0x150</code></td><td>MP</td><td>cast costs</td></tr>
-      <tr><td><code>+0x0E</code></td><td><code>+0x154</code></td><td>AGL</td><td>the action gauge the AI spends per action, re-derived each round; "Power Up" raises it</td></tr>
+      <tr><td><code>+0x0E</code></td><td><code>+0x154</code></td><td>AGL</td><td>the per-turn action budget (the party's arts bar, the AI's move queue), restored each round; "Power Up" raises it</td></tr>
       <tr><td><code>+0x12</code></td><td><code>+0x158</code></td><td>ATK</td><td>attacker's offense</td></tr>
       <tr><td><code>+0x14</code></td><td><code>+0x15C</code></td><td>UDF</td><td>defense vs high-class strikes</td></tr>
       <tr><td><code>+0x16</code></td><td><code>+0x160</code></td><td>LDF</td><td>defense vs low-class strikes</td></tr>
       <tr><td><code>+0x18</code></td><td><code>+0x168</code></td><td>INT</td><td>magical damage and magic defense; seeds accuracy / evasion</td></tr>
-      <tr><td><code>+0x1A</code></td><td><code>+0x164</code></td><td>SPD</td><td>the initiative key above</td></tr>
+      <tr><td><code>+0x1A</code></td><td><code>+0x164</code></td><td>SPD</td><td>the initiative key and the escape roll</td></tr>
     </tbody>
   </table>
   <p>The single "Defense Up" buff raising UDF and LDF together confirms they are two facets of one defense. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy, along with each monster's castable spell list and AGL costs (decoded from the record's spell-offset array - entry head byte is the spell id, <code>+0x74</code> the AGL cost the AI checks and spends).</p>
@@ -200,7 +246,7 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
 <section class="doc-section" id="seru-side-effects">
   <h2>Seru-magic side-effects</h2>
   <p>A levelled Seru spell does more than damage: the stager <code>FUN_801F3D3C</code>, called once per cast from inside the spell's own summon module, stages a secondary effect keyed on the <strong>summoned creature's element</strong> (the slot-7 record's <code>+0x1D</code>, the byte the affinity scale reads) and scaled by the caster's magic level for the spell (record <code>+0x161</code>). It writes a percent to <code>0x801F6960</code> and a banner string to <code>0x800775B4</code>; the damage finisher <code>FUN_801DDB30</code> then shaves <code>stat &times; pct / 100</code> off the target on <em>every hit</em>. The table is <code>0x801F6870</code> (PROT 0898 file <code>0x28058</code>), parsed by <code>legaia_asset::seru_side_effect</code>.</p>
-  <table class="layout">
+  <table class="data-table">
     <thead><tr><th>Summon element</th><th>Effect</th><th>lv 3-4</th><th>lv 5-6</th><th>lv 7-8</th><th>lv 9</th></tr></thead>
     <tbody>
       <tr><td>0 earth</td><td>DEF down - all four defence halfwords</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
@@ -212,14 +258,14 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
       <tr><td>6 dark</td><td>MP down - current MP <code>+0x150</code> only</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
     </tbody>
   </table>
-  <p>The gates, in order: level below 3 stages nothing. With the <strong>scripted-fight flag</strong> <code>ctx[+0x287]</code> set (a formation row's non-zero header byte - every boss), four casts in five are suppressed unless the spell is light or <code>affinity[summon][first enemy] &ge; 101</code> (thunder against the four base elements, or the opposite pair). Then, for earth / fire / wind / thunder / dark in a scripted fight and for water always, the target's <em>base</em> stat halfword is compared with the raw record and the effect is dropped when they differ. Because the scripted boost profile has already raised ATK, UDF/LDF and INT, those three debuffs can never land on a boss; SPD and AGL land once per battle - literally once: the first cast that passes moves the value the compare reads, and every later cast of that element prints "No effect." for the rest of the fight; MP-down compares a value the hit never moves and lands every time. A random encounter runs neither the roll nor the compare (water aside), so everything lands and stacks. There is no per-monster immunity field - the record's <code>+0x24..+0x43</code> is zero across the roster. The <a href="../monsters.html#side-effects">enemy table</a> renders the verdict per enemy; the "No effect." banner is the return-from-fade pass <code>FUN_801F3C34</code> announcing a suppressed or already-landed effect.</p>
-  <p>Engine: <code>engine-vm::seru_side_effect::{stage_side_effect, apply_hit}</code> both run in the live loop - the stager once per player Seru cast at the engine's single cast fold, the finisher switch per damaged target inside it. Three pieces of live state carry them: the <em>base</em> stat halfwords (written equal to the working halves at battle entry, the way the record copy does, and untouched afterwards except by a debuff), the scripted-fight flag derived from the formation's header byte, and the enemy stat seed picking its boost profile from that same flag - so a random encounter really does install the &times;7/4 defence profile. A host with no disc installs no table and the stager returns before its one <code>rand()</code> draw.</p>
+  <p><strong>Why bosses shrug most of it off.</strong> Level below 3 stages nothing. In a <strong>scripted fight</strong> (a formation row's non-zero header byte - every boss), four casts in five are suppressed unless the spell is light or <code>affinity[summon][first enemy] &ge; 101</code>. Then, for earth / fire / wind / thunder / dark in a scripted fight and for water always, the target's <em>base</em> stat halfword is compared with the raw record and the effect is dropped when they differ. Because the scripted boost profile has already raised ATK, UDF/LDF and INT, those three debuffs can never land on a boss; SPD and AGL land once per battle - the first cast that passes moves the value the compare reads, and every later cast of that element prints "No effect."; MP-down compares a value the hit never moves and lands every time.</p>
+  <p>A random encounter runs neither the roll nor the compare (water aside), so everything lands and stacks. There is no per-monster immunity field - the record's <code>+0x24..+0x43</code> is zero across the roster. The <a href="../monsters.html#side-effects">enemy table</a> renders the verdict per enemy; the "No effect." banner is the return-from-fade pass <code>FUN_801F3C34</code> announcing a suppressed or already-landed effect.</p>
 </section>
 
 <section class="doc-section" id="victory-spoils">
   <h2>Victory spoils</h2>
   <p>EXP / gold / drop are inline in each monster record; the spoils routine walks the dead enemies and applies the scaling in the <a href="#small-formulas">table above</a>:</p>
-  <table class="layout">
+  <table class="data-table">
     <thead><tr><th>Record</th><th>Field</th><th>Note</th></tr></thead>
     <tbody>
       <tr><td><code>+0x44</code> u16</td><td>base gold</td><td>scaled, then committed to the wallet (clamp 99,999,999)</td></tr>
@@ -229,25 +275,19 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
     </tbody>
   </table>
   <p>The drop is one item per battle, not one per enemy. Every enemy costs one <code>rand() % 100</code> against its chance (plus 30 when a living member carries Items Up), and the last enemy whose roll wins supplies the item - a captured one cannot. Then, unless some enemy has a 100% chance or the bonus applies, a further <code>rand() &amp; 3</code> must come up zero or the drop is lost: a lone 10% enemy drops 2.5% of the time. The item is not granted when 99 are already held.</p>
-  <p>Runtime-confirmed by write-watchpoint (Gimard credits exactly +15 gold) and cross-checked against the curated <a href="../reference/gamedata.html">game-data tables</a> (Gimard drops Healing Leaf at 10%). The engine wires the scaling into <code>World::apply_battle_loot</code> / <code>apply_battle_xp</code>, so the credited reward is the scaled amount, not the raw record sum.</p>
-  <p>The <strong>special-battle word</strong> <code>_DAT_8007BAC0</code> is not the scripted-fight flag - a boss row leaves it alone. It is non-zero in an arena leg and in the two Ra-Seru-forbidden fights (the Rim Elm ambush, first monster <code>0xAF</code>), and any bit of it zeroes the gold and each member's EXP, skips the drop walk and the steal, makes the Seru absorb answer "known", skips spell XP and drops a monster flee the roll granted. The same word opens no result window at the end, ends the battle as a party wipe once the leader has all three limbs rotted, and in an arena leg hands a Run round's first turn to the leader and records the leg as run; its <code>0x100</code> bit forces the party's flee. The engine reads all of these through <code>World::special_battle_word</code>.</p>
+  <p>Runtime-confirmed by write-watchpoint (Gimard credits exactly +15 gold) and cross-checked against the curated <a href="../reference/gamedata.html">game-data tables</a> (Gimard drops Healing Leaf at 10%).</p>
+  <p><strong>Other regions pay more.</strong> The record bytes are identical on every disc, but the JP original and the three PAL executables skip the final gold halving and the EXP cut: a lone enemy pays half its record gold there against a quarter on NTSC-U, and the whole record EXP is split instead of three quarters. Zeto pays 2000 G on NTSC-U and 4000 G on PAL - the source of community tables that show "double" gold.</p>
+  <p>The <strong>special-battle word</strong> <code>_DAT_8007BAC0</code> is not the scripted-fight flag - a boss row leaves it alone. It is non-zero in an arena leg and in the two Ra-Seru-forbidden fights (the Rim Elm ambush, first monster <code>0xAF</code>), and any bit of it zeroes the gold and each member's EXP, skips the drop walk and the steal, makes the Seru absorb answer "known", skips spell XP and drops a monster flee the roll granted. The same word opens no result window at the end, ends the battle as a party wipe once the leader has all three limbs rotted, and in an arena leg hands a Run round's first turn to the leader and records the leg as run; its <code>0x100</code> bit forces the party's flee.</p>
 </section>
 
 <section class="doc-section" id="engine-mirror">
-  <h2>Engine port</h2>
-  <p><code>crates/engine-vm/src/battle_formulas.rs</code> ports every formula above as pure functions, drawing <code>rand()</code> in retail call order so the RNG stream matches. Live in the battle loop:</p>
-  <ul class="bullets">
-    <li><strong>Melee:</strong> <code>physical_predamage</code> + the per-command equipment fold; accuracy rolls; MP-saver accessories.</li>
-    <li><strong>Magic:</strong> the faithful summon kernel for player Seru-magic and <code>arts_physical_predamage</code> for monster specials, seeded by the <a href="../formats/move-power.html">move-power table</a>.</li>
-    <li><strong>Element affinity in both directions</strong> - and by <em>slot</em>, not spell: a player Seru cast attacks <em>as the summoned creature</em>, scaling by <code>matrix[creature element][target element]</code>; a monster's element reads record-direct.</li>
-    <li><strong>Finisher:</strong> <code>damage_finish</code> - elemental-guard halving, guard halve, the <code>rand()%9+8</code> floor, the 9999 cap, spirit-gauge accrual.</li>
-    <li><strong>Spoils and escape:</strong> the reward scaling and the Run roll.</li>
-  </ul>
-  <p>Every disc-seeded path is gated so an uninstalled table reproduces the placeholder baseline bit-identically - disc-free battles stay deterministic.</p>
+  <h2>In the port</h2>
+  <p><code>engine-vm::battle_formulas</code> carries every formula on this page as a pure function, drawing <code>rand()</code> in retail call order so the RNG stream matches: <code>physical_predamage</code> for the melee kernel, the summon kernels for Seru magic, <code>damage_finish</code> and <code>spirit_gauge_fill</code> for the finisher, <code>escape_roll</code>, the spoils scaling and the drop roll. Element affinity applies in both directions and by <em>slot</em>, not spell: a player Seru cast attacks as the summoned creature.</p>
   <details class="disclosure">
     <summary>Deep dive: the applicator, and what stays open</summary>
     <div class="disclosure-body">
       <p><strong>The applicator</strong> <code>FUN_800402F4</code> (~1,976 instructions) is a selector dispatch, <code>switch(selector) { case 0..0x83 }</code>, over four 8-pointer arrays covering each actor's HP / MP pairs. Selector 0 applies the pending HP delta against the per-party-slot damage-cap table; selector 9 is the accuracy roll; selectors 1..7 are the &times;6/5 stat-buff ramps (each touching a working/base halfword pair). The table has 132 slots but only 15 distinct arms, and 116 of them - every selector from <code>0x0F</code> to <code>0x83</code> bar one - are the function's own epilogue, the same place an out-of-range selector lands. The only body above <code>0x0E</code> is a single call that ramps screen brightness. The arms that do work are all at or below <code>0x0E</code>: status clear, an opposed-INT status roll, learning a Tactical Art, and discharging the Point Card counter as damage.</p>
+      <p><strong>The spirit-gauge fill exists twice</strong> in overlay 0898 - one inlined copy in the magic finisher, one in the physical resolver. A mod that edits only the first leaves ordinary enemy swings running stock.</p>
       <p><strong>Open threads:</strong> the retail <em>debuff</em> factor (the port keeps debuffs additive); the interior semantics of the per-spell effect descriptor a monster spell's effect index resolves to; what the kernel does with a negative angle halfword (a strike from behind) - uncaptured; and two juggle loose ends (the four-slot list helper that no disc reaction entry exercises, and whether the parry guard window uses the same beat). See <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
     </div>
   </details>
@@ -255,22 +295,25 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <div class="table-wrap">
+  <table class="data-table">
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Melee kernel</td><td><code>FUN_801EC3E4</code></td><td>The whole physical pipeline: roll pair, power tiers at <code>0x801F64EC</code>, juggle / angle terms, Art &times;13/10, element matrix at <code>0x801F53E8</code>, underdog rewrite, chip floor.</td><td><code>overlay_0898_801ec3e4.txt</code></td></tr>
       <tr><td>Equipment fold arms</td><td><code>PTR_801CF4B4</code> table, arms <code>0x801ECBC4..0x801ECDE4</code></td><td>Which slot each command reads, halved; the arms live in a listing gap and are read straight from overlay bytes.</td><td>overlay 0898 bytes</td></tr>
       <tr><td>Battle loader</td><td><code>FUN_80053CB8</code></td><td>ATK is seeded <em>base</em>, equipment folded only at swing time.</td><td><code>80053cb8.txt</code></td></tr>
       <tr><td>Reeling byte</td><td><code>FUN_80047430</code></td><td>The only two writers of <code>+0x1F7</code>; the first-event-frame derivation.</td><td><code>80047430.txt</code>; live write-watch</td></tr>
+      <tr><td>Magic kernel + finisher</td><td><code>FUN_801DD0AC</code> / <code>FUN_801DD864</code> / <code>FUN_801DDB30</code></td><td>INT-driven roll pair, affinity / status / magic-level scale, re-roll; per-caster summon power table at <code>0x801F5468</code>; finisher stages.</td><td><code>overlay_battle_action_801dd0ac.txt</code></td></tr>
       <tr><td>Applicator</td><td><code>FUN_800402F4</code></td><td>Selector dispatch; HP caps at <code>DAT_8007655C</code>; accuracy roll; buff ramps.</td><td><code>800402f4.txt</code></td></tr>
       <tr><td>MP-cost modifier</td><td><code>FUN_801E295C</code> state <code>0x28</code></td><td>Subtract-a-shift (rounds up); MP-half short-circuits MP-quarter.</td><td><code>overlay_0898_801e295c.txt</code></td></tr>
-      <tr><td>Escape roll</td><td><code>FUN_801E791C</code></td><td>Party / enemy score formulas, two draws, accessory bits.</td><td>overlay 0898 dump</td></tr>
+      <tr><td>Formation advantage</td><td><code>FUN_80051D84</code></td><td>Mean-SPD roll, the two passives, the latch the escape roll reads.</td><td><code>80051d84.txt</code></td></tr>
+      <tr><td>Escape roll</td><td><code>FUN_801E791C</code></td><td>Party / enemy score formulas, two draws, accessory bits, the pre-emptive tie.</td><td>overlay 0898 dump</td></tr>
       <tr><td>Spoils</td><td><code>FUN_8004E568</code></td><td>Gold / EXP scaling; record fields <code>+0x44..+0x49</code>; runtime write-watch on the wallet.</td><td><code>8004e568.txt</code></td></tr>
-      <tr><td>Magic kernel + finisher</td><td><code>FUN_801DD0AC</code> / <code>FUN_801DDB30</code></td><td>INT-driven roll; per-caster summon power table at <code>0x801F5468</code>; finisher stages.</td><td>overlay 0898 dumps</td></tr>
       <tr><td>RNG</td><td><code>FUN_80056798</code></td><td>PsyQ LCG constants; 15-bit output.</td><td><code>80056798.txt</code></td></tr>
     </tbody>
   </table>
-  <p>Each claim of the community analysis is checked against the disassembly; every term is confirmed, with one correction (the random source is 15-bit, immaterial after the modulo) and two open magnitudes (the negative-angle behaviour; the walk-in distance is runtime state, not a constant). The full claim-by-claim table, register-level stage list and address appendix - plus the summon kernel, spell-XP accrual and poison ticker in full - are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-formulas.md</code></a>.</p>
+  </div>
+  <p>Each claim of the community analysis is checked against the disassembly; every term is confirmed, with one correction (the random source is 15-bit, immaterial after the modulo) and two open magnitudes (the negative-angle behaviour; the walk-in distance is runtime state, not a constant). The full claim-by-claim table, register-level stage list and address appendix - plus the spell-XP accrual, the poison ticker and the monster escape roll - are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-formulas.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="credits">
