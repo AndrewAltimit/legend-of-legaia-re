@@ -1006,6 +1006,8 @@ For each of the four TIMs it forms the header `+8` (the CLUT block), writes that
 | `+0x18E04` | SCEA     | 4bpp | (320, 508) | (640, 0)   | `0x0A` | `0x7F14` |
 | `+0x1CE44` | WARNING  | 4bpp | (0, 506)   | (704, 0)   | `0x0B` | `0x7E80` |
 
+The logo CLUT rows stay resident after boot: nothing re-uploads `(320..575, 507)` until a scene's own TIM claims the cells, so PROKION's palette - entries `131..161` are a 31-step grey ramp `0x0421 * k` at `(451..481, 507)` - shows up in the VRAM of every field state captured since, `teien`'s hedge CLUT row included. A cold-boot exec breakpoint on the upload body `FUN_80059BD4` (`scripts/pcsx-redux/autorun_grey_ramp_writer.lua`) sees exactly one write covering `(451, 507)`: this 256 x 1 rect, from `0x801D09F0`, at vsync 317. No TMD on the disc names a CLUT cell past `x = 255` on row 507, so a port that leaves the boot palettes out of a field scene's VRAM loses nothing on screen.
+
 SCEA and WARNING are uploaded where their rects are written; PROKION and Contrail have their rects written in the same pass but are uploaded later in the body, after the display env is up. The routine also selects the **640×480** wide display mode (`FUN_8001DAF8(0x400)`), clears VRAM `(0, 0, 640, 500)` to black through `FUN_80058298` with the RECT at file `+0x08`, loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00` (so the pack "header" is two `RECT`s, not four opaque words), spawns the two boot actors, and stores game mode `0x11`.
 
 ### The per-logo quads
