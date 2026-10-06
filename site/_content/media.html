@@ -1024,8 +1024,7 @@
       const bytes = await prog.read(f, `Reading ${f.name}`);
       prog.indeterminate('Initialising decoder…');
       if (!wasmMod) {
-        wasmMod = await import('./wasm/legaia_web_viewer.js');
-        await wasmMod.default();
+        wasmMod = await LegaiaWasm.load();
       }
       audio = new wasmMod.LegaiaAudio();
       prog.indeterminate('Parsing PROT.DAT - this can take a few seconds…');

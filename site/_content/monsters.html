@@ -1334,8 +1334,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     try {
       const buf = await prog.read(f, `Reading ${f.name}`);
       prog.indeterminate('Initialising decoder…');
-      const mod = await import('./wasm/legaia_web_viewer.js');
-      await mod.default();
+      const mod = await LegaiaWasm.load();
       viewer = new mod.LegaiaViewer('enemy-table-canvas');
       prog.indeterminate('Parsing PROT.DAT - this can take a few seconds…');
       await prog.paint(); // let the bar render before the blocking parse

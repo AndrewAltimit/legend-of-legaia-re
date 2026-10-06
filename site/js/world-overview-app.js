@@ -675,13 +675,7 @@
         : new Uint8Array(await f.arrayBuffer());
       if (prog) prog.indeterminate('Initialising WASM decoder…');
       if (!wasmMod) {
-        // This file loads as a CLASSIC script (no type="module"), so
-        // `import.meta` is a SyntaxError that would kill the whole file.
-        // Resolve wasm-pack output against the page URL instead, like
-        // arts-viewer.js / summon-view.js do.
-        const v = window.LEGAIA_WASM_V || '0';
-        wasmMod = await import(new URL('wasm/legaia_web_viewer.js?v=' + v, document.baseURI).href);
-        await wasmMod.default(new URL('wasm/legaia_web_viewer_bg.wasm?v=' + v, document.baseURI).href);
+        wasmMod = await LegaiaWasm.load();
       }
       $status.textContent = 'Classifying PROT entries ...';
       if (prog) { prog.indeterminate('Parsing PROT.DAT + classifying entries…'); await prog.paint(); }

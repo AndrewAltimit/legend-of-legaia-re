@@ -32,9 +32,7 @@ let wasmMod = null;
 
 async function ensureWasm() {
   if (wasmMod) return wasmMod;
-  const v = window.LEGAIA_WASM_V || '0';
-  wasmMod = await import('../wasm/legaia_web_viewer.js?v=' + v);
-  await wasmMod.default(new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, import.meta.url));
+  wasmMod = await window.LegaiaWasm.load();
   return wasmMod;
 }
 
