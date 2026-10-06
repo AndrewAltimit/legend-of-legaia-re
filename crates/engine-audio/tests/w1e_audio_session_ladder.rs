@@ -24,6 +24,7 @@
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 
+use legaia_engine_audio::AudioSink;
 use std::path::{Path, PathBuf};
 
 use legaia_engine_audio::seq_calc::{
@@ -369,7 +370,7 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
         return;
     };
 
-    let mut sink = TestAudioSink::new(SPU_INTERNAL_RATE);
+    let sink = TestAudioSink::new(SPU_INTERNAL_RATE);
     let mut alloc = SpuAllocator::new(SPU_RAM_BYTES as u32 - SFX_SPU_BYTES, SFX_SPU_BYTES);
     let vab = sink.with_spu(|spu: &mut Spu| {
         VabBank::upload(spu, &mut alloc, &report, &bank_bytes[vab_off..])

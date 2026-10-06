@@ -22,3 +22,6 @@ legaia-save.workspace = true
 legaia-seq.workspace = true
 legaia-vab.workspace = true
 legaia-xa.workspace = true
+
+[dev-dependencies]
+legaia-engine-audio.workspace = true

@@ -1230,7 +1230,11 @@ impl<S: AudioSink> BootSession<S> {
     /// bank slot, or the entry doesn't decode. The slot machine + fishing
     /// deliberately don't call this: retail inherits the host scene's BGM.
     pub fn start_global_bgm(&mut self, bgm_id: u16) -> bool {
-        let Ok(Some(entry)) = self.host.music_bank_entry_bytes(bgm_id) else {
+        // A scene-local id loads retail's fallback track, as the op-0x35
+        // route does, so a card load whose save carries one restores a track
+        // rather than silence.
+        let bank_id = legaia_engine_core::scene::bgm_bank_id(bgm_id);
+        let Ok(Some(entry)) = self.host.music_bank_entry_bytes(bank_id) else {
             return false;
         };
         let Some(bgm) = self.bgm.as_mut() else {

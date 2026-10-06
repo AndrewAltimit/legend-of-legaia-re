@@ -267,18 +267,6 @@ impl LegaiaRuntime {
     }
 }
 
-/// The `music_01` entry a track id loads: its own for a global id, retail's
-/// fallback entry for a scene-local one - the rule
-/// `SceneHost::route_bgm_events` applies to every routed start.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-fn owned_bank_id(id: u16) -> u16 {
-    if id < legaia_engine_core::scene::GLOBAL_BGM_BASE {
-        legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID
-    } else {
-        id
-    }
-}
-
 impl LegaiaRuntime {
     /// Perform an armed title -> load hand-off ([`Self::play_bgm_title_handoff`]):
     /// stop the running score, then start the loaded world's own track through
@@ -307,7 +295,9 @@ impl LegaiaRuntime {
             let Some(id) = host.world.audio.current_bgm else {
                 return;
             };
-            if let Ok(Some(entry)) = host.music_bank_entry_bytes(owned_bank_id(id)) {
+            if let Ok(Some(entry)) =
+                host.music_bank_entry_bytes(legaia_engine_core::scene::bgm_bank_id(id))
+            {
                 director.start_owned_vab(id, &entry);
             }
         }
@@ -343,7 +333,9 @@ impl LegaiaRuntime {
             let Some(id) = host.world.audio.current_bgm else {
                 return;
             };
-            if let Ok(Some(entry)) = host.music_bank_entry_bytes(owned_bank_id(id)) {
+            if let Ok(Some(entry)) =
+                host.music_bank_entry_bytes(legaia_engine_core::scene::bgm_bank_id(id))
+            {
                 let mut director = WebBgmDirector {
                     out,
                     bank: &mut self.bgm_bank,

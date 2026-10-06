@@ -1263,6 +1263,115 @@ mod tests {
         );
     }
 
+    /// A director over the device-free sink - the same director both hosts
+    /// run, with the mixing core pulled by the test instead of a device.
+    // Single-threaded like both hosts; the director takes its sink by `Arc`.
+    #[allow(clippy::arc_with_non_send_sync)]
+    fn headless() -> AudioBgmDirector<legaia_engine_audio::TestAudioSink> {
+        AudioBgmDirector::new(Arc::new(legaia_engine_audio::TestAudioSink::new(
+            legaia_engine_audio::SPU_INTERNAL_RATE,
+        )))
+    }
+
+    /// The duck is retail's arithmetic: a 75% target lands at
+    /// `0xD7 * 75 / 100`, the live level steps one unit per tick toward it,
+    /// back up the same way, and an out-of-range percentage clamps.
+    #[test]
+    fn duck_ramps_one_unit_per_tick_to_retails_target() {
+        use legaia_engine_audio::duck::DUCK_LEVEL_REF;
+        let mut d = headless();
+        assert_eq!(d.duck_level(), DUCK_LEVEL_REF);
+        d.set_duck_pct(75);
+        let target = (u32::from(DUCK_LEVEL_REF) * 75 / 100) as u8;
+        let mut steps = 0;
+        while d.duck_level() != target {
+            d.tick_duck();
+            steps += 1;
+            assert!(steps <= 255, "the duck never reached its target");
+        }
+        assert_eq!(steps, u32::from(DUCK_LEVEL_REF - target));
+        d.tick_duck();
+        assert_eq!(d.duck_level(), target, "settled: the level holds");
+        d.set_duck_pct(100);
+        while d.duck_level() != DUCK_LEVEL_REF {
+            d.tick_duck();
+        }
+        d.set_duck_pct(250);
+        d.tick_duck();
+        assert_eq!(
+            d.duck_level(),
+            DUCK_LEVEL_REF,
+            "a percentage past 100 clamps"
+        );
+    }
+
+    /// A scene change empties the cue queue but keeps the reward bank: it
+    /// lives in the BGM region's tail until a track overruns it or the field
+    /// init closes it (the shared `BgmTail` rule).
+    #[test]
+    fn scene_change_clears_the_queue_but_keeps_the_reward_bank() {
+        let mut d = headless();
+        d.enqueue_sfx(0x21, 3, 0, 0);
+        d.enqueue_sfx(0x118, 5, 0, 3);
+        d.tail.commit_reward(TailBorrow {
+            slot: TRANSIENT_REWARD_SLOT,
+            base: 0x8000,
+            end: 0x9000,
+        });
+        assert_eq!(d.sfx_sched.pending_count(), 2);
+        d.clear_sfx();
+        assert_eq!(d.sfx_sched.pending_count(), 0);
+        assert!(d.tail.reward().is_some());
+    }
+
+    /// The scheduler steps once per tick wherever the host calls
+    /// `tick_sfx_frame` - under a menu-overlay screen too, as retail's
+    /// mode-`0x17` handler runs the cue drainer - so a delayed cue matures
+    /// on its own frame.
+    #[test]
+    fn a_delayed_cue_matures_on_its_frame() {
+        let mut d = headless();
+        d.enqueue_sfx(0x21, 3, 0, 0);
+        d.tick_sfx_frame();
+        d.tick_sfx_frame();
+        assert_eq!(d.sfx_sched.pending_count(), 1, "still delayed");
+        d.tick_sfx_frame();
+        d.tick_sfx_frame();
+        assert_eq!(d.sfx_sched.pending_count(), 0, "matured");
+    }
+
+    /// The side-band retry memo is the shared tail's: a scene change neither
+    /// clears nor re-arms it (a door stages no bank, so the free tail is what
+    /// it was).
+    #[test]
+    fn a_scene_change_keeps_the_side_band_memo() {
+        let mut d = headless();
+        let want = SideBandBank {
+            request: 2002,
+            slot: 3,
+            prot_entry: 1070,
+        };
+        assert!(d.tail.begin_side_band_attempt(want));
+        d.clear_sfx();
+        assert!(
+            !d.tail.begin_side_band_attempt(want),
+            "same tail, same request: not retried"
+        );
+    }
+
+    /// A cast cue (`0x118`, `0x20C`, ...) routes to the CD-XA voice leg and
+    /// never keys a descriptor - truncating it to `u8` would key the populated
+    /// entries `0x18` / `0x0C`.
+    #[test]
+    fn a_matured_voice_cue_keys_no_descriptor() {
+        let mut d = headless();
+        d.set_bank(empty_bank());
+        d.enqueue_sfx(0x20C, 0, 3, 0);
+        d.enqueue_sfx(0x118, 0, 0, 0);
+        assert!(d.tick_sfx_frame().is_empty());
+        assert_eq!(d.sfx_sched.pending_count(), 0);
+    }
+
     /// Test stub bank - empty programs / samples. Real banks come from
     /// `legaia_vab::parse`.
     fn empty_bank() -> VabBank {
