@@ -80,7 +80,7 @@ impl LegaiaRuntime {
         if !self.dev_menu_enabled {
             return;
         }
-        let Some(scene) = self.scene_host.host_mut() else {
+        let Some((scene, camera)) = self.scene_host.host_cam_mut() else {
             return;
         };
         // The EVENT FLAG page's list comes off the user's disc (the field
@@ -100,7 +100,7 @@ impl LegaiaRuntime {
         // The shared tick the native window makes: party records, the
         // CAMERA row's follow switch on this page's camera, and the EQUIP
         // row's confirm against the engine's own bag.
-        let _ = session.tick_host(world, &mut self.camera, edge, held);
+        let _ = session.tick_host(world, camera, edge, held);
 
         // The screen's cues ride the world's SFX ring (retail
         // `FUN_80035B50`), which `route_field_sfx` replays - the same call

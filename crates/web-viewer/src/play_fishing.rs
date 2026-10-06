@@ -119,11 +119,11 @@ impl LegaiaRuntime {
     /// writes, applied here to this page's engine camera. The ripples and
     /// bursts land in `World::minigames.fx`, which this page already draws.
     pub(crate) fn tick_fishing_actors(&mut self) {
-        let Some(host) = self.scene_host.host_mut() else {
+        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
             return;
         };
         let writes = legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(host);
-        writes.apply(&mut self.camera);
+        writes.apply(camera);
     }
 
     /// The fishing rod and line as screen primitives for this tick - the
@@ -135,7 +135,7 @@ impl LegaiaRuntime {
     /// shared `ui_fishing_line` builder, into the page's screen-prim pass.
     pub(crate) fn fishing_line_prims(&mut self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some(host) = self.scene_host.host_mut() else {
+        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
             return Vec::new();
         };
         let world = &mut host.world;
@@ -144,7 +144,7 @@ impl LegaiaRuntime {
         }
         // The pond draws under the venue camera; the line projects through it.
         let view = legaia_engine_core::fishing_venue::venue_view(&world.minigames).or_else(|| {
-            legaia_engine_core::camera_view::resolve_field_camera(world, &self.camera, None, centre)
+            legaia_engine_core::camera_view::resolve_field_camera(world, camera, None, centre)
                 .field_view()
         });
         // The rod model first, as the native window orders it: the rod actor

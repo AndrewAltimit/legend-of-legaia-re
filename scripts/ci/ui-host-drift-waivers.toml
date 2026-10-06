@@ -367,7 +367,7 @@ skips = [
 
 [[frame_arm]]
 host = "web"
-arm = "let Some(host) = self.scene_host.host_mut() else"
+arm = "let Some((host, camera)) = self.scene_host.host_cam_mut() else"
 reason = """
 No scene host: no disc has been loaded, or the page is on its boot title. The
 arm ticks the bare `World` and returns. Every kernel in the list reads scene

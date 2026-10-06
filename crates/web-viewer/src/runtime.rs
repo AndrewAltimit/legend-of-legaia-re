@@ -90,13 +90,6 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
-    /// The engine camera controller ([`crate::play_camera`]) - the same
-    /// `legaia_engine_core::camera::Camera` the native window's session owns.
-    /// This host had none at all, so nothing here routed the op-`0x45`
-    /// Configure beats, advanced the mover, wrote the follow focus back into
-    /// the retail globals, or reset them on scene entry; the page framed a
-    /// separate orbit camera beside a world whose camera state never moved.
-    pub(crate) camera: legaia_engine_core::camera::Camera,
     /// The between-beat cutscene glide and its display-frame clock - the
     /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
     /// one of too. Without it every `apply > 0` Camera Configure beat snapped
@@ -384,7 +377,16 @@ impl LegaiaRuntime {
         Self {
             world,
             menu,
-            scene_host: Default::default(),
+            scene_host: crate::host_slot::HostSlot::new({
+                let mut c = legaia_engine_core::camera::Camera::new();
+                c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+                // The follow distance is an OPTION, and the window applies it
+                // at startup (`window/run.rs`). `Camera::new()`'s own default
+                // is `Retail`, so a page that never read the option framed
+                // every field frame ~35% closer than the window did.
+                c.distance = options_state.camera_distance;
+                c
+            }),
             field: None,
             player: None,
             tile_mesh: None,
@@ -398,16 +400,6 @@ impl LegaiaRuntime {
             // The host framing bias the retail follow view is rendered with,
             // pushed in exactly where the native window pushes it
             // (`window/run.rs`), through the one shared expression.
-            camera: {
-                let mut c = legaia_engine_core::camera::Camera::new();
-                c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
-                // The follow distance is an OPTION, and the window applies it
-                // at startup (`window/run.rs`). `Camera::new()`'s own default
-                // is `Retail`, so a page that never read the option framed
-                // every field frame ~35% closer than the window did.
-                c.distance = options_state.camera_distance;
-                c
-            },
             cutscene_glide: Default::default(),
             engine_camera: None,
             sim_stepper: Default::default(),
@@ -749,7 +741,7 @@ impl LegaiaRuntime {
         // and was framed by the old scene's camera. The native
         // `BootSession::enter_field_live` is the paired site; the glide
         // interpolator is this host's own and goes with it.
-        self.camera.reset_for_scene_entry();
+        self.scene_host.camera_mut().reset_for_scene_entry();
         self.cutscene_glide.reset();
         if !world_map {
             // Retail reaches the field through the mode table, not through a
@@ -971,7 +963,7 @@ impl LegaiaRuntime {
         // The same for a score hand-off armed alongside it: with no entry to
         // run it, it runs now, over the scene still open.
         self.run_pending_bgm_handoff();
-        let Some(host) = self.scene_host.host_mut() else {
+        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
             self.world.tick();
             return Ok(String::new());
         };
@@ -992,7 +984,7 @@ impl LegaiaRuntime {
             // runs. This host used to publish it after the tick, so the d-pad
             // remap ran one tick behind the camera.
             legaia_engine_core::frame_step::camera_before_world_tick(
-                &mut self.camera,
+                camera,
                 &mut host.world,
                 self.camera_azimuth_override.take(),
             );
@@ -2205,6 +2197,6 @@ impl LegaiaRuntime {
         }
         // The follow-camera distance preset, the same host knob the native
         // window re-asserts each tick (`window/event_handler/redraw.rs`).
-        self.camera.distance = self.options_state.camera_distance;
+        self.scene_host.camera_mut().distance = self.options_state.camera_distance;
     }
 }

@@ -303,8 +303,8 @@ impl LegaiaRuntime {
         // the first frame after it, through the kernel the native window
         // runs (`FUN_801CEF54` / `FUN_801D414C`). The hall geometry itself is
         // the minigame art's `DanceVenue` build (`play_mg_dance_*`).
-        if let Some(host) = self.scene_host.host_mut() {
-            legaia_engine_core::dance_venue::sync_dance_venue(&mut host.world, &mut self.camera);
+        if let Some((host, camera)) = self.scene_host.host_cam_mut() {
+            legaia_engine_core::dance_venue::sync_dance_venue(&mut host.world, camera);
         }
         let now = self
             .scene_host

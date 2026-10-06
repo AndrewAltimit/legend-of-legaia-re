@@ -35,7 +35,7 @@ impl LegaiaRuntime {
     /// The engine camera's retail globals, the state
     /// a scene entry resets (`Camera::reset_globals_for_scene_entry`).
     pub fn debug_camera_globals(&self) -> Vec<i32> {
-        self.camera.globals.0.to_vec()
+        self.scene_host.camera().globals.0.to_vec()
     }
 
     /// Offset every scene-entry reset axis of the camera globals away from
@@ -44,7 +44,8 @@ impl LegaiaRuntime {
     pub fn debug_perturb_camera_globals(&mut self) {
         use legaia_engine_core::camera::RetailCamGlobals;
         for axis in RetailCamGlobals::FIELD_RESET_AXES {
-            self.camera.globals.0[axis] = RetailCamGlobals::FIELD_RESET.0[axis] + 0x123;
+            self.scene_host.camera_mut().globals.0[axis] =
+                RetailCamGlobals::FIELD_RESET.0[axis] + 0x123;
         }
     }
 

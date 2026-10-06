@@ -44,7 +44,7 @@ impl LegaiaRuntime {
         };
         let world = &host.world;
         let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
-        let frame = resolve_field_camera(world, &self.camera, None, centre);
+        let frame = resolve_field_camera(world, self.scene_host.camera(), None, centre);
         marker_quads(world, &frame, aabb, draw_player)
             .iter()
             .map(|q| world_map_marker_prim(q.xy, q.rgba, q.depth))
@@ -71,7 +71,7 @@ impl LegaiaRuntime {
         };
         let seated = host.debug_seat_standing(x, z);
         if seated {
-            self.camera.zone.arm_arrival();
+            self.scene_host.camera_mut().zone.arm_arrival();
         }
         seated
     }
