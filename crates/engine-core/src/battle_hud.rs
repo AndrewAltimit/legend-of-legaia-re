@@ -1722,7 +1722,7 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     let pc = party_count(world) as u8;
     let cat = actor.battle.action_category;
     if cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::TacticalArts.as_byte() {
-        if a >= pc {
+        if a >= pc || world.battle.move_label_closed {
             return None;
         }
         let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());

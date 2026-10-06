@@ -301,6 +301,14 @@ pub struct BattleState {
     pub steal: crate::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
     pub steal_caption: Option<crate::battle_steal::StealCaption>,
+    /// The party art-name label (element `0x4C`, records 76 / 77) has been
+    /// taken down: the commit that replaces a party member's art clip on
+    /// dynamic slot `0x11` destroys widget `0x21`
+    /// (`FUN_8004AD80` `0x8004AE70..0x8004AEAC`), and the next art
+    /// constant's commit opens it again (`0x8004BC34..0x8004BC40`).
+    /// [`crate::battle_hud::battle_move_name`] answers `None` for a party
+    /// attack while it is set.
+    pub move_label_closed: bool,
     /// The field-to-battle transition entity, live only while the encounter
     /// session sits in [`crate::encounter::EncounterPhase::Transition`].
     /// `None` outside that window.
@@ -727,6 +735,7 @@ impl BattleState {
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             steal: crate::battle_steal::StealBand::default(),
             steal_caption: None,
+            move_label_closed: false,
             player_driven: false,
             command: None,
             item_menu: None,

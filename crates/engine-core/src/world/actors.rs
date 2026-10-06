@@ -1434,6 +1434,25 @@ impl World {
             self.battle_ctx.arts_banner_stage = stage;
             self.battle_ctx.arts_banner_level = level;
         }
+        // The art-name label's close (`0x8004AE70..0x8004AEAC`): a party seat
+        // (`sltiu v0,s3,0x3`) whose outgoing clip sits on dynamic slot
+        // `0x11` - every art constant and the SpecialStarter install there -
+        // under an attack command (`+0x1DE == 3`), and whose latched id
+        // `+0x1DB` is not the SpecialStarter `0x1A`, destroys widget `0x21`,
+        // the label. Ahead of the latch below and of the re-commit return,
+        // as in retail. The art-constant arm re-opens it on this same commit
+        // when the incoming id names another art.
+        // REF: FUN_8004AD80
+        {
+            let b = &self.actors[i].battle;
+            if self.actors[i].battle_monster_id.is_none()
+                && b.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                && b.action_category == vm::battle_action::ActionCategory::Attack.as_byte()
+                && b.latched_anim != 0x1A
+            {
+                self.battle.move_label_closed = true;
+            }
+        }
         let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
             if let Some(p) = actor.battle_animation.as_mut() {
@@ -1543,6 +1562,13 @@ impl World {
             self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
             return;
         }
+        // The art-constant arm (`staged >= 0x1B`, `0x8004BB5C..0x8004BC40`)
+        // places and opens the name label (`FUN_8004C650`, then
+        // `FUN_801D8DE8(0x4C, 0)`) for a party seat.
+        if q >= 0x1B && actor.battle_monster_id.is_none() {
+            self.battle.move_label_closed = false;
+        }
+        let actor = &self.actors[i];
         // Resolve the clip + the committed id (post-rewrite).
         let (clip, committed) = match resolve_staged_anim(q) {
             StagedAnimTarget::ArtBank { record, slot } if actor.battle_art_bank.is_some() => {

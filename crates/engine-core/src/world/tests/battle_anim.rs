@@ -1296,3 +1296,29 @@ fn a_committed_swing_plays_its_animation_cue_track() {
         .expect("battle bank row");
     assert_eq!(row[4], 2, "the party literal category");
 }
+
+#[test]
+fn the_art_name_label_closes_when_the_art_clip_hands_off() {
+    // FUN_8004AD80: an art constant's commit opens the label; the commit
+    // that replaces that clip on slot 0x11 (attack command, latched id not
+    // the SpecialStarter) destroys it, and the next art reopens it.
+    let mut world = staged_anim_test_world();
+    world.actors[0].battle.action_category = vm::battle_action::ActionCategory::Attack.as_byte();
+    world.battle.move_label_closed = true;
+    world.actors[0].battle.queued_anim = 0x1B;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.actors[0].battle.current_anim, 0x11);
+    assert!(!world.battle.move_label_closed, "the art opens its label");
+    // The art clip ends on a plain swing: the label comes down.
+    world.actors[0].battle.queued_anim = 0x0E;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(
+        world.battle.move_label_closed,
+        "the 0x11 hand-off closes it"
+    );
+    // A swing handing off to idle leaves it as it is.
+    world.battle.move_label_closed = false;
+    world.actors[0].battle.queued_anim = 0;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(!world.battle.move_label_closed, "only slot 0x11 closes it");
+}
