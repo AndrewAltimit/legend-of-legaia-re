@@ -1355,6 +1355,12 @@ impl LegaiaRuntime {
     pub fn audio_init(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
+            // Idempotent: a second output would replace the first, and the
+            // page's whole audio state (director, staged banks, the playing
+            // track) is built over the one it has.
+            if self.audio_out.is_some() {
+                return true;
+            }
             match WebAudioOut::new() {
                 Ok(out) => {
                     out.set_gain(BGM_DEFAULT_GAIN);

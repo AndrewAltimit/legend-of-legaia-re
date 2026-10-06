@@ -54,6 +54,17 @@ pub struct WebAudioOut {
     gain: web_sys::GainNode,
 }
 
+/// Closing the context on drop stops the `ScriptProcessorNode` with it. The
+/// node stays connected to the destination after the Rust side is gone, so
+/// without this a dropped output (a second `new()` replacing the first) keeps
+/// calling a freed closure on every buffer - wasm-bindgen's "closure invoked
+/// recursively or after being dropped", forever.
+impl Drop for WebAudioOut {
+    fn drop(&mut self) {
+        let _ = self.ctx.close();
+    }
+}
+
 impl WebAudioOut {
     /// Open the browser's default audio output. Returns an error if
     /// `AudioContext` construction fails (e.g. still blocked by autoplay
