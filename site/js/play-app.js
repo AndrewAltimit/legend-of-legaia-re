@@ -1418,12 +1418,13 @@ void main() {
          * no page-side gate, and no confirm blip. */
         let scripted = false;
         try { scripted = rt.play_menu_scripted_open_pending(); } catch (e) {}
-        if (scripted || (startEdge && this._canOpenFieldMenu())) {
+        if (scripted || startEdge) {
           try { rt.play_menu_open(); } catch (e) { return false; }
-          /* The engine can REFUSE - `play_menu_open` declines while a dialogue
-           * engagement owns the player (`World::dialogue_owns_input`), which is
-           * retail's engaged-bit branch. Take none of the follow-up on a
-           * refusal: no confirm blip, no swallowed pad edge, no menu clock. */
+          /* The engine decides - `play_menu_open` asks
+           * `World::field_menu_open_allowed`, the rule the native window asks,
+           * and on a press the menu lock refuses it queues the deny buzz
+           * itself. Take none of the follow-up on a refusal: no confirm blip,
+           * no swallowed pad edge, no menu clock. */
           let opened = false;
           try { opened = rt.play_menu_is_open(); } catch (e) {}
           if (!opened) return false;
@@ -1640,14 +1641,15 @@ void main() {
      * the field does, and a page-side copy of an engine rule is drift no gate
      * can see because no Rust symbol is missing.
      *
-     * What stays here is page-owned presentation state the engine has no view
-     * of: a dialog box the page is drawing, and the opening chain. */
+     * Nothing page-side is added to it. The page used to refuse on two
+     * copies of its own - a dialog box in the last HUD state, and the
+     * opening chain / narration beat - and the native window asked neither.
+     * The first was the engine's `dialogue_owns_input` read back a frame
+     * later; the second is now the engine's (`opening_chain_active`, with
+     * the crawl and title card already in the rule), so both hosts answer
+     * the same press the same way. */
     _canOpenFieldMenu() {
-      try { if (!this.rt.play_menu_can_open()) return false; } catch (e) { return false; }
-      if (this._hudState && this._hudState.dialog) return false;
-      /* The opening chain / a narration beat owns the scene - Start is inert. */
-      if (this._cut && (this._cut.locked || this._cut.chain)) return false;
-      return true;
+      try { return !!this.rt.play_menu_can_open(); } catch (e) { return false; }
     }
 
     /* Upload the pause-menu atlases (font glyphs + the disc's menu-chrome sheet)

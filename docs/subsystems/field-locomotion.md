@@ -2217,6 +2217,25 @@ treats an active cutscene timeline as that state: `World::field_menu_open_allowe
 while one runs. `tests/door_arrival_menu_refusal_disc.rs` pins the refusal, its release and
 its length on the real `map01` record.
 
+#### The rest of the gates in front of the accept
+
+The engaged bit is one of four things that keep `FUN_801D1344` from calling the pad
+controller. The others are the scratchpad system lock `_DAT_1F800394 & 0x400`
+(`0x801D16A8..0x801D16B8`), a running kind-0 warp timer `_DAT_8007B6B0` and its post-warp
+pad hold `_DAT_8007B6B4` (`0x801D16C8..0x801D16E4`). Each is silent: the controller is
+never entered. The **menu lock** `_DAT_1F800394 & 0x8000000` is the one refusal inside
+the accept (`0x801D02C0..0x801D02E4`): the press is taken and answered with the deny buzz
+`0x23` through `FUN_80035BD0`. `town0e` and `urudre1` raise it with `2E 1B`; `urudre1`,
+`edteien` and `edbalden` drop it with `2F 1B`. No shipped script issues `2E 0A`, so the
+system lock has no field-VM writer.
+
+`World::field_menu_open_allowed` carries all of them, and `World::field_menu_press_denied`
+is the buzz both hosts call on a refused press. It also refuses while the New Game
+opening chain plays: the engine seats each leg's entry record one tick after the leg's
+scene loads, and without that arm the menu opened on that one tick of `opstati` and
+`opurud` (`tests/opening_chain_menu_refusal_disc.rs`). The browser play page used to
+refuse there through a page-side copy of the chain gate the native window lacked.
+
 #### Where the 294 vsyncs go
 
 The record parks three times, and each park is a retail mechanism the timeline now holds on:

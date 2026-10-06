@@ -334,6 +334,11 @@ impl PlayWindowApp {
                     self.prev_pad = self.pad;
                     continue;
                 }
+            } else if !narration && pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
+                // A press the menu lock refuses buzzes (`0x23` on the SFX
+                // ring); every other refusal is silent. The browser page
+                // makes the same call through `play_menu_open`.
+                self.session.host.world.field_menu_press_denied();
             }
             // Route this frame's pad into the engine before the
             // tick so World::tick's mode dispatch (world-map

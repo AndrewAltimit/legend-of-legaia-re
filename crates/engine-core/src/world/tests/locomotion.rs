@@ -898,3 +898,51 @@ fn battle_reach_is_keyed_on_the_seats_character() {
     assert_ne!(m[1], m[2], "{m:?}");
     assert_ne!(m[0], m[2], "{m:?}");
 }
+
+/// The pad-controller gates `FUN_801D1344` puts in front of the menu accept
+/// (`0x801D16A8..0x801D16E4`) and the accept's own menu lock
+/// (`0x801D02C0..0x801D02E4`): the system lock, a kind-0 warp and its pad
+/// hold refuse silently; the menu lock refuses with the deny buzz `0x23`.
+#[test]
+fn the_menu_accept_honours_retails_pad_controller_gates_and_buzzes_on_the_lock() {
+    use crate::world::{FIELD_MENU_DENY_CUE, FIELD_MENU_LOCK_BIT, FIELD_SYSTEM_LOCK_BIT};
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    assert!(world.field_menu_open_allowed(), "control: an idle field");
+
+    world.flags.story_flags |= FIELD_SYSTEM_LOCK_BIT;
+    assert!(
+        !world.field_menu_open_allowed(),
+        "the system lock skips the controller"
+    );
+    world.audio.sfx_ring_ops.clear();
+    assert!(!world.field_menu_press_denied(), "silently");
+    assert!(world.audio.sfx_ring_ops.is_empty());
+    world.flags.story_flags &= !FIELD_SYSTEM_LOCK_BIT;
+
+    world.locomotion.warp.hold = 0x28;
+    assert!(!world.field_menu_open_allowed(), "the post-warp pad hold");
+    world.locomotion.warp.hold = 0;
+    world.locomotion.warp.timer = 0x26;
+    assert!(!world.field_menu_open_allowed(), "a running kind-0 warp");
+    assert!(!world.field_menu_press_denied());
+    world.locomotion.warp.timer = 0;
+
+    world.flags.story_flags |= FIELD_MENU_LOCK_BIT;
+    assert!(!world.field_menu_open_allowed(), "the menu lock");
+    assert!(
+        world.field_menu_press_denied(),
+        "a locked press reaches the accept"
+    );
+    assert_eq!(
+        world.audio.sfx_ring_ops,
+        vec![crate::world::SfxRingOp::ReplaceLast(FIELD_MENU_DENY_CUE)],
+        "and buzzes through the overwrite producer"
+    );
+    world.flags.story_flags &= !FIELD_MENU_LOCK_BIT;
+    assert!(world.field_menu_open_allowed());
+
+    world.cutscene.opening_chain_active = true;
+    assert!(!world.field_menu_open_allowed(), "the opening chain");
+}

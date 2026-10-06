@@ -533,6 +533,12 @@ impl LegaiaRuntime {
                 .as_ref()
                 .is_some_and(|h| !h.world.field_menu_open_allowed())
         {
+            // A press the menu lock refuses buzzes (`0x23` on the SFX ring,
+            // which the page's scheduler drains); every other refusal is
+            // silent. The native window makes the same call.
+            if let Some(h) = self.scene_host.as_mut() {
+                h.world.field_menu_press_denied();
+            }
             return;
         }
         let mut session = FieldMenuSession::new();

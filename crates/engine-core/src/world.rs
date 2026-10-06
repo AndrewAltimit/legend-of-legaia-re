@@ -214,6 +214,7 @@ pub mod pause_session;
 mod prop_interact;
 mod retail_progression;
 pub use retail_progression::RetailProgressionTables;
+pub use save::{FIELD_MENU_DENY_CUE, FIELD_MENU_LOCK_BIT, FIELD_SYSTEM_LOCK_BIT};
 mod save;
 mod scene_program;
 pub use scene_program::SceneProgramFrame;
