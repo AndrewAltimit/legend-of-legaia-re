@@ -4322,15 +4322,23 @@ active-actor bar takes over, the panels do not stop drawing - they move to
 `y = 230`, below the 228-line display window, the same park row the arts
 input screen uses ([`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned)).
 
-Inside an action the panels come back up in one place only: the item band's
-`0x3E` arm, for a party-wide target. Its opener (`t2 == 8` at `0x801E404C`
-raises records 6, `0x4E` and `0x4F` and leaves `6` for the Done hold's close)
-is reached from a single branch at `0x801E3E88`, off the arm's
-non-gauge-extend path; the action seed `0x0C` opens record 7 for a member
-target and nothing else. So a party-wide magic cast keeps them parked -
+Inside an action the panels come back up for a party-wide target
+(`t2 == 8`) through two openers, each raising records 6, `0x4E` and `0x4F`
+and leaving `6` for the Done hold's close:
+
+- the seed's plate routine `FUN_801E6D84`, which every category arm of `0x0C`
+  ends in, only for a **monster** caster (`sltiu v0,v0,3` on the caster seat
+  at `0x801E7038..0x801E7080`) and only past its Run / Arts / Spirit returns;
+- the item band's `0x3E` arm (`0x801E404C`), reached from a single branch at
+  `0x801E3E88` off its non-gauge-extend path, for any caster.
+
+So a party member's magic cast on the whole party keeps them parked -
 `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`, and
-its frame shows the scene where the panels would sit - and `battle_hud::battle_panels_visible` raises them for a party-wide item from
-`0x3E` through `0x51`.
+its frame shows the scene where the panels would sit. The same routine opens
+the target plaque (record 81) for a monster target, except for Theeder,
+Zenoir and Mushura (`0x82` / `0x86` / `0x8D`), which it sends down its row arm
+whatever their target byte (`0x801E6E4C..0x801E6E68`). Port:
+`battle_hud::battle_panels_visible` / `battle_target_plaque`.
 
 ### The per-phase rule - what the sub-draw script builds
 
@@ -4380,8 +4388,8 @@ carries the AP plate. The action SM's openers are three: the `0x0C` seed
 bar for it when it is a party slot; the Item pre-arm `0x3C` (`0x801E3DA0`)
 raises it for the acting member; and the item band's `0x3E` arm
 (`0x801E401C`) raises it for a member target again, or all three panels for
-a party-wide one (`t2 == 8`) - the only place an action raises the panels
-(see the roster-panel note above). A party
+a party-wide one (`t2 == 8`), as the seed's plate routine does for a monster
+caster (see the roster-panel note above). A party
 member's attack on a monster therefore shows **no** readout at all; a monster's
 cast on a member shows that member's bar.
 A counterattack runs no seed of its own: the strike loop's swap hands the
