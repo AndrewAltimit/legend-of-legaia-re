@@ -224,7 +224,7 @@ and a truncated pack's offset table reads mesh payload as offsets - the
 bracket is the decoded length against the header, on a cold boot of the
 rebuilt disc, which no shipped patcher path produces.
 
-The editing contract is unchanged: `legaia_asset::party_swap::fieldize`
+The editing contract is unchanged: `legaia_patcher::party_swap::fieldize`
 keeps the first four words (`meta[0]`, `meta[1]`, `type<<24|size0`,
 `offset0`) byte-exact, which pins §0's decoded size at retail's 46 236
 bytes (pad the pack tail - retail itself pads ~19 KB in slot 4). A rebuild

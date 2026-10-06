@@ -527,7 +527,7 @@ pub(super) fn retime_camera_arm(
     patcher: &mut DiscPatcher,
     slot: usize,
     art: &HostArt,
-    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
 ) -> Result<String> {
     let (frames, retail) = (rebuilt.frames, rebuilt.retail_frames);
     if retail == 0 || (frames == retail && rebuilt.stages == 1) {

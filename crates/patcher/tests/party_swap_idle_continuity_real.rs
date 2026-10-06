@@ -23,8 +23,8 @@
 use std::path::PathBuf;
 
 use legaia_asset::monster_archive::PartPose;
-use legaia_asset::party_swap::{self, PlayerRig, winpose};
 use legaia_asset::{battle_char_assembly, monster_archive};
+use legaia_patcher::party_swap::{self, PlayerRig, winpose};
 
 fn prot_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

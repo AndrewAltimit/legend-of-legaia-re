@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use legaia_asset::battle_char_assembly::SECTION_TEXTURE_RECTS;
 use legaia_asset::face_anim;
-use legaia_asset::party_swap::playerize::FACE_STAMP_WINDOWS;
+use legaia_patcher::party_swap::playerize::FACE_STAMP_WINDOWS;
 
 fn scus() -> Option<Vec<u8>> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

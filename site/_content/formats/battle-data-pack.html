@@ -250,7 +250,7 @@
 
 <section class="doc-section" id="weapon-transplant">
   <h2>Editing: carrying a weapon into another character's file</h2>
-  <p>A file only holds records for the items its character can equip, so a weapon handed to another character through the owner mask alone lands on that character's bare-hand default. The patcher's <code>--equip-owner</code> builds the missing record (<code>legaia_asset::equip_transplant</code>):</p>
+  <p>A file only holds records for the items its character can equip, so a weapon handed to another character through the owner mask alone lands on that character's bare-hand default. The patcher's <code>--equip-owner</code> builds the missing record (<code>legaia_patcher::equip_transplant</code>):</p>
   <ol class="bullets">
     <li>Cut the weapon's primitives out of the donor record (item-alone cut; CLUT columns remapped onto the target section).</li>
     <li>Merge them channel by channel into the target's weapon-section default - the held sections are the same three arm bones on every skeleton, only numbered differently - and <strong>re-seat</strong> each channel through a rigid transform calibrated from the weapons both files carry (<code>equip_hand_frame</code>, per weapon class).</li>

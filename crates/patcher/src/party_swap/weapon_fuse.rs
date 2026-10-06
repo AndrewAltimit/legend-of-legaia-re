@@ -45,8 +45,8 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 
-use crate::battle_char_assembly::{self as bca, SECTION_COUNT};
 use bca::{equip_isolate, equip_item};
+use legaia_asset::battle_char_assembly::{self as bca, SECTION_COUNT};
 use legaia_tim::Vram;
 use legaia_tmd::encode::{ModelGroup, ModelObject, ModelPrim};
 use legaia_tmd::legaia_prims;
@@ -106,7 +106,7 @@ pub(crate) fn weapon_fusions(
     char_slot: usize,
     weapon_cols: &[u16],
 ) -> Result<WeaponFusion> {
-    let pack = crate::battle_data_pack::parse(player_file).context("parse player file")?;
+    let pack = legaia_asset::battle_data_pack::parse(player_file).context("parse player file")?;
     let mut fusion = WeaponFusion::default();
     let bare = BareFrame::new(player_file, &pack)?;
 
@@ -159,7 +159,10 @@ pub struct BareFrame {
 
 impl BareFrame {
     /// Assemble the bare loadout of `player_file`.
-    pub fn new(player_file: &[u8], pack: &crate::battle_data_pack::BattleDataPack) -> Result<Self> {
+    pub fn new(
+        player_file: &[u8],
+        pack: &legaia_asset::battle_data_pack::BattleDataPack,
+    ) -> Result<Self> {
         let bare_ids = [0u8; SECTION_COUNT];
         let mut asm = bca::assemble_character(player_file, pack, &bare_ids)?;
         bca::relocate_tsb_cba(&mut asm.tmd, BAND)?;
@@ -180,7 +183,7 @@ pub type WeaponCut = (BTreeMap<u8, ModelObject>, Vec<[u16; 16]>);
 /// mis-paletted). Channels are the file's own bone ids.
 pub fn weapon_fusion_record(
     player_file: &[u8],
-    pack: &crate::battle_data_pack::BattleDataPack,
+    pack: &legaia_asset::battle_data_pack::BattleDataPack,
     bare: &BareFrame,
     char_slot: usize,
     section: usize,
@@ -376,7 +379,7 @@ pub fn merge_into(dst: &mut ModelObject, add: &ModelObject) {
 /// recipe the equipment viewer uses.
 fn vram_for(
     player_file: &[u8],
-    pack: &crate::battle_data_pack::BattleDataPack,
+    pack: &legaia_asset::battle_data_pack::BattleDataPack,
     equipped: &[u8; SECTION_COUNT],
 ) -> Result<Vram> {
     let mut vram = Vram::new();

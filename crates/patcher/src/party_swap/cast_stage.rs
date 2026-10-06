@@ -79,8 +79,8 @@
 //! dwell instead of ever reaching that arm (see [`build_entry`]).
 
 use super::*;
-use crate::battle_char_assembly as bca;
-use crate::monster_archive::MonsterAnimation;
+use legaia_asset::battle_char_assembly as bca;
+use legaia_asset::monster_archive::MonsterAnimation;
 
 /// The two rows PROT 959 stages on the caster (`0x0A` open, `0x0B` after
 /// the lift-boundary increment).
@@ -255,7 +255,7 @@ fn stage_ladder(clip: &MonsterAnimation, floor: usize, identity: bool) -> Vec<(u
 /// written `hold` times (see [`stage_ladder`]).
 ///
 /// `window` is the SOURCE clip's authored loop window
-/// ([`crate::monster_archive::animation_loop_windows`]), rescaled into
+/// ([`legaia_asset::monster_archive::animation_loop_windows`]), rescaled into
 /// the hosted frame count and written to head bytes `+0x84..+0x87`.
 /// Without it a clip shorter than its module stage dwell hits the
 /// natural-end re-commit in `FUN_80047430` and replays from frame 0 -
@@ -303,7 +303,7 @@ fn build_entry(
     frames: usize,
     hold: usize,
     rate: u8,
-    window: Option<crate::monster_archive::ActionLoopWindow>,
+    window: Option<legaia_asset::monster_archive::ActionLoopWindow>,
     cue_track: &[(u16, u16)],
     rig: &PlayerRig,
     retail_player: &[u8],
@@ -481,8 +481,8 @@ pub fn build_staged_cast_rows(
     source_id: u16,
     chain: &[&MonsterAnimation],
     floors: &[usize],
-    windows: &[Option<crate::monster_archive::ActionLoopWindow>],
-    cue_tracks: &[crate::monster_archive::ActionCueTrack],
+    windows: &[Option<legaia_asset::monster_archive::ActionLoopWindow>],
+    cue_tracks: &[legaia_asset::monster_archive::ActionCueTrack],
     identity: &[bool],
     row_ids: &[u8],
     binding: &[(usize, usize)],

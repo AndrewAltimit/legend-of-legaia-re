@@ -45,9 +45,9 @@
 //! disc-gated mirror test re-asserts it).
 
 use super::*;
-use crate::battle_char_assembly as bca;
-use crate::battle_char_assembly::swing_battle_animations;
-use crate::monster_archive::MonsterAnimation;
+use legaia_asset::battle_char_assembly as bca;
+use legaia_asset::battle_char_assembly::swing_battle_animations;
+use legaia_asset::monster_archive::MonsterAnimation;
 use std::collections::BTreeSet;
 use winpose::{mmul, to_euler, transpose};
 
@@ -930,7 +930,7 @@ fn hero_victory_clip(
         .unwrap_or(1);
     let archive = bca::art_me_archive(readef, char_index, true).context("base ME archive")?;
     let stream = archive.entry(0).context("base entry 0")?;
-    crate::monster_archive::parse_animation_stream(&stream, 0x22, rate, 0, 0, Vec::new())
+    legaia_asset::monster_archive::parse_animation_stream(&stream, 0x22, rate, 0, 0, Vec::new())
         .ok_or_else(|| anyhow::anyhow!("base ME entry 0 is not a keyframe stream"))
 }
 

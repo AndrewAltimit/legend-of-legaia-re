@@ -7,8 +7,9 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::party_swap::playerize;
-use legaia_asset::{battle_char_assembly, battle_data_pack, monster_archive, party_swap};
+use legaia_asset::{battle_char_assembly, battle_data_pack, monster_archive};
+use legaia_patcher::party_swap;
+use legaia_patcher::party_swap::playerize;
 
 fn prot_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

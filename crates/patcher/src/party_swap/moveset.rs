@@ -24,7 +24,7 @@
 //! ## What counts as a swing
 //!
 //! The monster archive tags each action entry
-//! (`crate::monster_archive::MonsterAnimation::action_id`). The three
+//! (`legaia_asset::monster_archive::MonsterAnimation::action_id`). The three
 //! siblings' attack families sit in the `0x0C..=0x1F` band (Gi
 //! `0x0F/0x0D/0x0E`, Che `0x0F/0x0D/0x10/0x0E`, Lu `0x0D/0x13/0x0E/0x12`),
 //! while their signature specials are tagged `0x23` and their
@@ -36,10 +36,10 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::me_archive;
-use crate::monster_archive::{self, MonsterAnimation};
 use crate::party_swap::PlayerRig;
 use crate::party_swap::winpose::{self, READEF_SLOT, pack_part, retarget_clip_wrist};
+use legaia_asset::me_archive;
+use legaia_asset::monster_archive::{self, MonsterAnimation};
 
 /// Action-tag band the siblings' ordinary attack clips occupy.
 pub const SWING_TAG_LO: u8 = 0x0C;

@@ -29,10 +29,10 @@
 //! texture.
 
 use super::*;
-use crate::character_pack;
-use crate::pack::extract_pack;
-use crate::parse_player_lzs;
 use crate::party_swap::playerize::{merge_palettes, monster_pool_texels, nearest_color};
+use legaia_asset::character_pack;
+use legaia_asset::pack::extract_pack;
+use legaia_asset::parse_player_lzs;
 use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::ModelPrim;
 
@@ -459,7 +459,7 @@ fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Resul
         bail!("NPC pack entry head {head:#x} is not a type-2 TMD stream");
     }
     let pack = &npc_pack[4..];
-    let entries = crate::pack::parse_pack(pack)?;
+    let entries = legaia_asset::pack::parse_pack(pack)?;
     let e = entries
         .get(member)
         .ok_or_else(|| anyhow::anyhow!("NPC pack member {member} missing"))?;
@@ -473,7 +473,7 @@ fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Resul
     }
 
     // Rest pose from the scene ANM bundle's idle record.
-    let bundle = crate::player_anm::find_in_entry(npc_bundle, 5)
+    let bundle = legaia_asset::player_anm::find_in_entry(npc_bundle, 5)
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("NPC bundle entry carries no ANM bundle"))?;
@@ -498,10 +498,10 @@ fn npc_slot_source(npc_pack: &[u8], npc_bundle: &[u8], monster_id: u16) -> Resul
     // local palette ids (cba & 0x3F indexes `cluts`, the pipeline's
     // convention).
     let container = parse_player_lzs(npc_bundle, 3).context("NPC bundle container")?;
-    let tims_payload = crate::decode(
+    let tims_payload = legaia_asset::decode(
         npc_bundle,
         &container.descriptors[0],
-        crate::DecodeMode::Lzs,
+        legaia_asset::DecodeMode::Lzs,
     )
     .context("NPC bundle TIM list")?;
     let mut vram = vec![0u16; 1024 * 512];
@@ -899,7 +899,7 @@ enum DoubleSideScope {
 
 fn fieldize_slot(
     pack: &character_pack::CharacterPack,
-    anm: &crate::player_anm::PlayerAnmBundle,
+    anm: &legaia_asset::player_anm::PlayerAnmBundle,
     slot: usize,
     source: &SlotSource,
     decimate: f32,
@@ -1309,7 +1309,7 @@ fn fieldize_pack_laddered(
 /// bake's own radial uses, inverted). Clamped to a sane figure range.
 fn slot_height_ratio(
     pack: &character_pack::CharacterPack,
-    retail_anm: &crate::player_anm::PlayerAnmBundle,
+    retail_anm: &legaia_asset::player_anm::PlayerAnmBundle,
     slot: usize,
     source: &SlotSource,
 ) -> Result<f32> {
@@ -1369,10 +1369,11 @@ fn fieldize_pack_at(
     // already pose three differently-proportioned heroes in retail, and
     // scaling them for one slot would break the other two.
     let sec1_desc = &container.descriptors[character_pack::LOCOMOTION_SECTION];
-    let mut sec1_decoded = crate::decode(prot_0874, sec1_desc, crate::DecodeMode::Lzs)
-        .context("LZS-decode PROT 0874 section 1 (party locomotion ANM)")?;
+    let mut sec1_decoded =
+        legaia_asset::decode(prot_0874, sec1_desc, legaia_asset::DecodeMode::Lzs)
+            .context("LZS-decode PROT 0874 section 1 (party locomotion ANM)")?;
     let retail_anm =
-        crate::player_anm::parse(&sec1_decoded).context("parse retail locomotion bundle")?;
+        legaia_asset::player_anm::parse(&sec1_decoded).context("parse retail locomotion bundle")?;
     let mut sec1_scaled = false;
     for (slot, source) in sources.iter().enumerate().take(3) {
         let r = slot_height_ratio(&pack, &retail_anm, slot, source)
@@ -1382,7 +1383,7 @@ fn fieldize_pack_at(
         }
         for bank in 0..character_pack::LOCOMOTION_BANK_STRIDE {
             let rec = character_pack::locomotion_record_index(slot, bank);
-            crate::player_anm::scale_record_translations(&mut sec1_decoded, rec, r)
+            legaia_asset::player_anm::scale_record_translations(&mut sec1_decoded, rec, r)
                 .with_context(|| format!("scale slot {slot} locomotion record {rec}"))?;
         }
         sec1_scaled = true;
@@ -1391,7 +1392,8 @@ fn fieldize_pack_at(
         ));
     }
     let anm = if sec1_scaled {
-        crate::player_anm::parse(&sec1_decoded).context("re-parse scaled locomotion bundle")?
+        legaia_asset::player_anm::parse(&sec1_decoded)
+            .context("re-parse scaled locomotion bundle")?
     } else {
         retail_anm
     };
@@ -1425,7 +1427,7 @@ fn fieldize_pack_at(
     // Retail's own §0 carries ~19 KB of trailing pack padding, so padding
     // to the exact size is the retail shape.
     let sec0 = &container.descriptors[character_pack::CONTAINER_SECTION];
-    let sec0_decoded = crate::decode(prot_0874, sec0, crate::DecodeMode::Lzs)?;
+    let sec0_decoded = legaia_asset::decode(prot_0874, sec0, legaia_asset::DecodeMode::Lzs)?;
     let bodies = extract_pack(&sec0_decoded)?;
     let mut new_bodies: Vec<Vec<u8>> = Vec::with_capacity(bodies.len());
     for (i, b) in bodies.iter().enumerate() {
@@ -1466,7 +1468,7 @@ fn fieldize_pack_at(
     // New §2: the atlas with each character entry's pixels + CLUT
     // repainted in place (same TIM sizes).
     let sec2 = &container.descriptors[2];
-    let mut sec2_new = crate::decode(prot_0874, sec2, crate::DecodeMode::Lzs)?;
+    let mut sec2_new = legaia_asset::decode(prot_0874, sec2, legaia_asset::DecodeMode::Lzs)?;
     patch_atlas(&mut sec2_new, &slots)?;
 
     // §1 (locomotion): the original compressed byte span when untouched,
@@ -1577,7 +1579,7 @@ fn fieldize_pack_at(
 /// Repaint each character's atlas TIM (entries 1..=3 of §2) with the new
 /// head window + palettes, in place inside the decoded §2 pack bytes.
 fn patch_atlas(sec2: &mut [u8], slots: &[FieldSlot]) -> Result<()> {
-    let entries = crate::pack::parse_pack(sec2)?;
+    let entries = legaia_asset::pack::parse_pack(sec2)?;
     for (slot, fs) in slots.iter().enumerate() {
         let e = entries
             .get(slot + 1)

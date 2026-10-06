@@ -13,13 +13,13 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::monster_archive as ma;
-use legaia_asset::party_swap;
-use legaia_asset::party_swap::enemy_anim;
 use legaia_patcher::delilas_party::{CastRoutePolicy, PartyMapping, apply_delilas_party};
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::enemy_anim_mirror::{
     RetailSources, apply_enemy_anim_mirror, staged_entries, staged_plan,
 };
+use legaia_patcher::party_swap;
+use legaia_patcher::party_swap::enemy_anim;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;

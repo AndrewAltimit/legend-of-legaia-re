@@ -32,8 +32,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::party_swap::{self, PlayerRig, playerize};
 use legaia_asset::{battle_char_assembly, battle_data_pack};
+use legaia_patcher::party_swap::{self, PlayerRig, playerize};
 use legaia_tmd::encode::{ModelObject, decode_model};
 
 fn prot_dir() -> Option<PathBuf> {

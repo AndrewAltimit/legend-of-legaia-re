@@ -405,7 +405,7 @@ retail file only carries records for the items its character can equip, a
 weapon handed to another character through the SCUS owner mask alone lands
 on that character's `id = 0` weapon default at battle load - the bare hand.
 Giving them the model means giving their file a record, and a record is
-built, not copied (`legaia_asset::equip_transplant`; the patcher's
+built, not copied (`legaia_patcher::equip_transplant`; the patcher's
 `--equip-owner` does it for every weapon it enables):
 
 1. the weapon's own primitives are cut out of the **donor** record with the
@@ -424,7 +424,7 @@ built, not copied (`legaia_asset::equip_transplant`; the patcher's
    Gala's, and the wrist origin sits at a different point along the shaft
    (`crates/asset/examples/hand_frame_fit.rs` measures it). So each
    channel's geometry is re-seated through a rigid transform calibrated
-   from the disc itself (`legaia_asset::equip_hand_frame`): every weapon
+   from the disc itself (`legaia_patcher::equip_hand_frame`): every weapon
    both files carry (the `any`-owner knives, Short Sword, claws, clubs and
    axes, each file holding its own record authored for its own hand) is
    cut out of both, its principal frame and far tip fitted, the roll sign
@@ -1249,7 +1249,7 @@ window opens, and retail's own variant is that bone's mesh again: byte-equal
 vertices and prims on Vahn / Gala / Terra, same topology with alternate
 vertices on Noa. The two tags need opposite treatment - a `0xFE` extra has a
 pose channel of its own and draws *alongside* the bone, so emptying that one
-is correct. `legaia_asset::party_swap::playerize` mirrors the attach bone's
+is correct. `legaia_patcher::party_swap::playerize` mirrors the attach bone's
 geometry into the variant by aliasing its object-table entry, which costs
 nothing because both the retail splice and the port address the data purely
 through that entry.

@@ -28,8 +28,8 @@
 //! texel indices remapped during the island copy).
 
 use super::*;
-use crate::battle_char_assembly::{SECTION_TEXTURE_RECTS, record0_texture_uploads};
-use crate::battle_data_pack::decode_record;
+use legaia_asset::battle_char_assembly::{SECTION_TEXTURE_RECTS, record0_texture_uploads};
+use legaia_asset::battle_data_pack::decode_record;
 /// Bytes per stored monster CLUT (16 BGR555 entries).
 const CLUT_BYTES: usize = 32;
 
@@ -1066,17 +1066,17 @@ pub fn playerize_player_file_with(
     // wrist seam across ALL of them; a record0-only objective left one
     // art clip's seam a hair past the audit band.
     let mut host_anims =
-        crate::battle_char_assembly::battle_animations(player_file).unwrap_or_default();
+        legaia_asset::battle_char_assembly::battle_animations(player_file).unwrap_or_default();
     if let Some(readef) = readef
-        && let Ok(rec0) = crate::battle_char_assembly::decode_record0(player_file)
-        && let Ok(bank) = crate::battle_char_assembly::art_animation_bank(&rec0)
+        && let Ok(rec0) = legaia_asset::battle_char_assembly::decode_record0(player_file)
+        && let Ok(bank) = legaia_asset::battle_char_assembly::art_animation_bank(&rec0)
     {
         for rec in &bank {
-            if let Ok(archive) = crate::battle_char_assembly::art_me_archive(
+            if let Ok(archive) = legaia_asset::battle_char_assembly::art_me_archive(
                 readef,
                 char_slot,
                 rec.uses_base_archive(),
-            ) && let Ok(clip) = crate::battle_char_assembly::art_animation(rec, &archive)
+            ) && let Ok(clip) = legaia_asset::battle_char_assembly::art_animation(rec, &archive)
             {
                 host_anims.push(clip);
             }
@@ -1197,10 +1197,10 @@ fn fk_inset_hand(
     dst_hand: &ModelObject,
     ch_f: usize,
     ch_h: usize,
-    anims: &[crate::monster_archive::MonsterAnimation],
+    anims: &[legaia_asset::monster_archive::MonsterAnimation],
     law_budget: f32,
 ) -> Result<Option<[f32; 3]>> {
-    use crate::monster_archive::PartPose;
+    use legaia_asset::monster_archive::PartPose;
     if hand.vertices.is_empty() || forearm.vertices.is_empty() {
         return Ok(None);
     }
@@ -1431,7 +1431,7 @@ fn playerize_scaled(
     hand_twins: HandTwins,
     fusions: &super::weapon_fuse::WeaponFusion,
     weapon_cols: &[u16],
-    host_anims: &[crate::monster_archive::MonsterAnimation],
+    host_anims: &[legaia_asset::monster_archive::MonsterAnimation],
     char_slot: usize,
     keep_welded_fist: bool,
 ) -> Result<PlayerizedFile> {
@@ -1929,9 +1929,12 @@ fn playerize_scaled(
         // (empty) sibling block.
         let weapon_block;
         let pool_block: &[u8] = if Some(section) == fusions.weapon_section
-            && let Some(up) =
-                crate::battle_char_assembly::section_texture_upload(&decoded.bytes, section, 0)
-                    .with_context(|| format!("record {idx}: retail pool"))?
+            && let Some(up) = legaia_asset::battle_char_assembly::section_texture_upload(
+                &decoded.bytes,
+                section,
+                0,
+            )
+            .with_context(|| format!("record {idx}: retail pool"))?
         {
             let mut block = Vec::new();
             match fusions.palettes.get(&(section, rec.id)) {

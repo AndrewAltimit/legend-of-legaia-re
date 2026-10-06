@@ -335,14 +335,14 @@ fn equipment_table_lists_noa_weapons_under_her_own_section() {
 fn weapon_record_section(patcher: &DiscPatcher, ci: usize, item: u8) -> Option<usize> {
     let buf = patcher.read_player_file(PLAYERS[ci].entry).ok()?;
     let pack = battle_data_pack::detect(&buf)?;
-    legaia_asset::equip_transplant::find_weapon_record(&pack, item as u32).map(|(_, s)| s)
+    legaia_patcher::equip_transplant::find_weapon_record(&pack, item as u32).map(|(_, s)| s)
 }
 
 /// Every record of `ci`'s file, decoded, keyed by (section, id).
 fn decoded_records(patcher: &DiscPatcher, ci: usize) -> Vec<((usize, u32), Vec<u8>)> {
     let buf = patcher.read_player_file(PLAYERS[ci].entry).unwrap();
     let pack = battle_data_pack::detect(&buf).unwrap();
-    let secs = legaia_asset::equip_transplant::record_sections(&pack);
+    let secs = legaia_patcher::equip_transplant::record_sections(&pack);
     pack.records
         .iter()
         .zip(&secs)

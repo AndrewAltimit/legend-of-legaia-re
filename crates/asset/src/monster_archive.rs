@@ -221,7 +221,8 @@ pub use record::*;
 pub use slim::*;
 pub use texture_page::*;
 
-pub(crate) use animation::{ANIM_RATE_OFFSET, effect_script_head, parse_animation_stream};
+pub(crate) use animation::effect_script_head;
+pub use animation::{ANIM_RATE_OFFSET, parse_animation_stream};
 
 /// Fixed per-monster slot stride inside the archive (`0x14000` bytes = 40
 /// sectors). Confirmed by the loader's relative-seek `(id-1)*40` sectors.

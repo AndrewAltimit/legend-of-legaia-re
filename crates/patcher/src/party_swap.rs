@@ -40,10 +40,12 @@
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 
-use crate::battle_char_assembly::{self, AUTHORING_FIRST_TEXPAGE, SECTION_COUNT, TextureUpload};
-use crate::battle_data_pack;
-use crate::monster_archive::{self, PartPose};
-use crate::monster_model::{CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT, UV_SPACE};
+use legaia_asset::battle_char_assembly::{
+    self, AUTHORING_FIRST_TEXPAGE, SECTION_COUNT, TextureUpload,
+};
+use legaia_asset::battle_data_pack;
+use legaia_asset::monster_archive::{self, PartPose};
+use legaia_asset::monster_model::{CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT, UV_SPACE};
 use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 
 pub mod cast_stage;

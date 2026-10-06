@@ -6,11 +6,11 @@
 use std::path::PathBuf;
 
 use legaia_asset::battle_data_pack;
-use legaia_asset::equip_hand_frame::{
+use legaia_patcher::equip_hand_frame::{
     self, V3, WeaponClass, fit_class_excluding, nearest_rms, shaft_axis,
 };
-use legaia_asset::equip_transplant::{section_bones, section_clut_cols, weapon_section};
-use legaia_asset::party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
+use legaia_patcher::equip_transplant::{section_bones, section_clut_cols, weapon_section};
+use legaia_patcher::party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
 
 fn prot_dir() -> Option<PathBuf> {
     ["extracted/PROT", "../../extracted/PROT"]

@@ -44,14 +44,14 @@
 use anyhow::{Context, Result, bail};
 use legaia_tmd::encode::{ModelObject, decode_model, encode};
 
-use crate::battle_char_assembly::{SECTION_COUNT, SECTION_TEXTURE_RECTS};
-use crate::battle_data_pack::{self, BattleDataPack};
 use crate::party_swap::playerize::{
     alias_variant_onto_bone, rebuild_player_file, splice_record_tmd, variant_object,
 };
 use crate::party_swap::weapon_fuse::{
     BareFrame, WEAPON_PALETTE_MAX, merge_into, weapon_fusion_record,
 };
+use legaia_asset::battle_char_assembly::{SECTION_COUNT, SECTION_TEXTURE_RECTS};
+use legaia_asset::battle_data_pack::{self, BattleDataPack};
 
 /// The two held-item sections of a player file.
 const HELD_SECTIONS: [usize; 2] = [2, 3];

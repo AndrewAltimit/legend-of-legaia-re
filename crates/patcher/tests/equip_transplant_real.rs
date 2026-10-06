@@ -6,11 +6,12 @@
 use std::path::PathBuf;
 
 use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::equip_transplant::{
+use legaia_asset::battle_data_pack;
+use legaia_asset::mesh_raster::{self, Pose, RasterOptions};
+use legaia_patcher::equip_transplant::record_sections;
+use legaia_patcher::equip_transplant::{
     self, packed_len, rebuild_with_transplants, records_with_transplants, transplant_weapon,
 };
-use legaia_asset::mesh_raster::{self, Pose, RasterOptions};
-use legaia_asset::{battle_data_pack, equip_transplant::record_sections};
 
 const ASTRAL_SWORD: u32 = 0xBA;
 

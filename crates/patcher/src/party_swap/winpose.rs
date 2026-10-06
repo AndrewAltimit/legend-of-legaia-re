@@ -41,7 +41,7 @@
 //! See [`victory_cycle`] and [`compose_base_stream`].
 
 use super::*;
-use crate::me_archive;
+use legaia_asset::me_archive;
 
 /// readef.DAT slot stride.
 pub const READEF_SLOT: usize = 0x10800;
@@ -257,7 +257,7 @@ pub fn encode_channel_delta(decoded: &[u8]) -> Result<Vec<u8>> {
 pub fn victory_clip(
     archive_entry: &[u8],
     source_id: u16,
-) -> Result<crate::monster_archive::MonsterAnimation> {
+) -> Result<legaia_asset::monster_archive::MonsterAnimation> {
     let tags = monster_archive::action_tags(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: empty slot"))?;
     let anims = monster_archive::animations(archive_entry, source_id)?
@@ -352,7 +352,7 @@ pub fn base_loop_windows(player_file: &[u8]) -> Result<BTreeMap<usize, LoopWindo
 pub fn victory_cycle(
     archive_entry: &[u8],
     source_id: u16,
-    clip: &crate::monster_archive::MonsterAnimation,
+    clip: &legaia_asset::monster_archive::MonsterAnimation,
 ) -> Result<Option<std::ops::Range<usize>>> {
     let Some(block) = monster_archive::decode_block(archive_entry, source_id)? else {
         return Ok(None);
@@ -464,7 +464,7 @@ pub fn compose_base_stream(
 /// (nearest frame) to `frame_count` frames of `part_count` player
 /// channels. Noa's extra hair channel rides the head's pose.
 pub fn retarget_clip(
-    clip: &crate::monster_archive::MonsterAnimation,
+    clip: &legaia_asset::monster_archive::MonsterAnimation,
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -501,7 +501,7 @@ pub fn retarget_clip(
 /// long-axis error under the slaved wrist, ~0 by construction here.
 #[allow(clippy::too_many_arguments)]
 pub fn retarget_clip_wrist(
-    clip: &crate::monster_archive::MonsterAnimation,
+    clip: &legaia_asset::monster_archive::MonsterAnimation,
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -824,7 +824,7 @@ pub fn retarget_clip_wrist(
 /// (zero-padded past the archive).
 pub fn rebuild_base_slot(
     slot: &[u8],
-    clip: &crate::monster_archive::MonsterAnimation,
+    clip: &legaia_asset::monster_archive::MonsterAnimation,
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -891,7 +891,7 @@ pub fn rebuild_base_slot(
                     (_, Some(r)) => clip.frames[r.clone()].to_vec(),
                     _ => vec![clip.frames[clip.frames.len() - 1].clone()],
                 };
-                let cyc_anim = crate::monster_archive::MonsterAnimation {
+                let cyc_anim = legaia_asset::monster_archive::MonsterAnimation {
                     frame_count: cycle_frames.len(),
                     frames: cycle_frames,
                     ..clip.clone()
@@ -1041,7 +1041,7 @@ pub struct RebuiltArtSlot {
 pub fn rebuild_art_slot_entry(
     slot: &[u8],
     entry_index: usize,
-    chain: &[&crate::monster_archive::MonsterAnimation],
+    chain: &[&legaia_asset::monster_archive::MonsterAnimation],
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -1143,11 +1143,11 @@ pub fn rebuild_art_slot_entry(
 /// The playback rate a concatenated chain runs at: the fastest stage's,
 /// so every slower stage can be stretched up to it rather than any stage
 /// being decimated down.
-fn chain_rate(stages: &[&crate::monster_archive::MonsterAnimation]) -> u8 {
+fn chain_rate(stages: &[&legaia_asset::monster_archive::MonsterAnimation]) -> u8 {
     stages.iter().map(|c| winpose_rate(c)).max().unwrap_or(1)
 }
 
-fn winpose_rate(clip: &crate::monster_archive::MonsterAnimation) -> u8 {
+fn winpose_rate(clip: &legaia_asset::monster_archive::MonsterAnimation) -> u8 {
     clip.rate.max(1)
 }
 
@@ -1159,7 +1159,7 @@ fn winpose_rate(clip: &crate::monster_archive::MonsterAnimation) -> u8 {
 /// common rate `R`. `None` when the total will not fit the stream head's
 /// `u8` frame count.
 fn chain_frames(
-    stages: &[&crate::monster_archive::MonsterAnimation],
+    stages: &[&legaia_asset::monster_archive::MonsterAnimation],
     target_rate: u8,
 ) -> Option<(usize, Vec<usize>)> {
     let r = target_rate.max(1) as usize;
@@ -1179,7 +1179,7 @@ fn chain_frames(
 /// into one stream.
 #[allow(clippy::too_many_arguments)]
 fn build_chain(
-    stages: &[&crate::monster_archive::MonsterAnimation],
+    stages: &[&legaia_asset::monster_archive::MonsterAnimation],
     per_stage: &[usize],
     rig: &PlayerRig,
     player_file: &[u8],

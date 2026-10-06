@@ -40,8 +40,8 @@ use super::nivora_field::{
     SlotReport, hero_slot_source, heroize_slot, npc_target_at, rebuild_pack_body, repaint_head_tim,
 };
 use super::*;
-use crate::pack::parse_pack;
-use crate::parse_player_lzs;
+use legaia_asset::pack::parse_pack;
+use legaia_asset::parse_player_lzs;
 
 /// One sibling's coordinates inside an event scene.
 #[derive(Debug, Clone, Copy)]
@@ -194,10 +194,10 @@ pub fn heroize_event_scene(
         .iter()
         .position(|d| d.type_byte == 0x02)
         .ok_or_else(|| anyhow::anyhow!("{} bundle has no TMD section", spec.scene))?;
-    let sec_tmd = crate::decode(
+    let sec_tmd = legaia_asset::decode(
         bundle,
         &container.descriptors[tmd_idx],
-        crate::DecodeMode::Lzs,
+        legaia_asset::DecodeMode::Lzs,
     )
     .with_context(|| format!("{} TMD section", spec.scene))?;
     let (mut tims, tim_sec_idx) = match spec.tim_entry {
@@ -214,13 +214,17 @@ pub fn heroize_event_scene(
                 .position(|d| d.type_byte == 0x01)
                 .ok_or_else(|| anyhow::anyhow!("{} bundle has no TIM_LIST section", spec.scene))?;
             (
-                crate::decode(bundle, &container.descriptors[idx], crate::DecodeMode::Lzs)
-                    .with_context(|| format!("{} TIM list", spec.scene))?,
+                legaia_asset::decode(
+                    bundle,
+                    &container.descriptors[idx],
+                    legaia_asset::DecodeMode::Lzs,
+                )
+                .with_context(|| format!("{} TIM list", spec.scene))?,
                 Some(idx),
             )
         }
     };
-    let anm = crate::player_anm::find_in_entry(bundle, BUNDLE_DESCRIPTORS)
+    let anm = legaia_asset::player_anm::find_in_entry(bundle, BUNDLE_DESCRIPTORS)
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("{} bundle carries no ANM bundle", spec.scene))?;
