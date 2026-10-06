@@ -260,10 +260,6 @@ HOSTS = {
     "native": [
         REPO / "crates" / "engine-shell" / "src",
         REPO / "crates" / "engine-render" / "src",
-        # The session (`BootSession`) and its BGM director: wgpu-free and built
-        # for both targets, but driven only by the native window until the
-        # page holds one too - then it joins `ENGINE_API_CRATES` instead.
-        REPO / "crates" / "engine-session" / "src",
     ],
     "web": [REPO / "crates" / "web-viewer" / "src"],
 }
@@ -3037,6 +3033,38 @@ def owns_type(text: str, name: str) -> bool:
     return False
 
 
+# The session type both hosts hold. A host that holds one owns every type its
+# fields hold - the scene host and the camera are the session's, and a host
+# reaches them through it.
+SESSION_TYPE = "BootSession"
+SESSION_SRC = REPO / "crates/engine-session/src/boot.rs"
+
+
+def session_part_types() -> set[str]:
+    """The type names [`SESSION_TYPE`]'s own field declarations mention."""
+    if not SESSION_SRC.is_file():
+        return set()
+    src = strip_comments(SESSION_SRC.read_text(encoding="utf-8"))
+    m = re.search(rf"\bpub struct {SESSION_TYPE}\b[^{{;]*\{{", src)
+    if not m:
+        return set()
+    start, end = brace_block(src, m.end() - 1)
+    field_types = re.findall(
+        r"^\s*(?:pub(?:\([^)]*\))?\s+)?[a-z_][a-z_0-9]*\s*:\s*([^,\n]*)",
+        src[start:end],
+        re.MULTILINE,
+    )
+    return set(re.findall(r"\b([A-Z][A-Za-z0-9_]*)\b", " ".join(field_types)))
+
+
+def holds_session(text: str) -> bool:
+    """A field or construction of the session type, or a type alias of it
+    (the page's `PageSession`)."""
+    return owns_type(text, SESSION_TYPE) or bool(
+        re.search(rf"\btype\s+\w+\s*=\s*[\w:]*\b{SESSION_TYPE}\b", text)
+    )
+
+
 def host_shipped_sources() -> dict[str, list[tuple[str, str]]]:
     """Per host label, every shipped (non-test) source as `(rel path, text)`."""
     out: dict[str, list[tuple[str, str]]] = {}
@@ -3074,9 +3102,13 @@ def check_owned_types(shipped: dict[str, list[tuple[str, str]]]) -> tuple[list[s
             )
             continue
         missing: list[str] = []
+        via_session = name in session_part_types()
         for host, rows in shipped.items():
-            if not any(owns_type(text, name) for _rel, text in rows):
-                missing.append(host)
+            if any(owns_type(text, name) for _rel, text in rows):
+                continue
+            if via_session and any(holds_session(text) for _rel, text in rows):
+                continue
+            missing.append(host)
         blocked = row.get("blocked_on")
         if missing and not blocked:
             problems.append(
@@ -4008,7 +4040,9 @@ def _selftest_frame_case(
 # engine call that happens to be spelled `insert` is invisible. Stating the
 # hole is the point: the alternative is a report where two thirds of every
 # row is `len`, which is a report nobody reads.
-ENGINE_API_CRATES = ("engine-core", "engine-vm", "engine-ui", "engine-audio")
+# `engine-session` is engine surface too: both play hosts hold its
+# `BootSession` and tick it, so a call into it is a call both can make.
+ENGINE_API_CRATES = ("engine-core", "engine-vm", "engine-ui", "engine-audio", "engine-session")
 
 # Names a `.name(` call cannot be attributed to the engine by name alone.
 # Ordinary std / core / collection / iterator methods that an engine type
