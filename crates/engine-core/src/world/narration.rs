@@ -1414,6 +1414,24 @@ impl World {
             }
             tl.pc = fw.resume_pc;
         }
+        // Player face-at park (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk
+        // kernel's FaceTarget leg turns the player toward the named actor,
+        // and the record resumes past the acquire on the leg's terminal
+        // frame - see `CutsceneTimeline::player_face`.
+        // REF: FUN_8003774C (the 0x4C arm)
+        if let Some((mut ramp, resume_pc, frames)) = tl.player_face.take() {
+            let done = self.step_player_face_leg(&mut ramp);
+            if !done && frames < WALK_PARK_TIMEOUT {
+                tl.player_face = Some((ramp, resume_pc, frames + 1));
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc = resume_pc;
+        }
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -1915,6 +1933,28 @@ impl World {
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
+                    // Halt-acquire of the player (`CC F8 85|8E|8F`): the
+                    // player turns to face the op's actor bind and the record
+                    // parks until the turn's terminal frame
+                    // (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
+                    // turns Vahn toward Cort this way before the evolved-Cort
+                    // fight; stepped as a plain halt on the record's own
+                    // context, the player kept facing the camera.
+                    // REF: FUN_801DE840 (0x801E2148..0x801E21DC)
+                    if let Some(mut ramp) =
+                        crate::inline_dialogue::TalkFaceRamp::from_acquire(&tl.bytecode, pc)
+                    {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        let resume_pc = pc + 6;
+                        if host.world.step_player_face_leg(&mut ramp) {
+                            tl.pc = resume_pc;
+                            continue;
+                        }
+                        tl.player_face = Some((ramp, resume_pc, 1));
+                        break;
+                    }
                     // Player seats (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..`
                     // NPC-run): `FUN_8003C83C` resolves `0xF8` to the player
                     // object, so the op runs with the PLAYER as its context
@@ -3902,6 +3942,41 @@ impl World {
     /// once rather than holding the talk's player-targeted ops.
     ///
     /// REF: FUN_8003774C (the kernel visit), FUN_8003BC08 (visits it on `0x400`)
+    /// One walk-kernel visit of a cutscene record's player face-at leg
+    /// (`CutsceneTimeline::player_face`): turn the player toward the actor
+    /// bind the acquire names. Returns `true` on the terminal frame, or when
+    /// there is no player or nothing the bind resolves to (the leg then
+    /// closes at once rather than holding the record).
+    ///
+    /// REF: FUN_8003774C (the 0x4C arm)
+    pub fn step_player_face_leg(
+        &mut self,
+        ramp: &mut crate::inline_dialogue::TalkFaceRamp,
+    ) -> bool {
+        let target = self.talk_face_target(ramp.program[4]);
+        let player = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get(usize::from(slot)))
+            .map(|a| {
+                (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.move_state.render_26,
+                )
+            });
+        let (Some((tx, tz)), Some((px, pz, yaw))) = (target, player) else {
+            return true;
+        };
+        let speed = self.clock.display_frame_step.max(1);
+        let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
+        if let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(usize::from(slot))
+        {
+            actor.move_state.render_26 = yaw as i16;
+        }
+        done
+    }
+
     pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
         let Some(mut ramp) = id.face_ramp else {
             return;
@@ -4448,6 +4523,57 @@ mod tests {
         let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "ramp done: park released");
         assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
+    }
+
+    /// A halt-acquire of the player (`CC F8 85 <lo> <hi> <id>`) turns the
+    /// player toward the actor the bind names - the walk kernel's FaceTarget
+    /// leg - and parks the record until the turn's terminal frame. `jouine`
+    /// `P2[5]` turns Vahn toward Cort this way (`CC F8 85 0A 00 17`); the
+    /// retail capture holds the player's `+0x26` on `atan2` of the offset
+    /// plus the half-turn, engine `0x23B` for this geometry.
+    #[test]
+    fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 2368;
+        w.actors[0].move_state.world_z = 2496;
+        w.actors[0].move_state.render_26 = 0x800;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x17,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (3136, 3136));
+        let bc = vec![0xCC, 0xF8, 0x85, 0x0A, 0x00, 0x17, 0x4A, 0xFF, 0x7F];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        let parked = |w: &World| {
+            w.cutscene
+                .timeline
+                .as_ref()
+                .is_some_and(|tl| tl.player_face.is_some())
+        };
+        assert!(parked(&w), "the record waits on the turn");
+        for _ in 0..12 {
+            w.step_cutscene_timeline();
+        }
+        assert!(!parked(&w), "the turn's terminal frame released the park");
+        assert_eq!(w.actors[0].move_state.render_26, 0x23B);
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+        assert_eq!(tl.pc, 6, "record resumed past the 6-byte acquire");
     }
 
     /// A player ExecMove queues the scene-record one-shot only when its pick

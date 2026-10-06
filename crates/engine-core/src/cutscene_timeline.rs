@@ -286,6 +286,20 @@ pub struct CutsceneTimeline {
     /// writing the NPC's render heading each frame.
     // REF: FUN_8003774C (case 0x38: rotate-to-angle interpreted in place)
     pub facing_wait: Option<TimelineFacing>,
+    /// `Some` while the timeline is PARKED on a cross-context
+    /// **halt-acquire of the player** (`CC F8 85|8E|8F <lo> <hi> <id>`).
+    /// Retail's acquire arm (`0x801E2148..0x801E21DC`) stores the op's
+    /// address into the player's `+0x94` and raises `0x400` on the player
+    /// and on the calling record; the walk kernel `FUN_8003774C` then reads
+    /// the bytes back as its `0x4C` FaceTarget leg on the player - turn
+    /// toward the actor bind `<id>` over the `u16` frame budget - and its
+    /// terminal frame clears both halt bits (`0x80038004` / `0x80038028`).
+    /// So the player turns to face the named actor and the record waits for
+    /// the turn. The leg is the one the talk runner plays
+    /// ([`crate::inline_dialogue::TalkFaceRamp`]); `.1` is the PC past the
+    /// op, `.2` the ticks parked so far.
+    // REF: FUN_801DE840 (the acquire arm), FUN_8003774C (the 0x4C arm)
+    pub player_face: Option<(crate::inline_dialogue::TalkFaceRamp, usize, u32)>,
     /// `Some` while a cross-context **compass walk** this timeline armed
     /// against the player plays (`B7 F8 <b0> <b1>` / `C1 F8 <b0> <b1>` = op
     /// `0x37` / `0x41` with the player-anchor target). Retail's dispatcher
@@ -501,6 +515,7 @@ impl CutsceneTimeline {
             restore_hidden_on_complete: false,
             walk_wait: None,
             facing_wait: None,
+            player_face: None,
             player_glide: None,
             npc_glides: Vec::new(),
             npc_walks: Vec::new(),
