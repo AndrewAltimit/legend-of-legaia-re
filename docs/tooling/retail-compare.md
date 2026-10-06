@@ -1164,6 +1164,27 @@ loop's last pass; the seed's pass at the seat (the one that raises `0x19D`)
 picks brown, and the brown shows through the semi-transparent sea. It is the
 selector's seeding limit, on the clear colour.
 
+### A pre-fight flag runs the entry's post-battle branch
+
+A scripted fight's pending flag is still up in a capture of the fight, and
+the seed enters the scene with it. In `town01` and `town0b` that flag is
+what the entry script tests for the *return* from the fight: `town01`'s
+`P1[0]` init at `+0x91` tests `0x23C`, clears it and runs `B1 2E 08`,
+engaging Tetsu's placement for the post-fight scene; `town0b`'s per-frame
+loop does the same for `0x30C` .. `0x30E` (`B1 2B 08` .. `B1 2D 08` at
+`+0x417..+0x43B`). Retail never ran that branch before the fight - it raised
+the flag in the talk that staged it. In the seed the branch clears the flag
+(the `-sys 0x23C` / `-sys 0x30C` / `-sys 0x30E` bit) and the engaged placement
+holds the system loop as retail's does on a real return
+([script-vm](../subsystems/script-vm.md)), so no later pass re-selects the
+region band the init cleared (`-sys 0x19D` in `town01`, `-sys 0x528` in
+`town0b`), and the field camera the fight inherits its entry yaw from stays
+where the seat left it. Retail's own return agrees:
+`v0_1_post_battle_tetsu_town` holds `0x19D` down. The Tetsu and Rim Elm
+Gimard battle states (`s5_tetsu_battle`, `v0_1_battle_*`,
+`rim_elm_gimard_*`, `shiny_refactor_gimard_*`) carry the two bits as a
+seeding limit.
+
 ### A flag the entry raises on every load
 
 `rikuroa`'s entry script raises the fog gate and sets flag `0x01F` on every
