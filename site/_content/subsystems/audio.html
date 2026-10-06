@@ -1,315 +1,181 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; audio</div>
   <h1>Audio</h1>
-  <p class="lede">How Legaia makes sound. The town theme that starts when you step through a gate, the clang of a sword hit and the shout a character gives when an art lands each take a different road to the PlayStation's sound chip: music is a MIDI-like score played through a sampled instrument bank, effects are one-shot samples keyed on a voice, and voices and cutscene audio are streamed straight off the CD. This page follows the three roads and shows how the from-scratch engine rebuilds the stack.</p>
+  <p class="lede">How Legaia makes sound. The town theme that starts when you step through a gate, the clang of a sword hit and the shout a character gives when an art lands each take a different road to the PlayStation's sound chip: music is a MIDI-like score played through a sampled instrument bank, effects are one-shot samples keyed on a voice, and voices are streamed straight off the CD. This page follows the three roads; the library catalogues and the port's audio model are on <a href="audio-internals.html">audio internals</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Hardware</dt><dd>The SPU: 24 voices, 512&nbsp;KB of its own RAM, ADSR envelopes, one global reverb. Retail runs reverb <strong>Studio C, always on</strong>, with most voices routed through it</dd>
+    <dt>Hardware</dt><dd>The SPU: 24 voices, 512&nbsp;KB of its own RAM, ADSR envelopes, one global reverb. Retail runs reverb <strong>Studio C, always on</strong>, on every voice</dd>
     <dt>Music</dt><dd>Every real track lives in the <code>music_01</code> bank as a self-contained <code>[VAB][SEQ]</code> pair; scenes pick one by script (field-VM op <code>0x35</code>, id <code>2000 + slot</code>). No BGM table exists</dd>
-    <dt>Effects</dt><dd>100 static descriptors at <code>DAT_8006F198</code>; the descriptor's category byte names which of twelve VAB slots the cue plays from</dd>
-    <dt>Voices</dt><dd>CD-XA streams: arts shouts from <code>XA2 / XA4 / XA6</code>, the melee grunt from <code>XA30</code>, victory lines from the tail of <code>monster.snd</code></dd>
-    <dt>Libraries</dt><dd>PsyQ libsnd (SsAPI sequencer, <code>0x80061..0x80067</code>) and libspu (<code>0x80068..0x8006D</code>), statically linked and traceable</dd>
-    <dt>Port</dt><dd><code>crates/engine-audio</code>: from-scratch SPU (ADSR, ADPCM, reverb network), sample-locked <code>Sequencer</code>, SFX bank + scheduler, XA mixing; WebAudio backend for the browser</dd>
-    <dt>Oracle</dt><dd><code>legaia-engine audio-trace</code> - per-frame voice activity against save states and PCSX-Redux captures</dd>
-    <dt>Confidence</dt><dd>Confirmed for dispatch, banks, cues and the sequencer; the <code>bse.dat</code> record columns are the SFX-table columns, pinned by the shared decoder <code>FUN_80016B6C</code></dd>
+    <dt>Effects</dt><dd>100 static descriptors at <code>DAT_8006F198</code>; a descriptor's category byte names the VAB slot the cue plays from</dd>
+    <dt>Voices</dt><dd>CD-XA streams: arts shouts from <code>XA2 / XA4 / XA6</code>, the blocked-strike grunt from <code>XA30</code>, victory lines from the tail of <code>monster.snd</code></dd>
+    <dt>Libraries</dt><dd>Sony's PsyQ libsnd (sequencer, <code>0x80061..0x80067</code>) and libspu (<code>0x80068..0x8006D</code>), statically linked and traceable</dd>
+    <dt>In the port</dt><dd><code>crates/engine-audio</code>: a from-scratch SPU, a sample-locked sequencer, the SFX bank, XA mixing; a WebAudio backend for the browser</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="how-it-works">
-  <h2>How it works</h2>
-  <p>The SPU cannot be driven from main RAM directly; games go through Sony's PsyQ libraries - <strong>libsnd</strong> for sequencer playback and <strong>libspu</strong> for voice and register control. Legaia links both statically, so the libraries are part of the game binary and can be traced like any other code. Legaia's own layer above them is small: a path-string cluster, two loaders, one bank installer, one SFX helper, one BGM poller and one CD-XA clip player.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 330" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="au-title">
-      <title id="au-title">Audio pipeline: a SEQ score and its VAB bank stream from PROT.DAT into the SsAPI sequencer, which keys SPU voices; sound-effect descriptors key voices directly; CD-XA streams bypass the voices and enter the mixer from the CD input</title>
-      <defs>
-        <marker id="au-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
-      </defs>
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="20" y="40" width="160" height="50" rx="4"/><rect x="220" y="40" width="170" height="50" rx="4"/><rect x="430" y="40" width="150" height="50" rx="4"/>
-        <rect x="20" y="140" width="160" height="50" rx="4"/><rect x="220" y="140" width="170" height="50" rx="4"/><rect x="430" y="140" width="150" height="50" rx="4"/>
-        <rect x="20" y="250" width="160" height="50" rx="4"/><rect x="220" y="250" width="170" height="50" rx="4"/>
-      </g>
-      <rect x="630" y="40" width="130" height="150" rx="4" fill="var(--bg-raised)" stroke="var(--accent)"/>
-      <rect x="790" y="100" width="95" height="60" rx="4" fill="var(--bg-raised)" stroke="var(--accent)"/>
-      <g fill="var(--text-muted)">
-        <text x="20" y="28">music</text><text x="20" y="128">effects</text><text x="20" y="238">streamed voice / cutscene</text>
-      </g>
-      <g fill="currentColor" text-anchor="middle">
-        <text x="100" y="60">PROT entry</text><text x="100" y="78" fill="var(--text-muted)">[VAB][SEQ] pair</text>
-        <text x="305" y="60">SsAPI sequencer</text><text x="305" y="78" fill="var(--text-muted)">open / tick</text>
-        <text x="505" y="60">note on / off</text><text x="505" y="78" fill="var(--text-muted)">voice key-on</text>
-        <text x="100" y="160">SFX descriptor</text><text x="100" y="178" fill="var(--text-muted)">8-byte record</text>
-        <text x="305" y="160">VAB slot</text><text x="305" y="178" fill="var(--text-muted)">by category byte</text>
-        <text x="505" y="160">SpuKeyOn</text><text x="505" y="178" fill="var(--text-muted)">direct</text>
-        <text x="100" y="270">XA / STR sectors</text><text x="100" y="288" fill="var(--text-muted)">CD-XA</text>
-        <text x="305" y="270">cue player</text><text x="305" y="288" fill="var(--text-muted)">clip, channel</text>
-        <text x="695" y="66">SPU RAM</text><text x="695" y="84" fill="var(--text-muted)">512 KB</text>
-        <text x="695" y="118">24 voices</text><text x="695" y="136" fill="var(--text-muted)">ADPCM, ADSR</text>
-        <text x="695" y="166">reverb bus</text><text x="695" y="184" fill="var(--text-muted)">Studio C</text>
-        <text x="837" y="126">mixer</text><text x="837" y="144" fill="var(--text-muted)">44.1 kHz</text>
-      </g>
-      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#au-ah)">
-        <path d="M180 65 L218 65"/><path d="M390 65 L428 65"/><path d="M580 65 L628 65"/>
-        <path d="M180 165 L218 165"/><path d="M390 165 L428 165"/><path d="M580 165 L628 165"/>
-        <path d="M760 115 L788 115"/>
-        <path d="M180 275 L218 275"/>
-        <path d="M390 275 L837 275 L837 162"/>
-      </g>
-      <text x="610" y="295" fill="var(--text-muted)" text-anchor="middle">CD input - never touches the 24 voices</text>
+  <h2>Three roads to the speaker</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three sound paths. Music: a scene script names a track id, the BGM poller turns it into a PROT entry, the entry's VAB is uploaded and its SEQ score opened, and Sony's sequencer keys SPU voices. Effects: an actor or script names a cue id, the 8-byte descriptor names a VAB slot by its category byte, and the voices are keyed directly. Voice: an art, strike or movie requests a CD-XA clip; the CD drive decodes it and it enters the mixer from the CD input, never touching the 24 voices.">
+      <defs><marker id="au-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="20" y="22">music</text>
+      <rect class="dg-node" x="20" y="30" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="95" y="54">scene script</text><text class="dg-sub" x="95" y="72">op 0x35: track id</text>
+      <rect class="dg-node" x="190" y="30" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="265" y="54">BGM poller</text><text class="dg-sub" x="265" y="72">id to PROT entry</text>
+      <rect class="dg-node" x="360" y="30" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="435" y="54">[VAB][SEQ] entry</text><text class="dg-sub" x="435" y="72">bank into SPU RAM</text>
+      <rect class="dg-node" x="530" y="30" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="605" y="54">sequencer</text><text class="dg-sub" x="605" y="72">libsnd: note on / off</text>
+
+      <text class="dg-edge-label" x="20" y="122">effects</text>
+      <rect class="dg-node" x="20" y="130" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="95" y="154">actor / script</text><text class="dg-sub" x="95" y="172">names a cue id</text>
+      <rect class="dg-node" x="190" y="130" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="265" y="154">descriptor</text><text class="dg-sub" x="265" y="172">8 bytes per cue</text>
+      <rect class="dg-node" x="360" y="130" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="435" y="154">VAB slot</text><text class="dg-sub" x="435" y="172">picked by category</text>
+      <rect class="dg-node" x="530" y="130" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="605" y="154">key-on</text><text class="dg-sub" x="605" y="172">one voice per count</text>
+
+      <rect class="dg-node-accent" x="710" y="30" width="130" height="156" rx="6"/>
+      <text class="dg-label" x="775" y="70">SPU</text>
+      <text class="dg-sub" x="775" y="96">24 voices</text>
+      <text class="dg-sub" x="775" y="114">ADPCM + ADSR</text>
+      <text class="dg-sub" x="775" y="132">512 KB RAM</text>
+      <text class="dg-sub" x="775" y="150">reverb: Studio C</text>
+
+      <text class="dg-edge-label" x="20" y="232">streamed voice</text>
+      <rect class="dg-node" x="20" y="240" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="95" y="264">art / strike / movie</text><text class="dg-sub" x="95" y="282">asks for a clip</text>
+      <rect class="dg-node" x="190" y="240" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="265" y="264">CD-XA sectors</text><text class="dg-sub" x="265" y="282">file + channel</text>
+      <rect class="dg-node" x="360" y="240" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="435" y="264">CD drive</text><text class="dg-sub" x="435" y="282">decodes ADPCM itself</text>
+      <rect class="dg-node-ok" x="710" y="240" width="130" height="56" rx="6"/>
+      <text class="dg-label" x="775" y="264">mixer</text><text class="dg-sub" x="775" y="282">to the speakers</text>
+
+      <path class="dg-edge" d="M170 58 L188 58" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M340 58 L358 58" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M510 58 L528 58" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M680 58 L708 58" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M170 158 L188 158" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M340 158 L358 158" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M510 158 L528 158" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M680 158 L708 158" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M775 186 L775 238" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M170 268 L188 268" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M340 268 L358 268" marker-end="url(#au-arrow)"/>
+      <path class="dg-edge" d="M510 268 L708 268" marker-end="url(#au-arrow)"/>
+      <text class="dg-edge-label" x="610" y="260" text-anchor="middle">CD input - skips the voices</text>
     </svg>
-    <figcaption>Three roads into one mixer. Music and effects both end as SPU voice key-ons; streamed CD-XA audio enters the mixer from the CD input.</figcaption>
+    <figcaption>Music and effects both end as SPU voice key-ons, from different banks; streamed CD-XA audio never touches the 24 voices and enters the mix from the CD input. That is why a port that wires up only the SPU stays silent when a character shouts.</figcaption>
   </figure>
-  <p>The surprising part is music dispatch: there is no "BGM id to file" table anywhere. A scene's own script writes a track id, and a per-frame poller turns that id into a <code>PROT.DAT</code> entry number by arithmetic over the disc layout. The archive is the table.</p>
+  <p>The SPU cannot be driven from main RAM directly; games go through Sony's <strong>libsnd</strong> (sequencer playback) and <strong>libspu</strong> (voices and registers). Legaia links both statically, so they are part of the game binary and can be traced and named like any other code. Legaia's own layer above them is small: two loaders, one bank installer, one SFX helper, one BGM poller and one CD-XA clip player.</p>
 </section>
 
-<section class="doc-section" id="loaders">
-  <h2>Finding the sound files</h2>
-  <p>Retail reads sound data by <code>PROT.DAT</code> entry number. A dev-station path (<code>h:\...</code>) survives in the same functions but is never taken on a retail disc: the split is a build-mode global, and the dev arm opens files through a host trap that has no disc to read.</p>
-  <table class="data-table">
-    <thead><tr><th>Piece</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td>Path-string cluster</td><td>Eight extensions the sound code appends to scene-asset paths - <code>.spk</code>, <code>.LZS</code>, <code>.dpk</code>, <code>.MAP</code>, <code>.PCH</code>, <code>.pac</code>, <code>STR</code> - plus the master file <code>bse.dat</code>. Layout on <a href="../formats/sound-driver.html">sound-driver outputs</a></td></tr>
-      <tr><td>Sound init / <code>.dpk</code> loader</td><td>Loads <code>bse.dat</code> (the battle occupant of the <code>&gt;= 0x200</code> SFX descriptor bank) at battle-scene setup - its only caller is battle init <code>FUN_800513F0</code> - then the per-scene <code>.dpk</code></td></tr>
-      <tr><td>Streaming-asset loader</td><td>Builds paths under <code>sound\</code>; the XA / <code>.pac</code> / <code>STR</code> consumer and the streamer every VAB-slot install goes through</td></tr>
-    </tbody>
-  </table>
-  <p class="hint">A third "mode-aware extension dispatcher" that turns up in call graphs is not a sound consumer at all - it is the character-mesh equipment group-transform swap (<a href="../formats/character-mesh.html">character mesh</a>).</p>
-</section>
-
-<section class="doc-section" id="banks">
-  <h2>Sound banks and their slots</h2>
-  <p>An instrument bank (VAB, format on <a href="../formats/vab.html">vab</a>) is a set of samples plus the tuning and envelope data that makes them instruments. Legaia keeps several resident at once, each parked in a numbered SPU slot. One installer opens every bank; its argument is the same category byte the SFX descriptors carry, and a 12-byte mixer record per category names the header buffer and the slot.</p>
-  <table class="data-table">
-    <thead><tr><th>Slot</th><th>Bank</th><th>Installed by</th></tr></thead>
-    <tbody>
-      <tr><td>0</td><td>PROT 0868 system bank</td><td>Resident from boot</td></tr>
-      <tr><td>1</td><td>The current BGM's own VAB (<code>music_01</code>, variable)</td><td>The BGM poller</td></tr>
-      <tr><td>2</td><td>PROT 0869 class-2 bank (0875 alternate)</td><td>Battle scene loader</td></tr>
-      <tr><td>3</td><td>A <code>vab_01</code> side-band bank (variable)</td><td>The BGM poller</td></tr>
-      <tr><td>6</td><td>PROT 0876 field bank</td><td>Field init</td></tr>
-      <tr><td>7 / 8</td><td>The active battle's two <code>monster.snd</code> banks</td><td>Monster bank loader</td></tr>
-      <tr><td>11</td><td>PROT 0889 reward bank</td><td>Victory spoils</td></tr>
-    </tbody>
-  </table>
+<section class="doc-section" id="bgm-dispatch">
+  <h2>Music: which track plays</h2>
+  <p>Walk into Rim Elm and the town theme starts; walk into a fight and the battle theme takes over. Nothing in the executable maps a place to a tune. The scene's own script says &ldquo;play track 2016&rdquo; through field-VM op <code>0x35</code>, and a per-frame poller turns that id into a disc entry by arithmetic - the archive is the table.</p>
   <ul class="bullets">
-    <li><strong>Slots 2 and 6 share one SPU base.</strong> The record initialiser assigns header buffers from one base with four pairs sharing one, and the SPU-base table gives those pairs one address - the field bank and the battle class-2 bank are the same physical bank in two modes. The engine seeds the same twelve-word image at boot and answers slot queries from the other end, with a test that the two agree.</li>
-    <li><strong>Monster banks</strong> come from one packed file, <code>monster.snd</code>, with a per-monster TOC of <code>[start_lba, end_lba + 1]</code> pairs. Its tail clips carry the party's <em>victory-pose voice lines</em>: the spoils routine picks a pose tier from the actor's HP (three-quarters, half, quarter; a status forces tier 4), an action id from a per-character table, and a clip byte - Vahn <code>0xB8..0xBC</code>, Gala <code>0xBD..0xC3</code>, Noa <code>0xC4..0xCB</code>.</li>
-    <li><strong>Multi-bank archives</strong> sit at extraction 0889 / 0890 (<code>sound_data2</code>) and 0891 (<code>level_up</code>). Slot sizes and the SPU map: <a href="../formats/sfx-table.html">sfx table</a>.</li>
+    <li><strong>Global ids (&ge; 2000)</strong> are offsets into the shared <code>music_01</code> bank: id <code>2000 + i</code> is sound-test track <code>i</code>. Scene-local ids (&lt; 2000) only feed the &ldquo;did the track change&rdquo; test - the load itself is overwritten with a global slot, so every scene that starts music picks a global track.</li>
+    <li><strong>The bank is piecewise.</strong> In extraction space it runs <code>988 + i</code> for <code>i &le; 67</code> and <code>990 + i</code> for <code>i &ge; 68</code>, with a two-entry gap at 1056 / 1057; a flat base gets the top of the sound test wrong (<a href="../reference/music-tracks.html">music tracks</a>).</li>
+    <li><strong>Each track carries its own instruments.</strong> An entry is a chunk header, a <code>pBAV</code> bank, then a <code>pQES</code> score; playing it uploads <em>that entry's</em> VAB. A scene's own sound stream is never its music.</li>
+    <li><strong>Re-selecting the playing track is a no-op</strong>, so walking between two rooms that name the same theme never restarts it.</li>
+  </ul>
+  <h3 id="track-swap">Changing track on cue</h3>
+  <p>A cutscene can choose the exact beat the outgoing score dies on. The poller walks a short ladder - wait for the CD, let the load settle for 30 frames, tear down the old track unless the script owns the swap, load, install the score, latch - and coordinates with the script through one sound-flag word. A swap started by sub-op 9 keeps the old track playing until the script commits it with sub-op <code>0xA</code>. The flag bits are on <a href="audio-internals.html#swap-handshake">internals</a>.</p>
+  <ul class="bullets">
+    <li><strong>Stop, pause, replay.</strong> Sub-op 2 <em>stops</em> the track (notes cut, cursor back to the start), sub-op 3 <em>pauses</em> it (notes keyed off, cursor kept) and sub-op 4 <em>replays</em> it from its first event.</li>
+    <li><strong>Hard cuts.</strong> Retail never cross-fades between tracks: the old sequence is keyed off (notes release through their own envelopes) and the new one starts that instant.</li>
+    <li><strong>Movies leave the score alone.</strong> The movie player never touches the sequencer: a score the script left sounding keeps playing under the movie's audio, and one it stopped stays silent. Only the title attract stops the title theme, and the title screen restarts it from the top.</li>
+    <li><strong>The silent dawn.</strong> <code>town01</code> starts its theme and, while a story flag is clear, pauses it at once; the opening cutscene's own sub-op 9 brings it in.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="sfx">
   <h2>Sound effects</h2>
-  <p>A footstep, a menu blip, a sword clang: each is one 8-byte descriptor - which program in which bank, how many voices, how loud - and the actor or script that wants the sound just names it. The static table holds 100 descriptors; ids at or above <code>0x200</code> come from the runtime <code>.dpk</code> bank instead.</p>
-  <table class="layout">
-    <thead><tr><th>Byte</th><th>Field</th></tr></thead>
-    <tbody>
-      <tr><td>+0</td><td>Program</td></tr>
-      <tr><td>+1</td><td>Tone / region base</td></tr>
-      <tr><td>+2</td><td>Note level</td></tr>
-      <tr><td>+3</td><td>Voice count, plus a sustained bit <code>0x20</code></td></tr>
-      <tr><td>+4</td><td>Category - selects the VAB slot the cue plays from</td></tr>
-    </tbody>
-  </table>
+  <p>A footstep, a menu blip, a sword clang: each is one 8-byte descriptor, and the actor or script that wants the sound just names its id. The static table holds 100 descriptors; ids at or above <code>0x200</code> come from a runtime bank instead - in battle, <code>bse.dat</code>.</p>
+  <div class="byte-map">
+    <div class="bm-cell"><span class="bm-off">+0</span><span class="bm-name">program</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell"><span class="bm-off">+1</span><span class="bm-name">tone / region base</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell"><span class="bm-off">+2</span><span class="bm-name">note level</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell"><span class="bm-off">+3</span><span class="bm-name">voice count + sustained bit 0x20</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent"><span class="bm-off">+4</span><span class="bm-name">category = VAB slot</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">+5</span><span class="bm-name">unused (zero)</span><span class="bm-size">3 bytes</span></div>
+  </div>
   <ul class="bullets">
-    <li><strong>Trigger.</strong> The actor tick fires the per-actor helper when the actor's one-shot pulse byte is set or a continuous cue is staged; move-VM and field-VM opcodes write the sound id and voice into the actor. The helper keys one voice per descriptor count.</li>
-    <li><strong>Bank is named by the cue.</strong> The voice programmer issues a VAB program-change before the program lookup, repointing libsnd's current-bank globals at the slot the category byte names. A cue never plays out of the scene's music VAB.</li>
-    <li><strong>Engine.</strong> <code>SfxBank::from_descriptors</code> builds the catalog from the disc table and fires each cue against the bank its category names; <code>SfxScheduler</code> dispatches at the retail timing offset (a hit cue with <code>timing_frames = 1</code> plays one frame after the strike begins). Implementation <code>crates/engine-audio/src/sfx.rs</code>.</li>
+    <li><strong>Trigger.</strong> Move-VM and field-VM opcodes write a sound id and a voice into the actor; the actor tick fires the SFX helper on a one-shot pulse or a staged continuous cue, keying one voice per descriptor count.</li>
+    <li><strong>The cue names its own bank.</strong> Before looking the program up, the voice programmer switches libsnd's current bank to the slot the category byte names - so a cue never plays out of the scene's music bank. Layout and the category &rarr; slot &rarr; PROT map: <a href="../formats/sfx-table.html">sfx table</a>.</li>
   </ul>
   <details class="disclosure">
-    <summary>History: "a cue plays out of the scene's music VAB"</summary>
+    <summary>History: &ldquo;a cue plays out of the scene's music VAB&rdquo;</summary>
     <div class="disclosure-body"><p>The current-bank globals are shared with the sequencer, so a save state sampled after a BGM note holds the music bank. That artefact produced the earlier reading; the program-change call inside the voice programmer is what selects the bank per cue.</p></div>
   </details>
 </section>
 
-<section class="doc-section" id="bgm-dispatch">
-  <h2>Music: which track plays, and how it starts</h2>
-  <p>Walk into Rim Elm and the town theme starts; walk into a fight and the battle theme takes over. Nothing in the executable maps a place to a tune. The scene's own script says "play track 2016" through field-VM op <code>0x35</code>, and the per-frame poller turns that id into a disc entry:</p>
+<section class="doc-section" id="banks">
+  <h2>Sound banks and their slots</h2>
+  <p>An instrument bank (VAB, format on <a href="../formats/vab.html">vab</a>) is a set of samples plus the tuning and envelope data that makes them instruments. Legaia keeps several resident at once, each parked in a numbered slot. One installer opens every bank; its argument is the same category byte the SFX descriptors carry.</p>
+  <div class="table-wrap">
   <table class="data-table">
-    <thead><tr><th>Id</th><th>Resolved PROT index</th><th>Base</th></tr></thead>
+    <thead><tr><th>Slot</th><th>Bank</th><th>Installed by</th></tr></thead>
     <tbody>
-      <tr><td><code>&lt; 2000</code> (scene-local)</td><td>change test: <code>scene_block + 6 + id</code>; loaded: <code>music_01_base + 2</code></td><td>Global slot 2 - the load index is overwritten, so no scene bank is ever staged</td></tr>
-      <tr><td><code>&ge; 2000</code> (global pool)</td><td><code>music_01_base + (id &minus; 2000)</code></td><td>Raw TOC 990 = extraction 988</td></tr>
+      <tr><td>0</td><td>PROT 0868 system bank (the shared UI cues)</td><td>resident from boot</td></tr>
+      <tr><td>1</td><td>the current track's own VAB (<code>music_01</code>)</td><td>the BGM poller</td></tr>
+      <tr><td>2</td><td>PROT 0869 battle class-2 bank (0875 alternate); a minigame's own bank in fishing, slots and dance</td><td>battle loader, minigame inits</td></tr>
+      <tr><td>3</td><td>a <code>vab_01</code> side-band bank</td><td>the BGM poller</td></tr>
+      <tr><td>6</td><td>PROT 0876 field bank</td><td>field init</td></tr>
+      <tr><td>7 / 8</td><td>the active battle's two <code>monster.snd</code> banks</td><td>monster bank loader</td></tr>
+      <tr><td>11</td><td>PROT 0889 reward bank</td><td>victory spoils</td></tr>
     </tbody>
   </table>
+  </div>
   <ul class="bullets">
-    <li><strong>The bank is piecewise.</strong> Global id <code>2000 + i</code> equals sound-test track <code>i</code>, but in extraction space the bank runs <code>988 + i</code> for <code>i &le; 67</code> and <code>990 + i</code> for <code>i &ge; 68</code>, with a two-entry gap at 1056 / 1057. <code>music_labels::prot_entry_for_bgm_id</code> owns that map; a flat base gets the top of the sound test wrong.</li>
-    <li><strong>Each entry is self-contained</strong> - chunk header, <code>pBAV</code> body, then a <code>pQES</code> score. Playing a track uploads <em>that entry's</em> VAB into SPU RAM; a scene's <code>scene_vab_stream</code> SEQ is never its music, which is why fingerprinting a playing track against the scene-local corpus fails.</li>
-    <li><strong>Script-selected, not table-driven.</strong> Running every scene's prescript and observing the emitted id (<code>bgm_scene_resolution.rs</code>) shows every scene that starts music picks a global-pool id. The sweep sees a scene's <em>entry</em> track only; cutscenes change music mid-scene with sub-op 9 from timeline records.</li>
-    <li><strong>Re-selecting the playing track is a no-op</strong> - the resolved index is compared with the loaded one before anything happens.</li>
-  </ul>
-  <h3>The track-swap handshake</h3>
-  <p>A cutscene can choose the exact beat the outgoing score dies on. The poller runs a stage counter through a seven-entry ladder - wait for CD idle, arm a 30-frame settle, tear down the BGM slot unless the script owns the swap, kick the load, count down, install the SEQ, re-attach unless paused, latch - coordinated with the script through one sound-flag word:</p>
-  <table class="data-table">
-    <thead><tr><th>Bit</th><th>Meaning</th><th>Set by</th><th>Cleared by</th></tr></thead>
-    <tbody>
-      <tr><td>0</td><td>Script-owned start pending (defer slot teardown)</td><td>Sub-op 9</td><td>Poller commit, scene entry</td></tr>
-      <tr><td>1</td><td>BGM slot paused / detached</td><td>Sub-op 2, 3, the dance overlay</td><td>Sub-op 1, 4, <code>0xA</code>, scene entry, game over</td></tr>
-      <tr><td>2</td><td>Keep the audio across the next scene load: the scene initializer skips its music level ramp and its sound-effect voice cut</td><td>Sub-op 6</td><td>Field overlay</td></tr>
-      <tr><td>3</td><td>Load settled - payload staged and delay elapsed</td><td>The poller</td><td>Poller commit</td></tr>
-      <tr><td>4</td><td>Release-ack - the script has released the old occupant</td><td>Sub-op <code>0xA</code></td><td>Poller commit</td></tr>
-    </tbody>
-  </table>
-  <p>After setting bit 3 the poller stalls while bit 0 is set and bit 4 is not: a swap started by sub-op 9 keeps the old track until the script commits with sub-op <code>0xA</code>. A port that honours the sub-op 2 pause but drops the <code>0xA</code> commit leaves the music paused after the cutscene; the engine routes sub-op <code>0xA</code> straight to <code>BgmDirector::unhalt_pause</code> because its BGM bytes resolve synchronously.</p>
-  <ul class="bullets">
-    <li><strong>Stop, pause, replay.</strong> The control words are not the labels they were given. Sub-op 2 <em>stops</em> the track (notes cut, read cursor back to the start), sub-op 3 <em>pauses</em> it (notes keyed off, cursor kept) and sub-op 4 <em>replays</em> it from its first event - the libsnd play call under it resets the cursor before it plays. The engine routes 2 and 3 as a pause and 4 as a rewind-and-resume; it once read 3 as a resume and 4 as a stop, which silenced the score where retail brings it back.</li>
-    <li><strong>Movies.</strong> Retail's movie player never touches the sequencer; a mid-game movie inherits whatever the script left, and a capture shows a score the script left sounding keeps playing under the movie's audio, and one already stopped (<code>taiku</code>'s own stop word, <code>garmel</code> after its boss fight) stays silent. Only the title attract acts: it releases the title theme, and the card-init screen it returns to streams the theme again from the top. Both of the port's hosts follow one engine policy - retail by default, so a cutscene movie layers over the score; the attract stops and restarts the theme; an optional ducking policy lowers only a sounding score and gives back only what that movie took.</li>
-    <li><strong>Entry-script pauses.</strong> town01 starts id 2016 and, while a system flag is clear, pauses it at once - the opening's silent dawn, restarted by the cutscene's own sub-op 9. The engine's free-roam staging drops that pause on scene-picker entries only; the new-game chain keeps it.</li>
-    <li><strong>Battle swap (engine).</strong> <code>World::set_battle_bgm</code> queues an ordinary sub-op 1 start on encounter and resumes the field track on battle end. Default battle track: global id 2026 (retail's <code>battle_id == 0</code> bundle, sound-test #26). Retail BGM changes are hard cuts, so <code>AudioOut::swap_bgm</code> key-offs the outgoing sequencer (notes release through their own envelopes) and starts the new one that instant, with a couple of frames of click-guard on the master.</li>
-    <li><strong>Minigame pages</strong> take the same path: Baka Fighter loads extraction 1043 (#55), the dance overlay 1048 / 1054 (#60 / #66); the slot machine, fishing and Muscle Dome inherit their host scene's track.</li>
+    <li><strong>Slots 2 and 6 are one physical bank in two modes.</strong> They share a header buffer and an SPU address: the field init loads 0876 into slot 6, and battle init closes it before the battle loader fills slot 2. That is why retail needs no extra SPU room for field cues.</li>
+    <li><strong>Monster banks</strong> come from one packed file, <code>monster.snd</code>, with a per-monster TOC of sector ranges. Its tail clips are the party's <em>victory-pose voice lines</em>: the spoils routine picks a pose tier from the actor's HP (a status forces the weakest pose) and plays that character's clip.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="battle-voice">
-  <h2>Battle voices: shouts and the melee grunt</h2>
-  <p>When Vahn lands a Somersault he shouts. That shout is not an SPU sample - it is a short CD-XA clip streamed off the disc, picked at random from a small per-art channel pool so it does not repeat back to back. The plain melee swing works the same way, which is why a port that wires up only the SPU stays silent in a fight.</p>
+  <h2>Battle voices: shouts and grunts</h2>
+  <p>When Vahn lands a Somersault he shouts. That shout is not an SPU sample - it is a short CD-XA clip streamed off the disc, picked at random from a small per-character channel pool so it does not repeat back to back.</p>
+  <div class="table-wrap">
   <table class="data-table">
-    <thead><tr><th>Cue</th><th>Source</th><th>Path</th></tr></thead>
+    <thead><tr><th>Cue</th><th>Source</th><th>When</th></tr></thead>
     <tbody>
-      <tr><td>Arts shout</td><td><code>XA2.XA</code> Vahn, <code>XA4.XA</code> Noa, <code>XA6.XA</code> Gala (16-channel mono banks)</td><td>Staged-animation materialiser &rarr; cue selector (pool pick) &rarr; CD-XA clip player. A second trigger fires from the animation cue track mid-clip</td></tr>
-      <tr><td>Melee grunt</td><td><code>XA30</code>, clip <code>0x1D</code>, character-spaced channel</td><td>The melee roll routine, first emission</td></tr>
-      <tr><td>Melee impact</td><td>Cue <code>0x10C</code> through the cue router - the XA voice leg for a party attacker, an element-tinted ring for a monster</td><td>The melee roll routine, second emission</td></tr>
-      <tr><td>Victory line</td><td>Tail clips of <code>monster.snd</code></td><td>Spoils routine (see <a href="#banks">banks</a>)</td></tr>
+      <tr><td>Arts shout</td><td><code>XA2.XA</code> Vahn, <code>XA4.XA</code> Noa, <code>XA6.XA</code> Gala (16-channel mono banks)</td><td>as an art's staged animation starts; a second trigger fires from the animation's cue track mid-clip</td></tr>
+      <tr><td>Grunt</td><td><code>XA30</code> clip <code>0x1D</code>, character-spaced channel</td><td>a melee strike the defender <em>blocks</em>; a strike that lands a flinch or knockdown is silent here</td></tr>
+      <tr><td>Impact sting</td><td>cue <code>0x10C</code> through the cue router - an <code>XA27</code> voice leg for a party target, an element-tinted ring for a monster</td><td>the same melee routine's second emission</td></tr>
+      <tr><td>Victory line</td><td>tail clips of <code>monster.snd</code></td><td>the spoils screen (see <a href="#banks">banks</a>)</td></tr>
     </tbody>
   </table>
-  <p><strong>Engine.</strong> Executing an art pushes one <code>BattleShoutCue</code>; boot demuxes <code>XA2 / XA4 / XA6</code> from the raw 2352-byte sectors (disc-image boots only); <code>AudioBgmDirector::play_art_shout</code> resolves the pool pick and <code>AudioOut::play_xa_shout</code> mixes the PCM the way the CD input does, never through the 24 voices. Two timing behaviours model the CD contract: a ~150&nbsp;ms response delay (the shout trails the animation) and back-to-back requests queue rather than cut. The cue tables are parsed by <code>legaia_art::arts_voice</code>.</p>
-  <p><strong>Shipped.</strong> The melee grunt and the impact cue are staged: boot demuxes the <code>XA27</code> / <code>XA30</code> clip banks (<code>read_battle_xa_clip_bank</code>) and the live battle loop fires the per-strike cue (<code>World::fire_melee_impact_cue</code>) - the <code>XA30</code> grunt on the strike that commits the target's <code>+0x1F3</code> reaction (four captured ordinary swings emit neither cue), the <code>0x10C</code> sting only when the effect handle <code>_DAT_8007BD84</code> is non-null, the <code>s7</code> pose gate honoured as retail's per-strike condition.</p>
-</section>
-
-<section class="doc-section" id="ssapi">
-  <h2>Sony's sequencer and SPU driver</h2>
-  <p>The music player is Sony's, not Legaia's. <strong>libsnd</strong> (<code>0x80061B18..0x800681D8</code>) walks the SEQ bytes, keeps per-channel state in 16 slots of <code>0xB0</code>-byte records, and turns note events into key-ons; Legaia installs two function-pointer hooks to wire the script VM's sequence context in. <strong>libspu</strong> (<code>0x80068..0x8006D</code>) pokes the chip's registers, runs the four-mode DMA transfer engine and the block allocator behind <code>SsSpuMalloc</code> / <code>SpuFree</code>. Being the same libraries every PsyQ game shipped is what lets the functions be named.</p>
-  <ul class="bullets">
-    <li><strong>Key-on volume chain.</strong> Velocity &times; bank volume &times; program volume &times; tone volume widened into the 14-bit register domain, a channel-volume fold, one pan attenuation per source, and - on the sequencer path only - a closing square taper. Engine port <code>VabBank::fire</code> + <code>sequencer::channel_mix</code>.</li>
-    <li><strong>Pitch law.</strong> A note is pitched against its tone's <code>center</code> through a two-octave table into a 14-bit SPU PITCH (clamped <code>0x3FFF</code>).</li>
-    <li><strong>Bank open</strong> validates the <code>pBAV</code> magic, builds the program-to-tone-page rank map into the reserved ProgAtr words, allocates SPU memory and stashes per-VAG addresses. Engine port <code>VabBank::upload</code>.</li>
-    <li><strong>Tempo</strong> becomes an integer tick step where the wall clock meets the sequencer; the decoder does not consume a whole event per call.</li>
-    <li id="libspu"><strong>Not audio:</strong> the <code>0x801CE628</code> cluster next door is libpad. And none of this is libgpu - battle and field code fire cues during render passes, which is why the cluster looks renderer-adjacent in call graphs.</li>
-  </ul>
-  <details class="disclosure">
-    <summary>Details: libsnd function and global catalogue</summary>
-    <div class="disclosure-body">
-      <table class="data-table">
-        <thead><tr><th>Address</th><th>PsyQ name</th><th>Role</th></tr></thead>
-        <tbody>
-          <tr><td><code>FUN_80062340</code></td><td><code>SsSeqOpen</code></td><td>Walks the 16-bit slot bitmap at <code>_DAT_801CD2B8</code>, marks the first free slot, initialises it</td></tr>
-          <tr><td><code>FUN_80062410</code></td><td><code>_SsSeqInit</code></td><td>Validates magic + version, reads PPQN base, BPM, ticks-per-quarter</td></tr>
-          <tr><td><code>FUN_80061D18</code></td><td><code>SsSeqClose</code></td><td>Key-off, clears the bitmap bit, resets the 16 channel records</td></tr>
-          <tr><td><code>FUN_8006275C</code> / <code>FUN_800628F0</code> / <code>FUN_800641EC</code></td><td>pause / play / stop</td><td>Flag edits on the per-slot status word at <code>+0x98</code>: the pause raises <code>0x2</code> and keeps the cursor; the play core rewinds the cursor to the start for every mode, then plays; the stop kills the notes and rewinds</td></tr>
-          <tr><td><code>FUN_80061C68</code></td><td><code>_SsSeqGetVar</code></td><td>Varint delta-time decode into the running tick at <code>+0x88</code></td></tr>
-          <tr><td><code>FUN_80061EDC</code> / <code>FUN_8006206C</code></td><td><code>SsSeqSetVol</code> / <code>_SsSetSlideVolume</code></td><td>Volume fetch and N-tick ramp</td></tr>
-          <tr><td><code>FUN_80067550</code></td><td><code>_SsVoNoteOn</code></td><td>The key-on volume chain</td></tr>
-          <tr><td><code>FUN_80067E9C</code></td><td><code>_SsSeqNoteOn</code></td><td>Sequence-driven key-on; calls the program-change</td></tr>
-          <tr><td><code>FUN_80065978</code></td><td><code>_SsVoKeyOnDirect</code></td><td>Voice allocation, region lookup, pitch + base note</td></tr>
-          <tr><td><code>FUN_80066E50</code> / <code>FUN_8006C6E4</code></td><td><code>_SsPitchFromKey</code> / <code>_SsKey2Pitch</code></td><td>12-entry key table at <code>_DAT_8007A940</code>; two-octave table</td></tr>
-          <tr><td><code>FUN_80068B98</code></td><td>VAB program-change</td><td>Installs the current-bank globals, reads the packed tone-page index</td></tr>
-          <tr><td><code>FUN_80068D94</code></td><td><code>SsVabOpenHead</code></td><td>Bank open (see above)</td></tr>
-          <tr><td><code>FUN_800684CC</code></td><td>Key-off by owner</td><td>Keys off every <code>0x36</code>-stride voice record at <code>0x801CDB60</code> whose <code>+0x0</code> owner key equals the argument (<code>seq | track &lt;&lt; 8</code>, as <code>FUN_800638D8</code> passes it) - not a VAB-id search</td></tr>
-          <tr><td><code>FUN_8006CA7C</code> / <code>FUN_8006CDB0</code> / <code>FUN_8006DDC8</code></td><td><code>SsSeqGetStatus</code> / <code>SetCallback</code> / <code>SetMarkCallback</code></td><td>Resolve the context through the Legaia hook <code>_DAT_801CE564</code></td></tr>
-          <tr><td><code>FUN_80062AA0</code> / <code>FUN_80065440</code></td><td>SPU command shims</td><td><code>&times;0x81</code> scaling, 0..127 to 0..16383</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </details>
-  <details class="disclosure">
-    <summary>Details: libspu globals, primitives and the transfer engine</summary>
-    <div class="disclosure-body">
-      <table class="data-table">
-        <thead><tr><th>Address</th><th>PsyQ name</th><th>Role</th></tr></thead>
-        <tbody>
-          <tr><td><code>_DAT_8007AF40</code></td><td>SPU register base</td><td>MMIO <code>0x1F801C00</code>; <code>+0x180</code> main volume, <code>+0x1AA</code> SPUCNT, <code>+0x1B0</code> reverb volume, <code>+0x1C0..0x1FE</code> reverb block</td></tr>
-          <tr><td><code>_DAT_8007AFA4</code> / <code>_DAT_8007AFF8</code></td><td>Block table / master attribute struct</td><td>Free bit <code>0x80000000</code>, end bit <code>0x40000000</code>; 10 modes &times; <code>0x44</code></td></tr>
-          <tr><td><code>FUN_8006ACBC</code> / <code>FUN_8006C048</code></td><td><code>SpuSetVoiceAttr</code></td><td>Mask-driven dispatcher; 24-voice broadcaster over <code>1 &lt;&lt; i</code></td></tr>
-          <tr><td><code>FUN_8006BCB4</code></td><td><code>SpuSetCommonAttr</code></td><td>Master volume, reverb registers, SPUCNT bits</td></tr>
-          <tr><td><code>FUN_8006B1B4</code></td><td><code>SpuSetReverbModeParam</code></td><td>30-attribute reverb commit</td></tr>
-          <tr><td><code>FUN_80069B18</code></td><td><code>_spu_t</code></td><td>Four-mode transfer state machine (arm read, arm write, stage address, commit); <code>0xF00</code>-poll timeout</td></tr>
-          <tr><td><code>FUN_800697E0</code> / <code>FUN_80069DA8</code></td><td><code>_SpuTransfer</code> / <code>SpuWrite</code></td><td>CPU-copy path in <code>0x40</code>-byte chunks; DMA-vs-CPU pick</td></tr>
-          <tr><td><code>FUN_8006A158</code> / <code>FUN_8006A728</code> / <code>FUN_8006A420</code></td><td><code>SsSpuMalloc</code> / <code>SpuFree</code> / compactor</td><td>First-fit walk, high-bit free, coalesce</td></tr>
-        </tbody>
-      </table>
-      <p>An earlier "<code>SsSepOpen</code> / <code>VAP</code> SEP loader" reading of the bank open is falsified - the magic is the VAB's. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
-</section>
-
-<section class="doc-section" id="engine-spu">
-  <h2>Engine port</h2>
-  <p><code>crates/engine-audio</code> ports the stack as a from-scratch model from this page, the libspu API surface and the public SPU register layout. No Sony bytes.</p>
-  <table class="data-table">
-    <thead><tr><th>Module</th><th>Models</th></tr></thead>
-    <tbody>
-      <tr><td><code>spu::Spu</code>, <code>spu::voice</code></td><td>24 voices with sample address, loop point, pitch, ADSR, L/R volume and reverb send; 4-point Gaussian resampling as the hardware does</td></tr>
-      <tr><td><code>spu::adsr</code>, <code>spu::adpcm</code></td><td>Five-phase envelope with linear / exponential modes; streaming 28-samples-per-block decoder, one per voice</td></tr>
-      <tr><td><code>spu::reverb</code></td><td>Register-driven network (same / different-side IIR, 4-tap comb, 2 all-pass) with the nine standard presets</td></tr>
-      <tr><td><code>spu::ram</code></td><td>512 KB model, libspu-shaped transfer engine, <code>SpuAllocator</code></td></tr>
-      <tr><td><code>vab_bind::VabBank</code></td><td><code>upload</code> drops every VAG into SPU RAM; <code>play_note</code> turns a MIDI key into voice config + key-on. Programs are slot-indexed</td></tr>
-      <tr><td id="engine-sequencer"><code>Sequencer</code></td><td><code>SsSeqOpen</code> / <code>Play</code> / <code>Close</code> / <code>SetVol</code> / <code>Rewind</code> surface; round-robin voice allocation tracking <code>(channel, key)</code>; pitch bend against per-tone <code>pbmin / pbmax</code>; loop markers from CC99 (20 = start, 30 = forever)</td></tr>
-      <tr><td><code>AudioOut</code></td><td>One cpal stream draining the SPU at 44.1 kHz; <code>swap_bgm</code>, <code>play_xa_shout</code>. The <code>audio-webaudio</code> feature adds <code>WebAudioOut</code> for the browser</td></tr>
-    </tbody>
-  </table>
-  <ul class="bullets">
-    <li><strong>Reverb is Studio C, always on, on every voice.</strong> Every captured state - field, town, battle, summon, title, minigames - has the master enable set and the 32 reverb registers byte-identical to the <code>StudioC</code> preset. A per-vsync capture reads the per-voice enable register as all 24 bits set on every frame, and the output depth, which is not part of any preset, as a fixed pair. The engine calls <code>Spu::set_retail_reverb()</code> once at init and installs the measured depth. No SEQ carries a CC91 reverb-depth event.</li>
-    <li><strong>Timebase.</strong> The production path ticks the sequencer once per SPU sample with an exact integer accumulator - locked to the audio clock, no drift, bit-deterministic for the replay oracle. The SEQ header tempo is a 240 BPM placeholder overridden by the first body tempo event, which carries no MIDI length byte; mis-parsing it pins playback ~3x fast (<a href="../formats/seq.html">seq</a>).</li>
-    <li><strong>Not modelled:</strong> pitch modulation, noise and FM (Legaia uses none), asynchronous DMA timing, and the hardware's 39-tap reverb FIR (decimation + zero-order hold instead).</li>
-  </ul>
+  </div>
+  <p>Cue tables: <code>legaia_art::arts_voice</code>. The CD contract shows up as two timing behaviours a port has to keep: the shout trails the animation by roughly 150 ms, and back-to-back requests queue rather than cut each other off.</p>
 </section>
 
 <section class="doc-section" id="xa">
-  <h2>XA-ADPCM <span class="tag tag-done">Confirmed</span></h2>
+  <h2>CD-XA streaming <span class="tag tag-done">Confirmed</span></h2>
   <p>Cutscene audio and voice clips are streamed CD-XA: the drive plays them directly, interleaved with video sectors, without the CPU or the SPU voices in the loop. <code>crates/xa</code> decodes the 4-bit ADPCM bit-exactly against an external lossless reference; the demuxer splits raw 2352-byte sectors by <code>(file, channel)</code>, which a 2048-byte ISO view strips. Format on <a href="../formats/xa.html">xa</a>.</p>
   <details class="disclosure">
-    <summary>History: the "non-standard interleave" reading</summary>
+    <summary>History: the &ldquo;non-standard interleave&rdquo; reading</summary>
     <div class="disclosure-body"><p>An earlier reading had most XA sound groups failing validation and inferred a bespoke interleave. That was Form-1 truncation damage in the old extractor, not the format. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
 </section>
 
-<section class="doc-section" id="audio-trace-oracle">
-  <h2>Checking the port: the audio-trace oracle</h2>
-  <p>The port's sound is checked by comparing which SPU voices are active, frame by frame, against a real emulator running the retail disc - the audio sibling of the VRAM and mode-trace oracles. Two retail capture shapes emit the same <code>AudioTraceFrame</code> JSONL: a single-cycle snapshot lifted from a mednafen save state's SPU section, and a multi-frame trace from <code>autorun_audio_trace.lua</code> in PCSX-Redux. The engine runs a standalone SPU + sequencer beside a headless boot session; a retail frame converges when some engine frame's active-voice mask is a superset of retail's with every retail voice's start address matching. A start-address or master-volume mismatch is a hard failure, and so is an engine trace that sounded nothing at all where retail had voices.</p>
-  <p>What a save-state comparand cannot decide is the rest. An SPU voice leaves its off phase on key-on and returns only when a key-off's release runs all the way down, and nothing does that wholesale - so a save taken mid-playthrough reports nearly every voice non-off, the residue of every cue since boot rather than the set the current score is sounding. A cold scene-entry window holds single-digit concurrent voices, so it can never be a superset of that, however faithful the playback. Deciding which voices belong to the score needs the per-vsync PCSX-Redux trace, captured from a moment whose loaded track is the one the engine side plays - which the save's scene does not settle.</p>
-  <p>That comparand once read as "the engine is much the quieter side", with reverb routing as the first channel to differ and a roughly halved voice count behind it. Both were instrument defects. The reverb figure came from the wrong register: the emulator's SPU register blob is the hardware window verbatim, and the offset being read was the SPU <em>control</em> register, not the per-voice reverb-enable mask. Read correctly, retail routes all 24 voices, and so does the engine - the oracle had been building a bare SPU where the shipped audio host builds one through <code>set_retail_reverb()</code>, so it was measuring an engine the port does not ship. Reverb now agrees frame for frame on routing, depth and work area.</p>
-  <p>The voice-count gap was two different pieces of music. An engine trace plays the track the scene's own entry script selects; a retail save plays whatever the playthrough left loaded, and a town save reached by walking in from the world map still holds the overworld track. Paired on one track and run over a comparable stretch of it, the two sides hold the same number of concurrent voices. The rest of the old gap is where in the track each window sits: that track's own score, decoded straight from the sequence data, peaks at nine simultaneous notes in its first few seconds and nineteen over the whole piece - and nineteen is exactly what the retail capture shows. With trace logging on, the sequencer drops no notes at all across the window.</p>
-  <p>What is left after track and window are controlled for is one per-voice difference: retail spends slightly more voices than it has distinct notes, doubling a note across two slots about one time in six, where the port plays each note once. The trace record now carries per-voice envelope level, volume and envelope-config word from all three emitters, so that question can be asked of the artifact directly.</p>
-  <p>CLI: <code>legaia-engine audio-trace --scene NAME</code> with <code>--scenario</code> (snapshot) or <code>--retail-jsonl</code> (multi-frame), plus <code>--per-voice</code> for the allocation comparison. Tests <code>audio_trace.rs</code>, <code>audio_trace_multi.rs</code> (needs <code>LEGAIA_AUDIO_TRACE_JSONL_DIR</code>).</p>
-</section>
-
-<section class="doc-section" id="how-we-know">
-  <h2>How we know</h2>
-  <table class="data-table">
-    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
-    <tbody>
-      <tr><td>Sound init / <code>.dpk</code> loader</td><td><code>FUN_8001FA88</code></td><td><code>bse.dat</code> at battle init (caller <code>FUN_800513F0</code>), dev / retail split on <code>_DAT_8007B8C2</code></td><td><code>ghidra/scripts/funcs/8001fa88.txt</code></td></tr>
-      <tr><td>Streaming-asset loader</td><td><code>FUN_8001FC00</code></td><td>The <code>sound\</code> path builder every bank install goes through</td><td><code>8001fc00.txt</code></td></tr>
-      <tr><td>Bank installer</td><td><code>FUN_8001E54C</code> / <code>FUN_8002630C</code></td><td>Category to mixer record to slot; open through <code>SsVabOpenHead</code></td><td><code>8001e54c.txt</code>, <code>8002630c.txt</code></td></tr>
-      <tr><td>Record initialiser / SPU bases</td><td><code>FUN_8001D424</code> / <code>FUN_800265E8</code></td><td>Twelve records, four pairs sharing a header and a base</td><td><code>8001d424.txt</code>, <code>800265e8.txt</code></td></tr>
-      <tr><td>Monster bank loader</td><td><code>FUN_8003E104</code></td><td><code>monster.snd</code> TOC and LBA range; slots 7 / 8</td><td><code>8003e104.txt</code></td></tr>
-      <tr><td>Per-actor SFX helper</td><td><code>FUN_800250D4</code> / <code>FUN_80065034</code></td><td>Descriptor decode; program-change before program lookup</td><td><code>800250d4.txt</code>, <code>80065034.txt</code></td></tr>
-      <tr><td>BGM poller</td><td><code>FUN_800243F0</code></td><td>Resolver arithmetic, the seven-stage swap ladder, sound-flag bits</td><td><code>800243f0.txt</code>, <code>800266e0.txt</code>, <code>80026520.txt</code></td></tr>
-      <tr><td>Op <code>0x35</code></td><td><code>FUN_801DE840</code> case <code>0x35</code></td><td>Sub-op semantics 1 / 2 / 3 / 4 / 6 / 9 / <code>0xA</code></td><td><a href="script-vm.html">script VM</a></td></tr>
-      <tr><td>Arts shout selector</td><td><code>FUN_8004C140</code> / <code>FUN_8003D53C</code></td><td>Channel pool pick; CD-XA clip player</td><td><code>8004c140.txt</code>, <code>8003d53c.txt</code>; PCSX-Redux call-site traces</td></tr>
-      <tr><td>Melee roll pair</td><td><code>FUN_801EC3E4</code></td><td>The grunt and the <code>0x10C</code> impact cue</td><td><code>overlay_battle_action_801ec3e4.txt</code></td></tr>
-      <tr><td>Victory spoils</td><td><code>FUN_8004E568</code></td><td>Pose tier, clip byte, reward bank slot 11</td><td><code>8004e568.txt</code></td></tr>
-      <tr><td>Reverb</td><td>SPU register file</td><td>Studio C in every captured state</td><td><code>mednafen-state spu</code> sweep</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<section class="doc-section" id="whats-left">
-  <h2>What's left</h2>
-  <ul class="bullets">
-    <li>The <code>bse.dat</code> battle bank: header word, record stride and the record columns (the SFX-table columns; <code>+4</code> is the category byte the cue router <code>FUN_8004FE5C</code> rewrites per cue through <code>gp+0x678</code>) are pinned (<a href="../formats/sound-driver.html">sound-driver outputs</a>).</li>
-    <li>The melee grunt and impact cue in the engine: an <code>XA30</code> bank at boot and cue emission from the live battle loop.</li>
-    <li>The <code>.MAP</code> / <code>.PCH</code> PsyQ SoundArtist intermediates are dev-side inputs, not separate retail chunks; nothing to port.</li>
-  </ul>
+<section class="doc-section" id="port">
+  <h2>In the port</h2>
+  <p><code>crates/engine-audio</code> rebuilds the stack from this page, the libspu API surface and the public SPU register layout - no Sony bytes. It models the 24 voices with Gaussian resampling, the envelope, the ADPCM decoder, the reverb network (set to Studio C on every voice, as retail runs it) and a sequencer clocked once per output sample, so playback is locked to the audio clock and bit-deterministic for replays. Both play hosts drive it through the same BGM director (<code>engine-session</code>). Module map, the sequencer details and how the port's sound is measured against retail: <a href="audio-internals.html#engine-spu">internals</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="audio-internals.html">Audio internals</a>
     <a href="../formats/vab.html">VAB sound bank</a>
     <a href="../formats/seq.html">SEQ sequence</a>
     <a href="../formats/xa.html">CD-XA</a>
@@ -317,9 +183,8 @@
     <a href="../formats/sound-driver.html">Sound-driver outputs</a>
     <a href="../reference/music-tracks.html">Music tracks</a>
     <a href="script-vm.html">Field VM op 0x35</a>
-    <a href="battle-action.html">Battle action SM</a>
     <a href="cutscene.html">Cutscene / STR</a>
     <a href="../media.html">Media page</a>
-    <a href="../minigames.html">Minigames</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/audio.md" target="_blank" rel="noopener">Full doc</a>
   </div>
 </section>

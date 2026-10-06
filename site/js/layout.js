@@ -97,6 +97,7 @@ const NAV = [
     items: [
       { href: 'subsystems/index.html',          text: 'Subsystems index',         key: 'subsystems/index' },
       { href: 'subsystems/boot.html',           text: 'Boot path',                key: 'subsystems/boot' },
+      { href: 'subsystems/boot-internals.html', text: 'Boot path: internals',     key: 'subsystems/boot-internals', indent: true },
       { href: 'subsystems/asset-loader.html',   text: 'Asset loader',             key: 'subsystems/asset-loader' },
       // Runtime VMs
       { href: 'subsystems/script-vm.html',      text: 'Field / event VM',         key: 'subsystems/script-vm' },
@@ -125,6 +126,7 @@ const NAV = [
       { href: 'subsystems/cutscene-internals.html', text: 'Cutscene: internals',  key: 'subsystems/cutscene-internals', indent: true },
       // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
+      { href: 'subsystems/audio-internals.html', text: 'Audio: internals',        key: 'subsystems/audio-internals', indent: true },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
       { href: 'subsystems/renderer-internals.html', text: 'Renderer: internals',  key: 'subsystems/renderer-internals', indent: true },
       { href: 'subsystems/shading.html',        text: 'Shading and palettes',     key: 'subsystems/shading', indent: true },
