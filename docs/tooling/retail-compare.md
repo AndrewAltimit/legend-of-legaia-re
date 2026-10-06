@@ -1459,6 +1459,16 @@ is checkable even where the pose is not. Two seeding limits follow.
   the camera had landed by frame twelve, so the frame scored better against
   a pose retail reached only by parking. Reproducing the park would mean
   reproducing the defect that froze it.
+- **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
+  `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
+  caster every pass and holds until the sound bank is resident
+  (`FUN_8003DE7C(1)`, `0x801E498C`). Retail's camera is part-way through
+  that ease when the capture lands - the step table's TR z endpoint is
+  `2457`, the live word `4279`, the accumulator `ctx[+0x87C]` at `96` - but
+  the engine's bank is resident at once, so its `0x32` is one tick long and
+  its frame is the ease's first. The accumulator says how long retail had
+  waited; the engine's state does not last long enough to be gated on it,
+  since the wait is CD timing.
 - **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
   `0x14`, past the intro timer) is taken once the engine's entry sweep and
   then its intro-name hold are over - the order retail runs them in, since

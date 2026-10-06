@@ -1176,3 +1176,53 @@ fn dead_end_crisis_rolls_in_the_cort_fight() {
     let world = dead_end_crisis_world(0xB5);
     assert!(!world.dead_end_crisis_wipes(0xA1));
 }
+
+/// Every gated capture-class chain body finishes: its countdown table never
+/// holds an arm for good.
+#[test]
+fn every_gated_chain_body_finishes() {
+    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    use legaia_engine_vm::cast_module_ticks::{capture_trampoline_for, chain_bodies};
+    let mut stuck = Vec::new();
+    for b in chain_bodies().iter().filter(|b| b.prot_entry >= 935) {
+        let sub = (b.prot_entry - 935) as u8;
+        let ids: Vec<u8> = if capture_trampoline_for(b.prot_entry).is_some() {
+            b.action_ids.to_vec()
+        } else {
+            vec![0xF0]
+        };
+        for id in ids {
+            let mut world = module_code_world();
+            world.party.party_count = 3;
+            world.battle_ctx.active_actor = 3;
+            world.actors[3].battle_monster_id = Some(180);
+            world.actors[3].battle.active_target = 0;
+            let mut entries = vec![SpellEntry::default(); 0x100];
+            entries[id as usize].class = CAPTURE_CLASS;
+            entries[id as usize].sub_class = sub;
+            world.menu.text = Some(crate::pause_screens::MenuTextTables {
+                spell_names: Some(SpellNameTable::from_entries(entries)),
+                ..Default::default()
+            });
+            if world.cast_module_for(id) != Some(b.prot_entry) {
+                continue;
+            }
+            world.arm_capture_cast_module(id);
+            let mut done = false;
+            for _ in 0..20_000 {
+                let phase = world.casting.module_phase;
+                match world.run_cast_module_code(id, phase) {
+                    Some(r) if r.busy => {}
+                    _ => {
+                        done = true;
+                        break;
+                    }
+                }
+            }
+            if !done {
+                stuck.push((b.prot_entry, id, world.casting.module_phase));
+            }
+        }
+    }
+    assert!(stuck.is_empty(), "never finished: {stuck:x?}");
+}

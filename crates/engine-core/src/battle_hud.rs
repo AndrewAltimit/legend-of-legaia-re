@@ -1562,18 +1562,20 @@ const ITEM_PANELS_CLOSE_STATE: u8 = 0x52;
 /// Up at the round prompt (step 0), parked by the ring (step 1, mode 1),
 /// **back up** while the item or magic window is browsed (steps 5 and 7),
 /// parked again for their target steps (`0x12` / `0x1B`), and raised in an
-/// action only by the **item** band's `0x3E` arm for a party-wide target.
+/// action by two openers, each for a party-wide target (`t2 == 8`), each
+/// leaving `ctx[+0x18] = 6` for the Done hold's close:
 ///
-/// The opener (`0x801E404C`: `t2 == 8` opens 6, `0x4E` and `0x4F` and leaves
-/// `ctx[+0x18] = 6` for the `0x51` close) is reached from one branch,
-/// `bne v1,v0,0x801E401C` at `0x801E3E88`, inside state `0x3E` - the arm
-/// that waits for the item clip to settle (`0x801E3E14..0x801E3E28`), retires
-/// HUD actor `0x21` and sends the move name `0x4C` off - and only off its
-/// non-gauge-extend path. The action seed `0x0C` opens record 7 for a
-/// member target and nothing else (`0x801E2F24..0x801E2F50`), so a magic
-/// cast on the whole party raises no panels: `orb_summon_mid_cast` holds
-/// `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`, and its frame shows the
-/// scene where the panels would sit.
+/// * the seed's plate routine `FUN_801E6D84` (every category arm of `0x0C`
+///   ends in it), only for a **monster** caster: `sltiu v0,v0,3` on the
+///   caster seat, then `t2 == 8`, then records 6 / `0x4E` / `0x4F`
+///   (`0x801E7038..0x801E7080`), and only on the arms that reach it past the
+///   Run / Arts / Spirit returns (`0x801E6DF0`, `0x801E6FA0..0x801E6FA8`);
+/// * the item band's `0x3E` arm (`0x801E404C`), reached from one branch at
+///   `0x801E3E88` off its non-gauge-extend path, for any caster.
+///
+/// A party member's magic cast on the whole party therefore raises none:
+/// `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`,
+/// and its frame shows the scene where the panels would sit.
 pub fn battle_panels_visible(world: &crate::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
@@ -1581,19 +1583,25 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
             battle_command_surface(world),
             Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)
         ),
-        // The `t2 == 8` arm sits in the item band's `0x3E` (see above); the
-        // panels stay up from there until the Done band's `0x51` hold ends.
+        // The two `t2 == 8` openers (see above); either keeps the panels up
+        // until the Done band's `0x51` hold ends.
         BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => false,
-        BattleHudPhase::Action => world
-            .actors
-            .get(world.battle_ctx.active_actor as usize)
-            .is_some_and(|a| {
+        BattleHudPhase::Action => {
+            let a = world.battle_ctx.active_actor;
+            world.actors.get(a as usize).is_some_and(|actor| {
                 use legaia_engine_vm::battle_action::{ActionCategory, ActionState};
                 let s = world.battle_ctx.action_state;
-                a.battle.active_target == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE
-                    && a.battle.action_category == ActionCategory::Item.as_byte()
-                    && (ActionState::SpiritFire as u8..ITEM_PANELS_CLOSE_STATE).contains(&s)
-            }),
+                let cat = actor.battle.action_category;
+                let party_wide = actor.battle.active_target
+                    == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+                let open = s < ITEM_PANELS_CLOSE_STATE;
+                let monster_seed =
+                    a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
+                let item_band =
+                    cat == ActionCategory::Item.as_byte() && s >= ActionState::SpiritFire as u8;
+                party_wide && open && (monster_seed || item_band)
+            })
+        }
         BattleHudPhase::Idle => false,
     }
 }
@@ -1840,6 +1848,26 @@ pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
     plate_glide_dy(world.battle.target_plaque_glide.as_ref(), a, b)
 }
 
+/// Whether `FUN_801E6D84`'s target arm runs for this category: it returns
+/// early for Run (`li v0,0x5; beq` at `0x801E6DEC`) and, past the actor
+/// plaque, for categories `0` and `4` (`beq s0,zero` / `beq s0,v0` with
+/// `v0 = 4`, `0x801E6FA0..0x801E6FA8`).
+fn seed_plates_reach_the_target_arm(category: u8) -> bool {
+    !matches!(category, 0 | 4 | 5)
+}
+
+/// The three Seru-magic ids `FUN_801E6D84` sends down its **row** arm
+/// instead of the single-target plaque, whatever their target byte
+/// (`li v0,0x8d` / `0x86` / `0x82` and the three `beq` at
+/// `0x801E6E4C..0x801E6E68`): Mushura, Zenoir and Theeder. The row arm
+/// counts the living monsters and stages their names
+/// (`0x801E6E70..0x801E6F90`) and opens no plate of its own, so
+/// `theeder_summon_mid_cast`, `zenoir_summon_mid_cast` and
+/// `mushura_summon_mid_cast` hold only the actor plaque in their handle
+/// lists while the single-target casts beside them (`nighto`, `swordie`)
+/// also hold record 81.
+pub const ROW_PLATE_SPELL_IDS: [u8; 3] = [0x8D, 0x86, 0x82];
+
 /// The bottom-right target plaque (placement record 81): the monster a
 /// party member's attack is aimed at, with its element badge - or `None`.
 ///
@@ -1875,6 +1903,11 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
         && cat != ActionCategory::TacticalArts.as_byte()
         && cat != ActionCategory::Magic.as_byte()
         && cat != ActionCategory::Item.as_byte()
+    {
+        return None;
+    }
+    if cat == ActionCategory::Magic.as_byte()
+        && ROW_PLATE_SPELL_IDS.contains(&actor.battle.params[0])
     {
         return None;
     }
@@ -3757,6 +3790,36 @@ mod tests {
             "the magic seed opens no panels (orb_summon_mid_cast)"
         );
         assert_eq!(battle_readout_bar_slot(&w), None);
+    }
+
+    /// `FUN_801E6D84`: a monster's party-wide cast raises the panels at the
+    /// seed; the three row-arm Seru ids raise no target plaque.
+    #[test]
+    fn the_seed_plates_follow_fun_801e6d84() {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+        let mut w = battle_world(1);
+        arm_action(
+            &mut w,
+            3,
+            ActionCategory::Magic.as_byte(),
+            TARGET_PARTY_WIDE,
+        );
+        assert!(battle_panels_visible(&w), "monster caster, party-wide");
+        arm_action(
+            &mut w,
+            3,
+            ActionCategory::Spirit.as_byte(),
+            TARGET_PARTY_WIDE,
+        );
+        assert!(!battle_panels_visible(&w), "spirit returns before the arm");
+        arm_action(&mut w, 0, ActionCategory::Magic.as_byte(), 3);
+        w.actors[0].battle.params[0] = 0x85;
+        assert!(battle_target_plaque(&w).is_some(), "single-target Nighto");
+        for id in ROW_PLATE_SPELL_IDS {
+            w.actors[0].battle.params[0] = id;
+            assert_eq!(battle_target_plaque(&w), None, "{id:#x}");
+        }
     }
 
     #[test]

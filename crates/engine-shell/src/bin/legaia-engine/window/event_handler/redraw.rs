@@ -3237,8 +3237,11 @@ impl PlayWindowApp {
                 light_prims.clear();
             }
             screen_prims.extend(self.weapon_trail_screen_prims());
-            // PROT 0948's Cross Beam, while its arm 3 runs.
-            screen_prims.extend(self.cross_beam_screen_prims());
+            // PROT 0948's Cross Beam, while its arm 3 runs. Its two OT
+            // entries (`2`, `0x400`) are both behind the text's bucket, so it
+            // draws under the HUD - the browser play page's GL pass sits
+            // under its text canvas the same way.
+            light_prims.extend(self.cross_beam_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured, and split at

@@ -771,8 +771,8 @@ const BATTLE_TICKS: usize = 60_000;
 /// [`BATTLE_TICKS_CAP`]. A boss whose specials land (Cort's Guilty Cross in
 /// `chitei2`) costs the party turns on heals, and a fight it is winning
 /// outlasts the flat budget - a player keeps fighting it.
-const BATTLE_STALL_TICKS: usize = 12_000;
-const BATTLE_TICKS_CAP: usize = 240_000;
+const BATTLE_STALL_TICKS: usize = 36_000;
+const BATTLE_TICKS_CAP: usize = 600_000;
 /// The most a scripted sequence may run while its park site keeps moving.
 const SCRIPT_CEILING: usize = 60_000;
 /// Hops a segment may take before it is called lost.
