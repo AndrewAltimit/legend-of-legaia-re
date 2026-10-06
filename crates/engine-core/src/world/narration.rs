@@ -203,17 +203,16 @@ impl World {
             .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
     }
 
-    /// The scripted full-scene multiply tint currently in force, or `None`
-    /// for the untouched render path. This is [`crate::World::screen_tint`] -
-    /// the op `0x4C 0x12` global tint (`DAT_8007BCB8/B9/BA`), the
-    /// scene-transition fade primitive (the opening's fade-in from black).
+    /// The op `0x4C 0x12` global tint currently in force
+    /// (`DAT_8007BCB8/B9/BA`, normalized; `None` = neutral).
     ///
-    /// Hosts stage this each frame over the drawn 3D scene (multiplying the
-    /// colour-grade gold and the depth-cue far colour by it - both branches
-    /// of the shader's cue mix, so the product distributes to the final
-    /// pixel). The text/narration overlay stays bright, matching retail (the
-    /// creation crawl scrolls over the fade). `None` when no tint is active -
-    /// the identity path, byte-identical to a build without this feature.
+    /// It is **not** a frame multiply. A disc-wide reference scan finds one
+    /// reader, the fog particle update `FUN_8003F3FC` (`0x8003F558` /
+    /// `0x8003F588` / `0x8003F5B8`); every other site is the op's own ramp or
+    /// a reset. `retona_field_card_boot` holds the word at `27` mid-arrival
+    /// over a full-brightness frame. So the hosts stage it into no colour
+    /// grade: it reaches the fog sheets (`World::fog_render_step`) and the
+    /// non-retail volumetric fog, which follows it so the two fade together.
     ///
     /// The op `0x34` sub-0 screen effect is deliberately NOT composed in:
     /// the retail cold-boot capture holds the lit villager tableau across

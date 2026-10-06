@@ -38,13 +38,12 @@ pub struct ScreenFxState {
     /// `_DAT_8007BCCC`, written `8` when `op0 & 2`, else `0` when `op0 & 4`,
     /// else `2` (`0x801DFD90..0x801DFDBC`).
     pub effect_kind: i16,
-    /// Global multiply screen tint (op `0x4C 0x12` → `DAT_8007BCB8/B9/BA`,
-    /// neutral operand `0x80`, stored normalized; ramp via `FUN_8003C5F0`).
-    /// The scene-entry fade-in from black - every field scene `P1[0]`'s
-    /// `0x52F` arrival arm: `4C 12 00 00 00 00 00` (instant black) then
-    /// `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - lives here.
-    /// Persists across scene changes (retail's cross-scene fade continuity:
-    /// a departure fade-to-black carries into the next scene's fade-in).
+    /// The op `0x4C 0x12` tint (`DAT_8007BCB8/B9/BA`, neutral operand
+    /// `0x80`, stored normalized; ramp via `FUN_8003C5F0`). Every field
+    /// scene `P1[0]`'s `0x52F` arrival arm drops it to `0` and ramps it back
+    /// over 68 frames. Its one retail reader is the fog particle update
+    /// `FUN_8003F3FC`: it fades the fog sheets, not the frame. Persists
+    /// across scene changes (the departure arm's ramp to `0` carries in).
     /// Stepped once per [`crate::world::World::tick`]; dropped once neutral.
     pub tint: Option<crate::fade::SceneTintRamp>,
     /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /

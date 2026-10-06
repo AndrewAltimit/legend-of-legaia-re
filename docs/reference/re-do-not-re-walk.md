@@ -65,6 +65,17 @@ replacements) fire in the same run. A kingdom overworld never enters the SCUS
 prim-dispatch family at all. See
 [`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
+### Op `4C 12` is the scene-entry screen fade
+
+*Falsified by a reference scan.*
+
+Every scene's arrival arm drops the op's word to `0` and ramps it back, which
+reads like a fade from black, and the port staged it as a multiply over the
+whole field frame. Its one reader disc-wide is the fog particle update
+`FUN_8003F3FC`; `retona_field_card_boot` holds the word at `27` over a
+full-brightness frame. See
+[`cutscene.md`](../subsystems/cutscene.md#the-op-0x4c-0x12-tint-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0).
+
 ### The field runs no hardware light source
 
 *Falsified by a frame.*

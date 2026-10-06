@@ -954,37 +954,26 @@ impl PlayWindowApp {
             // retail); every other scene, incl. the Rim Elm hand-off, is
             // natural colour. Staged every frame so it clears on transition.
             //
-            // The scripted screen-fade tint (op `0x4C 0x12` global tint -
-            // the scene-entry fade-from-black) composes into the
-            // same multiply: with grade strength `s` and gold `G`, the shaded
-            // pixel is `rgb*((1-s) + G*s)`, so a full-strength grade of
-            // `gold' = tint*((1-s) + G*s)` is exactly `tint * graded`. The
-            // depth-cue far colour is tinted the same way below, so both
-            // branches of the shader's cue mix carry the tint and the product
-            // distributes to the final pixel. `None` tint stages the previous
-            // identity values - the byte-identical untouched path. The text /
-            // narration overlay is a separate shader and stays bright, which
-            // is retail's look (the creation crawl scrolls over the fades).
-            let tint = self.session.host.world.scene_screen_tint();
-            match (self.session.host.world.scene_color_grade(), tint) {
+            // The op `0x4C 0x12` word (`_DAT_8007BCB8..BA`) is NOT a frame
+            // multiply: its one reader disc-wide is the fog particle update
+            // `FUN_8003F3FC` (see `docs/subsystems/field-ambient-fx.md`), so
+            // the scene's own pixels never take it - `retona_field_card_boot`
+            // holds the word at 27 over a full-brightness frame. The fog
+            // sheets take it through `World::fog_render_step`.
+            match self.session.host.world.scene_color_grade() {
                 // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
                 // mode - the retail mechanism's true altitude (the scene's
                 // uploaded CLUTs are rewritten to the gold law and the
                 // resident TMD colour words by the two `4C E6` HSV ops; the
                 // engine's shaders apply the identical laws per texel /
-                // packet colour, `prologue_sepia_word`). The screen tint
-                // rides the palette slot so the ground's neutral modulation
-                // still fades. The view-depth cue ramp is inert in this mode
-                // (retail's prologue nodes hold `IR0 = 0`).
-                (Some(g), t) => {
+                // packet colour, `prologue_sepia_word`). The view-depth cue
+                // ramp is inert in this mode (retail's prologue nodes hold
+                // `IR0 = 0`).
+                Some(g) => {
                     r.set_color_grade(g.gold, g.strength);
-                    r.set_palette_grade(t.unwrap_or([1.0; 3]), true);
+                    r.set_palette_grade([1.0; 3], true);
                 }
-                (None, Some(t)) => {
-                    r.set_color_grade(t, 1.0);
-                    r.set_palette_grade([1.0; 3], false);
-                }
-                (None, None) => {
+                None => {
                     r.set_color_grade([1.0, 1.0, 1.0], 0.0);
                     r.set_palette_grade([1.0; 3], false);
                 }
@@ -992,17 +981,9 @@ impl PlayWindowApp {
             // The grade's second half: the per-render-node DPCS far-colour
             // pull (gold far colour + depth-graded IR0 in retail), staged as
             // a view-depth IR0 ramp. Cleared every non-prologue frame, so
-            // interactive scenes render the identity (ramp-off) path. The
-            // screen-fade tint multiplies the far colour too (see above), so
-            // a fade-to-black reaches full black on far-cued geometry.
+            // interactive scenes render the identity (ramp-off) path.
             match self.session.host.world.scene_depth_cue() {
-                Some(c) => {
-                    let far = match tint {
-                        Some(t) => [c.far[0] * t[0], c.far[1] * t[1], c.far[2] * t[2]],
-                        None => c.far,
-                    };
-                    r.set_depth_cue_ramp(far, c.near_z, c.far_z, c.max_ir0)
-                }
+                Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
                 None => r.clear_depth_cue_ramp(),
             }
             // Retail GTE NCLIP winding rejection over the whole field pass

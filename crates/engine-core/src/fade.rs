@@ -444,13 +444,13 @@ impl DepthCueRamp {
 /// - **Op `0x4C 0x12`** (7-byte `[4C, 12, r, g, b, ramp_lo, ramp_hi]`): the
 ///   global multiply screen tint `DAT_8007BCB8/B9/BA = r/g/b`, optionally
 ///   ramped there over `LE_u16(ramp)` frames by the slot-job spawner
-///   `FUN_8003C5F0`. Neutral is `0x80`. This one IS the scene fade: every
-///   field scene's `P1[0]` entry script carries the arrival arm of the
-///   `0x52F`/`0x530`/`0x531` fade handshake - `4C 12 00 00 00 00 00`
-///   (black, instant) then `4C 12 80 80 80 44 00` (ramp to neutral over 68
-///   frames), the retail fade-in from black. Hosts multiply the drawn 3D
-///   scene by it ([`crate::World::scene_screen_tint`]); the narration/text
-///   overlay is a separate draw path and stays bright, matching retail.
+///   `FUN_8003C5F0`. Neutral is `0x80`. Every field scene's `P1[0]` entry
+///   script carries the arrival arm of the `0x52F`/`0x530`/`0x531`
+///   handshake - `4C 12 00 00 00 00 00` (instant) then
+///   `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - but the word
+///   is **not** a frame fade: its one reader disc-wide is the fog particle
+///   update `FUN_8003F3FC`, so it fades the fog sheets in and nothing else
+///   ([`crate::World::scene_screen_tint`]).
 /// - **Op `0x34` sub-0** (7-byte `[34, op0, r, g, b, ramp_lo, ramp_hi]`,
 ///   `FUN_801E1FB0`): the effect-layer global colour, neutral `0xFF`. The
 ///   opening timeline ramps it in the crawl gaps (`34 05 00 00 00 D2 00` =
