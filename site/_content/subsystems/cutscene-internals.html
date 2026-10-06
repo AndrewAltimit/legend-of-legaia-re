@@ -15,51 +15,38 @@
     <dt>Grade</dt><dd>Palette law <code>(L, L&minus;1, L&gt;&gt;1)</code> on every CLUT entry; port <code>Renderer::set_palette_grade</code></dd>
     <dt>Confidence</dt><dd>Confirmed; the gold-grade CLUT rewrite is capture-observed with no statically visible writer loop</dd>
   </dl>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 960 300" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ci-lanes-title">
-      <title id="ci-lanes-title">Four parallel contexts during an opening scene: the timeline record, the narration roller it spawns, the camera mover it stages, and the per-actor channels it pokes - all ticked by one per-frame actor walk</title>
-      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.2">
-        <rect x="16" y="16" width="928" height="40" rx="4"/>
-        <rect x="16" y="80" width="200" height="44" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
-        <rect x="16" y="140" width="200" height="44" rx="4"/>
-        <rect x="16" y="200" width="200" height="44" rx="4"/>
-        <rect x="16" y="252" width="200" height="40" rx="4"/>
-      </g>
-      <g fill="none" stroke="var(--text-muted)" stroke-width="1.2">
-        <line x1="240" y1="102" x2="944" y2="102"/>
-        <line x1="240" y1="162" x2="944" y2="162"/>
-        <line x1="240" y1="222" x2="944" y2="222"/>
-        <line x1="240" y1="272" x2="944" y2="272"/>
-      </g>
-      <g fill="var(--accent)">
-        <rect x="300" y="152" width="200" height="20" rx="3"/>
-        <rect x="560" y="152" width="150" height="20" rx="3"/>
-        <rect x="260" y="212" width="120" height="20" rx="3"/>
-        <rect x="420" y="212" width="360" height="20" rx="3"/>
-        <rect x="320" y="262" width="60" height="20" rx="3"/>
-        <rect x="520" y="262" width="60" height="20" rx="3"/>
-        <rect x="740" y="262" width="60" height="20" rx="3"/>
-      </g>
-      <g fill="var(--text-muted)" text-anchor="middle" dominant-baseline="middle">
-        <text x="300" y="102">spawn</text>
-        <text x="560" y="102">spawn</text>
-        <text x="260" y="102">cut</text>
-        <text x="420" y="102">glide</text>
-        <text x="880" y="102">SceneChange</text>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="480" y="36">per-frame actor walk FUN_8002519C - every live context gets a slice each frame</text>
-        <text x="116" y="102">timeline record</text>
-        <text x="116" y="162">narration roller</text>
-        <text x="116" y="222">camera mover</text>
-        <text x="116" y="272">actor channels</text>
-      </g>
-      <g fill="var(--bg-raised)" text-anchor="middle" dominant-baseline="middle" font-size="11">
-        <text x="400" y="162">crawl 1 scrolls</text>
-        <text x="635" y="162">crawl 2</text>
-        <text x="320" y="222">snap</text>
-        <text x="600" y="222">dolly, apply 840 frames</text>
-      </g>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four parallel contexts during an opening scene, ticked by one per-frame actor walk: the timeline record spawns the narration roller twice and stages the camera mover (a snap, then a long dolly), pokes the actor channels at three beats, and ends in a scene change.">
+      <rect class="dg-node" x="10" y="12" width="880" height="38" rx="5"/>
+      <text class="dg-label" x="450" y="36">per-frame actor walk FUN_8002519C - every live context gets a slice each frame</text>
+      <rect class="dg-node-accent" x="10" y="76" width="180" height="44" rx="5"/>
+      <text class="dg-label" x="100" y="103">timeline record</text>
+      <rect class="dg-node" x="10" y="136" width="180" height="44" rx="5"/>
+      <text class="dg-label" x="100" y="163">narration roller</text>
+      <rect class="dg-node" x="10" y="196" width="180" height="44" rx="5"/>
+      <text class="dg-label" x="100" y="223">camera mover</text>
+      <rect class="dg-node" x="10" y="250" width="180" height="40" rx="5"/>
+      <text class="dg-label" x="100" y="275">actor channels</text>
+      <path class="dg-edge-dim" d="M210 98 L890 98"/>
+      <rect class="dg-group" x="210" y="142" width="680" height="32" rx="4"/>
+      <rect class="dg-group" x="210" y="202" width="680" height="32" rx="4"/>
+      <rect class="dg-group" x="210" y="254" width="680" height="32" rx="4"/>
+      <text class="dg-edge-label" x="236" y="90" text-anchor="middle">cut</text>
+      <text class="dg-edge-label" x="290" y="90" text-anchor="middle">spawn</text>
+      <text class="dg-edge-label" x="400" y="90" text-anchor="middle">glide</text>
+      <text class="dg-edge-label" x="545" y="90" text-anchor="middle">spawn</text>
+      <text class="dg-edge-label" x="840" y="90" text-anchor="middle">scene change</text>
+      <rect class="dg-node-accent" x="290" y="147" width="200" height="22" rx="3"/>
+      <text class="dg-sub" x="390" y="162">crawl 1 scrolls</text>
+      <rect class="dg-node-accent" x="545" y="147" width="150" height="22" rx="3"/>
+      <text class="dg-sub" x="620" y="162">crawl 2</text>
+      <rect class="dg-node-ok" x="230" y="207" width="110" height="22" rx="3"/>
+      <text class="dg-sub" x="285" y="222">snap</text>
+      <rect class="dg-node-ok" x="400" y="207" width="360" height="22" rx="3"/>
+      <text class="dg-sub" x="580" y="222">dolly, apply 840 frames</text>
+      <rect class="dg-node-warn" x="310" y="259" width="60" height="22" rx="3"/>
+      <rect class="dg-node-warn" x="510" y="259" width="60" height="22" rx="3"/>
+      <rect class="dg-node-warn" x="730" y="259" width="60" height="22" rx="3"/>
     </svg>
     <figcaption>The timeline never blocks on the roller or the mover: it spawns them and keeps executing, so camera cuts play under the scrolling text. It blocks only before a new crawl block, on a channel's completion flag, and before its terminal scene change.</figcaption>
   </figure>
@@ -117,7 +104,7 @@
       <tr><td>6 Colour</td><td>4:2:0 upsample; <code>R = Y' + (91881&middot;Cr &gt;&gt; 16)</code>, <code>G = Y' &minus; ((22554&middot;Cb + 46802&middot;Cr) &gt;&gt; 16)</code>, <code>B = Y' + (116130&middot;Cb &gt;&gt; 16)</code> with <code>Y' = Y + 128</code>; row-major RGBA8 out</td></tr>
     </tbody>
   </table>
-  <p>Implementation <code>crates/mdec/src/lib.rs</code> (<code>MdecDecoder</code>, <code>AC_CODES</code>, <code>iki_lzss_decompress</code>, <code>IDCT_C</code>, <code>Q_MAT</code>); the disc-gated <code>str_mdec_decode_is_pixel_stable</code> test pins a decoded-frame fingerprint. XA decode is bit-exact against a lossless reference of a real track; sector layout and filter coefficients are on <a href="../formats/xa.html">XA audio</a>.</p>
+  <p>Implementation <code>crates/mdec/src/lib.rs</code> (<code>MdecDecoder</code>, <code>AC_CODES</code>, <code>iki_lzss_decompress</code>, <code>IDCT_C</code>, <code>Q_MAT</code>); a decoded-frame fingerprint is pinned against the disc. XA decode is bit-exact against a lossless reference of a real track; sector layout and filter coefficients are on <a href="../formats/xa.html">XA audio</a>.</p>
 </section>
 
 <section class="doc-section" id="timeline">
@@ -214,13 +201,13 @@
       <tr><td><code>34</code> sub-0</td><td><code>[op0][r][g][b][ramp u16]</code></td><td>Spawns a colour tween on the effect actor at <code>_DAT_8007B62C</code>; <code>op0</code> itself carries the blend (<code>&amp;1 ? 2 : 1</code>) and the push kind (<code>8</code> on <code>&amp;2</code>, <code>0</code> on <code>&amp;4</code>, else <code>2</code>)</td><td>Walks the effect colour out and back in as a pair of tweens; not a screen fade - the tableau stays lit through it. An <strong>all-zero</strong> operand clears the effect outright (the arm drops the actor pointer and never spawns), and a pure-white target under blend <code>2</code> loses an eighth of its duration</td></tr>
     </tbody>
   </table>
-  <p>Every scene's entry script arms <code>4C 12 00 00 00 00 00</code> then <code>4C 12 80 80 80 44 00</code> - instant black, 68-frame ramp to neutral. New Game sets system flag <code>0x52F</code> to arm that handshake, and the engine pre-runs the entry script's load-frame slice so black is on screen before the first render. Port: <code>fade::SceneTintRamp</code> in <code>World::presentation.tint</code>; the effect beat is a pool colour tween read back as <code>World::screen_tint_pushes</code>, which is the one model - a live capture of a retail beat reads a three-argument push per frame, the push's shape exactly, while the global multiply tint stays neutral throughout. The three arguments are an ordering-table bucket, a semi-transparency equation and a GP0 colour word (red in the low byte); both hosts draw the frame's pushes through one shared emitter, having simulated the envelope and drawn nothing for as long as the pool had no consumer.</p>
+  <p>Every scene's entry script arms <code>4C 12 00 00 00 00 00</code> then <code>4C 12 80 80 80 44 00</code> - instant black, 68-frame ramp to neutral. New Game sets system flag <code>0x52F</code> to arm that handshake, and the engine pre-runs the entry script's load-frame slice so black is on screen before the first render. Port: <code>fade::SceneTintRamp</code> in <code>World::presentation.tint</code>; the effect beat is a pool colour tween read back as <code>World::screen_tint_pushes</code>, which is the one model - a live capture of a retail beat reads a three-argument push per frame, the push's shape exactly, while the global multiply tint stays neutral throughout. The three arguments are an ordering-table bucket, a semi-transparency equation and a GP0 colour word (red in the low byte); both hosts draw the frame's pushes through one shared emitter.</p>
   <p><strong>The gold grade</strong> on <code>opdeene</code> / <code>opstati</code> / <code>opurud</code> is a palette-space law applied to the loaded assets: every CLUT row the bundle uploads is rewritten entry for entry from the disc value to <code>(L, max(L&minus;1, 0), L &gt;&gt; 1)</code> with <code>L = max(r, g, b)</code>, STP bit preserved. Packet colours split by source - the ground kernel's runtime neutral <code>0x80</code> stays neutral and draws gold purely through its collapsed CLUT, while each resident TMD's authored colour words are rewritten by the scripts' own two <code>4C E6</code> HSV ops (saturation <code>-0x100</code>, then hue <code>+0x38</code> / saturation <code>+0x90</code> / value <code>-0x1E</code>) to <code>(V, V&middot;246 &gt;&gt; 8, V&middot;112 &gt;&gt; 8)</code> with <code>V = min(max(r,g,b), 0xF8) &minus; 30</code> - a retail <code>opdeene</code> state holds every resident word on that curve. No depth cue runs: <code>IR0</code> is 0 on every render node throughout the opening.</p>
-  <p>The port applies the same laws in its mesh shaders (<code>palette_law_word</code> / <code>prologue_sepia_word</code>, CPU mirrors in lockstep tests) because a 4/8bpp texel <em>is</em> a palette entry; exact-neutral words stay neutral, and the screen tint rides the same uniform. The ground matches the capture at <code>G/R 0.890</code>, <code>B/R 0.46..0.48</code>. The far spires read brighter in the engine (<code>B/R &asymp; 0.27</code> vs <code>0.15</code>) because lit prims with no baked colour are fed neutral and skip the collapse, where retail shades them through its dim scene ambient - an engine boundary, not a missing law.</p>
+  <p>The port applies the same laws in its mesh shaders (<code>palette_law_word</code> / <code>prologue_sepia_word</code>, CPU mirrors in lockstep tests) because a 4/8bpp texel <em>is</em> a palette entry; exact-neutral words stay neutral, and the screen tint rides the same uniform. The ground matches the capture at <code>G/R 0.890</code>, <code>B/R 0.46..0.48</code>. The far spires are the exception that is not a palette law: they are light-source rows, which the <code>4C E6</code> rewrite never touches, and retail shades them through <code>opdeene</code>'s dim scene back colour <code>0x202020</code> (<code>B/R &asymp; 0.15</code> in the capture).</p>
   <details class="disclosure">
     <summary>History: the depth-cue and tint models</summary>
     <div class="disclosure-body">
-      <p>The grade was first modelled as a gold far colour with a per-node depth-cue pull, then as a render-time pixel multiply; the CLUT peek falsified the first (<code>IR0 = 0</code> everywhere) and the ground's green cast (<code>G/R &asymp; 1.07</code>) the second. A signature scan across PROT 0970, 0897 and the executable finds no CLUT-rewrite arithmetic loop - the rewrite is a table/DMA upload - so the &ldquo;overlay load hook&rdquo; reading is also closed. The op-<code>0x34</code> ramp was read as a between-beat black fade and, before that, as a white flash with a 50% wash; the cold-boot capture holds the lit tableau across the span. Both dormant approximations (<code>apply_grade</code>, <code>fade::DepthCueRamp</code>) remain as bypassed plumbing.</p>
+      <p>The grade was first modelled as a gold far colour with a per-node depth-cue pull, then as a render-time pixel multiply; the CLUT peek falsified the first (<code>IR0 = 0</code> everywhere) and the ground's green cast (<code>G/R &asymp; 1.07</code>) the second. A signature scan across PROT 0970, 0897 and the executable finds no CLUT-rewrite arithmetic loop - the rewrite is a table/DMA upload - so the &ldquo;overlay load hook&rdquo; reading is also closed. The op-<code>0x34</code> ramp was read as a between-beat black fade and, before that, as a white flash with a 50% wash; the cold-boot capture holds the lit tableau across the span.</p>
     </div>
   </details>
 </section>
@@ -245,7 +232,27 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <h3 id="hwk-movie">The movie path</h3>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>Master dispatch</td><td><code>FUN_801CEA3C</code></td><td>32-byte slot stride (<code>sll v0,v0,0x5</code>), decoder select, return-scene hand-off, intro-only skip</td><td>PROT 0970 disassembly, byte-identical to the playback RAM capture</td></tr>
+      <tr><td>Play loop</td><td><code>FUN_801CF098</code></td><td>Seek math, SPU CD mix, per-frame pump, teardown</td><td>PROT 0970</td></tr>
+      <tr><td>St demux</td><td><code>FUN_8005ECD4</code> / <code>FUN_8005F024</code></td><td>Ring slots, magic gate, end-frame latch</td><td><code>SCUS_942.54</code></td></tr>
+      <tr><td>Iki decoder</td><td><code>FUN_801D0378</code> / <code>FUN_801D0604</code></td><td>LZSS DC table + AC scan; STRv2 path <code>FUN_801D070C</code> is dev-only</td><td>PROT 0970</td></tr>
+      <tr><td>FMV trigger op</td><td><code>0x801E30E4</code> in <code>FUN_801DE840</code></td><td>Writes <code>_DAT_8007BA78</code> and <code>_DAT_8007B83C = 0x1A</code>; a label, not a callable</td><td>Field overlay 0897 dump; JT chain <code>0x801CEE60</code> &rarr; <code>0x801CF010</code></td></tr>
+      <tr><td>Title attract trigger</td><td><code>FUN_801DD35C</code> (<code>0x801DDCF0</code>)</td><td>Idle countdown underflow writes mode 26 with id 0</td><td>PCSX-Redux watchpoint - <a href="boot.html#title-overlay-state">boot</a></td></tr>
+      <tr><td>Per-scene triggers</td><td><code>man_field_scripts::scene_fmv_triggers</code></td><td>One trigger op per scene MAN, the table on <a href="cutscene.html#seven-mid-game-scenes">the overview</a></td><td>Disc walk of every scene MAN</td></tr>
+      <tr><td>XA clip starter</td><td><code>FUN_8003D53C</code> / <code>FUN_8003D764</code></td><td><code>CdlSetfilter {1, chan}</code> for clips; no filter for movies</td><td><code>SCUS_942.54</code></td></tr>
+      <tr><td>Clip table filler</td><td><code>FUN_801CFA78</code></td><td>34 <code>[CdlLOC][len]</code> slots at <code>0x801C6ED8</code> from <code>\XA\XA%d.XA;1</code></td><td>PROT 0895 <code>init.pak</code></td></tr>
+      <tr><td>Per-movie single XA track</td><td>-</td><td><code>(file 1, chan 0)</code> on all six movies</td><td>Raw-sector subheader scan</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3 id="hwk-opening">The opening and its helpers</h3>
+  <div class="table-wrap">
+  <table class="data-table">
     <thead><tr><th>Claim</th><th>Evidence</th></tr></thead>
     <tbody>
       <tr><td>Ring / demux state machine</td><td><code>FUN_8005BBF8</code>, <code>FUN_8005EDC4</code>, <code>FUN_8005EB68</code>, <code>FUN_8005ECD4</code>, <code>FUN_8005F024</code>, <code>FUN_8005EF40</code>, <code>FUN_8005EE4C</code> (<code>SCUS_942.54</code> St library)</td></tr>
@@ -256,13 +263,31 @@
       <tr><td>Camera</td><td><code>FUN_801DE084</code>, <code>FUN_801DD310</code> (mover), <code>FUN_801DC0BC</code> (per-frame), <code>FUN_800172C0</code> (view), <code>FUN_80026988</code> (rotation, LUT <code>0x80070A2C</code>; <code>FUN_8001CF50</code> is the per-node camera-relative variant), base matrix <code>DAT_8007BF10</code>; live capture 2471/2480 axis values</td></tr>
       <tr><td>Roller</td><td><code>FUN_80037174</code>, template <code>DAT_801F28A0</code>, allocator <code>FUN_80020DE0</code>, page measure <code>FUN_8003CA38</code>; per-scene geometry from pixel capture</td></tr>
       <tr><td>Caption TIM</td><td>PROT 0749 at LZS offset <code>0x01EC30</code>; zero UI text/blit draws in the caption window; string absent from a full RAM dump</td></tr>
-      <tr><td>Channels</td><td><code>FUN_8003A1E4</code> per placement from <code>FUN_8003AEB0</code>; anim tick <code>FUN_8003BC08 &rarr; FUN_80021DF4</code>; disc-gated <code>opdeene_field_channels</code> (13 channels)</td></tr>
-      <tr><td>Fade ops</td><td><code>FUN_8003C5F0</code>; op-<code>0x34</code> arm at <code>0x801E1FB0</code>; disc-gated <code>opening_fade_from_black</code></td></tr>
+      <tr><td>Channels</td><td><code>FUN_8003A1E4</code> per placement from <code>FUN_8003AEB0</code>; anim tick <code>FUN_8003BC08 &rarr; FUN_80021DF4</code> (13 channels on <code>opdeene</code>)</td></tr>
+      <tr><td>Fade ops</td><td><code>FUN_8003C5F0</code>; op-<code>0x34</code> arm at <code>0x801E1FB0</code></td></tr>
       <tr><td>Gold grade</td><td>VRAM CLUT peek vs disc TIMs, zero mismatches; render-node walk <code>IR0 = 0</code>; engine ground pixel-matched</td></tr>
       <tr><td>Battle intro</td><td><code>FUN_801CE8CC</code>, <code>FUN_801CF5BC</code>, <code>DAT_801D2458</code> (PROT 0979)</td></tr>
-      <tr><td>Chain oracles</td><td><code>opening_full_chain_e2e</code>, <code>opdeene_timeline_execution</code>, <code>opdeene_narration_playback</code>, <code>town01_opening_name_entry_wiring</code> (disc-gated); <code>cutscene_timeline_synthetic</code>, <code>cutscene_framing_tests</code> (disc-free)</td></tr>
     </tbody>
   </table>
+  </div>
+  <details class="disclosure">
+    <summary>The per-STR trigger capture corpus</summary>
+    <div class="disclosure-body">
+      <p>Nine save states, one per <code>fmv_id 0..=8</code>, captured immediately before each movie starts, pin the trigger-side state: <code>_DAT_8007BA78</code> = the expected id, <code>_DAT_8007B83C = 0x1A</code>, BGM id 2000, active scene <code>map01</code>. The states were produced through the dev menu's register editor (<code>FUN_801DBD04</code> family), not by stepping a scene's trigger op, so they prove the id/mode tuple across the whole range but not the per-scene assignment - that comes from the MAN walk above. There is no per-movie event record carrying post-play flags; the dev menu's &ldquo;jump to beat&rdquo; is the MAP CHANGE warp appliers plus the event-flag editor.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>History: superseded readings</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>The dispatch table was read with a 64-byte stride and paired the wrong slot halves; the shift instruction pins 32 bytes. With the right stride the last three scenes play <code>MV4</code>/<code>MV5</code>/<code>MV6</code> rather than &ldquo;vestigial triggers at cut movies&rdquo;.</li>
+        <li>A &ldquo;compact MV table&rdquo; at <code>0x801CAE40</code> was the libcd <code>CdlFILE</code> directory cache read 8 bytes out of phase.</li>
+        <li>The confirm-press flag-26 packet was read as the required hand-off into <code>town01</code>; it is the skip, and the natural chain arrives through the tile trigger. Op <code>0x44</code> was labelled COUNTER before the probe showed it spawning a record.</li>
+        <li>Reading the GTE matrix from a save state does not recover the cutscene camera - it is the last-rendered object's composed transform (row norms &asymp; 6). The camera comes from the op-<code>0x45</code> globals.</li>
+      </ul>
+      <p>More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

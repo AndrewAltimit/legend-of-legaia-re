@@ -2054,17 +2054,18 @@ The remaining hub legs, one level deep, decoded + driven by the disc-gated
   leg - `P2[13]` (C1 `0x15E` / C2 `0x15D`) -> `P2[14]` (C1 `0x169` / C2
   `0x15E`) -> `P2[15]` (C1 `[0x13, 0x142]` / C2 `0x169`; the final beat stops
   replaying once the Zeto flag sets). Ungated `P2[16]` SETs the `0x15D` entry
-  key. The `0x15E` beat is read cross-scene by `urudre1` `P2[0]` (the Uru
-  Mais dream tests the cave beat).
+  key.
 - **`vell`** - single exit `P2[10]` (band `(88..92,7)`). `P2[11]` self-latch
   C1=[`0x2AF`] (strictly vell-local Set/Test pair); `P2[7]` carries
-  `C1=[0x63A, 0x7]` **byte-identical to vozz `P2[7]`'s gate**, and `0x63A`
-  has ZERO script sites disc-wide (no writer anywhere in the MAN corpus -
-  open thread). Also carries a gate-4 trigger family (record 53, five
+  `C1=[0x63A, 0x7]` **byte-identical to vozz `P2[7]`'s gate**; `0x63A`'s
+  writers are late-game beats (rikuroa's post-Caruban variant MAN, retockin,
+  edretoin), so the spawn block passes for the whole first visit
+  ([settled](../reference/re-settled-threads.md#flag-0x63a---the-vellvozz-p27-gate-with-no-script-writer)). Also carries a gate-4 trigger family (record 53, five
   scattered tiles) not seen on the other legs.
-- **`suimon` is a pure corridor** - all three `P2` records are ungated `0x3F`
-  exits to `map01`; story variation only via the shared controller `P1[0]`
-  testing `0x142`.
+- **`suimon`'s three `P2` records are ungated `0x3F` exits to `map01`** -
+  records `0`/`1` to the northern component, record `2` to the southern one;
+  which chamber the player arrives in is flag `0x27B`
+  ([above](#the-overworld-is-not-one-walk-component)).
 - **The Drake Castle interior is FOUR scenes deep**: `jou -> jouina ->
   jouinb -> jouinc -> jouind`. `jouinb` (`[19,7,13]`) is fully ungated (no
   jouina-style `C1=[0xF]` busy-latch): `P2[9]` back to `jouina`, `P2[10]`

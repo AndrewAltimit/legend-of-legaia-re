@@ -115,6 +115,7 @@ const NAV = [
       { href: 'subsystems/arts-command-gauge.html', text: 'Arts command gauge',   key: 'subsystems/arts-command-gauge' },
       // Per-domain runtime
       { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
+      { href: 'subsystems/world-map-internals.html', text: 'World map: internals', key: 'subsystems/world-map-internals', indent: true },
       { href: 'subsystems/history-world-map.html', text: 'Chapter-1 hub sweep (history)', key: 'subsystems/history-world-map', indent: true },
       { href: 'subsystems/world-overview-viewer.html', text: 'World-overview viewer', key: 'subsystems/world-overview-viewer' },
       { href: 'subsystems/vr-mode.html',        text: 'VR mode (WebXR)',          key: 'subsystems/vr-mode', indent: true },

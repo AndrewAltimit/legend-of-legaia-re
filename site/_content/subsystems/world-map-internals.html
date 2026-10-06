@@ -1,0 +1,201 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="world-map.html">world map</a> &middot; internals</div>
+  <h1>World map internals</h1>
+  <p class="lede">The register-level companion to the <a href="world-map.html">world map tour</a>: how the carrier installs a formation, the camera's globals and axis convention, how the port seeds portals and gates from the disc, the overlay terrain renderers, the palette-walk table, the debug tooling's globals and the routine-by-routine provenance.</p>
+</header>
+
+<section class="doc-section" id="install">
+  <h2>Formation install and who arms the carrier</h2>
+        <p>The install body at <code>0x801DA620..0x801DA678</code> (inside the entity tick, jump table <code>0x801CEC28</code> on <code>entity[+0x8A]</code>):</p>
+      <ol>
+        <li>Clear the formation array <code>0x8007BD0C..0x8007BD0F</code> (slots 3, 2, 1, then 0 - slot 0 in the delay slot of <code>JAL 0x801DE190</code>).</li>
+        <li><code>monster_count = entity[+0x94][+3]</code>.</li>
+        <li>Copy <code>entity[+0x94][+4 ..+4+count]</code> into the cell byte-for-byte; clear <code>entity[+0x94]</code>, set <code>entity[+0x88] = 0</code>, <code>entity[+0x8A] = 2</code>.</li>
+        <li>Fall through the case-2/3 arm: <code>_DAT_8007B83C = 8</code>, <code>entity[+0x8A] = 4</code>, clear bit <code>0x80000</code> of <code>_DAT_8007C364[+0x10]</code> (the player context, corpus-stable at <code>0x80083794</code>).</li>
+      </ol>
+      <p>The adjacent byte <code>0x8007BD11</code> selects the battle-data PROT entry (<code>0x367</code> or <code>0x36D</code>). The random roll <code>FUN_801D9E1C</code> sets <code>+0x88</code> / <code>+0x8A</code> / <code>+0x94</code> from the rolled formation index. Scripted arming comes from a family of field-VM op handlers inside the script dispatcher (<code>0x801DEEDC</code>, <code>0x801DEF08</code>, <code>0x801DEFA0</code>, <code>0x801DF038</code>, <code>0x801DF3FC</code>, <code>0x801E1C38</code>, <code>0x801E1F44</code>, <code>0x801E21C0</code>), each a "trigger encounter on actor X" op sharing one clause:</p>
+<pre><code>sw   &lt;record_ptr&gt;, 0x94(&lt;actor&gt;)
+sh   $zero,         0x54(&lt;actor&gt;)
+ori  $tmp, $tmp, 0x400      ; "encounter armed" in actor[+0x10]
+sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
+      <p>The carrier is reached through the per-entity update-function-pointer dispatch, never by a direct <code>jal</code>, which is what shows it is a MAN-placed entity and not the player. State 0's resolver call (<code>FUN_800243F0</code>) is the per-frame BGM/asset poller, not a location lookup.</p>
+    
+</section>
+
+<section class="doc-section" id="camera">
+  <h2>Walk camera and axis convention</h2>
+        <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Symbol</th><th>Meaning</th><th>Value / global</th></tr></thead>
+        <tbody>
+          <tr><td>H</td><td>projection distance</td><td>368 (<code>_DAT_8007B6F4</code>)</td></tr>
+          <tr><td>S</td><td>base world scale matrix</td><td><code>DAT_8007BF10</code> = 24576 x I (6.0x)</td></tr>
+          <tr><td>R</td><td>pitch-only rotation trio</td><td><code>_DAT_8007B790</code></td></tr>
+          <tr><td>focus</td><td>player world X/Z (negated)</td><td><code>_DAT_80089118</code> / <code>_DAT_80089120</code></td></tr>
+          <tr><td>TR</td><td>eye trio, composed per region</td><td><code>_DAT_800840B8</code>: (-69, 776, 8875) on map01 near Rim Elm, (-71, 536, 9139) Sebucus, (-86, 406, 11041) Karisto</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>screen = H * (R * (S * (v - player)) + TR) / Ze</code>. The pose is the field zone camera's: the region record's pitch and eye depth, eye X = <code>-(depth &gt;&gt; 7)</code>, eye Y compensated for the terrain height under the player, and an ease between regions. An earlier model treated the Sebucus and Karisto values as two ends of one zoom axis; they are two region records, and that model framed map01 from well above retail's camera.</p>
+      <p><strong>Axis convention.</strong> <code>FUN_800467E8</code> looks the direction nibble (<code>pad &amp; 0xF000</code>) up in the ring at <code>DAT_800766FC</code> (<code>1000, 3000, 2000, 6000, 4000, C000, 8000, 9000</code>), adds the octant count at <code>gp + 0x2D8</code>, masks <code>&amp; 7</code>, and writes the entry back over the pad bits. The step arms of <code>FUN_801D01B0</code> then fix the axes: <code>0x1000</code> = Z+, <code>0x4000</code> = Z-, <code>0x2000</code> = X+, <code>0x8000</code> = X-. Retail's yaw-0 camera looks down +Z; the port's <code>world_map_camera_mvp</code> puts the eye on +X, so its azimuth-0 Up walks -X. A single-axis sign flip turns the frame from a rotation into a reflection, so the projection and the pad-to-axis mapping have to change together.</p>
+      <p><strong>Port symbols.</strong> <code>tick_world_map</code>, <code>step_world_map_locomotion</code>, <code>live_world_map_tick</code>, <code>set_world_map_regions</code> (the region roll), <code>World::advance_with_collision</code>, <code>World::world_map_camera_relative_bits</code>.</p>
+    
+</section>
+
+<section class="doc-section" id="seeding">
+  <h2>Portals, gates and NPCs from the disc</h2>
+        <ul class="bullets">
+        <li><strong>Placements.</strong> Partition-1 records (<code>ManFile::actor_placements</code>): <code>[u8 N][N x 2 locals][model][anim_id][tile_x][tile_z][script]</code>. <code>classify_placements</code> reads the kind off the script: a genuine door warp (base <code>0x3E</code>, <code>op0</code> in <code>100..=106</code>, not extended) is a <strong>Portal</strong> to scene-type overlay <code>op0 - 100</code>; an inline <code>0x1F</code> text block or a scripted-battle install (<code>op0 &lt; 100</code>) is an <strong>NPC</strong>; anything else is Plain. Eleven genuine portals exist in the whole corpus; <code>map01</code> has none, so its entrances come from the bridge below.</li>
+        <li><strong>Bridge.</strong> <code>man_field_scripts::overworld_portal_sites</code> joins <code>.MAP</code> tile trigger to P2 record to <code>0x3F</code> destination + arrival tile, decoding the op-<code>0x70</code> conditional pair as <code>ConditionalDest</code>. <code>enter_world_map_scene</code> runs each record through <code>partition2_record_gates</code> / <code>World::p2_record_gates_pass</code> (retail <code>FUN_8003BDE0</code>) and installs an <code>OverworldPortal</code> only when the gate passes.</li>
+        <li><strong>Drain.</strong> <code>auto_engage_world_map_portals</code> drives a matching Idle portal to its transition state once per visit; <code>SceneHost::tick</code> drains the <code>WorldMapTransition</code> - an <code>OverworldPortal</code> loads its scene and seats the arrival tile; a door portal resolves through <code>MapIdResolver</code>. <code>SceneHost::dispatch_walk_on_trigger</code> runs in world-map mode too, leaving portal records to the entity SM and spawning beat records as timelines so their C1 one-shot latch holds.</li>
+        <li><strong>NPC talk.</strong> <code>tick_world_map</code> opens an NPC's inline dialogue on confirm within one tile (<code>first_inline_dialog_offset</code>, <code>OwnedDialogPanel::from_inline_dialog</code>); the text is the record's structural <code>0x1F</code> segment pool, never the scene MES and never the <code>0x3F</code> op.</li>
+        <li><strong>Flag writers.</strong> <code>0x142</code> is set by plain <code>51 42</code> script bytes in <code>rikuroa</code>'s streaming-carrier MAN - the self-latching post-victory record P2[50] - and re-asserted on entry by <code>dolk2</code> P1[0]. Four further records carry the same op as rows of a <strong>developer flag menu</strong> rather than as the beat, which is why an opcode count credits six writers where two exist; the engine reaches it through the boss-stager record. <code>0x482</code> (mist walls) and <code>0x225</code> (the town01 opening one-shot) have <strong>no</strong> script writer in either the field-VM census or the motion-VM census; they are direct code paths in overlays (<a href="../tooling/spine-flag-writers-capture.html">capture runbook</a>).</li>
+      </ul>
+      <p>Two falsified readings, kept so they are not re-walked: "<code>dolk2</code> is reached from a dungeon interior" (it is the same hub entrance selected by <code>0x142</code>), and "<code>0x482</code> is set in the <code>other7</code> block" (desynced-walker noise over SJIS text). More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    
+  <h3 id="sidecar-instruments">Why the sidecar doors read as sealed</h3>
+  <p>Three separate decoders read these five as sealed, and each answer was a property of the instrument. A script walk that reads a partition as one stream desyncs inside the first long block of dialogue text and never reaches ops sitting several kilobytes deeper. A tile sweep with a cap stops before the sidecar's rows, which sort after the map's - <code>uru</code>'s exit band is the 63rd of its 118 walk-on tiles. And a short "did anything happen?" budget after stepping on a tile cannot outlast records that spend hundreds of frames in explicit waits, or that run a boss fight first.</p>
+  <p>Confirmed on hardware behaviour: walking four tiles north from Uru Mais's own arrival tile under an emulator probe spawns record 42 and calls the scene-change routine with <code>MAP03</code>, returning into the field VM's <code>0x3F</code> arm. Since that tile exists only in the sidecar, the same capture is the live proof that the fall-through search is real and not just present in the code.</p>
+</section>
+
+<section class="doc-section" id="overlay-leaves">
+  <h2>Overlay terrain renderers</h2>
+  <p>The per-primitive dispatcher picks its emit function from one of two tables, chosen by a scratchpad flag; with the world-map overlay paged in, the overlay table's eight depth-cued slots point at overlay copies of the executable's renderers.</p>
+  <div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Flag</th><th>Table</th><th>Banks</th><th>Lives in</th></tr></thead>
+    <tbody>
+      <tr><td>clear</td><td><code>0x8007657C</code></td><td>4 (alpha offset 0 / 50 / A0 / F0)</td><td>SCUS</td></tr>
+      <tr><td>set</td><td><code>0x801F8968</code></td><td>1 (the alpha offset is skipped)</td><td>world-map overlay</td></tr>
+    </tbody>
+  </table></div>
+        <p>Every overlay leaf is the SCUS body plus a per-vertex distance-cue fog block gated on <code>(u8*)(t2-0x2D1) &amp; 0x10</code>: clamp max-Z, shift by <code>(u8*)(t2+0x90)</code>, mix the far-Z reference at <code>t2-0x2E0</code> into the prim cmd, run <code>GTE.dpcs</code> (or <code>dpct + dpcs</code> for textured quads), then index the per-Z RGB LUT at <code>t2-0x2BC</code> three times to add fog tints into packet offsets 8 / 0xC / 0x10. Each leaf ends with <code>j 0x80043580; addiu $a1, $a1, 0xc</code>. Slots 8..11 share the SCUS low-mode dispatchers.</p>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Slot</th><th>SCUS sibling</th><th>Overlay leaf</th><th>Extra GTE ops</th></tr></thead>
+        <tbody>
+          <tr><td>12</td><td><code>0x80043658</code></td><td><code>0x801F7644</code></td><td>dpcs</td></tr>
+          <tr><td>13</td><td><code>0x80043768</code></td><td><code>0x801F7838</code></td><td>dpcs</td></tr>
+          <tr><td>14</td><td><code>0x80043B58</code></td><td><code>0x801F7F78</code></td><td>dpcs</td></tr>
+          <tr><td>15</td><td><code>0x80043C6C</code></td><td><code>0x801F8198</code></td><td>dpct + dpcs (FT4 / GT4)</td></tr>
+          <tr><td>16</td><td><code>0x800438B8</code></td><td><code>0x801F7AA4</code></td><td>dpcs</td></tr>
+          <tr><td>17</td><td><code>0x800439E4</code></td><td><code>0x801F7CCC</code></td><td>dpcs</td></tr>
+          <tr><td>18</td><td><code>0x80043DD4</code></td><td><code>0x801F8454</code></td><td>dpcs</td></tr>
+          <tr><td>19</td><td><code>0x80043F10</code></td><td><code>0x801F8690</code></td><td>dpct + dpcs (FT4 / GT4)</td></tr>
+        </tbody>
+      </table></div>
+      <p>Three properties hide these from static hunts: the GP0 command byte comes from a descriptor table, not an immediate; an overlay capture that stops at <code>0x801F0000</code> clips every leaf; and the horizon emitter is called by a direct <code>jal</code> from SCUS that a sweep of the overlay alone never sees. Capture the overlay with the wide window <code>0x801C0000..0x801F9000</code>.</p>
+    
+  <p>Each overlay leaf also bends every corner's screen Y by the curvature table entry its own depth indexes, after the back-face test and the ordering-table depth; the executable's four lit handlers never bend, and no overworld mesh reaches them. <code>mednafen-state prim-dispatch-table</code> decodes both tables from a save state.</p>
+</section>
+
+<section class="doc-section" id="frame-dispatch">
+  <h2>Per-frame dispatch, horizon and pass iterator</h2>
+        <p><strong>Dispatch.</strong> Two handlers from the 28-mode table at <code>0x8007078C</code> reach the render tick: the default handler <code>FUN_80025EEC</code> (<code>FUN_8001698C</code> &rarr; <code>FUN_80016444(1)</code>) and the mode-13 handler <code>FUN_80025F2C</code> (<code>FUN_8001698C</code> &rarr; overlay entry <code>0x801CE850</code> &rarr; <code>FUN_80016444(0)</code>). The argument only decides whether the early <code>FUN_8005FB84</code> block runs. The horizon call is gated on the submode register <code>_DAT_8007BC3C == 2</code>:</p>
+<pre><code>80016750  lui   v1, 0x8008
+80016754  lw    v1, -0x43c4(v1)        ; _DAT_8007BC3C
+80016758  li    v0, 0x2
+8001675c  bne   v1, v0, 0x8001676c
+80016764  jal   0x801d7ea0             ; horizon emitter</code></pre>
+      <p><strong>Horizon emitter</strong> <code>FUN_801D7EA0</code>: if <code>_DAT_801F351C</code> is set, clear it, advance the angle <code>_DAT_801F3518 += DAT_1F800393 * _DAT_801F3524</code>, and loop 224 times emitting two POLY_FT4 (cmd <code>0x2C808080</code>, chain tag <code>0x9000000</code>) plus one small prim per step, vertices projected through the sine LUT at <code>0x8007B81C</code> with <code>_DAT_801F3520</code> and its 4/5 as scale moduli. The gate is armed by <code>FUN_801D1344</code> (reads <code>_DAT_8007BCD0/D4/D8</code>) &rarr; <code>FUN_801D8258</code> (writes the gate + <code>_DAT_801F3520/24/28</code>). The gate lives above <code>0x801F0000</code> and survives overlay swaps. <code>0x801C2B2C</code> and <code>0x801C9688</code> are not copies of the wrapper and the emitter: they are those two bodies printed <code>0xE818</code> low, and PSX overlays are not relocated.</p>
+      <p><strong>Pass iterator</strong> <code>FUN_8002519C</code>: five linked-list heads at <code>_DAT_8007C34C..+0x20</code>; per node, bit <code>0x8</code> of <code>+0x10</code> takes an early return, otherwise <code>jalr</code> the tick at <code>+0x0C</code>.</p>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Offset</th><th>Type</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td>+0x00</td><td>actor*</td><td>next (NULL terminates)</td></tr>
+          <tr><td>+0x0C</td><td>fn*</td><td>tick function</td></tr>
+          <tr><td>+0x10</td><td>u32</td><td>flags: <code>0x8</code> early return, <code>0x200</code> already-emitted guard, <code>0x800</code> free the chain at +0x44</td></tr>
+          <tr><td>+0x44</td><td>chain*</td><td>mesh / prim chain head (count, then pointers)</td></tr>
+          <tr><td>+0x48</td><td>u8*</td><td>move-VM bytecode base</td></tr>
+          <tr><td>+0x56</td><td>u8</td><td>render mode 1..0xB for <code>FUN_8001ADA4</code></td></tr>
+          <tr><td>+0x70</td><td>u16</td><td>move-VM PC in halfwords</td></tr>
+        </tbody>
+      </table></div>
+      <p>Ticks seen on the overworld: <code>FUN_80021DF4</code> (move VM step, 8 actors), <code>FUN_8003BC08</code> (motion VM + the visibility cull <code>FUN_801D79E8</code>, 14 actors), <code>FUN_801E76D4</code>, <code>FUN_801DA51C</code>, <code>FUN_801D1344</code>. The render dispatcher's case 4 splits on <code>actor[+0x9E]</code> (<code>0x4000</code> &rarr; <code>FUN_8002A5A4</code>, <code>0x2000</code> &rarr; overlay <code>FUN_801CFA48</code>, else <code>FUN_80028158</code>); case 5 walks <code>+0x44</code> calling <code>FUN_8002735C</code> when the actor's <code>+0x42</code> is non-zero, <code>FUN_80029888</code> when that is zero and <code>+0x7A</code> is not, else <code>FUN_80043390</code> - and across four save states in three game modes every one of 5089 gate hits took the last arm; case 1 re-poses each piece from the scene&#39;s animation bank before drawing it (<a href="../formats/world-map-overlay.html">slot-4 records</a>); cases 2/3/6/7/8/B are LOD, particle, billboard and palette-cycle branches. The walk pool <code>DAT_8007C018</code> settles at 45 entries on <code>map01</code>: five party meshes then the 40-mesh landmark pack, so pack mesh <code>i</code> is pool slot <code>i + 5</code>.</p>
+      <p><strong>Walk <code>.MAP</code> source.</strong> The field-file loader <code>FUN_8001F7C0</code> resolves the <code>.MAP</code> by PROT entry index (<code>FUN_8003E8A8</code> over the in-RAM TOC at <code>0x801C70F0</code>, index from <code>0x80084540</code>); a live Drake walk reads index 85, the raw uncompressed <code>0x10000</code> region at PROT.DAT <code>0x655800</code>.</p>
+    
+</section>
+
+<section class="doc-section" id="walk-rendering">
+  <h2>Ground heightfield in the port</h2>
+        <ul class="bullets">
+        <li><code>Scene::walk_heightfield</code> &rarr; <code>build_walk_heightfield</code> sweeps the <code>0x1000</code> cells, emits one quad per cell with corner Y = <code>-lut[nibble]</code>, and bakes per-cell UV + <code>[clut, tpage]</code> (<code>WalkHeightfield::uvs</code> / <code>::cba_tsb</code>). The heightfield is drawn <strong>without</strong> the Y-flip the pack meshes get - flipping it sinks every raised cell under its own buildings.</li>
+        <li>Texture rule: <code>u = (id % 8) * 32</code>, <code>v = (id / 8) * 32</code> from <code>+0x14</code>; page from <code>+0x15</code> (<code>0x1A</code> grass, <code>0x0C</code> mountain, <code>0x1B</code>/<code>0x1C</code> water, <code>0x0B</code> forest); CLUT from <code>+0x16</code>. The rule matches the object record on every captured cell.</li>
+        <li>Landmarks: <code>Scene::walk_object_placements</code>. Entities draw as kind-coded markers (portals cyan, NPCs green, encounter zones red) and the player as a marker with a facing tick.</li>
+        <li><code>LEGAIA_WORLDMAP_SLOT4=1</code> overlays the decoded slot-4 <strong>animation bank</strong>: one polyline per (clip, part) through that part&rsquo;s decoded 12-bit translations across its clip (<code>world_map_overlay::translation_path_segments</code>). Slot 4 is an ANM container, not a mesh library. The paths are object-local, so they draw about the world origin until an actor owns them.</li>
+      </ul>
+      <p>History: "single grass page, positional <code>(col%3,row%3)</code>, <code>+0x14</code> unused" was a misread - grass tiles happen to occupy the atlas's top-left 3x3 block; <code>+0x14</code> is the selector.</p>
+    
+</section>
+
+<section class="doc-section" id="clut-walk">
+  <h2>The palette-walk table</h2>
+        <p>Format: <code>[u32 count=8][u32 entry_offsets[8]]</code>, then per entry <code>[u8 kind=1][u8 nframes][u16 cumulative_size][u16 dest_x][u16 dest_y]</code> + <code>nframes</code> x <code>[u8 0][u8 hold_vsyncs][u16 0][u16 src_x][u16 src_y]</code>. The asset-type dispatcher (case 6) installs it at <code>DAT_8007B7C8</code>; field init spawns one actor per entry with the accumulator seeded to 100 so all eight fire on the first tick; the SCUS walker (render case 0xB) adds the frame-skip byte <code>DAT_1F800393</code> (overworld 3, towns 2) each tick and on <code>acc &gt;= hold</code> emits a 16x1 <code>MoveImage</code>, resets to zero, and advances with wrap. Interval = <code>ceil(hold/dt) * dt</code>: the ocean head at fb <code>(0, 506)</code> (18 steps, hold 8) fires every 9 vsyncs, full cycle 162 vsyncs, about 2.7 s.</p>
+      <p>Sources park at VRAM rows 498/499/501..505 as raw CLUT-block records in the bundle's slot-0 TIM list (no TIM magic; <code>clut_walk::park_strips</code>). <code>map02</code> / <code>map03</code> ship only rows {501, 503, 505} and inherit the rest as VRAM residue from the Drake upload, so the engine parks Drake's byte-identical records for the missing rows. The VRAM parity oracle excludes exactly the destination cells (<code>WORLD_MAP_CLUT_CYCLE_CELLS</code>) on all three kingdoms. The script family: <code>FUN_801E4C58</code> (field-VM <code>0x4C</code> n6 sub-<code>0x61</code> one-shot copy / fill) and <code>FUN_801E4794</code> (multi-frame cross-fade); <code>map01</code> holds exactly eight such ops, all on row 498, frames denominated in vsyncs through the same skip byte.</p>
+    
+</section>
+
+<section class="doc-section" id="dev-tooling">
+  <h2>Debug tooling globals</h2>
+        <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Global</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>_DAT_8007B98C</code></td><td>debug flag (clear on retail)</td></tr>
+          <tr><td><code>DAT_801F2B94</code></td><td>view flag (walk / top view); <code>DAT_801F2B95</code> bits 1 / 2 enable the screen-dim pass and a second animation</td></tr>
+          <tr><td><code>_DAT_8007B850</code> / <code>_DAT_8007B874</code></td><td>pad mask / held mask</td></tr>
+          <tr><td><code>_DAT_80089120</code> / <code>_DAT_80089118</code></td><td>Z scroll (Up / Down) / X scroll (Right / Left)</td></tr>
+          <tr><td><code>_DAT_8007B794</code> / <code>_DAT_8007B6F4</code></td><td>azimuth / zoom-height</td></tr>
+          <tr><td><code>_DAT_801F35A8..AC</code></td><td>camera snapshot taken on toggle</td></tr>
+          <tr><td><code>0x801CF344</code></td><td>dev-menu string table; <code>DAT_8007B5F8</code> encounter-rate readout; <code>_DAT_801F2E90</code> BGM readout</td></tr>
+        </tbody>
+      </table></div>
+      <p>Port: <code>engine-core::world_map::WorldMapController</code> models the four camera globals and the toggle (<code>tick(pad_input)</code>); <code>engine-vm::world_map_overlay</code> holds the 24-row dev-menu model (<code>DevMenuRow</code>, <code>is_closed</code>, <code>cursor_step</code>, <code>format_fixed_decimal</code>, <code>decode_camera_readout</code>), the escape-timer scheduler, the battle-records model and the equipment stat-comparison preview; <code>engine-ui</code> owns the draw halves (<code>records_screen_draws_for</code>, <code>dev_menu_list_draws_for</code>). <code>legaia-engine play-window --world-map</code> shows the camera state in the HUD.</p>
+      <p>History: an earlier reading of the top-view controller as "the world-map controller with a normal-walk path" is falsified by its own branch target (the walk branch is the epilogue). The overworld opens the pause menu through the ordinary field arm. See <a href="save-screen.html">save screen</a>.</p>
+    
+</section>
+
+<section class="doc-section" id="engine-port">
+  <h2>In the port</h2>
+  <div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Module</th><th>Ports</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>engine-vm::world_map</code></td><td>carrier entity SM</td><td><code>EntityState</code> (Idle / Activating / Transitioning / Terminal), <code>WorldMapEntityHost</code>, <code>step(entity_idx, ctx, host)</code>; per-entity roles <code>EncounterZone</code> / <code>Portal</code> / <code>Npc</code>. Serves field-resident carriers too.</td></tr>
+      <tr><td><code>engine-core::World</code></td><td>walk, regions, portals, NPC talk</td><td><code>tick_world_map</code>, <code>set_world_map_regions</code>, <code>enter_world_map_scene</code>, <code>auto_engage_world_map_portals</code>; battles return via <code>battle_return_mode</code>.</td></tr>
+      <tr><td><code>engine-core::world_map</code></td><td>top-view controller</td><td>camera globals + toggle.</td></tr>
+      <tr><td><code>build_walk_heightfield</code> / <code>prim_dispatch</code></td><td>ground, top-view terrain</td><td>heightfield with baked per-cell texturing; overlay-variant prim table.</td></tr>
+      <tr><td><code>legaia_asset::clut_walk</code></td><td>sea shimmer</td><td>slot-5 table parser; <code>WaterAnim::Walk</code> in <code>play-window</code>.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>entity tick</td><td><code>FUN_801DA51C</code></td><td>the 5-state carrier SM; formation install + mode-8 write in one tick</td><td><code>overlay_world_map_801da51c</code></td></tr>
+      <tr><td>region roll</td><td><code>FUN_801D9E1C</code></td><td>region-keyed encounter roll per tile crossing</td><td>world-map overlay</td></tr>
+      <tr><td>top-view controller</td><td><code>FUN_801E76D4</code></td><td>toggle combo, scroll / azimuth / zoom globals; walk branch is the epilogue</td><td><code>overlay_dialog_801e76d4.txt</code></td></tr>
+      <tr><td>dev-menu renderer</td><td><code>FUN_801EAD98</code></td><td>row labels, CLOSED gating, readouts</td><td><code>overlay_dialog_801ead98.txt</code></td></tr>
+      <tr><td>gate-arm wrapper</td><td><code>FUN_801D1344</code></td><td>the overworld's real per-frame chain; arms the horizon gate</td><td><code>801cfc40.txt</code> window</td></tr>
+      <tr><td>horizon emitter</td><td><code>FUN_801D7EA0</code></td><td>224-step cos-projected sky plane</td><td>world-map overlay</td></tr>
+      <tr><td>render tick</td><td><code>FUN_80016444</code></td><td>submode-2 gated direct call into the overlay</td><td>SCUS</td></tr>
+      <tr><td>prim dispatcher</td><td><code>FUN_80043390</code></td><td>flag-selected table; eight overlay leaves at <code>0x801F7644..0x801F8690</code></td><td><code>dump_world_map_top_prim_leaves.py</code></td></tr>
+      <tr><td>ground-height sampler</td><td><code>FUN_80019278</code></td><td>the continent is a heightfield from <code>+0x4000</code> nibbles</td><td>SCUS</td></tr>
+      <tr><td>compass remap</td><td><code>FUN_800467E8</code></td><td>octant table lookup, not trigonometry</td><td>SCUS</td></tr>
+      <tr><td>P2 gate test</td><td><code>FUN_8003BDE0</code></td><td>C1 any-blocks / C2 all-required</td><td>SCUS</td></tr>
+      <tr><td>CLUT walker</td><td><code>FUN_8001ADA4</code> case 0xB</td><td>slot-5 cadence; installed by <code>FUN_8001F05C</code> case 6</td><td>SCUS</td></tr>
+      <tr><td>captures</td><td>-</td><td>walk pool of 45 entries; walk camera anchors; ocean cadence; texture rule 100%</td><td>mednafen overworld save states</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="world-map.html">World map tour</a>
+    <a href="history-world-map.html">Chapter-1 hub sweep</a>
+    <a href="renderer-internals.html">Renderer internals</a>
+    <a href="../formats/encounter.html">Encounter record</a>
+    <a href="../formats/world-map-overlay.html">World-map overlay (slot 4)</a>
+    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/world-map.md" target="_blank" rel="noopener">world-map.md</a>
+  </div>
+</section>

@@ -544,6 +544,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/renderer-internals.html","Renderer: internals",     "subsystems/renderer-internals","subsystems/renderer-internals.html"),
     ("subsystems/shading.html",    "Shading and palettes",          "subsystems/shading",         "subsystems/shading.html"),
     ("subsystems/world-map.html",  "World map",                     "subsystems/world-map",       "subsystems/world-map.html"),
+    ("subsystems/world-map-internals.html","World map: internals",  "subsystems/world-map-internals","subsystems/world-map-internals.html"),
     ("subsystems/history-world-map.html","Chapter-1 hub sweep (history)","subsystems/history-world-map","subsystems/history-world-map.html"),
     ("subsystems/world-overview-viewer.html","World-overview viewer", "subsystems/world-overview-viewer","subsystems/world-overview-viewer.html"),
     ("subsystems/vr-mode.html",   "VR mode (WebXR)",               "subsystems/vr-mode",         "subsystems/vr-mode.html"),

@@ -306,7 +306,7 @@ mode.
 | 18 | `0x80043DD4` | `0x800453BC` (b2 `0x800457C4`) | tri | DPCT/DPCS |
 | 19 | `0x80043F10` | `0x80045584` (b2 `0x80045988`, b3 `0x80045BB4`) | quad | DPCT/DPCS |
 
-Bank 3 (subtractive) is the only bank that selects `0x80045BB4`, and no retail
+Bank 3 (offset `0xF0`, raised by tint bit `0x20000000`; a depth-cued handler set like banks 1 and 2, not a blend mode) is the only bank that selects `0x80045BB4`, and no retail
 world-map caller observed so far sets the flag that reaches it - see
 [`formats/world-map-overlay.md`](../formats/world-map-overlay.md) for the per-bank
 capture counts. **Unreached in one capture is not unreachable**: the handler is a
