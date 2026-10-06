@@ -423,3 +423,59 @@ fn party_field_export_bakes_vahn_noa_gala_with_idle_and_walk() {
         eprintln!("[party note] {note}");
     }
 }
+
+/// The world glb leaves out the steep sloped far-bucket ground cells (the
+/// near-vertical sheets retail paints over, town01's cave-overhang sliver at
+/// tile `(30, 38)` among them) and keeps every gentle one: a glb has no
+/// ordering table, so a ramp still reads right depth-tested and a sheet does
+/// not.
+#[test]
+fn town01_world_export_drops_steep_far_bucket_sheets_only() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let a = assemble_field_scene(&index, "town01").expect("assemble town01");
+    let scene = Scene::load(&index, "town01").expect("load town01");
+    let hf = a.ground.as_ref().expect("town01 has a walk ground");
+    let refs = legaia_engine_core::field_ground::flat_refs(hf, &hf.positions);
+
+    let (mut steep, mut gentle, mut sliver_steep) = (0usize, 0usize, false);
+    for q in hf.indices.chunks_exact(6) {
+        let v = q[0] as usize;
+        if !legaia_engine_core::field_ground::is_far_bucket_ref(&refs[v]) {
+            continue;
+        }
+        let ys: Vec<f32> = q.iter().map(|&i| hf.positions[i as usize][1]).collect();
+        let rise = ys.iter().cloned().fold(f32::MIN, f32::max)
+            - ys.iter().cloned().fold(f32::MAX, f32::min);
+        if rise > 128.0 {
+            steep += 1;
+            let c = hf.positions[v];
+            let (x0, z0) = q
+                .iter()
+                .map(|&i| hf.positions[i as usize])
+                .fold((c[0], c[2]), |(x, z), p| (x.min(p[0]), z.min(p[2])));
+            sliver_steep |= x0 == 30.0 * 128.0 && z0 == 38.0 * 128.0;
+        } else {
+            gentle += 1;
+        }
+    }
+    assert!(
+        sliver_steep,
+        "the (30, 38) overhang sliver is a steep sheet"
+    );
+    assert!(gentle > 0, "town01 has gentle far-bucket ramps to keep");
+
+    let opts = GlbExportOptions {
+        scale: 1.0 / 64.0,
+        include_sky: false,
+    };
+    let world = export_world_glb(&index, &scene, &a, &opts).expect("world glb");
+    assert_eq!(world.ground_quads, hf.quad_count() - steep);
+}

@@ -47,7 +47,11 @@ with, so the export matches the on-screen pages:
 
 - **World glb** - `engine-core::scene_assembly::assemble_field_scene` (the
   field-scene page's build): ground heightfield (with the shared
-  `GROUND_SINK`), terrain tiles, and placed objects with coplanar lifts
+  `GROUND_SINK`, minus the steep sloped far-bucket cells - see
+  `field_ground::flat_refs`; a glb has no ordering table to draw them
+  under the cliff that hides them in retail, and a cell rising more than
+  its 128-unit run is a stray sheet, not a ramp), terrain tiles, and
+  placed objects with coplanar lifts
   applied, each instanced at its resolved `.MAP` transform. Placements
   whose object bind names a clip are posed at **frame 0** (the native
   play-window's static bake). Sky shells are dropped by the site's

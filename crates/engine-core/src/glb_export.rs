@@ -119,6 +119,10 @@ fn frame_bone_offsets(
     )
 }
 
+/// A walk-ground cell's horizontal run (one 128-unit tile), the steepness
+/// bound past which a sloped far-bucket cell is a sheet, not a ramp.
+const GROUND_CELL_RUN: f32 = 128.0;
+
 /// Bake the assembled scene's static map into one `.glb`: ground + terrain
 /// tiles + placed objects (bound placements posed at clip frame 0), the same
 /// draw list the field-scene page renders and exports, with the site's
@@ -137,7 +141,34 @@ pub fn export_world_glb(
     let mut ground_quads = 0usize;
 
     if let Some(hf) = &a.ground {
-        ground_quads = hf.quad_count();
+        // A glb has no ordering table to sink a sloped far-bucket cell under
+        // the cliff in front of it (`field_ground::flat_refs`). A gentle
+        // ramp still reads right depth-tested, but a cell rising more than
+        // its own run stands as a stray sheet of ground texture retail never
+        // shows (town01's cell (30, 38)). Leave those quads out.
+        let refs = crate::field_ground::flat_refs(hf, &hf.positions);
+        let sheet = |q: &[u32; 6]| {
+            let v = q[0] as usize;
+            if !refs
+                .get(v)
+                .is_some_and(crate::field_ground::is_far_bucket_ref)
+            {
+                return false;
+            }
+            let ys = q.iter().map(|&i| hf.positions[i as usize][1]);
+            let rise = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+            rise > GROUND_CELL_RUN
+        };
+        let indices: Vec<u32> = hf
+            .indices
+            .as_chunks::<6>()
+            .0
+            .iter()
+            .filter(|q| !sheet(q))
+            .flatten()
+            .copied()
+            .collect();
+        ground_quads = indices.len() / 6;
         // Ground sinks below the env pack's authored floor art (see
         // `coplanar_draws::GROUND_SINK`), same as the page's ground stream.
         let mut positions = Vec::with_capacity(hf.positions.len() * 3);
@@ -159,7 +190,7 @@ pub fn export_world_glb(
             positions,
             uvs,
             cba_tsb,
-            indices: hf.indices.clone(),
+            indices,
             flat_rgba: Vec::new(),
             morph_targets: Vec::new(),
         });
