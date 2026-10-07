@@ -1361,12 +1361,11 @@
      * by the real box at the top on the next - on every open and every page
      * break. Two differently-seated surfaces cannot be swapped per frame. */
     if (st.dialog && st.dialog.text && !(view && view.dialogCanvasCapable)) {
-      let html = st.dialog.text.replace(/[<>&]/g, c => (
-        { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+      let html = window.escapeHtml(st.dialog.text);
       if (st.dialog.options && st.dialog.options.length) {
         html += '\n' + st.dialog.options.map((o, i) => {
           const cls = i === st.dialog.cursor ? 'play-dialog-opt is-sel' : 'play-dialog-opt';
-          return `<span class="${cls}">${i === st.dialog.cursor ? '▸ ' : '  '}${o}</span>`;
+          return `<span class="${cls}">${i === st.dialog.cursor ? '▸ ' : '  '}${window.escapeHtml(o)}</span>`;
         }).join('\n');
       }
       dialogEl.innerHTML = html;

@@ -2992,8 +2992,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let muscleLastPhase = null;
   let muscleLastTurn = -1;
 
-  const muscleEsc = (s) => String(s).replace(/[&<>"]/g,
-    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const muscleEsc = window.escapeHtml;
 
   /* Decode the roster + build the arena once per disc (called from loadDisc).
    * The opponent picker groups the curated Muscle Dome course line-ups
