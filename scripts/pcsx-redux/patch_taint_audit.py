@@ -18,6 +18,14 @@ that state, whatever disc it is loaded onto. This tool measures both halves:
   ppf      Decode a PPF 3.0 file into disc byte runs -> ISO file -> PROT entry
            (or SCUS virtual address), so a patch can be matched to the
            runs that read its bytes.
+  scan     The whole-executable form of `states`: compare EVERY resident SCUS
+           byte against the retail executable, mask the bytes the game itself
+           writes (learned from the states `states` calls retail, so the mask
+           is the union of their runtime differences), and report what is left
+           outside both the mask and the site table. A state that `states`
+           calls retail but `scan` does not carries a patch the site table
+           does not know; a tainted state's leftover is the part of its build
+           the table does not name.
 
 No disc bytes are printed: only addresses, lengths, entry indices and site
 labels. Needs the release binaries `pcsxr-state`, `mednafen-state`,
@@ -28,6 +36,7 @@ Usage:
     patch_taint_audit.py states [--library saves/library] [--scenarios scripts/scenarios.toml]
     patch_taint_audit.py logs   [--captures captures]
     patch_taint_audit.py ppf    <file.ppf> --disc <retail.bin>
+    patch_taint_audit.py scan   [--library saves/library] [--scenarios scripts/scenarios.toml]
 
 See docs/tooling/pcsx-redux-automation.md#patched-disc-taint.
 """
@@ -64,6 +73,18 @@ SITES = [
     (0x80078A88, 0x44, "SCUS slot 6 arena"),
     (0x8007ACA0, 0x60, "flee-exp / enemy-ally arena"),
     (0x8007AE00, 0x100, "SCUS arena 1"),
+    # Found by `scan`, not by a feature's own hook list: what a build rewrites
+    # beyond its hook sites. The arts-name glyph strings are the arts
+    # randomizer's display half (crates/patcher/src/arts.rs, glyph_patches;
+    # the pool runs from the first record's +8 pointer to the last string);
+    # arena 2 and the victory mouth-table padding are shiny-seru's current and
+    # earlier layouts (crates/patcher/src/space_ledger.rs, shiny_seru.rs); the
+    # new-game template rows and the table below them are the party swap's.
+    (0x80013620, 0xC80, "arts-name glyph strings (arts randomizer)"),
+    (0x8007AFF8, 0x48, "shiny-seru arena 2"),
+    (0x800781B0, 0x230, "shiny-seru earlier layout (mouth-table padding)"),
+    (0x800788C0, 0x48, "party swap (data)"),
+    (0x80078C4C, 0x68, "party swap (new-game template rows)"),
 ]
 
 
@@ -203,6 +224,64 @@ def cmd_ppf(args):
         print(f"{agg[k]:6d}  {k}")
 
 
+def _runs(offsets, gap=16):
+    """Merge sorted byte offsets into (start, end) runs bridging gaps < `gap`."""
+    out = []
+    for o in offsets:
+        if out and o - out[-1][1] < gap:
+            out[-1][1] = o + 1
+        else:
+            out.append([o, o + 1])
+    return out
+
+
+def cmd_scan(args):
+    retail = Path(args.scus).read_bytes()[SCUS_HDR:]
+    n = min(len(retail), SCUS_END_VA - SCUS_VA)
+    labels = scenario_labels(Path(args.scenarios))
+    site_bytes = set()
+    for va, ln, _ in SITES:
+        site_bytes.update(range(va - SCUS_VA, va - SCUS_VA + ln))
+    states = []
+    for sub in ("pcsx-redux", "mednafen"):
+        d = Path(args.library) / sub
+        if not d.is_dir():
+            continue
+        for p in sorted(d.iterdir()):
+            if p.suffix not in (".sstate", ".mcr"):
+                continue
+            try:
+                ram = resident_scus(Path(args.bin_dir), p)
+            except subprocess.CalledProcessError:
+                continue
+            states.append((sub, p, ram, site_hits(retail, ram)))
+    # The runtime mask: every byte some site-clean state holds differently
+    # from the executable. Those are the game's own writes (data, bss tails,
+    # self-written words); a patch nobody tagged would have to sit in every
+    # clean state at the same bytes to hide in here, which the per-state
+    # report below would then show as a mask that reaches into code.
+    mask = set()
+    clean = [ram for _, _, ram, hits in states if not hits]
+    for ram in clean:
+        mask.update(i for i in range(n) if ram[i] != retail[i])
+    print(f"# runtime mask: {len(mask)} byte(s) from {len(clean)} site-clean state(s)")
+    for a, b in _runs(sorted(mask), gap=64)[: args.mask_runs]:
+        print(f"#   mask 0x{SCUS_VA + a:08X} +0x{b - a:X}")
+    flagged = 0
+    for sub, p, ram, hits in states:
+        left = [i for i in range(n) if ram[i] != retail[i] and i not in mask and i not in site_bytes]
+        if not left and not args.all:
+            continue
+        flagged += bool(left)
+        lab = ",".join(sorted(set(labels.get(p.stem, ["-"]))))
+        fam = "tainted" if hits else "site-clean"
+        runs = _runs(left)
+        print(f"{sub:10s} {p.stem[:12]}  {lab:40s} {fam:10s} {len(left):6d} B outside mask+sites in {len(runs)} run(s)")
+        for a, b in runs[: args.runs]:
+            print(f"    0x{SCUS_VA + a:08X} +0x{b - a:X}")
+    print(f"# {flagged} of {len(states)} states differ from retail outside the runtime mask and the site table")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--bin-dir", default="target/release")
@@ -221,6 +300,13 @@ def main():
     pp.add_argument("--disc", required=True)
     pp.add_argument("--prot", default="extracted/PROT.DAT")
     pp.set_defaults(fn=cmd_ppf)
+    sc = sub.add_parser("scan")
+    sc.add_argument("--library", default="saves/library")
+    sc.add_argument("--scenarios", default="scripts/scenarios.toml")
+    sc.add_argument("--all", action="store_true", help="also list states with nothing left")
+    sc.add_argument("--runs", type=int, default=8, help="runs printed per state")
+    sc.add_argument("--mask-runs", type=int, default=0, help="mask runs printed")
+    sc.set_defaults(fn=cmd_scan)
     args = ap.parse_args()
     args.fn(args)
     return 0

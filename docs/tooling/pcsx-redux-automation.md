@@ -820,6 +820,26 @@ PROT entries and SCUS addresses. The manifest records the result per
 scenario as `resident_patch` ([`scripts/scenarios.toml`](../../scripts/scenarios.toml)).
 No disc bytes are printed; the output is addresses, lengths and labels.
 
+A site table only finds the patches it already names, so `scan` asks the
+question without one. It compares **every** resident SCUS byte against the
+retail executable, masks the bytes the game writes into its own image at run
+time - learned as the union of what the site-clean states hold differently,
+which is data words and the in-place value bytes of format strings such as
+the equipment captions' `0xC1 NN` slots - and reports what is left outside
+the mask and the site table, per state. A leave-one-out pass over the
+site-clean states is the control for the mask: a byte only one clean state
+holds differently falls in the data band from `0x80070000` up in every
+case, never in code. So every state `states` calls retail is retail in its
+whole executable, not only at the sites.
+
+`scan` is also how three windows of the site table were found, each a
+build rewriting more than its hook list: the arts randomizer's display half
+(the arts-name glyph strings `0x80013620` up, which `glyph_patches` rewrites
+in place), shiny-seru's arena 2 and its earlier layout in the victory
+mouth-table padding, and the party swap's new-game template rows. The last
+leftovers it reports are three bytes in one dome state and one in one party
+swap state, both in the data band.
+
 ### Resident patch families in the save-state library
 
 A patched state is identified by what its resident SCUS carries at the
@@ -828,12 +848,13 @@ against a patched image built by the same feature.
 
 | Family (`resident_patch`) | Resident signature | What else the build rewrites | Carried by |
 |---|---|---|---|
-| shiny-seru + enemy-ally charm | SCUS hooks `0x800321D4`, `0x8004AD0C`, `0x80051990`, `0x80051A20` + the four SCUS arenas; resident `0898` at six hook sites. Byte-identical to a shiny + charm build at every one of that build's SCUS bytes | PROT 0867 (monster archive, repacked), 0898, 0899 | the three `rikuroa_*` beats, `dolk2_market_noa`, the five `minigame_*_pcsx` states (the S1..S5 anchors and `first_town_interactive` were re-shot retail - [below](#re-shooting-the-s1s5-anchors-on-an-unpatched-image)) |
-| shiny-seru (earlier layout) | `0x800321D4`, `0x8004AD0C`, `0x80051A20`, gap-1 arena | as above, earlier layout | the three `shiny_refactor_gimard_*` states |
+| shiny-seru + enemy-ally charm | SCUS hooks `0x800321D4`, `0x8004AD0C`, `0x80051990`, `0x80051A20` + the four SCUS arenas and arena 2 (`0x8007AFF8`); resident `0898` at six hook sites. Byte-identical to a shiny + charm build at every one of that build's SCUS bytes | PROT 0867 (monster archive, repacked), 0898, 0899 | the three `rikuroa_*` beats, `dolk2_market_noa`, the five `minigame_*_pcsx` states (the S1..S5 anchors and `first_town_interactive` were re-shot retail - [below](#re-shooting-the-s1s5-anchors-on-an-unpatched-image)) |
+| shiny-seru (earlier layout) | `0x800321D4`, `0x8004AD0C`, `0x80051A20`, gap-1 arena, the victory mouth-table padding from `0x800781B0` | as above, earlier layout | the three `shiny_refactor_gimard_*` states |
 | arts AP override | SCUS arena 1 routines; resident `0898` guard / debit / refund sites `0x801EF410` / `0x801EF490` / `0x801EF988` | PROT 0898 | the four `battle_gaza2_*` states |
-| starting bag + warp preset | the new-game seed code `0x80034ADC` and `0x80034B04` | none resident - the edit acts once, at NEW GAME | `karisto_sol_pre_encounter`, `sol_to_karisto_worldmap`, `octam_to_sebucus_worldmap`, the three `casino_*` states, `baka_fighter_entry_pretransition`, the two Super / Miracle Art battle states, four mednafen `overworld_battle_bg_angle_*` states |
+| starting bag + warp preset | the new-game seed code `0x80034ADC` and `0x80034B04` | none resident - the edit acts once, at NEW GAME | `karisto_sol_pre_encounter`, `sol_to_karisto_worldmap`, `octam_to_sebucus_worldmap`, the three `casino_*` states, `baka_fighter_entry_pretransition`, the two Super / Miracle Art battle states; `scan` finds nothing else in their executables |
+| starting bag + warp preset + arts randomizer | the seed code above and the arts-name glyph strings from `0x80013620` | the player battle files' arts combos (the matcher half) | the four mednafen `overworld_battle_bg_angle_*` states |
 | location rename | the quick-travel name cells at `0x80073B18` | the kingdom and scene MAN name carriers ([`place-names.md`](../formats/place-names.md)) | the three `cort_evolved_*` states (`teien_field_run` was re-shot retail) |
-| delilas party swap + cast | `0x80012DD0`, `0x80054008`, gap-1 arena | player battle files, cast modules | the nine `delilas_*` states (made on purpose) |
+| delilas party swap + cast | `0x80012DD0`, `0x80054008`, gap-1 arena, the new-game template rows and arts glyph strings | player battle files, cast modules | the nine `delilas_*` states (made on purpose) |
 | enemy-ally charm | `0x80051990` + its arena | - | `enemy_ally_charm_gobu_slime` (made on purpose) |
 
 What a family can and cannot move:
