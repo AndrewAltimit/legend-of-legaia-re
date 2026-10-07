@@ -355,10 +355,15 @@ place: the **card op**.
 
 - `SaveScreenFlow` also keeps a `CardIoMachine` and advances it every frame
   through `card_frame_tick`. The "card" is whatever backs the host's blocks -
-  the native shell's save directory, the browser's imported `.mcr` - so the
-  poll status is what that backend answered: blocks installed for the port on
-  screen poll `Ready`, a mount with nothing readable polls `NoCard` and spends
-  the retry budget, an unanswered read polls `Pending`.
+  the native shell's save directory, the browser's own card or an imported
+  `.mcr` - so the poll status is what that backend answered: blocks installed
+  for a **mounted** port poll `Ready` whether or not any of them holds a save,
+  an empty port polls `NoCard` and spends the retry budget, an unanswered read
+  polls `Pending`. A blank card is a card - a formatted card answers the
+  directory read like any other, and it is where a first save goes. Keying
+  `Ready` on "some block holds a save" made a blank card read as no card, so
+  the write confirm stayed refused and neither host could make the first save
+  on a fresh card or an empty save directory.
 - The card driver's own waits read that result. Sub-screen `0x18` / `0x19` step
   1 blocks on the display script going idle and step 2 blocks on the op
   finishing; the flow answers the first with "the I/O machine has published
@@ -828,17 +833,22 @@ save".
 A port is whatever the host mounts, and that is the only thing the two hosts
 differ in:
 
-- The browser play page (`legaia_web_viewer::cards` + `play_menu`) mounts the
-  player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`), so cell `i` of
+- The browser play page (`legaia_web_viewer::cards` + `play_menu`) mounts
+  its **browser card** in port 1: a formatted card image
+  (`legaia_save::card::formatted_card_image`, exported as
+  `formatted_memory_card`) kept in the page's storage and written back on
+  every in-game save - the twin of the native save directory, so a save point
+  and Continue work with nothing imported. Either port also takes the
+  player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`). Cell `i` of
   the grid is card block `i + 1` - block 0 is the directory.
 - The native shell mounts its save directory as the card in port 1
   (`disk_save_rack_with_card`), where cell `i` is `slot_{i}` - a plain
   index, no directory block. Port 2 is the memory-card image `--card`
   mounted (cell `i` = block `i + 1`, as on the page), or the empty port.
 
-The browser has no save directory: its engine-format (`.lgsf`) sessions live
-in the page's save bar and reach the world through an import, not through a
-rack port. Both hosts read a card block through one reader,
+The browser has no save directory: the browser card stands in for it, and
+its engine-format (`.lgsf`) sessions live in the page's save bar and reach
+the world through an import, not through a rack port. Both hosts read a card block through one reader,
 `MountedCard::save_at`, which refuses a block that does not open a save
 chain.
 

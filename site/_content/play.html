@@ -805,6 +805,9 @@
       if (typeof window.__playSyncRenderToggles === 'function') window.__playSyncRenderToggles();
       if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
       setSaveUi(true);
+      /* A fresh runtime has an empty rack: mount the browser card (and any
+       * card the player picked) before anything can open a save screen. */
+      remountCards();
       /* The disc is up: re-render the save bar so it decodes the party
        * portrait faces + card icons now that WASM + disc bytes are available. */
       renderSavesStrip();
@@ -1290,6 +1293,7 @@
       fresh.load_disc(discBytes, '');
       runtime = fresh;
       window.__playRuntime = runtime;
+      remountCards();
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
       if (typeof window.__playApplyGroundFog === 'function') window.__playApplyGroundFog();
@@ -1621,16 +1625,48 @@
    * here; the in-game Load / Save screens then read and write whatever is
    * inserted (`runtime.insert_card` / `card_slots_json` / `export_card`).
    *
-   * Cards come from the save bar above: any stored `card` session is
-   * insertable. Saving in-game writes into the card image in place and marks
-   * the port dirty; the page stores it back into the browser at once, and
-   * Export downloads it so the player can
-   * carry the save back to their emulator. */
+   * Port 1 holds the page's own BROWSER CARD unless the player puts another
+   * card there: a formatted card image kept in this browser's storage
+   * (`LegaiaSaves.getBrowserCard`), the twin of the native window's save
+   * directory, which is always the card in its port 1. So the retail Save /
+   * Load screens - a save point, the pause menu's Save / Load rows, the
+   * title's Continue - always have a card to write and read, with nothing to
+   * import first.
+   *
+   * Any stored `card` session from the save bar above is insertable too.
+   * Saving in-game writes into the card image in place and marks the port
+   * dirty; the page stores it back into the browser at once, and Export
+   * downloads it so the player can carry the save back to their emulator. */
 
   const cardRackEl = document.getElementById('play-card-rack');
   const CARD_PORTS = 2;
+  /* The port-1 default: the browser card, not a stored session id. */
+  const BROWSER_CARD = '@browser';
+  const BROWSER_CARD_NAME = 'Browser memory card';
   /* Which stored save id is in each port, so a re-render keeps the picks. */
-  const portSaveIds = [null, null];
+  const portSaveIds = [BROWSER_CARD, null];
+
+  /* The browser card's bytes, formatting (and storing) a fresh one the first
+   * time this browser plays. */
+  function browserCardBytes() {
+    let bytes = LegaiaSaves.getBrowserCard();
+    if (!bytes && wasm && typeof wasm.formatted_memory_card === 'function') {
+      bytes = wasm.formatted_memory_card();
+      LegaiaSaves.putBrowserCard(bytes);
+    }
+    return bytes;
+  }
+
+  /* Put every port's card into the engine: after the disc loads (a fresh
+   * runtime starts with an empty rack) and after a trap rebuilt the runtime,
+   * which must not silently pull the cards out from under the player. */
+  function remountCards() {
+    if (!runtime) return;
+    for (let p = 0; p < CARD_PORTS; p++) {
+      if (portSaveIds[p]) insertCard(p, portSaveIds[p], true);
+    }
+    renderCardRack();
+  }
 
   function cardSessions() {
     return LegaiaSaves.listSessions().filter(s => s.kind === 'card');
@@ -1642,8 +1678,9 @@
     catch (e) { return null; }
   }
 
-  /* Insert the stored save `id` into `port` (or eject when id is falsy). */
-  function insertCard(port, id) {
+  /* Insert the stored save `id` (or the browser card) into `port`, or eject
+   * when id is falsy. `quiet` skips the status line (a remount). */
+  function insertCard(port, id, quiet) {
     if (!runtime) return;
     if (!id) {
       runtime.eject_card(port);
@@ -1651,17 +1688,25 @@
       renderCardRack();
       return;
     }
-    const stored = LegaiaSaves.getSession(id);
+    let stored;
+    if (id === BROWSER_CARD) {
+      const bytes = browserCardBytes();
+      stored = bytes ? { bytes, meta: { name: BROWSER_CARD_NAME } } : null;
+    } else {
+      stored = LegaiaSaves.getSession(id);
+    }
     if (!stored) { saveMsg('That card is no longer stored in this browser.', true); return; }
     try {
       runtime.insert_card(port, stored.bytes, stored.meta.name || id);
       portSaveIds[port] = id;
-      saveMsg(`"${stored.meta.name || id}" is in MEMORY CARD SLOT ${port + 1} - `
-            + 'the in-game Load and Save screens use it now.');
+      if (!quiet) {
+        saveMsg(`"${stored.meta.name || id}" is in MEMORY CARD SLOT ${port + 1} - `
+              + 'the in-game Load and Save screens use it now.');
+      }
     } catch (err) {
       saveMsg(`Could not insert that card: ${err.message || err}`, true);
     }
-    renderCardRack();
+    if (!quiet) renderCardRack();
   }
 
   /* Store card `bytes` back over the browser session that sits in `port`,
@@ -1669,6 +1714,10 @@
    * meta (or `{}` when the port's card is not a stored session). */
   function storeCardBytes(port, bytes) {
     const id = portSaveIds[port];
+    if (id === BROWSER_CARD) {
+      LegaiaSaves.putBrowserCard(bytes);
+      return { name: 'legaia-browser-card', format: 'mcr' };
+    }
     const meta = id ? (LegaiaSaves.listSessions().find(s => s.id === id) || {}) : {};
     const name = meta.name || `card-slot-${port + 1}`;
     /* Re-store so the browser copy carries the in-game saves too, and the
@@ -1719,7 +1768,7 @@
     none.value = '';
     none.textContent = '(empty)';
     sel.appendChild(none);
-    for (const s of sessions) {
+    for (const s of [{ id: BROWSER_CARD, name: BROWSER_CARD_NAME }].concat(sessions)) {
       const o = document.createElement('option');
       o.value = s.id;
       /* A card can only be in one port at a time, as on the console. */
@@ -1774,17 +1823,16 @@
 
     const note = document.createElement('div');
     note.className = 'play-card-note';
-    note.innerHTML = sessions.length
-      ? 'Open the pause menu (Start) and pick <b>Save</b> to write into the inserted card, '
-        + 'or <b>Load</b> to read a save off it. Export when you want to carry it back to '
-        + 'your emulator.'
-      : 'Import a memory-card save above (<b>.mcr / .gme / .mcs</b>) to put one in a slot.';
+    note.innerHTML = 'Save at a save point (or from the world map\'s pause menu) to write into '
+      + 'the inserted card, and <b>Continue</b> / <b>Load</b> to read a save off it. Slot 1 starts '
+      + 'with this browser\'s own card; import an emulator card above (<b>.mcr / .gme / .mcs</b>) '
+      + 'to use yours. Export when you want to carry it back to your emulator.';
     cardRackEl.appendChild(note);
   }
 
   /* A card ejected out from under the engine must not stay "inserted". */
   function dropEjectedCards() {
-    const live = new Set(cardSessions().map(s => s.id));
+    const live = new Set(cardSessions().map(s => s.id).concat([BROWSER_CARD]));
     for (let p = 0; p < CARD_PORTS; p++) {
       if (portSaveIds[p] && !live.has(portSaveIds[p])) insertCard(p, null);
     }

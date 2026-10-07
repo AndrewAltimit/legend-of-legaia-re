@@ -382,6 +382,53 @@ pub(crate) fn encode_dir_frame(
     frame[0x7F] = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
 }
 
+/// Directory frames (in block 0) that hold the broken-sector list - frames
+/// `16..=35`, after the fifteen per-block frames.
+const BROKEN_SECTOR_FRAMES: std::ops::RangeInclusive<usize> = 16..=35;
+
+/// Frame 63, the last frame of block 0: the BIOS's write-test frame, which a
+/// freshly formatted card carries as a copy of the `MC` header frame.
+const WRITE_TEST_FRAME: usize = 63;
+
+/// A freshly **formatted** 128 KiB memory-card image: the `MC` header frame,
+/// fifteen free directory frames, an empty broken-sector list and the
+/// write-test frame, every frame carrying its XOR checksum - the card a
+/// console's memory-card manager produces, with no saves on it.
+///
+/// This is the card a host mounts when the player has none of their own: the
+/// browser play page keeps one in the page's storage and mounts it in port 1,
+/// the twin of the native window's save directory, so the retail Save / Load
+/// screens always have a card to read and write.
+pub fn formatted_card_image() -> Vec<u8> {
+    fn stamp_checksum(frame: &mut [u8]) {
+        frame[0x7F] = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+    }
+    let mut buf = vec![0u8; CARD_SIZE];
+    buf[..2].copy_from_slice(&CARD_MAGIC);
+    stamp_checksum(&mut buf[..DIR_FRAME_SIZE]);
+    for i in 1..=DIR_FRAMES {
+        let off = DIR_FRAME_SIZE * i;
+        encode_dir_frame(
+            &mut buf[off..off + DIR_FRAME_SIZE],
+            state::FREE,
+            None,
+            0xFFFF,
+            "",
+        );
+    }
+    for i in BROKEN_SECTOR_FRAMES {
+        let off = DIR_FRAME_SIZE * i;
+        let frame = &mut buf[off..off + DIR_FRAME_SIZE];
+        frame[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+        frame[8..10].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        stamp_checksum(frame);
+    }
+    let (head, rest) = buf.split_at_mut(DIR_FRAME_SIZE);
+    let off = DIR_FRAME_SIZE * (WRITE_TEST_FRAME - 1);
+    rest[off..off + DIR_FRAME_SIZE].copy_from_slice(head);
+    buf
+}
+
 /// Write `save_data` into a free block chain on a PSX memory-card image.
 ///
 /// Finds enough free blocks (state `0xA0`) starting from the lowest-indexed
@@ -1374,6 +1421,33 @@ fn bytes_to_ascii(b: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A formatted card holds no saves, every frame's XOR checksum is right,
+    /// and a save written into it lands in block 1 and reads back.
+    #[test]
+    fn formatted_card_is_empty_valid_and_writable() {
+        use super::*;
+        let mut buf = formatted_card_image();
+        assert_eq!(buf.len(), CARD_SIZE);
+        assert!(parse_card(&buf).unwrap().is_empty());
+        let dir = walk_directory(&buf).unwrap();
+        assert_eq!(dir.len(), DIR_FRAMES);
+        assert!(dir.iter().all(|e| e.state == state::FREE));
+        for i in 0..64 {
+            let f = &buf[i * DIR_FRAME_SIZE..(i + 1) * DIR_FRAME_SIZE];
+            let x = f[..0x7F].iter().fold(0u8, |a, &b| a ^ b);
+            assert_eq!(f[0x7F], x, "frame {i} checksum");
+        }
+        assert_eq!(&buf[63 * DIR_FRAME_SIZE..63 * DIR_FRAME_SIZE + 2], b"MC");
+        assert!(crate::emu::detect(&buf).is_ok());
+        let mut payload = vec![0u8; BLOCK_SIZE];
+        payload[..2].copy_from_slice(&SAVE_BLOCK_MAGIC);
+        assert_eq!(
+            write_block(&mut buf, &payload, "BASCUS-94254PRO-00").unwrap(),
+            1
+        );
+        assert_eq!(parse_card(&buf).unwrap().len(), 1);
+    }
+
     #[test]
     fn rename_covers_both_name_sites_and_restamps() {
         use crate::character::{NAME_LEN, NAME_OFFSET};

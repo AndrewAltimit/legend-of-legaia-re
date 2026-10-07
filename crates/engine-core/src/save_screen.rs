@@ -127,9 +127,9 @@ pub struct SaveScreenFlow {
     ///
     /// The **card is the host's block backend**: the native shell's save
     /// directory, the browser's imported `.mcr`. So the machine's poll status
-    /// is what the backend answered - blocks installed for the port on screen
-    /// is `Ready`, a mount with nothing readable is `NoCard`, and a read the
-    /// host has not answered yet is `Pending`. That is the same substitution
+    /// is what the backend answered - blocks installed for a mounted port on
+    /// screen is `Ready` (empty or not), a port with nothing in it is
+    /// `NoCard`, and a read the host has not answered yet is `Pending`. That is the same substitution
     /// the rest of this module makes (the flow asks for snapshots and never
     /// touches a device), applied to the beat instead of to the bytes.
     io: CardIoMachine,
@@ -347,14 +347,21 @@ impl SaveScreenFlow {
     }
 
     /// This frame's poll status for the card behind `port`, derived from what
-    /// the host has answered [`Self::pending_read`] with.
-    fn card_status(&self, port: u8) -> CardStatus {
+    /// the host has answered [`Self::pending_read`] with and whether the
+    /// rack has a card in that port (`mounted`, the pill's `present`).
+    ///
+    /// A mounted card is `Ready` once its blocks are in, **whether or not any
+    /// block holds a save**: a formatted card with nothing on it answers the
+    /// directory read like any other, and it is the card a first save is
+    /// written into. Keying `Ready` on "some block is present" instead made a
+    /// blank card read as no card, so the write confirm was refused forever
+    /// and no host could make the first save on a fresh card or an empty save
+    /// directory. Only a port with nothing in it reads `NoCard`.
+    fn card_status(&self, port: u8, mounted: bool) -> CardStatus {
         match self.blocks.as_ref() {
-            Some((p, blocks)) if *p == port && blocks.iter().any(|b| b.present) => {
-                CardStatus::Ready
-            }
-            // The host answered and the port holds nothing readable: an empty
-            // mount reads as no card, which is what spends the retry budget.
+            Some((p, _)) if *p == port && mounted => CardStatus::Ready,
+            // The host answered for an empty port: no card, which is what
+            // spends the retry budget.
             Some((p, _)) if *p == port => CardStatus::NoCard,
             _ => CardStatus::Pending,
         }
@@ -413,7 +420,12 @@ impl SaveScreenFlow {
         // word allows and latches the first non-zero result; the commit phase
         // it also watches is the one the *save* direction raises, which the
         // port performs in one call, so the rebuild arm never fires here.
-        let status = self.card_status(session.current_slot());
+        let port = session.current_slot();
+        let mounted = session
+            .slots()
+            .get(usize::from(port))
+            .is_some_and(|pill| pill.present);
+        let status = self.card_status(port, mounted);
         let (result, _effect, rebuilt) = card_frame_tick(
             &mut self.io,
             status,
@@ -908,6 +920,60 @@ mod tests {
             flow.grid_cursor = 2;
             assert_ne!(flow.before_tick(&s, cross()) & PadButton::Cross.mask(), 0);
         }
+    }
+
+    /// A mounted card with **no saves on it** - a freshly formatted card, an
+    /// empty save directory - is a card: the op publishes success and the
+    /// first save commits into the cell under the cursor. Every other test
+    /// here installs a card holding a save, which is how a blank card's
+    /// first save stayed refused on both hosts.
+    #[test]
+    fn a_blank_mounted_card_takes_the_first_save() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        for _ in 0..beat {
+            if let Some(port) = flow.pending_read(&s) {
+                flow.install_blocks(port, (0..15).map(|i| block(i, false)).collect());
+            }
+            let edge = flow.before_tick(&s, 0);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        assert_eq!(flow.card_io_result(), 1, "a blank card still answers");
+        assert!(!flow.card_absent());
+        let edge = flow.before_tick(&s, cross());
+        assert_ne!(edge & cross(), 0, "the save confirm reaches the session");
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert!(matches!(s.phase(), SelectPhase::ConfirmOverwrite { .. }));
+        // "Do you wish to save?" defaults to No; step to Yes and confirm.
+        for e in [PadButton::Left.mask(), cross()] {
+            let edge = flow.before_tick(&s, e);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        assert_eq!(
+            flow.commit(&s),
+            Some(SaveCommit {
+                port: 0,
+                cell: 0,
+                kind: SaveCommitKind::Save,
+            })
+        );
+    }
+
+    /// An **empty port** still reads as no card: the pill is not present, so
+    /// whatever the host answered for it never publishes success.
+    #[test]
+    fn an_unmounted_port_reads_as_no_card() {
+        let mut flow = SaveScreenFlow::new();
+        flow.install_blocks(1, (0..15).map(|i| block(i, false)).collect());
+        assert_eq!(flow.card_status(1, false), CardStatus::NoCard);
+        assert_eq!(flow.card_status(1, true), CardStatus::Ready);
+        assert_eq!(flow.card_status(0, true), CardStatus::Pending);
     }
 
     /// The commit names the port off the outcome and the block off the grid.
