@@ -184,6 +184,58 @@ pub fn family_rows<'a>(
         .collect()
 }
 
+/// Every on-stage triangle of one CLUT family, one JSON line each: the index
+/// of the draw it came from, its screen corners on the `width x height`
+/// stage and its semi-transparency enable. The per-packet sibling of
+/// [`family_rows`], for reading a family whose count parts from the retail
+/// display list's (`LEGAIA_DIAG_DRAW_TRIS=<clut>` beside `LEGAIA_DIAG_DRAWS`):
+/// two draws carrying the same corners are a mesh drawn twice, a lone
+/// triangle retail has no packet for is one its emit dropped.
+pub fn family_tris_jsonl<'a>(
+    draws: impl IntoIterator<Item = (&'a MeshCensus, [f32; 16])>,
+    width: f32,
+    height: f32,
+    cba: u16,
+) -> String {
+    let mut out = String::new();
+    for (di, (census, m)) in draws.into_iter().enumerate() {
+        for t in census.tris.iter().filter(|t| t.cba == cba) {
+            let mut on = false;
+            let mut scr = [[f32::NAN; 2]; 3];
+            let mut ws = [f32::NAN; 3];
+            for (i, p) in t.pos.into_iter().enumerate() {
+                let x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12];
+                let y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+                let w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+                ws[i] = w;
+                if w <= 1e-6 {
+                    continue;
+                }
+                let sx = (x / w * 0.5 + 0.5) * width;
+                let sy = (0.5 - y / w * 0.5) * height;
+                scr[i] = [sx, sy];
+                on |= (0.0..width).contains(&sx) && (0.0..height).contains(&sy);
+            }
+            if on {
+                out.push_str(&format!(
+                    "{{\"draw\":{di},\"semi\":{},\"tri\":[[{:.1},{:.1}],[{:.1},{:.1}],[{:.1},{:.1}]],\"w\":[{:.1},{:.1},{:.1}]}}\n",
+                    t.semi,
+                    scr[0][0],
+                    scr[0][1],
+                    scr[1][0],
+                    scr[1][1],
+                    scr[2][0],
+                    scr[2][1],
+                    ws[0],
+                    ws[1],
+                    ws[2]
+                ));
+            }
+        }
+    }
+    out
+}
+
 /// [`family_rows`] as JSON lines, one family per line - the shape
 /// `scripts/ci/draw-family-diff.py` reads.
 pub fn family_rows_jsonl(rows: &[FamilyRow]) -> String {

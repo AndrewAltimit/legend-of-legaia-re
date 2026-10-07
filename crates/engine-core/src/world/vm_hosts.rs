@@ -796,7 +796,7 @@ pub(super) fn is_player_scale_op(bytecode: &[u8], pc: usize) -> bool {
 pub(super) fn is_player_effect_gate_op(bytecode: &[u8], pc: usize) -> bool {
     bytecode.get(pc) == Some(&0xCC)
         && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
-        && bytecode.get(pc + 2) == Some(&0xC2)
+        && matches!(bytecode.get(pc + 2), Some(&(0xC2 | 0x45)))
 }
 
 /// Step one field-VM op, landing a player-aimed `+0x72` write on the player.
@@ -823,7 +823,8 @@ pub(super) fn field_step_routed(
 ) -> vm::field::StepResult {
     // `CC F8 C2 <b>`: the player's object-effect gate `+0x42`, on the same
     // stand-in context the scale op uses, seeded from and written back to the
-    // world's player word.
+    // world's player word. `CC F8 45 ..` (the player's look rotation) runs on
+    // the same stand-in, which `look_key` reads as the player.
     if is_player_effect_gate_op(bytecode, pc) {
         let mut player_ctx = FieldCtx {
             script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
@@ -877,6 +878,23 @@ impl FieldHostImpl<'_> {
         ctx.flags & vm::field_player_clip::PARTY_BANK_FLAG != 0
             && self.world.field_vm.executing_channel.is_none()
             && !self.world.field_vm.entry_prerun
+    }
+
+    /// Whose side buffer a `4C 45` writes: the player (an op on the player
+    /// stand-in context, `CC F8 45 ..`), the placement channel stepping, or
+    /// nobody - a placed object's context draws through the static bracket,
+    /// which never reads the look.
+    fn look_key(&self, ctx: &FieldCtx) -> Option<crate::actor_look::LookKey> {
+        use crate::actor_look::LookKey;
+        if ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET)
+            || self.ctx_is_player(ctx)
+        {
+            return Some(LookKey::Player);
+        }
+        if self.world.field_vm.executing_object.is_some() {
+            return None;
+        }
+        self.world.field_vm.executing_channel.map(LookKey::Npc)
     }
 }
 
@@ -1082,6 +1100,42 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         let player = self.ctx_is_player(ctx);
         self.world
             .set_actor_tint(ctx, target, player, colour, blend, ticks);
+    }
+
+    /// Op `4C 45` with `ticks == 0`: the side buffer's look object and
+    /// angles, written at once (`0x801E12BC..0x801E12F4`). See
+    /// [`crate::actor_look`].
+    ///
+    /// PORT: FUN_801DE840 (the nibble-4 sub-5 immediate arm)
+    fn op4c_n4_sub5_write_immediate(
+        &mut self,
+        ctx: &mut FieldCtx,
+        b1: u8,
+        w94: i16,
+        w96: i16,
+        w98: i16,
+    ) {
+        if let Some(key) = self.look_key(ctx) {
+            self.world.npcs.looks.write(key, b1, [w94, w96, w98]);
+        }
+    }
+
+    /// Op `4C 45` with `ticks != 0`: the object at once, one ramp per angle
+    /// that changes (`0x801E12F8..0x801E138C`).
+    ///
+    /// PORT: FUN_801DE840 (the nibble-4 sub-5 ramp arm)
+    fn op4c_n4_sub5_ramp(
+        &mut self,
+        ctx: &mut FieldCtx,
+        b1: u8,
+        w94: i16,
+        w96: i16,
+        w98: i16,
+        ticks: u16,
+    ) {
+        if let Some(key) = self.look_key(ctx) {
+            self.world.npcs.looks.ramp(key, b1, [w94, w96, w98], ticks);
+        }
     }
 
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
@@ -2771,9 +2825,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// select is [`crate::model_bank::resolve_model_id`]'s, the `4C 50`
     /// arm's own `0x801E17AC..0x801E1824` select instruction for instruction.
     ///
-    /// Only a placement channel receives it here; an op aimed at the player
-    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) goes to
-    /// [`World::field_player_set_model`] instead, through
+    /// A placed object's bind context (an object-bind channel, its own op
+    /// or a `CC <record> 50 ..` poke) lands on the live model its bind
+    /// record draws with, [`World::object_live_models`] - the table op
+    /// `0x0E` also writes, which both hosts redraw the record's object from.
+    /// The credits walk on `map01` (`P2[40]`, `CC 08 50 20 00`) swaps Rim
+    /// Elm's landmark, record 8, from its `.MAP` mesh to model `32`
+    /// (`ending_vignette_rimelm_walkaway` holds `+0x64 = 37` over a bank base
+    /// of `5`); without the route the overworld kept drawing the old village.
+    /// An op aimed at the player (`CC F8 50 ..`, e.g. `jagaroom`'s costume
+    /// swap) goes to [`World::field_player_set_model`] instead, through
     /// `FieldHost::player_set_model`.
     ///
     /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
@@ -2784,7 +2845,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.model_pool_is_world_map() {
             ctx.model_id_high = value as u16;
         }
-        if let Some(slot) = self.world.field_vm.executing_channel {
+        if let Some(record) = self.world.field_vm.executing_object {
+            self.world
+                .npcs
+                .object_models
+                .insert(usize::from(record), value);
+        } else if let Some(slot) = self.world.field_vm.executing_channel {
             self.world.set_field_npc_live_model(slot, value);
         }
     }

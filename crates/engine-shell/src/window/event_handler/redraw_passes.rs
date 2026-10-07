@@ -341,6 +341,27 @@ impl PlayWindowApp {
             // translation-only ANM path unchanged.
             let is_field_player =
                 player_slot == Some(ai as u8) && self.player_color_draw.map(|(_, s)| s) == Some(ai);
+            // A script's look rotation (`4C 45`, `World::actor_look`) turns
+            // one object of the field player - the head - on top of its
+            // keyframe; the browser page folds the same kernel in.
+            let looked;
+            let pose = match (player_slot == Some(ai as u8) && actor.battle_animation.is_none())
+                .then(|| {
+                    self.session
+                        .host
+                        .world
+                        .actor_look(legaia_engine_core::actor_look::LookKey::Player)
+                })
+                .flatten()
+            {
+                Some(look) => {
+                    let mut p = pose.clone();
+                    legaia_engine_core::actor_look::apply_look(&mut p.bone_outputs, look);
+                    looked = p;
+                    &looked
+                }
+                None => pose,
+            };
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs)
             } else {

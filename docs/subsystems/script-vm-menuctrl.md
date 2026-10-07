@@ -962,6 +962,34 @@ Splits on `ticks == 0` between a direct write and one scheduled
 (`addiu s8,s8,0x5` at `0x801E12A4` over the head's 6), leaving through the
 common exit or the scheduler exit `0x801E2054`.
 
+The fields are the actor's **look turn**. `b1` lands in the side buffer's
+`+0x9A` at once on both arms (`sh v0,0x9a(v1)` at `0x801E12C8` /
+`0x801E1304`); the three words are X / Y / Z angles at `+0x94` / `+0x96` /
+`+0x98`, and the ramp arm schedules one only for an angle that differs from
+its live value (`beq s7,a3` at `0x801E1318` / `0x801E134C` / `0x801E1380`).
+The animated renderer `FUN_8001B964` turns the object whose index equals
+`+0x9A` by `RotZ(+0x98) RotY(+0x96) RotX(+0x94)` ahead of that object's
+keyframe rotation (`0x8001BB40..0x8001BB88`; each helper post-multiplies,
+so the object draws with `R_look * R_key` about its own pivot). The
+allocator seeds `+0x9A = -1`, and the static bracket `FUN_8001ADA4` never
+reads it. Every captured state that holds a look names object `0` - the head
+of a field rig - so this is how a cutscene turns a head toward a speaker:
+`cort_evolved_pre_battle`
+holds Vahn's and his party's at `X = -412`, looking up at the wall; the
+casino counter clerk's is turned `Y = -512`. The op is common - the
+[field-op census](../tooling/field-op-census.md) finds it in most town and
+dungeon scenes.
+
+Port: [`engine-core::actor_look`](../../crates/engine-core/src/actor_look.rs)
+holds each actor's look and its ramps (ticked at the frame step, reset on a
+scene entry); `CC F8 45 ..` lands on the player through the same stand-in
+context `CC F8 40` / `CC F8 C2` use. `World::actor_look` answers per actor,
+and both play hosts fold it into the pose with `actor_look::apply_look`
+before they skin the mesh - the native window's player rig and NPC pose
+cache (the look rides the cache key), the browser page's player rig and its
+NPC `live_bones` (the look rides the clip-state generation, so a head turns
+on a held frame).
+
 #### Sub-9's tristate
 
 | Bit `0x02000000` | Bit `0x01000000` | Path |

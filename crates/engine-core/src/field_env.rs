@@ -862,7 +862,7 @@ pub fn story_hidden_records_for_scene(
         .field_map_index(index)
         .and_then(|idx| index.entry_bytes_extended(idx).ok());
     let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
-        Some(map) => crate::man_field_scripts::object_script_binds(map, &triggers),
+        Some(map) => crate::man_field_scripts::object_script_bind_seats(map, &triggers),
         None => triggers
             .iter()
             .filter(|t| t.gate == 0)

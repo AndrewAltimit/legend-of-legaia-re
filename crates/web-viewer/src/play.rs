@@ -1407,15 +1407,26 @@ impl LegaiaRuntime {
     }
 
     fn player_mesh_positions_unscaled(&mut self) -> Vec<f32> {
-        let pose: Option<Vec<([i16; 3], [i16; 3])>> = self
-            .scene_host
-            .host()
-            .and_then(|h| {
-                let slot = h.world.player_actor_slot? as usize;
-                h.world.actors.get(slot)
-            })
-            .and_then(|a| a.pose_frame.as_ref())
-            .map(|p| p.bone_outputs.clone());
+        let pose: Option<Vec<([i16; 3], [i16; 3])>> = self.scene_host.host().and_then(|h| {
+            let slot = h.world.player_actor_slot? as usize;
+            let mut bones = h
+                .world
+                .actors
+                .get(slot)?
+                .pose_frame
+                .as_ref()?
+                .bone_outputs
+                .clone();
+            // The script's look rotation on one object (`4C 45`), the kernel
+            // the native window folds into the same rig.
+            if let Some(l) = h
+                .world
+                .actor_look(legaia_engine_core::actor_look::LookKey::Player)
+            {
+                legaia_engine_core::actor_look::apply_look(&mut bones, l);
+            }
+            Some(bones)
+        });
         let Some(p) = self.player.as_mut() else {
             return Vec::new();
         };
@@ -1607,14 +1618,14 @@ impl LegaiaRuntime {
     /// Live clip-playback state of every catalogued NPC, `[pose, generation,
     /// ...]` (`[-1, -1]` with no live clip player).
     pub fn play_npc_clip_states(&self) -> Vec<i32> {
-        self.actors.clip_states()
+        self.actors.clip_states(self.scene_host.host())
     }
 
     /// Current pose of catalog entry `i`'s live clip, 6 `i32` per bone, read
     /// without advancing the playhead (it moves only in
     /// [`LegaiaRuntime::tick_frame`]).
     pub fn play_npc_live_bones(&self, i: u32) -> Vec<i32> {
-        self.actors.live_bones(i)
+        self.actors.live_bones(i, self.scene_host.host())
     }
 
     /// Live world state of every catalogued NPC, `[x, y, z, facing_units,

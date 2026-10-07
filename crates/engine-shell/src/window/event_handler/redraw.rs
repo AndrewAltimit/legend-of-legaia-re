@@ -1519,8 +1519,25 @@ impl PlayWindowApp {
                     // the playhead, then advance by the sim ticks this redraw
                     // ran (0 on a pure-refresh frame, so a 144 Hz display holds
                     // each frame for the same wall-clock time a 60 Hz one does).
-                    let key = (*slot, player.pose_key());
-                    let pose = player.current_pose();
+                    // A script's look rotation (`4C 45`) turns one object -
+                    // the head - on top of the keyframe, so it is part of
+                    // the pose the cache keys: its angles ride the key's
+                    // high bits.
+                    let look =
+                        world.actor_look(legaia_engine_core::actor_look::LookKey::Npc(*slot));
+                    let look_bits = look.map_or(0usize, |l| {
+                        let a = l.angles.map(|v| v as u16 as usize);
+                        (1 << 63)
+                            | ((l.object as u16 as usize & 0xFF) << 52)
+                            | ((a[0] & 0xFFF) << 40)
+                            | ((a[1] & 0xFFF) << 28)
+                            | ((a[2] & 0xFFF) << 16)
+                    });
+                    let key = (*slot, player.pose_key() | look_bits);
+                    let mut pose = player.current_pose();
+                    if let Some(l) = look {
+                        legaia_engine_core::actor_look::apply_look(&mut pose.bone_outputs, l);
+                    }
                     if !world_driven {
                         player.advance(field_tail_ticks);
                     }
@@ -1822,9 +1839,49 @@ impl PlayWindowApp {
                     let &(colour, blend) = object_tints.get(&(*record?)?)?;
                     tint_draw_cue((colour, blend))
                 };
+                // A landmark is an actor: retail's case-5 draw reads its live
+                // position and mesh, so a script's `A3 <id>` seat and
+                // `CC <id> 50` model swap move and re-skin it (the credits
+                // walk re-skins Rim Elm, `map01` record 8). The kernels are the
+                // field branch's - `World::object_draw_displacements`,
+                // `World::object_live_models` on a record's first draw - and
+                // the browser page folds the same two tables into its
+                // overworld placements (`field_placement_moves` /
+                // `field_placement_models`).
+                let wm_moves = self.session.host.world.object_draw_displacements();
+                let wm_models = self.session.host.world.object_live_models().clone();
+                let wm_live = |records: &[Option<usize>], i: usize, model: &Mat4| {
+                    let record = records.get(i).copied().flatten();
+                    let moved = match record.and_then(|r| wm_moves.get(&r)) {
+                        Some(d) => {
+                            Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
+                                * *model
+                        }
+                        None => *model,
+                    };
+                    let first = record.is_some() && !records[..i].contains(&record);
+                    let swap = record
+                        .filter(|_| first)
+                        .and_then(|r| wm_models.get(&r))
+                        .and_then(|&id| usize::try_from(id).ok())
+                        .filter(|&id| id < 0xF0);
+                    (moved, swap)
+                };
                 for (i, (mesh_idx, model)) in self.world_map_terrain_draws.iter().enumerate() {
-                    if let Some(mesh) = self.meshes.get(*mesh_idx) {
-                        let mvp = cam * *model;
+                    let (model, swap) = if i < deco_start {
+                        wm_live(&self.world_map_terrain_records, i, model)
+                    } else {
+                        (*model, None)
+                    };
+                    let mesh_idx = match swap {
+                        Some(id) => match self.field_pack_meshes.get(id).copied().flatten() {
+                            Some(m) => m,
+                            None => continue,
+                        },
+                        None => *mesh_idx,
+                    };
+                    if let Some(mesh) = self.meshes.get(mesh_idx) {
+                        let mvp = cam * model;
                         draws.push(SceneDraw {
                             mesh,
                             mvp,
@@ -1841,8 +1898,20 @@ impl PlayWindowApp {
                 // field branch's pairing, which this branch lacked.
                 for (i, (mesh_idx, model)) in self.world_map_terrain_color_draws.iter().enumerate()
                 {
-                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
-                        let mvp = cam * *model;
+                    let (model, swap) = if i < color_deco_start {
+                        wm_live(&self.world_map_terrain_color_records, i, model)
+                    } else {
+                        (*model, None)
+                    };
+                    let mesh_idx = match swap {
+                        Some(id) => match self.field_pack_color_meshes.get(id).copied().flatten() {
+                            Some(m) => m,
+                            None => continue,
+                        },
+                        None => *mesh_idx,
+                    };
+                    if let Some(mesh) = self.color_meshes.get(mesh_idx) {
+                        let mvp = cam * model;
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp,
@@ -3344,15 +3413,33 @@ impl PlayWindowApp {
                 if let (Some(m), Some(c)) = (&self.ground_heightfield, &d.ground) {
                     by_ptr.insert(m as *const _, c);
                 }
-                let rows = legaia_engine_core::draw_census::family_rows(
+                let census_draws = || {
                     draws.iter().filter_map(|dr| {
                         by_ptr
                             .get(&(dr.mesh as *const _))
                             .map(|c| (*c, dr.mvp.to_cols_array()))
-                    }),
-                    320.0,
-                    240.0,
-                );
+                    })
+                };
+                let rows =
+                    legaia_engine_core::draw_census::family_rows(census_draws(), 320.0, 240.0);
+                // `LEGAIA_DIAG_DRAW_TRIS=<clut hex>`: that family's triangles,
+                // one per line, at `<path>.tris`.
+                if let Some(cba) = std::env::var("LEGAIA_DIAG_DRAW_TRIS")
+                    .ok()
+                    .and_then(|s| u16::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+                {
+                    let mut tp = path.clone();
+                    tp.push(".tris");
+                    let _ = std::fs::write(
+                        tp,
+                        legaia_engine_core::draw_census::family_tris_jsonl(
+                            census_draws(),
+                            320.0,
+                            240.0,
+                            cba,
+                        ),
+                    );
+                }
                 // The CPU VRAM the field pass samples, beside it
                 // (`<path>.vram`, 1 MiB little-endian), so a family whose
                 // count and colour agree but whose pixels part can be read

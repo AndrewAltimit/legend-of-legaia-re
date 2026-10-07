@@ -18,6 +18,7 @@ pub use legaia_engine_battle::{
 };
 pub mod actor_alloc_host;
 pub mod actor_handler;
+pub mod actor_look;
 pub mod anim_cue;
 pub mod arts_command_input;
 pub mod baka_duel_scene;

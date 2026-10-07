@@ -1296,7 +1296,9 @@ impl SceneHost {
                     // has no readable `.MAP` object layer.
                     // REF: FUN_8003A55C, FUN_8003C83C
                     let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
-                        Some(map) => crate::man_field_scripts::object_script_binds(map, &triggers),
+                        Some(map) => {
+                            crate::man_field_scripts::object_script_bind_seats(map, &triggers)
+                        }
                         None => triggers
                             .iter()
                             .filter(|t| t.gate == 0)

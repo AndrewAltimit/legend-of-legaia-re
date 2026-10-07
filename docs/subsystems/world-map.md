@@ -2340,6 +2340,23 @@ whose bind is hidden
 decoration sweep runs no script and is never filtered. map02 and map03 park
 no landmark on a cold entry.
 
+**A landmark is an actor, so a script moves and re-skins it.** The actor
+stands at the object's own position (`tile * 128 + 0x40` plus the
+descriptor's fine offsets), not on the key tile its record lookup uses -
+`map01`'s Rim Elm (record 8) is keyed two tiles north of where it stands -
+so the port seats each object-bind context on that position
+(`man_field_scripts::object_script_bind_seats`; the portal and walk-touch
+layers keep the contact centre). A record that seats the actor
+(`A3 <id> ..`) or swaps its model (`CC <id> 50 ..`, `FUN_80024E08`) changes
+what the overworld draws: the credits walk (`map01` `P2[40]`) runs
+`A3 08 60 17` and `CC 08 50 20 00`, and the state
+`ending_vignette_rimelm_walkaway` holds the landmark on model `32`
+(`+0x64 = 37` over a bank base of `5`), a different village mesh from the
+`.MAP` slot. The swap lands on `World::object_live_models` (the table op
+`0x0E` writes) and the seat on `World::object_draw_displacements`; the
+native world-map landmark pass and the browser page's overworld placements
+both draw a landmark's first stamp from the two.
+
 #### Placing the continent terrain (engine port)
 
 The kingdom slot-1 meshes are object-local, so the continent must be assembled

@@ -799,10 +799,31 @@ player (`CC F8 C2`, five of the 50 sites, in `uru2`, `rugi` and `noaru`) runs
 on the same player stand-in context the `CC F8 40` scale op uses
 (`field_step_routed`) and lands in `FieldVmState::player_field_42`, so the
 player's draws clip on both hosts too - `rugi` and `noaru` raise it in the
-same beat as their two NPCs. One difference remains: an animated actor is
-clipped on its posed mesh, where `FUN_8001B964` runs the effect `MVMVA` on
-unposed object-local vertices. Disc-gated test:
+same beat as their two NPCs. Disc-gated test:
 `crates/engine-core/tests/object_effect_row_disc.rs`.
+
+**Posed or unposed: the clip reads the posed vertex.** `FUN_8002735C`
+copies each prim's object-local vertices to the stack and `MVMVA`s them
+through `0x1F800314` (`0x800275A8..0x800275D0`), and what that transform
+holds depends on the bracket. `FUN_8001ADA4` (a static actor - placed
+objects, unanimated props) zeroes the keyframe triples at `0x1F8002C0` /
+`0x1F8002C8` (`0x8001B570..0x8001B588`), so its effect point is
+`s * Rrow * (Ractor * v + pos)`. `FUN_8001B964` (an animated actor - NPCs, the
+player) calls `FUN_8001C204` per object after `FUN_8001BE80` has left that
+object's interpolated keyframe translation at `0x1F8002C0` and its angles at
+`0x1F8002C8..0x1F8002CC`: `FUN_8001C204` transforms the translation through
+`Rrow * Ractor` (`FUN_8003D344` at `0x8001C2B8`), adds the transformed actor
+position (`0x8001C2C8..0x8001C300`), and turns the matrix by the keyframe's
+`RotZ` / `RotY` / `RotX` (`0x8001C2FC..0x8001C328`) before storing it - so
+the effect point is `s * Rrow * (Ractor * (Rkey * v + Tkey) + pos)`, the
+**posed** vertex. The engine clips each draw in its own mesh space, and an
+animated actor's draw is its posed mesh, so both brackets agree with retail.
+The one rotation the effect transform leaves out is the side buffer's look
+turn (`4C 45`, [`script-vm-menuctrl.md`](script-vm-menuctrl.md#4c-45-the-11-byte-form)):
+`FUN_8001B964` applies it to the drawn object (`0x8001BB40..0x8001BB88`) but
+`FUN_8001C204` never reads `+0x94..+0x9A`, so on a turned head retail clips
+the unturned head. The port clips the turned one - a difference only on an
+actor that carries both at once.
 
 ## The battle per-actor draw
 

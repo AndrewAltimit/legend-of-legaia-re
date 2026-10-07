@@ -1016,6 +1016,42 @@ pub fn object_script_binds(
     out
 }
 
+/// [`object_script_binds`] with each bind's **actor seat** in place of its
+/// contact centre: the object's own world position
+/// ([`crate::field_regions::MapObject::world`], `tile * 128 + 0x40` plus the
+/// descriptor's fine offsets), which `FUN_8003A55C` stores in the actor's
+/// `+0x14 / +0x18`. The contact box sits off it by the key-tile and touch
+/// offsets the touch test adds (`FUN_801CFC40`), so a context seated there
+/// stood up to a few tiles from the object it scripts: `map01`'s Rim Elm
+/// landmark (record 8) is keyed two tiles north of where it stands, and the
+/// credits walk's `A3 08 60 17` - which seats it back on its own tile - read
+/// as a 256-unit move. This is what the object-bind script contexts are
+/// seated on ([`crate::field_channels::spawn_object_channels`]); the portal
+/// and walk-touch layers keep the contact centre.
+// REF: FUN_8003A55C
+pub fn object_script_bind_seats(
+    map: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+) -> Vec<(usize, (i16, i16))> {
+    let mut seen: Vec<(usize, (i16, i16))> = Vec::new();
+    let mut out: Vec<(usize, (i16, i16))> = Vec::new();
+    for obj in crate::field_regions::parse_map_objects(map) {
+        let Some(t) = triggers
+            .iter()
+            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
+        else {
+            continue;
+        };
+        let record = usize::from(t.record);
+        if seen.contains(&(record, obj.contact)) {
+            continue;
+        }
+        seen.push((record, obj.contact));
+        out.push((record, obj.world));
+    }
+    out
+}
+
 /// The walk-touch effect of the MAN record at **flat** index `flat`: its first
 /// player-channel teleport (either op form - see [`PlayerMoveKind`]), or
 /// `None` when the record repositions nobody (a plain scenery / chest / sign

@@ -2186,6 +2186,18 @@ impl World {
         &self.npcs.object_models
     }
 
+    /// The look rotation (field-VM `4C 45`) an animated actor draws with
+    /// this frame, or `None` while it turns nothing. Both play hosts fold it
+    /// into the actor's pose with [`crate::actor_look::apply_look`] before
+    /// they skin the mesh - the player's rig and every posed NPC.
+    // REF: FUN_8001B964 (0x8001BB40..0x8001BB88)
+    pub fn actor_look(
+        &self,
+        key: crate::actor_look::LookKey,
+    ) -> Option<crate::actor_look::ActorLook> {
+        self.npcs.looks.turning(key)
+    }
+
     /// Capture alignment: set a placed object's live model where a motion
     /// stream drives it (a record outside
     /// [`crate::world::FieldNpcState::object_ambient`] is left alone). The

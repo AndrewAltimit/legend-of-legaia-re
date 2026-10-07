@@ -1284,7 +1284,10 @@ which prints the families one side draws and the other does not, or whose
 count or colour parts. The census counts triangles before the shader's
 winding test, so a family whose engine count is about twice retail's, split
 between the windings, is one retail's `NCLIP` halves. Player, NPC and effect
-meshes are not in the census.
+meshes are not in the census. With `LEGAIA_DIAG_DRAW_TRIS=<clut hex>` beside
+it, the child also writes that family's triangles one per line
+(`<path>.tris`: draw index, screen corners, clip `w`), the per-packet level
+to match against the display list's corners when a family's count parts.
 
 ## The ratchet
 
@@ -1628,6 +1631,13 @@ lands within a few dozen units of retail's player; what remains is about a
 dozen frames between the walk and the glide (retail's glide is 123 frames
 in after 111 walked units, the engine's after 123).
 
+The same record re-skins Rim Elm's landmark: `CC 08 50 20 00` puts record 8
+on model `32`, the village the frame's foreground shows. The engine had run
+the op without drawing it - the swap landed on no table a host read, and the
+landmark's context sat on its key tile two tiles north of the object, so the
+record's own `A3 08 60 17` read as a move - and drew the `.MAP` slot's mesh
+in its place ([world-map](../subsystems/world-map.md#placed-actors-and-the-mesh-resolver)).
+
 ### The dance-hall state is inside the contest-entry cutscene
 
 `minigame_dance_pcsx` is `koin3` with the qualifier request (story flag
@@ -1671,11 +1681,22 @@ full-screen `POLY_F4` under ABR `2` (`B - F`), and the push in the state's own
 display list is grey `141`, linked after every scene packet. That list is the
 one the GPU drew into the **back** buffer: VRAM's draw buffer holds a frame
 whose floor the subtract has taken to black, while the displayed buffer is an
-older frame under a much lighter push, with the floor still green. During the
-hall load retail's display trails its logic by more than the usual two game
-frames, so the compared frame is earlier in the fade than any state the RAM
-describes. The port's frame matches the draw buffer's darkness, not the
-display's.
+older frame under a lighter push, with the floor still green. The lag is the
+usual two game frames, measured off the tween itself: the walk-in actor
+(`_DAT_8007B62C`) reads clock `+0xC8 = 21` of a `27`-vsync ramp on a step-`3`
+frame, so the tick the RAM holds built a push of clock `18` (grey `170`); the
+draw buffer's list is the frame before (clock `15`, grey `141`), and the
+displayed buffer's floor, read against the draw buffer's, sits under a push
+of about `117..125` - clock `12`, one more frame back. The engine gates on
+the displayed wait, but its frame step is `2` against retail's `3`, so the
+push it draws comes from clock `14` rather than `12`; gating it earlier still
+does not raise the score, because what parts the frames is not the fade.
+Retail's own two buffers - one game frame apart - agree on only `0.80` of
+the blocks: the floor's palette strobe and a spotlight beam (the CLUT-cell
+cycler parts on row `507`) that is on in the displayed frame and off in the
+drawn one. The engine frame agrees with the draw buffer on `0.84` and with
+the display on `0.69`; the residual is that frame-to-frame strobe, a capture
+limit.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.

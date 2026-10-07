@@ -181,6 +181,9 @@ pub struct FieldNpcState {
     /// (op `0x0E`), keyed by bind record; both hosts draw the record's
     /// placed objects with that mesh instead of the `.MAP` pack slot.
     pub(crate) object_models: std::collections::BTreeMap<usize, i16>,
+    /// Every animated actor's side-buffer look rotation (field-VM `4C 45`)
+    /// and the ramps driving it - [`crate::actor_look`].
+    pub looks: crate::actor_look::ActorLooks,
     /// Publish the ambient tail-section-1 streams' walk steps
     /// ([`crate::world::World::tick_field_npc_ambient`]) - the villagers'
     /// authored wandering. The bare `World` default is off (NPCs rest at their
@@ -293,6 +296,7 @@ impl FieldNpcState {
             ambient: std::collections::BTreeMap::new(),
             object_ambient: std::collections::BTreeMap::new(),
             object_models: std::collections::BTreeMap::new(),
+            looks: Default::default(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),
             morphs: std::collections::BTreeMap::new(),

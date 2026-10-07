@@ -608,6 +608,8 @@ impl World {
         // Scene entry resets the ramp pool (`FUN_8003CDA8`): a ramp the last
         // scene left running must not resize the player on this one.
         self.locomotion.player_scale_ramps.reset_pool();
+        // Every side buffer is fresh on a scene entry (`+0x9A = -1`).
+        self.npcs.looks.clear();
         if self.move_vm.ramp_ratio == 0 {
             self.move_vm.ramp_ratio = 1;
         }
