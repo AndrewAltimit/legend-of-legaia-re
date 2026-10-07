@@ -710,6 +710,7 @@ SPLIT_MODULES = frozenset({
     "crates/engine-minigames/src/fishing",
     "crates/engine-vm/src/title_overlay",
     "crates/web-viewer/src/minigames_muscle",
+    "crates/engine-core/src/world/vm_hosts",
 })
 
 
