@@ -104,6 +104,25 @@ impl World {
         }
     }
 
+    /// Write a placed object's clip-control word (`+0x62`) - a script's
+    /// `LFLAG_SET` / `LFLAG_CLR` or `4C 35` / `4C 36` landing on the object's
+    /// actor. The anim tick reads the word every frame (a restart request
+    /// snaps the cursor, hold freezes it), so the clip takes the bits at once
+    /// without a clip poke.
+    ///
+    /// REF: FUN_800204F8
+    pub(crate) fn set_object_prop_flags(&mut self, record: u16, flags: u16) {
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == usize::from(record))
+        {
+            p.anim.flags = flags;
+        }
+    }
+
     /// Advance the placed-prop layer one field tick: step the clips, step an
     /// in-flight prop record run, and start a run for a movement touch posted
     /// by this tick's locomotion.

@@ -268,6 +268,16 @@ plays the engagement as the touch-resumed interaction timeline
 `0x21` leaves the placement context's PC past it, as the shared retail context
 does.
 
+The system script reaches placed objects the same way. `rugi`'s `P1[0]`, once
+the wall is opened (`0x57B`), freezes the two gate leaves on the first frame
+of their clips with `CC 01 35` / `CC 02 35` (`+0x62 = (+0x62 & 0xFF7F) |
+0x20A`: hold, restart, clamp - the lowered pose) and parks partition-0 record
+6, the stone block the opening leaves behind, with `A3 06 7F 7F`. Both land on
+the objects' actors, whose anim tick and draw read them on the next frame; the
+engine routes a system-script `MOVE_TO` to any resolved channel and the
+clip-control writes (`AB` / `AC <id> <bit>`, `CC <id> 35` / `36`) to a resolved
+object's channel and its prop clip (`World::step_field_cross_context_actor_op`).
+
 A mid-talk glide on the talker itself (`37` / `41` / `47` with no target
 byte) parks the record (`+0x10 |= 0x400`) until the walk kernel's terminal
 frame clears the bit (`FUN_8003774C`). The engine's talk runner plays no walk

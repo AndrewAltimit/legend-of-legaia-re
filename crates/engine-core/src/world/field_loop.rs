@@ -701,6 +701,9 @@ impl World {
         if let Some(res) = self.step_field_cross_context_cflag() {
             return Some(res);
         }
+        if let Some(res) = self.step_field_cross_context_actor_op() {
+            return Some(res);
+        }
         let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
         let bc_ptr: *const Vec<u8> = &self.field_bytecode;
         let pc = self.field_pc;
@@ -783,6 +786,89 @@ impl World {
             ch.ctx.flags &= !mask;
         }
         let next_pc = pc + 3;
+        self.field_pc = next_pc;
+        Some(FieldStepResult::Advance { next_pc })
+    }
+
+    /// A system-script op aimed at another actor's own words: `FUN_8003C83C`
+    /// resolves the extended target `<id>` through the actor list and the op
+    /// runs against **that** actor's context, not the system context's.
+    /// Two families route here:
+    ///
+    /// - `MOVE_TO` (`A3 <id> <x> <z>`), for any channel: the seat lands on the
+    ///   target's `+0x14` / `+0x18`. A placed object parked at the hide box
+    ///   `(0x7F, 0x7F)` stops drawing ([`Self::hidden_object_records`]), and a
+    ///   placement the op moves has its position surfaced at once, as the
+    ///   cutscene timeline's poke does.
+    /// - the clip-control writes on a **placed object** - `LFLAG_SET` /
+    ///   `LFLAG_CLR` (`AB` / `AC <id> <bit>`) and `4C 35` / `4C 36`
+    ///   (`CC <id> 35`, the hold + restart + clamp freeze): the bits land on
+    ///   the object's `+0x62`, which its anim tick reads every frame, so the
+    ///   prop's clip state takes them at once.
+    ///
+    /// `rugi`'s `P1[0]`, with the wall opened (`0x57B`), is the case for
+    /// both: it freezes the two gate leaves (`CC 01 35`, `CC 02 35`) on the
+    /// first frame of their clips - the lowered pose - and parks partition-0
+    /// record 6, the stone block the opening leaves behind, with
+    /// `A3 06 7F 7F`. Stepped on the system context, the leaves kept looping
+    /// their raise and the block stayed, a wall across the floor in front of
+    /// the save crystal.
+    ///
+    /// The player (`0xF8`) and the system context (`0xFB`) take the ordinary
+    /// step, as does an id no channel carries.
+    ///
+    /// REF: FUN_801DE840 (cases 0x23, 0x2B, 0x2C, 0x4C nibble 3), FUN_8003C83C
+    fn step_field_cross_context_actor_op(&mut self) -> Option<FieldStepResult> {
+        let pc = self.field_pc;
+        let op = *self.field_bytecode.get(pc)?;
+        let target = *self.field_bytecode.get(pc + 1)?;
+        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+            return None;
+        }
+        let clip_control = op == 0xAB
+            || op == 0xAC
+            || (op == 0xCC && matches!(self.field_bytecode.get(pc + 2), Some(&(0x35 | 0x36))));
+        if op != 0xA3 && !clip_control {
+            return None;
+        }
+        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let object = self.field_vm.channels[ci].object_bind;
+        if clip_control && !object {
+            return None;
+        }
+        let width = legaia_asset::field_disasm::decode(&self.field_bytecode, pc)
+            .ok()
+            .map(|i| i.size)
+            .filter(|&n| n > 0)?;
+        let mut channels = std::mem::take(&mut self.field_vm.channels);
+        let bc = std::mem::take(&mut self.field_bytecode);
+        self.field_vm.executing_channel = (!object).then_some(channels[ci].placement_index as u8);
+        self.field_vm.executing_object = object.then_some(channels[ci].ctx.script_id);
+        let res = {
+            let mut host = FieldHostImpl { world: self };
+            vm::field::step(&mut host, &mut channels[ci].ctx, &bc, pc)
+        };
+        self.field_vm.executing_channel = None;
+        self.field_vm.executing_object = None;
+        let c = &channels[ci];
+        if op == 0xA3
+            && !object
+            && let Ok(slot) = u8::try_from(c.placement_index)
+        {
+            self.npcs
+                .positions
+                .insert(slot, (c.ctx.world_x as i16, c.ctx.world_z as i16));
+            self.npcs.motions.remove(&slot);
+        }
+        if clip_control {
+            self.set_object_prop_flags(c.ctx.script_id, c.ctx.local_flags);
+        }
+        self.field_vm.channels = channels;
+        self.field_bytecode = bc;
+        let next_pc = match res {
+            FieldStepResult::Advance { next_pc } => next_pc,
+            _ => pc + width,
+        };
         self.field_pc = next_pc;
         Some(FieldStepResult::Advance { next_pc })
     }
@@ -1059,6 +1145,37 @@ mod cross_context_cflag_tests {
         w.step_field();
         assert_eq!(w.field_vm.channels[1].ctx.flags & (1 << 0x16), 0);
         assert_eq!(w.field_pc, 6);
+    }
+
+    /// `rugi` `P1[0]`'s opened-wall arm: `CC 01 35` freezes the gate leaf on
+    /// its object's own `+0x62`, and `A3 06 7F 7F` parks partition-0 record 6
+    /// at the hide box - both on the target object, none on the system
+    /// context.
+    #[test]
+    fn system_script_seats_and_freezes_the_target_object() {
+        let mut w = World::default();
+        let mut leaf = channel(1, 1);
+        leaf.object_bind = true;
+        leaf.ctx.local_flags = crate::field_env::ANIM_SPAWN_FLAGS;
+        leaf.ctx.field_72 = 0x1000;
+        let mut block = channel(6, 6);
+        block.object_bind = true;
+        block.ctx.world_x = 11072;
+        block.ctx.world_z = 6208;
+        block.ctx.field_72 = 0x1000;
+        w.field_vm.channels = vec![leaf, block];
+        w.load_field_script_at(vec![0xCC, 0x01, 0x35, 0xA3, 0x06, 0x7F, 0x7F, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.field_pc, 3);
+        assert_eq!(w.field_vm.channels[0].ctx.local_flags, 0x021F);
+        assert_eq!(
+            w.field_ctx.local_flags, 0,
+            "the system context keeps its word"
+        );
+        w.step_field();
+        assert_eq!(w.field_pc, 7);
+        assert!(w.hidden_object_records().contains(&6));
+        assert!(!w.hidden_object_records().contains(&1));
     }
 
     /// The player anchor and an unresolved id take the ordinary step.

@@ -798,6 +798,34 @@ impl LegaiaRuntime {
         per.into_iter().flatten().map(|v| v as f32).collect()
     }
 
+    /// Per-placement **parked** mask (parallel to
+    /// [`Self::field_placement_slots`]): `1` where the placed object's actor
+    /// now stands at the off-map hide box (or carries a zero render scale),
+    /// so the draw is skipped. The page builds its placed draws once, at
+    /// scene load, from the records parked by then; a script that parks one
+    /// later (`rugi`'s entry script runs `A3 06 7F 7F` on the stone block the
+    /// opened wall leaves behind) hides it through this mask. **Empty** while
+    /// no placement is parked. The same `World::hidden_object_records` set
+    /// the native play-window reads per frame.
+    pub fn field_placement_parked(&self) -> Vec<u8> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let parked = h.world.hidden_object_records();
+        if parked.is_empty() {
+            return Vec::new();
+        }
+        let mask: Vec<u8> = f
+            .placement_records
+            .iter()
+            .map(|r| u8::from(r.is_some_and(|r| parked.contains(&r))))
+            .collect();
+        if mask.iter().all(|&m| m == 0) {
+            return Vec::new();
+        }
+        mask
+    }
+
     /// Per-placement **draw tint** (parallel to
     /// [`Self::field_placement_slots`]), flattened `[r, g, b, ir0]`: the far
     /// colour (display `0..1`) and `IR0` (`1.0 = 0x1000`) of a constant

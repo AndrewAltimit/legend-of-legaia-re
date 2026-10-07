@@ -2143,7 +2143,7 @@ void main() {
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
         d.winHidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
-        d.hidden = d.winHidden || !!d.cullHidden;
+        d.hidden = d.winHidden || !!d.cullHidden || !!d.parkHidden;
       }
     }
 
@@ -2163,7 +2163,7 @@ void main() {
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
         d.cullHidden = d.placeIdx < culled.length && culled[d.placeIdx] === 1;
-        d.hidden = !!d.winHidden || d.cullHidden;
+        d.hidden = !!d.winHidden || d.cullHidden || !!d.parkHidden;
       }
     }
 
@@ -2285,6 +2285,27 @@ void main() {
         }
       }
       this._objectMovesLive = mv.length > 0;
+    }
+
+    /* A placed object a script parks at the hide box after the scene built
+     * its draws (rugi's entry script runs `A3 06 7F 7F` on the stone block the
+     * opened wall leaves behind) stops drawing: retail's case-5 draw reads the
+     * actor, which now stands off the map. The engine hands back a
+     * per-placement mask (1 = parked) or an EMPTY array while none is;
+     * `_objectParkedLive` clears the flags on the falling edge. The native
+     * window skips the same set (`World::hidden_object_records`). */
+    _applyObjectParked(rt) {
+      if (!rt.field_placement_parked) return;
+      const m = rt.field_placement_parked();
+      if (!m.length && !this._objectParkedLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const parked = d.placeIdx < m.length && m[d.placeIdx] === 1;
+        if (parked === !!d.parkHidden) continue;
+        d.parkHidden = parked;
+        d.hidden = !!d.winHidden || !!d.cullHidden || parked;
+      }
+      this._objectParkedLive = m.length > 0;
     }
 
     /* A placed object whose actor carries a draw tint (op `4C 81`: the
@@ -2629,6 +2650,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectParked(rt);
       this._applyObjectModels(rt);
       this._applyObjectTints(rt);
       this._applyGroundWave(rt);

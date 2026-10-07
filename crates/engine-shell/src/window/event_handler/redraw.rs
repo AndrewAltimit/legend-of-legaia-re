@@ -2094,6 +2094,18 @@ impl PlayWindowApp {
                     // `World::object_draw_displacements`; the browser play
                     // page folds the same table in (`field_placement_moves`).
                     let object_moves = self.session.host.world.object_draw_displacements();
+                    // A placed object a script parks at the hide box after
+                    // the scene built its draw lists (`rugi`'s entry script
+                    // runs `A3 06 7F 7F` on the stone block the opened wall
+                    // leaves behind) stops drawing that frame: retail's
+                    // case-5 draw reads the actor, which now stands off the
+                    // map. The build-time pass drops the records parked by
+                    // then; this is the same set, read per frame. Shared
+                    // kernel `World::hidden_object_records`; the browser play
+                    // page reads it through `field_placement_parked`.
+                    let object_parked = self.session.host.world.hidden_object_records();
+                    let parked =
+                        |record: Option<usize>| record.is_some_and(|r| object_parked.contains(&r));
                     let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
                         match record.and_then(|r| object_moves.get(&r)) {
                             Some(d) => {
@@ -2140,6 +2152,9 @@ impl PlayWindowApp {
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
                             let record = self.field_placement_records.get(di).copied().flatten();
+                            if parked(record) {
+                                continue;
+                            }
                             let model = &object_moved(model, record);
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
@@ -2208,6 +2223,9 @@ impl PlayWindowApp {
                         // mesh; the ones whose clip is running were re-posed
                         // above, so the door draws mid-swing.
                         for (mesh_idx, model, record) in &posed_prop_baked_v {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2234,6 +2252,9 @@ impl PlayWindowApp {
                             }
                         }
                         for (mesh, model, record) in &posed_prop_live_v {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2261,6 +2282,9 @@ impl PlayWindowApp {
                                 .get(di)
                                 .copied()
                                 .flatten();
+                            if parked(record) {
+                                continue;
+                            }
                             let model = &object_moved(model, record);
                             if !legaia_engine_core::field_env::placed_draw_live(
                                 self.field_placement_color_window_keys
@@ -2309,6 +2333,9 @@ impl PlayWindowApp {
                             }
                         }
                         for (mesh_idx, model, record) in &posed_prop_baked_c {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2327,6 +2354,9 @@ impl PlayWindowApp {
                             }
                         }
                         for (mesh, model, record) in &posed_prop_live_c {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
