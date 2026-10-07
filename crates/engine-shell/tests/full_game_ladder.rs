@@ -3594,11 +3594,32 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
             if w.p2_record_gates_pass(c1, c2)
                 && let Some(land) = flag_path_landing(w, body, *pc0)
             {
-                map.entry(*tile).or_insert(land);
+                map.entry(*tile).or_insert(open_landing(w, land));
             }
         }
         map
     })
+}
+
+/// `land`, or the nearest open lattice cell within a tile of it. A walk
+/// leg's target carries the half-tile bit (`0x80`), and the leg's own
+/// arrival stops short of it: `deroa`'s hub P2[11] walks its west leg to
+/// `0xB6` (x 7040) and the platform parks the player at x 6912, beside the
+/// pillar the encoded point sits in. A landing in a wall cell joins nothing.
+fn open_landing(w: &legaia_engine_core::world::World, land: Cell) -> Cell {
+    let open = |c: Cell| {
+        let (x, z) = cell_center(c);
+        !w.field_tile_is_wall(x, z)
+    };
+    if open(land) {
+        return land;
+    }
+    (1..=4)
+        .flat_map(|r| {
+            (-r..=r).flat_map(move |dx| (-r..=r).map(move |dz| (land.0 + dx, land.1 + dz)))
+        })
+        .find(|&c| open(c))
+        .unwrap_or(land)
 }
 
 /// Where a walk-on record whose only forks are story-flag tests walks the
@@ -4029,6 +4050,152 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// What a [`cross_over`] detour is for: a door toward another scene, or the
+/// band tiles of a walk-on beat in another walk component of the scene.
+#[derive(Debug, Clone)]
+enum CrossTarget {
+    /// A door of the loaded scene toward this scene.
+    Door(String),
+    /// Any of these tiles (a walk-on band).
+    Tiles(Vec<(i16, i16)>),
+}
+
+impl CrossTarget {
+    /// The tiles the lattice plans toward.
+    fn tiles(&self, session: &BootSession, graph: &DiscGraph) -> Vec<(i16, i16)> {
+        match self {
+            CrossTarget::Door(toward) => doors_to(session, graph, toward)
+                .map(|d| {
+                    d.iter()
+                        .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            CrossTarget::Tiles(t) => t.clone(),
+        }
+    }
+
+    /// Whether the pad walk can now reach the target from where it stands.
+    fn in_reach(&self, session: &BootSession, graph: &DiscGraph) -> bool {
+        match self {
+            CrossTarget::Door(toward) => door_in_reach(session, graph, toward),
+            CrossTarget::Tiles(t) => tiles_in_reach(session, t),
+        }
+    }
+}
+
+/// Can the pad walk reach one of `tiles` (or a tile beside it) from where
+/// the player stands?
+fn tiles_in_reach(session: &BootSession, tiles: &[(i16, i16)]) -> bool {
+    let avoid = hazards(session, "");
+    let (x, z) = player_xz(session);
+    let from = cell_of(x, z);
+    tiles.iter().any(|&g| {
+        plan_path(session, from, g, &avoid)
+            .and_then(|p| p.last().copied())
+            .is_some_and(|c| {
+                let t = tile_of(cell_center(c).0, cell_center(c).1);
+                (t.0 - g.0).abs() + (t.1 - g.1).abs() <= 1
+            })
+    })
+}
+
+/// Whether the milestone beat in partition-2 record `rec` should wait: its
+/// record sets one of the milestone's missing reach flags and clears a flag
+/// the live state holds, and another
+/// missing reach flag's band lies outside the player's walk component. The
+/// pad hand plays the far beat first, by a crossing, the way the story does:
+/// `chitei2` P2[11] (the `0x470` climax) clears the Rapid Transport switch
+/// flags `0x4EF` / `0x4F0` that route `deroa`'s platform hub to the room
+/// whose door re-enters by the junction band P2[3] (`0x3C8`).
+fn reach_beat_waits(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    rec: usize,
+) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let Some(target) = BEAT_TARGET.with(|t| t.borrow().clone()) else {
+        return false;
+    };
+    let missing: Vec<u16> = target
+        .reach_flags
+        .iter()
+        .copied()
+        .filter(|&f| !session.host.world.system_flag_test(f))
+        .collect();
+    if missing.len() < 2 {
+        return false;
+    }
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 2, rec) else {
+        return false;
+    };
+    let sets: Vec<u16> = LinearWalker::new(&man[start..start + len], pc0)
+        .map_while(Result::ok)
+        .filter_map(|i| match i.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } if missing.contains(&idx) => Some(idx),
+            _ => None,
+        })
+        .collect();
+    if sets.is_empty() {
+        return false;
+    }
+    // Only a beat that takes something away waits: one that clears a flag
+    // the live state holds (P2[11] clears the switch flags). A beat that only
+    // adds state is played where it is met - P2[3] waiting on P2[11] in turn
+    // would leave both unplayed.
+    let w = &session.host.world;
+    let takes = LinearWalker::new(&man[start..start + len], pc0)
+        .map_while(Result::ok)
+        .any(|i| {
+            matches!(i.info, InsnInfo::SystemFlag { kind: FlagKind::Clear, idx, .. } if w.system_flag_test(idx))
+        });
+    if !takes {
+        return false;
+    }
+    missing.iter().filter(|f| !sets.contains(f)).any(|&f| {
+        let bands = reach_flag_bands(session, &[f]);
+        !bands.is_empty() && !tiles_in_reach(session, &bands)
+    })
+}
+
+/// The band tiles of the live walk-on records of the loaded scene whose own
+/// body sets one of `flags` - the beats a milestone's missing reach flags
+/// wait on (`chitei2` P2[3], the junction's north-south band, sets `0x3C8`).
+fn reach_flag_bands(session: &BootSession, flags: &[u16]) -> Vec<(i16, i16)> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::{partition_record_span, partition2_record_gates};
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return Vec::new();
+    };
+    let w = &session.host.world;
+    let mut out = Vec::new();
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        let r = usize::from(t.record);
+        let pass = partition2_record_gates(&mf, &man, r)
+            .is_some_and(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2));
+        if !pass {
+            continue;
+        }
+        let Some((start, pc0, len)) = partition_record_span(&mf, &man, 2, r) else {
+            continue;
+        };
+        let body = &man[start..start + len];
+        let sets = LinearWalker::new(body, pc0).map_while(Result::ok).any(|i| {
+            matches!(i.info, InsnInfo::SystemFlag { kind: FlagKind::Set, idx, .. } if flags.contains(&idx))
+        });
+        if sets {
+            out.push((i16::from(t.tile_x), i16::from(t.tile_z)));
+        }
+    }
+    out
+}
+
 /// A detour through a **crossing scene**: `cur`'s door toward `goal` lies in
 /// another walk component of `cur` (`map01`'s north and south halves meet
 /// only through `suimon`). A player crosses by entering a scene `X` that
@@ -4041,7 +4208,29 @@ fn cross_over(
     graph: &DiscGraph,
     cur: &str,
     goal: &str,
-    toward: &str,
+    target: &CrossTarget,
+) -> Result<String, String> {
+    // The doors a band crossing refused stay refused only for the crossing:
+    // the segment's other hops still take them.
+    let mut refused_here: Vec<(String, (i16, i16))> = Vec::new();
+    let r = cross_over_inner(session, graph, cur, goal, target, &mut refused_here);
+    REFUSED_DOORS.with(|r| {
+        let mut r = r.borrow_mut();
+        for k in refused_here {
+            r.remove(&k);
+        }
+    });
+    r
+}
+
+/// [`cross_over`]'s body; `refused_here` collects the doors it refused.
+fn cross_over_inner(
+    session: &mut BootSession,
+    graph: &DiscGraph,
+    cur: &str,
+    goal: &str,
+    target: &CrossTarget,
+    refused_here: &mut Vec<(String, (i16, i16))>,
 ) -> Result<String, String> {
     let back = |x: &String| graph.edges.get(x).is_some_and(|e| e.contains(cur));
     let mut cands: Vec<String> = graph
@@ -4058,11 +4247,11 @@ fn cross_over(
     let all = cands.clone();
     let plan = |session: &BootSession, shut: &BTreeSet<String>| {
         let open: Vec<String> = all.iter().filter(|x| !shut.contains(*x)).cloned().collect();
-        let p = crossing_plan(session, graph, &open, toward);
+        let p = crossing_plan(session, graph, &open, &target.tiles(session, graph));
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             let (px, pz) = player_xz(session);
             eprintln!(
-                "    [cross] {cur} toward {toward} from {:?}: lattice plan {p:?} (shut {shut:?})",
+                "    [cross] {cur} toward {target:?} from {:?}: lattice plan {p:?} (shut {shut:?})",
                 dispatch_tile(px, pz)
             );
         }
@@ -4098,7 +4287,9 @@ fn cross_over(
         }
         let (fx, fz) = player_xz(session);
         let left_from = tile_of(fx, fz);
+        LAST_HOP_DOOR.with(|l| *l.borrow_mut() = None);
         let r = pad_hop(session, graph, &x);
+        let out_door = LAST_HOP_DOOR.with(|l| l.borrow().clone());
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             let (px, pz) = player_xz(session);
             eprintln!(
@@ -4205,10 +4396,10 @@ fn cross_over(
                     // reach, else the next crossing from here.
                     Ok(s) if s == cur => {
                         let (px, pz) = player_xz(session);
-                        if door_in_reach(session, graph, toward) {
+                        if target.in_reach(session, graph) {
                             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                                 eprintln!(
-                                    "    [cross] {cur}: {toward}'s door in reach from {:?}",
+                                    "    [cross] {cur}: {target:?} in reach from {:?}",
                                     dispatch_tile(px, pz)
                                 );
                             }
@@ -4225,6 +4416,26 @@ fn cross_over(
                         if back && again {
                             shut.insert(x.clone());
                         }
+                        // Back on the side it left: the door it went out by
+                        // leads to the part of `x` that only returns here
+                        // (`chitei2`'s P2[4] lands north of `deroa`'s
+                        // platform hub, P2[5] south of it, where the hub ride
+                        // starts). The next round trip leaves by another.
+                        let mut new_door = false;
+                        if back
+                            && matches!(target, CrossTarget::Tiles(_))
+                            && let Some((s0, d)) = out_door.clone()
+                            && s0 == cur
+                        {
+                            new_door = REFUSED_DOORS.with(|r| {
+                                r.borrow_mut()
+                                    .insert((s0.clone(), d), flags_of_world(session))
+                                    .is_none()
+                            });
+                            if new_door {
+                                refused_here.push((s0, d));
+                            }
+                        }
                         // The lattice names the next crossing from where the
                         // player landed. A crossing taken before is taken
                         // again with its beats played.
@@ -4234,7 +4445,9 @@ fn cross_over(
                                     Some(l) => want.insert(y.clone(), l),
                                     None => want.remove(&y),
                                 };
-                                let seen = visited.contains(&y);
+                                // A round trip by a door not taken before
+                                // is a first visit: its beats wait.
+                                let seen = visited.contains(&y) && !new_door;
                                 queue.retain(|(q, _)| *q != y);
                                 queue.push_front((y, seen));
                             }
@@ -4310,13 +4523,11 @@ fn crossing_plan(
     session: &BootSession,
     graph: &DiscGraph,
     cands: &[String],
-    toward: &str,
+    targets: &[(i16, i16)],
 ) -> FirstHop {
-    let targets: Vec<(i16, i16)> = doors_to(session, graph, toward)
-        .ok()?
-        .iter()
-        .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
-        .collect();
+    if targets.is_empty() {
+        return None;
+    }
     let xdoors: Vec<(String, Vec<(i16, i16)>)> = cands
         .iter()
         .filter_map(|x| {
@@ -5254,6 +5465,7 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     }
     .map(|(g, _)| *g)
     .expect("doors_to is non-empty");
+    LAST_HOP_DOOR.with(|l| *l.borrow_mut() = Some((scene_name(session), goal)));
     let dist = |a: (i16, i16)| i32::from((a.0 - goal.0).abs() + (a.1 - goal.1).abs());
     // A door the collision lattice cannot get near is a different finding
     // from a walk that stalls on the way: the scene is split into walk
@@ -6735,6 +6947,11 @@ thread_local! {
     /// hop up; new flags re-open the band.
     static REFUSED_DOORS: std::cell::RefCell<RefusedDoors> =
         std::cell::RefCell::new(HashMap::new());
+    /// The scene and door band [`pad_hop`] last walked to: a crossing that
+    /// brought the player back to the side it left refuses that band, so the
+    /// next round trip leaves by another door into the same scene.
+    static LAST_HOP_DOOR: std::cell::RefCell<Option<(String, (i16, i16))>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 thread_local! {
@@ -7181,6 +7398,12 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                         "    [beat-skip] {name} P2[{rec}] gates {:?}",
                         partition2_record_gates(&mf, &man, usize::from(rec))
                     );
+                }
+                continue;
+            }
+            if pad_hand() && reach_beat_waits(session, &mf, &man, usize::from(rec)) {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [beat-skip] {name} P2[{rec}] waits on the other reach beats");
                 }
                 continue;
             }
@@ -8658,7 +8881,13 @@ fn traverse(
                     *n <= MAX_CROSS_OVERS
                 } =>
             {
-                match cross_over(session, graph, &cur, &goal, &next) {
+                match cross_over(
+                    session,
+                    graph,
+                    &cur,
+                    &goal,
+                    &CrossTarget::Door(next.clone()),
+                ) {
                     Ok(s) => {
                         // Only a detour that ended in a third scene earns
                         // another: one that came back to `cur` already
@@ -8723,6 +8952,48 @@ fn traverse(
                     }
                     trail.push(format!("[{cur}->{next} dead]"));
                     continue;
+                }
+                // The beat that sets a missing reach flag lies in another walk
+                // component of the scene: a round trip through a neighbouring
+                // scene that lands on its side (`chitei2`'s junction band
+                // P2[3] is reached by re-entering from `deroa` at (93, 108)),
+                // then the beats again.
+                if stuck_here && pad {
+                    let flags: Vec<u16> = target
+                        .reach_flags
+                        .iter()
+                        .copied()
+                        .filter(|&f| !session.host.world.system_flag_test(f))
+                        .collect();
+                    // The bands of the flags no reachable beat sets.
+                    let bands: Vec<(i16, i16)> = flags
+                        .iter()
+                        .map(|&f| reach_flag_bands(session, &[f]))
+                        .filter(|b| !tiles_in_reach(session, b))
+                        .flatten()
+                        .collect();
+                    let n = crossed
+                        .entry((cur.clone(), String::from("<band>")))
+                        .or_insert(0);
+                    *n += 1;
+                    if !bands.is_empty() && *n <= MAX_CROSS_OVERS {
+                        let t = CrossTarget::Tiles(bands);
+                        match cross_over(session, graph, &cur, "", &t) {
+                            Ok(s) => {
+                                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                    eprintln!("    [cross] {cur} to the reach band: landed in {s}");
+                                }
+                                trail.push(format!("{s}(band crossing)"));
+                                beaten.remove(&s);
+                                continue;
+                            }
+                            Err(why) => {
+                                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                    eprintln!("    [cross] {cur} to the reach band: {why}");
+                                }
+                            }
+                        }
+                    }
                 }
                 if stuck_here {
                     let missing: Vec<String> = target

@@ -293,7 +293,9 @@ map as its street:
   carry the walker across the walls between its rooms. A record whose only
   forks are story-flag tests is followed under the live flags: the hub
   P2[11] sends its platform to one of three rooms by the `chitei2` Rapid
-  Transport switches' `0x4EF` / `0x4F0`.
+  Transport switches' `0x4EF` / `0x4F0`. A leg's encoded point can sit in the
+  pillar beside where the platform parks the player (the hub's west leg,
+  `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
 
 The follower leaves a cross-axis offset of a few units alone while the
 other axis still has ground to cover: chasing its own overshoot flips the
@@ -826,11 +828,18 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   P2[17]'s C2 gate, so the segment stalls in `concnow`. Whether retail
   talks to the guards from that spot, and what joins the `(64, 15)` room,
   is not yet pinned; a capture in `concnow` would decide both.
-- `chitei2` joins its parts through machinery as well as walls. The
-  transporter at `(100, 102)` is a kind-0 teleport to `(94, 24)` and the
-  planner rides it. The cages along row 102 (partition-0 records 6..11, each a
-  bare `31 00` with no clip) are doors the touch opens; the lift platform
-  reaches the `deroa` door through them. The Rapid Transport System, with its
-  three switches (P0[32..34]) and the walk-on pairs (P2[0] / P2[1]) that issue
-  `4C D6` to actors 5..11, is not modelled, and the `jette_fortress_late` pad
-  stall (`0x3C8` / `0x470` unset) sits on it.
+- `chitei2`'s parts join only through `deroa`. The Rapid Transport System is
+  `deroa`'s platform hub (P2[11]); `chitei2`'s three switches (P0[32..34]) only
+  pick where it goes (`0x4EF` / `0x4F0`), and each parks the player on the
+  car's track to watch it and puts it back. The entry room and the hub
+  (P2[11], `0x470`) are one side; the junction's north-south band (P2[3],
+  `0x3C8`) is reached by re-entering at (93, 108) from `deroa` P2[3], whose
+  room the hub's west leg serves while `0x4F0` is up. So when a milestone's
+  reach beat lies outside the player's walk component, the pad hand takes a
+  round trip toward its band the way a hop takes one toward a door (the
+  crossing lattice above), and a round trip that comes back to the side it
+  left refuses the door it went out by, so the next leaves by another
+  (`chitei2` P2[4] lands north of the hub, P2[5] south of it, where the ride
+  starts). A reach beat that clears a flag the live state holds waits while
+  another missing reach flag's band is out of reach: P2[11] clears the switch
+  flags the `deroa` route needs, so the junction comes first.
