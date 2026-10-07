@@ -73,9 +73,9 @@
 //! `FUN_801d2114` / `FUN_801d2440` (stop) -> `FUN_801d0554` (snap + claim) ->
 //! `FUN_801d13e8` (win eval).
 
-use crate::levelup::BiosRand;
 use legaia_asset::minigame_slot_scene::{MarqueeFrame, MarqueePlacement, compose_marquee_frame};
 use legaia_asset::slot_payout::{self, SlotPayoutTable};
+use legaia_engine_vm::bios_rand::BiosRand;
 
 /// Reels on the machine.
 pub const REEL_COUNT: usize = 3;
@@ -1274,7 +1274,7 @@ impl SlotMachine {
 
 // --- The cash-out submenu ----------------------------------------------------
 
-/// Retail packed pad bits (`_DAT_8007B874`, [`crate::retail_pad`]) the
+/// Retail packed pad bits (`_DAT_8007B874`, `legaia_engine_core::retail_pad`) the
 /// cash-out flow tests. The face/shoulder byte is the low byte, the
 /// d-pad/system byte the high one.
 pub mod menu_pad {
@@ -1508,9 +1508,9 @@ impl SlotMachine {
 }
 
 /// The packed retail edge word for this frame off the engine's raw pad words
-/// (`InputState::pad` / `pad_prev`, [`crate::input::PadButton`] layout).
+/// (`InputState::pad` / `pad_prev`, [`legaia_engine_vm::pad::PadButton`] layout).
 pub fn packed_edges(pad: u16, pad_prev: u16) -> u32 {
-    u32::from(crate::dev_menu::retail_packed(pad & !pad_prev))
+    u32::from(legaia_engine_vm::pad::retail_packed(pad & !pad_prev))
 }
 
 // --- Coin exchange counter --------------------------------------------------
@@ -2848,7 +2848,7 @@ mod tests {
 
     #[test]
     fn packed_edges_swap_the_raw_layout() {
-        use crate::input::PadButton;
+        use legaia_engine_vm::pad::PadButton;
         let raw = PadButton::Triangle.mask() | PadButton::Up.mask();
         assert_eq!(packed_edges(raw, 0), 0x1010);
         assert_eq!(packed_edges(raw, raw), 0);

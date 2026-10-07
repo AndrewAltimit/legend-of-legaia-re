@@ -313,8 +313,8 @@ blocker is a table is the same error this page records for the panel painters.
 | `8003ec70` | `load_overlay_b` | `crates/engine-core/src/overlay_loader.rs:212` | DISCLOSE |
 | `800520f0` | `battle_stage_overlay_entry` | `crates/engine-core/src/overlay_loader.rs:135` | DISCLOSE |
 | `801cea3c` | `fmv_post_play_handoff` | `crates/engine-core/src/cutscene.rs:205` | WIRE |
-| `801cf0d8` | `build_strip` | `crates/engine-core/src/slot_machine.rs:172` | WIRE |
-| `801cf0d8` | `cash_out` | `crates/engine-core/src/slot_machine.rs:973` | FALSE INERT |
+| `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs:172` | WIRE |
+| `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
 | `801d06c8` | `buy` | `crates/engine-core/src/fishing/prize.rs:159` | FALSE INERT |
 | `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome/session.rs` | FALSE INERT |
@@ -473,7 +473,7 @@ why the obvious placement was wrong. Where each one lives now:
 - `fmv_post_play_handoff` - consumed by `apply_fmv_handoff` in
   `crates/engine-shell/src/bin/legaia-engine/commands/run.rs`, with the
   `CardInit` / `ModeZero` arms disclosed as modes the engine does not have.
-- `build_strip` - `build_reel` in `crates/engine-core/src/slot_machine.rs`
+- `build_strip` - `build_reel` in `crates/engine-minigames/src/slot_machine.rs`
   builds both permuted 20-slot strips per reel in retail's interleaved draw
   order; `SlotMachine::new` builds all three reels and seeds the display
   strip from the symbol half.

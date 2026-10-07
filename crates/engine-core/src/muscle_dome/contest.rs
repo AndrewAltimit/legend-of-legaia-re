@@ -193,39 +193,9 @@ pub struct LegReport {
     /// `_DAT_80084444` - turns the leg took.
     pub turns_taken: u32,
 }
-
-/// The four count-up rows the between-leg screen rolls.
-///
-/// The first three are HP recovery, not score: they drain into the same
-/// accumulator `DAT_801D1AC8` that the restore state adds to the fighter's
-/// HP. Only [`Self::score_cell`] drains into the coin tally. That is what the
-/// six-row tally screen holds, and it is why the scoring and the healing are
-/// one mechanism rather than two.
-///
-/// PORT: FUN_801d1184 (the four lane values)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LegScoreRows {
-    /// `round * 2 * max_hp / 100` (`DAT_801D1ACC`).
-    pub round_lane: i32,
-    /// `min(turns_taken, 8) * max_hp / 100` (`DAT_801D1AD0`).
-    pub turns_lane: i32,
-    /// `LEG_OUTCOME_TABLE[min(outcome, 3)] * max_hp / 100` (`DAT_801D1AD4`).
-    pub outcome_lane: i32,
-    /// The `(course, round)` score cell (`DAT_801D1AAC`) - the only row that
-    /// is money.
-    pub score_cell: i32,
-}
-
-impl LegScoreRows {
-    /// The HP the restore state hands back: the three recovery lanes summed,
-    /// which is exactly what the tally screen accumulates into
-    /// `DAT_801D1AC8`.
-    ///
-    /// PORT: FUN_801cf074 (`0x801CF0DC` / `0x801CF150` / `0x801CF1C8`)
-    pub fn hp_restore(&self) -> i32 {
-        self.round_lane + self.turns_lane + self.outcome_lane
-    }
-}
+/// The four count-up rows live beside the tally ramp that rolls them, in the
+/// minigame crate's `other_game_overlay`.
+pub use crate::other_game_overlay::LegScoreRows;
 
 /// Compute a finished leg's four rows. `round` is the **post-advance** round
 /// index, the same one retail reads out of `DAT_801D1A94` after the arena has

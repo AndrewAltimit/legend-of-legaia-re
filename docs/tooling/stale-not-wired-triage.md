@@ -73,7 +73,7 @@ because they are the names a small `impl` block also wants.
 **A duplicate free-function name.** The receiver gate is defined over
 `impl_type`, and a free function has none, so free-function edges are never
 gated however many definitions share the name. `countdown_frame` existed twice -
-in `crates/engine-core/src/baka_fighter_chrome.rs`, called every frame by the
+in `crates/engine-minigames/src/baka_fighter_chrome.rs`, called every frame by the
 Baka round chrome, and in `crates/engine-core/src/dance_tutorial.rs`, called by
 nothing - and the one bare call linked to both.
 
@@ -346,7 +346,7 @@ so a recurrence is recognisable rather than re-derived.
 | `801d0750` | `engine-core/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
 | `801e5b4c` | `engine-vm/src/world_map_overlay.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `baka_hub_actors::entry_list` calls it where retail's only `jal` sits. |
 | `801ead98` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
-| `801eca08` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-core/src/baka_cabinet.rs`'s same-named free function. |
+| `801eca08` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
 | `801ed710` | `engine-vm/src/world_map_overlay.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
 | `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/scus_core_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
 | `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |

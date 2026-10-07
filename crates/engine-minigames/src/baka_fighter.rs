@@ -35,7 +35,7 @@
 
 use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent, ROUND_WIN_TARGET};
 
-use crate::levelup::BiosRand;
+use legaia_engine_vm::bios_rand::BiosRand;
 
 /// Starting HP each round (`FUN_801d1744` round seed: `DAT_801dbfc4 = 0xc80`).
 pub const HP_START: i32 = 0xC80;
@@ -578,9 +578,9 @@ pub struct BakaFight {
     roster_clips: Option<std::sync::Arc<Vec<ClipHeaders>>>,
     /// Each seat's display clip (actor `+0x5C` / `+0x68`), stepped every
     /// tick by [`Self::tick_presentation`].
-    motion: [crate::baka_duel_scene::FighterMotion; 2],
+    motion: [crate::baka_duel::FighterMotion; 2],
     /// The arena camera.
-    camera: crate::baka_duel_scene::DuelCamera,
+    camera: crate::baka_duel::DuelCamera,
     /// Each seat's roster `+0x44` stand-off (`0` for a bare-config fight).
     stand_off: [i32; 2],
     /// Each seat's Z off the duel line (the result close-up's step).
@@ -832,18 +832,18 @@ impl BakaFight {
         self.rate_divisor
     }
 
-    /// A seat's display clip ([`crate::baka_duel_scene::FighterMotion`]).
-    pub fn motion(&self, slot: usize) -> crate::baka_duel_scene::FighterMotion {
+    /// A seat's display clip ([`crate::baka_duel::FighterMotion`]).
+    pub fn motion(&self, slot: usize) -> crate::baka_duel::FighterMotion {
         self.motion[slot & 1]
     }
 
     /// The arena camera.
-    pub fn duel_camera(&self) -> &crate::baka_duel_scene::DuelCamera {
+    pub fn duel_camera(&self) -> &crate::baka_duel::DuelCamera {
         &self.camera
     }
 
     /// Stage the player's special-commit camera glides
-    /// ([`crate::baka_duel_scene::parse_special_cameras`]). Without them a
+    /// ([`crate::baka_duel::parse_special_cameras`]). Without them a
     /// player special leaves the camera where it is.
     pub fn with_special_cameras(mut self, rows: Vec<[i16; 20]>) -> Self {
         self.special_cameras = rows;
@@ -913,7 +913,7 @@ impl BakaFight {
             let record = if slot == 0 {
                 self.special_cameras.get(self.cfg[0].roster_id).copied()
             } else {
-                Some(crate::baka_duel_scene::OPPONENT_SPECIAL_GLIDE)
+                Some(crate::baka_duel::OPPONENT_SPECIAL_GLIDE)
             };
             if let Some(r) = record {
                 self.camera.arm_glide(&r);
@@ -1612,11 +1612,11 @@ impl BakaFight {
     /// The fighters' display clips and the arena camera, one frame: what the
     /// combat tick's clip store / idle reset and the clip selector do to each
     /// fighter actor (`FUN_801D3F44`, `FUN_800204F8`), and the camera spin /
-    /// glide ([`crate::baka_duel_scene::DuelCamera`]). Nothing here feeds the
+    /// glide ([`crate::baka_duel::DuelCamera`]). Nothing here feeds the
     /// rules - the exchange books off the [`StrikeClock`].
     fn tick_presentation(&mut self, frame_step: i32) {
         use crate::baka_cabinet::{ST_CHOICE, ST_CHOICE_SECRET, ST_TALLY_OUT};
-        use crate::baka_duel_scene::MOTION_WIN;
+        use crate::baka_duel::MOTION_WIN;
         let st = self.cabinet.state();
         if crate::baka_cabinet::front_end(st) {
             // State `0x0A` writes the select camera (`0x801CF8F4..0x801CF924`)
@@ -1642,8 +1642,8 @@ impl BakaFight {
             self.camera.result_close_up(st == ST_CHOICE_SECRET);
             self.motion[0].play(MOTION_WIN, true);
             self.motion[0].pinned = true;
-            if self.cfg[0].roster_id == crate::baka_duel_scene::RESULT_STEP_FIGHTER {
-                self.stand_z[0] += crate::baka_duel_scene::RESULT_STEP_Z;
+            if self.cfg[0].roster_id == crate::baka_duel::RESULT_STEP_FIGHTER {
+                self.stand_z[0] += crate::baka_duel::RESULT_STEP_Z;
             }
         }
         if std::mem::take(&mut self.setup_pending)
@@ -1822,9 +1822,9 @@ impl BakaFight {
                 // landed, held on its last frame (`0x801D3C60..0x801D3CA0`).
                 self.motion[l].play(
                     if special_round_win {
-                        crate::baka_duel_scene::MOTION_KNOCKDOWN
+                        crate::baka_duel::MOTION_KNOCKDOWN
                     } else {
-                        crate::baka_duel_scene::MOTION_HIT
+                        crate::baka_duel::MOTION_HIT
                     },
                     true,
                 );
@@ -1881,7 +1881,7 @@ impl BakaFight {
                 let (d0, c0, _) = self.apply_damage(0);
                 let (d1, c1, _) = self.apply_damage(1);
                 for m in &mut self.motion {
-                    m.play(crate::baka_duel_scene::MOTION_HIT, true);
+                    m.play(crate::baka_duel::MOTION_HIT, true);
                 }
                 self.f[0].combo = 0;
                 self.f[1].combo = 0;
@@ -2409,7 +2409,7 @@ pub struct EffectSpawnSpec {
 /// `(0xA0, 0x78)` through the shared part-spawn API `FUN_80021B04` at scale
 /// `0x1000`, then stamps `sprite_id` into the spawned part's `+0x50`. The
 /// dance overlay's cell-placed twin is `FUN_801d3fd0`
-/// ([`crate::dance::step_mark_effect_spawn`]).
+/// (`legaia_engine_core::dance::step_mark_effect_spawn`).
 pub fn center_effect_spawn(sprite_id: u16) -> EffectSpawnSpec {
     EffectSpawnSpec {
         x: 0xA0,

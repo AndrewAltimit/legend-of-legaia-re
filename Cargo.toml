@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-core", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-core", "crates/engine-minigames", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -38,6 +38,7 @@ legaia-cheats = { path = "crates/cheats", default-features = false }
 legaia-engine-audio = { path = "crates/engine-audio", default-features = false }
 legaia-engine-battle = { path = "crates/engine-battle" }
 legaia-engine-core = { path = "crates/engine-core" }
+legaia-engine-minigames = { path = "crates/engine-minigames" }
 legaia-engine-render = { path = "crates/engine-render" }
 legaia-engine-session = { path = "crates/engine-session" }
 legaia-engine-screens = { path = "crates/engine-screens" }

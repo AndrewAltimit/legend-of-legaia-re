@@ -31,7 +31,7 @@
 //! ## Why this is not `world::ambient`
 //!
 //! The field's ambient part runtime
-//! ([`crate::world::World::spawn_ambient_record_at`]) seats records out of
+//! (`legaia_engine_core::world::World::spawn_ambient_record_at`) seats records out of
 //! the **scene's** prescript stager table (`World::props.stagers`) and
 //! flushes bytecode self-writes back into that bundle. These templates are
 //! not in any stager table - `FUN_801D4DF8` passes their rodata addresses

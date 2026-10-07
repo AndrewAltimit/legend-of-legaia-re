@@ -2458,6 +2458,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-shell",
     REPO / "crates" / "engine-render",
     REPO / "crates" / "engine-core",
+    REPO / "crates" / "engine-minigames",
     REPO / "crates" / "engine-ui",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "web-viewer",
@@ -3291,6 +3292,7 @@ HOTKEY_SOURCES = [
 # browser hosts share, and the browser hosts themselves.
 SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
+    REPO / "crates" / "engine-minigames" / "src",
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
     REPO / "crates" / "web-viewer" / "src",
@@ -4044,6 +4046,7 @@ def _selftest_frame_case(
 ENGINE_API_CRATES = (
     "engine-core",
     "engine-battle",
+    "engine-minigames",
     "engine-vm",
     "engine-ui",
     "engine-audio",

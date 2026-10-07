@@ -1,6 +1,6 @@
 //! Two small simulation kernels of the PROT 0977 `other_game` overlay - the
 //! mode-24 sub-id-5 **arena door/init slot** whose contest settlement is
-//! [`crate::muscle_dome::settle_contest`].
+//! `legaia_engine_core::muscle_dome::settle_contest`.
 //!
 //! The overlay's per-frame update drives a set of counters, scales each
 //! frame's step through [`step_scale`], and keys one rotating SPU voice
@@ -17,19 +17,19 @@
 //! rolls four pending lanes into their sinks, one [`step_scale`] step per
 //! lane per frame with an [`arena_voice_cue`] blip per step.
 //!
-//! The lanes are [`crate::muscle_dome::LegScoreRows`], and they do not all
+//! The lanes are `legaia_engine_core::muscle_dome::LegScoreRows`, and they do not all
 //! mean the same thing. Three of them - `round * 2`, `min(turns, 8)` and
 //! the outcome-table cell, each scaled `× max_hp / 100` - drain into the
 //! **same** accumulator `DAT_801D1AC8`, which the hub's restore state then
 //! adds to the fighter's HP: they are between-leg healing, not score. Only
 //! the fourth, the `(course, round)` score-table cell, drains into the
-//! running tally `_DAT_80084440` that [`crate::muscle_dome::settle_contest`]
+//! running tally `_DAT_80084440` that `legaia_engine_core::muscle_dome::settle_contest`
 //! settles into casino coins.
 //!
 //! So the scoring and the healing are one mechanism, which is why a dome
 //! contest costs no permanent HP. The values are computed by
-//! [`crate::muscle_dome::leg_score_rows`] and carried by
-//! [`crate::muscle_dome::DomeContest`]; the screen's geometry is
+//! `legaia_engine_core::muscle_dome::leg_score_rows` and carried by
+//! `legaia_engine_core::muscle_dome::DomeContest`; the screen's geometry is
 //! `other_game_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
 //!
 //! # Wiring status is per item, not per module
@@ -157,7 +157,7 @@ pub struct VoiceAttrCue {
 /// volume the voice-attr primitive's last two arguments take.
 ///
 /// `_DAT_80084580` is the voice/SFX volume setting, cold-reset to `200` by
-/// `FUN_8001FFA4` (see [`crate::new_game::GAME_STATE_COLD_RESET`]) - **not** a
+/// `FUN_8001FFA4` (see `legaia_engine_core::new_game::GAME_STATE_COLD_RESET`) - **not** a
 /// party-block coordinate. The SCUS cue drainer `FUN_80016B6C` passes the very
 /// same `(_DAT_80084580 << 0xf) >> 0x10` expression into arguments 7 and 8 of
 /// the same primitive, which is what pins these two slots as `vol_l` / `vol_r`.
@@ -183,7 +183,7 @@ pub fn cue_volume(word: u32) -> i32 {
 /// masks with `3` only when picking the voice, so it is a free-running u32.
 ///
 /// Named `arena_voice_cue` rather than `sfx_cue` on purpose:
-/// `MenuInput::sfx_cue` in `crate::menu_input` already holds that name, and a
+/// `MenuInput::sfx_cue` in `legaia_engine_core::menu_input` already holds that name, and a
 /// free function sharing a name with anything else is never receiver-gated by
 /// the reachability pass - the collision would eventually manufacture a false
 /// live edge onto this inert port. See
@@ -206,7 +206,7 @@ pub fn cue_volume(word: u32) -> i32 {
 // per frame.
 // The tally screen's audible per-lane "ka-ching" is a different mechanism
 // anyway: the hub's INTERVAL arm pre-schedules four cue ids on the staggered
-// vsync countdown ([`crate::muscle_dome::HUB_TALLY_CUE_STAGGER`]).
+// vsync countdown (`legaia_engine_core::muscle_dome::HUB_TALLY_CUE_STAGGER`).
 pub fn arena_voice_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
     let voice = CUE_VOICE_BASE | (*counter & (CUE_VOICE_SLOTS - 1));
     let v = cue_volume(volume_word);
@@ -231,7 +231,7 @@ pub const TALLY_ROWS: usize = 6;
 
 /// A lane's fade counter must *exceed* this before the lane starts draining,
 /// and is reseeded to it on every draining frame
-/// ([`crate::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS`] is the `0x11` the
+/// (`legaia_engine_core::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS` is the `0x11` the
 /// `slti` compares against; this is the `0x10` the delay slot stores).
 pub const LANE_FADE_FULL: i32 = 0x10;
 
@@ -283,7 +283,7 @@ impl ScoreTallyRamp {
     /// Arm the roll from a finished leg's four lane values.
     ///
     /// The lane order is the drain order, which is
-    /// [`crate::muscle_dome::LegScoreRows`]'s own field order: `DAT_801D1ACC`
+    /// `legaia_engine_core::muscle_dome::LegScoreRows`'s own field order: `DAT_801D1ACC`
     /// takes the round lane and `DAT_801D1AD0` the turn lane. The arming
     /// routine computes them in the other order and stores the turn lane
     /// first, which reads as a swap until the two `lui` reloads in between
@@ -293,7 +293,7 @@ impl ScoreTallyRamp {
     ///
     /// PORT: FUN_801d1184 (the store pairing; the lane values are
     /// `muscle_dome::leg_score_rows`)
-    pub fn arm(rows: crate::muscle_dome::LegScoreRows) -> Self {
+    pub fn arm(rows: LegScoreRows) -> Self {
         Self {
             fade: [0; TALLY_LANES],
             pending: [
@@ -411,6 +411,39 @@ impl ScoreTallyRamp {
     }
 }
 
+/// The four count-up rows the between-leg screen rolls.
+///
+/// The first three are HP recovery, not score: they drain into the same
+/// accumulator `DAT_801D1AC8` that the restore state adds to the fighter's
+/// HP. Only [`Self::score_cell`] drains into the coin tally. That is what the
+/// six-row tally screen holds, and it is why the scoring and the healing are
+/// one mechanism rather than two.
+///
+/// PORT: FUN_801d1184 (the four lane values)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LegScoreRows {
+    /// `round * 2 * max_hp / 100` (`DAT_801D1ACC`).
+    pub round_lane: i32,
+    /// `min(turns_taken, 8) * max_hp / 100` (`DAT_801D1AD0`).
+    pub turns_lane: i32,
+    /// `LEG_OUTCOME_TABLE[min(outcome, 3)] * max_hp / 100` (`DAT_801D1AD4`).
+    pub outcome_lane: i32,
+    /// The `(course, round)` score cell (`DAT_801D1AAC`) - the only row that
+    /// is money.
+    pub score_cell: i32,
+}
+
+impl LegScoreRows {
+    /// The HP the restore state hands back: the three recovery lanes summed,
+    /// which is exactly what the tally screen accumulates into
+    /// `DAT_801D1AC8`.
+    ///
+    /// PORT: FUN_801cf074 (`0x801CF0DC` / `0x801CF150` / `0x801CF1C8`)
+    pub fn hp_restore(&self) -> i32 {
+        self.round_lane + self.turns_lane + self.outcome_lane
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,20 +520,8 @@ mod tests {
         assert_eq!(cue_volume(0xFFFE_0004), 2);
         assert_eq!(cue_volume(0xFFFF_0004), -32766);
     }
-
-    #[test]
-    fn the_boot_voice_volume_halves_to_one_hundred() {
-        // The word this reads is the voice-volume config `_DAT_80084580`,
-        // which the cold reset seeds at 200 - so a freshly booted game keys
-        // the arena cue at 100 per channel. This is what settles the slot as
-        // a volume rather than a coordinate.
-        let boot = crate::new_game::GAME_STATE_COLD_RESET.voice_volume;
-        assert_eq!(boot, 200);
-        assert_eq!(cue_volume(boot as u32), 100);
-    }
-
-    fn armed() -> (ScoreTallyRamp, crate::muscle_dome::LegScoreRows) {
-        let rows = crate::muscle_dome::LegScoreRows {
+    fn armed() -> (ScoreTallyRamp, LegScoreRows) {
+        let rows = LegScoreRows {
             round_lane: 40,
             turns_lane: 25,
             outcome_lane: 12,
@@ -598,7 +619,7 @@ mod tests {
 
     #[test]
     fn an_armed_roll_with_nothing_in_it_still_reports_done() {
-        let mut r = ScoreTallyRamp::arm(crate::muscle_dome::LegScoreRows::default());
+        let mut r = ScoreTallyRamp::arm(LegScoreRows::default());
         let (frames, cues, gain) = roll_out(&mut r);
         assert_eq!((cues, gain), (0, 0));
         // The first lane costs a whole lead-in plus the frame that carries it
@@ -637,7 +658,7 @@ mod tests {
 
     #[test]
     fn brightness_is_per_lane_and_doubles_the_screen_fade_at_the_clamp() {
-        let mut r = ScoreTallyRamp::arm(crate::muscle_dome::LegScoreRows::default());
+        let mut r = ScoreTallyRamp::arm(LegScoreRows::default());
         assert_eq!(
             r.row_brightness(0x80),
             [0; TALLY_ROWS],

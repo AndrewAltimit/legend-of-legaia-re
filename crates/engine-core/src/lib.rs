@@ -21,9 +21,6 @@ pub mod actor_handler;
 pub mod anim_cue;
 pub mod arts_command_input;
 pub mod baka_duel_scene;
-pub mod baka_fighter;
-pub mod baka_fighter_chrome;
-pub mod baka_impact_fx;
 pub mod battle_arts;
 pub mod battle_cam_inputs;
 pub mod battle_flow;
@@ -116,7 +113,6 @@ pub mod menu_open_sequence;
 pub mod menu_runtime;
 pub mod menu_validator;
 pub mod menu_widget;
-pub mod minigame_actor;
 pub mod minigame_entry;
 pub mod minigame_floor;
 pub mod minigame_fx;
@@ -134,7 +130,6 @@ pub mod new_game;
 pub mod npc_catalog;
 pub mod object_effect;
 pub mod options;
-pub mod other_game_overlay;
 pub mod overlay_loader;
 pub mod overworld_curvature;
 pub mod overworld_draw_order;
@@ -165,7 +160,6 @@ pub mod scus_leaf_kernels;
 pub mod sfx_cue;
 pub mod shop;
 pub mod shop_catalog;
-pub mod slot_machine;
 pub mod sound_state;
 pub mod spell_menu;
 pub mod spell_party_broadcast;
@@ -187,7 +181,6 @@ pub mod world_map_markers;
 pub mod float_tween;
 
 pub mod action_effect_script;
-pub mod baka_cabinet;
 pub mod camera_ease;
 pub mod casino_coin_bank;
 pub mod effect_default_arm;
@@ -582,3 +575,10 @@ pub use legaia_engine_vm::camera_rel_glide;
 pub mod field_save_screen_actor;
 pub mod morph_weight_apply;
 pub mod scene_transition_actor;
+
+// The minigame rules engines live in `legaia-engine-minigames`; re-exported
+// here so every host and test keeps its `legaia_engine_core::<module>` path.
+pub use legaia_engine_minigames::{
+    baka_cabinet, baka_fighter, baka_fighter_chrome, baka_impact_fx, minigame_actor,
+    other_game_overlay, slot_machine,
+};

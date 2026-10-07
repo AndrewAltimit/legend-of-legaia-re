@@ -26,7 +26,7 @@
 //!
 //! The cabinet reads the **packed** Legaia pad word (`_DAT_8007B874` edges,
 //! `_DAT_8007B850` held), not the raw PSX layout - see
-//! [`crate::retail_pad`] and the [`PACK_*`](crate::dev_menu::PACK_LEFT)
+//! `legaia_engine_core::retail_pad` and the [`PACK_*`](legaia_engine_vm::pad::PACK_LEFT)
 //! constants. That is what makes the cursor bits `0x8000` / `0x2000` the
 //! **left / right** d-pad on the horizontal screens and `0x1000` / `0x4000`
 //! **up / down** on the vertical ones, while `0xF0` is "any face button".

@@ -1144,7 +1144,7 @@ pub const IMPACT_Z_LIFT: i16 = 0x32;
 // `spawn_impact`, run by `tick_with_input` - the one duel tick the native
 // window, the browser play page and the minigames page all drive). The
 // spawns seat `crate::baka_impact_fx` parts, which the duel surface
-// (`crate::baka_duel_scene`) draws.
+// (`legaia_engine_core::baka_duel_scene`) draws.
 /// PORT: FUN_801d4df8 - the per-slot **impact effect pair**.
 ///
 /// Retail calls it on a decided exchange. It first zeroes the fighter's
@@ -1231,7 +1231,7 @@ pub const BLIT_SRC_Y_BASE: i16 = 0x80;
 pub const BLIT_DST_Y: i32 = 0x86;
 
 // Called from the duel surface's VRAM build
-// (`crate::baka_duel_scene::BakaDuelAssets::apply_wink`), for the row the
+// (`legaia_engine_core::baka_duel_scene::BakaDuelAssets::apply_wink`), for the row the
 // cameo's frame leaves showing ([`CameoPose::blit_index`]); the surface bumps
 // its generation when the row changes so each host re-uploads the edited
 // VRAM.
@@ -1512,7 +1512,7 @@ pub struct CameoPose {
 // Spawned by `BakaFight` at a round setup under a held Triangle (the host
 // hands the duel its packed held word through `BakaFight::set_held_pad`),
 // stepped per frame as `crate::baka_fighter::CameoActor`, and drawn by the
-// duel's 3D surface (`crate::baka_duel_scene`): stage model
+// duel's 3D surface (`legaia_engine_core::baka_duel_scene`): stage model
 // [`CAMEO_SCENE_MODEL`] posed by records `0x1B` / `0x1C` of the PROT 1203
 // clip bank in the camera-relative frame, with [`sprite_blit`]'s wink
 // applied to the surface's VRAM.
@@ -1793,7 +1793,7 @@ pub fn hud_digit_placements(round: i32, tally: Option<(i32, i32)>) -> Vec<(i32, 
 /// The quads sample the PROT 1203 art pages through the widget's own
 /// texpage / CLUT words, so a host draws them only while those pages are
 /// resident - which the duel VRAM makes them
-/// ([`crate::baka_duel_scene::BakaDuelSurface::hud_quads`]).
+/// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::hud_quads`).
 ///
 /// REF: FUN_801d5ed0, FUN_801cf388, FUN_801d59d4
 pub fn hud_widget_quads(

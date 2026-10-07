@@ -5,9 +5,9 @@
 //! # Why this exists as its own type
 //!
 //! Three minigames' draw kernels are written against *one* record shape, and
-//! the port had no equivalent for it. [`crate::dance::sprite_part_emit`],
-//! [`crate::dance::sprite_part_fade_weight`],
-//! [`crate::dance::dance_clip_driver_gate`] and
+//! the port had no equivalent for it. `legaia_engine_core::dance::sprite_part_emit`,
+//! `legaia_engine_core::dance::sprite_part_fade_weight`,
+//! `legaia_engine_core::dance::dance_clip_driver_gate` and
 //! [`crate::baka_fighter_chrome::afterimage_pass`] each take a handful of
 //! loose integers because that is all a caller could hand them; every one of
 //! those integers is a field of this record in retail, and the reason those
@@ -21,8 +21,8 @@
 //!
 //! # What this is *not*
 //!
-//! It is not the field actor. `crate::field_actor_program` ports the field
-//! overlay's actor program and `crate::world` holds the field actor list; this
+//! It is not the field actor. `legaia_engine_core::field_actor_program` ports the field
+//! overlay's actor program and `legaia_engine_core::world` holds the field actor list; this
 //! record is the **minigame** pool, which the hub overlays allocate out of
 //! their own arrays (`&DAT_801dbfac[slot * 0x50]` in the duel,
 //! `DAT_801d55cc`-relative in the dance hall) and which never enters the field
@@ -54,7 +54,7 @@ pub const FLAG_KILLED: u32 = 0x8;
 /// bit `0x200` into it (`FUN_801d1358`), and its spawn raises it on kind 0.
 pub const FLAG_PARTY_CLIP_BANK: u32 = 0x0100_0000;
 
-/// Beat / yaw value at or above which [`crate::dance::sprite_part_fade_weight`]
+/// Beat / yaw value at or above which `legaia_engine_core::dance::sprite_part_fade_weight`
 /// collapses the sprite weight to zero outright.
 pub const BEAT_FADE_CEILING: u16 = 0x4000;
 
@@ -66,7 +66,7 @@ pub const BEAT_FADE_CEILING: u16 = 0x4000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MinigameActor {
     /// `+0x10` - the actor flag word. [`FLAG_DRIVE_CLIP`] is the bit
-    /// [`crate::dance::dance_clip_driver_gate`] tests; [`FLAG_KILLED`] and
+    /// `legaia_engine_core::dance::dance_clip_driver_gate` tests; [`FLAG_KILLED`] and
     /// [`FLAG_PARTY_CLIP_BANK`] are the two other bits the minigame overlays
     /// write.
     pub flags: u32,
