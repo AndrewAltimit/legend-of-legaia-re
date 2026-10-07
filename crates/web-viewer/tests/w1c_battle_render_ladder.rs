@@ -28,9 +28,12 @@
 //! | 3 | curtain two-pass | the capture landing + `refresh_captured_page` chain (`FUN_801D1D9C`'s subtractive mid-pass decay and the no-clear display trail) |
 //! | 4 | target ring, pad-driven | a real forced encounter on the play page, walked into the target cursor with **D-pad Left** and cycled with Left/Right |
 //! | 5 | target ring, property | the ring builder + cursor step + the sweep-group aim, pinned against the disassembly's stated intent |
+//! | 6 | weapon trail, clip-seated | a second forced encounter on the play page, with Vahn's one trail clip (`+0x77 == 0x29`) committed through the page's staging probe and the page left to sweep, emit and compose |
 //!
 //! Rung 4 is the host rung: it is the browser play page, fed pad words, with
-//! every frame composed. Rungs 1-3 and 5 are *kernel* rungs - they call the
+//! every frame composed. Rung 6 is the page too, but **seated**: the clip is
+//! the driver's choice, everything downstream of it is the page's. Rungs 1-3
+//! and 5 are *kernel* rungs - they call the
 //! same library objects the page calls, with the selector's own output
 //! substituted for the formation id the page happens to fight. That
 //! distinction is stated rather than blurred because the reach report's whole
@@ -499,7 +502,7 @@ fn strip_glyphs(rt: &mut LegaiaRuntime) -> usize {
         .unwrap_or(0)
 }
 
-fn rung4_target_ring_pad_driven(rt: &mut LegaiaRuntime) -> Result<(), String> {
+fn enter_forced_battle(rt: &mut LegaiaRuntime) -> Result<(), String> {
     // A battle needs a **seeded party**, and on this page the seed is the
     // new-game entry, not `enter_field`: a plain field visit leaves the three
     // party records empty, every party actor fails the "can act" gate, and the
@@ -539,6 +542,11 @@ fn rung4_target_ring_pad_driven(rt: &mut LegaiaRuntime) -> Result<(), String> {
     if !in_battle {
         return Err("forced encounter never reached SceneMode::Battle".into());
     }
+    Ok(())
+}
+
+fn rung4_target_ring_pad_driven(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    enter_forced_battle(rt)?;
 
     // Left is the one direction that advances every command surface toward
     // the target cursor and then *cycles it*: the round prompt's `Begin` chip
@@ -629,6 +637,73 @@ fn rung4_target_ring_pad_driven(rt: &mut LegaiaRuntime) -> Result<(), String> {
         "[rung 4] enemy strip up for {cycles} frames (peak {peak_strip} glyphs); \
          {fx_prim_frames} composed frames carried in-battle screen prims"
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Rung 6 - the weapon trail, clip-seated
+// ---------------------------------------------------------------------------
+
+/// Vahn's art-bank anim id whose action entry carries clip identity `0x29`
+/// at `+0x77` - the one Vahn row of `FUN_8005112C`'s trigger ladder. Read
+/// off the disc's own art bank (record `0x2B - 0x10`, the Tri-Somersault
+/// clip); the rung re-checks it through the page's staging probe, which
+/// only answers `true` when the committed clip is that id.
+const VAHN_TRAIL_ANIM: u8 = 0x2B;
+
+/// Rung 6. The weapon trail (`FUN_8005112C` -> `FUN_80048310` ->
+/// `FUN_800485BC`) is keyed on the committed clip's `+0x77` identity byte,
+/// not on the move-power record: it fires only during four hand-picked
+/// swing clips. A starting-party fight's plain strike is none of them, so
+/// rung 4 composes the screen-FX pass with nothing in it.
+///
+/// This rung **seats** the clip - the page's `debug_stage_battle_anim`,
+/// which stages the id and commits it through the world's own anim-commit
+/// ladder (`FUN_8004AD80`) - and then lets the page tick and compose. The
+/// sweep, the band schedule and the band emitter all run on the page's own
+/// per-tick screen-prim cache; only the choice of clip is the driver's.
+/// The contrast is the same fight before the clip is seated, which must
+/// plan no trail.
+fn rung6_weapon_trail_seated(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    enter_forced_battle(rt)?;
+    let slots = rt.debug_battle_party_slots();
+    let Some(&lead) = slots.first() else {
+        return Err("the forced battle registered no party actor".into());
+    };
+    for _ in 0..30 {
+        let _ = rt.tick_frame();
+        if rt.debug_battle_weapon_trail_draw_count() != 0 {
+            return Err("a trail was planned before any trail clip was seated".into());
+        }
+    }
+    if !rt.debug_stage_battle_anim(lead, VAHN_TRAIL_ANIM) {
+        return Err(format!(
+            "staging anim {VAHN_TRAIL_ANIM:#x} on party slot {lead} did not commit that clip"
+        ));
+    }
+    let mut trail_frames = 0u32;
+    let mut composed = 0u32;
+    for _ in 0..60 {
+        let _ = rt.tick_frame();
+        if rt.debug_battle_weapon_trail_draw_count() > 0 {
+            trail_frames += 1;
+            if rt.play_screen_prim_count() > 0 {
+                composed += 1;
+                let _ = rt.play_screen_prim_vertex_bytes();
+                let _ = rt.play_screen_prim_indices();
+                let _ = rt.play_screen_prim_runs();
+            }
+        }
+    }
+    if trail_frames == 0 {
+        return Err("the seated trail clip never planned a weapon-trail sweep".into());
+    }
+    if composed == 0 {
+        return Err(format!(
+            "a sweep was planned on {trail_frames} frames but the page composed no screen prims"
+        ));
+    }
+    eprintln!("[rung 6] trail planned on {trail_frames} frames, composed on {composed}");
     Ok(())
 }
 
@@ -871,7 +946,7 @@ fn w1c_battle_render_ladder() {
     let mut score = 0u32;
     let mut fail: Option<(u32, &str, String)> = None;
     type Rung = Box<dyn Fn(&mut LegaiaRuntime, &ProtIndex) -> Result<(), String>>;
-    let rungs: [(&str, Rung); 5] = [
+    let rungs: [(&str, Rung); 6] = [
         (
             "selector-census",
             Box::new(|_rt, _ix| rung1_selector_census()),
@@ -892,6 +967,10 @@ fn w1c_battle_render_ladder() {
             "target-kernels",
             Box::new(|_rt, _ix| rung5_target_kernels()),
         ),
+        (
+            "weapon-trail-seated",
+            Box::new(|rt, _ix| rung6_weapon_trail_seated(rt)),
+        ),
     ];
     for (name, rung) in rungs {
         match rung(&mut rt, &index) {
@@ -905,7 +984,7 @@ fn w1c_battle_render_ladder() {
             }
         }
     }
-    eprintln!("w1c_battle_render_ladder: score {score}/5");
+    eprintln!("w1c_battle_render_ladder: score {score}/6");
     if let Some((n, name, why)) = fail {
         panic!("rung {n} ({name}): {why}");
     }

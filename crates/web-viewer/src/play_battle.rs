@@ -2620,6 +2620,35 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.mode == SceneMode::Battle)
     }
 
+    /// The battle actor slots of the party - an actor with a battle clip
+    /// player and no monster id, the same party test
+    /// `World::battle_weapon_trail_draws` makes. Empty outside battle.
+    pub fn debug_battle_party_slots(&self) -> Vec<usize> {
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        if host.world.mode != SceneMode::Battle {
+            return Vec::new();
+        }
+        host.world
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.battle_monster_id.is_none() && a.battle_animation.is_some())
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// How many weapon-trail draws (`World::battle_weapon_trail_draws`) the
+    /// live battle plans this frame - the count the page's screen-FX pass
+    /// hands to `legaia_engine_ui::battle_trail::weapon_trail_prims`.
+    pub fn debug_battle_weapon_trail_draw_count(&self) -> usize {
+        self.scene_host
+            .host()
+            .map(|h| h.world.battle_weapon_trail_draws().len())
+            .unwrap_or(0)
+    }
+
     /// Raise a system-flag-bank bit on the live world, the way a field-VM
     /// `0x5x` SET op does.
     ///
