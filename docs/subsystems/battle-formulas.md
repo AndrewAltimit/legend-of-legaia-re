@@ -512,7 +512,7 @@ the attack roll down (the party-defender elemental-guard ladder at
 resist stage and stays there), and `battle_formulas::arms_weapon_atk_fold`
 ports the equipment fold. `World::land_melee_hit` runs every physical
 hit - party and monster, swing and art - through both, once per hit event the
-anim tick admits: the attacker's `battle_attack` is the un-equipped base
+anim tick admits: the attacker's `battle.attack` is the un-equipped base
 (`seed_party_battle_stats` subtracts the equipment sum the menu aggregator
 adds) and the fold adds the halved slot for the committed command from
 `World::battle.equip_atk` (a committed art clip, `+0x1D9 > 0x10`, takes the
@@ -691,8 +691,8 @@ a monster's chosen move id resolves to a power record, `cast_spell_on_slots`
 overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
 that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
 The stat bridge reads live actor fields faithfully - INT (the `+0x168` stat,
-record `+0x18`) from `battle_accuracy`, HP from `battle.hp`, the two defender defense terms from the
-`battle_defense_split` (UDF/LDF) pair - and takes the `rand()` draws in retail
+record `+0x18`) from `battle.accuracy`, HP from `battle.hp`, the two defender defense terms from the
+`battle.defense_split` (UDF/LDF) pair - and takes the `rand()` draws in retail
 call order: attacker ×2 + defender ×1 up front, then the bonus pair **lazily**
 (only when the bonus arm fires, via `arts_physical_predamage_lazy`), so the
 shared RNG cursor advances by three or five draws exactly as `FUN_801dd0ac` does.
@@ -713,7 +713,7 @@ belongs to neither branch: it runs the melee kernel `FUN_801EC3E4`
 (`World::player_summon_predamage`): when the spell's namesake summon creature
 resolves, `cast_spell_on_slots` replaces the MP-scaled placeholder with `summon_predamage_lazy` seeded faithfully - summon-body
 HP/INT from the creature's `battle_data` record (the stats the loader installs
-on the freshly-spawned slot-7 actor; INT = record `+0x18`), the caster's `battle_accuracy` (`+0x168`)
+on the freshly-spawned slot-7 actor; INT = record `+0x18`), the caster's `battle.accuracy` (`+0x168`)
 doubled, the affinity percent inside the roll, and the caster's per-spell
 **magic-power byte** searched the way `FUN_801dd864` does (the character
 record's 32-entry spell-id list at `+0x13D` with parallel level bytes at
@@ -1269,8 +1269,8 @@ while the queued Item action is still owed a turn. Retail's "Miss" on a normal a
 **Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; the
 `battle_session` resolver still applies it per strike. `World::apply_basic_attack`
 **does not** - it used to, and the consequence was a fight running backwards.
-Each actor's `+0x168` value lives in the World-side `battle_accuracy` /
-`battle_evasion` arrays, and the two sides are seeded from different stats:
+Each actor's `+0x168` value lives in the World-side `battle.accuracy` /
+`battle.evasion` arrays, and the two sides are seeded from different stats:
 party slots from each character's AGL-derived `acc`/`eva` (via
 `compute_battle_stats` in `seed_party_battle_stats`), monster slots from
 `MonsterDef::accuracy`/`evasion` (both = the monster's INT, record `+0x18`). A
@@ -1288,15 +1288,16 @@ These cases multiply the actor stat block by `6/5` (decompiles to `0x4cccccccd >
 **Engine wiring.** `battle_formulas::buff_ramp` ports the `×6/5`-clamped ramp, and the
 live battle loop applies it for **stat-up** buffs: `World::apply_battle_buff` routes a
 positive-magnitude `Buff` outcome through `ramp_buff_scalar`, which ramps the live
-per-slot scalar (`battle_attack` / `battle_magic` / `battle_defense`) by +20% of its
+per-slot scalar (`battle.attack` / `battle.magic` / `battle.defense`) by +20% of its
 current value and records the exact `u16` delta for precise revert on expiry (a refresh
 reverts the old delta first, so the ramp re-applies from the base with no compounding).
 Buffs consume **no RNG**, so determinism oracles are unaffected. **Debuffs** (negative
 magnitude) keep the saturating additive model: retail's only stat debuffs are the
 Seru-magic
 [side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
-(a per-hit `stat * pct / 100` shave, pinned), which the live loop does not yet apply -
-the engine does not fabricate a factor for its own buff model. Accuracy / Evasion /
+(a per-hit `stat * pct / 100` shave, pinned), which the live loop applies on its own
+path - `World::apply_seru_side_effect` on each damaging summon hit, through
+`engine-vm::seru_side_effect::apply_hit` - so the buff model fabricates no factor for it. Accuracy / Evasion /
 Speed have no live-loop scalar,
 so a buff on them only runs the turn timer.
 

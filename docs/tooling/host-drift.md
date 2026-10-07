@@ -57,8 +57,8 @@ checks (`check-dump-stat-drift.py`, `check-dump-base-integrity.py`,
 
 Every tier below reads sources. Every cargo gate beside them - `cargo fmt`,
 `cargo clippy --all-targets --workspace`, `cargo test`, `cargo build` - builds
-for the **host** triple, and about eighty files under `crates/web-viewer/`
-carry `#[cfg(target_arch = "wasm32")]` blocks that none of those four ever
+for the **host** triple, so the `#[cfg(target_arch = "wasm32")]` blocks that
+run through much of `crates/web-viewer/` are code none of those four ever
 sees. A page feature written inside one can name a private field, a moved
 method or a deleted type and stay green through the whole ladder; the first
 thing that compiles it is a wasm build, which is where one was found.
@@ -2384,9 +2384,10 @@ native overlay already drew inside the scene render pass with the depth
 attachment bound, and maps the depth through the scene's reversed-Z remap
 (`1 - z`); the page's pass draws into the default framebuffer the 3D pass
 just filled and puts the depth straight into `gl_Position.z`, the value its
-3D shader produces from the same matrix. The overworld fog sheets take the
-same channel (`fog_puff_prim`'s depth, flat at the sheet's ordering-table
-bucket), since retail links them into the ordering table with the continent;
+3D shader produces from the same matrix. The fog sheets take the same
+channel on the field and the overworld alike (`fog_puff_prim`'s depth: the
+particle's own on the field, flat at the sheet's ordering-table bucket on the
+overworld), since retail links them into the ordering table the meshes sort into;
 the continent's cells draw at their own buckets' depths on both hosts, from
 one kernel (`legaia_engine_core::overworld_draw_order`, see
 [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)).
@@ -2397,7 +2398,7 @@ depth sat six times too near until `World::field_fx_view` scaled it. Every other
 plane, so it passes against any scene depth as before. Pinned by
 `screen_prim`'s `only_a_depth_carrying_quad_is_depth_tested`,
 `world_map_markers`' `walk_camera_quads_carry_scene_depth` and
-`fog_particles`' `only_overworld_sheets_carry_a_scene_depth`.
+`fog_particles`' `field_and_overworld_sheets_carry_a_scene_depth`.
 
 ### An overworld label enters the world map on both hosts
 

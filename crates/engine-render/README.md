@@ -184,13 +184,13 @@ shadow pass (`set_dyn_shadows`, default on; `--no-dyn-shadows` / the `Y`
 key). The full model is on
 [renderer.md](../../docs/subsystems/renderer.md#enhanced-lighting-enhancement-default-on).
 
-## Opt-in camera-occlusion fade (enhancement, NOT retail)
+## Camera-occlusion fade (enhancement, NOT retail)
 
 `Renderer::set_occlusion_fade(true)` plus a per-frame
-`Renderer::set_occlusion_focus(player_clip_pos, strength, proj_scale_y)`
+`Renderer::set_occlusion_focus(clip_pos, feet_clip, strength, proj_scale_y)`
 dissolve scene fragments that sit between the camera and the player to a
 4x4-Bayer screen-door, so the character reads through walls / roofs. **Off
-by default, and off IS retail** - the disabled path is pixel-identical
+by default in the renderer, and off IS retail** - the disabled path is pixel-identical
 (the WGSL `occl_keep` returns 1.0, which no Bayer threshold reaches).
 `strength` is the host's eased output of the **visibility gate**
 (`engine-core::field_occlusion`): a 5-point eye-to-player ray-cast against
@@ -201,7 +201,9 @@ only when its draw is environment geometry (the
 `flags[2]`), it is nearer the camera than the player by more than a small
 depth margin (16 units - hugging occluders still open, actors are
 protected by the watermark instead), and it lies inside a screen-space
-circle around the player's projected centre; the keep probability
+circle around the player's projected centre and above the line through the
+projected feet (`feet_clip`, `occlusion_fade::lift_factor` - the ground in
+front of the character and the foot of a wall never dissolve); the keep probability
 feathers from 1.0 at the rim to 0.25 at the centre, then blends toward
 identity by the strength. Implemented as a fragment `discard` in the
 opaque + semi-blend scene entries - no extra pipelines, depth writes

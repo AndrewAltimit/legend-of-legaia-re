@@ -2,10 +2,11 @@
 
 Top-level driver for the from-scratch engine reimplementation (Track 2). This
 is the crate that turns extracted-disc bytes into a running, rendered scene:
-it composes the per-crate primitives - `legaia-engine-core` (world / scene
-host / camera), `legaia-engine-render` (wgpu + software PSX VRAM), and
-`legaia-engine-audio` (SPU + SsAPI-shape sequencer) - into one `BootSession`
-the binary drives per frame, and ships the `legaia-engine` command-line tool.
+it runs the shared game session (`legaia-engine-session`'s `BootSession`)
+over the native outputs - `legaia-engine-render` (wgpu + software PSX VRAM)
+and `legaia-engine-audio`'s cpal mixer - draws the shop-family screens
+through `legaia-engine-screens`, and ships the `legaia-engine` command-line
+tool.
 
 End-user model: ship the engine, the user supplies the disc image. The
 `--disc <bin>` flag on most subcommands reads `PROT.DAT` + `CDNAME.TXT`
@@ -55,7 +56,7 @@ authoritative list; the broad groups are:
 | Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `config dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
 | Launch | *(no subcommand)* | First-run launcher: asks for the disc image once (native picker, drag-and-drop, typed path), remembers it, boots `play-window --boot-ui`. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
-| Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
+| Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s, `--party` the party's field forms as villager-shaped `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes `saves/slot_NN.bin` with the loaded scene as its resume point (LGSF `LGX5`), and Continue / Load re-enter that scene before hydrating the world, as retail does; a file without one loads onto the current scene. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
 | Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios`, `retail-compare` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay, the scenario-hash suite and the [retail comparison corpus](../../docs/tooling/retail-compare.md). |
 | Synthetic sessions | `battle`, `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |

@@ -12,6 +12,14 @@ layers:
 Engines push voice attributes / key-on masks / sample uploads through
 `AudioOut::with_spu(|spu| ...)`.
 
+Every output implements [`AudioSink`](src/sink.rs): the native `AudioOut`
+(cpal), the browser's `WebAudioOut` and the headless `TestAudioSink` all
+drive one `StreamResampler` mix core and differ only in how they lock it.
+The control surface (sequencer attach / swap / pause, XA streams, mute,
+mono, the SPU) is written once as provided methods over
+`AudioSink::with_core`, which is what lets `legaia-engine-session`'s
+director run unchanged on either play host.
+
 `AudioOut` also carries two output-side switches: `set_mono` (the retail
 options screen's Stereo/Monaural downmix) and `set_muted` - an engine-only
 master gate that zeroes the rendered frames while the sequencer, SPU
@@ -39,7 +47,8 @@ placed next to the real key transitions, **not** off `key_on_mask` - the
 sequencer's voice path keys voices on directly through `Voice`, so a hook on
 the mask API would miss every BGM note.
 
-The `note-trace` binary emits a track's timeline as canonical JSONL:
+The `note-trace` binary (behind the default-on `cli` feature) emits a
+track's timeline as canonical JSONL:
 
 ```bash
 note-trace --extracted extracted --list
@@ -123,7 +132,7 @@ through the frame scheduler, each asserted on the PCM that came out.
 `DEFAULT_INPUT_RATE = 22_050` - the rate Legaia's VAB samples run at,
 verified across several extracted banks.
 
-## Out of scope (first port pass)
+## Out of scope
 
 - **SPU-level pitch modulation, noise, FM.** None of these *hardware* voice
   modes are used by Legaia (verified against the libspu calls in the SCUS

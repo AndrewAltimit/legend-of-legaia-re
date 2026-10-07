@@ -19,16 +19,20 @@ instead of every raw entry.
   `legaia-xa` / `legaia-mdec` - the sub-asset parsers behind the entry
   inspector.
 - `legaia-patcher` + `legaia-iso` - the randomizer / disc patcher (see `rom_patcher` below).
-- `legaia-engine-core` / `-vm` / `-ui` / `-audio` (the last with
-  `audio-webaudio`) + `legaia-font` + `legaia-save` - the ported engine the
-  play page runs. Not a wrapper layer: these are the same crates the native
-  window links.
+- `legaia-engine-core` / `-vm` / `-ui` / `-session` / `-screens` /
+  `-audio` (the last with `audio-webaudio`) + `legaia-font` + `legaia-save` -
+  the ported engine the play page runs. Not a wrapper layer: these are the
+  same crates the native window links.
+- `legaia-art` / `legaia-gamedata` / `legaia-mednafen` - the arts tables, the
+  curated labels and the save-state reader behind the viewer pages.
 
 ## Playing the port in the browser (`runtime` + `play`)
 
-`LegaiaRuntime` is the engine, not a re-implementation of it: it owns a real
-`legaia_engine_core::scene::SceneHost` - the same host the native
-`legaia-engine play-window` drives - so the browser runs the ported field /
+`LegaiaRuntime` is the engine, not a re-implementation of it: it holds the
+native window's own session, `legaia_engine_session::BootSession`, over the
+page's audio output (`host_slot`), built with `BootSession::from_host` over
+the `SceneHost` `load_disc` assembles in memory - so the browser runs the
+ported field /
 event VM, the free-movement controller against the per-scene walkability grid,
 floor-height sampling, the NPC motion VMs, the interaction probe, and the
 inline-script dialogue runner. Drives `site/play.html`.
@@ -38,13 +42,15 @@ The split is deliberate:
 - **`runtime`** - the simulation. `load_disc` (user's own image, in memory, in
   their browser), `enter_field(name)`, `set_pad(mask)` (PSX pad word),
   `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
-  `tick_frame()` (returns the label of the scene a door just walked into, so the
-  page rebuilds around a transition), and `state_json()` (frame / mode / player
-  transform / live dialogue box). It also holds the port's seat at retail's
-  **mode table** (`engine-core::mode::ModeSeat`) and drives it through the same
-  entry points `BootSession` uses - reconciled once per frame, plus the two
-  INIT modes a host enters by hand (`MAIN INIT` at field entry, `CARD INIT` on
-  the pause-menu open). `mode_state_json()` reports the word, its table name,
+  `tick_frame()` (calls `BootSession::tick` - the native frame order - and
+  returns the label of the scene a door just walked into, so the page rebuilds
+  around a transition), and `state_json()` (frame / mode / player transform /
+  live dialogue box). The page tells the session what it does itself (the
+  pause menu, the field CD-XA lane, the per-tick queue drains; see the
+  [`engine-session` README](../engine-session/README.md)). The session holds
+  the port's seat at retail's **mode table** (`engine-core::mode::ModeSeat`),
+  reconciled once per frame, plus the two INIT modes a host enters by hand
+  (`MAIN INIT` at field entry, `CARD INIT` on the pause-menu open). `mode_state_json()` reports the word, its table name,
   the front-end entry word and the seat's edge count; the cross-host oracle is
   `engine-shell/tests/mode_seat_host_parity.rs`, which drives **both** hosts
   over one ladder and compares the chains and the edge counts.
@@ -359,16 +365,17 @@ are classified through the shared `classify_cue` into the page's scheduler.
 
 A field-VM op-`0x49` sub-0 merchant record opens the retail gold shop, and the
 post-battle level-up / Seru-capture banners draw over the live field. Both are
-the shared `legaia-engine-ui` builders (`shop_draws_for`, `level_up_draws_for`,
-`capture_banner_draws_for`) driven by the real
+the one composition the native window calls,
+`legaia_engine_screens::shop_overlay_frame`, driven by the real
 `legaia_engine_core::menu_runtime::MenuRuntime`; `play_shop_input` forwards pad
 edges and `play_overlay_draws_json` serves the quads.
 
-Retail's shop is five windows rather than one panel, so alongside the engine's
-interactive list the page paints the four **descriptor windows** that have
-painters - 33 vendor plate, 32 purse, 34 item info, 37 sell quantity - through
-the same `painter_at` renderer dispatch and the same disc-parsed rects the
-native `play-window` uses. They draw only when the menu-overlay window table
+Retail's shop is a set of descriptor windows rather than one panel, so the
+composition paints them - vendor plate, purse, item info, buy / sell
+quantity, sell detail, the equipment-buy recipient list - through the same
+`painter_at` renderer dispatch and the same disc-parsed rects on both hosts
+(the window list is on the
+[`engine-screens` README](../engine-screens/README.md)). They draw only when the menu-overlay window table
 parsed: a `renderer_va` is not something the pinned-rect fallback can invent,
 so without the real table the windows are absent rather than mislocated.
 `tests/shop_overlay_parity.rs` asserts content lands inside window 32's and
@@ -1197,13 +1204,18 @@ reference TIMs sitting in other PROT entries.
 | [`play_tile_board`](src/play_tile_board.rs) | Tile-board (op `0x49`) rendering on the play page. |
 | [`play_world_map_markers`](src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
 | [`play_frame_step`](src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
+| [`host_slot`](src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
+| [`play_lighting`](src/play_lighting.rs) / [`play_fog_volume`](src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
+| [`play_cheats`](src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-core::cheats`. |
+| [`audio_api`](src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |
 
 ## Build
 
 `wasm-bindgen` for the JS bindings; `wasm-pack` for packaging.
-`wasm-opt` is disabled in `Cargo.toml` to keep the build reproducible
-across environments without an emscripten install.
+`wasm-opt` runs strip-only (`--strip-debug --strip-producers`, set in
+`Cargo.toml`): a full `-O` pass costs far more build time than the few
+percent of gzipped size it saves.
 
 ```bash
 # Direct invocation:

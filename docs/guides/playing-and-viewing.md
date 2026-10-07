@@ -323,6 +323,10 @@ bank into the world's persistent pool, so they survive leaving and re-entering,
 and the prize-exchange rows come off the same overlay with retail availability
 gating. Background: [minigame-fishing.md](../subsystems/minigame-fishing.md).
 
+The site's separate **Minigames** page runs the slot machine, the dance, Baka
+Fighter, fishing and the Muscle Dome on their own, without a field scene
+underneath - the same engine sessions, read off the same disc.
+
 One HUD caveat that looks like a bug and is not: the fishing sprite page is the
 one asset in that chain nobody has decoded, so both hosts draw the HUD's digit
 and caption rows from the dialog font and skip its glyphs. The captions are

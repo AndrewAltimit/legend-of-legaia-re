@@ -135,7 +135,7 @@ Game-data, playing, and modding:
 
 | Binary | What it's for |
 |---|---|
-| `legaia-engine` | The from-scratch engine: play scenes, FMVs, record/replay - straight from your disc. |
+| `legaia-engine` | The from-scratch engine: play scenes, FMVs, record/replay, export scenes to `.glb` - straight from your disc. |
 | `asset-viewer` | Windowed browser for textures, meshes, audio banks, and scene demos. |
 | `legaia-patcher` | Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches. |
 | `save-tool` | PSX memory-card / save inspector: character records, save-block diffs. |
@@ -152,6 +152,7 @@ Reverse-engineering aids (useful once you go deeper):
 | `mdt` | Move-table (Tactical Arts) layout classifier. |
 | `art` | Tactical Arts tables: action constants, arts names, Super/Miracle Art triggers. |
 | `mednafen-state` | Mednafen save-state inspector: RAM diffs, VRAM dumps, SPU snapshots. |
+| `pcsxr-state` | PCSX-Redux save-state reader: scene, game mode and player position; RAM windows; VRAM. |
 
 ## Related docs
 

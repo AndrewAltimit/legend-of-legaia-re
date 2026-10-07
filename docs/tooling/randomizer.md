@@ -2043,7 +2043,7 @@ feature shipped with, and it read in game as the torso floating clear of
 the model; measured, it opened a 21.6 to 89.8 unit gap at every torso and
 pelvis joint of all nine sibling/host pairs, against the 1.8 to 2.4 units
 retail's own idles carry. Oracle:
-`crates/asset/tests/party_swap_idle_continuity_real.rs`.
+`crates/patcher/tests/party_swap_idle_continuity_real.rs`.
 
 The translation's two axes come from different references, because they
 answer different questions. **x / z from the torso** - the FK root the

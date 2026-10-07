@@ -216,7 +216,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/bytes`](crates/bytes/README.md) | - | Checked little-endian byte readers. The leaf under the format stack, but **not** yet universal: only `legaia-asset` and `legaia-engine-core` depend on it - the older per-format crates hand-roll their reads. |
+| [`crates/bytes`](crates/bytes/README.md) | - | Checked little-endian byte readers. The leaf under the format stack, but **not** yet universal: only `legaia-asset`, `legaia-engine-core` and `legaia-patcher` depend on it - the older per-format crates hand-roll their reads. |
 | [`crates/iso`](crates/iso/README.md) | `disc-extract` | PSX Mode2/2352 disc reader, ISO9660 walker, **sector write-back** (`write` module: EDC/ECC re-encode + `patch_file_logical`; `iso9660::find_file_in_image`). |
 | [`crates/prot`](crates/prot/README.md) | `prot-extract` | PROT.DAT / DMY.DAT TOC, CDNAME map, standalone TIM-pack. |
 | [`crates/lzs`](crates/lzs/README.md) | `lzs-decode` | Legaia LZS decoder (reversed from `FUN_8001a55c`) + `compress` re-packer (greedy LZSS the retail decoder accepts; for editing assets). |
@@ -273,7 +273,7 @@ cargo clippy --all-targets --workspace -- -D warnings    # CI gate (warnings = f
 cargo test --workspace --profile release-test           # CI's test profile: release opt-level, no LTO
 cargo test -p legaia-asset                               # single-crate
 cargo test --workspace test_name                         # single test by name
-cargo test -p legaia-engine-core --test integration foo::  # one tests/foo.rs (each crate's tests/*.rs build as one `integration` binary)
+cargo test -p legaia-engine-core --test integration foo::  # one tests/foo.rs (a crate with several tests/*.rs builds them as one `integration` binary)
 ```
 
 Top-level pipeline (recommended for end-to-end runs):

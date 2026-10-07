@@ -15,7 +15,7 @@ current directory); the rest take explicit file paths. `field` and
 ```bash
 asset-viewer tim   <input.tim> [--offset H] [--clut N]
 asset-viewer save-icons <PROT_899> [--tile N] [--scale N]  # save-slot portraits
-asset-viewer tmd   <input> [--shape character] [--sort-by-size] [--bundle battle]
+asset-viewer tmd   <input> [--shape character] [--sort-by-size] [--bundle battle] [--scene <CDNAME>]
 asset-viewer stage <PATH>                       # wireframe stage geometry
 asset-viewer vab   <PROT_entry> --offset <H> --sample <N>
 asset-viewer seq   <file.seq> <file.vab> [--vab-offset H] [--looped]
@@ -44,10 +44,11 @@ through the retail texture blend and depth cue, with no light source.
 
 Useful flags:
 
-- `--bundle battle` - overlay the empirically-tuned extraction 865–890 `tim_scan` set traced from
-  `FUN_800520f0`. Field/town/level_up bundles live in uncaptured
-  overlays, so for those you may need `--vram-extra-dir` until the
-  runtime asset chain is fully traced.
+- `--bundle battle` - overlay the empirically-tuned extraction 865–890
+  `tim_scan` set traced from `FUN_800520f0` (battle / `level_up` /
+  `monster_se` meshes share its character-body palettes).
+- `--scene <CDNAME>` - overlay the `tim_scan` dirs of every PROT entry in
+  that CDNAME block, the set the field / town loader co-loads for a scene.
 - `--vram-extra-dir <dir>` - workaround for character meshes whose CLUT
   rows live in *different* PROT entries from their TMD source.
 - `--no-textures` (alias `--flat-shaded`) - skip the VRAM path entirely

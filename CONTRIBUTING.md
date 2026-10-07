@@ -13,7 +13,7 @@ Two tracks share one Cargo workspace:
 
 The end-user model is: ship the engine, the user supplies their own disc image, the engine extracts and runs it.
 
-Faithfulness to retail is the baseline for game logic and simulation. That does not make this a strict 1:1 remake - the engine also carries an enhancement layer (dynamic lighting, precise movement, alternate cameras, VR), and the randomizer and translation toolchains are deliberate, shipped features. The rule those follow is that enhancements are **opt-in and off by default**, so the faithful behaviour stays available and the parity oracles keep passing. [`docs/subsystems/engine.md`](docs/subsystems/engine.md) is the authority on where the port boundaries sit.
+Retail behaviour is the measured ground truth for game logic and simulation. That does not make this a strict 1:1 remake - the engine also carries an enhancement layer (enhanced lighting, volumetric fog, the camera-occlusion fade, precise movement, alternate cameras, VR), and the randomizer and translation toolchains are deliberate, shipped features. The rule enhancements follow: they may ship **enabled by default** where they are clearly the better experience, but each is a toggle, and with it off the faithful mode stays bit-identical - so retail is always one switch away and the parity oracles keep passing. [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements) is the authority on where the port boundaries sit and what each knob defaults to.
 
 ## The one hard rule: no Sony bytes
 
@@ -43,8 +43,10 @@ CI is strict - warnings are failures. Run these before you push:
 ```bash
 cargo fmt --all -- --check
 cargo clippy --all-targets --workspace -- -D warnings
-cargo test --workspace --release
+cargo test --workspace --profile release-test
 ```
+
+`release-test` is CI's test profile: `release`'s optimisation level without LTO, so a relink after a small change stays fast. To run one test file, select it by module path inside the crate's single `integration` test binary: `cargo test -p legaia-engine-core --profile release-test --test integration foo::`.
 
 **Run them yourself.** The full CI job triggers on push-to-main and manual dispatch, not on pull-request events, so opening a PR does not automatically prove your branch is green.
 
@@ -55,20 +57,22 @@ cargo build --release --workspace
 cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer
 ```
 
+The port ships three hosts on one engine - the native `play-window`, the browser play page, and the minigames page - so a feature wired into one host is invisible in a diff of the others. [`docs/tooling/host-drift.md`](docs/tooling/host-drift.md) covers the gates that catch that.
+
 ### What the pre-commit hook actually runs
 
-The hook is scoped to what you staged, so a docs-only commit doesn't pay for a clippy run:
+The hook is scoped to what you staged, so a docs-only commit doesn't pay for a clippy run. The broad shape (the [hook itself](scripts/git-hooks/pre-commit) is the authority, and documents why each gate exists):
 
-| Staged | Gate |
+| Staged | Gates |
 |---|---|
-| any docs | `check-doc-density.py --staged` (legibility linter) |
-| any docs | `check-md-links.py --staged` (intra-repo links + heading anchors) |
-| `site/` | `check-site-links.py` (internal links + anchors) |
+| any docs | `check-doc-density.py --staged` (legibility linter), `check-md-links.py --staged` (intra-repo links + heading anchors) |
+| `site/` | internal links + anchors, CSS cascade order, the JS syntax / case-fold / play-page state checks, generated-page freshness |
 | `scripts/vrc-diorama/` | `codegen.py --check` (generated register drift) |
-| `Cargo.toml`, `Cargo.lock`, `crates/`, `rust-toolchain*`, `.cargo/` | `cargo fmt --check`, then `cargo clippy -D warnings` |
-| engine-crate Rust | `check-port-tags.py` (warn-only, never blocks) |
+| every commit | shell observer traps, integration-test declarations, and the disc-coverage / byte-accounting / dump-integrity / port-catalog ratchets (each self-skips when its gitignored input is absent) |
+| `Cargo.toml`, `Cargo.lock`, `crates/`, `rust-toolchain*`, `.cargo/` | `cargo fmt --check`, `cargo clippy -D warnings`, UI host drift, trait-override symmetry, `check-port-tags.py` (warn-only) |
+| the wasm-sensitive crates | the wasm32 type-check (`scripts/ci/check-wasm-target.sh`) |
 
-Two things to know: a `cargo fmt` failure is **auto-fixed** - the hook runs `cargo fmt --all` and re-stages the `.rs` files it had staged, then asks you to review. And the hook does **not** run the test suite; that's the manual `cargo test --workspace --release` above.
+Two things to know: a `cargo fmt` failure is **auto-fixed** - the hook runs `cargo fmt --all` and re-stages the `.rs` files it had staged, then asks you to review. And the hook does **not** run the test suite; that's the manual `cargo test --workspace --profile release-test` above.
 
 Set `LEGAIA_SKIP_PRECOMMIT=1` to bypass in an emergency.
 
@@ -90,7 +94,7 @@ python3 scripts/ci/check-md-links.py
 Tests that touch a real disc read `LEGAIA_DISC_BIN`:
 
 ```bash
-LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --release
+LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --profile release-test
 ```
 
 With it unset, they **skip and pass**. That's deliberate - it's what lets CI run without disc data - so don't "fix" a skipping test by removing the gate. Find them with `grep -rl LEGAIA_DISC_BIN crates/*/tests`.
@@ -103,13 +107,17 @@ If you're adding one, follow the shape of its neighbours: a disc round-trip orac
 
 Read the relevant [`docs/formats/`](docs/formats/overview.md) page before writing a parser - don't infer the layout from the data alone. Several of these formats look like their standard PSX counterparts and aren't.
 
+Port and document from the **disassembly**, not the decompiled C: the C is a rendering, and its artifacts (label-calls, dropped register arguments, reordered stores) have each put a false claim into these docs before. [`docs/tooling/ghidra.md`](docs/tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims) lists them.
+
 Findings need provenance. Cite the function dump (`see ghidra/scripts/funcs/<addr>.txt`) or the entry (`FUN_801XXXXXX in PROT entry NNNN_<name>`). If you pin something notable, add it to [`docs/reference/functions.md`](docs/reference/functions.md).
 
-[`CLAUDE.md`](CLAUDE.md) has a "Cross-cutting facts that catch people out" section covering the traps that recur - the MIPS LUI+ADDIU pairs Ghidra won't resolve, the CDNAME +2 index shift, why "LZS decompresses without error" proves nothing, and the three distinct pack formats. Skim it before chasing a "why is X broken" thread. [`docs/reference/open-rev-eng-threads.md`](docs/reference/open-rev-eng-threads.md) tracks open questions *and* falsified hypotheses - check it so you don't re-walk a dead end.
+[`CLAUDE.md`](CLAUDE.md) has a "Cross-cutting facts that catch people out" section covering the traps that recur - the MIPS LUI+ADDIU pairs Ghidra won't resolve, the CDNAME +2 index shift, why "LZS decompresses without error" proves nothing, and the one pack format with two readers. Skim it before chasing a "why is X broken" thread. [`docs/reference/open-rev-eng-threads.md`](docs/reference/open-rev-eng-threads.md) tracks the open questions, [`re-settled-threads.md`](docs/reference/re-settled-threads.md) the answered ones with their evidence grade, and [`re-do-not-re-walk.md`](docs/reference/re-do-not-re-walk.md) the falsified hypotheses - check the last so you don't re-walk a dead end.
 
 ## Code conventions
 
-- Crate naming: package `legaia-foo`, lib `legaia_foo`. Internal deps go through workspace path entries.
+- Crate naming: package `legaia-foo`, lib `legaia_foo`. Every dependency, internal or external, is declared once in the root `[workspace.dependencies]` and taken as `foo.workspace = true` - never a per-crate `path =` or version pin.
+- A crate's command-line binary sits behind its default-on `cli` feature (`required-features = ["cli"]`, with `clap` optional), so library builds and the wasm bundle stay free of CLI dependencies.
+- A crate's integration tests build as one binary: `tests/foo.rs` is a `mod foo;` of `tests/integration.rs`, and a file without that line is never compiled (`check-integration-tests.py` fails the commit).
 - Prefer a new subcommand on an existing per-crate binary over a new binary, unless the tool genuinely spans crates. The pattern is `clap` derive plus a subcommand enum at the top of `bin/<name>.rs`.
 - Tag ported functions with `// PORT: FUN_<addr>` and cross-references with `// REF: FUN_<addr>`. The [port catalog](docs/tooling/port-catalog.md) reads these.
 

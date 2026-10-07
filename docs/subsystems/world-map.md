@@ -1072,7 +1072,7 @@ tagged via `World::battle.return_mode` to return to the overworld rather than
 the field.
 
 Each entity carries an optional per-entity role
-(`World::WorldMapEntityConfig`, paired by index with the SM list and installed
+(`engine-core::world::WorldMapEntityConfig`, paired by index with the SM list and installed
 via `install_world_map_entities_with_configs`):
 
 - `EncounterZone { formation_id }` - the entity spawns its own formation when
@@ -1081,7 +1081,7 @@ via `install_world_map_entities_with_configs`):
   (`World::engage_world_map_entity`, the from-scratch stand-in for retail's
   player-position-in-zone trigger) drives the SM to its transition state, whose
   arm arms the **mode-24 minigame door warp** (`World::arm_minigame_warp` +
-  `pending_minigame_warp`) exactly as the field-VM `0x3E` arm and the walk-touch
+  `World::minigames.pending_warp`) exactly as the field-VM `0x3E` arm and the walk-touch
   arm do. `sub_id` is `op0 - 100` off a partition-1 actor's genuine `0x3E`, a
   *code-overlay* selector - never a map id, and never a scene transition. On the
   three overworld scenes the disc's only such placements are the `map02` /

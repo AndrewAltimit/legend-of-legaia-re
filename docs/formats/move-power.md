@@ -586,7 +586,7 @@ carry no move id and stay on the generic impact path.)
 A spawn also surfaces the move's two presentation fields for the render / audio
 layers: the **trail texpage** (`+0x0b` → `0x7700 + id`) on
 `World::active_move_fx_trail_texpage()` (the 2D afterimage streak draw
-`FUN_801e1ab0` is ported as `legaia_engine_render::afterimage::build_afterimage_quad`,
+`FUN_801e1ab0` is ported as `legaia_engine_ui::afterimage::build_afterimage_quad`,
 which assembles the jittered semi-transparent `POLY_FT4` from this texpage; only
 the camera-coupled GTE projection of its screen corners stays caller-side), and
 the **sound cue** (`+0x0d`) as

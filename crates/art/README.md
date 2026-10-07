@@ -7,8 +7,8 @@ Tactical Arts data system: Action Constants, per-character art tables, Miracle A
 - `ActionConstant` - battle action queue values `0x00–0x32` (Nothing, Item, Magic, Attack, Spirit, Escape, directional inputs, starters, per-character art constants).
 - Per-character art name tables - `0x1B–0x32` resolves to a different art per character (Vahn / Noa / Gala). Slot ordering matches the on-disc Learned Art Constant table.
 - `MiracleMatcher` - command-string → full action queue replacement. The 4 leading bytes of each replacement carry the on-disc MSB-set quirk, normalised here.
-- `SuperMatcher` - find/replace pattern matcher applied to the **tail** of the action queue. Returns the longest match per character. `try_trigger_at_tail` matches the byte-exact queue; `trigger_by_art_sequence` matches a recognized art *ordering* against `SuperArt::art_sequence()` (the Find pattern projected to its art constants only), for the connector-abstracted live-submenu path.
-- `recognize_art_sequence` - tokenizes a flat directional command string into the ordered named arts it performs (each identified by its own `ArtRecord::commands`, greedy longest-match, skipping unrecognized connector directions). The recognizer the live Arts submenu uses to detect a Super-Art chain.
+- `super_art::SuperMatcher` - find/replace pattern matcher applied to the **tail** of the action queue. Returns the longest match per character. `try_trigger_at_tail` matches the byte-exact queue; `trigger_by_art_sequence` matches a recognized art *ordering* against `SuperArt::art_sequence()` (the Find pattern projected to its art constants only), for the connector-abstracted live-submenu path.
+- `recognize::recognize_art_sequence` - tokenizes a flat directional command string into the ordered named arts it performs (each identified by its own `ArtRecord::commands`, greedy longest-match, skipping unrecognized connector directions). The recognizer the live Arts submenu uses to detect a Super-Art chain.
 - `tokenize` / `derive_super_input` - the byte-exact retail normalisation (`FUN_801EED1C`: the starter overwrites a matched art's **last** arrow, the constant is inserted after it, the leading arrows stay, arts overlap under a tail-first walk) and, on top of it, each Super Art's **physical input** derived from its `find` pattern - Tri-Somersault is seven arrows, and the derivation reproduces the in-the-wild queue capture byte-exact. What `--show-super-arts` draws as a row's arrows.
 - `ArtRecord` / `parse_record` - schema for the 40-field art binary record. The strict parser reads the leading command sequence + action constant + animation index; the rest is variable-width and surfaced via the `tail` bytes for downstream tooling.
 - `arts_table::parse_from_scus` - decodes the SCUS arts-name table (`DAT_80075EC4`): per-character name + AP cost + command-input direction sequence, recovered from the menu's arrow-glyph display string. An independent, byte-exact source for each art's command (validates the best-effort PROT `0x05C4` parse and the curated gamedata AP column).
@@ -26,7 +26,8 @@ Tactical Arts data system: Action Constants, per-character art tables, Miracle A
   `scripts/recomp/xa_cue_capture.py`; each observed channel is a decoded-pool member with
   the table's own `dur` arithmetic), and `pick_channel` prefers it. Consumed by the site's
   arts viewer (`legaia-web-viewer::arts_view`). Distinct from the ordinary
-  directional-attack grunt (`XA30.XA`) and the stereo Miracle fanfares (`XA3`/`XA5`).
+  directional-attack grunt (`XA30.XA`) and the stereo fanfare banks (`XA1`/`XA3`/`XA5`, below).
+- `hyper_fanfare` - the Hyper / Super / Miracle Art **fanfare** cue selector (`FUN_8004AD80`): a Hyper art fires no pool shout but a coin flip between two fixed channels of the character's stereo fanfare bank (`XA1`/`XA3`/`XA5.XA`); a Super or Miracle expansion fires the generic channel 1. `CAPTURED_FANFARES` carries the recomp-captured fires; `FanfareDurTable` reproduces the `0x800788B8` duration arithmetic.
 
 The data tables (Action Constants, art names, Miracle/Super patterns) come from external reverse-engineering of RAM addresses `0x80160EFC` (Vahn), `0x80176998` (Noa), `0x8018BA54` (Gala) and PROT entry `0x05C4`.
 
@@ -49,4 +50,4 @@ directions, e.g. `Burning Flare  RDLDL`); defaults to `extracted/SCUS_942.54`.
 
 ## Cross-crate integration
 
-`engine-vm/src/battle_action.rs` imports the matchers and applies them via the `BattleActionHost::art_record` callback during action-queue resolution. See [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md) for the resolution-order contract.
+`crates/engine-vm/src/battle_action/` imports the matchers and applies them via the `BattleActionHost::art_record` callback during action-queue resolution. See [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md) for the resolution-order contract.

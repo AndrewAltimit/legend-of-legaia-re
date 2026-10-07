@@ -484,9 +484,10 @@ disassembly (`overlay_battle_action_801dbf9c.txt`):
   eyes **every** player cast, healing included, is a summon.
 - `spell_id < 0x25`: the byte at `0x801F4E64 + id - 1` indexes an 8-byte
   anim-pair list at `0x801F4EDC`, copied pairwise into `+0x1E0..` until its
-  `0xFF` terminator (`0x801DBFAC..0x801DC060`). The engine has no parse of
-  that table (NOT WIRED); its `spell_anim_trigger` terminates the stream at
-  `params[1]` and folds the cast there.
+  `0xFF` terminator (`0x801DBFAC..0x801DC060`). The engine parses that table
+  (`legaia_asset::spell_anim_pairs`, held on `World::battle.spell_anim_pairs`)
+  and its `spell_anim_trigger` copies the pairs into the stream the same way;
+  without a disc read the list is empty and the cast folds at once.
 
 `FUN_801DC0A0`'s second argument is what this staged (`0x12` for a summon,
 the monster's own byte otherwise), and the summon band keeps calling it with
@@ -4379,7 +4380,7 @@ slot returns to `8` and `ctx[+0x243]` clears.
 (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s
 `commit_staged_battle_anim`; the rate-scaled advance in
 `battle_anim::MonsterAnimPlayer::tick_rated`; the restore was already ported
-as `battle_gauge_rearm::rearm_gauge` (whose old "arts-gauge arm width"
+as `battle_gauge_rearm::restore_anim_rates` (whose old "arts-gauge arm width"
 reading of `+0x21D` is superseded).
 
 ### The after-image ghost walk (`FUN_80049348`)
@@ -4433,8 +4434,8 @@ retail's deeper-bucket ordering explicitly, because their additive passes
 deliberately pass on **equal** depth (coplanar decals) - so a ghost pose
 coincident with the live body would otherwise blend over every body
 fragment and wash the whole mesh additive (the "monster glows yellow"
-defect). The native window scales the ghost's clip z toward the far plane
-(`GHOST_DEPTH_PUSH` in the redraw pass); the play page draws ghost
+defect). The native window scales each ghost uniformly about the eye until it sits
+past the body (`battle_afterimage::ghost_eye_push_scale` in the redraw pass); the play page draws ghost
 placements with a strictly-nearer depth test (`strictDepth` → `gl.LESS`).
 Either way the live body hides the overlap and only the separated trail
 shows, which is what retail's `+0x50`-bucket push produces on the console.
@@ -4450,7 +4451,7 @@ acting actor draws the afterimage while the counter is `>= 0x281` (its
 half-width is `counter - 0x200`, so the quad shrinks), nothing through
 `0x280..0x201`, and the ribbon below `0x201`; a monster acting actor draws
 the ribbon at every value. Port:
-`engine-render::streak_pass::streak_quads_scheduled` +
+`engine-ui::streak_pass::streak_quads_scheduled` +
 `MoveFxStreak::tick_counter`.
 
 The ribbon has a second caller outside that dispatcher: the per-clip pass of

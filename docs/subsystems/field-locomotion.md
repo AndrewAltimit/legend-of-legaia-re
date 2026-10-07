@@ -283,7 +283,7 @@ After movement, the same function runs an interaction probe (`FUN_801cf9f4`) to 
 
 The probe compares the player's position against each actor's `+0x14`/`+0x18` **directly** (no transform), so the player and the placed actors share one coordinate frame - and that frame is the MAN placement frame. `FUN_8003A1E4` spawns each partition-1 placement at `world = tile*128 + 0x40` (the `+0x40`/`+0x80` half-tile centre, i.e. the placement's [`world_x`](../formats/encounter.md)) and `FUN_80024C88` writes it straight into `actor[+0x14/+0x16/+0x18]` with **no anchor subtraction**. The player cold-spawn `0xA40` (2624) is exactly `tile 20 * 128 + 0x40`, so the player starts at MAN tile 20 in the same frame. (A live actor's position can still drift from its spawn tile if it patrols - a moving NPC reads at a different tile than its placement - but the frame is identical.)
 
-The engine ports the probe as `World::tick_field_interaction_probe` (`engine-core`): it stores each talkable NPC's placement position (`World::npcs.positions`, keyed by the same slot as the dialogue) and, on a just-pressed action button, runs the retail facing probe (`World::field_interact_probe_slot` - the `DAT_801f2254` radius-64 compass point ahead of the facing, ±72 box), opens the matched NPC's dialogue via `World::trigger_field_interact`, and turns the player toward it (`World::face_field_npc`) - then dismisses a probe-opened box on the next press (a `dialog_input_consumed` per-tick guard keeps it from racing the field VM's `0x4C` dialog poll).
+The engine ports the probe as `World::tick_field_interaction_probe` (`engine-core`): it stores each talkable NPC's placement position (`World::npcs.positions`, keyed by the same slot as the dialogue) and, on a just-pressed action button, runs the retail facing probe (`World::field_interact_probe_slot` - the `DAT_801f2254` radius-64 compass point ahead of the facing, ±72 box), opens the matched NPC's dialogue via `World::trigger_field_interact`, and turns the player toward it (`World::face_field_npc`) - then dismisses a probe-opened box on the next press (a `World::dialog.input_consumed` per-tick guard keeps it from racing the field VM's `0x4C` dialog poll).
 This probe is the whole trigger - no field-VM opcode opens a conversation (op `0x3E` with `op0 < 100` is the scripted-battle install; see [`script-vm.md`](script-vm.md#0x3e-scripted-battle-op0--100)). Talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
 
 `World::nav_step_toward(tx, tz, tol)` is the matching auto-navigation primitive: it steps the player one frame toward a world target using the same per-axis collision as the pad path (`advance_with_collision`) but a world-space direction, returning `true` on arrival. A driver loops it along a BFS route over the collision grid to walk the player to a target - e.g. the v0.1 oracle's emergent Battle leg walks from the cold-boot spawn to the sparring partner, then talks to it via the probe. (The partner's *placement* tile (76,65) is its post-tutorial village spot, in a town01 sub-area not walk-reachable from the spawn; the opening repositions it next to Vahn for the tutorial - see `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`.)
@@ -338,7 +338,7 @@ The pad and nav-walk paths still raise that flag directly, because they know the
 
 The pass exists because the flag previously had only those two writers, both on the player's own locomotion path. Anything moved by a script - a cutscene `MoveTo`, a channel walk-on - committed a position and raised nothing, so it slid along in its idle pose. An actor appearing in the tracked set for the first time seeds the snapshot without reporting motion: its arrival is a placement, not a step. The snapshot clears on scene entry, or a warp would read as one enormous step and start everyone walking on the landing frame.
 
-**The NPC half is signal-only so far.** `field_actor_moving` carries a bit for every tracked placement slot, but no host reads the NPC bits yet - an NPC's clip still changes only on an explicit `Animate` cue, so a script-walked NPC still glides.
+**The NPC half is signal-only so far.** `World::locomotion.actor_moving` carries a bit for every tracked placement slot, but no host reads the NPC bits yet - an NPC's clip still changes only on an explicit `Animate` cue, so a script-walked NPC still glides.
 
 Wiring it needs an idle-clip → walk-clip pairing per NPC, and only the `special_model` party placements have one pinned (the PROT 0874 §1 locomotion bank's `LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT` per character). For an ordinary scene NPC the placement names a single record out of the scene's own ANM bundle and the walk sibling is not identified.
 
@@ -737,7 +737,7 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
 - **A door placement's own record is installed, and the action probe reaches it.** Retail runs the
   touched placement's record through the dialog SM whatever it contains
   (see [`script-vm.md`](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), so
-  `install_field_carriers_from_man` seeds a `field_npc_dialog_prologue` entry for every genuine
+  `install_field_carriers_from_man` seeds a `World::npcs.dialog_prologue` entry for every genuine
   `0x3E` placement as well as every talk NPC, entered at the interaction cursor, and
   `field_interact_probe_slot` admits those slots off their `field_walk_touch` anchors - retail's
   probe walks the whole actor list, so a cabinet is as probe-able as a villager, where the engine's
@@ -1366,9 +1366,10 @@ checks that the two sweeps partition every drawn placement.
 
 The per-cell ground and decoration passes read a second window, the camera's
 visible tile window at `0x1F8003E8..EB` ([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
-which the port tracks (`Camera::zone.view_window`) but does not yet crop the
-terrain / heightfield draws by: the ground beyond the window still draws, where
-retail's frame is black (`conc_field_card_boot`'s neighbouring room).
+which the port tracks (`Camera::zone.view_window`) and crops the terrain /
+heightfield draws by at retail framing (`engine-core::field_view_window`,
+gated by `World::toggles.view_window_crop`); a wider or re-aimed view draws the
+map whole - see [engine.md](engine.md#the-visible-tile-crop-follows-the-framing).
 
 - **The bind carries the object's animation id.** A partition-0 record's header
   is `[u8 n][n*2 name bytes][u8 anim_id]` (its own shape - the partition-1

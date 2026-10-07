@@ -235,7 +235,7 @@ compared unsigned, so a negative index fails too) prints rather than aborts. The
 mesh-index rule this establishes - **`rec[+0x10] + prefix`, not the object's
 position in the pack** - is the one recorded in
 [`subsystems/renderer.md`](../../subsystems/renderer.md). Ported as
-`legaia_engine_render::actor_bind`, `NOT WIRED` (that crate holds no actor pool).
+`legaia_engine_render::actor_bind`, `REPLACED-BY` the `legaia_asset::field_objects` placement resolution feeding the hosts' per-placement draw lists.
 `see ghidra/scripts/funcs/80020f88.txt`.
 
 ### `800480D8`
@@ -380,7 +380,7 @@ decoded size differs therefore gets a truncated pack rather than a bigger one.
 `FUN_8005BAC8` then projects - `RTPT` on corners 0..2 plus one `RTPS` on corner 3 - into the caller's four out-pointers (the order `FUN_801E1AB0` writes straight into `POLY_FT4.xy0..xy3`), and `FUN_8003D1A4` restores the saved GTE control words from `&DAT_1F8003C8`. Returns the projected depth (`SZ3 >> 2`, shifted by the scratchpad OT-resolution byte `DAT_1F8003A4`).
 Reached from the battle / cutscene / world-map quad emitters (e.g. `FUN_800485BC`); the afterimage caller passes a **dynamic half-width** (fx-state halfword `+0x6C6` − `0x200`) with constant half-height `0x100`.
 
-Ported as `legaia_engine_render::billboard::project_billboard` (the afterimage call shape: `afterimage::project_streak_corners`). The `RotMatrix*` trig source is the in-image q3.12 LUT pair - sine at `0x80070A2C + 2*angle`, cosine read from the same table `0x400` entries (90°) ahead at `0x8007122C` - generated as `4096*sin(2π·angle/4096)` **truncated toward zero**, pinned entry-for-entry by the disc-gated oracle `engine-shell/tests/gte_sin_lut_real.rs` against `billboard::psx_sin`/`psx_cos`.
+Ported as `legaia_engine_ui::billboard::project_billboard` (the afterimage call shape: `afterimage::project_streak_corners`). The `RotMatrix*` trig source is the in-image q3.12 LUT pair - sine at `0x80070A2C + 2*angle`, cosine read from the same table `0x400` entries (90°) ahead at `0x8007122C` - generated as `4096*sin(2π·angle/4096)` **truncated toward zero**, pinned entry-for-entry by the disc-gated oracle `engine-shell/tests/gte_sin_lut_real.rs` against `billboard::psx_sin`/`psx_cos`.
 
 `see ghidra/scripts/funcs/800195a8.txt`.
 

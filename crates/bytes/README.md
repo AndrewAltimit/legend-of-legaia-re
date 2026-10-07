@@ -30,8 +30,8 @@ out of scope here.
 
 ## Pipeline
 
-Leaf crate with no dependencies of its own. Depended on by `legaia-asset` and
-`legaia-engine-core` - the two crates that read the widest range of raw disc
-buffers - wherever a raw little-endian read out of one is needed. Other
+Leaf crate with no dependencies of its own. Depended on by `legaia-asset`,
+`legaia-engine-core` and `legaia-patcher` - the crates that read the widest
+range of raw disc buffers - wherever a raw little-endian read out of one is needed. Other
 parser crates still carry their own private helpers; each is a candidate to
 fold in here.

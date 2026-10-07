@@ -71,6 +71,13 @@ want the whole `SaveFile` - including the party gold
 coin bank (`RETAIL_COINS_OFFSET` = SC `+0x464`, RAM `0x800845A4` - the
 slot-machine cash-out global).
 
+The [`minigame_save`](src/minigame_save.rs) module (`MinigameSave`) carries the
+minigame purses and records as one unit: the coin bank, the Point Card bank
+(SC `+0x474`) and the fishing point record (pool, lure, rod, best catch, cast
+counter, one-time prize mask at SC `+0x30C..+0x32C`). It lifts from and writes
+back into the SC block, and rides in an LGSF file as the optional `LGX7` block,
+emitted only when non-zero.
+
 A lift reads the present party from the block's own count and member list
 (`read_retail_present_party` into `SaveExtV2::active_party`), never from the
 number of populated records - the New Game template populates all four - and
@@ -182,6 +189,7 @@ save-tool saves <card.mcr>               # active save blocks + product codes
 save-tool character <card.mcr> --block N --offset 0x5C8
 save-tool party <card.mcr> --block N --offset 0x5C8 --count 3   # records as JSON
 save-tool roundtrip <card.mcr> --block N --offset 0x5C8   # parse→write→parse
+save-tool rename <card.mcr> --set Vahn=Lu --set Noa=Gi --out <new.mcr>   # both name sites + checksum
 save-tool items <card.mcr> [--save-index N] [--consume ID:QTY]   # retail accessors
 save-tool write --card <card.mcr> --payload <raw.bin>    # into a free block chain
 save-tool sc-diff <a.mcr> <b.mcr>        # byte diff of two saves' SC blocks

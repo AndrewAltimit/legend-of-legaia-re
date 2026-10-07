@@ -11,6 +11,7 @@ and surfaces them through a stable API.
 |---|---|
 | `arts` | Per-character regular / hyper / super / miracle arts: command sequences, raw direction bytes, AP costs, action constants. Cross-checked against `legaia_art::tables`. |
 | `magic` | 21 Seru spells + 8 Ra-Seru summons: element, MP cost, attack name, target shape. |
+| `magic_leveling` | Per-spell level-up XP thresholds + per-level damage scaling (a Rust module, not a TOML table; Meth962's guide). |
 | `items` | Consumables, key items, art books, fishing rods/lures with prices and effect text. |
 | `weapons` | Weapons with attack stat, primary user, alternate users. |
 | `armor` | Armor / helmets / shoes with UDF / LDF and equip restrictions. |
@@ -23,6 +24,8 @@ and surfaces them through a stable API.
 | `characters` | Vahn / Noa / Gala affinities and favorite-weapon classes. |
 | `music` | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test id + title / in-game context / official OST title / proposed relocalization). Contributed by Stann0x. |
 | `scenes` | Scene display names per CDNAME block (`scene_names` / `scene_by_id`), with the disc's banner and Stann0x's in-game reading. See [`docs/reference/scene-names.md`](../../docs/reference/scene-names.md). |
+
+`data/gamedata/sol_tower.toml` is not parsed here - the static site reads it directly.
 
 ## Source attribution
 

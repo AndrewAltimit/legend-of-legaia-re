@@ -11,7 +11,7 @@ dispatch table at `0x8007078C`. The title screen itself is overlay-resident
 (PROT 0899), but it is still mode-table-driven: it runs under the `CARD` pair,
 modes 22/23, which is simply not *named* for it.
 
-**Port counterpart.** `engine-core`'s `BootSession` + the mode/menu dispatch;
+**Port counterpart.** `engine-session`'s `BootSession` + `engine-core`'s mode/menu dispatch;
 `legaia_asset::mode_table` reads the mode table straight off the disc.
 
 **The three things that catch people out:**
@@ -462,7 +462,7 @@ One flag, two readers, and the port holds it on the seat below.
 #### The port's seat at the mode table
 
 The engine's counterpart of `_DAT_8007B83C` is `engine-core::mode::ModeSeat`,
-owned by `engine-shell`'s `BootSession` and driven once per frame from
+owned by `engine-session`'s `BootSession` and driven once per frame from
 `BootSession::tick`. It is a seat rather than a mirror because its **writes are
 the port's own transitions**: the session enters `MAIN INIT` where retail's
 title dispatcher stores `2`, and `CARD INIT` where retail's field image calls
@@ -901,7 +901,7 @@ The title-tick body reaches into three SCUS-side helpers to emit GPU primitives.
 - `FUN_80058490` (`MoveImage` VRAM-to-VRAM copy, 49 instructions) → `exec_move_image(host, src, dst_x, dst_y)`, with early-out on zero extent matching the original's `li v0, -1` path.
 - `FUN_800198E0` (sprite-descriptor dispatcher, 146 instructions) → `exec_sprite_descriptor(host, &SpriteDescriptor)`, with full tag-`0x11` simple variant + complex variant routing (alpha-OR pre-pass under `flags & 8`, four width-divisor variants from `flags & 3`).
 
-`SpriteDescriptor { tag, flags, rect, pixel_data_ptr }` and `Rect12 { x, y, w, h }` capture the wire shapes. The `PrimHost` trait abstracts the four engine-side callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`, `alpha_or_gate_set`); engines wire those to a real GPU back-end. The overlay-side helpers (`FUN_801E1C1C` / `FUN_801E373C` / `FUN_801E3EE0` / `FUN_801E36C4`, each ~8 KiB, shared across menu / battle / shop / save UI overlays) are deferred to their own focused port - the title-tick body's calls into them can be stubbed against the same `PrimHost`.
+`SpriteDescriptor { tag, flags, rect, pixel_data_ptr }` and `Rect12 { x, y, w, h }` capture the wire shapes. The `PrimHost` trait abstracts the engine-side callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`, `stp_or_gate_set`, plus the defaulted `stp_or_pixels`); engines wire those to a real GPU back-end. The overlay-side helpers (`FUN_801E1C1C` / `FUN_801E373C` / `FUN_801E3EE0` / `FUN_801E36C4`, each ~8 KiB, shared across menu / battle / shop / save UI overlays) are deferred to their own focused port - the title-tick body's calls into them can be stubbed against the same `PrimHost`.
 
 ### State struct (extended)
 
