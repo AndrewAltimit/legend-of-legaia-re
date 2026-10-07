@@ -720,6 +720,10 @@ pub struct BattleHudFrame<'a> {
     /// The target plaque's offset below its rest seat while its raise glide
     /// runs (`engine-core::battle_hud::battle_target_plaque_dy`).
     pub target_plaque_dy: i32,
+    /// The active-actor bar's offset below its rest seat while its raise
+    /// glide runs (`engine-core::battle_hud::battle_readout_bar_dy`):
+    /// positive from the seed's raise until it lands. `0` at rest.
+    pub bar_dy: i32,
     /// The **target-select** plaque (placement record `0x29`): the monster
     /// the open target cursor rests on, and its element badge, on the blue
     /// plate class at retail's seat - content box centred on `x = 0xE8`,
@@ -1512,22 +1516,44 @@ pub fn battle_hud_draws_for(
     // primitive in either readout, and neither reference frame shows one.
     if let Some((i, slot)) = bar_member.filter(|_| !bar_covered) {
         let (base, hp_tint, mp_tint) = tints(slot);
-        plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
-        stage_text(&mut text, font, slot.name, BAR_NAME.0, BAR_NAME.1, base);
-        label(&mut sprites, &mut text, 0, BAR_HP_LABEL.0, BAR_HP_LABEL.1);
+        // The raise glide ([`BattleHudFrame::bar_dy`]) moves the whole plate.
+        let dy = frame.bar_dy;
+        plate_run(
+            &mut text,
+            &mut sprites,
+            BAR_X,
+            BAR_Y + dy,
+            BAR_INTERIOR_W,
+            false,
+        );
+        stage_text(
+            &mut text,
+            font,
+            slot.name,
+            BAR_NAME.0,
+            BAR_NAME.1 + dy,
+            base,
+        );
+        label(
+            &mut sprites,
+            &mut text,
+            0,
+            BAR_HP_LABEL.0,
+            BAR_HP_LABEL.1 + dy,
+        );
         numerals(
             &mut sprites,
             &mut text,
             u32::from(slot.hp),
             BAR_HP_CUR_RIGHT,
-            BAR_DIGIT_Y,
+            BAR_DIGIT_Y + dy,
             hp_tint,
         );
         separator(
             &mut sprites,
             &mut text,
             BAR_HP_SEPARATOR.0,
-            BAR_HP_SEPARATOR.1,
+            BAR_HP_SEPARATOR.1 + dy,
             hp_tint,
         );
         numerals(
@@ -1535,24 +1561,30 @@ pub fn battle_hud_draws_for(
             &mut text,
             u32::from(slot.hp_max),
             BAR_HP_MAX_RIGHT,
-            BAR_DIGIT_Y,
+            BAR_DIGIT_Y + dy,
             hp_tint,
         );
         if slot.mp_max > 0 {
-            label(&mut sprites, &mut text, 1, BAR_MP_LABEL.0, BAR_MP_LABEL.1);
+            label(
+                &mut sprites,
+                &mut text,
+                1,
+                BAR_MP_LABEL.0,
+                BAR_MP_LABEL.1 + dy,
+            );
             numerals(
                 &mut sprites,
                 &mut text,
                 u32::from(slot.mp),
                 BAR_MP_CUR_RIGHT,
-                BAR_DIGIT_Y,
+                BAR_DIGIT_Y + dy,
                 mp_tint,
             );
             separator(
                 &mut sprites,
                 &mut text,
                 BAR_MP_SEPARATOR.0,
-                BAR_MP_SEPARATOR.1,
+                BAR_MP_SEPARATOR.1 + dy,
                 mp_tint,
             );
             numerals(
@@ -1560,13 +1592,13 @@ pub fn battle_hud_draws_for(
                 &mut text,
                 u32::from(slot.mp_max),
                 BAR_MP_MAX_RIGHT,
-                BAR_DIGIT_Y,
+                BAR_DIGIT_Y + dy,
                 mp_tint,
             );
         }
         popup_anchor[i] = (
             origin.0 + BAR_HP_LABEL.0 * scale,
-            origin.1 + (BAR_Y - 26) * scale,
+            origin.1 + (BAR_Y + dy - 26) * scale,
         );
     }
 

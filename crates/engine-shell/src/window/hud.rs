@@ -2058,6 +2058,7 @@ impl PlayWindowApp {
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 plaque_dy: bh::battle_action_plaque_dy(w_ref),
                 target_plaque_dy: bh::battle_target_plaque_dy(w_ref),
+                bar_dy: bh::battle_readout_bar_dy(w_ref),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),

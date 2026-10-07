@@ -24,6 +24,22 @@
 
 use super::*;
 
+/// What one engine tick adds to a tracked widget glide's `elapsed` byte.
+///
+/// `FUN_801D9BBC` adds the frame step `*(0x1F800393)` per battle pass
+/// (`lbu v1,0x393(v1)` / `addu v0,a0,v1` at `0x801D9C18..0x801D9C28`), and a
+/// pass spans that many vsyncs, so a glide's `total` counts vsyncs: the
+/// sixteen-frame raise lasts sixteen vsyncs at any cadence. The world ticks
+/// once per vsync (the action SM's own timers drain by `1` a tick), so the
+/// per-tick step is `1`. Stepping by the frame step on every tick ran each
+/// glide at twice retail's speed under the battle's step of `2`
+/// (`nivora_duel_mid_blazing_slash`: retail's plaque and bar are ten of
+/// sixteen into their raise, the engine's had landed).
+pub(in crate::world) const WIDGET_GLIDE_STEP_PER_TICK: u8 = 1;
+
+/// Placement record 7 - the active-actor readout bar.
+const READOUT_BAR_ELEMENT: u8 = 7;
+
 impl World {
     /// Raise a launch in `inbound`'s direction.
     pub(in crate::world) fn launch_commit_log(&mut self, inbound: bool) {
@@ -31,12 +47,12 @@ impl World {
             Some(legaia_engine_vm::battle_commit_log::LogLaunch::new(inbound));
     }
 
-    /// One frame of the launch glide, on the world's frame step
-    /// (`0x1F800393`). A settled inbound launch retires - the log is back
-    /// at rest; a settled outbound one stays, which keeps the log hidden
-    /// until the member returns to the ring or commits.
+    /// One tick of the launch glide ([`WIDGET_GLIDE_STEP_PER_TICK`]). A
+    /// settled inbound launch retires - the log is back at rest; a settled
+    /// outbound one stays, which keeps the log hidden until the member
+    /// returns to the ring or commits.
     pub(in crate::world) fn step_commit_log_launch(&mut self) {
-        let step = self.clock.frame_step.max(1);
+        let step = WIDGET_GLIDE_STEP_PER_TICK;
         if let Some(l) = self.battle.commit_log_launch.as_mut() {
             l.step(step);
             if l.inbound && l.settled() {
@@ -60,20 +76,49 @@ impl World {
             self.battle.action_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
             self.battle.counter_hud = None;
+            // The seed's own record-7 open (`0x801E2F24..0x801E2F44`): the
+            // Attack arm and the Magic arm past its item-class branch fall
+            // into `sltiu v0,t2,3` on the target and raise the bar for a
+            // party target with mode `0`. The engine's seed reports only the
+            // banner plan, so the raise is taken here, on the same edge.
+            self.battle.readout_bar_glide = self
+                .seed_raises_readout_bar()
+                .then(|| LogLaunch::new(false));
+        } else if element == READOUT_BAR_ELEMENT {
+            self.battle.readout_bar_glide = Some(LogLaunch::new(false));
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
         }
     }
 
-    /// One frame of the two action-plate glides, on the frame step the
-    /// commit log's launch steps by (`FUN_801D9BBC` walks every tracked
-    /// widget in one pass).
+    /// Whether the action seed opens record 7 for its target: an Attack or a
+    /// Magic action aimed at a party seat. The Magic arm's item-class branch
+    /// (spell class `< 0x14` with id `< 0x65`, `0x801E2EEC..0x801E2EF8`)
+    /// leaves for `0x3C` instead, whose own open (the acting member's,
+    /// [`READOUT_BAR_ELEMENT`] through the host) restarts the glide; this
+    /// test does not tell the branch apart, so such a cast starts the glide
+    /// at the seed and again at `0x3C`.
+    fn seed_raises_readout_bar(&self) -> bool {
+        use legaia_engine_vm::battle_action::ActionCategory;
+        let a = self.battle_ctx.active_actor;
+        let Some(actor) = self.actors.get(usize::from(a)) else {
+            return false;
+        };
+        let cat = actor.battle.action_category;
+        (cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::Magic.as_byte())
+            && actor.battle.active_target < self.party.party_count
+    }
+
+    /// One tick of the two action-plate glides, on the step the commit log's
+    /// launch takes ([`WIDGET_GLIDE_STEP_PER_TICK`]; `FUN_801D9BBC` walks
+    /// every tracked widget in one pass).
     pub(in crate::world) fn step_action_plate_glides(&mut self) {
-        let step = self.clock.frame_step.max(1);
+        let step = WIDGET_GLIDE_STEP_PER_TICK;
         for g in [
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
+            self.battle.readout_bar_glide.as_mut(),
         ]
         .into_iter()
         .flatten()

@@ -258,7 +258,7 @@ impl World {
             // `0x801D0B2C`) - the result windows' raise among them.
             // REF: FUN_801D9BBC
             if let Some(g) = self.battle.result_windows_glide.as_mut() {
-                g.step(self.clock.frame_step.max(1));
+                g.step(super::commit_log_launch::WIDGET_GLIDE_STEP_PER_TICK);
             }
             self.tick_battle_end_sequence();
             return None;

@@ -3199,7 +3199,7 @@ fn run_drive(
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
             eprintln!(
-                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} depth={} acc={:?} tint={:?}",
+                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} depth={} acc={:?} plaque_dy={} tint={:?}",
                 world.mode,
                 world.battle.flow,
                 world.battle.command.is_some(),
@@ -3212,6 +3212,7 @@ fn run_drive(
                     .camera
                     .as_ref()
                     .map(|c| (c.close_up_accum(), c.is_gliding())),
+                legaia_engine_core::battle_hud::battle_action_plaque_dy(world),
                 world
                     .actors
                     .iter()

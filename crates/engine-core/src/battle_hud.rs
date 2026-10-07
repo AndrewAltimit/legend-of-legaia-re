@@ -1864,6 +1864,24 @@ pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
     plate_glide_dy(world.battle.target_plaque_glide.as_ref(), a, b)
 }
 
+/// Seat A / seat B rows of the active-actor bar (record 7: `y = 234` ->
+/// `192`, the glide slot a retail cast capture holds mid-raise).
+const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
+
+/// How far the active-actor bar sits below its rest seat this frame - the
+/// raise glide record 7 runs when the action seed (or the item pre-arm)
+/// opens it ([`crate::world::BattleState::readout_bar_glide`]). `0` outside
+/// the action phase, where the bar is the command ring's or a target step's.
+pub fn battle_readout_bar_dy(world: &crate::world::World) -> i32 {
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode != crate::world::SceneMode::Battle
+    {
+        return 0;
+    }
+    let (a, b) = READOUT_BAR_SEATS_Y;
+    plate_glide_dy(world.battle.readout_bar_glide.as_ref(), a, b)
+}
+
 /// Whether `FUN_801E6D84`'s target arm runs for this category: it returns
 /// early for Run (`li v0,0x5; beq` at `0x801E6DEC`) and, past the actor
 /// plaque, for categories `0` and `4` (`beq s0,zero` / `beq s0,v0` with

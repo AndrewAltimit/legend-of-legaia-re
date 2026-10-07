@@ -4325,7 +4325,11 @@ which of the record's two seats the actor spawns at (`+0x02/+0x04` for `0`,
 `+0x0A/+0x0C` for `1`) before `FUN_801DB7B0` glides it to the other; bit 1
 suppresses the glide (`0x801D92E0..0x801D93DC`). The glide stepper
 `FUN_801D9BBC` walks `ctx[+0x11B4 + slot * 0xC]` - `[total][elapsed] ..
-[target x][target y][start x][start y]`, linear, snapping on arrival. Which
+[target x][target y][start x][start y]`, linear, snapping on arrival.
+`elapsed` grows by the frame step `*(0x1F800393)` per battle pass and a pass
+spans that many vsyncs, so `total` counts vsyncs: the sixteen-frame raise
+lasts sixteen vsyncs at any cadence, and the port, which ticks once per
+vsync, steps every tracked glide by one a tick. Which
 seat is on screen is per record, so "mode 0" means *appear* for the bar and
 *unfold* for a chip; the port's `SubdrawStep::shows` reads it as "seat B is
 the on-screen one", which holds for every record the battle HUD draws.
@@ -4347,7 +4351,10 @@ So the roster **card** is the round prompt's and the browsed windows'; the
 full-width **pill** is the ring's and the target steps'; and the ring alone
 carries the AP plate. The action SM's openers are three: the `0x0C` seed
 (`0x801E2F24`) reads the acting actor's target byte `+0x1DD` and raises the
-bar for it when it is a party slot; the Item pre-arm `0x3C` (`0x801E3DA0`)
+bar for it when it is a party slot - mode `0`, so the bar rises from
+`y = 234` to `192` beside the actor plaque's descent
+(`nivora_duel_mid_blazing_slash` holds both at ten of sixteen; port
+`BattleState::readout_bar_glide`); the Item pre-arm `0x3C` (`0x801E3DA0`)
 raises it for the acting member; and the item band's `0x3E` arm
 (`0x801E401C`) raises it for a member target again, or all three panels for
 a party-wide one (`t2 == 8`), as the seed's plate routine does for a monster
