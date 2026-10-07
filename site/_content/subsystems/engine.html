@@ -21,7 +21,7 @@
   <h2>How the crates stack</h2>
   <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Leaves: engine-ui (draw lists, no wgpu), engine-vm (the VMs) and engine-battle (the World-free battle kernels, linked by engine-core). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
+    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Leaves: engine-ui (draw lists, no wgpu), engine-vm (the VMs), engine-minigames (the minigame rules engines) and engine-battle (the World-free battle kernels), both linked by engine-core. Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="868" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
@@ -48,12 +48,14 @@
       <text class="dg-label" x="760" y="254">engine-audio</text><text class="dg-sub" x="760" y="272">SPU model + sequencer</text>
 
       <text class="dg-edge-label" x="868" y="322" text-anchor="end">leaves</text>
-      <rect class="dg-node" x="120" y="330" width="200" height="56" rx="5"/>
-      <text class="dg-label" x="220" y="354">engine-ui</text><text class="dg-sub" x="220" y="372">draw lists, no wgpu</text>
-      <rect class="dg-node" x="440" y="330" width="200" height="56" rx="5"/>
-      <text class="dg-label" x="540" y="354">engine-vm</text><text class="dg-sub" x="540" y="372">VMs + battle action SM</text>
-      <rect class="dg-node" x="660" y="330" width="175" height="56" rx="5"/>
-      <text class="dg-label" x="747" y="354">engine-battle</text><text class="dg-sub" x="747" y="372">battle kernels</text>
+      <rect class="dg-node" x="20" y="330" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="110" y="354">engine-ui</text><text class="dg-sub" x="110" y="372">draw lists, no wgpu</text>
+      <rect class="dg-node" x="420" y="330" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="520" y="354">engine-vm</text><text class="dg-sub" x="520" y="372">VMs + battle action SM</text>
+      <rect class="dg-node" x="215" y="330" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="310" y="354">engine-minigames</text><text class="dg-sub" x="310" y="372">rules, no World</text>
+      <rect class="dg-node" x="640" y="330" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="735" y="354">engine-battle</text><text class="dg-sub" x="735" y="372">battle kernels</text>
 
       <rect class="dg-group" x="20" y="410" width="840" height="48" rx="6"/>
       <text class="dg-label" x="440" y="432">format crates: asset, prot, iso, lzs, tim, tmd, vab, seq, xa, mes, anm, art, save, font, mdec ...</text>
@@ -67,17 +69,20 @@
       <path class="dg-edge-dim" d="M60 86 L60 108 L10 108 L10 258 L18 258" marker-end="url(#en-arrow)"/>
       <path class="dg-edge-dim" d="M120 186 L120 228" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M340 186 L420 228" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M300 186 L240 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M260 186 L130 328" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M540 186 L460 228" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M600 186 L720 228" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M120 286 L190 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M460 286 L520 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M250 386 L250 408" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M540 386 L540 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M100 286 L100 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M470 286 L520 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M110 386 L110 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M520 386 L520 408" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M850 286 L850 408" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M520 286 L690 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M660 358 L644 358" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M747 386 L747 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M520 286 L700 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M640 358 L622 358" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M735 386 L735 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M380 286 L330 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M405 358 L418 358" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M310 386 L310 408" marker-end="url(#en-arrow)"/>
       <text class="dg-edge-label" x="480" y="110">both play hosts</text>
       <text class="dg-edge-label" x="130" y="212">native only</text>
     </svg>
