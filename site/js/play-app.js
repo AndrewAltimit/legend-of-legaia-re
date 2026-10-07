@@ -549,6 +549,8 @@ void main() {
       this.pulse = new Set();
       this.scene = null;
       this.staticDraws = [];
+      this._terrainByIdx = null;
+      this._terrainFacingLive = null;
       this.player = null;    /* { basePositions } */
       this.npcs = [];        /* [{ meshId, base, objectIds, frames, partCount, frameCount, out }] */
       this.tileMeshSlots = [];
@@ -899,6 +901,8 @@ void main() {
       const rt = this.rt;
       this.renderer.clearScene();
       this.staticDraws = [];
+      this._terrainByIdx = null;
+      this._terrainFacingLive = null;
       this._staticWindowStamp = undefined;
       this._viewWindowStamp = undefined;
       this._placementCullStamp = undefined;
@@ -1095,8 +1099,11 @@ void main() {
         }
       };
       const terrainSlots = rt.field_terrain_slots();
+      /* Terrain cells carry the record's authored pitch / roll too (vell's
+       * trees, bubu1's tilted slabs); the native window composes all three. */
       push(terrainSlots, rt.field_terrain_positions(), rt.field_terrain_rot_y(), null,
-        null, null, 0);
+        rt.field_terrain_rot_x ? rt.field_terrain_rot_x() : null,
+        rt.field_terrain_rot_z ? rt.field_terrain_rot_z() : null, 0);
       push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
@@ -2287,6 +2294,49 @@ void main() {
       this._objectMovesLive = mv.length > 0;
     }
 
+    /* A camera-facing terrain / decoration cell (record flags +0x12 & 0x380:
+     * rugi's candle glows, the vell forest trees) is rebuilt against this
+     * frame's engine camera: retail's decoration pass FUN_801F7088 drops the
+     * flagged axes from the camera rotation before the cell's own. The engine
+     * hands back [terrain index, 9 column-major floats] per cell - the linear
+     * part in the page frame - or an EMPTY array (no such cell, or the page
+     * drew through its own orbit, when every cell returns to its baked
+     * model). The native window rebuilds the same draws
+     * (`gte::decoration_cell_basis`). Runs after the camera is staged. */
+    _applyTerrainFacing(rt) {
+      if (!rt || typeof rt.field_terrain_facing !== 'function') return;
+      const vp = this.cam && this.cam.vp;
+      const m = vp ? rt.field_terrain_facing(vp) : [];
+      if (!m.length && !this._terrainFacingLive) return;
+      if (!this._terrainByIdx) {
+        this._terrainByIdx = new Map();
+        for (const d of this.staticDraws) {
+          if (d.terrainIdx !== undefined) this._terrainByIdx.set(d.terrainIdx, d);
+        }
+      }
+      const seen = new Set();
+      for (let k = 0; k + 9 < m.length; k += 10) {
+        const d = this._terrainByIdx.get(m[k]);
+        if (!d) continue;
+        if (d.facingBase === undefined) d.facingBase = d.model || null;
+        d.model = new Float32Array([
+          m[k + 1], m[k + 2], m[k + 3], 0,
+          m[k + 4], m[k + 5], m[k + 6], 0,
+          m[k + 7], m[k + 8], m[k + 9], 0,
+          d.x, d.y, d.z, 1,
+        ]);
+        seen.add(d);
+      }
+      if (this._terrainFacingLive) {
+        for (const d of this._terrainFacingLive) {
+          if (seen.has(d)) continue;
+          if (d.facingBase) d.model = d.facingBase; else delete d.model;
+          delete d.facingBase;
+        }
+      }
+      this._terrainFacingLive = seen.size ? seen : null;
+    }
+
     /* A placed object a script parks at the hide box after the scene built
      * its draws (rugi's entry script runs `A3 06 7F 7F` on the stone block the
      * opened wall leaves behind) stops drawing: retail's case-5 draw reads the
@@ -2910,6 +2960,7 @@ void main() {
        * used to run its own orbit projection here and re-map the cutscene
        * params onto it, which is a second camera model beside the engine's. */
       this._stageEngineCamera(pt);
+      this._applyTerrainFacing(this.rt);
 
       /* This frame's field view-projection, built exactly as the renderer
        * will build it (`buildWorldOrbitVp`, or the VR/battle override). Two

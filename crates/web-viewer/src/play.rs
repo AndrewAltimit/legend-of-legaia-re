@@ -798,6 +798,68 @@ impl LegaiaRuntime {
         per.into_iter().flatten().map(|v| v as f32).collect()
     }
 
+    /// Per-terrain-draw authored pitch (object record `+0x08`), parallel to
+    /// [`Self::field_terrain_slots`]. Composed with yaw and roll in retail's
+    /// `Rx * Ry * Rz` order, as the native window composes every terrain
+    /// cell (`battle_intro::placement_rotation`).
+    pub fn field_terrain_rot_x(&self) -> Vec<u16> {
+        self.field
+            .as_ref()
+            .map(|f| f.terrain.iter().map(|d| d.rot_x).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-terrain-draw authored roll (object record `+0x0C`). See
+    /// [`Self::field_terrain_rot_x`].
+    pub fn field_terrain_rot_z(&self) -> Vec<u16> {
+        self.field
+            .as_ref()
+            .map(|f| f.terrain.iter().map(|d| d.rot_z).collect())
+            .unwrap_or_default()
+    }
+
+    /// The **camera-facing** terrain / decoration cells' linear model parts
+    /// for this frame, flattened `[terrain index, 9 column-major floats]` per
+    /// cell, in the page's Y-up frame (`F * K * R`, `F = scale(1,-1,1)`): the
+    /// record's own `Rx * Ry * Rz` behind the basis
+    /// `gte::decoration_cell_basis` resolves against the engine camera -
+    /// retail's decoration pass `FUN_801F7088` drops the flagged axes
+    /// (`+0x12 & 0x380`) from the camera rotation before the cell's own, so
+    /// `rugi`'s candle glows and the `vell` forest trees face the lens. The
+    /// page keeps each cell's translation and swaps in this linear part.
+    /// **Empty** with no flagged cell, or when `vp` is not the engine
+    /// camera's matrix (the page drew through its own orbit). The native
+    /// window rebuilds the same draws per frame.
+    pub fn field_terrain_facing(&self, vp: &[f32]) -> Vec<f32> {
+        let Some(f) = self.field.as_ref() else {
+            return Vec::new();
+        };
+        if f.terrain.iter().all(|d| d.view_skip == 0) {
+            return Vec::new();
+        }
+        let Some(cam) = self
+            .engine_camera
+            .filter(|(m, _)| m.as_slice() == vp)
+            .and_then(|(_, frame)| frame.field_view())
+            .map(|v| legaia_engine_ui::gte::PartCameraPose::from_field_view(&v))
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (i, d) in f.terrain.iter().enumerate() {
+            let Some(k) = legaia_engine_ui::gte::decoration_cell_basis(d.view_skip, Some(&cam))
+            else {
+                continue;
+            };
+            let r = legaia_engine_ui::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
+            let kr = glam::Mat3::from_cols_array_2d(&k).transpose() * glam::Mat3::from_mat4(r);
+            let page = glam::Mat3::from_diagonal(glam::Vec3::new(1.0, -1.0, 1.0)) * kr;
+            out.push(i as f32);
+            out.extend_from_slice(&page.to_cols_array());
+        }
+        out
+    }
+
     /// Per-placement **parked** mask (parallel to
     /// [`Self::field_placement_slots`]): `1` where the placed object's actor
     /// now stands at the off-map hide box (or carries a zero render scale),

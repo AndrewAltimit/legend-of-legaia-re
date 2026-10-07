@@ -1024,6 +1024,11 @@ struct PlayWindowApp {
     field_terrain_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
     /// The same, per `field_terrain_color_draws` entry.
     field_terrain_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    /// Per `field_terrain_draws` entry: a camera-facing cell's record flags
+    /// and rotation (`EnvDraw::view_skip`), re-placed every frame.
+    field_terrain_facing: Vec<Option<field_render::CameraFacing>>,
+    /// The same, per `field_terrain_color_draws` entry.
+    field_terrain_color_facing: Vec<Option<field_render::CameraFacing>>,
     /// `C`-key toggle: when `true`, the field render uses the wide debug
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
     /// (`camera_view::field_follow_view`). Defaults to the retail view.

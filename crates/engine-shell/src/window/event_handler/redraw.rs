@@ -2017,6 +2017,30 @@ impl PlayWindowApp {
                             cue: None,
                         });
                     }
+                    // A camera-facing terrain / decoration cell (record
+                    // flags `+0x12 & 0x380` - `rugi`'s candle glows, the
+                    // `vell` forest trees) is rebuilt against this frame's
+                    // camera: retail's decoration pass `FUN_801F7088` drops
+                    // the flagged axes from the camera rotation before the
+                    // cell's own. Shared kernel
+                    // `gte::decoration_cell_basis`; the browser play page
+                    // takes the same basis through `field_terrain_facing`.
+                    let facing_cam = self.part_camera_pose(in_world_map, cutscene_cam);
+                    let facing_model = |model: &Mat4,
+                                        f: Option<&Option<super::field_render::CameraFacing>>|
+                     -> Mat4 {
+                        let Some(Some((skip, rot))) = f else {
+                            return *model;
+                        };
+                        let Some(k) = legaia_engine_render::gte::decoration_cell_basis(
+                            *skip,
+                            facing_cam.as_ref(),
+                        ) else {
+                            return *model;
+                        };
+                        let basis = Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&k).transpose());
+                        Mat4::from_translation(model.w_axis.truncate()) * basis * *rot
+                    };
                     // Then the terrain / decor tile layer (drawn under
                     // the buildings): the `CELL_VISIBLE` field-map tiles
                     // (stone plaza, paths, riverbank).
@@ -2045,7 +2069,8 @@ impl PlayWindowApp {
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp: cam
+                                        * facing_model(model, self.field_terrain_facing.get(di)),
                                     cue: None,
                                 });
                             }
@@ -2071,7 +2096,11 @@ impl PlayWindowApp {
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp: cam
+                                        * facing_model(
+                                            model,
+                                            self.field_terrain_color_facing.get(di),
+                                        ),
                                     cue: None,
                                 });
                             }

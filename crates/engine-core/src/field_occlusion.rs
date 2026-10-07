@@ -455,6 +455,7 @@ mod tests {
             floor: Default::default(),
             cell: (0, 0),
             cull_radius: 0,
+            view_skip: 0,
         }
     }
 

@@ -37,6 +37,11 @@ use std::collections::{HashMap, HashSet};
 /// One resolved environment draw: a scene-pack mesh instanced at a world
 /// position. `world_*` are PSX field-frame coordinates (retail Y-down); the
 /// caller applies its own render-frame flip.
+/// The record-flag bits the decoration pass `FUN_801F7088` turns into a
+/// camera-facing matrix (`andi v0,v0,0x380` at `0x801F7714`); see
+/// [`EnvDraw::view_skip`].
+pub const DECORATION_VIEW_SKIP_MASK: u16 = 0x0380;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EnvDraw {
     /// Index into the environment-pack subset (the [`env_pack_tmd_indices`]
@@ -114,6 +119,19 @@ pub struct EnvDraw {
     /// The record's `+0x1E` cull radius ([`Placement::cull_radius`]), which
     /// widens that per-cell window test.
     pub cull_radius: u8,
+    /// The **camera-facing** bits of a terrain / decoration cell's record
+    /// flags (`+0x12 & 0x380`; `0` for a placed object). The decoration pass
+    /// `FUN_801F7088` tests them at `0x801F770C..0x801F779C`: set, it rebuilds
+    /// the cell's matrix from the base matrix and the camera rotation with
+    /// the flagged axes left out (`0x80` pitch, `0x100` yaw, `0x200` roll),
+    /// before the record's own rotation - so a flagged cell keeps facing the
+    /// camera on those axes. `rugi`'s candle glows (`0x80`), the forest
+    /// trees of `vell` / `vozz` (`0x180`) and the `0x380` billboards of
+    /// `deene` / `retona` are such cells. Hosts resolve the basis per frame
+    /// through `legaia_engine_ui::gte::decoration_cell_basis`.
+    ///
+    // REF: FUN_801F7088
+    pub view_skip: u16,
 }
 
 /// The rung(s) of the scene floor-height ladder one [`EnvDraw`]'s world Y was
@@ -530,6 +548,11 @@ pub fn resolve_placed_env_draws(
             },
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
+            view_skip: if p.floor_corner_nibbles.is_some() {
+                p.flags & DECORATION_VIEW_SKIP_MASK
+            } else {
+                0
+            },
         });
     }
     (draws, drops)
@@ -2208,6 +2231,7 @@ mod tests {
                 },
                 cell: (2, 3),
                 cull_radius: 0,
+                view_skip: 0,
             }]
         );
     }

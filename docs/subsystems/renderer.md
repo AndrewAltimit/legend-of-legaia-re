@@ -1128,6 +1128,21 @@ and `0x780` (`crates/engine-core/tests/move_ctrl52_census_disc.rs`), so a
 skip-bit node always drops yaw, and `0x300` is the one shape that keeps a
 factor (pitch).
 
+The field decoration pass `FUN_801F7088` has its own copy of the skip arm,
+keyed on the cell record's flags rather than a node word: `+0x12 & 0x380`
+(`0x801F770C..0x801F7718`) loads the base matrix and post-multiplies
+`RotMatrixX(pitch)` unless `0x80`, `RotMatrixY(yaw)` unless `0x100`,
+`RotMatrixZ(roll)` unless `0x200` (the angles `_DAT_8007B790..94`), then the
+record's own `+0x08 / +0x0A / +0x0C` rotations; the clear arm puts those on the
+full camera matrix. There is no `0x400` arm and no `6 / S_b` factor. About a
+third of the field maps carry such cells: `rugi`'s candle glows (`0x80`, a
+vertical quad that stays square to the lens), the `vell` / `vozz` forest
+trees (`0x180`), the `0x380` billboards of `deene` and `retona`. Drawn under
+the full camera, the glows lay flat as ellipses. Both play hosts rebuild a
+flagged cell per frame as `T(pos) * K * R_record` with `K = R^T * P`
+(`gte::decoration_cell_basis`; the native terrain draws, the play page's
+`field_terrain_facing`).
+
 What each arm leaves in the node's matrix slot (`0x1F8002D4`), read off the
 two routines' disassembly (`FUN_8005B3A8` is `MulMatrix2`, writing `a0 * a1`
 back into `a1`; `FUN_8005B4E8` scales the matrix by a vector):

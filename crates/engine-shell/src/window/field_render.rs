@@ -21,6 +21,24 @@ pub(super) type PlacedDrawList = (
     Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     Vec<legaia_engine_core::field_view_window::CellKey>,
     Vec<Option<usize>>,
+    Vec<Option<CameraFacing>>,
+);
+
+/// A camera-facing terrain / decoration cell
+/// ([`legaia_engine_core::field_env::EnvDraw::view_skip`]): the record's
+/// `0x380` bits and the cell's own rotation-and-scale, kept so the frame can
+/// rebuild the cell's model as `T(pos) * K * rot` against this frame's camera
+/// (`legaia_engine_render::gte::decoration_cell_basis`).
+pub(super) type CameraFacing = (u16, Mat4);
+
+/// [`PlayWindowApp::resolve_field_terrain_draws`]'s lists: the draws, the
+/// ladder rungs each Y came from, the visible-tile crop keys and the
+/// camera-facing cells, all parallel.
+pub(super) type TerrainDrawList = (
+    Vec<(usize, Mat4)>,
+    Vec<FloorAnchor>,
+    Vec<legaia_engine_core::field_view_window::CellKey>,
+    Vec<Option<CameraFacing>>,
 );
 
 /// The live **floor-height ladder** patch for the field draw lists.
@@ -950,11 +968,7 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> (
-        Vec<(usize, Mat4)>,
-        Vec<legaia_engine_core::field_env::FloorAnchor>,
-        Vec<legaia_engine_core::field_view_window::CellKey>,
-    ) {
+    ) -> TerrainDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Default::default();
         };
@@ -970,9 +984,9 @@ impl PlayWindowApp {
             return Default::default();
         }
         // Field frame: raw retail-convention transforms (see above).
-        let (draws, floors, _, cells, _) =
+        let (draws, floors, _, cells, _, facing) =
             self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None, None);
-        (draws, floors, cells)
+        (draws, floors, cells, facing)
     }
 
     /// World-map continent terrain draws: the dense visible-tile set
@@ -1339,6 +1353,9 @@ impl PlayWindowApp {
         // Parallel to `draws`: the bind record whose actor a script can move
         // (`World::object_draw_displacements`, folded in per frame).
         let mut records = Vec::new();
+        // Parallel to `draws`: a camera-facing cell's flags and rotation
+        // (`EnvDraw::view_skip`), re-placed against the camera every frame.
+        let mut facing = Vec::new();
         let bind_records =
             legaia_engine_core::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
         for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
@@ -1433,6 +1450,7 @@ impl PlayWindowApp {
             window_keys.push(legaia_engine_core::field_env::placed_window_key(d, binds));
             cell_keys.push(legaia_engine_core::field_view_window::CellKey::of_draw(d));
             records.push(record);
+            facing.push((d.view_skip != 0 && !flip_y).then_some((d.view_skip, rot)));
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -1440,7 +1458,7 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        (draws, floors, window_keys, cell_keys, records)
+        (draws, floors, window_keys, cell_keys, records, facing)
     }
 
     /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so

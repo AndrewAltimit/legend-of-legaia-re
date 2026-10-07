@@ -572,6 +572,7 @@ impl PlayWindowApp {
             placement_window_keys,
             placement_cell_keys,
             placement_records,
+            _,
         ) = self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
         // props' placement transforms map to `color_meshes` indices.
@@ -581,18 +582,23 @@ impl PlayWindowApp {
             placement_color_window_keys,
             placement_color_cell_keys,
             placement_color_records,
+            _,
         ) = self.resolve_field_placement_draws(
             &res,
             &color_tmd_src_index,
             &posed_placement_meshes,
             false,
         );
-        let (field_terrain_draws, floor_terrain, terrain_cell_keys) =
+        let (field_terrain_draws, floor_terrain, terrain_cell_keys, terrain_facing) =
             self.resolve_field_terrain_draws(&res, &tmd_src_index);
         // Untextured ground tiles resolve through the colour-mesh bridge (the
         // textured bridge has no entry for them - they'd render as floor holes).
-        let (field_terrain_color_draws, floor_terrain_color, terrain_color_cell_keys) =
-            self.resolve_field_terrain_draws(&res, &color_tmd_src_index);
+        let (
+            field_terrain_color_draws,
+            floor_terrain_color,
+            terrain_color_cell_keys,
+            terrain_color_facing,
+        ) = self.resolve_field_terrain_draws(&res, &color_tmd_src_index);
         log::info!(
             "play-window: {} field terrain draws (ground layer, +{} colour tiles)",
             field_terrain_draws.len(),
@@ -846,6 +852,8 @@ impl PlayWindowApp {
         self.field_terrain_color_draws = field_terrain_color_draws;
         self.field_terrain_cell_keys = terrain_cell_keys;
         self.field_terrain_color_cell_keys = terrain_color_cell_keys;
+        self.field_terrain_facing = terrain_facing;
+        self.field_terrain_color_facing = terrain_color_facing;
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
