@@ -2542,6 +2542,14 @@ fn battle_image(
     if battle.hud_glides_landed {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
     }
+    // Glides still in flight: each seated on the elapsed the displayed
+    // frame shows (`HudGlideSeat`).
+    if !battle.hud_glides.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_HUD_GLIDES",
+            crate::retail_compare_battle::HudGlideSeat::to_env(&battle.hud_glides),
+        ));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK

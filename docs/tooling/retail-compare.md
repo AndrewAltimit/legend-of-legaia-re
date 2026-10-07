@@ -532,6 +532,20 @@ cannot say how long ago a glide landed, and the displayed frame is two
 frame steps older: `battle_noa_miracle_art_combo`'s plates landed inside that
 window, so its frame shows them still rising while the seat lands them.
 
+A record still in flight seats its widget instead. Its target seat
+(`+0x04` / `+0x06`) names the widget - `(16, 12)` the actor plaque,
+`(16, 192)` the readout bar, another seat on the bar's row the target plaque,
+`x = 168` the combo cluster's anchor - and its `elapsed` byte, less the
+display lag (`FUN_801D9BBC` adds the frame step a pass, so the byte counts
+vsyncs), is how far the displayed frame shows it (`LEGAIA_SEAT_HUD_GLIDES`,
+`World::seat_battle_hud_glide`, the cluster's age on the host's HUD). The
+replayed cast or strike reaches its phase on its own clock, which the raise
+does not share: `nivora_duel_mid_blazing_slash` holds plaque and bar ten
+vsyncs into the raise, six on screen - the plaque all but above the top edge,
+the bar part below the bottom - where the engine's had landed, and
+`battle_melee_hit_spark`'s cluster is twelve vsyncs into its slide, eight on
+screen, which leaves it off the right edge.
+
 **A push the capture already holds.** A capture inside an action stands its
 combatants where that action had already moved them - a target shoved back
 by its hits, a member knocked down by a spell - and the drive replays the

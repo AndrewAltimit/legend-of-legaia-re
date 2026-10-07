@@ -132,6 +132,29 @@ impl World {
         }
     }
 
+    /// Seat the HUD widget glide whose retail record lands on `target` at
+    /// `elapsed` - the record's `+0x04` / `+0x06` target seat names the
+    /// widget: `(16, 12)` the actor plaque (record `0x44`), `(16, 192)` the
+    /// readout bar (record 7), any other seat on the bar's row the target
+    /// plaque (record `0x51`, `x = 304 - w`). Returns whether a glide the
+    /// engine holds took the seat. The retail-compare capture seats this
+    /// from a capture whose glides were in flight; no game path calls it.
+    pub fn seat_battle_hud_glide(&mut self, target: [i16; 2], elapsed: u8) -> bool {
+        let glide = match target {
+            [16, 12] => self.battle.action_plaque_glide.as_mut(),
+            [16, 192] => self.battle.readout_bar_glide.as_mut(),
+            [_, 192] => self.battle.target_plaque_glide.as_mut(),
+            _ => None,
+        };
+        match glide {
+            Some(g) => {
+                g.elapsed = elapsed.min(g.total);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// One tick of the two action-plate glides, on the step the commit log's
     /// launch takes ([`BATTLE_PASS_STEP_PER_TICK`]; `FUN_801D9BBC` walks
     /// every tracked widget in one pass).

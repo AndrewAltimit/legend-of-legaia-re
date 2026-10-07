@@ -213,6 +213,9 @@ pub struct RetailBattle {
     /// `FUN_801D9BBC` leaves once a glide has snapped onto its target
     /// (`0x801D9BE4` skips a record whose `total` byte is zero).
     pub hud_glides_landed: bool,
+    /// The HUD widget glides in flight, each as the displayed frame shows
+    /// it ([`HudGlideSeat`]); empty when every record has landed.
+    pub hud_glides: Vec<HudGlideSeat>,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -1026,6 +1029,77 @@ const HUD_GLIDE_TABLE: u32 = 0x11B4;
 const HUD_GLIDE_STRIDE: u32 = 0xC;
 const HUD_GLIDE_SLOTS: u32 = 40;
 
+/// One HUD widget glide in flight, as a capture's **displayed** frame shows
+/// it: the record's target seat (`+0x04` / `+0x06`, which names the widget -
+/// the actor plaque lands on `(16, 12)`, the readout bar on `(16, 192)`, the
+/// combo cluster's anchor on `(168, 168)`) and its `elapsed` byte less the
+/// display lag ([`display_lag_vsyncs`]). `FUN_801D9BBC` adds the frame step
+/// to `elapsed` a battle pass, so the byte counts vsyncs, the unit the lag is
+/// in; a glide younger than the lag had not left its start on the displayed
+/// frame (`0`).
+///
+/// The image child seats the engine's glides on these
+/// (`LEGAIA_SEAT_HUD_GLIDES`): the replay reaches an action's phase on its
+/// own clock, which the plates' sixteen-vsync raise does not share
+/// (`nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the
+/// raise, six on screen, where the engine's had landed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HudGlideSeat {
+    pub target: [i16; 2],
+    pub elapsed: u8,
+    pub total: u8,
+}
+
+impl HudGlideSeat {
+    /// `x:y:elapsed:total`, comma-separated - the form
+    /// [`Self::list_from_env`] reads back.
+    pub fn to_env(seats: &[Self]) -> String {
+        seats
+            .iter()
+            .map(|g| format!("{}:{}:{}:{}", g.target[0], g.target[1], g.elapsed, g.total))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// The inverse of [`Self::to_env`]; malformed entries are dropped.
+    pub fn list_from_env(v: &str) -> Vec<Self> {
+        v.split(',')
+            .filter_map(|e| {
+                let mut it = e.trim().split(':').map(str::parse::<i32>);
+                let (Some(Ok(x)), Some(Ok(y)), Some(Ok(elapsed)), Some(Ok(total))) =
+                    (it.next(), it.next(), it.next(), it.next())
+                else {
+                    return None;
+                };
+                Some(Self {
+                    target: [x as i16, y as i16],
+                    elapsed: elapsed.clamp(0, 255) as u8,
+                    total: total.clamp(0, 255) as u8,
+                })
+            })
+            .collect()
+    }
+}
+
+/// Every in-flight record of the HUD glide table, lag-corrected
+/// ([`HudGlideSeat`]).
+fn hud_glide_seats(ram: &[u8], ctx: u32, lag: u16) -> Vec<HudGlideSeat> {
+    (0..HUD_GLIDE_SLOTS)
+        .filter_map(|s| {
+            let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
+            let total = game_anchors::u8_at(ram, r);
+            (total != 0).then(|| HudGlideSeat {
+                target: [
+                    game_anchors::i16_at(ram, r + 4),
+                    game_anchors::i16_at(ram, r + 6),
+                ],
+                elapsed: u16::from(game_anchors::u8_at(ram, r + 1)).saturating_sub(lag) as u8,
+                total,
+            })
+        })
+        .collect()
+}
+
 /// The tween table `FUN_801D829C` builds (`ctx[+0x118C]`, nine
 /// `{u16 step, u16 endpoint}` records: pitch / yaw / roll, the translation
 /// trio, the focus trio).
@@ -1146,6 +1220,7 @@ impl RetailBattle {
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),
+            hud_glides: hud_glide_seats(ram, ctx, display_lag_vsyncs(ram)),
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
@@ -3717,6 +3792,47 @@ mod tests {
         assert_eq!(frame_step(&ram), 1, "a non-adaptive mode steps one vsync");
         put32(&mut ram, FORCED_STEP, 2);
         assert_eq!(frame_step(&ram), 2, "a forced step skips the history");
+    }
+
+    /// The glide table's in-flight records come out with the display lag
+    /// taken off `elapsed` (`nivora_duel_mid_blazing_slash`'s plaque and bar
+    /// read ten of sixteen, six on screen at step 2), a landed record
+    /// (`total == 0`) is skipped, and the list survives its env form.
+    #[test]
+    fn hud_glides_come_out_lag_corrected_and_round_trip() {
+        let mut ram = vec![0u8; 0x20_0000];
+        let ctx = 0x800E_B654;
+        let rec = |slot: u32| ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        // slot 0: the readout bar, (16, 234) -> (16, 192), ten in.
+        ram[(rec(0) & 0x1F_FFFF) as usize] = 16;
+        ram[(rec(0) & 0x1F_FFFF) as usize + 1] = 10;
+        put16(&mut ram, rec(0) + 4, 16);
+        put16(&mut ram, rec(0) + 6, 192);
+        // slot 1: the actor plaque, three in - younger than the lag.
+        ram[(rec(1) & 0x1F_FFFF) as usize] = 16;
+        ram[(rec(1) & 0x1F_FFFF) as usize + 1] = 3;
+        put16(&mut ram, rec(1) + 4, 16);
+        put16(&mut ram, rec(1) + 6, 12);
+        let seats = hud_glide_seats(&ram, ctx, 4);
+        assert_eq!(
+            seats,
+            vec![
+                HudGlideSeat {
+                    target: [16, 192],
+                    elapsed: 6,
+                    total: 16
+                },
+                HudGlideSeat {
+                    target: [16, 12],
+                    elapsed: 0,
+                    total: 16
+                },
+            ]
+        );
+        assert_eq!(
+            HudGlideSeat::list_from_env(&HudGlideSeat::to_env(&seats)),
+            seats
+        );
     }
 
     #[test]

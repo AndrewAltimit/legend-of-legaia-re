@@ -337,3 +337,31 @@ fn landing_the_hud_glides_puts_every_plate_at_rest() {
     assert_eq!(battle_readout_bar_dy(&world), 0);
     assert_eq!(battle_action_plaque_dy(&world), 0);
 }
+
+/// The retail-compare seat for a capture whose HUD glides were in flight:
+/// a record's target seat names the widget, and the engine's glide takes
+/// the record's elapsed.
+#[test]
+fn seating_a_hud_glide_matches_the_widget_by_its_target_seat() {
+    use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
+    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut world = party_world(1);
+    world.battle.command = None;
+    world.battle_ctx.active_actor = 1;
+    world.battle_ctx.action_state = 0x6E;
+    world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
+    world.actors[1].battle.active_target = 0;
+    world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    world.land_battle_hud_glides();
+    assert_eq!(battle_readout_bar_dy(&world), 0);
+    assert!(world.seat_battle_hud_glide([16, 192], 6));
+    assert_eq!(world.battle.readout_bar_glide.unwrap().elapsed, 6);
+    assert_ne!(battle_readout_bar_dy(&world), 0, "the bar is back mid-rise");
+    assert!(world.seat_battle_hud_glide([16, 12], 0));
+    assert_ne!(battle_action_plaque_dy(&world), 0);
+    assert!(
+        !world.seat_battle_hud_glide([123, 148], 4),
+        "a seat no engine glide owns is left alone"
+    );
+}

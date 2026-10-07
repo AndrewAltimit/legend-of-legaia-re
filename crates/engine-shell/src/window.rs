@@ -89,6 +89,12 @@ pub struct ScreenshotConfig {
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
+    /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
+    /// HUD widget glides still in flight, each at the elapsed its displayed
+    /// frame shows; the captured frame seats the engine's on them
+    /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
+    /// retail-compare image channel.
+    pub seat_hud_glides: Vec<legaia_parity::retail_compare_battle::HudGlideSeat>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
@@ -406,6 +412,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
+                .map(|v| legaia_parity::retail_compare_battle::HudGlideSeat::list_from_env(&v))
+                .unwrap_or_default(),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare_script::ScriptGate::from_env(&v)),

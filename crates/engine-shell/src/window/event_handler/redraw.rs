@@ -728,6 +728,24 @@ impl PlayWindowApp {
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.land_battle_hud_glides();
             }
+            if due {
+                for g in &sc.seat_hud_glides {
+                    // The combo cluster's anchor (placement record 80) glides
+                    // in from `x = 328` onto `x = 168`
+                    // (`battle_melee_hit_spark`'s record reads `(168, 168)`);
+                    // the host owns its age.
+                    if g.target[0] == 168 && (160..=176).contains(&g.target[1]) {
+                        if let Some(c) = self.battle_hud.combo.as_mut() {
+                            c.age = u16::from(g.elapsed);
+                        }
+                    } else {
+                        self.session
+                            .host
+                            .world
+                            .seat_battle_hud_glide(g.target, g.elapsed);
+                    }
+                }
+            }
             if due && let Some(rgb) = sc.seat_clear {
                 self.session.host.world.presentation.clear_rgb = rgb;
                 self.session.host.world.presentation.clear_ramp = None;
