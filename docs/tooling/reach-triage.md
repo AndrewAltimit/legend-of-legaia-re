@@ -38,20 +38,20 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **899 live / 849 entered / 27
-never entered, across 91 ladders**, with both defect lists empty (and 21
+page verdicts. Over the current union they are **900 live / 853 entered / 18
+never entered, across 91 ladders**, with both defect lists empty (and 33
 addresses in the *not observable* bucket plus 2 const anchors, outside all
-three). Of the 27, 19 are [disclosed and receiver-gated
-dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 8 are
+three). Of the 18, 13 are [disclosed and receiver-gated
+dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 5 are
 the reach worklist, every one of which carries a verdict below: `8004629c`
-and `800485bc` (b), `801f2134` (c), and `801d31b0`, `801d553c`,
-`801dba90`, `801dd4c4`, `801f1a00` (d). Three of the eight have a union
-member asserting entry that postdates the figure - `801f2134` (the close
-tick behind `w1d_world_map_render_ladder`'s fill fade), `800485bc`
-(`w1c_battle_render_ladder` rung 6) and `801dba90`
-(`dome_ladder_and_hub_real`) - so the next export reads them entered, and
-`8004629c` is pinned content-gated by a disc census rather than by the
-captures alone.
+(b), and `801d31b0`, `801d553c`, `801dd4c4`, `801f1a00` (d). The three rows
+an earlier figure listed as awaiting a newer union member - `801f2134`,
+`800485bc` and `801dba90` - read entered, and `8004629c` is pinned
+content-gated by a disc census rather than by the captures alone. The
+battle-tutorial countdown arm `801f7628`, a port site the ignore list had
+hidden as interior until the static images took the inherited-tail cut
+([`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code)),
+joined the live set in the same union and reads entered.
 
 The ladder count belongs in the same breath as the other three, because none
 of them is a property of the port: every ladder that lands moves all three,
