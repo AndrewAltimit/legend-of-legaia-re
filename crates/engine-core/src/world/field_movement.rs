@@ -1722,6 +1722,7 @@ impl World {
                         live: None,
                         vm,
                         walks: false,
+                        defers: b.enable & 1 != 0,
                     },
                 );
             }
@@ -1776,6 +1777,11 @@ impl World {
                 .wrapping_mul(u32::from(slot).wrapping_add(1))
                 .wrapping_add(0x1234_5678);
             let walks = variants.iter().any(|(_, code)| stream_has_walk_op(code));
+            let defers = rec
+                .bindings
+                .iter()
+                .find(|b| b.actor_id == bind_id)
+                .is_some_and(|b| b.enable & 1 != 0);
             self.npcs.ambient.insert(
                 slot,
                 FieldNpcAmbient {
@@ -1783,6 +1789,7 @@ impl World {
                     live: None,
                     vm,
                     walks,
+                    defers,
                 },
             );
         }
@@ -1850,6 +1857,19 @@ impl World {
         };
         let slots: Vec<u8> = self.npcs.ambient.keys().copied().collect();
         let mut globals_in = self.flags.story_flags;
+        // Retail's engaged bit `+0x10 & 0x80000`. The engine raises the word
+        // itself only on a touch post and reads a script context's
+        // engagement through its predicate. A conversation is narrower than
+        // retail here: it holds only the talker (retail's `+0x10 & 0x100`
+        // on the actor whose record runs), not every deferring stream.
+        let player_engaged = self.script_context_engages_player()
+            || self
+                .player_actor_slot
+                .and_then(|s| self.actors.get(usize::from(s)))
+                .is_some_and(|a| {
+                    a.move_state.flags & crate::field_actor_program::PLAYER_ENGAGED != 0
+                });
+        let talker = self.dialog.inline.as_ref().and_then(|id| id.npc_slot);
         for slot in slots {
             // Re-select against the live system-flag bank before stepping.
             let pick = self
@@ -1865,6 +1885,7 @@ impl World {
                 exempt: self.field_channel_flags(slot) & 3 != 0,
             };
             let seat = self.npcs.positions.get(&slot).copied();
+            let chan_flags = self.field_channel_flags(slot);
             let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
                 continue;
             };
@@ -1886,14 +1907,30 @@ impl World {
             // Split the borrow across the struct's fields so the bytecode can
             // be read while the VM is stepped - no per-frame clone.
             let FieldNpcAmbient {
-                variants, live, vm, ..
+                variants,
+                live,
+                vm,
+                defers,
+                ..
             } = chan;
-            if *live != Some(pick) {
+            // The stream's deferral gate (`FieldNpcAmbient::defers`): with
+            // `+0x8A` bit 0 set the interpreter returns before its first op
+            // while the player is engaged, the actor's own script or walk
+            // kernel holds it (`+0x10 & 0x500`), or it stands on the off-map
+            // park - the variant preamble included. The ramp pool is its own actor
+            // and keeps running.
+            // REF: FUN_80038158 (0x80038188..0x800381F4)
+            let defer = *defers
+                && (player_engaged
+                    || talker == Some(slot)
+                    || chan_flags & 0x500 != 0
+                    || seat.is_some_and(|(x, z)| x >= 0x3F81 && z >= 0x3F81));
+            if !defer && *live != Some(pick) {
                 *live = Some(pick);
                 vm.pc = 0;
                 vm.cursor = 0;
             }
-            let Some((_, code)) = variants.get(pick) else {
+            let Some((_, code)) = variants.get(live.unwrap_or(pick)) else {
                 continue;
             };
             let before = vm.heading;
@@ -1922,7 +1959,7 @@ impl World {
                 scene_guard_clear: true,
                 global_suppress: suppressed,
             });
-            if plan.dispatch.run_scripted {
+            if plan.dispatch.run_scripted && !defer {
                 vm.tick_with(code, speed, &blocking);
             } else {
                 vm.moved = false;

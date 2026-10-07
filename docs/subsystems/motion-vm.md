@@ -525,6 +525,19 @@ So the byte reads "this stream defers to the player", not "this stream is
 switched on", and a binding that authors it zero keeps choreographing through
 a cutscene.
 
+The port carries the bit as `FieldNpcAmbient::defers` and makes the same three
+tests before the variant preamble. The engaged bit is read through the
+engine's script-context predicate; an ordinary conversation holds only the
+talker's own stream (its record running is retail's `+0x10 & 0x100`), not
+every deferring stream in the scene. That is narrower than retail, where a
+talk freezes them all: with the full rule, villagers frozen beside a talk
+stood in the full-game ladder's walk routes and kept re-opening their touch
+talks. `rikuroa` `P1[3]` is the
+case a player sees: Noa's stream (bound with the bit set) ramps her to the
+compass point `LUT[7]` and back, and without the gate it ran through her own
+pre-battle beat and turned her away from the creature her spawn prologue's
+`4C 85 00 00 16` had faced her toward.
+
 ### Walk-op speed encoding
 
 Every walk op steps on the same `0x80 >> (2 + bits)` per-tick ladder as the

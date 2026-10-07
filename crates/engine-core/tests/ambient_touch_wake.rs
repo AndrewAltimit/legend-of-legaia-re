@@ -57,6 +57,7 @@ fn world_with_npc_at(npc: (i16, i16)) -> World {
     world.npcs.ambient.insert(
         1,
         FieldNpcAmbient {
+            defers: false,
             variants: vec![(0xFFFF, PROGRAM.to_vec())],
             live: None,
             vm,
