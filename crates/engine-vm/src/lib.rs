@@ -180,6 +180,7 @@ pub mod gameover_banner;
 pub mod gte_divide;
 pub mod menu;
 pub mod menu_actor_seed;
+pub mod menu_input;
 pub mod motion_pause;
 pub mod motion_vm;
 pub mod move_buffer;

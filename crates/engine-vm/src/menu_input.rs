@@ -21,7 +21,7 @@
 //! This module ports the primitive as engine idiom: a plain
 //! [`menu_cursor_nav`] function over a caller-owned cursor cell plus a
 //! [`NavButtons`] snapshot (the host derives the four booleans from
-//! [`crate::input::InputState`]), returning a [`CursorNav`] whose
+//! `engine-core`'s `input::InputState`), returning a [`CursorNav`] whose
 //! [`CursorNav::sfx_cue`] surfaces the retail cue id for the host to play
 //! through its `SfxBank` - matching how the rest of engine-core surfaces
 //! sound cues (return values, not a global enqueue).
@@ -83,7 +83,7 @@ impl CursorNav {
 }
 
 /// Per-frame button snapshot the navigator consumes. The host derives these
-/// from [`crate::input::InputState`]: `confirm` / `cancel` are the game's
+/// from `engine-core`'s `input::InputState`: `confirm` / `cancel` are the game's
 /// confirm / cancel bindings (retail `_DAT_8007B874 & DAT_801EF0F0` /
 /// `DAT_801EF0F4`), and `left` / `right` are the held-pad decrement /
 /// increment directions (retail `_DAT_8007BB84 & 0x1000` / `0x4000`).

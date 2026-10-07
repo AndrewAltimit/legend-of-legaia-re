@@ -25,3 +25,4 @@ pub mod minigame_floor;
 pub mod minigame_fx;
 pub mod other_game_overlay;
 pub mod slot_machine;
+pub mod tile_board;

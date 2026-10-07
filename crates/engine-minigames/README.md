@@ -17,6 +17,7 @@ at its old path (`legaia_engine_core::dance`, `legaia_engine_core::slot_machine`
 | `fishing` / `fishing_actors` / `fishing_chrome` / `fishing_hub` | The fishing minigame's `PondSession`, its rod / lure / line actors, the venue chrome and the hub screen. See [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md). |
 | `minigame_actor` / `minigame_fx` / `minigame_floor` | The overlay band's shared actor record, effect-part pool and venue floor grid. |
 | `other_game_overlay` | PROT 0977 kernels shared by the hub-band games (step scaling, voice cues, the score-tally ramp). |
+| `tile_board` | The op-`0x49` tile board: cell codes, header, walk state machine, fades, prompt. See [`tile-board.md`](../../docs/subsystems/tile-board.md). |
 
 ## What stays in `engine-core`, and why
 
@@ -40,10 +41,12 @@ simulation crate:
 - **Muscle Dome** - `muscle_dome` and `muscle_ringside` are an ordinary battle
   under the hood (spells, the battle command menu, the arts input), so they
   sit with the battle modules.
-- **`prize_exchange` / `tile_board`** - both drive the world's `ItemBag` /
-  `World` directly.
+- **`prize_exchange`** - its buy step writes into the world's `ItemBag`.
+  `tile_board`'s per-cell draw assembly reads the `World` and stays beside
+  the re-export.
 
 The pure leaves these engines share with the rest of the engine (the BIOS
 `rand()` LCG, both pad-word layouts, the `.MAP` region tables, the field clip
-step, the retail camera globals and the camera-relative glide) live one layer
+step, the retail camera globals, the camera-relative glide and the menu cursor
+navigator `menu_input`) live one layer
 lower, in `legaia-engine-vm`.

@@ -103,7 +103,7 @@ pub mod mdec_dma_sync;
 pub mod menu_arrange;
 pub mod menu_cues;
 pub mod menu_glyph_atlas;
-pub mod menu_input;
+pub use legaia_engine_vm::menu_input;
 pub mod menu_item_category;
 pub mod menu_list_rows;
 pub mod menu_open_sequence;

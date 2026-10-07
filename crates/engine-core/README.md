@@ -447,7 +447,8 @@ non-summon casts and specials, off the parsed `move_power` table.
 Each is a headless rules engine driven by disc-parsed tables, with the
 presentation left to the host. The ones that need no `World` - `dance`,
 `dance_tutorial`, `minigame_actor`, `minigame_fx`, `minigame_floor`,
-`baka_*`, `slot_machine`, `fishing*`, `other_game_overlay` - live in
+`baka_*`, `slot_machine`, `fishing*`, `other_game_overlay`, `tile_board` -
+live in
 [`legaia-engine-minigames`](../engine-minigames/README.md) and are
 re-exported here at their old paths; this crate keeps their `World` glue
 and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
