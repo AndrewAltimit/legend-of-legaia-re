@@ -443,7 +443,9 @@ on the frame the walk-on band was due), the naming prompt's Yes/No confirm
 gets Up first (it opens on No), and a
 battle is fought through the command ring, one pad edge at a time, by a
 fighter shaped like a player: a member who is down gets a revive, and a
-member in danger - standing, and under 45% of its HP, or unable to take another loss the
+member in danger - standing, and under 45% of its HP (three fifths against a
+boss of eight times the party's largest HP or more, whose party-wide hit is
+unseen until it lands), or unable to take another loss the
 size of the biggest it took this battle between two of the party's command
 windows (a round, not a hit: a fast foe acts twice in one, and a cast lands
 its flurry and its burst as separate HP writes) - gets a heal: a party heal when two
@@ -457,7 +459,9 @@ spending the rest on plain directions (whether a matched art fires is the
 queue builder's call, out of the Spirit gauge). The plan runs up to nine
 commands, the length of each character's Miracle Art. A random encounter that
 interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
-the fight forbids running.
+the fight forbids running. A member in danger is healed before the run, unless
+the foes' last round took half or more of what the party still holds: a heal
+does not win that race, and the run is the better draw.
 
 A foe that winds up is guarded against the turn its blow lands: a
 capture-class charge body (Xain's Bull Charge, PROT 0953) sets its caster's
@@ -478,6 +482,17 @@ Earthquake), a member that hit would drop and the guard would not takes
 Spirit, ahead of healing itself when no ally is worse off; not on the round
 after a heavy one from a foe that has never hit hard twice running, and never
 against a foe that telegraphs its hit with a charge latch.
+
+One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
+opens behind a Mystic Shield that halves every hit on it, and its pick arm
+(`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time
+in three only once the shield is down (at half HP), on the odd values of the
+per-round battle-mode counter, and while it holds the 255 MP the cast spends.
+The cast lands a flurry and a burst that together take about 1900 from each
+member of the anchor's lv30 party - more than any member holds - and about
+half that in the Spirit stance. So once the shield has dropped, on the rounds
+the cast can come, every member above 55% of its HP takes Spirit; the others
+are the heal arm's, and the even rounds are the party's to act on.
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per

@@ -1457,6 +1457,38 @@ thread_local! {
 
 /// Percent of max HP below which the fighter heals a member.
 const HEAL_BELOW_PCT: u32 = 45;
+/// [`HEAL_BELOW_PCT`] against a boss ([`boss_fight`]).
+const BOSS_HEAL_BELOW_PCT: u32 = 60;
+
+/// A fight that forbids running against a foe of eight times the party's
+/// largest HP or more (`dohaty`'s 17200 to a 1256-HP Gala).
+fn boss_fight(w: &legaia_engine_core::world::World) -> bool {
+    if !w.battle.no_escape {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let ours = (0..n)
+        .map(|i| u32::from(w.actors[i].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    (n..w.actors.len()).any(|i| {
+        let a = &w.actors[i].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 8
+    })
+}
+
+/// The heal threshold for this fight. Against a boss a member tops up below
+/// three fifths: its party-wide hit is unseen until it lands, and the
+/// `dohaty` fight's first one (832 / 913 / 671) dropped two members sitting
+/// at 54% and 53% of their HP, above the ordinary threshold.
+fn heal_below_pct(w: &legaia_engine_core::world::World) -> u32 {
+    if boss_fight(w) {
+        BOSS_HEAL_BELOW_PCT
+    } else {
+        HEAL_BELOW_PCT
+    }
+}
 
 thread_local! {
     /// The largest HP loss one member took between two of the party's
@@ -1603,6 +1635,57 @@ fn guard_before_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         .iter()
         .enumerate()
         .all(|(i, &h)| i == usize::from(actor) || h > aoe * 5 / 8)
+}
+
+/// Whether the coming round may bring Evil Seru Magic (`0xAD`), the
+/// party-wide flurry and burst of monster `0xB4` (the `chitei2` P2[13]
+/// fight): its pick arm (`FUN_801E9FD4`, ported as `monster_ai::decide`)
+/// rolls the cast one time in three, but only once its Mystic Shield is
+/// down (`_DAT_8007BD84` clear - the damage halve a player sees lift), on
+/// the odd values of the per-round battle-mode counter, and while it holds
+/// the 255 MP the cast spends. A lv30 party takes about 1900 a member from
+/// it unguarded - more than any member holds - and about half that in the
+/// Spirit stance, so a player who has watched the shield drop guards the
+/// alternate rounds the cast can come on and acts on the others.
+fn evil_magic_due(w: &legaia_engine_core::world::World) -> bool {
+    const EVIL_MAGIC_CASTER: u16 = 0xB4;
+    const EVIL_MAGIC_MP: u16 = 0xFF;
+    let ai = &w.battle.monster_ai_state;
+    if ai.flag_bd84 != 0 || ai.mode_flags & 1 == 0 {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (n..w.actors.len()).any(|i| {
+        let a = &w.actors[i];
+        a.battle.hp > 0
+            && a.battle_monster_id == Some(EVIL_MAGIC_CASTER)
+            && a.battle.mp >= EVIL_MAGIC_MP
+            && u32::from(a.battle.hp) <= u32::from(a.battle.max_hp) / 2
+    })
+}
+
+/// [`evil_magic_due`] for one member: it guards when the stance lets it
+/// live through the cast (about half of what it does unguarded), and is left
+/// to the heal arm when even the guarded hit would drop it.
+fn wants_evil_magic_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if !evil_magic_due(w) {
+        return false;
+    }
+    let Some(a) = w.actors.get(usize::from(actor)) else {
+        return false;
+    };
+    let hp = projected_hp(w)
+        .get(usize::from(actor))
+        .copied()
+        .unwrap_or(0);
+    hp > 0 && hp * 100 >= u32::from(a.battle.max_hp) * 55
+}
+
+/// Whether the foes' last round took half or more of the HP the party
+/// still holds: healing cannot keep pace with that, and fleeing can.
+fn losing_race(w: &legaia_engine_core::world::World) -> bool {
+    let last = ROUND_HISTORY.with(|h| h.borrow().last().copied().unwrap_or(0));
+    last > 0 && last * 2 >= party_hp_key(w)
 }
 
 /// Whether a living foe holds its ability latch - the wind-up of a charge
@@ -1791,7 +1874,7 @@ fn wanted_item(
     let duel = solo_duel(w);
     let limit = |i: usize| {
         let max = u32::from(w.actors[i].battle.max_hp);
-        let pct = max * HEAL_BELOW_PCT / 100;
+        let pct = max * heal_below_pct(w) / 100;
         // A party-wide hit's per-member share swings by a tenth or more
         // between casts (Van Saryu's Earthquake: 550, then 609 on a 690-HP
         // Gala), so the margin over it is a quarter.
@@ -2498,6 +2581,12 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && guard_before_heal(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
+            // Evil Seru Magic can come this round: the stance.
+            CommandPhase::Menu { .. }
+                if lesson.is_none() && wants_evil_magic_guard(w, cmd.actor) =>
+            {
+                PadButton::Down.mask()
+            }
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
             // Out of MP for its best spell in a boss fight: a drink.
             CommandPhase::Menu { .. } if lesson.is_none() && drink() => PadButton::Up.mask(),
@@ -2525,9 +2614,16 @@ fn fight_pad(session: &BootSession) -> u16 {
             // (`no_escape`) is fought. A member low enough to want a heal
             // takes it first: monster swings play their own clips and roll
             // their own power bytes, so a failed run under a full enemy
-            // round can now take a worn member from half HP to zero.
+            // round can now take a worn member from half HP to zero. But a
+            // heal does not win a race the foes are winning: once the last
+            // round took half of what the party still holds, the turn spent
+            // healing is a turn under another such round, and the run is
+            // the better draw (`vozz`'s three-monster F4 after a caught Run:
+            // a Healing Leaf a round into ~250 a round, two members down).
             CommandPhase::RoundPrompt { .. }
-                if FLEE_ENCOUNTERS.with(std::cell::Cell::get) && !w.battle.no_escape && !heal() =>
+                if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
+                    && !w.battle.no_escape
+                    && (!heal() || losing_race(w)) =>
             {
                 PadButton::Right.mask()
             }
@@ -2780,11 +2876,21 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             }
             if trace_hits {
                 eprintln!(
-                    "    [round] t={t} history {:?} due {} aoe {} hp {:?}",
+                    "    [round] t={t} history {:?} due {} aoe {} hp {:?} mode {} foe mp {:?}",
                     ROUND_HISTORY.with(|h| h.borrow().clone()),
                     big_round_due(),
                     AOE_HIT.with(std::cell::Cell::get),
                     party_hp(session),
+                    session.host.world.battle.monster_ai_state.mode_flags,
+                    session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .skip(session.host.world.party.party_count.clamp(1, 3) as usize)
+                        .map(|a| a.battle.mp)
+                        .filter(|&m| m > 0)
+                        .collect::<Vec<_>>(),
                 );
                 last_cmd = Default::default();
             }
