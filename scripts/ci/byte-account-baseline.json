@@ -22,12 +22,12 @@
     "scene_asset_table": 0,
     "scene_tmd_stream": 0,
     "scene_vab_stream": 0,
-    "summon_readef": 20,
+    "summon_readef": 0,
     "vab_multi_bank": 0
   },
   "disc": {
     "accounted_pct": 99.83,
     "structural_pct": 99.83,
-    "work_bytes": 8095
+    "work_bytes": 8075
   }
 }

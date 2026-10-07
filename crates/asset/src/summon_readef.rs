@@ -209,6 +209,44 @@ pub struct ActorRecordSlot {
     pub name: Option<String>,
 }
 
+impl ActorRecordSlot {
+    /// How many offsets the `+0x4C` table carries **past** [`Self::part_count`]:
+    /// the link targets the per-part entries name.
+    ///
+    /// `FUN_801F19EC` reads two link words in every part entry, `+0x04` and
+    /// `+0x08`, and a non-zero one is a **1-based** index into the same table
+    /// past the part slots: it is replaced by
+    /// `record + table[part_count + link - 1]` (`0x801F1B08..0x801F1B34` and
+    /// `0x801F1B54..0x801F1B80`; the big-summon arm repeats it at
+    /// `0x801F1C28..0x801F1CA0`). Nothing else bounds that tail - the
+    /// installer never reads a count for it - so its length is the largest
+    /// link any entry names. On the disc that equals the record's `+0x4B`
+    /// byte in every record, which no instruction in the installer reads.
+    ///
+    /// `pool` is the buffer the part offsets are relative to: the record slot
+    /// for the three-slot groups, the previous slot's part pool for the big
+    /// summons (see [`parse_cast`]). A link that would run the table into the
+    /// attack name at [`Self::name_offset`] is ignored.
+    pub fn linked_offset_count(&self, pool: &[u8]) -> usize {
+        let base = usize::from(self.part_count);
+        let capacity = self.name_offset.saturating_sub(0x4C) / 4;
+        let mut most = 0usize;
+        for &off in &self.part_offsets {
+            let off = off as usize;
+            for link_at in [off + 4, off + 8] {
+                let Some(w) = pool.get(link_at..link_at + 4) else {
+                    continue;
+                };
+                let link = u32::from_le_bytes(w.try_into().unwrap()) as usize;
+                if link != 0 && base + link <= capacity {
+                    most = most.max(link);
+                }
+            }
+        }
+        most
+    }
+}
+
 /// Classification of one `0x10800` slot.
 #[derive(Debug, Clone)]
 pub enum SlotKind {
@@ -738,6 +776,30 @@ pub fn decode_texture_slot(slot: &[u8], t: &TextureSlot, clut_sub: u8) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_part_table_tail_is_sized_by_the_largest_link() {
+        // Two parts at 0x100 / 0x200; part 0 links to tail slot 2, part 1
+        // to tail slot 1 and to a slot that would overrun the name.
+        let mut slot = vec![0u8; 0x400];
+        let put = |b: &mut Vec<u8>, o: usize, v: u32| b[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        put(&mut slot, 0x104, 2);
+        put(&mut slot, 0x204, 1);
+        put(&mut slot, 0x208, 9);
+        let rec = ActorRecordSlot {
+            name_offset: 0x4C + 4 * 4,
+            tmd_offset: 0x300,
+            texture_pool_offset: 0x300,
+            part_count: 2,
+            part_offsets: vec![0x100, 0x200],
+            name: None,
+        };
+        // Capacity is four slots: two parts plus two links. Link 9 would run
+        // into the name and is ignored.
+        assert_eq!(rec.linked_offset_count(&slot), 2);
+        put(&mut slot, 0x104, 0);
+        assert_eq!(rec.linked_offset_count(&slot), 1);
+    }
 
     #[test]
     fn detect_rejects_short_and_undivisible_buffers() {
