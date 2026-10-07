@@ -309,8 +309,8 @@ impl World {
                 ]
             })
             .unwrap_or([0, -300, -645]);
-        if crate::summon::SERU_SUMMON_IDS.contains(&def.id) {
-            // A player Seru-magic id resolves to a per-summon overlay: request
+        if crate::summon::PLAYER_SUMMON_IDS.contains(&def.id) {
+            // A player summon id resolves to a per-summon overlay: request
             // the summon-creature spawn (the retail cast band's `FUN_8003EC70`
             // overlay load - see `crate::summon`). A band-owned cast's spawn
             // is the stager's (already out and walking by the strike).

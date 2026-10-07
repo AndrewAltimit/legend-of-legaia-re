@@ -561,13 +561,13 @@ impl PlayWindowApp {
                 shop_opened_this_tick = true;
                 self.menu_runtime.open_prize_exchange(exchange);
             }
-            // Production cast-band trigger: a player Seru-magic cast
-            // (spell id 0x81..=0x8b) requests a summon spawn. The
-            // faithful render is the namesake battle_data creature drawn
-            // through the enemy animation pipeline (the summon reuses
-            // that creature's mesh + per-object TRS animation), so spawn
-            // it as a battle creature rather than the move-VM scene-graph
-            // stand-in (`summon::summon_creature_id`).
+            // Production cast-band trigger: a player summon cast
+            // (spell id 0x81..=0xA0) requests a summon spawn. The
+            // faithful render is the cast's own body drawn through the
+            // enemy animation pipeline (the namesake battle_data creature
+            // for 0x81..=0x95, the cast's summon.dat record above that),
+            // so spawn it as a battle creature rather than the move-VM
+            // scene-graph stand-in (`summon::summon_spawn_asset`).
             if let Some((spell_id, _origin)) = self.session.host.world.take_pending_summon_spawn() {
                 self.spawn_summon_creature(spell_id);
             }

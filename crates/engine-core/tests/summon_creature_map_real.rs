@@ -77,11 +77,45 @@ fn player_summons_map_to_their_namesake_battle_data_creatures() {
     assert!(summon_creature_id(0x10, &entry).is_none());
 
     // The high block 0x99..=0xA0 is a bespoke mesh, not an archive creature, so
-    // it is intentionally unresolved here (the bespoke-mesh render is unwired).
+    // it is intentionally unresolved here (its body comes from `summon.dat` -
+    // `summon_spawn_asset`, pinned below).
     for spell in 0x99u8..=0xA0 {
         assert!(
             summon_creature_id(spell, &entry).is_none(),
             "high-block summon {spell:#04x} should not resolve to an archive creature",
         );
     }
+}
+
+/// Every player summon id seats a drawable body through the one kernel both
+/// hosts call: the archive twin for `0x81..=0x95`, the cast's own
+/// `summon.dat` record (PROT 893) for the high block.
+#[test]
+fn every_player_summon_resolves_a_drawable_spawn_body() {
+    let Some(entry) = battle_data() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT/0867 missing");
+        return;
+    };
+    let summon_dat = ["extracted/PROT", "../../extracted/PROT"]
+        .iter()
+        .find_map(|d| std::fs::read(PathBuf::from(d).join("0893_monster_se.BIN")).ok())
+        .expect("summon.dat (PROT 893) beside 867");
+    use legaia_engine_core::summon::{HIGH_SUMMON_IDS, summon_spawn_asset};
+    for spell in (0x81u8..=0x95).chain(HIGH_SUMMON_IDS) {
+        let a = summon_spawn_asset(spell, &entry, Some(&summon_dat))
+            .unwrap_or_else(|| panic!("{spell:#04x}: no spawn body"));
+        assert_eq!(a.creature_id.is_some(), spell <= 0x95, "{spell:#04x}");
+        let tmd = legaia_tmd::parse(a.mesh.tmd_bytes()).expect("parse body TMD");
+        assert!(!tmd.objects.is_empty(), "{spell:#04x}: empty TMD");
+        let mut vram = legaia_tim::Vram::new();
+        let vmesh = a
+            .mesh
+            .battle_render_mesh(0, &mut vram)
+            .unwrap_or_else(|| panic!("{spell:#04x}: no render mesh"));
+        assert!(!vmesh.indices.is_empty(), "{spell:#04x}: no triangles");
+        assert!(a.idle.is_some(), "{spell:#04x}: no idle clip");
+    }
+    // Without summon.dat the high block has no body; the archive twins do.
+    assert!(summon_spawn_asset(0x9E, &entry, None).is_none());
+    assert!(summon_spawn_asset(0x8C, &entry, None).is_some());
 }

@@ -914,8 +914,18 @@ impl LegaiaRuntime {
         let Ok(archive) = host.index.entry_bytes_extended(867) else {
             return;
         };
-        let Some(creature) = legaia_engine_core::summon::summon_creature_id(spell_id, &archive)
-        else {
+        // The cast's own body: the archive twin for 0x81..=0x95, the cast's
+        // `summon.dat` record (PROT 893) for the high block - the native
+        // window's resolution, through the same kernel.
+        let summon_dat = host
+            .index
+            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
+            .ok();
+        let Some(asset) = legaia_engine_core::summon::summon_spawn_asset(
+            spell_id,
+            &archive,
+            summon_dat.as_ref().map(|b| b.as_slice()),
+        ) else {
             return;
         };
         let Some(br) = self.battle_render.as_ref() else {
@@ -923,10 +933,7 @@ impl LegaiaRuntime {
         };
         let mut vram = br.vram.clone();
         let tex_slot = br.tex_slots_used.min(4);
-        let mesh = match legaia_asset::monster_archive::mesh(&archive, creature) {
-            Ok(Some(m)) => m,
-            _ => return,
-        };
+        let mesh = &asset.mesh;
         let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
             return;
         };
@@ -938,9 +945,7 @@ impl LegaiaRuntime {
         }
         let object_ids =
             legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
-        let idle = legaia_asset::monster_archive::idle_animation(&archive, creature)
-            .ok()
-            .flatten();
+        let idle = asset.idle.clone();
         let rest_pose = idle
             .as_ref()
             .and_then(|a| a.frames.first())
@@ -985,10 +990,8 @@ impl LegaiaRuntime {
         // The creature's archive-order clip set, so the stager's staged ids
         // (the walk, clip 1) resolve through the same commit as a monster's
         // - the native window's seat, leg for leg.
-        if let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, creature)
-            && !anims.is_empty()
-        {
-            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+        if !asset.clips.is_empty() {
+            let clips: Vec<_> = asset.clips.iter().cloned().map(Some).collect();
             host.world
                 .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
         }

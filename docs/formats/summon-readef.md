@@ -379,9 +379,14 @@ For the **base + evolved-Seru summons (`0x81..=0x95`)** this actor-record TMD is
 the summon reuses an ordinary enemy creature's mesh. Matching each group's
 actor-record TMD against the archive by longest-common-prefix recovers the full
 spell → creature map (e.g. Gimard `0x81`→ archive id 10; the otherwise
-capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The map lives
+capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The texture
+pool is byte-identical too, so an evolved cast seats its own evolved body
+(Gola Gola, not Gimard), colours included. The map lives
 in `legaia_asset::summon_creatures` and is byte-validated by the disc-gated
-`summon_creature_tmd_map_real`. The **big-summon block `0x9A..=0xA0`** instead
+`summon_creature_tmd_map_real`. Both play hosts seat the body through
+`engine-core::summon::summon_spawn_asset`: the archive twin where one exists,
+the cast's own record (`parse_cast`) otherwise, which covers the high block
+`0x99..=0xA0`. The **big-summon block `0x9A..=0xA0`** instead
 carries a **bespoke mesh** - its actor-record TMD byte-matches no archive
 record - so those seven summons are not reused enemy bodies, and the
 creature-id route resolves nothing for them. Their mesh is still the actor

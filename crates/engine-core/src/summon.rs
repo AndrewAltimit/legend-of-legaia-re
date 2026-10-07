@@ -269,6 +269,65 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
     })
 }
 
+/// What a host seats as the summoned creature: the mesh (TMD + texture pool,
+/// monster-shaped so `MonsterMesh::battle_render_mesh` relocates it), the
+/// clip the seat idles on, and the record-order clip set the stager's staged
+/// ids resolve against.
+#[derive(Debug, Clone)]
+pub struct SummonSpawnAsset {
+    /// The archive creature id for a reused enemy body, `None` for a body
+    /// that comes out of the cast's own `summon.dat` group.
+    pub creature_id: Option<u16>,
+    pub mesh: legaia_asset::monster_archive::MonsterMesh,
+    pub idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
+    pub clips: Vec<legaia_asset::monster_archive::MonsterAnimation>,
+}
+
+/// Resolve the body a player summon `spell_id` seats as slot 7.
+///
+/// Retail's seat arm `FUN_801F19EC` installs the cast's **own** streamed
+/// `summon.dat` actor record (TMD + texture pool, through the monster mesh
+/// installer `FUN_80055468`) for every id. For the base and evolved blocks
+/// (`0x81..=0x95`) that record's TMD and texture pool are byte-identical to
+/// the mapped `battle_data` creature's (the disc-gated
+/// `summon_creature_tmd_map_real` oracle pins both), so the archive record -
+/// with its archive-order clips - is the same body. Every other cast id
+/// (the high block `0x99..=0xA0` and the flutes) has no archive twin and
+/// resolves from `summon_dat` (extraction PROT 893) through
+/// [`legaia_asset::summon_readef::parse_cast`], idling on the record's clip 0.
+/// `None` when neither source resolves.
+///
+/// REF: FUN_801F19EC, FUN_80055468
+pub fn summon_spawn_asset(
+    spell_id: u8,
+    battle_data_entry: &[u8],
+    summon_dat: Option<&[u8]>,
+) -> Option<SummonSpawnAsset> {
+    use legaia_asset::monster_archive as ma;
+    if let Some(creature) = summon_creature_id(spell_id, battle_data_entry)
+        && let Ok(Some(mesh)) = ma::mesh(battle_data_entry, creature)
+    {
+        return Some(SummonSpawnAsset {
+            creature_id: Some(creature),
+            mesh,
+            idle: ma::idle_animation(battle_data_entry, creature)
+                .ok()
+                .flatten(),
+            clips: ma::animations(battle_data_entry, creature)
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+        });
+    }
+    let cast = legaia_asset::summon_readef::parse_cast(summon_dat?, spell_id).ok()?;
+    Some(SummonSpawnAsset {
+        creature_id: None,
+        idle: cast.clips.first().cloned(),
+        mesh: cast.mesh,
+        clips: cast.clips,
+    })
+}
+
 /// One entry of the four-slot **big-summon** band `0x9A..=0xA0` - the Sim-Seru
 /// summons (Palma / Mule / Horn / Jedo) and the three Ra-Seru summons
 /// (Meta / Terra / Ozma). These are the summons whose creature body is
