@@ -82,7 +82,7 @@ pub mod field_lit_mesh;
 pub mod field_menu;
 pub mod field_menu_dispatch;
 pub mod field_occlusion;
-pub mod field_regions;
+pub use legaia_engine_vm::field_regions;
 pub mod field_view_window;
 pub mod fishing;
 pub mod fishing_actors;
@@ -578,7 +578,7 @@ mod tests {
     }
 }
 
-pub mod camera_rel_glide;
+pub use legaia_engine_vm::camera_rel_glide;
 pub mod field_save_screen_actor;
 pub mod morph_weight_apply;
 pub mod scene_transition_actor;

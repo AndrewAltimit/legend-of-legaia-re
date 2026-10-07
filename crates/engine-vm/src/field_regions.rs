@@ -18,7 +18,7 @@
 //! - [`refresh_region_attributes`] - `FUN_800180EC`, the per-tile refresh:
 //!   rebuilds the region-type bitmask (`_DAT_8007B8F4` - the bank the
 //!   field-VM op `0x42` mode 0 tests via
-//!   [`legaia_engine_vm::field::FieldHost::extra_flags`]) by ORing
+//!   [`crate::field::FieldHost::extra_flags`]) by ORing
 //!   `1 << type` for every region containing the tile, and latches the last
 //!   type-0/1 region's raw box bytes into the scratchpad attribute block
 //!   (`0x1F800384..87` + type at `0x1F80037C`). Falls back to the full-map
@@ -469,7 +469,7 @@ pub struct WindowSpawn {
     pub tile: (u8, u8),
     /// The placement's **footprint-anchor tile** (`tile + (i8 desc[+6], i8
     /// desc[+7])`) - the tile whose [`CELL_BIND_OWNED`] bit the sweep tests,
-    /// and the same anchor a [`crate::field_env::EnvDraw`] carries, which is
+    /// and the same anchor a `legaia_engine_core::field_env::EnvDraw` carries, which is
     /// how a host matches a drawn placement to this actor.
     pub anchor: (u8, u8),
     /// The spawn vector retail hands `FUN_80024C88`: `x = tile_x * 0x80 +
@@ -591,11 +591,11 @@ pub fn window_rebuild_spawns(
 /// scratchpad LUT. The returned list is in the sweep's own order (X outer,
 /// Z inner).
 ///
-/// Live: [`crate::world::World::recentre_field_window`] runs it on every
+/// Live: `legaia_engine_core::world::World::recentre_field_window` runs it on every
 /// camera re-centre the engine models and keeps the result as the scene's
 /// windowed static-object list
-/// ([`crate::world::StaticObjectWindow`]); both play hosts consume that list
-/// through [`crate::field_env::placed_draw_live`].
+/// (`legaia_engine_core::world::StaticObjectWindow`); both play hosts consume that list
+/// through `legaia_engine_core::field_env::placed_draw_live`.
 // REF: FUN_8003A55C (the complementary init sweep), FUN_80024C88 (the spawn),
 // FUN_80020DE0 (template +0x14 -> actor +0x56)
 pub fn window_rebuild_spawns_resident(
@@ -696,7 +696,7 @@ impl RegionMatch {
 /// The per-scene `.MAP` region table (the `+0x10000` block).
 ///
 /// Parse with [`RegionTable::parse`] over the `.MAP` bytes from `+0x10000`
-/// (e.g. [`crate::scene::Scene::field_map_region_block`]).
+/// (e.g. `legaia_engine_core::scene::Scene::field_map_region_block`).
 #[derive(Debug, Clone, Copy)]
 pub struct RegionTable<'a> {
     /// The `.MAP` `+0x10000..` block.

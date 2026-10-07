@@ -1,5 +1,5 @@
 //! Camera-relative **glide** actor tick - the per-frame partner of the
-//! spawner [`legaia_engine_vm::camera_rel_actor`].
+//! spawner [`crate::camera_rel_actor`].
 //!
 //! (The `PORT:` tag sits on [`CameraRelGlide::tick`], the item that
 //! implements the body. A module-level tag would attribute every `pub` item
@@ -28,10 +28,10 @@
 //!    angles `0x8007B790/92/94`, the `i32` eye-space trio `0x800840B8/BC/C0`,
 //!    the `i32` focus trio `0x80089118/1C/20`, and the `u16` GTE `H`
 //!    `0x8007B6F4`. Those ten in that order are
-//!    [`crate::camera::RetailCamGlobals`].
+//!    [`crate::retail_cam::RetailCamGlobals`].
 //! 3. **Its terminal handshake is the spawner's, inverted.** The spawner runs
 //!    `scratch &= !0x80; ... scratch |= 0x100` on `_DAT_1F800394`
-//!    (`legaia_engine_vm::camera_rel_actor::spawn_handshake`). When all ten
+//!    (`crate::camera_rel_actor::spawn_handshake`). When all ten
 //!    channels have arrived this tick runs `scratch &= !0x100; scratch |=
 //!    0x80` (`0x80021720..0x80021730`) and raises its own kill bit
 //!    `actor[+0x10] |= 8`. So bit `0x100` means "a camera-relative glide is
@@ -66,11 +66,11 @@
 //! ## Where it runs
 //!
 //! The Baka Fighter duel holds the glide between frames:
-//! [`crate::baka_duel_scene::DuelCamera`] keeps the one live
+//! the Baka duel camera (`legaia_engine_minigames::baka_duel::DuelCamera`) keeps the one live
 //! [`CameraRelGlide`] and ticks it every frame of `BakaFight` - the round-start
 //! spin's settle and a special commit's swing, the two records PROT 0976
 //! hands `FUN_80021248`. The battle's own producer (`FUN_801D829C`, ported as
-//! `legaia_engine_vm::battle_camera::build_camera_angle_tween`) does not reach
+//! `crate::battle_camera::build_camera_angle_tween`) does not reach
 //! it: the family's `DAT_8007071C` / `_DAT_8007C34C` seat has no engine
 //! counterpart in a battle, and the native battle camera runs its own `Glide`
 //! off the tween slots directly instead.
@@ -80,9 +80,9 @@
 //! three `jal` sites split between PROT 0898 and PROT 0976 - so no field scene
 //! walk reaches this family at all.
 
-use crate::camera::RetailCamGlobals;
-use legaia_engine_vm::camera_mover::AXIS_COUNT;
-use legaia_engine_vm::camera_rel_actor::NormalizedParams;
+use crate::camera_mover::AXIS_COUNT;
+use crate::camera_rel_actor::NormalizedParams;
+use crate::retail_cam::RetailCamGlobals;
 
 /// The three angle channels at the head of the record - the ones driven by a
 /// distance budget rather than an overshoot test.
@@ -152,7 +152,7 @@ impl CameraRelGlide {
     ///
     /// PORT: FUN_8002149C
     ///
-    /// Ticked by [`crate::baka_duel_scene::DuelCamera::tick`], every frame of
+    /// Ticked by `legaia_engine_minigames::baka_duel::DuelCamera::tick`, every frame of
     /// `BakaFight` on both play hosts; see the module docs for the battle's
     /// producer, which does not reach it.
     pub fn tick(&mut self, cam: &mut RetailCamGlobals, dt: u8) -> GlideTick {
@@ -226,7 +226,7 @@ impl CameraRelGlide {
 }
 
 /// The completion handshake on `_DAT_1F800394` - the exact inverse of
-/// `legaia_engine_vm::camera_rel_actor::spawn_handshake`.
+/// `crate::camera_rel_actor::spawn_handshake`.
 ///
 /// Retail: `scratch = (scratch & ~0x100) | 0x80` (`0x80021720..0x80021730`).
 pub fn finish_handshake(scratch: u32) -> u32 {
@@ -236,7 +236,7 @@ pub fn finish_handshake(scratch: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::camera_rel_actor::{normalize_camera_relative_params, spawn_handshake};
+    use crate::camera_rel_actor::{normalize_camera_relative_params, spawn_handshake};
 
     fn glide(pairs: [(i16, i16); AXIS_COUNT], budget: [u16; ANGLE_AXES]) -> CameraRelGlide {
         let mut g = CameraRelGlide {
