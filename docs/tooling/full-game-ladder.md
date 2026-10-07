@@ -342,8 +342,9 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
 - before a boss, and whenever a walk sets out with the weakest member below
-  two thirds of its HP (a travel leg's encounter can open on a back attack,
-  a round before the party acts), the hand heals through the pause menu:
+  four fifths of its HP (a travel leg's encounter can open on a back attack,
+  a round before the party acts, and a three-monster group can catch Run
+  several rounds running), the hand heals through the pause menu:
   Start, Items, Use, the first HP restorative, the weakest member, Circle
   back out;
 - still below half HP after that, in a scene that rolls encounters, with an

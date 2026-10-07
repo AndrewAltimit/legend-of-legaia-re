@@ -5996,9 +5996,11 @@ fn pad_walk(
     // encounter has already rolled - or, with nothing to heal with, burns an
     // Incense so the next encounter never rolls. A travel leg's encounter
     // can open on a back attack, which takes a round before the party acts
-    // (`vozz`'s F4: ~120 to each member, then a caught Run), so the walk sets
-    // out above two thirds.
-    pad_field_heal(session, 650);
+    // (`vozz`'s F4: ~120 to each member, then a caught Run), and a three-
+    // monster group can catch Run two or three rounds running (`map01`'s F5
+    // took ~240 from Noa over three caught rounds), so the walk sets out
+    // above four fifths.
+    pad_field_heal(session, 800);
     pad_field_repel(session, 500);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
         let w = &session.host.world;
