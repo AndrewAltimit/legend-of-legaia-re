@@ -288,6 +288,18 @@ impl ItemBag {
     }
 }
 
+/// The casino prize exchange's commit reads and grants through the same
+/// map-shaped calls every other by-id consumer uses.
+impl legaia_engine_minigames::prize_exchange::RedeemBag for ItemBag {
+    fn held(&self, item_id: u8) -> u8 {
+        *self.get(&item_id).unwrap_or(&0)
+    }
+    fn grant_one(&mut self, item_id: u8) {
+        let slot = self.entry(item_id).or_insert(0);
+        *slot = slot.saturating_add(1);
+    }
+}
+
 impl<'a> IntoIterator for &'a ItemBag {
     type Item = (&'a u8, &'a u8);
     type IntoIter = Box<dyn Iterator<Item = (&'a u8, &'a u8)> + 'a>;

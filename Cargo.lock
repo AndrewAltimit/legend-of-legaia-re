@@ -1371,6 +1371,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-asset",
  "legaia-engine-vm",
+ "legaia-save",
  "legaia-tmd",
 ]
 

@@ -54,7 +54,7 @@
 //! The op-`0x49` park stays Armed until `World::finish_prize_exchange`
 //! flips it Done, exactly the gold shop's shape.
 
-use crate::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
+use legaia_engine_vm::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 
 /// File offset of the prize table inside the menu overlay's PROT entry
 /// (899): retail VA `0x801E4518`, the base `FUN_801D5DE0` indexes with
@@ -225,7 +225,7 @@ impl PrizeExchangeSession {
     /// this in place after every redeem).
     pub fn rebuild(&mut self, flag_set: impl FnMut(u16) -> bool) {
         self.rows = visible_rows(&self.block, flag_set);
-        self.cursor = (self.cursor & crate::menu_input::CURSOR_INDEX_MASK)
+        self.cursor = (self.cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK)
             .min(self.rows.len().saturating_sub(1) as u32);
     }
 
@@ -236,12 +236,12 @@ impl PrizeExchangeSession {
 
     /// Browse-cursor row index.
     pub fn cursor(&self) -> usize {
-        (self.cursor & crate::menu_input::CURSOR_INDEX_MASK) as usize
+        (self.cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK) as usize
     }
 
     /// Yes/No cursor (0 = Yes, 1 = No).
     pub fn confirm_cursor(&self) -> u8 {
-        (self.confirm_cursor & crate::menu_input::CURSOR_INDEX_MASK) as u8
+        (self.confirm_cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK) as u8
     }
 
     /// Selected visible row's record, if any.
@@ -293,7 +293,7 @@ impl PrizeExchangeSession {
             }
             Phase::Confirm => match menu_cursor_nav(&mut self.confirm_cursor, 2, true, nav) {
                 CursorNav::Confirm => {
-                    self.cursor &= crate::menu_input::CURSOR_INDEX_MASK;
+                    self.cursor &= legaia_engine_vm::menu_input::CURSOR_INDEX_MASK;
                     self.phase = Phase::Browse;
                     if self.confirm_cursor() == 1 {
                         return PrizeEvent::BackToList;
@@ -308,7 +308,7 @@ impl PrizeExchangeSession {
                     }
                 }
                 CursorNav::Cancel => {
-                    self.cursor &= crate::menu_input::CURSOR_INDEX_MASK;
+                    self.cursor &= legaia_engine_vm::menu_input::CURSOR_INDEX_MASK;
                     self.phase = Phase::Browse;
                     PrizeEvent::BackToList
                 }
@@ -319,25 +319,36 @@ impl PrizeExchangeSession {
     }
 }
 
+/// The two bag operations the state-3 commit needs: the held count the
+/// `< 0x63` gate reads (`FUN_80042F4C(id)`) and the one-copy grant
+/// (`FUN_800421D4(id, 1)`). The engine's party bag
+/// (`legaia_engine_core::world::ItemBag`) implements it; this crate keeps
+/// the rules free of the bag type.
+pub trait RedeemBag {
+    /// Copies of `item_id` currently held (0 when absent).
+    fn held(&self, item_id: u8) -> u8;
+    /// Grant one copy of `item_id`, saturating at the stack cap.
+    fn grant_one(&mut self, item_id: u8);
+}
+
 /// The state-3 commit deltas: grant one copy, debit the coin bank, set the
 /// one-shot gate flag. Returns `false` (no mutation) when the gate would
 /// refuse - retail cannot reach the commit in that state, so a `false`
 /// here marks a host driving the session with stale inputs.
 pub fn apply_redeem(
     coins: &mut u32,
-    inventory: &mut crate::world::ItemBag,
+    inventory: &mut impl RedeemBag,
     flags: &mut impl FnMut(u16),
     item_id: u8,
     price: u32,
     gate: u16,
 ) -> bool {
-    let held = *inventory.get(&item_id).unwrap_or(&0);
+    let held = inventory.held(item_id);
     if redeem_gate(*coins, price, held).is_err() {
         return false;
     }
     *coins -= price;
-    let slot = inventory.entry(item_id).or_insert(0);
-    *slot = slot.saturating_add(1);
+    inventory.grant_one(item_id);
     if gate != 0 {
         flags(gate);
     }
@@ -347,6 +358,21 @@ pub fn apply_redeem(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A map-shaped stand-in for the engine bag; the engine's own
+    /// `ItemBag` impl is pinned in `legaia-engine-core`.
+    #[derive(Default)]
+    struct MapBag(std::collections::BTreeMap<u8, u8>);
+
+    impl RedeemBag for MapBag {
+        fn held(&self, item_id: u8) -> u8 {
+            self.0.get(&item_id).copied().unwrap_or(0)
+        }
+        fn grant_one(&mut self, item_id: u8) {
+            let slot = self.0.entry(item_id).or_insert(0);
+            *slot = slot.saturating_add(1);
+        }
+    }
 
     fn nav(confirm: bool, cancel: bool, left: bool, right: bool) -> NavButtons {
         NavButtons::new(confirm, cancel, left, right)
@@ -450,7 +476,7 @@ mod tests {
         // Host applies + rebuilds: coins debited, item granted, one-shot
         // row gone from the rebuilt list.
         let mut coins = 9000u32;
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = MapBag::default();
         let mut set = std::collections::HashSet::new();
         assert!(apply_redeem(
             &mut coins,
@@ -463,7 +489,7 @@ mod tests {
             0x36
         ));
         assert_eq!(coins, 4000);
-        assert_eq!(inv.get(&0x20), Some(&1));
+        assert_eq!(inv.0.get(&0x20), Some(&1));
         assert!(set.contains(&0x36));
         s.rebuild(|g| set.contains(&g));
         assert_eq!(s.rows().count(), 2);
@@ -490,7 +516,7 @@ mod tests {
     #[test]
     fn apply_redeem_refuses_on_stale_inputs() {
         let mut coins = 10u32;
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = MapBag::default();
         assert!(!apply_redeem(
             &mut coins,
             &mut inv,
@@ -500,6 +526,6 @@ mod tests {
             0
         ));
         assert_eq!(coins, 10);
-        assert!(inv.is_empty());
+        assert!(inv.0.is_empty());
     }
 }

@@ -23,6 +23,8 @@ pub mod fishing_hub;
 pub mod minigame_actor;
 pub mod minigame_floor;
 pub mod minigame_fx;
+pub mod muscle_dome;
 pub mod other_game_overlay;
+pub mod prize_exchange;
 pub mod slot_machine;
 pub mod tile_board;

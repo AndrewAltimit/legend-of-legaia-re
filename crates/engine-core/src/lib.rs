@@ -135,7 +135,6 @@ pub mod part_motion;
 pub mod pause_screens;
 pub mod pause_wipe;
 pub mod place_name_banner;
-pub mod prize_exchange;
 pub mod publisher_logos;
 pub mod ram_map;
 pub mod register_ramp;
@@ -577,5 +576,6 @@ pub mod scene_transition_actor;
 // here so every host and test keeps its `legaia_engine_core::<module>` path.
 pub use legaia_engine_minigames::{
     baka_cabinet, baka_fighter, baka_fighter_chrome, baka_impact_fx, dance_tutorial, fishing,
-    fishing_chrome, minigame_actor, minigame_floor, minigame_fx, other_game_overlay, slot_machine,
+    fishing_chrome, minigame_actor, minigame_floor, minigame_fx, other_game_overlay,
+    prize_exchange, slot_machine,
 };

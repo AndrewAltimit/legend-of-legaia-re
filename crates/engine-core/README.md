@@ -447,8 +447,8 @@ non-summon casts and specials, off the parsed `move_power` table.
 Each is a headless rules engine driven by disc-parsed tables, with the
 presentation left to the host. The ones that need no `World` - `dance`,
 `dance_tutorial`, `minigame_actor`, `minigame_fx`, `minigame_floor`,
-`baka_*`, `slot_machine`, `fishing*`, `other_game_overlay`, `tile_board` -
-live in
+`baka_*`, `slot_machine`, `fishing*`, `other_game_overlay`, `tile_board`,
+`prize_exchange` and the World-free half of `muscle_dome` - live in
 [`legaia-engine-minigames`](../engine-minigames/README.md) and are
 re-exported here at their old paths; this crate keeps their `World` glue
 and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
@@ -481,7 +481,9 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   course selection and Master-course length gating, per-leg scoring, the
   between-leg HP restore, and settlement into casino coins. A leg pays
   nothing; a contest pays. Driven by `World::report_muscle_leg` /
-  `World::settle_muscle_contest`.
+  `World::settle_muscle_contest`. The contest ladder, course tables, damage
+  model and hub envelopes are World-free and live in `engine-minigames`;
+  this module keeps the leg session and re-exports them.
 - `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
   the arena shell, the ground grid, the lead's assembled battle form and the
   ladder's monster, posed off the session's turn edge and framed by
@@ -690,7 +692,7 @@ docs carry the retail provenance.
   screen's host half), `debug_char_editor`, `dev_menu_host`,
   `dialog_pacing` / `dialog_picker_slide` (typewriter reveal, picker slide),
   `title_screen_atlas`, `publisher_logos`, `game_over` (party wipe → title),
-  `prize_exchange` (casino sub-screen `0x20`).
+  `prize_exchange` (casino sub-screen `0x20`; rules in `engine-minigames`).
 - **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
   `minigame_floor`, `minigame_status` (the engine's affordance rows),
   `dance_cast_scene`, `dance_tutorial`, `fishing_scene`, `fishing_chrome`,

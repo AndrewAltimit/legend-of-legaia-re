@@ -70,7 +70,7 @@ pub const TIME_METER_MAX: u8 = 0xC;
 /// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
 /// Returns `(new_counter, bar_y)`.
 ///
-/// Wired: [`MuscleDomeSession::tick_time_meter`](super::MuscleDomeSession::tick_time_meter), which the host calls once a
+/// Wired: `legaia_engine_core::muscle_dome::MuscleDomeSession::tick_time_meter`, which the host calls once a
 /// frame while a contest is up.
 pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
     let new = if ramp_up && in_select_phase {
@@ -231,7 +231,7 @@ impl HubScreen {
     /// (`0x801CFC54`), with nothing else drawn. The ROUND banner
     /// (`FUN_801D02F0`) is arm `0x15`'s, under [`Self::opponent_card`]. The
     /// play hosts run those arms through
-    /// `crate::muscle_ringside::FirstVisitHub` and raise any other leg-open
+    /// `legaia_engine_core::muscle_ringside::FirstVisitHub` and raise any other leg-open
     /// ROUND card on [`Self::opponent_card`]; this envelope stays for the
     /// standalone page's sampled screen `1`.
     pub const fn round_banner() -> Self {

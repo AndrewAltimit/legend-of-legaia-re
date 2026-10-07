@@ -17,6 +17,8 @@ at its old path (`legaia_engine_core::dance`, `legaia_engine_core::slot_machine`
 | `fishing` / `fishing_actors` / `fishing_chrome` / `fishing_hub` | The fishing minigame's `PondSession`, its rod / lure / line actors, the venue chrome and the hub screen. See [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md). |
 | `minigame_actor` / `minigame_fx` / `minigame_floor` | The overlay band's shared actor record, effect-part pool and venue floor grid. |
 | `other_game_overlay` | PROT 0977 kernels shared by the hub-band games (step scaling, voice cues, the score-tally ramp). |
+| `muscle_dome` | The Muscle Dome's World-free half: the PROT 0977 course ladder and score tables, the contest ladder above a leg (`DomeContest`: cursor word, course gating, leg scoring, coin settlement), the fighter stat profiles and `DomeDamageModel`, and the hub screen envelopes. See [`minigame-muscle-dome.md`](../../docs/subsystems/minigame-muscle-dome.md). |
+| `prize_exchange` | The casino prize-exchange sub-screen `0x20`: the menu overlay's prize table, its 4-state browse / confirm / commit machine, and `apply_redeem` over any bag implementing `RedeemBag`. See [`shop.md`](../../docs/subsystems/shop.md). |
 | `tile_board` | The op-`0x49` tile board: cell codes, header, walk state machine, fades, prompt. See [`tile-board.md`](../../docs/subsystems/tile-board.md). |
 
 ## What stays in `engine-core`, and why
@@ -38,10 +40,13 @@ simulation crate:
   and `fishing_hub` are thin modules that glob-re-export the crate's module
   and add only these, so `legaia_engine_core::dance::*` still names both
   halves.
-- **Muscle Dome** - `muscle_dome` and `muscle_ringside` are an ordinary battle
-  under the hood (spells, the battle command menu, the arts input), so they
-  sit with the battle modules.
-- **`prize_exchange`** - its buy step writes into the world's `ItemBag`.
+- **The Muscle Dome leg** - a leg is an ordinary battle under the hood
+  (spells, the battle command menu, the arts input), so `MuscleDomeSession`,
+  its command menu, the ring / magic gates and the loadouts built off a live
+  roster stay in `engine-core::muscle_dome`, which glob-re-exports this
+  crate's `muscle_dome` beside them; `muscle_ringside` stays too.
+- **The engine bag** - `prize_exchange::apply_redeem` is generic over
+  `RedeemBag`; `engine-core` implements it for the world's `ItemBag`.
   `tile_board`'s per-cell draw assembly reads the `World` and stays beside
   the re-export.
 
