@@ -914,6 +914,9 @@ pub struct TheederFx {
     pub trail: TheederTrail,
     /// What the last tick drew, `None` on a tick that drew nothing.
     pub packet: Option<TheederPacket>,
+    /// Arm 4's seat placement `(x, z, facing)`
+    /// ([`theeder_seat_placement`]); retail never moves the seat again.
+    pub seat: Option<(i16, i16, u16)>,
     cell_seed: u32,
 }
 
@@ -1061,6 +1064,25 @@ pub fn theeder_ray_rest_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
         THEEDER_MOUTH_Y,
         mouth[2].wrapping_add(((i32::from(c) * 2) / 3) as i16),
     ]
+}
+
+/// Where arm 4 seats Theeder once `FUN_801F19EC` has installed it
+/// (`0x801F6EEC..0x801F6F8C`): facing `atan2(victim -> caster) + 0x800`, i.e.
+/// from the caster toward the victim, and standing half a unit
+/// (`sin / 2`, `cos / 2`, truncated toward zero) short of the victim along
+/// that line - between the two, facing the victim. Returns `(x, z, facing)`.
+/// No later arm moves the seat; the arm-12 beam (`2/3` of a unit from a root
+/// `0x5C` ahead) is what reaches the row.
+pub fn theeder_seat_placement(victim: (i16, i16), caster: (i16, i16)) -> (i16, i16, u16) {
+    let facing = crate::battle_action::bearing_12bit_approx(victim.1, victim.0, caster.1, caster.0)
+        .wrapping_add(0x800)
+        & 0x0FFF;
+    let (s, c) = crate::battle_action::motion::trig12(facing);
+    (
+        victim.0.wrapping_sub(s / 2),
+        victim.1.wrapping_sub(c / 2),
+        facing,
+    )
 }
 
 /// Arm 9's two prong tips about the summon seat `(x, z)`: `0xA0` along the
@@ -2249,6 +2271,18 @@ mod tests {
                 .contains(&retract_ticks),
             "retract held {retract_ticks} ticks"
         );
+    }
+
+    #[test]
+    fn theeder_seat_stands_half_a_unit_short_of_the_victim_facing_it() {
+        // Caster at the origin, victim straight down +Z.
+        let (x, z, f) = theeder_seat_placement((0, 3000), (0, 0));
+        assert_eq!(f, 0, "facing from the caster toward the victim");
+        assert_eq!((x, z), (0, 3000 - 2048));
+        // Victim along +X: a quarter turn.
+        let (x, z, f) = theeder_seat_placement((3000, 0), (0, 0));
+        assert_eq!(f, 0x400);
+        assert_eq!((x, z), (3000 - 2048, 0));
     }
 
     #[test]

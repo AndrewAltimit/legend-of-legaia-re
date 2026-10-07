@@ -1647,6 +1647,7 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
     let mut done = false;
     // Which packet kinds the module's draw side emitted, in first-seen order.
     let mut kinds: Vec<&str> = Vec::new();
+    let mut seat_at: Option<(i16, i16)> = None;
     for _ in 0..40_000 {
         match world.casting.module_phase {
             THEEDER_RETARGET_ARM => retarget_ticks += 1,
@@ -1670,12 +1671,33 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
         {
             kinds.push(k);
         }
-        let _ = world.take_pending_summon_spawn();
+        // Arm 4 seats the creature once; no later arm moves it.
+        if (5..=THEEDER_SWEEP_ARM).contains(&world.casting.module_phase)
+            && let Some(slot) = world.casting.summon_actor_slot
+        {
+            let a = &world.actors[slot as usize];
+            let at = (a.move_state.world_x, a.move_state.world_z);
+            assert_eq!(*seat_at.get_or_insert(at), at, "the Theeder seat moved");
+        }
+        if world.take_pending_summon_spawn().is_some() {
+            world.seat_summon_actor(7);
+        }
         for a in world.actors.iter_mut() {
             a.battle.current_anim = a.battle.queued_anim;
         }
     }
     assert!(done, "the stager let go");
+    let want = legaia_engine_vm::cast_seru_ticks_a::theeder_seat_placement(
+        (
+            world.actors[3].move_state.world_x,
+            world.actors[3].move_state.world_z,
+        ),
+        (
+            world.actors[0].move_state.world_x,
+            world.actors[0].move_state.world_z,
+        ),
+    );
+    assert_eq!(seat_at, Some((want.0, want.1)), "arm 4's placement");
     assert!(retarget_ticks >= 64, "arm 11 held {retarget_ticks} ticks");
     assert!(sweep_ticks >= 64, "arm 12 held {sweep_ticks} ticks");
     assert!(world.casting.module_phase > THEEDER_SWEEP_ARM);

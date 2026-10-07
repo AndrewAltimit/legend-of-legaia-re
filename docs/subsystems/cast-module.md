@@ -1619,6 +1619,15 @@ phase has run its turn.
 Its camera arms are not ported: the director only passes, and case 6 keeps
 the caster.
 
+PROT 0904 seats its creature once, in arm 4 (`0x801F6EEC..0x801F6F8C`, right
+after `FUN_801F19EC`): facing `atan2(victim -> caster) + 0x800`, from the caster
+toward the victim, standing half a unit (`sin / 2`, `cos / 2`) short of the
+victim on that line. No later arm stores to the seat's `+0x34` / `+0x38`, so it
+stands there for the rest of the cast and the beam reaches the row. The port
+pins that placement (`cast_seru_ticks_a::theeder_seat_placement`) from arm 4
+on, which also stops the walk the engine's generic summon drive had been
+giving the creature.
+
 PROT 0904's packet arms are drawn. Arm 8 seeds `ctx[+0x6D8] = scalar *
 0x78` and arm 9 drains it, drawing two lightning prongs a pass
 (`FUN_801F815C`, a textured `POLY_FT4` on texture page `0x27` / CLUT

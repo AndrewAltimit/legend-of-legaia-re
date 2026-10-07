@@ -1991,6 +1991,31 @@ impl World {
         (mouth, tip)
     }
 
+    /// PROT 0904's arm-4 seat placement
+    /// ([`vm::cast_seru_ticks_a::theeder_seat_placement`]) from the victim's
+    /// and the caster's live positions.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 4, `0x801F6EEC..0x801F6F8C`)
+    fn theeder_seat_for(&self, caster_slot: u8, victim_slot: u8) -> Option<(i16, i16, u16)> {
+        let pos = |s: u8| {
+            self.actors
+                .get(s as usize)
+                .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        };
+        Some(vm::cast_seru_ticks_a::theeder_seat_placement(
+            pos(victim_slot)?,
+            pos(caster_slot)?,
+        ))
+    }
+
+    fn pin_theeder_seat(&mut self, summon_slot: u8, (x, z, facing): (i16, i16, u16)) {
+        if let Some(a) = self.actors.get_mut(summon_slot as usize) {
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            a.battle.facing_angle = facing;
+        }
+    }
+
     /// The summon seat's live `(x, z)` and facing, as PROT 0904 reads slot 7.
     fn theeder_geom(&self, summon_slot: u8) -> vm::cast_seru_ticks_a::TheederGeom {
         self.actors
@@ -3200,6 +3225,17 @@ impl World {
                             // gets a zero roll and the arm's presentation half
                             // (render flag, reaction bits) runs.
                             let in_cone = cone_seats.clone();
+                            // Arm 4 seats the creature between the caster and
+                            // the victim, facing the victim (`0x801F6EEC`).
+                            // No later arm writes the seat's position, so it
+                            // stays pinned there for the rest of the cast.
+                            if ctx.phase == ticks_a::THEEDER_RISE_ARM {
+                                self.casting.module_theeder.seat =
+                                    self.theeder_seat_for(caster_slot, victim_slot);
+                            }
+                            if let Some(seat) = self.casting.module_theeder.seat {
+                                self.pin_theeder_seat(seat_slot, seat);
+                            }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
                             let run = ticks_a::theeder_tick(
