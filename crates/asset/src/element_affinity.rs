@@ -66,6 +66,26 @@ pub const AFFINITY_MATRIX_FILE_OFFSET: usize = 0x26BD0;
 /// Element-id space size (matrix is `ELEMENT_COUNT × ELEMENT_COUNT`).
 pub const ELEMENT_COUNT: usize = 8;
 
+/// Runtime VA of a **second** 8x8 percentage block directly after the matrix,
+/// which nothing reads.
+///
+/// It fills the 64 bytes between [`AFFINITY_MATRIX_VA`]'s last row and
+/// [`SUMMON_POWER_PCT_VA`] exactly, and it has the matrix's shape - one row per
+/// element, a neutral row and column - but far stronger values (a 50% same-
+/// element cut, 125% opposed pairs, a 40% cell) than the shipped `96 / 104`
+/// nudge. No instruction in any image forms an address in it: no word, `lui`
+/// pair or `jal` names one (`find-address-word-refs.py --range`), and every
+/// access to the matrix base (`FUN_801DD864` at `0x801DD938`, `FUN_801EC3E4`
+/// at `0x801ED144` / `0x801ED180` / `0x801ED46C` / `0x801ED4A8`) indexes
+/// `atk * 8 + def` with both elements read from the per-character table or a
+/// record's `+0x1D` byte, which on the disc never exceed `7` - so rows `8..16`
+/// of that index, which is what this block would be, are never formed. Dead
+/// data the link carried, most likely an earlier tuning of the matrix.
+pub const UNREAD_AFFINITY_BLOCK_VA: u32 = 0x801F_5428;
+
+/// Raw PROT 0898 file offset of [`UNREAD_AFFINITY_BLOCK_VA`].
+pub const UNREAD_AFFINITY_BLOCK_FILE_OFFSET: usize = 0x26C10;
+
 /// Runtime VA of the per-character **summon power-percent** table read by the
 /// damage finisher `FUN_801ddb30` for a summon attacker (`attacker_slot == 7`):
 ///

@@ -55,6 +55,8 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     }
     if prot_index == 898 {
         claim_effect_proto_records(buf, sink);
+        claim_subdraw_records(buf, sink);
+        claim_unread_affinity_block(buf, sink);
         claim_battle_overlay_strings(buf, sink);
         claim_battle_jump_tables(buf, sink);
         claim_side_effect_banners(buf, sink);
@@ -63,12 +65,110 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
         claim_str_overlay_tables(buf, sink);
     }
     claim_consumer_pinned_tables(buf, sink, prot_index);
+    if prot_index == ARENA_PROT_INDEX {
+        claim_arena_course_ladder(buf, sink);
+    }
     if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
         claim_field_probe_tables(buf, sink);
     }
     if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
         claim_other3_roster(buf, sink);
     }
+}
+
+/// PROT entry of the Muscle Dome arena's door / init overlay.
+const ARENA_PROT_INDEX: u32 = 977;
+/// The arena's course descriptor table: three `{ i32 round_count; u32
+/// first_round }` records (`legaia_engine_core::muscle_dome::COURSE_TABLE_VA`).
+const ARENA_COURSE_TABLE_VA: u32 = 0x801D_1A08;
+/// The per-`(course, round)` score table, sixteen `i32` cells per course
+/// (`legaia_engine_core::muscle_dome::SCORE_TABLE_VA`).
+const ARENA_SCORE_TABLE_VA: u32 = 0x801D_1860;
+/// The two `lui` sites that form [`ARENA_SCORE_TABLE_VA`]: the settlement's
+/// `DAT_801D1860 + course * 0x40 + (round - 1) * 4` read (`0x801D10E8`,
+/// `sll v1,v1,0x6` on the course) and its sibling at `0x801D1234`.
+const ARENA_SCORE_TABLE_SITES: [u32; 2] = [0x801D_10E8, 0x801D_1234];
+const ARENA_COURSES: usize = 3;
+const ARENA_MAX_ROUNDS: usize = 16;
+
+/// The arena's course ladder, read the way `FUN_801D1510` and the settlement
+/// read it: the score table (three rows of sixteen cells, the row stride the
+/// consumer's `sll 6` states), every course's run of `{ u32 label_va; u32
+/// monster_id }` round records reached through the descriptor table's
+/// `first_round` pointers, and the label each round names - the opponent-name
+/// pool at the head of the image, which is reached only through those
+/// records. The parser of record is
+/// `legaia_engine_core::muscle_dome::parse_course_ladder`; this mirrors its
+/// validation (three courses of `1..=16` rounds, non-zero byte monster ids)
+/// and claims nothing when any of it fails.
+pub(super) fn claim_arena_course_ladder(buf: &[u8], sink: &mut Sink) {
+    const SLOT_A: u32 = 0x801C_E818;
+    let at = |va: u32| va.checked_sub(SLOT_A).map(|o| o as usize);
+    let rd = |o: usize| legaia_bytes::u32_le(buf, o);
+    let score_ok = ARENA_SCORE_TABLE_SITES
+        .iter()
+        .all(|&site| at(site).and_then(|o| lui_pair_address(buf, o)) == Some(ARENA_SCORE_TABLE_VA));
+    let Some(table) = at(ARENA_COURSE_TABLE_VA) else {
+        return;
+    };
+    let mut runs = Vec::new();
+    for c in 0..ARENA_COURSES {
+        let (Some(count), Some(first)) = (rd(table + c * 8), rd(table + c * 8 + 4)) else {
+            return;
+        };
+        let count = count as usize;
+        let Some(base) = at(first) else {
+            sink.note("arena course ladder not claimed: a first_round pointer is below the image");
+            return;
+        };
+        if count == 0 || count > ARENA_MAX_ROUNDS || base + count * 8 > buf.len() {
+            sink.note("arena course ladder not claimed: a descriptor is out of range");
+            return;
+        }
+        for r in 0..count {
+            let id = rd(base + r * 8 + 4).unwrap_or(0);
+            if id == 0 || id > 0xFF {
+                sink.note("arena course ladder not claimed: a round's monster id is not a byte");
+                return;
+            }
+        }
+        runs.push((base, count));
+    }
+    if score_ok {
+        let start = at(ARENA_SCORE_TABLE_VA).unwrap_or(0);
+        sink.claim(
+            start,
+            start + ARENA_COURSES * ARENA_MAX_ROUNDS * 4,
+            OWNER_RECORD,
+            "arena score table, 3 courses x 16 i32 cells (FUN_801D1510 settlement)",
+        );
+    }
+    let mut labels = 0usize;
+    for (c, &(base, count)) in runs.iter().enumerate() {
+        sink.claim(
+            base,
+            base + count * 8,
+            OWNER_RECORD,
+            format!("arena course {c}: {count} round record(s) (label_va, monster_id)"),
+        );
+        for r in 0..count {
+            let Some(label) = rd(base + r * 8).and_then(at) else {
+                continue;
+            };
+            let Some(len) = buf
+                .get(label..)
+                .and_then(|t| t.iter().position(|&b| b == 0))
+            else {
+                continue;
+            };
+            sink.claim(label, label + len + 1, OWNER_STRING, "arena round label");
+            labels += 1;
+        }
+    }
+    sink.note(format!(
+        "arena course ladder: {} round record(s), {labels} label(s)",
+        runs.iter().map(|&(_, n)| n).sum::<usize>()
+    ));
 }
 
 /// Where a consumer-pinned table's count comes from.
@@ -661,6 +761,64 @@ pub(super) fn claim_effect_proto_records(buf: &[u8], sink: &mut Sink) {
         offs.len(),
         mp::EFFECT_AUX_TABLE_LEN
     ));
+}
+
+/// The battle overlay's **sub-draw record pool** - the step records the
+/// `0x801F4D34` pointer table names, as distinct from the table itself (the
+/// same shape as [`claim_effect_proto_records`]). Each record's extent is the
+/// consumer's own `3 + 2*count` read
+/// ([`crate::muscle_dome::subdraw_record_extents`]); the word padding between
+/// records stays residue.
+pub(super) fn claim_subdraw_records(buf: &[u8], sink: &mut Sink) {
+    let recs = crate::muscle_dome::subdraw_record_extents(buf);
+    for &(off, len) in &recs {
+        sink.claim(
+            off,
+            off + len,
+            OWNER_RECORD,
+            format!(
+                "battle HUD sub-draw step, {} element pair(s) (muscle_dome)",
+                (len - 3) / 2
+            ),
+        );
+    }
+    sink.note(format!(
+        "{} unique sub-draw record(s) behind the {}-entry 0x801F4D34 table \
+         (muscle_dome::subdraw_record_extents)",
+        recs.len(),
+        crate::muscle_dome::SUBDRAW_PTR_TABLE_LEN
+    ));
+}
+
+/// The battle overlay's unread second affinity block
+/// ([`crate::element_affinity::UNREAD_AFFINITY_BLOCK_VA`]) - claimed as dead
+/// data under that name, the way [`claim_str_dead_vlc_table`] claims the STR
+/// overlay's unreferenced table, and only after a shape check: it must end
+/// exactly where the summon power-percent table begins and every byte must be
+/// a plausible percentage (`1..=200`).
+pub(super) fn claim_unread_affinity_block(buf: &[u8], sink: &mut Sink) {
+    use crate::element_affinity as elem;
+    let start = elem::UNREAD_AFFINITY_BLOCK_FILE_OFFSET;
+    let len = elem::ELEMENT_COUNT * elem::ELEMENT_COUNT;
+    if start + len != elem::SUMMON_POWER_PCT_FILE_OFFSET
+        || start != elem::AFFINITY_MATRIX_FILE_OFFSET + len
+    {
+        sink.note("the unread affinity block's constants no longer tile the gap");
+        return;
+    }
+    let Some(block) = buf.get(start..start + len) else {
+        return;
+    };
+    if !block.iter().all(|b| (1..=200).contains(b)) {
+        sink.note("no percentage block between the affinity matrix and the summon table");
+        return;
+    }
+    sink.claim(
+        start,
+        start + len,
+        OWNER_RECORD,
+        "unread second 8x8 affinity block, dead data (element_affinity)",
+    );
 }
 
 /// Data-segment tables an overlay image carries at an offset a parser in this
