@@ -4389,6 +4389,19 @@ frames - `battle_melee_hit_spark` carries it mid-glide at elapsed 12 of 16,
 `x = 208`, which is the `+40` every `HIT` / `TOTAL` packet of that frame shows.
 The cluster's own seats are in `engine-vm::battle_value_readout`.
 
+Every landed hit restarts that slide. The melee kernel's HP write raises
+`DAT_8007B64C = 0x78` and stores the hit's damage in `DAT_8007BD14`
+(`FUN_801EC3E4`, `0x801EEA64..0x801EEA78`); the readout pass `FUN_801E805C`,
+which the action SM's prologue calls on every pass (`0x801E2A70`), answers a
+raised flag with a non-zero damage word by calling `FUN_801D8DE8(0x50, 0)` and
+clearing the flag (`0x801E808C..0x801E80B0`). Mode `0` spawns record 80 at
+seat A and registers a fresh glide to seat B (`0x801D92E8..0x801D93D8`), so
+the cluster slides in again from the right edge with its running count.
+`battle_melee_hit_spark` is such a frame: the display list's cluster reads
+`3 HIT` / `TOTAL 29` beside the third hit's `15`, twelve vsyncs into the
+slide that hit opened. Engine: `BattleHud::push_popup` restarts the
+cluster's `age` on each landed damage hit.
+
 The ring's right arm is record 10, and its string is chosen in `FUN_801D8DE8`'s
 own case (`0x801D8EC8`): `0x801F4B9E + char_id * 10` - the character's
 Ra-Seru, `Meta` / `Terra` / `Ozma` for `char_id` `1..=3` - when the member's

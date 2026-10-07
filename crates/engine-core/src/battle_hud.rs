@@ -395,7 +395,8 @@ pub struct ComboReadout {
     pub hits: u16,
     /// Running damage the value row shows.
     pub total: u32,
-    /// Frames since the cluster first appeared - drives the slide-in.
+    /// Frames since the latest landed hit re-opened the cluster - drives
+    /// the slide-in, which every hit starts over ([`BattleHud::push_popup`]).
     pub age: u16,
 }
 
@@ -550,6 +551,18 @@ impl BattleHud {
         // The combo cluster counts every landed damage hit of the action in
         // flight: one more `HIT`, its amount into `TOTAL` / `DAMAGE`. Heals
         // and status tags carry no numeral on the cluster.
+        //
+        // Every landed hit also re-opens the cluster from its off-screen
+        // seat. The melee kernel's HP write raises `DAT_8007B64C = 0x78`
+        // beside the hit's damage in `DAT_8007BD14` (`FUN_801EC3E4`,
+        // `0x801EEA64..0x801EEA78`), and the readout pass the action SM's
+        // prologue calls every pass (`FUN_801E805C`, from `0x801E2A70`)
+        // answers a raised flag with `FUN_801D8DE8(0x50, 0)` and clears it
+        // (`0x801E808C..0x801E80B0`): mode `0` spawns placement record 80 at
+        // seat A and registers a fresh glide to seat B
+        // (`0x801D92E8..0x801D93D8`), so the slide starts over.
+        // `battle_melee_hit_spark` holds the third hit's numeral `15` with the
+        // cluster (`3 HIT`, `TOTAL 29`) twelve vsyncs into its slide.
         if !popup.is_heal
             && popup.status.is_none()
             && popup.amount > 0
@@ -564,6 +577,7 @@ impl BattleHud {
             c.style = style;
             c.hits = c.hits.saturating_add(1);
             c.total = c.total.saturating_add(u32::from(popup.amount));
+            c.age = 0;
         }
     }
 
@@ -3901,6 +3915,17 @@ mod tests {
         assert_eq!(c.age, 0);
         h.tick();
         assert_eq!(h.combo.unwrap().age, 1);
+        // The next landed hit re-opens the slide from the off-screen seat
+        // (`FUN_801E805C`'s `FUN_801D8DE8(0x50, 0)` on the melee kernel's
+        // flag), keeping the count.
+        for _ in 0..20 {
+            h.tick();
+        }
+        assert!(h.combo.unwrap().settled());
+        h.push_damage(3, 6);
+        let c = h.combo.unwrap();
+        assert_eq!((c.hits, c.total, c.age), (3, 35, 0));
+        assert!(!c.settled());
         // Same actor, same style: the cluster keeps counting.
         h.arm_combo(Some(ComboStyle::HitTotal), 0);
         assert!(h.combo.is_some());
