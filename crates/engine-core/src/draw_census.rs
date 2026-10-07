@@ -186,7 +186,8 @@ pub fn family_rows<'a>(
 
 /// Every on-stage triangle of one CLUT family, one JSON line each: the index
 /// of the draw it came from, its screen corners on the `width x height`
-/// stage and its semi-transparency enable. The per-packet sibling of
+/// stage, the clip `w` and mesh-space corners (to name the prim in its TMD)
+/// and its semi-transparency enable. The per-packet sibling of
 /// [`family_rows`], for reading a family whose count parts from the retail
 /// display list's (`LEGAIA_DIAG_DRAW_TRIS=<clut>` beside `LEGAIA_DIAG_DRAWS`):
 /// two draws carrying the same corners are a mesh drawn twice, a lone
@@ -218,7 +219,7 @@ pub fn family_tris_jsonl<'a>(
             }
             if on {
                 out.push_str(&format!(
-                    "{{\"draw\":{di},\"semi\":{},\"tri\":[[{:.1},{:.1}],[{:.1},{:.1}],[{:.1},{:.1}]],\"w\":[{:.1},{:.1},{:.1}]}}\n",
+                    "{{\"draw\":{di},\"semi\":{},\"tri\":[[{:.1},{:.1}],[{:.1},{:.1}],[{:.1},{:.1}]],\"w\":[{:.1},{:.1},{:.1}],\"mesh\":[[{:.0},{:.0},{:.0}],[{:.0},{:.0},{:.0}],[{:.0},{:.0},{:.0}]]}}\n",
                     t.semi,
                     scr[0][0],
                     scr[0][1],
@@ -228,7 +229,16 @@ pub fn family_tris_jsonl<'a>(
                     scr[2][1],
                     ws[0],
                     ws[1],
-                    ws[2]
+                    ws[2],
+                    t.pos[0][0],
+                    t.pos[0][1],
+                    t.pos[0][2],
+                    t.pos[1][0],
+                    t.pos[1][1],
+                    t.pos[1][2],
+                    t.pos[2][0],
+                    t.pos[2][1],
+                    t.pos[2][2]
                 ));
             }
         }

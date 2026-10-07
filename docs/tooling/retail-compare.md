@@ -1302,7 +1302,7 @@ winding test, so a family whose engine count is about twice retail's, split
 between the windings, is one retail's `NCLIP` halves. Player, NPC and effect
 meshes are not in the census. With `LEGAIA_DIAG_DRAW_TRIS=<clut hex>` beside
 it, the child also writes that family's triangles one per line
-(`<path>.tris`: draw index, screen corners, clip `w`), the per-packet level
+(`<path>.tris`: draw index, screen corners, clip `w`, mesh-space corners), the per-packet level
 to match against the display list's corners when a family's count parts.
 
 ## The ratchet
@@ -1502,6 +1502,16 @@ translucent strand whose far side faced the camera blended a second time.
 Retail's prim leaves apply `NCLIP` to a semi prim exactly as to an opaque one;
 both blend entries now discard the same winding the opaque entry does (the
 browser page runs one fragment program for both passes and already did).
+
+What then looked like a residue - about ten front-facing strand triangles
+the port drew and the display list had no packet for - was the decoder's.
+The strand mesh carries two groups (32 `FT3`, flags `0x0020`; 100 `FT4`,
+flags `0x0022`), and the display-list walker accepted a `POLY_FT3` only at
+six payload words where the packet has seven (colour, then three `xy` /
+`uv` pairs; the field leaf `FUN_80044C14` tags it `0x07`), so every `FT3`
+in every decoded list was dropped - this state's own list holds 172. With
+the length fixed the family matches triangle for triangle: retail `55`, the
+port `54` front-facing of `128`.
 
 ### One glide frame ahead, or a few frames into an arrival
 
