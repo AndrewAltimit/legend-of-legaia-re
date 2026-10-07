@@ -60,7 +60,16 @@ impl PlayWindowApp {
             || self.fishing_gpu.is_some()
             || self.dance_venue_gpu.is_some()
             || self.slot_gpu.is_some();
-        let frame = if self.boot_ui.is_active() || in_world_map || venue {
+        // A menu-overlay screen that owns the frame (a shop, the casino prize
+        // counter) draws no field: the 3D pass is skipped and the frame
+        // clears black, so the field's mist bank must not draw over the black
+        // either. It did, as a grey haze behind every shop window in a misty
+        // scene; the browser page's black backdrop sits over its GL canvas.
+        let frame = if self.boot_ui.is_active()
+            || self.menu_runtime.covers_field()
+            || in_world_map
+            || venue
+        {
             None
         } else {
             world.fog_volume_frame()

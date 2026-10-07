@@ -170,6 +170,9 @@ pub struct LegaiaRuntime {
     /// so the per-frame accessors must not re-tick) with the primitive count
     /// alongside for the page's early-out.
     pub(crate) battle_intro_geom: Option<(u32, legaia_engine_ui::screen_prim::OverlayGeometry)>,
+    /// The last tick's screen primitives before the shop fade, and the index
+    /// the fade goes in at ([`crate::play_battle`]'s `rebuild_screen_geom`).
+    pub(crate) screen_prims_base: (Vec<legaia_engine_ui::screen_prim::ScreenPrim>, usize),
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -397,6 +400,7 @@ impl LegaiaRuntime {
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             battle_intro_geom: None,
+            screen_prims_base: (Vec::new(), 0),
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
             passive_hud_icons: Vec::new(),

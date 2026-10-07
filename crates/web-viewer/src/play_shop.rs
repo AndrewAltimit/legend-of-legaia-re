@@ -64,13 +64,30 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
+        let mut opened = false;
         if let Some(shop) = host.world.take_pending_field_shop() {
             self.menu.open_shop_menu(shop);
+            opened = true;
         }
         // The casino prize counter (op-0x49 sub-7), same drain shape.
         if let Some(exchange) = host.world.take_pending_prize_exchange() {
             self.menu.open_prize_exchange(exchange);
+            opened = true;
         }
+        // The screen takes its first step on the tick that opened it, on no
+        // edge - the native window's `menu_edge = 0` beat. The press this
+        // tick carried already went to the field (the Cross that closed the
+        // merchant's line), and handing it to the screen too would commit
+        // the picker's first row on the same press. Without the step the
+        // page's fade and window slides ran one tick behind the window's.
+        if !opened {
+            return;
+        }
+        let cue = self.menu.step_field_session(&mut host.world, 0);
+        if let Some(cue) = cue {
+            self.play_sfx(u32::from(cue));
+        }
+        self.rebuild_screen_geom();
     }
 
     /// The shop-family overlay for this frame over a `surface_w x surface_h`
@@ -266,6 +283,10 @@ impl LegaiaRuntime {
         if let Some(cue) = menu.step_field_session(&mut host.world, edge) {
             self.play_sfx(u32::from(cue));
         }
+        // The opening fade steps with the shop, so its quad is re-placed
+        // into the frame's screen geometry here rather than on a field tick
+        // the page does not run under a shop.
+        self.rebuild_screen_geom();
     }
 
     /// Draw lists for the field shop panel and the post-action banners over a

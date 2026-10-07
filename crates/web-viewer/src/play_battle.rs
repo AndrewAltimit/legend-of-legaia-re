@@ -2191,15 +2191,10 @@ impl LegaiaRuntime {
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
-        // A shop opening: the field fades to black before its windows slide
-        // in (`MenuRuntime::shop_fade_level`, the native window's quad too).
-        if let Some(level) = self.menu.shop_fade_level() {
-            prims.push(legaia_engine_ui::screen_prim::fade_prim(
-                u32::from(level) * 0x01_01_01,
-                2,
-                0,
-            ));
-        }
+        // A shop opening's fade to black sits here in the list; it is
+        // inserted by `rebuild_screen_geom`, because it steps with the shop
+        // and not with this tick (the page freezes `tick_frame` under a shop).
+        let shop_fade_at = prims.len();
         // The field overlay's screen-effect washes (op `0x34` sub-0 ->
         // `FUN_80024EE4`): the scene-entry fade-from-black and the door
         // prologue's fade-to-black, through the same shared emitter the
@@ -2228,6 +2223,29 @@ impl LegaiaRuntime {
             // draws and this page did not. Geometry, culling and ordering come
             // out of the shared `screen_fx` kernel; this only re-wraps.
             prims.extend(screen_fx_prims(&host.world.presentation.fx_frame));
+        }
+        self.screen_prims_base = (prims, shop_fade_at);
+        self.rebuild_screen_geom();
+    }
+
+    /// Order this frame's screen primitives into the cached geometry: the
+    /// tick's list ([`Self::tick_battle_intro`]) plus the shop's opening fade
+    /// (`MenuRuntime::shop_fade_level`, the native window's quad too) at its
+    /// place in the list.
+    ///
+    /// Split out because the fade steps with the shop session, not with the
+    /// field: the page skips `tick_frame` while a shop is up, so a fade built
+    /// only on the tick was never drawn at all - the shop's first frames sat
+    /// on the frozen field and then cut to black. The shop step calls this
+    /// after every tick it runs ([`Self::play_shop_input`]).
+    pub(crate) fn rebuild_screen_geom(&mut self) {
+        let (base, at) = &self.screen_prims_base;
+        let mut prims = base.clone();
+        if let Some(level) = self.menu.shop_fade_level() {
+            prims.insert(
+                (*at).min(prims.len()),
+                legaia_engine_ui::screen_prim::fade_prim(u32::from(level) * 0x01_01_01, 2, 0),
+            );
         }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (
