@@ -267,6 +267,11 @@ pub struct LegaiaMinigames {
     /// How many tally steps this screen has already keyed, so a replay to
     /// `round` keys only the steps it has not.
     muscle_tally_voiced_steps: i32,
+    /// The shared wall-clock to sim-tick rule
+    /// ([`legaia_engine_core::frame_step::SimStepper`]) the native window and
+    /// the play page drain through: the page's animation loop asks it how
+    /// many 60 Hz game frames each display frame runs.
+    sim_stepper: legaia_engine_core::frame_step::SimStepper,
 }
 
 impl Default for LegaiaMinigames {
@@ -308,6 +313,26 @@ fn jstr(s: &str) -> String {
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
+    /// How many 60 Hz game frames this display frame runs, given the wall
+    /// time since the previous call in **milliseconds** - the shared
+    /// [`legaia_engine_core::frame_step::SimStepper`], the play page's
+    /// `play_drain_sim_steps` and the native window's redraw drain. A gap
+    /// longer than the stepper's backlog cap is dropped, not carried.
+    ///
+    /// The page stepped every game once per `requestAnimationFrame`, so on a
+    /// 120 Hz display the dance song, the Baka duel, the reels and the dome
+    /// all ran at twice retail speed (and the fishing loop's own wall clock
+    /// rounded a half frame up to a whole one).
+    pub fn drain_sim_steps(&mut self, elapsed_ms: f64) -> u32 {
+        self.sim_stepper.drain(elapsed_ms / 1000.0)
+    }
+
+    /// Drop the undrained backlog - a game was (re)started or the tab was
+    /// hidden, and the gap must not come back as catch-up frames.
+    pub fn resync_sim_clock(&mut self) {
+        self.sim_stepper.resync();
+    }
+
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         #[cfg(target_arch = "wasm32")]
@@ -315,6 +340,7 @@ impl LegaiaMinigames {
         Self {
             prot: Vec::new(),
             entries: Vec::new(),
+            sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
             dance: None,
             dance_countin: None,
             dance_tutorial: None,

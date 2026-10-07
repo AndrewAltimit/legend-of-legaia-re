@@ -1162,14 +1162,31 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   })();
 
   /* One rAF loop drives whichever game is on screen. Each engine is
-   * frame-stepped exactly as the retail 60 Hz overlay steps it. */
+   * frame-stepped as the retail 60 Hz overlay steps it: the engine's shared
+   * wall-clock stepper (`drain_sim_steps`, the play page's and the native
+   * window's `SimStepper`) says how many game frames this display frame runs
+   * - none on half the frames of a 120 Hz panel, up to its backlog cap on a
+   * slow one. Stepping once per rAF ran every game at the monitor's rate. A
+   * cached bundle without the export keeps one frame per rAF. */
+  let simLast = 0;
   function loop() {
     if (api) {
-      if (active === 'dance') danceFrame();
-      else if (active === 'baka') bakaFrame();
-      else if (active === 'slot') slotFrame();
-      else if (active === 'fishing') fishingFrame();
-      else if (active === 'muscle') muscleFrame();
+      const now = performance.now();
+      let steps = 1;
+      if (typeof api.drain_sim_steps === 'function') {
+        steps = simLast ? api.drain_sim_steps(now - simLast) : 1;
+      }
+      simLast = now;
+      if (active === 'fishing') {
+        if (steps > 0) fishingFrame(typeof api.drain_sim_steps === 'function' ? steps : 0);
+      } else {
+        for (let s = 0; s < steps; s++) {
+          if (active === 'dance') danceFrame();
+          else if (active === 'baka') bakaFrame();
+          else if (active === 'slot') slotFrame();
+          else if (active === 'muscle') muscleFrame();
+        }
+      }
     }
     raf = requestAnimationFrame(loop);
   }
@@ -2862,13 +2879,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   let fishClock = 0;
-  function fishingFrame() {
+  function fishingFrame(steps) {
     if (!api || !fishLive) return;
     /* Step the retail 60 Hz simulation by wall-clock, so a throttled rAF
      * (background tab, slow machine, headless) still plays at game speed.
-     * The one-shot cast edge and newly-pressed word ride the first step. */
+     * `steps` is the shared stepper's answer from the page loop; a cached
+     * bundle without it (`0`) falls back to the old local clock. The
+     * one-shot cast edge and newly-pressed word ride the first step. */
     const now = performance.now();
-    const frames = fishClock ? Math.min(4, Math.max(1, Math.round((now - fishClock) / 16.6))) : 1;
+    const frames = steps > 0 ? steps
+      : (fishClock ? Math.min(4, Math.max(1, Math.round((now - fishClock) / 16.6))) : 1);
     fishClock = now;
     let events = [];
     for (let i = 0; i < frames; i++) {
