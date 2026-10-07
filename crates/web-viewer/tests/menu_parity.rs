@@ -643,7 +643,9 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
     for _ in 0..240 {
         rt.boot_title_step(0);
     }
-    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on Continue
+    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on New Game
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
     let mut outcome = String::new();
     for _ in 0..240 {
         rt.boot_title_step(0);
@@ -705,7 +707,9 @@ fn a_cold_title_continue_loads_a_save_off_the_card() {
     for _ in 0..240 {
         rt.boot_title_step(0);
     }
-    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on Continue
+    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on New Game
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
     let mut outcome = String::new();
     for _ in 0..240 {
         rt.boot_title_step(0);

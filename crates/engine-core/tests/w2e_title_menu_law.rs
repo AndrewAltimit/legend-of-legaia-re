@@ -33,11 +33,7 @@ fn cursor(s: &TitleSession) -> u8 {
 #[test]
 fn start_confirms_the_highlighted_row() {
     let mut s = at_menu();
-    // Land on NEW GAME.
-    s.tick(TitleInput {
-        up: true,
-        ..Default::default()
-    });
+    // The menu opens on NEW GAME.
     assert_eq!(cursor(&s), 0);
     let events = s.tick(TitleInput {
         start: true,

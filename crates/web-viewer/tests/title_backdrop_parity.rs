@@ -81,7 +81,9 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
     for _ in 0..240 {
         rt.boot_title_step(0);
     }
-    rt.boot_title_step(START); // PressStart -> MainMenu, cursor on Continue
+    rt.boot_title_step(START); // PressStart -> MainMenu, cursor on New Game
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
     let mut outcome = String::new();
     for _ in 0..240 {
         rt.boot_title_step(0);

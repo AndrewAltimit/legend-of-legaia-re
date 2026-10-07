@@ -308,8 +308,20 @@ impl TitleSession {
                 let (_, held) = Self::pad_words(input);
                 let frozen = self.menu.countdown < ATTRACT_INPUT_FREEZE_BELOW;
                 if !frozen && (input.start || input.cross) {
-                    let cursor = if self.continue_enabled { 1 } else { 0 };
-                    self.phase = TitlePhase::MainMenu { cursor };
+                    // The cursor opens on NEW GAME whether or not a save
+                    // exists. Retail's row counter `_DAT_8007B820` is only
+                    // ever stepped by the title's own Up / Down arm; the one
+                    // other writer, init.pak's card scan (`0x801CF1DC` /
+                    // `0x801CF300`), raises it to CONTINUE only when its
+                    // match count `0x801F3978` is non-zero - and the scan
+                    // (`FUN_801CFF68`) compares each file against
+                    // "BISCUS-94254PRO-" (`0x801D098C`), a prefix no US save
+                    // (`BASCUS-94254PRO-`) carries. The `title_attract`
+                    // capture shows it: nine US saves in the directory table
+                    // at `0x801F39A4`, count `0`, row `0`.
+                    self.phase = TitlePhase::MainMenu {
+                        cursor: self.menu.row_counter.clamp(0, 1) as u8,
+                    };
                     events.push(TitleEvent::StartPressed);
                 }
                 if held != 0 {
@@ -560,16 +572,22 @@ mod tests {
         assert!(!without.continue_enabled && without.attract_enabled);
     }
 
+    /// The US build's title opens on NEW GAME even with saves on the card:
+    /// init.pak's scan matches "BISCUS-94254PRO-", which no US save carries,
+    /// so the row counter stays `0` (the `title_attract` capture: nine US
+    /// saves, count `0x801F3978 = 0`, row `0x8007B820 = 0`). This test used to
+    /// assert the cursor opened on CONTINUE.
     #[test]
-    fn start_press_opens_menu_with_continue_enabled() {
+    fn start_press_opens_menu_on_new_game_even_with_saves() {
         let mut s = TitleSession::new();
         s.skip_fade_in();
         let events = s.tick(TitleInput {
             start: true,
             ..Default::default()
         });
+        assert!(s.continue_enabled);
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
             _ => panic!("expected MainMenu"),
         }
         assert!(events.contains(&TitleEvent::StartPressed));
@@ -618,7 +636,11 @@ mod tests {
             start: true,
             ..Default::default()
         });
-        // Cursor at 1 = Continue.
+        // The cursor opens on New Game; Down moves it to Continue.
+        s.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
         let events = s.tick(TitleInput {
             cross: true,
             ..Default::default()
@@ -737,8 +759,8 @@ mod tests {
     #[test]
     fn cursor_wraps_around() {
         // Two-row menu (NewGame / Continue). Start press lands cursor
-        // on Continue (1); Up goes to NewGame (0); Up again wraps back
-        // to Continue (1).
+        // on NewGame (0); Up wraps to Continue (1); Up again comes back
+        // to NewGame (0).
         let mut s = TitleSession::new();
         s.skip_fade_in();
         s.tick(TitleInput {
@@ -750,7 +772,7 @@ mod tests {
             ..Default::default()
         });
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
             _ => panic!(),
         }
         s.tick(TitleInput {
@@ -758,7 +780,7 @@ mod tests {
             ..Default::default()
         });
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
             _ => panic!(),
         }
     }
@@ -769,10 +791,6 @@ mod tests {
         s.skip_fade_in();
         s.tick(TitleInput {
             start: true,
-            ..Default::default()
-        });
-        s.tick(TitleInput {
-            up: true,
             ..Default::default()
         });
         s.tick(TitleInput {
