@@ -91,6 +91,7 @@ The initialised data: static game tables (the mode table at `0x8007078C`, the tr
 | `0x800788B8` | u16[0x110] | Streamed-**voice** clip duration table (index = cue id - `0x100`), read by both the arts shout and the Seru cast voice; `FUN_8004FE5C` and `FUN_8004FCC8` convert to sectors as `(raw*60 + 99)/100`. Live rows run to index `0x10F` with interior zero runs (`0x37..0x40`, `0x78..0x88`, `0xE8..0x10A`), and **neither reader bounds the index** - the only test is `id >= 0x100` - so a consumer that stops short drops the high rows silently. |
 | `0x80078DFC..0x80078E0F` | u32[5] | Statically-linked libgpu `MoveImage` packet template: `[tag 0x04FFFFFF][GP0 0x80000000][src yx][dst yx][wh]`. `FUN_80058490` (MoveImage) patches src/dst/wh in place per call, then submits through the driver vtable at `*(0x80078D4C)+8`. The frame-clear fill template (`x=0, y=4`, 320×224) sits just above at `0x80078DC0`. |
 | `0x80078E84` | i16[192] | **Square-root mantissa table** for the PsyQ-shaped `SquareRoot0` leaf `FUN_8005B0B8` (`lh t5,-0x717c(t5)` at `0x8005B11C`), which seeds GTE `LZCS` with the argument, reads the leading-zero count back off `LZCR` and shifts the looked-up mantissa by half the exponent. |
+| `0x800797D8..0x8007A83F` | struct + stack | **PsyQ interrupt-callback state and its private stack.** `ResetCallback` (`FUN_8005FF20`) zero-fills the block word by word (`FUN_8006046C(0x800797D8, 0x41A)` at `0x8005FF78`) and stores the callback stack top `0x8007A7F0` at `0x80079814`. The stack is `0xFDC` bytes; the lowest non-zero byte in 274 of 275 library states is `0x8007A570`, about 640 bytes of use. The floor below that is zero on the disc and in every state, but it is cleared at boot, so bytes patched into the image here do not survive. Code placed here has to be copied in at run time, after `ResetCallback`. The cheat-derived `0x8007A6BC` row below falls inside the used part of this stack. |
 | `0x8007A6BC` | u16 | Shared "currently-acting character" HP/MP scratch. Cheat: Every "Infinite HP/MP" cheat hits this first. |
 | `0x8007A894` | u16 | Frame-pacing logic timer. Cheat: `Slow Motion` writes `0x68FB`. |
 | `0x8007A940` | table | SsAPI per-note pitch / per-voice volume exponential lookup table (read by `FUN_80066E50` / `FUN_80067550`). |
@@ -364,7 +365,11 @@ Slot A is the per-mode code window. Every image below links at `0x801CE818` (the
 | 0981 | `0x801CE818..0x801CF817` | World-map top-view debug image | mode 12 `MAPDSIP` |
 | 0896 | links at `0x801D4DF0` | Foreign-build options / status image - nothing on this disc loads it | - |
 
-The extents are the PROT entries' own sectors, the slice the loader streams. Where an image's code stops short of its extent, the rest is uninitialised data or bytes inherited from the packer's buffer ([`disc-coverage.md`](../tooling/disc-coverage.md)). The menu overlay replaces the field overlay at the same base when the pause menu opens, so a menu-time address in `0x801CE818..0x801F3817` never names field code. The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C5818`" readings are both retired: the title screen is PROT 0899 code (its tick `FUN_801DD35C` is 0899 file `+0xEB44`), and `0x801C5818` is heap.
+The extents are the PROT entries' own sectors, the slice the loader streams. Where an image's code stops short of its extent, the rest is uninitialised data or bytes inherited from the packer's buffer ([`disc-coverage.md`](../tooling/disc-coverage.md)).
+
+Because the loader streams exactly that many sectors (the TOC gap, unclamped), what sits above a short image is whatever the previous image left there. While the field (0897) or menu (0899) is loaded, `0x801F3818..0x801F69D7` holds leftovers - the battle image's bytes, or `init.pak`'s, whose extent runs to `0x801F4017` and which references the range 104 times. Neither 0897 nor 0899 forms an address in it; the SCUS references at `0x801F53D4` / `0x801F53D8` are battle-only ([`move-power.md`](../formats/move-power.md)). The menu overlay replaces the field overlay at the same base when the pause menu opens, so a menu-time address in `0x801CE818..0x801F3817` never names field code.
+
+The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C5818`" readings are both retired: the title screen is PROT 0899 code (its tick `FUN_801DD35C` is 0899 file `+0xEB44`), and `0x801C5818` is heap.
 
 ### Field / dialog / world map (PROT 0897)
 
@@ -523,7 +528,19 @@ Because the band starts inside PROT 0898's extent, a module paged during battle 
 
 ## Free RAM and stack (`0x801FA9D8-0x801FFFFF`)
 
-Above the largest slot-B image nothing is loaded. The stack pointer starts at `0x801FFFF0` (the EXE header's `s_addr`) and grows down; the deepest stack use observed across the save-state library reaches `0x801FE420`, and `0x801FD000..0x801FE000` reads all-zero in every library state, battles included - which is why the patcher parks injected code there ([`randomizer.md`](../tooling/randomizer.md)).
+Above the largest slot-B image nothing is loaded. The largest slot-B modules (0923, 0934, 0957, 0966) are exactly `0x4000` bytes and end at `0x801FA9D8`. PROT 0900 and 0901, the field-time modules, end lower, at `0x801F91D8`. No instruction in `SCUS_942.54` or any PROT entry forms an address from `0x801FA9D8` up, except the initial stack pointer.
+
+The stack pointer starts at `0x801FFFF0` (the EXE header's `s_addr`) and grows down. The deepest stack use observed reaches `0x801FE420`, the same figure in every one of 275 library states (field, battle, menu, minigame, boot; no FMV state exists). `0x801FA9D8..0x801FE000` reads all-zero in all of them, battles included. That is why the patcher parks injected code at `0x801FD000` ([`randomizer.md`](../tooling/randomizer.md)).
+
+Three ranges could be filled with no hook at all, because the loader streams exactly the TOC's sector count (`FUN_8003EC70` passes the resolver's count straight to the CD read):
+
+| Range | Size | Loaded by | Resident |
+|---|---|---|---|
+| `0x801F3818..0x801F69D7` | 12.4 KB | a grown 0897 **and** 0899 | while field or menu is loaded; every battle overwrites it |
+| `0x801F91D8..0x801FA9D7` | 6 KB | a grown 0900 **and** 0901 | in the field and on the world map; the `0x4000` battle modules overwrite it |
+| `0x801FA9D8..` | up to the stack | a grown 0900 / 0901 | from the first field load until power-off; nothing else reaches it |
+
+Growing an entry is not a same-size patch. 0900 and 0901 are five sectors each and sit back to back on the disc with no slack, and neither ends in padding. Every later TOC word moves and `PROT.DAT` grows, so the change does not fit a same-size PPF. Both alternating images would have to carry the same tail.
 
 ## PSX scratchpad (`0x1F800000-0x1F8003FF`)
 

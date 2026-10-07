@@ -474,6 +474,7 @@
 <section class="doc-section" id="stack">
   <h2>Free RAM and the stack</h2>
   <p>Above the largest slot-B image nothing is loaded. The stack starts at <code>0x801FFFF0</code> and grows down; the deepest use seen across the save-state library is <code>0x801FE420</code>, and <code>0x801FD000..0x801FE000</code> reads all-zero in every state - which is why the disc patcher parks injected code there (<a href="../tooling/randomizer.html">randomizer</a>).</p>
+  <p>No code on the disc builds an address from <code>0x801FA9D8</code> up, apart from the initial stack pointer. The loader reads exactly as many sectors as the PROT table of contents gives, so a larger PROT 0900 / 0901 would carry its extra bytes into this space on every field load, and they would stay until power-off. The catch is that those two entries have no spare room on the disc, so growing them means moving every later PROT entry, which a same-size patch cannot do. In the same way, while the field or menu overlay is loaded, the range <code>0x801F3818..0x801F69D7</code> only holds leftovers from whichever image last used it.</p>
 </section>
 
 <section class="doc-section" id="scratchpad">
