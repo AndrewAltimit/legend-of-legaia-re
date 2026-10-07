@@ -23,12 +23,17 @@ enum TitleAttractAction {
     Aborted,
 }
 
-/// Build the window's title session: [`legaia_engine_core::title::TitleSession::for_front_end`],
-/// the constructor the browser page's title uses too. Continue follows
-/// `continue_enabled`; the attract hand-off is armed (this host plays
+/// Build the window's title session:
+/// [`legaia_engine_core::title::TitleSession::for_front_end_at`], the
+/// constructor the browser page's title uses too. Continue follows
+/// `continue_enabled`; the menu opens on `row`, the seat's row counter
+/// (`ModeSeat::title_row`); the attract hand-off is armed (this host plays
 /// retail's `fmv_id 0` through its windowed MDEC path).
-pub(super) fn title_session(continue_enabled: bool) -> legaia_engine_core::title::TitleSession {
-    legaia_engine_core::title::TitleSession::for_front_end(continue_enabled)
+pub(super) fn title_session(
+    continue_enabled: bool,
+    row: u8,
+) -> legaia_engine_core::title::TitleSession {
+    legaia_engine_core::title::TitleSession::for_front_end_at(continue_enabled, row)
 }
 
 /// Does any port of this host's save rack hold a save? Port 1 is the save
@@ -416,7 +421,10 @@ impl PlayWindowApp {
                     match next {
                         GameMode::CardInit => {
                             let any_present = rack_has_save(&self.save_dir, self.card.as_ref());
-                            self.boot_ui = BootUiState::Title(title_session(any_present));
+                            self.boot_ui = BootUiState::Title(title_session(
+                                any_present,
+                                self.session.mode_seat.title_row(),
+                            ));
                             self.start_title_bgm();
                         }
                         // The dev route. The port has no debug-menu screen, so
@@ -424,7 +432,10 @@ impl PlayWindowApp {
                         // silently folded, because the two are different modes.
                         other => {
                             log::info!("boot hand-off went to {other:?}; no engine screen owns it");
-                            self.boot_ui = BootUiState::Title(title_session(false));
+                            self.boot_ui = BootUiState::Title(title_session(
+                                false,
+                                self.session.mode_seat.title_row(),
+                            ));
                             self.start_title_bgm();
                         }
                     }
@@ -463,6 +474,8 @@ impl PlayWindowApp {
                     circle,
                 };
                 let events = session.tick(input);
+                // Retail's row counter outlives this title.
+                self.session.mode_seat.set_title_row(session.row_counter());
                 for ev in &events {
                     match ev {
                         TitleEvent::NewGameSelected => {
@@ -558,10 +571,10 @@ impl PlayWindowApp {
                             if !self.open_menu_row_from_title(
                                 legaia_engine_core::field_menu::FieldMenuRow::Options,
                             ) {
-                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                                    &self.save_dir,
-                                    self.card.as_ref(),
-                                )));
+                                self.boot_ui = BootUiState::Title(title_session(
+                                    rack_has_save(&self.save_dir, self.card.as_ref()),
+                                    self.session.mode_seat.title_row(),
+                                ));
                                 self.start_title_bgm();
                             }
                         }
@@ -590,10 +603,10 @@ impl PlayWindowApp {
                         SelectOutcome::Cancelled => {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
-                            self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                                &self.save_dir,
-                                self.card.as_ref(),
-                            )));
+                            self.boot_ui = BootUiState::Title(title_session(
+                                rack_has_save(&self.save_dir, self.card.as_ref()),
+                                self.session.mode_seat.title_row(),
+                            ));
                             self.start_title_bgm();
                         }
                         _ => {
@@ -762,10 +775,10 @@ impl PlayWindowApp {
                             self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
                             if std::mem::take(&mut self.menu_from_title) {
-                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                                    &self.save_dir,
-                                    self.card.as_ref(),
-                                )));
+                                self.boot_ui = BootUiState::Title(title_session(
+                                    rack_has_save(&self.save_dir, self.card.as_ref()),
+                                    self.session.mode_seat.title_row(),
+                                ));
                                 self.start_title_bgm();
                             }
                         }
@@ -795,10 +808,10 @@ impl PlayWindowApp {
                     if let Some(bgm) = self.session.bgm.as_mut() {
                         bgm.stop();
                     }
-                    self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                        &self.save_dir,
-                        self.card.as_ref(),
-                    )));
+                    self.boot_ui = BootUiState::Title(title_session(
+                        rack_has_save(&self.save_dir, self.card.as_ref()),
+                        self.session.mode_seat.title_row(),
+                    ));
                     self.start_title_bgm();
                 }
                 true

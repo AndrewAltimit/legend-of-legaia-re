@@ -164,7 +164,10 @@ impl LegaiaRuntime {
         crate::console_log(&format!(
             "boot title: the {row} row would not open on this world; returning to the title"
         ));
-        self.boot_title = Some(TitleSession::for_front_end(self.boot_title_has_save_data()));
+        self.boot_title = Some(TitleSession::for_front_end_at(
+            self.boot_title_has_save_data(),
+            self.scene_host.seat().title_row(),
+        ));
         String::new()
     }
 }
@@ -191,7 +194,10 @@ impl LegaiaRuntime {
         // The front-end constructor both hosts open every title through
         // (fresh rack scan, attract armed - the movie plays through the FMV
         // lane, see `boot_title_step`).
-        self.boot_title = Some(TitleSession::for_front_end(self.boot_title_has_save_data()));
+        self.boot_title = Some(TitleSession::for_front_end_at(
+            self.boot_title_has_save_data(),
+            self.scene_host.seat().title_row(),
+        ));
         self.boot_title_attract_skips = 0;
     }
 
@@ -252,7 +258,7 @@ impl LegaiaRuntime {
         // (`service_title_attract`). Here the movie is armed on the play
         // page's FMV lane the frame the countdown fires, and the session
         // stays frozen in `Attract` until that lane reports the end.
-        let (attract_fmv, attract_playing) = {
+        let (attract_fmv, attract_playing, title_row) = {
             let Some(session) = self.boot_title.as_mut() else {
                 return String::new();
             };
@@ -261,8 +267,10 @@ impl LegaiaRuntime {
             if pending.is_some() {
                 session.mark_attract_started();
             }
-            (pending, session.attract_playing())
+            (pending, session.attract_playing(), session.row_counter())
         };
+        // Retail's row counter outlives this title (`ModeSeat::title_row`).
+        self.scene_host.seat_mut().set_title_row(title_row);
         if let Some(fmv_id) = attract_fmv {
             self.fmv_arm(fmv_id, crate::play_fmv::FmvOrigin::Attract);
         }

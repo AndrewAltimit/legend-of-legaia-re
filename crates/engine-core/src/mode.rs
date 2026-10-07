@@ -1018,6 +1018,12 @@ pub struct ModeSeat {
     /// raises it itself on a cold boot, which is why the seat opens with it
     /// set.
     entry_word: u32,
+    /// `_DAT_8007B820` - the title menu's **row counter**. A power-on global:
+    /// only the title's own Up / Down arm and init.pak's card scan write it
+    /// (the scan never matches a US save, `docs/subsystems/boot.md`), so
+    /// every later title opens on whichever row it last held. The seat lives
+    /// across every title a session raises, which is why the word is here.
+    title_row: u8,
 }
 
 impl ModeSeat {
@@ -1035,6 +1041,7 @@ impl ModeSeat {
             previous: start,
             edges: 0,
             entry_word: legaia_engine_vm::title_overlay::ENTRY_WORD_COLD_BOOT,
+            title_row: 0,
         }
     }
 
@@ -1071,6 +1078,18 @@ impl ModeSeat {
     /// The front-end entry word `_DAT_8007BB00`.
     pub fn entry_word(&self) -> u32 {
         self.entry_word
+    }
+
+    /// The title row counter `_DAT_8007B820` (`0` NEW GAME, `1` CONTINUE).
+    pub fn title_row(&self) -> u8 {
+        self.title_row
+    }
+
+    /// Record the row the running title holds
+    /// ([`crate::title::TitleSession::row_counter`]); the next title opens
+    /// there ([`crate::title::TitleSession::for_front_end_at`]).
+    pub fn set_title_row(&mut self, row: u8) {
+        self.title_row = row;
     }
 
     /// Request the front end, both stores: the mode word to `CARD INIT` and

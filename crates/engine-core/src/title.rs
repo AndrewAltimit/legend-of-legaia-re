@@ -248,6 +248,28 @@ impl TitleSession {
         s
     }
 
+    /// [`Self::for_front_end`] opened on `row` - the row counter
+    /// `_DAT_8007B820` a host carries across titles in its
+    /// [`crate::mode::ModeSeat::title_row`]. Retail never resets the counter,
+    /// so a later title (a party wipe's, a backed-out Continue's) opens on
+    /// whichever row the last one held. A CONTINUE row with nothing to
+    /// continue folds to NEW GAME: the port greys that row out, and the
+    /// cursor must not open on a row its own step skips.
+    pub fn for_front_end_at(any_save_present: bool, row: u8) -> Self {
+        let mut s = Self::for_front_end(any_save_present);
+        let row = i32::from(row) % i32::from(s.rows.max(1));
+        s.menu.row_counter = if s.continue_enabled { row } else { 0 };
+        s
+    }
+
+    /// The row counter as it stands (`0` NEW GAME, `1` CONTINUE) - what a
+    /// host hands [`crate::mode::ModeSeat::set_title_row`] each frame.
+    pub fn row_counter(&self) -> u8 {
+        self.menu
+            .row_counter
+            .rem_euclid(i32::from(self.rows.max(1))) as u8
+    }
+
     /// Construct a session with `Continue` disabled (no save data).
     pub fn without_save_data() -> Self {
         let mut s = Self::new();
@@ -577,6 +599,38 @@ mod tests {
     /// so the row counter stays `0` (the `title_attract` capture: nine US
     /// saves, count `0x801F3978 = 0`, row `0x8007B820 = 0`). This test used to
     /// assert the cursor opened on CONTINUE.
+    /// Retail's row counter outlives the title: a title opened at the row
+    /// the last one held opens its menu there, and reports it back.
+    #[test]
+    fn a_later_title_opens_on_the_row_the_last_one_held() {
+        let mut first = TitleSession::for_front_end(true);
+        first.skip_fade_in();
+        first.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        first.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        assert_eq!(first.row_counter(), 1);
+        let mut again = TitleSession::for_front_end_at(true, first.row_counter());
+        again.skip_fade_in();
+        again.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert_eq!(again.phase(), TitlePhase::MainMenu { cursor: 1 });
+        // Nothing to continue: the greyed row is never the opening row.
+        let mut bare = TitleSession::for_front_end_at(false, 1);
+        bare.skip_fade_in();
+        bare.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert_eq!(bare.phase(), TitlePhase::MainMenu { cursor: 0 });
+    }
+
     #[test]
     fn start_press_opens_menu_on_new_game_even_with_saves() {
         let mut s = TitleSession::new();

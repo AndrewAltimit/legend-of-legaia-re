@@ -160,3 +160,45 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
         "no save-select, no backdrop"
     );
 }
+
+/// Retail's title row counter `_DAT_8007B820` outlives the title: a second
+/// title the page raises opens its menu on the row the first one held, so
+/// one Cross there answers CONTINUE without a Down.
+#[test]
+fn a_reopened_title_keeps_the_row_the_last_one_held() {
+    let Some(disc) = std::env::var("LEGAIA_DISC_BIN").ok() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read disc");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load disc");
+    rt.enter_field("town01").expect("enter town01");
+    rt.insert_card(0, card_with_save(3), "card A".into())
+        .expect("insert card into port 1");
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(START);
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
+    rt.boot_title_step(0);
+    rt.boot_title_close();
+
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(START);
+    let mut outcome = String::new();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+        outcome = rt.boot_title_step(CROSS);
+        if !outcome.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(outcome, "continue", "the reopened title opened on CONTINUE");
+    eprintln!("[ran] title row memory");
+}

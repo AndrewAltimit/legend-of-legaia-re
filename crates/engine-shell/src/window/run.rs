@@ -1409,6 +1409,7 @@ pub(super) fn cmd_play_window_with_record(
         } else {
             BootUiState::Title(super::boot_cutscene::title_session(
                 super::boot_cutscene::rack_has_save(save_dir, mounted_card.as_ref()),
+                0,
             ))
         }
     } else {

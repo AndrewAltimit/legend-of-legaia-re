@@ -93,6 +93,14 @@ impl HostSlot {
         }
     }
 
+    /// The mode seat, mutably.
+    pub(crate) fn seat_mut(&mut self) -> &mut ModeSeat {
+        match self.session.as_mut() {
+            Some(s) => &mut s.mode_seat,
+            None => &mut self.seat,
+        }
+    }
+
     /// The active world and the mode seat together: the session's world once
     /// a disc is loaded, `scaffold` (the page's disc-free world) before.
     pub(crate) fn world_seat_mut<'a>(
