@@ -519,6 +519,19 @@ sampled before any round ran. The acting seat is placed too, even on a
 captured Attack whose pair is a point on the walk the drive replays: the walk
 ends at its target whatever it starts from.
 
+**HUD glides the capture had landed.** The battle HUD's plates rise over
+sixteen vsyncs from the action seed (`FUN_801D9BBC`'s records at
+`ctx[+0x11B4]`; a landed record reads `total == 0`). A seat placed on its
+captured ground skips the approach retail spent that time on, so a drive can
+reach an attack capture's phase with the engine's plates still mid-rise while
+retail's had long since landed (`battle_gaza2_park_0x19_summon_melee`, a park
+held for seconds; `player_steal_skeleton_pre`). When every retail record has
+landed the image child lands the engine's at the capture
+(`LEGAIA_SEAT_HUD_GLIDES_LANDED`, `World::land_battle_hud_glides`). The RAM
+cannot say how long ago a glide landed, and the displayed frame is two
+frame steps older: `battle_noa_miracle_art_combo`'s plates landed inside that
+window, so its frame shows them still rising while the seat lands them.
+
 **A push the capture already holds.** A capture inside an action stands its
 combatants where that action had already moved them - a target shoved back
 by its hits, a member knocked down by a spell - and the drive replays the

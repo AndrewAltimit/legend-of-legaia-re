@@ -316,3 +316,24 @@ fn the_seed_glides_the_readout_bar_in_over_sixteen_ticks() {
         "a monster target raises no bar"
     );
 }
+
+/// The retail-compare seat for a capture whose HUD glides had all landed:
+/// every plate in flight snaps onto its rest seat.
+#[test]
+fn landing_the_hud_glides_puts_every_plate_at_rest() {
+    use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
+    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut world = party_world(1);
+    world.battle.command = None;
+    world.battle_ctx.active_actor = 1;
+    world.battle_ctx.action_state = 0x6E;
+    world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
+    world.actors[1].battle.active_target = 0;
+    world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    world.step_action_plate_glides();
+    assert_ne!(battle_readout_bar_dy(&world), 0);
+    world.land_battle_hud_glides();
+    assert_eq!(battle_readout_bar_dy(&world), 0);
+    assert_eq!(battle_action_plaque_dy(&world), 0);
+}

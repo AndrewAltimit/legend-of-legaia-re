@@ -2535,6 +2535,13 @@ fn battle_image(
         "LEGAIA_BATTLE_CAMERA_OPTION",
         battle.camera_option.to_string(),
     ));
+    // Retail's HUD glides had all landed: the frame shows every plate at its
+    // rest seat whatever the replay's own seed-to-phase time was (a seat
+    // seeded on its captured ground skips the approach retail spent the
+    // sixteen-frame raise on).
+    if battle.hud_glides_landed {
+        env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK

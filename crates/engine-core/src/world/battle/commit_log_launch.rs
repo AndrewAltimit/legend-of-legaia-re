@@ -114,6 +114,24 @@ impl World {
             && actor.battle.active_target < self.party.party_count
     }
 
+    /// Land every HUD widget glide in flight on its rest seat, as
+    /// `FUN_801D9BBC` does once a glide's `elapsed` reaches its `total`. The
+    /// retail-compare capture seats this when the retail state's glides had
+    /// all landed; no game path calls it.
+    pub fn land_battle_hud_glides(&mut self) {
+        for g in [
+            self.battle.action_plaque_glide.as_mut(),
+            self.battle.target_plaque_glide.as_mut(),
+            self.battle.readout_bar_glide.as_mut(),
+            self.battle.result_windows_glide.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            g.elapsed = g.total;
+        }
+    }
+
     /// One tick of the two action-plate glides, on the step the commit log's
     /// launch takes ([`BATTLE_PASS_STEP_PER_TICK`]; `FUN_801D9BBC` walks
     /// every tracked widget in one pass).

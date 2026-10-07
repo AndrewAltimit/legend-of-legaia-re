@@ -208,6 +208,11 @@ pub struct RetailBattle {
     /// saved game-state window, but the save lift does not carry options,
     /// so the seed stamps it (`World::toggles.battle_camera`).
     pub camera_option: u8,
+    /// No HUD widget glide is in flight: every tracked record
+    /// `ctx[+0x11B4 + slot * 0xC]` reads `total == 0`, which is what
+    /// `FUN_801D9BBC` leaves once a glide has snapped onto its target
+    /// (`0x801D9BE4` skips a record whose `total` byte is zero).
+    pub hud_glides_landed: bool,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -1014,6 +1019,13 @@ pub const PRE_SEED_STATES: [u8; 3] = [0x00, 0x0A, 0x0B];
 /// `ctx[+0x274]` - the next actor the initiative pick `FUN_801DABA4` chose.
 const NEXT_ACTOR: u32 = 0x274;
 
+/// The HUD's tracked widget glides `FUN_801D9BBC` walks: `ctx[+0x11B4]`,
+/// `0xC`-byte records `[total][elapsed] .. [target x, y][start x, y]`, one
+/// per handle slot `ctx[+0x1074]` (forty).
+const HUD_GLIDE_TABLE: u32 = 0x11B4;
+const HUD_GLIDE_STRIDE: u32 = 0xC;
+const HUD_GLIDE_SLOTS: u32 = 40;
+
 /// The tween table `FUN_801D829C` builds (`ctx[+0x118C]`, nine
 /// `{u16 step, u16 endpoint}` records: pitch / yaw / roll, the translation
 /// trio, the focus trio).
@@ -1131,6 +1143,9 @@ impl RetailBattle {
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
+            hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
+                game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
+            }),
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
