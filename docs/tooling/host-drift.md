@@ -761,11 +761,15 @@ this tier measures; that host does not have one.
 What it does share is the clock. The page's one animation loop asks the
 engine's `frame_step::SimStepper` (`LegaiaMinigames::drain_sim_steps`, the
 play page's `play_drain_sim_steps` and the native redraw's drain) how many
-60 Hz game frames each display frame runs, and calls the on-screen game's
-frame function that many times; fishing takes the count as its step budget.
-It used to step every game once per `requestAnimationFrame` - and fishing
-rounded its own wall-clock gap up to at least one frame - so on a 120 Hz
-display every minigame on the page ran at twice retail speed.
+60 Hz game frames each display frame runs. Fishing takes the count as its
+step budget (its frame function steps the pond in a loop and draws once); the
+other four run their frame function at most once, and not at all on a frame
+the stepper answers `0` - each of them draws inside it, so a catch-up frame
+would be an extra 3D or raster pass, and a slow machine plays them in slow
+motion rather than spiralling. The page used to step every game once per
+`requestAnimationFrame` - and fishing rounded its own wall-clock gap up to at
+least one frame - so on a 120 Hz display every minigame on the page ran at
+twice retail speed.
 
 Both halves are derived from the sources rather than declared, so a new arm or
 a new kernel joins the measurement by existing. The ratchet is the `skips`
