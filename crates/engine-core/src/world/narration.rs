@@ -3145,24 +3145,23 @@ impl World {
                 // the placement she was seated beside) or another one
                 // (`CC <id> 85 ..`): the target's walk kernel runs the leg.
                 // It is armed here and stepped from the next field tick,
-                // once the seats this pre-run writes have surfaced.
+                // once the seats this pre-run writes have surfaced; the op
+                // itself still runs below, so the pre-run's control flow -
+                // an own-context acquire parks the section, as the record's
+                // own halt does in retail - is unchanged.
                 // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
                 if let Some(slot) = self.field_vm.executing_channel
-                    && let Some((ramp, width)) =
-                        crate::inline_dialogue::TalkFaceRamp::from_own_acquire(bc, pc)
-                            .map(|r| (r, 5))
-                            .or_else(|| {
-                                crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
-                                    .filter(|_| target.is_some())
-                                    .map(|(_, r)| (r, 6))
-                            })
+                    && let Some(ramp) = crate::inline_dialogue::TalkFaceRamp::from_own_acquire(
+                        bc, pc,
+                    )
+                    .or_else(|| {
+                        crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
+                            .filter(|_| target.is_some())
+                            .map(|(_, r)| r)
+                    })
                 {
-                    self.field_vm.executing_channel = None;
-                    self.field_vm.executing_object = None;
                     self.npcs.rotate_legs.remove(&slot);
                     self.npcs.face_legs.insert(slot, ramp);
-                    channels[i].pc = pc + width;
-                    continue;
                 }
                 let result = {
                     let mut host = FieldHostImpl { world: self };
@@ -3654,19 +3653,6 @@ impl World {
             // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
             // A cross-context `B8 <id> ..` turn lands on `<id>` the same way;
             // stepped on the talk's context it turned the talker instead.
-            // The talker's own `4C 85 <lo> <hi> <bind>` turns the talker.
-            if let Some(slot) = host.world.dialog.stepping_inline_npc
-                && let Some(ramp) =
-                    crate::inline_dialogue::TalkFaceRamp::from_own_acquire(&id.bytecode, id.pc)
-            {
-                host.world.face_leg_npc(slot, ramp);
-                if id.pc < id.visited.len() {
-                    id.visited[id.pc] = true;
-                }
-                id.pc += 5;
-                id.park_frames = 0;
-                continue;
-            }
             if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
