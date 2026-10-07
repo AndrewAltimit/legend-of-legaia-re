@@ -636,23 +636,28 @@ reach, `dolk` P2[9] (the bed behind the inn's stair door), wipes on 14 of
 before it sets out, no region rolls between `dolk` and Rim Elm, and the
 pad tier clears on the default stream and on seeds 1..40 alike.
 
-### A boss the pad hand cannot out-damage
+### A boss the anchor's party cannot outlast
 
 `noaru_valley -> bio_castle` meets the third Songi fight (48000 HP, UDF
-`402`) on the walk out of `noaru`, and the pad tier loses it on every seed
-with Songi still holding a large share of its HP. The pad hand commits
-plain Attack and nothing else - no arts, no Seru magic, no Spirit - so its
-damage is the swing kernel's against one of the game's highest
-defences, a hand a retail player does not play. That makes the wipe a
-property of the driver before it is a property of the damage path.
+`402`, INT `324`) on the walk out of `noaru`, and the pad tier loses it on
+every seed. The hand's damage is not the gap: each member casts Gilium, the
+strongest summon it knows, for about 2000 (Vahn, Noa) to 3000 (Gala) a
+cast, drinks a Magic Fruit when it cannot afford the next, and an Art
+against that defence does a few hundred. Every term of those rolls, and of
+Songi's, reads off the disassembly (the summon branch of `FUN_801DD0AC`, the
+INT wrapper `FUN_801DD4B0`, the melee kernel `FUN_801EC3E4`).
 
-What would make it the damage path is a per-hit figure that disagrees with
-retail, and the library cannot supply one: its battle states are almost all
-early fights, and the popup ring `ctx[+0x83C]` holds a live party hit in
-only a handful of them. Until a capture of a late-game party hit exists,
-read this stall as the hand's, and check a change to it against the
-formula pages ([`battle-formulas.md`](../subsystems/battle-formulas.md)),
-not against the ladder.
+The gap is the anchor. The `PRO-04` party is level 31 with 1683..1956 HP.
+Songi's turn is a 3..6-strike combo of about 700 a strike (ATK 477 with
+`x5/4` boss boost, power-28 swings, plus `HP/256` = 187 off its own pool) or
+a single 928-power special of about 1300..1550, so most of its turns drop
+one member, and a Phoenix brings that member back at a quarter of its HP for
+the next turn to drop again. Below half HP, on a turn its core picked a
+strike, it arms Genocidal Cannon half the time, and from then on every turn
+is the cannon - about 1700 to each member, about 750 to a member in the
+Spirit stance - for as long as its 3000 MP lasts. The next anchor's save
+(`PRO-10`) holds the same party at 3090..3583 HP: retail did not fight this
+at `PRO-04` strength either. Read the stall as the anchor's.
 
 ## Seeding
 
