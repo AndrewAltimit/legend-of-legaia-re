@@ -701,6 +701,18 @@ The strike combo still drops a full member, so the heal arm ignores a
 biggest-hit-seen larger than a member's whole HP when it sizes "in danger":
 holding everyone near full against a hit no heal outlasts had the guarded
 hand spending most turns on items.
+
+The segment stays fragile. Guarded, the hand beats Songi on the default
+stream and on 5 of seeds 1..10, and clears the segment at the pad tier on
+the default stream and 3 of them. The losses are the cannon phase: Songi
+(SPD 196) usually acts ahead of the party (about 161), so a heal committed
+in a round lands after that round's cannon. Raising the heal line to four
+fifths of max HP, or handing out the Wonder Elixir (whose SPD share moves a
+member ahead of Songi) in place of the Power Elixir, each win on some seeds
+and lose the default stream. One more stall on a re-dealt stream sits in
+the overworld: a `map01` random battle that ends after a few ticks while the
+walk steps onto the `dolk2` portal leaves the party at (54, 72), outside the
+walk component that reaches `jou`.
 The retry is reported as `pad (retried with element-N guards)`. The Jette
 fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
 50000 HP boss the unguarded hand loses at about half its HP, and wins once
