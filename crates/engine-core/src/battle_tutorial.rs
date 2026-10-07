@@ -764,14 +764,24 @@ impl BattleTutorial {
         }
     }
 
-    /// `FUN_801F7628`'s store into `ctx[+0x6B4]`: arm the hold countdown.
+    /// `FUN_801F7628`: arm the hold countdown.
+    ///
+    /// The routine (23 instructions, PROT 0967) seeds `ctx[+0x6B4]` with
+    /// `rate * 360` ([`COMPLETION_COUNTDOWN_VSYNCS`] once the rate cancels),
+    /// raises the hold `ctx[+0x6B0] = 1`, zeroes the pad masks
+    /// `_DAT_8007B874` / `_DAT_8007B938` / `_DAT_8007B850` and `ctx[+0x884]`,
+    /// and captures the cancel mask `_DAT_800846D4` into `ctx[+0x88C]`. The
+    /// hold, the cleared masks and the captured cancel are what
+    /// [`Self::tick_countdown`] reports as [`CountdownTick::Holding`] and
+    /// [`CountdownTick::Rewind`], so the countdown is the one stored value
+    /// this side keeps.
     ///
     /// Retail also calls it on every wrong-lesson rewind (`0x801F7184` and
     /// siblings), where the expiry injects a Cancel press. The engine's
     /// rewind reopens the command menu directly
     /// ([`TutorialEmission::rewind`]), so only the completion tail arms it.
     ///
-    /// REF: FUN_801F7628
+    /// PORT: FUN_801F7628
     pub fn arm_countdown(&mut self) {
         self.countdown = COMPLETION_COUNTDOWN_VSYNCS;
     }
