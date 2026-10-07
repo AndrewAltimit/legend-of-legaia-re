@@ -118,6 +118,14 @@ pub struct InlineDialogue {
     /// halt window: the player and the talking actor both carry `0x400`, and
     /// a cross-context op aimed at the player parks until it closes.
     pub face_ramp: Option<TalkFaceRamp>,
+    /// The talker's own turn a no-target `4C 85|8E|8F` started, while it is
+    /// in flight: the placement slot whose face-at leg holds the talker's
+    /// `0x400`. Retail's dispatcher prologue (`0x801DE90C..0x801DE944`)
+    /// refuses every op of a context carrying `0x400` (the scene word
+    /// `*(_DAT_801C6EA4) + 8` is `0` in a talk and the talker is not `0xFB`),
+    /// so the record holds at its PC until the leg's terminal frame clears
+    /// the bit (`FUN_8003774C`, `0x80038004`).
+    pub own_turn: Option<u8>,
     /// This pass has spawned a record (an own-context op `0x44`). A raw
     /// `0x21` after that is the conversation's real end, not a prologue that
     /// failed to reach its box: the talk's effect was the spawn. `vozz`
@@ -298,6 +306,7 @@ impl InlineDialogue {
             visited,
             parked_pc: None,
             face_ramp: None,
+            own_turn: None,
             spawned: false,
         }
     }
@@ -331,6 +340,7 @@ impl InlineDialogue {
             visited,
             parked_pc: None,
             face_ramp: None,
+            own_turn: None,
             spawned: false,
         }
     }

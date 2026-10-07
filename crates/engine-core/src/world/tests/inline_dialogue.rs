@@ -509,10 +509,23 @@ fn a_talkers_own_face_at_turns_the_talker() {
     let body = vec![0x4C, 0x85, 0x0A, 0x00, 0xF8, 0x1F, b'K', 0x00];
     world.start_inline_dialogue_with_prologue(body, 0, 5);
     world.dialog.inline.as_mut().unwrap().npc_slot = Some(4);
-    assert_eq!(run_inline_until_box(&mut world), b"K");
+    // The acquire raised the talker's own `0x400`, and the dispatcher
+    // refuses every op of a context carrying it: the box waits for the
+    // walk kernel to land the turn (budget 10) and clear the bit.
+    for _ in 0..4 {
+        world.step_inline_dialogue(false, false, false);
+        world.tick_field_npc_motions();
+    }
+    let id = world.dialog.inline.as_ref().unwrap();
+    assert!(id.page_bytes().is_empty(), "the box held for the turn");
+    assert_eq!(id.own_turn, Some(4));
     for _ in 0..12 {
         world.tick_field_npc_motions();
     }
+    assert_eq!(run_inline_until_box(&mut world), b"K");
+    let id = world.dialog.inline.as_ref().unwrap();
+    assert_eq!(id.own_turn, None);
+    assert_eq!(id.ctx.flags & 0x400, 0, "the landed turn cleared the bit");
     let h = i32::from(*world.npcs.headings.get(&4).expect("heading written"));
     let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
     assert!(

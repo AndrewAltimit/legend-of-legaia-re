@@ -7252,8 +7252,43 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     // playing the next stage, so stagers are approached every round until
     // a contact gains nothing.
     let mut stager_spent: BTreeSet<usize> = BTreeSet::new();
+    // A walk-on beat that ran and gained nothing ran on a gate its own
+    // script tests and failed (`rayman` P2[18] wants `0x1FD..0x1FF`, which
+    // the talks of the same pass raise): it plays again once the flags it
+    // ran against have changed, as a player stepping back onto the band.
+    // Only a change to a system flag the record itself tests rearms it: a
+    // beat whose script reads none of the flags that moved would replay the
+    // same run, and replaying a seat-and-release beat walks the player off
+    // the route another beat set up.
+    let tested: BTreeMap<usize, BTreeSet<u16>> = {
+        use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+        let mut m: BTreeMap<usize, BTreeSet<u16>> = BTreeMap::new();
+        for site in walk_partition_gflag_sites(&mf, &man, 2) {
+            if site.clean && site.bank == FlagBank::System && site.kind == FlagKind::Test {
+                m.entry(site.record).or_default().insert(site.flag);
+            }
+        }
+        m
+    };
+    let mut idle: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
+    let mut rearmed: BTreeSet<u8> = BTreeSet::new();
     for _round in 0..BEAT_ROUNDS {
         let round_start = flags_of_world(session);
+        let stale: Vec<u8> = idle
+            .iter()
+            .filter(|(rec, f)| {
+                tested.get(&usize::from(**rec)).is_some_and(|t| {
+                    f.symmetric_difference(&round_start)
+                        .any(|flag| t.contains(flag))
+                })
+            })
+            .map(|(&rec, _)| rec)
+            .collect();
+        for rec in stale {
+            idle.remove(&rec);
+            walked.remove(&rec);
+            rearmed.insert(rec);
+        }
         for p in boss_stager_placements(&mf, &man) {
             if stager_spent.contains(&p.placement_index) {
                 continue;
@@ -7390,7 +7425,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 return Err(w);
             }
             pad_budget(session)?;
-            if RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec))) {
+            if !rearmed.contains(&rec)
+                && RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec)))
+            {
                 walked.insert(rec);
             }
             if doors.contains(&rec)
@@ -7507,6 +7544,10 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             // end of one tunnel, drops its member beside the P2[2] band).
             if matches!(&r, Run::Parked(e) if e.contains("no walkable path")) {
                 walked.remove(&rec);
+            }
+            rearmed.remove(&rec);
+            if matches!(r, Run::Released) && flags_of_world(session) == f0 {
+                idle.insert(rec, f0.clone());
             }
             trace_beat(session, &f0, || {
                 format!("{name} walk P2[{rec}] at {tile:?} -> {r:?}")

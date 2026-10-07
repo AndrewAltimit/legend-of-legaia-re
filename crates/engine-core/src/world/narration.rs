@@ -3573,6 +3573,18 @@ impl World {
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
             budget -= 1;
+            // The talker's own turn in flight (see `InlineDialogue::own_turn`):
+            // the dispatcher prologue refuses every op of a context carrying
+            // `0x400`, so the record holds at its PC - a text lead included -
+            // until the walk kernel's terminal frame clears the bit.
+            // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (0x80038004)
+            if let Some(slot) = id.own_turn {
+                if host.world.npcs.face_legs.contains_key(&slot) {
+                    break;
+                }
+                id.own_turn = None;
+                id.ctx.flags &= !0x400;
+            }
             let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
             // Retail SM transition test: a byte with `& 0x7F < 0x20` is a text
             // lead (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode.
@@ -3651,19 +3663,18 @@ impl World {
             // five (`0x801E2148..0x801E21DC`); the talker's actor tick then
             // runs the walk kernel's FaceTarget leg (`0x8003BD44..0x8003BD50`),
             // whose terminal frame clears the bit (`0x80038004`). The leg is
-            // armed here so the talker turns. The op itself still runs on the
-            // stand-in context below, which keeps the bit up: a record that
-            // waits for the turn (`rayman` `P1[6]`, Kina, follows its
-            // `4C 85 10 00 F8` with `B3 13 0A`) parks there as before. Releasing
-            // the park when the leg lands is retail's flow, but it runs Kina's
-            // guide beat to its end and the full-game ladder's pad route then
-            // loops on the `rayman` walk-ons (see `motion-vm.md`).
+            // armed here so the talker turns, and the op runs on the stand-in
+            // context below, which takes the bit; `InlineDialogue::own_turn`
+            // holds the record until the leg lands (the hold at the top of
+            // this loop). `rayman` `P1[6]` (Kina) turns this way before her
+            // "Follow me!" beat.
             // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C, FUN_8003BC08
             if let Some(slot) = host.world.dialog.stepping_inline_npc
                 && let Some(ramp) =
                     crate::inline_dialogue::TalkFaceRamp::from_own_acquire(&id.bytecode, id.pc)
             {
                 host.world.face_leg_npc(slot, ramp);
+                id.own_turn = Some(slot);
             }
             // A halt-acquire of a placement (`CC <id> 85|8E|8F <lo> <hi>
             // <bind>`): the target's walk kernel turns it toward the bind
