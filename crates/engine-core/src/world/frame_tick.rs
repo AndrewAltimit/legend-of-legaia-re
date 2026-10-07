@@ -3334,79 +3334,35 @@ impl World {
     /// PORT: the Baka Fighter per-frame drive (`FUN_801d3f44` player input →
     /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
     fn tick_baka_fighter(&mut self) {
-        use crate::baka_fighter::BakaAttack;
-        let Some(fight) = self.minigames.baka_fighter.as_ref() else {
+        if self.minigames.baka_fighter.is_none() {
             // Mode is BakaFighter but no fight installed - drop back.
             self.mode = self.minigames.baka_return_mode;
             return;
-        };
-        if fight.cabinet().front_end() {
-            // The attract card and the player select: the cabinet reads the
-            // packed edge itself (start `0x844`, cursor `0x8000` / `0x2000`,
-            // confirm `0x44`) and no fight runs until the pick is seated.
-            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
-            if let Some(f) = self.minigames.baka_fighter.as_mut() {
-                f.set_cabinet_pad(edge);
-                f.tick(1);
-            }
-            self.queue_baka_xa_prestage();
-            return;
         }
-        if fight.match_over() {
-            // The result screen: run the score tally, banking each drained
-            // step into the mode-24 winnings accumulator exactly as retail's
-            // `FUN_801D239C` adds it into `_DAT_80084440` - the coin prize,
-            // not party gold (`0x8008459C`). The exit warp
-            // ([`Self::minigame_return_warp`]) then pays the accumulator into
-            // the casino coin bank. Any face button latches its fast-forward.
-            let face = [
-                input::PadButton::Triangle,
-                input::PadButton::Circle,
-                input::PadButton::Cross,
-                input::PadButton::Square,
-            ]
-            .iter()
-            .any(|&b| self.input.just_pressed(b));
-            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
-            let pot = self.minigames.winnings;
-            let mut exit = false;
-            if let Some(f) = self.minigames.baka_fighter.as_mut() {
-                f.cabinet_mut().set_pot(pot);
-                f.set_cabinet_pad(edge);
-                f.tick_with_input(1, face);
-                let paid = f.take_tally_gold();
-                if paid > 0 {
-                    self.minigames.winnings = self.minigames.winnings.saturating_add(paid as u32);
-                }
-                if f.cabinet_frame().forfeit.is_some() {
-                    self.minigames.winnings = 0;
-                }
-                exit = f.cabinet().exit_done();
-            }
-            if exit {
-                self.exit_baka_fighter();
-            }
-            return;
-        }
-        // Retail's last-write-wins test order, read back to front.
-        let attack = if self.input.just_pressed(input::PadButton::Cross) {
-            Some(BakaAttack::C)
-        } else if self.input.just_pressed(input::PadButton::Circle) {
-            Some(BakaAttack::B)
-        } else if self.input.just_pressed(input::PadButton::Square) {
-            Some(BakaAttack::A)
-        } else {
-            None
-        };
+        // The cabinet's whole frame (`BakaFight::frame`), shared with the
+        // standalone minigames page: the front end, the duel's throw, and
+        // after a match the tally / NEXT GAME / PAY OUT sheet. Each drained
+        // tally step banks into the mode-24 winnings accumulator exactly as
+        // retail's `FUN_801D239C` adds it into `_DAT_80084440` - the coin
+        // prize, not party gold (`0x8008459C`); the exit warp
+        // ([`Self::minigame_return_warp`]) then pays the accumulator into the
+        // casino coin bank.
+        let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
         let held = crate::dev_menu::retail_packed(self.input.pad());
-        if let Some(fight) = self.minigames.baka_fighter.as_mut() {
-            if let Some(attack) = attack {
-                fight.choose(0, attack);
-            }
-            // The held word the round setup reads for the cameo
-            // (`_DAT_8007B850`).
-            fight.set_held_pad(held);
-            fight.tick(1);
+        let pot = self.minigames.winnings;
+        let out = match self.minigames.baka_fighter.as_mut() {
+            Some(f) => f.frame(edge, held, pot),
+            None => return,
+        };
+        if out.paid > 0 {
+            self.minigames.winnings = self.minigames.winnings.saturating_add(out.paid);
+        }
+        if out.forfeit {
+            self.minigames.winnings = 0;
+        }
+        if out.exit {
+            self.exit_baka_fighter();
+            return;
         }
         self.queue_baka_xa_prestage();
     }

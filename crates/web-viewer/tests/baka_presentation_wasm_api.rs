@@ -182,70 +182,77 @@ fn facing_and_ladder_progression() {
     );
 }
 
-/// The cabinet ladder-run bookkeeping through the WASM surface: the pot
-/// accumulates the disc's own rung prizes, the between-match NEXT GAME /
-/// PAY OUT choice banks or risks it, a loss forfeits it, and running every
-/// rung pays the 460-coin full clear.
+/// A whole cabinet run through the page's one per-frame step, `baka_frame` -
+/// the play hosts' `BakaFight::frame`: the attract card and the player select
+/// on the cabinet's own edges, a duel thrown through the packed pad, the
+/// result tally draining the disc's rung prize into the winnings accumulator,
+/// and PAY OUT on the cabinet's NEXT GAME / PAY OUT sheet (Right, then Cross)
+/// leaving with exactly that pot.
+///
+/// This replaces the page's own ladder (`LadderRun` behind `baka_run_*`),
+/// which kept a second pot and a second choice menu beside the cabinet's.
 #[test]
-fn ladder_run_cash_out_over_real_prizes() {
+fn a_cabinet_run_banks_the_rung_prize_on_pay_out() {
     let Some(mut mg) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-
+    const CROSS: u16 = 0x40;
+    const RIGHT: u16 = 0x2000;
+    let throw = [0x80u16, 0x20, 0x40]; // throws 1 / 2 / 3 = Square / Circle / Cross
     let roster: serde_json::Value = serde_json::from_str(&mg.baka_roster_json()).unwrap();
-    let gold = |rid: i64| roster[rid as usize]["gold"].as_u64().unwrap();
+    let first_prize = roster[5]["gold"].as_u64().unwrap();
 
-    // Full clear from rung 0: fight on at every choice; the pot ends at 460.
-    let mut rid = mg.baka_run_start(0) as i64;
-    assert_eq!(rid, 5, "the run opens on roster 5 (the disc's first rung)");
-    let mut expected_pot = 0u64;
-    for step in 0..14 {
-        expected_pot += gold(rid);
-        assert!(mg.baka_run_match_over(true), "win reported (step {step})");
-        let st: serde_json::Value = serde_json::from_str(&mg.baka_run_state_json()).unwrap();
-        assert_eq!(
-            st["pot"].as_u64().unwrap(),
-            expected_pot,
-            "pot after {step}"
-        );
-        if step < 13 {
-            assert_eq!(st["phase"], "choice", "the tally menu is up");
-            rid = mg.baka_run_fight_on() as i64;
-            assert!(rid >= 0, "next rung served");
-        } else {
-            assert_eq!(st["phase"], "all_clear");
-            assert_eq!(st["banked"].as_u64().unwrap(), 460, "full clear pays 460");
+    for attempt in 0..6 {
+        assert!(mg.baka_start_cabinet(), "the cabinet racks");
+        let mut won_rung = false;
+        let mut paid_sheet = false;
+        for t in 0..60_000u32 {
+            let cab: serde_json::Value = serde_json::from_str(&mg.baka_cabinet_json()).unwrap();
+            let st: serde_json::Value = serde_json::from_str(&mg.baka_state_json()).unwrap();
+            let mut edge = 0u16;
+            if cab["front_end"] == true {
+                if t % 20 == 0 {
+                    edge = CROSS;
+                }
+            } else if st["phase"] == "match_over" {
+                won_rung |= st["winner"] == 0;
+                // Fast-forward the tally; on the NEXT GAME / PAY OUT sheet
+                // (cabinet state `0x68`) step the cursor to PAY OUT, then
+                // take it.
+                if cab["state"] == 0x68 && !paid_sheet {
+                    edge = RIGHT;
+                    paid_sheet = true;
+                } else if t % 25 == 0 {
+                    edge = CROSS;
+                }
+            } else if st["can_choose"] == true {
+                // 2 beats 1, 3 beats 2, 1 beats 3.
+                let pick = match st["chosen"][1].as_u64() {
+                    Some(1) => 2,
+                    Some(2) => 3,
+                    Some(3) => 1,
+                    _ => 1,
+                };
+                edge = throw[pick - 1];
+            }
+            let out: serde_json::Value = serde_json::from_str(&mg.baka_frame(edge, 0)).unwrap();
+            if out["exit"] == true {
+                let w = out["winnings"].as_u64().unwrap();
+                if won_rung {
+                    assert!(
+                        w >= first_prize,
+                        "PAY OUT leaves with the first rung's prize: {w} vs {first_prize}"
+                    );
+                    eprintln!("[ran] cabinet run paid out {w} coins (attempt {attempt})");
+                    return;
+                }
+                assert_eq!(w, 0, "a lost first rung leaves with nothing");
+                break;
+            }
         }
     }
-
-    // Pay out mid-run: two wins then PAY OUT banks exactly those prizes.
-    let first = mg.baka_run_start(0) as i64;
-    mg.baka_run_match_over(true);
-    let second = mg.baka_run_fight_on() as i64;
-    mg.baka_run_match_over(true);
-    let banked = mg.baka_run_pay_out();
-    assert_eq!(banked as u64, gold(first) + gold(second));
-    let st: serde_json::Value = serde_json::from_str(&mg.baka_run_state_json()).unwrap();
-    assert_eq!(st["phase"], "paid_out");
-
-    // Forfeit: two wins then a loss loses the whole pot.
-    let first = mg.baka_run_start(3) as i64;
-    mg.baka_run_match_over(true);
-    let second = mg.baka_run_fight_on() as i64;
-    mg.baka_run_match_over(true);
-    let third = mg.baka_run_fight_on();
-    assert!(third >= 0);
-    mg.baka_run_match_over(false);
-    let st: serde_json::Value = serde_json::from_str(&mg.baka_run_state_json()).unwrap();
-    assert_eq!(st["phase"], "game_over");
-    assert_eq!(st["pot"].as_u64().unwrap(), 0);
-    assert_eq!(st["banked"].as_u64().unwrap(), 0);
-    assert_eq!(
-        st["forfeited"].as_u64().unwrap(),
-        gold(first) + gold(second),
-        "the pot at risk is what a loss forfeits"
-    );
+    panic!("six cabinet runs never won and paid out the first rung");
 }
 
 /// The duel page's widget geometry comes from the **ported** POLY_GT4 emitter

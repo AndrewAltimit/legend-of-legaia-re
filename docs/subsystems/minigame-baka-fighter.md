@@ -1303,11 +1303,16 @@ paying out banks it; a mid-run loss forfeits the whole pot, which the
 ["GAME OVER" state](#a-mid-run-defeat-really-does-forfeit-the-pot) zeroes
 `_DAT_80084440` to do, and the final rung pays out automatically through the
 all-clear chain. The
-pot/choice bookkeeping is `engine-core::baka_fighter::LadderRun`, reached
-through the `baka_run_*` WASM surface; the per-rung prizes are the roster
-records' gold column, so a full 14-rung clear pays the 460-coin total
-(disc-gated oracle `crates/web-viewer/tests/baka_presentation_wasm_api.rs`,
-`ladder_run_cash_out_over_real_prizes`).
+pot / choice bookkeeping is the cabinet's own, on every host: the per-frame
+kernel `BakaFight::frame` (engine-minigames) runs the front end, the duel's
+throw, the result tally, the sheet and the next rung off the packed pad
+words, and hands back what the host's winnings accumulator does (add the
+tally's drain, clear it on a forfeit, leave on the exit state). The world
+tick calls it for the native window and the play page, and the standalone
+minigames page calls it through `baka_frame`; the per-rung prizes are the
+roster records' gold column (disc-gated oracle
+`crates/web-viewer/tests/baka_presentation_wasm_api.rs`,
+`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
 
 The **duel facing** is the retail arrangement: the player stands on the LEFT
 of the arena and faces RIGHT toward the opponent (see

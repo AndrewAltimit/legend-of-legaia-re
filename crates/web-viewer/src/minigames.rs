@@ -56,7 +56,7 @@ use legaia_asset::minigame_art::{self, SlotHudWidget};
 use legaia_asset::minigame_sfx::{self, SfxCueBank};
 use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
-use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
+use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
 use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
@@ -81,9 +81,16 @@ pub struct LegaiaMinigames {
     dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
     /// Live Baka Fighter duel.
     baka: Option<BakaFight>,
-    /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
-    /// each rung's duel itself runs in `baka`).
-    baka_run: Option<LadderRun>,
+    /// The page's winnings accumulator for a cabinet run - retail's mode-24
+    /// `_DAT_80084440`, the coin prize the play hosts keep on
+    /// `World::minigames.winnings`. [`BakaFight::frame`] adds the tally's
+    /// drain into it and clears it on a forfeit; the cabinet reads it back as
+    /// the pot at risk on its NEXT GAME / PAY OUT sheet.
+    baka_winnings: u32,
+    /// Game frames this page has stepped ([`Self::drain_sim_steps`]), the
+    /// frame count a cabinet's RNG seed folds in - the play hosts fold in the
+    /// world frame the same way.
+    sim_frames: u32,
     /// The duel's 3D surface (`engine-core::baka_duel_scene`) - the same
     /// per-host cache the native window and the play page pose the duel
     /// through, here over this page's own fight.
@@ -321,7 +328,9 @@ impl LegaiaMinigames {
     /// all ran at twice retail speed (and the fishing loop's own wall clock
     /// rounded a half frame up to a whole one).
     pub fn drain_sim_steps(&mut self, elapsed_ms: f64) -> u32 {
-        self.sim_stepper.drain(elapsed_ms / 1000.0)
+        let n = self.sim_stepper.drain(elapsed_ms / 1000.0);
+        self.sim_frames = self.sim_frames.wrapping_add(n);
+        n
     }
 
     /// Drop the undrained backlog - a game was (re)started or the tab was
@@ -343,7 +352,8 @@ impl LegaiaMinigames {
             dance_tutorial: None,
             dance_tutorial_frame: None,
             baka: None,
-            baka_run: None,
+            baka_winnings: 0,
+            sim_frames: 0,
             baka_surface: Default::default(),
             baka_xa: legaia_engine_audio::XaClipBank::new(),
             muscle_hub: None,
@@ -451,7 +461,7 @@ impl LegaiaMinigames {
         self.entries = entries;
         self.dance = None;
         self.baka = None;
-        self.baka_run = None;
+        self.baka_winnings = 0;
         self.baka_surface = Default::default();
         self.slot = None;
         self.fishing_species = None;
@@ -1166,7 +1176,13 @@ impl LegaiaMinigames {
     /// ([`BakaFight::with_attract`]). The pad reaches it through
     /// [`Self::baka_cabinet_pad`]; [`Self::baka_cabinet_json`] reports where
     /// it is and what it draws.
-    pub fn baka_start_cabinet(&mut self, seed: u32) -> bool {
+    ///
+    /// Seeded the way the play hosts seed a cabinet
+    /// ([`legaia_engine_core::baka_fighter::BAKA_RNG_BASE`] folded with the
+    /// frame count), not with a page random.
+    pub fn baka_start_cabinet(&mut self) -> bool {
+        let seed = legaia_engine_core::baka_fighter::BAKA_RNG_BASE ^ self.sim_frames;
+        self.baka_winnings = 0;
         let first = legaia_engine_core::baka_fighter::first_rung_roster();
         match self.baka_fight_for(0, first, seed) {
             Some(f) => {
@@ -1318,104 +1334,49 @@ impl LegaiaMinigames {
         }
     }
 
-    // ------------------------------------------------- baka fighter: ladder run
+    // ------------------------------------------------- baka fighter: cabinet run
 
-    /// Start a cabinet ladder run at `start_rung` (an index into
-    /// [`Self::baka_ladder_json`]'s serve order). Bookkeeping only: the caller
-    /// still starts each rung's duel with [`Self::baka_start`]. Returns the
-    /// first opponent's roster id, or `-1` when the tables didn't decode /
-    /// the rung is out of range.
+    /// One frame of the whole cabinet - attract card, player select, duel,
+    /// result tally, NEXT GAME / PAY OUT sheet, the next rung and the
+    /// game-over / all-clear sequence - on this frame's **packed** pad edge
+    /// and held words: [`BakaFight::frame`], the per-frame step the play hosts'
+    /// world tick runs. The page keeps the winnings accumulator the play hosts
+    /// keep on the world.
     ///
-    /// The run models the retail between-match choice - after every match win
-    /// the tally screen offers "NEXT GAME" (risk the accumulated pot on the
-    /// next rung) or "PAY OUT" (bank it and stop); the two cells live on the
-    /// PROT 1203 tally sheet next to "GET COIN" and its digit strip. A mid-run
-    /// loss forfeits the whole pot; clearing the last rung pays it in full.
-    pub fn baka_run_start(&mut self, start_rung: usize) -> i32 {
-        self.baka_run = None;
-        let Some((opponents, _)) = self.baka_tables.as_ref() else {
-            return -1;
-        };
-        let ladder: Vec<(usize, u32)> = minigame_art::baka_ladder()
-            .into_iter()
-            .filter_map(|(_, roster)| Some((roster, opponents.get(roster)?.gold_reward)))
-            .collect();
-        let Some(run) = LadderRun::new(ladder, start_rung) else {
-            return -1;
-        };
-        let roster = run.current().map(|(r, _)| r as i32).unwrap_or(-1);
-        self.baka_run = Some(run);
-        roster
-    }
-
-    /// Report the current rung's match result into the run: `true` = the
-    /// player won (prize joins the pot; a choice - or the all-clear - is now
-    /// pending), `false` = lost (the pot is forfeited). Returns `false` when
-    /// no run is fighting.
-    pub fn baka_run_match_over(&mut self, player_won: bool) -> bool {
-        let Some(run) = self.baka_run.as_mut() else {
-            return false;
-        };
-        if player_won {
-            run.match_won().is_some()
-        } else {
-            run.match_lost().is_some()
-        }
-    }
-
-    /// Take "NEXT GAME" at the between-match choice: risk the pot on the next
-    /// rung. Returns the next opponent's roster id, or `-1` when no choice is
-    /// pending.
-    pub fn baka_run_fight_on(&mut self) -> i32 {
-        self.baka_run
-            .as_mut()
-            .and_then(|r| r.fight_on())
-            .map(|r| r as i32)
-            .unwrap_or(-1)
-    }
-
-    /// Take "PAY OUT" at the between-match choice: bank the pot and end the
-    /// run. Returns the coins banked (`0` when no choice was pending).
-    pub fn baka_run_pay_out(&mut self) -> u32 {
-        self.baka_run
-            .as_mut()
-            .and_then(|r| r.pay_out())
-            .unwrap_or(0)
-    }
-
-    /// Live ladder-run state:
+    /// The page used to leave the cabinet after its player select and run a
+    /// page-side ladder instead (`LadderRun`, with its own pot, its own HTML
+    /// NEXT GAME / PAY OUT menu and a free choice of starting rung) - a second
+    /// rule set beside the cabinet's own ladder. It is gone.
     ///
     /// ```json
-    /// { "live": true, "phase": "fighting"|"choice"|"paid_out"|"game_over"|"all_clear",
-    ///   "rung": 0, "len": 14, "roster": 5, "prize": 10,
-    ///   "pot": 0, "banked": 0, "forfeited": 0 }
+    /// { "paid": 0, "forfeit": false, "exit": false, "winnings": 30 }
     /// ```
-    pub fn baka_run_state_json(&self) -> String {
-        let Some(run) = self.baka_run.as_ref() else {
-            return r#"{"live":false}"#.to_string();
+    pub fn baka_frame(&mut self, edge: u16, held: u16) -> String {
+        let Some(f) = self.baka.as_mut() else {
+            return r#"{"paid":0,"forfeit":false,"exit":false,"winnings":0}"#.to_string();
         };
-        let phase = match run.phase() {
-            RunPhase::Fighting => "fighting",
-            RunPhase::Choice => "choice",
-            RunPhase::PaidOut => "paid_out",
-            RunPhase::GameOver => "game_over",
-            RunPhase::AllClear => "all_clear",
-        };
-        let (roster, prize) = run.current().unwrap_or((0, 0));
-        format!(
-            concat!(
-                r#"{{"live":true,"phase":{},"rung":{},"len":{},"roster":{},"prize":{},"#,
-                r#""pot":{},"banked":{},"forfeited":{}}}"#
-            ),
-            jstr(phase),
-            run.rung(),
-            run.len(),
-            roster,
-            prize,
-            run.pot(),
-            run.banked(),
-            run.forfeited(),
-        )
+        let out = f.frame(edge, held, self.baka_winnings);
+        let cues = f.take_cues();
+        let xa = f.chrome_frame().xa;
+        if out.paid > 0 {
+            self.baka_winnings = self.baka_winnings.saturating_add(out.paid);
+        }
+        if out.forfeit {
+            self.baka_winnings = 0;
+        }
+        for id in cues {
+            self.minigame_sfx_cue(u16::from(id));
+        }
+        if let Some(xa) = xa {
+            self.play_baka_xa(xa);
+        }
+        serde_json::json!({
+            "paid": out.paid,
+            "forfeit": out.forfeit,
+            "exit": out.exit,
+            "winnings": self.baka_winnings,
+        })
+        .to_string()
     }
 
     // ----------------------------------------------------------------- slots

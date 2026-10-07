@@ -249,7 +249,7 @@ impl SceneHost {
         };
         let frame = self.world.frame as u32;
         let opponent = crate::baka_fighter::first_rung_roster();
-        let seed = 0xBA4A_F19A ^ frame;
+        let seed = crate::baka_fighter::BAKA_RNG_BASE ^ frame;
         let Some(fight) =
             crate::baka_fighter::BakaFight::from_tables(&opponents, &actions, 0, opponent, seed)
         else {

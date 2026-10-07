@@ -952,6 +952,13 @@
         return;
       }
 
+      /* The duel HUD (stage strip, bars, pips, combo, attack icons) draws
+       * only in the cabinet states whose epilogue draws it
+       * (`baka_cabinet::draws_hud`, `meta.hud`): not under the result
+       * screens or the NEXT GAME / PAY OUT sheet. */
+      const hudOn = !(meta && meta.hud === false);
+      if (hudOn) {
+
       /* The glyph page that carries the pips / combo digits / attack icons
        * (texpage 5 = art page of the widget-0 strip). */
       const glyphPage = this.widgets[W.STAGE_SM] ? this.widgets[W.STAGE_SM].page : 0;
@@ -1027,11 +1034,13 @@
       for (let i = 0; i < 3; i++) {
         const y = 0x60 + i * 16;
         const litP = st.chosen[0] === i + 1, litO = st.chosen[1] != null;
-        g.globalAlpha = litP ? 1 : 0.55;
+        g.globalAlpha = hudOn ? (litP ? 1 : 0.55) : 0;
         this._cell(g, glyphPage, 3, i * 16, 0x30, 16, 16, 0x20, y);
-        g.globalAlpha = litO ? 1 : 0.55;
+        g.globalAlpha = hudOn ? (litO ? 1 : 0.55) : 0;
         this._cell(g, glyphPage, 3, i * 16, 0x30, 16, 16, 0x110, y);
-        g.globalAlpha = 1;
+      }
+      g.globalAlpha = 1;
+
       }
 
       /* The engine's round chrome (BakaChrome - intro card, ROUND banner,
@@ -1057,6 +1066,24 @@
           g.restore();
         } else {
           this._widget(g, d.w, d.x, d.y, alpha, false, d.b, d.s);
+        }
+      }
+
+      /* The cabinet's own cells (the NEXT GAME / PAY OUT sheet after a win,
+       * the result screens) at retail's emitter arguments - the list the
+       * play hosts label (`BakaFight::cabinet_cells`). While the cabinet
+       * draws them it owns the tally, so the page's fitted sheet stands down. */
+      const cells = (meta && Array.isArray(meta.cells)) ? meta.cells : [];
+      for (const c of cells.slice().reverse()) {
+        this._widget(g, c.w, c.x, c.y, Math.max(0, Math.min(1, c.b / 128)), false, c.b, 0x1000);
+      }
+      if (cells.length) this.choice = null;
+      /* The pot numeral on the sheet (`baka_cabinet::choice_pot_placements`
+       * over the winnings accumulator), on the coin strip. */
+      const w47 = this.widgets[W.COIN_DIGIT];
+      if (w47) {
+        for (const [x, y, d] of ((meta && meta.potDigits) || [])) {
+          this._cell(g, w47.page, w47.palette, 88 + d * 16, w47.v, 16, 16, x, y - 8);
         }
       }
 

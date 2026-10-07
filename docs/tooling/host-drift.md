@@ -2852,13 +2852,18 @@ select camera and line-up by eye and drew cursor arrows retail does not
 draw; and the page fired the duel's hit a second time by event name in JS
 while `baka_tick` already drained the same cue into its SPU.
 
-The standalone minigames page keeps its own run model,
-`baka_fighter::LadderRun` behind the `baka_run_*` surface: fixed serve order
-from `baka_ladder()`, a page-drawn choice sheet at fitted positions, no
-score-gated secret rungs. It draws the engine chrome with the sheet's own
-widget art (`baka_chrome_json`). That page has
-no `World` to tick the cabinet through (next section), which is the
-blocking capability for giving it the cabinet's ladder too.
+The standalone minigames page runs the same cabinet for the whole run.
+The cabinet's per-frame step is a `World`-free kernel, `BakaFight::frame`
+(engine-minigames), which the world tick calls for both play hosts and the
+page calls through `baka_frame`: front end, duel throw, result tally, the
+NEXT GAME / PAY OUT sheet (drawn from the cabinet's own cells), the next
+rung and the score-gated secret rungs. The page used to leave the cabinet
+after its select for a ladder of its own, `LadderRun` behind `baka_run_*`,
+with a second pot, an HTML choice menu and a free starting rung; that model
+is deleted, and the page keeps only the winnings accumulator the play hosts
+keep on the world. Both seed a cabinet with `BAKA_RNG_BASE` folded with a
+frame count (the world frame, the page's stepped-frame count), as slots
+rack on the overlay's literal `SLOT_RNG_SEED`.
 
 Still disclosed on the two field hosts: the in-duel pause menu (`0xBE` /
 `0xBF`) stays unreached: the port feeds the cabinet a zero pad inside the

@@ -472,6 +472,25 @@ fn sra3_round_to_zero(v: i32) -> i32 {
     (if v < 0 { v + 7 } else { v }) >> 3
 }
 
+/// The base every host folds its frame count into to seed a cabinet
+/// (`BAKA_RNG_BASE ^ frame`): the play hosts with the world frame, the
+/// standalone minigames page with its own stepped-frame count. A port
+/// choice, not a retail literal - one shared base keeps a replayed pad
+/// stream deterministic on every host.
+pub const BAKA_RNG_BASE: u32 = 0xBA4A_F19A;
+
+/// What one [`BakaFight::frame`] hands the host's winnings accumulator
+/// (retail's mode-24 `_DAT_80084440`, the coin prize - not party gold).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BakaFrameOutcome {
+    /// Coins the result tally drained this frame (`FUN_801D239C`'s add).
+    pub paid: u32,
+    /// The game-over state forfeited the pot: the accumulator empties.
+    pub forfeit: bool,
+    /// The cabinet's exit state finished: the host leaves the minigame.
+    pub exit: bool,
+}
+
 /// Match phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchPhase {
@@ -1308,6 +1327,58 @@ impl BakaFight {
         self.tally.as_mut().map(BakaTally::take_gold).unwrap_or(0)
     }
 
+    /// One frame of the whole cabinet on this frame's **packed** pad words
+    /// (`edge` = `_DAT_8007B874`, `held` = `_DAT_8007B850`) - the per-frame
+    /// step every host runs, so the play hosts' world tick and the standalone
+    /// minigames page drive one ladder, one tally and one input rule.
+    ///
+    /// - The front end (attract card, player select) reads the edge itself.
+    /// - After a match the cabinet runs its tally, the "NEXT GAME / PAY OUT"
+    ///   sheet, the next rung or the game-over / all-clear sequence off the
+    ///   edge, with `pot` - the host's winnings accumulator - as the coins at
+    ///   risk; any face button fast-forwards the tally.
+    /// - In a duel, the frame's throw is retail's last-write-wins test read
+    ///   back to front (Cross, then Circle, then Square), and the held word
+    ///   feeds the round setup's cameo test.
+    ///
+    /// The returned outcome is what the host's accumulator does: add
+    /// [`BakaFrameOutcome::paid`], clear it on a forfeit, and leave the
+    /// cabinet on [`BakaFrameOutcome::exit`].
+    pub fn frame(&mut self, edge: u16, held: u16, pot: u32) -> BakaFrameOutcome {
+        use legaia_engine_vm::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
+        if self.cabinet.front_end() {
+            self.set_cabinet_pad(edge);
+            self.tick(1);
+            return BakaFrameOutcome::default();
+        }
+        if self.match_over() {
+            let face = edge & (PACK_TRIANGLE | PACK_CIRCLE | PACK_CROSS | PACK_SQUARE) != 0;
+            self.cabinet.set_pot(pot);
+            self.set_cabinet_pad(edge);
+            self.tick_with_input(1, face);
+            return BakaFrameOutcome {
+                paid: self.take_tally_gold().max(0) as u32,
+                forfeit: self.cabinet_frame.forfeit.is_some(),
+                exit: self.cabinet.exit_done(),
+            };
+        }
+        let attack = if edge & PACK_CROSS != 0 {
+            Some(BakaAttack::C)
+        } else if edge & PACK_CIRCLE != 0 {
+            Some(BakaAttack::B)
+        } else if edge & PACK_SQUARE != 0 {
+            Some(BakaAttack::A)
+        } else {
+            None
+        };
+        if let Some(attack) = attack {
+            self.choose(0, attack);
+        }
+        self.set_held_pad(held);
+        self.tick(1);
+        BakaFrameOutcome::default()
+    }
+
     /// Coins the tally has not paid out yet - what a host owes the player if
     /// the duel is left before the tally finishes. `0` when no prize is due
     /// (a lost match) or the tally has fully drained.
@@ -1918,164 +1989,6 @@ impl BakaFight {
 pub fn first_rung_roster() -> usize {
     let cab = crate::baka_cabinet::BakaCabinet::new();
     crate::baka_cabinet::rung_fold(cab.stage(), cab.secret_opponent()).0 as usize
-}
-
-// ---------------------------------------------------------------- ladder run
-
-/// Phase of a cabinet [`LadderRun`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunPhase {
-    /// A match against the current rung's opponent is in progress.
-    Fighting,
-    /// The match was won and the rung's prize joined the pot: the retail
-    /// end-of-match menu is up (the "NEXT GAME / PAY OUT" cells on the PROT
-    /// 1203 tally sheet, drawn by `FUN_801d239c`'s tally screen).
-    Choice,
-    /// The player took "PAY OUT" mid-run: the pot is banked, the run is over.
-    PaidOut,
-    /// A match was lost: the accumulated pot is forfeited, the run is over.
-    GameOver,
-    /// Every rung cleared: the full pot pays out (the "VICTORY! / ALL STAGE
-    /// CLEAR!" sheet).
-    AllClear,
-}
-
-/// The cabinet's ladder run with the between-match **cash-out** choice.
-///
-/// Retail grain: after every match win the tally screen offers "NEXT GAME"
-/// or "PAY OUT" (both are widget cells in the PROT 1203 art pack, on the
-/// same sheet as "GET COIN" + its digit strip - see
-/// `docs/subsystems/minigame-baka-fighter.md`). Fighting on keeps the
-/// accumulated prize pot at risk; paying out banks it and ends the run.
-/// A mid-run loss forfeits the whole pot (the cabinet's "GAME OVER" state
-/// zeroes `_DAT_80084440`), and clearing the final rung pays the pot out.
-/// The rung prizes are the roster records' own gold column, so a full
-/// 14-rung clear from rung 0 pays the full-clear total (460 on the retail
-/// disc).
-///
-/// This is the **standalone minigames page's** run model: a fixed serve
-/// order with no secret rungs, driven by page calls. The field-warp hosts
-/// run the cabinet port itself ([`crate::baka_cabinet::BakaCabinet`], which
-/// every [`BakaFight`] carries) - see [`BakaFight::set_cabinet_pad`].
-#[derive(Debug, Clone)]
-pub struct LadderRun {
-    /// `(roster_id, prize_gold)` per rung, in cabinet serve order.
-    ladder: Vec<(usize, u32)>,
-    rung: usize,
-    pot: u32,
-    banked: u32,
-    forfeited: u32,
-    phase: RunPhase,
-}
-
-impl LadderRun {
-    /// Start a run at `start_rung` of `ladder` (`(roster_id, prize)` pairs in
-    /// serve order). `None` when the ladder is empty or the rung is out of
-    /// range.
-    pub fn new(ladder: Vec<(usize, u32)>, start_rung: usize) -> Option<Self> {
-        if ladder.is_empty() || start_rung >= ladder.len() {
-            return None;
-        }
-        Some(Self {
-            ladder,
-            rung: start_rung,
-            pot: 0,
-            banked: 0,
-            forfeited: 0,
-            phase: RunPhase::Fighting,
-        })
-    }
-
-    pub fn phase(&self) -> RunPhase {
-        self.phase
-    }
-
-    /// Current rung index (0-based into the serve order).
-    pub fn rung(&self) -> usize {
-        self.rung
-    }
-
-    /// Total rungs in the ladder.
-    pub fn len(&self) -> usize {
-        self.ladder.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.ladder.is_empty()
-    }
-
-    /// Prize pot currently at risk.
-    pub fn pot(&self) -> u32 {
-        self.pot
-    }
-
-    /// Coins committed by a pay-out / all-clear (0 while running or after a
-    /// forfeit).
-    pub fn banked(&self) -> u32 {
-        self.banked
-    }
-
-    /// Coins lost to a mid-run defeat.
-    pub fn forfeited(&self) -> u32 {
-        self.forfeited
-    }
-
-    /// The rung being fought (or offered next): `(roster_id, prize)`.
-    pub fn current(&self) -> Option<(usize, u32)> {
-        self.ladder.get(self.rung).copied()
-    }
-
-    /// A match win: the rung's prize joins the pot. Moves to [`RunPhase::Choice`]
-    /// (or pays out immediately on the final rung → [`RunPhase::AllClear`]).
-    /// Returns the prize added, or `None` when not fighting.
-    pub fn match_won(&mut self) -> Option<u32> {
-        if self.phase != RunPhase::Fighting {
-            return None;
-        }
-        let (_, prize) = self.current()?;
-        self.pot += prize;
-        if self.rung + 1 == self.ladder.len() {
-            self.banked = self.pot;
-            self.phase = RunPhase::AllClear;
-        } else {
-            self.phase = RunPhase::Choice;
-        }
-        Some(prize)
-    }
-
-    /// A match loss: the pot is forfeited. Returns the coins lost, or `None`
-    /// when not fighting.
-    pub fn match_lost(&mut self) -> Option<u32> {
-        if self.phase != RunPhase::Fighting {
-            return None;
-        }
-        self.forfeited = self.pot;
-        self.pot = 0;
-        self.phase = RunPhase::GameOver;
-        Some(self.forfeited)
-    }
-
-    /// Take "NEXT GAME": risk the pot on the next rung. Returns the next
-    /// rung's roster id, or `None` when no choice is pending.
-    pub fn fight_on(&mut self) -> Option<usize> {
-        if self.phase != RunPhase::Choice {
-            return None;
-        }
-        self.rung += 1;
-        self.phase = RunPhase::Fighting;
-        self.current().map(|(roster, _)| roster)
-    }
-
-    /// Take "PAY OUT": bank the pot and end the run. Returns the coins
-    /// banked, or `None` when no choice is pending.
-    pub fn pay_out(&mut self) -> Option<u32> {
-        if self.phase != RunPhase::Choice {
-            return None;
-        }
-        self.banked = self.pot;
-        self.phase = RunPhase::PaidOut;
-        Some(self.banked)
-    }
 }
 
 // --- End-of-match score tally ----------------------------------------------
@@ -3391,73 +3304,6 @@ mod tests {
             }
         }
         assert!(seen_backward, "the scripted pattern branch fired");
-    }
-
-    // ---------------------------------------------------------- ladder run
-
-    fn run_ladder() -> Vec<(usize, u32)> {
-        // Strictly-increasing prizes like the retail first lap.
-        vec![(5, 10), (6, 20), (7, 30), (8, 40)]
-    }
-
-    #[test]
-    fn ladder_pot_accumulates_and_pays_out() {
-        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
-        assert_eq!(r.current(), Some((5, 10)));
-        assert_eq!(r.match_won(), Some(10));
-        assert_eq!(r.phase(), RunPhase::Choice);
-        assert_eq!(r.pot(), 10);
-        assert_eq!(r.fight_on(), Some(6));
-        assert_eq!(r.match_won(), Some(20));
-        assert_eq!(r.pot(), 30);
-        // Cash out mid-run banks the pot and ends the run.
-        assert_eq!(r.pay_out(), Some(30));
-        assert_eq!(r.phase(), RunPhase::PaidOut);
-        assert_eq!(r.banked(), 30);
-        // No further transitions.
-        assert_eq!(r.fight_on(), None);
-        assert_eq!(r.match_won(), None);
-    }
-
-    #[test]
-    fn ladder_loss_forfeits_the_pot() {
-        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
-        r.match_won();
-        r.fight_on();
-        r.match_won();
-        r.fight_on();
-        assert_eq!(r.pot(), 30);
-        assert_eq!(r.match_lost(), Some(30));
-        assert_eq!(r.phase(), RunPhase::GameOver);
-        assert_eq!(r.pot(), 0);
-        assert_eq!(r.banked(), 0);
-        assert_eq!(r.forfeited(), 30);
-    }
-
-    #[test]
-    fn ladder_full_clear_pays_the_whole_pot() {
-        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
-        for _ in 0..3 {
-            r.match_won();
-            r.fight_on();
-        }
-        // Final rung: the win pays out automatically (no choice pending).
-        assert_eq!(r.match_won(), Some(40));
-        assert_eq!(r.phase(), RunPhase::AllClear);
-        assert_eq!(r.banked(), 100);
-        assert_eq!(r.pay_out(), None);
-    }
-
-    #[test]
-    fn ladder_start_rung_and_bounds() {
-        assert!(LadderRun::new(vec![], 0).is_none());
-        assert!(LadderRun::new(run_ladder(), 4).is_none());
-        let mut r = LadderRun::new(run_ladder(), 3).unwrap();
-        assert_eq!(r.current(), Some((8, 40)));
-        // Dropping in at the last rung: one win = all clear, pot = that prize.
-        assert_eq!(r.match_won(), Some(40));
-        assert_eq!(r.phase(), RunPhase::AllClear);
-        assert_eq!(r.banked(), 40);
     }
 
     #[test]
