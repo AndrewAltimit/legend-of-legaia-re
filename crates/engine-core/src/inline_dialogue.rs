@@ -134,6 +134,23 @@ pub struct InlineDialogue {
     /// scene's text and tail instead (`0x2C3` and the `map01` hand-off)
     /// without the `0x2AC` / `0x193` arm the next talk takes.
     pub spawned: bool,
+    /// The player leg a prop record's cross-context walk-to-tile
+    /// (`C7 F8 <tx> <tz> <mode>`) armed, while it is in flight. Only a
+    /// player target parks the calling record (`0x801DF034..0x801DF044`);
+    /// the run resumes past the op once the player lands.
+    pub player_walk: Option<PropPlayerWalk>,
+}
+
+/// A player walk-to-tile leg a prop run parks on: the decoded target, the
+/// per-frame step (`field_npc_walk_step_speed(0x80, mode & 7)`) and the
+/// frames spent, bounded like a cutscene walk.
+///
+/// REF: FUN_8003774C (case 0x47)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PropPlayerWalk {
+    pub target: (i16, i16),
+    pub speed: u16,
+    pub frames: u32,
 }
 
 /// The walk-kernel leg a talk's `CC F8 85|8E|8F <lo> <hi> <id>` halt-acquire
@@ -308,6 +325,7 @@ impl InlineDialogue {
             face_ramp: None,
             own_turn: None,
             spawned: false,
+            player_walk: None,
         }
     }
 
@@ -342,6 +360,7 @@ impl InlineDialogue {
             face_ramp: None,
             own_turn: None,
             spawned: false,
+            player_walk: None,
         }
     }
 

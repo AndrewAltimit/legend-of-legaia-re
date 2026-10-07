@@ -3827,7 +3827,7 @@ const ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
     use legaia_engine_core::man_field_scripts::{WalkTouchEvent, resolve_walk_touch_arm};
     let w = &session.host.world;
-    if w.mode != SceneMode::Field || w.props.walk_touch.is_empty() {
+    if w.mode != SceneMode::Field {
         return Vec::new();
     }
     let parsed = w
@@ -3851,6 +3851,75 @@ fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
         }) = live
         {
             out.push((contact, cell_of(world_x, world_z)));
+        }
+    }
+    out.extend(prop_rides(session));
+    out
+}
+
+/// The loaded field scene's **rides** under the live flags: each solid
+/// touch-class prop whose bind record, resumed where it is parked and
+/// followed against the story flags as the touch runs it, walks the player
+/// with a walk-to-tile (`C7 F8 <tx> <tz> <mode>`) before its `21` - contact
+/// centre and the cell of the last leg's tile. `taiku` P0[6], the lift at
+/// (109, 78), walks the player aboard, rides and walks them off the far
+/// side, each touch the other way (`0x38B`).
+fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
+    use legaia_asset::field_disasm::{InsnInfo, decode};
+    let w = &session.host.world;
+    if w.mode != SceneMode::Field {
+        return Vec::new();
+    }
+    let tile =
+        |b: u8| -> i16 { i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 } };
+    let mut out = Vec::new();
+    for (&anchor, prop) in &w.props.bank.props {
+        let Some(c) = w
+            .props
+            .colliders
+            .iter()
+            .find(|c| c.anchor == Some(anchor) && c.solid && !c.interact && !c.moving_box)
+        else {
+            continue;
+        };
+        let body = &prop.record_body[..];
+        let mut pc = prop.parked_pc;
+        let mut seen = HashSet::new();
+        let mut last = None;
+        while seen.insert(pc) {
+            let Ok(insn) = decode(body, pc) else { break };
+            if insn.size == 0 || insn.opcode == 0x21 {
+                break;
+            }
+            match insn.info {
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    target: Some(target),
+                    ..
+                } if w.system_flag_test(idx) => {
+                    pc = target;
+                    continue;
+                }
+                InsnInfo::JmpRel { target, .. } => {
+                    pc = target;
+                    continue;
+                }
+                _ => {}
+            }
+            if insn.opcode == 0x47
+                && insn.extended == Some(0xF8)
+                && let (Some(&x), Some(&z)) = (body.get(pc + 2), body.get(pc + 3))
+                && (x & 0x7F, z & 0x7F) != (0x7F, 0x7F)
+            {
+                last = Some(cell_of(tile(x), tile(z)));
+            }
+            pc += insn.size;
+        }
+        if let (Some(land), Ok(x), Ok(z)) =
+            (last, i16::try_from(c.center.0), i16::try_from(c.center.1))
+        {
+            out.push(((x, z), land));
         }
     }
     out
@@ -6300,15 +6369,16 @@ fn pad_walk(
                     path = unwedge(session, cell);
                 }
                 // A route over a band that stages a fight walks into a boss:
-                // a party under two thirds is topped up first, as before a
-                // stager (`taiku` P2[27], the F9 boss on the way out, met
-                // at 56% after a fled encounter).
-                if !path.is_empty() && party_hp_permille(session) < 667 {
+                // a party not near full is topped up first, as before a
+                // stager (`taiku` P2[27], Zora's F9 fight on the way out:
+                // met at 56% after a fled encounter it wiped, and met at 75%
+                // it still wiped, where a full party wins it).
+                if !path.is_empty() && party_hp_permille(session) < 900 {
                     let fights = fight_band_tiles(session);
                     if path.iter().any(|&c| {
                         let (x, z) = cell_center(c);
                         fights.contains(&dispatch_tile(x, z))
-                    }) && pad_field_heal(session, 900) > 0
+                    }) && pad_field_heal(session, 1000) > 0
                     {
                         planned_from = None;
                         path.clear();
@@ -6480,6 +6550,22 @@ fn pad_walk(
                     }
                 }
                 other => return Err(format!("scripted sequence on the walk: {other:?}")),
+            }
+            // A band whose record stages a fight (`3E FF row`) is a boss's:
+            // `taiku` P2[27], Zora's "I will fight you", ends its talk on
+            // the F9 fight. The battle opens after the walk that crossed the
+            // band has returned, so the pending latch this walk polls never
+            // shows it; the band's rows join the staged set the next walk
+            // reads, which fights it instead of fleeing a fight it cannot
+            // run from.
+            if let Some(rec) = fired_record
+                && let Some((mf, man, _)) = scene_man_and_triggers(session)
+            {
+                let here_name = scene_name(session);
+                for row in staged_formation_rows(&mf, &man, 2, usize::from(rec)) {
+                    STAGED_FIGHTS.with(|s| s.borrow_mut().insert((here_name.clone(), Some(row))));
+                    scripted_next = true;
+                }
             }
             let (px, pz) = player_xz(session);
             if before != (flags_of_world(session), cell_of(px, pz)) {
@@ -8671,6 +8757,41 @@ fn record_stages_fight(
         || spawned_p2(mf, man, part, rec, n0 + n1, 3)
             .into_iter()
             .any(|r| fights(2, r))
+}
+
+/// The formation rows record `(part, rec)` installs (op `0x3E` with
+/// `op0 == 0xFF` or `< 100`), its own and those of the partition-2 records
+/// it spawns (three levels).
+fn staged_formation_rows(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> BTreeSet<u16> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let rows = |part: usize, rec: usize| -> Vec<u16> {
+        partition_record_span(mf, man, part, rec).map_or_else(Vec::new, |(start, pc0, len)| {
+            LinearWalker::new(&man[start..start + len], pc0)
+                .flatten()
+                .filter_map(|i| match i.info {
+                    InsnInfo::WarpOrInteract {
+                        op1,
+                        is_warp: false,
+                        ..
+                    } => Some(u16::from(op1)),
+                    _ => None,
+                })
+                .collect()
+        })
+    };
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let mut out: BTreeSet<u16> = rows(part, rec).into_iter().collect();
+    for r in spawned_p2(mf, man, part, rec, n0 + n1, 3) {
+        out.extend(rows(2, r));
+    }
+    out
 }
 
 /// Whether record `(part, rec)` runs the mode-24 minigame door-warp

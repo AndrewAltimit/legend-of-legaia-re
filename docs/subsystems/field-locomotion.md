@@ -791,6 +791,14 @@ field.
   the blocked step's touch, and stops blocking via its `31 00`; the cupboard blocks silently, opens
   only on interact, grants once under its `70 xx` searched-flag guard, shows the found/empty
   message, and swings shut when the box is dismissed).
+- **A prop record that walks the player carries them.** A cross-context
+  walk-to-tile on the player (`C7 F8 <tx> <tz> <mode>`) parks the calling
+  record until the walk kernel lands the player (`FUN_801DE840`
+  `0x801DF034..0x801DF044`, `FUN_8003774C` case `0x47`); the prop run arms the
+  same player leg the cutscene timeline does and resumes past the op on
+  arrival. `taiku` P0[6], Zora Castle's lift, walks the player onto its
+  platform and off the far side this way. Disc-gated:
+  `engine-core/tests/prop_ride_player_walk_disc.rs`.
 
 Capture note: both wall-press captures park in the **`town0c`** Rim Elm variant. The live grid byte-matches the town01 map's base + paints - which is exactly what a town0c session *should* hold: under the universal `define−2` `.MAP` resolution (see "Engine port" below) town0c's own `.MAP` is PROT 0019, **byte-identical** to town01's (0001/0010 - the Rim Elm variants share one map). The earlier reading that PROT 0028 was "town0c's own different `.MAP`" mis-attributed the next block's map (0028 is `izumi`'s, `define 30 − 2`); the cold-vs-variant question this raised is dissolved.
 

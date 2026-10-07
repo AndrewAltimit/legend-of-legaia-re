@@ -799,8 +799,18 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   Delilas family's challenge P2[21] only on "I'm ready!", and a band is
   walked once per visit.
 - A route that crosses a band whose record stages a fight is a walk into a
-  boss: a party under two thirds of its HP is healed first (`taiku` P2[27],
-  the F9 boss on the way out, met after a fled encounter).
+  boss: a party under nine tenths of its HP is healed first (`taiku` P2[27],
+  Zora's F9 fight on the way out: met at three quarters after a fled
+  encounter the party falls, met full it wins). The fight opens after the
+  walk that crossed the band has returned, so the band's formation rows are
+  recorded as staged and the next walk fights the battle instead of fleeing
+  it.
+- A solid touch-class prop whose record walks the player (`C7 F8 <tx> <tz>`)
+  is a ride: the planner takes it as an edge from its contact box to the
+  last leg's tile under the live flags. `taiku` P0[6] is the lift at
+  (109, 78) that joins Zora Castle's east corridor to its south half (the
+  way to the west wing's exit band P2[15] after the fight); it runs only
+  while `0x38C` is set, and `0x38B` picks the direction.
 - A pad hop whose walk stalls against the door's own frame (two tiles or
   less short) treats the door as refused and tries the scene's other door
   to the same place, as for a door that turns the walk back.

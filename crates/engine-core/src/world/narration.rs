@@ -1222,45 +1222,7 @@ impl World {
             walk.frames += 1;
             let arrived = match walk.slot {
                 Some(slot) => !self.npcs.motions.contains_key(&slot),
-                None => {
-                    // Step the player toward the target at the op's speed.
-                    if let Some(p) = self.player_actor_slot
-                        && let Some(actor) = self.actors.get_mut(p as usize)
-                    {
-                        let ms = &mut actor.move_state;
-                        let (dx, dz) = (
-                            i32::from(walk.target.0) - i32::from(ms.world_x),
-                            i32::from(walk.target.1) - i32::from(ms.world_z),
-                        );
-                        let step = i32::from(walk.speed.max(1));
-                        let sx = dx.clamp(-step, step);
-                        let sz = dz.clamp(-step, step);
-                        if sx != 0 || sz != 0 {
-                            ms.world_x += sx as i16;
-                            ms.world_z += sz as i16;
-                            ms.render_26 = (((sx as f32).atan2(sz as f32) / std::f32::consts::TAU
-                                * 4096.0)
-                                .round() as i32
-                                & 0x0FFF) as i16;
-                        }
-                        let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
-                        let arrived =
-                            (nx, nz) == (i32::from(walk.target.0), i32::from(walk.target.1));
-                        // The floor under every step, not just the landing
-                        // tile: a leg that crosses a stair run (chitei2's
-                        // escape beats) otherwise carries the start height
-                        // through the steps and snaps at the end - Vahn
-                        // walking through the stairs. Same per-step
-                        // resolution the compass glide runs.
-                        let y = self.sample_field_floor_height(nx, nz) as i16;
-                        if let Some(a) = self.actors.get_mut(p as usize) {
-                            a.move_state.world_y = y;
-                        }
-                        arrived
-                    } else {
-                        true
-                    }
-                }
+                None => self.step_player_walk_leg(walk.target, walk.speed),
             };
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
