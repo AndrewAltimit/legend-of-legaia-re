@@ -592,6 +592,20 @@ pub const BATTLE_OT_SHIFT: u32 = 2;
 /// Shared so the two hosts cannot arm it on different frames.
 ///
 /// REF: FUN_80043390, FUN_80043768
+/// The projection `H` the GPU polygon-size limit is tested under this frame
+/// (`legaia_engine_ui::prim_near_reject::gpu_span_rejected`), or `None` when
+/// the pass does not apply it. Battle only: every catalogued battle state's
+/// camera reads `H = 256`, and the battle stage puts a combatant between the
+/// eye and the caster on the summon close-ups (`theeder_summon_mid_cast`'s
+/// monster, `0xA1`), whose legs reach past the eye; retail's GPU drops those
+/// primitives. The field and the dance hall keep their own rules.
+pub fn prim_gpu_span_h(mode: SceneMode, retail_camera: bool) -> Option<f32> {
+    (retail_camera && mode == SceneMode::Battle).then_some(BATTLE_GTE_H)
+}
+
+/// The battle camera's projection distance `H`.
+pub const BATTLE_GTE_H: f32 = 256.0;
+
 pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)> {
     if !retail_camera {
         return None;

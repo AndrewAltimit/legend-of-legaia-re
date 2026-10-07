@@ -2138,6 +2138,33 @@ field and battle only, and never under the debug orbit; the native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
 
+### The GPU polygon-size limit in battle
+
+The prim leaves hand the GPU the GTE's `SXY` with no clip of their own, and
+the GPU skips any polygon whose corners lie more than `1023` pixels apart
+horizontally or `511` vertically. A corner just in front of the eye, or behind
+it, projects far off screen: `RTPS` divides by `SZ` saturated at `0` with its
+quotient capped at `0x1FFFF` (`H / SZ` at most `2`), and `SX` / `SY` saturate
+to `-0x400..=0x3FF`. In battle that removes the primitives of a body whose
+limbs reach past the camera - a summon close-up that seats a monster between
+the eye and the caster - where a per-pixel clip paints them as long shards.
+
+Both hosts run the span test in the same vertex stage as the near reject
+(`prim_near_reject::gpu_span_rejected`, the WGSL `prim_sxy` and the GLSL
+`primSxy`), armed in battle only (`camera_view::prim_gpu_span_h`, the battle
+camera's `H = 256` riding the parameters' enable lane). A split quad is
+dropped only when both of its halves exceed the limit. The dance hall applies
+the same rule to its baked hall on the CPU
+([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
+
+`theeder_summon_mid_cast` is the case this does not close. Retail's near
+monster there (pool slot 5, ghosted `B + F/4` by `FUN_8004DC68`) reaches the
+ordering table with only its flat-textured `POLY_FT4` body prims - every one of
+its gouraud prims is missing from both packet buffers - while the engine draws
+its legs, around the caster, as see-through shards. Neither the near reject
+nor the span limit removes those legs, so what drops them in retail is still
+open.
+
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
 Retail has **no depth buffer**. Every primitive is inserted into the ordering

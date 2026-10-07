@@ -1095,10 +1095,16 @@ impl PlayWindowApp {
                 SceneMode::Battle => self.battle_stage_mesh.is_some(),
                 _ => !self.field_debug_camera,
             } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
-            r.set_prim_near_reject(legaia_engine_core::camera_view::prim_near_cut(
-                self.session.host.world.mode,
-                retail_camera,
-            ));
+            r.set_prim_near_reject(
+                legaia_engine_core::camera_view::prim_near_cut(
+                    self.session.host.world.mode,
+                    retail_camera,
+                ),
+                legaia_engine_core::camera_view::prim_gpu_span_h(
+                    self.session.host.world.mode,
+                    retail_camera,
+                ),
+            );
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
             }

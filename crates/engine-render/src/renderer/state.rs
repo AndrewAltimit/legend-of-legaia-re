@@ -734,9 +734,14 @@ impl Renderer {
     /// `0x10 << ot_shift`; `None` (the default) never rejects. Hosts arm it
     /// under the retail field and battle cameras and leave it off for
     /// cameras retail never had (the debug orbit) and for the viewers.
-    pub fn set_prim_near_reject(&self, cut: Option<(f32, u32)>) {
+    ///
+    /// `span_h` arms the GPU's polygon-size limit on top
+    /// ([`legaia_engine_ui::prim_near_reject::gpu_span_rejected`]).
+    pub fn set_prim_near_reject(&self, cut: Option<(f32, u32)>, span_h: Option<f32>) {
         self.prim_near
-            .set(legaia_engine_ui::prim_near_reject::shader_params(cut));
+            .set(legaia_engine_ui::prim_near_reject::shader_params(
+                cut, span_h,
+            ));
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.
