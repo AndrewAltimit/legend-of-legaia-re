@@ -606,6 +606,40 @@ pub const THEEDER_RETARGET_ARM: u8 = 11;
 pub const THEEDER_SWEEP_ARM: u8 = 12;
 /// The arm PROT 0904 settles from.
 pub const THEEDER_SETTLE_ARM: u8 = 14;
+/// The arm PROT 0904 zeroes `ctx+0x6D8` in (`sh zero,0x6d8(s1)` at
+/// `0x801F7768`) ahead of the retarget arm's ramp.
+pub const THEEDER_RAMP_RESET_ARM: u8 = 10;
+/// Where the retarget arm's ramp holds until (`slti v0,v0,0x100` at
+/// `0x801F77B8`).
+pub const THEEDER_RETARGET_RAMP_END: i16 = 0x100;
+/// Where the sweep arm's ray stops (`slti v0,v0,0x1000` at `0x801F7EF0`) -
+/// one full turn.
+pub const THEEDER_SWEEP_END: i16 = 0x1000;
+
+/// What one engine tick adds to `ctx+0x6D8` in PROT 0904's retarget arm
+/// (`+= (step * scalar) >> 1` a pass, `0x801F778C..0x801F77AC`) and in its
+/// sweep arm (`+= (step * scalar) << 3`, `0x801F7ACC..0x801F7AF0`). A pass
+/// spans `step` vsyncs and the engine ticks once a vsync, so the per-tick
+/// product is the speed scalar alone
+/// ([`crate::cast_module_camera::MODULE_DRAIN_PER_TICK`]): the retarget arm
+/// holds 64 ticks and the sweep turns its ray once in 64 more - the 16 / 16
+/// passes the retail dwell measures at a frame step of `4`.
+pub const fn theeder_ramp_per_tick(phase: u8) -> u16 {
+    let d = crate::cast_module_camera::MODULE_DRAIN_PER_TICK as u16;
+    match phase {
+        THEEDER_RETARGET_ARM => d >> 1,
+        THEEDER_SWEEP_ARM => d << 3,
+        _ => 0,
+    }
+}
+
+/// The ray bearing PROT 0904's sweep arm tests the cone against on the tick
+/// it is about to run: `ctx+0x6D8` after the arm's own ramp
+/// ([`theeder_ramp_per_tick`]), masked to a turn (`andi v0,v0,0xfff` at
+/// `0x801F7B98`). The host resolves cone membership with it before the tick.
+pub const fn theeder_sweep_bearing(ctx_6d8: u16) -> u16 {
+    ctx_6d8.wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM)) & 0x0FFF
+}
 /// The render flag PROT 0904 raises the summon seat to in arm 4.
 pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 
@@ -676,15 +710,32 @@ pub fn theeder_tick(
             }
             CastArmStep::Advance
         }
+        THEEDER_RAMP_RESET_ARM => {
+            c.ctx_6d8 = 0;
+            CastArmStep::Advance
+        }
         THEEDER_RETARGET_ARM => {
+            // The ramp holds the arm until `ctx+0x6D8` reaches `0x100`; the
+            // exit retargets both seats and zeroes the word for the sweep
+            // (`sh zero,0x0(s8)` in the `j 0x801F7F04` delay slot).
+            c.ctx_6d8 = c
+                .ctx_6d8
+                .wrapping_add(theeder_ramp_per_tick(THEEDER_RETARGET_ARM));
+            if (c.ctx_6d8 as i16) < THEEDER_RETARGET_RAMP_END {
+                return CastArmStep::Hold;
+            }
             for slot in [who.caster, who.summon] {
                 if let Some(s) = seats.get_mut(slot as usize) {
                     s.target_code = TARGET_CODE_ENEMY_ROW;
                 }
             }
+            c.ctx_6d8 = 0;
             CastArmStep::Advance
         }
         THEEDER_SWEEP_ARM => {
+            c.ctx_6d8 = c
+                .ctx_6d8
+                .wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM));
             for seat in FIRST_MONSTER_SEAT..MONSTER_ROW_END {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
@@ -705,7 +756,14 @@ pub fn theeder_tick(
                 stage_reaction_bits(v);
                 hits.push(SweepHit { seat, applied });
             }
-            CastArmStep::Advance
+            // The ray turns a full circle, one pass of hits per tick; a seat
+            // already reacting (`+0x1D9 != 0`) is passed over, which is what
+            // keeps a seat from being struck twice.
+            if (c.ctx_6d8 as i16) < THEEDER_SWEEP_END {
+                CastArmStep::Hold
+            } else {
+                CastArmStep::Advance
+            }
         }
         CHOREOGRAPHY_DONE_PHASE => CastArmStep::Finish,
         p if p <= THEEDER_SETTLE_ARM => CastArmStep::Advance,
@@ -1799,16 +1857,56 @@ mod tests {
         assert_eq!(seats[7].hp, 200);
     }
 
+    /// Arm 11 ramps `ctx+0x6D8` by half the scalar a tick and holds below
+    /// `0x100` (64 ticks); its exit retargets both seats and zeroes the word.
     #[test]
-    fn theeder_retargets_both_seats_onto_the_enemy_row() {
+    fn theeder_retargets_both_seats_once_its_ramp_reaches_0x100() {
         let mut seats = row();
         let mut ctx = CastModuleCtx {
             phase: THEEDER_RETARGET_ARM,
             ..Default::default()
         };
-        theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+        let mut ticks = 0;
+        while ctx.phase == THEEDER_RETARGET_ARM {
+            theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+            ticks += 1;
+            if ctx.phase == THEEDER_RETARGET_ARM {
+                assert_eq!(seats[0].target_code, 0, "no retarget while holding");
+            }
+        }
+        assert_eq!(ticks, 64);
+        assert_eq!(ctx.phase, THEEDER_SWEEP_ARM);
+        assert_eq!(ctx.ctx_6d8, 0, "the exit zeroes the word for the sweep");
         assert_eq!(seats[0].target_code, TARGET_CODE_ENEMY_ROW);
         assert_eq!(seats[7].target_code, TARGET_CODE_ENEMY_ROW);
+    }
+
+    /// Arm 12 turns its ray a full circle at eight times the scalar a tick
+    /// (64 ticks) and holds until it has; arm 10 zeroes the word first.
+    #[test]
+    fn theeder_sweeps_for_one_turn_of_the_ray() {
+        let mut seats = row();
+        let mut ctx = CastModuleCtx {
+            phase: THEEDER_RAMP_RESET_ARM,
+            ctx_6d8: 0x1234,
+            ..Default::default()
+        };
+        theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+        assert_eq!((ctx.phase, ctx.ctx_6d8), (THEEDER_RETARGET_ARM, 0));
+        ctx.phase = THEEDER_SWEEP_ARM;
+        let mut ticks = 0;
+        while ctx.phase == THEEDER_SWEEP_ARM {
+            assert_eq!(
+                theeder_sweep_bearing(ctx.ctx_6d8),
+                ctx.ctx_6d8
+                    .wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM))
+                    & 0xFFF
+            );
+            theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+            ticks += 1;
+        }
+        assert_eq!(ticks, 64);
+        assert_eq!(ctx.ctx_6d8, 0x1000);
     }
 
     #[test]

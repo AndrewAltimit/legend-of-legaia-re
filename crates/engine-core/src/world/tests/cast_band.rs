@@ -1588,3 +1588,42 @@ fn the_swordie_wind_up_lasts_256_vsync_ticks_and_restores_the_normal_rate() {
         legaia_engine_vm::battle_anim_rate::RATE_NORMAL
     );
 }
+
+/// PROT 0904 (Theeder, `0x82`) paces its band: the stager holds `0x36` on the
+/// module, so the band stays up through arm 11's 64-tick ramp and arm 12's
+/// 64-tick sweep, and lets go only after the ray has turned a full circle.
+#[test]
+fn the_theeder_band_holds_through_its_ramp_and_sweep() {
+    use legaia_engine_vm::cast_seru_ticks_a::{THEEDER_RETARGET_ARM, THEEDER_SWEEP_ARM};
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    assert_eq!(world.cast_module_for(0x82), Some(904));
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 3;
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    world.arm_summon_stager(0, 0x82);
+    let (mut retarget_ticks, mut sweep_ticks) = (0, 0);
+    let mut done = false;
+    for _ in 0..40_000 {
+        match world.casting.module_phase {
+            THEEDER_RETARGET_ARM => retarget_ticks += 1,
+            THEEDER_SWEEP_ARM => sweep_ticks += 1,
+            _ => {}
+        }
+        if !world.summon_stager_tick() {
+            done = true;
+            break;
+        }
+        let _ = world.take_pending_summon_spawn();
+        for a in world.actors.iter_mut() {
+            a.battle.current_anim = a.battle.queued_anim;
+        }
+    }
+    assert!(done, "the stager let go");
+    assert!(retarget_ticks >= 64, "arm 11 held {retarget_ticks} ticks");
+    assert!(sweep_ticks >= 64, "arm 12 held {sweep_ticks} ticks");
+    assert!(world.casting.module_phase > THEEDER_SWEEP_ARM);
+}

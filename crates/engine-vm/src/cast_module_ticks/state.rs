@@ -217,6 +217,11 @@ pub struct CastModuleCtx {
     /// `ctx+0x27A` - a second scratch byte, cleared beside `ctx+0x278` by
     /// PROT 0965's damage arm (`0x801F789C`).
     pub ctx_27a: u8,
+    /// `ctx+0x6D8` as a module drives it - the action SM's frame timer word,
+    /// which PROT 0904's arms reuse as the ring sweep's ramp and ray
+    /// ([`crate::cast_seru_ticks_a::theeder_tick`]). The host keeps the
+    /// module's copy apart from the SM's own timer.
+    pub ctx_6d8: u16,
 }
 
 /// What a tick reported to the drive loop. Retail's `0x801E4CA8` /

@@ -2249,6 +2249,7 @@ impl World {
             ctx_0d: 0,
             turn_cursor: self.battle_ctx.turn_cursor,
             ctx_27a: 0,
+            ctx_6d8: self.casting.module_ring_angle,
         }
     }
 
@@ -3094,21 +3095,21 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
-                    let cone_seats: Vec<u8> = if entry == 904 {
-                        use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
-                        let step = u16::from(self.clock.frame_step.max(1)) << 3;
-                        self.casting.module_ring_angle =
-                            self.casting.module_ring_angle.wrapping_add(step);
-                        let centre = self.cast_seat_xz(seat_slot);
-                        self.seats_in_cone(
-                            centre,
-                            self.casting.module_ring_angle & 0x0FFF,
-                            THEEDER_CONE_HALF_WIDTH,
-                            ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
-                        )
-                    } else {
-                        Vec::new()
-                    };
+                    let cone_seats: Vec<u8> =
+                        if entry == 904 && ctx.phase == ticks_a::THEEDER_SWEEP_ARM {
+                            use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
+                            // The ray the sweep arm tests this tick: `ctx+0x6D8`
+                            // after its own ramp (the tick body advances the word).
+                            let centre = self.cast_seat_xz(seat_slot);
+                            self.seats_in_cone(
+                                centre,
+                                ticks_a::theeder_sweep_bearing(ctx.ctx_6d8),
+                                THEEDER_CONE_HALF_WIDTH,
+                                ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
+                            )
+                        } else {
+                            Vec::new()
+                        };
                     let nighto_outcome = if entry == 907 {
                         self.nighto_verdict(caster_slot, victim_slot, spell_id)
                     } else {
@@ -3340,6 +3341,7 @@ impl World {
             a.pass(&mut self.casting.module_cam.countdown);
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
+        self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;
         // The turn-steal arms bump `ctx[+0x1A]`; it is a context byte, so it
         // has to travel back out of the view.

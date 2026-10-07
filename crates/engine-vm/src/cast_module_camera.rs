@@ -520,6 +520,18 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             stages_spawns: true,
             seat_arm: module_seat_arm(903),
         }),
+        // PROT 0904's tick body paces the band through its ported ramps
+        // (arms 10..12, `crate::cast_seru_ticks_a::theeder_tick`); its camera
+        // arms are not ported, so the director only passes and case 6 keeps
+        // the caster. The outcome lands once the sweep has turned.
+        904 => Some(ModuleProfile {
+            direct: theeder_direct,
+            hit_arm: Some(crate::cast_seru_ticks_a::THEEDER_SWEEP_ARM),
+            walk_arm: None,
+            owns_phase: false,
+            stages_spawns: false,
+            seat_arm: module_seat_arm(904),
+        }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
             hit_arm: Some(VERA_RESTORE_ARM),
@@ -556,6 +568,12 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         913 => Some(ModuleProfile::camera_beside(nova_direct).seated_at(913)),
         _ => None,
     }
+}
+
+/// PROT 0904's director: no camera arm is ported, so every arm passes and
+/// the ported tick body alone paces the band.
+fn theeder_direct(_: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
+    ArmDirection::PASS
 }
 
 impl ModuleProfile {
