@@ -495,6 +495,46 @@ remove MEMORY CARD" at `x` on `y = 0x60`. The result line is
 retail's "Unable to save." / "Unable to load data." from the same pool. The
 result arm's skip stores cue `0x20` (`0x801DF91C`).
 
+The write panel carries three sprites besides its box, all from the 12-byte
+sprite-record table at `0x801E5048` (PROT 0899 file `0x16830`; records are
+`[clut][u][v][w][h]` on texture page `0xF`, where the save-menu TIM at
+`0x16908` uploads, the CLUT word being a sub-palette of that TIM's one CLUT
+row):
+
+| Record | Rect `(u, v, w, h)` | Sub-palette | Drawn at |
+|---|---|---|---|
+| 3 - `No.` | `(0, 144, 22, 16)` | 8 | `(x - 0x55, 0x54)` |
+| 2 - block numeral | `(block * 16, 128, 16, 16)` | 8 | `(x - 0x3F, 0x54)`; `u` is rewritten through `DAT_801E5062 = _DAT_801F0210 << 4` |
+| 4 - progress tube | `(0, 0, 104, 16)` | 0 | `(x - 0x34, 0x90)` |
+
+Under the tube `FUN_801E2DC4(x - 0x2C, 0x95)` draws the fill: one `0x3C`
+quad `t * 0x58 >> 12` wide and 6 tall on the progress timer `_DAT_801F01D0`,
+every vertex `(0xBC, t * 0xFF >> 12, 0)` over a grey-112 texel - red to
+yellow as it grows across the tube's transparent 88-pixel interior. The
+same `No.` + numeral pair labels the confirm prompt (numeral at
+`0xA0 - 0x5A`, or `0xA0 - 0x3A` on the free-block "Do you wish to save?" arm,
+`y + 4`) and the info panel's title row (`(8, local_34 - 8)` /
+`(0x1E, local_34 - 8)`).
+
+The progress timer is not decoration on the save side: the save arm
+(`0x801DF3CC..0x801DF3FC`) leaves the write panel only once the card op is
+done **and** `_DAT_801F01D0` reads `0x1000`. Mode 4 steps it `+0x20` per
+frame-step unit, so a save holds its panel at least `0x1000 / 0x20 = 128`
+sixtieth-second units; the load arm waits on the card alone. And once the
+panel has slid in, the dispatcher's shared tail stops drawing the header tab,
+the pill and the block grid (`0x801DFCDC..0x801DFCE4`: only while
+`_DAT_801F01CC != 0x1000`), while the panel's own subtractive push
+`FUN_80024EE4(1, 2, slide >> 4)` has blacked the frame - so the parked panel
+and the result line after it sit alone on black.
+
+The port bakes the three records and the texel into the shared save-menu
+atlas (`legaia_asset::title_pak::SAVE_MENU_ATLAS_*`), draws them in
+engine-ui's `card_banner_draws_for` / `confirm_dialog_badge_draws_for` /
+`slot_info_panel_draws_for`, holds a Save's beat for
+`COMMIT_SAVE_WORK_FRAMES`, and `save_select_overlay_draws` draws a parked
+banner alone. The subtractive darkening during the slide itself is not
+ported; the port cuts to black when the panel parks.
+
 The port: `SelectPhase::Committing` carries the two halves between the
 confirm and the outcome (`COMMIT_WORK_FRAMES`, then `COMMIT_RESULT_FRAMES` =
 90). A Save's beat holds on its last write frame until the host has written:

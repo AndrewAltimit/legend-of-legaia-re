@@ -19,10 +19,12 @@ pub const SLOT_INFO_PANEL_PARKED_Y: i32 = 138;
 /// every offset.
 ///
 /// Title-row offsets (`local_34 + 4` in retail = panel_y + 4):
-/// - `SLOT_INFO_NO_OFFSET`: "No." badge (retail emits a sprite via
-///   `FUN_801E3FF0` modes 2/3 at `(8, local_34 - 8)` with a CLUT row
-///   selected by `DAT_801e5062 = slot_index << 4`. The engine renders
-///   it as text at the same screen position, glyph-baseline corrected).
+/// - `SLOT_INFO_NO_OFFSET`: the "No." badge. Retail stamps record 3
+///   (`No.`) of the sprite-record table at `(8, local_34 - 8)` and record
+///   2 (the block numeral, its `u` set to `block << 4` through
+///   `DAT_801E5062`) at `(0x1E, local_34 - 8)`, both via `FUN_801E3FF0`.
+///   With the atlas resident the engine draws that sprite pair; the
+///   no-atlas fallback prints `No.N` as text at the same pen.
 /// - `SLOT_INFO_LOCATION_OFFSET`: kingdom name string.
 /// - `SLOT_INFO_TIME_LABEL_OFFSET`: "Time " prefix.
 /// - `SLOT_INFO_TIME_VALUE_OFFSET`: HH:MM:SS digits. Retail splits the
@@ -169,6 +171,15 @@ pub fn slot_info_panel_draws_for(
             SLOT_INFO_MP_LABEL_OFFSET.0,
             content_y + SLOT_INFO_MP_LABEL_OFFSET.1,
         );
+        // The title row's block badge: `FUN_801E3FF0` record 3 (`No.`) at
+        // `(8, local_34 - 8)` and record 2 (the numeral, `u = block << 4`)
+        // at `(0x1E, local_34 - 8)`.
+        out.extend(block_badge_draws_for(
+            info.slot_no.saturating_sub(1),
+            (SLOT_INFO_NO_OFFSET.0, content_y + SLOT_INFO_NO_OFFSET.1),
+            stage_origin,
+            stage_scale,
+        ));
     }
     out
 }
@@ -215,12 +226,15 @@ pub fn slot_info_panel_text_draws_for(
         }
     };
 
-    // Title row.
-    emit_at(
-        &mut out,
-        &format!("No.{}", info.slot_no),
-        (SLOT_INFO_NO_OFFSET.0, panel_y + SLOT_INFO_NO_OFFSET.1),
-    );
+    // Title row. With the atlas resident the block badge is retail's
+    // `No.` + numeral sprite pair (`slot_info_panel_draws_for`).
+    if !labels_as_sprites {
+        emit_at(
+            &mut out,
+            &format!("No.{}", info.slot_no),
+            (SLOT_INFO_NO_OFFSET.0, panel_y + SLOT_INFO_NO_OFFSET.1),
+        );
+    }
     emit_at(
         &mut out,
         info.location,

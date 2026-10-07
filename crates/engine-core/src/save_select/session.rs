@@ -577,7 +577,7 @@ impl SaveSelectSession {
                         // line run before the outcome lands.
                         self.phase = SelectPhase::Committing {
                             slot,
-                            frames_remaining: COMMIT_WORK_FRAMES + COMMIT_RESULT_FRAMES,
+                            frames_remaining: commit_work_frames(self.mode) + COMMIT_RESULT_FRAMES,
                             // A Load's block was read and parsed for the
                             // grid already; only a Save has bytes to move.
                             report: match self.mode {
@@ -684,7 +684,8 @@ impl SaveSelectSession {
         match self.phase {
             SelectPhase::Committing {
                 frames_remaining, ..
-            } => (COMMIT_WORK_FRAMES + COMMIT_RESULT_FRAMES).saturating_sub(frames_remaining),
+            } => (commit_work_frames(self.mode) + COMMIT_RESULT_FRAMES)
+                .saturating_sub(frames_remaining),
             _ => 0,
         }
     }

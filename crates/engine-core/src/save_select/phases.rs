@@ -186,11 +186,35 @@ impl SelectPhase {
     }
 }
 
-/// Frames the write / read line of [`SelectPhase::Committing`] holds. The
-/// port's own beat - retail sits on the card driver's result word, which the
-/// port's synchronous backends answer at once - set long enough to read the
-/// line.
+/// Frames the **read** line of [`SelectPhase::Committing`] holds. The port's
+/// own beat - retail's load arm leaves the panel on the card driver's result
+/// word alone, which the port's synchronous backends answer at once - set
+/// long enough to read the line.
 pub const COMMIT_WORK_FRAMES: u16 = 45;
+
+/// Frames the **write** line holds: retail's save arm (`0x801DF3CC..
+/// 0x801DF3FC`) leaves the panel only once the card op is done **and** the
+/// progress timer `_DAT_801F01D0` has reached `0x1000`. `FUN_801E1C1C`
+/// mode 4 steps that timer `+0x20` per frame-step unit (`0x801E2D04..`), so
+/// the bar takes `0x1000 / 0x20` sixtieth-second units to fill.
+pub const COMMIT_SAVE_WORK_FRAMES: u16 = 0x1000 / COMMIT_PROGRESS_STEP;
+
+/// The progress timer's per-frame step (`sll v1,v1,0x5` on the frame scalar).
+pub const COMMIT_PROGRESS_STEP: u16 = 0x20;
+
+/// The write / read panel's progress timer after `elapsed` frames of the
+/// beat: `+0x20` a frame, clamped at `0x1000`.
+pub fn commit_progress_t(elapsed: u16) -> u16 {
+    elapsed.saturating_mul(COMMIT_PROGRESS_STEP).min(0x1000)
+}
+
+/// The write / read half's length for a session's direction.
+pub fn commit_work_frames(mode: SaveSelectMode) -> u16 {
+    match mode {
+        SaveSelectMode::Save => COMMIT_SAVE_WORK_FRAMES,
+        SaveSelectMode::Load => COMMIT_WORK_FRAMES,
+    }
+}
 
 /// What a save-select phase puts on screen, for the host that composes the
 /// draws.

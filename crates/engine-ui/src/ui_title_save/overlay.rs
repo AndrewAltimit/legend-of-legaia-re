@@ -87,6 +87,24 @@ pub fn save_select_overlay_draws(
     stage_scale: u32,
 ) -> SaveSelectOverlayDraws {
     let chrome = rects.is_some();
+    // Once the write / read panel has slid all the way in, retail stops
+    // drawing everything under it: the dispatcher's shared tail emits the
+    // header tab, the pill and the block grid only while the panel's slide
+    // timer `_DAT_801F01CC` is short of `0x1000` (`0x801DFCDC..0x801DFCE4`
+    // in `FUN_801DD35C`), and the panel's own subtractive push
+    // (`FUN_80024EE4(1, 2, t >> 4)`) has blacked the frame by then. The
+    // result line keeps the parked timer, so it sits on black too.
+    if let Some(banner) = view.banner.as_ref()
+        && banner.slide_t >= 0x1000
+    {
+        let mut out = SaveSelectOverlayDraws::default();
+        let block = view.preview.as_ref().map(|p| p.cell);
+        let (sprites, texts) =
+            card_banner_draws_for(font, rects, banner, block, stage_origin, stage_scale);
+        out.sprites.extend(sprites);
+        out.texts.extend(texts);
+        return out;
+    }
     let mut out = SaveSelectOverlayDraws {
         texts: save_select_draws_for(
             font,
@@ -193,8 +211,9 @@ pub fn save_select_overlay_draws(
         }
     }
     if let Some(banner) = view.banner.as_ref() {
+        let block = view.preview.as_ref().map(|p| p.cell);
         let (sprites, texts) =
-            card_banner_draws_for(font, rects, banner, stage_origin, stage_scale);
+            card_banner_draws_for(font, rects, banner, block, stage_origin, stage_scale);
         out.sprites.extend(sprites);
         out.texts.extend(texts);
     }
@@ -213,6 +232,16 @@ pub fn save_select_overlay_draws(
                 stage_origin,
                 stage_scale,
             ));
+            // The badge sits on the prompt bar, so it draws after it.
+            if let Some(p) = view.preview.as_ref() {
+                out.sprites.extend(confirm_dialog_badge_draws_for(
+                    prompt,
+                    p.cell,
+                    y,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
         }
         out.texts.extend(confirm_dialog_text_draws_for(
             font,
@@ -268,6 +297,54 @@ mod tests {
             out.texts.len() > title_only.texts.len(),
             "caption + confirm text drew"
         );
+    }
+
+    /// A parked write panel is drawn alone: the header, pills and grid stop
+    /// under it, as retail's dispatcher tail stops them at `0x1000`.
+    #[test]
+    fn a_parked_write_panel_hides_the_screen_under_it() {
+        let font = legaia_font::Font::placeholder();
+        let cells = [SlotGridCell::default(); 15];
+        let banner = |slide_t| CardBannerView {
+            lines: ("  Saving to MEMORY CARD", "Do not remove MEMORY CARD"),
+            work: true,
+            slide_t,
+            progress_t: 0,
+        };
+        let base = SaveSelectOverlayView {
+            title: "Save",
+            rows: &[],
+            cursor: 0,
+            single_pill: true,
+            pills: &[0],
+            pill_cursor: None,
+            slide_t: 0x1000,
+            info_t: 0x1000,
+            now_checking: false,
+            banner: Some(banner(0x800)),
+            preview: Some(SaveSelectPreviewView {
+                cells: &cells,
+                cell: 0,
+                info: None,
+                caption: Some("Able to save."),
+                panel_y_offset: 0,
+            }),
+            confirm: None,
+        };
+        let sliding = save_select_overlay_draws(&font, None, &base, (0, 0), 1);
+        let parked = save_select_overlay_draws(
+            &font,
+            None,
+            &SaveSelectOverlayView {
+                banner: Some(banner(0x1000)),
+                ..base
+            },
+            (0, 0),
+            1,
+        );
+        let (_, alone) = card_banner_draws_for(&font, None, &banner(0x1000), Some(0), (0, 0), 1);
+        assert_eq!(parked.texts.len(), alone.len(), "only the banner draws");
+        assert!(sliding.texts.len() > parked.texts.len());
     }
 
     #[test]

@@ -747,6 +747,10 @@ pub fn build_atlas(
         title_pak::OVERLAY_SAVE_MENU_BAND_SLOT2,
     );
 
+    // The block badge and the write panel's progress tube - records 2 / 3 /
+    // 4 of the save UI's sprite-record table (`0x801E5048`), same TIM.
+    add_card_work_sprites(&mut out, &pill_parsed, pill_w)?;
+
     // Panel 9-slice tiles - copy from panel plane (256x192) into
     // atlas at the same source coords (160..192, 0..32). Those atlas
     // pixels are unused in the PROT 0899 layout, so the panel tiles
@@ -1541,6 +1545,54 @@ fn add_atr_icon_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::Result
 ///
 /// Each portrait TIM ships with its own CLUT (single row, 16 entries);
 /// CLUT row 0 is the only meaningful row.
+/// Bake the save UI's block badge (`No.` + the fifteen block numerals,
+/// sub-palette 8) and the write panel's progress tube (sub-palette 0) out of
+/// PROT 0899's save-menu TIM, plus the grey texel the progress fill
+/// modulates. Placements are `title_pak::SAVE_MENU_ATLAS_*`.
+fn add_card_work_sprites(dst: &mut [u8], tim: &legaia_tim::Tim, src_w: u32) -> anyhow::Result<()> {
+    let digit_rgba = legaia_tim::decode_rgba8(tim, title_pak::OVERLAY_SAVE_UI_REC_DIGIT_CLUT)?;
+    let tube_rgba = legaia_tim::decode_rgba8(tim, title_pak::OVERLAY_SAVE_UI_REC_TUBE_CLUT)?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &digit_rgba,
+        src_w,
+        title_pak::OVERLAY_SAVE_UI_REC_NO_LABEL,
+        title_pak::SAVE_MENU_ATLAS_NO_LABEL,
+    );
+    let (u0, v0, w, h) = title_pak::OVERLAY_SAVE_UI_REC_BLOCK_DIGIT;
+    for block in 0..title_pak::OVERLAY_SAVE_UI_BLOCK_DIGIT_COUNT {
+        if let Some(cell) = title_pak::save_menu_atlas_block_digit(block) {
+            copy_rect(
+                dst,
+                ATLAS_WIDTH,
+                &digit_rgba,
+                src_w,
+                (u0 + block * w, v0, w, h),
+                cell,
+            );
+        }
+    }
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &tube_rgba,
+        src_w,
+        title_pak::OVERLAY_SAVE_UI_REC_PROGRESS_TUBE,
+        title_pak::SAVE_MENU_ATLAS_PROGRESS_TUBE,
+    );
+    let (x0, y0, tw, th) = title_pak::SAVE_MENU_ATLAS_PROGRESS_TEXEL;
+    let grey = title_pak::OVERLAY_SAVE_UI_PROGRESS_TEXEL_GREY;
+    let stride = (ATLAS_WIDTH * 4) as usize;
+    for y in y0..y0 + th {
+        for x in x0..x0 + tw {
+            let off = y as usize * stride + x as usize * 4;
+            dst[off..off + 4].copy_from_slice(&[grey, grey, grey, 255]);
+        }
+    }
+    Ok(())
+}
+
 fn add_load_slot_grid_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::Result<()> {
     // Pick the right base offset depending on whether we got the full
     // PROT.DAT (offset 0 = file start) or the system-UI-rooted slice

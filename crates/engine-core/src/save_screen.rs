@@ -639,6 +639,9 @@ pub struct SaveBanner {
     /// The write panel's slide timer (`0..=0x1000`, `+0x100` a frame,
     /// retail's `_DAT_801F01CC`).
     pub slide_t: u16,
+    /// The write panel's progress timer (`0..=0x1000`, `+0x20` a frame,
+    /// retail's `_DAT_801F01D0`): the fill bar under the panel.
+    pub progress_t: u16,
 }
 
 /// Whether the outer fade suppresses the slot-select confirm this frame.
@@ -820,6 +823,7 @@ impl SaveScreenFlow {
                 ),
                 work,
                 slide_t: (session.committing_elapsed().saturating_mul(0x100)).min(0x1000),
+                progress_t: crate::save_select::commit_progress_t(session.committing_elapsed()),
             }
         });
         Some(SaveOverlayModel {

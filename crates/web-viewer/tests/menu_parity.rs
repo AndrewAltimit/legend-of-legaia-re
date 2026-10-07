@@ -691,7 +691,9 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
 /// Tick through a confirmed card op's write / read beat and result line
 /// (`SelectPhase::Committing`) with no input, so the outcome lands.
 fn run_commit_beat(rt: &mut LegaiaRuntime) {
-    for _ in 0..200 {
+    // The write beat runs until the progress bar fills (128 frames), then
+    // the 90-frame result line.
+    for _ in 0..300 {
         rt.play_menu_input(0);
     }
 }

@@ -643,16 +643,17 @@ fn slot_info_panel_skips_chrome_portrait_when_no_save() {
         1,
     );
     let chrome_none = slot_info_panel_draws_for(&rects, None, 0, (0, 0), 1);
-    // With Some, expect the chrome PLUS the leader portrait and the
-    // three retail LV / HP / MP label sprites.
+    // With Some, expect the chrome PLUS the leader portrait, the
+    // three retail LV / HP / MP label sprites and the `No.` + numeral
+    // block badge.
     assert!(
         chrome_with.len() > chrome_none.len(),
         "info-panel with save should emit extra content sprites"
     );
     assert_eq!(
         chrome_with.len() - chrome_none.len(),
-        4,
-        "delta should be the leader portrait + LV/HP/MP label sprites"
+        6,
+        "delta should be the leader portrait + LV/HP/MP labels + block badge"
     );
     // The label sprites sit at the pinned column-0 offsets off the
     // parked panel y (138 + 33/46/59).

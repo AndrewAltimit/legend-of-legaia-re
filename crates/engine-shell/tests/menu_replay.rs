@@ -676,8 +676,9 @@ fn pad_driven_menu_ladder() {
                             tap_button(&mut w, PadButton::Left); // No -> Yes
                             tap_button(&mut w, PadButton::Cross);
                             // "Saving to MEMORY CARD", then "Save
-                            // successful.", then the commit.
-                            idle(&mut w, 200);
+                            // successful.", then the commit. The write panel
+                            // holds until its progress bar fills (128 frames).
+                            idle(&mut w, 300);
                             match w.last_save_commit {
                                 Some(c) if c.kind == SaveCommitKind::Save && prompted => {
                                     eprintln!(

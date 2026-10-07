@@ -969,7 +969,13 @@ fn rung6_the_muscle_page_builds_its_fighter_through_battle_load_stat_init() {
 /// Tick through a confirmed card op's write / read beat and result line
 /// (`SelectPhase::Committing`), drawing each frame as the page does.
 fn run_commit_beat(rt: &mut LegaiaRuntime) {
-    for _ in 0..200 {
+    // The write beat runs until the progress bar fills (128 frames), then
+    // the 90-frame result line; stop once the screen has closed, so what
+    // follows it (a refusal notice) is still up for the caller.
+    for _ in 0..300 {
+        if !rt.play_menu_sub_is_open() {
+            break;
+        }
         rt.play_menu_input(0);
         let _ = rt.play_menu_draws_json(W, H);
     }

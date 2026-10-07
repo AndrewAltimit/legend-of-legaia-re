@@ -1697,6 +1697,7 @@ impl LegaiaRuntime {
                 lines: b.lines,
                 work: b.work,
                 slide_t: b.slide_t,
+                progress_t: b.progress_t,
             }),
             preview,
             confirm: m.confirm,
