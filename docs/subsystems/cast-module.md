@@ -1601,16 +1601,17 @@ from a row is one the walk never entered.
 These are dwells in retail **passes** at the measured frame step of `4`; the
 engine runs a body once a vsync, so a ported countdown advances by the speed
 scalar alone a tick and lasts four times as many ticks (PROT 0910's arm 7 is
-`256` engine ticks, `65` passes here). PROT 0904's arms 11 and 12 are the
-exception the port does not yet reproduce: both are ramps on `ctx[+0x6D8]`
-(arm 10 zeroes it at `0x801F7768`; arm 11 adds `(step * scalar) >> 1` a pass
-and holds below `0x100`, `0x801F778C..0x801F77BC`; arm 12 adds
-`(step * scalar) << 3` and sweeps its ray at `ctx[+0x6D8] & 0xFFF` until
-`0x1000`, `0x801F7AE4` / `0x801F7EF0`), which the 20 / 16 above measure. The
-engine runs each in one tick, its sweep ray on a band-long accumulator, and
-the band itself is not paced by PROT 0904 (no module profile), so holding the
-arms would end the band before the sweep. Porting the ramps needs the band
-pacing first.
+`256` engine ticks, `65` passes here). PROT 0904's arms 10 to 12 are ramps on
+`ctx[+0x6D8]`: arm 10 zeroes it (`0x801F7768`), arm 11 adds
+`(step * scalar) >> 1` a pass and holds below `0x100`
+(`0x801F778C..0x801F77BC`) before it retargets and zeroes the word, and arm
+12 adds `(step * scalar) << 3` and sweeps its ray at `ctx[+0x6D8] & 0xFFF`
+until `0x1000` (`0x801F7AE4` / `0x801F7EF0`) - the 20 / 16 above. The port
+runs both at 64 ticks (`cast_seru_ticks_a::theeder_ramp_per_tick`), tests the
+cone at the ray the tick sweeps, and gives PROT 0904 a module profile whose
+outcome arm is the sweep, so the band holds `0x36` until the ray has turned.
+Its camera arms are not ported: the director only passes, and case 6 keeps
+the caster.
 
 Three of the seven walks skip arms outright. PROT 0911's arm `5` jumps to `9`
 (the `sb s7,0x279` at `0x801F7780`), which this page already records; PROT 0905's

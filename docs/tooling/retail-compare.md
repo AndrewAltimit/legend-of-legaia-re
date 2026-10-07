@@ -1026,7 +1026,8 @@ side takes, so the frame's party is retail's (levels, equipment and the battle
 meshes assembled from it, the HP / MP the HUD prints) rather than the New Game
 template a bare door entry seeds - captured a fixed number of ticks past the
 fight's first prompt - the evolved-Cort arrival (PROT 0968) holds the prompt
-back about a thousand frames longer than an ordinary opening, and the headless
+back some two thousand vsync ticks longer than an ordinary opening (its
+countdowns drain by the frame step a pass, so one a tick), and the headless
 side's opening window runs long enough to wait it out. A fight with
 no MAN row to name is not imaged; its reason is in the report.
 
@@ -1641,7 +1642,9 @@ is checkable even where the pose is not. Two seeding limits follow.
   the lag retail did not have. Seeding retail's step into the engine clock
   would change every actor's cadence, not only the camera, so the corpus
   keeps it as a seeding limit. On `theeder_summon_mid_cast` the lag is most
-  of what the `image` channel reads: the close-up's eye sits `76` units
+  of what the `image` channel reads (the capture is in `0x33`, ahead of
+  PROT 0904's own arms, so the module's pacing does not reach it): the
+  close-up's eye sits `76` units
   further back (TR z `2392` against `2316`), so the caster draws smaller and
   higher, and the monster seated between the camera and the caster - a
   near-camera ghost on both sides (`+0x08 = 0x83000000`, `B + F/4`) - spans
