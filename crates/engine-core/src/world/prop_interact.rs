@@ -324,6 +324,12 @@ impl World {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
+        let door_teleports = self.props.bank.props.get(&anchor).is_some_and(|p| {
+            self.props
+                .walk_touch_records
+                .values()
+                .any(|&r| r == p.record)
+        });
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
@@ -411,8 +417,15 @@ impl World {
                 // throwaway context left the player where the touch found
                 // them, on the near side of the lift.
                 // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
+                // A door bind whose record also teleports the player is a
+                // walk-touch door: the contact dispatch already applied its
+                // decoded `MoveTo` (`check_field_walk_touch`), so its walk-in
+                // leg is not replayed on top of the landing (`tower`'s floor
+                // doors walk the player into the doorway, glide, then `A3 F8`
+                // to the next floor).
                 if player_target
                     && b == 0xC7
+                    && !door_teleports
                     && let (Some(&b0), Some(&b1), Some(&b2)) = (
                         id.bytecode.get(id.pc + 2),
                         id.bytecode.get(id.pc + 3),

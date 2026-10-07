@@ -807,7 +807,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   it.
 - A solid touch-class prop whose record walks the player (`C7 F8 <tx> <tz>`)
   is a ride: the planner takes it as an edge from its contact box to the
-  last leg's tile under the live flags. `taiku` P0[6] is the lift at
+  last leg's tile under the live flags, unless the record then changes scene
+  or teleports the player (`retockin` P0[0] walks the player into the
+  doorway and leaves for `jagaroom`: a door). `taiku` P0[6] is the lift at
   (109, 78) that joins Zora Castle's east corridor to its south half (the
   way to the west wing's exit band P2[15] after the fight); it runs only
   while `0x38C` is set, and `0x38B` picks the direction.

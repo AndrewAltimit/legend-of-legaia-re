@@ -3874,6 +3874,15 @@ fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
         |b: u8| -> i16 { i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 } };
     let mut out = Vec::new();
     for (&anchor, prop) in &w.props.bank.props {
+        // A walk-touch door's landing is its decoded teleport
+        // ([`object_doors`]); the engine plays no walk leg for it.
+        if w.props
+            .walk_touch_records
+            .values()
+            .any(|&r| r == prop.record)
+        {
+            continue;
+        }
         let Some(c) = w
             .props
             .colliders
@@ -3889,6 +3898,14 @@ fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
         while seen.insert(pc) {
             let Ok(insn) = decode(body, pc) else { break };
             if insn.size == 0 || insn.opcode == 0x21 {
+                break;
+            }
+            // A record that leaves the scene or teleports the player after
+            // its walk-in is a door, not a ride: `retockin` P0[0] walks the
+            // player into the doorway and changes scene to `jagaroom`. Its
+            // way out is the scene graph's, not a walk edge.
+            if insn.opcode == 0x3F || (insn.opcode == 0x23 && insn.extended == Some(0xF8)) {
+                last = None;
                 break;
             }
             match insn.info {
@@ -3919,6 +3936,14 @@ fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
         if let (Some(land), Ok(x), Ok(z)) =
             (last, i16::try_from(c.center.0), i16::try_from(c.center.1))
         {
+            if std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some() {
+                eprintln!(
+                    "      [plan] ride {} P0[{}] at {anchor:?} contact ({x},{z}) lands {land:?} from pc {}",
+                    scene_name(session),
+                    prop.record,
+                    prop.parked_pc
+                );
+            }
             out.push(((x, z), land));
         }
     }
