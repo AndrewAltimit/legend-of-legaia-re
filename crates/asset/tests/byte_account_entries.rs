@@ -1056,6 +1056,43 @@ fn the_world_map_prim_dispatch_row_is_claimed() {
     assert_eq!((row.start, row.end - row.start), (0x1F90, 80));
 }
 
+/// The menu overlay's six save-screen text slots pass their slot-by-slot
+/// shape check and are claimed whole.
+#[test]
+fn the_save_screen_text_slots_are_claimed() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 899) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(899),
+        label: "0899".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    assert!(
+        !acc.notes
+            .iter()
+            .any(|n| n.starts_with("save-screen text slots")),
+        "slots refused: {:?}",
+        acc.notes
+    );
+    // 0x801EED24..0x801EF024 is no longer residue anywhere.
+    let (lo, hi) = (0x801E_ED24 - 0x801C_E818, 0x801E_F024 - 0x801C_E818);
+    assert!(
+        !acc.residue.iter().any(|r| r.start < hi && r.end > lo),
+        "residue inside the slots"
+    );
+}
+
 /// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
 /// and claiming it at the stride leaves the entry near whole.
 #[test]

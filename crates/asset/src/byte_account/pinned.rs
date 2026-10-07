@@ -67,6 +67,9 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     if prot_index == WORLD_MAP_RENDER_PROT_INDEX {
         claim_world_map_prim_dispatch(buf, sink);
     }
+    if prot_index == MENU_OVERLAY {
+        claim_save_text_slots(buf, sink);
+    }
     claim_consumer_pinned_tables(buf, sink, prot_index);
     if prot_index == ARENA_PROT_INDEX {
         claim_arena_course_ladder(buf, sink);
@@ -995,6 +998,62 @@ pub(super) fn claim_subdraw_records(buf: &[u8], sink: &mut Sink) {
         recs.len(),
         crate::muscle_dome::SUBDRAW_PTR_TABLE_LEN
     ));
+}
+
+/// First of the menu overlay's six `0x80`-byte save-screen text slots.
+const SAVE_TEXT_SLOTS_VA: u32 = 0x801E_ED24;
+
+/// Bytes per save-screen text slot.
+const SAVE_TEXT_SLOT_BYTES: usize = 0x80;
+
+/// Save-screen text slots: six, closed by the region filename prefix the
+/// image forms at `0x801EF024` (`0x801DE9A0`).
+const SAVE_TEXT_SLOTS: usize = 6;
+
+/// `(lui site, address formed)` pairs that reach into the slots: the
+/// play-time digits of slot 0 (`0x801EED29`, `FUN_801DD35C`) and the page
+/// digits of slot 3 (`0x801EEEA4`, `FUN_801DE234`), each poked in place.
+const SAVE_TEXT_SLOT_FORMS: [(u32, u32); 2] =
+    [(0x801D_D628, 0x801E_ED29), (0x801D_E8C4, 0x801E_EEA4)];
+
+/// The menu overlay's save-screen text slots: six `0x80`-byte buffers from
+/// [`SAVE_TEXT_SLOTS_VA`], each a NUL-terminated string at the slot start and
+/// zero fill to the slot end, the sixth closed exactly by the next string the
+/// image forms. Two slots are written in place by the code that forms them
+/// ([`SAVE_TEXT_SLOT_FORMS`]); the other four (`0x801EEDA4`, `0x801EEE24`,
+/// `0x801EEF24`, `0x801EEFA4`) are named by no instruction, word, `gp` or
+/// base-plus-displacement access in any image
+/// (`find-address-word-refs.py --prot`, `find-gp-relative-refs.py --prot`),
+/// so those are claimed as dead text and the slot stride is read off the
+/// layout, which the shape check pins slot by slot.
+pub(super) fn claim_save_text_slots(buf: &[u8], sink: &mut Sink) {
+    const MENU_BASE: u32 = 0x801C_E818;
+    let at = |va: u32| (va - MENU_BASE) as usize;
+    let start = at(SAVE_TEXT_SLOTS_VA);
+    let end = start + SAVE_TEXT_SLOTS * SAVE_TEXT_SLOT_BYTES;
+    let Some(slots) = buf.get(start..end) else {
+        return;
+    };
+    let forms_ok = SAVE_TEXT_SLOT_FORMS
+        .iter()
+        .all(|&(site, va)| lui_pair_address(buf, at(site)) == Some(va));
+    let shape_ok = slots.chunks(SAVE_TEXT_SLOT_BYTES).all(|slot| {
+        let n = slot.iter().position(|&b| b == 0).unwrap_or(slot.len());
+        n > 0
+            && n < slot.len()
+            && slot[..n].iter().all(|&b| (0x20..0x7F).contains(&b))
+            && slot[n..].iter().all(|&b| b == 0)
+    }) && buf.get(end).is_some_and(|&b| b != 0);
+    if !forms_ok || !shape_ok {
+        sink.note("save-screen text slots at 0x801EED24 not claimed: shape or form check failed");
+        return;
+    }
+    sink.claim(
+        start,
+        end,
+        OWNER_STRING,
+        "save-screen text slots, 6 x 0x80 (slots 0 and 3 written in place, 1/2/4/5 referenced by nothing)",
+    );
 }
 
 /// PROT entry of the world-map render overlay (slot B, base `0x801F69D8`).

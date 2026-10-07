@@ -495,6 +495,18 @@ remove MEMORY CARD" at `x` on `y = 0x60`. The result line is
 retail's "Unable to save." / "Unable to load data." from the same pool. The
 result arm's skip stores cue `0x20` (`0x801DF91C`).
 
+The pool is not the whole of the overlay's save text. Six `0x80`-byte text
+slots sit at `0x801EED24`, closed by the region filename prefixes at
+`0x801EF024`. Two are buffers the save path writes into in place: slot 0 is the
+play-time line, whose digits `FUN_801DD35C` pokes from `0x801EED29`, and slot 3
+is a two-digit counter `FUN_801DE234` pokes at `+2` and `+4` of `0x801EEEA4`.
+The other four - a load-failure line, a wrong-game line that refuses a save, a
+not-available line and a not-used line - are referenced by nothing on the disc:
+no instruction, word, `gp` access or base-plus-displacement access names an
+address in them in any image (`find-address-word-refs.py --prot`,
+`find-gp-relative-refs.py --prot`). Retail's failure text comes from the pool
+above, so those four are dead strings a port owes nothing.
+
 The write panel carries three sprites besides its box, all from the 12-byte
 sprite-record table at `0x801E5048` (PROT 0899 file `0x16830`; records are
 `[clut][u][v][w][h]` on texture page `0xF`, where the save-menu TIM at
