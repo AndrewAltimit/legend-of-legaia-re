@@ -1076,6 +1076,55 @@ pub fn orb_tick(
     (step, healed)
 }
 
+/// The phase of PROT 0919 (Spoon) whose arm heals and cures
+/// (`0x801F78A8`; its sweep is `0x801F7F48..0x801F83D8`).
+pub const SPOON_HEAL_ARM: u8 = 7;
+
+/// PROT 0919's inline heal: `(magic_level << 7) + 0x380` (`sll v0,v0,0x7` at
+/// `0x801F8064`, `addiu a3,v0,0x380` at `0x801F8070`) - twice Orb's.
+pub fn spoon_heal_amount(magic_level: u8) -> u32 {
+    (u32::from(magic_level) << 7) + 0x380
+}
+
+/// PROT 0919 (Spoon) arm 7's cure half - the status ladder and the tier-`4`
+/// AP doubling - over party seats `0..3`.
+///
+/// Retail walks a fixed three seats (`sltiu v0,s3,0x3` at `0x801F83D0`),
+/// skips a dead one whole (`beq v0,zero,0x801f83c4` at `0x801F7F98`), and
+/// once the caster's magic level is `>= 3` (`0x801F815C`) switches on the
+/// cure selector `0x801F6960` (`0x801F8168`): the same four keep-masks as
+/// Orb ([`orb_cleanse_mask`]), and selector `4` doubles the seat's AP gauge
+/// `+0x170` under a cap of 100 (`0x801F8394..0x801F83C0`). `+0x16E & 4`
+/// skips only the HP store (`0x801F8100`), so the ladder still runs there.
+/// `cleanse` is `None` below the level gate.
+///
+/// The heal itself is the engine's cast fold's, as for every heal in the
+/// band; this is the half with no second owner.
+///
+/// Returns the seats whose AP was doubled.
+///
+/// REF: FUN_801F69D8 (PROT 0919 arm 7 `0x801F7F48..0x801F83D8`; the phase chain is `chain_bodies::SPOON_CHAIN`)
+pub fn spoon_cure_sweep(seats: &mut [CastActorState], cleanse: Option<u8>) -> Vec<u8> {
+    let mut doubled = Vec::new();
+    let Some(mask) = cleanse.and_then(orb_cleanse_mask) else {
+        return doubled;
+    };
+    for seat in 0..ORB_PARTY_SEATS {
+        let Some(v) = seats.get_mut(seat as usize) else {
+            continue;
+        };
+        if v.hp == 0 {
+            continue;
+        }
+        v.flags &= mask;
+        if cleanse == Some(4) {
+            v.spirit_gauge = crate::cast_seru_ticks_a::cure_tier4_ap(v.spirit_gauge);
+            doubled.push(seat);
+        }
+    }
+    doubled
+}
+
 // ---------------------------------------------------------------------------
 // PROT 0912 - Freed
 // ---------------------------------------------------------------------------
@@ -1735,6 +1784,43 @@ mod tests {
             s[0].spirit_gauge = 17;
             orb_tick(&mut ctx, &mut s, 7, 0, sel, |_| 400);
             assert_eq!(s[0].spirit_gauge, 17, "selector {sel:?} leaves AP alone");
+        }
+    }
+
+    #[test]
+    fn spoon_heal_amount_is_twice_orbs() {
+        assert_eq!(spoon_heal_amount(1), 0x400);
+        assert_eq!(spoon_heal_amount(9), 0x800);
+        for lv in 1..=9 {
+            assert_eq!(spoon_heal_amount(lv), 2 * orb_heal_amount(lv));
+        }
+    }
+
+    /// Spoon's ladder walks seats 0..3 only, skips a dead seat, still runs
+    /// past `+0x16E & 4`, and doubles AP on selector 4 alone.
+    #[test]
+    fn spoon_cure_sweep_doubles_ap_on_selector_four() {
+        let mut s = seats(8);
+        for a in s.iter_mut() {
+            a.flags = 0x0403;
+            a.spirit_gauge = 17;
+        }
+        s[1].hp = 0;
+        s[2].flags |= FLAG_NON_TARGETABLE;
+        let doubled = spoon_cure_sweep(&mut s, Some(4));
+        assert_eq!(doubled, vec![0, 2]);
+        assert_eq!(s[0].spirit_gauge, 34);
+        assert_eq!(s[0].flags, 0);
+        assert_eq!(s[1].spirit_gauge, 17, "dead seat skipped");
+        assert_eq!(s[1].flags, 0x0403);
+        assert_eq!(s[2].spirit_gauge, 34, "the ladder runs past the HP skip");
+        assert_eq!(s[3].spirit_gauge, 17, "only seats 0..3");
+
+        for sel in [None, Some(1), Some(2), Some(3), Some(10)] {
+            let mut s = seats(8);
+            s[0].spirit_gauge = 17;
+            assert!(spoon_cure_sweep(&mut s, sel).is_empty());
+            assert_eq!(s[0].spirit_gauge, 17, "selector {sel:?}");
         }
     }
 

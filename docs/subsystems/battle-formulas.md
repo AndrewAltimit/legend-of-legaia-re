@@ -1000,10 +1000,19 @@ Engine: kernels `battle_formulas::summon_spell_xp_gain` /
 `engine-core::magic_xp::thresholds_from_scus` (decoded off the user's
 `SCUS_942.54`, disc-gated `magic_xp_disc`); live wiring
 `World::cast_spell_on_slots` → `World::accrue_summon_spell_xp` (XP persists in
-the record's `+0x8` bytes, so it round-trips through saves). The engine
-narrows "summon attacker" to the Seru-magic id block its summon path covers
-(`0x81..=0x8B`); the evolved-spell ids above that block accrue nothing until
-the summon coverage widens.
+the record's `+0x8` bytes, so it round-trips through saves). "Summon
+attacker" covers the base and the evolved Seru blocks (`0x81..=0x95`): the
+tail tests only for attacker slot 7 (`0x801DE440`), and both blocks cast
+through that body.
+
+The three heal modules accrue in their own arm instead, per healed seat,
+into the same XP word (`+0x5D0 + slot * 4` off `0x80084140` is record
+`+0x8`), under the same special-battle gate: Vera `+0xC` when the seat's
+missing HP covers the full amount and `+0x4` when it clamps
+(`0x801F7CCC` / `0x801F7CA4`); Orb `+0x4` / `+0x2` (`0x801F7B50` /
+`0x801F7B2C`); Spoon `+0x4` / `+0x2` (`0x801F80D4` / `0x801F80B0`). A seat
+missing nothing earns nothing. Port: `magic_xp::module_heal_xp_gain`, banked
+with the damage path's gain.
 
 ### Spirit gauge extension
 
@@ -1061,10 +1070,14 @@ retail); the sites above are the disassembly behind them.
 
 Port: the accrual is `engine-vm::battle_action::done` (`done_cleanup`), the
 damage fill `battle_formulas::spirit_gauge_fill`, and the tier-4 doubling
-`cast_seru_ticks_a::cure_tier4_ap`, which the Vera and Orb ticks run. Spoon
-is not doubled in the engine yet: its module runs as a phase-chain body, and
-the engine stages the cure selector only for the base Seru block
-(`0x81..=0x8B`), not for the evolved block (`0x8C..=0x95`) Spoon's id sits in.
+`cast_seru_ticks_a::cure_tier4_ap`, which the Vera and Orb ticks run and
+Spoon's arm-7 cure sweep (`cast_seru_ticks_b::spoon_cure_sweep`) runs beside
+its phase chain. The cure tier is the side-effect stager's latch, and retail
+stages it from inside each module rather than from the cast band: the
+`jal 0x801f3d3c` sits in every image `0903..=0923` except 0907 (Nighto) and
+0916 (Aluru), so the engine stages it for the base **and** evolved blocks
+minus those two (`summon::module_stages_side_effect`) - which is what lets
+Spoon (`0x91`, evolved) read its own tier.
 
 ## Stats and the actor record
 
@@ -1738,7 +1751,9 @@ stager-free spells (Nighto, Aluru, the Ra-Seru band).
 
 Engine: both halves run in the live loop. The stager
 (`engine-vm::seru_side_effect::stage_side_effect`) fires once per player Seru cast at the
-engine's single cast fold seam, through `World::stage_seru_side_effect`; the
+engine's single cast fold seam, through `World::stage_seru_side_effect`, for
+exactly the ids whose module calls it - the base and evolved blocks minus
+Nighto and Aluru (`summon::module_stages_side_effect`); the
 finisher switch (`apply_hit`) runs per damaged target in the same fold,
 through `World::apply_seru_side_effect`. The banner pass is
 `engine-vm::move_no_effect_guard`, live from the SM's state `0x36`.

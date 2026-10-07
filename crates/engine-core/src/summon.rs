@@ -127,6 +127,23 @@ pub fn has_summon_body(spell_id: u8) -> bool {
     SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id)
 }
 
+/// Whether the cast module for a player Seru `spell_id` calls the Seru
+/// side-effect stager `FUN_801F3D3C` - the routine that stages the debuff
+/// percent, or a light-row cure tier, into `0x801F6960`.
+///
+/// Retail calls it from inside the module, not from the cast band: the
+/// `jal 0x801f3d3c` word `0x0C07CF4F` sits in every image `0903..=0923`
+/// except **0907** (Nighto, `0x85`) and **0916** (Aluru, `0x8E`), and in no
+/// image above (a byte scan of the entries at their slot-B base; Spoon's is
+/// `0x801F7028`). So the whole base and evolved blocks stage, minus those two -
+/// exactly the ids `FUN_801F3C34`'s "No effect." pass early-outs on
+/// (`0x85` / `0x8E` / `>= 0x96`).
+///
+/// REF: FUN_801F3D3C (its callers, by image)
+pub fn module_stages_side_effect(spell_id: u8) -> bool {
+    has_summon_body(spell_id) && spell_id != 0x85 && spell_id != 0x8E
+}
+
 /// Rare-Seru **flute** summon block (`0x96..=0x98`), the contiguous
 /// continuation of [`EVOLVED_SUMMON_IDS`] under the same arithmetic
 /// (`0x96 → 924`, `0x97 → 925`, `0x98 → 926`). SummonFlute items (item-effect
@@ -1132,6 +1149,24 @@ fn apply_translation_update(state: &mut ActorState, origin: [i16; 3], frame_delt
 mod tests {
     use super::*;
     use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
+
+    /// The images that call `FUN_801F3D3C`: `0903..=0923` minus 0907
+    /// (Nighto) and 0916 (Aluru) - base and evolved blocks alike, Spoon
+    /// included; nothing from the flute block up.
+    #[test]
+    fn side_effect_stager_callers_are_the_base_and_evolved_blocks() {
+        let stagers: Vec<u8> = (0..=u8::MAX)
+            .filter(|&id| module_stages_side_effect(id))
+            .collect();
+        let want: Vec<u8> = (0x81..=0x95)
+            .filter(|&id| id != 0x85 && id != 0x8E)
+            .collect();
+        assert_eq!(stagers, want);
+        assert!(
+            module_stages_side_effect(0x91),
+            "Spoon stages its cure tier"
+        );
+    }
 
     /// A synthetic overlay: one transform node + one mesh part with a tiny
     /// move-VM program (`0x00 ANIM_BANK_SET 1,2,3` then `0x08 HALT`) - the

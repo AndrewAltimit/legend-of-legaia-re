@@ -580,6 +580,69 @@ fn a_level_nine_orb_doubles_the_party_ap() {
     assert_eq!(world.actors[0].battle.spirit_gauge, 52);
 }
 
+/// A level-9 Spoon doubles the party's AP too - PROT 0919 arm 7
+/// (`0x801F8394..0x801F83C0`) - once, as the arm lets the phase through, and
+/// cures nothing below tier 4's selector beyond its mask.
+#[test]
+fn a_level_nine_spoon_doubles_the_party_ap_once() {
+    use legaia_engine_vm::cast_seru_ticks_b::SPOON_HEAL_ARM;
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x91), Some(919));
+    world.casting.summon_actor_slot = Some(7);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.spirit_gauge = 9;
+    world.actors[0].battle.field_flags = 0x0403;
+    world.battle_ctx.follow_up_pending = 4;
+    roster_with_spell(&mut world, 0x91, 9);
+    drive_module_through(&mut world, 0x91, SPOON_HEAL_ARM);
+    assert_ne!(world.casting.module_phase, SPOON_HEAL_ARM, "arm 7 ran");
+    assert_eq!(world.actors[0].battle.spirit_gauge, 18);
+    assert_eq!(world.actors[0].battle.field_flags, 0, "tier 4 mask 0xFB84");
+    // A later frame past the arm does not double again.
+    let phase = world.casting.module_phase;
+    let _ = world.run_cast_module_code(0x91, phase);
+    assert_eq!(world.actors[0].battle.spirit_gauge, 18);
+
+    // Below the level gate the ladder never runs.
+    let mut world = module_code_world();
+    world.casting.summon_actor_slot = Some(7);
+    world.actors[0].battle.spirit_gauge = 9;
+    world.battle_ctx.follow_up_pending = 4;
+    roster_with_spell(&mut world, 0x91, 2);
+    drive_module_through(&mut world, 0x91, SPOON_HEAL_ARM);
+    assert_eq!(world.actors[0].battle.spirit_gauge, 9);
+}
+
+/// The evolved block now folds like the base block: a Spoon cast restores
+/// PROT 0919's own `(level << 7) + 0x380` (not the catalog placeholder) and
+/// credits the module's `+4` XP for a seat whose missing HP covered it
+/// (`0x801F80D4`).
+#[test]
+fn a_spoon_cast_heals_its_module_amount_and_trains_the_spell() {
+    use crate::spells::{SpellDef, SpellEffect, SpellTarget};
+    let mut world = module_code_world();
+    world.actors[0].battle.hp = 1;
+    world.actors[0].battle.max_hp = 0x500;
+    roster_with_spell(&mut world, 0x91, 1);
+    let def = SpellDef {
+        id: 0x91,
+        name: "Spoon".into(),
+        mp_cost: 0,
+        target: SpellTarget::AllAllies,
+        effect: SpellEffect::HealAll { amount: 7 },
+        ..SpellDef::default()
+    };
+    assert!(world.cast_spell_on_slots_prepaid(0, &def, &[0]));
+    assert_eq!(
+        world.actors[0].battle.hp,
+        1 + 0x400,
+        "level 1: 0x80 + 0x380"
+    );
+    let rec = &world.party.roster.members[0];
+    let slot = crate::magic_xp::spell_slot(rec, 0x91).expect("learned");
+    assert_eq!(crate::magic_xp::spell_xp(rec, slot), 4);
+}
+
 // ---------------------------------------------------------------------------
 // PROT 0907 (Nighto): the kill / confuse fork, driven at the band
 // ---------------------------------------------------------------------------

@@ -182,6 +182,50 @@ pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
 //   then `level += 1` and the notification setter `FUN_80035C00(char, slot)`
 //   fires - the `(_DAT_8007BB70, _DAT_8007BB78)` pair window 7 reads.
 
+/// Battle heal-module spell-XP grant for one healed seat.
+///
+/// The three player Seru heals bump the caster's per-spell XP word in their
+/// own tick arm - `lw v0,0x5d0(v1)` / `addiu` / `sw v0,0x5d0(v1)` off
+/// `0x80084140 + char * 0x414 + slot * 4`, i.e. this module's XP array at
+/// record `+0x8` - choosing between two grants by whether the seat's missing
+/// HP covered the module's full amount. A seat missing nothing credits
+/// nothing (the `beq a3,zero` skip). Unlike the damage tail there is no
+/// group / single split:
+///
+/// | Module | full | clamped | sites |
+/// |---|---|---|---|
+/// | Vera `0x83` (signed `slt`) | `+0xC` | `+0x4` | `0x801F7CCC` / `0x801F7CA4` |
+/// | Orb `0x89` | `+0x4` | `+0x2` | `0x801F7B50` / `0x801F7B2C` |
+/// | Spoon `0x91` | `+0x4` | `+0x2` | `0x801F80D4` / `0x801F80B0` |
+///
+/// The full amounts are `vera_heal_amount` / `orb_heal_amount` /
+/// `spoon_heal_amount` of `magic_level`. Each arm gates the bump on the
+/// special-battle word `0x8007BAC0` being zero; that gate is applied where
+/// the gain banks (`World::accrue_summon_spell_xp`). Any other id returns 0.
+///
+/// REF: FUN_801F69D8 (PROT 0905 / 0911 / 0919 heal arms)
+pub fn module_heal_xp_gain(spell_id: u8, magic_level: u8, hp: u16, max_hp: u16) -> u32 {
+    use legaia_engine_vm::{cast_seru_ticks_a as a, cast_seru_ticks_b as b};
+    let missing = i32::from(max_hp) - i32::from(hp);
+    let (want, full, clamped) = match spell_id {
+        0x83 => (
+            (u32::from(magic_level) * a::VERA_HEAL_PER_LEVEL + a::VERA_HEAL_BASE) as i32,
+            0xC,
+            0x4,
+        ),
+        0x89 => (b::orb_heal_amount(magic_level) as i32, 0x4, 0x2),
+        0x91 => (b::spoon_heal_amount(magic_level) as i32, 0x4, 0x2),
+        _ => return 0,
+    };
+    if missing <= 0 {
+        0
+    } else if missing < want {
+        clamped
+    } else {
+        full
+    }
+}
+
 /// Menu-cast heal spell-XP grant - PORT: FUN_800402F4 (HP-heal arms).
 ///
 /// Single-target arm (case body `0x80040470`): `+0xC` when the target's
@@ -298,6 +342,30 @@ pub fn magic_level_increased_message(spell_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each heal module's two grants, keyed on whether the missing HP covers
+    /// its level-scaled amount (Vera lv 1 = 0x100, Orb lv 1 = 0x200, Spoon
+    /// lv 1 = 0x400).
+    #[test]
+    fn module_heal_xp_grants_per_module() {
+        // (id, hp, max) -> grant
+        for (id, hp, max, want) in [
+            (0x83u8, 0u16, 0x100u16, 0xCu32),
+            (0x83, 1, 0x100, 0x4),
+            (0x89, 0, 0x200, 0x4),
+            (0x89, 1, 0x200, 0x2),
+            (0x91, 0, 0x400, 0x4),
+            (0x91, 1, 0x400, 0x2),
+            (0x91, 0x400, 0x400, 0),
+            (0x81, 0, 0x400, 0),
+        ] {
+            assert_eq!(
+                module_heal_xp_gain(id, 1, hp, max),
+                want,
+                "id {id:#x} hp {hp}"
+            );
+        }
+    }
 
     /// Minimal synthetic PS-X EXE: header + zeroed text with a threshold
     /// table planted at the retail VA. No Sony bytes.

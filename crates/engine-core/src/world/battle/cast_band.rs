@@ -3218,6 +3218,7 @@ impl World {
                 // fold's.
                 e if ticks::direct_chain_body(e).is_some() => {
                     let chain = ticks::direct_chain_body(e).expect("guarded");
+                    let phase_before = ctx.phase;
                     let t = ticks::run_chain_body(
                         chain,
                         &mut ctx,
@@ -3227,6 +3228,41 @@ impl World {
                         0,
                     );
                     run.item_refund = t.refund;
+                    // PROT 0919 (Spoon) arm 7 also runs the party cure ladder
+                    // and its tier-4 AP doubling - the half of the arm the
+                    // fold does not own (its heal is the fold's). Once, on
+                    // the frame the arm lets the phase through.
+                    if e == 919
+                        && phase_before == vm::cast_seru_ticks_b::SPOON_HEAL_ARM
+                        && ctx.phase != phase_before
+                    {
+                        // The views carry this frame's chain writes; seat them
+                        // in the row before the sweep reads it.
+                        let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                            .map(|s| self.cast_actor_state(s))
+                            .collect();
+                        for (slot, view) in [
+                            (caster_slot, caster),
+                            (victim_slot, victim),
+                            (seat_slot, seat),
+                        ] {
+                            if let Some(s) = seats.get_mut(slot as usize) {
+                                *s = view;
+                            }
+                        }
+                        let cleanse = self.cure_selector(
+                            caster_slot,
+                            spell_id,
+                            vm::cast_seru_ticks_b::ORB_CLEANSE_MIN_LEVEL,
+                        );
+                        vm::cast_seru_ticks_b::spoon_cure_sweep(&mut seats, cleanse);
+                        for (slot, st) in seats.iter().enumerate() {
+                            self.write_cast_actor_state(slot as u8, st);
+                        }
+                        caster = seats.get(caster_slot as usize).copied().unwrap_or(caster);
+                        victim = seats.get(victim_slot as usize).copied().unwrap_or(victim);
+                        seat = seats.get(seat_slot as usize).copied().unwrap_or(seat);
+                    }
                     Some(t.step)
                 }
                 _ => None,
