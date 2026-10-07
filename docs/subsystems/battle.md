@@ -5954,6 +5954,34 @@ tracker) plus the image scan as the load-bearing evidence. And the intro is long
 the park outlasts a 3400-vsync capture window, so a run that ends early reads as
 "stuck forever" - which is what an earlier reading of this state concluded.
 
+**The countdown is in battle-frame units, not vsyncs.** Every phase arm drains
+the module word `0x801F73F8` by the frame step `*(0x1F800393)` and re-arms it with
+an immediate: `0x80` (phase 0's exit, `0x801F6B84`), then `+0x100` three times
+(`0x801F6CC8`, `0x801F6E00`, `0x801F6F30`), `+0x1E0` (`0x801F6FDC`) and `+0xB4`;
+phase 0 itself waits on the camera word `0x800840BC` climbing `4 * step` a pass
+to `0xC00`. That is about 2000 units from residency to hand-back. The same
+probe extended with a phase-change log (pad-free, from `cort_evolved_pre_battle`)
+times each phase in vsyncs:
+
+| Phase | Starts at vsync | Lasts | Countdown units | Step read |
+|---|---|---|---|---|
+| 0 | 291 (mode `0x15`; the module pages in near 631) | 624 | camera `1280 -> 0xC00` | 4 |
+| 1 | 915 | 283 | `0x80` | 3-4 |
+| 2 | 1198 | 944 | `0x100` | 4 |
+| 3 | 2142 | 660 | `0x100` | 4 |
+| 4 | 2802 | 256 | `0x100` | 4 |
+| 5 | 3058 | 479 | `0x1E0` | 4 |
+| 6 | 3537 | 181 | `0xB4` | 2 |
+
+Phases 4 to 6 run at exactly one unit a vsync. Phases 1 to 3 - the drop, the
+descent trail and the landing, which spawn records every eighth frame - run at a
+quarter to a half of that: the step the module reads stays at `4` while a pass
+takes up to fifteen vsyncs, so the countdown spans more vsyncs than it has units.
+That is frame lag in the capture, not a different count. The port runs the same
+arithmetic at one unit a tick (`battle_stage_module::arrival_tick`), so its
+arrival hands back after about 2000 ticks where this capture took about 3400
+vsyncs from mode `0x15`.
+
 ### Each surface is a D-pad map
 
 There is no face-button map. Every chip is seated on a **D-pad arm** and its
