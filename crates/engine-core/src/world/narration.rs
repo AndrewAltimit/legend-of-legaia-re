@@ -2017,7 +2017,10 @@ impl World {
                     // the shot and closes with `A3 F8 60 0D`, and without it
                     // free roam resumed on a tile no direction leaves.
                     // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 arms)
-                    if op == 0x23 || (op == 0x4C && tl.bytecode.get(pc + 2) == Some(&0x51)) {
+                    if op == 0x23
+                        || (op == 0x4C
+                            && matches!(tl.bytecode.get(pc + 2), Some(&0x51) | Some(&0xE3)))
+                    {
                         let mut player_ctx = legaia_engine_vm::field::FieldCtx {
                             script_id: 0xF8,
                             flags: 0x0100_0000,
@@ -4861,6 +4864,62 @@ mod tests {
         let h = i32::from(*w.npcs.headings.get(&4).expect("heading written"));
         let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
         assert!(d.min(0x1000 - d) <= 1, "NPC faces the player: {h:#x}");
+    }
+
+    /// `CC <dst> E3 F8` seats placement `<dst>` on the player's spot with
+    /// the player's heading (`stone` `P2[6]`'s `CC 09 E3 F8` / `CC 0A E3 F8`
+    /// bring Noa and Gala in on Vahn), and `CC F8 E3 <src>` the player on
+    /// another actor's.
+    #[test]
+    fn cutscene_timeline_position_copy_carries_the_heading() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 2368;
+        w.actors[0].move_state.world_z = 2496;
+        w.actors[0].move_state.render_26 = 0x123;
+        w.field_vm.channels = vec![
+            FieldChannel {
+                placement_index: 4,
+                ctx: FieldCtx {
+                    script_id: 0x09,
+                    ..FieldCtx::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            },
+            FieldChannel {
+                placement_index: 5,
+                ctx: FieldCtx {
+                    script_id: 0x0A,
+                    ..FieldCtx::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            },
+        ];
+        w.npcs.positions.insert(4, (100, 100));
+        w.npcs.positions.insert(5, (3000, 3100));
+        w.npcs.headings.insert(5, 0x456);
+        let bc = vec![
+            0xCC, 0x09, 0xE3, 0xF8, 0xCC, 0xF8, 0xE3, 0x0A, 0x4A, 0xFF, 0x7F,
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        assert_eq!(w.npcs.positions.get(&4), Some(&(2368, 2496)));
+        assert_eq!(w.npcs.headings.get(&4), Some(&0x123));
+        let p = &w.actors[0].move_state;
+        assert_eq!((p.world_x, p.world_z, p.render_26), (3000, 3100, 0x456));
     }
 
     /// A player ExecMove queues the scene-record one-shot only when its pick

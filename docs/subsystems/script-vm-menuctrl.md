@@ -633,6 +633,11 @@ A ctx with the inverted-Y bit `0x20000000` also gets `+0x8E = -src_y`, and
 only a **player** ctx refreshes the camera scroll (`0x801E3178..0x801E31AC`).
 Arm `0x801E3108..0x801E31B0`; PC += 3 (in the `j 0x801E00BC` delay slot on
 the player path, via the `0x801E00B8` entry on the NPC path).
+The port applies it in `FieldHostImpl::op4c_n_e_sub_3_actor_sync_camera`:
+a placement destination takes the source's live position and heading
+(`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
+`CC 0A E3 F8`), a player destination moves the player actor; the player
+arm's camera-scroll refresh is not modelled.
 
 #### `4C E4`: AABB branch
 

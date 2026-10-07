@@ -881,6 +881,69 @@ impl FieldHostImpl<'_> {
 }
 
 impl<'a> FieldHost for FieldHostImpl<'a> {
+    // `4C E3 <src>`: the executing context takes the source actor's
+    // position `+0x14/+0x16/+0x18` and heading `+0x26`
+    // (`0x801E3108..0x801E314C`). In the cross-context form
+    // `CC <dst> E3 <src>` the destination is `<dst>` - a party placement
+    // stepping onto the player's spot facing his way (`CC 09 E3 F8` in
+    // `stone`). Headings copy in the engine's own space on both sides.
+    // REF: FUN_801DE840 (0x801E3108..0x801E31B0), FUN_8003C83C
+    fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
+        let w = &mut *self.world;
+        let src = if actor_id == crate::field_env::PLAYER_ANCHOR_TARGET {
+            w.player_actor_slot
+                .and_then(|s| w.actors.get(usize::from(s)))
+                .map(|a| {
+                    (
+                        a.move_state.world_x,
+                        a.move_state.world_z,
+                        a.move_state.render_26,
+                    )
+                })
+        } else {
+            let view = w.channel_view();
+            crate::field_channels::resolve_target(view, actor_id).map(|ci| {
+                let ch = &view[ci];
+                let own = (ch.ctx.world_x as i16, ch.ctx.world_z as i16);
+                let slot = (!ch.object_bind)
+                    .then(|| u8::try_from(ch.placement_index).ok())
+                    .flatten();
+                let (x, z) = slot
+                    .and_then(|s| w.npcs.positions.get(&s).copied())
+                    .unwrap_or(own);
+                let h = slot
+                    .and_then(|s| w.npcs.headings.get(&s).copied())
+                    .unwrap_or(0x800);
+                (x, z, h)
+            })
+        };
+        let Some((x, z, heading)) = src else {
+            return;
+        };
+        if ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET)
+            && w.field_vm.executing_channel.is_none()
+        {
+            let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+            if let Some(a) = w
+                .player_actor_slot
+                .and_then(|s| w.actors.get_mut(usize::from(s)))
+            {
+                a.move_state.world_x = x;
+                a.move_state.world_z = z;
+                a.move_state.world_y = y;
+                a.move_state.render_26 = heading;
+            }
+            return;
+        }
+        ctx.world_x = x as u16;
+        ctx.world_z = z as u16;
+        if let Some(slot) = w.field_vm.executing_channel {
+            w.npcs.positions.insert(slot, (x, z));
+            w.npcs.motions.remove(&slot);
+            w.npcs.headings.insert(slot, heading);
+        }
+    }
+
     fn player_cflag(&mut self, bit: u8, set: bool) -> bool {
         self.world.field_player_cflag(bit, set)
     }
