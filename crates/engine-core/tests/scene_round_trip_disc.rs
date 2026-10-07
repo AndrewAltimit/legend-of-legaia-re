@@ -235,10 +235,12 @@ fn overworld_walks_back_into_town() {
         (3264, 5824),
         "byte-exact against the door_warp_town01_to_map01 capture"
     );
+    // Sector 0 is retail heading `0` (the capture's player `+0x26`), which
+    // the engine's `render_26` holds a half-turn round: `0x800`.
     assert_eq!(
         facing(&host),
-        0,
-        "arrival faces the op-0x3F `dir` sector 0 (into the town)"
+        0x800,
+        "arrival faces the op-0x3F `dir` sector 0 (retail +0x26 = 0)"
     );
 }
 

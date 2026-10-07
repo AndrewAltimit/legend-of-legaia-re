@@ -2382,6 +2382,7 @@ impl World {
     ///
     /// REF: FUN_8003774C
     pub(crate) fn tick_field_npc_motions(&mut self) {
+        self.tick_field_npc_face_legs();
         let slots: Vec<u8> = self.npcs.motions.keys().copied().collect();
         for slot in slots {
             let Some(motion) = self.npcs.motions.get_mut(&slot) else {

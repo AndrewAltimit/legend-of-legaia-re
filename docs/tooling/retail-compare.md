@@ -1134,7 +1134,12 @@ during the settle window, or bits the save round trip does not carry.
 Retail's heading is `+0x26` on every actor node; the engine keeps the
 player's as `render_26` and each placement's in `World::npcs.headings`, both
 a half-turn from retail's space (`engine = retail + 0x800`; a placement with
-no entry is the spawn default, retail `0`). A retail node is matched to its
+no entry is the spawn default, retail `0`). The player is scored only while retail's
+heading still equals the arrival facing `_DAT_80073EFC` the entry script's
+`4C 3A` gave it (a card load zeroes it, so every card-boot state is scored);
+once the pad has turned the player the heading is walk history the seat does
+not replay. A non-zero arrival facing is a door's, which the card-load seed
+zeroes, so the seed seats it before settling. A retail node is matched to its
 placement by the flat record index `+0x50` (`N0 + slot`, `FUN_8003A1E4`), and
 is scored only when the engine holds that placement within 96 units of
 retail's position - a placement in the wrong place is the position's miss,

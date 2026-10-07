@@ -7,6 +7,14 @@ use super::*;
 
 /// Player field-locomotion state: run / slow / precise-movement gates, step deltas, ledge hop, vertical settle, wall probes and the per-tick movement cues.
 pub struct FieldLocomotion {
+    /// The **arrival facing** `_DAT_80073EFC`, in retail heading space
+    /// (`0` = facing -Z; the player's `render_26` is this plus `0x800`).
+    /// A door's op `0x3F` writes it from its `dir` byte through the compass
+    /// table at `0x80073F04` (`0x801DEBAC`); the card load zeroes it
+    /// (`FUN_8003AEB0`, `0x8003B778`), as does the new-game seed; the entry
+    /// script's `4C 3A` copies it onto the player
+    /// ([`crate::world::World::apply_arrival_facing`]).
+    pub arrival_facing: i16,
     /// When set, field free-movement snaps the player's `world_y` to the
     /// per-scene terrain elevation each step via
     /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`).
@@ -346,6 +354,7 @@ impl FieldLocomotion {
             player_rig_dirty: false,
             warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
+            arrival_facing: 0,
         }
     }
 }

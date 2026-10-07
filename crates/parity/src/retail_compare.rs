@@ -64,6 +64,9 @@ const CAM_EYE: u32 = 0x8008_40B8;
 /// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// The arrival facing `_DAT_80073EFC` (op `0x3F`'s compass write, zeroed by
+/// the card load), which the entry script's `4C 3A` copies onto the player.
+const ARRIVAL_FACING: u32 = 0x8007_3EFC;
 /// The field BGM sound-source slot (`docs/subsystems/audio.md`).
 const BGM_SLOT: u32 = 0x8007_052C;
 /// `0x8007B708`: `1` after the slot's replay, `0` after a stop / pause.
@@ -305,8 +308,12 @@ pub struct RetailObs {
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
     pub clear_rgb: Option<[u8; 3]>,
-    /// The player's heading `+0x26` (retail space, `0` = -Z).
+    /// The player's heading `+0x26` (retail space, `0` = -Z), when it still
+    /// equals the arrival facing `_DAT_80073EFC` the entry script's `4C 3A`
+    /// gave it; `None` once the pad has turned the player.
     pub player_facing: Option<i16>,
+    /// `_DAT_80073EFC`, the arrival facing.
+    pub arrival_facing: i16,
     /// Every field-actor-ticked placement's heading ([`retail_actor_facings`]).
     pub actor_facings: Vec<ActorFacing>,
 }
@@ -861,7 +868,13 @@ impl RetailObs {
                 Vec::new()
             },
             clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
-            player_facing: game_anchors::player_ptr(ram).map(|p| rd16(ram, p + 0x26)),
+            // Only while the player still faces the way the entry stood it:
+            // after a pad turn the heading is walk history the seat does
+            // not replay.
+            player_facing: game_anchors::player_ptr(ram)
+                .map(|p| rd16(ram, p + 0x26))
+                .filter(|&h| h == rd16(ram, ARRIVAL_FACING)),
+            arrival_facing: rd16(ram, ARRIVAL_FACING),
             actor_facings: if matches!(class, StateClass::Field) {
                 retail_actor_facings(ram)
             } else {
@@ -1184,6 +1197,13 @@ pub fn run_engine_with(
     let mut director = RecordingDirector::default();
     // The entry itself may already have queued a start.
     session.host.route_bgm_events(&mut director)?;
+    // A non-zero arrival facing is a door's (the card load the seed takes
+    // zeroes it): history the seed cannot replay, so it is seated like the
+    // position, and the player stands as the state's entry stood it.
+    if retail.arrival_facing != 0 {
+        session.host.world.locomotion.arrival_facing = retail.arrival_facing;
+        session.host.world.apply_arrival_facing();
+    }
     if let Some([x, _, z]) = retail.player
         && session.host.debug_seat_standing(x, z)
     {

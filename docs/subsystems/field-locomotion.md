@@ -2098,7 +2098,7 @@ player actor. Riremito clears the same hold at its own fade spawn (`0x801EE168`)
 `2`, a `0x20`-frame ramp from black to white, hold `-1` - under the kind-`2` `B - F` blend a
 fade to black that holds until the destination loads. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
 0x1000`) and drops `+0x10 & 0x200000` (`0x801EE268..0x801EE294`). The warp seats the
-player at the stored tile with Y `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
+player at the stored tile with arrival facing `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
 resume (`World::man_load_resume_programs`) - the engine's warp stays on the loaded map, so
 that stands in for the scene load `FUN_8001FD44` stages, whose MAN init is where retail
 starts the closer.

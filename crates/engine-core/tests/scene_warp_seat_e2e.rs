@@ -59,7 +59,7 @@ fn named_warp_seats_player_at_entry_tile() {
     // seat the arrival).
     const DEST: &str = "keikoku";
     const ENTRY_TILE: (u8, u8) = (10, 20);
-    const ENTRY_DIR: u8 = 6; // compass sector 6 -> facing 0xC00
+    const ENTRY_DIR: u8 = 6; // compass sector 6 -> retail facing 0xC00
     host.world.pending_named_scene_transition =
         Some((DEST.to_string(), ENTRY_TILE.0, ENTRY_TILE.1, ENTRY_DIR));
     let event = tick_through_hold(&mut host);
@@ -80,9 +80,11 @@ fn named_warp_seats_player_at_entry_tile() {
         expect,
         "warp arrival must seat the player at the op-0x3F entry tile centre"
     );
+    // The table value is a retail heading; `render_26` is the same angle
+    // plus the half-turn.
     assert_eq!(
         ms.render_26,
-        i16::from(ENTRY_DIR) * 0x200,
+        (i16::from(ENTRY_DIR) * 0x200 + 0x800) & 0x0FFF,
         "warp arrival must face the op-0x3F dir compass sector (SCUS 0x80073F04 table)"
     );
 

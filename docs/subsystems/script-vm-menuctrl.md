@@ -119,6 +119,15 @@ Arm addresses are from the nibble-3 jump table at `0x801CEEB8` in PROT `0897`:
 | `[4C 3D]` | `0x801E10F8` | `FUN_800180EC` at the player's tile - the walk-region **attribute** refresh, not a camera load. | 2 |
 | `[4C 3E]` | `0x801E10BC` | `FUN_801DB8EC(player)` snap + `FUN_801DAA50()` focus clamp. | 2 |
 
+Between them sits `[4C 3A]` (arm `0x801E10DC`): the player's heading
+`+0x26` takes the **arrival facing** `_DAT_80073EFC` (`lhu v0,0x3efc(v1)` /
+`sh v0,0x26(a0)`). Every scene's entry script issues it once. A door's
+op `0x3F` sets the word from its `dir` byte through the compass table at
+`0x80073F04`, and the card load (`FUN_8003AEB0`, `0x8003B778`) and the
+new-game seed zero it, so a card-loaded hero stands at retail heading `0`,
+facing the default camera. The values are retail headings; the engine's
+`render_26` holds each a half-turn round (`World::apply_arrival_facing`).
+
 `[4C 3E]`'s table entry points **inside** `[4C 39]`'s arm, seventeen
 instructions in: the snap arm is the query arm with its head cut off, and
 `[4C 39]` falls through into it rather than branching.

@@ -550,6 +550,10 @@ impl SceneHost {
     /// flag copies the save's `0x80084568` / `0x8008456C` into the entry
     /// operand `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003B764..0x8003B798`).
     ///
+    /// The same arm zeroes the arrival facing `_DAT_80073EFC`
+    /// (`0x8003B778`) - a save stores no heading - so the entry script's
+    /// `4C 3A` stands the player facing retail's `0`, towards the camera.
+    ///
     /// REF: FUN_8003AEB0 (`0x8003B764..0x8003B798`, the card-load seat)
     pub fn arm_resume_seat(
         &mut self,
@@ -557,6 +561,7 @@ impl SceneHost {
         save_scene: &str,
         scene: &str,
     ) -> bool {
+        self.world.locomotion.arrival_facing = 0;
         if self.pending_entry_seat.is_some() {
             return false;
         }
@@ -2495,6 +2500,7 @@ impl SceneHost {
             // region refresh, arrival trigger) instead of arriving one step
             // late, and the picker's cold-spawn relocation stands down for a
             // scene somebody actually walked into.
+            self.world.arm_arrival_facing(dir);
             self.set_entry_seat_tile(entry_x, entry_z);
             if is_world_map_scene(&name) {
                 self.enter_world_map_scene(&name)?;
@@ -2585,6 +2591,7 @@ impl SceneHost {
                         }
                     }
                 }
+                self.world.arm_arrival_facing(dir);
                 self.set_entry_seat_tile(entry_x, entry_z);
                 if is_world_map_scene(&name) {
                     self.enter_world_map_scene(&name)?;

@@ -3619,6 +3619,30 @@ impl World {
             {
                 break;
             }
+            // A halt-acquire of a placement (`CC <id> 85|8E|8F <lo> <hi>
+            // <bind>`): the target's walk kernel turns it toward the bind
+            // while the talk runs on past the op, as in a cutscene record
+            // (`World::face_leg_npc`). Run on the stand-in context it turned
+            // nobody: the talk's "Noa looks at Vahn" beats stood still.
+            // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
+            if let Some((t, ramp)) =
+                crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(&id.bytecode, id.pc)
+                && let Some(slot) = {
+                    let view = host.world.channel_view();
+                    crate::field_channels::resolve_target(view, t)
+                        .map(|ci| &view[ci])
+                        .filter(|ch| !ch.object_bind)
+                        .and_then(|ch| u8::try_from(ch.placement_index).ok())
+                }
+            {
+                host.world.face_leg_npc(slot, ramp);
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc += 6;
+                id.park_frames = 0;
+                continue;
+            }
             // `A2 <target> <clip>` - a cross-context ExecMove. Retail writes
             // the target's `+0x5C` and calls the anim tick, which re-points its
             // `+0x4C` clip pointer and zeroes its cursor; the port binds the
@@ -4073,6 +4097,27 @@ impl World {
         let (yaw, done) = ramp.step(x, z, yaw as u16, tx, tz, speed);
         self.set_timeline_facing(Some(slot), yaw as i16);
         done
+    }
+
+    /// Arm a free-standing NPC face-at leg (a talk record's
+    /// `CC <id> 85|8E|8F ..`): its first frame now, the rest on the field
+    /// tick ([`Self::tick_field_npc_face_legs`]). A new leg replaces one the
+    /// actor had in flight - retail overwrites `+0x94`.
+    pub fn face_leg_npc(&mut self, slot: u8, mut ramp: crate::inline_dialogue::TalkFaceRamp) {
+        self.npcs.face_legs.remove(&slot);
+        if !self.step_npc_face_leg(slot, &mut ramp) {
+            self.npcs.face_legs.insert(slot, ramp);
+        }
+    }
+
+    /// One walk-kernel frame of every free-standing NPC face-at leg.
+    /// REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
+    pub(crate) fn tick_field_npc_face_legs(&mut self) {
+        for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
+            if !self.step_npc_face_leg(slot, &mut ramp) {
+                self.npcs.face_legs.insert(slot, ramp);
+            }
+        }
     }
 
     pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {

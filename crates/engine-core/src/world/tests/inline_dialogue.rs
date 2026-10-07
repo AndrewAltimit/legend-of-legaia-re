@@ -447,3 +447,48 @@ fn inline_dialogue_extended_0xa1_nop_runs_through() {
     assert!(!id.is_done(), "0xA1 is not a conversation end");
     assert!(id.panel.is_some(), "the segment after the 0xA1 opened");
 }
+
+#[test]
+fn a_talk_face_at_on_another_placement_turns_it_to_its_bind() {
+    // A talk record's `CC <id> 85 <lo> <hi> F8` turns placement `<id>`
+    // toward the player over the budget while the talk runs on to its box -
+    // the walk kernel's FaceTarget leg on the target, not a halt on the
+    // talker. The jouine geometry mirrored: the NPC lands a half-turn from
+    // the player's own `0x23B` bearing toward it.
+    use crate::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut world = World {
+        mode: crate::world::SceneMode::Field,
+        ..World::default()
+    };
+    world.spawn_actor(0);
+    world.player_actor_slot = Some(0);
+    world.actors[0].move_state.world_x = 2368;
+    world.actors[0].move_state.world_z = 2496;
+    world.field_vm.channels = vec![FieldChannel {
+        placement_index: 4,
+        ctx: FieldCtx {
+            script_id: 0x26,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    world.npcs.positions.insert(4, (3136, 3136));
+    let body = vec![0xCC, 0x26, 0x85, 0x0A, 0x00, 0xF8, 0x1F, b'N', 0x00];
+    world.start_inline_dialogue_with_prologue(body, 0, 6);
+    assert_eq!(run_inline_until_box(&mut world), b"N");
+    assert!(
+        world.npcs.face_legs.contains_key(&4),
+        "the turn is in flight"
+    );
+    for _ in 0..12 {
+        world.tick_field_npc_motions();
+    }
+    assert!(world.npcs.face_legs.is_empty(), "the leg landed");
+    let h = i32::from(*world.npcs.headings.get(&4).expect("heading written"));
+    let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
+    assert!(d.min(0x1000 - d) <= 1, "the NPC faces the player: {h:#x}");
+}

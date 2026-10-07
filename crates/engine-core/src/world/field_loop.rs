@@ -675,21 +675,41 @@ impl World {
         }
     }
 
-    /// Face the player along a warp-arrival compass sector - the op-`0x3F`
+    /// Arm the arrival facing from a warp's compass sector - the op-`0x3F`
     /// trailing `dir` byte. Retail resolves `dir & 7` through the 8-entry
     /// i16 table at SCUS `0x80073F04` (`[0, 0x200, 0x400, .. 0xE00]` - the
     /// eight 45-degree compass points of the 12-bit angle space) into the
-    /// arrival-facing global `_DAT_80073EFC`; the engine stores the same
-    /// angle on the player's heading (`move_state.render_26`, `0` = +Z).
+    /// arrival-facing global `_DAT_80073EFC` (`0x801DEBAC`), which the
+    /// destination's entry script hands the player (`4C 3A`).
     ///
     /// REF: FUN_801DE840 (case 0x3F facing write, table 0x80073F04)
-    pub fn face_player_sector(&mut self, dir: u8) {
-        let Some(slot) = self.player_actor_slot else {
-            return;
-        };
-        if let Some(actor) = self.actors.get_mut(slot as usize) {
-            actor.move_state.render_26 = i16::from(dir & 7) * 0x200;
+    pub fn arm_arrival_facing(&mut self, dir: u8) {
+        self.locomotion.arrival_facing = i16::from(dir & 7) * 0x200;
+    }
+
+    /// Op `4C 3A`: the player's heading `+0x26` takes the arrival facing.
+    /// The table values are retail headings (`0` = facing -Z), the engine's
+    /// `render_26` the same angle plus the half-turn (`0` = +Z), so index 0
+    /// is a hero facing the default camera rather than turned away from it.
+    ///
+    /// REF: FUN_801DE840 (`4C 3A`, 0x801E10DC..0x801E10F4)
+    pub fn apply_arrival_facing(&mut self) {
+        let heading = self.locomotion.arrival_facing.wrapping_add(0x800) & 0x0FFF;
+        if let Some(actor) = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get_mut(usize::from(slot)))
+        {
+            actor.move_state.render_26 = heading;
         }
+    }
+
+    /// Face the player along a warp-arrival compass sector: arm the arrival
+    /// facing ([`Self::arm_arrival_facing`]) and apply it at once
+    /// ([`Self::apply_arrival_facing`]), the pair the door's `0x3F` and the
+    /// destination's entry `4C 3A` perform.
+    pub fn face_player_sector(&mut self, dir: u8) {
+        self.arm_arrival_facing(dir);
+        self.apply_arrival_facing();
     }
 
     /// One field-VM step. Drives `field_ctx` + `field_pc` from the loaded
@@ -1186,5 +1206,44 @@ mod cross_context_cflag_tests {
         w.load_field_script_at(vec![0xB1, 0x0D, 0x08, 0x21], 0);
         w.step_field();
         assert!(w.field_vm.pending_engagements.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod arrival_facing_tests {
+    use crate::world::World;
+
+    fn world_with_player() -> World {
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w
+    }
+
+    /// The entry script's `4C 3A` stands the player on the arrival facing.
+    /// A card load zeroes the word, and retail heading `0` faces the default
+    /// camera: the engine's `render_26` is that plus the half-turn. Read
+    /// straight, it turned every card-loaded hero's back to the camera
+    /// (`kor5_field_card_boot`: retail `+0x26 = 0`).
+    #[test]
+    fn op_4c_3a_applies_the_arrival_facing_a_half_turn_round() {
+        let mut w = world_with_player();
+        w.actors[0].move_state.render_26 = 0x123;
+        w.load_field_script_at(vec![0x4C, 0x3A, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.actors[0].move_state.render_26, 0x800);
+    }
+
+    /// A door's `dir` sector arms the word through the compass table; the
+    /// applied heading is the table's retail angle plus the half-turn.
+    #[test]
+    fn a_door_sector_faces_the_player_on_the_table_angle() {
+        let mut w = world_with_player();
+        w.face_player_sector(6);
+        assert_eq!(w.locomotion.arrival_facing, 0xC00);
+        assert_eq!(w.actors[0].move_state.render_26, 0x400);
     }
 }

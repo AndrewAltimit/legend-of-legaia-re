@@ -2509,6 +2509,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::MenuRefresh);
     }
 
+    // REF: FUN_801DE840 (`4C 3A`, 0x801E10DC..0x801E10F4)
+    fn apply_arrival_facing(&mut self) {
+        self.world.apply_arrival_facing();
+    }
+
     // The five camera-zone arms of op `0x4C` outer-nibble 3 / C. They queue
     // on the world because the camera globals live on the host-owned
     // `Camera`; `Camera::tick` drains the queue for both hosts. See

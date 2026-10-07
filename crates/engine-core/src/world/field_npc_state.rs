@@ -138,6 +138,11 @@ pub struct FieldNpcState {
     /// position. Script-started legs (cutscene walk-to-tile pokes, actor
     /// VM `start_motion`) run regardless of [`crate::world::FieldNpcState::animate`].
     pub motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
+    /// Face-at legs a talk record armed on placements
+    /// (`CC <id> 85|8E|8F <lo> <hi> <bind>` outside a cutscene timeline,
+    /// which keeps its own), keyed by slot and stepped once per field tick
+    /// ([`crate::world::World::tick_field_npc_face_legs`]).
+    pub face_legs: std::collections::BTreeMap<u8, crate::inline_dialogue::TalkFaceRamp>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
@@ -265,6 +270,7 @@ impl FieldNpcState {
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),
+            face_legs: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
             object_ambient: std::collections::BTreeMap::new(),
