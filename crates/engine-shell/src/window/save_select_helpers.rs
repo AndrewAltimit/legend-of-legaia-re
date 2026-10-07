@@ -421,11 +421,27 @@ mod save_rack_tests {
                 legaia_engine_core::input::PadButton::Right.mask(),
             );
         }
+        // Cross raises "Do you wish to load?" (defaulting to No); Yes runs
+        // "Now Loading" / "Load successful." before the outcome lands.
         step(
             &mut session,
             &mut flow,
             legaia_engine_core::input::PadButton::Cross.mask(),
         );
+        assert_eq!(flow.commit(&session), None, "the load asks first");
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Left.mask(),
+        );
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Cross.mask(),
+        );
+        while !session.is_done() {
+            step(&mut session, &mut flow, 0);
+        }
         assert_eq!(
             flow.commit(&session),
             Some(SaveCommit {

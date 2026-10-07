@@ -678,11 +678,33 @@ fn card_slots_save_confirms_overwrite_from_the_preview() {
         cross: true,
         ..Default::default()
     });
+    // The card write beat ("Saving to MEMORY CARD") and the result line
+    // ("Save successful.") run before the outcome lands.
+    assert_eq!(s.committing_work(), Some(true));
+    assert_eq!(s.outcome(), None);
+    run_commit_beat(&mut s);
     assert_eq!(s.outcome(), Some(SelectOutcome::Saved(0)));
 }
 
+/// Tick a [`SelectPhase::Committing`] session through its whole beat with
+/// no input; the result line flips on for the last stretch.
+fn run_commit_beat(s: &mut SaveSelectSession) {
+    let mut saw_result = false;
+    for _ in 0..=(COMMIT_WORK_FRAMES + COMMIT_RESULT_FRAMES) {
+        if s.committing_work() == Some(false) {
+            saw_result = true;
+        }
+        s.tick(SelectInput::default());
+    }
+    assert!(saw_result, "the result line showed before the outcome");
+}
+
+/// Retail asks before a card Load replaces the running game ("Do you wish
+/// to load?", defaulting to No), then runs the "Now Loading" / "Load
+/// successful." beat. Committing straight off the preview was the port's
+/// shortcut.
 #[test]
-fn card_slots_load_still_loads_from_the_preview() {
+fn card_slots_load_asks_then_loads() {
     let mut s = SaveSelectSession::new(SaveSelectMode::Load, slots(&[true]));
     s.set_card_slots_mode(true);
     s.set_now_checking_frames(0);
@@ -691,6 +713,34 @@ fn card_slots_load_still_loads_from_the_preview() {
         ..Default::default()
     });
     s.tick(SelectInput::default());
+    s.tick(SelectInput {
+        cross: true,
+        ..Default::default()
+    });
+    assert!(matches!(
+        s.phase(),
+        SelectPhase::ConfirmOverwrite { slot: 0, cursor: 1 }
+    ));
+    assert_eq!(s.outcome(), None, "the confirm does not load");
+    s.tick(SelectInput {
+        left: true,
+        ..Default::default()
+    });
+    s.tick(SelectInput {
+        cross: true,
+        ..Default::default()
+    });
+    assert_eq!(s.committing_work(), Some(true));
+    // A press during the write beat does not skip it...
+    s.tick(SelectInput {
+        cross: true,
+        ..Default::default()
+    });
+    assert_eq!(s.outcome(), None);
+    // ...but one on the result line does.
+    while s.committing_work() == Some(true) {
+        s.tick(SelectInput::default());
+    }
     s.tick(SelectInput {
         cross: true,
         ..Default::default()

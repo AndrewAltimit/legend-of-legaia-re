@@ -536,8 +536,20 @@ fn pad_driven_menu_ladder() {
                     tap_button(&mut s, PadButton::Right);
                     tap_button(&mut s, PadButton::Left);
                     let cell_before = s.save_flow().grid_cursor();
+                    // Cross raises "Do you wish to load?" (defaulting to
+                    // No); Yes runs "Now Loading" / "Load successful."
+                    // before the commit lands.
                     tap_button(&mut s, PadButton::Cross);
+                    let prompted = matches!(sub_select_phase(&s), Some(SelectPhase::ConfirmOverwrite { cursor, .. }) if cursor == 1);
+                    tap_button(&mut s, PadButton::Left); // No -> Yes
+                    tap_button(&mut s, PadButton::Cross);
+                    idle(&mut s, 200);
                     match s.last_save_commit {
+                        Some(c) if c.kind == SaveCommitKind::Load && !prompted => {
+                            stall = Some(
+                                "Load committed without the load confirm defaulting to No".into(),
+                            );
+                        }
                         Some(c) if c.kind == SaveCommitKind::Load => {
                             eprintln!(
                                 "[rung 8] committed load: port {} cell {} (grid was {cell_before})",
@@ -654,6 +666,9 @@ fn pad_driven_menu_ladder() {
                             let prompted = matches!(sub_select_phase(&w), Some(SelectPhase::ConfirmOverwrite { cursor, .. }) if cursor == 1);
                             tap_button(&mut w, PadButton::Left); // No -> Yes
                             tap_button(&mut w, PadButton::Cross);
+                            // "Saving to MEMORY CARD", then "Save
+                            // successful.", then the commit.
+                            idle(&mut w, 200);
                             match w.last_save_commit {
                                 Some(c) if c.kind == SaveCommitKind::Save && prompted => {
                                     eprintln!(

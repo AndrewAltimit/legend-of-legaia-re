@@ -126,8 +126,38 @@ pub enum SelectPhase {
         slot: u8,
         cursor: u8,
     },
+    /// A confirmed card Save or Load, between the confirm's "Yes" and the
+    /// outcome: the write / read beat ("Saving to MEMORY CARD" / "Now
+    /// Loading" over "Do not remove MEMORY CARD") for the first
+    /// [`COMMIT_RESULT_FRAMES`]-exceeding stretch of `frames_remaining`, then
+    /// the result line ("Save successful." / "Load successful.") for the
+    /// last [`COMMIT_RESULT_FRAMES`]. A face button skips the result line,
+    /// as retail's result arm adds a whole hold (`+0x5A`) on a press. Ends in
+    /// `Done(Saved)` / `Done(Loaded)` by the session's mode - the host
+    /// commits on that outcome exactly as it did from the confirm.
+    ///
+    /// Retail strings and the mode test that picks them live in PROT 0899:
+    /// `0x801E2B50..0x801E2B7C` picks "Saving to MEMORY CARD" or "Now
+    /// Loading" off the op flag `0x801F0200`, and `0x801DF920..0x801DF9B0`
+    /// draws "Load successful." / "Save successful." off the result word.
+    Committing {
+        slot: u8,
+        frames_remaining: u16,
+    },
     Done(SelectOutcome),
 }
+
+/// Frames the result line of [`SelectPhase::Committing`] holds when no
+/// button cuts it short. Retail's result arm accumulates the frame scalar
+/// into its hold word and moves on at `0x5A` (`slti v0,v0,0x5B` at
+/// `0x801DF9D8`): 90 sixtieth-second units.
+pub const COMMIT_RESULT_FRAMES: u16 = 90;
+
+/// Frames the write / read line of [`SelectPhase::Committing`] holds. The
+/// port's own beat - retail sits on the card driver's result word, which the
+/// port's synchronous backends answer at once - set long enough to read the
+/// line.
+pub const COMMIT_WORK_FRAMES: u16 = 45;
 
 /// What a save-select phase puts on screen, for the host that composes the
 /// draws.
@@ -156,6 +186,8 @@ pub struct SaveSelectPhaseLayout {
     pub now_checking: bool,
     /// Draw the Yes/No confirm messagebox on top of everything.
     pub confirm: bool,
+    /// Draw the card-operation messagebox ([`SelectPhase::Committing`]).
+    pub banner: bool,
 }
 
 /// The layout [`SelectPhase`] implies - see [`SaveSelectPhaseLayout`].
@@ -166,6 +198,7 @@ pub fn phase_layout(phase: SelectPhase) -> SaveSelectPhaseLayout {
         preview: false,
         now_checking: false,
         confirm: false,
+        banner: false,
     };
     match phase {
         SelectPhase::NowChecking { .. } => SaveSelectPhaseLayout {
@@ -178,6 +211,13 @@ pub fn phase_layout(phase: SelectPhase) -> SaveSelectPhaseLayout {
             single_pill: true,
             pill_cursor: false,
             preview: true,
+            ..base
+        },
+        SelectPhase::Committing { .. } => SaveSelectPhaseLayout {
+            single_pill: true,
+            pill_cursor: false,
+            preview: true,
+            banner: true,
             ..base
         },
         SelectPhase::ConfirmOverwrite { .. } | SelectPhase::ConfirmDelete { .. } => {

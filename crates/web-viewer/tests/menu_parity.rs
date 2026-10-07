@@ -325,9 +325,18 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
          (got {filled_texts} vs {empty_cell_texts} on an empty block)"
     );
 
-    // Confirm cell 2 = block 3: the card's save is parked, and the page's
-    // resume call (`play_resume_save`) lands it in the live world.
+    // Confirm cell 2 = block 3: retail asks "Do you wish to load?"
+    // (defaulting to No), then runs "Now Loading" / "Load successful."
+    // before the save is parked; the page's resume call
+    // (`play_resume_save`) lands it in the live world.
     rt.play_menu_input(CROSS);
+    assert!(
+        rt.play_menu_take_load_scene().is_empty(),
+        "the load confirm must not load on its own"
+    );
+    rt.play_menu_input(LEFT); // -> Yes
+    rt.play_menu_input(CROSS);
+    run_commit_beat(&mut rt);
     assert!(
         !rt.play_menu_take_load_scene().is_empty(),
         "a card load reports the scene the save was written in"
@@ -375,6 +384,8 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
     );
     rt.play_menu_input(LEFT); // -> Yes
     rt.play_menu_input(CROSS);
+    // "Saving to MEMORY CARD", then "Save successful.", then the write.
+    run_commit_beat(&mut rt);
     assert!(rt.card_slot_dirty(0), "confirming Yes writes into the card");
 
     // The exported container is still a card an emulator can walk, with the
@@ -661,4 +672,12 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
     }
     assert!(!rt.play_menu_is_open(), "the menu closed back to the title");
     assert_eq!(rt.play_menu_take_load_scene(), "", "nothing was loaded");
+}
+
+/// Tick through a confirmed card op's write / read beat and result line
+/// (`SelectPhase::Committing`) with no input, so the outcome lands.
+fn run_commit_beat(rt: &mut LegaiaRuntime) {
+    for _ in 0..200 {
+        rt.play_menu_input(0);
+    }
 }

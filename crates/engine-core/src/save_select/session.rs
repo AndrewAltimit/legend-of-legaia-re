@@ -233,7 +233,8 @@ impl SaveSelectSession {
             SelectPhase::Browsing { cursor } => cursor,
             SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => slot,
             SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => slot,
+            | SelectPhase::ConfirmDelete { slot, .. }
+            | SelectPhase::Committing { slot, .. } => slot,
             SelectPhase::Done(_) => 0,
         }
     }
@@ -261,6 +262,10 @@ impl SaveSelectSession {
             SelectPhase::ConfirmDelete { slot, cursor } => {
                 self.tick_confirm(ConfirmKind::Delete, slot, cursor, input, &mut events);
             }
+            SelectPhase::Committing {
+                slot,
+                frames_remaining,
+            } => self.tick_committing(slot, frames_remaining, input, &mut events),
             SelectPhase::Done(_) => {}
         }
         self.advance_slide_anim();
@@ -295,7 +300,8 @@ impl SaveSelectSession {
             }
             SelectPhase::SlotPreview { .. }
             | SelectPhase::ConfirmOverwrite { .. }
-            | SelectPhase::ConfirmDelete { .. } => {
+            | SelectPhase::ConfirmDelete { .. }
+            | SelectPhase::Committing { .. } => {
                 self.slide_anim_t = self.slide_anim_t.saturating_add(SLIDE_ANIM_RATE);
                 if self.slide_anim_t > SLIDE_ANIM_FULL {
                     self.slide_anim_t = SLIDE_ANIM_FULL;
@@ -490,7 +496,10 @@ impl SaveSelectSession {
             // host is showing the card's block grid). Confirming there is
             // a destructive write, so it lands on the overwrite prompt
             // rather than committing - retail's "Do you wish to save?".
-            if self.mode == SaveSelectMode::Save {
+            // A card Load asks too ("Do you wish to load?", PROT 0899
+            // `0x801E25F0..0x801E2600` on the load op flag): replacing the
+            // running game is as final as overwriting a block.
+            if self.mode == SaveSelectMode::Save || self.card_slots_mode {
                 self.phase = SelectPhase::ConfirmOverwrite {
                     slot,
                     cursor: 1, // default to "No" for safety
@@ -562,6 +571,16 @@ impl SaveSelectSession {
             CursorNav::Confirm => {
                 if cursor == 0 {
                     // Yes
+                    if self.card_slots_mode && kind == ConfirmKind::Overwrite {
+                        // A card op: the write / read beat and the result
+                        // line run before the outcome lands.
+                        self.phase = SelectPhase::Committing {
+                            slot,
+                            frames_remaining: COMMIT_WORK_FRAMES + COMMIT_RESULT_FRAMES,
+                        };
+                        events.push(SelectEvent::Confirmed { slot, kind });
+                        return;
+                    }
                     let outcome = match kind {
                         ConfirmKind::Overwrite => SelectOutcome::Saved(slot),
                         ConfirmKind::Delete => SelectOutcome::Deleted(slot),
@@ -575,6 +594,46 @@ impl SaveSelectSession {
                 }
             }
             CursorNav::None => {}
+        }
+    }
+
+    /// One frame of [`SelectPhase::Committing`]: count the beat down, let a
+    /// face button cut the result line short, and land the outcome the
+    /// session's mode names.
+    pub(super) fn tick_committing(
+        &mut self,
+        slot: u8,
+        frames_remaining: u16,
+        input: SelectInput,
+        events: &mut Vec<SelectEvent>,
+    ) {
+        let in_result = frames_remaining <= COMMIT_RESULT_FRAMES;
+        let skip = in_result && (input.cross || input.circle || input.triangle);
+        if frames_remaining == 0 || skip {
+            let outcome = match self.mode {
+                SaveSelectMode::Load => {
+                    events.push(SelectEvent::LoadConfirmed { slot });
+                    SelectOutcome::Loaded(slot)
+                }
+                SaveSelectMode::Save => SelectOutcome::Saved(slot),
+            };
+            self.phase = SelectPhase::Done(outcome);
+            return;
+        }
+        self.phase = SelectPhase::Committing {
+            slot,
+            frames_remaining: frames_remaining - 1,
+        };
+    }
+
+    /// The write / read half of [`SelectPhase::Committing`] is up (as
+    /// opposed to the result line).
+    pub fn committing_work(&self) -> Option<bool> {
+        match self.phase {
+            SelectPhase::Committing {
+                frames_remaining, ..
+            } => Some(frames_remaining > COMMIT_RESULT_FRAMES),
+            _ => None,
         }
     }
 

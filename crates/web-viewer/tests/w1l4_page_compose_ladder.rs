@@ -47,7 +47,6 @@ use legaia_web_viewer::runtime::LegaiaRuntime;
 const W: u32 = 320;
 const H: u32 = 240;
 
-const UP: u16 = 0x0010;
 const RIGHT: u16 = 0x0020;
 const DOWN: u16 = 0x0040;
 const LEFT: u16 = 0x0080;
@@ -301,16 +300,11 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
     }
     rt.play_menu_input(CROSS);
     let _ = rt.play_menu_draws_json(W, H);
-    // A free block confirms straight through on some builds and raises the
-    // overwrite prompt on others; drive the prompt's Yes either way.
-    if !rt.card_slot_dirty(0) {
-        rt.play_menu_input(LEFT);
-        rt.play_menu_input(CROSS);
-    }
-    if !rt.card_slot_dirty(0) {
-        rt.play_menu_input(UP);
-        rt.play_menu_input(CROSS);
-    }
+    // A free block raises "Do you wish to save?" (defaulting to No); Yes
+    // runs "Saving to MEMORY CARD" / "Save successful." before the write.
+    rt.play_menu_input(LEFT);
+    rt.play_menu_input(CROSS);
+    run_commit_beat(&mut rt);
     assert!(
         rt.card_slot_dirty(0),
         "confirming a free cell must write into the card"
@@ -469,7 +463,10 @@ fn rung2b_a_refused_load_raises_the_refusal_notice() {
     rt.play_menu_input(CROSS); // pick SLOT 1
     settle_card_read(&mut rt);
     rt.eject_card(0);
-    rt.play_menu_input(CROSS); // load cell 0 - no card to load from
+    rt.play_menu_input(CROSS); // load cell 0 - raises "Do you wish to load?"
+    rt.play_menu_input(LEFT); // -> Yes
+    rt.play_menu_input(CROSS); // - and there is no card to load from
+    run_commit_beat(&mut rt);
     assert!(
         !rt.play_menu_take_load(),
         "a Load off an ejected card must not park a save"
@@ -582,7 +579,10 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     open_row(&mut rt, ROW_LOAD);
     rt.play_menu_input(CROSS);
     settle_card_read(&mut rt);
+    rt.play_menu_input(CROSS); // "Do you wish to load?"
+    rt.play_menu_input(LEFT); // -> Yes
     rt.play_menu_input(CROSS);
+    run_commit_beat(&mut rt);
     // The page lands the parked save the frame the Load commits
     // (`play_menu_take_load`, then `play_resume_save` via `onCardLoad`).
     assert!(rt.play_menu_take_load(), "the Load parked its save");
@@ -962,4 +962,13 @@ fn rung6_the_muscle_page_builds_its_fighter_through_battle_load_stat_init() {
          ({hp30} at Lv30 vs {hp60} at Lv60)"
     );
     assert_eq!(st60["source"], "disc");
+}
+
+/// Tick through a confirmed card op's write / read beat and result line
+/// (`SelectPhase::Committing`), drawing each frame as the page does.
+fn run_commit_beat(rt: &mut LegaiaRuntime) {
+    for _ in 0..200 {
+        rt.play_menu_input(0);
+        let _ = rt.play_menu_draws_json(W, H);
+    }
 }

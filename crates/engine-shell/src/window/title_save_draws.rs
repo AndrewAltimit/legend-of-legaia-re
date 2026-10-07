@@ -167,6 +167,7 @@ impl PlayWindowApp {
             slide_t: m.slide_t,
             info_t: m.info_t,
             now_checking: m.now_checking,
+            banner: m.banner,
             preview,
             confirm: m.confirm,
         };

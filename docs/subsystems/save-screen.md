@@ -456,6 +456,30 @@ post-libcd-read copy - the card read buffer back into the live game-state
 window. The save branch is its mirror with the *other* block buffer as the
 destination; see [Which buffer the sum runs over](#which-buffer-the-sum-runs-over).
 
+#### The confirm question and the commit beat
+
+Confirming a block raises a Yes / No messagebox in **both** directions, and
+the question depends on the direction and on what the block holds. The arm at
+`0x801E2540..0x801E2600` (PROT 0899) asks "Do you wish to load?" when the op
+flag `0x801F0200` is set; on the save path it runs the slot-mode test
+`FUN_801E3F74` inline and asks "Do you wish to save?" only for mode `3` (a
+free block), "Do you wish to overwrite?" for anything else. The box opens on
+**No**.
+
+A "Yes" does not return at once. The write / read runs under a messagebox -
+"Saving to MEMORY CARD" or "Now Loading" over "Do not remove MEMORY CARD"
+(`0x801E2B50..0x801E2BA8`, same op flag) - and the result line follows:
+"Save successful." / "Load successful." (`0x801DF920..0x801DF9B0`), held until
+the frame-scalar accumulator reaches `0x5A` (`slti v0,v0,0x5B` at
+`0x801DF9D8`), a press adding a whole hold to cut it short.
+
+The port: `SelectPhase::Committing` carries the two halves between the
+confirm and the outcome (`COMMIT_WORK_FRAMES`, then `COMMIT_RESULT_FRAMES` =
+90), `SaveScreenFlow::confirm_prompt` picks the question and `commit_banner`
+the lines, and both hosts draw them through `save_select_overlay_draws`. The
+host still commits on the outcome, so the result line precedes the write by
+the length of the beat; a write that then fails raises the refusal notice.
+
 #### Which op is which direction
 
 Three independent readings agree, and they are recorded because the pair

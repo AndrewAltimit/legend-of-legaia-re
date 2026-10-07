@@ -382,6 +382,7 @@ impl SaveScreenFlow {
                 | SelectPhase::SlotPreview { .. }
                 | SelectPhase::ConfirmOverwrite { .. }
                 | SelectPhase::ConfirmDelete { .. }
+                | SelectPhase::Committing { .. }
         ) {
             return None;
         }
@@ -551,6 +552,21 @@ impl SaveScreenFlow {
     }
 }
 
+/// The two lines of [`SelectPhase::Committing`]'s messagebox: the write /
+/// read beat while `working`, the result line after it. Retail's strings,
+/// out of PROT 0899's pool - "Saving to MEMORY CARD" / "Now Loading" over
+/// "Do not remove MEMORY CARD" (`0x801E2B50..0x801E2BA8`, op flag
+/// `0x801F0200`) and "Save successful." / "Load successful."
+/// (`0x801DF920..0x801DF9B0`).
+pub fn commit_banner(mode: SaveSelectMode, working: bool) -> (&'static str, &'static str) {
+    match (mode, working) {
+        (SaveSelectMode::Save, true) => ("Saving to MEMORY CARD", "Do not remove MEMORY CARD"),
+        (SaveSelectMode::Load, true) => ("Now Loading", "Do not remove MEMORY CARD"),
+        (SaveSelectMode::Save, false) => ("Save successful.", ""),
+        (SaveSelectMode::Load, false) => ("Load successful.", ""),
+    }
+}
+
 /// Whether the outer fade suppresses the slot-select confirm this frame.
 ///
 /// Retail's dispatcher masks the pad globals whole-frame while its fade level
@@ -645,6 +661,9 @@ pub struct SaveOverlayModel<'a> {
     pub slide_t: u16,
     pub info_t: u16,
     pub now_checking: bool,
+    /// The card-operation messagebox of [`SelectPhase::Committing`]: the
+    /// write / read beat, then the result line (second line empty).
+    pub banner: Option<(&'static str, &'static str)>,
     pub preview: Option<SaveOverlayPreview<'a>>,
     pub confirm: Option<(&'static str, u8)>,
 }
@@ -664,7 +683,8 @@ impl SaveScreenFlow {
             SelectPhase::NowChecking { slot, .. }
             | SelectPhase::SlotPreview { slot }
             | SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
+            | SelectPhase::ConfirmDelete { slot, .. }
+            | SelectPhase::Committing { slot, .. } => slot as usize,
             SelectPhase::Done(_) => return None,
         };
         let layout = crate::save_select::phase_layout(phase);
@@ -712,10 +732,13 @@ impl SaveScreenFlow {
             }
         });
         let confirm = layout.confirm.then_some(match phase {
-            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
+            SelectPhase::ConfirmOverwrite { cursor, .. } => (self.confirm_prompt(session), cursor),
             SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
             _ => ("", 0),
         });
+        let banner = layout
+            .banner
+            .then(|| commit_banner(session.mode(), session.committing_work() == Some(true)));
         Some(SaveOverlayModel {
             title: match session.mode() {
                 SaveSelectMode::Load => "Load",
@@ -728,9 +751,38 @@ impl SaveScreenFlow {
             slide_t: session.slide_anim_t(),
             info_t: session.info_panel_slide_anim_t(),
             now_checking: layout.now_checking,
+            banner,
             preview,
             confirm,
         })
+    }
+
+    /// The confirm messagebox's question, picked the way retail's confirm
+    /// arm picks it (PROT 0899 `0x801E2540..0x801E2600`): a Load asks "Do
+    /// you wish to load?"; a Save asks "Do you wish to save?" only when the
+    /// focused block is free (the slot mode `FUN_801E3F74` calls `3`), and
+    /// "Do you wish to overwrite?" over anything else - a Legend of Legaia
+    /// save or a block it cannot read.
+    pub fn confirm_prompt(&self, session: &SaveSelectSession) -> &'static str {
+        if session.mode() == SaveSelectMode::Load {
+            return "Do you wish to load?";
+        }
+        let free = if session.card_slots_mode() {
+            self.focused_block().is_none_or(|b| {
+                crate::save_select::SlotInfoMode::for_grid_cell(self.grid_cursor, b)
+                    == crate::save_select::SlotInfoMode::FreeBlock
+            })
+        } else {
+            session
+                .slots()
+                .get(usize::from(session.current_slot()))
+                .is_none_or(|b| !b.present)
+        };
+        if free {
+            "Do you wish to save?"
+        } else {
+            "Do you wish to overwrite?"
+        }
     }
 }
 
@@ -753,6 +805,11 @@ mod tests {
         SlotSnapshot {
             slot: cell,
             present,
+            content: if present {
+                crate::save_select::SlotContent::LegaiaSave
+            } else {
+                crate::save_select::SlotContent::Free
+            },
             label: if present {
                 "Vahn".into()
             } else {
@@ -950,11 +1007,8 @@ mod tests {
         assert_ne!(edge & cross(), 0, "the save confirm reaches the session");
         s.tick(SelectInput::from_pad_edge(edge));
         assert!(matches!(s.phase(), SelectPhase::ConfirmOverwrite { .. }));
-        // "Do you wish to save?" defaults to No; step to Yes and confirm.
-        for e in [PadButton::Left.mask(), cross()] {
-            let edge = flow.before_tick(&s, e);
-            s.tick(SelectInput::from_pad_edge(edge));
-        }
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to save?");
+        confirm_yes_and_run_out(&mut flow, &mut s);
         assert_eq!(
             flow.commit(&s),
             Some(SaveCommit {
@@ -998,6 +1052,9 @@ mod tests {
         assert_eq!(flow.grid_cursor(), 1);
         let edge = flow.before_tick(&s, cross());
         s.tick(SelectInput::from_pad_edge(edge));
+        assert_eq!(flow.commit(&s), None, "a Load asks first");
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to load?");
+        confirm_yes_and_run_out(&mut flow, &mut s);
         assert_eq!(
             flow.commit(&s),
             Some(SaveCommit {
@@ -1006,6 +1063,43 @@ mod tests {
                 kind: SaveCommitKind::Load,
             })
         );
+    }
+
+    /// Step a raised confirm to Yes, confirm it, and run the write / read
+    /// beat and the result line out to the outcome - one `before_tick` per
+    /// frame, the way a host drives it.
+    fn confirm_yes_and_run_out(flow: &mut SaveScreenFlow, s: &mut SaveSelectSession) {
+        for e in [PadButton::Left.mask(), cross()] {
+            let edge = flow.before_tick(s, e);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        let working = commit_banner(s.mode(), true);
+        assert_eq!(flow.overlay_model(s).unwrap().banner, Some(working));
+        let mut frames = 0;
+        while !s.is_done() {
+            let edge = flow.before_tick(s, 0);
+            s.tick(SelectInput::from_pad_edge(edge));
+            frames += 1;
+            assert!(frames < 1000, "the commit beat never ended");
+        }
+    }
+
+    /// Over a block that already holds something, a Save asks to
+    /// overwrite; over a free block it asks to save.
+    #[test]
+    fn the_save_prompt_names_an_overwrite_over_an_occupied_block() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
+        // run_beat's card holds a save in cell 2 only.
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to save?");
+        flow.grid_cursor = 2;
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to overwrite?");
     }
 
     /// A flat rack commits the pill slot as both port and cell, so a host

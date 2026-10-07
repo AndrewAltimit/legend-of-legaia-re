@@ -91,9 +91,32 @@ pub fn now_checking_text_draws_for(
     stage_scale: u32,
     slide_offset: (i32, i32),
 ) -> Vec<TextDraw> {
+    card_banner_text_draws_for(
+        font,
+        ("Now checking.", "Do not remove MEMORY CARD"),
+        stage_origin,
+        stage_scale,
+        slide_offset,
+    )
+}
+
+/// The two centred lines of a card-operation messagebox, on the "Now
+/// checking" panel's rows: the card-read beat, the write / read beat
+/// ("Saving to MEMORY CARD" / "Now Loading" over "Do not remove MEMORY
+/// CARD") and the result line ("Save successful." / "Load successful.").
+/// An empty second line centres the first on the panel - the result
+/// messages are single lines (`FUN_801E36C4(160, 96, ...)` in the menu
+/// overlay's result arm).
+pub fn card_banner_text_draws_for(
+    font: &legaia_font::Font,
+    lines: (&str, &str),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+    slide_offset: (i32, i32),
+) -> Vec<TextDraw> {
     let scale = stage_scale.max(1);
     let color = SAVE_SELECT_TITLE_COLOR;
-    let mut out = Vec::with_capacity(40);
+    let mut out = Vec::with_capacity(48);
 
     let emit_centered = |out: &mut Vec<TextDraw>, text: &str, top_y: i32| {
         let layout = font.layout_ascii(text);
@@ -115,12 +138,16 @@ pub fn now_checking_text_draws_for(
         }
     };
 
-    emit_centered(&mut out, "Now checking.", NOW_CHECKING_TEXT_LINE1_Y);
-    emit_centered(
-        &mut out,
-        "Do not remove MEMORY CARD",
-        NOW_CHECKING_TEXT_LINE2_Y,
-    );
+    if lines.1.is_empty() {
+        emit_centered(
+            &mut out,
+            lines.0,
+            (NOW_CHECKING_TEXT_LINE1_Y + NOW_CHECKING_TEXT_LINE2_Y) / 2,
+        );
+    } else {
+        emit_centered(&mut out, lines.0, NOW_CHECKING_TEXT_LINE1_Y);
+        emit_centered(&mut out, lines.1, NOW_CHECKING_TEXT_LINE2_Y);
+    }
     out
 }
 
