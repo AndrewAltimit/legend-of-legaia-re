@@ -200,6 +200,7 @@ mod fishing_line_frame;
 mod fishing_minigame_real;
 mod fishing_scene_surface_disc;
 mod fog_sheet_colour_retail_capture_disc;
+mod fog_volume_regions_disc;
 mod free_roam_staging_disc;
 mod freeroam_field_channels_disc;
 mod game_over_routes_to_title;

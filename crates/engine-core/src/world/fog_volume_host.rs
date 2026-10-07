@@ -20,8 +20,17 @@ impl World {
     /// The bank the current state asks for: the field scene's own style
     /// ([`crate::fog_volume::scene_style`] - its tuned entry, else the retail
     /// fog pool's gate with an enabled region); in battle, the style of the
-    /// field scene the fight was entered from. `None` elsewhere.
+    /// field scene the fight was entered from. `None` elsewhere, and `None`
+    /// while the player stands in an interior
+    /// ([`crate::fog_volume::InteriorTracker`]).
     pub fn fog_volume_style(&self) -> Option<crate::fog_volume::FogStyle> {
+        // Indoors (a walk area a door warped the player into) there is no
+        // bank, and a fight opened there inherits none.
+        if self.fog_volume.interiors.indoors
+            && matches!(self.mode, SceneMode::Field | SceneMode::Battle)
+        {
+            return None;
+        }
         match self.mode {
             SceneMode::Field => {
                 let pool_live = self.fog.gate && self.fog.regions.iter().any(|r| r.enabled);
@@ -112,6 +121,24 @@ impl World {
             self.fog_volume.last_style = None;
             self.fog_volume.strength = 0.0;
             self.fog_volume.clear_field();
+            self.fog_volume.interiors.reset();
+        }
+        // Interiors: the walk areas a door warps the player into
+        // ([`crate::fog_volume::InteriorTracker`]). Seeded once the scene's
+        // collision grid is in.
+        let mut warped_indoors = false;
+        if self.mode == SceneMode::Field {
+            if !self.fog_volume.interiors.seeded()
+                && self.terrain.collision_grid.len() >= FIELD_GRID_LEN
+                && self.terrain.object_cells.len() >= FIELD_GRID_LEN
+            {
+                let (labels, sizes) = self.field_walk_components();
+                if !sizes.is_empty() {
+                    self.fog_volume.interiors.seed(labels, sizes);
+                }
+            }
+            let p = self.fog_player_world_pos();
+            warped_indoors = self.fog_volume.interiors.observe(p[0], p[2]);
         }
         let (space, focus) = match self.mode {
             SceneMode::Field => {
@@ -127,7 +154,16 @@ impl World {
         };
         let style = self.fog_volume_style();
         self.fog_volume.set_space(space);
+        if warped_indoors {
+            // The door is a cut: the room comes up clear.
+            self.fog_volume.strength = 0.0;
+        }
         self.fog_volume.set_style(style);
+        // Where the bank may lie: the live fog-region table, the retail
+        // pool spawner's own gate ([`crate::fog_volume::region_weight`]).
+        if space == FogSpace::Field {
+            self.fog_volume.set_regions(&self.fog.regions);
+        }
         let movers = self.fog_volume_movers();
         // Borrow split: the floor sampler reads terrain, the step writes the
         // bank.

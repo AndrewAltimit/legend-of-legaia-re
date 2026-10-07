@@ -2824,6 +2824,33 @@ entered from and runs its own grid in raw battle-stage units, centred on the
 arena. A new scene label starts a new bank; a style eases in and out over about
 a second and a half.
 
+**Where in a scene: outdoors only.** A town's house rooms and a castle's halls
+are walk areas of the same scene map, islands of floor at their own tiles, and a
+door is an intra-scene warp to one
+([encounter.md](../formats/encounter.md#the-window-is-not-cleared-with-the-scene)),
+so a scene-level choice cannot keep the bank out of them. Two rules do:
+
+- **The fog-region table**, retail's own spawn gate for the puff pool. Each
+  sheet-mesh vertex carries bank only where the first region whose open box
+  holds its tile is enabled (`fog_volume::region_weight`; the spawner's test at
+  `0x801D6320..0x801D63B8`), folded into the vertex's floor weight both hosts
+  already multiply by. `town0b`'s one region covers the Rim Elm streets and
+  none of the rooms beside them, and several scenes put boxes keyed on flag
+  `0x007` ahead of an area-wide region, which carve holes once that flag is
+  set. A script that rewrites the enables re-samples the sheet.
+- **Door-reached areas** (`fog_volume::InteriorTracker`), for scenes whose table
+  keeps one region over the whole map (`dolk`'s halls and rooms). The bank
+  labels the 4-connected open-floor areas the collision grid leaves: the area
+  the player is first seen in after entering the scene is open ground; walking
+  into another area carries its class over (a stair without floor bits splits
+  one street in two); a warp into an unclassified area makes it an interior
+  when it is room-sized (at most 800 sub-cells), open ground otherwise. In an
+  interior the scene raises no bank, the door's cut drops it at once, and a
+  fight opened there inherits none; walking back out eases it in again.
+
+Retail's pool is not held to the second rule: in `dolk` it spawns in the halls
+and rooms as freely as on the plaza.
+
 **Drawing.** The frame (`World::fog_volume_frame`) carries the density grid as
 bytes, the sheet mesh's floor heights (a 48 x 48 quad grid sampled from the
 live walk-ground floor, re-sent only when it moves), the colour (folded with

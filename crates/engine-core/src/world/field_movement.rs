@@ -599,7 +599,7 @@ impl World {
     /// sub-cell or the 1-based component id; `sizes[id - 1]` is that
     /// component's sub-cell count. Deterministic: components are numbered in
     /// row-major scan order.
-    fn field_walk_components(&self) -> (Vec<u16>, Vec<u32>) {
+    pub(crate) fn field_walk_components(&self) -> (Vec<u16>, Vec<u32>) {
         let (labels, sizes, _) = self.field_walk_components_edged();
         (labels, sizes)
     }
