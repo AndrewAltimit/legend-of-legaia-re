@@ -3817,8 +3817,23 @@ rest tables), so no allocator and no packing makes that pair fit; the exclusion
 is not a hard-coded region clash that a smarter allocator would dissolve. A
 sweep of every zero run in the whole `SCUS_942.54` image outside the known live
 tables finds **53 further candidate bytes** in total, so there is no fifth region
-to grow into either. (The 4208-byte run at `0x800797D0` is inside the live SsAPI
-cluster - see ["zero is not dead"](../../crates/patcher/README.md).)
+to grow into either. (The 4208-byte run at `0x800797D0` is the PsyQ
+interrupt-callback block. `ResetCallback` zero-fills `0x800797D8..0x8007A83F`
+at boot, and its callback stack uses only the top ~640 bytes. So the floor of
+that run is unused, but anything written there in the disc image is erased
+before it could run - see ["zero is not dead"](../../crates/patcher/README.md)
+and the [memory map](../reference/memory-map.md#scus_94254-data-segment-0x8006f180-0x8007b7ff).)
+
+The zero-run sweep counts only bytes that are already zero. Larger pools exist,
+and each has a cost. Unreferenced SCUS function bodies come to about 15 KB:
+159 functions in 94 ranges with no reference of any form anywhere on the disc.
+The Delilas course and `--enemy-hp-bar` already live in some of them, and the
+"zero is not dead" rule still asks for a live read-watch before one is reused.
+The ~1.8 KB of format strings read only by BIOS `printf` (`FUN_800567A8`)
+become free if every call to it is stubbed out, along with the libgpu hook word
+at `0x80078D50`. The RAM above slot B, from `0x801FA9D8`, can be loaded by
+growing PROT 0900 / 0901, but that needs a PROT relayout rather than a
+same-size patch ([memory map](../reference/memory-map.md#free-ram-and-stack-0x801fa9d8-0x801fffff)).
 
 What paid for the arrows, the sort and the performed gate inside that budget:
 folding the shared unlock leaf into hook (A) (which can read the performed byte

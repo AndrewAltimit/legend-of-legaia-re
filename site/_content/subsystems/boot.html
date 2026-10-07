@@ -168,6 +168,13 @@
       <p>A sweep for absolute <code>lui</code>+offset references saw no writer for the loader flag, because the one write is gp-relative, and concluded it booted at 0; the executable&rsquo;s header carries <code>b_size = 0</code>, so no BSS is cleared either. The debug byte returned zero byte-granular references because consumers read the word. Both are under <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; the gp-relative blind spot is why the <a href="../tooling/address-reference-scan.html">address reference scan</a> checks all five forms.</p>
     </div>
   </details>
+  <p>Not every debug-menu entry works once it is reached. On a retail console three of them fail:</p>
+  <ul>
+    <li><strong>TMD TEST</strong> (mode 6) stores its two draw buffers at the fixed addresses <code>0x80400040</code> and <code>0x80419040</code> instead of taking them from the heap. A 2 MB console has no RAM there. The addresses wrap onto the BIOS area and the game's own code, so the console crashes. The branch is the <code>beq</code> at <code>0x8001F6D8</code>; replacing it with a <code>nop</code> should send the mode down the heap path, but that has not been tested.</li>
+    <li><strong>TEST</strong> (mode 10) has an empty start-up handler, so it hangs.</li>
+    <li><strong>READ</strong> (mode 16) jumps into the boot overlay <code>init.pak</code>, which is no longer loaded once the debug menu has replaced it.</li>
+  </ul>
+  <p>The mode table these entries come from is on <a href="boot-internals.html#mode-table">internals</a>. Found by Stann0x.</p>
 </section>
 
 <section class="doc-section" id="see-also">

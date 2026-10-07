@@ -49,13 +49,15 @@ dev-string formatter `FUN_800567A8` - `main.exe` / `pad_init` / `init_mem` /
 1. GPU/display: `FUN_80057C44` (display-mode reset), `FUN_80058068(0)`
    (`SetDispMask` off), `FUN_80057EDC`, then a full-frame `ClearImage`
    (`FUN_80058298`) and queue flush (`FUN_80058104`).
-2. CD + XA: `FUN_8003EE7C(0)`, `FUN_8003F024`, and the region/console probe
-   `FUN_8002B92C` whose result (stored at `gp+0x550`) selects the heap size.
+2. CD + XA: `FUN_8003EE7C(0)`, `FUN_8003F024`, and the console probe
+   `FUN_8002B92C` whose result (stored at `gp+0x550`, `0x80015F18`) selects the
+   heap size. In retail the probe is a stub - `jr ra; move v0, zero` - so the
+   stored word is always `0`.
 3. Sound: libsnd init `FUN_80062310` + `FUN_800644C0(&DAT_80085B58, 4, 4)`
    (the sound-driver work area; see [`audio.md`](audio.md)).
 4. Heap: `InitHeap`-wrapper `FUN_8002B3D4(2, DAT_8007B414, size)` with
    `size = 0x134800` retail / `0x200000` when the `gp+0x550` probe reports the
-   expanded-RAM dev console.
+   expanded-RAM dev console - a branch the stub probe never takes.
 5. Boot-scene name: the default scene string is `opdeene`; when the build-mode
    halfword at `gp+0x5AA` is set it is copied over the scene-name slot at
    `0x8007050C` instead. That halfword **is** `_DAT_8007B8C2` (`gp = 0x8007B318`),
@@ -260,6 +262,46 @@ is already linked into the executable.
 
 All three are mirrored as `legaia_engine_core::mode::mode_init_bare`, beside
 `mode_init_stage` for the staging rows.
+
+**Entered from the debug menu, mode 16 lands in the wrong image.** Any slot-A
+load replaces PROT 0895, so once the field (0897) or the debug menu (0971) has
+loaded, `0x801CE9C0` is someone else's bytes. From the debug menu it is 0971
+file `+0x1A8` - `lui at` / `sw zero, -0x4748(at)` in the middle of
+`FUN_801CE97C`'s global-clear block - entered with no frame of its own. That is
+why picking READ from the debug menu fails.
+
+##### Two debug modes that cannot run on a retail console
+
+**Mode 6 `TMD TEST` writes its draw buffers over the kernel.** The init handler
+`0x801CF730` (PROT 0971 file `+0xF18`) calls `FUN_8001E3B8` at `0x801CF758`
+while the master mode still reads `6`, and `FUN_8001E3B8` calls
+`FUN_8001F690` at `0x8001E510`. That routine compares the mode against `6`
+(`addiu v1, zero, 6` at `0x8001F6D4`, `beq v0, v1, 0x8001F728` at
+`0x8001F6D8`). Every other mode falls through and takes its two draw buffers
+from the heap (two `jal 0x80017888`, stored at `0x8007BFA0` / `0x8007C014`);
+mode 6 branches to `0x8001F728`, which builds `0x80419040` and `0x80400040`
+(`lui 0x8041` / `ori 0x9040`, `lui 0x8040` / `ori 0x40`) and stores those
+instead. The branch reads no RAM-size probe. Both addresses are past
+`0x801FFFFF`, where only the 8 MB development console has RAM; on a 2 MB
+console the window mirrors, so the `0x19000`-byte buffers cover
+`0x80000040..0x80032040` - the exception vector at `0x80000080`, the BIOS
+tables and the game's own code from `0x80010000` ([memory map](../reference/memory-map.md#kernel-ram-0x80000000-0x8000ffff)).
+No other code on the disc builds either address.
+
+Replacing the `beq` at `0x8001F6D8` (file offset `0xFED8`) with a `nop` sends
+mode 6 down the heap path; the delay slot's `move a0, zero` is already the
+allocator's first argument. That patch is read off the instructions and has
+not been run. Two other 8 MB-only paths exist, both behind dev flags: the
+halfword `gp+0x704` selects `0x806FA000` / `0x80600000` at `0x8001E438`, and
+the field overlay stores `0x80400000` / `0x80600000` at `0x801D7410` behind
+`0x8007B868` and `0x8007B8BE`.
+
+**Mode 10 `TEST` hangs.** Its init handler `0x8002B97C` is `jr ra; nop`. The
+mode record's next-mode field (`+0x08 = 0`) is read only by `FUN_800179C0`
+(`lh 0xa(v1)` at `0x80017A48`), the Start + Select exit, and that runs only
+from the per-frame drivers. Mode 10 never reaches one, so the main loop calls
+the empty handler forever. Mode 4 is the opposite: it writes mode `0` itself
+and bounces straight back to the menu.
 
 **Structural fact:** 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map display) and Mode 23 (menu / memory card) carry their own. So the per-frame "MODE" half of the state machine is mostly one shared tick parameterised by `+0x14`, not 14 distinct handlers. (The `0x80025DA0` MAPDSIP-init dev string is misspelled on the disc - "MAPDSIP", not "MAPDISP".)
 
