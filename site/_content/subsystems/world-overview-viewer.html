@@ -8,37 +8,43 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Input</dt><dd>A disc image in the browser tab. Save-state captures only refine camera anchors, the fog colour and the script-placed actors</dd>
-    <dt>Kingdom bundles</dt><dd>PROT 0086 Drake / 0245 Sebucus / 0392 Karisto; the walk <code>.MAP</code> is the entry two slots before each block (a fixed <code>0x12000</code>-byte footprint)</dd>
+    <dt>Kingdom bundles</dt><dd>PROT 0086 Drake / 0245 Sebucus / 0392 Karisto; the walk <code>.MAP</code> is the first entry of each scene block - two below its CDNAME number - with a fixed <code>0x12000</code>-byte footprint</dd>
     <dt>Ocean</dt><dd>A static 4bpp tile at VRAM <code>(768, 256)</code> whose first 16 palette entries at row <code>(0, 506)</code> are rewritten from a 13-frame table</dd>
     <dt>Fog</dt><dd>Retail's 2048-entry per-Z scalar LUT, found by content scan in <code>SCUS_942.54</code>, mixed toward a per-kingdom haze colour</dd>
     <dt>Code</dt><dd><code>legaia_web_viewer::{build_walk_ground, build_walk_placements, ocean, sentinel_placements, scene_export}</code>; <code>site/js/world-overview-app.js</code>, <code>webgl-tmd.js</code>, <code>webgl-math.js</code></dd>
     <dt>Confidence</dt><dd>Heightfield, stamps, ocean and fog LUT: Confirmed against the engine and save-state VRAM. Unplaced-mesh layout and global-pool placeholders are viewer conventions, not retail</dd>
     <dt>Used by</dt><dd><a href="../world-overview.html">World overview</a> &middot; <a href="vr-mode.html">VR mode</a> &middot; <a href="../viewer.html">Asset viewer</a> (full-map mode)</dd>
   </dl>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 170" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wo-layers-title">
-      <title id="wo-layers-title">Render passes of the world-overview viewer in draw order: ocean backdrop, continent heightfield, decoration stamps, placed landmarks, then the fog mix in the fragment shader; one CLUT row feeds both the ocean quad and every water cell</title>
-      <defs><marker id="wl-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="20" y="30" width="150" height="54" rx="4"/><rect x="200" y="30" width="150" height="54" rx="4"/><rect x="380" y="30" width="150" height="54" rx="4"/><rect x="560" y="30" width="150" height="54" rx="4"/><rect x="740" y="30" width="140" height="54" rx="4"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle">
-        <text x="95" y="52">ocean backdrop</text><text x="95" y="70" fill="var(--text-muted)">flat quad, y = 0</text>
-        <text x="275" y="52">heightfield</text><text x="275" y="70" fill="var(--text-muted)">walk .MAP floors</text>
-        <text x="455" y="52">decorations</text><text x="455" y="70" fill="var(--text-muted)">trees, mountains</text>
-        <text x="635" y="52">landmarks</text><text x="635" y="70" fill="var(--text-muted)">towers, bridges</text>
-        <text x="810" y="52">fog mix</text><text x="810" y="70" fill="var(--text-muted)">lut[z] to haze</text>
-      </g>
-      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#wl-ah)">
-        <path d="M170 57 L198 57"/><path d="M350 57 L378 57"/><path d="M530 57 L558 57"/><path d="M710 57 L738 57"/>
-      </g>
-      <rect x="100" y="120" width="170" height="36" rx="4" fill="var(--bg-raised)" stroke="var(--border)" stroke-dasharray="4 3"/>
-      <text x="185" y="142" fill="var(--text-muted)" text-anchor="middle">CLUT row (0, 506), 13 frames</text>
-      <g fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#wl-ah)">
-        <path d="M140 120 L110 88"/><path d="M230 120 L260 88"/>
-      </g>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Render passes of the world-overview viewer in draw order: ocean backdrop, continent heightfield, decoration stamps, placed landmarks, then the fog mix in the fragment shader. One palette row feeds both the ocean quad and every water cell of the heightfield.">
+      <defs><marker id="wo-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="30" width="150" height="58" rx="5"/>
+      <text class="dg-label" x="85" y="55">Ocean backdrop</text>
+      <text class="dg-sub" x="85" y="73">flat quad, y = 0</text>
+      <rect class="dg-node" x="185" y="30" width="150" height="58" rx="5"/>
+      <text class="dg-label" x="260" y="55">Heightfield</text>
+      <text class="dg-sub" x="260" y="73">walk .MAP floors</text>
+      <rect class="dg-node" x="360" y="30" width="150" height="58" rx="5"/>
+      <text class="dg-label" x="435" y="55">Decorations</text>
+      <text class="dg-sub" x="435" y="73">trees, mountains</text>
+      <rect class="dg-node" x="535" y="30" width="150" height="58" rx="5"/>
+      <text class="dg-label" x="610" y="55">Landmarks</text>
+      <text class="dg-sub" x="610" y="73">towers, bridges</text>
+      <rect class="dg-node-accent" x="710" y="30" width="140" height="58" rx="5"/>
+      <text class="dg-label" x="780" y="55">Fog mix</text>
+      <text class="dg-sub" x="780" y="73">lut[z] toward haze</text>
+      <path class="dg-edge" d="M160 59 L183 59" marker-end="url(#wo-arrow)"/>
+      <path class="dg-edge" d="M335 59 L358 59" marker-end="url(#wo-arrow)"/>
+      <path class="dg-edge" d="M510 59 L533 59" marker-end="url(#wo-arrow)"/>
+      <path class="dg-edge" d="M685 59 L708 59" marker-end="url(#wo-arrow)"/>
+      <rect class="dg-node-ok" x="70" y="140" width="250" height="44" rx="5"/>
+      <text class="dg-label" x="195" y="160">Palette row (0, 506)</text>
+      <text class="dg-sub" x="195" y="176">13 frames, one write per step</text>
+      <path class="dg-edge-dim" d="M140 140 L95 90" marker-end="url(#wo-arrow)"/>
+      <path class="dg-edge-dim" d="M250 140 L260 90" marker-end="url(#wo-arrow)"/>
+      <text class="dg-edge-label" x="335" y="125">sea and water cells sample the same 16 entries</text>
     </svg>
-    <figcaption>Draw order of the assembled view. One palette-row rewrite per step shimmers both the sea and every water cell, because they sample the same 16 entries.</figcaption>
+    <figcaption>Draw order of the assembled view. One palette-row rewrite per animation step shimmers both the open sea and every water cell of the continent, phase-locked, because they read the same palette.</figcaption>
   </figure>
 </section>
 
@@ -70,17 +76,19 @@
     <thead><tr><th>Layer</th><th>Record rule</th><th>Count (Drake / Sebucus / Karisto)</th></tr></thead>
     <tbody>
       <tr><td>Placed landmarks</td><td>Objects with the placed flag <code>0x4</code>, stamped on occupied tiles</td><td>5 / 6 / 17</td></tr>
-      <tr><td>Decorations</td><td>Walk-visible cells with a nonzero mesh slot at <code>+0x10</code>, the mesh-drawn bit <code>0x2</code> and no placed flag</td><td>~295 / ~240 / ~210</td></tr>
-      <tr><td>Not decorations</td><td>Nonzero mesh slot without the <code>0x2</code> bit (the riverbank record family, identical across kingdoms) - stamping them tiles a wall down every river</td><td>-</td></tr>
+      <tr><td>Decorations</td><td>Every cell carrying the draw bit <code>0x2000</code> whose record is not placed, stamping the record's <code>+0x10</code> mesh - trees, mountain groups, small props and the big enterable mountains</td><td>~295 / ~240 / ~210</td></tr>
+      <tr><td>Not decorations</td><td>The riverbank record family: a nonzero mesh slot and the walk bit only, never <code>0x2000</code> - stamping them tiles a wall down every river</td><td>-</td></tr>
     </tbody>
   </table>
   <ul class="bullets">
     <li><strong>Height.</strong> World Y = <code>&minus;lut[floor_nibble] + y_off</code>, so each stamp sits on the heightfield. The JS negates that anchor before handing it to the model builder: the ground bakes <code>&minus;lut</code> into its vertices and lands at <code>+lut</code> under the shared <code>(1, &minus;1, 1)</code> flip, so an un-negated anchor buries a stamp by <code>2 &times; (lut &minus; y_off)</code> - whole cave entrances vanish on Drake's mountain cells.</li>
     <li><strong>Yaw.</strong> Each record carries an authored yaw (4096 per turn) that retail copies into the actor's rotation triple; the Sebucus island bridges' quarter turns and the trees' variety come from it. Retail's pure-Y matrix maps local <code>+Z</code> to <code>(sin, 0, cos)</code>, the opposite sense of the JS helper, hence <code>rotY = &minus;(rot &amp; 0xFFF) &middot; &pi; / 2048</code>.</li>
     <li><strong>Cutout.</strong> The PSX rule (BGR555 zero with STP clear discards) makes the crossed-quad tree billboards read as foliage; the kingdom's real VRAM image is uploaded and CLUTs resolve like retail.</li>
+    <li><strong>Mountains are ground.</strong> The big mountain cells carry the draw bit and <em>no</em> walk bit <code>0x1000</code> - the mesh is the ground there - so a decoration sweep gated on the walk bit draws every tree and drops every big mountain. Drake's terraced peak is record 412 at cell <code>(39, 80)</code>.</li>
+    <li><strong>Whole meshes.</strong> Each stamped mesh uploads its textured primitives and its untextured colour primitives together: Rim Elm's roofs are gouraud triangles, and the Uru Mais temple on Karisto is colour primitives only. Retail draws both families through one dispatch, and the fog mix applies to both.</li>
     <li><strong>One suppressed stamp.</strong> Placed objects are script-managed - retail gates each spawn on a MAN interaction record and runs its leading ops inline, so a record's resting position is not always its grid cell. Drake's record-349 golden bridge sits over the river in the grid but retail shows the one bridge at the record-441 road crossing; <code>WALK_STAMP_SUPPRESS</code> drops it by <code>(mesh, x, z)</code>.</li>
   </ul>
-  <p>Code: <code>legaia_web_viewer::build_walk_placements</code> over <code>parse_placements</code> + <code>parse_walk_decorations</code>. The disc-gated <code>walk_placements_parity.rs</code> asserts the viewer's placements equal the engine's for all three kingdoms; <code>window.__woWalkStamps</code> exposes the queued stamp list for headless checks.</p>
+  <p>Code: <code>legaia_web_viewer::build_walk_placements</code> over <code>parse_placements</code> + <code>parse_walk_decorations</code>. The viewer resolves exactly the placements the native engine draws, on all three kingdoms.</p>
 </section>
 
 <section class="doc-section" id="fog-pass">
@@ -111,7 +119,7 @@
 <section class="doc-section" id="ocean-tile">
   <h2>Ocean tile and its 13-frame palette animation</h2>
   <p>The water texture never changes - its palette does. Sixteen colours cycle through thirteen frames and a bright peak walks across them, so the same pixels read as rolling waves.</p>
-  <table class="layout">
+  <table class="data-table">
     <thead><tr><th>Asset</th><th>Where</th><th>Detail</th></tr></thead>
     <tbody>
       <tr><td>Texture</td><td>Kingdom bundle slot 0 (TIM list), image at VRAM <code>(768, 256)</code></td><td>4bpp, 256 &times; 256 logical pixels; the wave ramp fills the top-left 96 &times; 96, the rest is shared page padding. Bytes differ per kingdom</td></tr>
@@ -120,7 +128,7 @@
       <tr><td>Cadence</td><td>Kingdom bundle slot-5 CLUT-walk table</td><td>A 16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs; the viewer uses 0.1 s per frame on a wall clock</td></tr>
     </tbody>
   </table>
-  <p>The stepping table is the slot-5 CLUT-walk table the live engine steps directly - <em>not</em> the script-driven CLUT-cell family, which only carries the row-498 park one-shots. Code: <code>legaia_web_viewer::ocean::find_ocean_assets</code> (disc-gated test <code>ocean_assets.rs</code> across all three kingdoms). Before a disc is loaded the sea is a solid tint from <code>ocean_color</code>, CLUT-sampled out of a save state.</p>
+  <p>The stepping table is the slot-5 CLUT-walk table the live engine steps directly - <em>not</em> the script-driven CLUT-cell family, which only carries the row-498 park one-shots. Code: <code>legaia_web_viewer::ocean::find_ocean_assets</code>. Before a disc is loaded the sea is a solid tint from <code>ocean_color</code>, CLUT-sampled out of a save state.</p>
 </section>
 
 <section class="doc-section" id="shader-plumbing">

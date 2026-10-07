@@ -203,7 +203,7 @@ pub(super) struct StagedChain {
 ///   rate-2 schedule and its park window.
 /// * Che (module 959): the retail walk IS two stages - chain == fold.
 pub(super) fn staged_chain_full(sibling: Sibling) -> StagedChain {
-    use legaia_asset::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
+    use crate::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
     match sibling {
         Sibling::Gi => StagedChain {
             clips: &[10, 11, 12, 13],
@@ -257,7 +257,7 @@ pub(super) fn staged_chain_full(sibling: Sibling) -> StagedChain {
 /// rides the restaged wind-up row, hence Lu's
 /// [`enemy_anim::PAYOFF_FLOOR_FRAMES`] floor on the charge).
 pub(super) fn staged_chain_folded(sibling: Sibling) -> StagedChain {
-    use legaia_asset::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
+    use crate::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
     match sibling {
         Sibling::Gi | Sibling::Che => StagedChain {
             clips: &[10, 11],

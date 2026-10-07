@@ -10,7 +10,7 @@
     <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
     <dt>Where</dt><dd><code>DAT_80077828</code> (file offset <code>0x68028</code>), 2-byte stride, 1-based monster id; <strong>not</strong> in the PROT 867 monster record</dd>
     <dt>Parser</dt><dd><code>legaia_asset::steal_table::StealTable</code>; randomizer <code>legaia_patcher::steal</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - pinned from a live steal capture and byte-exact against the complete published steal table (<code>steal_table_real</code>)</dd>
+    <dt>Confidence</dt><dd>Confirmed - pinned from a live steal capture and byte-exact against the complete published steal table</dd>
     <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (steal column), <a href="../tooling/randomizer.html">Randomizer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
   </dl>
   <p class="hint"><strong>Field order is <code>[chance, item]</code></strong> - the reverse of the drop pair in the monster record. Read it item-first and every chance shifts by one monster.</p>
@@ -19,45 +19,32 @@
 <section class="doc-section" id="table-layout">
   <h2>Table base + record layout</h2>
   <p>(<code>DAT_80077828</code> is a Ghidra label - the disassembler's name for the fixed RAM address the table occupies. Static data: the address maps directly to a file offset in <code>SCUS_942.54</code> on the disc.)</p>
-  <table>
-  <thead><tr><th>Field</th><th>Value</th></tr></thead>
-  <tbody>
-    <tr><td>Base address</td><td><code>DAT_80077828</code> (file offset <code>0x68028</code> in <code>SCUS_942.54</code>)</td></tr>
-    <tr><td>Index form</td><td><code>DAT_80077828 + monster_id*2</code> (1-based monster id, same id space as the monster archive)</td></tr>
-    <tr><td>Stride</td><td><code>0x2</code> bytes</td></tr>
-    <tr><td>Id range</td><td>monster ids <code>1..</code> (entry <code>0</code> is a reserved sentinel)</td></tr>
-  </tbody>
-  </table>
-  <table>
-  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
-  <tbody>
-    <tr><td><code>+0</code></td><td>u8</td><td><code>steal_chance_pct</code> - steal success chance, percent</td></tr>
-    <tr><td><code>+1</code></td><td>u8</td><td><code>steal_item_id</code> - stolen item id in the <a href="item-table.html">item-name table</a>'s id space; <code>0</code> = none</td></tr>
-  </tbody>
-  </table>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 700 130" width="100%" style="max-width:700px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The steal pair is chance-first; the monster record's drop pair is item-first">
-      <style>
-        .st-lab { font: 12px 'Inter', sans-serif; fill: var(--text-muted); }
-        .st-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .st-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .st-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-      </style>
-      <text x="10" y="42" class="st-lab">steal table (SCUS)</text>
-      <rect x="220" y="20" width="110" height="34" class="st-box"/>
-      <rect x="330" y="20" width="110" height="34" class="st-box"/>
-      <text x="275" y="41" class="st-seg">chance %</text>
-      <text x="385" y="41" class="st-seg">item id</text>
-      <text x="275" y="68" class="st-off">+0</text>
-      <text x="385" y="68" class="st-off">+1</text>
-      <text x="10" y="106" class="st-lab">drop pair (monster record)</text>
-      <rect x="220" y="84" width="110" height="34" class="st-box"/>
-      <rect x="330" y="84" width="110" height="34" class="st-box"/>
-      <text x="275" y="105" class="st-seg">item id</text>
-      <text x="385" y="105" class="st-seg">chance %</text>
-      <text x="500" y="105" class="st-lab">&#8592; reversed order</text>
+  <dl class="kv">
+    <dt>Base</dt><dd><code>DAT_80077828</code> (file offset <code>0x68028</code> in <code>SCUS_942.54</code>)</dd>
+    <dt>Index</dt><dd><code>DAT_80077828 + monster_id*2</code> - 1-based monster id, the monster archive's id space; entry <code>0</code> is a reserved sentinel</dd>
+  </dl>
+  <div class="byte-map" role="img" aria-label="Steal entry: +0 chance percent, +1 item id">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">steal_chance_pct</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">steal_item_id</span><span class="bm-size">u8</span></div>
+  </div>
+  <p>The item id is in the <a href="item-table.html">item-name table</a>'s id space; <code>0</code> = none.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 700 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The steal pair is chance-first; the monster record's drop pair is item-first">
+      <text x="10" y="42" class="dg-edge-label">steal table (SCUS)</text>
+      <rect x="220" y="20" width="110" height="34" rx="4" class="dg-node-accent"/>
+      <rect x="330" y="20" width="110" height="34" rx="4" class="dg-node"/>
+      <text x="275" y="41" class="dg-label">chance %</text>
+      <text x="385" y="41" class="dg-label">item id</text>
+      <text x="275" y="68" class="dg-sub">+0</text>
+      <text x="385" y="68" class="dg-sub">+1</text>
+      <text x="10" y="106" class="dg-edge-label">drop pair (monster record)</text>
+      <rect x="220" y="84" width="110" height="34" rx="4" class="dg-node"/>
+      <rect x="330" y="84" width="110" height="34" rx="4" class="dg-node-accent"/>
+      <text x="275" y="105" class="dg-label">item id</text>
+      <text x="385" y="105" class="dg-label">chance %</text>
+      <text x="460" y="105" class="dg-edge-label">&#8592; reversed order</text>
     </svg>
-    <figcaption>Two bytes per monster, chance first - the reverse of the drop pair in the monster record.</figcaption>
+    <figcaption>Two bytes per monster, chance first - the reverse of the drop pair (<code>+0x48</code> item / <code>+0x49</code> chance) in the monster record.</figcaption>
   </figure>
   <p><strong>Field order is chance-then-item</strong> - the reverse of the drop fields in the monster record (<code>+0x48</code> item / <code>+0x49</code> chance). Reading the table with the record's item-first order shifts every chance by one monster. A chance of <code>0</code> (or item <code>0</code>) means the enemy can't be stolen from; a raw steal id resolves to a name the same way a drop id does (<code>0x8A</code> &rarr; Incense).</p>
 </section>
@@ -73,19 +60,22 @@
 <section class="doc-section" id="when-a-steal-happens">
   <h2>When a steal happens</h2>
   <p>The steal is not a command and does not happen on the hit. The battle animation commit <code>FUN_8004AD80</code> rolls it as a slain monster finishes its knockdown fall, and only for the <strong>first</strong> monster each attacking action fells: a one-shot latch is set before the killer is even looked at, so a kill by someone without the Evil God Icon spends that action's attempt. The battle state machine re-arms the latch at the end of every attack chain. The killer must have used Attack and wear the icon; the roll is <code>rand() % 100 &lt; chance</code>, doubled when any living party member has the Bronze Book's <em>Items Up</em>; and a stack already at 99 drops the steal silently. The caption goes up in the full-width bottom bar, composed from a template in the executable plus the item name.</p>
-  <p>The same arm also returns loot: a monster whose Steal spell took something hands it back when it dies. Both halves run in the port (<code>legaia_engine_core::battle_steal</code>), on both the native window and the browser play page.</p>
+  <p>The same arm also returns loot. An enemy's Steal (PROT 0941) parks what it took in a per-seat band at <code>0x801C8FE0</code>; when that thief dies, the arm hands the item back to the bag instead of rolling a steal, with its own "recovered" caption.</p>
 </section>
 
 <section class="doc-section" id="parser">
-  <h2>Parser</h2>
-  <p><code>legaia_asset::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. The disc-gated <code>steal_table_real</code> test pins the Skeleton&rarr;Incense anchor plus a span of ids against the real executable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
-  <p>The randomizer (<code>legaia_patcher::steal</code>) edits this table on a user-supplied disc to reassign steal items.</p>
+  <h2>In the port</h2>
+  <p><code>legaia_asset::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
+  <p>The randomizer (<code>legaia_patcher::steal</code>) edits this table on a user-supplied disc to reassign steal items. The steal roll and the thief's return run in <code>legaia_engine_core::battle_steal</code>.</p>
 </section>
 
 <section class="doc-section" id="retail-steal-capture">
   <h2>Watching it in the retail game</h2>
+  <p>An emulator probe confirms the roll, the doubling and the latch exactly as read from the disassembly.</p>
+  <details class="disclosure"><summary>What the capture showed</summary>
   <p>An emulator probe that breaks on every step of that branch, in a real battle with the Evil God Icon's passive bit written in, shows the roll is one BIOS <code>rand()</code> taken <code>% 100</code> and compared <em>strictly</em> against the table's chance: a 29 steals at 30%, a 30 does not. The Bronze Book's Items Up passive doubles the threshold to 60, exactly.</p>
   <p>The one-roll latch that stops the death animation from rolling again every frame is <strong>re-armed at the end of every attack chain</strong> (the battle state machine clears it when a strike loop hands over to its recovery wait), so each attacking action gets a roll on the first monster it fells - not one roll per battle. A plain byte search for writes to that latch misses the clear, because the instruction reaches it through a base register that already carries part of the offset.</p>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -16,32 +16,20 @@
     <dt>The "magic"</dt><dd><code>0x01059B84</code> = <code>(TIM_LIST &lt;&lt; 24) | 0x059B84</code>. The low 24 bits are that carrier's payload length, so the word differs per file - it occurs exactly once in the whole archive</dd>
     <dt>Two forms</dt><dd>18 carriers lead with the chunk header; 5 carry the bare pack at offset 0. The bundle's <code>Flag</code> descriptor picks which</dd>
     <dt>Parser</dt><dd><code>legaia_asset::field_pack::scene_pack</code> (corrected reader); <code>detect</code> / <code>CANONICAL_SCHEMA</code> kept for the classifier and the <code>asset field-pack</code> CLI</dd>
-    <dt>Confidence</dt><dd>Confirmed - loader disassembly plus a whole-archive byte sweep, disc-gated in <code>field_pack_real.rs</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - loader disassembly plus a whole-archive byte sweep (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="scene-bundles.html">scene bundles</a>, <a href="../subsystems/asset-loader.html">asset loader</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 90" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A carrier: a four-byte chunk header, a pack count word, the word-offset table, then the packed TIM or TMD members">
-      <style>
-        .fp-var  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.4; }
-        .fp-const{ fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
-        .fp-seg  { font: 11px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .fp-sub  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
-      </style>
-      <rect x="20" y="20" width="90" height="34" class="fp-const"/><text x="65" y="41" class="fp-seg">chunk hdr</text>
-      <rect x="110" y="20" width="70" height="34" class="fp-var"/><text x="145" y="41" class="fp-seg">count</text>
-      <rect x="180" y="20" width="180" height="34" class="fp-var"/><text x="270" y="41" class="fp-seg">word offsets</text>
-      <rect x="360" y="20" width="500" height="34" class="fp-var"/><text x="610" y="41" class="fp-seg">members - TIMs or TMDs, back to back</text>
-      <text x="65" y="74" class="fp-sub">4 B, 18 of 23</text>
-      <text x="145" y="74" class="fp-sub">4 B</text>
-      <text x="270" y="74" class="fp-sub">4 &times; count</text>
-      <text x="610" y="74" class="fp-sub">to the sector-aligned end</text>
-    </svg>
-    <figcaption>Dashed = the optional DATA_FIELD chunk header. Everything right of it is a plain <a href="pack.html">asset::pack</a>: word offsets are <code>&times; 4</code> from the count word, and member 0 starts exactly where the table ends.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="A carrier: optional four-byte chunk header, the pack count word, the word-offset table, then the TIM or TMD members">
+    <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">chunk header (optional)</span><span class="bm-size">u32, 18 of 23</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x04</span><span class="bm-name">count</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:5"><span class="bm-off">+0x08</span><span class="bm-name">word_offset[count]</span><span class="bm-size">4 &times; count</span></div>
+    <div class="bm-cell" style="--w:12"><span class="bm-off">table end</span><span class="bm-name">members - TIMs or TMDs, back to back</span><span class="bm-size">to the sector-aligned end</span></div>
+  </div>
+  <p>Grey = the optional <a href="data-field.html">DATA_FIELD</a> chunk header (offsets shown with it present; the five bare carriers start at <code>count</code>). Everything after it is a plain <a href="pack.html">asset::pack</a>: word offsets are <code>&times; 4</code> from the count word, and member 0 starts exactly where the table ends.</p>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Notes</th></tr></thead>
     <tbody>
@@ -125,6 +113,9 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the loader chain, function by function</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function / evidence</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -133,9 +124,11 @@
       <tr><td>Asset-type dispatcher</td><td><code>FUN_8001F05C</code> at <code>8001f574</code> / <code>8001f60c</code> / <code>8001f658</code></td><td>Types <code>0x0A</code> / <code>0x0F</code> / <code>0x14</code> return <code>(case &lt;&lt; 8)</code> and do nothing else</td><td><code>funcs/8001f05c.txt</code></td></tr>
       <tr><td>Descriptor walker</td><td><code>FUN_80020224</code>, caller at <code>801d6bf8</code></td><td>Status word is the OR of the descriptor returns; the caller shifts it right by 8 into the mode</td><td><code>funcs/80020224.txt</code>, <code>funcs/overlay_0897_801d6704.txt</code></td></tr>
       <tr><td>Field-file loader</td><td><code>FUN_8001F7C0</code></td><td><code>.MAP</code> at <code>+0</code>, <code>.PCH</code> at <code>+0x12000</code>, <code>efect.dat</code> at <code>+0x12800</code> - the block's first three slots by name</td><td><code>funcs/8001f7c0.txt</code></td></tr>
-      <tr><td>Corpus sweep</td><td><code>field_pack_real.rs</code></td><td>One magic occurrence archive-wide, at offset 0; every member's magic agrees with the chunk type; the Flag / form correspondence</td><td>disc-gated test</td></tr>
+      <tr><td>Corpus sweep</td><td>whole-archive byte scan</td><td>One magic occurrence archive-wide, at offset 0; every member's magic agrees with the chunk type; the Flag / form correspondence</td><td>-</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="deep-dive">

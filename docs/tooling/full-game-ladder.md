@@ -520,7 +520,7 @@ a worktree points at them:
 LEGAIA_EXTRACTED_DIR=/path/to/extracted \
 LEGAIA_SAVES_LIBRARY=/path/to/saves/library \
 cargo test -p legaia-engine-shell --profile release-test \
-  --test full_game_ladder -- --nocapture --test-threads 1
+  --test integration full_game_ladder:: -- --nocapture --test-threads 1
 ```
 
 `LEGAIA_DISC_BIN` must be set; without it, or without either tree, both parts

@@ -211,14 +211,22 @@ browser. `webgl-tmd.js` and `webgl-math.js` both changed content while still
 shipping `?v=zfight-1`; `layout.js` carried no marker at all. A content hash
 cannot be forgotten - it changes exactly when the bytes change, and only then.
 
-This does **not** cover `site/wasm/`. The engine bundle is loaded by a bare
-`import('./wasm/legaia_web_viewer.js')` with no query, and the glue then fetches
-its own binary through `new URL('legaia_web_viewer_bg.wasm', import.meta.url)` -
-a URL query on the glue does **not** propagate to that fetch, so busting only
-the glue is a half-fix. Both would have to be handled together, via a loader
-that passes an explicit versioned URL into the wasm-bindgen `init`. What the
-skew actually costs today is measured in
-[`shipped-bundle-freshness.md`](shipped-bundle-freshness.md#what-a-stale-engine-against-fresh-pages-costs).
+`site/wasm/` is versioned the same way, through one loader.
+[`site/js/wasm-loader.js`](../../site/js/wasm-loader.js) is a classic script the
+page template puts in every `<head>`; `LegaiaWasm.load()` imports the glue and
+passes the binary URL into the wasm-bindgen `init` explicitly, both carrying
+`?v=` from `window.LEGAIA_WASM_V` (a hash of the glue and the binary, written by
+`_gen.py`). Both halves matter: the glue fetches its binary through
+`import.meta.url`, which drops any query on the glue, so busting the glue alone
+can pair new glue with a cached binary. The loader is also the only import site,
+because a dynamic import is keyed by its URL - two call sites on one page that
+spell it differently instantiate the bundle twice. Never `import()` the glue
+directly from a page or script.
+
+Helpers every page shares sit in one classic head script the same way:
+[`site/js/site-util.js`](../../site/js/site-util.js) defines `window.escapeHtml`
+(the five HTML entities; `null` renders empty), which inline page scripts,
+classic scripts and modules call instead of carrying a copy each.
 
 ## A case fold binds to one operand, not to the concatenation
 

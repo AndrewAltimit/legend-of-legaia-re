@@ -10,23 +10,23 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-bytemuck = { version = "1", features = ["derive"] }
+bytemuck.workspace = true
 glam.workspace = true
-legaia-asset = { path = "../asset" }
-legaia-engine-ui = { path = "../engine-ui" }
-legaia-engine-vm = { path = "../engine-vm" }
-legaia-font = { path = "../font" }
-legaia-tim = { path = "../tim" }
-log = "0.4"
-pollster = "0.3"
+legaia-asset.workspace = true
+legaia-engine-ui.workspace = true
+legaia-engine-vm.workspace = true
+legaia-font.workspace = true
+legaia-tim.workspace = true
+log.workspace = true
+pollster = "0.4"
 serde.workspace = true
 serde_json.workspace = true
 wgpu = "26"
-winit = "0.30"
+winit.workspace = true
 
 [dev-dependencies]
 # The battle-intro descriptor-table oracle reads PROT 0979 straight out of
 # `PROT.DAT` (disc-gated; nothing is committed).
-legaia-prot = { path = "../prot" }
+legaia-prot.workspace = true
 # The camera-roll census LZS-decodes every scene bundle's MAN (disc-gated).
-legaia-lzs = { path = "../lzs" }
+legaia-lzs.workspace = true

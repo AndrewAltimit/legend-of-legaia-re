@@ -6,18 +6,18 @@
 //! test:
 //!
 //!   1. Builds an engine audio trace via
-//!      [`legaia_engine_shell::audio_trace_oracle::engine_trace_from_paths`]:
+//!      [`legaia_parity::audio_trace_oracle::engine_trace_from_paths`]:
 //!      boots a [`BootSession`](legaia_engine_shell::BootSession) headlessly
 //!      (`enable_audio = false`), runs a private standalone
 //!      [`legaia_engine_audio::Spu`] in parallel, ticks `FRAMES` frames,
 //!      and samples voice / master / reverb state each frame. The trace
 //!      installs a private
-//!      [`TraceBgmDirector`](legaia_engine_shell::audio_trace_oracle::TraceBgmDirector)
+//!      [`TraceBgmDirector`](legaia_parity::audio_trace_oracle::TraceBgmDirector)
 //!      so the field VM's op `0x35` events drive sequencer attach /
 //!      detach in lock-step with retail behaviour.
 //!   2. Lifts a single voice-state snapshot out of the matching
 //!      `.mc{slot}` save's `SPU` section via
-//!      [`legaia_engine_shell::audio_trace_oracle::load_runtime_audio_trace_from_save`].
+//!      [`legaia_parity::audio_trace_oracle::load_runtime_audio_trace_from_save`].
 //!   3. Reports `[ok]` / `[DRIFT]` via [`first_audio_trace_divergence`]:
 //!      at least one engine frame must have an active-voice mask that is
 //!      a superset of retail's mask AND matching start-addresses where
@@ -59,11 +59,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_shell::audio_trace_oracle::{
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::audio_trace_oracle::{
     AudioDivergenceKind, engine_trace_from_paths, first_audio_trace_divergence,
     load_runtime_audio_trace_from_save,
 };
-use legaia_mednafen::ScenarioManifest;
 
 /// How many engine frames to tick before sampling. One retail second at
 /// 60 Hz, matching the mode-trace oracle's window.

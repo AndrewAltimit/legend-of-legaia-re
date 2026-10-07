@@ -98,9 +98,14 @@ WAIVERS = Path(__file__).resolve().parent / "trait-override-waivers.toml"
 
 # Same host split as check-ui-host-drift.py: engine-render re-exports engine-ui
 # and hosts native-side adapters, so an impl there is the native window's.
+# engine-session holds the session and BGM director the native window runs
+# (the browser page runs the director too), and parity holds the oracles'
+# recording directors.
 HOSTS = {
     "native": [
         REPO / "crates" / "engine-shell" / "src",
+        REPO / "crates" / "engine-session" / "src",
+        REPO / "crates" / "parity" / "src",
         REPO / "crates" / "engine-render" / "src",
     ],
     "web": [REPO / "crates" / "web-viewer" / "src"],
@@ -111,10 +116,10 @@ TRAIT_RE = re.compile(r"\bpub trait\s+(?P<name>[A-Z][A-Za-z0-9_]*)")
 FN_RE = re.compile(r"\bfn\s+(?P<name>[a-z0-9_]+)\s*[<(]")
 
 # `impl [<generics>] [path::]Trait[<args>] for Type {`. The trait path is
-# allowed to be qualified because the web host writes
-# `impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_>`, and a
-# pattern that only matched the bare name would have silently dropped exactly
-# the host this gate exists to compare.
+# allowed to be qualified because a host can write
+# `impl legaia_engine_core::scene::BgmDirector for SomeDirector<'_>`, and a
+# pattern that only matched the bare name would silently drop exactly the
+# host this gate exists to compare.
 IMPL_RE = re.compile(
     r"\bimpl\s*(?:<[^>]*>)?\s*"
     r"(?:[A-Za-z0-9_]+\s*::\s*)*"

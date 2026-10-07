@@ -241,7 +241,7 @@ pub(crate) fn effect_script_head(block: &[u8], entry_off: usize) -> Vec<u8> {
 }
 /// Offset of the playback-rate byte inside a per-action entry (shared with
 /// the player battle files' record[0] entries).
-pub(crate) const ANIM_RATE_OFFSET: usize = 0x78;
+pub const ANIM_RATE_OFFSET: usize = 0x78;
 /// Offset of the attach-key / clip-identity byte inside a per-action entry
 /// (see [`MonsterAnimation::attach_key`]).
 pub(crate) const ATTACH_KEY_OFFSET: usize = 0x77;
@@ -321,7 +321,7 @@ fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<Mons
 /// entries (stream at entry `+0x8c`) and the player battle files' record[0]
 /// action entries (stream at entry `+0xAC`;
 /// see [`crate::battle_char_assembly::battle_animations`]).
-pub(crate) fn parse_animation_stream(
+pub fn parse_animation_stream(
     block: &[u8],
     action_id: u8,
     rate: u8,

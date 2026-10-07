@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Per-attack code for summons and special attacks (the slot-B "stagers"), plus other mode-specific modules that expose an entry-point or dispatch table.</dd>
     <dt>Magic / marker</dt><dd>No header - the first u32 is a pointer into the overlay window <code>0x801C0000..=0x801FFFFF</code>, followed by 3..63 more</dd>
     <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0900..=0968</code> range (extraction index), 42 entries, 14-160 KB; the attack stagers load at slot-B base <code>0x801F69D8</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::overlay_ptr_table::detect</code> (<code>crates/asset/src/overlay_ptr_table.rs</code>); load bases in <code>crates/asset/data/static-overlays.toml</code></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::overlay_ptr_table::detect</code>; load bases in <code>crates/asset/data/static-overlays.toml</code></dd>
     <dt>Confidence</dt><dd>Inferred as a detector (a shape heuristic with zero overlap against named formats); the individual attack-stager identities are capture-pinned.</dd>
     <dt>Used by</dt><dd><a href="summon-readef.html">summon.dat / readef.DAT</a>, <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a></dd>
   </dl>
@@ -50,15 +50,13 @@
     <figcaption>The detector consumes pointers until the first out-of-window word; the smallest pointer bounds the load address from above.</figcaption>
   </figure>
 
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td>ptr_0</td><td>Address in <code>0x801C0000..=0x801FFFFF</code> (the overlay window)</td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td>ptr_1</td><td>Same range</td></tr>
-      <tr><td><code>+N*4</code></td><td>4</td><td>ptr_{N-1}</td><td>Last pointer (still in range); <code>N</code> is 4..64</td></tr>
-      <tr><td><code>+(N+1)*4</code></td><td>rest</td><td>body</td><td>First non-pointer u32 - typically MIPS code, sometimes a <code>jr ra; nop</code> stub or a leading ASCII string</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">ptr_0</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">ptr_1</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">&hellip;</span><span class="bm-name">ptr_2 .. ptr_N-1</span><span class="bm-size">N = 4..64</span></div>
+    <div class="bm-cell bm-dim" style="--w:12"><span class="bm-off">+N*4</span><span class="bm-name">body: first word outside the window</span><span class="bm-size">rest</span></div>
+  </div>
+  <p>Every <code>ptr</code> is an address inside the overlay window <code>0x801C0000..=0x801FFFFF</code>. The body is typically MIPS code, sometimes a <code>jr ra; nop</code> stub.</p>
   <p>Tables come in three shapes:</p>
   <table>
     <thead><tr><th>Shape</th><th>Size</th><th>Tell</th></tr></thead>
@@ -78,12 +76,7 @@
     <li>The run of consecutive overlay-pointer u32s is between 4 and 64 long.</li>
   </ol>
   <p>Monotonicity is <strong>not</strong> required - switch dispatch tables legitimately repeat handler addresses.</p>
-<pre><code>use legaia_asset::overlay_ptr_table;
-
-if let Some(t) = overlay_ptr_table::detect(buf) {
-    println!("Overlay pointer table: {} entries, first=0x{:08x}, last=0x{:08x}",
-             t.count, t.first_ptr, t.last_ptr);
-}</code></pre>
+<p>In the port: <code>legaia_asset::overlay_ptr_table::detect</code> returns the run's length and its first and last pointers; the recovered load bases live in <code>crates/asset/data/static-overlays.toml</code>.</p>
   <p>Once the load address is known (the pointer values bound it from above: base <code>&lt;= min_ptr</code>), the entry can be imported into Ghidra via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a>.</p>
 </section>
 
@@ -98,7 +91,7 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
     </tbody>
   </table>
   <h3>Entries that open with a title</h3>
-  <p>A handful lead with an ASCII string before the pointer table. The string is the <strong>battle special-attack name</strong> the overlay stages. All of these load at slot-B base <code>0x801F69D8</code>.</p>
+  <p>A handful of images in the same band open with a NUL-padded ASCII string instead of a pointer, so the detector does not count them. The string is the <strong>battle special-attack name</strong> the overlay stages; after it comes the pointer table (0924, 0927) or the code directly (0907). All of these load at slot-B base <code>0x801F69D8</code>.</p>
   <table>
     <thead><tr><th>Entry</th><th>Title</th><th>What it stages</th><th>Spell id</th><th>Pinned by</th></tr></thead>
     <tbody>
@@ -119,6 +112,10 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <p>The detector is a shape heuristic, so its badge stays Inferred; what is pinned is the slot-B load base and the identities of the titled stagers, each from a live capture of the summon loader.</p>
+  <details class="disclosure">
+    <summary>Provenance: claim by claim</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Claim</th><th>Evidence</th><th>Where</th></tr></thead>
     <tbody>
@@ -129,6 +126,8 @@ if let Some(t) = overlay_ptr_table::detect(buf) {
       <tr><td>0980 is not a stager</td><td>No slot-B loader call site in the dance overlay</td><td><a href="../tooling/address-reference-scan.html">Address reference scan</a></td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/overlay-ptr-table.md"><code>docs/formats/overlay-ptr-table.md</code></a>.</p>
 </section>
 

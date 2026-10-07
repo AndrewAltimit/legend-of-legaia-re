@@ -13,95 +13,101 @@
     <dt>Where</dt><dd><a href="prot.html">PROT.DAT</a> entries <code>0903..0966</code>, one per spell slot</dd>
     <dt>Load base</dt><dd><code>0x801F69D8</code> - the shared slot-B overlay window; only one image is resident at a time</dd>
     <dt>Regions</dt><dd>head jump table, frame-matched code, spawn-record band, inherited mastering tail</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::slot_b_module</code>; the records feed <code>cast_effect_pool</code></dd>
-    <dt>Behaviour</dt><dd>the phase machine, the entry tables and the damage shape are the behaviour side, in <code>docs/subsystems/cast-module.md</code></dd>
+    <dt>In the port</dt><dd><code>legaia_asset::slot_b_module</code>; the same records are what the engine's cast effect pool stages</dd>
+    <dt>Behaviour</dt><dd>the phase machine, entry tables and damage shape are on <a href="../subsystems/battle-internals.html#cast-modules">cast modules</a></dd>
   </dl>
 </section>
 
 <section class="doc-section" id="regions">
   <h2>The regions</h2>
-  <table class="data">
+  <p>An image reads, from its first byte, as up to four regions. Each is recovered from the image's own bytes:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A slot-B image from file start: head jump table, framed code, spawn-record band, then an inherited tail copied from another image; each region with how it is recovered">
+      <text x="10" y="16" class="dg-edge-label">file +0 = VA 0x801F69D8</text>
+      <text x="420" y="16" class="dg-edge-label">recovered by</text>
+      <rect x="10" y="28" width="380" height="54" rx="4" class="dg-node-accent"/>
+      <text x="200" y="51" class="dg-label">head table</text><text x="200" y="69" class="dg-sub">0..256 in-image words</text>
+      <text x="420" y="60" class="dg-edge-label">leading address run</text>
+      <rect x="10" y="90" width="380" height="54" rx="4" class="dg-node"/>
+      <text x="200" y="113" class="dg-label">code</text><text x="200" y="131" class="dg-sub">phase machine, stager, trampolines</text>
+      <text x="420" y="122" class="dg-edge-label">frame matching</text>
+      <rect x="10" y="152" width="380" height="54" rx="4" class="dg-node-ok"/>
+      <text x="200" y="175" class="dg-label">spawn-record band</text><text x="200" y="193" class="dg-sub">part records + bytecode</text>
+      <text x="420" y="184" class="dg-edge-label">the spawn call's pointer</text>
+      <rect x="10" y="214" width="380" height="54" rx="4" class="dg-node-warn"/>
+      <text x="200" y="237" class="dg-label">inherited tail</text><text x="200" y="255" class="dg-sub">an earlier image's bytes</text>
+      <text x="420" y="246" class="dg-edge-label">byte match</text>
+      <path class="dg-edge-dim" d="M4 214 L396 214"/><text x="420" y="218" class="dg-sub" style="text-anchor:start">own-content cut</text>
+    </svg>
+    <figcaption>The idealised order, from file start down; on the right, how each region is found. Real images can break the order (below).</figcaption>
+  </figure>
+  <table>
     <thead><tr><th>Region</th><th>Contents</th><th>Recovered by</th></tr></thead>
     <tbody>
-      <tr><td>head table</td><td>0 to 256 words of in-image addresses - the jump table of <em>one</em> of the module's two switches</td><td>leading run of words inside the image, stopping at the first framed function</td></tr>
-      <tr><td>code</td><td>the tick's phase machine, the spawn stager, the capture-class trampolines</td><td>frame matching</td></tr>
-      <tr><td>spawn-record band</td><td><code>[i16 model_sel][u16 reserved][move-VM bytecode]</code> particle records</td><td>the consumer's own pointer-forming instruction</td></tr>
-      <tr><td>inherited tail</td><td>a byte-identical copy of another extracted image's bytes at the same file offset</td><td>mastering residue: the build buffer still held the previous image</td></tr>
+      <tr><td>head table</td><td>0 to 256 words of in-image addresses: the jump table of <em>one</em> of the module's two switches. The <code>sltiu</code> bound at the dispatcher says which.</td><td>the leading run of in-image words, stopping at the first framed function</td></tr>
+      <tr><td>code</td><td>the tick's phase machine, the spawn stager <code>0x801F6734</code>, the capture-class trampolines</td><td>frame matching</td></tr>
+      <tr><td>spawn-record band</td><td>particle / part records the spell spawns</td><td>the consumer's own pointer-forming instruction</td></tr>
+      <tr><td>inherited tail</td><td>a byte-identical copy of an earlier image's bytes at the same file offset - mastering residue</td><td>see <a href="../subsystems/battle-internals.html#cast-modules">cast modules</a></td></tr>
     </tbody>
   </table>
-  <p><strong>Frame matching finds where a body ENDS, not where every body starts.</strong> A frameless leaf has
-  no prologue for the scan to catch, and the jump table is what names it. PROT 0949 is the case: its stager forms
-  a table base with <code>lui 0x801F; addiu 0x69F0</code> and bounds it with <code>sltiu a1, 0x8</code>, so it owns
-  eight arms six words into the image's leading address run - and seven of them are 20-byte frameless leaves that
-  the frame partition misses. They are one eight-step ramp on the victim actor (tint blend 0x200..0x1000 against
-  anim rate 7..0), and the 140-byte run they occupy read as "the module's own data region" until the dispatcher's
-  own table base was read. Read the consumer's pointer-forming instruction before counting table words.</p>
 
-  <p><strong>They are not laid out head-to-tail.</strong> PROT 0943 (Curse) and PROT 0961 (Dead End Crisis) both
-  carry framed code <em>above their record band</em>, so "everything past the last function is data" swallows five
-  bodies. Those five are real routines but not those images' own: they sit above each image's own-content cut
-  (0943's bytes end at file +0x1037, 0961's at +0x1918) and are byte-identical to PROT 0942 and PROT 0960 at the
-  same offsets - inherited residue. A record claim is therefore cut at the next function's prologue, never run to
-  the image end.</p>
+  <h3 id="frame-matching">Frame matching</h3>
+  <p>A body opens at <code>addiu sp, sp, -F</code> and closes at the first <code>jr ra</code> whose delay slot is <code>addiu sp, sp, +F</code> for the same <code>F</code>. That survives an early <code>jr ra</code> inside a body and a <code>jr ra</code> word sitting in data. What it cannot see is a <strong>frameless leaf</strong> - no prologue, nothing to match - and the head jump table is what names those. PROT 0949 is the case: its stager forms a table base six words into the image's address run and bounds it with <code>sltiu 0x8</code>, so it owns eight arms, seven of them 20-byte frameless leaves (one eight-step tint ramp on the victim). Read the dispatcher's table base and bound before reading the frame partition.</p>
+
+  <h3 id="not-head-to-tail">Not always head-to-tail</h3>
+  <p>PROT 0943 (Curse) and PROT 0961 (Dead End Crisis) carry framed code <em>above</em> their record band. Those bodies sit above each image's own-content cut and are byte-identical to PROT 0942 / 0960 at the same offsets - inherited residue, not the image's own routines. Either way, a record claim is cut at the next function's prologue, never run to the image end.</p>
 </section>
 
 <section class="doc-section" id="records">
   <h2>The spawn-record band</h2>
-  <p>A record is named by an <strong>instruction</strong>, never by a statistic. The module materialises the
-  record's address with a <code>lui</code>/<code>addiu</code> pair and passes it in <code>$a2</code> to the actor
-  spawn helper <code>FUN_80021B04</code> or its pool wrapper <code>FUN_80050ED4</code>. One record's end is the
-  next record's start, so both ends of a claim are addresses the module's own code computes - no length field, no
-  terminator scan, no entropy test.</p>
-  <p>The pointer is not always a pair sitting just above the call, and a resolver that only reads that shape
-  misses records the module plainly hands over. The walk reads <code>$a2</code> backwards from the call's
-  <strong>delay slot</strong> and follows three more shapes: the pair completed in the delay slot itself (the
-  narrow reading saw only the bare high half there, which lands outside the image - 52 of the 97 pointers it
-  used to drop as "a neighbour's record" were this shape); a copy from a saved register (<code>move a2,s0</code>,
-  followed up to 256 words back, since no call can clobber a saved register); and <code>switch</code> arms that
-  each load <code>$a2</code> in the delay slot of a jump to one shared call. The Rust walker and the Python mirror
-  the coverage scripts use resolve all three the same way, record for record.</p>
-  <p>Five filters keep a spurious pointer out, and two of them fire on retail: the resolved address must land
-  inside this image (55 values), and the <strong>call site</strong> must lie inside a framed body of this image
-  (7 values - an inherited tail carries a sibling's spawn calls, and in PROT 0909 three of them name PROT 0908's
-  records). The other three - a call crossed while following a caller-saved register, a target inside a framed
-  function, and a <code>model_sel</code> the spawn helper would not dispatch - never fire on this disc, and saying
-  so is the point: they are guards, not findings. With all five, no claim in the band overlaps a routine the dump
-  corpus places in the same image.</p>
-  <p>The image's <strong>highest</strong> record has nothing above it computing an address, so the band cannot
-  bound it - its own move-VM program does. Walk the opcode widths to a terminator (<code>0x08</code> HALT, or an
-  armed <code>0x19</code> / <code>0x1B</code> idle loop that no HALT immediately follows) and round the end up to
-  4, because the records are word-aligned. That alignment step is the whole difference between reproducing a
-  record's measured extent and missing it by exactly 4 bytes, which is what an earlier reading recorded as
-  evidence that no static bound existed.</p>
-  <p>A third word bounds a record only where neither of those turns up: a <code>0x09</code> WAIT carrying the
-  maximal operand <code>0x0FFF</code>. 4095 frames is over a minute, which no cast or summon part is on screen
-  for, so nothing above it ever runs - but that is a layout argument rather than a VM one, and the band emits the
-  same operand mid-program too. Ending the walk at the first one costs 48 of the extents the HALT rule reproduces
-  exactly, so the walk remembers the last one it stepped over and returns it only where it would otherwise have
-  no bound at all. Under that ordering every image on the disc that has a highest record bounds it.</p>
-  <p>The residue has one direction, which is what makes the rule safe to consume - but the direction belongs to
-  the <em>claim</em>, not to the walk's program counter. Of the 1238 extents the band itself bounds, the chain
-  reproduces 1231 exactly, <strong>not one chain overruns a measured end</strong>, and the seven that miss stall
-  below it. So the rule never claims bytes the band does not bound and cannot retire real code from the dump
-  worklist.</p>
-  <p>The program counter does run past the end, though. Most misses stop exactly on the measured end - the record
-  whose last instruction is non-terminating, the shape the rule was written for - a handful stop below it, and
-  fourteen step past it before dying on a halfword that is no opcode, having mis-stepped a width somewhere inside
-  the record. "Every miss stalls below the end" describes the first two groups only.</p>
-  <p>Above the highest pointer-credited record the bytes often keep reading as <code>[header][program]</code>, and the
-  walk chains them. It stops at <strong>eight zero bytes</strong>: a zero header is a legal mesh-0 record and a zero
-  halfword a legal opcode, so the padding below an image's inherited tail walks as a record and the chain runs on
-  into the donor's. No pointer-credited record on the disc opens with eight zeros, and twelve chained ones did -
-  every one of them that padding. PROT 0944 is the worked case: its chain used to walk on through PROT 0942's
-  records, which put its tail cut 1412 bytes too high.</p>
+  <p>The record format is the summon part record shared with the <a href="move-power.html">PROT 0898 effect prototypes</a>:</p>
+  <div class="byte-map" role="img" aria-label="Spawn record: i16 model_sel, u16 reserved, then move-VM bytecode to the next record">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">model_sel</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off">+0x02</span><span class="bm-name">reserved</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+0x04</span><span class="bm-name">move-VM bytecode ... to the next record</span><span class="bm-size">var</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>model_sel</code></td><td><code>-1</code> = a transform node; a small library index = a modelled part; <code>0x4000</code> / <code>0x4001</code> = the two render-mode nodes the spawn helper special-cases</td></tr>
+      <tr><td><code>reserved</code></td><td>Never read: the spawn helper loads only the first halfword, and the <a href="../subsystems/move-vm.html">move VM</a> starts the program at halfword index 2. Zero in every record.</td></tr>
+      <tr><td>bytecode</td><td>The part's move-VM program</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="finding-records">How a record is found</h3>
+  <p>A record is named by an <strong>instruction</strong>, never by a statistic. The module builds the record's address and passes it in <code>$a2</code> to the actor-spawn helper <code>FUN_80021B04</code> or its pool wrapper <code>FUN_80050ED4</code>. One record's end is the next record's start, so both ends of a claim are addresses the module itself computes - no length field, no terminator scan.</p>
+  <ol class="steps">
+    <li><b>Find every spawn call</b><span>a <code>jal</code> to either helper, inside a framed body of this image (an inherited tail carries a sibling's calls).</span></li>
+    <li><b>Read <code>$a2</code> backwards from the delay slot</b><span>a <code>lui</code>/<code>addiu</code> pair above the call or completed in its delay slot; a copy from a saved register (<code>move a2,s0</code>); or a <code>switch</code> whose arms each load <code>$a2</code> before jumping to one shared call.</span></li>
+    <li><b>Keep only addresses inside the image</b><span>plus guards that a pointer is not inside a framed function and its <code>model_sel</code> is one the helper dispatches.</span></li>
+    <li><b>Sort and cut</b><span>each record ends where the next begins, or at the next function prologue.</span></li>
+  </ol>
+
+  <h3 id="highest-record">Bounding the highest record</h3>
+  <p>Nothing above the highest record computes an address, so its own program bounds it: walk the move-VM opcode widths to a terminator - <code>0x08</code> HALT, or an armed <code>0x19</code> / <code>0x1B</code> idle loop with no HALT right after - and round up to 4, since records are word-aligned. Only where neither turns up does a <code>0x09</code> WAIT with the maximal operand <code>0x0FFF</code> (over a minute; no spell part lasts that long) serve as the bound.</p>
+  <p>Above it the bytes often keep reading as <code>[header][program]</code>, and the walk chains them, stopping at <strong>eight zero bytes</strong> - the padding below an inherited tail, which would otherwise walk as a legal mesh-0 record and run into the donor's records.</p>
+  <details class="disclosure"><summary>How well the walk reproduces the measured extents</summary>
+    <p>Where the band itself bounds a record, the chained walk reproduces the extent exactly almost every time and never overruns a measured end; the few misses stop below it. So the rule never claims bytes the band does not bound. The program counter can still step past an end on a mis-stepped width before dying on a non-opcode - the claim is what is safe, not the walk. Of the five pointer filters, only two fire on this disc: the address-inside-image test and the call-site-inside-a-framed-body test. The others are guards.</p>
+  </details>
 </section>
 
 <section class="doc-section" id="why">
-  <h2>Why it was read as un-dumped code</h2>
+  <h2>Why the band matters to the coverage tools</h2>
   <p>The coverage instrument's data-segment rule rejects any run holding a <code>lui</code> of a RAM page. A
   record's body is move-VM bytecode - arbitrary bytes - so a long enough band contains that word by accident, and
-  the opcode statistic then scored the records as code. Several images' whole record bands ranked as
-  disassembly work on the strength of that. Naming the band with a parser takes them out of the code denominator
-  and off the worklist. See <a href="../tooling/byte-accounting.html">byte accounting</a> and
+  the opcode statistic then scored the records as code. Naming the band with a parser takes those bytes out of the code
+  denominator. See <a href="../tooling/byte-accounting.html">byte accounting</a> and
   <a href="../tooling/disc-coverage.html">disc coverage</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle-internals.html#cast-modules">Cast modules</a>
+    <a href="move-power.html">Move-power table (effect prototypes)</a>
+    <a href="../subsystems/move-vm.html">Move VM</a>
+    <a href="prot.html">PROT.DAT</a>
+  </div>
 </section>

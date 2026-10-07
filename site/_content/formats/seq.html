@@ -26,74 +26,35 @@
     </ol>
   </div>
 
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 170" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Legaia SEQ header byte strip: magic, u32 big-endian version, PPQN, u24 tempo, time signature, then the event stream; below, the meta-event encoding without a length byte">
-      <style>
-        .sq-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .sq-hot  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 2.4; }
-        .sq-lab  { font: 12px sans-serif; fill: currentColor; }
-        .sq-sub  { font: 11px monospace; fill: var(--text-muted); }
-        .sq-off  { font: 11px monospace; fill: var(--accent); }
-      </style>
-      <text class="sq-sub" x="10" y="16">Header (15 bytes)</text>
-      <rect class="sq-box" x="10" y="36" width="100" height="44"/>
-      <text class="sq-lab" x="60" y="54" text-anchor="middle">magic</text>
-      <text class="sq-sub" x="60" y="70" text-anchor="middle">pQES</text>
-      <text class="sq-off" x="10" y="30">+0</text>
-
-      <rect class="sq-hot" x="110" y="36" width="130" height="44"/>
-      <text class="sq-lab" x="175" y="54" text-anchor="middle">version</text>
-      <text class="sq-sub" x="175" y="70" text-anchor="middle">u32 BE = 1</text>
-      <text class="sq-off" x="110" y="30">+4</text>
-
-      <rect class="sq-box" x="240" y="36" width="110" height="44"/>
-      <text class="sq-lab" x="295" y="54" text-anchor="middle">PPQN</text>
-      <text class="sq-sub" x="295" y="70" text-anchor="middle">u16 BE = 480</text>
-      <text class="sq-off" x="240" y="30">+8</text>
-
-      <rect class="sq-box" x="350" y="36" width="130" height="44"/>
-      <text class="sq-lab" x="415" y="54" text-anchor="middle">tempo</text>
-      <text class="sq-sub" x="415" y="70" text-anchor="middle">u24 BE us/qn</text>
-      <text class="sq-off" x="350" y="30">+0xA</text>
-
-      <rect class="sq-box" x="480" y="36" width="110" height="44"/>
-      <text class="sq-lab" x="535" y="54" text-anchor="middle">time sig</text>
-      <text class="sq-sub" x="535" y="70" text-anchor="middle">num, denom</text>
-      <text class="sq-off" x="480" y="30">+0xD</text>
-
-      <rect class="sq-box" x="590" y="36" width="160" height="44"/>
-      <text class="sq-lab" x="670" y="54" text-anchor="middle">events ...</text>
-      <text class="sq-sub" x="670" y="70" text-anchor="middle">delta, status, data</text>
-      <text class="sq-off" x="590" y="30">+0xF</text>
-
-      <text class="sq-sub" x="10" y="112">Set Tempo meta event - no length byte:</text>
-      <rect class="sq-box" x="10" y="122" width="70" height="34"/>
-      <text class="sq-lab" x="45" y="143" text-anchor="middle">FF</text>
-      <rect class="sq-box" x="80" y="122" width="70" height="34"/>
-      <text class="sq-lab" x="115" y="143" text-anchor="middle">51</text>
-      <rect class="sq-hot" x="150" y="122" width="150" height="34"/>
-      <text class="sq-lab" x="225" y="143" text-anchor="middle">tt tt tt</text>
-      <text class="sq-sub" x="312" y="143">MIDI would insert 03 here - SEQ does not</text>
-    </svg>
-    <figcaption>The two bytes that differ from the PsyQ documentation: the widened version word, and the absent meta-event length.</figcaption>
-  </figure>
+  <p>The meta-event difference, byte for byte:</p>
+  <div class="byte-map" role="img" aria-label="Set Tempo meta event: FF, 51, then three tempo bytes with no length byte">
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">FF</span><span class="bm-size">meta</span></div>
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">51</span><span class="bm-size">Set Tempo</span></div>
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+2</span><span class="bm-name">tt tt tt - no <code>03</code> length byte first</span><span class="bm-size">u24 BE us/qn</span></div>
+  </div>
 </section>
 
 <section class="doc-section" id="header">
   <h2>Header</h2>
   <p>Every retail track uses the 15-byte Legaia layout; <code>crates/seq::parse_header</code> also accepts the documented 13-byte PsyQ layout, dispatching on whether the u32 at <code>+4</code> reads 1.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <div class="byte-map" role="img" aria-label="Legaia SEQ header: magic, u32 BE version, PPQN, u24 tempo, time signature numerator and denominator, then events">
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">magic <code>pQES</code></span><span class="bm-size">4 B</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">version = 1</span><span class="bm-size">u32 BE</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x08</span><span class="bm-name">PPQN = 480</span><span class="bm-size">u16 BE</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x0A</span><span class="bm-name">tempo</span><span class="bm-size">u24 BE</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x0D</span><span class="bm-name">ts num</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x0E</span><span class="bm-name">ts den</span><span class="bm-size">u8</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td><code>magic</code></td><td><code>pQES</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>u32 BE</td><td><code>version</code></td><td>always 1 in retail; the two extra bytes are what shifts everything below (PsyQ: u16 at <code>+4</code>)</td></tr>
-      <tr><td><code>+0x08</code></td><td>u16 BE</td><td><code>resolution</code></td><td>PPQN, ticks per quarter note - always 480</td></tr>
-      <tr><td><code>+0x0A</code></td><td>u24 BE</td><td><code>tempo</code></td><td>microseconds per quarter note; a 240 BPM placeholder the first body event overrides</td></tr>
-      <tr><td><code>+0x0D</code></td><td>u8</td><td>time-sig num</td><td>e.g. 4</td></tr>
-      <tr><td><code>+0x0E</code></td><td>u8</td><td>time-sig denom</td><td>power of 2 (2 = /4, 3 = /8)</td></tr>
-      <tr><td><code>+0x0F</code></td><td>-</td><td>events</td><td>event stream</td></tr>
+      <tr><td><code>version</code></td><td>Always 1 in retail. It is a u32 where the PsyQ documentation has a u16 at <code>+4</code>; the two extra bytes shift every field below.</td></tr>
+      <tr><td>PPQN</td><td>Ticks per quarter note - always 480.</td></tr>
+      <tr><td><code>tempo</code></td><td>Microseconds per quarter note. A 240 BPM placeholder that the first body event overrides.</td></tr>
+      <tr><td>time signature</td><td>Numerator (e.g. 4) and a power-of-two denominator (2 = /4, 3 = /8).</td></tr>
     </tbody>
   </table>
+  <p>The event stream starts at <code>+0x0F</code>.</p>
   <p>The retail loader checks <code>version</code> and rejects any other value as an old SEQ format.</p>
 </section>
 
@@ -138,24 +99,27 @@
 <section class="doc-section" id="where-the-data-lives">
   <h2>Where the data lives and how it is played</h2>
   <p>SEQ payloads ride behind a VAB inside the scene streaming containers (<a href="scene-bundles.html">scene bundles</a>), so the bytes sit at a non-zero offset. The field VM's BGM opcode (<code>0x35</code>) writes a slot that the BGM loader resolves through the <a href="cdname.html">CDNAME</a> map to the containing entry; playback goes through the PsyQ <code>SsSeqOpen</code> family (<a href="../subsystems/audio.html">audio stack</a>).</p>
-<pre><code>seq info    &lt;PATH&gt;    # header summary + event-type histogram
-seq events  &lt;PATH&gt;    # disassemble every event in source order
-seq json    &lt;PATH&gt;    # full parse as JSON</code></pre>
-  <p>The engine side is <code>legaia_engine_audio::Sequencer</code>: a parsed <code>Seq</code> plus a loaded <code>VabBank</code> driving the from-scratch SPU model.</p>
+  <h3 id="in-the-port">In the port</h3>
+  <div class="cli"><code>seq info &lt;PATH&gt;</code></div>
+  <div class="cli"><code>seq events &lt;PATH&gt;</code></div>
+  <div class="cli"><code>seq json &lt;PATH&gt;</code></div>
+  <p><code>info</code> prints the header plus an event-type histogram, <code>events</code> disassembles every event, <code>json</code> dumps the full parse. The engine side is <code>legaia_engine_audio::Sequencer</code>: a parsed <code>Seq</code> plus a loaded <code>VabBank</code> driving the from-scratch SPU model.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure"><summary>Provenance by claim</summary>
   <table>
     <thead><tr><th>Claim</th><th>Function / address</th><th>What it proves</th></tr></thead>
     <tbody>
       <tr><td>Version check</td><td><code>FUN_80062410</code> (SsAPI loader, SCUS)</td><td>Reads the version word and rejects <code>!= 1</code></td></tr>
-      <tr><td>No meta length byte</td><td>Corpus arithmetic</td><td>Read raw, every retail tempo lands on a round BPM (65, 70, 80, 128, 130, 140, 150, 160, 170); a phantom length byte scatters them - <code>real_seq_stream_integrity</code></td></tr>
-      <tr><td>Event usage, loop markers, pitch bend</td><td>Disc-wide sweep of every SEQ-bearing entry</td><td><code>real_seq_expressive_events</code>, <code>real_seq_program_change_coverage</code></td></tr>
+      <tr><td>No meta length byte</td><td>Corpus arithmetic</td><td>Read raw, every retail tempo lands on a round BPM (65, 70, 80, 128, 130, 140, 150, 160, 170); a phantom length byte scatters them</td></tr>
+      <tr><td>Event usage, loop markers, pitch bend</td><td>Disc-wide sweep of every SEQ-bearing entry</td><td>Which status bytes occur, how often, and where program changes land on unused slots</td></tr>
       <tr><td>BGM slot resolution</td><td><code>_DAT_8007BAC8</code> &rarr; <code>FUN_800243F0</code></td><td>Field-VM BGM slot resolved through CDNAME to the streaming entry</td></tr>
       <tr><td>Program-slot aliasing</td><td><code>FUN_80068D94</code> (bank open)</td><td>Used-program counter stored per slot, read back as tone-page index</td></tr>
     </tbody>
   </table>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

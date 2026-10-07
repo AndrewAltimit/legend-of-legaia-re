@@ -231,8 +231,8 @@ fn shop_descriptor_windows_paint_at_their_disc_rects() {
 /// chain rather than the pixels: the kind dispatch has to route an equipment
 /// row to the picker (not the quantity screen), the session has to take the
 /// pad, and windows 36 / 25 / 41 have to draw at the descriptor table's
-/// rects. The native window reaches the same builder through
-/// `window/shop_windows.rs::recipient_window_draws`, so a break here is a
+/// rects. The native window reaches the same builder through the shared
+/// `legaia_engine_screens::recipient_window_draws`, so a break here is a
 /// break on both hosts.
 #[test]
 fn the_recipient_picker_paints_its_three_windows_at_their_disc_rects() {
@@ -300,10 +300,10 @@ fn the_recipient_picker_paints_its_three_windows_at_their_disc_rects() {
 /// reachable on a vanilla disc. On a patched one both are - and the page used
 /// to draw nothing at all for `ShopTrade` / `ShopTradeConfirm` while the
 /// session held the pad, because its row table only covered the `'static`-label
-/// states and fell through to an empty list. The native window has drawn both
-/// all along (`window/menu_draws.rs::draw_shop_trade`), so this was platform
-/// drift the UI host-drift gate cannot see: both hosts call the same
-/// `shop_draws_for` builder and differ only in what they feed it.
+/// states and fell through to an empty list. The native window drew both all
+/// along, so this was platform drift the UI host-drift gate could not see:
+/// both hosts called the same `shop_draws_for` builder and differed only in
+/// what they fed it. One copy draws both now (`legaia_engine_screens`).
 #[test]
 fn the_seru_trade_screens_draw_on_the_browser_host() {
     let Some(mut rt) = loaded_in_town() else {

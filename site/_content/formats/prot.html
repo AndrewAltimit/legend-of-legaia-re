@@ -75,20 +75,29 @@
     </svg>
     <figcaption>The first words of <code>PROT.DAT</code>. Word <code>+0x08</code> is both the TOC-size word and <code>toc[0]</code>; the first extracted entry's start LBA is two words later.</figcaption>
   </figure>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">unused (0)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">rows &minus; 1</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">toc[0] = 3</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:12"><span class="bm-off">+0x0C</span><span class="bm-name">toc[1..] start LBAs</span><span class="bm-size">4 &times; rows</span></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td><code>unused</code></td><td>Zero in both retail archives</td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td><code>rows - 1</code></td><td>TOC row count minus one: <code>PROT.DAT</code> 1235, <code>DMY.DAT</code> 15</td></tr>
-      <tr><td><code>+0x08</code></td><td>4</td><td><code>toc[0]</code></td><td>Header + TOC size in sectors (3), which is also the first content LBA</td></tr>
-      <tr><td><code>+0x0C</code></td><td>4 &times; rows</td><td><code>toc[1..]</code></td><td>Start LBAs; <code>toc[1235] = 59206</code> is the end terminator</td></tr>
+      <tr><td><code>rows &minus; 1</code></td><td>TOC row count minus one: <code>PROT.DAT</code> 1235, <code>DMY.DAT</code> 15</td></tr>
+      <tr><td><code>toc[0]</code></td><td>Header + TOC size in sectors (3), which is also the first content LBA</td></tr>
+      <tr><td><code>toc[1..]</code></td><td>Start LBAs; <code>toc[1235] = 59206</code> is the end terminator (the archive's sector count)</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p>The 1236 rows are <code>toc[0]</code> and <code>toc[1]</code> (two boot-UI regions), 1233 entry starts, and one terminator. For extraction entry <code>p</code>:</p>
-<pre><code>start_lba     = toc[p + 2]                  // LBA relative to PROT.DAT
-size_sectors  = toc[p + 3] - toc[p + 2]     // the gap to entry p+1
-byte_offset   = start_lba * 0x800
-size_bytes    = size_sectors * 0x800</code></pre>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Quantity</th><th>Formula</th></tr></thead>
+    <tbody>
+      <tr><td>start LBA (relative to <code>PROT.DAT</code>)</td><td><code>toc[p + 2]</code></td></tr>
+      <tr><td>size in sectors (the gap to entry <code>p+1</code>)</td><td><code>toc[p + 3] &minus; toc[p + 2]</code></td></tr>
+      <tr><td>byte offset / size</td><td><code>start_lba &times; 0x800</code> / <code>size_sectors &times; 0x800</code></td></tr>
+    </tbody>
+  </table></div>
   <p>The LBAs are <code>PROT.DAT</code>-relative, so they are identical on the USA and PAL discs even though <code>PROT.DAT</code> sits at a different disc LBA per region. That is what makes whole-sector entry growth tractable: shift the later start-LBA words, no disc-wide cascade (<a href="disc.html#full-iso-relayout">disc &sect; full-ISO relayout</a>). The detector tries the header at offset <code>0x000</code> first, then <code>0x800</code>; both retail archives use <code>0x000</code>.</p>
 </section>
 
@@ -121,7 +130,9 @@ size_bytes    = size_sectors * 0x800</code></pre>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <p>Retail's own size routine does the same subtraction, and the sizes partition the archive with no gaps or overlaps.</p>
+  <details class="disclosure"><summary>The routines that pin it</summary><div class="disclosure-body">
+  <div class="table-wrap"><table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Entry size</td><td><code>FUN_8003E68C</code></td><td>Twelve instructions returning <code>TABLE[i+3] - TABLE[i+2]</code>; result goes straight to the sector read</td><td><code>funcs/8003e68c.txt</code></td></tr>
@@ -131,10 +142,10 @@ size_bytes    = size_sectors * 0x800</code></pre>
       <tr><td>Path resolver</td><td><code>FUN_8003E6BC</code></td><td>CDNAME name map &rarr; index &rarr; LBA resolver</td><td><code>funcs/8003e6bc.txt</code></td></tr>
       <tr><td>Overlay slot loaders</td><td><code>FUN_8003EBE4</code> (<code>*DAT_8001038C</code>, <code>gp+0x924</code>), <code>FUN_8003EC70</code> (<code>*DAT_80010390</code>, <code>gp+0x934</code>)</td><td>Two parallel slots; <code>param + 0x381</code> argument</td><td>per-function dumps</td></tr>
       <tr><td>Dual-mode loader</td><td><code>FUN_8003E360</code>; <code>FUN_800608F0</code> / <code>FUN_80060944</code></td><td>Retail TOC branch vs dev <code>h:\</code> trap</td><td><code>funcs/8003e360.txt</code></td></tr>
-      <tr><td>Tiling</td><td><code>archive_tiling_real.rs</code></td><td>Sizes partition LBA 121..59206 exactly</td><td>disc-gated test</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p>Further evidence that the gap is the size, independent of the definition: known-length files agree with it (<code>readef.DAT</code> = 78 &times; <code>0x10800</code>, <code>summon.dat</code> = 103 &times; <code>0x10800</code>, every <code>.MAP</code> = <code>0x12000</code>, <code>bse.dat</code> = 2 sectors); every scene-asset table lands at offset 0 of its entry; mid-cast save states hold a stager byte-resident up to the sector gap and stale bytes after it; and PROT 899 is 74 sectors, all its own.</p>
+  </div></details>
 </section>
 
 <section class="doc-section" id="deep-dive">

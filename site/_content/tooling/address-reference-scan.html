@@ -25,22 +25,29 @@
     <li><strong>The mirror trap:</strong> an address with no caller of any kind might not be a function at all - a label <em>inside</em> somebody else's function, reached by a PC-relative branch. Ghidra invents a fake <code>FUN_</code> entry at each of those.</li>
   </ul>
   <p>Reach for this scan whenever a port-catalog row says "no caller", before you either port the routine or declare it dead. It is the instrument behind the rule that <strong>zero static callers in <code>SCUS_942.54</code> does not mean dead in retail</strong>.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">One address</span><span class="desc">a stalled worklist row, or a whole table via <code>--range</code></span><span class="crate">input</span>
-    <span class="num">2</span><span class="layer">Sweep five forms</span><span class="desc">word / <code>lui</code>+<code>addiu</code> / <code>jal</code> / <code>j</code> / branch, over SCUS + 31 overlays (+ raw PROT)</span><span class="crate">find-address-word-refs.py</span>
-    <span class="num">3</span><span class="layer">Attribute + classify</span><span class="desc">each hit named by image; word hits triaged as table / template / incidental</span><span class="crate">static-overlays.toml</span>
-    <span class="num">4</span><span class="layer">Outcome</span><span class="desc">a consumer to chase, a label (never work), or "no reference exists" (documented negative)</span><span class="crate">port-catalog ignore list</span>
-  </div>
+  <ol class="steps">
+    <li><b>One address</b><span>a stalled worklist row, or a whole table via <code>--range</code></span></li>
+    <li><b>Sweep five forms</b><span>word / <code>lui</code>+<code>addiu</code> / <code>jal</code> / <code>j</code> / branch, over SCUS + 31 overlays (+ raw PROT) <code>find-address-word-refs.py</code></span></li>
+    <li><b>Attribute + classify</b><span>each hit named by image; word hits triaged as table / template / incidental <code>static-overlays.toml</code></span></li>
+    <li><b>Outcome</b><span>a consumer to chase, a label (never work), or "no reference exists" (documented negative)</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="quick-start">
   <h2>Quick start</h2>
   <div class="cli"><code>scripts/ghidra-analysis/find-address-word-refs.py 8005126c</code></div>
-<pre><code>find-address-word-refs.py 8005126c --prot        # widen to every extracted PROT entry
-find-address-word-refs.py 801e58a8 --home field  # mark branch hits from slot siblings as aliases
-find-address-word-refs.py --range 800705fc:80070760   # who references this table?
-find-address-word-refs.py --file addrs.txt --context  # batch a worklist, print neighbours
-find-address-word-refs.py 8004da00 --expect-scus 800767fc   # self-check with exit status</code></pre>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>find-address-word-refs.py 8005126c --prot</code></td><td>Widen to every extracted PROT entry</td></tr>
+      <tr><td><code>find-address-word-refs.py 801e58a8 --home field</code></td><td>Mark branch hits from slot siblings as aliases</td></tr>
+      <tr><td><code>find-address-word-refs.py --range 800705fc:80070760</code></td><td>Who references this table?</td></tr>
+      <tr><td><code>find-address-word-refs.py --file addrs.txt --context</code></td><td>Batch a worklist, print neighbours</td></tr>
+      <tr><td><code>find-address-word-refs.py 8004da00 --expect-scus 800767fc</code></td><td>Self-check with exit status</td></tr>
+    </tbody>
+  </table>
+  </div>
   <h3>The five forms it looks for</h3>
   <table>
     <thead><tr><th>Form</th><th>What it is</th><th>Carries its target?</th></tr></thead>

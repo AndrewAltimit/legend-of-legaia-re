@@ -213,7 +213,7 @@ per-character ext, saved chains) that have no SC representation. To
 intentionally regenerate after a writer change:
 
 ```bash
-LEGAIA_UPDATE_FIXTURES=1 cargo test -p legaia-save --test schema_fixture
+LEGAIA_UPDATE_FIXTURES=1 cargo test -p legaia-save --test integration schema_fixture::
 ```
 
 ## Reference

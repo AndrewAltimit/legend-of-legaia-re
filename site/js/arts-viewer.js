@@ -158,12 +158,7 @@
       try {
         const buf = await prog.read(file, `Reading ${file.name}`);
         prog.indeterminate('Initialising the arts decoder…');
-        /* Resolve against the PAGE (this file lives in js/, the wasm glue in
-         * wasm/ next to the page - a bare './wasm/...' would resolve against
-         * this script's URL). */
-        const v = window.LEGAIA_WASM_V || '0';
-        const mod = await import(new URL('wasm/legaia_web_viewer.js?v=' + v, document.baseURI).href);
-        await mod.default(new URL('wasm/legaia_web_viewer_bg.wasm?v=' + v, document.baseURI));
+        const mod = await LegaiaWasm.load();
         if (typeof mod.LegaiaArts !== 'function') {
           prog.fail('This build of the viewer has no arts support.');
           return;

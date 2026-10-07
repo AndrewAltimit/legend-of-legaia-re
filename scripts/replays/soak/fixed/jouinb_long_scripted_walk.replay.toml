@@ -3,7 +3,7 @@
 # soak-seed = 5011
 # soak-signature = "script_stall|jouinb|timeline@0x071f:opc7"
 # detail: script parked at one PC for 1800 frames
-# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 1624298894

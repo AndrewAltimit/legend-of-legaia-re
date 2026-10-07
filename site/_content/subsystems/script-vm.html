@@ -1,354 +1,242 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field / event script VM</div>
   <h1>Field / event script VM</h1>
-  <p class="lede">The interpreter that makes Legaia's towns work. A villager's dialogue, a door that warps you to the next room, a chest that hands over an item, a cutscene, a story flag flipping so the plot can advance - each is a small bytecode script, and this one interpreter runs them all, every frame, for every actor in the scene. <span class="tag tag-done">All 43 opcodes ported</span></p>
+  <p class="lede">The interpreter that makes Legaia's towns work. A villager's lines, a door that swings open, a chest that hands over an item, a cutscene, a story flag flipping so the plot can advance: each is a small bytecode script, and this one interpreter runs them all, for every actor in the scene, every frame. This page is the tour; every opcode and sub-op is on <a href="script-vm-internals.html">script VM internals</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Lives in</dt><dd>The <strong>field overlay</strong> (PROT <code>0897</code>) - code the game streams into RAM whenever you walk around. The dispatcher is the largest function on the disc.</dd>
-    <dt>Scripts come from</dt><dd>Each scene's <strong>MAN</strong>, the script-and-data bundle shipped with the scene: record 0 is the scene's own script, records 1.. belong to NPCs, a second partition holds cutscenes spawned on demand.</dd>
-    <dt>Opcode space</dt><dd>43 opcodes <code>0x21</code>-<code>0x4F</code> (gap <code>0x27</code>-<code>0x2A</code>), plus every byte in <code>0x50</code>-<code>0x7F</code> as a "wide" story-flag op. Bit <code>0x80</code> on any opcode aims it at another actor's script.</dd>
-    <dt>Dialogue</dt><dd>Has <strong>no opcode</strong> - talking pages the NPC's own inline text (<a href="#dialogue">below</a>).</dd>
-    <dt>Engine</dt><dd><code>crates/engine-vm/src/field.rs</code> (executing VM); <code>legaia_asset::field_disasm</code> (side-effect-free disassembler; CLI <code>field-disasm</code>).</dd>
-    <dt>Confidence</dt><dd>Confirmed - disassembly of the overlay dump plus live captures (<a href="#how-we-know">how we know</a>).</dd>
+    <dt>Lives in</dt><dd>The <strong>field overlay</strong> (PROT <code>0897</code>), the code the game streams into RAM whenever you walk around. The dispatcher <code>FUN_801DE840</code> is one of the largest functions on the disc.</dd>
+    <dt>Scripts come from</dt><dd>Each scene's <strong>MAN</strong>, the script-and-data bundle shipped with the scene. Nothing about a town's behaviour is in the main executable.</dd>
+    <dt>Opcodes</dt><dd>43 opcodes <code>0x21</code>-<code>0x4F</code> (gap <code>0x27</code>-<code>0x2A</code>) over a byte stream, plus every byte <code>0x50</code>-<code>0x7F</code> as a story-flag op. Bit <code>0x80</code> on any opcode aims it at another actor.</dd>
+    <dt>Dialogue</dt><dd>Has <strong>no opcode</strong>: talking resumes the NPC's own script, and its text sits inline in that script (<a href="#dialogue">below</a>).</dd>
+    <dt>In the port</dt><dd><code>engine-vm::field</code> (executing VM); <code>legaia_asset::field_disasm</code> (side-effect-free disassembler, CLI <code>asset field-disasm</code>).</dd>
+    <dt>Confidence</dt><dd>Confirmed - disassembly of the overlay plus live captures (<a href="#how-we-know">how we know</a>).</dd>
   </dl>
+</section>
+
+<section class="doc-section" id="what-scripts-do">
+  <h2>What a script does in a scene</h2>
+  <p>A scene's MAN holds four kinds of script, and each one is started by something different. Nothing schedules them centrally: each kind waits for its own trigger.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four kinds of field script. Scene load and every frame start the system script, record 0 of partition 1, which runs music, camera zones and story gates. A touch or the action button starts a placement script, which runs NPC talk, chests and save points. Contact or the action button starts a partition-0 bind script, which runs house doors and cupboards. Op 0x44 or a walk-on tile starts a partition-2 record, which runs cutscenes, story beats and town exits.">
+      <defs><marker id="sv-what-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="120" y="16" class="dg-sub">what starts it</text>
+      <text x="430" y="16" class="dg-sub">which MAN record</text>
+      <text x="740" y="16" class="dg-sub">what it drives</text>
+      <rect x="20" y="28" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="120" y="51" class="dg-label">Scene load,</text><text x="120" y="69" class="dg-label">then every frame</text>
+      <rect x="300" y="28" width="260" height="54" rx="4" class="dg-node-accent"/>
+      <text x="430" y="51" class="dg-label">P1 record 0</text><text x="430" y="69" class="dg-sub">system script, context 0xFB</text>
+      <rect x="640" y="28" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="740" y="51" class="dg-label">music, camera zones,</text><text x="740" y="69" class="dg-sub">story gates, wall paints</text>
+
+      <rect x="20" y="96" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="120" y="119" class="dg-label">Touch or</text><text x="120" y="137" class="dg-label">action button</text>
+      <rect x="300" y="96" width="260" height="54" rx="4" class="dg-node-accent"/>
+      <text x="430" y="119" class="dg-label">P1 records 1..</text><text x="430" y="137" class="dg-sub">one placement per NPC or trigger</text>
+      <rect x="640" y="96" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="740" y="119" class="dg-label">NPC talk, chests,</text><text x="740" y="137" class="dg-sub">save points</text>
+
+      <rect x="20" y="164" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="120" y="187" class="dg-label">Contact or button</text><text x="120" y="205" class="dg-sub">doors open on contact</text>
+      <rect x="300" y="164" width="260" height="54" rx="4" class="dg-node-accent"/>
+      <text x="430" y="187" class="dg-label">P0 bind scripts</text><text x="430" y="205" class="dg-sub">bound to a map object at load</text>
+      <rect x="640" y="164" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="740" y="187" class="dg-label">house doors,</text><text x="740" y="205" class="dg-sub">cupboards, props</text>
+
+      <rect x="20" y="232" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="120" y="255" class="dg-label">Op 0x44 or a</text><text x="120" y="273" class="dg-label">walk-on tile</text>
+      <rect x="300" y="232" width="260" height="54" rx="4" class="dg-node-accent"/>
+      <text x="430" y="255" class="dg-label">P2 records</text><text x="430" y="273" class="dg-sub">spawned if their flag gates pass</text>
+      <rect x="640" y="232" width="200" height="54" rx="4" class="dg-node"/>
+      <text x="740" y="255" class="dg-label">cutscenes, story beats,</text><text x="740" y="273" class="dg-sub">town exits</text>
+
+      <path class="dg-edge" d="M220 55 L298 55" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M560 55 L638 55" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M220 123 L298 123" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M560 123 L638 123" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M220 191 L298 191" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M560 191 L638 191" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M220 259 L298 259" marker-end="url(#sv-what-ah)"/>
+      <path class="dg-edge" d="M560 259 L638 259" marker-end="url(#sv-what-ah)"/>
+    </svg>
+    <figcaption>Four carriers, four triggers, one interpreter. A door is a script on a map object, not a scene change; a town exit is a partition-2 record that runs the named scene change (<code>0x3F</code>) when a walk-on tile spawns it.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>NPCs.</strong> Each placement record seats an actor (model, idle clip, tile) and carries its script. A short <em>spawn section</em> runs at load (class flags, starting facing, flag-dependent relocation), and the rest waits for the player to touch it.</li>
+    <li><strong>Doors and props.</strong> A partition-0 record bound to a map object plays the door's swing clip and, for an interior, teleports the player within the same scene grid (<a href="field-locomotion.html#doorways">walking into a house</a>).</li>
+    <li><strong>Cutscenes.</strong> A partition-2 record is a timeline: it walks actors with cross-context motion ops, stages the camera, shows lines in the shared dialog box and sets the story flags that move the plot on. The narration crawl and camera mover it spawns are ordinary actors that run in parallel.</li>
+    <li><strong>Gameplay hooks.</strong> Battles (<code>3E FF row</code>), minigames (<code>3E</code> with <code>op0 &ge; 100</code>), FMVs (<code>4C E2</code>), shops and the name-entry screen (<code>0x49</code>) are all script ops; the scene's script decides when each happens.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="how-it-works">
   <h2>How a frame runs</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 264" width="100%" style="max-width: 860px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Every display frame the actor lists are walked; each field actor with its script bit set gets one slice; the interpreter runs instruction after instruction until a yield, a wait, a text byte or the end-of-frame opcode stops it">
-      <defs><marker id="sv-ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
-      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.4">
-        <rect x="20" y="20" width="190" height="50" rx="4"/>
-        <rect x="20" y="90" width="190" height="50" rx="4"/>
-        <rect x="20" y="160" width="190" height="50" rx="4"/>
-        <rect x="640" y="20" width="200" height="44" rx="4"/>
-        <rect x="640" y="80" width="200" height="44" rx="4"/>
-        <rect x="640" y="140" width="200" height="44" rx="4"/>
-        <rect x="640" y="200" width="200" height="44" rx="4"/>
-      </g>
-      <rect x="290" y="30" width="250" height="200" rx="4" fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.6"/>
-      <g fill="currentColor" text-anchor="middle">
-        <text x="115" y="40">Every display frame<tspan x="115" dy="16" fill="var(--text-muted)">walk 5 actor lists</tspan></text>
-        <text x="115" y="110">Each field actor<tspan x="115" dy="16" fill="var(--text-muted)">script bit set?</tspan></text>
-        <text x="115" y="180">One script slice<tspan x="115" dy="16" fill="var(--text-muted)">run until a stop</tspan></text>
-        <text x="415" y="70">The interpreter</text>
-        <text x="415" y="96" fill="var(--text-muted)">read opcode at PC</text>
-        <text x="415" y="116" fill="var(--text-muted)">0x80 prefix: retarget ctx</text>
-        <text x="415" y="136" fill="var(--text-muted)">switch on (op &amp; 0x7F)</text>
-        <text x="415" y="156" fill="var(--text-muted)">handler returns new PC</text>
-        <text x="415" y="190">repeat</text>
-        <text x="740" y="38">Yield: motion op<tspan x="740" dy="16" fill="var(--text-muted)">parks PC, halts</tspan></text>
-        <text x="740" y="98">Wait: 0x4A / 0x49<tspan x="740" dy="16" fill="var(--text-muted)">PC unchanged, retry</tspan></text>
-        <text x="740" y="158">Text byte &lt; 0x20<tspan x="740" dy="16" fill="var(--text-muted)">dialogue pager runs</tspan></text>
-        <text x="740" y="218">0x21 end of frame<tspan x="740" dy="16" fill="var(--text-muted)">resume next frame</tspan></text>
-      </g>
-      <g stroke="var(--text-muted)" stroke-width="1.4" fill="none" marker-end="url(#sv-ah)">
-        <line x1="115" y1="70" x2="115" y2="88"/>
-        <line x1="115" y1="140" x2="115" y2="158"/>
-        <line x1="210" y1="185" x2="288" y2="185"/>
-        <line x1="540" y1="42" x2="638" y2="42"/>
-        <line x1="540" y1="102" x2="638" y2="102"/>
-        <line x1="540" y1="162" x2="638" y2="162"/>
-        <line x1="540" y1="222" x2="638" y2="222"/>
-      </g>
+  <p>A script runs only while its actor is <strong>engaged</strong> (bit <code>0x100</code> of the actor's flag word). While engaged it gets one <em>slice</em> per frame, and a slice is not one instruction: it runs instruction after instruction until something stops it.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 820 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The slice loop. An engaged context runs the opcode at its PC; if the PC advanced it runs the next opcode in the same frame. Four things stop a slice: a wait leaves the PC unchanged and retries next frame; a motion op parks the script until the walk kernel lands the actor; a text byte parks it on the dialog box until it closes; opcode 0x21 ends the pass and clears the engaged bit, so the script waits for its next trigger.">
+      <defs><marker id="sv-slice-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="40" y="30" width="250" height="56" rx="4" class="dg-node"/>
+      <text x="165" y="53" class="dg-label">Context engaged</text>
+      <text x="165" y="72" class="dg-sub">touch, spawn or system pass</text>
+      <rect x="40" y="150" width="250" height="76" rx="4" class="dg-node-accent"/>
+      <text x="165" y="174" class="dg-label">Run the opcode at PC</text>
+      <text x="165" y="194" class="dg-sub">bit 0x80: act on a target actor</text>
+      <text x="165" y="212" class="dg-sub">handler returns the new PC</text>
+      <path class="dg-edge" d="M165 86 L165 148" marker-end="url(#sv-slice-ah)"/>
+      <path class="dg-edge" d="M100 226 L100 262 L22 262 L22 188 L38 188" marker-end="url(#sv-slice-ah)"/>
+      <text x="30" y="280" class="dg-edge-label">PC advanced: next op,</text>
+      <text x="30" y="295" class="dg-edge-label">same frame</text>
+
+      <rect x="470" y="14" width="330" height="68" rx="4" class="dg-node"/>
+      <text x="635" y="36" class="dg-label">Wait</text>
+      <text x="635" y="54" class="dg-sub">0x4A, flag spins, 0x49 armed</text>
+      <text x="635" y="71" class="dg-sub">resume: same op, next frame</text>
+      <rect x="470" y="100" width="330" height="68" rx="4" class="dg-node"/>
+      <text x="635" y="122" class="dg-label">Motion park</text>
+      <text x="635" y="140" class="dg-sub">0x37 / 0x41 / 0x47 set the halt bit</text>
+      <text x="635" y="157" class="dg-sub">resume: when the walk kernel lands</text>
+      <rect x="470" y="186" width="330" height="68" rx="4" class="dg-node"/>
+      <text x="635" y="208" class="dg-label">Text</text>
+      <text x="635" y="226" class="dg-sub">byte &lt; 0x20: the shared dialog box</text>
+      <text x="635" y="243" class="dg-sub">resume: when the box closes</text>
+      <rect x="470" y="272" width="330" height="68" rx="4" class="dg-node-warn"/>
+      <text x="635" y="294" class="dg-label">0x21: end of pass</text>
+      <text x="635" y="312" class="dg-sub">engaged bit cleared, PC kept</text>
+      <text x="635" y="329" class="dg-sub">resume: at the next trigger</text>
+
+      <path class="dg-edge" d="M290 188 L380 188 L380 48 L468 48" marker-end="url(#sv-slice-ah)"/>
+      <path class="dg-edge" d="M380 134 L468 134" marker-end="url(#sv-slice-ah)"/>
+      <path class="dg-edge" d="M380 188 L380 220 L468 220" marker-end="url(#sv-slice-ah)"/>
+      <path class="dg-edge" d="M380 220 L380 306 L468 306" marker-end="url(#sv-slice-ah)"/>
+      <path class="dg-edge-dim" d="M635 340 L635 360 L10 360 L10 58 L38 58" marker-end="url(#sv-slice-ah)"/>
     </svg>
-    <figcaption>There is no scheduler and no instruction budget: every live script gets one slice per frame, and each slice runs instruction after instruction until one of the four exits on the right stops it.</figcaption>
+    <figcaption>One slice. There is no scheduler and no instruction budget: every engaged script runs until one of the four stops on the right. A scene's whole entry prologue runs inside the load frame for this reason.</figcaption>
   </figure>
-  <ul>
-    <li><strong>Every live script runs every frame.</strong> The frame driver walks the five actor lists; a field actor whose flag word has the script bit set runs its slice. Scripts are not time-sliced against each other - the list length is the only bound.</li>
-    <li><strong>A slice runs to a stop, not one step.</strong> The slice loop calls the interpreter, stores the returned PC, and calls again while the next opcode is in range, the PC moved, and the opcode is not <code>0x21</code>. A scene's entry prologue therefore runs inside the load frame; the per-frame body after it is whatever the script loops back over a <code>0x21</code>.</li>
-    <li><strong>Presenters are scripts too.</strong> The narration crawl and the cutscene camera mover are ordinary actors, so a cutscene never blocks on them.</li>
-    <li><strong>Waits are display frames.</strong> <code>WAIT_FRAMES</code> adds the frame-skip factor per visit, so "wait 30" is 30 display frames whatever the logic rate. A port must pace the VM from a display-frame clock.</li>
+  <ul class="bullets">
+    <li><strong>Every engaged script runs every frame.</strong> The frame driver walks five actor lists; a field actor with the engaged bit runs its slice. Scripts are not time-sliced against each other.</li>
+    <li><strong>A script is a series of interactions.</strong> Each one runs from where the last <code>0x21</code> left the PC to the next executed <code>0x21</code>. An NPC that says one thing on the first talk and another afterwards is one record whose branches all jump back to a shared flag selector.</li>
+    <li><strong>Three things engage a script.</strong> The touch post (contact or the action button), the record spawner (a new partition-2 context) and the system script's own driver. No opcode engages a placement: a cutscene that walks a villager runs on its own slice against the villager's actor, and never runs the villager's talk body.</li>
+    <li><strong>The system script sits out other scenes.</strong> It starts a new pass only while no other script holds the player, and not at all while a battle is committed, so a town's per-frame loop pauses during an NPC talk or a cutscene.</li>
+    <li><strong>Waits are display frames.</strong> <code>WAIT_FRAMES</code> adds the frame-skip factor per visit, so "wait 30" is 30 display frames whatever the logic rate. A port has to pace the VM from a display-frame clock.</li>
   </ul>
-  <p>The scene's own script (record 0, context id <code>0xFB</code>) is one more context, seated at scene load. Rim Elm's starts a track and stops it 32 instructions later on a first visit, all before anything is drawn - stepping one instruction per frame would play half a second of music retail never lets you hear.</p>
+  <p>The scene's own script is the readable example. Rim Elm's starts a track, clears two story-flag banks and stops the track again 32 instructions later on a first visit, all before anything is drawn; the loop after it is a 20-instruction run of player box tests choosing the camera. Stepping one instruction per frame would play half a second of music retail never lets you hear.</p>
 </section>
 
 <section class="doc-section" id="on-disc-form">
   <h2>Where scripts live</h2>
-  <p>Nothing about a town's behaviour is in the main executable. Each scene's bundle carries a MAN (asset type <code>0x03</code>); the scene loader installs each placement record's script pointer on its actor and starts the VM on the record body.</p>
-  <table class="layout">
+  <p>The carrier is the scene MAN (asset type <code>0x03</code>). The scene loader installs each placement record's script pointer on its actor and starts the VM on the body that follows the record header.</p>
+  <table class="data-table">
     <thead><tr><th>Partition</th><th>Record header</th><th>Holds</th></tr></thead>
     <tbody>
-      <tr><td><code>0</code></td><td><code>[n][n&times;2 name][attr]</code></td><td>Named objects</td></tr>
-      <tr><td><code>1</code></td><td><code>[N][N&times;2 locals][model][anim][bx][bz]</code></td><td>Record 0 = scene script; records 1.. = one per NPC / trigger, script body follows the header</td></tr>
-      <tr><td><code>2</code></td><td>name + three condition blocks</td><td>Cutscene records, spawned by op <code>0x44</code> when their flag gates pass</td></tr>
+      <tr><td><code>0</code></td><td><code>[n][n&times;2 name][attr]</code></td><td>Named objects; bound to map objects as touch scripts (doors, cupboards)</td></tr>
+      <tr><td><code>1</code></td><td><code>[N][N&times;2 locals][model][anim][bx][bz]</code></td><td>Record 0 = scene system script; records 1.. = one per NPC or trigger, script body after the header</td></tr>
+      <tr><td><code>2</code></td><td>name + three condition blocks</td><td>Cutscene and beat records, spawned by op <code>0x44</code> or a walk-on tile when their flag gates pass</td></tr>
     </tbody>
   </table>
-  <p>Thirteen scenes ship a second, plain MAN inside a streaming PROT entry (the "variant MAN"); for the two v12-family dungeons it is the scene's <em>only</em> MAN. A story-flag writer that seems to be missing is usually there. The prescript table that precedes some scenes (<code>scene_event_scripts</code>) is <strong>not</strong> field-VM bytecode - it holds <a href="move-vm.html">move-VM</a> stager records.</p>
+  <p>Thirteen scenes ship a second, plain MAN inside a streaming PROT entry (the "variant MAN"); for two dungeons it is the scene's <em>only</em> MAN, so a story-flag writer that seems to be missing is usually there. The prescript table that precedes some scenes (<code>scene_event_scripts</code>) is <strong>not</strong> field-VM bytecode: it holds <a href="move-vm.html">move-VM</a> stager records.</p>
   <h3 id="placement-header-model-animation-resolution">Placement header: model and idle pose</h3>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Byte</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>model &lt; 0xF0</code></td><td>Scene TMD index (pool slot <code>model + 5</code>; slots 0..4 are the party and save point)</td></tr>
+      <tr><td><code>model &lt; 0xF0</code></td><td>Scene TMD index (pool slot <code>model + 5</code>; slots 0..4 are the party and the save point)</td></tr>
       <tr><td><code>model &gt;= 0xF0</code></td><td>Global head slot <code>model &minus; 0xF0</code>: Vahn, Noa, Gala, save point</td></tr>
       <tr><td><code>anim</code></td><td>Scene-bundle <a href="../formats/anm.html">ANM</a> record index + 1 (<code>0</code> = none); party models resolve it against the locomotion bundle instead</td></tr>
-      <tr><td><code>bx, bz</code></td><td>Tile position; <code>(127, 127)</code> marks a conditional spawn a script places later</td></tr>
+      <tr><td><code>bx, bz</code></td><td>Tile position; <code>(127, 127)</code> parks a conditional spawn a script places later</td></tr>
     </tbody>
   </table>
+  <p>The header tile is not always where the actor stands. The spawn section runs at load, and a flag-chosen arm that moves the actor (op <code>4C 51</code>, or a bare <code>0x23</code>) relocates it before the first frame draws - Rim Elm stages its two running kids on the standing kids' exact tiles and dispatches them across town that way.</p>
 </section>
 
 <section class="doc-section" id="dispatch">
-  <h2>Dispatch and context</h2>
-  <p>The interpreter is a plain function: <code>new_pc = run(buffer, pc, ctx)</code>. Before the 43-way switch, one prefix check: if the opcode's high bit is set, the next byte names the script this instruction acts on, and the handler runs against <em>that</em> context. A cutscene can say "the king walks to X" without becoming the king.</p>
-  <table>
-    <thead><tr><th>Target id</th><th>Resolves to</th></tr></thead>
+  <h2>Dispatch and targets</h2>
+  <p>The interpreter is a plain function, <code>new_pc = run(buffer, pc, ctx)</code>. Before its 43-way switch there is one prefix check: if the opcode's high bit is set, the next byte names the actor this instruction acts on, and the handler runs against <em>that</em> actor's context. A cutscene can say "the king walks to X" without becoming the king.</p>
+  <table class="data-table">
+    <thead><tr><th>Target byte</th><th>Resolves to</th></tr></thead>
     <tbody>
-      <tr><td><code>0xF8</code></td><td>The player's context</td></tr>
-      <tr><td><code>0xFB</code></td><td>The scene's system context (record 0)</td></tr>
-      <tr><td>other</td><td>That actor's script context; a halted target (flag <code>0x400</code>) is left alone unless the op is <code>32 0x400</code> (un-halt)</td></tr>
+      <tr><td><code>0xF8</code></td><td>The player</td></tr>
+      <tr><td><code>0xFB</code></td><td>The scene's system context (P1 record 0)</td></tr>
+      <tr><td>other</td><td>The actor whose bind index matches; a halted target (flag <code>0x400</code>, mid-walk) refuses the op until it lands, except the un-halt <code>32 0x400</code></td></tr>
     </tbody>
   </table>
-  <h3 id="context-struct">The context record (selected fields)</h3>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Type</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x10</code></td><td>u32</td><td>Flag word: <code>0x400</code> halted, <code>0x100</code> "touched", bits 0/1 collision-exempt, <code>0x1000</code> animating</td></tr>
-      <tr><td><code>+0x14/16/18</code></td><td>u16</td><td>World X / Y / Z (tile byte &rarr; <code>(b &amp; 0x7F) &times; 0x80 + 0x40</code>)</td></tr>
-      <tr><td><code>+0x50</code></td><td>u16</td><td>Script id (<code>0xFB</code> = system)</td></tr>
-      <tr><td><code>+0x54</code></td><td>u16</td><td>Wait accumulator (cleared by yield, ticked by <code>WAIT_FRAMES</code>)</td></tr>
-      <tr><td><code>+0x5C</code></td><td>u16</td><td>Move-table index (<code>EXEC_MOVE</code>)</td></tr>
-      <tr><td><code>+0x62</code></td><td>u16</td><td>Local flag bank, 16 bits</td></tr>
-      <tr><td><code>+0x72</code></td><td>u16</td><td>Render scale, <code>0x1000</code> = 1.0; <code>0</code> = invisible (trigger gizmos)</td></tr>
-      <tr><td><code>+0x94</code></td><td>u32</td><td>Saved PC of a parked motion op</td></tr>
-      <tr><td><code>+0x9E</code></td><td>i16</td><td>Program counter - 16-bit, so relative jumps wrap (<code>0xFFFE</code> = back 2)</td></tr>
-    </tbody>
-  </table>
-  <p>The full field table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#context-struct" target="_blank" rel="noopener"><code>script-vm.md</code></a>.</p>
+  <p>That refusal is how a cutscene choreographs its cast: it starts a walk on an NPC and runs on, and its next op on that NPC waits at the dispatcher until the walk lands. Only a walk aimed at the <em>player</em> parks the calling script as well. The context record's fields and every target rule are on <a href="script-vm-internals.html#context-struct">internals</a>.</p>
 </section>
 
 <section class="doc-section" id="opcode-summary">
-  <h2>Opcode reference</h2>
-  <p>Most of a town is built from a handful of these - flag tests, waits, walks, scene changes. Two opcodes (<code>0x43</code>, <code>0x4C</code>) are sub-dispatchers hiding dozens of sub-ops each.</p>
-  <table class="layout">
-    <thead><tr><th>Op</th><th>Mnemonic</th><th>Bytes</th><th>What it does</th></tr></thead>
+  <h2>The instruction set</h2>
+  <p>Most of a town is built from a handful of these: flag tests, waits, walks, scene changes. Two opcodes, <code>0x43</code> and <code>0x4C</code>, are sub-dispatchers hiding dozens of sub-ops each.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Group</th><th>Opcodes</th><th>What scenes use them for</th></tr></thead>
     <tbody>
-      <tr><td><code>21 24 25 48</code></td><td>NOP</td><td>1</td><td>Advance one byte; <code>0x21</code> also ends the frame's slice</td></tr>
-      <tr><td><code>22</code></td><td>EXEC_MOVE</td><td>2</td><td>Play move-table clip <code>id</code> on this actor (<code>99</code> = cancel)</td></tr>
-      <tr><td><code>23</code></td><td>MOVE_TO</td><td>3</td><td>Teleport to tile <code>(x, z)</code>; player path also snaps the camera</td></tr>
-      <tr><td><code>26</code></td><td>JMP_REL</td><td>3</td><td>Unconditional relative jump (16-bit wrap)</td></tr>
-      <tr><td><code>2B 2C 2D</code></td><td>LFLAG set/clr/test</td><td>2</td><td>Local flag bank <code>ctx+0x62</code>; test halts when clear</td></tr>
-      <tr><td><code>2E 2F 30</code></td><td>GFLAG set/clr/test</td><td>2</td><td>32-bit scratchpad word - transient, not saved</td></tr>
-      <tr><td><code>31 32 33</code></td><td>CFLAG set/clr/test</td><td>2</td><td>The context flag word <code>ctx+0x10</code> (halt, collision-exempt, contact class)</td></tr>
-      <tr><td><code>34</code></td><td>EFFECT</td><td>var</td><td>Sub 0 colour/intensity; 1 spawn effect; 2 capture-and-yield; 3 play a 3D animation</td></tr>
-      <tr><td><code>35</code></td><td>BGM</td><td>3</td><td>11 sub-ops: start, pause, stop, resume, timed release, swap-commit (<a href="#bgm-table">ids</a>)</td></tr>
-      <tr><td><code>36</code></td><td>SCENE_FADE</td><td>5</td><td>Two u16 operands; <code>0xFFFF</code> waits for the load flag</td></tr>
-      <tr><td><code>37 41</code></td><td>GLIDE</td><td>3</td><td>Motion op: directional glide-step; parks the PC and hands the bytes to the <a href="motion-vm.html">walk kernel</a></td></tr>
-      <tr><td><code>38</code></td><td>CAM_CFG</td><td>3</td><td>Copy a camera constant into <code>ctx+0x26</code>, or halt-acquire</td></tr>
-      <tr><td><code>39</code></td><td>GIVE_ITEM</td><td>2</td><td>Add one of item <code>id</code> - the treasure-chest path; the id is the inline byte</td></tr>
-      <tr><td><code>3A</code></td><td>ADD_MONEY</td><td>4</td><td>Signed 24-bit gold delta, clamped <code>0..9,999,999</code></td></tr>
-      <tr><td><code>3B</code></td><td>SET_ITEM_COUNT</td><td>3</td><td>Write one inventory slot, refresh the display</td></tr>
-      <tr><td><code>3C 3D</code></td><td>PARTY_ADD / REMOVE</td><td>2</td><td>Sorted insert / remove, cap 4, leader fix-up</td></tr>
-      <tr><td><code>3E</code></td><td>INTERACT / WARP</td><td>var</td><td><code>op0 &lt; 100</code>: arm NPC interaction <code>op1</code>; <code>op0 &gt;= 100</code>: enter minigame <code>op0 &minus; 100</code> (0 fishing, 3 slots, 4 Baka Fighter, 6 dance)</td></tr>
-      <tr><td><code>3F</code></td><td>SCENE_CHANGE</td><td>var</td><td>Named warp: <code>[idx:i16][len][name][x][z][dir]</code> - a door, not dialogue</td></tr>
-      <tr><td><code>40</code></td><td>DATA_BLOCK</td><td>2+len</td><td>Skip <code>len</code> inline data bytes</td></tr>
-      <tr><td><code>42</code></td><td>COND_JMP</td><td>5</td><td>Mode 0 tests a flag bit, mode 1 the held d-pad (against a compass) or a face button; taken = <code>pc + 3 + delta</code>, else skip 5</td></tr>
-      <tr><td><code>43</code></td><td>ACTOR_CTRL</td><td>var</td><td>22+ sub-ops: halt-acquire, 3-actor talk, camera zone ramps, facing, position tween, actor allocation, emitters</td></tr>
-      <tr><td><code>44</code></td><td>SPAWN_RECORD</td><td>2</td><td>Spawn partition-2 record <code>global_index</code> as a new context if its flag gates pass</td></tr>
-      <tr><td><code>45</code></td><td>CAMERA</td><td>var</td><td><code>op0 &amp; 0xC0</code>: configure / load / save / apply</td></tr>
-      <tr><td><code>46</code></td><td>VIEW_WINDOW</td><td>2 / 5</td><td>Camera visible-tile window (<code>0x1F8003E8..EB</code>): long form writes the four signed tile offsets, short form a half-width window; not fog</td></tr>
-      <tr><td><code>47</code></td><td>WALK_TO</td><td>4</td><td>Motion op: walk to tile at step <code>4 &lt;&lt; (b2 &amp; 7)</code>, approach mode in the high nibble</td></tr>
-      <tr><td><code>49</code></td><td>STATE_RESUME</td><td>var</td><td>Idle / armed / done machine over the entry context; <code>49 03 n</code> opens the name-entry screen for party slot <code>n</code></td></tr>
-      <tr><td><code>4A</code></td><td>WAIT_FRAMES</td><td>2</td><td>Accumulate display frames into <code>ctx+0x54</code>; retry until the operand is reached</td></tr>
-      <tr><td><code>4B</code></td><td>ANIMATE</td><td>3+4n</td><td>Multi-keyframe setup, sets the animating bit</td></tr>
-      <tr><td><code>4C</code></td><td>MENU_CTRL</td><td>var</td><td>Sixteen sub-dispatchers on the high nibble (<a href="#menu-ctrl">below</a>)</td></tr>
-      <tr><td><code>4D</code></td><td>BBOX_TEST</td><td>7</td><td>Player inside the box: continue; outside: jump</td></tr>
-      <tr><td><code>4E</code></td><td>INVENTORY_CMP</td><td>7 / 9</td><td>Compare-and-skip on HP/MP, level, gold (the inn gate), a d256 roll, slot table, coins</td></tr>
-      <tr><td><code>4F</code></td><td>SCENE_REGISTER_WRITE</td><td>7</td><td>Three u16 writes into the scene record</td></tr>
-      <tr><td><code>5x 6x 7x</code></td><td>SYSFLAG set/clr/test</td><td>2 / 4</td><td>The persistent story-flag bank (<a href="#default-route">below</a>); test carries a 2-byte jump target</td></tr>
+      <tr><td>Flow</td><td><code>21</code> <code>26</code> <code>40</code> <code>42</code> <code>4D</code> <code>4E</code></td><td>End of pass (<code>21</code>), relative jumps, inline data skips, branches on the held pad, on the player standing in a box, or on HP / gold / level / a random roll / a script counter</td></tr>
+      <tr><td>Timing</td><td><code>4A</code> <code>2D</code> <code>33</code></td><td>Wait N display frames; spin until a local or context bit flips - the "play this clip and wait for it" idiom</td></tr>
+      <tr><td>Flags</td><td><code>2B</code>-<code>33</code>, <code>5x</code> <code>6x</code> <code>7x</code></td><td>Three small banks (per-script local, a transient global word, the actor's own flag word) and the persistent 4096-bit story-flag bank in the save block</td></tr>
+      <tr><td>Actors</td><td><code>22</code> <code>23</code> <code>37</code> <code>38</code> <code>41</code> <code>43</code> <code>47</code> <code>4B</code></td><td>Play a move clip, teleport to a tile, glide or walk to a tile, set facing, actor control (arc jumps, position tweens, shutter blackout, ending widgets), morph lanes</td></tr>
+      <tr><td>Camera</td><td><code>45</code> <code>46</code></td><td>Stage, save, load and release camera shots; set the visible tile window</td></tr>
+      <tr><td>Sound</td><td><code>35</code> <code>36</code></td><td>BGM start / pause / swap; XA voice clips, SFX cues and the side-band sound bank</td></tr>
+      <tr><td>Party and bag</td><td><code>39</code> <code>3A</code> <code>3B</code> <code>3C</code> <code>3D</code></td><td>Give an item (the chest op), add gold, set a bag slot, add or remove a party member</td></tr>
+      <tr><td>Scene flow</td><td><code>3E</code> <code>3F</code> <code>44</code> <code>49</code></td><td>Start a scripted battle or a minigame, change scene by name, spawn a partition-2 record, open a menu-class screen (shop, save, name entry, code lock)</td></tr>
+      <tr><td>Effects</td><td><code>34</code> <code>4F</code></td><td>Colour fades, attached lights, scene-local 3D animations; scene register writes</td></tr>
+      <tr><td>Grab-bag</td><td><code>4C</code></td><td>Sixteen sub-dispatchers: wall paint, camera focus, actor tint and clone, floor ladder, take item, coins, FMVs, timed flags</td></tr>
     </tbody>
   </table>
-  <p>Per-sub-op encodings for <code>0x34</code>, <code>0x35</code>, <code>0x43</code>, <code>0x49</code> and <code>0x4E</code> are tabulated in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#opcode-reference" target="_blank" rel="noopener"><code>script-vm.md</code></a>.</p>
+  </div>
+  <p>Every opcode with its byte width, the sub-op tables for <code>0x34</code> / <code>0x35</code> / <code>0x36</code> / <code>0x43</code> / <code>0x45</code> / <code>0x49</code> / <code>0x4E</code>, and all sixteen <code>0x4C</code> nibbles are on <a href="script-vm-internals.html#opcode-table">script VM internals</a>.</p>
+</section>
 
-  <h3 id="menu-ctrl">0x4C MENU_CTRL: sixteen dispatchers in one opcode</h3>
-  <p>Despite the name, this is where most of a scene's "everything else" lives. The first operand's high nibble picks the sub-dispatcher; the low nibble picks the sub-op.</p>
-  <table class="layout">
-    <thead><tr><th>Nibble</th><th>Theme</th></tr></thead>
-    <tbody>
-      <tr><td><code>0</code></td><td>Party-leader change</td></tr>
-      <tr><td><code>1</code></td><td>A five-entry sub-table, not sixteen arms: only <code>10</code>..<code>14</code> index it and slot 1 is the common exit, so <code>11</code> and <code>15</code>..<code>1F</code> advance seven bytes and do nothing. The four real arms are a global write (<code>10</code>), the screen tint (<code>12</code>) and its sibling triple (<code>13</code>), and the <strong>actor clone</strong> (<code>14</code>) - the VM's after-image, and the one eight-byte form in the nibble</td></tr>
-      <tr><td><code>2</code></td><td>Camera-octant / pad-rotation setter (<code>gp+0x2D8 = sub_op &amp; 7</code>)</td></tr>
-      <tr><td><code>3</code></td><td>Input lock, player resync, party-state clear</td></tr>
-      <tr><td><code>4</code></td><td>Immediate-or-ramped writes: render scale (<code>40</code>), scalar, mirrored Y</td></tr>
-      <tr><td><code>5</code></td><td>Model select, NPC move-to-tile, <strong>TAKE_ITEM</strong> (sub 2), dialogue polls</td></tr>
-      <tr><td><code>6</code></td><td>Emitter setup, halt-acquire</td></tr>
-      <tr><td><code>7</code></td><td>Rectangular wall paint into the walkability grid - story-conditional collision (<a href="field-locomotion.html">locomotion</a>)</td></tr>
-      <tr><td><code>8</code></td><td>Party full heal, guard-slot jump, actor model + anim set, actor-search jumps, and the <strong>reflection controller</strong> (<code>86</code> installs it, <code>87</code> retires every live one). <code>86</code> names the actor to mirror and makes the executing script the image - ten sites, all in talk records whose text is a single parenthesised beat</td></tr>
-      <tr><td><code>9</code></td><td>Floor-height ladder: sub-<code>0xE</code> installs all sixteen elevation rungs at <code>0x1F80035C</code>, sub-<code>0..2</code> sets one rung oscillating, sub-<code>0xF</code> retires the oscillators. Not a fade family &mdash; the tick's destination is the scene elevation LUT.</td></tr>
-      <tr><td><code>A</code></td><td>Conditional jump on a ctx / local / global flag bit</td></tr>
-      <tr><td><code>B</code></td><td>Undefined - the default arm halts</td></tr>
-      <tr><td><code>C</code></td><td>Slot table writes (<code>CA CB CC</code>), sound trigger, control-word toggle</td></tr>
-      <tr><td><code>D</code></td><td>Field SE, synchronous spawn, party search, VRAM STP-bit edits (<code>D4 D5</code>), timed flags (<code>D3</code>)</td></tr>
-      <tr><td><code>E</code></td><td>Text balloon, <strong>FMV trigger</strong> (<code>4C E2 lo hi</code>), camera teleport / zoom, casino coin delta</td></tr>
-      <tr><td><code>F</code></td><td>Only <code>FF</code> is valid (pass-through)</td></tr>
-    </tbody>
-  </table>
-  <p>Every sub-op body and its byte width: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><code>script-vm-menuctrl.md</code></a>.</p>
-
-  <h3 id="default-route">The story-flag bank (wide opcodes 0x5x / 0x6x / 0x7x)</h3>
-  <p>"Has the player beaten this boss?" lives in a 4096-bit array at RAM <code>0x80085758</code>, inside the save block, reached through the dispatcher's default arm. The low nibble of the opcode plus the next byte form the flag index.</p>
-  <table class="layout">
-    <thead><tr><th>Lead</th><th>Effect</th><th>Bytes</th></tr></thead>
+<section class="doc-section" id="default-route">
+  <h2>Story flags</h2>
+  <p>"Has the player beaten this boss?" lives in a 4096-bit array at RAM <code>0x80085758</code>, inside the save block. The VM reaches it through the dispatcher's default arm: any byte whose high nibble is <code>5</code>, <code>6</code> or <code>7</code> is a flag op, and the opcode's low nibble plus the next byte form the flag index (bits are MSB-first within each byte).</p>
+  <table class="data-table">
+    <thead><tr><th>Lead byte</th><th>Effect</th><th>Bytes</th></tr></thead>
     <tbody>
       <tr><td><code>0x5x</code></td><td>Set flag</td><td>2</td></tr>
       <tr><td><code>0x6x</code></td><td>Clear flag</td><td>2</td></tr>
-      <tr><td><code>0x7x</code></td><td>Test flag; jump to the u16 target when set</td><td>4</td></tr>
+      <tr><td><code>0x7x</code></td><td>Test flag; when set, jump by the following 16-bit offset, else fall through</td><td>4</td></tr>
     </tbody>
   </table>
-  <p>Some story-numbered flags are mechanism, not progress: the <code>0x527..0x531</code> scene-transition scratch band every entry script rewrites, the <code>0x00F</code> door busy-mutex in Drake Castle, and per-visit lift state. Read them as traffic. The disc-wide "who sets flag F" question is answered by <code>legaia-engine man-scripts --system-flag-census</code>, which walks every carrier of every scene.</p>
+  <p>Partition-2 records gate on the same bank, so a flag set by one script is visible to the next record immediately. A beat that should play once <strong>self-latches</strong>: its script sets the very flag its gate tests. Some story-numbered flags are mechanism, not progress: the <code>0x527..0x531</code> scene-transition scratch band every entry script rewrites, the <code>0x00F</code> door busy-mutex in Drake Castle, per-visit lift state. Read those as traffic. The disc-wide "who sets flag F" question is answered by <code>legaia-engine man-scripts --system-flag-census</code>; its caveats are on <a href="script-vm-internals.html#flag-census">internals</a>.</p>
 </section>
 
 <section class="doc-section" id="dialogue">
   <h2>Field dialogue has no opcode</h2>
-  <p>Press the action button in front of a villager and a text box opens - but there is no "show dialogue" instruction. Talking is a three-step pipeline over the NPC's own bytes.</p>
-  <ol>
-    <li><strong>Trigger.</strong> The touch / button-press interaction: the facing probe picks the actor and the entity state machine resumes its parked script. No opcode is involved - op <code>0x3E</code> with <code>op0 &lt; 100</code> is the scripted-battle install, which points the system context at a formation-table row, not at an interaction script.</li>
-    <li><strong>Text.</strong> The NPC's record carries <em>two</em> scripts back to back under one cursor: a prologue (turn, walk) and the conversation - a <code>0x1F</code>-led glyph stream in the <a href="../formats/mes.html">MES</a> encoding.</li>
-    <li><strong>Display.</strong> A per-frame actor-dialogue state machine walks the glyph bytes and feeds the pager one box at a time. Each branch ends by jumping back to the record's flag selector, so the NPC is parked ready for the next talk.</li>
+  <p>Press the action button in front of a villager and a text box opens, but there is no "show dialogue" instruction. Talking is a three-step pipeline over the NPC's own bytes.</p>
+  <ol class="steps">
+    <li><b>Trigger</b><span>The facing probe picks the actor in front of the player and the touch post engages its script. No opcode is involved.</span></li>
+    <li><b>Text</b><span>The record carries two scripts back to back under one cursor: the spawn section, then the interaction. The interaction starts one byte past the spawn section's <code>0x21</code>, and its lines are <code>0x1F</code>-led glyph runs in the <a href="../formats/mes.html">MES</a> encoding.</span></li>
+    <li><b>Display</b><span>The runner stops at the text byte and parks the context on the one shared dialog box; the pager shows it a box at a time. When the box closes, the script runs on.</span></li>
   </ol>
-  <p>Engine: <code>engine_core::inline_dialogue</code> drives the record through the real VM, pausing at each <code>0x1F</code> segment (default in <code>play-window</code>; <code>--simple-dialogue</code> opts out).</p>
-</section>
-
-<section class="doc-section" id="bgm-table">
-  <h2>BGM ids</h2>
-  <p>A script's "play track 2016" is an offset into one bank, not a table lookup.</p>
-  <table>
-    <thead><tr><th>Id</th><th>Resolves to</th></tr></thead>
-    <tbody>
-      <tr><td><code>&lt; 2000</code></td><td>Scene-local: <em>not</em> a scene-block entry. The resolver keeps the block index (base + 6 + id) only as its change test and loads global slot 2 (the track 2002 plays) instead; retail stages no scene bank (<a href="audio.html#bgm-dispatch">audio</a>)</td></tr>
-      <tr><td><code>&gt;= 2000</code></td><td>The global <code>music_01</code> bank in sound-test order: <code>2000 + i</code> = sound-test track <code>i</code> (<a href="../reference/music-tracks.html">names</a>); the bank is piecewise in extraction space</td></tr>
-    </tbody>
-  </table>
+  <p>The box has one owner at a time: a script that reaches text while another holds the box waits for it, while every script not on text keeps its slice. Op <code>0x3E</code> is often mistaken for "talk to NPC"; with <code>op0 &lt; 100</code> it installs a scripted battle.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>The dispatcher</td><td><code>FUN_801DE840</code></td><td>The 43-way switch, prefix retarget, every handler and PC delta</td><td><code>overlay_0897_801de840.txt</code></td></tr>
       <tr><td>Frame driver</td><td><code>FUN_8002519C</code></td><td>Five actor lists at <code>_DAT_8007C34C..6C</code>, <code>jalr node+0x0C</code></td><td><code>funcs/8002519c.txt</code></td></tr>
       <tr><td>Field actor tick</td><td><code>FUN_8003BC08</code></td><td>Flag-word routing: <code>0x100</code> script slice, <code>0x400</code> walk kernel, <code>+0x80</code> motion VM</td><td><code>funcs/8003bc08.txt</code></td></tr>
-      <tr><td>Script slice</td><td><code>FUN_80039B7C</code></td><td>Run-until-stop loop, <code>ctx+0x9E</code> write-back; also the actor-dialogue SM</td><td><code>funcs/80039b7c.txt</code></td></tr>
-      <tr><td>System context seat</td><td><code>FUN_8003AB2C</code></td><td>Record 0 allocated and run inline at scene load</td><td><code>funcs/8003ab2c.txt</code></td></tr>
-      <tr><td>Scene loader</td><td><code>FUN_8003A1E4</code></td><td>Script pointer at <code>actor+0x90</code>, body at <code>1 + 2N + 4</code></td><td><code>funcs/8003a1e4.txt</code></td></tr>
-      <tr><td>Target resolver</td><td><code>FUN_8003C83C</code></td><td><code>0xF8</code> player, <code>0xFB</code> system, else table</td><td><code>funcs/8003c83c.txt</code></td></tr>
+      <tr><td>Script slice</td><td><code>FUN_80039B7C</code></td><td>Run-until-stop loop; <code>0x21</code> clears the engaged bit; the dialog-box park</td><td><code>funcs/80039b7c.txt</code></td></tr>
+      <tr><td>System script</td><td><code>FUN_8003AB2C</code> / <code>FUN_801DA51C</code></td><td>Record 0 run inline at load; per-frame passes gated on the player being free</td><td><code>funcs/8003ab2c.txt</code></td></tr>
+      <tr><td>Scene loader</td><td><code>FUN_8003A1E4</code></td><td>Script pointer at <code>actor+0x90</code>, body at <code>1 + 2N + 4</code>, spawn-section pre-run</td><td><code>funcs/8003a1e4.txt</code></td></tr>
+      <tr><td>Touch post</td><td><code>FUN_801D5B5C</code></td><td>Engages the touched actor unconditionally, text or not</td><td>field overlay dump</td></tr>
+      <tr><td>Target resolver</td><td><code>FUN_8003C83C</code></td><td><code>0xF8</code> player, <code>0xFB</code> system, else bind index</td><td><code>funcs/8003c83c.txt</code></td></tr>
       <tr><td>Story-flag bank</td><td><code>FUN_8003CE08 / CE34 / CE64</code></td><td>Set / clear / test on <code>DAT_80085758</code>, MSB-first per byte</td><td><code>funcs/8003ce08.txt</code></td></tr>
-      <tr><td>Flag writers, live</td><td>exec breakpoints</td><td>Every story write returns to the dispatcher's own <code>0x5x/0x6x</code> arms</td><td><code>autorun_flag_firehose.lua</code></td></tr>
-      <tr><td>Record spawn</td><td><code>FUN_8003BDE0</code></td><td>Partition-2 C1/C2 gate check for op <code>0x44</code></td><td><code>funcs/8003bde0.txt</code></td></tr>
-      <tr><td>BGM resolver</td><td><code>FUN_800243F0</code></td><td>The <code>&lt; 2000</code> / <code>&minus; 2000</code> split</td><td><code>funcs/800243f0.txt</code></td></tr>
-      <tr><td>Placements, live</td><td>town01 actor pool</td><td>53/53 animated actors match the placement header decode</td><td><code>field_npc_placements_disc.rs</code></td></tr>
-      <tr><td>Mode-write sweep</td><td><code>_DAT_8007B83C = 0x1A</code></td><td>Only the field op <code>4C E2</code> and the title attract loop start a movie</td><td><code>cutscene_trigger.rs</code></td></tr>
+      <tr><td>Record spawn</td><td><code>FUN_8003BDE0</code></td><td>Partition-2 gate check for op <code>0x44</code> and walk-on tiles</td><td><code>funcs/8003bde0.txt</code></td></tr>
     </tbody>
   </table>
-  <p class="hint">Full write-up, including the overlay's menu-support functions and the per-scene flag families: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/script-vm.md</code></a>.</p>
-</section>
-
-<section class="doc-section" id="details">
-  <h2>Details</h2>
-
-  <details class="disclosure">
-    <summary>Reading the dump: label-calls, PC deltas and 16-bit jumps</summary>
-    <div class="disclosure-body">
-      <ul>
-        <li>Ghidra renders the epilogue as a call (<code>switchD_801e00f4::default()</code>). In the asm each arm exits with <code>addiu s8, s8, N</code> in the delay slot of <code>j 0x801df09c</code> - that <code>N</code> is the op's PC advance. Ops <code>0x39</code>, <code>0x3B</code>, <code>0x44</code>, <code>0x4C</code> all advance this way.</li>
-        <li>Intra-function labels promoted to fake functions: <code>0x801df098</code> (+2), <code>0x801df09c</code> (+0), <code>0x801df8dc</code> (+6), <code>0x801e00b8</code> (+3), <code>0x801e212c</code> (+7), <code>0x801e3614</code> (BBOX outside, <code>pc + 5 + skip</code>), <code>0x801e3620</code> (+4). Grep the address in the dump before treating it as a callee.</li>
-        <li><code>0x42</code> mode-0 taken target is <code>pc + 3 + u16</code>, joined at <code>LAB_801e35fc</code>.</li>
-        <li>The PC is a signed 16-bit halfword, so every relative jump is <code>(base + delta) mod 0x10000</code>. <code>[21] [26 FE FF]</code> is the park-here idiom. The port wraps in <code>rel_jump(base, lo, hi)</code>.</li>
-      </ul>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>Name-entry screen (op <code>49 03 n</code>)</summary>
-    <div class="disclosure-body">
-      <p>The field overlay's state machine runs the screen (renderer <code>FUN_801E6B34</code>, cursor cell <code>_DAT_8007BB88</code>, state <code>_DAT_8007BB94</code>: 1 editing, 4 confirm) and writes the typed name live into the character record at <code>+0x2A7</code>. Geometry in 320x240 pixels, overlay base <code>(32, 99)</code>:</p>
-      <table>
-        <thead><tr><th>Element</th><th>Geometry</th></tr></thead>
-        <tbody>
-          <tr><td>Grid window / name window</td><td><code>(24, 91, 272, 120)</code> / <code>(196, 71, 88, 28)</code>, pause-menu skin</td></tr>
-          <tr><td>Charset</td><td>7 rows x 17 at <code>0x801F29F0</code>; glyphs from <code>base + (4, 4)</code>, 15 px column pitch, 14 px row pitch, ink 7</td></tr>
-          <tr><td>Working name</td><td><code>(208, 79)</code>; teal <code>_</code> caret 6 px after, 75%-duty blink, 57 px field</td></tr>
-          <tr><td>Control bar</td><td><code>y = 191</code>, ink 6: BS, the default name (restores the template - there is no space key), Select; cursor anchors 102 / 108 / 114</td></tr>
-          <tr><td>Prompts</td><td>"Select your name." at <code>(176, 32)</code>; confirm "Is this name okay?" at <code>(172, 24)</code> with Yes <code>(204, 38)</code> / No <code>(204, 50)</code>, hand opens on No</td></tr>
-        </tbody>
-      </table>
-      <p>After the Done resume the opening plays <code>A2 F8 30</code> then <code>A2 F8 31</code> (<code>EXEC_MOVE</code> on the player) - scene-ANM records 47 / 48 once each - before the walk-out. Engine: <code>engine-core::name_entry</code> + the <code>engine-ui</code> name-entry builders.</p>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>Two <code>0x4C</code> nibble-D sub-ops: VRAM STP bits and the escape timer</summary>
-    <div class="disclosure-body">
-      <p><strong><code>4C D4 / D5</code> - VRAM STP-bit set / clear.</strong> Operand <code>[x_lo x_hi y_lo y_hi]</code> is a VRAM origin; the rect is always 16x1 pixels. Retail does <code>StoreImage</code> &rarr; per-pixel edit &rarr; <code>LoadImage</code>: <code>D4</code> sets the transparency bit on non-zero pixels, <code>D5</code> clears it unless the pixel is STP-only. How a scene toggles a see-through detail without a second texture. Host hooks <code>op4c_n_d_sub_4_vram_stp_set(x, y)</code> / <code>sub_5_…clear</code>.</p>
-      <p><strong><code>4C D3</code> - SCHEDULE_TIMED_FLAGS.</strong> <code>[expiry_flag:u16][below_flag:u16][duration:u32][threshold:u32]</code>: writes the pair into <code>_DAT_800845C0</code>, the duration into <code>_DAT_800845B8</code> / <code>A0</code>, the threshold into <code>_DAT_800845BC</code>. The per-tick consumer <code>FUN_801D2EBC</code> counts down, sets the expiry flag on zero and the below flag while under the threshold. Retail use: <code>chitei2</code>'s collapsing-dungeon escape (flag <code>0x4C7</code>, 2400 frames, threshold 910). The slots sit in the save block, so a mid-timer save keeps it.</p>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>Pure helpers ported as functions</summary>
-    <div class="disclosure-body">
-      <table>
-        <thead><tr><th>Helper</th><th>Original</th><th>Behaviour</th></tr></thead>
-        <tbody>
-          <tr><td><code>packet_length</code></td><td><code>FUN_8003CA38</code></td><td>Length of one text packet: stop at a byte <code>&le; 0x1E</code>; a <code>0xCx</code> byte consumes its follower</td></tr>
-          <tr><td><code>party_flag_test</code></td><td><code>FUN_8003CE64</code></td><td>Bit <code>idx</code> of a packed array, MSB-first; <code>0xFF</code> when set</td></tr>
-          <tr><td><code>small_table_search</code></td><td><code>FUN_80042EE0</code></td><td>Find <code>needle</code> in the low byte of <code>table[i*2]</code> over <code>[lo, hi)</code>; <code>0x100</code> on miss</td></tr>
-          <tr><td><code>load_u16/u24/u32_le</code></td><td><code>FUN_8003CE9C / CEB8 / CED8</code></td><td>Little-endian immediates; the 24-bit form pairs with <code>sign_extend_24</code> for the casino coin delta</td></tr>
-          <tr><td><code>tile_center</code></td><td>inlined in nine arms</td><td><code>0 &rarr; 0</code>; else <code>(b &amp; 0x7F) &lt;&lt; 7 | 0x40</code>, <code>+0x40</code> if the high bit is set</td></tr>
-        </tbody>
-      </table>
-      <p>All in <code>crates/engine-vm/src/field_helpers.rs</code>.</p>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>Flag census: when a row lies</summary>
-    <div class="disclosure-body">
-      <p>The census walks bytecode linearly, and three things desync it. A marked row means "check the record disassembly", never "discard".</p>
-      <ul>
-        <li><strong>Text aliases.</strong> Dialogue bytes land on the wide flag ops: <code>S..W</code> read as Set, <code>a..g</code> as Clear, <code>q..w</code> as Test, so bigrams like <code>ta</code> and <code>Sp</code> mint phantom sites. Rows carry <code>clean</code> (enough error-free decodes since the last desync) and <code>text_alias</code> (printable operand inside a prose-shaped window). A non-printable operand cannot be minted by prose; a mirrored Set/Clear run is self-proving.</li>
-        <li><strong>Width blindness.</strong> A wrong sub-op width desyncs the walk even in clean code and hides a real site behind a phantom. Every <code>0x4C</code> nibble decodes with widths mirrored from the executing VM (nibble B stays a decode error by design).</li>
-        <li><strong>Variant carriers.</strong> The census walks the bundle MAN <em>and</em> the streaming variant MANs (<code>--variant &lt;entry&gt;</code>; rows tagged <code>VARIANT-MAN</code>). <code>--p2-gates</code> prints the partition-2 spawn conditions the inline walk cannot see.</li>
-        <li><strong>Developer flag menus.</strong> The fourth shape is not a desync at all: several shipped records carry a debug picker whose options write the scene's own story flags, so the rows are clean, their operands real, and their meaning "an option nobody picks in retail play". The labels say so - <code>Set all flags</code> / <code>Clear</code> / <code>Exit</code> in Jeremi's inn record, <code>Clear all flags</code> on the Sebucus overworld, an <code>On</code> / <code>Off</code> / <code>Exit</code> toggle in half a dozen more. What separates them from a beat is the block: the label list, the record's stop, then two or more arms that each write flags and jump back to the picker. Rows carry <code>debug_menu</code>.</li>
-      </ul>
-      <p>Worked cases (flag <code>0x142</code> in the Rikuroa variant MAN, <code>0x370</code> in Nivora, <code>549</code> in Rim Elm) are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#disc-wide-system-flag-census-tooling" target="_blank" rel="noopener"><code>script-vm.md</code></a>.</p>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>FMV trigger sites and the <code>field-disasm</code> tool</summary>
-    <div class="disclosure-body">
-      <table>
-        <thead><tr><th>Site</th><th>Function</th><th>Mode write</th><th>Movie id</th></tr></thead>
-        <tbody>
-          <tr><td><code>field_vm_op_4c_e2</code></td><td><code>FUN_801DE840</code></td><td><code>0x801E3104</code></td><td>u16 operand of <code>4C E2</code></td></tr>
-          <tr><td><code>title_attract_loop</code></td><td><code>FUN_801DE234</code> case <code>0x10</code></td><td><code>0x801E0F50</code></td><td><code>0</code> (intro)</td></tr>
-          <tr><td><code>title_tick_inline</code></td><td><code>FUN_801DD35C</code></td><td><code>0x801DDCF0</code></td><td><code>0</code> (intro)</td></tr>
-        </tbody>
-      </table>
-      <p>Eight scenes carry a <code>4C E2</code> op (town01, garmel, deroa, chitei2, dohaty, town0d, uru, jouine); the operands sit LZS-compressed inside each MAN and decode statically (<a href="cutscene.html">cutscenes</a>). <code>FUN_801E30E4</code> is a label inside the dispatcher, not a callee.</p>
-      <pre><code>cargo run -p legaia-engine-vm --bin field-disasm -- file &lt;PATH&gt;
-cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot --disc &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
-      <p>The walker mirrors the executing VM's widths without side effects, so any byte buffer is safe input. <code>scene-event-scripts</code> / <code>scan-prot</code> walk the move-VM prescript table, so a <code>4C E2</code> hit inside a prescript record is a false positive.</p>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>History: readings this page replaced</summary>
-    <div class="disclosure-body">
-      <p>The prescript table was read as field-VM bytecode (it is move-VM stager records). Op <code>0x39</code> was labelled <code>PLAY_SFX</code> (it is the item give). The story-flag base was mislabelled <code>DAT_80086D70</code> by double-counting the save-block displacement. FMV triggers were thought to be rebuilt at scene load (they decode statically from the MAN). More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/script-vm.md</code></a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><code>script-vm-menuctrl.md</code></a>, which also cover the overlay's menu-support functions and the per-scene flag families.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="script-vm-internals.html">Script VM internals</a>
     <a href="motion-vm.html">Motion VMs (the walk kernel)</a>
     <a href="field-locomotion.html">Field locomotion</a>
     <a href="actor-vm.html">Window-widget VM</a>
@@ -359,6 +247,5 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot --disc &lt;PROT.DA
     <a href="../formats/scene-v12-table.html">Scene v12 table</a>
     <a href="../formats/mes.html">MES dialog</a>
     <a href="../formats/str-fmv-table.html">FMV dispatch table</a>
-    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

@@ -43,7 +43,7 @@
 //! repeat interval is therefore `ceil(hold_vsyncs / dt) * dt` vsyncs.
 //!
 //! Engine consumer: the `play-window` water animator
-//! (`crates/engine-shell/src/bin/legaia-engine/window/field_render.rs`).
+//! (`crates/engine-shell/src/window/field_render.rs`).
 
 use crate::kingdom_bundle;
 

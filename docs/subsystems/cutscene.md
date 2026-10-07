@@ -1665,13 +1665,15 @@ is no such law to port:
   `crates/tmd/src/mesh/{color,vram}.rs`), so `palette_collapse_prim`'s neutral guard leaves
   them un-graded. The same guard also leaves an authored word of exactly `(0x80, 0x80, 0x80)`
   neutral, which retail's rewrite takes to `(98, 94, 42)`; the renderer cannot tell the two
-  apart at the shader. Retail draws those same lit prims through the scene GTE back/far colour that
-  its field renderer `FUN_80029888` loads (opdeene's ambient `DAT_8007B788 = 0x00202020`, dim,
-  vs `town01`'s `0x00FFFFFF`; writer `FUN_80043390`) - the field-path GTE colour the engine
-  deliberately omits (no field light source). That omission is a scene-wide boundary that only
-  *shows* in the prologue because opdeene's ambient is unusually dim, and the port's absence of
-  distance culling widens the sampled far region. Both are engine boundaries, not palette-law
-  defects; there is no faithful separable palette / depth law to add.
+  apart at the shader. Retail draws those same lit prims as [light-source rows](renderer.md#the-light-source-rows):
+  `NCCS` / `NCCT` against the GTE back colour, which the per-prim dispatcher `FUN_80043390` loads
+  from `_DAT_8007B788` (`ctc2` to `RBK`/`GBK`/`BBK` at `0x80043464..0x8004346C`; opdeene's
+  `0x00202020` is dim, `town01`'s `0x00FFFFFF` is not). The prologue shows the gap because
+  opdeene's back colour is unusually dim, and the port's absence of distance culling widens the
+  sampled far region. Port: both play hosts shade light-source rows through
+  `engine-core::field_lit_mesh` (over `engine-vm::field_light`), replacing the builder's neutral
+  `0x80`; the engine figures above are those prims at the neutral packet. Neither is a
+  palette-law defect; there is no faithful separable palette / depth law to add.
 
 ## Field-to-battle transition (the battle-intro overlay)
 

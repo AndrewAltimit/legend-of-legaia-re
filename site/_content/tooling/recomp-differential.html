@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Retail side</dt><dd>psxrecomp static recomp of <code>SCUS_942.54</code>, driven over its JSON-over-TCP debug server by <code>scripts/recomp/probe.py</code></dd>
-    <dt>Engine side</dt><dd><code>legaia-engine sim-trace</code> (<code>crates/engine-shell/src/sim_trace.rs</code>) ticking a <code>BootSession</code></dd>
+    <dt>Engine side</dt><dd><code>legaia-engine sim-trace</code> (<code>crates/parity/src/sim_trace.rs</code>) ticking a <code>BootSession</code></dd>
     <dt>Trace shape</dt><dd>One JSON object per frame; angles 12-bit (4096 = full turn), positions in retail world units, mode = the retail game-mode word</dd>
     <dt>Diff</dt><dd><code>trace_diff.py</code> (state), <code>note_diff.py</code> (BGM key-ons); non-zero exit on any divergence</dd>
     <dt>Environment</dt><dd><code>LEGAIA_RECOMP_DIR</code>, <code>LEGAIA_RECOMP_BIOS</code>, <code>LEGAIA_RECOMP_PORT</code> - each overridable per call</dd>
@@ -20,45 +20,32 @@
 <section class="doc-section" id="when">
   <h2>What this solves</h2>
   <p>The emulator harnesses (<a href="pcsx-redux-automation.html">PCSX-Redux</a>, <a href="mednafen-automation.html">mednafen</a>) observe retail through breakpoints and save-state diffs: precise, but slow and one address at a time. The recomp path reads a dozen retail globals every frame at full speed, so hundreds of aligned frames from both sides cost seconds. Reach for it when a scene <em>plays</em> differently in the engine and you need the first diverging quantity and frame.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 210" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two lanes: the retail recomp and the from-scratch engine each emit a JSONL trace in retail units, and trace_diff.py aligns them on the first camera cut and reports the first divergent frame per channel">
-      <style>
-        .rd-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .rd-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .rd-lab { font: 12px sans-serif; fill: currentColor; }
-        .rd-sub { font: 10px monospace; fill: var(--text-muted); }
-        .rd-arr { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#rd-head); }
-      </style>
-      <defs><marker id="rd-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="20" y="30" width="170" height="52" class="rd-box"/>
-      <text x="105" y="52" text-anchor="middle" class="rd-lab">Retail recomp</text>
-      <text x="105" y="70" text-anchor="middle" class="rd-sub">TCP debug server</text>
-      <rect x="20" y="130" width="170" height="52" class="rd-box"/>
-      <text x="105" y="152" text-anchor="middle" class="rd-lab">From-scratch engine</text>
-      <text x="105" y="170" text-anchor="middle" class="rd-sub">BootSession</text>
-      <path d="M190,56 L260,56" class="rd-arr"/>
-      <path d="M190,156 L260,156" class="rd-arr"/>
-      <rect x="262" y="30" width="180" height="52" class="rd-soft"/>
-      <text x="352" y="52" text-anchor="middle" class="rd-lab">trace_capture.py</text>
-      <text x="352" y="70" text-anchor="middle" class="rd-sub">reads pinned globals</text>
-      <rect x="262" y="130" width="180" height="52" class="rd-soft"/>
-      <text x="352" y="152" text-anchor="middle" class="rd-lab">sim-trace</text>
-      <text x="352" y="170" text-anchor="middle" class="rd-sub">reads Camera::globals</text>
-      <path d="M442,56 L520,56" class="rd-arr"/>
-      <path d="M442,156 L520,156" class="rd-arr"/>
-      <rect x="522" y="30" width="120" height="52" class="rd-soft"/>
-      <text x="582" y="52" text-anchor="middle" class="rd-lab">JSONL</text>
-      <text x="582" y="70" text-anchor="middle" class="rd-sub">retail units</text>
-      <rect x="522" y="130" width="120" height="52" class="rd-soft"/>
-      <text x="582" y="152" text-anchor="middle" class="rd-lab">JSONL</text>
-      <text x="582" y="170" text-anchor="middle" class="rd-sub">retail units</text>
-      <path d="M642,56 L690,56 L690,100" class="rd-arr"/>
-      <path d="M642,156 L690,156 L690,116" class="rd-arr"/>
-      <rect x="700" y="80" width="140" height="52" class="rd-box"/>
-      <text x="770" y="102" text-anchor="middle" class="rd-lab">trace_diff.py</text>
-      <text x="770" y="120" text-anchor="middle" class="rd-sub">first divergent frame</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 230" role="img" aria-label="Two lanes: the retail recomp read by trace_capture.py and the from-scratch engine run by legaia-engine sim-trace each emit a JSONL trace in retail units; trace_diff.py aligns the two on the first camera cut and reports the first divergent frame per channel">
+      <defs><marker id="rd-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub" x="100" y="16">retail</text>
+      <rect class="dg-node" x="10" y="26" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="100" y="50">static recomp</text><text class="dg-sub" x="100" y="68">TCP debug server</text>
+      <rect class="dg-node" x="240" y="26" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="340" y="50">trace_capture.py</text><text class="dg-sub" x="340" y="68">reads pinned globals</text>
+      <text class="dg-sub" x="100" y="216">port</text>
+      <rect class="dg-node" x="10" y="146" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="100" y="170">engine BootSession</text><text class="dg-sub" x="100" y="188">cold-booted scene</text>
+      <rect class="dg-node" x="240" y="146" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="340" y="170">sim-trace</text><text class="dg-sub" x="340" y="188">reads Camera::globals</text>
+      <rect class="dg-group" x="470" y="20" width="110" height="190" rx="6"/>
+      <text class="dg-label" x="525" y="58">JSONL</text><text class="dg-sub" x="525" y="76">retail units</text>
+      <text class="dg-label" x="525" y="178">JSONL</text><text class="dg-sub" x="525" y="196">retail units</text>
+      <rect class="dg-node-accent" x="610" y="86" width="140" height="56" rx="5"/>
+      <text class="dg-label" x="680" y="110">trace_diff.py</text><text class="dg-sub" x="680" y="128">first divergence</text>
+      <path class="dg-edge" d="M190 54 L238 54" marker-end="url(#rd-arrow)"/>
+      <path class="dg-edge" d="M190 174 L238 174" marker-end="url(#rd-arrow)"/>
+      <path class="dg-edge" d="M440 54 L478 54" marker-end="url(#rd-arrow)"/>
+      <path class="dg-edge" d="M440 174 L478 174" marker-end="url(#rd-arrow)"/>
+      <path class="dg-edge" d="M572 64 L608 104" marker-end="url(#rd-arrow)"/>
+      <path class="dg-edge" d="M572 170 L608 126" marker-end="url(#rd-arrow)"/>
     </svg>
-    <figcaption>Both sides emit the same trace shape; the diff aligns on the first camera cut and reports per channel.</figcaption>
+    <figcaption>Both sides emit the same trace shape in retail units; the diff aligns them on the first camera cut and reports, per channel, the first frame they disagree.</figcaption>
   </figure>
 </section>
 
@@ -79,7 +66,7 @@
   <tbody>
   <tr><td><code>probe.py</code></td><td><code>scripts/recomp/</code></td><td><code>RecompClient</code> library + CLI for the debug server: ping / read / press / load-state / screenshot / launch / kill</td></tr>
   <tr><td><code>trace_capture.py</code></td><td><code>scripts/recomp/</code></td><td>Per-frame capture of a named address map (<code>camera</code>, <code>player</code>, <code>scene</code>, <code>--actors</code>) into JSONL</td></tr>
-  <tr><td><code>legaia-engine sim-trace</code></td><td><code>crates/engine-shell</code></td><td>Engine side: boots the scene live, ticks N frames, emits N+1 records</td></tr>
+  <tr><td><code>legaia-engine sim-trace</code></td><td><code>crates/parity</code> (subcommand of <code>legaia-engine</code>)</td><td>Engine side: boots the scene live, ticks N frames, emits N+1 records</td></tr>
   <tr><td><code>trace_diff.py</code></td><td><code>scripts/recomp/</code></td><td>Aligns two traces, first divergence per channel</td></tr>
   <tr><td><code>preflight.py</code>, <code>apply_boot_state_fix.py</code></td><td><code>scripts/recomp/</code></td><td>Diagnose and repair the recomp's savestate-resume defect</td></tr>
   <tr><td><code>minigame_warp.py</code></td><td><code>scripts/recomp/</code></td><td>Replays the field VM's door-warp writes to drop any field state into a minigame</td></tr>
@@ -134,7 +121,7 @@
     <li>Right after a savestate load the camera can sit static for a settle window; capture longer and let alignment find the first change.</li>
   </ul>
   <h3>Reading a camera divergence</h3>
-  <p>Over the opening chain the angle channels, <code>cam.roll</code>, <code>scene</code> and <code>mode</code> match retail exactly. The remaining position gap is a <strong>timeline-phase difference</strong>: <code>sim-trace</code> boots a scene cold at frame 0, while a retail capture arrives through the prologue chain several beats in, so the engine's beat 0 is compared against retail's beat 5. A scene where the cold-booted engine runs no camera script at all reads the same way - a beat gated on arrival story flags. Distinguishing either from a pose error needs the engine driven <em>through</em> the chain.</p>
+  <p>Before reading a position gap as a pose error, rule out a <strong>timeline-phase difference</strong>: <code>sim-trace</code> boots a scene cold at frame 0, while a retail capture usually arrives through the prologue chain several beats in, so the engine's beat 0 can be compared against retail's beat 5. A scene where the cold-booted engine runs no camera script at all reads the same way - a beat gated on arrival story flags. Telling either from a pose error needs the engine driven <em>through</em> the chain.</p>
   <details class="disclosure">
     <summary>Getting into a scene the opening chain does not reach</summary>
     <div class="disclosure-body">
@@ -184,9 +171,9 @@
 <section class="doc-section" id="note-differential">
   <h2>Note-level audio differential</h2>
   <p>The same shape applied to music: instead of camera channels per frame it compares the stream of <em>key-ons</em> a sequencer asked the SPU for. Both sides snapshot the same instant (sample start address, pitch, per-voice volumes, ADSR words), so a divergence localises directly - a missing key-on means the sequencer never asked, a wrong start address means tone selection diverged, a wrong pitch means the note or its bend resolved differently.</p>
-<pre><code>python3 scripts/recomp/audio_note_capture.py --port 4472 --seconds 30 --out /tmp/scratch/recomp_notes.jsonl --summary
-./target/release/note-trace --extracted extracted --track 0 --frames 1800 --out /tmp/scratch/engine_notes.jsonl
-python3 scripts/recomp/note_diff.py /tmp/scratch/recomp_notes.jsonl /tmp/scratch/engine_notes.jsonl</code></pre>
+  <div class="cli"><code>python3 scripts/recomp/audio_note_capture.py --port 4472 --seconds 30 --out /tmp/scratch/recomp_notes.jsonl --summary</code></div>
+  <div class="cli"><code>./target/release/note-trace --extracted extracted --track 0 --frames 1800 --out /tmp/scratch/engine_notes.jsonl</code></div>
+  <div class="cli"><code>python3 scripts/recomp/note_diff.py /tmp/scratch/recomp_notes.jsonl /tmp/scratch/engine_notes.jsonl</code></div>
   <table>
     <thead><tr><th>Rule</th><th>Why</th></tr></thead>
     <tbody>
@@ -196,17 +183,7 @@ python3 scripts/recomp/note_diff.py /tmp/scratch/recomp_notes.jsonl /tmp/scratch
       <tr><td>Alignment is on note <em>ordinal</em></td><td>Captures start mid-track and the frame counters have unrelated origins.</td></tr>
     </tbody>
   </table>
-  <details class="disclosure">
-    <summary>History: two engine defects the note diff surfaced (both closed)</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li><strong>Per-voice volume in the wrong domain.</strong> Key-on volumes occupied <code>0..127</code> where retail's occupy the SPU's 14-bit <code>0..0x3FFF</code>. <code>fire</code> carries the retail chain of <code>FUN_80067550</code> (<code>vel &times; bank_mvol &times; 0x3FFF / 0x3F01</code>, then <code>&times; prog_mvol &times; tone_vol / 0x3F01</code>) and the sequencer's closing square taper lands in <code>sequencer.rs</code>'s <code>channel_mix</code>.</li>
-        <li><strong>Tone selection collapsed.</strong> The VAB packs one tone page per <em>used</em> program; retail resolves a program to its page by rank among used <code>ProgAtr</code> slots (<code>FUN_80068d94</code> writes the rank table, <code>FUN_80068b98</code> reads it). <code>VabBank::upload</code> expands pages into program-number space; pinned corpus-wide by <code>engine-audio/tests/real_vab_program_mapping.rs</code>.</li>
-        <li>The <code>v</code> (voice index) channel differs whenever either does - allocation order is an effect, not a finding.</li>
-      </ul>
-      <p>The reading that field BGM is scene-bundle-resident is falsified - see <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
+  <p class="hint">The <code>v</code> (voice index) channel differs whenever any other channel does - voice allocation order is an effect, not a finding. The volume domain the key-on carries is retail's 14-bit SPU range (<code>FUN_80067550</code>'s chain), and a program resolves to its tone page by rank among the used programs (<code>FUN_80068d94</code> / <code>FUN_80068b98</code>).</p>
 </section>
 
 <section class="doc-section" id="xa-cue">
@@ -224,7 +201,7 @@ python3 scripts/recomp/note_diff.py /tmp/scratch/recomp_notes.jsonl /tmp/scratch
       <tr><td>Key-on volume chain</td><td><code>FUN_80067550</code></td><td>14-bit volume domain and truncation points</td><td><code>ghidra/scripts/funcs/80067550.txt</code></td></tr>
       <tr><td>Program-to-page rank table</td><td><code>FUN_80068d94</code> (write), <code>FUN_80068b98</code> (read)</td><td>Tone pages are indexed by rank among used programs</td><td><code>ghidra/scripts/funcs/</code></td></tr>
       <tr><td>XA cue fire</td><td><code>FUN_8003D53C</code>; clip table <code>0x801C6ED8</code></td><td>Which globals stage a cue and how a location maps to a file</td><td><a href="../subsystems/battle-action.html">battle action</a></td></tr>
-      <tr><td>Diff semantics</td><td><code>scripts/recomp/test_trace_diff.py</code>, <code>test_minigame_warp.py</code>, <code>test_xa_cue_capture.py</code></td><td>Alignment, wraparound, tolerance and edge rules on synthetic fixtures</td><td><code>python3 -m unittest</code></td></tr>
+      <tr><td>Diff semantics</td><td>synthetic fixtures beside the scripts in <code>scripts/recomp/</code></td><td>Alignment, wraparound, tolerance and edge rules, checked without retail data</td><td><code>python3 -m unittest</code></td></tr>
     </tbody>
   </table>
 </section>

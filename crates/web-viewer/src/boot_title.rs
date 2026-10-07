@@ -13,7 +13,7 @@
 //! **The mode word is held here too.** `engine-shell`'s `BootSession` holds
 //! the port's seat at the retail mode table (`engine-core::mode::ModeSeat`)
 //! and carries `_DAT_8007B83C` through the boot chain; this page holds one on
-//! [`LegaiaRuntime`] (`mode_seat`), reconciled once per frame by
+//! [`LegaiaRuntime`] (its host slot's `seat()`), reconciled once per frame by
 //! `LegaiaRuntime::tick_mode_seat` through the same two seat entry points -
 //! so the battle-intro mode hand-off and the mode-change edge land on the same
 //! frame on both hosts, and the page can report the word
@@ -79,7 +79,7 @@ impl LegaiaRuntime {
         if self.title_atlas.is_some() {
             return;
         }
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return;
         };
         let bytes = host
@@ -103,7 +103,7 @@ impl LegaiaRuntime {
             return;
         }
         self.boot_logos_failed = true;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return;
         };
         let Ok(bytes) = host
@@ -130,7 +130,7 @@ impl LegaiaRuntime {
         if self.menu_glyph_atlas.is_some() {
             return;
         }
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return;
         };
         self.menu_glyph_atlas = host
@@ -181,7 +181,7 @@ impl LegaiaRuntime {
     /// write through - so the scan is "does any inserted card hold a readable
     /// block".
     pub fn boot_title_start(&mut self) {
-        if self.scene_host.is_none() {
+        if self.scene_host.host().is_none() {
             return;
         }
         // Reuse the pause-menu font atlas for the text draws.
@@ -362,7 +362,7 @@ impl LegaiaRuntime {
     /// and its atlas builder were shared, and the browser play page entered
     /// the boot chain one stage late, at the title.
     pub fn boot_logos_start(&mut self) -> bool {
-        if self.scene_host.is_none() {
+        if self.scene_host.host().is_none() {
             return false;
         }
         self.ensure_publisher_logos_atlas();

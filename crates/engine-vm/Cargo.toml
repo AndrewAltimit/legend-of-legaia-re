@@ -3,32 +3,28 @@ name = "legaia-engine-vm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_vm"
 path = "src/lib.rs"
 
-[[bin]]
-name = "field-disasm"
-path = "src/bin/field_disasm.rs"
-
 [dependencies]
-anyhow.workspace = true
-clap.workspace = true
-legaia-art = { path = "../art" }
-legaia-anm = { path = "../anm" }
-legaia-asset = { path = "../asset" }
-legaia-prot = { path = "../prot" }
-
-# SIGPIPE reset in the bin's main() so piping stdout into `head` exits
-# quietly instead of panicking on a broken pipe.
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+legaia-art.workspace = true
+legaia-anm.workspace = true
+legaia-asset.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
+legaia-prot.workspace = true
 # The camera-mover recomp oracle parses the external frame-tagged JSONL
 # captures (env-gated via LEGAIA_RECOMP_TRACE_DIR; never committed).
 serde_json.workspace = true
 # The ambient-motion disc oracle LZS-decodes each scene bundle's MAN to
 # re-derive the facing-op census (disc-gated; no bytes committed).
-legaia-lzs = { path = "../lzs" }
+legaia-lzs.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

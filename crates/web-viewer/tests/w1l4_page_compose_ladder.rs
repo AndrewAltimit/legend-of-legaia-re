@@ -27,7 +27,7 @@
 //! Coverage export (what wires this into the reach report):
 //!
 //! ```text
-//! cargo llvm-cov -p legaia-web-viewer --test w1l4_page_compose_ladder \
+//! cargo llvm-cov -p legaia-web-viewer --test integration w1l4_page_compose_ladder:: \
 //!     --json --output-path target/cov-w1l4_page_compose_ladder.json
 //! ```
 //!

@@ -834,7 +834,8 @@ pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
 /// - Every skeleton part carries geometry in every assembly.
 pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
     use legaia_asset::battle_char_assembly as bca;
-    use legaia_asset::{battle_data_pack, monster_archive, party_swap};
+    use legaia_asset::{battle_data_pack, monster_archive};
+    use legaia_patcher::party_swap;
 
     /// A baked hand's local-centroid magnitude ceiling (units). Retail
     /// hands sit 21-36 from the wrist pivot; the un-seated sibling fists

@@ -509,7 +509,7 @@ set. And bank 0 / bank 1 are gated by `fade_flags`, not by
 | `== 0` | (ignored) | `0x00` | bank 0 - `kind ∈ [12..19]` use the small `0x80043658..0x80043F10` handler set |
 | `!= 0` | neither `0x04000000` nor `0x20000000` | `0x50` | bank 1 - `kind 12..19` swap to the `0x800448B0..0x80045584` set |
 | `!= 0` | `0x04000000` set, `0x20000000` clear | `0xA0` | bank 2 - `kind 12..17` same as bank 1; `kind 18` / `19` swap to `0x800457C4` / `0x80045988` |
-| `!= 0` | `0x20000000` set | `0xF0` | bank 3 - subtractive blend; `kind 19` swaps to `0x80045BB4`. Never observed in retail world-map render |
+| `!= 0` | `0x20000000` set | `0xF0` | bank 3 - `kind 19` swaps to `0x80045BB4`. Never observed in retail world-map render |
 
 `kind ∈ [0..7]` and `kind ≥ 20` are NULL slots in every bank -
 encountering them ends the primitive stream. `kind ∈ [8..11]` is
@@ -533,11 +533,14 @@ during retail Drake world-map gameplay; banks 2 and 3 are reachable in
 the dispatcher but no caller passes the flags that select them. The
 sole bank distinction is `fade_flags != 0` (bank 0 ↔ bank 1).
 
-"Never selected in this capture" is not "not a real render mode": the four
-banks are the PSX semi-transparency states, and bank 3 is **subtractive**
-blend. See [`subsystems/renderer.md`](../subsystems/renderer.md) for the
-per-bank alpha semantics, which is the authority on what a bank *means*; this
-page only records which ones the world-map capture exercised.
+"Never selected in this capture" is not "not a real render mode": banks 2
+and 3 are real handlers. The bank is **not** the blend equation - with a fade
+argument the dispatcher loads the GTE far colour + depth-cue interpolant
+(`0x800434C8..0x800434D4`) and picks the depth-cue handler set, while the
+blend mode is a separate field, `((cmd_flags >> 24) & 3) << 21`, stored at
+`0x80043518`. See [`subsystems/renderer.md`](../subsystems/renderer.md), the
+authority on what each handler draws; this page only records which banks the
+world-map capture exercised.
 
 #### Per-kind primitive types
 

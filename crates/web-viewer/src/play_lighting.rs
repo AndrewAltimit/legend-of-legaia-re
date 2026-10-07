@@ -47,7 +47,7 @@ pub(crate) struct SceneLightCache {
 impl LegaiaRuntime {
     fn scene_name(&self) -> String {
         self.scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.scene.as_ref())
             .map(|s| s.name.clone())
             .unwrap_or_default()
@@ -58,7 +58,7 @@ impl LegaiaRuntime {
     pub(crate) fn lighting_mood(&self) -> sl::LightingMood {
         let grade = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.held_scene_grade());
         TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
             .unwrap_or_default()
@@ -112,7 +112,7 @@ impl LegaiaRuntime {
             }
             cache.statics = sl::cluster_all_scene_lights(&samples);
         }
-        if let Some(host) = self.scene_host.as_ref() {
+        if let Some(host) = self.scene_host.host() {
             let banks = crate::field_actors::ActorBanks {
                 scene_anm: self.scene_anm.as_ref(),
                 locomotion_anm: self.locomotion_anm.as_ref(),
@@ -182,7 +182,7 @@ impl LegaiaRuntime {
         let mood = self.lighting_mood();
         let mut out: Vec<f32> = mood.uniforms(true).iter().flatten().copied().collect();
         out.extend_from_slice(&mood.window_word());
-        let field = self.scene_host.as_ref().is_some_and(|h| {
+        let field = self.scene_host.host().is_some_and(|h| {
             h.world.mode == SceneMode::Field
                 && !h
                     .scene
@@ -194,8 +194,7 @@ impl LegaiaRuntime {
             return out;
         }
         self.ensure_scene_lights();
-        let (Some(host), Some(cache)) = (self.scene_host.as_ref(), self.scene_lights.as_ref())
-        else {
+        let (Some(host), Some(cache)) = (self.scene_host.host(), self.scene_lights.as_ref()) else {
             out.extend_from_slice(&[0.0, 0.0]);
             return out;
         };

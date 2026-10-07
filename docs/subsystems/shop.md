@@ -442,8 +442,8 @@ The whole body is gated on the staged id word `DAT_801E46B0` being
 `(WX, WY + 0x45)` draws unconditionally, so an empty panel is not an empty
 rectangle. Ported as `engine-core::shop::{shop_sell_detail_panel,
 item_passive_index}`; **both** hosts draw it for the sell list in place of the
-buy-side info window 34 (`web-viewer::play_shop`,
-`legaia-engine`'s `window::shop_windows`). The two windows are alternatives, not
+buy-side info window 34, through one shared draw
+(`legaia_engine_screens::sell_detail_window_draws`). The two windows are alternatives, not
 siblings - their rects overlap and both print the name / description head - so a
 host that drew 34 and 39 together would double that text rather than gain a
 panel.
@@ -518,10 +518,10 @@ Port: `engine-core::shop::{ShopScreenPhase, shop_screen_windows,
 party_compare_members}` and `MenuRuntime::{shop_screen_phase,
 covers_field}`; `engine-ui::shop_screen` composes the frames (window 33
 wears the carved plaque), the picker, the paged list, window 41 and the
-painters' hand / currency-pictogram sprites, so the native window
-(`window/shop_windows.rs::gold_shop_screen`) and the browser play page
-(`web-viewer::play_shop::gold_shop_screen`) draw one screen. Both clear to
-black under a shop.
+painters' hand / currency-pictogram sprites, and
+`legaia_engine_screens::gold_shop_screen` projects the live session into it,
+so the native window and the browser play page draw one screen through one
+call. Both clear to black under a shop.
 
 The casino prize counter is the same stack: on black, the "Exchange" plaque
 (window 43, kind 2), the framed prize list (44) and coin counter (45), and the

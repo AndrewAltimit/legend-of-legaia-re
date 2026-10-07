@@ -499,12 +499,6 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   // Slot 0/1/2 = Vahn/Noa/Gala in every form.
   const HERO_SLOTS = [0, 1, 2];
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
-  }
-
   // Active pack for whichever form is selected. Baka Fighter (both palettes)
   // uses PROT 1204; field form uses PROT 0874 §0; the battle form uses the
   // four player battle files (PROT 863+).
@@ -1985,8 +1979,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     try {
       const buf = await prog.read(f, `Reading ${f.name}`);
       prog.indeterminate('Initialising decoder…');
-      const mod = await import('./wasm/legaia_web_viewer.js');
-      await mod.default();
+      const mod = await LegaiaWasm.load();
       viewer = new mod.LegaiaViewer('char-viewer-canvas');
       prog.indeterminate('Parsing PROT.DAT…');
       await prog.paint();

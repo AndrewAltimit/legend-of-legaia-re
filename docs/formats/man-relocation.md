@@ -202,7 +202,7 @@ any of the 112 members' byte offsets.
 So the cost of growing a member is: rewrite `word_offsets[i..]` for every member
 at or after the grown one, rewrite the chunk header's declared length, and keep
 the result inside the entry's sector footprint. That is exactly what
-`legaia_asset::party_swap::nivora_field` does when it re-emits members
+`legaia_patcher::party_swap::nivora_field` does when it re-emits members
 `106/107/108` (disc oracle `nivora_field_real`), and it is why the swap budgets
 the *contiguous span of the three retail members* rather than patching in place.
 

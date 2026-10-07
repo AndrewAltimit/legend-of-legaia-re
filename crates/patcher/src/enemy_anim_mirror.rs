@@ -2,7 +2,7 @@
 //! `apply_delilas_party` re-skins monster blocks 162/163/164 with the
 //! mapped heroes' battle models, this pass rewrites the swapped blocks'
 //! animation entries with the HERO's own clips
-//! (`legaia_asset::party_swap::enemy_anim`), so the Nivora ravine duels
+//! (`crate::party_swap::enemy_anim`), so the Nivora ravine duels
 //! fight a Vahn/Noa/Gala who stand, react and strike like themselves
 //! instead of posing the hero mesh with Delilas choreography.
 //!
@@ -40,10 +40,10 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::monster_archive;
-use legaia_asset::party_swap::enemy_anim::{
+use crate::party_swap::enemy_anim::{
     self, MirrorOptions, PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR, StagedPlan,
 };
+use legaia_asset::monster_archive;
 
 use crate::delilas_party::{PartyMapping, Sibling};
 use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};

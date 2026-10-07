@@ -1,0 +1,206 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="renderer.html">renderer</a> &middot; internals</div>
+  <h1>Renderer internals</h1>
+  <p class="lede">The evidence and the dense tables behind the <a href="renderer.html">renderer tour</a>: which mesh leaf a retail frame really enters, the light-source formula, the per-primitive dispatch table, the port's VRAM upload passes, and the routine-by-routine provenance.</p>
+</header>
+
+<section class="doc-section" id="mesh-leaf">
+  <h2>Which leaf a frame enters</h2>
+  <p>The mesh-chain walk is a three-way choice, opened at every site by the same test on the drawn actor's <code>+0x42</code> halfword:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three-way mesh leaf choice: an actor draw tests +0x42; non-zero goes to the table-driven renderer FUN_8002735C; zero then tests +0x7A, non-zero going to the light-source sibling FUN_80029888, zero to the per-primitive dispatcher FUN_80043390, which is the leaf every sampled frame uses.">
+      <defs><marker id="ri-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="85" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="105" y="109">Actor draw</text>
+      <text class="dg-sub" x="105" y="127">3 SCUS brackets</text>
+      <rect class="dg-node" x="250" y="20" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="350" y="44">FUN_8002735C</text>
+      <text class="dg-sub" x="350" y="62">table-driven renderer</text>
+      <rect class="dg-node" x="250" y="150" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="350" y="174">test +0x7A</text>
+      <text class="dg-sub" x="350" y="192">light-source sibling gate</text>
+      <rect class="dg-node" x="530" y="100" width="210" height="50" rx="5"/>
+      <text class="dg-label" x="635" y="122">FUN_80029888</text>
+      <text class="dg-sub" x="635" y="139">light-source sibling</text>
+      <rect class="dg-node-accent" x="530" y="168" width="210" height="50" rx="5"/>
+      <text class="dg-label" x="635" y="190">FUN_80043390</text>
+      <text class="dg-sub" x="635" y="207">per-prim dispatcher</text>
+      <path class="dg-edge-dim" d="M190 105 L248 50" marker-end="url(#ri-arrow)"/>
+      <path class="dg-edge" d="M190 122 L248 176" marker-end="url(#ri-arrow)"/>
+      <path class="dg-edge-dim" d="M450 170 L528 128" marker-end="url(#ri-arrow)"/>
+      <path class="dg-edge" d="M450 186 L528 192" marker-end="url(#ri-arrow)"/>
+      <text class="dg-edge-label" x="105" y="66" text-anchor="middle">+0x42 != 0</text>
+      <text class="dg-edge-label" x="105" y="166" text-anchor="middle">+0x42 == 0</text>
+      <text class="dg-edge-label" x="470" y="130" text-anchor="middle">!= 0</text>
+      <text class="dg-edge-label" x="490" y="210" text-anchor="middle">== 0</text>
+    </svg>
+    <figcaption>Dashed arms are the ones no sampled mode takes. A census over a battle, a world map, an in-engine cutscene and the slot machine counted thousands of actor draws, every one with <code>+0x42 == 0</code> and <code>+0x7A == 0</code>, and thousands of dispatcher entries against zero renderer entries.</figcaption>
+  </figure>
+  <p>The gate is a property of the actor, not of the mode: the disc ships writers of <code>+0x42</code> (the actor allocator behind a dev counter, and move-VM op <code>0x10</code> from script data), so a state that raised it would enter the table-driven renderer in any mode. The third bracket, <code>FUN_80048A08</code>, is what the arts after-image renderer draws each motion-trail ghost through.</p>
+</section>
+
+<section class="doc-section" id="light-rows">
+  <h2>The light-source rows</h2>
+  <p>Group flags <code>0x10..=0x17</code> (descriptor rows 0 and 1) carry no colour word. The dispatcher picks a body by <code>flags &gt;&gt; 1</code> (<code>srl s5,s7,0x11</code> at <code>0x800435A4</code>), so these become kinds 8..11 - the only handlers with a GTE light op. A corner's colour is <code>NCCS</code> / <code>NCCT</code>:</p>
+  <ol class="steps">
+    <li><b>Intensity</b><span><code>IR = clamp0(L &middot; n &gt;&gt; 12)</code> - light matrix times the TMD normal</span></li>
+    <li><b>Ambient</b><span><code>IR' = clamp0((BK &lt;&lt; 12) + LC &middot; IR &gt;&gt; 12)</code> - back colour plus the light colour</span></li>
+    <li><b>Object colour</b><span><code>out = RGBC &middot; IR' &gt;&gt; 12</code>, saturated per channel</span></li>
+  </ol>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Input</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td><code>RGBC</code></td><td>The dispatcher's colour argument times the object's <code>+0x18</code> colour word, <code>&gt;&gt; 7</code> per channel; both field sweeps pass <code>0x808080</code></td></tr>
+      <tr><td><code>BK</code></td><td><code>_DAT_8007B788</code>'s low three bytes, each <code>&lt;&lt; 4</code>; scene load sets <code>0x202020</code>, op <code>4C 8A</code> changes it</td></tr>
+      <tr><td><code>LC</code></td><td>Static block <code>0x800704EC</code>: every row <code>(4096, 0, 0)</code>, so all channels follow the first light alone</td></tr>
+      <tr><td><code>L</code></td><td>Built each frame by <code>FUN_800172C0</code> from the angle trio <code>_DAT_8007B780..84</code> (half-turn added on X), folded with the draw's rotation - so intensity is against the <strong>world</strong> normal</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Exec breakpoints on <code>cave01</code> count hundreds of kind-8 and kind-9 entries per second, every one returning into the decoration pass; the port's frame of that state, shaded this way, matches retail to within image noise. On a kingdom overworld the same breakpoints catch nothing - with a control group of the overworld's own overlay leaves firing on the same frames - and no TMD in the kingdom bundles or the party pack carries a light-source group. Both hosts shade lit meshes through one kernel, <code>engine-core::field_lit_mesh</code>, with one shaded copy per mesh and rotation.</p>
+</section>
+
+<section class="doc-section" id="prim-dispatch">
+  <h2>Per-primitive dispatch table</h2>
+  <p><code>FUN_80043390</code> decodes a kind (<code>0..19</code>) and tail-calls a 20-slot &times; 4-bank jump table: <code>0x8007657C</code> on the SCUS path, <code>0x801F8968</code> when the world-map overlay is paged in. Each handler runs <code>RTPT</code>/<code>RTPS</code> &rarr; <code>NCLIP</code> &rarr; <code>AVSZ3</code>/<code>AVSZ4</code> &rarr; packet into the ordering table. Even kinds are triangles, odd kinds quads.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Kinds</th><th>Banks</th><th>Colour op</th><th>Reached by</th></tr></thead>
+    <tbody>
+      <tr><td>0..7</td><td>-</td><td>-</td><td>NULL slots in every bank</td></tr>
+      <tr><td>8..11</td><td>bank-invariant</td><td><code>NCCS</code> / <code>NCCT</code> (lit)</td><td>the field's light-source rows</td></tr>
+      <tr><td>12..19</td><td>bank 0 opaque; banks 1..3 add the depth cue</td><td><code>DPCS</code> / <code>DPCT</code></td><td>the hot path: field, battle, summons</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The bank is an offset the dispatcher itself writes (<code>0x00</code>, <code>0x50</code>, <code>0xA0</code>, <code>0xF0</code>) from its blend argument and tint bits; it is not the blend equation, which is stored separately. The overworld swaps in eight overlay-resident replacements for kinds 12..19 (PROT 0901), so a sweep bounded to the SCUS span misses them. The body at <code>0x80044798</code>, between the lit set and the fog banks, is a read-back helper, not a table entry.</p>
+</section>
+
+<section class="doc-section" id="vram-upload">
+  <h2>The port's VRAM upload passes</h2>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Step</th><th>What happens</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Collect targets</td><td>Parse every TMD in the scene; union the palette rows and texture-page rectangles its primitives sample</td><td><code>SceneResources::build_targeted</code></td></tr>
+      <tr><td>Shared blocks first</td><td>Upload the boot-resident UI pack and the character pack (PROT 0874) so scene-local TIMs win any collision</td><td><code>FIELD_SHARED_BLOCKS</code></td></tr>
+      <tr><td>Image pass</td><td>Write each TIM image that overlaps a sampled page and no sampled palette row</td><td><code>build_vram_targeted</code></td></tr>
+      <tr><td>Palette pass</td><td>Write each TIM palette block that overlaps a sampled row, unconditionally</td><td>same</td></tr>
+      <tr><td>Verdict per primitive</td><td><code>Ok</code> / <code>MissingClut</code> / <code>ClutDepthMismatch</code> / <code>MissingTexturePage</code>; bad ones are dropped at mesh build</td><td><code>Vram::prim_texture_status</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Retail's loader uploads <em>every</em> scene TIM; the VRAM parity oracle switches to that (<code>upload_all_tims</code>) while the render path stays targeted. Untextured primitives skip VRAM entirely and draw from their colour block on the vertex-colour pipeline.</p>
+  <h3 id="colour-space">Colour space</h3>
+  <p>Every colour is a PSX framebuffer value - display-referred, what the console clocks out. The swapchain is a UNORM view, never sRGB (an sRGB attachment would lift retail's mid-grey from 132 to 190); the last shader stage quantises to 5 bits and expands <code>(c5 &lt;&lt; 3) | (c5 &gt;&gt; 2)</code>; semi-transparency blends in the same space.</p>
+</section>
+
+<section class="doc-section" id="render-surfaces">
+  <h2>Five surfaces, one engine</h2>
+  <p><code>engine-render</code> links wgpu, so the browser cannot depend on it; kernels in <code>engine-core</code>, <code>engine-ui</code>, <code>engine-vm</code> or <code>legaia-tmd</code> are the ones every surface shares.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Surface</th><th>Draw-list assembly</th></tr></thead>
+    <tbody>
+      <tr><td>Native <code>play-window</code></td><td><code>engine-shell</code> <code>window/field_render.rs</code>, <code>window/geometry.rs</code></td></tr>
+      <tr><td>Browser play page</td><td><code>web-viewer</code> <code>play.rs</code>, <code>play_battle_render.rs</code></td></tr>
+      <tr><td>Browser field-scene viewer</td><td><code>web-viewer</code> <code>field_scene.rs</code>; <code>scene_geom.rs</code> for the world map</td></tr>
+      <tr><td>Browser dance hall</td><td><code>web-viewer</code> <code>minigames_dance.rs</code></td></tr>
+      <tr><td>Browser fishing venue</td><td><code>web-viewer</code> <code>minigames_fishing_scene.rs</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Placement rotation is three angles on every surface (<code>Rx &middot; Ry &middot; Rz</code>); a yaw-only builder loses maps like <code>juui1</code>, which tilts all nine placements a quarter turn about X. The battle backdrop is one TMD retail draws twice, the second copy under a per-stage transform; both hosts append the copy at build time.</p>
+</section>
+
+<section class="doc-section" id="how-we-know">
+  <h2>How we know</h2>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Function / data</th><th>Address</th><th>What it shows</th><th>Dump</th></tr></thead>
+    <tbody>
+      <tr><td>TMD renderer</td><td><code>FUN_8002735C</code></td><td>60 GTE ops per group; the only colour op is <code>DPCS</code>. Three <code>jal</code> sites, all behind the <code>+0x42</code> test</td><td><code>funcs/8002735c.txt</code></td></tr>
+      <tr><td>Light-source sibling</td><td><code>FUN_80029888</code></td><td>Same op set over the same table; behind <code>+0x7A</code></td><td><code>funcs/80029888.txt</code></td></tr>
+      <tr><td>Descriptor table</td><td><code>DAT_8007326C</code></td><td>Six 8-byte rows; byte3 shape, byte4 vertex offset, byte1 colour block</td><td>SCUS data</td></tr>
+      <tr><td>Per-prim dispatch</td><td><code>FUN_80043390</code></td><td>Kind by <code>flags &gt;&gt; 1</code>; stages far / back colour per object</td><td><code>funcs/80043390.txt</code></td></tr>
+      <tr><td>Lit handlers</td><td><code>FUN_8004409C / 423C / 4434 / 45B0</code></td><td>The only light-matrix consumers disc-wide (five <code>NCC*</code> sites, no <code>MVMVA</code> selecting the light matrix); run on <code>cave01</code>, never on a kingdom overworld</td><td><code>funcs/8004409c.txt</code></td></tr>
+      <tr><td>Scene light reset</td><td><code>FUN_8003AEB0</code></td><td>Angle trio <code>(0x994, 0x9CC, -0x62C)</code>, back colour <code>0x202020</code></td><td><code>funcs/8003aeb0.txt</code></td></tr>
+      <tr><td>Screen constants</td><td>GTE control file, GPU registers</td><td><code>OFX/OFY</code>, clip, offsets, display window constant across a save-state corpus</td><td><code>gte_projection_real.rs</code></td></tr>
+      <tr><td>Depth cue identity</td><td>town0c capture</td><td>A GT3 primitive's corner colours leave <code>DPCS</code> byte-unchanged at <code>IR0 = 0</code></td><td>mednafen state</td></tr>
+      <tr><td>Dither bit</td><td><code>0x8002004C</code>, <code>0x80017208</code>, <code>0x8001D520</code>, <code>0x801E350C</code></td><td>Init stamps 0; frame driver re-stamps from <code>_DAT_8007BA66</code> (boots 1); a field op writes it</td><td><code>funcs/80016b6c.txt</code></td></tr>
+      <tr><td>Overworld curvature</td><td><code>FUN_800271A8</code></td><td>Two <code>0x8000</code> buffers: a quadratic drop ramp and the <code>0x2000</code>-entry screen-Y curvature table the overworld leaves add to <code>SY</code></td><td><code>funcs/800271a8.txt</code></td></tr>
+      <tr><td>Field drop shadow</td><td><code>FUN_8001C394</code></td><td>A 3&times;3 grid around the actor's feet, four <code>POLY_FT4</code> cells of a 16&times;16 blob on page <code>0x001F</code>, CLUT <code>0x7F86</code></td><td><code>funcs/8001c394.txt</code></td></tr>
+      <tr><td>TMD pointer table</td><td><code>FUN_80026B4C</code> &rarr; <code>0x8007C018</code></td><td>Registered meshes by index; party in slots 0..4</td><td><code>funcs/80026b4c.txt</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="details">
+  <h2>Details</h2>
+
+  <details class="disclosure">
+    <summary id="tmd-pointer-table">TMD pointer table and who reads it</summary>
+    <div class="disclosure-body">
+      <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Function</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>FUN_80021B04</code></td><td>Actor-spawn helper; builds the per-actor OBJECT table</td></tr>
+          <tr><td><code>FUN_80024D78</code></td><td>Per-actor OBJECT-table rebuild</td></tr>
+          <tr><td><code>FUN_8001EBEC</code></td><td>Per-frame OBJECT[10/11] swap - pose select for the party</td></tr>
+          <tr><td><code>FUN_8001E890</code></td><td>Targets PROT 876 (<code>player_data</code>: VAB + TIM list + SEQ); it does <strong>not</strong> load the character meshes, which come from PROT 0874 section 0 (<a href="../formats/character-mesh.html">character mesh</a>)</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Battle player meshes are assembled per character from the player battle files' equipment sections, not loaded whole (<a href="../formats/battle-data-pack.html">battle data pack</a>).</p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary>Colour grade, fades and the depth-cue ramp</summary>
+    <div class="disclosure-body">
+      <p>The prologue's sepia is a <strong>palette collapse</strong>: retail rewrites every uploaded CLUT entry to <code>L = max(r,g,b) &rarr; (L, max(L&minus;1,0), L &gt;&gt; 1)</code>, and the scripts' two <code>4C E6</code> ops rewrite every resident TMD colour word to <code>(V, V&middot;246 &gt;&gt; 8, V&middot;112 &gt;&gt; 8)</code>, <code>V = min(max(rgb), 0xF8) &minus; 30</code>; the port's shaders apply the same laws per texel and packet colour (<a href="cutscene.html#sepia-grade">cutscene</a>). The scripted screen fade (<code>4C 12</code>) multiplies its tint into the grade and the depth-cue far colour. <code>set_depth_cue_ramp</code> stages retail's far-field blue crush as a view-depth <code>IR0</code> ramp on the prologue only. UI is never graded.</p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary>Texture window, palette depth, diagnostics</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>GP0 <code>0xE2</code> texture window.</strong> Four 5-bit values in 8-pixel steps; retail leaves it zero almost everywhere. Shader: <code>coord = (coord &amp; ~(mask &times; 8)) | ((offset &amp; mask) &times; 8)</code>.</li>
+        <li><strong>Palette depth.</strong> A 4bpp primitive's CLUT row may hold sixteen packed 16-entry palettes; an 8bpp row two 256-entry palettes. Past that, another TIM's image has spilled onto the row.</li>
+        <li><strong>Flat-material trick.</strong> Primitives sampling texpage <code>(960, 256)</code> + CLUT <code>(64, 510)</code> read a constant mid-grey patch of the boot-resident system-UI bundle (<a href="../formats/npc-palette.html#row510-band">row-510 strip</a>).</li>
+        <li><strong>CLIs.</strong> <code>legaia-engine clut-trace</code>, <code>vram-oracle --runtime-vram</code>, <code>info --tmd-stats</code>; <code>tmd prims --vram-dir</code>, <code>tmd vram-dump --annotate</code>. <code>asset-viewer tmd --no-textures</code> is the one place a synthetic light exists, as a bare-geometry preview.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary id="gte">GTE emulator and trace harness</summary>
+    <div class="disclosure-body">
+      <p><code>crates/engine-render/src/gte.rs</code> is a bit-exact software model of the geometry coprocessor - not on the render path (that is f32 wgpu math) but the oracle it is measured against: q3.12 matrices, q19.12 translations, i64 multiply-add, <code>RTPT</code> with PSX saturation, and a full cop2 register file (vectors, MACs, IRs, the SXY/SZ/RGB FIFOs, FLAG at hardware bit positions). It covers the transform family (<code>RTPS/RTPT</code>, <code>NCLIP</code>, <code>AVSZ3/4</code>, <code>MVMVA</code>), the normal-colour family (<code>NCDS</code>.. <code>NCCT</code>, <code>CDP</code>, <code>CC</code>), the depth-cue family (<code>DCPL</code>, <code>DPCS/DPCT</code>, <code>INTPL</code>) and register transfers. <code>legaia-engine gte-replay --trace FILE</code> replays a captured retail trace against it.</p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary>Readings this page replaced</summary>
+    <div class="disclosure-body">
+      <p>The field was once read as entirely unlit: a cold-boot <code>town01</code> sweep saw no lit handler, but <code>town01</code> sets a white back colour so its lit rows are indistinguishable from baked ones; <code>cave01</code>'s dark walls settle it. The world-map slot-4 data was once presumed the lit handlers' consumer; it is an animation bank, and breakpoints confirm no overworld execution. The player texture atlas was once placed in PROT 876 (it is PROT 0874 section 2). <code>FUN_8003DAA8</code> was read as a present driver (it is the CD load-kick driver). The draw-environment initialiser's <code>dtd = 0</code> misled a first reading that retail does not dither. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="renderer.html">Renderer tour</a>
+    <a href="shading.html">Shading and palettes</a>
+    <a href="../formats/tmd.html">Legaia TMD</a>
+    <a href="../formats/world-map-overlay.html">World-map overlay</a>
+    <a href="../tooling/mednafen-automation.html">Mednafen save-state oracles</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/renderer.md" target="_blank" rel="noopener">renderer.md</a>
+  </div>
+</section>

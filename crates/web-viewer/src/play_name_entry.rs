@@ -55,7 +55,7 @@ impl LegaiaRuntime {
     /// install the establishing timeline whose op-`0x49` opens name entry. A
     /// plain `enter_field("town01")` is a casual visit and never does.
     pub fn debug_enter_town01_opening(&mut self) -> Result<(), String> {
-        let host = self.scene_host.as_mut().ok_or("no disc loaded")?;
+        let host = self.scene_host.host_mut().ok_or("no disc loaded")?;
         host.world.cutscene.entering_town01_opening = true;
         self.enter_field(legaia_asset::new_game::OPENING_SCENE)
             .map(|_| ())
@@ -70,14 +70,14 @@ impl LegaiaRuntime {
 
     /// The live world frame counter - the "did the field resume" observable.
     pub fn debug_world_frame(&self) -> u64 {
-        self.scene_host.as_ref().map(|h| h.world.frame).unwrap_or(0)
+        self.scene_host.host().map(|h| h.world.frame).unwrap_or(0)
     }
 
     /// `true` while the opening cutscene timeline still owns the scene. It
     /// must eventually clear, or the player never gets the controls back.
     pub fn debug_timeline_active(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.cutscene_timeline_active())
     }
 }
@@ -89,7 +89,7 @@ impl LegaiaRuntime {
     /// holds - the overlay is modal, exactly as it is natively.
     pub fn name_entry_is_active(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.name_entry_active())
     }
 
@@ -109,7 +109,7 @@ impl LegaiaRuntime {
     /// overlay). Folding the counter in here made the blink period a
     /// property of the monitor's refresh rate.
     pub fn name_entry_input(&mut self, edge: u16) -> bool {
-        let Some(h) = self.scene_host.as_mut() else {
+        let Some(h) = self.scene_host.host_mut() else {
             return false;
         };
         if !h.world.name_entry_active() {
@@ -124,7 +124,7 @@ impl LegaiaRuntime {
     /// display frame's fixed-timestep step count, which is exactly what the
     /// native window's catch-up ticks spend on the same counter.
     pub fn name_entry_advance_frames(&mut self, steps: u32) {
-        let Some(h) = self.scene_host.as_mut() else {
+        let Some((h, camera)) = self.scene_host.host_cam_mut() else {
             return;
         };
         if !h.world.name_entry_active() {
@@ -134,11 +134,7 @@ impl LegaiaRuntime {
         // keeps stepping the camera mover around it), and the camera's half
         // runs, as `BootSession::step_name_entry_frame` does natively.
         h.world.name_entry_display_frames(steps.min(64));
-        legaia_engine_core::frame_step::camera_after_world_tick(
-            &mut self.camera,
-            &mut h.world,
-            false,
-        );
+        legaia_engine_core::frame_step::camera_after_world_tick(camera, &mut h.world, false);
     }
 
     /// Live overlay state for the page's status line (and headless checks):
@@ -153,7 +149,7 @@ impl LegaiaRuntime {
     pub fn name_entry_state_json(&self) -> String {
         let Some(entry) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.party.name_entry.as_ref())
         else {
             return r#"{"open":false}"#.to_string();
@@ -182,7 +178,7 @@ impl LegaiaRuntime {
     /// on a screen that came and went.
     pub fn party_display_name(&self, slot: usize) -> String {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.party_name(slot).to_string())
             .unwrap_or_default()
     }
@@ -207,7 +203,7 @@ impl LegaiaRuntime {
         if !self.ensure_menu_assets() {
             return CLOSED.to_string();
         }
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return CLOSED.to_string();
         };
         let Some(entry) = h.world.party.name_entry.as_ref() else {

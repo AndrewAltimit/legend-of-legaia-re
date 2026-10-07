@@ -85,6 +85,20 @@
   <p>Stats come in pairs: the <code>_live</code> copies are the effective values the aggregator rebuilds every frame
   (equipment and buffs applied), while the <code>_record</code> copies are the base stats the level-up system
   maintains. The quoted names are the GameShark cheat labels that pinned each offset.</p>
+  <p>The stat band at <code>+0x104</code>, where most cheats and screens land:</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x104</span><span class="bm-name">HP max / cur</span><span class="bm-size">live</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x108</span><span class="bm-name">MP max / cur</span><span class="bm-size">live</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x10C</span><span class="bm-name">AP max / cur</span><span class="bm-size">live</span></div>
+    <div class="bm-cell bm-accent" style="--w:12"><span class="bm-off">+0x110</span><span class="bm-name">AGL ATK UDF LDF SPD INT</span><span class="bm-size">live</span></div>
+  </div>
+  <div class="byte-map">
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x11C</span><span class="bm-name">HP / MP max</span><span class="bm-size">record</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x120</span><span class="bm-name">cap = 100</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:12"><span class="bm-off">+0x122</span><span class="bm-name">AGL ATK UDF LDF SPD INT</span><span class="bm-size">record</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x12E</span><span class="bm-name">status</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x130</span><span class="bm-name">LV</span><span class="bm-size">u8</span></div>
+  </div>
   <div class="table-scroll">
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
@@ -120,7 +134,8 @@
       <tr><td><code>+0x198</code></td><td>1</td><td><code>weapon_id</code></td><td>"Weapon Modifier"</td></tr>
       <tr><td><code>+0x199</code></td><td>1</td><td><code>accessory_or_seru_lock</code></td><td>"Activate Meta/Terra/Ozma at Lv9" - the Seru lock byte the menu reads to gate summon access</td></tr>
       <tr><td><code>+0x19A</code></td><td>1</td><td><code>leg_gear_id</code></td><td>"Leg Gear Modifier"</td></tr>
-      <tr><td><code>+0x19B</code> .. <code>+0x19D</code></td><td>3</td><td><code>accessory_1..3_id</code></td><td>"Accessory N Modifier"; <code>+0x19E..+0x2A6</code> unmapped</td></tr>
+      <tr><td><code>+0x19B</code> .. <code>+0x19D</code></td><td>3</td><td><code>accessory_1..3_id</code></td><td>"Accessory N Modifier"; <code>+0x19E..+0x1A6</code> unmapped</td></tr>
+      <tr><td><code>+0x1A7</code> / <code>+0x1B7</code></td><td>16+16</td><td><code>auto_command_string_a</code> / <code>_b</code></td><td>the battle menu's <strong>Auto</strong> replay queue, primary and secondary AP band (<a href="#auto-command">note</a>); <code>+0x1C7..+0x2A6</code> unmapped</td></tr>
       <tr><td><code>+0x2A7</code></td><td>9</td><td>display name</td><td>NUL-padded</td></tr>
       <tr><td><code>+0x2B0</code></td><td>14&times;0x14</td><td><code>active_spell_slots[14]</code></td><td>runtime active-spell slots (<code>active_spell_slot()</code> accessor); <code>+0x380..+0x413</code> unmapped</td></tr>
     </tbody>
@@ -163,6 +178,9 @@
   overlay on every level-up. The live copies then clamp at <code>0x3E7</code>, so equipment and buffs can push
   past it up to 999 in battle. Accessors <code>stat_cap()</code> / <code>set_stat_cap()</code>.</p>
 
+  <h3 id="auto-command"><code>+0x1A7</code> / <code>+0x1B7</code> are the Auto command strings</h3>
+  <p>The battle command menu's <strong>Auto</strong> replays the 16-byte action queue the player last confirmed, parked here between turns. Which band is used is decided by the actor's action gauge (base gauge strictly below live gauge takes the primary band <code>+0x1A7</code>). The two legs are asymmetric: the primary read falls back to <code>+0x1B7</code> when its head byte is zero, the secondary read zero-fills instead, and the write-back overwrites exactly one band, only for a live actor using the attack/arts command. Readers <code>FUN_801DA34C</code> / <code>FUN_801DA59C</code> in the battle overlay address them off the live-state window (<code>0x80084140 + slot &times; 0x414 + 0x76F</code> / <code>+0x77F</code>), which sits <code>0x5C8</code> below the record base.</p>
+
   <details class="disclosure">
     <summary>Evidence for each note</summary>
     <div class="disclosure-body">
@@ -198,7 +216,7 @@
       <tr><td>Spell-list pop</td><td><code>FUN_80042DBC</code></td><td>the <code>+0x13C</code> count / <code>+0x13D</code> id-list pairing</td></tr>
       <tr><td>Level-up applier</td><td><code>FUN_801E9504</code> (overlay)</td><td>record-stat writes, threshold rewrite, level byte tick, <code>+0x120</code> constant</td></tr>
       <tr><td>Ailment mirror</td><td><code>FUN_80047430</code>, HUD selector <code>FUN_8002C2E4</code></td><td><code>+0x12E</code> status word and the second HUD base</td></tr>
-      <tr><td>Save-state captures</td><td><code>capture_observations::char_level_up</code>, <code>levelup::observations::{noa,gala}_4_level_jump</code></td><td>which bytes move on a level-up event</td></tr>
+      <tr><td>Save-state captures</td><td>save-state pairs around level-ups (incl. Noa / Gala four-level jumps)</td><td>which bytes move on a level-up event</td></tr>
       <tr><td>GameShark database</td><td><a href="../reference/cheats.html"><code>data/cheats/</code></a></td><td>a labelled <code>(addr, value)</code> write per named field</td></tr>
     </tbody>
   </table>

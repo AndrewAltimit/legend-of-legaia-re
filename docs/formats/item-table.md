@@ -27,7 +27,7 @@ the record proper starts 4 bytes earlier, at `DAT_80074368`:
 | Offset | Type | Field |
 |---|---|---|
 | `+0` | u8 | kind (`1` = equipment, `2` = item/consumable/key) |
-| `+1` | u8 | (per-kind flags) |
+| `+1` | u8 | per-kind index - equipment: row in the [stat-bonus table](equipment-table.md); items: [item-effect](item-effect-table.md) subtype |
 | `+2` | u16 | **shop price** in gold - what the buy/sell UI charges; `0` = quest / found-only item the shop never prices |
 | `+4` | u32 | `name_ptr` - pointer to the NUL-terminated display name |
 | `+8` | u32 | `desc_ptr` - pointer to the info-window **description** string |

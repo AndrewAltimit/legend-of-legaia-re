@@ -16,7 +16,7 @@ impl LegaiaRuntime {
     /// [`World::install_retail_progression_tables`]:
     ///     legaia_engine_core::world::World::install_retail_progression_tables
     pub fn debug_progression_tables_json(&self) -> String {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return "null".into();
         };
         let w = &h.world;
@@ -35,7 +35,7 @@ impl LegaiaRuntime {
     /// The engine camera's retail globals, the state
     /// a scene entry resets (`Camera::reset_globals_for_scene_entry`).
     pub fn debug_camera_globals(&self) -> Vec<i32> {
-        self.camera.globals.0.to_vec()
+        self.scene_host.camera().globals.0.to_vec()
     }
 
     /// Offset every scene-entry reset axis of the camera globals away from
@@ -44,7 +44,8 @@ impl LegaiaRuntime {
     pub fn debug_perturb_camera_globals(&mut self) {
         use legaia_engine_core::camera::RetailCamGlobals;
         for axis in RetailCamGlobals::FIELD_RESET_AXES {
-            self.camera.globals.0[axis] = RetailCamGlobals::FIELD_RESET.0[axis] + 0x123;
+            self.scene_host.camera_mut().globals.0[axis] =
+                RetailCamGlobals::FIELD_RESET.0[axis] + 0x123;
         }
     }
 
@@ -54,7 +55,7 @@ impl LegaiaRuntime {
     pub fn debug_lead_live_stats_json(&self) -> String {
         let Some(lead) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.party.roster.members.first())
         else {
             return "null".into();

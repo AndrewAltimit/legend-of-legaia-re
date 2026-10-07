@@ -40,8 +40,7 @@
     thunder: '#d0bb3a', light: '#d9d4c0', dark: '#8a5ad0', neutral: '#8a8aa0',
   };
 
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const esc = window.escapeHtml;
 
   const hex2 = (n) => '0x' + Number(n).toString(16).toUpperCase().padStart(2, '0');
 
@@ -108,11 +107,7 @@
       try {
         const buf = await prog.read(file, `Reading ${file.name}`);
         prog.indeterminate('Initialising the summon decoder…');
-        /* Resolve against the PAGE (this file lives in js/, the wasm glue in
-         * wasm/ next to the page). */
-        const v = window.LEGAIA_WASM_V || '0';
-        const mod = await import(new URL('wasm/legaia_web_viewer.js?v=' + v, document.baseURI).href);
-        await mod.default(new URL('wasm/legaia_web_viewer_bg.wasm?v=' + v, document.baseURI));
+        const mod = await LegaiaWasm.load();
         if (typeof mod.LegaiaSummons !== 'function') {
           prog.fail('This build of the viewer has no summon support.');
           return;

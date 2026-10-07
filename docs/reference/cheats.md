@@ -191,10 +191,13 @@ into the engine yet - they're recorded as citations only.
 
 ### FieldVmCollision
 
-The "Walk Thru Walls" cheat patches four collision-state cells in
-the field overlay: `0x801D078C / 0x801D071C / 0x801D065C /
-0x801D06BC`. Each is a 1-byte gate the field VM consults during
-movement; setting them all to `0x06` disables the collision check.
+The "Walk Thru Walls" cheat patches four instructions in the field
+overlay: `0x801D078C / 0x801D071C / 0x801D065C / 0x801D06BC`. Each is
+a `beq v0,zero,...` in the collision path of the player movement
+controller `FUN_801D01B0`; the cheat writes `0x06` over the low byte,
+which rewrites the branch displacement so the collision response is
+bypassed. It is a code patch, not a RAM cell - see
+[`memory-map.md`](memory-map.md#field--dialog--world-map-prot-0897).
 
 ### ScratchActiveActor
 

@@ -49,7 +49,7 @@ own finisher; blocking and the limb-height "Miss" are separate mechanics.
 ## Contents
 
 - [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [juggle window](#the-juggle-window---what-makes-a-monster-juggleable) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
-- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [spirit damage](#spirit-damage-formula)
+- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [Spirit gauge extension](#spirit-gauge-extension)
 - [Stats and the actor record](#stats-and-the-actor-record) - [applicator `FUN_800402F4`](#damage-application-primitive---fun_800402f4) · [stat block mapping](#actor-stat-block--monster-record-mapping) · [initiative](#initiative-key-seeding-fun_801da780) · [formation advantage](#formation-advantage-fun_80051d84) · [spell list](#spell-list-record-0x4c) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9](#selector-9---accuracy--evasion-roll) · [stat buffs](#stat-buff-selectors-17)
 - [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte) · [Seru-magic side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
 - [Rewards and costs](#rewards-and-costs) - [victory spoils](#victory-spoils-rewards) · [MP cost](#mp-cost--ability-bit-modifiers) · [RNG](#rng-primitive)
@@ -1005,17 +1005,25 @@ narrows "summon attacker" to the Seru-magic id block its summon path covers
 (`0x81..=0x8B`); the evolved-spell ids above that block accrue nothing until
 the summon coverage widens.
 
-### Spirit damage formula
+### Spirit gauge extension
 
-From [battle-action.md state `0x3E` and `0x46`](battle-action.md):
+From [battle-action.md states `0x46` and `0x3E`](battle-action.md). A Spirit turn
+is not a damage formula: state `0x46` reads the **acting actor's own** AGL base
+(`lhu v0,0x156(s3)` at `0x801E52C4`) and stages two gauge targets:
 
 ```text
-damage = ((target_HP * 7) / 5) + 8;     // 1.4 × target HP + 8
-damage = min(damage, 0x120);            // cap 1: 288 hit-points
-// or cap 2 (smaller spirit arts): min(damage, 100);
+ctx[+0x6DC] = min(agl_base * 7 / 5 + 8, 0x120);   // the extended arts bar (cap 288)
+ctx[+0x6DE] = min(spirit + 0x20, 100);            // Spirit +32 (+0x28 / +0x23 under
+                                                  //   the +0xF8 passives 0x200 / 0x100)
 ```
 
-This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_80076D7E` damage popup is written directly with the result before the state machine calls `func_0x800402F4` in state `0x3F`. The spirit pre-application formula is the one place the engine has to reproduce a non-obvious arithmetic; everything else is selector-dispatch driven.
+`ctx[+0x6DC]` is the command-gauge pool the arts entry spends
+([arts-command-gauge.md](arts-command-gauge.md#where-the-gauge-pool-comes-from)),
+and the round boundary restores a Spirit-charged actor's `+0x154` to the same
+extended value, so the next turn's arts input opens on the longer bar. State
+`0x3E`'s item class 5 stages the same `min(base * 7 / 5 + 8, 0x120)` shape off
+the target. The `100` cap is the Spirit gauge's, not a second damage cap, and
+nothing here is written to HP.
 
 ## Stats and the actor record
 
@@ -1181,7 +1189,7 @@ Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`, wi
 
 Which arm fires depends on the actor's action state, and one of the three restores nothing:
 
-- **spirit-charged** (`+0x1DE == 4`, or the `+0x1F9` charge byte non-zero): restore to `(base*7/5)+8` capped at `0x120` - the same shape as the [spirit-damage formula](#spirit-damage-formula).
+- **spirit-charged** (`+0x1DE == 4`, or the `+0x1F9` charge byte non-zero): restore to `(base*7/5)+8` capped at `0x120` - the same shape as the [Spirit gauge extension](#spirit-gauge-extension).
 - **plain** (`+0x1DE == 3`, or any monster slot `>= 3`): restore to `+0x156`.
 - **otherwise**: `+0x154` is left untouched, so a party actor mid-combo carries its spent AGL into the next round rather than refilling.
 

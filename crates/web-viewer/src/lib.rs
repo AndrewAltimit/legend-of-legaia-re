@@ -19,6 +19,7 @@ mod field_actors;
 pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;
+mod host_slot;
 mod inspect;
 pub mod minigames;
 mod monster;
@@ -530,10 +531,9 @@ const WALK_FIELD_MAP_LEN: usize = 0x12000;
 ///
 /// - **Walk `.MAP`** is the entry two slots before the kingdom block start
 ///   (`prot_base - 2`), whose extended on-disc footprint is exactly
-///   `WALK_FIELD_MAP_LEN` (`0x12000`) - the universal field-map resolution
-///   (the scene PROT clusters overlap by two entries, so the first `0x12000`
-///   entry inside the block is the NEXT scene's map; pinned 14/14 against a
-///   live `map01` walk capture). Falls back to scanning the block when that
+///   `WALK_FIELD_MAP_LEN` (`0x12000`): the `.MAP` is slot 0 of the scene
+///   block and the bundle `prot_base` names is slot 2 (pinned 14/14 against
+///   a live `map01` walk capture). Falls back to scanning the block when that
 ///   slot isn't a `0x12000` entry.
 /// - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the kingdom
 ///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`
@@ -647,10 +647,9 @@ pub fn build_walk_placements(
 ///
 /// - **Walk `.MAP`** is the entry two slots before the kingdom block start
 ///   (`prot_base - 2`), whose extended on-disc footprint is exactly
-///   [`WALK_FIELD_MAP_LEN`] (`0x12000`) - the universal field-map resolution
-///   (the scene PROT clusters overlap by two entries, so the first `0x12000`
-///   entry inside the block is the NEXT scene's map; pinned 14/14 against a
-///   live `map01` walk capture). Falls back to scanning the block when that
+///   [`WALK_FIELD_MAP_LEN`] (`0x12000`): the `.MAP` is slot 0 of the scene
+///   block and the bundle `prot_base` names is slot 2 (pinned 14/14 against
+///   a live `map01` walk capture). Falls back to scanning the block when that
 ///   slot isn't a `0x12000` entry.
 /// - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the kingdom
 ///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`

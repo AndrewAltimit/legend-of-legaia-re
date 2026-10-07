@@ -19,7 +19,7 @@
 //! ```text
 //! cargo llvm-cov clean --profraw-only
 //! cargo llvm-cov -p legaia-engine-core \
-//!     --test w1d_world_map_render_ladder --no-report
+//!     --test integration w1d_world_map_render_ladder:: --no-report
 //! cargo llvm-cov report --json \
 //!     --output-path target/cov-w1d_world_map_render_ladder.json
 //! ```

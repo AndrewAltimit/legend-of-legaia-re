@@ -11,7 +11,7 @@
     <dt>Loaders</dt><dd>One per scene type - battle, field / town, sound, streams (<a href="#how-we-know">table below</a>)</dd>
     <dt>Common router</dt><dd>The asset-type dispatcher: an 8-bit type byte picks a handler (TIM, TMD, MES, ANM, &hellip;)</dd>
     <dt>Scene change</dt><dd>Field-VM op <code>0x3F</code> carries a scene <em>name</em>; op <code>0x3E</code> door-warps reach only the seven minigames</dd>
-    <dt>Engine port</dt><dd><code>engine-core::SceneResources::build_targeted</code> + <code>legaia_asset</code> parsers (<code>scene_asset_table</code>, <code>scene_tmd_stream</code>, <code>battle_data_pack</code>)</dd>
+    <dt>In the port</dt><dd><code>engine-core::SceneResources::build_targeted</code> + <code>legaia_asset</code> parsers (<code>scene_asset_table</code>, <code>scene_tmd_stream</code>, <code>battle_data_pack</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly + corpus round-trips (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <div class="notice">
@@ -28,14 +28,42 @@
     <li>Each case hands one entry's bytes to the asset-type dispatcher.</li>
     <li>Some cases kick off async CD reads so data streams in while the scene initialises.</li>
   </ul>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Scene name</span><span class="desc">"town01" resolves through CDNAME.TXT to a block of consecutive PROT entries</span><span class="crate">FUN_8003E6BC</span>
-    <span class="num">2</span><span class="layer">Sector read</span><span class="desc">the block's .LZS bundle entry streams raw into the shared asset buffer</span><span class="crate">FUN_80021934</span>
-    <span class="num">3</span><span class="layer">Descriptor walk</span><span class="desc">count word, then 8-byte descriptors: slot i = i-th descriptor, payload at base + data_offset</span><span class="crate">FUN_80020224</span>
-    <span class="num">4</span><span class="layer">LZS decode</span><span class="desc">each payload is its own compressed stream, inflated into a separate target</span><span class="crate">FUN_8001A55C</span>
-    <span class="num">5</span><span class="layer">Type byte</span><span class="desc">high 8 bits of the size word pick a handler from a 21-entry table</span><span class="crate">FUN_8001F05C</span>
-    <span class="num">6</span><span class="layer">Handler</span><span class="desc">TIM &rarr; VRAM upload; TMD &rarr; mesh pool; MES / ANM / MAN &rarr; RAM tables</span><span class="crate">per type</span>
-  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Loading a field scene. The scene name resolves through CDNAME.TXT to a block of consecutive PROT entries: .MAP at +0, .PCH at +1, the prescript at +2, the .LZS bundle at +3. The bundle streams into the shared asset buffer during the door fade; the descriptor walker hands each slot's payload to LZS and then to the type-byte dispatcher, whose handlers upload TIMs to VRAM, register TMD meshes in the mesh pool and copy MES, ANM and MAN data into RAM tables.">
+      <defs><marker id="al-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="20" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="95" y="44">scene name</text><text class="dg-sub" x="95" y="62">"town01"</text>
+      <rect class="dg-group" x="200" y="10" width="640" height="78" rx="6"/>
+      <text class="dg-edge-label" x="212" y="26">CDNAME block: consecutive PROT entries</text>
+      <rect class="dg-node" x="212" y="34" width="140" height="44" rx="4"/><text class="dg-label" x="282" y="54">+0 .MAP</text><text class="dg-sub" x="282" y="70">walk + trigger grid</text>
+      <rect class="dg-node" x="362" y="34" width="140" height="44" rx="4"/><text class="dg-label" x="432" y="54">+1 .PCH</text><text class="dg-sub" x="432" y="70">walk-on triggers</text>
+      <rect class="dg-node" x="512" y="34" width="140" height="44" rx="4"/><text class="dg-label" x="582" y="54">+2 prescript</text><text class="dg-sub" x="582" y="70">event scripts</text>
+      <rect class="dg-node-accent" x="662" y="34" width="166" height="44" rx="4"/><text class="dg-label" x="745" y="54">+3 .LZS bundle</text><text class="dg-sub" x="745" y="70">the scene's assets</text>
+      <rect class="dg-node" x="662" y="120" width="166" height="56" rx="5"/>
+      <text class="dg-label" x="745" y="144">asset buffer</text><text class="dg-sub" x="745" y="162">streamed during the fade</text>
+      <rect class="dg-node" x="440" y="120" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="535" y="144">descriptor walk</text><text class="dg-sub" x="535" y="162">slot i = i-th descriptor</text>
+      <rect class="dg-node" x="230" y="120" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="320" y="144">LZS decode</text><text class="dg-sub" x="320" y="162">one stream per slot</text>
+      <rect class="dg-node-accent" x="20" y="120" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="110" y="144">type dispatcher</text><text class="dg-sub" x="110" y="162">type = word &gt;&gt; 24</text>
+      <rect class="dg-node-ok" x="20" y="226" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="110" y="250">TIM</text><text class="dg-sub" x="110" y="268">upload to VRAM</text>
+      <rect class="dg-node-ok" x="230" y="226" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="320" y="250">TMD</text><text class="dg-sub" x="320" y="268">register in mesh pool</text>
+      <rect class="dg-node-ok" x="440" y="226" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="535" y="250">MES / ANM / MAN</text><text class="dg-sub" x="535" y="268">RAM tables, scripts</text>
+      <path class="dg-edge" d="M170 48 L198 48" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M745 78 L745 118" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M662 148 L632 148" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M440 148 L412 148" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M230 148 L202 148" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M110 176 L110 224" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M150 176 L150 200 L320 200 L320 224" marker-end="url(#al-arrow)"/>
+      <path class="dg-edge" d="M180 176 L180 192 L535 192 L535 224" marker-end="url(#al-arrow)"/>
+    </svg>
+    <figcaption>A field scene load. The sidecars (+0..+2) are staged into a per-scene buffer; the bundle at +3 is what the walk turns into live assets. A battle stacks its own loader on top of what is already resident, through the same dispatcher.</figcaption>
+  </figure>
   <p class="hint">Each format on the way down has its own page: <a href="../formats/prot.html">PROT.DAT</a> (the archive), <a href="../formats/cdname.html">CDNAME</a> (the name map), <a href="../formats/lzs.html">LZS</a> (the compression), <a href="../formats/asset-type.html">asset-type</a> + <a href="../formats/asset-descriptor.html">asset-descriptor</a> (the router and its 8-byte records). Function names like <code>FUN_8001F05C</code> are RAM addresses from the disassembly - the game shipped without symbols.</p>
 </section>
 
@@ -60,7 +88,7 @@
     <summary>Deep dive: the transition streamer state machine</summary>
     <div class="disclosure-body">
       <p><code>FUN_8001FD44(name_ptr)</code> copies the target CDNAME string into <code>0x8007050C</code>, syncs it to the active buffer <code>0x80084548</code> (<code>FUN_8001D7F8</code>), and stages the destination index from the resolved halfword at <code>0x80084540</code> (retail arm: into <code>DAT_8007B768</code>; dev arm: <code>_DAT_8007B9A0</code>); <code>s_ERR_CHANGE_PACKET</code> guards re-entry while a packet is pending. It then spawns the streaming actor via <code>FUN_80020DE0(&amp;DAT_80070734, _DAT_8007C34C)</code> - descriptor <code>0x80070734</code> of the 24-byte spawn-descriptor family at <code>0x800705FC..0x80070763</code> (layout <code>[+4 0xFFFF0000][+8 handler][+0xC flags]</code>). The handler is <code>FUN_80021934</code> (real entry 3 instructions before the <code>0x80021940</code> prologue), a 5-state machine over <code>actor+0x1A</code>:</p>
-      <table>
+      <table class="data-table">
         <thead><tr><th>State</th><th>Does</th></tr></thead>
         <tbody>
           <tr><td>0</td><td><code>DAT_8007B648 = 0x80</code>; seed the 70-frame fade countdown <code>gp+0x710 = 0x46</code>.</td></tr>
@@ -78,7 +106,7 @@
   <h2>Asset descriptor walker</h2>
   <p>Once the bundle is in RAM, one loop turns it into live assets - and its one surprise is that there is nothing clever in it. The walker reads a count word, then for each slot hands <code>base + data_offset</code> to the dispatcher, which splits the descriptor word into <code>type = word &gt;&gt; 24</code> and <code>size = word &amp; 0xFF_FFFF</code> and jumps through the handler table.</p>
   <p>The walk is also <strong>what fills the mesh pool</strong>: two dispatcher cases (type <code>0x02</code> TMD pack, type <code>0x09</code> bare mesh) register meshes into the runtime pointer table in walk order, past the resident 5-mesh head (the party). A magic-byte sweep of a scene block is <em>not</em> equivalent - see <a href="../formats/scene-bundles.html">scene bundles</a>.</p>
-  <p>The walker has zero static callers in the main executable; its sole caller lives in the field <em>overlay</em> (code streamed into RAM on demand), at the start of every field session. Engine side: <code>scene_asset_table::resolve</code> handles both the bare bundle and the prescript-prefixed variant, and a disc-gated corpus test verifies the walk against every classified entry.</p>
+  <p>The walker has zero static callers in the main executable; its sole caller lives in the field <em>overlay</em> (code streamed into RAM on demand), at the start of every field session. The port&rsquo;s reader is <code>legaia_asset::scene_asset_table</code>, checked against every classified entry on the disc.</p>
 </section>
 
 <section class="doc-section" id="warp-flow">
@@ -93,7 +121,7 @@
   <details class="disclosure">
     <summary>Globals, overlay indices and the phantom-warp filter</summary>
     <div class="disclosure-body">
-      <table>
+      <table class="data-table">
         <thead><tr><th>Global</th><th>Role</th></tr></thead>
         <tbody>
           <tr><td><code>DAT_80084548</code></td><td>Active scene name string (max 8 chars)</td></tr>
@@ -103,7 +131,7 @@
           <tr><td><code>DAT_8007BA34</code></td><td>Pending warp sub_id (0..6); read by <code>FUN_80025980</code></td></tr>
         </tbody>
       </table>
-      <p>The overlay loader values <code>0x4D..0x55</code> (<code>FUN_8003EBE4(sub_id + 0x4D)</code>; <code>sub_id &ge; 6</code> adds 2 first) are raw loader parameters, not extraction indices - they resolve to extraction entries 0972..0980 (<code>prot_index = param + 0x37F</code>; fishing = 0972, slot machine = 0975, Baka Fighter = 0976, dance = 0980). A genuine warp's <code>op0</code> is always <code>100..=106</code>; the placement classifier uses that range (plus the absence of the <code>0x80</code> cross-context prefix) to reject text-desync phantom warps. The engine's <code>DefaultMapIdResolver</code> approximates ids positionally over CDNAME blocks; retail only ever warps to the 7 minigames.</p>
+      <p>The overlay loader values <code>0x4D..0x55</code> (<code>FUN_8003EBE4(sub_id + 0x4D)</code>; <code>sub_id &ge; 6</code> adds 2 first) are raw loader parameters, not extraction indices - they resolve to extraction entries 0972..0980 (<code>prot_index = param + 0x37F</code>; fishing = 0972, slot machine = 0975, Baka Fighter = 0976, dance = 0980). A genuine warp's <code>op0</code> is always <code>100..=106</code>; the placement classifier uses that range (plus the absence of the <code>0x80</code> cross-context prefix) to reject text-desync phantom warps.</p>
     </div>
   </details>
   <p class="hint">Full chain and provenance: <a href="script-vm.html">field VM</a> &sect; 0x3E WARP; the mode-word trap ("<code>0x19</code> alone cannot tell fishing from dance") is on the <a href="boot.html#game-mode">boot page</a>. Play them on the <a href="../minigames.html">minigames page</a>.</p>
@@ -112,7 +140,7 @@
 <section class="doc-section" id="battle-loader">
   <h2>Battle bundle</h2>
   <p>A battle starts from inside a field scene, so its loader (an 11-case state machine) stacks on top of what's already resident: monsters, their sound banks, effect scripts, and the side-band streams that summons and special attacks pull from mid-fight.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Case</th><th>Loads</th></tr></thead>
     <tbody>
       <tr><td>6</td><td>The <code>befect_data</code> bundle (<a href="../formats/effect.html">effect</a>; extraction 0870..0873)</td></tr>
@@ -144,8 +172,7 @@
 
 <section class="doc-section" id="clut-scattering">
   <h2>Filling VRAM: the targeted upload</h2>
-  <p>A PS1 texture is useless without its palette, and Legaia keeps the two in different places: a character's mesh sits in one PROT entry while the palette rows it samples come from another. Retail uploads only the texture bytes the current scene's meshes need, in a fixed order; the port reproduces that policy rather than blasting every TIM into VRAM.</p>
-  <p><code>SceneResources::build_targeted</code> parses every TMD in the scene's block, collects the union of CLUT rows and texture-page boxes the meshes sample, then uploads each TIM block only where it will not collide with a referenced palette row. Field and battle differ in scope:</p>
+  <p>A PS1 texture is useless without its palette, and Legaia keeps the two in different places: a character's mesh sits in one PROT entry while the palette rows it samples come from another. Retail uploads only the texture bytes the current scene's meshes need, in a fixed order, and the port reproduces that policy rather than blasting every TIM into VRAM: it collects the palette rows and texture-page boxes the scene's meshes sample, then uploads each TIM only where it will not collide with a referenced palette row (<code>SceneResources::build_targeted</code>). Field and battle differ in scope:</p>
   <ul class="bullets">
     <li><strong>Battle</strong> uploads everything, including the meshes and TIM chunks inside <code>scene_tmd_stream</code> entries and the player battle files.</li>
     <li><strong>Field</strong> skips both - those are battle-init residents. Retail field saves carry VRAM row 479 as zeros, which is the boundary the engine matches.</li>
@@ -166,19 +193,16 @@
 <section class="doc-section" id="bgm-lookup">
   <h2>Music selection (BGM lookup)</h2>
   <p>When a scene asks for "music track 2016", there is no music table to consult. A global id is an <em>offset</em> into the shared music bank. A scene-local id (below 2000) looks like an offset into the scene's own CDNAME block, but that index only drives the "did the track change" test - the load itself is overwritten with global slot 2.</p>
-  <pre><code>// FUN_800243F0
-if (bgm_id &lt; 2000) {
-    change_idx = scene_block + 6 + bgm_id;         // compared only
-    load_idx   = global_pool_base + 2;             // 0x800245A4..0x800245BC
-} else {
-    change_idx = load_idx = global_pool_base + (bgm_id - 2000);
-}</code></pre>
+  <ul class="bullets">
+    <li><strong>Global id (&ge; 2000):</strong> the change test and the load both use <code>music_01_base + (id &minus; 2000)</code>.</li>
+    <li><strong>Scene-local id (&lt; 2000):</strong> the change test compares <code>scene_block + 6 + id</code>, but the load index is overwritten with global slot 2 (<code>0x800245A4..0x800245BC</code> in <code>FUN_800243F0</code>), so no scene bank is ever staged as music.</li>
+  </ul>
   <p>Global id <code>2000+i</code> is sound-test track <code>i</code>, but the <code>music_01</code> bank is <strong>piecewise</strong> in extraction space (<code>988+i</code> for <code>i &le; 67</code>, <code>990+i</code> for <code>i &ge; 68</code>, gap at 1056/1057) - not a flat base. Resolver: <code>engine-core::music_labels</code>; the full cue list is on <a href="../reference/music-tracks.html">music tracks</a>.</p>
 </section>
 
 <section class="doc-section" id="sound-loaders">
   <h2>Sound and stream loaders</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Loader</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td>Sound bank</td><td>Loads <code>bse.dat</code> (the battle SFX descriptor bank) at battle-scene setup, then per-scene <code>.dpk</code> files by path (dev builds load by PROT index directly).</td></tr>
@@ -190,7 +214,7 @@ if (bgm_id &lt; 2000) {
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Asset-type dispatcher</td><td><code>FUN_8001F05C</code></td><td>Type byte split (<code>&gt;&gt; 24</code>), 21-entry handler table at <code>0x80010638</code>.</td><td><code>ghidra/scripts/funcs/8001f05c.txt</code></td></tr>
@@ -204,7 +228,7 @@ if (bgm_id &lt; 2000) {
       <tr><td>Minigame warp</td><td><code>FUN_80025980</code> / <code>FUN_80026018</code></td><td>Scene-name backup / restore; overlay parameter <code>+0x4D</code>; coin-bank commit.</td><td><code>80025980.txt</code></td></tr>
       <tr><td>Mesh register</td><td><code>FUN_80026B4C</code></td><td>Pool stores in walk order with a post-incremented index.</td><td><code>80026b4c.txt</code></td></tr>
       <tr><td>BGM resolver</td><td><code>FUN_800243F0</code></td><td>The <code>&lt; 2000</code> scene-local / global split.</td><td><code>800243f0.txt</code></td></tr>
-      <tr><td>Corpus tests</td><td>-</td><td><code>scene_asset_table_walk_real</code> verifies the walk against every classified entry; <code>field_ground_texture_pages_disc.rs</code> guards the pochi / v12 skips.</td><td><code>crates/asset</code>, <code>crates/engine-core</code></td></tr>
+      <tr><td>Disc corpus</td><td>-</td><td>The walk verified against every classified entry; the pochi / v12 skips verified across every scene.</td><td>-</td></tr>
     </tbody>
   </table>
   <p class="hint">Full write-up: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/asset-loader.md" target="_blank" rel="noopener"><code>docs/subsystems/asset-loader.md</code></a>.</p>

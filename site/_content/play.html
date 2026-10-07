@@ -779,8 +779,7 @@
       const bytes = await prog.read(file, `Reading ${file.name}`);
       prog.indeterminate('Starting the engine…');
       if (!wasm) {
-        wasm = await import('./wasm/legaia_web_viewer.js');
-        await wasm.default();
+        wasm = await LegaiaWasm.load();
       }
       runtime = new wasm.LegaiaRuntime();
       prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
@@ -1551,8 +1550,7 @@
   function saveTools() {
     if (wasm) return Promise.resolve(wasm);
     if (!saveToolsPromise) {
-      saveToolsPromise = import('./wasm/legaia_web_viewer.js')
-        .then(m => m.default().then(() => m));
+      saveToolsPromise = LegaiaWasm.load();
     }
     return saveToolsPromise;
   }

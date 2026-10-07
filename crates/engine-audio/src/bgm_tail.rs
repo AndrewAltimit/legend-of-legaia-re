@@ -276,6 +276,28 @@ impl<K: Copy + PartialEq> BgmTail<K> {
 mod tests {
     use super::*;
 
+    /// A borrower goes above the highest staged VAG; an empty or absent
+    /// track puts it at the region floor.
+    #[test]
+    fn track_end_is_the_highest_vag_end() {
+        use crate::{UploadedVag, VabBank};
+        let vag = |addr, size| Some(UploadedVag { addr, size });
+        let bank = VabBank {
+            master_vol: 127,
+            samples: vec![vag(0x1000, 0x200), None, vag(0x4000, 0x10)],
+            programs: Vec::new(),
+        };
+        assert_eq!(track_end(Some(&bank)), 0x4010);
+        let empty = VabBank {
+            master_vol: 127,
+            samples: Vec::new(),
+            programs: Vec::new(),
+        };
+        let floor = crate::spu_layout::SPU_RESERVED_BYTES;
+        assert_eq!(track_end(Some(&empty)), floor);
+        assert_eq!(track_end(None), floor);
+    }
+
     #[test]
     fn monster_banks_stack_and_drop_with_the_track() {
         let mut t = BgmTail::<i32>::default();

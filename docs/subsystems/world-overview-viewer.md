@@ -67,12 +67,12 @@ The WASM viewer builds the same surface from the raw PROT.DAT it already
 has in hand (`legaia_web_viewer::build_walk_ground`), mirroring
 `Scene::walk_heightfield` without the full `ProtIndex` / CDNAME stack:
 
-- **Walk `.MAP`** is the entry two slots before the kingdom block start
-  (`prot_base - 2`), identified by its `0x12000` extended footprint - the
-  universal field-map resolution (the scene PROT clusters overlap by two
-  entries, so the within-block `0x12000` entry is the *next* scene's map;
-  for a kingdom it reads as the wrong continent with only a handful of
-  `0x1000` cells).
+- **Walk `.MAP`** is slot 0 of the kingdom's scene block, identified by its
+  `0x12000` extended footprint ([`field-map.md`](../formats/field-map.md#numbering)).
+  The bundle the viewer is handed is slot 2 of the same block, so the map is
+  `prot_base - 2`. The first `0x12000` entry at or after the bundle is the
+  *next* scene's map; for a kingdom it reads as the wrong continent with only
+  a handful of `0x1000` cells.
 - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the
   kingdom bundle's MAN slot (slot 2) - the same bytes
   `Scene::field_floor_height_lut` reads.

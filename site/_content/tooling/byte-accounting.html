@@ -18,10 +18,17 @@
 
 <section class="doc-section" id="running-it" data-doc="running-it,method">
   <h2>Running it</h2>
-<pre><code>asset account extracted/PROT/0867_battle_data.BIN
-asset account 893 --prot-dir extracted/PROT      # bare extraction index
-asset account 898 --funcs ghidra/scripts/funcs   # an overlay code image
-asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>asset account extracted/PROT/0867_battle_data.BIN</code></td><td>One extracted entry by path</td></tr>
+      <tr><td><code>asset account 893 --prot-dir extracted/PROT</code></td><td>Bare extraction index</td></tr>
+      <tr><td><code>asset account 898 --funcs ghidra/scripts/funcs</code></td><td>An overlay code image</td></tr>
+      <tr><td><code>asset account 0086 --depth 2 --json &gt; kingdom.json</code></td><td>Two levels of nested accounting, as JSON</td></tr>
+    </tbody>
+  </table>
+  </div>
   <p>The method is four steps. Classify the buffer with <code>asset categorize</code> and pick a walker; run the walker, which emits <strong>claims</strong> - half-open <code>[start, end)</code> ranges each tagged with an owner; merge the claims and take the complement, so every maximal uncovered run is one <strong>residue</strong>; and where a claim covers a compressed span, decode it and account the payload in a nested pass. Two walker selections are keyed on the extraction index rather than on the class, because no detector fires on their heads: the monster archive, and any entry with a row in the <a href="static-overlay-pipeline.html">static overlay map</a>.</p>
   <h3>What the number means</h3>
   <p><code>accounted</code> is the share of an entry's bytes some parser consumes. It is <strong>not</strong> the share whose meaning is understood: a fixed-region file accounts to 100% the moment its region constants are written down, while the semantics of those regions can be only partly pinned. Read it as an upper bound on understanding and a lower bound on structure.</p>
@@ -98,13 +105,13 @@ asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
   <table>
     <thead><tr><th>Class</th><th>What its unclaimed bytes are</th><th>Verdict</th></tr></thead>
     <tbody>
-      <tr><td>the fixed-stride streaming slots</td><td>nothing - each slot's fill is claimed out to the stride the loader transfers</td><td>closed; the monster archive alone used to be four fifths of the disc's residue</td></tr>
-      <tr><td>the multi-bank VAB</td><td>nothing - the bank index, each bank's two chunks and each bank's sector slack are all claimed from lengths the container states</td><td>closed; it used to be the largest non-slack residue on the disc</td></tr>
+      <tr><td>the fixed-stride streaming slots</td><td>nothing - each slot's fill is claimed out to the stride the loader transfers</td><td>closed</td></tr>
+      <tr><td>the multi-bank VAB</td><td>nothing - the bank index, each bank's two chunks and each bank's sector slack are all claimed from lengths the container states</td><td>closed</td></tr>
       <tr><td><code>overlay_data_blob</code></td><td>almost all <code>zero_pad</code>; the rest is one entry whose whole extent reads <code>plausible_mips</code> although its head is a length-prefixed Japanese label table</td><td>a Japanese-build menu image the USA disc never loads</td></tr>
       <tr><td><code>lzs_container</code></td><td>one member that is a code image rather than a container; the per-entry tails past the last descriptor's stream were the packer's buffer and are claimed</td><td>one mis-classed entry</td></tr>
       <tr><td><code>overlay_ptr_table</code>, <code>mips_overlay</code></td><td><code>low_entropy</code> with a <code>plausible_mips</code> minority</td><td>dump worklist - and it agrees with <a href="disc-coverage.html">disc coverage</a>'s gap list</td></tr>
-      <tr><td>scene streams, battle data</td><td>nothing - the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack, the same thing the multi-bank VAB's per-bank slack is</td><td>closed; this used to be the largest single figure in the ranking, under the verdict "walker tails"</td></tr>
-      <tr><td>scene asset tables, packs</td><td>nothing but <code>zero_pad</code> - the one run per bundle that used to rank here is an earlier entry's bytes at the same file offsets, above the last descriptor's stream</td><td>closed; "walker tails" was the wrong verdict - the walker had reached the end of the content</td></tr>
+      <tr><td>scene streams, battle data</td><td>nothing - the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack, the same thing the multi-bank VAB's per-bank slack is</td><td>closed</td></tr>
+      <tr><td>scene asset tables, packs</td><td>nothing but <code>zero_pad</code> - what follows the last descriptor's stream is an earlier entry's bytes at the same file offsets</td><td>closed: the walker reaches the end of the content</td></tr>
       <tr><td>filler, zero entries, trigger sidecars</td><td><code>ascii_text</code> and <code>zero_pad</code></td><td>the disc's own slack</td></tr>
       <tr><td>field maps</td><td>nothing - every entry accounts fully</td><td>closed</td></tr>
     </tbody>

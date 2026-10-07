@@ -21,53 +21,29 @@
 
 <section class="doc-section" id="art-record-layout">
   <h2>Art record layout</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 150" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of one 0xD0-byte art record: command bytes, action constant, anim index, 20-byte name, power run at 0x24, variable tail, effect class at 0x7A, keyframe pointer region">
-      <style>
-        .ar-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .ar-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .ar-lab { font: 12px sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .ar-sub { font: 11px sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
-        .ar-off { font: 11px monospace; fill: var(--accent); }
-      </style>
-      <rect x="20" y="30" width="130" height="44" class="ar-box"/>
-      <rect x="150" y="30" width="60" height="44" class="ar-box"/>
-      <rect x="210" y="30" width="150" height="44" class="ar-box"/>
-      <rect x="360" y="30" width="110" height="44" class="ar-box"/>
-      <rect x="470" y="30" width="180" height="44" class="ar-dim"/>
-      <rect x="650" y="30" width="90" height="44" class="ar-box"/>
-      <rect x="740" y="30" width="140" height="44" class="ar-dim"/>
-      <text x="85" y="46" class="ar-lab">commands</text>
-      <text x="85" y="62" class="ar-sub">1=L 2=R 3=D 4=U, 0 ends</text>
-      <text x="180" y="46" class="ar-lab">const</text>
-      <text x="180" y="62" class="ar-sub">+ anim</text>
-      <text x="285" y="46" class="ar-lab">name slot</text>
-      <text x="285" y="62" class="ar-sub">20 bytes</text>
-      <text x="415" y="46" class="ar-lab">power run</text>
-      <text x="415" y="62" class="ar-sub">1-4 bytes</text>
-      <text x="560" y="46" class="ar-sub">hit timing, cues,</text>
-      <text x="560" y="62" class="ar-sub">status, repeat (Inferred)</text>
-      <text x="695" y="46" class="ar-lab">effect</text>
-      <text x="695" y="62" class="ar-sub">class</text>
-      <text x="810" y="52" class="ar-sub">action-entry tail</text>
-      <text x="20" y="96" class="ar-off">+0x00</text>
-      <text x="210" y="96" class="ar-off">+0x10</text>
-      <text x="360" y="96" class="ar-off">+0x24</text>
-      <text x="650" y="96" class="ar-off">+0x7A</text>
-      <text x="880" y="96" class="ar-off" text-anchor="end">+0xD0</text>
-      <text x="450" y="130" class="ar-sub">Confirmed fields in solid boxes; dashed regions are schema-then-walk, positions documented but not byte-pinned</text>
-    </svg>
-    <figcaption>One record per action constant. The <code>0x24</code>-byte matcher head is followed by a standard battle action entry (see <a href="battle-data-pack.html#battle-animations">player files &sect; battle animations</a>).</figcaption>
-  </figure>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <p>One <code>0xD0</code>-byte record per action constant. Solid cells are byte-pinned; the hatched span is schema-then-walk - its fields are known in order but their exact offsets vary per art.</p>
+  <div class="byte-map" role="img" aria-label="Art record bytes 0x00 to 0x28: command sequence with action constant and anim index, 20-byte name slot at 0x10, power run at 0x24">
+    <div class="bm-cell bm-accent" style="--w:10"><span class="bm-off">+0x00</span><span class="bm-name">commands (1=L 2=R 3=D 4=U, 0 ends)</span><span class="bm-size">u8[]</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">after</span><span class="bm-name">const</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">after</span><span class="bm-name">anim + extras</span><span class="bm-size">u8 + u8[5]</span></div>
+    <div class="bm-cell" style="--w:20"><span class="bm-off">+0x10</span><span class="bm-name">name slot</span><span class="bm-size">20 bytes</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">+0x24</span><span class="bm-name">power run</span><span class="bm-size">u8[1..4]</span></div>
+  </div>
+  <div class="byte-map" role="img" aria-label="Art record bytes 0x28 to 0xD0, not to scale: variable tail of hit timing, cues, status and repeat fields; effect class byte at 0x7A; action-entry tail to 0xD0">
+    <div class="bm-cell bm-pad" style="--w:6"><span class="bm-off">+0x28</span><span class="bm-name">hit timing, cues, status, repeat, background (Inferred)</span><span class="bm-size">variable</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x7A</span><span class="bm-name">effect class</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-dim" style="--w:5"><span class="bm-off">+0x7B</span><span class="bm-name">action-entry tail</span><span class="bm-size">to +0xD0</span></div>
+  </div>
+  <p>The second row is not to scale. The <code>0x24</code>-byte matcher head is followed by a standard battle action entry (see <a href="battle-data-pack.html#battle-animations">player files &sect; battle animations</a>).</p>
+  <table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>u8[]</td><td>command sequence</td><td><code>1</code>=L <code>2</code>=R <code>3</code>=D <code>4</code>=U, <code>0</code>-terminated. A Super Art record's field is a one-byte stub (no combo).</td></tr>
-      <tr><td>after</td><td>u8</td><td>action constant</td><td><code>0x1B..=0x32</code> (<a href="#action-constants">below</a>).</td></tr>
-      <tr><td>after</td><td>u8 + u8[5]</td><td><code>anim_index</code>, <code>anim_extra</code></td><td>Primary animation slot; extras chain multi-stage arts (Noa's Hurricane Kick).</td></tr>
-      <tr><td><code>+0x10</code></td><td>20</td><td>name</td><td>Fixed-width name slot; populated for Super, Miracle and some Hyper Arts.</td></tr>
-      <tr><td><code>+0x24</code></td><td>u8[1..4]</td><td>power run</td><td>Per-strike damage tier bytes (<a href="#power-encoding">encoding</a>). <strong>Confirmed</strong>; editor <code>legaia_patcher::arts_power</code>.</td></tr>
-      <tr><td><code>+0x7A</code></td><td>u8</td><td>impact-effect class</td><td><code>1..=5</code>, <code>0</code> = none. Selects the element spark and afterimage tint - this byte, not the cue script, makes an art read as its element.</td></tr>
+      <tr><td>command sequence</td><td><code>1</code>=L <code>2</code>=R <code>3</code>=D <code>4</code>=U, <code>0</code>-terminated. A Super Art record's field is a one-byte stub (no combo).</td></tr>
+      <tr><td>action constant</td><td><code>0x1B..=0x32</code> (<a href="#action-constants">below</a>).</td></tr>
+      <tr><td><code>anim_index</code>, <code>anim_extra</code></td><td>Primary animation slot; extras chain multi-stage arts (Noa's Hurricane Kick).</td></tr>
+      <tr><td>name</td><td>Fixed-width name slot; populated for Super, Miracle and some Hyper Arts.</td></tr>
+      <tr><td>power run</td><td>Per-strike damage tier bytes (<a href="#power-encoding">encoding</a>). <strong>Confirmed</strong>; editor <code>legaia_patcher::arts_power</code>.</td></tr>
+      <tr><td>impact-effect class</td><td><code>1..=5</code>, <code>0</code> = none. Selects the element spark and afterimage tint - this byte, not the cue script, makes an art read as its element.</td></tr>
     </tbody>
   </table>
   <details class="disclosure">
@@ -197,13 +173,13 @@
 <section class="doc-section" id="super-arts">
   <h2>Super Arts</h2>
   <p>A Super Art is never matched against the raw input. The game first <em>tokenizes</em> the arrows into arts, then looks for a registered Find pattern at the tail of the queue and replaces it with the Super's finisher.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">input arrows</span><span class="desc">The player types 7-9 directions, e.g. <code>&uarr;&darr;&uarr;&uarr;&uarr;&darr;&uarr;</code>.</span><span class="crate">pad</span>
-    <span class="num">2</span><span class="layer">tokenize</span><span class="desc">Tail-first: each matched art overwrites its <strong>last</strong> arrow with a Starter (<code>0x19</code>) and inserts its constant; leading arrows stay, so one arrow can belong to two arts. Restarts after every match.</span><span class="crate">legaia_art::tokenize</span>
-    <span class="num">3</span><span class="layer">queue</span><span class="desc"><code>19 27 0F 19 1F 0E 19 27</code> - Somersault, Cyclone, Somersault overlapping.</span><span class="crate">actor[+0x1DF]</span>
-    <span class="num">4</span><span class="layer">Find at tail</span><span class="desc">The pattern must end the queue and every chain art must have paid its AP.</span><span class="crate">table 0x801F6524</span>
-    <span class="num">5</span><span class="layer">Replace</span><span class="desc"><code>19 27 0F 19 1F 0E 1A 2B 2B 2B</code> - Special Starter + Tri-Somersault &times; 3 hits. The Super charges no AP of its own.</span><span class="crate">table 0x801F65E8</span>
-  </div>
+  <ol class="steps">
+    <li><b>Input arrows</b><span>The player types 7-9 directions, e.g. <code>&uarr;&darr;&uarr;&uarr;&uarr;&darr;&uarr;</code>.</span></li>
+    <li><b>Tokenize</b><span>Tail-first: each matched art overwrites its <strong>last</strong> arrow with a Starter (<code>0x19</code>) and inserts its constant; leading arrows stay, so one arrow can belong to two arts. Restarts after every match.</span></li>
+    <li><b>Queue</b><span><code>19 27 0F 19 1F 0E 19 27</code> in <code>actor[+0x1DF]</code> - Somersault, Cyclone, Somersault overlapping.</span></li>
+    <li><b>Find at tail</b><span>Table <code>0x801F6524</code>: the pattern must end the queue and every chain art must have paid its AP.</span></li>
+    <li><b>Replace</b><span>Table <code>0x801F65E8</code>: <code>&hellip; 1A 2B 2B 2B</code> - Special Starter + Tri-Somersault &times; 3 hits. AP is the chain's sum; the Super charges none of its own.</span></li>
+  </ol>
   <p>Because the Find pattern is what the <em>physical input</em> tokenizes to, laying the chain arts end to end does not trigger it. Every retail Super derives to a unique shortest input; fourteen of fifteen agree with the public walkthrough table (Dragon Fangs' printed six-arrow input drops one arrow and never performs Swan Driver).</p>
   <table>
     <thead><tr><th>Character</th><th>Super Art</th><th>Chain</th><th>Input</th><th>AP</th></tr></thead>
@@ -249,6 +225,11 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <p>The fixed fields are read off the overlay damage kernel, queue builder and cue player's disassembly; the Super tables are validated against a captured resident queue, and every record's command bytes agree with the SCUS name table's glyph strings.</p>
+  <details class="disclosure">
+    <summary>Provenance: functions and tables</summary>
+    <div class="disclosure-body">
+  <div class="table-wrap">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -260,9 +241,11 @@
       <tr><td>Element renderers</td><td><code>FUN_8004998C</code>, <code>FUN_80049348</code></td><td>Spark along the swing path and afterimage tint keyed on <code>actor[+0x21F]</code> (the <code>+0x7A</code> class); neither reads the cue records.</td><td>-</td></tr>
       <tr><td>Name-table expander</td><td><code>FUN_80036514</code></td><td>Scans <code>DAT_80075EC4</code> rows by <code>(character, index)</code>; returns the <code>+0xC</code> name pointer.</td><td>-</td></tr>
       <tr><td>AP display read</td><td><code>0x801D4524</code> in <code>FUN_801D33D8</code> (overlay 0899)</td><td>The only reader of the name table's <code>+2</code> byte is the status-panel renderer.</td><td>-</td></tr>
-      <tr><td>Disc-gated tests</td><td><code>crates/art/tests/arts_table_real.rs</code>, <code>crates/gamedata/tests/arts_scus_oracle.rs</code></td><td>Record command bytes round-trip through the name-table oracle; curated AP + directions agree with SCUS (allowlist: Hyper Elbow).</td><td>-</td></tr>
     </tbody>
   </table>
+  </div>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>History: "PROT entry 0x05C4" and the SFX-table reading</summary>
     <div class="disclosure-body">

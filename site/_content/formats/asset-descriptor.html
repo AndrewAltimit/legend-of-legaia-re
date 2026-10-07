@@ -18,38 +18,18 @@
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <p>Two header words, then a flat array of 8-byte pairs. <code>data_offset</code> is byte-relative to the buffer start; <code>type_size</code> packs the <a href="asset-type.html">asset-type byte</a> (the 8-bit tag saying TIM / TMD / MES / &hellip;) in its high byte with the payload size in the low 24 bits. Each payload is an <a href="lzs.html">LZS</a> stream when the container is a <code>player.lzs</code>-style chain.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 120" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Asset descriptor byte layout: count, header word, then repeated type_size and data_offset pairs">
-      <style>
-        .ad-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .ad-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .ad-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-        .ad-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .ad-dim { fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-      </style>
-      <rect x="20"  y="30" width="120" height="34" class="ad-box"/>
-      <rect x="140" y="30" width="140" height="34" class="ad-box"/>
-      <rect x="280" y="30" width="150" height="34" class="ad-box"/>
-      <rect x="430" y="30" width="150" height="34" class="ad-box"/>
-      <rect x="580" y="30" width="150" height="34" class="ad-dim"/>
-      <rect x="730" y="30" width="130" height="34" class="ad-dim"/>
-      <text x="80"  y="51" class="ad-seg" dominant-baseline="middle">count</text>
-      <text x="210" y="51" class="ad-seg" dominant-baseline="middle">header word</text>
-      <text x="355" y="51" class="ad-seg" dominant-baseline="middle">type_size 0</text>
-      <text x="505" y="51" class="ad-seg" dominant-baseline="middle">data_offset 0</text>
-      <text x="655" y="51" class="ad-seg" dominant-baseline="middle">type_size 1</text>
-      <text x="795" y="51" class="ad-seg" dominant-baseline="middle">&hellip;</text>
-      <text x="80"  y="20" class="ad-off">+0x00</text>
-      <text x="210" y="20" class="ad-off">+0x04</text>
-      <text x="355" y="20" class="ad-off">+0x08</text>
-      <text x="505" y="20" class="ad-off">+0x0C</text>
-      <text x="655" y="20" class="ad-off">+0x10</text>
-      <text x="480" y="86" class="ad-note">one 8-byte pair per asset, count pairs total</text>
-      <text x="355" y="106" class="ad-note">type_size = (type &lt;&lt; 24) | size</text>
-    </svg>
-    <figcaption>The descriptor: four little-endian words of header + pairs, no magic.</figcaption>
-  </figure>
+  <p>Two header words, then a flat array of 8-byte pairs. <code>data_offset</code> is byte-relative to the buffer start; <code>type_size</code> packs the <a href="asset-type.html">asset-type byte</a> (the 8-bit tag saying TIM / TMD / MES / &hellip;) in its high byte with the payload's <strong>decompressed</strong> size in the low 24 bits. Each payload is an <a href="lzs.html">LZS</a> stream when the container is a <code>player.lzs</code>-style chain.</p>
+  <div class="byte-map" role="img" aria-label="Descriptor header: count at +0x00, total size at +0x04, then type_size and data_offset pairs from +0x08">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">count</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">total_decompressed_size</span><span class="bm-size">u32 &middot; never read</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">type_size 0</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">data_offset 0</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-pad" style="--w:4"><span class="bm-off">+0x10</span><span class="bm-name">pair 1 &hellip; pair count&minus;1</span><span class="bm-size">8 B each</span></div>
+  </div>
+  <div class="byte-map" role="img" aria-label="type_size word: asset-type byte in bits 31..24, decompressed size in bits 23..0">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">bits 31..24</span><span class="bm-name">asset type</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">bits 23..0</span><span class="bm-name">decompressed size</span><span class="bm-size">u24</span></div>
+  </div>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -64,14 +44,14 @@
 <section class="doc-section" id="total-size">
   <h2>The second header word</h2>
   <p>The word at <code>+0x04</code> is the container's <strong>total decompressed size</strong>: the sum of every descriptor's <code>size</code> field. Across the 105 carriers on the disc the identity holds 105 times out of 105, and in all 105 the sum is <em>larger</em> than the PROT entry that carries it - which is what rules out reading it as a file size or a sector count. It is where the last asset ends once the container has been unpacked into the runtime buffer, not a position inside the entry.</p>
-  <p>Retail never reads it. The walker takes its loop count from <code>+0x00</code> and steps descriptor pairs from <code>+0x08</code>, so <code>+0x04</code> is never addressed. Sweeping the executable and all 83 extracted overlays for every dereference of the table-base pointer - including the <code>lui</code>+load and materialised-base forms an absolute-address scan cannot see - turns up 69 access sites: one store that publishes the buffer base, and four that dereference the pointer, every one of them at displacement <code>0x0</code>.</p>
+  <p>Retail never reads it. The walker takes its loop count from <code>+0x00</code> and steps descriptor pairs from <code>+0x08</code>, so <code>+0x04</code> is never addressed. Sweeping the executable and every extracted overlay for dereferences of the table-base pointer <code>_DAT_8007B85C</code> - including the <code>lui</code>+load and materialised-base forms an absolute-address scan cannot see - finds one store that publishes the buffer base and four sites that dereference the pointer, every one of them at displacement <code>0x0</code>; every other site hands the pointer straight to a callee as a load destination.</p>
   <p class="hint">Inert at runtime is not the same as free to change. The word is an authoring total, so an editor that rewrites a descriptor's size has to keep it consistent; the Rust side checks it with <code>SceneAssetTable::total_size_is_consistent</code>.</p>
 </section>
 
 <section class="doc-section" id="where-it-appears">
   <h2>Where it appears</h2>
   <ul class="bullets">
-    <li><strong>On the disc, at the top level.</strong> A structural sweep of all 1233 PROT entries (the numbered slots of <code>PROT.DAT</code>, the disc's main asset archive) finds <strong>105</strong> entries wearing this header at offset 0 - the scene bundles, the <code>player.lzs</code>-style character and effect containers, and the minigame art container. An earlier reading of &quot;zero hits&quot; came from a detector that demanded a fixed descriptor count; the count word varies (80 carriers use 7, the rest 1, 3, 4, 5 or 6).</li>
+    <li><strong>On the disc, at the top level.</strong> A structural sweep of all 1233 PROT entries (the numbered slots of <code>PROT.DAT</code>, the disc's main asset archive) finds <strong>105</strong> entries wearing this header at offset 0 - the scene bundles, the <code>player.lzs</code>-style character and effect containers, and the minigame art container. An earlier reading of &quot;zero hits&quot; came from a detector that demanded a fixed descriptor count; the count word varies (80 carriers use 7, the rest 1, 3, 4, 5 or 6). The same corpus is what <a href="scene-bundles.html">scene bundles</a> classes as <code>scene_asset_table</code>.</li>
     <li><strong>Reached only through an overlay.</strong> The executable's static call graph never touches the walker - it looks like dead code until the town overlay's init is followed (<a href="#how-we-know">how we know</a>). This "zero static callers but alive via overlay" pattern recurs across the whole codebase; treat a zero-xref result as "needs an overlay sweep", never as "dead".</li>
     <li><strong>Installs the party's field meshes.</strong> The same walk registers PROT 0874 &sect;0's five TMDs into the model slots the <a href="character-mesh.html">field-form character meshes</a> draw from.</li>
   </ul>
@@ -80,6 +60,9 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the walker, its overlay caller, and the TMD handler chain</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
@@ -88,6 +71,8 @@
       <tr><td>Type-2 (TMD) handler chain</td><td><code>FUN_8001F05C</code> case 2 &rarr; <code>FUN_80026B4C</code></td><td>Registers PROT 0874 &sect;0's five TMDs into <code>DAT_8007C018[0..=4]</code> - the field character-mesh slots.</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

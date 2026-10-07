@@ -650,8 +650,8 @@ fn every_slot_gets_its_siblings_signature_art() {
         return;
     };
     use legaia_asset::battle_char_assembly as bca;
-    use legaia_asset::party_swap::winpose;
     use legaia_patcher::delilas_party::READEF_ENTRY;
+    use legaia_patcher::party_swap::winpose;
 
     /// One hero slot's expected reskin. Combo glyphs: 1 L, 2 R, 3 D, 4 U,
     /// so the three retail combos read R D L D L / L L R L R / R R L L L.
@@ -1095,9 +1095,9 @@ fn every_slot_gets_its_siblings_signature_art() {
                 "slot {slot}: idle frame 0 moved the torso off the host rest ground spot"
             );
             let rig = if slot == 1 {
-                &legaia_asset::party_swap::RIG_NOA
+                &legaia_patcher::party_swap::RIG_NOA
             } else {
-                &legaia_asset::party_swap::RIG_VAHN_GALA
+                &legaia_patcher::party_swap::RIG_VAHN_GALA
             };
             let feet = [
                 rig.channel_for_canonical[11] as usize,
@@ -1349,8 +1349,8 @@ fn me_slot(patcher: &DiscPatcher, slot: usize) -> Vec<u8> {
         .read_entry_footprint(READEF_ENTRY)
         .expect("readef.DAT");
     let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false)
-        * legaia_asset::party_swap::winpose::READEF_SLOT;
-    readef[off..off + legaia_asset::party_swap::winpose::READEF_SLOT].to_vec()
+        * legaia_patcher::party_swap::winpose::READEF_SLOT;
+    readef[off..off + legaia_patcher::party_swap::winpose::READEF_SLOT].to_vec()
 }
 
 fn run_mode(original: &[u8], moves: MoveMode) -> DiscPatcher {
@@ -1888,7 +1888,7 @@ fn the_signature_effect_script_lives_in_the_bank_the_runtime_walks() {
 /// they are unpacked locally rather than through the crate's own decoder so
 /// the assertion does not measure the patcher with the patcher's tools.
 fn stream_speed(readef: &[u8], slot: usize, entry_index: usize) -> Vec<f64> {
-    use legaia_asset::party_swap::winpose::READEF_SLOT;
+    use legaia_patcher::party_swap::winpose::READEF_SLOT;
     let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false) * READEF_SLOT;
     let ar = legaia_asset::me_archive::parse(&readef[off..off + READEF_SLOT]).expect("ME archive");
     let body = ar.entry(entry_index).expect("art entry");

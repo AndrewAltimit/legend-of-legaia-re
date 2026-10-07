@@ -95,7 +95,7 @@ LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --r
 
 With it unset, they **skip and pass**. That's deliberate - it's what lets CI run without disc data - so don't "fix" a skipping test by removing the gate. Find them with `grep -rl LEGAIA_DISC_BIN crates/*/tests`.
 
-In CI they run as a separate job, on manual dispatch or when a maintainer adds the `disc-test` label to a pull request. If your change touches disc-gated behaviour, say so in the PR so the label gets applied - and run the suite locally against your own image first.
+Every push to a pull request runs the disc-free repo gates plus `cargo fmt`, `cargo clippy` and a wasm32 type-check; the full test pass runs after merge. The disc-gated suite runs as a separate job, on manual dispatch or when a maintainer adds the `disc-test` label to a pull request. If your change touches disc-gated behaviour, say so in the PR so the label gets applied - and run the suite locally against your own image first.
 
 If you're adding one, follow the shape of its neighbours: a disc round-trip oracle asserts invariants survive a patch/re-decode cycle, and a runtime oracle drives the actual engine kernel rather than a save-state RAM cache. Keep a non-disc baseline assertion so the test isn't vacuous when it does run.
 

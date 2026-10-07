@@ -245,4 +245,39 @@ mod tests {
             SFX_REGION_BASE + 0x10
         ))));
     }
+
+    /// [`SFX_REGION_BYTES`] is squeezed between two hard measurements, and
+    /// this is both of them. Widening it silences BGM; narrowing it drops a
+    /// resident SFX bank. Either failure is silent in play - a track that
+    /// stops loading its instruments and a cue that keys a sibling sample both
+    /// sound like "the audio is a bit off", which is why the numbers are
+    /// asserted rather than left in a comment.
+    ///
+    /// The four constants are disc measurements from `vab list`: the two
+    /// pinned banks' VAG-body totals (PROT 0868 / 0869) and the two largest
+    /// VAB sample bodies in `PROT.DAT` that a BGM path can stage (269632 in
+    /// `1071_music_01`, 268496 in `1113_vab_01`). Every VAG in all four is
+    /// already a multiple of the allocator's 16-byte ADPCM block, so the
+    /// packed footprint equals the raw total exactly.
+    #[test]
+    fn sfx_region_fits_both_pinned_banks_and_leaves_the_largest_bgm_room() {
+        const SLOT0_BODY_BYTES: u32 = 59_136; // PROT 0868
+        const SLOT2_BODY_BYTES: u32 = 188_128; // PROT 0869
+        const LARGEST_STAGED_BGM_BODY_BYTES: u32 = 269_632; // 1071_music_01
+        const SECOND_LARGEST_BGM_BODY_BYTES: u32 = 268_496; // 1113_vab_01
+        let both = SLOT0_BODY_BYTES + SLOT2_BODY_BYTES;
+        assert!(
+            both <= SFX_REGION_BYTES,
+            "both pinned banks must fit one region: {both} > {SFX_REGION_BYTES}"
+        );
+        for body in [LARGEST_STAGED_BGM_BODY_BYTES, SECOND_LARGEST_BGM_BODY_BYTES] {
+            assert!(
+                body <= BGM_REGION_BYTES,
+                "a BGM VAB that fits today ({body}) must still fit: budget {BGM_REGION_BYTES}"
+            );
+        }
+        // The two regions tile SPU RAM above the reserved floor.
+        assert_eq!(SPU_RESERVED_BYTES + BGM_REGION_BYTES, SFX_REGION_BASE);
+        assert_eq!(SFX_REGION_BASE + SFX_REGION_BYTES, SPU_RAM_BYTES);
+    }
 }

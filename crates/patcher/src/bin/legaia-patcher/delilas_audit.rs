@@ -35,9 +35,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::monster_archive::PartPose;
-use legaia_asset::party_swap;
 use legaia_asset::{battle_data_pack, me_archive};
 use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::party_swap;
 use legaia_tmd::encode::{ModelObject, decode_model};
 
 use crate::util::load_image;

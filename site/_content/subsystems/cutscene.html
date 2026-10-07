@@ -12,49 +12,52 @@
     <dt>Dispatch table</dt><dd>Overlay data at <code>0x801D0A6C</code>, 23 &times; 32-byte slots; parser <code>legaia_asset::fmv_dispatch</code> - <a href="../formats/str-fmv-table.html">STR FMV table</a></dd>
     <dt>Bitstream</dt><dd>PSX <strong>Iki</strong> variant, not STRv2; 15 fps (10 sectors per frame); decoder <code>crates/mdec</code></dd>
     <dt>Audio</dt><dd>One XA-ADPCM track per movie at <code>(file 1, channel 0)</code>, stereo 37.8 kHz, interleaved sector by sector; decoder <code>crates/xa</code></dd>
-    <dt>Engine</dt><dd><code>SceneMode::Cutscene</code>; player <code>engine-shell::cutscene_av</code> + <code>legaia-engine play-str</code>; opening timeline in <code>engine-core</code></dd>
-    <dt>Confidence</dt><dd>Confirmed - static decompile of PROT 0970 plus RAM captures during playback and a cold-boot pixel capture of the opening</dd>
+    <dt>In the port</dt><dd><code>crates/mdec</code>, <code>crates/xa</code>, <code>engine-shell::cutscene_av</code>; opening timeline in <code>engine-core</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - disassembly of PROT 0970 plus RAM captures during playback and a cold-boot pixel capture of the opening (<a href="cutscene-internals.html#how-we-know">evidence</a>)</dd>
   </dl>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 960 270" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cs-pipe-title">
-      <title id="cs-pipe-title">STR playback pipeline: one sector stream is split into video frames for the MDEC and XA audio for the SPU; the port paces the picture off the audio cursor</title>
-      <defs><marker id="cs-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
-      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.2">
-        <rect x="16" y="100" width="150" height="70" rx="4"/>
-        <rect x="236" y="30" width="200" height="60" rx="4"/>
-        <rect x="236" y="180" width="200" height="60" rx="4"/>
-        <rect x="506" y="30" width="200" height="60" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
-        <rect x="776" y="30" width="170" height="60" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
-        <rect x="776" y="120" width="170" height="50" rx="4"/>
-        <rect x="776" y="185" width="170" height="50" rx="4"/>
-      </g>
-      <g fill="none" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#cs-ah)">
-        <path d="M166,118 L236,64"/>
-        <path d="M166,152 L236,206"/>
-        <path d="M436,60 L506,60"/>
-        <path d="M706,60 L776,60"/>
-        <path d="M861,90 L861,120"/>
-        <path d="M436,210 L776,210"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="91" y="124">CD-ROM</text>
-        <text x="91" y="146" fill="var(--text-muted)">CdlReadS, filter off</text>
-        <text x="336" y="50">video sectors (Form 1)</text>
-        <text x="336" y="72" fill="var(--text-muted)">St ring demux</text>
-        <text x="336" y="200">XA sectors (Form 2)</text>
-        <text x="336" y="222" fill="var(--text-muted)">drive plays them itself</text>
-        <text x="606" y="50">Iki bitstream</text>
-        <text x="606" y="72" fill="var(--text-muted)">LZSS DC table + AC VLC</text>
-        <text x="861" y="50">MDEC</text>
-        <text x="861" y="72" fill="var(--text-muted)">IDCT, YCbCr to RGB</text>
-        <text x="861" y="138">VRAM</text>
-        <text x="861" y="156" fill="var(--text-muted)">32-px strips</text>
-        <text x="861" y="203">SPU CD mix</text>
-        <text x="861" y="221" fill="var(--text-muted)">volume 0x7F</text>
-      </g>
-      <text x="606" y="255" fill="var(--text-muted)" text-anchor="middle">port: the audio cursor clocks the video frame index</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="STR playback pipeline. Disc sectors split into video and audio. Video: frame assembly, Iki entropy decode (LZSS DC table and AC VLC), dequantise and IDCT, YCbCr to RGB, then the frame shown. Audio: XA ADPCM decode, then the SPU in retail or the audio cursor in the port, which picks the video frame due.">
+      <defs><marker id="cs-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="170" y="22">video: Mode 2 Form 1, magic 0x0160</text>
+      <text class="dg-edge-label" x="170" y="292">audio: Mode 2 Form 2, XA (file 1, channel 0)</text>
+      <rect class="dg-node" x="10" y="118" width="130" height="64" rx="5"/>
+      <text class="dg-label" x="75" y="143">STR sectors</text>
+      <text class="dg-sub" x="75" y="161">interleaved run</text>
+      <rect class="dg-node" x="170" y="34" width="130" height="64" rx="5"/>
+      <text class="dg-label" x="235" y="59">Frame assembly</text>
+      <text class="dg-sub" x="235" y="77">10 sectors each</text>
+      <rect class="dg-node-accent" x="315" y="34" width="130" height="64" rx="5"/>
+      <text class="dg-label" x="380" y="59">Entropy decode</text>
+      <text class="dg-sub" x="380" y="77">LZSS DC + AC VLC</text>
+      <rect class="dg-node-accent" x="460" y="34" width="130" height="64" rx="5"/>
+      <text class="dg-label" x="525" y="59">Dequant + IDCT</text>
+      <text class="dg-sub" x="525" y="77">8x8 blocks</text>
+      <rect class="dg-node-accent" x="605" y="34" width="130" height="64" rx="5"/>
+      <text class="dg-label" x="670" y="59">YCbCr to RGB</text>
+      <text class="dg-sub" x="670" y="77">4:2:0, BT.601</text>
+      <rect class="dg-node-ok" x="750" y="34" width="140" height="64" rx="5"/>
+      <text class="dg-label" x="820" y="59">Frame shown</text>
+      <text class="dg-sub" x="820" y="77">strips into VRAM</text>
+      <rect class="dg-node" x="170" y="202" width="130" height="64" rx="5"/>
+      <text class="dg-label" x="235" y="227">XA ADPCM</text>
+      <text class="dg-sub" x="235" y="245">stereo 37.8 kHz</text>
+      <rect class="dg-node" x="315" y="202" width="275" height="64" rx="5"/>
+      <text class="dg-label" x="452" y="227">Retail: drive feeds the SPU</text>
+      <text class="dg-sub" x="452" y="245">CPU never sees the samples</text>
+      <rect class="dg-node-warn" x="605" y="202" width="285" height="64" rx="5"/>
+      <text class="dg-label" x="747" y="227">Port: audio cursor is the clock</text>
+      <text class="dg-sub" x="747" y="245">frame due = position / frame period</text>
+      <path class="dg-edge" d="M140 135 L168 72" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge" d="M140 165 L168 228" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge" d="M300 66 L313 66" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge" d="M445 66 L458 66" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge" d="M590 66 L603 66" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge" d="M735 66 L748 66" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge" d="M300 234 L313 234" marker-end="url(#cs-arrow)"/>
+      <path class="dg-edge-dim" d="M820 200 L820 100" marker-end="url(#cs-arrow)"/>
+      <text class="dg-edge-label" x="812" y="155" text-anchor="end">picks the frame</text>
     </svg>
-    <figcaption>Video and audio share one sector stream, so they are aligned by construction. The port replaces the MDEC chip with a software decoder and paces the picture off the audio cursor.</figcaption>
+    <figcaption>Video and audio share one sector stream, so they are aligned by construction. Retail hands the picture to the MDEC chip and the sound to the drive; the port decodes both in software and lets the soundtrack's playback position decide which frame is on screen.</figcaption>
   </figure>
 </section>
 
@@ -83,7 +86,7 @@
       <tr><td>4..6</td><td>-</td><td>Padding the PC math reserves; never read</td></tr>
     </tbody>
   </table>
-  <p>The handler stores the id in the FMV-index global and sets the next-game-mode global to 26. Nothing else happens until the next frame, when <code>StrInit</code> loads the overlay and reads the id back to pick a dispatch slot. The port handles the op as <code>op4c_n_e_sub2_fmv_trigger</code> in <code>legaia_engine_vm::field</code>; the world consumes the pending trigger at the top of the next tick, flips into <code>SceneMode::Cutscene</code> and suspends the field VM for the duration.</p>
+  <p>The handler stores the id in the FMV-index global and sets the next-game-mode global to 26. Nothing else happens until the next frame, when <code>StrInit</code> loads the overlay and reads the id back to pick a dispatch slot. The field script is suspended for the duration.</p>
   <h3 id="seven-mid-game-scenes">Which scene plays which movie</h3>
   <p>The assignment is disc data: each triggering scene's MAN (its script-and-data bundle) carries exactly one trigger op, recovered by decompressing every scene and walking its scripts (<code>man_field_scripts::scene_fmv_triggers</code>). After playback the master dispatch does not return to the triggering scene - it writes a <strong>return scene</strong> from its own label table.</p>
   <table>
@@ -100,40 +103,49 @@
       <tr><td>8</td><td><code>jouine</code></td><td><code>MV6.STR</code></td><td><code>town0e</code></td></tr>
     </tbody>
   </table>
-  <p>Slots 9 and above name dev files (<code>MOV15.STR</code>, <code>MV1A.STR</code>, <code>\DATA\MOV.STR</code>) that are not on the disc. The return-scene hand-off is one kernel shared by every host: <code>World::finish_cutscene</code> parks the finished id and <code>SceneHost::apply_pending_fmv_handoff</code> loads the destination - so skipping or failing to decode the movie still moves the player, exactly as retail writes the scene globals whether or not the picture played.</p>
+  <p>Slots 9 and above name dev files (<code>MOV15.STR</code>, <code>MV1A.STR</code>, <code>\DATA\MOV.STR</code>) that are not on the disc. Retail writes the return-scene globals whether or not the picture played, so the port moves the player on even when a movie is skipped or cannot be decoded.</p>
 </section>
 
 <section class="doc-section" id="retail-playback">
   <h2>Playing a movie: the retail path</h2>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Mode 26</span><span class="desc">master dispatch picks the 32-byte slot <code>0x801D0A6C + fmv_id &times; 0x20</code>, clears the letterbox bands, selects the Iki decoder</span><span class="crate">FUN_801CEA3C</span>
-    <span class="num">2</span><span class="layer">Seek</span><span class="desc"><code>CdSearchFile</code> resolves the slot's path; the play loop seeks <code>(start_frame &minus; 1) &times; 10</code> sectors in and opens the SPU CD input</span><span class="crate">FUN_801CF098</span>
-    <span class="num">3</span><span class="layer">Stream</span><span class="desc"><code>CdlReadS</code> with real-time XA on and the sector filter off, into a 32-sector ring in the asset buffer</span><span class="crate">St library</span>
-    <span class="num">4</span><span class="layer">Demux</span><span class="desc">video sectors (magic <code>0x0160</code>) accumulate per frame in ring slots; XA sectors are played by the drive and never touch the CPU</span><span class="crate">FUN_8005F024</span>
-    <span class="num">5</span><span class="layer">Decode</span><span class="desc">the Iki bitstream is entropy-decoded into MDEC codes and DMA'd to the chip; each 32-px strip is blitted to VRAM as it comes out</span><span class="crate">FUN_801D0378</span>
-    <span class="num">6</span><span class="layer">Exit</span><span class="desc">end-of-stream latch, or a pad press when <code>fmv_id == 0</code>; mute the CD mix, <code>CdlPause</code>, write the return scene, mode 2</span><span class="crate">FUN_801CEA3C</span>
-  </div>
+  <ol class="steps">
+    <li><b>Mode 26</b><span>Pick the 32-byte slot <code>0x801D0A6C + fmv_id &times; 0x20</code>, clear the letterbox bands, select the Iki decoder (<code>FUN_801CEA3C</code>).</span></li>
+    <li><b>Seek</b><span><code>CdSearchFile</code> resolves the path; seek <code>(start_frame &minus; 1) &times; 10</code> sectors in and open the SPU CD input (<code>FUN_801CF098</code>).</span></li>
+    <li><b>Stream</b><span><code>CdlReadS</code> with real-time XA on and the sector filter off, into a 32-sector ring.</span></li>
+    <li><b>Demux</b><span>Video sectors gather per frame in ring slots; XA sectors are played by the drive and never touch the CPU.</span></li>
+    <li><b>Decode</b><span>The Iki bitstream becomes MDEC codes, DMA'd to the chip; each 32-px strip is blitted to VRAM as it comes out.</span></li>
+    <li><b>Exit</b><span>End of stream, or a pad press when <code>fmv_id == 0</code>: mute the CD mix, pause, write the return scene.</span></li>
+  </ol>
   <p>Only the intro is skippable - the mid-game movies ignore the pad. Every retail movie takes the Iki path; the overlay also carries an STRv2/v3 decoder that only the dev slots select. The demux state machine, ring layout and MDEC feed are on <a href="cutscene-internals.html#demux">cutscene internals</a>.</p>
 </section>
 
 <section class="doc-section" id="str-sector">
   <h2>What is on the disc: STR sectors and the Iki frame</h2>
   <p>A movie is a run of 2048-byte Mode 2 Form 1 sectors, each tagged with the frame it belongs to and its position within that frame. Concatenating the payloads of one frame's sectors in arrival order gives the demuxed bitstream.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x00</code></td><td>2</td><td>magic <code>0x0160</code> = video sector; anything else is skipped</td></tr>
-      <tr><td><code>0x02</code></td><td>2</td><td>type <code>0x8001</code></td></tr>
-      <tr><td><code>0x04</code></td><td>2</td><td><code>chunk_number</code> - position of this sector within the frame</td></tr>
-      <tr><td><code>0x06</code></td><td>2</td><td><code>chunks_per_frame</code></td></tr>
-      <tr><td><code>0x08</code></td><td>4</td><td><code>frame_number</code>, wraps at <code>0xFFFF</code></td></tr>
-      <tr><td><code>0x0C</code></td><td>4</td><td><code>frame_size_bytes</code> across all chunks</td></tr>
-      <tr><td><code>0x10</code></td><td>2 + 2</td><td>width, height (multiples of 16)</td></tr>
-      <tr><td><code>0x14</code></td><td>12</td><td>header copy + padding, unused</td></tr>
-      <tr><td><code>0x20</code></td><td>2016</td><td>payload chunk</td></tr>
-    </tbody>
-  </table>
-  <p id="mdec">The demuxed frame is the PSX <strong>Iki</strong> layout: a 10-byte header (<code>mdec_code_count</code>, magic <code>0x3800</code>, width, height, <code>lzss_size</code>), then an LZSS-compressed table holding every block's quantisation scale and DC value, then an AC-only entropy stream. Legaia overwrites the fields a strict STRv2 parser expects to hold version and qscale with the frame width and height, which is why generic tools reject these movies. <code>MdecDecoder::decode_frame</code> in <code>crates/mdec</code> turns one frame into RGBA8 in six steps - header, LZSS table, AC bitstream, dequantise + IDCT, macroblock layout, 4:2:0 upsample + BT.601 - each written out with its formulas on <a href="cutscene-internals.html#mdec-steps">cutscene internals</a>.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">magic 0x0160</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x02</span><span class="bm-name">type 0x8001</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x04</span><span class="bm-name">chunk no.</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x06</span><span class="bm-name">chunks / frame</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">frame number</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">frame size (bytes)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x10</span><span class="bm-name">width, height</span><span class="bm-size">u16 &times; 2</span></div>
+    <div class="bm-cell bm-pad" style="--w:6"><span class="bm-off">+0x14</span><span class="bm-name">header copy, padding</span><span class="bm-size">12 B</span></div>
+  </div>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+0x00</span><span class="bm-name">32-byte header</span><span class="bm-size">above</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">+0x20</span><span class="bm-name">payload chunk - concatenate a frame's chunks in order</span><span class="bm-size">2016 B</span></div>
+  </div>
+  <p id="mdec">The demuxed frame is the PSX <strong>Iki</strong> layout: a 10-byte header, then an LZSS-compressed table holding every block's quantisation scale and DC value, then an AC-only entropy stream. Legaia puts the frame width and height where a strict STRv2 parser expects version and qscale, which is why generic tools reject these movies. One frame decodes in six steps:</p>
+  <ol class="steps">
+    <li><b>Header</b><span>10 bytes: code count, magic <code>0x3800</code>, width, height, LZSS size.</span></li>
+    <li><b>DC table</b><span>LZSS inflates to one 6-bit qscale + 10-bit DC per 8&times;8 block.</span></li>
+    <li><b>AC codes</b><span>Run/level VLC per block, ended by EOB; an escape carries a raw 16-bit code.</span></li>
+    <li><b>IDCT</b><span>Dequantise through the zigzag order, then a separable 8&times;8 inverse DCT.</span></li>
+    <li><b>Macroblocks</b><span>Six blocks each - Cr, Cb, Y0..Y3 - laid out column by column.</span></li>
+    <li><b>Colour</b><span>Upsample 4:2:0 chroma, convert BT.601 YCbCr to RGB.</span></li>
+  </ol>
+  <p>Formulas for every step are on <a href="cutscene-internals.html#mdec-steps">cutscene internals</a>; the port's decoder is <code>legaia_mdec::MdecDecoder</code>.</p>
 </section>
 
 <section class="doc-section" id="xa">
@@ -205,49 +217,6 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
 <section class="doc-section" id="battle-intro">
   <h2>Battle intro and script helpers</h2>
   <p>The shatter or swirl before a fight is a third overlay, <strong>PROT 0979</strong>, sharing the movie player's slot. Its init picks a style from the battle flags byte, the formation's first monster id and (two arms) the scene index - style 2 is the ordinary shatter, 3 and 4 are reached by a handful of formations - and its per-frame tick owns the whole frame until the battle scene takes over. Port <code>engine-vm::battle_intro_styles</code> + <code>engine-ui::battle_intro</code>. The scripted <code>op*</code> / <code>ed*</code> scenes also lean on five shared per-frame helpers in the dialogue overlay (party-leader swap, position tween, teardown, particle emitter, colour rotate); both are tabulated on <a href="cutscene-internals.html#battle-intro">internals</a>.</p>
-</section>
-
-<section class="doc-section" id="how-we-know">
-  <h2>How we know</h2>
-  <table>
-    <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Source</th></tr></thead>
-    <tbody>
-      <tr><td>Master dispatch</td><td><code>FUN_801CEA3C</code></td><td>32-byte slot stride (<code>sll v0,v0,0x5</code>), decoder select, return-scene hand-off, intro-only skip</td><td>PROT 0970 static decompile, byte-identical to the playback RAM capture</td></tr>
-      <tr><td>Play loop</td><td><code>FUN_801CF098</code></td><td>Seek math, SPU CD mix, per-frame pump, teardown</td><td>PROT 0970</td></tr>
-      <tr><td>St demux</td><td><code>FUN_8005ECD4</code> / <code>FUN_8005F024</code></td><td>Ring slots, magic gate, end-frame latch</td><td><code>SCUS_942.54</code></td></tr>
-      <tr><td>Iki decoder</td><td><code>FUN_801D0378</code> / <code>FUN_801D0604</code></td><td>LZSS DC table + AC scan; STRv2 path <code>FUN_801D070C</code> is dev-only</td><td>PROT 0970</td></tr>
-      <tr><td>FMV trigger op</td><td><code>0x801E30E4</code> in <code>FUN_801DE840</code></td><td>Writes <code>_DAT_8007BA78</code> and <code>_DAT_8007B83C = 0x1A</code>; a label, not a callable</td><td>Field overlay 0897 dump; JT chain <code>0x801CEE60</code> &rarr; <code>0x801CF010</code></td></tr>
-      <tr><td>Title attract trigger</td><td><code>FUN_801DD35C</code> (<code>0x801DDCF0</code>)</td><td>Idle countdown underflow writes mode 26 with id 0</td><td>PCSX-Redux watchpoint - <a href="boot.html#title-overlay-state">boot</a></td></tr>
-      <tr><td>Per-scene triggers</td><td><code>man_field_scripts::scene_fmv_triggers</code></td><td>One trigger op per scene MAN, the table above</td><td>Disc-gated <code>scene_fmv_triggers_disc</code></td></tr>
-      <tr><td>XA clip starter</td><td><code>FUN_8003D53C</code> / <code>FUN_8003D764</code></td><td><code>CdlSetfilter {1, chan}</code> for clips; no filter for movies</td><td><code>SCUS_942.54</code></td></tr>
-      <tr><td>Clip table filler</td><td><code>FUN_801CFA78</code></td><td>34 <code>[CdlLOC][len]</code> slots at <code>0x801C6ED8</code> from <code>\XA\XA%d.XA;1</code></td><td>PROT 0895 <code>init.pak</code></td></tr>
-      <tr><td>Per-movie single XA track</td><td>-</td><td><code>(file 1, chan 0)</code> on all six movies</td><td>Raw-sector subheader scan</td></tr>
-      <tr><td>Record spawn</td><td><code>FUN_8003BDE0</code></td><td>Exactly five spawns across the opening: three op-<code>0x44</code>, two tile triggers</td><td>Exec breakpoint, cold boot</td></tr>
-      <tr><td>Crawl roller</td><td><code>FUN_80037174</code></td><td>Child context; geometry globals at <code>_DAT_801C6EA4 + 0x4C..0x52</code></td><td><code>SCUS_942.54</code> + pixel capture</td></tr>
-      <tr><td>Camera</td><td><code>FUN_801DE084</code> / <code>FUN_801DD310</code> / <code>FUN_800172C0</code></td><td>Param-to-global map, mover curves, view build</td><td>Field overlay 0897; capture matches 2471 of 2480 sampled axis values</td></tr>
-      <tr><td>Gold grade</td><td>-</td><td>Every uploaded CLUT row rewritten entry-for-entry, zero mismatches; <code>IR0 = 0</code> on every node</td><td>VRAM peek against disc TIMs during the opening</td></tr>
-      <tr><td>Battle intro</td><td><code>FUN_801CE8CC</code> / <code>FUN_801CF5BC</code></td><td>Style select, frame ownership</td><td>PROT 0979</td></tr>
-    </tbody>
-  </table>
-  <p>Format references for the decoder: PSX-SPX (STR, BS compression, MDEC) and jPSXdec's <code>PlayStation1_STR_format.txt</code> - documentation only. Port files: <code>crates/mdec/src/{lib,str_sector,strv2_table,strv2_decode}.rs</code>, <code>crates/xa/src/demux.rs</code>, <code>crates/engine-shell/src/cutscene_av.rs</code>, <code>crates/engine-core/src/mode.rs</code>.</p>
-  <details class="disclosure">
-    <summary>The per-STR trigger capture corpus</summary>
-    <div class="disclosure-body">
-      <p>Nine save states, one per <code>fmv_id 0..=8</code>, captured immediately before each movie starts, pin the trigger-side state: <code>_DAT_8007BA78</code> = the expected id, <code>_DAT_8007B83C = 0x1A</code>, BGM id 2000, active scene <code>map01</code>. The states were produced through the dev menu's register editor (<code>FUN_801DBD04</code> family), not by stepping a scene's trigger op, so they prove the id/mode tuple across the whole range but not the per-scene assignment - that comes from the MAN walk above. There is no per-movie event record carrying post-play flags; the dev menu's &ldquo;jump to beat&rdquo; is the MAP CHANGE warp appliers plus the event-flag editor. Codified as <code>capture_observations::cutscene_trigger_corpus</code>.</p>
-    </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: superseded readings</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>The dispatch table was read with a 64-byte stride and paired the wrong slot halves; the shift instruction pins 32 bytes. With the right stride the last three scenes play <code>MV4</code>/<code>MV5</code>/<code>MV6</code> rather than &ldquo;vestigial triggers at cut movies&rdquo;.</li>
-        <li>A &ldquo;compact MV table&rdquo; at <code>0x801CAE40</code> was the libcd <code>CdlFILE</code> directory cache read 8 bytes out of phase.</li>
-        <li>The confirm-press flag-26 packet was read as the required hand-off into <code>town01</code>; it is the skip, and the natural chain arrives through the tile trigger. Op <code>0x44</code> was labelled COUNTER before the probe showed it spawning a record.</li>
-        <li>Reading the GTE matrix from a save state does not recover the cutscene camera - it is the last-rendered object's composed transform (row norms &asymp; 6). The camera comes from the op-<code>0x45</code> globals.</li>
-      </ul>
-      <p>More on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

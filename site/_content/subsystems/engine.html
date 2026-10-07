@@ -1,231 +1,268 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; engine reimplementation</div>
   <h1>Engine reimplementation</h1>
-  <p class="lede">A from-scratch Rust port of Legend of Legaia in the ScummVM / OpenRCT2 mould: the original PlayStation code is traced with a disassembler, documented, and rewritten fresh - never recompiled. You supply your own disc image; the engine reads every asset from it and plays the game. Retail behaviour is the measured ground truth, provable against parity oracles, and enhancements ride on top as toggles with a retail-faithful mode always one flip away.</p>
+  <p class="lede">A from-scratch Rust port of Legend of Legaia in the ScummVM / OpenRCT2 mould: the original PlayStation code is traced with a disassembler, documented, and rewritten fresh - never recompiled. You supply your own disc image; the engine reads every asset from it and plays the game. Retail behaviour is the measured ground truth, provable against parity oracles, and enhancements ride on top as toggles with a retail-faithful mode always one flip away. This page is about how the port itself is built.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>What it is</dt><dd>A Rust runtime - boot, field, battle, menus, cutscenes, audio - reading the original disc for every asset</dd>
+    <dt>What it is</dt><dd>A Rust runtime - boot, field, battle, menus, cutscenes, minigames, audio - reading the original disc for every asset</dd>
     <dt>What it is not</dt><dd>A recompile of <code>SCUS_942.54</code>, a re-authored asset set, or a build that loses the retail-faithful mode</dd>
-    <dt>Hosts</dt><dd>Native <code>legaia-engine play-window</code> (winit + wgpu), the browser <a href="../play.html">play page</a> (WASM, same engine), the site&rsquo;s minigame page</dd>
-    <dt>Crates</dt><dd><code>engine-vm</code> (the VMs) &larr; <code>engine-core</code> (the world) &larr; <code>engine-shell</code> (the driver); <code>engine-ui</code> / <code>engine-render</code> / <code>engine-audio</code> are presentation leaves</dd>
-    <dt>Faithful vs enhanced</dt><dd>Shading defaults to retail, rasterisation defaults to clean; every enhancement is bit-identical to retail when off</dd>
-    <dt>Proof</dt><dd>Save-hash scenarios, VRAM diff against save-state captures, mode / audio traces, record-replay determinism</dd>
-    <dt>Legal posture</dt><dd>Zero Sony bytes in the repo or any binary; disc-dependent tests skip when <code>LEGAIA_DISC_BIN</code> is unset</dd>
+    <dt>Hosts</dt><dd>The native <code>legaia-engine play-window</code> (winit + wgpu), the browser <a href="../play.html">play page</a> (WASM, same engine) and the site&rsquo;s <a href="../minigames.html">minigames page</a></dd>
+    <dt>One session</dt><dd><code>engine-session::BootSession</code> is the game loop both play hosts tick; hosts own only input, the draw target and audio output</dd>
+    <dt>Faithful vs enhanced</dt><dd>Shading defaults to retail, rasterisation to clean; every enhancement is bit-identical to retail when off</dd>
+    <dt>Proof</dt><dd>Save-hash scenarios, VRAM diff against save-state captures, mode / audio / sim traces, record-replay determinism, a retail comparison corpus</dd>
+    <dt>Legal posture</dt><dd>Zero Sony bytes in the repo or any binary; disc-dependent tests skip when no disc is supplied</dd>
   </dl>
+</section>
+
+<section class="doc-section" id="crate-layout">
+  <h2>How the crates stack</h2>
+  <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Leaves: engine-ui (draw lists, no wgpu) and engine-vm (the VMs). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
+      <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="868" y="22" text-anchor="end">hosts</text>
+      <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
+      <text class="dg-label" x="175" y="54">engine-shell</text><text class="dg-sub" x="175" y="72">native window + legaia-engine CLI</text>
+      <rect class="dg-node-accent" x="325" y="30" width="230" height="56" rx="5"/>
+      <text class="dg-label" x="440" y="54">web-viewer</text><text class="dg-sub" x="440" y="72">browser play page (WASM)</text>
+      <rect class="dg-node" x="590" y="30" width="230" height="56" rx="5"/>
+      <text class="dg-label" x="705" y="54">asset-viewer</text><text class="dg-sub" x="705" y="72">standalone format viewer</text>
+
+      <text class="dg-edge-label" x="868" y="122" text-anchor="end">host glue</text>
+      <rect class="dg-node" x="20" y="130" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="120" y="154">parity</text><text class="dg-sub" x="120" y="172">oracles + retail compare</text>
+      <rect class="dg-node" x="240" y="130" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="340" y="154">engine-screens</text><text class="dg-sub" x="340" y="172">shop / prize / inn / banner</text>
+      <rect class="dg-node" x="460" y="130" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="560" y="154">engine-session</text><text class="dg-sub" x="560" y="172">BootSession + BGM director</text>
+
+      <text class="dg-edge-label" x="868" y="222" text-anchor="end">engine</text>
+      <rect class="dg-node" x="20" y="230" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="120" y="254">engine-render</text><text class="dg-sub" x="120" y="272">wgpu + software PSX VRAM</text>
+      <rect class="dg-node-ok" x="340" y="230" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="440" y="254">engine-core</text><text class="dg-sub" x="440" y="272">World, scenes, game rules</text>
+      <rect class="dg-node" x="660" y="230" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="760" y="254">engine-audio</text><text class="dg-sub" x="760" y="272">SPU model + sequencer</text>
+
+      <text class="dg-edge-label" x="868" y="322" text-anchor="end">leaves</text>
+      <rect class="dg-node" x="120" y="330" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="220" y="354">engine-ui</text><text class="dg-sub" x="220" y="372">draw lists, no wgpu</text>
+      <rect class="dg-node" x="440" y="330" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="540" y="354">engine-vm</text><text class="dg-sub" x="540" y="372">VMs + battle action SM</text>
+
+      <rect class="dg-group" x="20" y="410" width="840" height="48" rx="6"/>
+      <text class="dg-label" x="440" y="432">format crates: asset, prot, iso, lzs, tim, tmd, vab, seq, xa, mes, anm, art, save, font, mdec ...</text>
+      <text class="dg-sub" x="440" y="449">engine-agnostic: typed data in memory, never wgpu, winit or cpal</text>
+
+      <path class="dg-edge" d="M120 86 L120 128" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M200 86 L320 128" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M260 86 L520 128" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M380 86 L360 128" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M480 86 L560 128" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge-dim" d="M60 86 L60 108 L10 108 L10 258 L18 258" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge-dim" d="M120 186 L120 228" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M340 186 L420 228" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M300 186 L240 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M540 186 L460 228" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M600 186 L720 228" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M120 286 L190 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M460 286 L520 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M250 386 L250 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M540 386 L540 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M760 286 L760 408" marker-end="url(#en-arrow)"/>
+      <text class="dg-edge-label" x="480" y="110">both play hosts</text>
+      <text class="dg-edge-label" x="130" y="212">native only</text>
+    </svg>
+    <figcaption>Arrows point at what a crate links (main edges only). The browser host links <code>engine-session</code>, <code>engine-screens</code> and <code>engine-ui</code> but never <code>engine-render</code>, so it carries no wgpu; <code>parity</code> and <code>engine-render</code> are reached only from the native shell. <code>engine-render</code> and <code>engine-audio</code> never depend on <code>engine-core</code>: they draw and play what the session hands them.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Crate</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>engine-vm</code></td><td>The VMs and the battle-action state machine. Each talks to the game through a <code>Host</code> trait, so the crate has no GPU or audio dependency</td></tr>
+      <tr><td><code>engine-core</code></td><td>The simulation: <code>World</code> (which implements every VM&rsquo;s <code>Host</code>), the scene host and scene resources, the mode seat, menus, shop / inn / level-up sessions, saves, minigame rules. Draws nothing</td></tr>
+      <tr><td><code>engine-ui</code></td><td>Renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>) and the shared render kernels - the wgpu-free leaf both hosts can link</td></tr>
+      <tr><td><code>engine-render</code></td><td>The wgpu renderer with a software PSX VRAM (1024&times;512, palette decode in the fragment shader)</td></tr>
+      <tr><td><code>engine-audio</code></td><td>From-scratch 24-voice SPU, SsAPI-shaped sequencer, SFX bank; cpal output natively, WebAudio in the browser</td></tr>
+      <tr><td><code>engine-session</code></td><td><code>BootSession</code> - the scene host plus the per-frame order around its tick (mode seat, pause menu, camera, BGM and SFX routing) - and the <code>AudioBgmDirector</code>, both generic over the audio output. Both play hosts tick it</td></tr>
+      <tr><td><code>engine-screens</code></td><td>The shop-family screens composed once for both hosts: the gold shop&rsquo;s windows, the casino prize exchange and coin counter, the inn prompt and Seru-trade panel, the level-up / capture banners</td></tr>
+      <tr><td><code>parity</code></td><td>The engine measured against retail: the VRAM / mode / audio / PCM oracles, the simulation trace, the retail comparison corpus. Tool code no play host ships</td></tr>
+      <tr><td><code>engine-shell</code></td><td>The native host as library code - the <code>play-window</code> window, launcher, replay, scenario runner - plus the <code>legaia-engine</code> binary whose subcommands drive it and the parity tools</td></tr>
+    </tbody>
+  </table>
+  </div>
 </section>
 
 <section class="doc-section" id="runtime-architecture">
   <h2>Runtime architecture</h2>
-  <p>One binary, one session, one world. The shell boots a session, the session drives the mode table, the mode hands the scene host a world to tick, and the world drives every VM by implementing its <code>Host</code> trait. Rendering and audio hang off the side: they consume what the world reports and never reach back into it.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 960 350" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Runtime data flow: the legaia-engine binary boots a BootSession, which drives the ModeSeat, SceneHost and World in engine-core; World drives six VMs in engine-vm through Host traits; SceneResources feed the wgpu Renderer and the BGM director feeds the sequencer and SPU mixer in engine-audio">
-      <g fill="none" stroke="var(--border)" stroke-dasharray="4 3">
-        <rect x="10" y="30" width="200" height="140" rx="6"/>
-        <rect x="240" y="30" width="220" height="280" rx="6"/>
-        <rect x="490" y="30" width="200" height="280" rx="6"/>
-        <rect x="720" y="30" width="230" height="100" rx="6"/>
-        <rect x="720" y="160" width="230" height="150" rx="6"/>
-      </g>
-      <g fill="var(--text-muted)" font-size="11">
-        <text x="18" y="22">engine-shell</text>
-        <text x="248" y="22">engine-core</text>
-        <text x="498" y="22">engine-vm</text>
-        <text x="728" y="22">engine-render</text>
-        <text x="728" y="152">engine-audio</text>
-      </g>
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="30" y="50" width="160" height="40" rx="4"/>
-        <rect x="30" y="110" width="160" height="40" rx="4" stroke="var(--accent)"/>
-        <rect x="260" y="50" width="180" height="40" rx="4"/>
-        <rect x="260" y="110" width="180" height="40" rx="4"/>
-        <rect x="260" y="170" width="180" height="50" rx="4" stroke="var(--accent)"/>
-        <rect x="260" y="250" width="180" height="40" rx="4"/>
-        <rect x="510" y="50" width="160" height="30" rx="4"/>
-        <rect x="510" y="90" width="160" height="30" rx="4"/>
-        <rect x="510" y="130" width="160" height="30" rx="4"/>
-        <rect x="510" y="170" width="160" height="30" rx="4"/>
-        <rect x="510" y="210" width="160" height="30" rx="4"/>
-        <rect x="510" y="250" width="160" height="30" rx="4"/>
-        <rect x="740" y="50" width="190" height="50" rx="4"/>
-        <rect x="740" y="180" width="190" height="40" rx="4"/>
-        <rect x="740" y="250" width="190" height="40" rx="4"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="110" y="70">legaia-engine</text>
-        <text x="110" y="130">BootSession</text>
-        <text x="350" y="70">ModeSeat</text>
-        <text x="350" y="130">SceneHost</text>
-        <text x="350" y="188">World</text>
-        <text x="350" y="206" fill="var(--text-muted)">implements every Host</text>
-        <text x="350" y="270">SceneResources</text>
-        <text x="590" y="65">Actor VM</text>
-        <text x="590" y="105">Field VM</text>
-        <text x="590" y="145">Move VM</text>
-        <text x="590" y="185">Motion VM</text>
-        <text x="590" y="225">Effect VM</text>
-        <text x="590" y="265">Battle action SM</text>
-        <text x="835" y="68">Renderer</text>
-        <text x="835" y="86" fill="var(--text-muted)">wgpu + PSX VRAM</text>
-        <text x="835" y="200">Sequencer</text>
-        <text x="835" y="270">SPU mixer</text>
-      </g>
-      <g stroke="currentColor" fill="none" stroke-width="1.5">
-        <line x1="110" y1="90" x2="110" y2="108"/>
-        <line x1="190" y1="130" x2="258" y2="130"/>
-        <line x1="350" y1="90" x2="350" y2="108"/>
-        <line x1="350" y1="150" x2="350" y2="168"/>
-        <line x1="350" y1="220" x2="350" y2="248"/>
-        <path d="M 440 270 L 475 270 L 475 8 L 835 8 L 835 48" stroke="var(--text-muted)" stroke-dasharray="3 3"/>
-        <line x1="835" y1="220" x2="835" y2="248"/>
-        <path d="M 110 150 L 110 335 L 705 335 L 705 200 L 738 200" stroke="var(--text-muted)" stroke-dasharray="3 3"/>
-      </g>
-      <g stroke="var(--accent)" fill="none" stroke-width="1.5">
-        <line x1="440" y1="195" x2="508" y2="65"/>
-        <line x1="440" y1="195" x2="508" y2="105"/>
-        <line x1="440" y1="195" x2="508" y2="145"/>
-        <line x1="440" y1="195" x2="508" y2="185"/>
-        <line x1="440" y1="195" x2="508" y2="225"/>
-        <line x1="440" y1="195" x2="508" y2="265"/>
-      </g>
-      <g fill="currentColor">
-        <polygon points="110,108 106,100 114,100"/>
-        <polygon points="258,130 250,126 250,134"/>
-        <polygon points="350,108 346,100 354,100"/>
-        <polygon points="350,168 346,160 354,160"/>
-        <polygon points="350,248 346,240 354,240"/>
-        <polygon points="835,248 831,240 839,240"/>
-      </g>
-      <g fill="var(--text-muted)" text-anchor="middle">
-        <text x="590" y="300">via Host traits</text>
-        <text x="400" y="326">BGM director</text>
-      </g>
+  <p>One session, one world. A host hands the session a pad word and the camera azimuth each frame; the session runs the mode seat and the scene host; the scene host ticks the world; the world drives every VM by implementing its <code>Host</code> trait. Rendering and audio hang off the side: they consume what the world reports and never reach back into it.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Per-frame data flow: a host (play-window or the browser) ticks BootSession in engine-session, which drives the ModeSeat and SceneHost in engine-core; the SceneHost ticks World, which drives six VMs through Host traits. World state is projected into draw lists by engine-ui and engine-screens and drawn by the host's renderer; the BGM director turns sound events into sequencer and SPU work in engine-audio.">
+      <defs><marker id="en-rt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="30" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="105" y="54">host</text><text class="dg-sub" x="105" y="72">pad, camera, draw, audio out</text>
+      <rect class="dg-node" x="230" y="30" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="54">BootSession</text><text class="dg-sub" x="315" y="72">engine-session</text>
+      <rect class="dg-node" x="440" y="30" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="525" y="54">ModeSeat</text><text class="dg-sub" x="525" y="72">the mode word</text>
+      <rect class="dg-node" x="440" y="110" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="525" y="134">SceneHost</text><text class="dg-sub" x="525" y="152">scene load + transitions</text>
+      <rect class="dg-node-ok" x="440" y="190" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="525" y="214">World</text><text class="dg-sub" x="525" y="232">implements every Host</text>
+      <rect class="dg-group" x="650" y="20" width="200" height="300" rx="6"/>
+      <text class="dg-edge-label" x="662" y="38">engine-vm</text>
+      <rect class="dg-node" x="665" y="46" width="170" height="34" rx="4"/><text class="dg-label" x="750" y="67">Field VM</text>
+      <rect class="dg-node" x="665" y="90" width="170" height="34" rx="4"/><text class="dg-label" x="750" y="111">Move VM</text>
+      <rect class="dg-node" x="665" y="134" width="170" height="34" rx="4"/><text class="dg-label" x="750" y="155">Motion VMs</text>
+      <rect class="dg-node" x="665" y="178" width="170" height="34" rx="4"/><text class="dg-label" x="750" y="199">Effect VM</text>
+      <rect class="dg-node" x="665" y="222" width="170" height="34" rx="4"/><text class="dg-label" x="750" y="243">Battle action SM</text>
+      <rect class="dg-node" x="665" y="266" width="170" height="34" rx="4"/><text class="dg-label" x="750" y="287">Window-widget VM</text>
+      <rect class="dg-node" x="20" y="190" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="105" y="214">draw lists</text><text class="dg-sub" x="105" y="232">engine-ui, engine-screens</text>
+      <rect class="dg-node" x="20" y="270" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="105" y="294">renderer</text><text class="dg-sub" x="105" y="312">wgpu native / WebGL web</text>
+      <rect class="dg-node" x="230" y="270" width="170" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="294">engine-audio</text><text class="dg-sub" x="315" y="312">sequencer + SPU</text>
+      <path class="dg-edge" d="M190 58 L228 58" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M400 58 L438 58" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M400 70 L420 70 L420 138 L438 138" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M525 166 L525 188" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M610 218 L640 218 L640 63 L663 63" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M640 107 L663 107" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M640 151 L663 151" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M640 195 L663 195" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M640 218 L640 239 L663 239" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge" d="M640 239 L640 283 L663 283" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge-dim" d="M440 218 L192 218" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge-dim" d="M105 246 L105 268" marker-end="url(#en-rt-arrow)"/>
+      <path class="dg-edge-dim" d="M315 86 L315 268" marker-end="url(#en-rt-arrow)"/>
+      <text class="dg-edge-label" x="610" y="182">Host traits</text>
+      <text class="dg-edge-label" x="320" y="210" text-anchor="middle">state, read-only</text>
+      <text class="dg-edge-label" x="323" y="180">BGM director</text>
     </svg>
-    <figcaption>Solid arrows are ordinary calls; accent lines are the <code>Host</code> trait boundary that keeps <code>engine-vm</code> free of GPU and audio dependencies; dashed lines carry scene uploads to the renderer and sequences to the audio stack.</figcaption>
+    <figcaption>Solid arrows are calls down the stack; dashed lines are data flowing out to presentation. The VMs see the game only through the <code>Host</code> traits <code>World</code> implements, which is what keeps <code>engine-vm</code> free of GPU and audio code.</figcaption>
   </figure>
-  <table class="data-table">
-    <thead><tr><th>Crate</th><th>Depends on</th><th>Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>engine-vm</code></td><td>asset, prot, art, anm</td><td>the VMs and the battle-action state machine; no GPU / audio</td></tr>
-      <tr><td><code>engine-core</code></td><td>engine-vm + parser crates</td><td><code>World</code>, scene host, <code>Vfs</code> (dir / disc / memory), menus, sessions, minigame rules</td></tr>
-      <tr><td><code>engine-ui</code></td><td>asset, tim, font</td><td>renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>); the wgpu-free leaf the browser links</td></tr>
-      <tr><td><code>engine-render</code></td><td>engine-ui, asset, tim, font</td><td>wgpu renderer with a software PSX VRAM (1024&times;512, CLUT decode in the fragment shader)</td></tr>
-      <tr><td><code>engine-audio</code></td><td>xa, vab, seq, prot</td><td>cpal output, from-scratch 24-voice SPU, SsAPI-shaped sequencer; <code>WebAudioOut</code> on WASM</td></tr>
-      <tr><td><code>engine-shell</code></td><td>all of the above</td><td>the <code>legaia-engine</code> binary: <code>BootSession</code>, subcommands, parity oracles</td></tr>
-    </tbody>
-  </table>
-  <p>The asset crates (<code>tim</code>, <code>tmd</code>, <code>vab</code>, &hellip;) stay engine-agnostic: they produce typed in-memory data and never touch wgpu, winit or cpal. <code>engine-render</code> and <code>engine-audio</code> never depend on <code>engine-core</code>; the shell composes them.</p>
+  <h3 id="frame-model">The frame model</h3>
+  <p>One world tick is one retail vsync, and retail never catches up: a slow frame makes a slow game. The hosts render at the display&rsquo;s refresh instead, so the engine owns the rule that turns display frames into ticks (<code>engine-core::frame_step</code>): whole 1/60 s ticks with the remainder carried, at most four per display frame, and a backlog past four dropped rather than carried. Both hosts call the same kernel. The pause menu, the name-entry prompt and a movie consume ticks without ticking the world - under the pause menu that is retail&rsquo;s own shape, since its mode handler runs no frame driver.</p>
 </section>
 
 <section class="doc-section" id="goal-non-goals">
   <h2>Goal and non-goals</h2>
-  <p><strong>Goal:</strong> a playable port of the NA release on modern systems via Rust + wgpu, with a WASM target; JP / EU follow once NA is solid. &ldquo;Playable port&rdquo; is grounded in retail, not bound by it: the Ghidra-traced dumps and oracles pin what the original does, the faithful mode reproduces it provably, and that is a measuring stick rather than a ceiling.</p>
+  <p><strong>Goal:</strong> a playable port of the NA release on modern systems via Rust + wgpu, with a WASM target; JP / EU follow once NA is solid. &ldquo;Playable port&rdquo; is grounded in retail, not bound by it: the traced dumps and oracles pin what the original does, the faithful mode reproduces it provably, and that is a measuring stick rather than a ceiling.</p>
   <ul class="bullets">
-    <li><strong>Not a decompilation.</strong> No byte-matching recompile is attempted; every line is fresh Rust written from format docs and the Ghidra-traced dumps. The decompiled C under <code>ghidra/scripts/funcs/</code> is reference material, never pasted; per-opcode tests use synthetic bytecode.</li>
+    <li><strong>Not a decompilation.</strong> No byte-matching recompile is attempted and nothing is auto-translated from the MIPS; every line is fresh Rust written from format docs and the traced dumps, which stay reference material. Per-opcode tests use synthetic bytecode.</li>
     <li><strong>Never lose retail.</strong> Departures live behind toggles; the oracles keep &ldquo;faithful&rdquo; a testable claim. A quirk is preserved in the faithful mode and fair game to improve outside it.</li>
     <li><strong>No re-authored assets.</strong> Every texture, mesh, sample and sequence comes off your own disc at runtime.</li>
-    <li><strong>Deterministic simulation.</strong> Seeded RNG, fixed timestep - the precondition for record / replay and TAS-style verification.</li>
+    <li><strong>Deterministic simulation.</strong> Seeded RNG, fixed timestep - the precondition for record / replay.</li>
   </ul>
-  <p>Modding and translation are shipped tracks, not exceptions: the <a href="../tooling/randomizer.html">randomizer</a> (in-browser via the <a href="../tooling/rom-patcher.html">ROM patcher</a>) and <code>legaia-patcher translate</code> patch a user-supplied disc without touching the engine, and what they prove out against retail - softlock fixes, tuning sliders - is expected to graduate into engine toggles.</p>
+  <p>Modding and translation are shipped tracks, not exceptions: the <a href="../tooling/randomizer.html">randomizer</a> (in-browser via the <a href="../tooling/rom-patcher.html">ROM patcher</a>) and the translation tools patch a user-supplied disc without touching the engine, and what they prove out against retail - softlock fixes, tuning sliders - is expected to graduate into engine toggles.</p>
 </section>
 
 <section class="doc-section" id="fidelity">
   <h2>Fidelity and enhancements</h2>
   <p>In the faithful mode no toggle changes damage, drops, AP costs, encounter rates or story flags, and every parity measurement runs against that mode. Enhancements are explicit toggles, bit-identical to retail when off, so flipping one never touches replays or oracles. Defaults follow the better experience: a knob still defaulting to retail marks an enhanced side that is maturing, not a policy of restraint.</p>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Knob</th><th>Default</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td>Enhanced lighting (<code>I</code>, <code>F8</code> cycles the time of day; a checkbox and a time-of-day selector on the browser play page)</td><td><strong>on</strong></td><td>a time-of-day mood over the baked shading, real lights at the scene's lamps and glowing props, emissive surfaces (the Genesis Tree) and soft halos - one shared kernel on both hosts; shadow maps native-only</td></tr>
-      <tr><td>Dynamic shadows (<code>--no-dyn-shadows</code>, <code>Y</code>)</td><td>on</td><td>per-scene candle / wall point lights with PCF shadow maps; inert while lighting is off (<a href="renderer.html">renderer</a>)</td></tr>
-      <tr><td>Occlusion fade (<code>--no-occlusion-fade</code>, <code>F4</code>)</td><td><strong>on</strong></td><td>geometry that <em>completely</em> hides the player dissolves to a dither circle; presentation-only, replays force it off</td></tr>
-      <tr><td>Precise movement (<code>R</code>)</td><td>off</td><td>free-angle locomotion instead of retail&rsquo;s 4 / 8-way quantisation (<a href="field-locomotion.html">locomotion</a>)</td></tr>
-      <tr><td>Field run button (<code>World::locomotion.run_button_mask</code>)</td><td><strong>retail + one alternate</strong></td><td>retail&rsquo;s <code>Cross | R1</code> (the config word <code>0x800846DC</code> = <code>0x48</code>, seeded once and never exposed as an option row) plus <strong>Square</strong>, the port&rsquo;s historical binding. Which <em>key</em> makes each button is the binding table (<code>legaia-engine config set --binding W=R1</code>), not this mask (<a href="field-locomotion.html">locomotion</a>)</td></tr>
-      <tr><td>Reduce flashing (options)</td><td><strong>on</strong></td><td>slew-limits the ambient palette cyclers; retail&rsquo;s koin3 dance floor strobes at 15 Hz. Simulation identical either way</td></tr>
-      <tr><td>Entry pulse (<code>--no-entry-pulse</code>)</td><td>on</td><td>a scene-entry vertex-morph envelope over packs retail never arms at entry</td></tr>
-      <tr><td>PSX rasterisation (<code>LEGAIA_PSX_RENDER=1</code>; a checkbox on the browser play page)</td><td>off</td><td>sub-pixel vertex snap + 15-bit ordered dither</td></tr>
+      <tr><td>Enhanced lighting (<code>I</code>; <code>F8</code> cycles time of day)</td><td><strong>on</strong></td><td>a time-of-day mood over the baked shading, point lights at lamps and glowing props, emissive surfaces, lit windows at night and soft halos - one shared kernel on both hosts</td></tr>
+      <tr><td>Lamp shadows (<code>Y</code>)</td><td>on</td><td>shadow maps for the lighting&rsquo;s point lights; inert while lighting is off</td></tr>
+      <tr><td>Volumetric ground fog (<code>F9</code>)</td><td><strong>on</strong></td><td>a drifting mist bank over misty and night scenes, parted by every character walking through it</td></tr>
+      <tr><td>See-through walls (<code>F4</code>)</td><td><strong>on</strong></td><td>geometry that <em>completely</em> hides the player dissolves to a dither circle around them</td></tr>
+      <tr><td>Leading-edge wall probes, solid NPCs, live NPCs</td><td><strong>on</strong></td><td>retail&rsquo;s three-probe collision footprint, NPC collision and the villagers&rsquo; ambient wander</td></tr>
+      <tr><td>Visible-tile crop</td><td><strong>on</strong> at retail framing</td><td>retail draws only the cells the camera&rsquo;s tile window reaches; any wider or re-aimed view draws the whole map instead of opening black edges</td></tr>
+      <tr><td>Reduce flashing</td><td><strong>on</strong></td><td>slew-limits the ambient palette cyclers (retail&rsquo;s casino dance floor strobes at 15 Hz); simulation identical either way</td></tr>
+      <tr><td>Field run button</td><td>retail + one</td><td>retail&rsquo;s <code>Cross | R1</code> plus Square</td></tr>
+      <tr><td>Precise movement (<code>R</code>)</td><td>off</td><td>free-angle locomotion instead of retail&rsquo;s 4 / 8-way quantisation</td></tr>
+      <tr><td>Camera distance (<code>T</code>), debug orbit (<code>F3</code>), drag / tilt / zoom</td><td><code>Far</code> / off / identity</td><td>framing only; the follow-camera knobs lock while a cutscene owns the camera and reset to the retail shot on a double-click</td></tr>
+      <tr><td>PSX rasterisation</td><td>off</td><td>sub-pixel vertex snap + 15-bit ordered dither</td></tr>
       <tr><td>Semi-transparency blend</td><td><strong>on</strong></td><td>retail ABE blending - on because it <em>is</em> retail</td></tr>
-      <tr><td>Camera distance (<code>T</code>) / debug orbit camera (<code>F3</code>)</td><td><code>Far</code> / off</td><td>framing only; <code>Far</code> is 1.35&times; retail&rsquo;s eye-back distance, <code>Retail</code> is the pinned framing. Both the native window and the play page default to the engine camera and swap in their own wide vantage on <code>F3</code></td></tr>
       <tr><td><a href="vr-mode.html">WebXR VR</a></td><td>off</td><td>stereo presentation on the site&rsquo;s WebGL pages</td></tr>
-      <tr><td>Start leaves a minigame</td><td>on, not a knob</td><td>exits any of the five minigames through that game&rsquo;s own exit so cash-out and score match a deliberate quit</td></tr>
+      <tr><td>Start leaves a minigame</td><td>on, not a knob</td><td>exits any of the five minigames through that game&rsquo;s own exit (<a href="#leavable">below</a>)</td></tr>
     </tbody>
   </table>
+  </div>
   <ul class="bullets">
-    <li><strong>Shading defaults to retail.</strong> Both retail mesh renderers issue one colour op on the GTE (the PS1&rsquo;s geometry coprocessor) - the depth cue - and no lighting op, so shading is baked into the mesh colour words as <code>texel &times; colour / 128</code>. The engine draws exactly that; enhanced lighting is layered over it and is an identity when off (every parity capture turns it off).</li>
+    <li><strong>Shading defaults to retail.</strong> Retail&rsquo;s field mesh paths issue one GTE colour op - the depth cue - and no lighting op, so shading is baked into the mesh colour words as <code>texel &times; colour / 128</code>. The engine draws exactly that; enhanced lighting is layered over it and is an identity when off (every parity capture turns it off).</li>
     <li><strong>Rasterisation defaults to clean.</strong> The default image is sharper than a PlayStation&rsquo;s; here faithfulness is opt-in.</li>
     <li><strong>Affine texturing is not gated.</strong> The PS1 has no perspective-correct texturing and neither does the mesh path; the swimming textures are the faithful behaviour on both hosts.</li>
   </ul>
   <details class="disclosure" id="leavable">
     <summary>Why every minigame must be leavable</summary>
     <div class="disclosure-body">
-      <p>A mode the player can enter has to be one the player can leave on every host, or reaching it is a softlock. Retail has no single exit to port: each minigame quits through its own overlay&rsquo;s state machine (the slot cabinet&rsquo;s exit row, the duel&rsquo;s decided-match confirm, the arena&rsquo;s give-up arm). <code>World::poll_minigame_escape</code> is therefore an engine affordance: Start leaves whichever minigame is live through its own <code>exit_*</code> and closes the mode-24 round trip when the entry came through a door warp. It lives in <code>World::tick</code>, so both hosts inherit it; <code>engine-shell/tests/casino_floor_softlock.rs</code> enters each of the five the way the door warp does and asserts a pad press gets back out.</p>
+      <p>A mode the player can enter has to be one the player can leave on every host, or reaching it is a softlock. Retail has no single exit to port: each minigame quits through its own overlay&rsquo;s state machine (the slot cabinet&rsquo;s exit row, the duel&rsquo;s decided-match confirm, the arena&rsquo;s give-up arm). <code>World::poll_minigame_escape</code> is therefore an engine affordance: Start leaves whichever minigame is live through its own exit, so the cash-out or score matches a deliberate quit, and closes the round trip when the entry came through a door warp. It lives in the world tick, so both hosts inherit it.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="ported-vms">
   <h2>The ported VMs</h2>
-  <p>Every interpreter is ported handler by handler: the opcode is read from the disassembly, rewritten in Rust and unit-tested against captured traces. The target is behavioural fidelity per opcode, not byte-exact internals. Each VM talks to the game through a <code>Host</code> trait that <code>World</code> implements.</p>
+  <p>Every interpreter is ported handler by handler: the opcode is read from the disassembly, rewritten in Rust and tested against captured traces. The target is behavioural fidelity per opcode, not byte-exact internals.</p>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>VM</th><th>Module</th><th>Scope</th></tr></thead>
     <tbody>
-      <tr><td><a href="actor-vm.html">Actor / window-widget VM</a></td><td><code>engine-vm/src/lib.rs</code></td><td>13 opcodes; the menu overlay&rsquo;s window choreography</td></tr>
-      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>engine-vm/src/field.rs</code></td><td>43 opcodes, cross-context dispatch, the op-<code>0x49</code> tristate, the <code>0x4C</code> sub-dispatchers</td></tr>
-      <tr><td><a href="move-vm.html">Move VM</a></td><td><code>engine-vm/src/move_vm.rs</code></td><td>71 opcodes + the 61-sub-opcode overlay extension; per-frame entry <code>actor_tick</code></td></tr>
-      <tr><td><a href="motion-vm.html">Motion VM</a></td><td><code>engine-vm/src/motion_vm.rs</code></td><td>pursue / patrol / face-target with 12-bit fixed-point angle math</td></tr>
-      <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>engine-vm/src/effect_vm.rs</code></td><td>32 master + 128 child slots; init / spawn / tick; UI-element routing</td></tr>
-      <tr><td><a href="battle-action.html">Battle action SM</a></td><td><code>engine-vm/src/battle_action.rs</code></td><td>47 states in 7 bands; damage at the swing apex, art strikes from the actor&rsquo;s chosen art</td></tr>
-      <tr><td><a href="boot.html#title-overlay-state">Title sub-mode dispatcher</a></td><td><code>engine-vm/src/title_overlay.rs</code></td><td>25-entry jump table; the title &rarr; field launch write</td></tr>
-      <tr><td>Actor physics tick + animation runtime</td><td><code>actor_tick.rs</code>, <code>anim_vm.rs</code></td><td>layered side-effect subsets surfaced as typed <code>TickEvent</code>s / <code>AnimEvent</code>s</td></tr>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>engine-vm::field</code></td><td>43 opcodes, cross-context dispatch, the op-<code>0x49</code> tristate, the <code>0x4C</code> sub-dispatchers</td></tr>
+      <tr><td><a href="move-vm.html">Move VM</a></td><td><code>engine-vm::move_vm</code></td><td>71 opcodes + the 61-sub-opcode overlay extension</td></tr>
+      <tr><td><a href="motion-vm.html">Motion VMs</a></td><td><code>engine-vm::motion_vm</code></td><td>pursue / patrol / face-target; scripted motion and story-flag writes</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>engine-vm::effect_vm</code></td><td>slot pool, init / spawn / tick</td></tr>
+      <tr><td><a href="battle-action.html">Battle action SM</a></td><td><code>engine-vm::battle_action</code></td><td>47 states in 7 bands; art strikes read from the actor&rsquo;s chosen art</td></tr>
+      <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td><code>engine-vm</code> crate root</td><td>13 opcodes; the menu overlay&rsquo;s window choreography</td></tr>
+      <tr><td><a href="boot.html#title-overlay-state">Title sub-mode dispatcher</a></td><td><code>engine-vm::title_overlay</code></td><td>25-entry jump table; the title &rarr; field launch write</td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 
 <section class="doc-section" id="phase3">
   <h2>Gameplay systems</h2>
-  <p>The shell loop closes: title &rarr; save-select &rarr; field / encounter &rarr; battle &rarr; save. Everything below is wired into <code>engine-core::World</code> and driven from <code>BootSession</code>.</p>
+  <p>The loop closes end to end: title &rarr; save-select &rarr; field and encounters &rarr; battle &rarr; menus &rarr; save. Everything below runs inside <code>engine-core::World</code>, driven from <code>BootSession</code>.</p>
+  <div class="table-wrap">
   <table class="data-table">
-    <thead><tr><th>Area</th><th>Module</th><th>What it covers</th></tr></thead>
+    <thead><tr><th>Area</th><th>Where</th><th>What it covers</th></tr></thead>
     <tbody>
-      <tr><td>Battle round</td><td><code>battle_round.rs</code>, <code>battle_runner.rs</code></td><td>AP reset, stat recompute, all six commands (Attack / Arts / Magic / Item / Spirit / Run), Miracle / Super expansion (<a href="battle.html#live-gameplay-loop">live loop</a>)</td></tr>
-      <tr><td>Stats + status</td><td><code>battle_stats.rs</code>, <code>status_effects.rs</code></td><td>the per-frame party stat walker (8 slots, ability mask); Toxic / Numb / Venom / Rot / Curse / Stone / Faint with tick damage</td></tr>
-      <tr><td>AP gauge + HUD</td><td><code>ap_gauge.rs</code>, <code>battle_hud.rs</code></td><td>base 4 AP, +1 per 10 levels capped at 10, +5 on Spirit; HP / MP / AP bars, popups, log</td></tr>
-      <tr><td>Field</td><td><code>world.rs</code>, <code>field_env</code></td><td>locomotion ANM banks, NPC placements from the MAN, inline field-VM dialogue from the scene&rsquo;s own bytecode</td></tr>
-      <tr><td>World map + minigames</td><td><code>WorldMapController</code>, <code>dance</code>, <code>baka_fighter</code>, <code>muscle_dome</code></td><td>overworld traversal + the 5-state entity SM; minigames as suspending <code>SceneMode</code>s</td></tr>
-      <tr><td>Shop / inn / level-up</td><td><code>ShopSession</code>, <code>InnSession</code>, <code>LevelUpTracker</code></td><td>stock from the MAN, prices from the item table, XP curve and growth tables read from the user&rsquo;s executable at boot</td></tr>
-      <tr><td>Items + inventory</td><td><code>items.rs</code>, <code>inventory_use.rs</code></td><td>typed <code>ItemEffect</code> resolver; the pick-item / pick-target flow shared by field menu and battle</td></tr>
-      <tr><td>Title + save</td><td><code>title::TitleSession</code>, <code>save_select</code>, <code>save/src/ext.rs</code></td><td>real title sheet (PROT 0890); LGSF container, versioned v1..v4 with sentinel-guarded extensions; memory-card writeback</td></tr>
-      <tr><td>Audio</td><td><code>AudioBgmDirector</code>, <code>sfx.rs</code></td><td>30-frame cross-fades; cue catalog decoded from the executable, frame-accurate scheduler through the scene VAB</td></tr>
+      <tr><td>Modes</td><td><code>mode::ModeSeat</code></td><td>the retail mode word and table; INIT staging and the transition edge</td></tr>
+      <tr><td>Field</td><td><code>World</code>, <code>scene</code>, <code>field_env</code></td><td>the scene&rsquo;s own MAN bytecode, locomotion, NPC placements, inline field-VM dialogue, door and minigame warps</td></tr>
+      <tr><td>Battle</td><td><code>battle_*</code> modules</td><td>the full round: seats, all six commands, Tactical Arts with Miracle / Super expansion, status ticks, AP gauge, spoils</td></tr>
+      <tr><td>Menus</td><td><code>field_menu</code>, <code>pause_screens</code></td><td>the pause menu&rsquo;s two-level stack, items, magic, equip, status, options</td></tr>
+      <tr><td>Shop / inn / level-up</td><td><code>shop</code>, <code>inn</code>, <code>levelup</code></td><td>stock from the MAN, prices from the item table; inns as scripted dialogue; the XP curve and growth tables read from the executable</td></tr>
+      <tr><td>Title + save</td><td><code>title</code>, <code>save_select</code>, <code>legaia_save</code></td><td>the real title sheet; the LGSF save container with sentinel-guarded extensions; real memory-card blocks patched in place</td></tr>
+      <tr><td>Audio</td><td><code>AudioBgmDirector</code>, <code>engine-audio</code></td><td>script-driven BGM with retail&rsquo;s hard cuts; SFX cues fired against the bank each cue&rsquo;s category names</td></tr>
+      <tr><td>Minigames</td><td><code>dance</code>, <code>baka_fighter</code>, <code>muscle_dome</code>, fishing, slots</td><td>the warp minigames as suspending scene modes with their own rules engines</td></tr>
       <tr><td>Cutscenes</td><td><code>play-str</code>, <code>mdec</code></td><td>STR video through the from-scratch MDEC decoder with XA audio in sync (<a href="cutscene.html">cutscene</a>)</td></tr>
     </tbody>
   </table>
-  <h3>The browser host</h3>
-  <p>The WASM target runs the <em>engine itself</em>: <code>LegaiaRuntime</code> owns a real <code>SceneHost</code>, so the browser executes the same field VM, movement controller, NPC motion and dialogue runner as the native window. Per frame it hands the engine a pad word and the camera azimuth, ticks, and draws what it reports through the site&rsquo;s shared WebGL renderer. It reaches field and town scenes; battles, the title chain, the pause-menu screens and audio have their state ported but their draw path only in the native window.</p>
+  </div>
+  <h3 id="browser-host">The browser host</h3>
+  <p>The WASM target runs the <em>engine itself</em>, not a second implementation of it: the play page holds a <code>BootSession</code> over its WebAudio output, built over a scene host it assembles in memory from the disc image. It reaches field and town scenes, live battles, the title and the opening chain, the pause menu and shops, the minigames and audio. Each screen is drawn from engine state through the shared <code>engine-ui</code> / <code>engine-screens</code> builders and the site&rsquo;s WebGL renderer; per-feature parity between the two hosts is policed by the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md" target="_blank" rel="noopener">host-drift</a> gates.</p>
   <ul class="bullets">
-    <li><strong>Seating.</strong> The cold-boot spawn is authored for <code>town01</code> only; every other scene expects a door warp. A host that drops the player in must seat them itself, off any walk-on trigger tile.</li>
-    <li><strong>Framing.</strong> Retail authors a camera per scene; a generic follow camera puts a cave roof in the way, so the browser culls meshes straddling the camera-to-player line.</li>
+    <li><strong>Seating.</strong> The cold-boot spawn is authored for <code>town01</code> only; every other scene expects a door warp. A host that drops the player straight into a scene gets a resolved seat: the retail one if it stands inside the scene&rsquo;s largest walkable region, otherwise a door-arrival tile or the region&rsquo;s centroid.</li>
+    <li><strong>Framing.</strong> Both hosts run the engine&rsquo;s retail follow camera and neither culls geometry; a wall between the lens and the player is handled by the see-through-walls fade.</li>
   </ul>
-  <p>Open ports are tracked structurally by the <a href="../tooling/port-catalog.html">port catalog</a>, which cross-references every dumped function against its docs page and its <code>// PORT:</code> tag.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know it matches</h2>
+  <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Oracle</th><th>Command</th><th>What it proves</th></tr></thead>
     <tbody>
       <tr><td>Engine scenarios</td><td><code>legaia-engine scenarios [--bless]</code></td><td>a headless run for N frames hashes the save bytes against a blessed baseline; an unblessed row fails until reviewed</td></tr>
       <tr><td id="vram-diff">VRAM diff</td><td><code>legaia-engine vram-oracle --runtime-vram &lt;bin&gt;</code></td><td>engine video memory vs a save-state capture; <code>--rows-csv</code> and <code>--clut-regions</code> localise a missed upload to one row</td></tr>
-      <tr><td>Mode / audio / sim traces</td><td><code>mode-trace</code>, <code>audio-trace</code>, <code>pcm-trace</code>, <code>sim-trace</code></td><td>the mode word, SPU state and per-frame simulation channels against retail snapshots (<a href="../tooling/recomp-differential.html">differential</a>)</td></tr>
+      <tr><td>Mode / audio / sim traces</td><td><code>mode-trace</code>, <code>audio-trace</code>, <code>pcm-trace</code>, <code>sim-trace</code></td><td>the mode word, SPU state and per-frame simulation channels against retail (<a href="../tooling/recomp-differential.html">differential</a>)</td></tr>
+      <tr><td>Retail comparison corpus</td><td><code>legaia-engine retail-compare</code></td><td>seeds the engine from every walkable and battle save state and scores scene, position, camera, BGM, party, flags, bag and the frame (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">retail compare</a>)</td></tr>
       <tr><td>Record / replay</td><td><code>legaia-engine record</code> / <code>replay</code></td><td>the same input file yields bit-identical state traces twice (<a href="../tooling/determinism-replay.html">replay</a>)</td></tr>
-      <tr><td>Mednafen scenarios</td><td><code>scripts/scenarios.toml</code></td><td>the byte-level twin of the engine manifest; both live side by side so a change to one is forced to consider the other</td></tr>
     </tbody>
   </table>
+  </div>
   <details class="disclosure">
     <summary>Details: the VRAM static mask</summary>
     <div class="disclosure-body">
-      <p>A save state&rsquo;s VRAM is a live snapshot: two captures of the same scene differ across ~40% of the texture band (animation frames, battle leftovers), so no stateless pre-pass can be byte-exact against one snapshot. The disc-gated <code>vram_oracle_e1</code> test asserts against the <strong>static mask</strong> - the words identical across every same-scene capture - excluding the runtime-managed NPC CLUT band around row 479. Incompleteness is not flagged; a wrong texel on a static pixel is.</p>
-      <p>Two refinements the captures forced: the shared effect-texture band is history-dependent (a handful of pixels hold a boot-resident value until a battle re-uploads the disc bytes), so cells inside it must be static across <em>all</em> scenes; and the world map&rsquo;s ocean CLUT rows 506 / 508 / 509 animate, so they are excluded for world-map scenes only.</p>
+      <p>A save state&rsquo;s VRAM is a live snapshot: two captures of the same scene differ across ~40% of the texture band (animation frames, battle leftovers), so no stateless pre-pass can be byte-exact against one snapshot. The VRAM test asserts against the <strong>static mask</strong> - the words identical across every same-scene capture - excluding the runtime-managed NPC palette band around row 479. Incompleteness is not flagged; a wrong texel on a static pixel is.</p>
+      <p>Two refinements the captures forced: the shared effect-texture band is history-dependent (a handful of pixels hold a boot-resident value until a battle re-uploads the disc bytes), so cells inside it must be static across <em>all</em> scenes; and the world map&rsquo;s ocean palette rows 506 / 508 / 509 animate, so they are excluded for world-map scenes only.</p>
     </div>
   </details>
 </section>

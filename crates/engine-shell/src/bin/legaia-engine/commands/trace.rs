@@ -472,7 +472,7 @@ fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTra
 }
 
 /// Recomp-differential sim trace: emit the canonical frame-tagged
-/// state-trace JSONL (`legaia_engine_shell::sim_trace`) for `frames` sim
+/// state-trace JSONL (`legaia_parity::sim_trace`) for `frames` sim
 /// ticks. The recomp-side pair is `scripts/recomp/trace_capture.py`; diff
 /// with `scripts/recomp/trace_diff.py`.
 pub(crate) fn cmd_sim_trace(
@@ -483,7 +483,7 @@ pub(crate) fn cmd_sim_trace(
     field_live: bool,
     out: &Path,
 ) -> Result<()> {
-    use legaia_engine_shell::sim_trace::{build_sim_trace, sim_trace_to_jsonl};
+    use legaia_parity::sim_trace::{build_sim_trace, sim_trace_to_jsonl};
     let trace = build_sim_trace(scene, extracted_root, disc, frames, field_live)?;
     let jsonl = sim_trace_to_jsonl(&trace);
     let out_label = if out.as_os_str() == "-" {
@@ -759,7 +759,7 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
 
 /// Render the per-voice allocation comparison for `--per-voice`.
 fn print_voice_allocation(engine: &[AudioTraceFrame], retail: &[AudioTraceFrame]) {
-    use legaia_engine_shell::audio_trace_oracle::compare_voice_allocation_aligned;
+    use legaia_parity::audio_trace_oracle::compare_voice_allocation_aligned;
     let c = compare_voice_allocation_aligned(engine, retail);
     for (label, s) in [("engine", &c.engine), ("retail", &c.retail)] {
         eprintln!(
@@ -858,7 +858,7 @@ pub(crate) fn cmd_pcm_trace(args: PcmTraceArgs<'_>) -> Result<()> {
     }
     let resolved = resolve_pcm_trace_inputs(&args)?;
 
-    let opts = legaia_engine_shell::audio_trace_oracle::AudioTraceBuildOptions {
+    let opts = legaia_parity::audio_trace_oracle::AudioTraceBuildOptions {
         scene: resolved.scene_name.clone(),
         bgm_id: args.bgm_id,
         us_per_frame: 1_000_000.0 / 60.0,

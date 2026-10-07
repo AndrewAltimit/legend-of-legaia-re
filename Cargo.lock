@@ -1363,11 +1363,40 @@ dependencies = [
  "legaia-prot",
  "legaia-tim",
  "log",
- "pollster 0.3.0",
+ "pollster",
  "serde",
  "serde_json",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "legaia-engine-screens"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-core",
+ "legaia-engine-ui",
+ "legaia-font",
+]
+
+[[package]]
+name = "legaia-engine-session"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-engine-audio",
+ "legaia-engine-core",
+ "legaia-engine-vm",
+ "legaia-font",
+ "legaia-iso",
+ "legaia-save",
+ "legaia-seq",
+ "legaia-vab",
+ "legaia-xa",
+ "log",
 ]
 
 [[package]]
@@ -1385,6 +1414,8 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-render",
+ "legaia-engine-screens",
+ "legaia-engine-session",
  "legaia-engine-vm",
  "legaia-font",
  "legaia-iso",
@@ -1392,6 +1423,7 @@ dependencies = [
  "legaia-mdec",
  "legaia-mednafen",
  "legaia-mes",
+ "legaia-parity",
  "legaia-pcsxr",
  "legaia-prot",
  "legaia-save",
@@ -1434,13 +1466,11 @@ name = "legaia-engine-vm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
  "legaia-anm",
  "legaia-art",
  "legaia-asset",
  "legaia-lzs",
  "legaia-prot",
- "libc",
  "serde_json",
 ]
 
@@ -1563,6 +1593,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-parity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-engine-audio",
+ "legaia-engine-core",
+ "legaia-engine-render",
+ "legaia-engine-session",
+ "legaia-engine-vm",
+ "legaia-mednafen",
+ "legaia-pcsxr",
+ "legaia-prot",
+ "legaia-save",
+ "legaia-seq",
+ "legaia-tim",
+ "legaia-vab",
+ "log",
+ "png",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "legaia-patcher"
 version = "0.1.0"
 dependencies = [
@@ -1571,6 +1629,7 @@ dependencies = [
  "encoding_rs",
  "legaia-art",
  "legaia-asset",
+ "legaia-bytes",
  "legaia-font",
  "legaia-gamedata",
  "legaia-iso",
@@ -1582,6 +1641,7 @@ dependencies = [
  "legaia-vab",
  "legaia-xa",
  "libc",
+ "png",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1679,6 +1739,8 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-audio",
  "legaia-engine-core",
+ "legaia-engine-screens",
+ "legaia-engine-session",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
@@ -2403,12 +2465,6 @@ dependencies = [
 
 [[package]]
 name = "pollster"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22686f4785f02a4fcc856d3b3bb19bf6c8160d103f7a99cc258bddd0251dc7f2"
-
-[[package]]
-name = "pollster"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
@@ -2602,7 +2658,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "percent-encoding",
- "pollster 0.4.0",
+ "pollster",
  "raw-window-handle",
  "wasm-bindgen",
  "wasm-bindgen-futures",

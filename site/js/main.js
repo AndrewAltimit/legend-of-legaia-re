@@ -97,7 +97,7 @@
       }).catch(() => { index = []; return index; });
     };
 
-    const escapeHtml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escapeHtml = window.escapeHtml;
     const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     const highlight = (text, query) => {

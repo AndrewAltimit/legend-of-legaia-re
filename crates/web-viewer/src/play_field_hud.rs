@@ -38,7 +38,7 @@ impl LegaiaRuntime {
     /// panel owns the frame. The enumeration used to be spelled out here and
     /// again in the native window, and the two copies had drifted.
     pub(crate) fn field_party_hud_suppressed(&self) -> bool {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return true;
         };
         // A movie owning the screen is the native window's `cutscene` term:
@@ -53,7 +53,7 @@ impl LegaiaRuntime {
     pub(crate) fn tick_field_party_hud(&mut self) {
         let scene = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.scene.as_ref().map(|s| s.name.clone()));
         if scene != self.field_party_hud_scene {
             self.field_party_hud_scene = scene;
@@ -62,13 +62,13 @@ impl LegaiaRuntime {
         // Retail's player-engaged rearm term, the one the native window asks
         // too: a script or conversation that holds the player restarts the
         // idle countdown every frame.
-        if self.scene_host.as_ref().is_some_and(|h| {
+        if self.scene_host.host().is_some_and(|h| {
             legaia_engine_core::world_map_panel_host::field_hud_rearm_held(&h.world)
         }) {
             self.field_party_hud.rearm();
         }
         let suppressed = self.field_party_hud_suppressed();
-        let (view_mode, pad, player_pos) = match self.scene_host.as_ref() {
+        let (view_mode, pad, player_pos) = match self.scene_host.host() {
             Some(h) => {
                 let w = &h.world;
                 (
@@ -122,7 +122,7 @@ impl LegaiaRuntime {
         }
         let Some(points) = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| &h.world)
             .filter(|w| w.passive_hud_active())
             .and_then(|w| w.passive_hud_points())
@@ -152,7 +152,7 @@ impl LegaiaRuntime {
         let (Some(first), Some(third)) = (project(points[0]), project(points[2])) else {
             return;
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return;
         };
         self.passive_hud_icons = world.passive_hud_icons((first.0, third.1));
@@ -217,7 +217,7 @@ impl LegaiaRuntime {
         let Some(assets) = self.menu_assets.as_ref() else {
             return empty;
         };
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return empty;
         };
         let rows = legaia_engine_core::world_map_panel_host::field_party_hud_members(&host.world);

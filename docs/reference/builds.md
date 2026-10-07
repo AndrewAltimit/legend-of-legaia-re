@@ -215,7 +215,7 @@ When trigger == `0x0003`, writing to `0x80084540` warps to that map ID.
 
 ## Mini-game state regions
 
-Each mini-game gets its own ~64 KB slab of upper RAM, loaded fresh when entered. The `xxx_dat` cluster (PROT 897..971) holds mini-game data; different mini-games' state regions don't overlap because they're loaded sequentially.
+Each mini-game is a slot-A overlay image: the mode-24 warp streams its PROT entry (fishing 0972, slot machine 0975, Baka Fighter 0976, Muscle Dome 0977, dance 0980) to `0x801CE818`, over whatever image was resident, so the addresses below name mini-game state only while that mini-game's image is loaded. Extents per image are in [`memory-map.md`](memory-map.md#overlay-slot-a-0x801ce818).
 
 | Address | Mini-game | Purpose |
 |---|---|---|
@@ -321,5 +321,5 @@ Useful as fixtures for validating extractors:
 ## See also
 
 - [`docs/reference/gamedata.md`](gamedata.md) - the curated enemy / item tables the unused-content indices reference.
-- [`docs/reference/memory-map.md`](memory-map.md) - the per-mini-game RAM slabs and region-shifted globals.
+- [`docs/reference/memory-map.md`](memory-map.md) - the region map, including the slot-A window the mini-game images share, and region-shifted globals.
 - [`docs/reference/cheats.md`](cheats.md) - region-specific RAM offsets validated against these builds.

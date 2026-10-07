@@ -36,7 +36,7 @@ All matches cluster in the `0900..=0968_xxx_dat` PROT range - sized 14 KB to 160
 - 30 entries: `0x801F6Axx`–`0x801F71xx` cluster (small function-entry tables, monotonic, 5–14 entries).
 - 12 entries: `0x801F84xx+` cluster (some monotonic, some switch dispatch with repeating handlers).
 
-A handful of entries lead with an ASCII title string before the pointer table - the title is the
+A handful of entries in the same band lead with a NUL-padded ASCII title string instead (so the detector's first-word test does not match them); the pointer table follows the title in 0924/0927, while 0907 goes straight to code. The title is the
 **battle special-attack name** the overlay stages, not a song: `0907_xxx_dat.BIN` "Hell's Music"
 is **Nighto's summon stager** (capture-pinned on the spell-`0x85` slot of the summon loader's
 `903..=913` range; the name also appears in the SCUS spell table - `Hell's Music|Kill or confuse

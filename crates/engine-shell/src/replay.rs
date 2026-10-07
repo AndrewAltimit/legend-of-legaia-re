@@ -22,7 +22,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::mode_trace_oracle::ModeTraceFrame;
+use legaia_parity::mode_trace_oracle::ModeTraceFrame;
 
 /// Current replay-file schema version. Bumped whenever the layout adds
 /// or removes a field; readers reject anything that doesn't match so a
@@ -86,7 +86,7 @@ pub struct PadEvent {
 /// Subset of [`ModeTraceFrame`] - keeps only the fields both engine
 /// and retail emitters populate (`scene_mode` + `active_scene`).
 /// `game_mode` is engine-side `None` today so it would always
-/// false-mismatch (see [`crate::mode_trace_oracle`] for the asymmetry
+/// false-mismatch (see [`legaia_parity::mode_trace_oracle`] for the asymmetry
 /// note).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExpectedFrame {

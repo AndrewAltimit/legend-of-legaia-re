@@ -159,13 +159,6 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     unknown:   '(none)',
   };
 
-  function escapeHtml(s) {
-    if (s == null) return '';
-    return String(s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
   function renderDetail(item, ctx) {
     const kind = item._kind || 'unknown';
     const kindLabel = KIND_LABELS[kind] || kind;

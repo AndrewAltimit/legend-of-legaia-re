@@ -1,126 +1,154 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">The interpreter that choreographs the game's UI windows: when the shop's gold box, vendor plate and Buy/Sell picker slide onto the screen together, that entrance is a tiny script, and this VM runs it. It is the simplest of Legaia's <a href="move-vm.html#vm-family">five runtime VMs</a> - 13 opcodes, fixed 4-byte instructions, no control flow. <span class="tag tag-done">Fully ported</span></p>
+  <p class="lede">The interpreter that choreographs the game's UI windows: when the shop's gold box, vendor plate and Buy / Sell picker slide onto the screen together, that entrance is a tiny script, and this VM runs it. It is the simplest of Legaia's <a href="move-vm.html#vm-family">runtime VMs</a> - 13 jump-table slots, fixed 4-byte instructions, no control flow. This page also covers the per-actor animation tick, a separate routine that shares the name "actor".</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Driver</dt><dd><code>FUN_801D6628</code>, dispatch table at <code>0x801CED70</code> (13 entries)</dd>
+    <dt>Driver</dt><dd><code>FUN_801D6628</code>, dispatch table at <code>0x801CED70</code></dd>
     <dt>Lives in</dt><dd>Menu overlay, PROT <code>0899</code> - resident whenever the pause menu, shop, inn or save UI can appear</dd>
-    <dt>Instruction</dt><dd>Fixed 4 bytes: <code>[opcode u8][window id u8][operand u16 LE]</code>, terminated by opcode <code>0x00</code></dd>
+    <dt>Instruction</dt><dd>Fixed 4 bytes: <code>[opcode u8][window id u8][operand u16 LE]</code>; opcode <code>0x00</code> ends the program</dd>
     <dt>Programs</dt><dd>Data in the same overlay image - see <a href="../formats/window-script.html">window widget scripts</a></dd>
     <dt>Targets</dt><dd>Windows from the menu overlay's 52-record descriptor table (<a href="field-menu.html">field menu</a>)</dd>
-    <dt>Engine port</dt><dd><code>crates/engine-vm/src/lib.rs</code> - the reference pattern for every other VM port</dd>
+    <dt>In the port</dt><dd><code>engine-vm</code> (<code>run</code> over a <code>Host</code> trait - the first VM ported, and the pattern the others follow)</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly + live shop-transition captures (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <div class="notice">
     <p class="notice-title">What it is not</p>
-    <p>Despite the name it inherited, this VM never moves characters. NPC pathing is the <a href="motion-vm.html">motion VM</a>, combat choreography is the <a href="move-vm.html">move VM</a>, and per-frame body animation is the separate <a href="#anm-connection">anim tick</a> below. This VM only ever moves <em>windows</em>.</p>
+    <p>Despite the name it inherited, this VM never moves characters. NPC pathing is the <a href="motion-vm.html">motion VM</a>, animation programs are the <a href="move-vm.html">move VM</a>, and per-frame body animation is the separate <a href="#anm-connection">anim tick</a> below. This VM only ever moves <em>windows</em>.</p>
   </div>
 </section>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>A caller hands the VM a pointer to a program - a run of fixed 4-byte instructions ending in a zero opcode - and the VM executes the whole thing in one call. Each instruction names a UI window by id, reads that window's home position from the descriptor table, and calls the executable's window helpers. The sliding itself happens over the following frames: the VM installs targets; the per-frame window walker animates them.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Caller</span><span class="desc">a menu screen (e.g. the shop's Buy/Sell picker) materialises a program pointer</span><span class="crate">menu overlay</span>
-    <span class="num">2</span><span class="layer">VM run</span><span class="desc">one call executes the whole program: 4-byte instructions until opcode 0x00</span><span class="crate">FUN_801D6628</span>
-    <span class="num">3</span><span class="layer">Window helpers</span><span class="desc">look up / create / close a window; install a slide target</span><span class="crate">SCUS helpers</span>
-    <span class="num">4</span><span class="layer">Per-frame walker</span><span class="desc">animates each window toward its target over the next frames</span><span class="crate">window system</span>
-  </div>
-  <p>The 13 jump-table slots are the minimum a window choreographer needs:</p>
-  <ul class="bullets">
-    <li>Open a window at its descriptor-table home, or at a packed position from the operand.</li>
-    <li>Close a window; a close / re-open / slide-back composite.</li>
-    <li>Slide a window toward a target (home or packed).</li>
-    <li>Write a window's style byte; clear its motion flag; tick the global window system.</li>
-    <li>Terminator (<code>0x00</code>); three slots are no-ops.</li>
-  </ul>
-  <p>There is no branching, no subroutines, no cross-context targeting - a program is a flat command list. That contrast is the whole reason it is a separate VM from the <a href="script-vm.html">field VM</a>, a 43-opcode variable-length dispatcher with halt-acquire semantics and sub-dispatcher families: UI widgets at the presentation layer, scripts at the gameplay layer.</p>
-  <p>The programs are data resident in the overlay itself, not a scene file: the shop's picker runs the open script (slide in the vendor plate, picker, gold box and two panels) and the slide-away script on the Sell transition. The engine resolves the same programs off the user's disc and runs them through the ported interpreter on the same transitions.</p>
+  <p>A caller hands the VM a pointer to a program and the VM executes the whole thing in one call. It installs targets; the sliding itself happens over the following frames, in the window system's per-frame walker.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A menu screen hands the VM a program pointer. In one call the VM reads 4-byte instructions until opcode 0. Each instruction looks up the window's home position in the descriptor table at 0x801E4738 and calls a window helper: create, slide, snap, close, destroy. Over the following frames the window walker animates each window toward its target.">
+      <defs><marker id="av-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="20" y="70" width="170" height="64" rx="4" class="dg-node"/>
+      <text x="105" y="96" class="dg-label">menu screen</text>
+      <text x="105" y="115" class="dg-sub">e.g. shop picker entry</text>
+      <rect x="240" y="40" width="220" height="124" rx="4" class="dg-node-accent"/>
+      <text x="350" y="66" class="dg-label">FUN_801D6628</text>
+      <text x="350" y="88" class="dg-sub">read [op][window][u16]</text>
+      <text x="350" y="106" class="dg-sub">home = table[window]</text>
+      <text x="350" y="124" class="dg-sub">call one window helper</text>
+      <text x="350" y="146" class="dg-sub">until op == 0, one call</text>
+      <rect x="510" y="40" width="160" height="124" rx="4" class="dg-node"/>
+      <text x="590" y="66" class="dg-label">window list</text>
+      <text x="590" y="90" class="dg-sub">create / destroy</text>
+      <text x="590" y="108" class="dg-sub">snap position</text>
+      <text x="590" y="126" class="dg-sub">slide target</text>
+      <text x="590" y="144" class="dg-sub">begin close</text>
+      <rect x="720" y="70" width="120" height="64" rx="4" class="dg-node"/>
+      <text x="780" y="96" class="dg-label">walker</text>
+      <text x="780" y="115" class="dg-sub">next frames</text>
+      <path class="dg-edge" d="M190 102 L238 102" marker-end="url(#av-ah)"/>
+      <path class="dg-edge" d="M460 102 L508 102" marker-end="url(#av-ah)"/>
+      <path class="dg-edge" d="M670 102 L718 102" marker-end="url(#av-ah)"/>
+      <text x="350" y="196" class="dg-sub">no branches, no subroutines, no cross-context targeting</text>
+    </svg>
+    <figcaption>The VM is a one-shot command list: everything it does is install a window state. Motion is target-based, so a "slide" instruction finishes immediately and the window arrives over the next frames.</figcaption>
+  </figure>
+  <table class="data-table">
+    <thead><tr><th>Opcode</th><th>What it does to the named window</th></tr></thead>
+    <tbody>
+      <tr><td><code>00</code></td><td>End of program</td></tr>
+      <tr><td><code>01</code></td><td>Open (create if missing) and slide toward its home position; motion cleared if it is already there</td></tr>
+      <tr><td><code>02</code></td><td>Open and slide toward the packed position in the operand</td></tr>
+      <tr><td><code>03</code></td><td>Write the operand's low byte as the window's style byte</td></tr>
+      <tr><td><code>04</code></td><td>Begin an animated close</td></tr>
+      <tr><td><code>05</code></td><td>Close every window</td></tr>
+      <tr><td><code>06</code></td><td>Clear the window's motion flag</td></tr>
+      <tr><td><code>07</code></td><td>No-op</td></tr>
+      <tr><td><code>08</code></td><td>Destroy immediately (free its buffers, unlink it)</td></tr>
+      <tr><td><code>09</code></td><td>Open and snap to the packed position, or to home when the operand is zero</td></tr>
+      <tr><td><code>0A</code></td><td>Re-create in place: remember its position, destroy, re-create, snap back there</td></tr>
+      <tr><td><code>0B</code>..<code>0D</code></td><td>No-op</td></tr>
+    </tbody>
+  </table>
+  <p>A packed position is <code>x = (w &gt;&gt; 7) &amp; 0x1FE</code>, <code>y = w &amp; 0xFF</code>, so <code>x</code> is always even. The programs are data resident in the overlay itself, not a scene file: the shop's picker runs its open program (slide in the vendor plate, picker, gold box and two panels) on entry and the slide-away program on the Sell transition.</p>
+  <p>There is no branching and no cross-context targeting - a program is a flat command list. That contrast is the reason it is a separate VM from the <a href="script-vm.html">field VM</a>, a 43-opcode variable-length dispatcher with halt-acquire semantics and sub-dispatcher families: UI widgets at the presentation layer, scripts at the gameplay layer.</p>
   <details class="disclosure">
-    <summary>History: "lives in the title-screen overlay"</summary>
-    <div class="disclosure-body"><p>An earlier reading placed the driver in an unindexed PROT.DAT gap after entry 0899. Recovering the menu overlay's base resolved the same image as PROT 0899 itself - which is why the shop, pause menu and save UI can all reach it.</p></div>
+    <summary>History: "lives in the title-screen overlay", and the helper names</summary>
+    <div class="disclosure-body">
+      <p>An earlier reading placed the driver in an unindexed PROT.DAT gap after entry 0899. Recovering the menu overlay's base resolved the same image as PROT 0899 itself, which is why the shop, pause menu and save UI can all reach it. The same pass found the slide and snap helpers' names swapped (read off their tails, <code>FUN_800357FC</code> starts a slide and <code>FUN_800358C0</code> snaps) and what had been called a "global tick" helper to be close-all.</p>
+    </div>
   </details>
 </section>
 
 <section class="doc-section" id="anm-connection">
   <h2>The per-actor anim tick (a separate system)</h2>
-  <p>This page also covers <code>FUN_80021DF4</code>, the per-actor animation and physics tick - related to the VM only in that both touch actor records. It lives in the main executable and runs once per frame for every active actor, laddering through a <strong>dispatch byte</strong> at <code>actor+0x5A</code> that selects which side-effects fire:</p>
-  <table>
-    <thead><tr><th>Byte</th><th>Mnemonic</th><th>What it drives</th></tr></thead>
+  <p><code>FUN_80021DF4</code> is the per-actor animation and physics tick, related to the VM above only in that both touch actor records. It lives in the main executable and runs once per game tick for every active actor, laddering through a <strong>dispatch byte</strong> at <code>actor+0x5A</code> that selects which side-effects fire. It is also where the <a href="move-vm.html">move VM</a> gets stepped.</p>
+  <table class="data-table">
+    <thead><tr><th>Byte</th><th>Name</th><th>What it drives</th></tr></thead>
     <tbody>
-      <tr><td><code>0x01</code></td><td>Snap</td><td>Pose-snap variant.</td></tr>
-      <tr><td><code>0x02</code></td><td>KeyframeAlt</td><td>Per-bone keyframe-style; shares logic with <code>0x06</code>.</td></tr>
-      <tr><td><code>0x03</code></td><td>Path</td><td>Three-axis velocity path with zoom envelope.</td></tr>
-      <tr><td><code>0x04</code></td><td>VramScroll</td><td>VRAM texture-rect wrap-scroll (scrolling water / conveyor textures).</td></tr>
-      <tr><td><code>0x05</code></td><td>PathAlt / SFX</td><td>Positional sound emitter: distance-based pan and volume.</td></tr>
-      <tr><td><code>0x06</code></td><td>Keyframe</td><td><strong>The dominant path</strong>: per-bone keyframe interpolation, fully ported in <code>legaia_anm::AnimPlayer</code>.</td></tr>
-      <tr><td><code>0x07</code></td><td>Spline</td><td>Spline / curve-driven variant.</td></tr>
+      <tr><td><code>0x01</code></td><td>Plain</td><td>Common stages only: plain kinematics, no extra arm (the ladder never tests 1)</td></tr>
+      <tr><td><code>0x02</code></td><td>KeyframeAlt</td><td>Per-bone keyframe-style; shares logic with <code>0x06</code></td></tr>
+      <tr><td><code>0x03</code></td><td>Path</td><td>Integrates a velocity triple and hands it to the CLUT-cell HSV cycler - the scripted colour pulses; skips the default motion</td></tr>
+      <tr><td><code>0x04</code></td><td>VramScroll</td><td>Wrap-scrolls a VRAM texture rect (water, conveyors); installed by move-VM op <code>0x1E</code></td></tr>
+      <tr><td><code>0x05</code></td><td>PathAlt / SFX</td><td>Positional sound emitter: distance-based pan and volume; skips the default motion</td></tr>
+      <tr><td><code>0x06</code></td><td>Keyframe</td><td><strong>The dominant path</strong>: per-bone keyframe interpolation</td></tr>
+      <tr><td><code>0x07</code></td><td>Spline</td><td>Spline / curve-driven variant; installed by move-VM op <code>0x45</code></td></tr>
     </tbody>
   </table>
-  <p>The tick reads three fixed actor fields: the record pointer at <code>+0x4C</code>, the dispatch byte at <code>+0x5A</code>, and the frame counter at <code>+0x68</code> (advanced by the per-actor frame delta). The port models the function as a <strong>layered pipeline</strong> - each dispatch byte selects a subset of side-effects in a fixed order - in <code>crates/engine-vm/src/actor_tick.rs</code>, with a typed <code>ActorPhysics</code> struct annotating every retail offset.</p>
+  <p>The tick reads three fixed fields: the record pointer at <code>+0x4C</code>, the dispatch byte at <code>+0x5A</code>, and the frame counter at <code>+0x68</code> (seeded to 100 when an animation is registered). In the port it is <code>engine-vm::actor_tick</code>, a layered pipeline with a typed <code>ActorPhysics</code> struct; the keyframe arm is <code>legaia_anm::AnimPlayer</code>.</p>
   <h3 id="per-arm-physics-tick">Per-arm physics</h3>
-  <p>Every dispatch byte shares a common pre-update (timer drain, rotation accumulator) and late-update (envelope caps, optional move-VM kick, unlink request, per-arm render); the arms differ in the middle. The full arm-by-arm walkthrough:</p>
+  <p>Every dispatch byte shares a common pre-update (timer drain, rotation accumulator) and late-update (envelope caps, optional move-VM kick, visibility cull, per-arm render); the arms differ in the middle.</p>
+  <ol class="steps">
+    <li><b>Pre-update</b><span>Every byte: drain the per-frame timer at <code>+0x54</code> and the rotation accumulator at <code>+0x22</code>.</span></li>
+    <li><b>Arm</b><span><code>0x02</code> / <code>0x06</code> fold acceleration into the shake envelopes; <code>0x05</code> runs the SFX emitter; <code>0x03</code> integrates the path velocity.</span></li>
+    <li><b>Default movement</b><span>Every byte except <code>0x03</code> and <code>0x05</code>: add the angular rates, the trig-LUT world update, and step render scale and depth-cue by their rates.</span></li>
+    <li><b>Late-update</b><span>Cap the envelopes; kick the move VM; cull; render the arm (line draws for <code>0x04</code>, a triangle for <code>0x07</code>, the keyframe pose for <code>0x06</code>).</span></li>
+  </ol>
   <details class="disclosure">
-    <summary>Deep dive: the six arms, field by field</summary>
+    <summary>The arms field by field</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Common pre-update</strong> (every byte). Drains the per-frame timer at <code>+0x54</code> and the rotation accumulator at <code>+0x22</code>.</li>
-        <li><strong>Keyframe accel</strong> (<code>0x02</code>/<code>0x06</code>). Folds <code>+0xC0..+0xCA</code> &times; scalars <code>&gt;&gt; 6</code> into the shake envelopes at <code>+0xB4..+0xC8</code>, sign-clamped on <code>+0xC8</code>.</li>
-        <li><strong>Positional SFX emitter</strong> (<code>0x05</code>). Ramps a fade between <code>(+0x90, +0x92)</code> and <code>(+0x94++0x98, +0x96++0x9A)</code> over <code>+0xBC</code> frames, or integrates the velocity pair. Issues SsAPI key-on (<code>FUN_80065034</code>), volume-only (<code>FUN_800657D0</code>) or release (<code>FUN_800250D4</code>) calls from listener distance and channel authority. Surface: <code>TickEvent::SfxUpdate / SfxRelease</code>.</li>
-        <li><strong>Path interpolation</strong> (<code>0x03</code>). Velocity from <code>+0x96..+0x9A</code> into <code>+0x90..+0x94</code>; zoom envelope at <code>+0x68</code> (cap <code>0x100</code>); path state at <code>+0x9C</code> (cap 1000, skips default movement once non-zero).</li>
-        <li><strong>Default movement</strong> (every byte except <code>0x05</code>). Adds <code>+0x80..+0x84</code> into <code>+0x24..+0x28</code>; trig-LUT world-position update; camera-shake accumulation at <code>+0x72/+0x78/+0x7A</code>.</li>
-        <li><strong>Common late-update</strong>. Caps the focal envelope at <code>0x1000</code>, shake at 15000; fires <code>MoveVmKick</code> (<code>+0x56</code> set) and <code>UnlinkRequest</code> (flag <code>0x2000</code>); per-arm render - line draws for <code>0x04</code>, scene-graph triangle for <code>0x07</code>, keyframe pose write for <code>0x06</code>.</li>
+        <li><strong>Keyframe accel</strong> (<code>0x02</code> / <code>0x06</code>). Folds <code>+0xC0..+0xCA</code> &times; scalars <code>&gt;&gt; 6</code> into the shake envelopes at <code>+0xB4..+0xC8</code>.</li>
+        <li><strong>Positional SFX emitter</strong> (<code>0x05</code>). Ramps a fade between <code>(+0x90, +0x92)</code> and <code>(+0x94 + +0x98, +0x96 + +0x9A)</code> over <code>+0xBC</code> frames, or integrates the velocity pair. Issues SsAPI key-on (<code>FUN_80065034</code>), volume-only (<code>FUN_800657D0</code>) or release (<code>FUN_800250D4</code>) calls from listener distance.</li>
+        <li><strong>Path</strong> (<code>0x03</code>). Velocity from <code>+0x96..+0x9A</code> into <code>+0x90..+0x94</code>, handed to the CLUT-cell HSV cycler <code>FUN_80019D50</code>.</li>
+        <li><strong>VramScroll</strong> (<code>0x04</code>). StoreImage a band &rarr; MoveImage the remainder &rarr; LoadImage the band back at the far edge, on the actor's <code>+0xD0</code> rect; the countdown at <code>+0xC6</code> drains by the frame scalar and reloads from <code>+0xC4</code>.</li>
+        <li><strong><code>+0xB4</code> aliases two arms</strong>: the SFX emitter reads it as an <code>i32</code> release-pending flag, the keyframe arms as two <code>i16</code> shake values. One actor never runs both, so the alias is benign.</li>
       </ul>
-      <p><strong><code>+0xB4</code> aliases two arms</strong>: the SFX emitter reads it as an <code>i32</code> release-pending flag; the keyframe arms as two <code>i16</code> shake values. The same actor never runs both in one frame, so the alias is benign; the port keeps both named views. The only intentional divergences from the retail arithmetic are an <code>i64</code> multiply-shift for the MIPS <code>MULT</code>+<code>MFLO</code> pair and a saturation-clamp helper - both functionally equivalent.</p>
-      <p><strong>VramScroll detail</strong> (<code>0x04</code>): StoreImage a band (<code>jal 0x8005842C</code> at <code>0x80022D68</code>) &rarr; MoveImage the remainder (<code>0x80022DB0</code>) &rarr; LoadImage the band back at the far edge (<code>0x80022DE8</code>), all on the actor's <code>+0xD0</code> rect; the countdown at <code>+0xC6</code> drains by <code>*(0x1F800393)</code> and reloads from <code>+0xC4</code>; installed by move-VM op <code>0x1E</code>. The earlier "damping / spring-decay" label for this arm was a decompiled-C-era reading; the call order above is read from the instructions.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="spawn-record-overload">
   <h2>One pointer, several meanings (actor+0x4C)</h2>
-  <p>The actor field at <code>+0x4C</code> is a multi-purpose pointer whose meaning depends on which spawn path created the actor. Background actors spawned from a VDF record keep their spawn bytes there (consumed once, at spawn, to size and fill the vertex pool); keyframe-animated actors keep their pose-output buffer there, read by the renderer's per-bone interpolator. The retail engine relies on disjoint actor classes never colliding.</p>
-  <p>Two consequences for the port: the 13-opcode window VM <em>never</em> reads <code>+0x4C</code> (it walks an external command list and looks actors up by slot byte), and VDF-spawned actors need no "PC bootstrap" - they are driven by the render pipeline, not by ticking their spawn bytes as opcodes.</p>
+  <p>The field at <code>+0x4C</code> is a multi-purpose pointer whose meaning depends on the spawn path that created the actor. A morph actor spawned from a VDF record keeps its spawn bytes there (read once, at spawn, to size and fill the vertex pool); a keyframe-animated actor keeps its pose-output buffer there, read by the renderer's per-bone interpolator. Retail relies on the actor classes never colliding. The window VM above <em>never</em> reads <code>+0x4C</code>.</p>
   <details class="disclosure">
-    <summary>Deep dive: writers and readers of actor+0x4C</summary>
+    <summary>Writers and readers of actor+0x4C</summary>
     <div class="disclosure-body">
-      <table>
+      <table class="data-table">
         <thead><tr><th>Routine</th><th>Role</th><th>Payload / access</th></tr></thead>
         <tbody>
-          <tr><td><code>FUN_801D77F4</code></td><td>writer + one-shot reader</td><td>VDF body (<code>[u32 record_count]</code> then 12-byte records starting <code>[u32 group_idx]</code>); walked at spawn to size the vertex-pool malloc and copy vertices from the indexed TMD groups into <code>actor+0x90</code>.</td></tr>
-          <tr><td><code>FUN_80024CFC</code></td><td>writer</td><td>Pose-output buffer bound on animation transition; also seeds the frame counter to 100.</td></tr>
-          <tr><td><code>FUN_80021DF4</code> arm <code>0x06</code></td><td>writer</td><td>Per-bone interpolated pose bytes: count at <code>+0</code>, ones at <code>+0x02/+0x06</code>, 8-byte-stride bones from <code>+0x0F</code>.</td></tr>
-          <tr><td><code>FUN_8001BE80</code></td><td>reader</td><td>The part's frame-0 entry at <code>ptr + bone*8 + 8</code>: the blend target on a looping clip's last frame.</td></tr>
-          <tr><td><code>FUN_800495C8</code></td><td>reader</td><td>Per-bone envelope curve walker at <code>ptr + 4</code>.</td></tr>
-          <tr><td><code>FUN_8003A1E4</code>, <code>FUN_801DE840</code></td><td>readers</td><td>Animation-period u16 at <code>ptr + 2</code> (modulo target for the frame index).</td></tr>
+          <tr><td><code>FUN_801D77F4</code></td><td>writer + one-shot reader</td><td>VDF body (<code>[u32 record_count]</code> then 12-byte records); walked at spawn to size the vertex pool and copy vertices from the indexed TMD groups</td></tr>
+          <tr><td><code>FUN_80024CFC</code></td><td>writer</td><td>Pose-output buffer bound on animation transition; seeds the frame counter to 100</td></tr>
+          <tr><td><code>FUN_80021DF4</code> arm <code>0x06</code></td><td>writer</td><td>Per-bone interpolated pose bytes, 8-byte-stride bones from <code>+0x0F</code></td></tr>
+          <tr><td><code>FUN_8001BE80</code></td><td>reader</td><td>The part's frame-0 entry at <code>ptr + bone*8 + 8</code>: the blend target on a looping clip's last frame</td></tr>
+          <tr><td><code>FUN_800495C8</code></td><td>reader</td><td>Per-bone envelope curve walker at <code>ptr + 4</code></td></tr>
+          <tr><td><code>FUN_8003A1E4</code>, <code>FUN_801DE840</code></td><td>readers</td><td>Animation-period u16 at <code>ptr + 2</code></td></tr>
         </tbody>
       </table>
-      <p>VDF body header: the first u32 is the record count and the 12-byte records start 4 bytes in. <code>Actor::spawn_record</code> in the engine is a retention slot mirroring the retail write; nothing feeds it back into a VM tick.</p>
-    </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: capture signature + superseded framings</summary>
-    <div class="disclosure-body">
-      <p>Diffing the actor pool between an idle save and an active-art-strike save shows the dispatch byte and record pointer flipping in lockstep - <code>0x04</code> idle vs <code>0x06</code> playing, and the pointer flipping between a self-reference and a real address into the scene's ANM payload. Two superseded framings: "the actor VM bootstraps its PC from the spawn record" (it never dispatches on that buffer at all), and a "16-byte VDF body header" that was off by 12.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
-      <tr><td>Window-script driver</td><td><code>FUN_801D6628</code></td><td>13-entry jump table at <code>0x801CED70</code>; 4-byte instruction stride; window-id lookup by slot byte.</td><td>menu overlay dump</td></tr>
-      <tr><td>Anim / physics tick</td><td><code>FUN_80021DF4</code></td><td>Dispatch-byte ladder <code>0x01..0x07</code>; per-arm side-effect order; envelope caps.</td><td><code>ghidra/scripts/funcs/80021df4.txt</code></td></tr>
-      <tr><td>Keyframe registrar</td><td><code>FUN_80024CFC</code></td><td>Binds the pose buffer at <code>+0x4C</code>, seeds the frame counter.</td><td><code>80024cfc.txt</code></td></tr>
-      <tr><td>VDF spawn walker</td><td><code>FUN_801D77F4</code></td><td>Record-count-first body layout; one-shot spawn consumption into the vertex pool.</td><td>field overlay dump</td></tr>
-      <tr><td>Pose interpolator</td><td><code>FUN_8001BE80</code></td><td>Reads the case-<code>0x06</code> per-bone layout back for the two-keyframe lerp.</td><td><code>8001be80.txt</code></td></tr>
-      <tr><td>Live captures</td><td>actor pool <code>0x801C9594..</code></td><td>Dispatch byte + record pointer flip together across idle vs playing saves.</td><td>mednafen state diffs</td></tr>
+      <tr><td>Window-script driver</td><td><code>FUN_801D6628</code></td><td>13-entry jump table at <code>0x801CED70</code>; 4-byte stride; descriptor-table base <code>0x801E4738</code></td><td><code>overlay_menu_801d6628.txt</code></td></tr>
+      <tr><td>Window helpers</td><td><code>FUN_80035334 / 800326AC / 800357FC / 800358C0 / 80035978 / 80035A4C / 800319A8</code></td><td>Lookup, create, start-slide, snap, begin-close, close-all, destroy</td><td><code>funcs/800357fc.txt</code> and siblings</td></tr>
+      <tr><td>Anim / physics tick</td><td><code>FUN_80021DF4</code></td><td>Dispatch-byte ladder (never tests 1); per-arm side-effect order; envelope caps</td><td><code>ghidra/scripts/funcs/80021df4.txt</code></td></tr>
+      <tr><td>Keyframe registrar</td><td><code>FUN_80024CFC</code></td><td>Binds the pose buffer at <code>+0x4C</code>, seeds the frame counter</td><td><code>80024cfc.txt</code></td></tr>
+      <tr><td>VDF spawn walker</td><td><code>FUN_801D77F4</code></td><td>Record-count-first body layout; one-shot spawn consumption</td><td>field overlay dump</td></tr>
+      <tr><td>Live captures</td><td>actor pool <code>0x801C9594..</code></td><td>Dispatch byte and record pointer flip together across idle vs art-strike saves</td><td>mednafen state diffs</td></tr>
     </tbody>
   </table>
   <p class="hint">Full write-up: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/actor-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/actor-vm.md</code></a>; program byte-spec on <a href="../formats/window-script.html">window scripts</a>.</p>
@@ -130,15 +158,13 @@
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="script-vm.html">Field/event VM</a>
+    <a href="script-vm.html">Field / event VM</a>
     <a href="move-vm.html">Move-table VM</a>
     <a href="motion-vm.html">Motion VM</a>
     <a href="../formats/anm.html">ANM animation</a>
-    <a href="../formats/tmd.html">Legaia TMD</a>
     <a href="field-menu.html">Field menu</a>
     <a href="shop.html">Shop</a>
     <a href="save-screen.html">Save screen</a>
     <a href="../formats/window-script.html">Window scripts</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory (docs)</a>
   </div>
 </section>

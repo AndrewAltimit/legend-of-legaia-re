@@ -115,7 +115,8 @@ the engine's diagnostic text rows (off by default), `F2` mutes audio, `F3`
 swaps the field camera for the wide debug orbit, `F4` toggles the
 camera-occlusion fade (on by default: walls between the camera and your
 character dissolve to a dither so you can always see yourself;
-`--no-occlusion-fade` starts with it off).
+`--no-occlusion-fade` starts with it off), `F9` toggles the volumetric ground
+fog (on by default; `--no-volumetric-fog` starts with it off).
 
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,
@@ -414,8 +415,8 @@ The field/event VM ([script-vm.md](../subsystems/script-vm.md)) drives every
 scene. Its disassembler is a release binary too:
 
 ```bash
-./field-disasm scan-prot --prot extracted/PROT.DAT     # sweep for event scripts + FMV triggers
-./field-disasm file <extracted-script-body>            # walk one raw script linearly
+./asset field-disasm scan-prot --prot extracted/PROT.DAT  # sweep for event scripts + FMV triggers
+./asset field-disasm file <extracted-script-body>         # walk one raw script linearly
 ```
 
 For a specific scene's per-scene scripts (LZS-compressed inside the scene's

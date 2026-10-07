@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-core", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-core", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,14 +8,60 @@ edition = "2024"
 license = "MIT OR Unlicense"
 
 [workspace.dependencies]
+# Every member takes its dependencies from this table (`foo.workspace = true`),
+# so one version and one feature set is pinned per crate.
 anyhow = "1"
-legaia-bytes = { path = "crates/bytes" }
+bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
 flate2 = "1"
 glam = { version = "0.30", features = ["bytemuck"] }
+libc = "0.2"
+log = "0.4"
+png = "0.17"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+winit = "0.30"
+
+# Workspace crates. Those carrying a command-line binary are listed with
+# default features off: their default `cli` feature exists only for their own
+# binary, and a library dependent never needs it.
+legaia-bytes = { path = "crates/bytes" }
+legaia-anm = { path = "crates/anm", default-features = false }
+legaia-art = { path = "crates/art", default-features = false }
+legaia-asset = { path = "crates/asset", default-features = false }
+legaia-cheats = { path = "crates/cheats", default-features = false }
+legaia-engine-audio = { path = "crates/engine-audio", default-features = false }
+legaia-engine-core = { path = "crates/engine-core" }
+legaia-engine-render = { path = "crates/engine-render" }
+legaia-engine-session = { path = "crates/engine-session" }
+legaia-engine-screens = { path = "crates/engine-screens" }
+legaia-parity = { path = "crates/parity" }
+legaia-engine-shell = { path = "crates/engine-shell" }
+legaia-engine-ui = { path = "crates/engine-ui" }
+legaia-engine-vm = { path = "crates/engine-vm" }
+legaia-font = { path = "crates/font", default-features = false }
+legaia-gamedata = { path = "crates/gamedata", default-features = false }
+legaia-iso = { path = "crates/iso", default-features = false }
+legaia-lzs = { path = "crates/lzs", default-features = false }
+legaia-mdec = { path = "crates/mdec", default-features = false }
+legaia-mdt = { path = "crates/mdt", default-features = false }
+legaia-mednafen = { path = "crates/mednafen", default-features = false }
+legaia-mes = { path = "crates/mes", default-features = false }
+legaia-patcher = { path = "crates/patcher", default-features = false }
+legaia-pcsxr = { path = "crates/pcsxr", default-features = false }
+legaia-prot = { path = "crates/prot", default-features = false }
+legaia-save = { path = "crates/save", default-features = false }
+legaia-seq = { path = "crates/seq", default-features = false }
+legaia-tim = { path = "crates/tim", default-features = false }
+legaia-tmd = { path = "crates/tmd", default-features = false }
+legaia-vab = { path = "crates/vab", default-features = false }
+legaia-web-viewer = { path = "crates/web-viewer" }
+legaia-xa = { path = "crates/xa", default-features = false }
 
 [profile.release]
 lto = "thin"

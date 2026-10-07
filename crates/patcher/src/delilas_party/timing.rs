@@ -94,11 +94,11 @@ pub(super) fn principal_impact(
 /// The per-stage length expression is the rebuild's own
 /// (`(frame_count * rate).div_ceil(stage.rate)`), and the front stages are
 /// the ones the rebuild drops when the slot is tight, so only the last
-/// [`RebuiltArtSlot::stages`](legaia_asset::party_swap::winpose::RebuiltArtSlot)
+/// [`RebuiltArtSlot::stages`](crate::party_swap::winpose::RebuiltArtSlot)
 /// of the chain are walked.
 pub(super) fn chain_contacts(
     chain: &[&legaia_asset::monster_archive::MonsterAnimation],
-    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
 ) -> Vec<Contact> {
     let kept = chain.len().saturating_sub(rebuilt.stages);
     let rate = rebuilt.rate.max(1) as usize;
@@ -221,7 +221,7 @@ pub(super) fn ascending_within(frames: &[usize], last: usize) -> Vec<u8> {
 /// multi-hit idiom (Burning Flare is `11 12 13 14` on one swing).
 pub(super) fn retimed_hit_frames(
     host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
-    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
     contacts: &[Contact],
 ) -> (Vec<(usize, u8)>, String) {
     if rebuilt.frames == rebuilt.retail_frames && rebuilt.stages == 1 {
@@ -348,7 +348,7 @@ pub(super) fn effect_script_edits(
     host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
     clip: &legaia_asset::monster_archive::MonsterAnimation,
     siblings_clips: &[legaia_asset::monster_archive::MonsterAnimation],
-    rebuilt: &legaia_asset::party_swap::winpose::RebuiltArtSlot,
+    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
     burst: Option<u8>,
     contacts: &[Contact],
 ) -> (Vec<(usize, u8)>, String) {

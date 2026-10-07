@@ -117,7 +117,7 @@ pub(super) fn retained_bank_rows(
 }
 
 /// Menu labels for the sibling's swing clips, in the archive order
-/// [`legaia_asset::party_swap::moveset::swing_entries`] returns.
+/// [`crate::party_swap::moveset::swing_entries`] returns.
 ///
 /// [`LABEL_MAX`] bytes at most, for every sibling. The SCUS arts-name
 /// field is rewritten in place over the retail string plus its measured
@@ -169,8 +169,8 @@ pub(super) fn clamp_charge_loop_windows(
     slot: usize,
     who: &str,
 ) -> Result<Vec<String>> {
+    use crate::party_swap::moveset;
     use legaia_asset::battle_char_assembly;
-    use legaia_asset::party_swap::moveset;
 
     let character = slot_character(slot);
     let index = crate::arts::player_entry_index(character);
@@ -243,7 +243,7 @@ pub(super) fn clamp_charge_loop_windows(
 /// Four coordinated edits, all same-size:
 ///
 /// 1. the main `"ME"` slot is re-authored from the sibling's motions
-///    ([`legaia_asset::party_swap::moveset`]) - the retail streams are
+///    ([`crate::party_swap::moveset`]) - the retail streams are
 ///    dropped, which is the only way Noa's slot (2446 free bytes) has
 ///    room for anything new;
 /// 2. every art record that reads that archive is repointed at one of
@@ -260,8 +260,8 @@ pub(super) fn apply_delilas_moveset(
     patcher: &mut DiscPatcher,
     ctx: &SignatureCtx<'_>,
 ) -> Result<Vec<String>> {
+    use crate::party_swap::moveset;
     use legaia_asset::battle_char_assembly;
-    use legaia_asset::party_swap::moveset;
 
     let &SignatureCtx {
         slot,

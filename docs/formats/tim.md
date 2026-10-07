@@ -27,7 +27,7 @@ The PSX TIM spec allows a 4bpp TIM's CLUT block to contain multiple CLUT rows (e
 | Source TIM | Layout | CLUT-row usage |
 |---|---|---|
 | **System-UI sprite sheet** at `PROT.DAT[0x018E0]` (4bpp, 256×192, 16×16 CLUT block) | Lives in the unindexed pre-`init_data` gap - not reachable through the per-PROT-entry walker. Constants in `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. | **Row 2** = the load-screen panel chrome (gold-bronze 9-slice border + dark-blue marbled interior region). **Row 7** = the pointing-finger cursor (white ink + grey shadow). Other rows render HP/MP/money panels, battle chrome, equipment frames, etc. |
-| **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_asset::menu_glyph_atlas`. | **Row 13** carries the "Load" text glyphs the load screen draws inside its panel. Other rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. |
+| **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_asset::menu_glyph_atlas`. | Rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. The load screen's "Load" title is **not** here (an earlier "row 13" pin is falsified - see [`save-screen.md`](../subsystems/save-screen.md)); it is the dialog font. |
 
 Both TIMs are byte-confirmed against retail VRAM dumps; see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen) for the pinning method (PCSX-Redux save state → `extract_vram_from_sstate.py` → CLUT-row byte cross-reference against `PROT.DAT`).
 

@@ -20,43 +20,36 @@
   <h2>What this solves</h2>
   <p>Reach for it when you are picking up work and want a real worklist: which retail functions are understood but not yet ported, which are ported but undocumented, which nobody has looked at, and which ports exist but nothing in the engine ever calls. A status table in a doc rots the day after it is written; the catalog <strong>measures</strong> each column live, so if you port a function and tag it, the next run knows.</p>
   <div class="cli"><code>python3 scripts/ci/port-catalog.py --dashboard</code></div>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 210" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three inputs - Ghidra dumps, docs citations, and PORT tags in Rust source - feed port-catalog.py, which emits worklists, the open-work dashboard, and the ratcheted baseline check">
-      <style>
-        .pc-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .pc-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .pc-lab { font: 12px sans-serif; fill: currentColor; }
-        .pc-sub { font: 10px monospace; fill: var(--text-muted); }
-        .pc-arr { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#pc-head); }
-      </style>
-      <defs><marker id="pc-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="20" y="15" width="200" height="46" class="pc-soft"/>
-      <text x="120" y="34" text-anchor="middle" class="pc-lab">Ghidra dump corpus</text>
-      <text x="120" y="51" text-anchor="middle" class="pc-sub">ghidra/scripts/funcs/</text>
-      <rect x="20" y="82" width="200" height="46" class="pc-soft"/>
-      <text x="120" y="101" text-anchor="middle" class="pc-lab">Doc citations</text>
-      <text x="120" y="118" text-anchor="middle" class="pc-sub">docs/**/*.md</text>
-      <rect x="20" y="149" width="200" height="46" class="pc-soft"/>
-      <text x="120" y="168" text-anchor="middle" class="pc-lab">Port tags in Rust</text>
-      <text x="120" y="185" text-anchor="middle" class="pc-sub">// PORT: FUN_&lt;addr&gt;</text>
-      <path d="M220,38 L300,38 L300,90" class="pc-arr"/>
-      <path d="M220,105 L298,105" class="pc-arr"/>
-      <path d="M220,172 L300,172 L300,120" class="pc-arr"/>
-      <rect x="302" y="80" width="180" height="50" class="pc-box"/>
-      <text x="392" y="101" text-anchor="middle" class="pc-lab">port-catalog.py</text>
-      <text x="392" y="118" text-anchor="middle" class="pc-sub">status matrix</text>
-      <path d="M482,105 L560,105 L560,38 L578,38" class="pc-arr"/>
-      <path d="M482,105 L578,105" class="pc-arr"/>
-      <path d="M482,105 L560,105 L560,172 L578,172" class="pc-arr"/>
-      <rect x="580" y="15" width="260" height="46" class="pc-soft"/>
-      <text x="710" y="34" text-anchor="middle" class="pc-lab">Worklists</text>
-      <text x="710" y="51" text-anchor="middle" class="pc-sub">--missing-ports --missing-dumps</text>
-      <rect x="580" y="82" width="260" height="46" class="pc-soft"/>
-      <text x="710" y="101" text-anchor="middle" class="pc-lab">Open-work dashboard</text>
-      <text x="710" y="118" text-anchor="middle" class="pc-sub">open-work.md</text>
-      <rect x="580" y="149" width="260" height="46" class="pc-soft"/>
-      <text x="710" y="168" text-anchor="middle" class="pc-lab">Ratchet gate</text>
-      <text x="710" y="185" text-anchor="middle" class="pc-sub">--check vs baseline.json</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 210" role="img" aria-label="Three inputs - Ghidra dumps, docs citations, and PORT tags in Rust source - feed port-catalog.py, which emits worklists, the open-work dashboard, and the ratcheted baseline check">
+      <defs><marker id="pc-head" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="20" y="15" width="200" height="46" class="dg-node"/>
+      <text x="120" y="34" text-anchor="middle" class="dg-label">Ghidra dump corpus</text>
+      <text x="120" y="51" text-anchor="middle" class="dg-sub">ghidra/scripts/funcs/</text>
+      <rect x="20" y="82" width="200" height="46" class="dg-node"/>
+      <text x="120" y="101" text-anchor="middle" class="dg-label">Doc citations</text>
+      <text x="120" y="118" text-anchor="middle" class="dg-sub">docs/**/*.md</text>
+      <rect x="20" y="149" width="200" height="46" class="dg-node"/>
+      <text x="120" y="168" text-anchor="middle" class="dg-label">Port tags in Rust</text>
+      <text x="120" y="185" text-anchor="middle" class="dg-sub">// PORT: FUN_&lt;addr&gt;</text>
+      <path d="M220,38 L300,38 L300,90" class="dg-edge" marker-end="url(#pc-head)"/>
+      <path d="M220,105 L298,105" class="dg-edge" marker-end="url(#pc-head)"/>
+      <path d="M220,172 L300,172 L300,120" class="dg-edge" marker-end="url(#pc-head)"/>
+      <rect x="302" y="80" width="180" height="50" class="dg-node-accent"/>
+      <text x="392" y="101" text-anchor="middle" class="dg-label">port-catalog.py</text>
+      <text x="392" y="118" text-anchor="middle" class="dg-sub">status matrix</text>
+      <path d="M482,105 L560,105 L560,38 L578,38" class="dg-edge" marker-end="url(#pc-head)"/>
+      <path d="M482,105 L578,105" class="dg-edge" marker-end="url(#pc-head)"/>
+      <path d="M482,105 L560,105 L560,172 L578,172" class="dg-edge" marker-end="url(#pc-head)"/>
+      <rect x="580" y="15" width="260" height="46" class="dg-node"/>
+      <text x="710" y="34" text-anchor="middle" class="dg-label">Worklists</text>
+      <text x="710" y="51" text-anchor="middle" class="dg-sub">--missing-ports --missing-dumps</text>
+      <rect x="580" y="82" width="260" height="46" class="dg-node"/>
+      <text x="710" y="101" text-anchor="middle" class="dg-label">Open-work dashboard</text>
+      <text x="710" y="118" text-anchor="middle" class="dg-sub">open-work.md</text>
+      <rect x="580" y="149" width="260" height="46" class="dg-node"/>
+      <text x="710" y="168" text-anchor="middle" class="dg-label">Ratchet gate</text>
+      <text x="710" y="185" text-anchor="middle" class="dg-sub">--check vs baseline.json</text>
     </svg>
     <figcaption>Three independent evidence sources join into one status matrix; the cross-cuts are the worklists.</figcaption>
   </figure>
@@ -122,11 +115,18 @@
     <summary>Tag drift checker: <code>check-port-tags.py</code></summary>
     <div class="disclosure-body">
       <p><code>scripts/ci/check-port-tags.py</code> walks <code>crates/engine-*/src/**.rs</code> and warns when a <code>FUN_&lt;addr&gt;</code> citation lacks a matching <code>// PORT:</code> or <code>// REF:</code> tag <em>in the same file</em> - the "I ported X but forgot the tag" pattern.</p>
-<pre><code>python3 scripts/ci/check-port-tags.py                  # default = --staged
-python3 scripts/ci/check-port-tags.py --scan-all       # full audit
-python3 scripts/ci/check-port-tags.py --strict         # exit 1 on warning
-python3 scripts/ci/check-port-tags.py --addr 80019b28  # drill-down
-python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pass</code></pre>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>python3 scripts/ci/check-port-tags.py</code></td><td>Default = --staged</td></tr>
+      <tr><td><code>python3 scripts/ci/check-port-tags.py --scan-all</code></td><td>Full audit</td></tr>
+      <tr><td><code>python3 scripts/ci/check-port-tags.py --strict</code></td><td>Exit 1 on warning</td></tr>
+      <tr><td><code>python3 scripts/ci/check-port-tags.py --addr 80019b28</code></td><td>Drill-down</td></tr>
+      <tr><td><code>python3 scripts/ci/check-port-tags.py --backfill-refs</code></td><td>One-shot grandfather pass</td></tr>
+    </tbody>
+  </table>
+  </div>
       <ul class="bullets">
         <li><strong>Scope rule:</strong> only files that already carry a <code>// PORT:</code> tag are checked; pure-docs files are skipped.</li>
         <li><strong>Backfill:</strong> <code>--backfill-refs</code> rewrites in place, inserting a <code>//! REF: ...</code> block after the leading module doc of each port-bearing file with untagged citations.</li>
@@ -138,16 +138,23 @@ python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pa
 
 <section class="doc-section" id="usage">
   <h2>Usage</h2>
-<pre><code>python3 scripts/ci/port-catalog.py                       # global catalog -> target/port-catalog/
-python3 scripts/ci/port-catalog.py --missing-ports       # dumped + documented, not ported (excludes ignore-list)
-python3 scripts/ci/port-catalog.py --missing-dumps       # cited but not dumped
-python3 scripts/ci/port-catalog.py --addr 801dd35c       # drill-down on one address
-python3 scripts/ci/port-catalog.py --feature title-screen   # BFS from a feature's roots
-python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> open-work.md
-python3 scripts/ci/port-catalog.py --live                # add the reachability column
-python3 scripts/ci/port-catalog.py --not-live            # ported but unreachable from any host root
-python3 scripts/ci/port-catalog.py --live-audit          # reachability vs `NOT WIRED:` disclosures
-python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure</code></pre>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>python3 scripts/ci/port-catalog.py</code></td><td>Global catalog -> target/port-catalog/</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --missing-ports</code></td><td>Dumped + documented, not ported (excludes ignore-list)</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --missing-dumps</code></td><td>Cited but not dumped</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --addr 801dd35c</code></td><td>Drill-down on one address</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --feature title-screen</code></td><td>BFS from a feature's roots</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --dashboard</code></td><td>Open-work rollup -> open-work.md</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --live</code></td><td>Add the reachability column</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --not-live</code></td><td>Ported but unreachable from any host root</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --live-audit</code></td><td>Reachability vs `NOT WIRED:` disclosures</td></tr>
+      <tr><td><code>python3 scripts/ci/port-catalog.py --check --live</code></td><td>Ratchet every baselined figure</td></tr>
+    </tbody>
+  </table>
+  </div>
   <p>Further flags: <code>--md</code> (markdown to stdout), <code>--ported-only</code>, <code>--ignored-only</code>, <code>--include-ignored</code>, <code>--list-features</code>, <code>--dashboard-top N</code>, <code>--allow-uncompared</code>, <code>--update-baseline</code>, <code>--selftest</code>. Output lands in <code>target/port-catalog/</code> (gitignored).</p>
 </section>
 
@@ -190,12 +197,7 @@ python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselin
       <p>The audit compares per <strong>anchor</strong>, not per address: a formula ported into both <code>engine-vm</code> and <code>engine-core</code> has two anchors and can legitimately be wired in one and not the other. The stale-<code>NOT WIRED</code> test reads off a <em>second</em>, receiver-gated graph so a name collision does not fire on unambiguous names, while <code>live</code> / <code>--not-live</code> stay on the permissive graph - sharpening the shared one would trade the hard floor away.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: analysis defects the audit itself turned up</summary>
-    <div class="disclosure-body">
-      <p>Two dispatch shapes the graph could not model each hid a whole tree of live code: trait default methods (counted as methods of their trait) and winit's <code>ApplicationHandler</code> callbacks (a root family). A <code>#[cfg(test)]</code> helper is still a caller node: a test helper with a common name (<code>step</code>, <code>tables</code>, <code>new</code>) collects every same-named edge and marks its own module live, which reads as a stale tag on a module nothing calls - give test helpers distinctive names. Per-row verdicts live in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md">live-audit-triage</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/stale-not-wired-triage.md">stale-not-wired-triage</a>.</p>
-    </div>
-  </details>
+  <p class="hint">Two dispatch shapes the call graph has to model explicitly: trait default methods and winit's <code>ApplicationHandler</code> callbacks. A <code>#[cfg(test)]</code> helper is still a caller node, so give test helpers distinctive names - a helper called <code>step</code> or <code>new</code> collects every same-named edge.</p>
 </section>
 
 <section class="doc-section" id="ratchet">
@@ -213,12 +215,7 @@ python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselin
     </tbody>
   </table>
   <p>Everything ratcheted is a property of the tags, the docs and the dump corpus; nothing read off the receiver-gated graph is baselined, because its numbers move with graph resolution rather than with the work. Three rules protect figures that need <code>--live</code>: <code>--check</code> fails on an uncompared figure unless the caller says <code>--allow-uncompared</code>; the hook spends the slow pass when the commit stages <code>crates/</code>; and <code>--update-baseline</code> carries forward figures its run did not compute rather than dropping them. <strong>Validate a surprise against rows, never against the count</strong> - a regression report is a prompt to open <code>--missing-ports</code> and <code>--live-audit</code>.</p>
-  <details class="disclosure">
-    <summary>History: why "every headline number was an instrument artifact"</summary>
-    <div class="disclosure-body">
-      <p>More than one wave found the count moving for a reason inside the measurement rather than inside the tree. The disclosure gap was baselined at zero while the hook ran <code>--check</code> without <code>--live</code>; the run printed <code>NOT COMPARED THIS RUN</code>, exited 0, and the figure drifted with every gate green - printing a line is not a comparison. A <code>--update-baseline</code> run without <code>--live</code> once deleted the whole <code>live</code> block in one command. And sharpening the shared call graph to fix name collisions was tried and reverted more than once, because it traded the hard <code>not-live</code> floor for a fix to the opposite error - which is why the tool builds two graphs. The per-address companions: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port-provenance</a> (nothing checks that a <code>// PORT:</code> address names the routine the Rust code implements - a live port once wore the casino prize list's address with every gate green) and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md">worklist-classification</a> (whether a <code>--missing-ports</code> row is a portable function entry at all).</p>
-    </div>
-  </details>
+  <p class="hint">Printing a figure is not comparing it: a run that says <code>NOT COMPARED THIS RUN</code> and exits 0 has checked nothing, which is why live figures need <code>--live</code> on both <code>--check</code> and <code>--update-baseline</code>. Per-address companions: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md">port provenance</a> (nothing checks that a <code>// PORT:</code> address names the routine the Rust implements).</p>
 </section>
 
 <section class="doc-section" id="ignore-list">

@@ -51,6 +51,7 @@ in the hook, and must self-skip everywhere else.
 - `install-hooks.sh` - point `core.hooksPath` at `git-hooks/` (run once per clone).
 - `install-tools.sh` - install the local toolchain (Ghidra container, capstone, emulators).
 - `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
+- `check-integration-tests.py` - every `tests/*.rs` of a crate with `autotests = false` is declared in its `tests/integration.rs`; an undeclared file would never compile or run.
 - `check-md-links.py` - Markdown intra-repo link + heading-anchor gate (the docs-side sibling of `check-site-links.py`).
 - `check-site-links.py` - static-site internal-link + anchor gate.
 - `check-site-generated-freshness.py` - generated `site/**/*.html` vs its `_content` fragment (subdirectories included): every asset the fragment references and every element `id` it declares must reach the generated page. Catches a `_content` edit that was never re-rendered, which the link gate cannot see because the defect is a *missing* reference, not a broken one - a page script reading `.checked` off an id the served page never grew is this shape.

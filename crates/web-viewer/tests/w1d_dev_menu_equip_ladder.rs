@@ -22,7 +22,7 @@
 //! ```text
 //! cargo llvm-cov clean --profraw-only
 //! cargo llvm-cov -p legaia-web-viewer \
-//!     --test w1d_dev_menu_equip_ladder --no-report
+//!     --test integration w1d_dev_menu_equip_ladder:: --no-report
 //! cargo llvm-cov report --json \
 //!     --output-path target/cov-w1d_dev_menu_equip_ladder.json
 //! ```

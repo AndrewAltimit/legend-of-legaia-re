@@ -306,7 +306,7 @@ mode.
 | 18 | `0x80043DD4` | `0x800453BC` (b2 `0x800457C4`) | tri | DPCT/DPCS |
 | 19 | `0x80043F10` | `0x80045584` (b2 `0x80045988`, b3 `0x80045BB4`) | quad | DPCT/DPCS |
 
-Bank 3 (subtractive) is the only bank that selects `0x80045BB4`, and no retail
+Bank 3 (offset `0xF0`, raised by tint bit `0x20000000`; a depth-cued handler set like banks 1 and 2, not a blend mode) is the only bank that selects `0x80045BB4`, and no retail
 world-map caller observed so far sets the flag that reaches it - see
 [`formats/world-map-overlay.md`](../formats/world-map-overlay.md) for the per-bank
 capture counts. **Unreached in one capture is not unreachable**: the handler is a
@@ -2367,7 +2367,12 @@ renderer defaults off and the interactive hosts turn on.
 
 **Affine UVs are not gated either - they are always on.** `@interpolate(linear)`
 is a static qualifier on the vertex-output struct, not a uniform-driven branch,
-so every path interpolates UVs affinely on every frame. `psx_mode` produces
+so every path interpolates UVs affinely on every frame. The browser's WebGL2
+twin (`site/js/webgl-shaders.js`) has no such qualifier - GLSL ES 3.00 lacks
+`noperspective` - so its vertex shader writes the UV and the gouraud colour
+premultiplied by clip `w`, alongside `w`, and the fragment shader divides:
+perspective-correct interpolation of `a * w` over `w` is the screen-linear
+interpolation of `a`. `psx_mode` produces
 exactly one value, `snap`, which drives the vertex snap and is shared as the
 dither enable.
 

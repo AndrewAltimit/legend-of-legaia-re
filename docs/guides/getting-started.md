@@ -146,7 +146,7 @@ Reverse-engineering aids (useful once you go deeper):
 
 | Binary | What it's for |
 |---|---|
-| `field-disasm` | Field/event-VM script disassembler over `PROT.DAT`. |
+| `asset field-disasm` | Field/event-VM script disassembler over `PROT.DAT` (a subcommand of `asset`). |
 | `mes` | MES dialog-container inspector (for readable game text, use `legaia-patcher translate export` instead). |
 | `anm` | ANM animation-container inspector. |
 | `mdt` | Move-table (Tactical Arts) layout classifier. |

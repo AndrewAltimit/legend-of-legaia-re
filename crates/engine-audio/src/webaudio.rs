@@ -19,8 +19,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::closure::Closure;
 use web_sys::AudioProcessingEvent;
 
-use crate::spu::Spu;
-use crate::{Sequencer, SequencerProgress, StreamResampler, XaPlayback};
+use crate::StreamResampler;
 
 /// Master output trim for the browser hosts, applied by
 /// [`WebAudioOut::set_gain`] on top of the caller's value.
@@ -53,6 +52,17 @@ pub struct WebAudioOut {
     /// the destination, so a host can scale output without re-mixing in
     /// WASM. Defaults to unity; the play page hangs its volume slider here.
     gain: web_sys::GainNode,
+}
+
+/// Closing the context on drop stops the `ScriptProcessorNode` with it. The
+/// node stays connected to the destination after the Rust side is gone, so
+/// without this a dropped output (a second `new()` replacing the first) keeps
+/// calling a freed closure on every buffer - wasm-bindgen's "closure invoked
+/// recursively or after being dropped", forever.
+impl Drop for WebAudioOut {
+    fn drop(&mut self) {
+        let _ = self.ctx.close();
+    }
 }
 
 impl WebAudioOut {
@@ -163,259 +173,10 @@ impl WebAudioOut {
             .resume()
             .unwrap_or_else(|_| js_sys::Promise::resolve(&JsValue::UNDEFINED))
     }
+}
 
-    /// Toggle the monaural downmix (the retail options screen's
-    /// "Sound: Stereo / Monaural" row) - the twin of
-    /// [`crate::AudioOut::set_mono`]. Without it the browser hosts had no
-    /// reader for that row at all, so the option was decorative on one host
-    /// and live on the other.
-    pub fn set_mono(&self, mono: bool) {
-        self.state.borrow_mut().mono = mono;
-    }
-
-    /// Master mute gate - the twin of [`crate::AudioOut::set_muted`]. The
-    /// producers keep ticking while muted (the gate lives in `next_frame`),
-    /// so unmuting resumes mid-track in sync.
-    pub fn set_muted(&self, muted: bool) {
-        self.state.borrow_mut().muted = muted;
-    }
-
-    /// Current state of the master mute gate.
-    pub fn is_muted(&self) -> bool {
-        self.state.borrow().muted
-    }
-
-    /// Run a closure with mutable access to the underlying SPU model.
-    pub fn with_spu<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut Spu) -> R,
-    {
-        f(&mut self.state.borrow_mut().spu)
-    }
-
-    /// Install a sequencer. The `ScriptProcessorNode` callback ticks it once
-    /// per SPU sample for sample-accurate timing. Replaces any active
-    /// sequencer immediately (use [`Self::crossfade_to`] for smooth transitions).
-    pub fn attach_sequencer(&self, seq: Sequencer) {
-        let mut s = self.state.borrow_mut();
-        if let Some(mut prev) = s.sequencer.take() {
-            prev.stop(&mut s.spu);
-        }
-        s.pending_seq = None;
-        s.master_fade = 1.0;
-        s.fade_target = 1.0;
-        s.fade_step = 0.0;
-        s.sequencer = Some(seq);
-    }
-
-    /// Rewind the attached sequencer to its first event - the twin of
-    /// [`crate::AudioOut::rewind_sequencer`].
-    pub fn rewind_sequencer(&self) {
-        self.state.borrow_mut().rewind_sequencer();
-    }
-
-    /// Detach the active sequencer (if any) and key-off any sounding notes.
-    pub fn detach_sequencer(&self) {
-        let mut s = self.state.borrow_mut();
-        if let Some(mut seq) = s.sequencer.take() {
-            seq.stop(&mut s.spu);
-        }
-        s.pending_seq = None;
-        s.master_fade = 1.0;
-        s.fade_target = 1.0;
-        s.fade_step = 0.0;
-    }
-
-    /// Gate the sequencer tick - the twin of
-    /// [`crate::AudioOut::set_sequencer_paused`]. When `paused`, the
-    /// sequencer clock stops and the notes it had sounding are keyed off;
-    /// `false` resumes from the playhead.
-    pub fn set_sequencer_paused(&self, paused: bool) {
-        self.state.borrow_mut().set_sequencer_paused(paused);
-    }
-
-    /// Whether the sequencer gate is currently closed
-    /// ([`Self::set_sequencer_paused`]). The browser BGM director keys the
-    /// op-`0x35` sub-`0xA` unhalt-pause commit on this, and so does the
-    /// native one through `AudioOut::sequencer_paused`: on both hosts the
-    /// gate is the only pause state there is.
-    pub fn sequencer_paused(&self) -> bool {
-        self.state.borrow().sequencer_paused
-    }
-
-    /// Cross-fade from the current sequencer to `new_seq` over
-    /// `fade_samples` SPU-rate (44.1 kHz) samples. If no sequencer is
-    /// active, `new_seq` is installed immediately at full volume.
-    pub fn crossfade_to(&self, new_seq: Sequencer, fade_samples: u32) {
-        let mut s = self.state.borrow_mut();
-        if fade_samples == 0 || s.sequencer.is_none() {
-            if let Some(mut prev) = s.sequencer.take() {
-                prev.stop(&mut s.spu);
-            }
-            s.pending_seq = None;
-            s.master_fade = 1.0;
-            s.fade_target = 1.0;
-            s.fade_step = 0.0;
-            s.sequencer = Some(new_seq);
-        } else {
-            s.pending_seq = Some(new_seq);
-            s.fade_target = 0.0;
-            s.fade_step = 1.0 / fade_samples.max(1) as f32;
-        }
-    }
-
-    /// Swap the active sequencer for `new_seq` **immediately** - the twin of
-    /// [`crate::AudioOut::swap_bgm`], and the same
-    /// [`StreamResampler::swap_bgm`] underneath, so both hosts hear one
-    /// model.
-    ///
-    /// This is the hook a BGM *change* takes. [`Self::crossfade_to`] is a
-    /// serial fade: it holds the incoming track in `pending_seq` and rolls
-    /// the outgoing one down to silence first, so the new track's intro is
-    /// still unplayed a fade-length after the script asked for it. Retail's
-    /// changes are hard cuts, and a cutscene sting is mostly intro - which is
-    /// why the browser had to reach this and not the crossfade.
-    ///
-    /// `fade_in_samples` is a short click-guard ramp on the SPU master (a
-    /// couple of frames at most) that only ever rises, so the incoming track
-    /// is audible from its first sample. Pass `0` for a true hard cut.
-    pub fn swap_bgm(&self, new_seq: Sequencer, fade_in_samples: u32) {
-        self.state.borrow_mut().swap_bgm(new_seq, fade_in_samples);
-    }
-
-    /// Snapshot of the attached sequencer's progress, `None` when no
-    /// sequencer is attached - the twin of
-    /// [`crate::AudioOut::sequencer_progress`]. The browser BGM director's
-    /// duplicate-start guard keys on this: a re-emitted start for the track
-    /// that is *already sounding* keeps its playhead, but the same id after
-    /// the track was detached (stopped, or run off its end) must restart it.
-    pub fn sequencer_progress(&self) -> Option<SequencerProgress> {
-        self.state.borrow().sequencer_progress()
-    }
-
-    /// Set the attached sequencer's master volume (`SsSeqSetVol`-shaped,
-    /// `0..=127`) in place, without restarting it - the twin of
-    /// [`crate::AudioOut::set_sequencer_master_vol`]. The battle audio duck
-    /// rides this: retail ramps `_DAT_8007B910` one unit per vsync and
-    /// re-applies it through `FUN_800267A8` -> `FUN_80062004` each frame.
-    /// No-op with no sequencer attached; a pending cross-fade target
-    /// inherits it when it installs.
-    pub fn set_sequencer_master_vol(&self, vol: u8) {
-        let mut s = self.state.borrow_mut();
-        if let Some(seq) = s.sequencer.as_mut() {
-            seq.set_master_vol(vol);
-        }
-        if let Some(seq) = s.pending_seq.as_mut() {
-            seq.set_master_vol(vol);
-        }
-    }
-
-    /// Install a streaming XA-ADPCM voice, replacing any active stream
-    /// without crossfading - the twin of [`crate::AudioOut::play_xa`]. The
-    /// `ScriptProcessorNode` callback mixes it into the SPU output at
-    /// 44.1 kHz inside the same [`StreamResampler`] the cpal path uses, so
-    /// it sits **before** the post-mixer `GainNode` and rides the page's
-    /// volume slider + [`WEB_MASTER_TRIM`] exactly like BGM and SFX do.
-    ///
-    /// `gain` is Q1.14 like SPU voice volumes - `0x4000` is unity.
-    pub fn play_xa(
-        &self,
-        pcm: Vec<i16>,
-        sample_rate: u32,
-        channels: legaia_xa::Channels,
-        looping: bool,
-        gain: u16,
-    ) {
-        let mut s = self.state.borrow_mut();
-        s.pending_xa = None;
-        s.xa = Some(XaPlayback {
-            pcm,
-            sample_rate,
-            channels,
-            looping,
-            gain,
-            cursor: 0.0,
-            start_delay: 0,
-        });
-    }
-
-    /// Install an arts-voice battle shout / one-shot CD-XA clip with the
-    /// modelled CD-response start delay and the back-to-back no-drop queue -
-    /// the twin of [`crate::AudioOut::play_xa_shout`], through the same
-    /// [`crate::stage_xa_shout`] staging the cpal path and the
-    /// [`crate::OfflineMixer`] share. A shout requested while one is sounding
-    /// queues behind it (one deep); `start_delay_frames` is in SPU samples.
-    pub fn play_xa_shout(
-        &self,
-        pcm: Vec<i16>,
-        sample_rate: u32,
-        channels: legaia_xa::Channels,
-        gain: u16,
-        start_delay_frames: u32,
-    ) {
-        let shout = XaPlayback {
-            pcm,
-            sample_rate,
-            channels,
-            looping: false,
-            gain,
-            cursor: 0.0,
-            start_delay: start_delay_frames,
-        };
-        crate::stage_xa_shout(&mut self.state.borrow_mut(), shout);
-    }
-
-    /// Decode a buffer of raw XA-ADPCM sound-group bytes (128-byte aligned)
-    /// through [`legaia_xa::StreamingDecoder`] and stage the PCM as an XA
-    /// stream - the twin of [`crate::AudioOut::play_xa_streaming`].
-    pub fn play_xa_streaming(
-        &self,
-        raw_bytes: &[u8],
-        sample_rate: u32,
-        channels: legaia_xa::Channels,
-        looping: bool,
-        gain: u16,
-    ) -> anyhow::Result<()> {
-        let mut decoder = legaia_xa::StreamingDecoder::new(legaia_xa::DecodeOptions {
-            channels,
-            sample_rate,
-            bits: legaia_xa::BitsPerSample::Four,
-        });
-        let mut pcm = Vec::with_capacity(raw_bytes.len() / 128 * 224);
-        decoder.feed(raw_bytes, &mut pcm)?;
-        self.play_xa(pcm, sample_rate, channels, looping, gain);
-        Ok(())
-    }
-
-    /// Detach the active XA stream and drop any queued shout - the twin of
-    /// [`crate::AudioOut::stop_xa`].
-    pub fn stop_xa(&self) {
-        let mut s = self.state.borrow_mut();
-        s.xa = None;
-        s.pending_xa = None;
-    }
-
-    /// `true` while an XA stream is attached and not yet exhausted - the
-    /// twin of [`crate::AudioOut::xa_active`].
-    pub fn xa_active(&self) -> bool {
-        self.state
-            .borrow()
-            .xa
-            .as_ref()
-            .is_some_and(|x| !x.is_done())
-    }
-
-    /// Playback position of the active XA stream in seconds (`None` with no
-    /// stream) - the twin of [`crate::AudioOut::xa_cursor_secs`]. Advanced
-    /// inside the audio callback, so it is the device-paced clock a video
-    /// player can lock its frame advance to.
-    pub fn xa_cursor_secs(&self) -> Option<f64> {
-        self.state.borrow().xa.as_ref().map(|x| {
-            if x.sample_rate == 0 {
-                0.0
-            } else {
-                x.cursor / x.sample_rate as f64
-            }
-        })
+impl crate::AudioSink for WebAudioOut {
+    fn with_core<R>(&self, f: impl FnOnce(&mut StreamResampler) -> R) -> R {
+        f(&mut self.state.borrow_mut())
     }
 }

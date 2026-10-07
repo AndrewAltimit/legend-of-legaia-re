@@ -11,7 +11,7 @@
     <dt>Magic / marker</dt><dd>None - static initialised data in the cutscene overlay's data section (an overlay is a chunk of code + data loaded into RAM on demand)</dd>
     <dt>Lives in</dt><dd>PROT 0970 (the STR / MDEC overlay) at link base <code>0x801CE818</code>: path strings at <code>0x801CE810</code>, return-scene labels at <code>0x801CE8AC</code>, the dispatch table at <code>0x801D0A6C</code> (23 &times; 32 B)</dd>
     <dt>Retail reader</dt><dd>Selector in the master dispatch + the play loop (<a href="#how-we-know">how we know</a>)</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::fmv_dispatch::FmvTable::from_str_overlay</code>; engine mirror <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code></dd>
+    <dt>In the port</dt><dd><code>legaia_asset::fmv_dispatch</code></dd>
     <dt>Confidence</dt><dd>Confirmed - stride and layout pinned from the PROT 0970 disc bytes, byte-identical in the resident RAM capture; every field cross-validated against the play loop's reads; the retail <code>fmv_id 0..=8</code> range pinned by nine trigger save states.</dd>
   </dl>
 </section>
@@ -19,62 +19,56 @@
 <section class="doc-section" id="runtime-table">
   <h2>The dispatch table</h2>
   <p>The field-VM FMV-trigger op (see the <a href="../subsystems/cutscene.html#fmv-trigger-op">cutscene subsystem</a>) writes an <code>s16</code> <code>fmv_id</code> to a global; the master dispatch multiplies it by 32 and indexes the table. The play loop opens the slot's file, seeks to <code>start_frame</code>, and streams until the demuxed frame number reaches <code>end_frame</code> - which is how one <code>MVn.STR</code> carries several cutscenes by frame range:</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 165" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MV3.STR carries four cutscenes split by frame range; three hand off to field scenes, one returns to the caller">
-      <style>
-        .fm-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .fm-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-        .fm-frm { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .fm-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .fm-out { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .fm-arr { stroke: var(--accent); stroke-width: 1.1; fill: none; }
-        .fm-lab { font: 12px 'Inter', sans-serif; fill: var(--text-muted); }
-      </style>
-      <text x="20" y="42" class="fm-lab">MV3.STR</text>
-      <rect x="110" y="24" width="180" height="34" class="fm-box"/>
-      <rect x="290" y="24" width="160" height="34" class="fm-box"/>
-      <rect x="450" y="24" width="170" height="34" class="fm-box"/>
-      <rect x="620" y="24" width="190" height="34" class="fm-box"/>
-      <text x="200" y="45" class="fm-seg" dominant-baseline="middle">fmv_id 2</text>
-      <text x="370" y="45" class="fm-seg" dominant-baseline="middle">fmv_id 3</text>
-      <text x="535" y="45" class="fm-seg" dominant-baseline="middle">fmv_id 4</text>
-      <text x="715" y="45" class="fm-seg" dominant-baseline="middle">fmv_id 5</text>
-      <text x="110" y="16" class="fm-frm">1</text>
-      <text x="290" y="16" class="fm-frm">0xE2</text>
-      <text x="450" y="16" class="fm-frm">0x1A5</text>
-      <text x="620" y="16" class="fm-frm">0x27C</text>
-      <text x="810" y="16" class="fm-frm">0x36A</text>
-      <path d="M 200 58 L 200 96" class="fm-arr"/><path d="M 194 90 L 200 96 L 206 90" class="fm-arr"/>
-      <path d="M 370 58 L 370 96" class="fm-arr"/><path d="M 364 90 L 370 96 L 376 90" class="fm-arr"/>
-      <path d="M 535 58 L 535 96" class="fm-arr"/><path d="M 529 90 L 535 96 L 541 90" class="fm-arr"/>
-      <path d="M 715 58 L 715 96" class="fm-arr"/><path d="M 709 90 L 715 96 L 721 90" class="fm-arr"/>
-      <rect x="130" y="96" width="140" height="34" class="fm-out"/>
-      <rect x="300" y="96" width="140" height="34" class="fm-out"/>
-      <rect x="465" y="96" width="140" height="34" class="fm-out"/>
-      <rect x="635" y="96" width="160" height="34" class="fm-out"/>
-      <text x="200" y="117" class="fm-seg" dominant-baseline="middle">map01</text>
-      <text x="370" y="117" class="fm-seg" dominant-baseline="middle">chitei2</text>
-      <text x="535" y="117" class="fm-seg" dominant-baseline="middle">map02</text>
-      <text x="715" y="117" class="fm-seg" dominant-baseline="middle">caller scene</text>
-      <text x="440" y="155" class="fm-note">after the segment ends, the dispatch writes the return scene and hands back to the field chain</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MV3.STR carries four cutscenes split by frame range; three hand off to field scenes, one returns to the caller">
+      <defs><marker id="fmv-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="20" y="47" class="dg-edge-label">MV3.STR</text>
+      <rect x="110" y="26" width="180" height="36" rx="3" class="dg-node-accent"/><text x="200" y="49" class="dg-label">fmv_id 2</text>
+      <text x="113" y="18" class="dg-edge-label">1</text>
+      <path class="dg-edge" d="M200 62 L200 98" marker-end="url(#fmv-arrow)"/>
+      <rect x="130" y="100" width="140" height="34" rx="4" class="dg-node"/><text x="200" y="122" class="dg-label">map01</text>
+      <rect x="290" y="26" width="160" height="36" rx="3" class="dg-node-accent"/><text x="370" y="49" class="dg-label">fmv_id 3</text>
+      <text x="293" y="18" class="dg-edge-label">0xE2</text>
+      <path class="dg-edge" d="M370 62 L370 98" marker-end="url(#fmv-arrow)"/>
+      <rect x="300" y="100" width="140" height="34" rx="4" class="dg-node"/><text x="370" y="122" class="dg-label">chitei2</text>
+      <rect x="450" y="26" width="170" height="36" rx="3" class="dg-node-accent"/><text x="535" y="49" class="dg-label">fmv_id 4</text>
+      <text x="453" y="18" class="dg-edge-label">0x1A5</text>
+      <path class="dg-edge" d="M535 62 L535 98" marker-end="url(#fmv-arrow)"/>
+      <rect x="465" y="100" width="140" height="34" rx="4" class="dg-node"/><text x="535" y="122" class="dg-label">map02</text>
+      <rect x="620" y="26" width="190" height="36" rx="3" class="dg-node-accent"/><text x="715" y="49" class="dg-label">fmv_id 5</text>
+      <text x="623" y="18" class="dg-edge-label">0x27C</text>
+      <path class="dg-edge" d="M715 62 L715 98" marker-end="url(#fmv-arrow)"/>
+      <rect x="645" y="100" width="140" height="34" rx="4" class="dg-node"/><text x="715" y="122" class="dg-label">caller scene</text>
+      <text x="770" y="18" class="dg-edge-label">0x36A</text>
+      <text x="440" y="160" class="dg-sub">when a segment ends, the dispatch writes its return scene and hands back to the field</text>
     </svg>
     <figcaption>One movie file, four cutscenes: the frame ranges abut exactly, and each slot names where play resumes.</figcaption>
   </figure>
   <h3 id="record-layout">Record layout (32 bytes)</h3>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
+  <div class="byte-map" role="img" aria-label="32-byte FMV slot: path pointer, colour flag, start frame, end frame">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">path_ptr</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">color_flag</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">start_frame</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">end_frame</span><span class="bm-size">u32</span></div>
+  </div>
+  <div class="byte-map" role="img" aria-label="FMV slot continued: framebuffer x, y, width, height">
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x10</span><span class="bm-name">fb_x</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x14</span><span class="bm-name">fb_y</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x18</span><span class="bm-name">width</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x1C</span><span class="bm-name">height</span><span class="bm-size">u32</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td>path_ptr</td><td>Pointer into the path string table at the overlay start</td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td>color_flag</td><td>Non-0 = 24-bit colour (VRAM footprint width &times; 3/2, MDEC depth bit, <code>DISPENV.isrgb24</code>)</td></tr>
-      <tr><td><code>+0x08</code></td><td>4</td><td>start_frame</td><td>1-based; the loop seeks <code>(start - 1) * 10</code> sectors in (the 15 fps cadence)</td></tr>
-      <tr><td><code>+0x0C</code></td><td>4</td><td>end_frame</td><td>Last frame of the segment - the demux stops here</td></tr>
-      <tr><td><code>+0x10</code></td><td>4</td><td>fb_x</td><td>VRAM decode-target x (0 on retail slots)</td></tr>
-      <tr><td><code>+0x14</code></td><td>4</td><td>fb_y</td><td>VRAM decode-target y (8 on retail); the double-buffer sibling rect sits at <code>fb_y + height</code></td></tr>
-      <tr><td><code>+0x18</code></td><td>4</td><td>width</td><td>Frame width (320 retail)</td></tr>
-      <tr><td><code>+0x1C</code></td><td>4</td><td>height</td><td>Frame height (240 retail)</td></tr>
+      <tr><td>path_ptr</td><td>Pointer into the path string table at the overlay start</td></tr>
+      <tr><td>color_flag</td><td>Non-0 = 24-bit colour (VRAM footprint width &times; 3/2, MDEC depth bit, <code>DISPENV.isrgb24</code>)</td></tr>
+      <tr><td>start_frame</td><td>1-based; the loop seeks <code>(start - 1) * 10</code> sectors in (the 15 fps cadence)</td></tr>
+      <tr><td>end_frame</td><td>Last frame of the segment - the demux stops here</td></tr>
+      <tr><td>fb_x / fb_y</td><td>VRAM decode target (0 / 8 on retail slots); the double-buffer sibling rect sits at <code>fb_y + height</code></td></tr>
+      <tr><td>width / height</td><td>Frame size (320 &times; 240 retail)</td></tr>
     </tbody>
   </table>
-  <p>Because the table is static initialised data in PROT 0970, it decodes straight from the disc; the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>). The <code>+0x18</code>/<code>+0x1C</code> pair is the one place the record can be <strong>overruled</strong>: it sizes the decode rects once, then from the first demuxed frame onward the play loop overwrites the rects' width and height from the STR sector header's own fields. A slot whose dimensions disagree with the movie loses.</p>
+  <p>Because the table is static initialised data in PROT 0970, it decodes straight from the disc. The <code>+0x18</code>/<code>+0x1C</code> pair is the one place the record can be <strong>overruled</strong>: it sizes the decode rects once, then from the first demuxed frame onward the play loop overwrites the rects' width and height from the STR sector header's own fields. A slot whose dimensions disagree with the movie loses.</p>
   <details class="disclosure">
     <summary>Every word of the record is a play-loop input</summary>
     <div class="disclosure-body">
@@ -92,7 +86,7 @@
           <tr><td><code>+0x1C</code></td><td><code>801cf168</code>, <code>801cf2c8</code></td><td>the sibling rect at <code>fb_y + height</code>, and the display rect's <code>h = height * 2</code></td></tr>
         </tbody>
       </table>
-      <p><code>FmvEntry</code> keeps six of the eight; <code>fb_x</code> / <code>fb_y</code> land in <code>legaia_mdec::str_player::FmvSlot</code>, which builds the two decode rects from them. The sector-header overwrite of width/height is at <code>FUN_801CF740</code> (cached in <code>DAT_801D0D50</code> / <code>DAT_801D0D54</code>); the one-time rect sizing at <code>FUN_801CF8B0</code>.</p>
+      <p>The sector-header overwrite of width/height is at <code>FUN_801CF740</code> (cached in <code>DAT_801D0D50</code> / <code>DAT_801D0D54</code>); the one-time rect sizing at <code>FUN_801CF8B0</code>.</p>
     </div>
   </details>
 </section>
@@ -149,44 +143,34 @@
   <details class="disclosure">
     <summary>History: the phase-shifted "compact MV-file table at 0x801CAE40"</summary>
     <div class="disclosure-body">
-      <p>Earlier captures read this cache as a name-first 24-byte table starting at <code>0x801CAE40</code>. That parse was <strong>phase-shifted 8 bytes</strong>, pairing each name with the <em>next</em> record's location - manufacturing an apparent one-entry shift ("MV1 points at disc MV2"). At the <code>CdlFILE</code> phase every record is self-consistent. The <code>legaia_asset::str_fmv_table</code> parser still reads the historical name-first window; treat it as a capture-forensics helper, not a format decoder. Convert <code>CdlLOC</code> to LBA with <code>LBA = ((M&times;60)+S)&times;75 + F &minus; 150</code>; a third copy of the six MV files appears nearby in raw ISO9660 directory-record form (<code>0x801CCA80</code>, 56-byte stride).</p>
+      <p>Earlier captures read this cache as a name-first 24-byte table starting at <code>0x801CAE40</code>. That parse was <strong>phase-shifted 8 bytes</strong>, pairing each name with the <em>next</em> record's location - manufacturing an apparent one-entry shift ("MV1 points at disc MV2"). At the <code>CdlFILE</code> phase every record is self-consistent. Convert <code>CdlLOC</code> to LBA with <code>LBA = ((M&times;60)+S)&times;75 + F &minus; 150</code>; a third copy of the six MV files appears nearby in raw ISO9660 directory-record form (<code>0x801CCA80</code>, 56-byte stride).</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="rust-api">
-  <h2>Rust API</h2>
-<pre><code>use legaia_asset::fmv_dispatch::FmvTable;
-
-// Decode the dispatch table straight from the PROT 0970 entry bytes.
-let overlay = std::fs::read("extracted/PROT/0970_xxx_dat.BIN")?;
-let table = FmvTable::from_str_overlay(&amp;overlay).expect("dispatch table");
-
-// fmv_id (the value the field VM writes) -> movie + range.
-let e = table.entry(1).unwrap();
-assert_eq!(e.engine_path(), "MOV/MV2.STR");
-assert_eq!((e.start_frame, e.end_frame), (1, 0xf4));
-
-// Dev slots decode too but engine_path() declines them.
-assert_eq!(table.engine_path(10), None); // MOV15.STR, not on the retail disc</code></pre>
+  <h2>In the port</h2>
+  <p><code>legaia_asset::fmv_dispatch::FmvTable::from_str_overlay</code> decodes the table from the PROT 0970 entry bytes; <code>entry(fmv_id)</code> gives the movie path and frame range, and <code>engine_path()</code> declines the dev slots whose files are not on the disc. The player builds its decode rects in <code>legaia_mdec::str_player</code>.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <details class="disclosure"><summary>Evidence by claim</summary>
+  <div class="table-wrap"><table>
     <thead><tr><th>Subject</th><th>Evidence</th></tr></thead>
     <tbody>
       <tr><td>Selector: <code>fmv_id * 32</code> into the table</td><td><code>FUN_801CEA3C</code>, disasm <code>0x801CEC94..A4</code> (<code>lh</code> the global, <code>sll v0,v0,0x5</code>, <code>addu</code> onto <code>0x801D0A6C</code>)</td></tr>
       <tr><td>Dispatch-table stride + field layout</td><td>PROT 0970 disc bytes at base <code>0x801CE818</code> (<code>asset overlay ...</code>); byte-identical in the <code>overlay_str_fmv.bin</code> RAM capture</td></tr>
       <tr><td>Play-loop field reads</td><td><code>FUN_801CF098</code>; <code>funcs/str0970_801cf098.txt</code></td></tr>
-      <tr><td>Return-scene hand-offs (scene label + spawn word + mode)</td><td><code>FUN_801CEA3C</code>; <code>funcs/overlay_cutscene_str_0970_801cea3c.txt</code>; labels match <code>legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES</code></td></tr>
-      <tr><td>Per-scene trigger assignment</td><td>Field-VM disassembler walk over all 88 scene MANs; disc-gated <code>scene_fmv_triggers_disc</code></td></tr>
-      <tr><td><code>fmv_id 0..=8</code> retail range</td><td>Nine save states, one per id, each captured just before playback (<code>capture_observations::cutscene_trigger_corpus</code>; disc-gated <code>cutscene_trigger_corpus_pins_fmv_id_across_nine_saves</code>)</td></tr>
+      <tr><td>Return-scene hand-offs (scene label + spawn word + mode)</td><td><code>FUN_801CEA3C</code>; <code>funcs/overlay_cutscene_str_0970_801cea3c.txt</code></td></tr>
+      <tr><td>Per-scene trigger assignment</td><td>Field-VM disassembler walk over every scene MAN</td></tr>
+      <tr><td><code>fmv_id 0..=8</code> retail range</td><td>Nine save states, one per id, each captured just before playback </td></tr>
       <tr><td>Only two writers of the id global</td><td>Raw-byte scan of all 1233 PROT entries, every MIPS addressing form and alignment phase: the trigger-op handler and the title-attract tick; the debug menu writes it through a register-pointer editor, invisible to static scans</td></tr>
-      <tr><td>Table decode from disc</td><td><code>FmvTable::from_str_overlay</code>; disc-gated <code>fmv_dispatch_real</code></td></tr>
+      <tr><td>Table decode from disc</td><td><code>FmvTable::from_str_overlay</code> against the disc entry</td></tr>
       <tr><td>Directory-cache identification</td><td>Title-screen + FMV-overlay RAM captures; PSX-SPX libcd <code>CdlFILE</code> definition</td></tr>
     </tbody>
-  </table>
+  </table></div>
+  </details>
   <p>Full path-table offsets and the trigger-corpus save-state details are in the source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/str-fmv-table.md" target="_blank" rel="noopener"><code>docs/formats/str-fmv-table.md</code></a>.</p>
 </section>
 

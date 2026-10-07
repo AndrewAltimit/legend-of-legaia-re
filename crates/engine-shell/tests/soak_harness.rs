@@ -1831,7 +1831,7 @@ fn replay_text(
     let _ = writeln!(
         out,
         "# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell \
-         --profile release-test --test soak_harness soak_replay -- --nocapture"
+         --profile release-test --test integration soak_harness::soak_replay -- --nocapture"
     );
     out.push_str(&rf.to_toml_string().expect("serialise replay"));
     out

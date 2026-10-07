@@ -266,12 +266,9 @@ impl SceneHost {
                         // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
                         // kept so the director's same-track suppression
                         // compares what retail's `_DAT_8007BAB8` does.
-                        let bank_id = if text_id < super::GLOBAL_BGM_BASE {
-                            super::SCENE_LOCAL_BGM_FALLBACK_ID
-                        } else {
-                            text_id
-                        };
-                        if let Some(entry) = self.music_bank_entry_bytes(bank_id)? {
+                        if let Some(entry) =
+                            self.music_bank_entry_bytes(super::bgm_bank_id(text_id))?
+                        {
                             director.start_owned_vab(text_id, &entry);
                             acted += 1;
                         }

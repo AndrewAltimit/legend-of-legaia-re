@@ -6,7 +6,7 @@
 //! retail progression through the spine; each is loaded from `saves/library/`
 //! (pcsx-redux `.sstate` via [`legaia_pcsxr`], mednafen `.mcr` via
 //! [`legaia_mednafen`] through
-//! [`legaia_engine_shell::mode_trace_oracle::load_runtime_mode_trace_from_save`])
+//! [`legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save`])
 //! and its recorded scene / mode (/ position where the loader exposes it) is
 //! asserted. Present anchors are checked; absent ones skip. A `checked >= 1`
 //! guard keeps the part non-vacuous *when the library is there* - the part
@@ -54,9 +54,9 @@ use std::path::PathBuf;
 use legaia_engine_core::field_events::FieldEvent;
 use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::{Actor, SceneMode, World, WorldMapEntityConfig};
-use legaia_engine_shell::mode_trace_oracle::{ModeTraceFrame, load_runtime_mode_trace_from_save};
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_mednafen::ScenarioManifest;
+use legaia_parity::mode_trace_oracle::{ModeTraceFrame, load_runtime_mode_trace_from_save};
 
 // ---------------------------------------------------------------------
 // Discovery helpers

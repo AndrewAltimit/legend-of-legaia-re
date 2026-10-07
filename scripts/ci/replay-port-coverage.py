@@ -72,7 +72,7 @@ the page's per-frame read surface (`play_overlay_draws_json`, the menu / battle
 / fishing / dev-menu overlays, the screen-prim route, the battle 3D + FX
 exports). It is still pad-only - nothing is seated or poked - but its frames
 are composed, which is exactly the half of a rendering host the native window
-keeps locked in its `bin/` target.
+keeps behind a wgpu surface.
 
 So the headline number is the **union** across every `--json` given, and the
 per-source table below it reports what each ladder contributed and how much of
@@ -105,7 +105,8 @@ Usage:
     # differs per ladder ([`CANONICAL_LADDERS`] carries it): the engine-shell
     # ladders and the web-viewer composition ladder are different crates, and
     # `--test` links each crate's LIBRARY - which is why the web-viewer route
-    # can execute composition code the engine-shell `bin/` never exposes.
+    # can execute composition code the native window runs only behind a wgpu
+    # surface.
     # Clean first: the reader collapses duplicate spans keyed on the exact
     # (line_start, line_end), so a stale sibling binary left in `target/` can
     # shadow a fresh executed record with its own zero.
@@ -137,7 +138,7 @@ Usage:
     # the build artifacts in place so this is not 26 rebuilds.
     scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
         cargo llvm-cov clean --profraw-only
-        cargo llvm-cov -p "$pkg" --test "$t" --no-report
+        cargo llvm-cov -p "$pkg" --test integration --no-report "${t}::"
         cargo llvm-cov report --json --output-path "target/cov-$t.json"
     done
 
@@ -280,11 +281,11 @@ CANONICAL_LADDERS = [
     # `w5_native_minigame_ladder` runs `CARGO_BIN_EXE_legaia-engine
     # play-window` once per minigame and lets the inherited `LLVM_PROFILE_FILE`
     # merge each child's profile into this export. That is the same route the
-    # `mdec` ladder's fourth rung takes, and it is why "no `#[test]` can call
-    # into a `bin/` target" bounds *calls* and not coverage: the whole
-    # `crates/engine-shell/src/bin/legaia-engine/` tree - the HUD builders, the
-    # minigame side-channel tick, the field render pass - executes here and
-    # nowhere else in the union.
+    # `mdec` ladder's fourth rung takes: the native window
+    # (`crates/engine-shell/src/window/`) - the HUD builders, the minigame
+    # side-channel tick, the field render pass - is library code a test could
+    # link, but it needs a wgpu surface, so it executes here, through the
+    # spawned binary, and nowhere else in the union.
     #
     # What made the cluster reachable at all is a CLI channel rather than a
     # file move: `--pad-script` writes a pad word and the window's keyboard
@@ -311,7 +312,7 @@ CANONICAL_LADDERS = [
     #
     #     cargo llvm-cov clean --workspace
     #     cargo llvm-cov -p legaia-engine-shell \
-    #         --test w5_native_minigame_ladder --no-report -- --test-threads=1
+    #         --test integration w5_native_minigame_ladder:: --no-report -- --test-threads=1
     #     cargo llvm-cov report --json \
     #         --output-path target/cov-w5_native_minigame_ladder.json
     #

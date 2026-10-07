@@ -16,11 +16,13 @@ straight out of a `.bin` image; `--extracted-root <dir>` reads the output of
 
 The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
 
-- [`BootSession`](src/boot.rs) / `BootConfig` - the boot flow. Opens the
+- [`BootSession`](../engine-session/src/boot.rs) / `BootConfig` - the boot flow
+  (defined in `legaia-engine-session`, re-exported here over the cpal output). Opens the
   PROT + CDNAME map, loads a starting scene (`town01` by default), uploads
   the scene's primary VAB to the SPU, then drives world + camera + event
   routing each frame. Mirrors the retail boot sequence.
-- [`AudioBgmDirector`](src/bgm.rs) - concrete
+- [`AudioBgmDirector`](../engine-session/src/bgm.rs) - (defined in
+  `legaia-engine-session`, generic over the audio output) the
   `legaia_engine_core::scene::BgmDirector` that parses the SEQ bytes the
   field VM resolves through the BGM table, builds a sequencer, and feeds a
   cpal-backed audio output. Field-VM op `0x35` (BGM start) routes here.
@@ -30,10 +32,6 @@ The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
   (pad-transition capture + deterministic playback).
 - [`scenarios`](src/scenarios.rs) - the engine integration-scenario manifest
   runner (boot a scenario headlessly, assert the SHA-256 of its `SaveFile`).
-- [`retail_compare`](src/retail_compare.rs) (+ `retail_compare_battle`,
-  `retail_compare_image`, `retail_compare_cli`) - the retail comparison
-  corpus behind `legaia-engine retail-compare`
-  ([`docs/tooling/retail-compare.md`](../../docs/tooling/retail-compare.md)).
 - [`tile_board_draws`](src/tile_board_draws.rs) - re-export of the
   tile-board draw assembly, which lives in `legaia_engine_core::tile_board`
   so the browser play page reaches it too.
@@ -42,33 +40,10 @@ The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
 
 ### Parity oracles
 
-These modules implement the "engine vs. retail" comparison harnesses. Each
-boots the engine on a scene, samples a per-frame trace, and (in scenario
-mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
-
-- [`vram_oracle`](src/vram_oracle.rs) - software-VRAM bytes vs. a runtime
-  VRAM dump (per-tile overlap + texpage-region byte-exactness).
-- [`mode_trace_oracle`](src/mode_trace_oracle.rs) - `(scene_mode,
-  active_scene)` per frame.
-- [`audio_trace_oracle`](src/audio_trace_oracle.rs) - `(voice_mask,
-  voices[24], master_volume)` per frame, vs. the SPU section.
-- [`pcm_oracle`](src/pcm_oracle.rs) - rendered stereo PCM windows from both
-  sides (the I2 sibling of the audio trace).
-
-Both audio oracles take the same cold scene-entry sequence the playable hosts
-take - free-roam story staging, then `enter_field_live`, then a director that
-implements the global-pool start hook - because each of those three is on its
-own enough to leave the trace silent. What that silence is *not* evidence of,
-and why `converged` on a `.mc` comparand is a statement about the comparand
-rather than about playback, is in
-[`docs/subsystems/audio.md`](../../docs/subsystems/audio.md#why-converged-is-not-the-audio-oracles-fidelity-measure).
-The assertion the `.mc` axis does carry is the floor: where retail had voices,
-the engine's own mask must be non-empty.
-- [`sim_trace`](src/sim_trace.rs) - the engine side of the frame-tagged
-  differential against the static recomp: per-frame simulation channels in
-  **retail** units (PSX 12-bit angles, retail world units), so
-  `scripts/recomp/trace_diff.py` can align the two timelines. See
-  [`docs/tooling/recomp-differential.md`](../../docs/tooling/recomp-differential.md).
+The "engine vs. retail" harnesses the trace subcommands drive - the VRAM,
+mode, audio and PCM oracles, the recomp differential's `sim_trace`, and the
+retail comparison corpus - live in
+[`legaia-parity`](../parity/README.md).
 
 ## Binary: `legaia-engine`
 
@@ -162,8 +137,15 @@ randomizer's swaps, keyed to the shop you're standing in.
 
 ### Binary source layout
 
-The binary is split into modules under `src/bin/legaia-engine/` (the crate
-root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
+The native window is library code: [`window`](src/window.rs) + `src/window/`
+holds the winit + wgpu drivers - the `play-window` / `record` engine viewer
+(`PlayWindowApp`, its `event_handler/` for input and the redraw passes, and
+per-screen modules such as `battle`, `hud`, `minigames`, `screens`) and
+the `play-str` movie player (`str_player`), plus their geometry / asset
+helpers - and [`host_setup`](src/host_setup.rs) the session helpers it shares
+with the headless subcommands. The binary is split into modules under
+`src/bin/legaia-engine/` (the crate root `src/bin/legaia-engine.rs` keeps only
+`main` + the clap dispatch):
 
 - `cli.rs` - the clap `Cli` / `Cmd` / `ConfigCmd` definitions (the help text
   doubles as the user-facing per-subcommand docs).
@@ -171,12 +153,6 @@ root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
   (`info`, `run`, `replay`, `trace`, `vram`, `sessions`, `export_glb`: scene
   inspection, the oracle drivers, save/load, and the synthetic-session
   drivers).
-- `window.rs` + `window/` - the winit + wgpu drivers: the `play-window` /
-  `record` engine viewer (`PlayWindowApp`, its `event_handler/` for input and
-  the redraw passes, and per-screen modules such as `battle`, `hud`,
-  `minigames`, `shop_windows`) and the `play-str` movie player
-  (`str_player`), plus their geometry / asset helpers.
-- `shared.rs` - helpers both halves use.
 - `launcher_window.rs` - the no-subcommand launcher's picker window (engine
   text overlay + `rfd` native file dialog). Its settings / validation /
   decision logic is the library module `launcher` (`src/launcher.rs`), unit

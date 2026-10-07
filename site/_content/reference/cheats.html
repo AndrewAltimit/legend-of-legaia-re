@@ -31,33 +31,13 @@
 <section class="doc-section" id="format">
   <h2>How a code is encoded</h2>
   <p>A code is eight hex digits of address and four of value. The high byte of the "address" is not an address at all - it is the <strong>operation prefix</strong> that says what kind of write (or condition) the cartridge performs.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 720 150" width="100%" style="max-width:720px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A GameShark code split into its prefix byte, 24-bit RAM offset and 16-bit value">
-      <style>
-        .gs-box { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
-        .gs-pre { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.6; }
-        .gs-t { font: 600 14px 'JetBrains Mono', monospace; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .gs-s { font: 12px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
-        .gs-a { font: 12px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; dominant-baseline: middle; }
-      </style>
-      <text x="360" y="18" class="gs-s">example code: 8 0 0 8 4 8 1 6   0 0 6 4</text>
-      <rect x="20" y="40" width="120" height="48" class="gs-pre"/>
-      <text x="80" y="58" class="gs-t">80</text>
-      <text x="80" y="76" class="gs-s">prefix (1 byte)</text>
-      <rect x="140" y="40" width="330" height="48" class="gs-box"/>
-      <text x="305" y="58" class="gs-t">084816</text>
-      <text x="305" y="76" class="gs-s">RAM offset, 24 bits - address is 0x80000000 + offset</text>
-      <rect x="490" y="40" width="210" height="48" class="gs-box"/>
-      <text x="595" y="58" class="gs-t">0064</text>
-      <text x="595" y="76" class="gs-s">value (16 bits)</text>
-      <text x="80" y="112" class="gs-a">80 = write u16</text>
-      <text x="80" y="130" class="gs-a">30 = write u8</text>
-      <text x="305" y="112" class="gs-a">D0 = run next line if mem16 == value</text>
-      <text x="305" y="130" class="gs-a">E0 = run next line if mem16 != value</text>
-      <text x="595" y="112" class="gs-s">mem16[0x80084816] = 0x0064</text>
-      <text x="595" y="130" class="gs-s">("100 AP")</text>
-    </svg>
-    <figcaption>One 12-digit code: prefix, 24-bit offset, 16-bit value. Conditional prefixes gate the <em>next</em> line - that is how "press Select to activate" cheats work.</figcaption>
+  <figure class="diagram">
+    <div class="byte-map" role="img" aria-label="The code 80084816 0064 split into a one-byte prefix 80, a 24-bit RAM offset 084816 and a 16-bit value 0064">
+      <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">prefix</span><span class="bm-name">80</span><span class="bm-size">u8 op</span></div>
+      <div class="bm-cell" style="--w:3"><span class="bm-off">RAM offset</span><span class="bm-name">084816</span><span class="bm-size">24 bits - address 0x80084816</span></div>
+      <div class="bm-cell" style="--w:2"><span class="bm-off">value</span><span class="bm-name">0064</span><span class="bm-size">u16</span></div>
+    </div>
+    <figcaption>The code <code>80084816 0064</code>: write the 16-bit value <code>0x0064</code> (100) to <code>0x80084816</code>. Conditional prefixes (<code>D0</code>, <code>E0</code>) gate the <em>next</em> line - that is how "press Select to activate" cheats work.</figcaption>
   </figure>
   <table class="layout">
     <thead><tr><th>Prefix</th><th>Operation</th><th>Example</th></tr></thead>
@@ -128,7 +108,7 @@
       <tr><td>ScriptVmGlobal</td><td><code>0x8007B450..0x8007B83C</code></td><td>Menu-request, encounter counter, save-anywhere, pad and next-game-mode registers (table below)</td></tr>
       <tr><td>CameraGlobal</td><td><code>0x8007B6F4</code></td><td>Camera mode word ("Control Camera", "Small Maps")</td></tr>
       <tr><td>WorldStoryFlag</td><td><code>0x80085600..0x80085800</code></td><td>Story-flag block. No shipped cheat lands here; the Door-of-Wind bitmask at <code>0x8008575C / 5E</code> is claimed first by the script-VM arm (classifier ordering, not a fact about the cheat)</td></tr>
-      <tr><td>Minigame</td><td><code>0x801D3CAC..0x801DC06C</code></td><td>Minigame scratch - fishing tension / cast power / life / fish id at <code>0x801D9168 / 9274 / 9298 / 91CC</code>, Baka Fighter <code>0x801DBFC4 / BFF0 / C06C</code>, dance points <code>0x801D53CC</code>, slot machine <code>0x801D3CAC</code>. Citations only; the engine's minigame ports do not consume them</td></tr>
+      <tr><td>Minigame</td><td><code>0x801D3CAC..0x801DC06C</code></td><td>Minigame scratch - fishing tension / cast power / life / fish id at <code>0x801D9168 / 9274 / 9298 / 91CC</code>, Baka Fighter <code>0x801DBFC4 / BFF0 / C06C</code>, dance points <code>0x801D53CC</code>, slot machine <code>0x801D3CAC</code></td></tr>
       <tr><td>FieldVmCollision</td><td><code>0x801D065C / 06BC / 071C / 078C</code></td><td>"Walk Thru Walls": four 1-byte gates in the field overlay; <code>0x06</code> in all four disables the collision check</td></tr>
       <tr><td>ScratchActiveActor</td><td><code>0x8007A6BC</code></td><td>Scratch for the currently-acting character; every "Infinite HP / MP" hits it first, then the per-record copy</td></tr>
       <tr><td>CodePatch</td><td>four sites</td><td>Cheats that patch instructions, not data (table below)</td></tr>
@@ -177,7 +157,7 @@
 <section class="doc-section" id="applier">
   <h2>Runtime applier</h2>
   <p><code>legaia-engine play-window --cheat-file &lt;PATH&gt;</code> applies every entry <strong>once at boot</strong>, routing each write through the <code>ram_map</code> registry to the matching <code>World</code> / <code>CharacterRecord</code> field. Conditional lines count as always-true unless <code>--cheat-strict</code> is given (which then skips every button-gated cheat, since the engine does not emulate the pad register).</p>
-  <pre><code>Cheat report (49 entries, 96 writes; 71 applied, 25 unmapped, 0 unknown):
+  <pre><code>Cheat report (N entries, M writes; A applied, U unmapped, 0 unknown):
   ok    Infinite HP (Vahn)............... 4/4 writes
   ok    Infinite Gold (Never Glitchy).... 1/1 writes
   skip  Walk Thru Walls.................. 0/4 writes</code></pre>

@@ -44,7 +44,7 @@ impl LegaiaRuntime {
     /// The live slot session on the scene host's world.
     fn slot_session(&self) -> Option<&SlotMachine> {
         self.scene_host
-            .as_ref()?
+            .host()?
             .world
             .minigames
             .slot_machine

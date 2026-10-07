@@ -24,37 +24,35 @@
 
 <section class="doc-section" id="overview">
   <h2>How a move is found</h2>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Script asks for a move</span><span class="desc">The field VM's <code>0x22 EXEC_MOVE</code> hands an actor a <code>move_id</code>.</span><span class="crate"><a href="../subsystems/script-vm.html">script VM</a></span>
-    <span class="num">2</span><span class="layer">Pick a buffer</span><span class="desc">Actor flag <code>0x01000000</code> set &rarr; alternate base <code>_DAT_8007B75C</code>; else <code>MOVE</code> for ids <code>&lt; 0x400</code>, <code>MOVE2</code> for <code>&gt;= 0x400</code>.</span><span class="crate"><code>FUN_800204F8</code></span>
-    <span class="num">3</span><span class="layer">Offset table</span><span class="desc"><code>offset_table[move_id &amp; 0x3FF]</code>; zero means "no record for this id".</span><span class="crate"><code>crates/mdt</code></span>
-    <span class="num">4</span><span class="layer">Record header</span><span class="desc">Clamp the playhead, pick the frame divisor, find the per-frame data.</span><span class="crate"><a href="#layout-the-consumer-reads">layout</a></span>
-    <span class="num">5</span><span class="layer">Run the bytecode</span><span class="desc">The per-frame data is move-VM bytecode walked by the 71-opcode dispatcher.</span><span class="crate"><a href="../subsystems/move-vm.html">move VM</a></span>
-  </div>
+  <ol class="steps">
+    <li><b>Script asks for a move</b><span>The field VM's <code>0x22 EXEC_MOVE</code> hands an actor a <code>move_id</code> (<a href="../subsystems/script-vm.html">script VM</a>).</span></li>
+    <li><b>Pick a buffer</b><span>Actor flag <code>0x01000000</code> set &rarr; alternate base <code>_DAT_8007B75C</code>; else <code>MOVE</code> for ids <code>&lt; 0x400</code>, <code>MOVE2</code> for <code>&gt;= 0x400</code>.</span></li>
+    <li><b>Offset table</b><span><code>offset_table[move_id &amp; 0x3FF]</code>; zero means "no record for this id".</span></li>
+    <li><b>Record header</b><span>Clamp the playhead, pick the frame divisor, find the per-frame data (<a href="#layout-the-consumer-reads">layout</a>).</span></li>
+    <li><b>Run the bytecode</b><span>The per-frame data is walked by the 71-opcode <a href="../subsystems/move-vm.html">move VM</a>.</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="layout-the-consumer-reads">
   <h2>Layout the consumer reads</h2>
   <p>The buffer starts with a fixed-size offset table indexed by the low 10 bits of the move id:</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x000</code></td><td>4 &times; 1024</td><td><code>offset_table[]</code></td><td>Indexed by <code>move_id &amp; 0x3FF</code>. <code>0</code> = no record; otherwise a byte offset into the buffer</td></tr>
-      <tr><td><code>offset_table[id]</code></td><td>varies</td><td>record</td><td>One record per used id (below)</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map" role="img" aria-label="Move buffer: 1024 u32 offsets, then the records">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x000</span><span class="bm-name">offset_table[1024] - index <code>move_id &amp; 0x3FF</code>; 0 = no record, else a byte offset into the buffer</span><span class="bm-size">u32 &times; 1024</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x1000</span><span class="bm-name">records, one per used id</span><span class="bm-size">varies</span></div>
+  </div>
   <p>Each record:</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>1</td><td>reserved</td><td>-</td></tr>
-      <tr><td><code>+0x01</code></td><td>1</td><td><code>flags</code></td><td>Bit 0 = "use frame divisor"</td></tr>
-      <tr><td><code>+0x02</code></td><td>2</td><td><code>max_position_x16</code></td><td>Clamps the playhead at <code>(this * 16) - 1</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>2</td><td>reserved</td><td>-</td></tr>
-      <tr><td><code>+0x06</code></td><td>1</td><td><code>divisor</code></td><td>Only consulted when <code>flags &amp; 1</code></td></tr>
-      <tr><td><code>+0x07</code></td><td>~<code>max_position_x16 * 16</code></td><td>per-frame data</td><td>Move-VM bytecode</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map" role="img" aria-label="Move record header: reserved byte, flags, max position, reserved halfword, divisor, then per-frame bytecode">
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">reserved</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x01</span><span class="bm-name">flags</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x02</span><span class="bm-name">max_position_x16</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+0x04</span><span class="bm-name">reserved</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x06</span><span class="bm-name">divisor</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-dim" style="--w:6"><span class="bm-off">+0x07</span><span class="bm-name">per-frame data (move-VM bytecode)</span><span class="bm-size">~max_position_x16 &times; 16</span></div>
+  </div>
+  <ul class="bullets">
+    <li><code>flags</code> bit 0 = "use frame divisor"; <code>divisor</code> is consulted only when it is set.</li>
+    <li><code>max_position_x16</code> clamps the playhead at <code>(this * 16) - 1</code>.</li>
+  </ul>
   <p><code>FUN_800204F8</code> clamps <code>actor[0x68]</code> (the playhead) to <code>[0, max_position_x16 * 16)</code>,
   advances it by <code>actor[0x6A]</code> (frame delta) optionally divided by <code>record[6]</code>, and reads the per-frame
   data into the per-actor animation state. The same header shape drives <a href="anm.html#playback">ANM clip
@@ -67,15 +65,12 @@
   per-scene blocks.) The <code>MOVE</code> base is <strong>populated per scene</strong> during area transitions, not from a
   boot-time entry. Every scene block's second PROT entry - the one classified <code>scene_asset_table</code> - carries
   an <code>Asset(0x05) = Move</code> descriptor whose payload is that scene's runtime table.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td><code>count</code></td><td><code>7</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td><code>total_decompressed_size</code></td><td>Sum of the descriptors' decompressed sizes; never read by retail</td></tr>
-      <tr><td><code>+0x08</code></td><td>7 &times; 8</td><td>descriptors</td><td><code>(u32 type_size, u32 data_offset)</code> each; <code>descriptor[4].type_byte == 0x05</code> is the Move payload</td></tr>
-      <tr><td><code>data_offset</code></td><td><code>size</code></td><td>payload</td><td>Independently <a href="lzs.html">LZS</a>-compressed stream decompressing to exactly <code>size</code> bytes</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map" role="img" aria-label="Scene asset table header: count, total size, seven descriptors, payloads">
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">count = 7</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x04</span><span class="bm-name">total decompressed size (never read)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:5"><span class="bm-off">+0x08</span><span class="bm-name">7 &times; (u32 type_size, u32 data_offset); <code>descriptor[4]</code> type <code>0x05</code> = Move</span><span class="bm-size">7 &times; 8</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">data_offset</span><span class="bm-name">payloads, each its own <a href="lzs.html">LZS</a> stream decoding to exactly <code>size</code> bytes</span><span class="bm-size">varies</span></div>
+  </div>
   <p>Examples verified by mednafen save-state diff against <code>_DAT_8007B888</code>:</p>
   <table>
     <thead><tr><th>Scene block</th><th>Slot-1 PROT entry</th><th>Move size</th><th>Notes</th></tr></thead>
@@ -85,16 +80,15 @@
       <tr><td><code>map01</code> (85)</td><td><code>0086_map01.BIN</code></td><td><code>0x7E30</code> (32304)</td><td>Loaded at <code>0x8011A624</code> (every <code>map01</code>-resident save, incl. menu and battle states layered on it)</td></tr>
     </tbody>
   </table>
-  <p>The descriptor's <code>data_offset</code> is measured into the bundle entry's <strong>extended on-disc
-  footprint</strong> (<code>Archive::read_entry</code>). Several scenes' Move offsets fall past the TOC-indexed end into
-  trailing sectors, so readers must use the extended footprint (<code>ProtIndex::entry_bytes_extended</code>) rather than
-  <code>Archive::read_entry_indexed</code>; <code>engine-core::scene_bundle::extract_move_payload</code> is the canonical
-  pattern, and <code>scene_asset_table::move_descriptor</code> the typed slot accessor:</p>
+  <p>The descriptor's <code>data_offset</code> is measured from the start of the bundle entry, and the payload lies
+  inside that entry's own sectors (an entry's size is the <a href="prot.html">sector gap to the next TOC entry</a>).
+  In the port, <code>engine-core::scene_bundle::extract_move_payload</code> slices and decodes it, and
+  <code>scene_asset_table::move_descriptor</code> is the typed slot accessor:</p>
 <pre><code>let s = legaia_asset::scene_asset_table::detect(&amp;prot_bytes)?;
 let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
-  <p>The <code>MOVE2</code> base (<code>_DAT_8007B840</code>) is zero across every observed save state, suggesting only a few
-  scenes populate an alternate table; the analogous "Move2" descriptor type in <a
-  href="scene-bundles.html"><code>scene_scripted_asset_table</code></a> has not been observed in the corpus.</p>
+  <p>The <code>MOVE2</code> base (<code>_DAT_8007B840</code>) is zero across every observed save state, and no Move2 payload has been observed in a retail
+  <a href="scene-bundles.html">scene bundle</a> - the alternate table is rare or unused. (The <code>scene_scripted_asset_table</code>
+  that once looked like its carrier was an entry-size over-read; see <a href="prot.html">PROT.DAT</a>.)</p>
 </section>
 
 <section class="doc-section" id="cdname-mismatch">
@@ -131,6 +125,9 @@ let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Consumer disassembly and save-state evidence</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -140,6 +137,8 @@ let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
       <tr><td>MOVE2 base</td><td><code>_DAT_8007B840</code></td><td>Zero across every observed save state - the alternate table is rare or unused</td><td>save-state corpus</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="cli">

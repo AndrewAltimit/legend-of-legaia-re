@@ -26,45 +26,21 @@
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dfc-title">
-      <title id="dfc-title">A DATA_FIELD stream: a chain of 4-byte type-and-size headers each followed by raw data, ended by a header whose low 24 bits are zero</title>
-      <style>
-        .dfc-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .dfc-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .dfc-lab  { font: 12px 'Inter', sans-serif; fill: currentColor; }
-        .dfc-sub  { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); }
-        .dfc-off  { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); }
-        .dfc-arr  { fill: none; stroke: var(--accent); stroke-width: 1.2; }
-      </style>
-      <text x="20" y="22" class="dfc-off">+0</text>
-      <rect x="20" y="30" width="70" height="44" class="dfc-box"/>
-      <text x="26" y="50" class="dfc-lab">hdr</text>
-      <text x="26" y="66" class="dfc-sub">type|size</text>
-      <rect x="90" y="30" width="200" height="44" class="dfc-soft"/>
-      <text x="96" y="50" class="dfc-lab">chunk 0 data (e.g. TIM)</text>
-      <text x="96" y="66" class="dfc-sub">size bytes</text>
-      <text x="290" y="22" class="dfc-off">+4+(size&amp;~3)</text>
-      <rect x="290" y="30" width="70" height="44" class="dfc-box"/>
-      <text x="296" y="50" class="dfc-lab">hdr</text>
-      <text x="296" y="66" class="dfc-sub">type|size</text>
-      <rect x="360" y="30" width="200" height="44" class="dfc-soft"/>
-      <text x="366" y="50" class="dfc-lab">chunk 1 data (e.g. TMD2)</text>
-      <text x="366" y="66" class="dfc-sub">size bytes</text>
-      <rect x="560" y="30" width="60" height="44" class="dfc-soft"/>
-      <text x="576" y="56" class="dfc-lab">...</text>
-      <rect x="620" y="30" width="110" height="44" class="dfc-box"/>
-      <text x="626" y="50" class="dfc-lab">terminator</text>
-      <text x="626" y="66" class="dfc-sub">low 24 bits = 0</text>
-      <rect x="730" y="30" width="130" height="44" class="dfc-soft"/>
-      <text x="736" y="50" class="dfc-lab">trailer</text>
-      <text x="736" y="66" class="dfc-sub">optional, unparsed</text>
-      <path d="M 55 80 L 55 100 L 325 100 L 325 80" class="dfc-arr"/>
-      <text x="120" y="122" class="dfc-sub">next header = this header + 4 + (size &amp; ~3)</text>
-      <text x="560" y="122" class="dfc-sub">header u32 = (type &lt;&lt; 24) | (size &amp; 0x00FFFFFF)</text>
-    </svg>
-    <figcaption>The chunk chain. Every chunk is self-describing through its header; the walker never needs a count up front.</figcaption>
-  </figure>
+  <p>A stream is a chain of chunks with no count up front - each header says how far to the next one:</p>
+  <div class="byte-map" role="img" aria-label="A DATA_FIELD stream: header, chunk 0 data, header, chunk 1 data, more chunks, a terminator header whose low 24 bits are zero, then an optional unparsed trailer">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0</span><span class="bm-name">hdr</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:6"><span class="bm-off">+4</span><span class="bm-name">chunk 0 data (e.g. TIM)</span><span class="bm-size">size bytes</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+4+(size&amp;~3)</span><span class="bm-name">hdr</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:6"><span class="bm-off">&hellip;</span><span class="bm-name">chunk 1 data (e.g. TMD2)</span><span class="bm-size">size bytes</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">&hellip;</span><span class="bm-name">more chunks</span><span class="bm-size"></span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">last</span><span class="bm-name">terminator</span><span class="bm-size">low 24 bits = 0</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">after</span><span class="bm-name">trailer</span><span class="bm-size">optional, unparsed</span></div>
+  </div>
+  <p>Every header is the dispatcher's own packed word, stored little-endian:</p>
+  <div class="byte-map" role="img" aria-label="Chunk header: three size bytes then the type byte">
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">size (low 24 bits)</span><span class="bm-size">u24</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">type</span><span class="bm-size">u8</span></div>
+  </div>
   <table>
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -81,10 +57,12 @@
   <p><code>asset scan-stream</code> strict-validates 34 PROT entries (class <code>data_field_streaming</code>), in two families.</p>
   <h3 id="character-effect-streams">Character / effect streams</h3>
   <p>The <code>other5</code> run, entries 1204..1219. The common shape is three single-asset chunks:</p>
-<pre><code>chunk[0]: TIM   (single, magic 0x10)        - sprite atlas / texture
-chunk[1]: TMD2  (single, magic 0x80000002)  - single Legaia TMD
-chunk[2]: MOVE2 (single, magic 0x08)        - animation data
-terminator</code></pre>
+<div class="byte-map" role="img" aria-label="Typical other5 entry: a TIM chunk, a TMD2 chunk, a MOVE2 chunk, then the terminator">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">chunk 0</span><span class="bm-name">TIM - sprite atlas / texture</span><span class="bm-size">type 0x00 &middot; magic 0x10</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">chunk 1</span><span class="bm-name">TMD2 - one Legaia TMD</span><span class="bm-size">type 0x09 &middot; magic 0x80000002</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">chunk 2</span><span class="bm-name">MOVE2 - animation data</span><span class="bm-size">type 0x0B &middot; magic 0x08</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">end</span><span class="bm-name">terminator</span><span class="bm-size">u32</span></div>
+  </div>
   <p>The two heads of the run are homogeneous instead: <code>1204</code> is five <code>TMD2</code> chunks (the battle-form party meshes used by the Baka Fighter minigame and as the default-equipment sibling pack - the in-battle player meshes themselves are assembled from the <a href="battle-data-pack.html"><code>PLAYER1..4</code> files</a>) and <code>1205</code> is eight <code>TIM</code> chunks of <code>0x8220</code> bytes each (their atlases) - which is what makes the atlas stride <code>0x8224</code>, chunk header included.</p>
   <h3 id="scene-bundles">Scene bundles</h3>
   <p><code>MAN / MES / MOVE / VDF</code>, four chunks (<code>dolk2</code>, <code>rikuroa</code>, <code>rikuroa2</code>, <code>rayman</code>, <code>station</code>, <code>taiku</code>, <code>taiku2</code>, <code>doman</code>, <code>nilboa2</code>, <code>edbalden</code>, <code>eddoman</code>). Shorter variants drop the trailing <code>VDF</code> (<code>balden2</code>, <code>ropeway2</code>) or lead with a bare <code>TMD</code> where a <code>MAN</code> would sit (<code>balden</code>, <code>bubu1</code>, <code>edbubu</code>). Two entries are neither family: <code>init_data</code> is <code>TIM_LIST + TMD</code>, and <code>0890_sound_data2</code> is two <code>TIM</code>s.</p>
@@ -93,7 +71,7 @@ terminator</code></pre>
 
 <section class="doc-section" id="trailer-data">
   <h2>Trailer data</h2>
-  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. The function that consumes the trailer has not been located; tracing the caller of <code>FUN_8002541C</code> in the field/town overlay is the next move if a specific entry's trailer looks structured.</p>
+  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. No consumer of the trailer is known: the walker stops at the terminator, and nothing located so far reads past it.</p>
 </section>
 
 <section class="doc-section" id="related-shapes">
@@ -144,14 +122,14 @@ terminator</code></pre>
 </section>
 
 <section class="doc-section" id="per-scene-field-bundles-what-s-still-open">
-  <h2>Per-scene field bundles - what's still open</h2>
-  <p>The CDNAME block for a typical field/town scene (e.g. <code>town01</code>, <code>bubu1</code>) carries 8-12 PROT entries. Categorize (the sweep that classifies every archive entry by format) identifies several known shapes per block. Slots below are in the retail block frame (see <a href="cdname.html#numbering-space">CDNAME &sect; numbering space</a>): slot 0 is the scene's <code>.MAP</code> and slot 1 its v12 trigger sidecar, which is why the classes below start one or two slots later than a naive count.</p>
+  <h2>Per-scene field bundles</h2>
+  <p>The CDNAME block for a typical field/town scene (e.g. <code>town01</code>, <code>bubu1</code>) carries 8-12 PROT entries. Categorize (the sweep that classifies every archive entry by format) identifies several known shapes per block. In the retail block frame (see <a href="cdname.html#numbering-space">CDNAME &sect; numbering space</a>) the head of every scene block is fixed: slot 0 the scene's <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md" target="_blank" rel="noopener"><code>.MAP</code></a>, slot 1 its <a href="scene-v12-table.html">v12 trigger sidecar</a>, slot 2 the event prescript, slot 3 the <a href="scene-bundles.html">scene asset table</a>. The table below is the categorize sweep's per-class view, whose slot columns predate that frame and are approximate.</p>
   <table>
     <thead><tr><th>Common slot</th><th>Class</th><th>Typical content</th></tr></thead>
     <tbody>
       <tr><td>0 / 1</td><td><code>SceneTmdStream</code> or <code>TmdSizePrefix</code></td><td>scene mesh (room geometry)</td></tr>
       <tr><td>1 / 2</td><td><code>Pack</code> (TIM-pack)</td><td>scene textures / sprite atlas</td></tr>
-      <tr><td>2 / 3</td><td><code>SceneEventScripts</code></td><td>per-event field-VM bytecode (the event-script prescript)</td></tr>
+      <tr><td>2 / 3</td><td><code>SceneEventScripts</code></td><td>per-scene move-VM stager records (not field-VM bytecode)</td></tr>
       <tr><td>3 / 4</td><td><code>MesContainer</code></td><td>dialog text</td></tr>
       <tr><td>4 / 5</td><td><code>Pack</code> (ANM-pack)</td><td>per-actor animation sets</td></tr>
       <tr><td>5..7</td><td><code>PochiFiller</code></td><td>reserved-but-unused dev fillers (one sector each)</td></tr>
@@ -163,7 +141,11 @@ terminator</code></pre>
     <li>Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in <a href="../subsystems/asset-loader.html">asset loader</a> is best-effort).</li>
     <li>Which function consumes the post-terminator trailer bytes.</li>
   </ul>
-  <p>Two long-standing entries on that list are closed, and both closed by shrinking rather than by new machinery. The
+  <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
+  <details class="disclosure">
+    <summary>History: the field-pack schema, the asset-table indirection and the "scripted asset table" class</summary>
+    <div class="disclosure-body">
+  <p>Two long-standing open items closed, and both closed by shrinking rather than by new machinery. The
   <a href="field-pack.html">field-pack</a> "slot semantics" were this page's own chunk format plus the
   <a href="pack.html">pack</a> format: the <code>0x01059B84</code> "magic" is a
   <code>(TIM_LIST &lt;&lt; 24) | size</code> chunk header and the "97-entry schema" is that chunk's
@@ -171,10 +153,7 @@ terminator</code></pre>
   <a href="prot.html">entry size</a>. And the per-scene asset-table indirection needs no capture: the walk is
   positional, and <code>+0x04</code> of the header is the sum of the descriptor sizes - see
   <a href="scene-bundles.html">scene bundles</a>.</p>
-  <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
-  <details class="disclosure">
-    <summary>History: the "scripted asset table" class</summary>
-    <div class="disclosure-body">
+
       <p>A <code>SceneScriptedAssetTable</code> class - a descriptor table found at a sector-aligned offset inside an entry that led with an event prescript - was an artefact of the over-read entry size: every such offset was the next entry's start LBA, i.e. the neighbour's ordinary offset-0 table. Read against their own sectors, the prescript entries classify as event scripts and the 88 bare asset tables stay where they are. See <a href="prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">PROT TOC &sect; history of the over-read</a>.</p>
     </div>
   </details>
@@ -182,6 +161,9 @@ terminator</code></pre>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the consumer, the dispatcher hand-off, the corpus sweep</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Evidence</th><th>Address / test</th><th>What it proves</th></tr></thead>
     <tbody>
@@ -190,6 +172,9 @@ terminator</code></pre>
       <tr><td>Corpus sweep</td><td><code>asset scan-stream</code> strict validation</td><td>The 34-entry census and the two family shapes above.</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/data-field.md" target="_blank" rel="noopener"><code>docs/formats/data-field.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

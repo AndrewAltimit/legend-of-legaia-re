@@ -1480,7 +1480,7 @@ Muscle Dome Master legs field Vahn, Noa and Gala, performing the retail
 Delilas movesets (the streams pose parts by index, so a same-part-count
 model inherits every move - the same law `monster-model` replacement rides).
 
-Mechanics of the swap (`legaia_asset::party_swap`): both pose systems use
+Mechanics of the swap (`legaia_patcher::party_swap`): both pose systems use
 flat per-part rigid transforms addressed by part index, and both texture
 systems are 4bpp indices + 16-colour CLUTs, so the swap is an anatomy
 permutation (players order bones `torso, pelvis, head, arms, legs`; every
@@ -1955,7 +1955,7 @@ The mirror's two remaining halves are closed by their own passes.
 
 The Delilas **field forms** in `nilboa` are scene-resident: MAN placements
 carry `model = 106/107/108`, pack-member indices into PROT entry `0639`.
-The scene mirror (`legaia_asset::party_swap::nivora_field::heroize_nilboa`
+The scene mirror (`legaia_patcher::party_swap::nivora_field::heroize_nilboa`
 via `legaia_patcher::nivora_field`) rebuilds those three members as the
 mapped heroes' field rigs, pivot-baked onto the siblings' scene-idle rest
 frames so the scene's own ANM records pose them, and repaints the three
@@ -2305,7 +2305,7 @@ sibling's. `hybrid` is the default and is exactly the behaviour above:
 every art keeps the animation retail authored for it, and only the one
 reskinned Hyper plays a Delilas motion. `delilas` re-authors the rest of
 the kit (`delilas_party::apply_delilas_moveset` +
-`legaia_asset::party_swap::moveset`).
+`legaia_patcher::party_swap::moveset`).
 
 **The archive is rebuilt, not extended.** A character's art streams live
 in one `0x10800`-byte `readef.DAT` slot, and retail fills most of it: the

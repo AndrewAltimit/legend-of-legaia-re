@@ -26,7 +26,7 @@
 //! Coverage export (what wires this into the reach report):
 //!
 //! ```text
-//! cargo llvm-cov -p legaia-engine-shell --test w1c_arts_swing_ladder \
+//! cargo llvm-cov -p legaia-engine-shell --test integration w1c_arts_swing_ladder:: \
 //!     --json --output-path target/cov-w1c_arts_swing_ladder.json
 //! ```
 //!

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use legaia_engine_shell::BootSession;
 use legaia_engine_shell::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::retail_compare::{enumerate_corpus, read_retail, resolve_dirs};
+use legaia_parity::retail_compare::{enumerate_corpus, read_retail, resolve_dirs};
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

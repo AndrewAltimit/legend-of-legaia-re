@@ -6,17 +6,17 @@
 //! mednafen save, this test:
 //!
 //!   1. Renders a retail-side reference PCM window via
-//!      [`legaia_engine_shell::pcm_oracle::retail_reference_pcm`]: lifts
+//!      [`legaia_parity::pcm_oracle::retail_reference_pcm`]: lifts
 //!      the save's SPU section through
-//!      [`legaia_engine_shell::pcm_oracle::engine_spu_from_retail`] and
+//!      [`legaia_parity::pcm_oracle::engine_spu_from_retail`] and
 //!      ticks the engine mixer for [`SAMPLES_PER_CHANNEL`] stereo
 //!      samples.
 //!   2. Boots a headless engine in parallel via
-//!      [`legaia_engine_shell::pcm_oracle::build_engine_pcm_trace`] for
+//!      [`legaia_parity::pcm_oracle::build_engine_pcm_trace`] for
 //!      [`FRAMES`] engine frames, routing field-VM op `0x35` BGM events
 //!      through a private [`TraceBgmDirector`]. The trace produces an
 //!      interleaved L,R PCM buffer covering the boot window.
-//!   3. Compares [`legaia_engine_shell::pcm_oracle::pcm_stats`] between
+//!   3. Compares [`legaia_parity::pcm_oracle::pcm_stats`] between
 //!      the two windows. Hard-fails only on a single condition: retail
 //!      had audibly non-zero output while the engine produced complete
 //!      silence over its entire trace window. Anything else - amplitude
@@ -37,11 +37,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_shell::audio_trace_oracle::AudioTraceBuildOptions;
-use legaia_engine_shell::pcm_oracle::{
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::audio_trace_oracle::AudioTraceBuildOptions;
+use legaia_parity::pcm_oracle::{
     SPU_SAMPLE_RATE, build_engine_pcm_trace, pcm_stats, retail_reference_pcm,
 };
-use legaia_mednafen::ScenarioManifest;
 
 /// How many engine frames to tick before sampling. One retail second at
 /// 60 Hz, matching the audio-trace oracle's window.

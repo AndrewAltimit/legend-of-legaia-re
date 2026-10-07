@@ -905,7 +905,7 @@ The title-tick body reaches into three SCUS-side helpers to emit GPU primitives.
 
 ### State struct (extended)
 
-Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` reached via *negative* displacements off the same `lui 0x801f`.
+Base `0x801F0000` (the `a0` arg), inside PROT 0899's own image extent (`0x801CE818..0x801F3817`), so it is menu-overlay data that the next slot-A load overwrites. Sibling region at `0x801EF014..0x801EF200` reached via *negative* displacements off the same `lui 0x801f`.
 
 | Address | Off | Use |
 |---|---|---|

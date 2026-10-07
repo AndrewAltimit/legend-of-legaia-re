@@ -1,5 +1,7 @@
 //! `LegaiaAudio` WASM bindings for site/media.html.
 use super::*;
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 
 #[wasm_bindgen]
 impl LegaiaAudio {

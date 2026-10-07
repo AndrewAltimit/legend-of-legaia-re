@@ -51,7 +51,7 @@
 //!
 //! ```text
 //! cargo llvm-cov clean --profraw-only
-//! cargo llvm-cov -p legaia-web-viewer --test play_compose_ladder --no-report
+//! cargo llvm-cov -p legaia-web-viewer --test integration play_compose_ladder:: --no-report
 //! cargo llvm-cov report --json \
 //!     --output-path target/cov-play_compose_ladder.json
 //! ```

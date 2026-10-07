@@ -1,126 +1,146 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field locomotion</div>
   <h1>Field locomotion</h1>
-  <p class="lede">What happens, every frame, between holding a d-pad direction and Vahn taking a step in a town, a dungeon or on the overworld. The controller reads the pad relative to the camera, inches the player forward two units at a time against a per-scene wall grid, settles the height afterwards, and fires doors and story beats on the tile it lands on. <span class="tag tag-done">Ported byte-exact</span></p>
+  <p class="lede">What happens, every frame, between holding a d-pad direction and Vahn taking a step in a town, a dungeon or on the overworld. The controller reads the pad relative to the camera, inches the player forward two units at a time against a per-scene wall grid, settles the height afterwards, and fires doors and story beats on the tile it lands on.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Controller</dt><dd>One routine in the <strong>field overlay</strong> (PROT <code>0897</code>), shared by towns, dungeons and the overworld walk mode. Not the tile-board puzzle mode that shares the overlay.</dd>
-    <dt>Collision grid</dt><dd>Per-scene, one byte per 128-unit tile: high nibble = four sub-cell wall bits, low nibble = floor tier. Streamed from the scene's <code>.MAP</code> file at load; scripts paint story-conditional changes on top.</dd>
+    <dt>Controller</dt><dd><code>FUN_801D01B0</code> in the <strong>field overlay</strong> (PROT <code>0897</code>), shared by towns, dungeons and the overworld walk. Not the tile-board puzzle mode that shares the overlay.</dd>
+    <dt>Collision grid</dt><dd>Per scene, one byte per 128-unit tile: high nibble = four sub-cell wall bits, low nibble = floor tier. Streamed from the scene's <code>.MAP</code> file at load; scripts paint story-conditional changes on top.</dd>
     <dt>Speed</dt><dd>480 units (3.75 tiles) per second walking, 720 running - counted in vsyncs, so the same on a busy frame as an empty one.</dd>
     <dt>Height</dt><dd>A second controller after the walk: floor sampled from the grid's low nibble, or from per-tile ramp records; ledges trigger a scripted hop.</dd>
-    <dt>Engine</dt><dd><code>World::step_field_locomotion</code> (engine-core); retail-default collision (<code>--no-edge-collision</code> / <code>--no-solid-npcs</code> turn the three-probe edge and the actor boxes off), precise movement (<code>R</code>).</dd>
+    <dt>In the port</dt><dd><code>World::step_field_locomotion</code> (engine-core); collision is retail by default, precise free-angle movement is an opt-in enhancement (<a href="#engine-port">below</a>).</dd>
     <dt>Confidence</dt><dd>Confirmed - runtime write-watchpoints on the player position, wall-press captures, disassembly (<a href="#how-we-know">how we know</a>).</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="per-frame">
-  <h2>One frame of walking</h2>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Gate</span><span class="desc">skip everything if movement is disabled (encounter queued, cutscene owns the player) or the action button was just pressed</span><span class="crate">player +0x10</span>
-    <span class="num">2</span><span class="layer">Camera remap</span><span class="desc">rotate the held d-pad by the camera's eighth-turn so "up" means "away from the camera"</span><span class="crate">pad remap</span>
-    <span class="num">3</span><span class="layer">Wall slide</span><span class="desc">if the wanted direction is blocked, probe along the wall and add a perpendicular slide</span><span class="crate">slide resolver</span>
-    <span class="num">4</span><span class="layer">Speed</span><span class="desc">base step (8 walk / 12 run) &times; actor multiplier &times; frame scalar; halve on slow terrain, trim diagonals by a quarter</span><span class="crate">frame scalar</span>
-    <span class="num">5</span><span class="layer">Step loop</span><span class="desc">move 2 units per iteration, Z then X, each iteration checked against the grid and nearby actors</span><span class="crate">collision</span>
-    <span class="num">6</span><span class="layer">Settle</span><span class="desc">re-sample the floor height under the new position; hop a ledge if the floor ahead rises a step</span><span class="crate">vertical settle</span>
-    <span class="num">7</span><span class="layer">Triggers</span><span class="desc">entering a new tile checks the trigger block: teleports, door records, story beats, encounters</span><span class="crate">walk-on dispatch</span>
+  <h2>How walking works</h2>
+  <p>One pass of the controller, in order. Everything below the second step is about one question: may the player move two more units this way?</p>
+  <ol class="steps">
+    <li><b>Gate</b><span>Skip everything while the player is held: an encounter queued, a cutscene or talk owns him (flag <code>0x80000</code>). This also blocks the pause menu.</span></li>
+    <li><b>Camera remap</b><span>Rotate the held d-pad by the camera's eighth-turn so "up" means "away from the camera"; snap the heading to one of eight angles.</span></li>
+    <li><b>Wall slide</b><span>If the wanted direction is blocked, probe along the wall and add a perpendicular direction, so the player skids instead of sticking.</span></li>
+    <li><b>Speed</b><span>Base step (8 walk, 12 run) &times; the actor's multiplier &times; the frame scalar; halved on slow terrain, trimmed by a quarter on diagonals.</span></li>
+    <li><b>Step loop</b><span>Spend the speed 2 units at a time, Z then X; each axis moves only if its collision probe is clear.</span></li>
+    <li><b>Settle</b><span>Re-sample the floor height under the new position; hop a ledge if the floor ahead rises a step.</span></li>
+    <li><b>Triggers</b><span>Entering a new tile checks the trigger block: teleports, door records, story beats, encounters.</span></li>
+  </ol>
+  <ul class="bullets">
+    <li><strong>Direction.</strong> The remapped mask names axes: <code>0x1000</code> Z+, <code>0x4000</code> Z&minus;, <code>0x2000</code> X+, <code>0x8000</code> X&minus;. A diagonal is two axes resolved independently, so a diagonal into a wall still slides along the open axis.</li>
+    <li><strong>Wall slide.</strong> For a blocked cardinal, three probes 62 units ahead (centre, &plusmn;33 lateral) sweep an offset table across the travel axis and add the slide direction the sweep's sign picks. Pure diagonals and symmetric dead ends add nothing.</li>
+    <li><strong>Animation follows motion.</strong> A committed step selects the walk or run clip; no step selects idle. The pad is never consulted for the clip, and walking and wall contact are silent.</li>
+    <li><strong>Run is an exclusive or.</strong> The Field Move option sets the default and the held button inverts it, so with Run selected the button walks. The button is <code>Cross | R1</code> (mask <code>0x48</code>), seeded once at new game and never rewritten: retail cannot rebind it.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="collision-tile">
+  <h2>A walkability tile</h2>
+  <p>The world is cut into 128-unit tiles, and each tile is split again into four 64-unit sub-cells. One byte per tile carries both a wall bit for each sub-cell and the tile's floor height.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 780 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Left: one 128-unit tile split into four 64-unit sub-cells. Bit 0x10 is the even-column even-row cell, 0x20 odd-column even-row, 0x40 even-column odd-row, 0x80 odd-column odd-row. The example byte 0xA3 sets 0x20 and 0x80, a wall along the odd-column half, with floor tier 3 in the low nibble. Right: the player moving toward a wall tests three probe points on its leading edge, 48 units ahead and 16 apart; any one in a wall sub-cell blocks the step. Actor probes reach further, 64 ahead and 32 apart.">
+      <defs><marker id="fl-tile-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="180" y="20" class="dg-label">tile byte 0xA3</text>
+      <text x="180" y="300" class="dg-sub">X: columns of 64-unit sub-cells</text>
+      <text x="30" y="160" class="dg-sub" transform="rotate(-90 30 160)">Z: rows of sub-cells</text>
+      <rect x="60" y="40" width="120" height="120" class="dg-node"/>
+      <rect x="180" y="40" width="120" height="120" class="dg-node-warn"/>
+      <rect x="60" y="160" width="120" height="120" class="dg-node"/>
+      <rect x="180" y="160" width="120" height="120" class="dg-node-warn"/>
+      <text x="120" y="95" class="dg-label">0x10</text><text x="120" y="114" class="dg-sub">even col, even row</text>
+      <text x="240" y="95" class="dg-label">0x20 wall</text><text x="240" y="114" class="dg-sub">odd col, even row</text>
+      <text x="120" y="215" class="dg-label">0x40</text><text x="120" y="234" class="dg-sub">even col, odd row</text>
+      <text x="240" y="215" class="dg-label">0x80 wall</text><text x="240" y="234" class="dg-sub">odd col, odd row</text>
+      <text x="180" y="318" class="dg-edge-label" text-anchor="middle">low nibble 3 = floor tier (height LUT index)</text>
+
+      <rect x="420" y="40" width="340" height="60" class="dg-group"/>
+      <rect x="420" y="100" width="340" height="80" class="dg-node-warn"/>
+      <text x="590" y="70" class="dg-sub">open sub-cells</text>
+      <text x="700" y="170" class="dg-label">wall</text>
+      <circle cx="558" cy="154" r="5" class="dg-node-accent"/>
+      <circle cx="590" cy="154" r="5" class="dg-node-accent"/>
+      <circle cx="622" cy="154" r="5" class="dg-node-accent"/>
+      <circle cx="526" cy="122" r="4" class="dg-node"/>
+      <circle cx="590" cy="122" r="4" class="dg-node"/>
+      <circle cx="654" cy="122" r="4" class="dg-node"/>
+      <circle cx="590" cy="250" r="16" class="dg-node-accent"/>
+      <text x="590" y="255" class="dg-label">P</text>
+      <path class="dg-edge" d="M590 232 L590 196" marker-end="url(#fl-tile-ah)"/>
+      <path class="dg-edge-dim" d="M558 160 L558 250 M622 160 L622 250"/>
+      <text x="590" y="292" class="dg-sub">leading edge: 3 probes, 48 ahead, &#177;16</text>
+      <text x="590" y="310" class="dg-sub">actor probes (small): 64 ahead, &#177;32</text>
+    </svg>
+    <figcaption>Left: the high nibble of one grid byte, one bit per sub-cell (the sampled bit is <code>1 &lt;&lt; ((row &amp; 1) &times; 2 + (col &amp; 1))</code>). Right: what a step tests. The footprint, not the centre, is checked, and one probe in a wall sub-cell is enough to refuse that axis. Probe distances are drawn to scale.</figcaption>
+  </figure>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">bits 7..4</span><span class="bm-name">wall bits, one per sub-cell</span><span class="bm-size">read by collision</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">bits 3..0</span><span class="bm-name">floor tier 0..15</span><span class="bm-size">read by the floor sampler</span></div>
   </div>
-  <ul>
-    <li><strong>Direction.</strong> The remapped mask names axes: <code>0x1000</code> Z+, <code>0x4000</code> Z&minus;, <code>0x2000</code> X+, <code>0x8000</code> X&minus;. Diagonals are two axes resolved independently. The heading (<code>+0x26</code>) snaps to one of eight angles.</li>
-    <li><strong>Wall slide.</strong> When the pad's direction is blocked, three probes 62 units ahead (centre, &plusmn;33 lateral) sweep an offset table across the travel axis and add the slide direction the sweep's sign picks - so the player skids along walls instead of sticking. Pure diagonals and symmetric dead ends add nothing.</li>
-    <li><strong>Step loop.</strong> <code>speed = ((base &times; mult) &gt;&gt; 12) &times; frame_scalar</code> units are spent 2 at a time; each axis is committed only if its probe is clear. The loop plays no sound - walking and wall contact are silent.</li>
-    <li><strong>Animation follows motion.</strong> A committed step selects the walk (or run) clip; no step selects idle. The pad is never consulted for the clip.</li>
-    <li><strong>Run is a held button, and it is not configurable.</strong> The mask is <code>0x48</code> - Cross or R1 - tested against the <em>held</em> pad, one of four button-mask words the new-game data init seeds and the only writer of any of them. Holding it inverts the walk / run option rather than forcing run. The port currently latches Square instead: a host binding choice, not a decode.</li>
+  <ul class="bullets">
+    <li><strong>Two nibbles, two mappings.</strong> The collision probe maps world to sub-cell with a bias (Z floored then +2, X rounded up then &minus;1), which pushes the half-tile-centred player onto the forward tile; the floor sampler reads the same bytes with plain indexing. A sweep that reads the whole byte as a wall mask calls every raised tile a wall.</li>
+    <li><strong>The grid wraps.</strong> Both the row and the column are masked to 7 bits, so a Z past the last row reads a real row rather than "no wall".</li>
+    <li><strong>Actors block too.</strong> Before the wall probes, three wider probes test other actors: a static prop blocks within &plusmn;80 units of its footprint, a moving NPC within &plusmn;40 of its live position. A hit links the pair, which is how a door's touch script fires on contact.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="frame-denomination">
   <h2>How fast is a frame?</h2>
   <p>Retail runs two clocks: the <strong>vsync</strong> (60/s) and the <strong>game tick</strong>, one pass of the master frame driver. A scratchpad byte, the frame scalar, says how many vsyncs the last tick spanned (1..4, floored at 2 in field scenes and 3 on the overworld). Every duration and velocity inside the tick is multiplied by it, so a cadence change moves the sample rate, never the speed.</p>
-  <table>
-    <thead><tr><th>Base step</th><th>Selector</th><th>Units / second</th><th>Tiles / second</th></tr></thead>
+  <table class="data-table">
+    <thead><tr><th>Base step</th><th>Selected when</th><th>Units / second</th><th>Tiles / second</th></tr></thead>
     <tbody>
-      <tr><td><code>5</code></td><td>forced slow</td><td>300</td><td>2.34</td></tr>
+      <tr><td><code>5</code></td><td>a kingdom world map (the run test is skipped)</td><td>300 at multiplier 1.0</td><td>2.34</td></tr>
       <tr><td><code>8</code></td><td>plain walk</td><td><strong>480</strong></td><td>3.75</td></tr>
       <tr><td><code>0xC</code></td><td>run</td><td><strong>720</strong></td><td>5.63</td></tr>
-      <tr><td><code>0x18</code></td><td>debug turbo</td><td>1440</td><td>11.25</td></tr>
+      <tr><td><code>0x18</code></td><td>debug turbo (dev flags only)</td><td>1440</td><td>11.25</td></tr>
     </tbody>
   </table>
-  <p>The port ticks once per vsync with the scalar at 1 - 60 steps of 8 instead of 30 of 16 - and both hosts drive that tick at 60 Hz from a wall clock. Reading a per-frame number in the wrong clock is where "the player moves 1.67&times; too fast" comes from.</p>
+  <p>The overworld step comes from a per-scene MAN flag set on exactly the three kingdom maps, and each kingdom's entry script also sets the player's multiplier to <code>0xC00</code>, so the overworld walk is <code>(5 &times; 0xC00) &gt;&gt; 12 = 3</code> units per vsync. Reading a per-frame number in the wrong clock is where "the player moves 1.67&times; too fast" comes from; the port ticks once per vsync with the scalar at 1.</p>
 </section>
 
 <section class="doc-section" id="grid-source">
   <h2>The field buffer: where walls come from</h2>
-  <p>Nothing in a town's script says "this is a wall". The scene loader streams the scene's <code>.MAP</code> file into a per-scene buffer; the collision grid is one region of it.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 120" width="100%" style="max-width: 860px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Field buffer regions: object records at 0x0000, collision and floor grid at 0x4000, per-tile object map at 0x8000, trigger block at 0x10000, field pack at 0x12000">
-      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.4">
-        <rect x="20" y="36" width="160" height="56" rx="3"/>
-        <rect x="180" y="36" width="160" height="56" rx="3" stroke="var(--accent)" stroke-width="1.8"/>
-        <rect x="340" y="36" width="240" height="56" rx="3"/>
-        <rect x="580" y="36" width="140" height="56" rx="3"/>
-        <rect x="720" y="36" width="120" height="56" rx="3"/>
-      </g>
-      <g fill="var(--text-muted)" font-size="11">
-        <text x="20" y="26">+0x0000</text>
-        <text x="180" y="26">+0x4000</text>
-        <text x="340" y="26">+0x8000</text>
-        <text x="580" y="26">+0x10000</text>
-        <text x="720" y="26">+0x12000</text>
-      </g>
-      <g fill="currentColor" text-anchor="middle">
-        <text x="100" y="60">objects<tspan x="100" dy="16" fill="var(--text-muted)">0x20-byte records</tspan></text>
-        <text x="260" y="60">collision + floor<tspan x="260" dy="16" fill="var(--text-muted)">1 byte per tile</tspan></text>
-        <text x="460" y="60">object map<tspan x="460" dy="16" fill="var(--text-muted)">u16 per tile</tspan></text>
-        <text x="650" y="60">trigger block<tspan x="650" dy="16" fill="var(--text-muted)">4 kinds</tspan></text>
-        <text x="780" y="60">field pack<tspan x="780" dy="16" fill="var(--text-muted)">+ efect.dat</tspan></text>
-      </g>
-      <text x="430" y="112" fill="var(--text-muted)" font-size="11" text-anchor="middle">base pointer in scratchpad 0x1F8003EC - regions not to scale</text>
-    </svg>
-    <figcaption>The <code>.MAP</code> file is the first <code>0x12000</code> bytes of this buffer, streamed by CD-DMA at scene load; the walkability grid is its <code>+0x4000</code> region.</figcaption>
-  </figure>
-  <table class="layout">
+  <p>Nothing in a town's script says "this is a wall". The scene loader streams the scene's <code>.MAP</code> file into a per-scene buffer, and the collision grid is one region of it.</p>
+  <div class="byte-map">
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0000</span><span class="bm-name">object records</span><span class="bm-size">0x20 B each</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x4000</span><span class="bm-name">collision + floor grid</span><span class="bm-size">1 B per tile</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+0x8000</span><span class="bm-name">object map</span><span class="bm-size">u16 per tile</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x10000</span><span class="bm-name">trigger block</span><span class="bm-size">4 kinds</span></div>
+    <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">+0x12000</span><span class="bm-name">field pack, efect.dat</span><span class="bm-size">separate files</span></div>
+  </div>
+  <table class="data-table">
     <thead><tr><th>Region</th><th>Content</th><th>Filled by</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x0000</code></td><td>Object records, <code>0x20</code> bytes each: the buildings, fences and props (anchor tile, mesh index, rotation)</td><td>the <code>.MAP</code> file</td></tr>
-      <tr><td><code>+0x4000</code></td><td>Collision + floor grid, <code>0x80</code>-byte rows: high nibble four sub-cell wall bits, low nibble floor tier</td><td><code>.MAP</code>; story deltas painted by op <code>4C 7s</code></td></tr>
+      <tr><td><code>+0x0000</code></td><td>Object records: the buildings, fences and props (anchor tile, mesh index, rotation)</td><td>the <code>.MAP</code> file</td></tr>
+      <tr><td><code>+0x4000</code></td><td>Collision + floor grid, <code>0x80</code>-byte rows</td><td><code>.MAP</code>; story deltas painted by op <code>4C 7s</code></td></tr>
       <tr><td><code>+0x8000</code></td><td>Per-tile word: low 9 bits object index, <code>0x400</code> object footprint, <code>0x800</code> elevation override</td><td><code>.MAP</code>; footprint bits stamped at scene init</td></tr>
-      <tr><td><code>+0x10000</code></td><td>Trigger block: kind 0 teleports, kind 1 record triggers, kind 2 ramp heights, kind 3 region boxes</td><td><code>.MAP</code></td></tr>
+      <tr><td><code>+0x10000</code></td><td>Trigger block: teleports, record triggers, ramp heights, region boxes</td><td><code>.MAP</code></td></tr>
       <tr><td><code>+0x12000</code></td><td>Field pack and <code>efect.dat</code>; also the trigger lookup's fallback window</td><td>separate files</td></tr>
     </tbody>
   </table>
-  <h3>Collision: how a step is tested</h3>
-  <p>Each 2-unit sub-step asks one function whether the tile ahead is a wall and whether an actor is in the way. The world position becomes a tile by <code>(coord + bias) &gt;&gt; 6</code>; the byte's high nibble is masked by the quadrant the point falls in. Three points along the player's <strong>leading edge</strong> are probed (48 units ahead, &plusmn;16 lateral), so the footprint is tested, not the centre. The Z bias is authored into the wall bits: the floor sampler reads the same bytes with plain indexing, so one byte's two nibbles live under two different mappings.</p>
-  <table>
-    <thead><tr><th>Blocker</th><th>Test</th><th>Result bit</th></tr></thead>
-    <tbody>
-      <tr><td>Wall</td><td>Sub-cell bit under any of the three edge probes</td><td><code>2</code></td></tr>
-      <tr><td>Static object</td><td>&plusmn;80-unit box around the record's footprint centre</td><td><code>1</code> / <code>4</code></td></tr>
-      <tr><td>Moving NPC</td><td>&plusmn;40-unit box around its live position; a hit links the pair at <code>+0x98</code></td><td><code>1</code> / <code>4</code></td></tr>
-    </tbody>
-  </table>
-  <p>Pressing the action button runs a third probe: a radius-64 compass point in the facing sector against a &plusmn;72 NPC box; a hit posts the touch event (engaged flag, facing saved) and turns the player toward the NPC. Props fire the same event on contact, no button needed.</p>
+  <p>The <code>.MAP</code> is the first <code>0x12000</code> bytes, streamed by CD-DMA at scene load; a write-watchpoint on the live grid catches only the DMA writer. Scripts then paint story-conditional rectangles on top with <code>4C 7s</code> - Rim Elm's south gate stays painted shut until the story opens it.</p>
+  <p>Pressing the action button runs a separate probe: a radius-64 compass point in the facing sector against a &plusmn;72 NPC box. A hit engages the NPC's script and turns the player toward it. Props divide into two classes on one authored bit: doors open on body contact, cupboards (which run <code>31 1E</code> in their spawn prologue) only on the button.</p>
 </section>
 
 <section class="doc-section" id="vertical-settle">
   <h2>Height: two floor models</h2>
   <p>The walk controller only writes X and Z. After it commits, a second controller re-samples the floor under the new position and glides Y toward it; a third probes ahead along the last step and starts a scripted hop when the floor rises a ledge.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Tile word bit <code>0x800</code></th><th>Model</th><th>Used for</th></tr></thead>
     <tbody>
       <tr><td>clear</td><td><strong>Bilinear nibble surface</strong>: the four corner tiles' tiers through a 16-entry height LUT, weighted by sub-tile position</td><td>flat ground, gentle terrain</td></tr>
-      <tr><td>set</td><td><strong>Elevation override</strong>: flat mean of the four corner tiers plus the tile's kind-2 record - <code>&minus;32</code> per whole-tile step, <code>&minus;16</code> per 64-unit sub-cell step. No interpolation</td><td>ramps and staircases</td></tr>
+      <tr><td>set</td><td><strong>Elevation override</strong>: flat mean of the four corner tiers plus the tile's kind-2 record (&minus;32 per whole-tile step, &minus;16 per sub-cell step). No interpolation</td><td>ramps and staircases</td></tr>
     </tbody>
   </table>
-  <p id="floor-two-models">The kind-2 record <em>replaces</em> the bilinear branch, it is not a fast path on top of it. Rim Elm's shore ramps sit on sea-level nibbles and hold their whole elevation in kind-2 records; interpolating their nibbles walks the player under the drawn stairs. Engine: <code>World::sample_field_floor_height</code> carries both branches (<code>--flat-y</code> opts out).</p>
+  <p id="floor-two-models">The kind-2 record <em>replaces</em> the bilinear branch; it is not a fast path on top of it. Rim Elm's shore ramps sit on sea-level nibbles and hold their whole elevation in kind-2 records; interpolating their nibbles walks the player under the drawn stairs.</p>
 </section>
 
 <section class="doc-section" id="trigger-block">
   <h2>Triggers: doors, beats and teleports</h2>
   <p>Crossing onto a new tile (<code>tile = (world &minus; 0x40) &gt;&gt; 7</code>, compared against last frame's) looks the tile up in the trigger block. Scene entry marks the compare stale, so the arrival tile fires on the first tick.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Kind</th><th>Record</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>0</code></td><td><code>[x][z][dest_half_x][dest_half_z]</code></td><td>Intra-scene teleport - most house exits</td></tr>
@@ -130,27 +150,27 @@
       <tr><td><code>3</code></td><td><code>[x0][z0][x1][z1][type]</code>, 8 bytes</td><td>Region boxes: camera zones, encounter regions</td></tr>
     </tbody>
   </table>
-  <p>A beat that should play once <strong>self-latches</strong>: its script sets the very flag its C1 gate lists, so it runs on the crossing that finds the flag clear and blocks itself afterwards. Rim Elm's dinner chain is the canonical example. The gate bitmap is the field VM's own <a href="script-vm.html#default-route">story-flag bank</a>, so a set is visible to the next record immediately.</p>
+  <p>A beat that should play once <strong>self-latches</strong>: its script sets the very flag its gate lists, so it runs on the crossing that finds the flag clear and blocks itself afterwards. The gate bitmap is the field VM's own <a href="script-vm.html#default-route">story-flag bank</a>, so a set is visible to the next record immediately.</p>
   <h3 id="doorways">Walking into a house</h3>
-  <p>A town house is <strong>not</strong> a scene change: the interior is a sub-area of the same 128&times;128 grid parked in an unused corner, and the door repositions the player. Two door mechanisms exist and one house can use one of each.</p>
-  <table>
+  <p>A town house is <strong>not</strong> a scene change: the interior is a sub-area of the same 128&times;128 grid parked in an unused corner, and the door repositions the player. Two door mechanisms exist, and one house can use one of each.</p>
+  <table class="data-table">
     <thead><tr><th>Class</th><th>Mechanism</th><th>Lives in</th></tr></thead>
     <tbody>
-      <tr><td>Script door</td><td>A gate-0 bind whose record teleports the player channel <code>0xF8</code> on contact - by instant teleport (<code>A3 F8</code>), teleport + move clip (<code>CC F8 51</code>) or animated walk-to-tile (<code>C7 F8</code>)</td><td>MAN partition 0</td></tr>
+      <tr><td>Script door</td><td>A gate-0 bind whose record moves the player channel <code>0xF8</code> on contact - instant teleport (<code>A3 F8</code>), teleport + move clip (<code>CC F8 51</code>) or an animated walk to a tile (<code>C7 F8</code>)</td><td>MAN partition 0</td></tr>
       <tr><td>Map door</td><td>A kind-0 teleport tile: no object, no script, no name</td><td><code>.MAP</code> trigger block</td></tr>
     </tbody>
   </table>
-  <p>Map doors are the larger class; a MAN-only census cannot see them. Vahn's house is the mixed case: script door in, map door out.</p>
+  <p>Map doors are the larger class, and a MAN-only census cannot see them. Vahn's house is the mixed case: script door in, map door out.</p>
 </section>
 
 <section class="doc-section" id="npc-motion">
   <h2>NPCs: facing and glide speed</h2>
   <h3 id="npc-initial-facing">Initial facing</h3>
-  <p>The placement record has no facing byte. At spawn, the placement installer pre-runs the record's leading ops (a <code>0x24</code>/<code>0x25</code> marker up to the first <code>0x21</code>), and two of them write the heading from the 8-direction LUT at SCUS <code>0x80073F04</code>: the NPC move-to-tile op <code>4C 51</code> (operand +3, low nibble) and <code>CAM_CFG</code>'s simple path. Town prologues route that leg through story-flag tests, so the fall-through branch is the fresh-game facing. Rim Elm's side-by-side villagers at tiles (29,22) / (30,22) derive indices 6 and 2 - they face each other.</p>
-  <p>Heading space: retail <code>0</code> = Z&minus;, <code>0x400</code> = X&minus;, <code>0x800</code> = Z+, <code>0xC00</code> = X+; the engine's convention is the same rotated a half-turn. After spawn, walking snaps the heading and the rotate ops ramp it; the last writer in the frame draws (<a href="motion-vm.html#facing">motion VM</a>).</p>
+  <p>The placement record has no facing byte. At spawn the installer pre-runs the record's leading ops (a <code>0x24</code> / <code>0x25</code> marker up to the first <code>0x21</code>), and two of them write the heading from the 8-direction LUT at SCUS <code>0x80073F04</code>: the NPC move-to-tile op <code>4C 51</code> (operand +3, low nibble) and op <code>0x38</code>'s simple path. Town prologues route that leg through story-flag tests, so the fall-through branch is the fresh-game facing. Rim Elm's side-by-side villagers at tiles (29,22) / (30,22) derive indices 6 and 2 - they face each other.</p>
+  <p>Heading space: retail <code>0</code> = Z&minus;, <code>0x400</code> = X&minus;, <code>0x800</code> = Z+, <code>0xC00</code> = X+. After spawn, walking snaps the heading and the rotate ops ramp it; the last writer in the frame draws (<a href="motion-vm.html#facing">motion VM</a>).</p>
   <h3 id="npc-glide-speed">Glide speed</h3>
   <p>An NPC's pace is not the player's walk step - the walk kernel never reads the speed multiplier. Both NPC walk kernels carry the base step in the <strong>walk op's own operands</strong>, on the ladder <code>numerator &gt;&gt; (2 + bits)</code> units per vsync.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Op</th><th>Where <code>bits</code> lives</th><th>Numerator</th></tr></thead>
     <tbody>
       <tr><td><code>0x37</code> glide</td><td><code>(op0 &gt;&gt; 5 &amp; 4) | (op1 &gt;&gt; 6)</code></td><td><code>0x80</code></td></tr>
@@ -160,43 +180,40 @@
       <tr><td>motion-stream <code>06 / 18</code></td><td>4-bit selector over the operands' high bits</td><td><code>0x80</code></td></tr>
     </tbody>
   </table>
-  <p>Base steps run 32 / 16 / 8 / 4 / 2 / 1 for <code>bits</code> 0..5. There is no synthesised motion bytecode: the field VM parks the op's address on the actor and the walk kernel reads the record bytes in place each frame. Engine: <code>placement_glide_speed</code> decodes the placement's bound motion stream first, then its own yield ops, with a base-step-8 stand-in when neither decodes.</p>
+  <p>Base steps run 32 / 16 / 8 / 4 / 2 / 1 for <code>bits</code> 0..5. There is no synthesised motion bytecode: the field VM parks the op's address on the actor and the walk kernel reads the record bytes in place each frame.</p>
 </section>
 
 <section class="doc-section" id="engine-port">
-  <h2>The port</h2>
-  <ul>
-    <li><strong>Faithful path.</strong> <code>step_field_locomotion</code> rings the held pad around the same eight-direction compass retail uses, by whole 45&deg; steps, and walks the result through the same per-axis 2-unit collision. Wall-press captures rest byte-exact. Retail picks its rotation step from scene data rather than from the camera; a free-orbiting port has no authored step to read, so it rounds the live camera azimuth to the nearest of the eight.</li>
-    <li><strong>Default-on fidelity.</strong> The three-probe leading edge and the actor boxes (static props and moving NPCs) are on by default on both hosts; <code>--no-edge-collision</code> and <code>--no-solid-npcs</code> fall back to the candidate-centre test and walk-through NPCs. The wall-slide resolver runs on the live pad path on all three hosts: <code>step_field_locomotion</code> hands the camera-remapped mask to <code>resolve_field_slide</code> and steps on the result, the order retail uses, so a held cardinal skids along a wall instead of sticking to it.</li>
-    <li><strong>Enhancements.</strong> Precise movement (<code>R</code>, default off): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle, sub-step remainder carried across frames. Camera distance presets (<code>T</code>) never touch the simulation.</li>
-    <li><strong>Run button.</strong> Walk / Run is an <em>exclusive or</em>: the Field Move option sets the default and the button inverts it, so with Run selected the button walks. Retail&rsquo;s button is the config word <code>0x800846DC</code> = <code>0x48</code> = <code>Cross | R1</code>, seeded once by <code>FUN_80034A6C</code> and never rewritten, so retail cannot rebind it. The port&rsquo;s <code>World::locomotion.run_button_mask</code> defaults to that pair plus <strong>Square</strong> (its historical binding, and retail&rsquo;s debug-turbo bit rather than a run button); rebinding happens at the key level, <code>legaia-engine config set --binding W=R1</code>.</li>
-    <li><strong>Scene entry.</strong> <code>.MAP</code> resolved as the slot two below the scene's CDNAME block start (its <code>0x12000</code> footprint identifies it); the MAN's entry script runs on channel <code>0xFB</code>; the MAN's encounter table is installed; input is locked while an opening-cutscene timeline drives the player.</li>
-    <li><strong>Spawn.</strong> Retail seats the player on <strong>both</strong> entry arms from the destination-entry pair <code>_DAT_80073EF4</code>/<code>_DAT_80073EF8</code> &mdash; the door&rsquo;s operand on an ordinary scene change, the saved coordinates on a return from battle, a minigame or an FMV. <code>(0xA40, 0, 0xA40)</code>, the centre of the camera window, is where the <em>ambient particle emitter</em> spawns, and only on a non-return entry; it is not Vahn&rsquo;s opening seat. The port keeps that constant as its own fallback because its scene picker can enter a scene with no door operand, which retail never does.</li>
+  <h2>In the port</h2>
+  <ul class="bullets">
+    <li><strong>Faithful path.</strong> <code>World::step_field_locomotion</code> rings the held pad around the same eight-direction compass, hands the remapped mask to the wall-slide resolver and walks the result through the same per-axis 2-unit collision with the three-probe edge and the actor boxes. Wall-press captures rest byte-exact. Retail picks its rotation step from scene data; a free-orbiting camera has none, so the port rounds the live camera azimuth to the nearest eighth.</li>
+    <li><strong>Enhancements.</strong> Precise movement (<code>options::precise_movement</code>, default off): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle. <code>--no-edge-collision</code> / <code>--no-solid-npcs</code> fall back to a centre test and walk-through NPCs.</li>
+    <li><strong>Floor.</strong> <code>World::sample_field_floor_height</code> carries both height models.</li>
+    <li><strong>Run button.</strong> The run mask defaults to the retail <code>Cross | R1</code> plus Square; which key is which pad button is a host binding (<code>legaia-engine config set --binding W=R1</code>).</li>
   </ul>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Locomotion controller</td><td><code>FUN_801D01B0</code></td><td>Gate, remap, speed, 2-unit step loop; found by a write-watchpoint on the player X/Z (stores at <code>0x801D0684 / 06E4 / 0744 / 07B4</code>)</td><td><code>autorun_player_pos_watch.lua</code>, field overlay dump</td></tr>
-      <tr><td>Wall collision</td><td><code>FUN_801CFE4C</code></td><td>Biased tile mapping, high-nibble quadrant mask, probe tables <code>DAT_801F21B4 / 2214</code></td><td>field overlay dump</td></tr>
-      <tr><td>Actor collision</td><td><code>FUN_801CFC40</code></td><td>Static &plusmn;80 / moving &plusmn;40 boxes, <code>0x20000</code> class bit, <code>+0x98</code> link</td><td>field overlay dump</td></tr>
-      <tr><td>Wall slide</td><td><code>FUN_80046494</code></td><td>Three-point probe, perpendicular sweep, slide bit</td><td><code>funcs/80046494.txt</code></td></tr>
+      <tr><td>Wall collision</td><td><code>FUN_801CFE4C</code> / <code>FUN_801D56C4</code></td><td>Biased sub-cell mapping, quadrant bit select, probe tables <code>DAT_801F21B4 / 2214</code></td><td>field overlay dump</td></tr>
+      <tr><td>Actor collision</td><td><code>FUN_801CFC40</code></td><td>Static &plusmn;80 / moving &plusmn;40 boxes, contact classes, <code>+0x98</code> link</td><td>field overlay dump</td></tr>
+      <tr><td>Wall slide</td><td><code>FUN_80046494</code></td><td>Three-point probe, perpendicular sweep, diagonals untouched</td><td><code>funcs/80046494.txt</code></td></tr>
       <tr><td>Pad remap</td><td><code>FUN_800467E8</code></td><td>Eighth-turn rotation over the 8-direction ring <code>DAT_800766FC</code></td><td><code>funcs/800467e8.txt</code></td></tr>
       <tr><td>Frame scalar</td><td><code>FUN_80016B6C</code></td><td><code>DAT_1F800393</code> picked from a <code>VSync(1)</code> measurement with per-mode floors</td><td><code>funcs/80016b6c.txt</code></td></tr>
       <tr><td>Floor sampler</td><td><code>FUN_80019278</code></td><td>Bilinear vs override on cell bit <code>0x800</code>; LUT at scratchpad <code>0x1F80035C</code></td><td><code>funcs/80019278.txt</code></td></tr>
       <tr><td>Settle / hop</td><td><code>FUN_801D1BA0 / FUN_801D1878</code></td><td>Step-delta globals <code>0x8007BDE0 / E4</code>, hop arc</td><td>field overlay dump</td></tr>
-      <tr><td>Walk-on dispatch</td><td><code>FUN_801D1EC4 &rarr; FUN_801D5630 &rarr; FUN_8003BDE0</code></td><td>Tile compare, trigger scan with the <code>+0x12000</code> fallback, C1/C2 gate check</td><td>field overlay dump, <code>funcs/8003bde0.txt</code></td></tr>
+      <tr><td>Walk-on dispatch</td><td><code>FUN_801D1EC4 &rarr; FUN_801D5630 &rarr; FUN_8003BDE0</code></td><td>Tile compare, trigger scan with the <code>+0x12000</code> fallback, gate check</td><td>field overlay dump, <code>funcs/8003bde0.txt</code></td></tr>
       <tr><td>Object spawn</td><td><code>FUN_8003A55C / FUN_8003AEB0</code></td><td>Object record fields, bind lookup, footprint bit, LUT fill</td><td><code>funcs/8003a55c.txt</code></td></tr>
-      <tr><td>Grid source</td><td><code>FUN_8001F7C0</code> via CD-DMA <code>FUN_8005D9A0</code></td><td>Write-watchpoint on the live grid caught only the DMA writer: the base grid streams, scripts paint deltas</td><td><code>funcs/8001f7c0.txt</code></td></tr>
+      <tr><td>Grid source</td><td><code>FUN_8001F7C0</code> via CD-DMA <code>FUN_8005D9A0</code></td><td>The only writer of the live grid is the DMA load; scripts paint deltas</td><td><code>funcs/8001f7c0.txt</code></td></tr>
       <tr><td>Wall paint</td><td><code>0x801E1C64</code> (op <code>4C 7s</code>)</td><td>Rect <code>[col0, col1+1) &times; [row0+1, row1+2)</code>; subs 0/1 six bytes, 2/3 seven</td><td><code>overlay_0897_801de840.txt</code></td></tr>
-      <tr><td>Wall-press captures</td><td>PCSX-Redux states</td><td>X&minus; press pins the 47-unit edge; Z&minus; press pins the authored Z bias; engine rests byte-exact on both</td><td><code>field_wall_press_*.rs</code></td></tr>
-      <tr><td>NPC facing / glide</td><td>town01 placements</td><td>Facing pair (29,22)/(30,22); glide steps decoded from real operands</td><td><code>field_npc_initial_facing_disc.rs</code>, <code>field_npc_glide_speed_disc.rs</code></td></tr>
+      <tr><td>Wall-press captures</td><td>PCSX-Redux states</td><td>X&minus; press pins the 47-unit edge; Z&minus; press pins the authored Z bias</td><td>capture states</td></tr>
     </tbody>
   </table>
-  <p class="hint">Full write-up, including the hop-arc controller, the door-swing clip binding and the scripted-scene actor programs: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-locomotion.md" target="_blank" rel="noopener"><code>docs/subsystems/field-locomotion.md</code></a>.</p>
+  <p class="hint">Full write-up, including the hop-arc controller, the door-swing clip binding, the timed warp and the scripted-scene actor programs: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-locomotion.md" target="_blank" rel="noopener"><code>docs/subsystems/field-locomotion.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="details">
@@ -205,15 +222,13 @@
   <details class="disclosure">
     <summary>Player actor fields</summary>
     <div class="disclosure-body">
-      <p>The player actor pointer is <code>_DAT_8007C364</code>. Read <code>+0x14/16/18</code> as 16-bit: a 32-bit read of <code>+0x14</code> folds the angle word into X and looks like position drift.</p>
-      <table class="layout">
+      <p>The player actor pointer is <code>_DAT_8007C364</code>. Read <code>+0x14/16/18</code> as 16-bit: a 32-bit read of <code>+0x14</code> folds the next word into X and looks like position drift.</p>
+      <table class="data-table">
         <thead><tr><th>Offset</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td><code>+0x10</code></td><td>flags: <code>0x80000</code> movement disabled, <code>0x1000000</code> interact requested</td></tr>
-          <tr><td><code>+0x14 / 18</code></td><td>world X / Z (<code>s16</code>, 128 units per tile); with <code>+0x16</code> between them the three are one position triple</td></tr>
-          <tr><td><code>+0x16</code></td><td>world Y - the ground-follow height, not the yaw and not a tilt</td></tr>
+          <tr><td><code>+0x14 / 16 / 18</code></td><td>world X / Y / Z (<code>s16</code>, 128 units per tile); Y is the ground-follow height, not a yaw or tilt</td></tr>
           <tr><td><code>+0x26</code></td><td>heading, eight angles</td></tr>
-          <tr><td><code>+0x5C</code></td><td>run state (<code>&gt; 0</code> selects the run clip)</td></tr>
           <tr><td><code>+0x72</code></td><td>speed multiplier, <code>0x1000</code> = 1.0</td></tr>
           <tr><td><code>+0x94</code></td><td>encounter-record pointer</td></tr>
           <tr><td><code>+0x98</code></td><td>interaction-target actor</td></tr>
@@ -225,7 +240,7 @@
   <details class="disclosure">
     <summary>Object records and the two spawners</summary>
     <div class="disclosure-body">
-      <table class="layout">
+      <table class="data-table">
         <thead><tr><th>Offset</th><th>Type</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td><code>+0x00</code></td><td>u16</td><td>X sub-tile offset: <code>world_x = col &times; 128 + this + 0x40</code></td></tr>
@@ -233,11 +248,11 @@
           <tr><td><code>+0x04</code></td><td>u16</td><td>Z sub-tile offset: <code>world_z = row &times; 128 &minus; (this &minus; 0x40)</code></td></tr>
           <tr><td><code>+0x06 / 07</code></td><td>i8</td><td>Footprint column / row delta to the anchor tile</td></tr>
           <tr><td><code>+0x08..0x0C</code></td><td>u16 &times; 3</td><td>Rotation triple, 4096 per turn (<code>+0x0A</code> = yaw)</td></tr>
-          <tr><td><code>+0x10</code></td><td>u16</td><td>Mesh index into the scene TMD pack - for every id; the id selects the record, never the mesh</td></tr>
+          <tr><td><code>+0x10</code></td><td>u16</td><td>Mesh index into the scene TMD pack</td></tr>
           <tr><td><code>+0x12</code></td><td>u16</td><td>flags; <code>0x4</code> = placed</td></tr>
         </tbody>
       </table>
-      <p>A placed record becomes an actor through exactly one of two sweeps. The scene-init sweep resolves the record's <strong>bind</strong> (the gate-0 trigger on its footprint anchor) and skips unbound records; the sub-area window rebuild spawns from the tile words with no bind lookup, gated only by the footprint bit. The sets are complementary (Rim Elm: 37 bound + 9 unbound = 46), so every placed record draws. A bound record with a clip id is <em>posed</em> by that clip's frame 0 - the cupboard's hinge doors hang through the floor without it. Parser <code>legaia_asset::field_objects</code>.</p>
+      <p>A placed record becomes an actor through exactly one of two sweeps. The scene-init sweep resolves the record's <strong>bind</strong> (the gate-0 trigger on its footprint anchor) and skips unbound records; the sub-area window rebuild spawns from the tile words with no bind lookup. The sets are complementary (Rim Elm: 37 bound + 9 unbound = 46), so every placed record draws. A bound record with a clip id is posed by that clip's frame 0 - the cupboard's hinge doors hang through the floor without it. Parser <code>legaia_asset::field_objects</code>.</p>
     </div>
   </details>
 
@@ -245,10 +260,10 @@
     <summary>Scene entry: which <code>.MAP</code>, which script, which encounters</summary>
     <div class="disclosure-body">
       <ul>
-        <li>The <code>.MAP</code> is the PROT slot at <code>define &minus; 2</code> from the scene's CDNAME block; the first <code>0x12000</code> entry <em>inside</em> a block belongs to the next scene. The TOC-indexed payload is <code>0x4000</code> bytes; the grid lives in the entry's trailing sectors, so the loader reads the extended footprint. town01's grid matches the live RAM grid with zero diffs.</li>
-        <li>The entry script is the MAN partition-1 record 0 on channel <code>0xFB</code>, sliced from the script start so 16-bit-wrapping jumps anchor at the slice base. Its wall paints sit behind story-flag tests: map03 paints tile (66, 102) solid behind flag <code>0x6C2</code> and clears three rects behind <code>0x378</code>; on a fresh boot both are clear.</li>
-        <li>The same MAN carries the random-encounter table (section 0, installed at <code>scene + 0x20</code>); towns have real tables too - Rim Elm declares 7 formations at a <code>6/256</code> mean rate, gated by its region records.</li>
-        <li>Standalone towns use the <code>count = 6</code> asset-table form in their block's second PROT entry; kingdom-bundle scenes use <code>count = 7</code>. Both resolve through <code>find_bundle</code>.</li>
+        <li>The <code>.MAP</code> is the PROT slot at <code>define &minus; 2</code> from the scene's CDNAME block; its <code>0x12000</code> footprint identifies it.</li>
+        <li>The entry script is MAN partition-1 record 0 on channel <code>0xFB</code>. Its wall paints sit behind story-flag tests: map03 paints tile (66, 102) solid behind flag <code>0x6C2</code> and clears three rects behind <code>0x378</code>.</li>
+        <li>The same MAN carries the random-encounter table; towns have real tables too - Rim Elm declares 7 formations, gated by its region records.</li>
+        <li>On entry the player is seated from the destination-entry pair <code>_DAT_80073EF4 / EF8</code>: the door's operand on a scene change, the saved coordinates on a return from battle, a minigame or an FMV. <code>(0xA40, 0, 0xA40)</code> is where the ambient particle emitter spawns, not Vahn's seat.</li>
       </ul>
     </div>
   </details>
@@ -256,24 +271,14 @@
   <details class="disclosure">
     <summary>The scripted-scene actor</summary>
     <div class="disclosure-body">
-      <p>Some field actors are small programs rather than NPCs - the hop-arc controller, door swings, one-shot props. <code>FUN_801D4A60</code> is a 38-state jump table on the actor's <code>+0x54</code> whose entry state computes <code>+0x54 = +0x54 + 1 + (+0x50 &times; 10)</code>: <code>+0x50</code> is a program selector and the table is four short programs of 5, 5, 6 and 7 states entered at 1 / 11 / 21 / 31. Spawner <code>FUN_801D5A24(program)</code>; port <code>engine-core::field_actor_program</code>.</p>
-    </div>
-  </details>
-
-  <details class="disclosure">
-    <summary>Open</summary>
-    <div class="disclosure-body">
-      <ul>
-        <li>The full touch-event handler state beyond its decoded entry kernel.</li>
-        <li>Per-actor field-VM channel execution with story-flag branches: the engine loops decoded waypoint lists and takes the fall-through facing leg rather than evaluating the prologue's flag tests against live flags.</li>
-      </ul>
+      <p>Some field actors are small programs rather than NPCs - the hop-arc controller, door swings, one-shot props. <code>FUN_801D4A60</code> is a 38-state jump table on the actor's <code>+0x54</code> whose entry state computes <code>+0x54 = +0x54 + 1 + (+0x50 &times; 10)</code>: <code>+0x50</code> is a program selector, and the table is four short programs of 5, 5, 6 and 7 states entered at 1 / 11 / 21 / 31. Spawner <code>FUN_801D5A24(program)</code>.</p>
     </div>
   </details>
 
   <details class="disclosure">
     <summary>History: readings this page replaced</summary>
     <div class="disclosure-body">
-      <p>Walls were once thought to be authored entirely by scripts (a static search for CPU stores cannot see the DMA load). The <code>+0x8000</code> region was read as a terrain-flag grid (it is the object map). The object table was read as NPC spawns rather than buildings (the near-zero <code>+0x08..0x0C</code> fields are the rotation, not the mesh). A positional "mesh band" rule for object ids was falsified by the GPU prim pool. The <code>4C 51</code> operand was read as a glide speed (it is a facing nibble). See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+      <p>Walls were once thought to be authored entirely by scripts (a static search for CPU stores cannot see the DMA load). The <code>+0x8000</code> region was read as a terrain-flag grid; it is the object map. The object table was read as NPC spawns rather than buildings. Base step 5 was read as a scripted slow-walk; it is the kingdom overworld's step. The <code>4C 51</code> operand was read as a glide speed; it is a facing nibble. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
 </section>
@@ -291,6 +296,5 @@
     <a href="../formats/encounter.html">Encounter record</a>
     <a href="../formats/scene-v12-table.html">Scene v12 table</a>
     <a href="../play.html">Play in the browser</a>
-    <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

@@ -60,13 +60,13 @@ use std::path::PathBuf;
 
 use legaia_engine_core::world::{Actor, SceneMode, World};
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
-use legaia_engine_shell::mode_trace_oracle::{
+use legaia_engine_shell::replay::ReplayFile;
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace_field_live,
     build_engine_mode_trace_new_game_battle_leg, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
-use legaia_engine_shell::replay::ReplayFile;
-use legaia_mednafen::ScenarioManifest;
 use sha2::{Digest, Sha256};
 
 /// Default location of the v0.1 replay file, relative to the workspace

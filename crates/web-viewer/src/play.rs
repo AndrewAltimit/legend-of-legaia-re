@@ -349,7 +349,7 @@ pub fn build_field_render(
 impl LegaiaRuntime {
     /// The host's scene resources (built by `enter_field_scene`).
     pub(crate) fn res(&self) -> Option<&SceneResources> {
-        self.scene_host.as_ref()?.resources.as_ref()
+        self.scene_host.host()?.resources.as_ref()
     }
 
     fn field_cur(&self) -> Option<&((usize, u8), legaia_tmd::mesh::VramMesh, Vec<u8>)> {
@@ -526,7 +526,7 @@ impl LegaiaRuntime {
         let anim = anim_id.min(u8::MAX as u32) as u8;
         let light = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.presentation.field_light)
             .ok_or_else(|| JsValue::from_str("field_mesh_lit: no scene"))?;
         let res_idx = *self
@@ -608,7 +608,7 @@ impl LegaiaRuntime {
     /// the page re-shades its lit env copies when it changes (op `4C 8A`).
     pub fn field_light_key(&self) -> String {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| {
                 let l = h.world.presentation.field_light;
                 format!(
@@ -632,7 +632,7 @@ impl LegaiaRuntime {
     /// slot's positions from [`Self::field_morph_positions`] - the play
     /// page's side of the `FUN_8001C604` render substitution.
     pub fn field_morph_slots(&mut self) -> Vec<u32> {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return Vec::new();
         };
         let mut slots: Vec<u32> = host
@@ -656,7 +656,7 @@ impl LegaiaRuntime {
         let Some(res_idx) = self.field.as_ref().and_then(|f| f.env_tmds.get(s).copied()) else {
             return Vec::new();
         };
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let Some(res) = host.resources.as_ref() else {
@@ -784,7 +784,7 @@ impl LegaiaRuntime {
     /// `World::object_draw_displacements` table the native play-window folds
     /// into its placed draws.
     pub fn field_placement_moves(&self) -> Vec<f32> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let moves = h.world.object_draw_displacements();
@@ -807,7 +807,7 @@ impl LegaiaRuntime {
     /// tinted. The same `World::object_draw_tints` table the native
     /// play-window stages per placed draw.
     pub fn field_placement_tints(&self) -> Vec<f32> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let tints = h.world.object_draw_tints();
@@ -836,7 +836,7 @@ impl LegaiaRuntime {
     /// no stream has swapped a model. The same `World::object_live_models`
     /// table the native play-window draws its placed objects through.
     pub fn field_placement_models(&self) -> Vec<i32> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let models = h.world.object_live_models();
@@ -864,7 +864,7 @@ impl LegaiaRuntime {
     /// [`field_env::placed_draw_live`] kernel the native play-window's
     /// placed-object pass asks per draw.
     pub fn field_placement_live(&self) -> Vec<u8> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let window = &h.world.terrain.static_window;
@@ -883,7 +883,7 @@ impl LegaiaRuntime {
     /// The same `field_view_window::placed_actor_visible` kernel the native
     /// play-window's placed-object pass asks per draw.
     pub fn field_placement_culled(&self, debug_camera: bool) -> Vec<u8> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let Some(cells) = self.field_view_cells_now(debug_camera) else {
@@ -916,11 +916,7 @@ impl LegaiaRuntime {
         let Some(cells) = self.field_view_cells_now(debug_camera) else {
             return 0;
         };
-        let Some(view) = self
-            .scene_host
-            .as_ref()
-            .and_then(|h| h.world.npcs.cull_view)
-        else {
+        let Some(view) = self.scene_host.host().and_then(|h| h.world.npcs.cull_view) else {
             return 0;
         };
         let mut h: u32 = cells.stamp();
@@ -949,7 +945,7 @@ impl LegaiaRuntime {
     /// windowed list's rebuild generation, with the retail-windowing flag in
     /// bit 0. The page re-reads the mask only when this moves.
     pub fn field_static_window_stamp(&self) -> u32 {
-        self.scene_host.as_ref().map_or(0, |h| {
+        self.scene_host.host().map_or(0, |h| {
             let w = &h.world.terrain.static_window;
             (w.generation << 1) | u32::from(w.retail_windowing)
         })
@@ -977,10 +973,11 @@ impl LegaiaRuntime {
         &self,
         debug_camera: bool,
     ) -> Option<legaia_engine_core::field_view_window::ViewCells> {
-        let h = self.scene_host.as_ref()?;
+        let h = self.scene_host.host()?;
         legaia_engine_core::field_view_window::field_view_cells(
             &h.world,
-            legaia_engine_core::field_view_window::framing_is_retail(&self.camera) && !debug_camera,
+            legaia_engine_core::field_view_window::framing_is_retail(self.scene_host.camera())
+                && !debug_camera,
         )
     }
 
@@ -1054,7 +1051,7 @@ impl LegaiaRuntime {
     /// door mid-swing - reports a changing key, and the page re-poses it by
     /// handing the key back to [`Self::field_mesh_posed_frame_positions`].
     pub fn field_placement_frames(&self) -> Vec<i32> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         f.placements
@@ -1142,7 +1139,7 @@ impl LegaiaRuntime {
         let Some(f) = self.field.as_ref() else {
             return Vec::new();
         };
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         // The terrain / decoration cells follow the live rungs; a placed
@@ -1202,7 +1199,7 @@ impl LegaiaRuntime {
     pub fn field_ground_live_positions(&mut self) -> Vec<f32> {
         let Some(live) = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.terrain.floor_height_lut)
         else {
             return Vec::new();
@@ -1308,7 +1305,7 @@ impl LegaiaRuntime {
     pub fn player_mesh_positions(&mut self) -> Vec<f32> {
         let scale = self
             .scene_host
-            .as_ref()
+            .host()
             .map_or(1.0, |h| h.world.player_render_scale());
         let mut out = self.player_mesh_positions_unscaled();
         if scale != 1.0 {
@@ -1322,7 +1319,7 @@ impl LegaiaRuntime {
     fn player_mesh_positions_unscaled(&mut self) -> Vec<f32> {
         let pose: Option<Vec<([i16; 3], [i16; 3])>> = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| {
                 let slot = h.world.player_actor_slot? as usize;
                 h.world.actors.get(slot)
@@ -1353,7 +1350,7 @@ impl LegaiaRuntime {
     /// `facing_units` is the engine heading (`render_26`, PSX 12-bit; `0` =
     /// travelling `+Z`); the world coords are the raw retail frame (`+Y` down).
     pub fn player_transform(&self) -> Vec<f32> {
-        let Some(a) = self.scene_host.as_ref().and_then(|h| {
+        let Some(a) = self.scene_host.host().and_then(|h| {
             let slot = h.world.player_actor_slot? as usize;
             h.world.actors.get(slot)
         }) else {
@@ -1379,7 +1376,7 @@ impl LegaiaRuntime {
         let Some(f) = self.field.as_ref() else {
             return false;
         };
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return false;
         };
         // Body centre: the one kernel the native gate samples
@@ -1416,7 +1413,7 @@ impl LegaiaRuntime {
     /// live clip's bone count), or `-1` for an uncut mesh. The page re-builds
     /// an NPC's mesh when this moves.
     pub fn play_npc_mesh_cut(&self, i: u32) -> i32 {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return -1;
         };
         self.actors.mesh_cut(h, self.actor_banks(), i)
@@ -1433,7 +1430,7 @@ impl LegaiaRuntime {
     /// staged (`World::npc_morphed_tmd`), in [`Self::play_npc_mesh_positions`]'
     /// vertex order.
     pub fn play_npc_morph_base(&self, i: u32) -> Vec<f32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         self.actors.morph_base(h, self.actor_banks(), i)
@@ -1444,7 +1441,7 @@ impl LegaiaRuntime {
     /// resolves out of the world's global TMD pool, and a clip-bound mesh is
     /// cut to the clip's bone count, as the native window's field-NPC bind.
     pub fn play_npc_mesh(&mut self, i: u32) -> Result<u32, JsValue> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Err(JsValue::from_str("play_npc_mesh: no scene"));
         };
         let banks = crate::field_actors::ActorBanks {
@@ -1462,7 +1459,7 @@ impl LegaiaRuntime {
     /// page re-uploads the mesh when the answer moves.
     pub fn play_npc_live_model(&self, i: u32) -> i32 {
         self.scene_host
-            .as_ref()
+            .host()
             .map_or(-1, |h| self.actors.live_model(h, i))
     }
 
@@ -1495,7 +1492,7 @@ impl LegaiaRuntime {
     /// Catalog entry `i`'s spawn clip, 6 `i32` per bone per frame
     /// (`[tx, ty, tz, rx, ry, rz]`, absolute); empty with no clip.
     pub fn play_npc_pose_frames(&self, i: u32) -> Vec<i32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         self.actors.pose_frames(h, self.actor_banks(), i)
@@ -1504,7 +1501,7 @@ impl LegaiaRuntime {
     /// `[frame_count, bone_count]` of catalog entry `i`'s clip; `[0, 0]` when
     /// it has none.
     pub fn play_npc_pose_dims(&self, i: u32) -> Vec<u32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return vec![0, 0];
         };
         self.actors.pose_dims(h, self.actor_banks(), i)
@@ -1535,7 +1532,7 @@ impl LegaiaRuntime {
     /// the floor / scripted-arc height).
     pub fn play_npc_transforms(&self) -> Vec<f32> {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| self.actors.transforms(h))
             .unwrap_or_default()
     }
@@ -1544,7 +1541,7 @@ impl LegaiaRuntime {
     /// (`World::field_npc_tilt`; `(0, 0)` for an untilted actor).
     pub fn play_npc_tilts(&self) -> Vec<f32> {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| self.actors.tilts(h))
             .unwrap_or_default()
     }
@@ -1556,7 +1553,7 @@ impl LegaiaRuntime {
     /// play-window stages on its NPC draws.
     pub fn play_npc_tints(&self) -> Vec<f32> {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| self.actors.tints(h))
             .unwrap_or_default()
     }
@@ -1566,7 +1563,7 @@ impl LegaiaRuntime {
     /// while this is `true`.
     pub fn play_effect_clip_live(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| !h.world.object_effect_clips().is_empty())
     }
 
@@ -1582,7 +1579,7 @@ impl LegaiaRuntime {
     /// the native window asks per placed / NPC draw.
     pub fn play_effect_clip(&self, kind: u8, key: u32, model: Vec<f32>) -> Vec<f32> {
         use legaia_engine_core::world::ActorTintKey;
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         if model.len() < 16 {
@@ -1624,7 +1621,7 @@ impl LegaiaRuntime {
     /// window's player cue).
     pub fn play_player_tint(&self) -> Vec<f32> {
         self.scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.player_draw_tint())
             .map(|(colour, blend)| {
                 let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
@@ -1689,7 +1686,7 @@ impl LegaiaRuntime {
     /// ping-pong ramp that moves on every frame, so no upload stays current.
     pub fn play_morph_weight_slots(&self) -> Vec<u32> {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| {
                 h.world
                     .morph_weight_actor_weights()
@@ -1714,11 +1711,11 @@ impl LegaiaRuntime {
         };
         let posed = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.morph_weight_posed_tmd(slot as usize));
         let Some(gtmd) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.actors.get(slot as usize))
             .and_then(|a| a.tmd_ref.as_ref().map(std::sync::Arc::clone))
         else {
@@ -1793,7 +1790,7 @@ impl LegaiaRuntime {
     /// heading map when the slot has one, else identity (`facing = 2048`,
     /// the native `None => Mat4::IDENTITY` arm).
     pub fn play_dynamic_actor_transforms(&self) -> Vec<f32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
