@@ -46,14 +46,14 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # proc_spawn_group / proc_wait_pid / proc_kill_group. Each attempt runs in its
 # OWN process group so the deadline can kill the emulator too. Plain
 # `timeout <n> bash run_probe.sh` cannot: timeout signals its direct child, the
 # shell dies, and PCSX-Redux is orphaned - observed live, an orphan from a
 # finished run kept burning CPU and slowed the next attempt to a crawl. These
 # helpers also make the liveness check structurally unable to match this script.
-# shellcheck source=../lib/proc.sh
+# shellcheck source=../../lib/proc.sh
 source "$REPO_ROOT/scripts/lib/proc.sh"
 
 ATTEMPTS=8
