@@ -1573,6 +1573,19 @@ pub fn run_engine_battle(
         }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
             for t in 0..INFLIGHT_TICKS {
+                if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
+                    let w = &session.host.world;
+                    eprintln!(
+                        "[cast] t={t} st=0x{:02X} act={} yb={:?} cam={:?}",
+                        w.battle_ctx.action_state,
+                        w.battle_ctx.active_actor,
+                        w.battle.camera.as_ref().map(|c| c.action_yaw_base()),
+                        w.battle
+                            .camera
+                            .as_ref()
+                            .map(|c| (c.phase(), w.battle_cam_pose())),
+                    );
+                }
                 if gate.met(&session.host.world) {
                     phase_tick = Some(t);
                     break;

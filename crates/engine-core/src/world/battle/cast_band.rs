@@ -2136,6 +2136,28 @@ impl World {
         outcome
     }
 
+    /// The module's camera state with its `yaw_base` loaded from the battle
+    /// camera's live `ctx[+0x6DA]`. Retail has one word: the module's
+    /// `sh 0x200, 0x6DA(ctx)` and per-pass swing land in the counter the
+    /// action SM's prologue keeps drifting, and the Done band's case 6 reads
+    /// what they left (`shiny_refactor_gimard_levelup`).
+    fn module_cam_with_yaw_base(&self) -> vm::cast_module_camera::ModuleCamState {
+        let mut st = self.casting.module_cam;
+        if let Some(cam) = self.battle.camera.as_ref() {
+            st.yaw_base = cam.action_yaw_base();
+        }
+        st
+    }
+
+    /// Store the module's camera state back and its `yaw_base` into the
+    /// battle camera's `ctx[+0x6DA]` ([`Self::module_cam_with_yaw_base`]).
+    fn store_module_cam(&mut self, st: vm::cast_module_camera::ModuleCamState) {
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.set_action_yaw_base(st.yaw_base);
+        }
+        self.casting.module_cam = st;
+    }
+
     /// The caster and victim as the module camera arms read them: world
     /// position (`+0x34..+0x38`) and battle heading (`+0x46`).
     pub(in crate::world) fn module_cam_seats(
@@ -2404,9 +2426,9 @@ impl World {
                     .victim_slot
                     .get_or_insert(victim_slot);
                 let seats = self.module_cam_seats(caster_slot, latched);
-                let mut st = self.casting.module_cam;
+                let mut st = self.module_cam_with_yaw_base();
                 let d = direct(&mut st, ctx.phase, seats);
-                self.casting.module_cam = st;
+                self.store_module_cam(st);
                 d
             })
         };
@@ -2421,9 +2443,9 @@ impl World {
             body.unwrap_or(vm::cast_module_camera::SINGLE_BODY),
         ) {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
-            let mut st = self.casting.module_cam;
+            let mut st = self.module_cam_with_yaw_base();
             let arm = direct(&mut st, ctx.phase, seats);
-            self.casting.module_cam = st;
+            self.store_module_cam(st);
             if let Some(v) = arm.latch
                 && let Some(i) = self.caster_latch_index(caster_slot)
             {

@@ -1589,9 +1589,14 @@ frames) at `0x801E5F2C..0x801E5F3C`.
 **The Done band's fork is on the action category**, read off the `0x50` arm
 (`0x801E5E90..0x801E5EF4`; the `0x51` arm at `0x801E5FC0..0x801E6018` is the
 same ladder): `actor[+0x1DE] == 5` (Run) skips the framing call and runs the
-yaw orbit instead, `== 3` (Attack) takes `li a1,0x8`, a party slot
-(`ctx[+0x13] < 3`) whose target's live HP `+0x14C` reads zero takes `0x8` too,
-and everything else `li a1,0x6`. Two captures pin the two sides:
+yaw orbit instead, `== 3` (Attack) takes `li a1,0x8`, a target that is itself
+a party seat whose live HP `+0x14C` reads zero takes `0x8` too, and everything
+else `li a1,0x6`. The seat test reads the spill `sp+0x20`, which the prologue
+fills from `lbu t2,0x1dd(s3)` (`0x801E29B0`) - the **target** index, beside
+`s8`, the target actor - not the acting seat `ctx[+0x13]`. A party caster whose
+spell killed a monster therefore keeps case 6 on itself through the tail
+(`shiny_refactor_gimard_levelup`: target slot `3` at `0` HP, step-table
+endpoints case 6's). Two captures pin the two sides:
 `zora_glare_petrify_post` (`ctx[7] == 0x51` after a monster's spell) reads
 pitch `0`, `TR (0, 1275, 4820)` - one tween step short of case 6's
 `(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the caster's own seat
@@ -1798,8 +1803,8 @@ tail, so it overrides cases 7 and 8 as it does case 6 - which matters now
 that the strike loop, where most art swings are filmed, is case 7. Its first
 test is the target's live HP (`0x801D71E8..0x801D7208`), so a death re-frame
 is never overridden. The Done cleanup (`0x50`) forks on the action category at
-`0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "party slot whose
-target's live-HP halfword reached zero" branch to `li a1,0x8`, everything else
+`0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "a party-seat
+target whose live-HP halfword reached zero" branch to `li a1,0x8`, everything else
 to `li a1,0x6` - and `0x52` / `0xFD` arm `8` unconditionally (`0x801E5F74`).
 
 Engine side: `battle_cam_script::recover_framing` / `action_end_framing`, armed

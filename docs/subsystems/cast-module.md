@@ -2239,6 +2239,12 @@ A walk arm hands the camera back to the action SM's framing instead: PROT
 with the depth `ctx[+0x6D0] = 0x800` and yaw base `ctx[+0x6DA] = 0x200` its
 arm 10 stored and `6 * scalar * delta` added to the yaw base per pass, and
 holds on the range poll `FUN_8004E2F0(7, victim)` while the creature walks in.
+That yaw base is the action SM's own counter, not a module copy: the prologue
+keeps drifting it every pass, and once the module returns the Done band's
+case 6 frames the caster from whatever the walk and the drift left there. The
+port loads the director's `yaw_base` from the battle camera's counter before
+each director pass and stores it back after (as it does for PROT 0966's
+`0x780`), so the two stay one word.
 Because the counted arms hold, the module - not a fixed stager script - sets
 how long `0x36` lasts: PROT 0903's run from arm 1 to the hit is about 500
 display frames.

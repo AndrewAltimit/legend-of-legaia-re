@@ -217,6 +217,14 @@ impl BattleCamera {
         self.action_yaw
     }
 
+    /// Store `ctx[+0x6DA]` from outside the action SM: the paged summon /
+    /// capture modules write the same word (PROT 0903's `sh 0x200` at
+    /// `0x801F738C` and its per-pass swing, PROT 0966's `0x780`), and the
+    /// Done band's case 6 reads whatever they left there.
+    pub fn set_action_yaw_base(&mut self, yaw: i32) {
+        self.action_yaw = yaw & 0xFFFF;
+    }
+
     /// Put the yaw counter on the half-turn nearer `yaw`: keep it, or flip
     /// its `0x800` bit, whichever lands closer (mod `0x1000`). The strike
     /// loop's seed `(rand() % 2) * 0x800 + 0x280` is a coin on the shared

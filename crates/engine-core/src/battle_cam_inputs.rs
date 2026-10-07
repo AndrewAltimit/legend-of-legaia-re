@@ -445,15 +445,18 @@ pub fn battle_post_action_target(
 
 /// The Done band's per-category fork inputs (`FUN_801E295C`'s `0x50` /
 /// `0x51` arms, `script::done_band_phase`): the acting actor's committed
-/// category `actor[+0x1DE]`, whether its seat is a party one
-/// (`ctx[+0x13] < 3`), and whether its target's live HP has reached zero.
+/// category `actor[+0x1DE]`, whether its **target** `actor[+0x1DD]` is a
+/// party seat (retail's `sp+0x20` spill, `< 3`; the engine seats the party
+/// first, so `< party_count`), and whether that target's live HP has reached
+/// zero.
 pub fn battle_done_band(world: &World, acting_slot: u8) -> script::DoneBandInputs {
     script::DoneBandInputs {
         category: world
             .actors
             .get(usize::from(acting_slot))
             .map_or(0, |a| a.battle.action_category),
-        party_slot: usize::from(acting_slot) < world.party.party_count as usize,
+        target_party_seat: battle_target_slot(world, acting_slot)
+            .is_some_and(|t| t < world.party.party_count as usize),
         target_dead: battle_post_action_target(world, acting_slot).is_some_and(|t| !t.live),
         target_knocked: battle_target_slot(world, acting_slot)
             .is_some_and(|t| world.battle_on_knockdown(t)),
