@@ -530,7 +530,8 @@ fn rung9_text_box(w: &mut World) -> Result<(), String> {
 
 /// Rung 10. `FUN_801EE5D4` - the screen-fill fade. It closes every open
 /// window on its first frame, raises the scene object's `0x80000` bit in its
-/// ramp phase, and exits on its own without any further pad.
+/// ramp phase, and exits on its own without any further pad - through the
+/// close tick `FUN_801F2134` its case 4 names as the next handler.
 fn rung10_fill_fade(w: &mut World) -> Result<(), String> {
     // Leave a window open so "closes every window" is observable.
     frame(w, PadButton::Square.mask());
@@ -551,11 +552,13 @@ fn rung10_fill_fade(w: &mut World) -> Result<(), String> {
         return Err("the fill fade did not close the window stack".into());
     }
     let mut saw_scene_bit = false;
+    let mut saw_close_tick = false;
     let mut retired = false;
     for _ in 0..512 {
         frame(w, 0);
         let c = ctrl(w);
         saw_scene_bit |= c.panels.scene_obj_flags & 0x0008_0000 != 0;
+        saw_close_tick |= c.panels.kind == Some(PanelActorKind::CloseTick);
         if !c.panels.is_active() {
             retired = true;
             break;
@@ -566,6 +569,11 @@ fn rung10_fill_fade(w: &mut World) -> Result<(), String> {
     }
     if !retired {
         return Err("the fill fade never reached its exit arm".into());
+    }
+    // Case 4 hands back to handler id 0, the close tick `FUN_801F2134`; the
+    // actor retires off that tick, not off the exit itself.
+    if !saw_close_tick {
+        return Err("the fill fade's exit never ran the close tick".into());
     }
     Ok(())
 }
