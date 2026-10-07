@@ -642,7 +642,10 @@ fn rung9_slot_reel_motor_keys_a_voice() {
         Some("100:Cross,160:Cross,220:Cross,280:Cross"),
         400,
         &[std::ffi::OsStr::new("--cheat-file"), cheat.as_os_str()],
-        &[("RUST_LOG", "info,legaia_engine_shell=debug")],
+        &[(
+            "RUST_LOG",
+            "info,legaia_engine_shell=debug,legaia_engine_session=debug",
+        )],
         true,
     );
     if !stderr.contains("audio: device=") {
