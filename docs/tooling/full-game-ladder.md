@@ -256,7 +256,11 @@ map as its street:
   centre short of the margin. A touch-class door whose touch reaches `31 00`
   opens itself wherever it stands, so it counts open too: `jiji` P0[0], the
   door across the corridor to the `map02` mouth at (66, 96), stands over no
-  teleport. The touch is read from the record's resume point (past its first
+  teleport. An interact-class prop (`31 1E` in its spawn prologue, the
+  button-gated contact) whose resumed record reaches `31 00` opens the same
+  way on the action button, which the follower taps when held against it:
+  `chitei2` P0[2], the gate at (41, 122) in front of the kind-0 teleport at
+  (41, 124) into the Jette pocket. The touch is read from the record's resume point (past its first
   `21`) with story-flag tests followed against the live flags; a door whose
   opening sits behind a box test of the player opens only from a cell inside
   that box (`ropeway` P0[2], the Octam station door, opens for a player on
@@ -304,7 +308,12 @@ drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to
 (89, 80), a one-way hop it cannot climb back). A script that fires on the walk and changes no flag, more than a couple of
 dozen times on one walk, makes that walk a stall: `retock` P2[26], the Mt.
 Letona checkpoint, turns the party back every time it is crossed without
-Lord Saryu's key, and re-crossing it ate the segment's budget. The follower presses a teleport waypoint until the jump lands, backs out of a
+Lord Saryu's key, and re-crossing it ate the segment's budget. A script that
+carries the walker to a landing it has carried it to before, leaving the same
+flags, is a loop after the third time even when the flags it toggles keep the
+first count from building: `chitei2`'s transport rides between (98, 102) and
+(94, 22), each ride flipping the car's flags, and a walk to P2[9] rode it back
+and forth for a third of the segment's budget. The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
 against something for a second, tries the action button. In a field the tap
 waits for a frame the player did not move: the stall counter also counts a run
@@ -464,7 +473,11 @@ spending the rest on plain directions (whether a matched art fires is the
 queue builder's call, out of the Spirit gauge). The plan runs up to nine
 commands, the length of each character's Miracle Art. A random encounter that
 interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
-the fight forbids running. A member in danger is healed before the run, unless
+the fight forbids running, and so is one the region roll raises while a script
+carries the party across a rolling region - the tick's step moved the region
+counter with no scripted formation armed (`jouinb` P2[6], the rapids, rolls
+several on one ride, and fighting them at the end of a dungeon's MP cost a
+third of the segment's budget). A member in danger is healed before the run, unless
 the foes' last round took half or more of what the party still holds: a heal
 does not win that race, and the run is the better draw.
 
@@ -601,7 +614,7 @@ one level down from the tier that failed:
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
 | `reach flag(s) 0x.. never set` | The target scene was reached but the beat that separates the milestones did not play. |
 | `battle unresolved ...: action SM ctx[7]=0x.. <state> actor N` | The battle action state machine (retail `FUN_801E295C`) sat in that state for the whole budget. |
-| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round, but it never changes equipment. |
+| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round. Equipment changes only on a boss retry (`pad (retried with element-N guards)`, see [the boss section](#a-boss-the-anchors-party-cannot-outlast)). |
 | `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands, through the scene's teleports and object doors; a pad hop then tries a crossing scene. |
 | `pad walk stalled at tile ..` | A path existed and the follower stopped making progress on it. |
 | `PANIC: ...` | An engine panic, caught per segment. |
@@ -650,25 +663,41 @@ pad tier clears on the default stream and on seeds 1..40 alike.
 ### A boss the anchor's party cannot outlast
 
 `noaru_valley -> bio_castle` meets the third Songi fight (48000 HP, UDF
-`402`, INT `324`) on the walk out of `noaru`, and the pad tier loses it on
-every seed. The hand's damage is not the gap: each member casts Gilium, the
-strongest summon it knows, for about 2000 (Vahn, Noa) to 3000 (Gala) a
-cast, drinks a Magic Fruit when it cannot afford the next, and an Art
-against that defence does a few hundred. Every term of those rolls, and of
-Songi's, reads off the disassembly (the summon branch of `FUN_801DD0AC`, the
-INT wrapper `FUN_801DD4B0`, the melee kernel `FUN_801EC3E4`).
+`402`, INT `324`) on the walk out of `noaru`. The hand's damage is not the
+gap: Gala casts Gilium for about 3000 and drinks a Magic Fruit when it
+cannot afford the next, and Vahn and Noa, Fury-boosted, type their Miracle
+Arts for about 2400 a round. Every term of those rolls, and of Songi's, reads
+off the disassembly (the summon branch of `FUN_801DD0AC`, the INT wrapper
+`FUN_801DD4B0`, the melee kernel `FUN_801EC3E4`).
 
-The gap is the anchor. The `PRO-04` party is level 31 with 1683..1956 HP.
-Songi's turn is a 3..6-strike combo of about 700 a strike (ATK 477 with
-`x5/4` boss boost, power-28 swings, plus `HP/256` = 187 off its own pool) or
-a single 928-power special of about 1300..1550, so most of its turns drop
-one member, and a Phoenix brings that member back at a quarter of its HP for
-the next turn to drop again. Below half HP, on a turn its core picked a
-strike, it arms Genocidal Cannon half the time, and from then on every turn
-is the cannon - about 1700 to each member, about 750 to a member in the
-Spirit stance - for as long as its 3000 MP lasts. The next anchor's save
-(`PRO-10`) holds the same party at 3090..3583 HP: retail did not fight this
-at `PRO-04` strength either. Read the stall as the anchor's.
+The `PRO-04` party is level 31 with 1683..1956 HP. Songi's turn is a
+3..6-strike combo of about 700 a strike (ATK 477 with `x5/4` boss boost,
+power-28 swings, plus `HP/256` = 187 off its own pool) or a single
+928-power special of about 1300..1550, so most of its turns drop one member,
+and a Phoenix brings that member back at a quarter of its HP for the next
+turn to drop again. Below half HP, on a turn its core picked a strike, it
+arms Genocidal Cannon half the time, and from then on every turn is the
+cannon - about 1800 to each member, more than Vahn or Noa holds - for as
+long as its 3000 MP lasts. The next anchor's save (`PRO-10`) holds the same
+party at 3090..3583 HP. Unequipped, the hand beats Songi on 2 of 10 dealt
+streams.
+
+What a player does after that game over is equip for the fight. Songi's
+element is Dark, the cannon goes through the resist-respecting wrapper, and
+the anchor's bag holds 99 Ebony Jewels (Dark Guard, passive `0x23`: the
+finisher halves a Dark hit on its wearer). So a pad segment that ends in a
+party wiped by a boss (a fight that forbids running) is played once more
+from the same seed, and before it sets out the hand equips the bag's guard
+against that boss's element (passive `0x1D + element`, record `+0x1D`) on
+every present member without one: Start, Equip, the member, the third Goods
+row, the guard, Yes. The third row is the slot a player keeps the least for:
+against Songi the Defender Chain's evasion, which Vahn and Noa carry second,
+is worth more than their third-slot Wonder Amulet and Spirit Talisman, and
+equipping the jewel there instead of over the chain wins on more streams.
+The retry is reported as `pad (retried with element-N guards)`. The Jette
+fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
+50000 HP boss the unguarded hand loses at about half its HP, and wins once
+guarded.
 
 ## Seeding
 
@@ -702,12 +731,14 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   scene graph, not locomotion; the pad tier is the locomotion claim.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
-  options by rotation, not by reading them. Neither tier buys or equips, and
-  only the pad tier opens the pause menu (to heal); a beat that waits on a
-  purchase or an equip reads as a stall at that beat.
+  options by rotation, not by reading them. Neither tier buys, and only the
+  pad tier opens the pause menu (to heal, or to equip a boss's elemental
+  guard on a retry); a beat that waits on a purchase or an equip reads as a
+  stall at that beat.
 - The fighter guards only a foe that hits hard every other round, never
-  targets a weakness or changes equipment, and it flees a travel leg's random
-  encounter. A fight that needs any of those reads as a wipe.
+  targets a weakness, changes equipment only to guard a boss's element after
+  losing to it, and flees a random encounter. A fight that needs anything
+  else reads as a wipe.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
   (`suimon`'s water gate `0x27B`) needs that beat played first. The talk
@@ -850,10 +881,3 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   starts). A reach beat that clears a flag the live state holds waits while
   another missing reach flag's band is out of reach: P2[11] clears the switch
   flags the `deroa` route needs, so the junction comes first.
-- The Jette fight (`chitei2` P2[13], band (16..18, 89)) that `noaru_valley`
-  passes through sits in a pocket whose way in is the kind-0 teleport at
-  (41, 124), below the door P0[2] / P0[3] at (40..41, 122). Both leaves run
-  `31 00`, but a player walking south down the corridor stops at z 15538, a
-  tile short of the teleport, so the pad tier stalls on the `map03` hop to
-  `concend` (whose portal waits on the fight's `0x4C8`). What opens that
-  last tile is not traced.

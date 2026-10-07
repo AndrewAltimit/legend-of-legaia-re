@@ -60,8 +60,9 @@
 //! sparring tutorial's lesson command in a tutorial). The
 //! seated tier talks to the NPCs whose records reach a flag the next anchor
 //! carries or a destination the route needs, and the pad tier plays the same
-//! beats by walking to them; neither tier buys or equips (the pad tier opens
-//! the pause menu only to heal or burn an Incense), so a story beat that waits on one reads as
+//! beats by walking to them; neither tier buys, and the pad tier opens the
+//! pause menu only to heal, burn an Incense, or - replaying a segment a boss
+//! wiped - equip the bag's guard against that boss's element, so a story beat that waits on a purchase reads as
 //! a stall at that beat. The route follows `0x3F` scene changes and FMV hand-offs; a
 //! transport an entry script spawns on arrival is a missing edge (see
 //! `docs/tooling/full-game-ladder.md`).
@@ -1321,7 +1322,15 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
             return Run::Parked(e);
         }
         if session.host.world.mode == SceneMode::Battle {
-            if let Some(r) = drain_battle(session) {
+            // A random encounter the region roll raised while a script ran
+            // (`jouinb` P2[6], the rapids, carries the party across rolling
+            // regions) is fled as it is on a travel leg; anything a script
+            // staged is fought.
+            let flee = RANDOM_ROLL.with(|r| r.replace(false));
+            FLEE_ENCOUNTERS.with(|f| f.set(flee));
+            let r = drain_battle(session);
+            FLEE_ENCOUNTERS.with(|f| f.set(false));
+            if let Some(r) = r {
                 return r;
             }
             continue;
@@ -1338,7 +1347,9 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
         session.host.world.set_pad(pad);
         let before = player_xz(session);
         let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
+        let roll_before = encounter_roll_state(session);
         let r = session.tick();
+        note_random_roll(session, roll_before);
         if let Some(site) = site {
             let after = player_xz(session);
             let now = park_site(session);
@@ -1374,6 +1385,39 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
         Run::Released
     } else {
         Run::Parked(format!("{} at {}", holder(session), park_site(session)))
+    }
+}
+
+thread_local! {
+    /// Set when the region roll (not a staged fight) raised the encounter
+    /// whose transition is under way; consumed when its battle starts.
+    static RANDOM_ROLL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// What [`note_random_roll`] compares across one tick: whether the encounter
+/// session sat idle, whether a scripted formation was armed, and the region
+/// step counter (`World::encounters.step_counter`, written only by the
+/// region arm of `World::on_field_step`).
+fn encounter_roll_state(session: &BootSession) -> (bool, bool, i32) {
+    use legaia_engine_core::encounter::EncounterPhase;
+    let e = &session.host.world.encounters;
+    (
+        e.session
+            .as_ref()
+            .is_none_or(|s| matches!(s.phase(), EncounterPhase::Idle)),
+        e.scripted_formation_pending,
+        e.step_counter,
+    )
+}
+
+/// Mark [`RANDOM_ROLL`] when this tick's step left the idle session for a
+/// transition through the region arm: no scripted formation was armed going
+/// in (the scripted arm fires first and returns), and the region arm moved
+/// the step counter.
+fn note_random_roll(session: &BootSession, (idle, pending, counter): (bool, bool, i32)) {
+    let (idle_now, _, counter_now) = encounter_roll_state(session);
+    if idle && !idle_now && !pending && counter_now != counter {
+        RANDOM_ROLL.with(|r| r.set(true));
     }
 }
 
@@ -2791,6 +2835,21 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
     };
     let mut party_prev = party_hp(session);
     let mut prev = 0u16;
+    // The element of a boss (a fight that forbids running): its record's
+    // `+0x1D`, read while its seat is still filled.
+    let boss_element = {
+        let w = &session.host.world;
+        w.battle
+            .no_escape
+            .then(|| {
+                w.actors
+                    .iter()
+                    .filter_map(|a| a.battle_monster_id)
+                    .find_map(|id| w.tables.monster_catalog.get(id))
+                    .map(|d| d.element)
+            })
+            .flatten()
+    };
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
@@ -2947,6 +3006,16 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
         if w.game_over_hold || w.game_over {
             if trace {
                 eprintln!("    [battle] wiped after {t} ticks");
+            }
+            // A boss fight (no running) lost: what the next attempt prepares
+            // for is the foe's element. The wiped party's game-over screen
+            // re-enters this loop with the monsters gone; it does not erase
+            // what beat them.
+            if trace {
+                eprintln!("    [battle] lost to a boss of element {boss_element:?}");
+            }
+            if boss_element.is_some() {
+                LOST_TO_ELEMENT.with(|l| l.set(boss_element));
             }
             return Some(Run::Battle(format!(
                 "party wiped: {}",
@@ -3353,6 +3422,9 @@ const PAD_STALL_FRAMES: u32 = 300;
 /// Times one walk-time script may fire on a single pad walk without changing
 /// a flag before the walk gives up on that way.
 const WALK_SCRIPT_REFIRES: u32 = 24;
+/// Times one walk-time script may carry the walker to the same landing,
+/// leaving the same flags, before the walk gives up on that way.
+const WALK_SCRIPT_CYCLES: u32 = 3;
 /// Cross-axis distance (world units) the pad walk does not correct while it
 /// still has ground to cover on the other axis.
 const WALK_DEADBAND: i16 = 8;
@@ -5003,25 +5075,28 @@ fn plan_search(
     // A touch-class door whose bind record runs `31 00` opens itself on the
     // touch wherever it stands, over a teleport or not (`jiji` P0[0], the
     // door across the corridor to the `map02` mouth at (66, 96)).
+    // An interact-class one (`31 1E` in its spawn prologue) opens the same
+    // way on the action button instead of the touch: the follower, held
+    // against it, taps Cross (`chitei2` P0[2], the gate at (41, 122) in
+    // front of the kind-0 teleport at (41, 124) into the Jette pocket).
     let self_opening = self_opening_doors(session);
     let blockers = Blockers::build(w, |c| {
         !c.moving_box
-            && !c.interact
             && (c.anchor.is_some_and(|a| self_opening.contains(&a))
-                || warps.keys().any(|&(tx, tz)| {
-                    let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
-                    (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)
+                || !c.interact
+                    && (warps.keys().any(|&(tx, tz)| {
+                        let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
+                        (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)
                     // A leaf anchored on the tile in front of the teleport
                     // (`dolk`'s inn stair door: anchor (76, 121), box
                     // centre z 121.3 tiles, teleport tile (76, 122)).
                     || c.anchor.is_some_and(|(ax, az)| {
                         (i32::from(ax) - tx).abs() + (i32::from(az) - tz).abs() <= 1
                     })
-                })
-                || doors.iter().any(|&((x, z), _)| {
-                    (c.center.0 - i32::from(x)).abs() <= 128
-                        && (c.center.1 - i32::from(z)).abs() <= 128
-                }))
+                    }) || doors.iter().any(|&((x, z), _)| {
+                        (c.center.0 - i32::from(x)).abs() <= 128
+                            && (c.center.1 - i32::from(z)).abs() <= 128
+                    })))
     });
     let mut s = Search {
         parent: HashMap::from([(from, from)]),
@@ -6119,6 +6194,9 @@ fn pad_walk(
     let mut tap_owed = false;
     // Walk-time script firings per park site, with the flags they left.
     let mut refires: HashMap<String, (u32, BTreeSet<u16>)> = HashMap::new();
+    // Landings of walk-time scripts that moved the walker, by site and the
+    // flags they left.
+    let mut landings: HashMap<(String, BTreeSet<u16>, Cell), u32> = HashMap::new();
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -6410,11 +6488,13 @@ fn pad_walk(
             // they were: a refusal's step back, not a band walked through
             // (`nilboa` P2[26] / P2[27] re-dress the boulder room in place).
             let turned_back = before.0 == flags_now && before.1 != cell_of(px, pz);
-            let n = refires.entry(site).or_insert((0, flags_now.clone()));
+            let n = refires
+                .entry(site.clone())
+                .or_insert((0, flags_now.clone()));
             if n.1 == flags_now {
                 n.0 += 1;
             } else {
-                *n = (1, flags_now);
+                *n = (1, flags_now.clone());
             }
             // On a split party, a band that fired twice on one walk and
             // changed nothing turned the walker back (`nilboa`'s tunnel
@@ -6438,6 +6518,25 @@ fn pad_walk(
                     here(session),
                     n.0
                 ));
+            }
+            // A script that carries the walker somewhere it has already
+            // carried it, leaving the same flags, is a loop rather than
+            // progress, even when the flags it toggles keep the count above
+            // from building: `chitei2`'s transport rides between (98, 102)
+            // and (94, 22), each ride flipping the car's flags, and the
+            // walk rode it back and forth for most of a segment's budget.
+            if before.1 != cell_of(px, pz) {
+                let c = landings
+                    .entry((site.clone(), flags_now.clone(), cell_of(px, pz)))
+                    .or_insert(0u32);
+                *c += 1;
+                if *c > WALK_SCRIPT_CYCLES {
+                    return Err(format!(
+                        "pad walk stalled at tile {:?}: a script on the walk carried it to the same spot {} times",
+                        here(session),
+                        *c
+                    ));
+                }
             }
         }
         let d = dist(here(session));
@@ -6842,6 +6941,184 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
         );
     }
     used
+}
+
+thread_local! {
+    /// The element of the boss (a fight that forbids running) the last pad
+    /// battle was lost to, for the reload that prepares against it.
+    static LOST_TO_ELEMENT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
+}
+
+/// The accessory passive that halves one element's hits on its wearer: the
+/// elemental-guard band `0x1D + element` the damage finisher's resist ladder
+/// tests (`FUN_801DDB30`; Ebony Jewel, Dark Stone and Dark Talisman for
+/// Dark). Elements past 6 have no guard.
+fn guard_passive(element: u8) -> Option<u8> {
+    (element <= 6).then_some(0x1D + element)
+}
+
+/// The Goods slot a guard goes into: the third (engine slot 7), the way a
+/// player who keeps the first two for the passives the party fights with
+/// would swap. Against Songi the Defender Chain's evasion (on Vahn and Noa
+/// the second Goods slot) outweighs the third slot's Wonder Amulet and
+/// Spirit Talisman.
+const GUARD_SLOT: u8 = 7;
+
+/// The bag's guard Goods item for `element`: the most-held item carrying
+/// [`guard_passive`].
+fn guard_item_for(w: &legaia_engine_core::world::World, element: u8) -> Option<u8> {
+    let want = guard_passive(element)?;
+    w.party
+        .inventory
+        .iter()
+        .filter(|&(&id, &qty)| {
+            qty > 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+        })
+        .max_by_key(|&(&id, &qty)| (qty, std::cmp::Reverse(id)))
+        .map(|(&id, _)| id)
+}
+
+/// The present party members that wear no guard against `element`.
+fn unguarded_members(w: &legaia_engine_core::world::World, element: u8) -> Vec<u8> {
+    let Some(want) = guard_passive(element) else {
+        return Vec::new();
+    };
+    w.present_party_list()
+        .into_iter()
+        .filter(|&s| {
+            w.party.roster.members.get(usize::from(s)).is_some_and(|m| {
+                !m.equipment().slots[5..].iter().any(|&id| {
+                    id != 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+                })
+            })
+        })
+        .collect()
+}
+
+/// Equip the bag's guard against `element` on every present member that
+/// lacks one, with the pad, as a player does after losing to a boss of that
+/// element: Start, Equip, the member in the character picker, the third
+/// Goods row, the guard in the candidate list, Yes - then Circle back to
+/// the field. Each confirm commits through the menu's own applier
+/// (`FUN_801E5A08`'s port), so the bag gives up the item and takes back the
+/// one it replaced. Returns how many members it equipped.
+fn pad_equip_guard(session: &mut BootSession, element: u8) -> usize {
+    use legaia_engine_core::equip_session::{EquipState, browse_row_for_slot};
+    use legaia_engine_core::field_menu::{FieldMenuPhase, FieldMenuRow};
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    let Some(item) = guard_item_for(&session.host.world, element) else {
+        return 0;
+    };
+    if !walking(session)
+        || !released(session)
+        || unguarded_members(&session.host.world, element).is_empty()
+    {
+        return 0;
+    }
+    let before = unguarded_members(&session.host.world, element).len();
+    open_pause_menu(session);
+    if session.field_menu.is_none() {
+        return 0;
+    }
+    let equip_row = FieldMenuRow::Equip.index();
+    let list = session.host.world.present_party_list();
+    let pos = |s: u8| list.iter().position(|&x| x == s).unwrap_or(0);
+    let mut skipped: HashSet<u8> = HashSet::new();
+    for _ in 0..400 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let target = unguarded_members(&session.host.world, element)
+            .into_iter()
+            .find(|s| !skipped.contains(s));
+        let pad = match (session.field_menu_sub.as_ref(), target) {
+            (None, None) => PadButton::Circle.mask(),
+            (None, Some(_)) => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } if cursor < equip_row => PadButton::Down.mask(),
+                FieldMenuPhase::Browsing { cursor } if cursor > equip_row => PadButton::Up.mask(),
+                FieldMenuPhase::Browsing { .. } => PadButton::Cross.mask(),
+                _ => 0,
+            },
+            (
+                Some(FieldMenuSubsession::Equip {
+                    session: es,
+                    char_slot,
+                    picking,
+                }),
+                Some(t),
+            ) => {
+                if *picking {
+                    match pos(*char_slot).cmp(&pos(t)) {
+                        std::cmp::Ordering::Less => PadButton::Down.mask(),
+                        std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                        std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                    }
+                } else if *char_slot != t {
+                    PadButton::Circle.mask()
+                } else {
+                    match es.state() {
+                        EquipState::SlotPicker { cursor } => {
+                            match cursor.cmp(&browse_row_for_slot(GUARD_SLOT)) {
+                                std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                            }
+                        }
+                        EquipState::ItemPicker { slot, cursor } if slot == GUARD_SLOT => {
+                            let rows = es.items_for_slot(slot);
+                            match rows.iter().position(|r| r.id == item && !r.equipped) {
+                                Some(k) => match usize::from(cursor).cmp(&k) {
+                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                                },
+                                None => {
+                                    skipped.insert(t);
+                                    PadButton::Circle.mask()
+                                }
+                            }
+                        }
+                        EquipState::Confirm {
+                            item_id, cursor, ..
+                        } if item_id == item => {
+                            if cursor == 0 {
+                                PadButton::Cross.mask()
+                            } else {
+                                PadButton::Left.mask()
+                            }
+                        }
+                        EquipState::Done(_) => 0,
+                        _ => PadButton::Circle.mask(),
+                    }
+                }
+            }
+            (Some(_), _) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    let after = unguarded_members(&session.host.world, element).len();
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [equip] item 0x{item:02X} against element {element}: {} member(s) unguarded -> {after}; menu {}",
+            before,
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    before - after.min(before)
 }
 
 /// Burn an Incense with the pad, as a player does who is too hurt to survive
@@ -7889,11 +8166,12 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .collect();
     let (px, pz) = player_xz(session);
     eprintln!(
-        "    [beat] {} +{gained:?} (ends in {} {:?} at {:?} ({px},{pz}))",
+        "    [beat] {} +{gained:?} (ends in {} {:?} at {:?} ({px},{pz}); frame {})",
         what(),
         scene_name(session),
         session.host.world.mode,
-        tile_of(px, pz)
+        tile_of(px, pz),
+        session.frames
     );
 }
 
@@ -8936,7 +9214,12 @@ fn traverse(
             })
         };
         match hop {
-            Ok(entered) => trail.push(entered),
+            Ok(entered) => {
+                if pad && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [hop] {cur} -> {entered} (frame {})", session.frames);
+                }
+                trail.push(entered)
+            }
             Err(e)
                 if pad && e.contains("no walkable path") && {
                     let n = crossed.entry((cur.clone(), goal.clone())).or_insert(0);
@@ -8982,7 +9265,10 @@ fn traverse(
                 }
                 if beaten.insert(cur.clone()) {
                     if !e.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                        eprintln!("    [hop] {e}; playing {cur}'s beats");
+                        eprintln!(
+                            "    [hop] {e}; playing {cur}'s beats (frame {})",
+                            session.frames
+                        );
                     }
                     let mut log = Vec::new();
                     // Only the milestone's own beats pass may stop short of
@@ -9212,50 +9498,79 @@ fn run_segment(
     }
 
     // -- pad pass ---------------------------------------------------------------
+    // A party wiped by a boss whose element a Goods item in the bag guards
+    // is played again from the same seed with that guard equipped: the
+    // player's reload after a game over, preparing for the fight that ended
+    // the last attempt (see "A boss the anchor's party cannot outlast" in
+    // the ladder docs).
     if with_pad && rep.tier >= Tier::Progresses {
-        let padded = catch_unwind(AssertUnwindSafe(|| {
-            let mut session = open_session(&inp.extracted);
-            let opts = live_opts(true);
-            seed(&mut session, from, from_anchor, &opts)?;
-            PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
-            PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
-            // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
-            // Every random draw it meets comes off the world rand stream, so
-            // a re-seeded run is how a pad route is checked for depending on
-            // one stream's luck (see "A pad wipe that moves with an
-            // unrelated change" in the ladder docs).
-            if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
-                let s = s.trim();
-                s.strip_prefix("0x")
-                    .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
-            }) {
-                session.host.world.rng_state = s;
+        let mut prepare: Option<u8> = None;
+        loop {
+            LOST_TO_ELEMENT.with(|l| l.set(None));
+            let padded = catch_unwind(AssertUnwindSafe(|| {
+                let mut session = open_session(&inp.extracted);
+                let opts = live_opts(true);
+                seed(&mut session, from, from_anchor, &opts)?;
+                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+                // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
+                // Every random draw it meets comes off the world rand stream,
+                // so a re-seeded run is how a pad route is checked for
+                // depending on one stream's luck (see "A pad wipe that moves
+                // with an unrelated change" in the ladder docs).
+                if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
+                    let s = s.trim();
+                    s.strip_prefix("0x")
+                        .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
+                }) {
+                    session.host.world.rng_state = s;
+                }
+                if let Some(element) = prepare {
+                    let n = pad_equip_guard(&mut session, element);
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [pad] retry: equipped {n} element-{element} guard(s)");
+                    }
+                }
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [pad] seeded {} at {:?} (anchor seat {:?})",
+                        scene_name(&session),
+                        player_xz(&session),
+                        from_anchor.and_then(|a| a.seat)
+                    );
+                }
+                let start = session.frames;
+                let mut trail = vec![scene_name(&session)];
+                let r = traverse(&mut session, graph, to, true, &mut trail)
+                    .map_err(|e| format!("{e} [trail {}]", trail.join(">")));
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    let (n, cells) = PLAN_STATS.with(std::cell::Cell::take);
+                    eprintln!(
+                        "    [pad] {} frames, {n} plans over {cells} cells",
+                        session.frames - start
+                    );
+                }
+                r
+            }));
+            let retry =
+                prepare.is_none() && matches!(&padded, Ok(Err(e)) if e.contains("party wiped"));
+            match padded {
+                Ok(Ok(())) => {
+                    rep.tier = Tier::Pad;
+                    rep.stall = None;
+                }
+                Ok(Err(e)) => {
+                    rep.stall = Some(match prepare {
+                        Some(el) => format!("pad (retried with element-{el} guards): {e}"),
+                        None => format!("pad: {e}"),
+                    })
+                }
+                Err(p) => rep.stall = Some(format!("pad PANIC: {}", panic_text(&*p))),
             }
-            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                eprintln!(
-                    "    [pad] seeded {} at {:?} (anchor seat {:?})",
-                    scene_name(&session),
-                    player_xz(&session),
-                    from_anchor.and_then(|a| a.seat)
-                );
+            match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
+                Some(el) if retry => prepare = Some(el),
+                _ => break,
             }
-            let start = session.frames;
-            let mut trail = vec![scene_name(&session)];
-            let r = traverse(&mut session, graph, to, true, &mut trail)
-                .map_err(|e| format!("{e} [trail {}]", trail.join(">")));
-            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                let (n, cells) = PLAN_STATS.with(std::cell::Cell::take);
-                eprintln!(
-                    "    [pad] {} frames, {n} plans over {cells} cells",
-                    session.frames - start
-                );
-            }
-            r
-        }));
-        match padded {
-            Ok(Ok(())) => rep.tier = Tier::Pad,
-            Ok(Err(e)) => rep.stall = Some(format!("pad: {e}")),
-            Err(p) => rep.stall = Some(format!("pad PANIC: {}", panic_text(&*p))),
         }
     }
     rep
