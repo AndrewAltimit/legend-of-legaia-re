@@ -93,7 +93,7 @@ pub struct FieldNpcState {
     /// `FUN_8001ADA4`), which reads X at `+0`, Y at `+2` and Z at `+4`.
     ///
     /// REF: FUN_8001ADA4, FUN_80026988
-    pub tilts: std::collections::HashMap<u8, (i16, i16)>,
+    pub(crate) tilts: std::collections::HashMap<u8, (i16, i16)>,
     /// The talk-time facing save: `(placement slot, the heading the NPC stood
     /// with before the player addressed it)`.
     ///
@@ -142,10 +142,11 @@ pub struct FieldNpcState {
     /// (`CC <id> 85|8E|8F <lo> <hi> <bind>` outside a cutscene timeline,
     /// which keeps its own), keyed by slot and stepped once per field tick
     /// ([`crate::world::World::tick_field_npc_face_legs`]).
-    pub face_legs: std::collections::BTreeMap<u8, crate::inline_dialogue::TalkFaceRamp>,
+    pub(crate) face_legs: std::collections::BTreeMap<u8, crate::inline_dialogue::TalkFaceRamp>,
     /// Budgeted `B8 <id> ..` rotate legs the same contexts armed, keyed and
     /// stepped alongside [`Self::face_legs`].
-    pub rotate_legs: std::collections::BTreeMap<u8, crate::cutscene_timeline::TimelineFacing>,
+    pub(crate) rotate_legs:
+        std::collections::BTreeMap<u8, crate::cutscene_timeline::TimelineFacing>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
@@ -174,11 +175,11 @@ pub struct FieldNpcState {
     /// actor carries as its bind record). Keyed by that record index. The
     /// koin3 dance hall's video wall is one: records `P0[5..=8]` cycle their
     /// panels' meshes with op `0x0E` every twelve ticks.
-    pub object_ambient: std::collections::BTreeMap<usize, FieldNpcAmbient>,
+    pub(crate) object_ambient: std::collections::BTreeMap<usize, FieldNpcAmbient>,
     /// The live scene-bank model id an object's stream last swapped in
     /// (op `0x0E`), keyed by bind record; both hosts draw the record's
     /// placed objects with that mesh instead of the `.MAP` pack slot.
-    pub object_models: std::collections::BTreeMap<usize, i16>,
+    pub(crate) object_models: std::collections::BTreeMap<usize, i16>,
     /// Publish the ambient tail-section-1 streams' walk steps
     /// ([`crate::world::World::tick_field_npc_ambient`]) - the villagers'
     /// authored wandering. The bare `World` default is off (NPCs rest at their
@@ -208,7 +209,7 @@ pub struct FieldNpcState {
     pub object_pack_slots: std::collections::BTreeMap<u16, Vec<usize>>,
     /// Placement slots whose morph deltas moved since a host last drained
     /// them ([`crate::world::World::take_npc_morph_dirty`]).
-    pub morph_dirty: std::collections::BTreeSet<u8>,
+    pub(crate) morph_dirty: std::collections::BTreeSet<u8>,
     /// The move id each NPC's clip player last took from a single-move cue
     /// (`(1, id, [])` - a `+0x5C` write), keyed by placement slot: retail's
     /// `actor+0x5E`, the "clip now playing" half of the move-table
@@ -220,7 +221,7 @@ pub struct FieldNpcState {
     /// Written when [`crate::world::World::drain_field_anim_cues`] hands a
     /// cue to the hosts; an op-`0x4B` sequence cue removes the entry, since
     /// what then plays is not one move. Cleared with the cue queue.
-    pub clip_current: std::collections::HashMap<u8, u8>,
+    pub(crate) clip_current: std::collections::HashMap<u8, u8>,
     /// Each animated NPC actor's live clip cursor (`actor+0x68`) under its
     /// own `+0x62` control word, keyed by placement slot. The hosts own the
     /// decoded clip frames ([`crate::field_anim::FieldClipPlayer`]) but not
@@ -238,12 +239,12 @@ pub struct FieldNpcState {
     /// record's gate and divisor and takes its rate from the actor's live
     /// `+0x6A` each tick, as retail's clip tick does. A host's bind (whose
     /// step is already folded at the template rate) drops the slot.
-    pub clip_rate_live: std::collections::BTreeSet<u8>,
+    pub(crate) clip_rate_live: std::collections::BTreeSet<u8>,
     /// The bone count each animated NPC's clip was first bound with, keyed
     /// by placement slot - the count the hosts cut its mesh to. A re-target
     /// to a clip of another count is refused
     /// ([`crate::world::World::drain_field_anim_cues`]).
-    pub clip_bones: std::collections::HashMap<u8, usize>,
+    pub(crate) clip_bones: std::collections::HashMap<u8, usize>,
     /// The Y of each field NPC on the **glide** height arm, keyed by
     /// placement slot: retail's `+0x16` while the actor's flag word carries
     /// `0x2000`, which `FUN_8003BC08` steps toward the floor by at most
@@ -251,7 +252,7 @@ pub struct FieldNpcState {
     /// NPC on the snap arm, whose Y is the floor sample itself.
     /// Stepped by [`crate::world::World::tick_field_npc_heights`] and read by
     /// [`crate::world::World::field_npc_render_y`].
-    pub glide_y: std::collections::HashMap<u8, i16>,
+    pub(crate) glide_y: std::collections::HashMap<u8, i16>,
     /// The camera state the visibility cull `FUN_801D79E8` reads (focus,
     /// region box, visible tile window), as the camera last left it.
     /// Published by [`crate::camera::Camera::route_camera_events`], which

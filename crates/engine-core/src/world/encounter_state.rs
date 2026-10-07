@@ -18,14 +18,14 @@ pub struct EncounterState {
     /// discriminator. `scripted_encounter_armed` is the engine-side stand-in
     /// for "the active entity is an encounter carrier" until the per-scene
     /// carrier identity / SM-confirm trigger is pinned from disc bytecode.
-    pub pending_scripted: Option<Vec<u8>>,
+    pub(crate) pending_scripted: Option<Vec<u8>>,
     /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
     /// treated as a scripted-encounter install: the record window overlaying
     /// the opcode is parsed as an [`crate::encounter_record::EncounterRecord`]
     /// and installed via [`crate::world::World::install_scripted_encounter`], which then
     /// disarms (fire-once). Default `false` so generic script yields are never
     /// mistaken for encounter arms. See [`crate::world::World::arm_scripted_encounter`].
-    pub scripted_armed: bool,
+    pub(crate) scripted_armed: bool,
     /// One-shot override: a scripted/forced formation has been installed
     /// ([`crate::world::World::install_man_formation`] / [`crate::world::World::install_encounter_from_record`])
     /// and the next [`crate::world::World::on_field_step`] must fire it regardless of any
@@ -54,7 +54,7 @@ pub struct EncounterState {
     /// Frames left on the "no random encounters in this scene" hint, armed by
     /// [`crate::world::World::arm_live_loop`] when the loop lands on such a scene and aged
     /// by [`crate::world::World::tick`]. Read through [`crate::world::World::show_encounter_hint`].
-    pub scene_hint_frames: u16,
+    pub(crate) scene_hint_frames: u16,
     /// `_DAT_8007B5FC` - the encounter step counter. One retail global, not
     /// per scene: the region trackers (field + overworld) are seeded from it
     /// when a scene installs them and write it back after every step, and the

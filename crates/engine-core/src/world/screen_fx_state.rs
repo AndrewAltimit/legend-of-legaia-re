@@ -10,7 +10,7 @@ pub struct ScreenFxState {
     /// Last fade colour requested by move-VM ext sub-op 0x3C - engines
     /// drain this each frame to drive the screen fade. `None` when no
     /// fade is pending.
-    pub pending_fade: Option<FadeRequest>,
+    pub(crate) pending_fade: Option<FadeRequest>,
     /// Active full-screen fade, staged by the battle SM's escape teardown
     /// (retail state `0x66` spawns the `DAT_801C9070` black→white ramp via
     /// the fade-primitive spawner `FUN_80024E80`). Stepped once per
@@ -22,7 +22,7 @@ pub struct ScreenFxState {
     /// own ramps while the summon band's flash is still up (PROT 0905's
     /// white rise over the band's flash-out). Stepped and drawn like
     /// [`Self::fade`], dropped as each lands; cleared with the battle.
-    pub module_fades: Vec<crate::fade::FadeState>,
+    pub(crate) module_fades: Vec<crate::fade::FadeState>,
     /// The live **screen-effect colour tween** the field VM's op `0x34`
     /// sub-0 arm installs - the pool slot retail keeps in `_DAT_8007B62C`.
     ///
@@ -36,7 +36,7 @@ pub struct ScreenFxState {
     /// The target RGB the last op `0x34` sub-0 latched - retail's
     /// `_DAT_8007BCCD/CE/CF`, read by the *next* instruction as the walk-out
     /// tween's start colour.
-    pub effect_target_rgb: [i16; 3],
+    pub(crate) effect_target_rgb: [i16; 3],
     /// Template `[0]`, the tween's **blend** - retail `_DAT_8007BCE0`,
     /// written `(op0 & 1) != 0 ? 2 : 1` at `0x801DFD7C..0x801DFD8C`.
     pub effect_blend: i16,
@@ -66,7 +66,7 @@ pub struct ScreenFxState {
     /// its spawner is the one op that allocates it and its envelope retires
     /// itself; [`crate::world::World::tick_field_timer_actors`] steps it and
     /// [`crate::world::ScreenFxState::cinematic_bar`] is what the two hosts draw from.
-    pub cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
+    pub(crate) cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
     /// This frame's bar height in scanlines, republished every tick so a
     /// renderer reads a value rather than re-stepping the envelope.
     pub cinematic_bar: i16,

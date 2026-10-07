@@ -21,12 +21,12 @@ pub struct WorldToggles {
     /// floor) become sub-hazard-rate pulses. Hue / saturation sweeps pass
     /// through untouched. The move-VM state itself always advances
     /// retail-exact - this only shapes the VRAM presentation.
-    pub reduce_flashing: bool,
+    pub(crate) reduce_flashing: bool,
     /// Retail's **visible-tile crop** on the field ground + decoration layers
     /// ([`crate::field_view_window::field_view_cells`]), from
     /// [`crate::options::OptionsState::retail_view_window`]. Default on; it
     /// only takes effect at retail framing.
-    pub view_window_crop: bool,
+    pub(crate) view_window_crop: bool,
     /// The volumetric ground-fog **enhancement**
     /// ([`crate::fog_volume`], stepped by `World::tick`), from
     /// [`crate::options::OptionsState::volumetric_fog`]. Default **off** here
@@ -91,7 +91,7 @@ pub struct WorldToggles {
     /// arts entry (`0x50`) - `FUN_801D0748`'s `0x28` Left arm at
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
-    pub select_attack: crate::options::SelectAttackOpt,
+    pub(crate) select_attack: crate::options::SelectAttackOpt,
     /// The options screen's **Battle Camera** row (config word
     /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
     /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
@@ -103,7 +103,7 @@ pub struct WorldToggles {
     /// `0xA0` frames, or never - so hosts mirror their `OptionsState` onto
     /// this through `OptionsState::apply_to_world` and both ask
     /// `world_map_panel_host::field_hud_view_mode`.
-    pub field_hp_display: crate::options::HpDisplayOpt,
+    pub(crate) field_hp_display: crate::options::HpDisplayOpt,
     /// Draw the overworld's per-placement **entity markers**
     /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a

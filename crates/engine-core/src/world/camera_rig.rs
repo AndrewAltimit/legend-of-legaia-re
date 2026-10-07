@@ -45,7 +45,7 @@ pub struct CameraRig {
     /// against; the question the comparison asks is whether the actor has
     /// stopped moving in Y and Z, and this answers it without asserting what
     /// retail keeps in those two slots. `None` until the first tick.
-    pub ease_prev_yz: Option<(i16, i16)>,
+    pub(crate) ease_prev_yz: Option<(i16, i16)>,
     /// Last camera state snapshot - filled by `camera_save`, applied by
     /// `camera_apply` / `camera_load`. Engines that draw a camera read
     /// this between frames.
@@ -67,7 +67,7 @@ pub struct CameraRig {
     /// camera globals live on the host-owned `Camera`, so the arms queue
     /// here instead of writing the globals directly - see
     /// [`crate::world::camera_hooks`].
-    pub zone_requests: Vec<crate::world::CameraZoneRequest>,
+    pub(crate) zone_requests: Vec<crate::world::CameraZoneRequest>,
 }
 
 impl CameraRig {

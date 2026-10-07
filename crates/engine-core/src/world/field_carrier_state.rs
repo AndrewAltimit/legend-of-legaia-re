@@ -16,14 +16,14 @@ pub struct FieldCarrierState {
     /// battle, mirroring retail's state-1 `entity[+0x94]` copy + `case 2/3`
     /// fall-through battle handoff. Empty unless
     /// [`crate::world::World::install_field_carriers`] seeded them.
-    pub entities: Vec<vm::world_map::WorldMapEntityCtx>,
+    pub(crate) entities: Vec<vm::world_map::WorldMapEntityCtx>,
     /// Per-carrier role config, paired by index with [`crate::world::FieldCarrierState::entities`].
     pub configs: Vec<FieldCarrierConfig>,
     /// Field carrier battle pending resolution: the MAN `formation_id` a
     /// carrier SM latched on its scene-transition this frame. Drained at the
     /// end of `Self::tick_field_carriers` to flip Field -> Battle. `None`
     /// between transitions.
-    pub pending_battle: Option<u16>,
+    pub(crate) pending_battle: Option<u16>,
     /// Field-interact `slot` -> [`crate::world::FieldCarrierState::entities`] index, for the
     /// **scripted-encounter** carriers only. Built by
     /// [`crate::world::World::install_field_carriers_from_man`] so a field-interact on the

@@ -21,16 +21,16 @@ pub struct AmbientFxState {
     /// of [`crate::world::AmbientFxState::clut_pending_game_ticks`], same clock law).
     pub pending_game_ticks: u32,
     /// Vsync sub-accumulator for the ambient game-tick bank.
-    pub vsync_accum: u8,
+    pub(crate) vsync_accum: u8,
     /// Per-rect VRAM capture cache for the ambient CLUT-cell cyclers: the
     /// texels op `0x2C` stored (`FUN_8005842C` StoreImage) keyed by the
     /// captured rect. Filled lazily by [`crate::world::World::step_ambient_fx`] from the
     /// host's VRAM the first time a cell fires; cleared on scene entry.
-    pub cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
+    pub(crate) cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
     /// The limiter's per-rect applied `(v_add, white)` state - what the
     /// last [`crate::world::World::step_ambient_fx`] actually wrote, keyed like
     /// [`crate::world::AmbientFxState::cell_captures`] and cleared with it on scene entry.
-    pub flash_applied: std::collections::HashMap<(u16, u16, u16, u16), (i16, i16)>,
+    pub(crate) flash_applied: std::collections::HashMap<(u16, u16, u16, u16), (i16, i16)>,
     /// Scene-entry **VDF pulse** (enhancement): a rolling ramp envelope over
     /// the scene's populated VDF pack for scenes whose entry-ambient tree
     /// arms no morph lanes of its own (jou). Installed by
@@ -41,11 +41,11 @@ pub struct AmbientFxState {
     /// `(pack_slot, group)` pairs whose morph deltas changed during the last
     /// ambient drain - the renderer-facing dirty set
     /// ([`crate::world::World::take_morph_dirty_slots`]).
-    pub morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
+    pub(crate) morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
     /// Vsyncs accumulated toward the next retail *game tick* (a game tick
     /// spans [`crate::world::FrameClock::frame_step`] vsyncs). Advanced by [`crate::world::World::tick`] on the
     /// sim ticks that map to a retail vsync ([`crate::world::FrameClock::display_frame_step`]).
-    pub clut_vsync_accum: u8,
+    pub(crate) clut_vsync_accum: u8,
     /// Retail game ticks elapsed since the host last drained the scripted
     /// CLUT effects ([`crate::world::World::step_clut_fx`] consumes these). Only
     /// accumulates while [`crate::world::AmbientFxState::clut_fx`] is non-empty, and saturates at a
@@ -84,7 +84,7 @@ pub struct AmbientFxState {
     /// `FieldHost::op43_vram_rect_copy` host hook), drained against the
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
-    pub vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
+    pub(crate) vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
     /// Capture alignment for the retail comparison's frame: a retail state's
     /// live mode-3 cycler snapshots (adds, mode and white amount per captured
     /// rect), written over the matching parts' own values when

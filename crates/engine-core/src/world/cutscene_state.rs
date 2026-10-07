@@ -38,7 +38,7 @@ pub struct CutsceneState {
     /// records "an FMV finished, and which one" and the scene host performs
     /// the transfer. Draining it is a `take`: the transfer runs once however
     /// many hosts poll.
-    pub finished_fmv: Option<i16>,
+    pub(crate) finished_fmv: Option<i16>,
     /// Live **element channel** - the field-overlay plain-template pool the
     /// ambient emitter (`FUN_801D6058`) runs on. See
     /// [`crate::world::cutscene_elements`].
@@ -63,7 +63,7 @@ pub struct CutsceneState {
     /// The crawl config block (`*0x801C6EA4 +0x4C..+0x52`) the next roller
     /// reads: the scene reset's values until a timeline `CC F8 E8` seed op
     /// overwrites them. See [`crate::cutscene_narration::RollerSeed`].
-    pub narration_seed: crate::cutscene_narration::RollerSeed,
+    pub(crate) narration_seed: crate::cutscene_narration::RollerSeed,
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
     /// [`crate::world::World::load_cutscene_timeline_from_man`] (the `opdeene` opening
@@ -100,10 +100,10 @@ pub struct CutsceneState {
     /// opening install names the cutscene timeline; any other `49 03 <slot>`
     /// names the context that executed it (`cave01`'s Noa prompt runs in a
     /// concurrent helper context).
-    pub naming_owner: Option<crate::field_submode_screen::Op49ParkOwner>,
+    pub(crate) naming_owner: Option<crate::field_submode_screen::Op49ParkOwner>,
     /// The party slot the pending naming prompt edits - the byte after the
     /// sub-op (`49 03 <slot>`, retail's `_DAT_8007B450 + 1`).
-    pub naming_slot: usize,
+    pub(crate) naming_slot: usize,
     /// Set by [`crate::world::World::take_prologue_handoff`] when it hands off to `town01`, so
     /// the next `town01` field entry installs the opening cutscene timeline
     /// (establishing shot + Vahn walk-out + name-entry handoff). Cleared when
@@ -140,7 +140,7 @@ pub struct CutsceneState {
     /// retail's - so the caption reads as a deliberate pause, not a freeze,
     /// even when the second crawl block is still frames away. Reset on scene
     /// entry; never re-shows once the hold elapses (the gap continues hidden).
-    pub caption_shown_frames: u32,
+    pub(crate) caption_shown_frames: u32,
     /// `true` while the New-Game opening cutscene chain is playing (from the
     /// `opdeene` entry through its `opstati` / `opurud` / world-map fly-in
     /// legs, until `town01` is entered). While set, a confirm press with the
@@ -158,7 +158,7 @@ pub struct CutsceneState {
     /// the prologue scene. Any other entry drops it: only the engine's
     /// fallback (`town01` when `opdeene` will not load) enters another scene
     /// straight off a New Game, and retail never does.
-    pub new_game_entry_seat: Option<(i16, i16)>,
+    pub(crate) new_game_entry_seat: Option<(i16, i16)>,
 }
 
 impl CutsceneState {

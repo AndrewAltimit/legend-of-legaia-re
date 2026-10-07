@@ -42,7 +42,7 @@ pub struct DiscTables {
     /// the running `mp` value (not the cap); the cap lives on the
     /// character record at `+0x140`. Engines populate this from the
     /// character record at battle init.
-    pub character_max_mp: Vec<u16>,
+    pub(crate) character_max_mp: Vec<u16>,
     /// Optional formation table - engines install this at boot via
     /// [`crate::world::World::set_formation_table`] so triggered encounters can resolve
     /// their `formation_id` into concrete monster slot definitions.
@@ -71,7 +71,7 @@ pub struct DiscTables {
     /// `summon.dat` (PROT 0893) actor record, the text a summon module's
     /// caption arm prints. Installed by [`crate::scene::SceneHost`] with the
     /// cast-effect pool; empty disc-free.
-    pub summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
+    pub(crate) summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
     /// The battle **VDF** morph pack `vdf.dat` (PROT 0872, the
     /// `[u32 count][u32 offsets[count]][bodies]` layout of a scene's VDF).
     /// Battle init loads it through the asset dispatcher's VDF case and
@@ -111,15 +111,15 @@ pub struct DiscTables {
     /// gate that keeps the stager
     /// ([`crate::world::World::stage_seru_side_effect`]) from running at
     /// all - so a synthetic battle stages nothing and draws no `rand()`.
-    pub seru_side_effects: Option<legaia_asset::seru_side_effect::SeruSideEffectTable>,
+    pub(crate) seru_side_effects: Option<legaia_asset::seru_side_effect::SeruSideEffectTable>,
     /// The Seru-absorb banner's caption pieces (PROT 0898 `0x801F4DFC` /
     /// `0x801F4C28`), installed with the move-power table. `None` on a
     /// disc-free host, where the banner shows the Seru's name alone.
-    pub absorb_caption: Option<legaia_asset::absorb_caption::AbsorbCaption>,
+    pub(crate) absorb_caption: Option<legaia_asset::absorb_caption::AbsorbCaption>,
     /// The loss window's two text pieces (PROT 0898 `0x801F4C78` /
     /// `0x801F4C94`), installed with the move-power table. `None` on a
     /// disc-free host, where the loss window opens empty.
-    pub defeat_text: Option<legaia_engine_vm::battle_party_panel::DefeatText>,
+    pub(crate) defeat_text: Option<legaia_engine_vm::battle_party_panel::DefeatText>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
     /// record element (`+0x1D`), the byte the side-effect stager switches on
     /// and the affinity scale reads as the attacker element.
@@ -130,7 +130,7 @@ pub struct DiscTables {
     /// own monsters, so a summon creature is absent from it in almost every
     /// fight, and a catalog-by-name lookup answers `None` there. Empty on a
     /// disc-free host.
-    pub summon_elements: std::collections::HashMap<u8, u8>,
+    pub(crate) summon_elements: std::collections::HashMap<u8, u8>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's** whole
     /// record, as the catalog would hold it: the summon body the damage roll
     /// reads its HP / INT / element from (`World::summon_creature_def`).
@@ -153,7 +153,7 @@ pub struct DiscTables {
     /// resolves off this table rather than off the bag
     /// (`docs/formats/steal-table.md`; the table is NOT in the PROT 867
     /// monster record).
-    pub steal_table: Option<legaia_asset::steal_table::StealTable>,
+    pub(crate) steal_table: Option<legaia_asset::steal_table::StealTable>,
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`crate::world::World::set_equipment_table`]
     /// so [`crate::world::World::seed_party_battle_stats`] folds equipped gear onto each
@@ -166,7 +166,7 @@ pub struct DiscTables {
     /// byte, and the item-detail window reads `+5`. Install via
     /// [`crate::world::World::set_equip_stats`]; `None` on a disc-free load,
     /// where the Throw Out list simply dims nothing.
-    pub equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    pub(crate) equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
     /// Accessory ("Goods") passive-effect catalog: item id → passive index +
     /// per-index party-wide scope, decoded from the executable. Empty by
     /// default; install via [`crate::world::World::set_accessory_passives`].
@@ -200,7 +200,7 @@ pub struct DiscTables {
     /// (`SCUS_942.54` `0x80077998`, [`legaia_engine_vm::battle_actor_draw`]).
     /// Installed by [`crate::world::World::install_menu_text`]; while `None`
     /// (disc-free) no rotted limb dims.
-    pub rot_limb_table: Option<legaia_engine_vm::battle_actor_draw::RotLimbTable>,
+    pub(crate) rot_limb_table: Option<legaia_engine_vm::battle_actor_draw::RotLimbTable>,
 }
 
 impl DiscTables {

@@ -15,7 +15,7 @@ pub struct MenuState {
     /// overlay (PROT 0899 VA `0x801E4A88`,
     /// [`crate::menu_arrange::parse_arrange_rank_table`]). `None` on a
     /// load without the overlay - Arrange then falls back to id order.
-    pub arrange_rank: Option<crate::menu_arrange::ArrangeRankTable>,
+    pub(crate) arrange_rank: Option<crate::menu_arrange::ArrangeRankTable>,
     /// Labels for the two entry-context screens the pause menu opens under
     /// kind [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] - the notice
     /// panel's lines (window `6`) and the ready check's headings (window

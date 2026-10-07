@@ -31,7 +31,7 @@ pub fn step_floor_ladder(
 pub struct FieldTerrain {
     /// Fixed map origin pair at `(_DAT_80089118, _DAT_80089120)` - used by ext
     /// sub-op 0x24 (world position lerp toward fixed map origin).
-    pub map_origin_xz: (i32, i32),
+    pub(crate) map_origin_xz: (i32, i32),
     /// Per-scene field collision / floor grid. Retail equivalent: the
     /// walkability map at `*(_DAT_1F8003EC) + 0x4000` that the locomotion
     /// collision check (`FUN_801cfe4c`) samples. One byte per 128-unit
@@ -61,12 +61,12 @@ pub struct FieldTerrain {
     /// The scratchpad region-attribute block (`0x1F800384..87` +
     /// `0x1F80037C`) latched by the per-tile refresh; read by the zone
     /// query's kind-0 arm.
-    pub region_attributes: crate::field_regions::RegionAttributes,
+    pub(crate) region_attributes: crate::field_regions::RegionAttributes,
     /// The 18-byte zone record the player currently stands in (the camera-
     /// region payload `FUN_801DBC20` consumes), refreshed on tile crossing.
     /// `None` when no zone record matches (retail loads the default camera
     /// parameter set).
-    pub zone_record: Option<[u8; crate::field_regions::ZONE_RECORD_STRIDE]>,
+    pub(crate) zone_record: Option<[u8; crate::field_regions::ZONE_RECORD_STRIDE]>,
     /// The 16-entry floor-height LUT the collision grid's low nibble indexes
     /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
     /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
@@ -129,7 +129,7 @@ pub struct FieldTerrain {
     ///
     /// Set by [`crate::world::World::load_field_object_cells`]; `CELL_WALK_VISIBLE` before
     /// any scene supplies a grid.
-    pub floor_cell_bit: u16,
+    pub(crate) floor_cell_bit: u16,
     /// The scene's kind-2 `.MAP` **elevation-override** records, primary
     /// (`+0x10000`) table followed by the fallback (`+0x12000`) one, so a
     /// linear first-match scan reproduces `FUN_801D5630`'s order. Consumed by
@@ -145,14 +145,14 @@ pub struct FieldTerrain {
     /// mirroring the retail per-step counter rather than a per-frame roll.
     /// `None` until the first field tick records a tile. Managed by the live
     /// loop.
-    pub last_tile: Option<(i16, i16)>,
+    pub(crate) last_tile: Option<(i16, i16)>,
     /// Player tile the region encounter reader last compared, sampled only
     /// on the actor game tick ([`crate::world::FrameClock::game_tick_fired`]):
     /// retail's `FUN_801D9E1C` tile cache (the entity's `+0x8E` / `+0x8F`),
     /// which its caller `FUN_801DA51C` refreshes once per game tick. Kept
     /// apart from [`crate::world::FieldTerrain::last_tile`], which the
     /// per-tile region refresh samples every vsync.
-    pub step_tile: Option<(i16, i16)>,
+    pub(crate) step_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
     /// uses, [`crate::world::WorldMapState::region_tracker`]). When set,

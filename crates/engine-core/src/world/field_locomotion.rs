@@ -71,7 +71,7 @@ pub struct FieldLocomotion {
     /// its rotation from the camera instead
     /// ([`crate::world::World::field_pad_ring_rotation`]); this word is what
     /// the tile board reads and restores.
-    pub pad_octant: u32,
+    pub(crate) pad_octant: u32,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -110,7 +110,7 @@ pub struct FieldLocomotion {
     /// mask is [`crate::world::FieldLocomotion::run_button_mask`], and it defaults to those two
     /// buttons. The XOR structure around the flag, in
     /// [`crate::world::World::field_run_active`], is pinned as well.
-    pub run_button_held: bool,
+    pub(crate) run_button_held: bool,
     /// Which pad buttons count as "the run button" for
     /// [`crate::world::FieldLocomotion::run_button_held`].
     ///
@@ -122,7 +122,7 @@ pub struct FieldLocomotion {
     /// for the retail button set exactly. Which *key* produces each of those
     /// buttons is the host's binding table
     /// (`legaia-engine config set --binding`), not this mask.
-    pub run_button_mask: u16,
+    pub(crate) run_button_mask: u16,
     /// Forced-slow override: selects base step
     /// [`crate::world::config::FIELD_BASE_STEP_FORCED_SLOW`] and **skips the
     /// run check entirely** - a forced walk cannot be run out of.
@@ -132,13 +132,13 @@ pub struct FieldLocomotion {
     /// world maps) and [`crate::world::World::field_base_step`] tests
     /// directly; this flag forces the same arm on any scene, for tests and
     /// debug drivers.
-    pub forced_slow: bool,
+    pub(crate) forced_slow: bool,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
     /// zero. Only touched while [`crate::world::FieldLocomotion::precise_movement`] is active with a
     /// direction held; reset when input releases.
-    pub precise_move_carry: (f32, f32),
+    pub(crate) precise_move_carry: (f32, f32),
     /// The player's `+0x72` ramps: op `4C` nibble-4 sub-0 aimed at the player
     /// (`CC F8 40 lo hi tlo thi` with a non-zero tick count) installs a slot of
     /// retail's generic ramp pool (`FUN_8003C5F0`, kind 2, from the live
@@ -147,7 +147,7 @@ pub struct FieldLocomotion {
     /// slot lives here: it is the one `+0x72` both play hosts read
     /// ([`crate::world::World::player_render_scale`]). Cleared at scene entry
     /// with the rest of the pool (`FUN_8003CDA8`).
-    pub player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
+    pub(crate) player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
     /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
@@ -160,7 +160,7 @@ pub struct FieldLocomotion {
     /// Public only because `World` is built with functional-update syntax in
     /// integration tests, which requires every field to be visible; treat it
     /// as internal to the detector.
-    pub motion_prev: std::collections::HashMap<u8, (i16, i16)>,
+    pub(crate) motion_prev: std::collections::HashMap<u8, (i16, i16)>,
     /// Placement slots whose field position CHANGED during the frame just
     /// ticked - the source-agnostic "this actor is moving" signal.
     ///
@@ -175,14 +175,14 @@ pub struct FieldLocomotion {
     /// The player's own bit is folded straight into
     /// [`crate::field_anim::FieldPlayerAnim::moved_this_frame`] rather than
     /// left here for a host to read.
-    pub actor_moving: std::collections::HashSet<u8>,
+    pub(crate) actor_moving: std::collections::HashSet<u8>,
     /// The post-remap direction bits of this tick's movement attempt
     /// (`0x1000`/`0x4000`/`0x2000`/`0x8000`; `0` when no direction is held).
     /// The walk-touch dispatch derives its leading probe points from it -
     /// retail's touch fires from the same forward probes that block the
     /// step, so contact must be tested ahead of the player, not at the
     /// player's feet.
-    pub last_move_dir_bits: u16,
+    pub(crate) last_move_dir_bits: u16,
     /// The last **committed** locomotion sub-step direction, one entry per
     /// axis at retail's fixed magnitude 8 - the engine's stand-in for the
     /// retail global pair `0x8007BDE0` (X) / `0x8007BDE4` (Z).
@@ -220,7 +220,7 @@ pub struct FieldLocomotion {
     /// will: the snap otherwise runs only on a committed step, and retail's
     /// every-frame glide carries the player on a script-animated floor
     /// (`jouina`'s pulsing path) whether or not they walk.
-    pub ladder_seen: [i16; 16],
+    pub(crate) ladder_seen: [i16; 16],
     /// The ledge hop [`crate::world::World::try_field_ledge_hop`] posted this frame, if any
     /// (retail hands the same triple to `FUN_801d2404`). `None` on every
     /// frame that did not start a hop.
@@ -250,7 +250,7 @@ pub struct FieldLocomotion {
     /// placement slot with an `(x, z)` pair and a scene-build Y from
     /// [`legaia_asset::field_objects::Placement::world_y`] - it has no
     /// per-frame height controller for a mirror to override.
-    pub eased_mirror_y: Option<i16>,
+    pub(crate) eased_mirror_y: Option<i16>,
     /// Scripted player-move cues raised by cutscene-timeline `A2 F8
     /// <move_id>` ExecMove pokes, in emission order. The windowed host
     /// drains these each frame and queues the named clip as a one-shot on
@@ -267,13 +267,13 @@ pub struct FieldLocomotion {
     /// by the cutscene timeline to time the end latch of a scene-bank clip it
     /// pokes onto the player without a host-owned clip player. Empty when the
     /// scene carries no bundle; `0` for a record with no frames.
-    pub scene_clip_ticks: Vec<u32>,
+    pub(crate) scene_clip_ticks: Vec<u32>,
     /// `(frame count, blend gate, step divisor)` of every record of the same
     /// bundle - header `b`, `a` high-byte bit 0, `flag` low byte - indexed
     /// like [`Self::scene_clip_ticks`]: what the world binds an NPC's clip
     /// cursor from when a script pokes a scene-bank clip onto it
     /// (`World::bind_npc_scene_clip`).
-    pub scene_clip_meta: Vec<(u16, bool, u8)>,
+    pub(crate) scene_clip_meta: Vec<(u16, bool, u8)>,
     /// The clip base `_DAT_8007BDD8`: the 1-based slot inside the leader's
     /// seven-record locomotion bank the settle tail strides into the player's
     /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
@@ -294,7 +294,7 @@ pub struct FieldLocomotion {
     /// non-zero a party-flagged pick binds `base + override - 1` from the
     /// **scene** bank - the two disc users (`jagaroom`, `urudre1`) point the
     /// player's walk / idle / run at scene-bundle records this way.
-    pub clip_override: u32,
+    pub(crate) clip_override: u32,
     /// The model id a script re-staged the **player** onto: op `4C 50` aimed
     /// at `0xF8` (`CC F8 50 lo hi`, the `jagaroom` / `urudre1` costume swaps)
     /// stores its operand here, resolved like any `4C 50` operand - a scene
@@ -306,15 +306,15 @@ pub struct FieldLocomotion {
     /// a host rebuilds the player's rig; drained by
     /// [`crate::world::World::take_player_rig_change`]. Scene entry lowers it,
     /// because every host builds the rig afresh on entry anyway.
-    pub player_rig_dirty: bool,
+    pub(crate) player_rig_dirty: bool,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_vm::field_warp_tile`].
-    pub warp: legaia_engine_vm::field_warp_tile::WarpTimer,
+    pub(crate) warp: legaia_engine_vm::field_warp_tile::WarpTimer,
     /// Frames left before the warp's fade-in (the second `FUN_801D58F0`,
     /// delayed `0x29` frames from the crossing) replaces the fade-out in the
     /// one fade slot the port has.
-    pub warp_fade_in_in: Option<i32>,
+    pub(crate) warp_fade_in_in: Option<i32>,
 }
 
 impl FieldLocomotion {
