@@ -153,6 +153,19 @@ pub enum SelectPhase {
 /// `0x801DF9D8`): 90 sixtieth-second units.
 pub const COMMIT_RESULT_FRAMES: u16 = 90;
 
+impl SelectPhase {
+    /// Whether a save-select opened from the title is composed over the
+    /// title art in this phase. Retail keeps the card up behind the pill
+    /// row and pivots to black once a port is picked: the "Now checking"
+    /// beat, the block grid and everything drawn on top of the grid - the
+    /// confirm messagebox and the write / read beat - sit on black. Both
+    /// hosts ask this rather than listing phases, which is how the confirm
+    /// came to flash the title art back up on both.
+    pub fn shows_title_backdrop(self) -> bool {
+        matches!(self, SelectPhase::Browsing { .. } | SelectPhase::Done(_))
+    }
+}
+
 /// Frames the write / read line of [`SelectPhase::Committing`] holds. The
 /// port's own beat - retail sits on the card driver's result word, which the
 /// port's synchronous backends answer at once - set long enough to read the

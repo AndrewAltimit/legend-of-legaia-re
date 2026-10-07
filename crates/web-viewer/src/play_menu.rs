@@ -598,16 +598,12 @@ impl LegaiaRuntime {
     /// same test inside `title_screen_sprite_draws`; this is the page's half,
     /// kept here because `PlaySub` is private to this module.
     pub(crate) fn play_menu_save_select_over_title(&self) -> bool {
-        use legaia_engine_core::save_select::SelectPhase;
         let Some(menu) = self.play_menu.as_ref() else {
             return false;
         };
         match &menu.sub {
             Some(PlaySub::Session(sub)) => match sub.as_ref() {
-                FieldMenuSubsession::Save(s) => !matches!(
-                    s.phase(),
-                    SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
-                ),
+                FieldMenuSubsession::Save(s) => s.phase().shows_title_backdrop(),
                 _ => false,
             },
             _ => false,

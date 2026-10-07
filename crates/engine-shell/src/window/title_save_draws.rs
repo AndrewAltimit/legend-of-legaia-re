@@ -367,7 +367,6 @@ impl PlayWindowApp {
 ///
 /// [`TitleBandState::backdrop`]: legaia_engine_render::TitleBandState::backdrop
 fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::TitleBandState> {
-    use legaia_engine_core::save_select::SelectPhase;
     use legaia_engine_core::title::TitlePhase;
     match boot_ui {
         BootUiState::Title(session) => {
@@ -388,10 +387,7 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::
             Some(st)
         }
         BootUiState::SaveSelect(s) => {
-            if matches!(
-                s.phase(),
-                SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
-            ) {
+            if !s.phase().shows_title_backdrop() {
                 return None;
             }
             Some(legaia_engine_render::TitleBandState::backdrop())
