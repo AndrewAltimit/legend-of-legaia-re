@@ -253,6 +253,7 @@ mod monster_drop_randomizer_runtime_e2e;
 mod monster_special_anim_sweep_disc;
 mod motion_flag_census_disc;
 mod motion_flag_runtime_disc;
+mod move_ctrl52_census_disc;
 mod move_ext_strip_census_disc;
 mod move_fx_records_vm_exec_disc;
 mod move_fx_render_disc;

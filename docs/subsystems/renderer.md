@@ -1121,6 +1121,12 @@ nodes on the actor lists carry one, nearly all of them move-VM parts
 billboard - on battle-effect parts, `0x100` / `0x180` on field and overworld
 parts, and the `0x400` arm on summon casts. On the overworld walk the camera
 yaw is `0`, so map01's `0x100` kind-4 column draws the same either way.
+The disc carries no word that keeps the yaw factor: over every op-`0x15`
+site in the scenes' stager records and the slot-B spawn records the words
+are `0x20`, `0x100`, `0x180`, `0x300`, `0x380`, `0x400`, `0x500`, `0x580`
+and `0x780` (`crates/engine-core/tests/move_ctrl52_census_disc.rs`), so a
+skip-bit node always drops yaw, and `0x300` is the one shape that keeps a
+factor (pitch).
 
 What each arm leaves in the node's matrix slot (`0x1F8002D4`), read off the
 two routines' disassembly (`FUN_8005B3A8` is `MulMatrix2`, writing `a0 * a1`
