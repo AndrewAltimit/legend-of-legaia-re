@@ -141,6 +141,7 @@ fn now_checking_beat_drains_the_latched_card_events() {
 
     let present = SlotSnapshot {
         present: true,
+        damaged: false,
         content: SlotContent::LegaiaSave,
         ..SlotSnapshot::empty(0)
     };

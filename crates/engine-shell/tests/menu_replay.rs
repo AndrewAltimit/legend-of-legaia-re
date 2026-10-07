@@ -202,6 +202,7 @@ fn port0_blocks() -> Vec<SlotSnapshot> {
     blocks[0] = SlotSnapshot {
         slot: 0,
         present: true,
+        damaged: false,
         content: SlotContent::LegaiaSave,
         label: "RIM ELM".to_string(),
         play_time_seconds: 1234,

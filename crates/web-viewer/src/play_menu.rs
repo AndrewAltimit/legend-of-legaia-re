@@ -909,7 +909,7 @@ impl LegaiaRuntime {
                 // Step the grid cursor and gate an empty-block Load BEFORE
                 // the session ticks, so a confirm on the same edge commits
                 // the cell the player is looking at.
-                if let FieldMenuSubsession::Save(s) = session.as_ref() {
+                if let FieldMenuSubsession::Save(s) = session.as_mut() {
                     edge = m.save_flow.before_tick(s, edge);
                     save_edge = Some(edge);
                 }
@@ -1695,6 +1695,7 @@ impl LegaiaRuntime {
             now_checking: m.now_checking,
             banner: m.banner.map(|b| ui::CardBannerView {
                 lines: b.lines,
+                note: b.note,
                 work: b.work,
                 slide_t: b.slide_t,
                 progress_t: b.progress_t,

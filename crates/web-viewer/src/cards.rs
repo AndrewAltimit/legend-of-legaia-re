@@ -86,6 +86,7 @@ impl LegaiaRuntime {
                 Some(c) => SlotSnapshot {
                     slot: i as u8,
                     present: true,
+                    damaged: false,
                     label: c.label.clone(),
                     ..SlotSnapshot::empty(i as u8)
                 },

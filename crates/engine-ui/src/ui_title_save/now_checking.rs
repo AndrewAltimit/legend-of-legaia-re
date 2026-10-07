@@ -163,6 +163,9 @@ fn emit_centered_text(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardBannerView<'a> {
     pub lines: (&'a str, &'a str),
+    /// A third result line. Non-empty only on the damaged-data box, which
+    /// draws all three lines in one taller box.
+    pub note: &'a str,
     /// The write / read panel (`true`) or the result line.
     pub work: bool,
     /// The write panel's slide timer, `0..=0x1000`.
@@ -284,6 +287,9 @@ pub const CARD_WORK_SLIDE_START_X: i32 = 576;
 /// (`0x801DF934..0x801DF9B0`) - the width is the text drawer's own
 /// `(strlen + 1) / 2` return times 13.
 pub const CARD_RESULT_Y: i32 = 0x60;
+/// The damaged-data box's first line and box `y` (`0x801DF4FC` /
+/// `0x801DF530`).
+pub const CARD_DAMAGED_Y: i32 = 0x50;
 
 /// Sprites + text for [`CardBannerView`], at retail's geometry. `block` is
 /// the picked block (the grid cell): the write / read panel carries its
@@ -347,6 +353,37 @@ pub fn card_banner_draws_for(
             stage_origin,
             stage_scale,
         );
+    } else if !banner.note.is_empty() {
+        // The damaged-data box (sub-mode `0x13`, `0x801DF4EC..0x801DF548`):
+        // three lines centred on `0xA0` at `y = 0x50 / 0x60 / 0x70`, in
+        // `FUN_801E36C4(0xA0, 0x50, 13 * n, 0x30)` where `n` is the text
+        // drawer's `(strlen + 1) / 2` return for the **last** line.
+        let x = DIALOG_TEXT_CENTER_X;
+        let half = (banner.note.len() as i32 + 1) / 2;
+        if let Some(rects) = rects {
+            nine_slice_panel_into(
+                &mut sprites,
+                rects,
+                messagebox_rect(x, CARD_DAMAGED_Y, 13 * half, 0x30),
+                stage_origin,
+                stage_scale,
+                false,
+            );
+        }
+        for (i, line) in [banner.lines.0, banner.lines.1, banner.note]
+            .into_iter()
+            .enumerate()
+        {
+            emit_centered_text(
+                &mut texts,
+                font,
+                line,
+                x,
+                CARD_DAMAGED_Y + 0x10 * i as i32 + 7,
+                stage_origin,
+                stage_scale,
+            );
+        }
     } else {
         let x = DIALOG_TEXT_CENTER_X;
         let half = (banner.lines.0.len() as i32 + 1) / 2;

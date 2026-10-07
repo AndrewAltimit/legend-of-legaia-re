@@ -9,6 +9,7 @@ fn slots(present_set: &[bool]) -> Vec<SlotSnapshot> {
                 SlotSnapshot {
                     slot: i as u8,
                     present: true,
+                    damaged: false,
                     content: SlotContent::LegaiaSave,
                     label: format!("Slot {i}"),
                     play_time_seconds: 1234,

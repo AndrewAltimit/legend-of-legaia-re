@@ -415,6 +415,7 @@ pub fn snapshot_for_save(
     SlotSnapshot {
         slot,
         present: true,
+        damaged: false,
         content: SlotContent::LegaiaSave,
         label: if leader.name.is_empty() {
             format!("Slot {}", slot + 1)
@@ -467,7 +468,14 @@ pub fn card_block_snapshots(card: &legaia_save::emu::MountedCard) -> Vec<SlotSna
             // Past here the block IS claimed, so every way of failing to read
             // it is someone else's save rather than a free block.
             match card.save_at(cell) {
-                Some((sf, resume)) => snapshot_for_save(cell, &sf, &resume),
+                Some((sf, resume)) => SlotSnapshot {
+                    // The read's verify, ahead of time: retail sums the
+                    // block it read and refuses it on a mismatch.
+                    damaged: !card
+                        .sc_block(block)
+                        .is_some_and(legaia_save::card::sc_block_checksum_valid),
+                    ..snapshot_for_save(cell, &sf, &resume)
+                },
                 None => SlotSnapshot::foreign(cell),
             }
         })

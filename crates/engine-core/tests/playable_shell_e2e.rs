@@ -58,6 +58,7 @@ fn save_select_load_outcome_round_trips() {
         SlotSnapshot {
             slot: 0,
             present: true,
+            damaged: false,
             content: SlotContent::LegaiaSave,
             label: "Slot 0".into(),
             play_time_seconds: 1234,

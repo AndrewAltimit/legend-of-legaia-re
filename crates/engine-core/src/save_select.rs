@@ -106,6 +106,12 @@ pub struct SlotSnapshot {
     /// [`SlotContent::LegaiaSave`]; the other variants distinguish the two
     /// ways a slot can be unloadable.
     pub content: SlotContent,
+    /// The block's stored checksum word (`+0x1FFC`) disagrees with a fresh
+    /// sum of the words before it. Retail's grid never looks - it classifies
+    /// by filename - so a damaged save still prints its cell and its info
+    /// panel; the read's verify (`FUN_801DD35C` sub-mode `0x05`,
+    /// `0x801DF880`) is where it is refused, as "Damaged data."
+    pub damaged: bool,
     /// Display label engines render. `"<empty>"` for empty slots.
     pub label: String,
     /// Game time in seconds (for the "Play time: 12:34:56" line).
@@ -137,6 +143,7 @@ impl SlotSnapshot {
         Self {
             slot,
             present: false,
+            damaged: false,
             content: SlotContent::Free,
             label: format!("Slot {slot}: <empty>"),
             play_time_seconds: 0,

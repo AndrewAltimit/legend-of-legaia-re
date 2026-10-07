@@ -307,6 +307,7 @@ mod tests {
         let cells = [SlotGridCell::default(); 15];
         let banner = |slide_t| CardBannerView {
             lines: ("  Saving to MEMORY CARD", "Do not remove MEMORY CARD"),
+            note: "",
             work: true,
             slide_t,
             progress_t: 0,

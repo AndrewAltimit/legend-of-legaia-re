@@ -165,6 +165,11 @@ pub enum CommitReport {
     Ok,
     /// The op failed: the result line reads retail's failure message.
     Failed,
+    /// A Load whose block failed the read's checksum verify: retail's
+    /// three-line "Unable to load data." / "Damaged data." / "Delete at the
+    /// PlayStation MEMORY CARD Screen." box (sub-mode `0x13`,
+    /// `0x801DF4EC..0x801DF548`), held until a face button.
+    Damaged,
 }
 
 /// Frames the result line of [`SelectPhase::Committing`] holds when no

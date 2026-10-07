@@ -531,6 +531,21 @@ the pill and the block grid (`0x801DFCDC..0x801DFCE4`: only while
 `FUN_80024EE4(1, 2, slide >> 4)` has blacked the frame - so the parked panel
 and the result line after it sit alone on black.
 
+A block whose checksum fails is refused **after** the read, not on the grid.
+Retail's grid classifies by filename, so a damaged save still prints its cell
+and its info panel; the verify (`0x05`, `0x801DF880`, see
+[Save-block checksum](#save-block-checksum-fun_801e38d8)) latches
+`0x801F0140 = 2` and routes to `0x13`, whose checksum arm
+(`0x801DF4EC..0x801DF548`) draws three centred lines at `y = 0x50 / 0x60 /
+0x70` - "Unable to load data." / "Damaged data." / "Delete at the
+PlayStation MEMORY CARD Screen." - in `FUN_801E36C4(0xA0, 0x50, 13 * n,
+0x30)`, `n` from the last line. There is no timer: only a face button leaves
+(`0x801DF560..0x801DF570`, cue `0x20`), back to the grid. The port reads the
+block's sum when it builds the grid (`SlotSnapshot::damaged`, from
+`legaia_save::card::sc_block_checksum_valid`), `SaveScreenFlow::before_tick`
+answers a Load's beat with `CommitReport::Damaged` for such a block, and
+engine-ui draws the box (`CARD_DAMAGED_Y`).
+
 The port bakes the three records and the texel into the shared save-menu
 atlas (`legaia_asset::title_pak::SAVE_MENU_ATLAS_*`), draws them in
 engine-ui's `card_banner_draws_for` / `confirm_dialog_badge_draws_for` /

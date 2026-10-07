@@ -169,6 +169,7 @@ impl PlayWindowApp {
             now_checking: m.now_checking,
             banner: m.banner.map(|b| legaia_engine_render::CardBannerView {
                 lines: b.lines,
+                note: b.note,
                 work: b.work,
                 slide_t: b.slide_t,
                 progress_t: b.progress_t,

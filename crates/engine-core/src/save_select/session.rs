@@ -621,8 +621,18 @@ impl SaveSelectSession {
         }
         let in_result = frames_remaining <= COMMIT_RESULT_FRAMES;
         let skip = in_result && (input.cross || input.circle || input.triangle);
+        // The damaged-data box has no timer: retail's 0x13 arm leaves only on
+        // a face button (`0x801DF560..0x801DF570`).
+        if report == CommitReport::Damaged && in_result && !skip {
+            self.phase = SelectPhase::Committing {
+                slot,
+                frames_remaining: frames_remaining.saturating_sub(1).max(1),
+                report,
+            };
+            return;
+        }
         if frames_remaining == 0 || skip {
-            if report == CommitReport::Failed {
+            if matches!(report, CommitReport::Failed | CommitReport::Damaged) {
                 // Retail's failure line has been read; the player picks again.
                 self.phase = SelectPhase::SlotPreview { slot };
                 events.push(SelectEvent::CommitFailed { slot });
@@ -667,6 +677,17 @@ impl SaveSelectSession {
             } else {
                 CommitReport::Failed
             };
+        }
+    }
+
+    /// The flow's answer to a Load whose block failed the checksum verify:
+    /// the beat's result becomes retail's "Damaged data." box. No-op outside
+    /// a Load's beat.
+    pub fn report_load_damaged(&mut self) {
+        if self.mode == SaveSelectMode::Load
+            && let SelectPhase::Committing { report, .. } = &mut self.phase
+        {
+            *report = CommitReport::Damaged;
         }
     }
 

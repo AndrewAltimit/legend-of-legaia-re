@@ -239,6 +239,9 @@ fn card_with_save(block: u8, name: &str, gold: i32) -> Vec<u8> {
     let loc = b"Rim Elm";
     let at = card::RETAIL_LOCATION_NAME_OFFSET;
     sc[at..at + loc.len()].copy_from_slice(loc);
+    // The raw label writes above come after the record writers' restamp: sum
+    // the block again, or retail's read verify refuses it as damaged data.
+    card::restamp_sc_block_checksum(sc);
     buf
 }
 

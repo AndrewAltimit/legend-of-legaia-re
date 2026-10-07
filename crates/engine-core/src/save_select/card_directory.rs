@@ -178,6 +178,7 @@ pub fn card_directory_slots(frames: &[&[u8]], avail_blocks: u32) -> Vec<SlotSnap
                 SlotContent::Foreign => SlotSnapshot::foreign(slot),
                 SlotContent::LegaiaSave => SlotSnapshot {
                     present: true,
+                    damaged: false,
                     content,
                     label: format!("Slot {slot}"),
                     ..SlotSnapshot::empty(slot)

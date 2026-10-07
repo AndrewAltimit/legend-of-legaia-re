@@ -248,6 +248,7 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
                 SlotSnapshot {
                     slot: i as u8,
                     present: true,
+                    damaged: false,
                     content: SlotContent::LegaiaSave,
                     label: format!("Slot {i}: Vahn  Lv 5"),
                     play_time_seconds: 1234,

@@ -414,7 +414,7 @@ impl SaveScreenFlow {
     ///
     /// A flat-rack session gets its edge back untouched: there is no second
     /// stage to walk.
-    pub fn before_tick(&mut self, session: &SaveSelectSession, edge: u16) -> u16 {
+    pub fn before_tick(&mut self, session: &mut SaveSelectSession, edge: u16) -> u16 {
         if !session.card_slots_mode() {
             return edge;
         }
@@ -509,6 +509,19 @@ impl SaveScreenFlow {
         // `0x801DF91C`) - so the edge is narrowed to one Cross, which the
         // shared menu-cue rule turns into exactly that cue.
         if let SelectPhase::Committing { .. } = session.phase() {
+            // The read's checksum verify (sub-mode `0x05`, `0x801DF880`):
+            // a block whose stored sum disagrees routes to the damaged-data
+            // box instead of "Load successful.".
+            let damaged = {
+                let (blocks, cell) = self.preview(session);
+                blocks.get(usize::from(cell)).is_some_and(|b| b.damaged)
+            };
+            if session.mode() == SaveSelectMode::Load
+                && session.commit_report() == Some(CommitReport::Ok)
+                && damaged
+            {
+                session.report_load_damaged();
+            }
             const FACE: u16 = 0xF000;
             return if session.committing_work() == Some(false) && edge & FACE != 0 {
                 PadButton::Cross.mask()
@@ -617,22 +630,33 @@ pub fn commit_banner(
     mode: SaveSelectMode,
     working: bool,
     report: CommitReport,
-) -> (&'static str, &'static str) {
+) -> (&'static str, &'static str, &'static str) {
     let failed = report == CommitReport::Failed;
-    match (mode, working, failed) {
+    if !working && report == CommitReport::Damaged {
+        // Sub-mode `0x13`'s checksum arm (`0x801DF4EC..0x801DF548`).
+        return (
+            "Unable to load data.",
+            "Damaged data.",
+            "Delete at the PlayStation MEMORY CARD Screen.",
+        );
+    }
+    let (a, b) = match (mode, working, failed) {
         (SaveSelectMode::Save, true, _) => ("  Saving to MEMORY CARD", "Do not remove MEMORY CARD"),
         (SaveSelectMode::Load, true, _) => ("  Now Loading", "Do not remove MEMORY CARD"),
         (SaveSelectMode::Save, false, false) => ("Save successful.", ""),
         (SaveSelectMode::Save, false, true) => ("Unable to save.", ""),
         (SaveSelectMode::Load, false, false) => ("Load successful.", ""),
         (SaveSelectMode::Load, false, true) => ("Unable to load data.", ""),
-    }
+    };
+    (a, b, "")
 }
 
 /// The commit beat's messagebox, as the overlay draws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SaveBanner {
     pub lines: (&'static str, &'static str),
+    /// A third line - only the damaged-data box has one.
+    pub note: &'static str,
     /// The write / read panel (`FUN_801E1C1C` mode 4) rather than the
     /// result line.
     pub work: bool,
@@ -690,6 +714,7 @@ pub fn card_port_snapshot(port: u8, mounted: Option<&str>) -> SlotSnapshot {
         Some(label) => SlotSnapshot {
             slot: port,
             present: true,
+            damaged: false,
             label: label.to_string(),
             ..SlotSnapshot::empty(port)
         },
@@ -815,12 +840,14 @@ impl SaveScreenFlow {
         });
         let banner = layout.banner.then(|| {
             let work = session.committing_work() == Some(true);
+            let (a, b, note) = commit_banner(
+                session.mode(),
+                work,
+                session.commit_report().unwrap_or(CommitReport::Ok),
+            );
             SaveBanner {
-                lines: commit_banner(
-                    session.mode(),
-                    work,
-                    session.commit_report().unwrap_or(CommitReport::Ok),
-                ),
+                lines: (a, b),
+                note,
                 work,
                 slide_t: (session.committing_elapsed().saturating_mul(0x100)).min(0x1000),
                 progress_t: crate::save_select::commit_progress_t(session.committing_elapsed()),
@@ -1058,11 +1085,14 @@ mod tests {
             assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
             assert_eq!(flow.card_io_result(), 1, "the card op published success");
             // Cell 0 is empty.
-            let gated = flow.before_tick(&s, cross()) & PadButton::Cross.mask() == 0;
+            let gated = flow.before_tick(&mut s, cross()) & PadButton::Cross.mask() == 0;
             assert_eq!(gated, expect_gated, "{mode:?} on an empty cell");
             // Cell 2 holds a save - never gated.
             flow.grid_cursor = 2;
-            assert_ne!(flow.before_tick(&s, cross()) & PadButton::Cross.mask(), 0);
+            assert_ne!(
+                flow.before_tick(&mut s, cross()) & PadButton::Cross.mask(),
+                0
+            );
         }
     }
 
@@ -1084,13 +1114,13 @@ mod tests {
             if let Some(port) = flow.pending_read(&s) {
                 flow.install_blocks(port, (0..15).map(|i| block(i, false)).collect());
             }
-            let edge = flow.before_tick(&s, 0);
+            let edge = flow.before_tick(&mut s, 0);
             s.tick(SelectInput::from_pad_edge(edge));
         }
         assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
         assert_eq!(flow.card_io_result(), 1, "a blank card still answers");
         assert!(!flow.card_absent());
-        let edge = flow.before_tick(&s, cross());
+        let edge = flow.before_tick(&mut s, cross());
         assert_ne!(edge & cross(), 0, "the save confirm reaches the session");
         s.tick(SelectInput::from_pad_edge(edge));
         assert!(matches!(s.phase(), SelectPhase::ConfirmOverwrite { .. }));
@@ -1135,10 +1165,10 @@ mod tests {
         let beat = s.now_checking_frames() + 1;
         run_beat(&mut flow, &mut s, beat);
         flow.install_blocks(1, (0..15).map(|i| block(i, true)).collect());
-        let edge = flow.before_tick(&s, PadButton::Right.mask());
+        let edge = flow.before_tick(&mut s, PadButton::Right.mask());
         s.tick(SelectInput::from_pad_edge(edge));
         assert_eq!(flow.grid_cursor(), 1);
-        let edge = flow.before_tick(&s, cross());
+        let edge = flow.before_tick(&mut s, cross());
         s.tick(SelectInput::from_pad_edge(edge));
         assert_eq!(flow.commit(&s), None, "a Load asks first");
         assert_eq!(flow.confirm_prompt(&s), "Do you wish to load?");
@@ -1161,10 +1191,10 @@ mod tests {
             let edge = flow.before_tick(s, e);
             s.tick(SelectInput::from_pad_edge(edge));
         }
-        let working = commit_banner(s.mode(), true, CommitReport::Pending);
+        let (a, b, _) = commit_banner(s.mode(), true, CommitReport::Pending);
         assert_eq!(
             flow.overlay_model(s).unwrap().banner.map(|b| b.lines),
-            Some(working)
+            Some((a, b))
         );
         let mut frames = 0;
         while !s.is_done() {
@@ -1196,12 +1226,12 @@ mod tests {
             let beat = s.now_checking_frames() + 1;
             run_beat(&mut flow, &mut s, beat);
             for e in [cross(), PadButton::Left.mask(), cross()] {
-                let edge = flow.before_tick(&s, e);
+                let edge = flow.before_tick(&mut s, e);
                 s.tick(SelectInput::from_pad_edge(edge));
             }
             // No answer: the beat parks on the write panel indefinitely.
             for _ in 0..400 {
-                let edge = flow.before_tick(&s, 0);
+                let edge = flow.before_tick(&mut s, 0);
                 s.tick(SelectInput::from_pad_edge(edge));
             }
             assert_eq!(s.committing_work(), Some(true), "parked on the write");
@@ -1223,7 +1253,7 @@ mod tests {
             );
             // A press on the result line cuts it short - as a Cross, which is
             // the confirm cue retail sounds.
-            assert_eq!(flow.before_tick(&s, PadButton::Circle.mask()), cross());
+            assert_eq!(flow.before_tick(&mut s, PadButton::Circle.mask()), cross());
             s.tick(SelectInput::from_pad_edge(cross()));
             if ok {
                 assert_eq!(s.outcome(), Some(SelectOutcome::Saved(0)));
@@ -1234,6 +1264,54 @@ mod tests {
                 assert_eq!(flow.written_save(), None);
             }
         }
+    }
+
+    /// A block whose checksum fails the read's verify is refused the way
+    /// retail's sub-mode `0x13` refuses it: the read panel runs, then the
+    /// three-line damaged-data box, held without a timer until a face
+    /// button, then the grid again - nothing is loaded.
+    #[test]
+    fn a_damaged_block_is_refused_after_the_read() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
+        flow.install_blocks(
+            0,
+            (0..15)
+                .map(|i| SlotSnapshot {
+                    damaged: i == 0,
+                    ..block(i, true)
+                })
+                .collect(),
+        );
+        for e in [cross(), PadButton::Left.mask(), cross()] {
+            let edge = flow.before_tick(&mut s, e);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        assert_eq!(s.committing_work(), Some(true), "the read panel runs first");
+        use crate::save_select::{COMMIT_LOAD_WORK_FRAMES, COMMIT_RESULT_FRAMES};
+        for _ in 0..(COMMIT_LOAD_WORK_FRAMES + COMMIT_RESULT_FRAMES + 60) {
+            let edge = flow.before_tick(&mut s, 0);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        let banner = flow.overlay_model(&s).unwrap().banner.unwrap();
+        assert_eq!(
+            (banner.lines, banner.note),
+            (
+                ("Unable to load data.", "Damaged data."),
+                "Delete at the PlayStation MEMORY CARD Screen."
+            ),
+            "the box holds past the result line's 0x5A"
+        );
+        let edge = flow.before_tick(&mut s, PadButton::Circle.mask());
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        assert_eq!(flow.commit(&s), None, "nothing loads");
     }
 
     /// Over a block that already holds something, a Save asks to
@@ -1308,7 +1386,7 @@ mod tests {
             ..Default::default()
         });
         assert!(matches!(s.phase(), SelectPhase::Browsing { .. }));
-        flow.before_tick(&s, 0);
+        flow.before_tick(&mut s, 0);
         assert!(flow.blocks().is_empty(), "the card read went with the grid");
         assert_eq!(flow.grid_cursor(), 0);
     }

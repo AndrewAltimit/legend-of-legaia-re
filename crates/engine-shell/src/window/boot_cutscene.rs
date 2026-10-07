@@ -77,7 +77,7 @@ impl PlayWindowApp {
             .map(|port| disk_port_blocks_with_card(&self.save_dir, self.card.as_ref(), port));
         // Re-borrow: `disk_port_blocks` needed `&self.save_dir` while the
         // session above borrowed `self.boot_ui`.
-        let session = match &self.boot_ui {
+        let session = match &mut self.boot_ui {
             BootUiState::SaveSelect(s) => s,
             BootUiState::FieldMenu {
                 sub: Some(FieldMenuSubsession::Save(s)),
