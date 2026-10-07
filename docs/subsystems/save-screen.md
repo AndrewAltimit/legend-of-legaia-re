@@ -516,11 +516,15 @@ same `No.` + numeral pair labels the confirm prompt (numeral at
 `y + 4`) and the info panel's title row (`(8, local_34 - 8)` /
 `(0x1E, local_34 - 8)`).
 
-The progress timer is not decoration on the save side: the save arm
-(`0x801DF3CC..0x801DF3FC`) leaves the write panel only once the card op is
-done **and** `_DAT_801F01D0` reads `0x1000`. Mode 4 steps it `+0x20` per
-frame-step unit, so a save holds its panel at least `0x1000 / 0x20 = 128`
-sixtieth-second units; the load arm waits on the card alone. And once the
+The progress timer is not decoration on the load side. The three sub-modes
+behind the panel are, by their own debug strings: `0x03` the write
+(`0x801DF5BC..`, "save_time out err" / "err card write retray"), `0x04` the
+read (`0x801DF33C..0x801DF400`, "err card read retray"), `0x05` the read's
+checksum verify (`0x801DF82C..`). The read arm leaves the panel only once the
+card op is done **and** `_DAT_801F01D0` reads `0x1000` (`0x801DF3D0..
+0x801DF3FC`); mode 4 steps it `+0x20` per frame-step unit, so a load holds
+its panel at least `0x1000 / 0x20 = 128` sixtieth-second units, where the
+write arm waits on the card alone. And once the
 panel has slid in, the dispatcher's shared tail stops drawing the header tab,
 the pill and the block grid (`0x801DFCDC..0x801DFCE4`: only while
 `_DAT_801F01CC != 0x1000`), while the panel's own subtractive push
@@ -530,8 +534,8 @@ and the result line after it sit alone on black.
 The port bakes the three records and the texel into the shared save-menu
 atlas (`legaia_asset::title_pak::SAVE_MENU_ATLAS_*`), draws them in
 engine-ui's `card_banner_draws_for` / `confirm_dialog_badge_draws_for` /
-`slot_info_panel_draws_for`, holds a Save's beat for
-`COMMIT_SAVE_WORK_FRAMES`, and `save_select_overlay_draws` draws a parked
+`slot_info_panel_draws_for`, holds a Load's beat for
+`COMMIT_LOAD_WORK_FRAMES`, and `save_select_overlay_draws` draws a parked
 banner alone. The subtractive darkening during the slide itself is not
 ported; the port cuts to black when the panel parks.
 

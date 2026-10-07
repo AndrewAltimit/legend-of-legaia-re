@@ -690,7 +690,7 @@ fn card_slots_save_confirms_overwrite_from_the_preview() {
 /// no input; the result line flips on for the last stretch.
 fn run_commit_beat(s: &mut SaveSelectSession) {
     let mut saw_result = false;
-    for _ in 0..=(COMMIT_SAVE_WORK_FRAMES.max(COMMIT_WORK_FRAMES) + COMMIT_RESULT_FRAMES) {
+    for _ in 0..=(COMMIT_LOAD_WORK_FRAMES.max(COMMIT_WORK_FRAMES) + COMMIT_RESULT_FRAMES) {
         if s.committing_work() == Some(false) {
             saw_result = true;
         }

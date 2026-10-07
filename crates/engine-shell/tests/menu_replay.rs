@@ -547,12 +547,13 @@ fn pad_driven_menu_ladder() {
                     let cell_before = s.save_flow().grid_cursor();
                     // Cross raises "Do you wish to load?" (defaulting to
                     // No); Yes runs "Now Loading" / "Load successful."
-                    // before the commit lands.
+                    // before the commit lands; the read panel holds until
+                    // its progress bar fills (128 frames).
                     tap_button(&mut s, PadButton::Cross);
                     let prompted = matches!(sub_select_phase(&s), Some(SelectPhase::ConfirmOverwrite { cursor, .. }) if cursor == 1);
                     tap_button(&mut s, PadButton::Left); // No -> Yes
                     tap_button(&mut s, PadButton::Cross);
-                    idle(&mut s, 200);
+                    idle(&mut s, 300);
                     match s.last_save_commit {
                         Some(c) if c.kind == SaveCommitKind::Load && !prompted => {
                             stall = Some(
@@ -676,9 +677,8 @@ fn pad_driven_menu_ladder() {
                             tap_button(&mut w, PadButton::Left); // No -> Yes
                             tap_button(&mut w, PadButton::Cross);
                             // "Saving to MEMORY CARD", then "Save
-                            // successful.", then the commit. The write panel
-                            // holds until its progress bar fills (128 frames).
-                            idle(&mut w, 300);
+                            // successful.", then the commit.
+                            idle(&mut w, 200);
                             match w.last_save_commit {
                                 Some(c) if c.kind == SaveCommitKind::Save && prompted => {
                                     eprintln!(
