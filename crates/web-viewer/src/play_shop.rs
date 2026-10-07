@@ -22,18 +22,16 @@
 //! catalog resolves, the shop opens, and closing it resumes the VM past the
 //! merchant op.
 //!
-//! # Divergence from the native window (deliberate)
+//! # Divergence from the native window
 //!
-//! * **Edge-triggered input.** The native window feeds `MenuRuntime::tick`
-//!   the *held* pad each frame; `menu_runtime::step` does no edge detection
-//!   of its own, so a held direction walks the cursor at 60 rows/second.
-//!   The browser page feeds **edges**, matching its own pause-menu
-//!   convention ([`crate::play_menu::play_menu_input`]) and retail's
-//!   behaviour.
-//!
-//! And one that is **not** a divergence, though it once was: both hosts now
-//! resolve their row labels from the disc item table (`World::menu.text`), so
-//! a name that appears on one appears on the other.
+//! None. Both hosts step the open session through the one per-tick kernel
+//! `MenuRuntime::step_field_session` on the tick's pad **edges** (the native
+//! window once fed the held word, which walked the cursor at 60 rows a
+//! second), once per sim tick (this page once stepped it per display frame,
+//! which ran the tick-counted fade and window slides at the monitor's rate),
+//! and release the merchant op on the same test (this page once released it
+//! while the buy list's quantity / recipient sub-screens were still up). Both
+//! resolve their row labels from the disc item table (`World::menu.text`).
 //!
 //! Row inks come from the retail kernels
 //! `legaia_engine_core::shop::{shop_root_command_rows, shop_buy_row_ink,
@@ -54,15 +52,9 @@
 //! inputs, scales its stage texts and serialises the quads.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::menu_runtime::MenuInput;
 use legaia_engine_screens::{ScreenInputs, ShopOverlayFrame};
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
-
-/// Pack a pad word into the `MenuInput` the menu VM steps on.
-fn menu_input(edge: u16) -> MenuInput {
-    legaia_engine_core::menu_runtime::menu_input_from_pad_edges(edge)
-}
 
 impl LegaiaRuntime {
     /// Hand a field-VM-armed shop to the menu runtime. Called once per
@@ -250,46 +242,29 @@ impl LegaiaRuntime {
         self.menu.is_open()
     }
 
-    /// Drive the open shop one frame from an edge-triggered PSX pad word
-    /// (same bit layout as [`Self::set_pad`]).
+    /// Drive the open shop **one sim tick** from an edge-triggered PSX pad
+    /// word (same bit layout as [`Self::set_pad`]). The page calls it once per
+    /// sim step it drains, with the frame's edges on the first step and `0`
+    /// on the rest - the shop's fade and window slides are tick-counted, and
+    /// one call per display frame ran them at the monitor's rate.
     ///
-    /// When the session ends (the player picked **Exit**, clearing
-    /// `shop_session`), this calls `World::finish_field_shop` so the
-    /// suspended op-`0x49` flips Armed -> Done and the field VM advances past
-    /// the merchant op on its next step. Without that call the script would
-    /// stay parked forever.
+    /// The step is the shared
+    /// [`MenuRuntime::step_field_session`](legaia_engine_core::menu_runtime::MenuRuntime::step_field_session),
+    /// the native window's call too: the tick, the shop's blip, and - once the
+    /// whole runtime has closed - `World::finish_field_shop`, so the suspended
+    /// op-`0x49` flips Armed -> Done and the field VM advances past the
+    /// merchant op on its next step.
     pub fn play_shop_input(&mut self, edge: u16) {
-        if !self.menu.is_open() {
-            return;
-        }
-        let input = menu_input(edge);
         // Disjoint field borrows: the menu runtime and the scene host are
         // separate fields, so the live scene world (not the disc-free
-        // scaffold) can be ticked in place - the shop spends the player's
-        // real gold and stocks their real bag.
+        // scaffold) is ticked in place - the shop spends the player's real
+        // gold and stocks their real bag.
         let menu = &mut self.menu;
-        if let Some(host) = self.scene_host.host_mut() {
-            menu.tick(&mut host.world, input);
-        }
-        // The shop's own blip (`MenuRuntime::take_ui_cue`), keyed through
-        // the page's SFX channel - the native window keys the same one off
-        // `tick_menu_runtime_session`.
-        if let Some(cue) = self.menu.take_ui_cue() {
+        let Some(host) = self.scene_host.host_mut() else {
+            return;
+        };
+        if let Some(cue) = menu.step_field_session(&mut host.world, edge) {
             self.play_sfx(u32::from(cue));
-        }
-        if self.menu.shop_session.is_none()
-            && let Some(host) = self.scene_host.host_mut()
-            && host.world.shops.shop_open
-        {
-            host.world.finish_field_shop();
-        }
-        // The prize exchange's own Exit already unparks through the runtime
-        // tick; this is the same safety net the shop keeps.
-        if self.menu.prize_session.is_none()
-            && let Some(host) = self.scene_host.host_mut()
-            && host.world.shops.prize_exchange_open
-        {
-            host.world.finish_prize_exchange();
         }
     }
 

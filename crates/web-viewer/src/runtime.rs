@@ -1485,21 +1485,6 @@ impl LegaiaRuntime {
         seat.enter(mode, world)
     }
 
-    /// The pause menu's open juncture: retail opens the menu by writing the
-    /// mode word, not by calling the menu (`CARD INIT` stages the menu overlay
-    /// and hands the word to `CARD MODE` at `0x80025974`). Both stores of
-    /// `request_card_mode` land on the seat, then the INIT frame runs.
-    ///
-    /// Twin of `BootSession::open_field_menu`'s own pair of calls.
-    pub(crate) fn seat_open_card_menu(&mut self) {
-        self.scene_host.seat_mut().request_card_mode();
-        let plan = self.seat_enter(legaia_engine_core::mode::GameMode::CardInit);
-        debug_assert!(
-            plan.is_none(),
-            "CARD INIT stages no overlay-A request in the port's model"
-        );
-    }
-
     /// Decode the live dialogue box (the field VM's inline-script runner) into
     /// the JSON the HUD prints. Glyph bytes are ASCII-compatible from `0x20`.
     fn dialog_value(&self) -> serde_json::Value {

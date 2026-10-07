@@ -757,14 +757,14 @@ impl LegaiaRuntime {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use legaia_engine_core::scene::SceneHost;
 
     /// A disc-free PROT.DAT: header + a three-entry TOC over a handful of
     /// zeroed sectors. Enough for `SceneHost::from_prot_bytes`; no scene
     /// loads, which is exactly the point - the hold logic must not need one.
-    fn synthetic_prot() -> Vec<u8> {
+    pub(crate) fn synthetic_prot() -> Vec<u8> {
         const SECTOR: usize = 2048;
         let sectors = 8usize;
         let mut img = vec![0u8; sectors * SECTOR];

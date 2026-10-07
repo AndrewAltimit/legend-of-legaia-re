@@ -1368,7 +1368,15 @@ about these is contested.
 
 ### The frame loop rules are engine-side
 
-Both play hosts run one engine frame: `legaia_engine_session::BootSession::tick` - the mode seat's frame, the camera's half before the world tick, the world tick, the tick's BGM events, the camera's half after it, the SFX queue dropped on a door, the field SFX routing, and the mode word adopted. The browser page holds a `BootSession` over its own audio output and declares at install what it does itself (the pause menu, the field CD-XA lane, the per-tick queue drains).
+Both play hosts run one engine frame: `legaia_engine_session::BootSession::tick` - the mode seat's frame, the camera's half before the world tick, the world tick, the tick's BGM events, the camera's half after it, the SFX queue dropped on a door, the field SFX routing, and the mode word adopted. The browser page holds a `BootSession` over its own audio output and declares at install what it does itself (driving the pause menu's sub-screens, the field CD-XA lane, the per-tick queue drains).
+
+### One pause menu, one press rule, one shop step
+
+The pause menu's root picker is the session's own `BootSession::field_menu` on both hosts. A menu-button press goes through `BootSession::press_field_menu` - the scripted op-`0x49` press, the Start edge through `World::field_menu_open_allowed` (which holds the dialogue engagement, the narration crawl and title card, the locks and the shop), and the deny buzz - and the close through `BootSession::close_field_menu`.
+
+The page used to keep a private `FieldMenuSession` with its own resume mode and re-spell the open beside the session's (gate sample, mode switch, seat), so one press had two answers; a title Continue / Options row could be refused on the page and never natively, because the page ran it through the press predicate and the window through the bare builder. Both now open the title rows through `open_field_menu` directly. What the page keeps in `PlayMenu` is only its sub-screen driver (the open sub-session, the card flow, the parked Load label, the latched key name).
+
+A shop, the prize exchange and the inn prompt step through one per-tick kernel on both hosts, `MenuRuntime::step_field_session`: the tick on that tick's pad edges, the blip, and the unpark of the suspended op-`0x49` once the whole runtime has closed. The page stepped the shop once per display frame, so the tick-counted open fade and window slides ran at the monitor's rate (twice retail speed at 120 Hz); it now calls `play_shop_input` once per drained sim step, the frame's edges on the first. It also released the merchant op as soon as `shop_session` cleared, while the native window waited for the whole runtime - so on the page the field script could resume under a buy list's quantity or recipient screen.
 
 What remains host-side is each host's display loop (winit's redraw natively, `requestAnimationFrame` on the page) and the steps it runs around the session's tick. Four of the rules that turn display frames into ticks are kernels in `engine-core::frame_step`, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
@@ -4093,13 +4101,10 @@ banner and the cheats panel. Closed rows:
   decoded frames and reads the bit depth.
 - **A scene-script movie skips on the page only.** The page tests the skip
   button on every movie; the native window only on the title attract.
-- **Paced per display frame on the page.** The game-over panel and the
-  shop step once per display frame on the page and once per sim tick
-  natively, and the boot title catches up to thirty ticks a frame where the
-  shared stepper allows four.
-- **Two copies of the menu-open body.** `play_menu.rs` re-spells
-  `BootSession::open_field_menu` and re-checks the whole open predicate, so a
-  title Continue can be refused on the page and never natively.
+- **Paced per display frame on the page.** The game-over panel steps once
+  per display frame on the page and once per sim tick natively, and the boot
+  title catches up to thirty ticks a frame where the shared stepper allows
+  four.
 - **An overworld Load arms the top-view debug chord on the page only**
   (`enter_field_core`); the native in-game Load does not.
 - **The inn prompt freezes the field on the page.** The page freezes on

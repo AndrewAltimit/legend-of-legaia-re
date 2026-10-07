@@ -1593,21 +1593,27 @@ void main() {
      * it, at which point the engine resumes the suspended script. So there is
      * nothing to toggle here - just forward edges while it is up.
      *
-     * Also unlike the pause menu, one tick per frame is right: the shop has no
-     * frame-counted animation to keep on a wall clock, so it needs no catch-up
-     * clock of its own.
+     * The shop steps on the SIM clock, one `play_shop_input` per drained sim
+     * step - the native window's cadence. Its open fade and window slides are
+     * tick-counted (`MenuRuntime::shop_fade_level`), so one call per display
+     * frame ran them at the monitor's rate: twice as fast on a 120 Hz panel.
+     * The frame's edges ride the first step; a frame that drains no step
+     * keeps them for the next one rather than dropping the press.
      *
      * Returns `true` while the shop is up, so `_frame` freezes the field. */
-    _updateFieldShop() {
+    _updateFieldShop(simSteps) {
       const rt = this.rt;
       if (typeof rt.play_shop_is_open !== 'function') return false;
       let open;
       try { open = rt.play_shop_is_open(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
+      if (!(simSteps > 0)) return true;
       let edge = 0;
       edge |= padMaskOf(this.pulse);
-      try { rt.play_shop_input(edge); } catch (e) {}
+      for (let s = 0; s < simSteps; s++) {
+        try { rt.play_shop_input(s === 0 ? edge : 0); } catch (e) { break; }
+      }
       /* The shop owns every edge while it is up - clear them so none leak into
        * the frozen field on the next tick. */
       this.pulse.clear();
@@ -2451,7 +2457,7 @@ void main() {
       const menuOpen = this._updateFieldMenu();
       /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
        * on the engine side, so the field must not advance under it either. */
-      const shopOpen = menuOpen ? false : this._updateFieldShop();
+      const shopOpen = menuOpen ? false : this._updateFieldShop(simSteps);
       /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
        * the script the same way, and is modal over everything else. */
       const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);

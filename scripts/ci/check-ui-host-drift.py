@@ -612,13 +612,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "screens' purchase / sale / equip cues are the engine's decision "
         "(`MenuRuntime::take_ui_cue`, retail's list kernel `FUN_80032A44` "
         "and the shop sub-screens' own ring writes). Both hosts dropped "
-        "them; each host's shop step must take and key the cue",
+        "them; each host's shop step must take and key the cue. The take "
+        "now sits inside the one per-tick step both hosts run "
+        "(`MenuRuntime::step_field_session`, which returns the cue), so the "
+        "assertion is that each host's shop step routes through it",
         "sites": {
             "native": (NATIVE_REDRAW, "tick_menu_runtime_session"),
             "web": ("crates/web-viewer/src/play_shop.rs", "play_shop_input"),
         },
         "mode": "symbols_all",
-        "symbols": ["take_ui_cue"],
+        "symbols": ["step_field_session"],
     },
     {
         "what": "CLUT-walk shimmer install, native vs play page - the resolve "
@@ -1147,25 +1150,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         "pattern": r"(resolve_turn\w*)",
     },
     {
-        "what": "pause-menu open through the mode seat - retail opens the menu "
-        "by writing the mode word (`CARD INIT` stages the menu overlay and "
-        "hands the word to `CARD MODE` at `0x80025974`), not by calling the "
-        "menu, and going through `ModeSeat::enter` is what runs the "
-        "mode-change edge with it. A host that only lets `adopt_world_mode` "
-        "follow the world's scene mode reaches the same word by a different "
-        "road: the chain of mode words is identical, the edge count is not, "
-        "so no trace comparison catches it and only the paired call sites do",
-        "sites": {
-            "native": (NATIVE_BOOT, "open_field_menu"),
-            # The browser's open calls the seat through one helper, so the
-            # helper is the site: naming `play_menu_open` would pin the call
-            # to `seat_open_card_menu` and not the seat call underneath it.
-            "web": (WEB_RUNTIME, "seat_open_card_menu"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["request_card_mode"],
-    },
-    {
         "what": "scripted mesh re-bind (motion-VM op `0x0E`) - the world holds "
         "the actor's new model id per placement slot and each host resolves it "
         "to bytes through the scene's model bank. A host that resolves it "
@@ -1234,43 +1218,40 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["arm_live_loop"],
     },
     {
-        "what": "pause-menu open - retail gates the root list's last two rows "
-        "on two scene-scoped values (the op-`0x49` entry context and the MAN "
-        "header's save-allow bit) and suspends the field while the menu owns "
-        "the frame. A host that opens the menu without sampling them into a "
-        "`FieldMenuGate` draws every row white and opens every row, so a "
-        "player can Save in one of the 96 scenes whose header forbids it; a "
-        "host that does not switch the world into `SceneMode::Menu` leaves "
-        "field dispatch running under the menu. Both are invisible in a diff, "
-        "because the two open sites live in different crates",
-        "sites": {
-            "native": (NATIVE_BOOT, "open_field_menu"),
-            "web": (WEB_PLAY_MENU, "play_menu_open"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["FieldMenuGate", "SceneMode::Menu"],
-    },
-    {
-        "what": "menu-open precondition - every host that turns a Start edge "
-        "into an open menu must ask `World::field_menu_open_allowed` rather "
-        "than spell the test out locally. Three hosts each wrote their own "
-        "copy and all three said `mode == Field`, which is how the OVERWORLD "
-        "lost the pause menu: retail runs one locomotion controller "
-        "(`FUN_801D01B0`) across the field and the kingdom overworlds, and "
-        "the port splits that one retail mode into `Field` + `WorldMap`. The "
-        "premise the copies rested on - that `FUN_801E76D4` is the "
-        "overworld's controller with a Start handler of its own - is false; "
-        "it is the top-view debug renderer. The symptom was silent in the "
-        "worst way: the Save row is legal in exactly the three scenes no host "
-        "would open the menu in, so the SAVE direction was unreachable by pad "
-        "anywhere in the port while every oracle stayed green",
+        "what": "pause-menu press - one engine rule answers every menu-button "
+        "press: `BootSession::press_field_menu` (the scripted op-`0x49` press, "
+        "the Start edge through `World::field_menu_open_allowed`, the deny "
+        "buzz) over `BootSession::open_field_menu` (the `FieldMenuGate` "
+        "sample, the switch into `SceneMode::Menu`, the open through the mode "
+        "seat). Each of those used to be paired across two open sites, "
+        "because the page kept a private root picker and re-spelled the open "
+        "beside the session's: three hosts once wrote their own `mode == "
+        "Field` copy of the precondition, which is how the OVERWORLD lost the "
+        "pause menu, and the page once opened without sampling the gate, "
+        "which let a player Save where the scene's header forbids it. The "
+        "page's menu is the session's `field_menu` now, so the property left "
+        "to assert is that every host routes the press through the kernel "
+        "rather than around it",
         "sites": {
             "native_window": (NATIVE_REDRAW, "handle_redraw"),
             "native_boot": (NATIVE_BOOT, "tick"),
             "web": (WEB_PLAY_MENU, "play_menu_open"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_menu_open_allowed"],
+        "symbols": ["press_field_menu"],
+    },
+    {
+        "what": "pause-menu open with no press - the title's Continue / "
+        "Options rows land on a pause-menu sub-screen, so they open the menu "
+        "through the session's own builder (`BootSession::open_field_menu`) "
+        "rather than through a Start press; a host that built its own root "
+        "picker here would be back to two menus",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "open_menu_row_from_title"),
+            "web": (WEB_PLAY_MENU, "open_play_menu_unpressed"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["open_field_menu"],
     },
     {
         "what": "party wipe - both hosts must route it to the title screen "
@@ -3161,9 +3142,18 @@ ENUM_COVERAGE: list[dict[str, object]] = [
         "mode-24 door warp for either) and only one can DRAW leaves the other "
         "host's player in a frozen field with no screen - the shape four "
         "minigame modes shipped in",
-        # (variant, host) -> reason. Empty: the play page's fishing line
-        # pass (`play_fishing.rs`) keys on `SceneMode::Fishing`.
-        "waivers": {},
+        # (variant, host) -> reason. The play page's fishing line pass
+        # (`play_fishing.rs`) keys on `SceneMode::Fishing`.
+        "waivers": {
+            ("Menu", "web"): {
+                "reason": "entered on both hosts by one engine call, "
+                "`BootSession::open_field_menu` (engine-session), and drawn on "
+                "the page off the session's own `field_menu` "
+                "(`play_menu_is_open` / `play_menu_draws_json`), so the page "
+                "never spells the variant: the mode and the screen cannot "
+                "come apart, which is the failure this row exists to catch"
+            },
+        },
     },
 ]
 

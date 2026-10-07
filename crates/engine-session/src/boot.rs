@@ -38,6 +38,19 @@ use legaia_engine_core::world::SceneMode;
 
 use crate::bgm::AudioBgmDirector;
 
+/// What one menu-button press did ([`BootSession::press_field_menu`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PauseMenuPress {
+    /// The pause menu opened. `scripted` = a script's op-`0x49` press, which
+    /// plays no confirm blip (retail's cue `0x20` is the pad controller's,
+    /// not the subsystem actor's).
+    Opened { scripted: bool },
+    /// The menu lock refused the press and queued the deny buzz.
+    Denied,
+    /// Nothing happened: no press, a menu already open, or a silent refusal.
+    None,
+}
+
 /// Options for [`BootSession::enter_field_live`] - how much of the live
 /// gameplay loop to arm when dropping into a field scene.
 #[derive(Debug, Clone, Default)]
@@ -1106,6 +1119,47 @@ impl<S: AudioSink> BootSession<S> {
         );
     }
 
+    /// One menu-button press, as every host answers it: the pause menu's whole
+    /// open rule in one place, so the native window, the browser page and a
+    /// headless [`Self::tick`] cannot answer the same press differently.
+    ///
+    /// - A script's own menu press (an op-`0x49` save point / ready check,
+    ///   [`World::scripted_menu_open_pending`](legaia_engine_core::world::World::scripted_menu_open_pending))
+    ///   opens the menu with no Start edge and past the engagement gate.
+    /// - A Start edge opens it when
+    ///   [`World::field_menu_open_allowed`](legaia_engine_core::world::World::field_menu_open_allowed)
+    ///   says so - the scene mode, the system / menu locks, the warp hold, the
+    ///   opening chain, a narration crawl or title card, a shop, and a dialogue
+    ///   engagement (retail's engaged-bit branch at `0x801D01F0` sits ahead of
+    ///   the accept, so Start mid-dialogue opens nothing and buzzes nothing).
+    /// - A Start edge the menu lock refuses queues the deny buzz (`0x23`);
+    ///   every other refusal is silent.
+    ///
+    /// No-op ([`PauseMenuPress::None`]) while a menu is already open: what
+    /// Start does inside the menu is the picker's own rule.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D0250`, the menu-open accept)
+    pub fn press_field_menu(&mut self, start_edge: bool) -> PauseMenuPress {
+        if self.field_menu.is_some() {
+            return PauseMenuPress::None;
+        }
+        let scripted = self.host.world.scripted_menu_open_pending();
+        if scripted || (start_edge && self.host.world.field_menu_open_allowed()) {
+            self.open_field_menu();
+            if self.field_menu.is_none() {
+                return PauseMenuPress::None;
+            }
+            if scripted {
+                self.host.world.note_scripted_menu_opened();
+            }
+            return PauseMenuPress::Opened { scripted };
+        }
+        if start_edge && self.host.world.field_menu_press_denied() {
+            return PauseMenuPress::Denied;
+        }
+        PauseMenuPress::None
+    }
+
     /// Close the pause menu and restore the suspended scene mode (the mode
     /// the world ran when [`Self::open_field_menu`] fired). No-op when no
     /// menu is open.
@@ -1496,23 +1550,11 @@ impl<S: AudioSink> BootSession<S> {
         // of its own (`World::scripted_menu_open_pending`): it opens the menu
         // with no Start edge and past the engagement gate the Start path
         // keeps, exactly once per arm.
-        let scripted_menu = !self.host_owns_pause_menu
-            && self.field_menu.is_none()
-            && self.host.world.scripted_menu_open_pending();
-        let menu_opened_this_tick = if scripted_menu
-            || (!self.host_owns_pause_menu
-                && self.field_menu.is_none()
-                && self.host.world.field_menu_open_allowed()
-                && self.host.world.input.just_pressed(PadButton::Start))
-        {
-            self.open_field_menu();
-            if scripted_menu && self.field_menu.is_some() {
-                self.host.world.note_scripted_menu_opened();
-            }
-            true
-        } else {
-            false
-        };
+        let menu_opened_this_tick = !self.host_owns_pause_menu
+            && matches!(
+                self.press_field_menu(self.host.world.input.just_pressed(PadButton::Start)),
+                PauseMenuPress::Opened { .. }
+            );
         if !self.host_owns_pause_menu && !menu_opened_this_tick && self.field_menu.is_some() {
             let close = self.tick_field_menu();
             if close {
@@ -1965,6 +2007,32 @@ mod tests {
     }
 
     /// The camera azimuth a host hands in is consumed by the next tick.
+    /// The press rule every host routes through: no press does nothing, a
+    /// Start edge opens exactly when the engine predicate allows it, a press
+    /// with the menu already up is not a second open, and the close restores
+    /// the suspended mode.
+    #[test]
+    fn a_menu_press_opens_once_and_only_where_allowed() {
+        let mut s = headless_session();
+        s.host.world.mode = SceneMode::Field;
+        assert_eq!(s.press_field_menu(false), PauseMenuPress::None);
+        assert!(!s.field_menu_is_open());
+        assert!(s.host.world.field_menu_open_allowed());
+        assert_eq!(
+            s.press_field_menu(true),
+            PauseMenuPress::Opened { scripted: false }
+        );
+        assert!(s.field_menu_is_open());
+        assert_eq!(s.host.world.mode, SceneMode::Menu);
+        assert_eq!(s.press_field_menu(true), PauseMenuPress::None);
+        s.close_field_menu();
+        assert_eq!(s.host.world.mode, SceneMode::Field);
+        // Off the field-run modes the press is refused silently.
+        s.host.world.mode = SceneMode::Battle;
+        assert_eq!(s.press_field_menu(true), PauseMenuPress::None);
+        assert!(!s.field_menu_is_open());
+    }
+
     #[test]
     fn the_azimuth_override_lasts_one_tick() {
         let mut s = headless_session();

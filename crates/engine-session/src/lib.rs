@@ -13,4 +13,4 @@ pub mod bgm;
 pub mod boot;
 
 pub use bgm::AudioBgmDirector;
-pub use boot::{BootConfig, BootSession};
+pub use boot::{BootConfig, BootSession, PauseMenuPress};

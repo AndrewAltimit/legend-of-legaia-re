@@ -296,53 +296,42 @@ impl PlayWindowApp {
             // so this asks the engine instead
             // ([`World::field_menu_open_allowed`]) and every host that opens
             // the menu asks the same question.
-            // A script's op-`0x49` save point / ready check presses the menu
-            // button itself (`World::scripted_menu_open_pending`): no Start
-            // edge, no engagement gate, and no confirm blip - retail's cue
-            // `0x20` belongs to the pad controller, not to the actor it spawns.
-            let scripted_menu = !self.menu_runtime.is_open()
-                && self.session.host.world.scripted_menu_open_pending();
-            if scripted_menu
-                || (!narration
-                    && pressed_edge & 0x0008 != 0
-                    && self.session.host.world.field_menu_open_allowed()
-                    && !self.menu_runtime.is_open())
-            {
-                // Start: open the BootSession-hosted pause menu (the
-                // retail CARD pair, game_mode 0x17 - the world holds
-                // SceneMode::Menu while it is open) and route the
-                // window's input + draws to it via the boot-UI arm.
-                //
-                // The open can be REFUSED - `open_field_menu` declines while
-                // a dialogue engagement owns the player, as retail's
-                // engaged-bit branch does. Only take the boot-UI arm when a
-                // session actually exists, or the window would route input
-                // and draws to a menu that is not there while the scene tick
-                // stayed skipped.
-                self.session.open_field_menu();
-                if self.session.field_menu_is_open() {
-                    if scripted_menu {
-                        self.session.host.world.note_scripted_menu_opened();
-                    } else {
-                        // The open blips as a confirm, as on the browser page;
-                        // a refused open blips nothing.
-                        self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
-                    }
-                    self.tick_menu_sfx();
-                    self.boot_ui = BootUiState::FieldMenu { sub: None };
-                    // The boot-UI state is set above, so the readout's
-                    // predicate already answers "suppressed" - step the
-                    // kernel on the opening frame rather than one frame
-                    // later, as every other short-circuit arm here does.
-                    self.tick_field_party_hud();
-                    self.prev_pad = self.pad;
-                    continue;
+            // The press itself - a script's op-`0x49` save point / ready
+            // check, a Start edge, the deny buzz - is answered by the one
+            // engine rule every host asks (`BootSession::press_field_menu`),
+            // which already holds the narration / title-card refusal this
+            // arm used to spell out locally. A shop / prize overlay owns the
+            // pad, so no press reaches the menu while one is up.
+            //
+            // The open can be REFUSED - a dialogue engagement owns the player,
+            // as retail's engaged-bit branch does - and then the boot-UI arm
+            // is not taken, or the window would route input and draws to a
+            // menu that is not there while the scene tick stayed skipped.
+            let press = if self.menu_runtime.is_open() {
+                legaia_engine_session::PauseMenuPress::None
+            } else {
+                self.session.press_field_menu(pressed_edge & 0x0008 != 0)
+            };
+            if let legaia_engine_session::PauseMenuPress::Opened { scripted } = press {
+                // Start: the BootSession-hosted pause menu (the retail CARD
+                // pair, game_mode 0x17 - the world holds SceneMode::Menu
+                // while it is open), with the window's input + draws routed
+                // to it via the boot-UI arm. The open blips as a confirm, as
+                // on the browser page; a scripted press blips nothing -
+                // retail's cue `0x20` belongs to the pad controller, not to
+                // the actor it spawns.
+                if !scripted {
+                    self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
                 }
-            } else if !narration && pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
-                // A press the menu lock refuses buzzes (`0x23` on the SFX
-                // ring); every other refusal is silent. The browser page
-                // makes the same call through `play_menu_open`.
-                self.session.host.world.field_menu_press_denied();
+                self.tick_menu_sfx();
+                self.boot_ui = BootUiState::FieldMenu { sub: None };
+                // The boot-UI state is set above, so the readout's
+                // predicate already answers "suppressed" - step the
+                // kernel on the opening frame rather than one frame
+                // later, as every other short-circuit arm here does.
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                continue;
             }
             // Route this frame's pad into the engine before the
             // tick so World::tick's mode dispatch (world-map
@@ -3956,29 +3945,10 @@ fn tick_menu_runtime_session(
     world: &mut legaia_engine_core::world::World,
     pressed_edge: u16,
 ) -> Option<u8> {
-    let mut cue = None;
-    if menu.is_open() {
-        // Edges, not the held word: the runtime filters no repeats, so a held
-        // key used to step the shop cursor / commit a screen every tick it
-        // stayed down. The browser page sends one edge per press through the
-        // same decode.
-        let input = legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
-        menu.tick(world, input);
-        // The shop's own blip (`MenuRuntime::take_ui_cue`); the browser
-        // page's `play_shop_input` keys the same one.
-        cue = menu.take_ui_cue();
-    }
-    // A field-VM-triggered shop the player has now closed: tell the world so
-    // the suspended op-0x49 resumes (Armed -> Done) and the field VM advances
-    // past the merchant op next tick.
-    if world.shops.shop_open && !menu.is_open() {
-        world.finish_field_shop();
-    }
-    // Safety net for the prize exchange (its own Exit already calls
-    // `finish_prize_exchange` through the runtime tick): if the menu closed by
-    // any other path, unpark the suspended counter script rather than wedge it.
-    if world.shops.prize_exchange_open && !menu.is_open() {
-        world.finish_prize_exchange();
-    }
-    cue
+    // The one per-tick step both hosts run (the browser page's
+    // `play_shop_input` calls it per sim tick too): edges, not the held word
+    // - the runtime filters no repeats, so a held key used to step the shop
+    // cursor / commit a screen every tick it stayed down - then the unpark of
+    // a closed shop / prize counter's suspended op-0x49.
+    menu.step_field_session(world, pressed_edge)
 }
