@@ -1394,6 +1394,12 @@ fn sample_engine(
 /// the menu's open / hand-off beats, which swallow the edge that caused them.
 pub const MENU_PRESS_GAP: u64 = 12;
 
+/// Extra ticks the first press after `Start` waits: the field darkens for up
+/// to fourteen ticks (`0x83 / 10` at a frame step of `1`) before the menu
+/// exists and takes a press (`BootSession::pause_wipe`, retail
+/// `FUN_801ED308` phase 1), longer than one [`MENU_PRESS_GAP`].
+pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
+
 /// The pad edges that reach `menu` from a settled field, as `(tick offset,
 /// button)` pairs from the first press: `Start`, `Down` until the root
 /// cursor (opening on row `0`) sits on the row, `Cross`. The Equip row opens
@@ -1403,10 +1409,7 @@ pub const MENU_PRESS_GAP: u64 = 12;
 pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::input::PadButton)> {
     use legaia_engine_core::input::PadButton;
     let mut out = vec![(0, PadButton::Start)];
-    // The field darkens for up to fourteen ticks before the menu exists and
-    // takes a press (`BootSession::pause_wipe`), so the first press waits
-    // one gap longer.
-    let mut t = MENU_PRESS_GAP;
+    let mut t = MENU_OPEN_WIPE_TICKS;
     let mut press = |b: PadButton| {
         t += MENU_PRESS_GAP;
         out.push((t, b));
@@ -2923,8 +2926,11 @@ mod tests {
         want.extend(std::iter::repeat_n(PadButton::Down, 4));
         want.push(PadButton::Cross);
         assert_eq!(buttons, want);
+        // The first press waits out the pause wipe; the rest are one gap
+        // apart.
+        assert_eq!(presses[1].0, MENU_OPEN_WIPE_TICKS + MENU_PRESS_GAP);
         assert!(
-            presses
+            presses[1..]
                 .windows(2)
                 .all(|w| w[1].0 - w[0].0 == MENU_PRESS_GAP)
         );
