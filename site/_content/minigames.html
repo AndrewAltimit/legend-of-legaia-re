@@ -1355,6 +1355,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function danceFrame() {
     const st = JSON.parse(api.dance_state_json());
     if (st.live) {
+      /* Every body's clip runs every frame, count-in included - the run's
+       * own clip driver, as `World::tick_dance` steps it for the play hosts. */
+      if (typeof api.dance_body_clips_tick === 'function') api.dance_body_clips_tick(1);
       /* Hold the beat clock through the engine's READY / GO! count-in. */
       if (!st.over && !(danceR && danceR.introGate)) {
         api.dance_tick(1);

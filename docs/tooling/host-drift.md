@@ -2887,6 +2887,15 @@ retire the second host. Until then, a kernel that hangs off `World` reaches
 two hosts and not three, and that is what a `host_only` row on this page
 means.
 
+What the page does share is every `World`-free kernel under those ticks. The
+slot machine (`SlotMachine::frame`), the Baka cabinet (`BakaFight::frame`) and
+the dome's command flow (`MuscleDomeSession::select_input`) are one step on
+all three hosts. The dance floor's bodies are posed by the run's own clip
+driver (`DanceGame::advance_body_clips`, stepped every frame through
+`dance_body_clips_tick`, count-in included) through the engine's cast surface
+(`DanceCastSurface::frame`, `dance_scene_*`), not by a page-side animator
+that picked its own moves.
+
 ### Ringside still on the standalone dome page
 
 The Muscle Dome hub's ringside still

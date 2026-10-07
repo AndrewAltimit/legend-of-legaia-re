@@ -144,7 +144,8 @@ window.MgDance = (function () {
        * decode - the HUD then sits on a neutral ground and the note says so. A
        * WebGL failure must not take the HUD art down with it. */
       try {
-        body = buildBodyScene();
+        body = typeof api.dance_scene_frame === 'function'
+          ? buildEngineScene(-1, null) : buildBodyScene();
       } catch (e) {
         body = null;
       }
@@ -356,6 +357,89 @@ window.MgDance = (function () {
       return scene;
     }
 
+    /* The floor's bodies off the engine's cast surface
+     * (`engine-core::dance_cast_scene` through `dance_scene_*`) - the kernel
+     * the native window and the play page pose the run's cast with, off the
+     * run's own clip driver (`dance_body_clips_tick`), into which the judge
+     * binds every move. The page used to pose its own cast here: its own clip
+     * cursors, its own pick of which move a press or a rival's beat plays.
+     * `gen < 0` (no run yet) builds the hall alone; a new generation (another
+     * mode's cast) rebuilds the combined buffers, keeping the renderer and
+     * the camera. */
+    function buildEngineScene(gen, prev) {
+      if (!glCanvas || !window.TmdRenderer) return null;
+      const cast = gen >= 0 ? {
+        pos: api.dance_scene_positions(), uvs: api.dance_scene_uvs(),
+        ct: api.dance_scene_cba_tsb(), idx: api.dance_scene_indices(),
+        flat: api.dance_scene_flat_rgba(),
+      } : null;
+      let env = null;
+      if (api.dance_env_positions) {
+        const ep = api.dance_env_positions();
+        if (ep.length) {
+          env = { pos: ep, uvs: api.dance_env_uvs(), ct: api.dance_env_cba_tsb(),
+                  idx: api.dance_env_indices(), flat: api.dance_env_flat_rgba() };
+        }
+      }
+      let markers = null;
+      if (api.dance_marker_tiles && api.dance_marker_tiles() > 0) {
+        const mp = api.dance_marker_positions();
+        if (mp.length) {
+          markers = { pos: mp, uvs: api.dance_marker_uvs(), ct: api.dance_marker_cba_tsb(),
+                      idx: api.dance_marker_indices(), flat: api.dance_marker_flat_rgba() };
+        }
+      }
+      if (!env && !cast) return null;
+      const parts = [cast, env, markers];
+      let total = 0;
+      const bases = parts.map(q => { const b0 = total; if (q) total += q.pos.length / 3; return b0; });
+      const pos = new Float32Array(total * 3);
+      const uvs = new Uint8Array(total * 2);
+      const ct = new Uint16Array(total * 2);
+      const flat = new Uint8Array(total * 4);
+      const idxArr = [];
+      const ends = [];
+      parts.forEach((q, i) => {
+        if (q) {
+          const vb = bases[i];
+          pos.set(q.pos, vb * 3);
+          uvs.set(q.uvs, vb * 2);
+          ct.set(q.ct, vb * 2);
+          flat.set(q.flat, vb * 4);
+          for (const ix of q.idx) idxArr.push(ix + vb);
+        }
+        ends.push(idxArr.length);
+      });
+      const idx = new Uint32Array(idxArr);
+      const renderer = (prev && prev.renderer) || new window.TmdRenderer(glCanvas);
+      renderer.uploadVram(api.dance_body_vram());
+      renderer.uploadMesh(pos, uvs, ct, idx, flat);
+      if (env) {
+        renderer.cullBackfaces = true;
+        renderer.cullFrontFace = 'ccw';
+        renderer.semiTwoPass = true;
+      }
+      const defCam = { yaw: Math.PI, pitch: 0.24, distance: 2.7 };
+      const scene = {
+        engine: true, castGen: gen, renderer,
+        markerBase: markers ? bases[2] : -1,
+        fullIdx: idx, castIdxLen: ends[0], envIdxEnd: ends[1], envBase: bases[1],
+        envIdxKey: null,
+        out: pos, env: !!env, defCam,
+        cam: prev ? prev.cam : Object.assign({}, defCam),
+        center: [0, -400, 0], radius: 900, fov: 0.85,
+      };
+      if (!prev) {
+        /* One set of orbit listeners, over whichever engine scene is live. */
+        attachOrbit({
+          get cam() { return body ? body.cam : scene.cam; },
+          set cam(v) { if (body) body.cam = v; },
+          get defCam() { return defCam; },
+        });
+      }
+      return scene;
+    }
+
     /* Start a one-shot move clip on dancer `d` (a judge-triggered pair from
      * the kind descriptor); it plays through once, then the dance loop
      * resumes. Ignored when that clip didn't decode. */
@@ -396,6 +480,22 @@ window.MgDance = (function () {
      * the sequence move for the beat's direction symbol on their own lane, and
      * the groovy move the frame their triangle stock drops. */
     function bodyRender(st, chart) {
+      if (body && body.engine) {
+        const gen = api.dance_scene_frame();
+        if (gen !== body.castGen) {
+          const nb = buildEngineScene(gen, body);
+          if (nb) body = nb;
+        }
+        const e = body;
+        if (gen >= 0) e.out.set(api.dance_scene_positions(), 0);
+        if (e.markerBase >= 0) {
+          const mp = api.dance_marker_step(1);
+          if (mp.length) e.out.set(mp, e.markerBase * 3);
+        }
+        e.renderer.updatePositions(e.out);
+        renderBody(e);
+        return;
+      }
       const b = body;
       const live = !!(st && st.live);
       const rivals = (st && st.rivals) || [];
@@ -856,7 +956,7 @@ window.MgDance = (function () {
       const B = layout.banners;
       /* Noa's body plays the judge-triggered move clip the kind descriptor
        * names for the event (see bodyRender's doc for the pair semantics). */
-      if (body && body.moves && st) {
+      if (body && !body.engine && body.moves && st) {
         const lane = Math.min(st.lane | 0, 2);
         const M = body.moves, human = api.dance_body_human_index();
         if (result === 'miss') {
@@ -920,7 +1020,7 @@ window.MgDance = (function () {
     function startRun(songSeconds) {
       banners = [];
       poses = [0, 0, 0, 0]; poseT = [0, 0, 0, 0];
-      if (body) {
+      if (body && body.anim) {
         body.lastBeat = -1;
         for (const a of body.anim) { a.cursor = 0; a.move = null; }
       }

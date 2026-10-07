@@ -95,6 +95,10 @@ pub struct LegaiaMinigames {
     /// per-host cache the native window and the play page pose the duel
     /// through, here over this page's own fight.
     baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// The dance floor's cast surface (`engine-core::dance_cast_scene`) over
+    /// this page's run - the per-host cache the native window and the play
+    /// page pose the bodies through, off the run's own clip driver.
+    dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
     /// The duel's CD-XA announcer lines (`XA32` / `XA33`), decoded at disc
     /// load while the raw sectors are still in hand.
     baka_xa: legaia_engine_audio::XaClipBank,
@@ -371,6 +375,7 @@ impl LegaiaMinigames {
             baka_winnings: 0,
             sim_frames: 0,
             baka_surface: Default::default(),
+            dance_surface: Default::default(),
             baka_xa: legaia_engine_audio::XaClipBank::new(),
             muscle_hub: None,
             muscle_hub_xa_fired: 0,

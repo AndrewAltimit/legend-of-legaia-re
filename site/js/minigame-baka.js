@@ -1087,8 +1087,14 @@
         }
       }
 
-      /* Banners. */
-      if (this.banner && this.tick < this.banner.until) {
+      /* The page's own banners (round / win / lose / match / all-clear),
+       * fitted by eye, only for a run with no engine chrome. A cabinet run
+       * hands the chrome in (`meta.chrome`, possibly empty) and the cabinet's
+       * own cells: retail's round-result banners are the chrome's sprite
+       * actors (`FUN_801d6e04`), and on the result tally and the NEXT GAME /
+       * PAY OUT sheet it draws the sheet alone - no "YOU WIN!" over it. */
+      const engineChrome = !!(meta && Array.isArray(meta.chrome));
+      if (!engineChrome && this.banner && this.tick < this.banner.until) {
         const b = this.banner;
         if (b.kind === 'round' && chrome.length) {
           /* the engine chrome above is framing the round */
