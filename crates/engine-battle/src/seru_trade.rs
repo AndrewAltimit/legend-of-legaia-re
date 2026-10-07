@@ -10,7 +10,7 @@
 //! into the on-disc schedule the retail handler reads, so the engine and a
 //! patched disc always show the same trade for the same seed + bucket. The
 //! randomizer embeds only the master seed (+ enabled flag) in the disc;
-//! [`crate::World::install_seru_trade_config`] reads it at boot, and this
+//! `legaia_engine_core::World::install_seru_trade_config` reads it at boot, and this
 //! module turns it into the live trade UI's state ([`SeruTradeSession`]) and
 //! performs the swap on the character spell lists.
 //!

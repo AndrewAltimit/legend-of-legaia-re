@@ -81,7 +81,7 @@ nothing - and the one bare call linked to both.
 identifier to any free function of that name, which is how a function value
 reaches `map` / `sort_by_key`. It does not distinguish a function value from a
 **struct field** of the same name: the field `stat_deltas` in
-`crates/engine-core/src/seru_stats.rs` links to the free `stat_deltas` in
+`crates/engine-battle/src/seru_stats.rs` links to the free `stat_deltas` in
 `crates/engine-vm/src/world_map_overlay.rs`. Nor from a **local binding**: a
 free function called `gate` collects an in-edge from every reachable function
 that merely names a local `gate`, which is why the whole of

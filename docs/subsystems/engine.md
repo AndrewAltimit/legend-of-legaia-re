@@ -98,7 +98,8 @@ anm          ← (none)
 extract      → iso, prot, lzs, asset, tim, tmd, xa, font
 
 engine-vm     → asset, prot, art, anm       (VM layer; no GPU / audio deps)
-engine-core   → engine-vm + the parser crates
+engine-battle → engine-vm, asset, art, anm, save, tim, tmd  (World-free battle kernels; no GPU / audio deps)
+engine-core   → engine-battle, engine-vm + the parser crates
 engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
@@ -115,7 +116,7 @@ Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic - they produce typ
 
 `engine-ui` deliberately does not link `engine-core`, so projecting engine state into its builders is a layer of its own. `engine-screens` is that layer for the shop-family screens - the gold shop and its descriptor windows, the casino prize exchange and coin counter, the inn / seru-trade fallback panel and the post-action banners: both play hosts (`engine-shell`, `web-viewer`) call its `shop_overlay_frame` and keep only the input assembly, the stage scale and the upload.
 
-Sequenced music is covered by `crates/seq` (the SEQ parser) plus the `engine-audio` `Sequencer`; the `.dpk / .MAP / .PCH` family decodes through `legaia_asset::sound_pack`. Battle / menu modules live inside `engine-vm` / `engine-core` next to the actor + field VMs rather than as separate crates.
+Sequenced music is covered by `crates/seq` (the SEQ parser) plus the `engine-audio` `Sequencer`; the `.dpk / .MAP / .PCH` family decodes through `legaia_asset::sound_pack`. Battle splits three ways: the action SM and the arithmetic kernels it calls live in `engine-vm`, the `World`-free battle kernels (monster AI script, catalogs, encounters, level-up, the per-frame battle passes) in `engine-battle`, and the stateful `World` side (round loop, command flow, cast band, monster turn picker) in `engine-core`, which re-exports every `engine-battle` module at its old path. Menu modules live in `engine-core` next to the field VM hosts.
 
 ## Runtime architecture
 

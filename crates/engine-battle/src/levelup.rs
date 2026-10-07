@@ -47,7 +47,7 @@ pub const MAX_PARTY: usize = 4;
 /// HUD banner shown after a level-up.
 ///
 /// Engines draw this via the dialog font overlay. `frames_remaining` counts
-/// down each [`crate::world::World::tick`]; when it reaches zero the banner
+/// down each `legaia_engine_core::world::World::tick`; when it reaches zero the banner
 /// is cleared by the world.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelUpBanner {

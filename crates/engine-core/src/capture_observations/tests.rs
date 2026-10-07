@@ -3,6 +3,16 @@
 use super::*;
 
 #[test]
+fn gimard_id_matches_the_save_state_pin() {
+    // The Gimard before/after savestate pin recorded spell id 0x81 in
+    // Vahn's record; the SCUS spell table names that id "Gimard" (fire).
+    assert_eq!(seru_capture::GIMARD_SPELL_ID, 0x81);
+    let gimard = crate::retail_magic::get(seru_capture::GIMARD_SPELL_ID).expect("Gimard pinned");
+    assert_eq!(gimard.name, "Gimard");
+    assert_eq!(gimard.element, crate::spells::SpellElement::Fire);
+}
+
+#[test]
 fn byte_delta_signed_delta_arithmetic() {
     let d = ByteDelta {
         addr: 0x80084708 + 0x10E,

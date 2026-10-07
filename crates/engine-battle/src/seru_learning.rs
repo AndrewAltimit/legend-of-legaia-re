@@ -213,7 +213,7 @@ impl SeruRegistry {
     /// links, and each Seru is named after the spell it teaches so the
     /// capture banner reads correctly (e.g. capturing the Gimard Seru learns
     /// spell `0x81` "Gimard", matching the save-state pin in
-    /// [`crate::capture_observations::seru_capture`]). The monster->Seru
+    /// `legaia_engine_core::capture_observations::seru_capture`). The monster->Seru
     /// attachment itself is still a port-side approximation - only the
     /// spell-id space is pinned.
     pub fn retail() -> Self {

@@ -3,7 +3,7 @@
 //! Tactical Arts are character-driven attack chains; spells are the
 //! magic-side of the same command menu (ActionConstant `Magic = 0x02`,
 //! followed by a per-character spell list). This module mirrors the shape
-//! of [`crate::items`]: a typed catalog keyed by spell id, plus a pure
+//! of `legaia_engine_core::items`: a typed catalog keyed by spell id, plus a pure
 //! [`cast_spell`] function that consumes a [`SpellSnapshot`] and returns
 //! a [`SpellOutcome`].
 //!
@@ -118,7 +118,7 @@ impl SpellTarget {
     /// It exists so the screens that branch on that byte can run retail's own
     /// predicate over it rather than re-deciding on the typed shape. The
     /// menu's `FUN_801D9110` confirm dispatch is one
-    /// ([`crate::spell_menu::spell_targets_group`]); the byte's other bits
+    /// (`legaia_engine_core::spell_menu::spell_targets_group`); the byte's other bits
     /// (element / usability) belong to different readers and are not
     /// reconstructed here.
     ///

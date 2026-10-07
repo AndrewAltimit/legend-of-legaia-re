@@ -48,7 +48,7 @@ pub struct TacticalArtLearned {
 /// HUD banner shown after an art is learned.
 ///
 /// Engines draw this via the dialog font overlay. `frames_remaining` counts
-/// down each [`crate::world::World::tick`]; when it reaches zero the banner
+/// down each `legaia_engine_core::world::World::tick`; when it reaches zero the banner
 /// is cleared by the world.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtLearnedBanner {
@@ -86,11 +86,10 @@ impl Default for LearnedArtList {
 ///
 /// Engines call [`notify_art_used`] from whatever path executes an art
 /// (the battle side-effects handler, once a Tactical Arts strike lands).
-/// The world's [`notify_art_used`] wrapper pushes the event onto the
-/// pending battle events queue and sets the HUD banner.
+/// The world's `World::notify_art_used` wrapper (engine-core) pushes the
+/// event onto the pending battle events queue and sets the HUD banner.
 ///
 /// [`notify_art_used`]: TacticalArtsTracker::notify_art_used
-/// [`notify_art_used`]: crate::world::World::notify_art_used
 #[derive(Debug, Clone, Default)]
 pub struct TacticalArtsTracker {
     lists: HashMap<u8, LearnedArtList>,

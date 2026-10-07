@@ -376,7 +376,7 @@ records being reverse-engineered:
   engineering: a kill against a Gimard rolls capture at 55% per
   attempt before any Ivory Book modifier; the engine's
   `record_capture` path in
-  [`crates/engine-core/src/seru_learning.rs`](../../crates/engine-core/src/seru_learning.rs)
+  [`crates/engine-battle/src/seru_learning.rs`](../../crates/engine-battle/src/seru_learning.rs)
   looks the rate up via `legaia_gamedata::Spell::absorb_lv1`.
 - **Magic XP curve** + **damage scaling tables** in
   `legaia_gamedata::magic_leveling` close the loop for the

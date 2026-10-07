@@ -27,7 +27,7 @@
 //!   multi-phase boss cases (`0xA8`, `0xB4`, `0xB5`, `0xB6`, `0xA2..=0xA4`, …).
 //!   The retail writer is the battle-action SM's `case 0xFF`
 //!   (`_DAT_8007BD24[0x28A] += 1`); it is ported as
-//!   [`crate::world::World::advance_battle_mode`], which a boss phase-transition
+//!   `legaia_engine_core::world::World::advance_battle_mode`, which a boss phase-transition
 //!   action calls so the next turn's [`decide`] reads the bumped mode and the
 //!   phase's scripted casts come alive.
 //! - The `actor+0x16e & 0x380` AI flag is **not** a missing monster writer.
@@ -93,7 +93,7 @@ pub struct MonsterAiState {
     pub recent_targets: [u8; 4],
     /// `ctx+0x28a` - battle-mode counter. Bit 0 (and `% 3`, exact value) gate
     /// the multi-phase boss cases. Advanced by
-    /// [`crate::world::World::advance_battle_mode`] (the battle-action SM's
+    /// `legaia_engine_core::world::World::advance_battle_mode` (the battle-action SM's
     /// `case 0xFF`); `0` until a boss phase transition fires.
     pub mode_flags: u8,
     /// Per-slot scratch for monster `0xB3`'s `record+0x1C` queue-armed byte
@@ -127,7 +127,7 @@ impl MonsterAiState {
     pub fn counter(&self) -> i32 {
         self.dat[1]
     }
-    pub(crate) fn set_counter(&mut self, v: i32) {
+    pub fn set_counter(&mut self, v: i32) {
         self.dat[1] = v;
     }
 }

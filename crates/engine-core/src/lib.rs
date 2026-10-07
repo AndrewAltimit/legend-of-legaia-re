@@ -5,39 +5,36 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies - the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
-pub mod accessory_passives;
+// The battle kernels live in `legaia-engine-battle`; re-exported so every
+// `legaia_engine_core::<module>` path (and `crate::<module>` inside this
+// crate) keeps resolving.
+pub use legaia_engine_battle::{
+    accessory_passives, ap_gauge, art_strike, battle_afterimage, battle_anim, battle_body_blend,
+    battle_effect_clut, battle_events, battle_return_flags, battle_seats, battle_sideband,
+    battle_stats, battle_status_clut, battle_steal, encounter, encounter_man, encounter_record,
+    encounter_registry, levelup, magic_xp, monster_ai, monster_catalog, move_power,
+    region_encounter, retail_magic, seru_learning, seru_stats, seru_trade, spells, tactical_arts,
+    tactical_arts_editor,
+};
 pub mod actor_alloc_host;
 pub mod actor_handler;
 pub mod anim_cue;
-pub mod ap_gauge;
-pub mod art_strike;
 pub mod arts_command_input;
 pub mod baka_duel_scene;
 pub mod baka_fighter;
 pub mod baka_fighter_chrome;
 pub mod baka_impact_fx;
-pub mod battle_afterimage;
-pub mod battle_anim;
 pub mod battle_arts;
-pub mod battle_body_blend;
 pub mod battle_cam_inputs;
-pub mod battle_effect_clut;
-pub mod battle_events;
 pub mod battle_flow;
 pub mod battle_hud;
 pub mod battle_input;
 pub mod battle_magic;
 pub mod battle_open;
 pub mod battle_party_form;
-pub mod battle_return_flags;
 pub mod battle_round;
-pub mod battle_seats;
-pub mod battle_sideband;
 pub mod battle_sideband_textures;
 pub mod battle_stage_module;
-pub mod battle_stats;
-pub mod battle_status_clut;
-pub mod battle_steal;
 pub mod battle_tutorial;
 pub mod camera;
 pub mod camera_view;
@@ -71,10 +68,6 @@ pub mod dialog_pacing;
 pub mod dialog_picker_slide;
 pub mod dialog_window;
 pub mod drop_shadow;
-pub mod encounter;
-pub mod encounter_man;
-pub mod encounter_record;
-pub mod encounter_registry;
 pub mod equip_session;
 pub mod equipment;
 pub mod fade;
@@ -109,10 +102,8 @@ pub mod input;
 pub mod inventory_use;
 pub mod items;
 pub mod key_rebind;
-pub mod levelup;
 pub mod list_order;
 pub mod live_loop;
-pub mod magic_xp;
 pub mod man_field_scripts;
 pub mod mdec_dma_sync;
 pub mod menu_arrange;
@@ -132,10 +123,7 @@ pub mod minigame_fx;
 pub mod minigame_status;
 pub mod mode;
 pub mod model_bank;
-pub mod monster_ai;
-pub mod monster_catalog;
 pub mod move_buffer_host;
-pub mod move_power;
 pub mod movie_audio;
 pub mod muscle_dome;
 pub mod muscle_dome_scene;
@@ -158,10 +146,8 @@ pub mod place_name_banner;
 pub mod prize_exchange;
 pub mod publisher_logos;
 pub mod ram_map;
-pub mod region_encounter;
 pub mod register_ramp;
 pub mod resume;
-pub mod retail_magic;
 pub mod retail_pad;
 pub mod save_menu_atlas;
 pub mod save_screen;
@@ -176,9 +162,6 @@ pub mod scene_name_sync;
 pub mod scene_resources;
 pub mod screen_fx;
 pub mod scus_leaf_kernels;
-pub mod seru_learning;
-pub mod seru_stats;
-pub mod seru_trade;
 pub mod sfx_cue;
 pub mod shop;
 pub mod shop_catalog;
@@ -186,12 +169,9 @@ pub mod slot_machine;
 pub mod sound_state;
 pub mod spell_menu;
 pub mod spell_party_broadcast;
-pub mod spells;
 pub mod status_screen;
 pub mod stream_file;
 pub mod summon;
-pub mod tactical_arts;
-pub mod tactical_arts_editor;
 pub mod target_picker;
 pub mod text_balloon;
 pub mod tile_board;

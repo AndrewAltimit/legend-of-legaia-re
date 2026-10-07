@@ -20,7 +20,7 @@
 //! summon spells whose `anim` ids run sequentially (`0x25..=0x2f`). Their MP
 //! costs cross-validate exactly against the curated `data/gamedata/magic.toml`
 //! (public walkthrough data), and id `0x81` = Gimard matches the save-state
-//! pin in [`crate::capture_observations::seru_capture`]. Id `0x80` ("Flip
+//! pin in `legaia_engine_core::capture_observations::seru_capture`. Id `0x80` ("Flip
 //! Frog") is the boundary entry just below the block (`mp`/`anim` both 0) and
 //! is not part of the sequential player set. The lower ids `0x00..=0x24` are
 //! the elemental enemy-attack tiers (names composed via the MES substitution
@@ -460,7 +460,6 @@ pub fn capture_special_def(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capture_observations::seru_capture;
 
     #[test]
     fn pinned_mp_costs_match_gamedata_cross_reference() {
@@ -584,16 +583,6 @@ mod tests {
                 spell.id
             );
         }
-    }
-
-    #[test]
-    fn gimard_id_matches_the_save_state_pin() {
-        // The Gimard before/after savestate pin recorded spell id 0x81 in
-        // Vahn's record; the SCUS spell table names that id "Gimard" (fire).
-        assert_eq!(seru_capture::GIMARD_SPELL_ID, 0x81);
-        let gimard = get(seru_capture::GIMARD_SPELL_ID).expect("Gimard pinned");
-        assert_eq!(gimard.name, "Gimard");
-        assert_eq!(gimard.element, SpellElement::Fire);
     }
 
     #[test]

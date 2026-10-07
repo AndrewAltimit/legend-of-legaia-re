@@ -9,8 +9,8 @@
 //! (`actor[+0x1df]`, carried on the engine side as a battle move id) resolves
 //! straight to its power record.
 //!
-//! Loaded lazily from PROT entry 0898 by [`crate::scene::SceneHost`] and parked
-//! on [`crate::world::DiscTables::move_power`]; the monster special-attack damage
+//! Loaded lazily from PROT entry 0898 by `legaia_engine_core::scene::SceneHost` and parked
+//! on `legaia_engine_core::world::DiscTables::move_power`; the monster special-attack damage
 //! path consumes it (see `World::enemy_move_predamage`). Disc-free / synthetic
 //! battles leave it `None` and keep the placeholder damage path, so no
 //! determinism trace changes when the table is absent.
@@ -35,13 +35,13 @@
 //! `crates/mednafen/tests/summon_model_base.rs`), and `model_sel` is
 //! library-relative - so a battle move-FX mesh is the resident PROT 0871
 //! effect-model library, which the engine registers at a fixed
-//! `DAT_8007C018[3..]` (the equivalent 1-member layout). [`crate::world::World::spawn_move_fx`]
+//! `DAT_8007C018[3..]` (the equivalent 1-member layout). `legaia_engine_core::world::World::spawn_move_fx`
 //! renders it: it parses a move's spawn records and stages them as a
-//! [`crate::summon::SummonScene`] at that base, driven through the move VM
-//! ([`crate::world::World::tick_move_fx`] / `active_move_fx_part_draws`). The
+//! `legaia_engine_core::summon::SummonScene` at that base, driven through the move VM
+//! (`legaia_engine_core::world::World::tick_move_fx` / `active_move_fx_part_draws`). The
 //! high-bit (`0x80`) list bytes instead route to the 2D `efect.dat` pool:
-//! [`crate::world::World::spawn_move_fx`] spawns each `AltEffect` entry through
-//! [`crate::world::World::try_spawn_effect`] (`spawn_by_ui_id`) by its 7-bit id
+//! `legaia_engine_core::world::World::spawn_move_fx` spawns each `AltEffect` entry through
+//! `legaia_engine_core::world::World::try_spawn_effect` (`spawn_by_ui_id`) by its 7-bit id
 //! (no-op when the `efect.dat` catalog isn't loaded). See
 //! `docs/formats/move-power.md`.
 
@@ -129,7 +129,7 @@ impl MovePowerCatalog {
     /// The raw 128-byte id → power-index map bytes, based at the parse VA
     /// `0x801F4E63` (`map[move_id]` = table index). Callers that mirror the
     /// effect-script terminator's read
-    /// ([`crate::action_effect_script::move_power_record_offset`], whose map
+    /// (`legaia_engine_core::action_effect_script::move_power_record_offset`, whose map
     /// argument is documented against the `0x801F4E64` base) pass
     /// `&bytes[1..]` - the two conventions address the same bytes.
     pub fn id_index_map_bytes(&self) -> &[u8] {
@@ -213,7 +213,7 @@ impl MovePowerCatalog {
     /// and does **not** require the auxiliary proto tables to be present, so the
     /// live battle path can decide whether a cast should request a move-FX spawn
     /// before the (disc-resident) proto records are consulted by
-    /// [`crate::world::World::spawn_move_fx`]. `false` for ids with no record.
+    /// `legaia_engine_core::world::World::spawn_move_fx`. `false` for ids with no record.
     pub fn move_has_spawn_fx(&self, move_id: u8) -> bool {
         self.fx_for_move_id(move_id).is_some_and(|fx| {
             fx.contact_effects
@@ -240,7 +240,7 @@ impl MovePowerCatalog {
     /// Battle move ids whose on-contact (`+0x12`) / launch (`+0x16`) effect
     /// lists hold at least one library-mesh [`EffectListEntry::Spawn`] entry
     /// with a resolved `0x801F6324` prototype pointer - i.e. the moves
-    /// [`crate::world::World::spawn_move_fx`] can render as a 3D ETMD
+    /// `legaia_engine_core::world::World::spawn_move_fx` can render as a 3D ETMD
     /// scene-graph (the same Spawn-with-proto predicate that function selects
     /// records by). Sorted ascending; empty when the aux tables weren't in the
     /// parsed overlay slice. Lets a previewer enumerate renderable moves
@@ -286,10 +286,10 @@ pub struct ResolvedEffect {
 ///
 /// This is pure data: the render / audio layers consume it (trail texpage,
 /// impact config, effect spawns, sound cue). The `0x801F6324` prototype records
-/// are decoded and staged by [`crate::world::World::spawn_move_fx`]; the live
+/// are decoded and staged by `legaia_engine_core::world::World::spawn_move_fx`; the live
 /// battle cast path requests that spawn for any non-summon move carrying a
 /// spawnable entry (see [`MovePowerCatalog::move_has_spawn_fx`] and
-/// [`crate::world::World::request_move_fx_spawn`]).
+/// `legaia_engine_core::world::World::request_move_fx_spawn`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveFx {
     /// The battle move id this descriptor was resolved for.

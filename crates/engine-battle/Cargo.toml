@@ -1,0 +1,20 @@
+[package]
+name = "legaia-engine-battle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_battle"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+legaia-anm.workspace = true
+legaia-art.workspace = true
+legaia-asset.workspace = true
+legaia-bytes.workspace = true
+legaia-engine-vm.workspace = true
+legaia-save.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true

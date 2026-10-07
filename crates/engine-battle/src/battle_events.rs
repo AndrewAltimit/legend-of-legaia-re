@@ -1,12 +1,12 @@
 //! Event queue emitted by the battle action state machine through the
 //! world's `BattleActionHost` implementation.
 //!
-//! Mirrors [`crate::field_events`] but for battle. Visual side-effects
+//! Mirrors `legaia_engine_core::field_events` but for battle. Visual side-effects
 //! (pose changes, UI element spawns, spell animations, screen shake,
 //! brightness ramps) and gameplay primitives (damage application,
 //! capture-archive load, party / monster setup) are pushed onto a
 //! [`BattleEvent`] queue on the world; engines drain after
-//! [`crate::world::World::tick`] each frame.
+//! `legaia_engine_core::world::World::tick` each frame.
 
 use crate::art_strike::ArtStrikeOutcome;
 use legaia_engine_vm::battle_action::{BattleEndCause, Pose};
@@ -27,7 +27,7 @@ pub enum BattleEvent {
     /// `BattleActionHost::camera_frame_height` - the per-action camera framing
     /// height / distance (`ctx+0x6D0`) the port of `FUN_801F0348` resolved from
     /// the acting actor's and target's monster size class. Mirrored on
-    /// [`crate::world::BattleState::camera_frame_height`].
+    /// `legaia_engine_core::world::BattleState::camera_frame_height`.
     CameraFrameHeight { height: i16 },
     /// `BattleActionHost::party_setup` - per-party-slot init hook
     /// (`FUN_801EED1C` in retail).
@@ -126,7 +126,7 @@ pub struct BattleHitFx {
 /// directly**, NOT a `FUN_8004fcc8` dispatch id, so the host plays it through
 /// `SfxBank::play_one_shot` without `classify_cue`. (The move-power `+0x0d` cue
 /// is the separate `FUN_8004fcc8` namespace, surfaced via
-/// [`crate::world::World::take_pending_move_fx_cue`].) `timing_frames` is the
+/// `legaia_engine_core::world::World::take_pending_move_fx_cue`.) `timing_frames` is the
 /// delay after strike-start, for the host's frame-timed scheduler.
 /// One Tactical-Arts **shout** cue - the per-character CD-XA voice clip a
 /// party art fires as it begins (distinct from the VAB one-shot
@@ -152,7 +152,7 @@ pub struct BattleShoutCue {
 
 /// One battle **effect-script spawn request** - a record the per-actor
 /// effect-script walk consumed this frame
-/// ([`crate::action_effect_script::step_effect_script`], the `FUN_801DEA50`
+/// (`legaia_engine_core::action_effect_script::step_effect_script`, the `FUN_801DEA50`
 /// port driven from the battle animation tick). Cosmetic, in the
 /// [`BattleHitFx`] "drain and present" pattern: `at` is already the
 /// world-space position (the record's local offset scaled and rotated by the
@@ -198,7 +198,7 @@ pub struct BattleEffectSpawn {
 /// last clip; every earlier hit only accumulated and drained the HP bar.
 /// Cosmetic in the [`BattleHitFx`] sense: the state mutation has already
 /// happened when an entry lands here. Drained via
-/// [`crate::world::World::drain_battle_hit_events`].
+/// `legaia_engine_core::world::World::drain_battle_hit_events`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleHitEvent {
     /// The attacker's actor-table index.

@@ -48,11 +48,11 @@
 //! Both scene modes route this tracker off the scene's MAN encounter section
 //! ([`region_encounter_table_from_man`]):
 //!
-//! - **Overworld** - [`crate::world::World::set_world_map_regions`]; the per-tile
+//! - **Overworld** - `legaia_engine_core::world::World::set_world_map_regions`; the per-tile
 //!   roll lives in `World::live_world_map_tick`, latching
 //!   `World::world_map.pending_encounter`.
-//! - **Field** - [`crate::world::World::set_field_regions`]; the roll lives in
-//!   [`crate::world::World::on_field_step`], which drives a trigger through the
+//! - **Field** - `legaia_engine_core::world::World::set_field_regions`; the roll lives in
+//!   `legaia_engine_core::world::World::on_field_step`, which drives a trigger through the
 //!   mean-rate [`crate::encounter::EncounterSession`]'s transition / grace SM via
 //!   [`crate::encounter::EncounterSession::trigger_with`]. A field scene whose MAN
 //!   has no encounter-region section keeps the aggregated mean-rate session.
@@ -175,7 +175,7 @@ pub struct RegionSetupBytes {
 /// Where the travel art puts the party back on the world map: the triple
 /// `0x80084628` (map word) / `0x80084624` (tile X) / `0x8008462C` (tile Z)
 /// the world-map panel's resolve scan compares against
-/// ([`crate::world_map_panel_host::VisitedMap`]). A region record on the
+/// (`legaia_engine_core::world_map_panel_host::VisitedMap`). A region record on the
 /// long layout writes it; so do the Door of Wind commit and a field-VM arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WorldMapReturn {
@@ -352,7 +352,7 @@ impl EncounterRateSetting {
 /// The magnitudes are statically pinned in `overlay_world_map_801d9e1c.txt`
 /// (no capture needed). The engine refreshes these from the party ability
 /// mask + system-flag bank each step
-/// ([`crate::world::World::encounter_rate_modifiers`]).
+/// (`legaia_engine_core::world::World::encounter_rate_modifiers`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EncounterRateModifiers {
     /// Ability bit `0x3B` set on any member - rate `<< 2`.

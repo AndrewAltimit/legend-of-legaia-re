@@ -196,6 +196,13 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
 
 ### Battle helpers
 
+The `World`-free battle kernels - `art_strike`, `ap_gauge`, `battle_stats`,
+`accessory_passives`, `seru_trade`, `battle_sideband`, `tactical_arts_editor`,
+`monster_ai`, `battle_steal`, the catalogs, encounters and level-up among
+them - live in [`legaia-engine-battle`](../engine-battle/README.md) and are
+re-exported here at the same paths; this crate keeps the `World` side that
+composes them.
+
 - `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
   (HP delta, status, scheduled SFX cues) the world drains into its
   battle event queue.
@@ -643,17 +650,13 @@ docs carry the retail provenance.
   `part_motion` (a move-VM part's motion block between steps),
   `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
   `camera_rel_glide`, `object_effect` (the `0x80083FF8` object-effect table).
-- **Battle** - `battle_anim` (per-actor clip playback), `battle_events`
-  (the action SM's event queue), `battle_arts` / `battle_magic` (the Arts and
-  Magic submenus), `battle_open` (the formation open banner),
-  `battle_party_form` (a member's assembled battle form, once for both
-  hosts), `battle_cam_inputs`, `battle_afterimage` (Super / Miracle Art
-  ghosts), `battle_body_blend`, `battle_effect_clut` / `battle_status_clut`
-  (effect palette stage, status recolour), `battle_sideband_textures`
-  (`readef.DAT` pages), `battle_steal` (death spoils), `battle_return_flags`
-  (MAIN INIT's back-from-battle story-flag arm), `sfx_cue` (cue id → ring /
-  XA clip), `magic_xp`, `retail_magic`, `seru_learning`, `seru_stats`,
-  `tactical_arts` (learn-on-use), `spell_party_broadcast` (`FUN_8003053C`).
+- **Battle** - `battle_arts` / `battle_magic` (the Arts and Magic
+  submenus), `battle_open` (the formation open banner), `battle_party_form`
+  (a member's assembled battle form, once for both hosts),
+  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages),
+  `sfx_cue` (cue id → ring / XA clip), `spell_party_broadcast`
+  (`FUN_8003053C`). The kernel modules re-exported from `engine-battle` are
+  mapped in [its README](../engine-battle/README.md).
 - **Field** - `field_events` (the field VM's event queue), `field_ground`
   (walk-ground heightfield as a render surface), `field_lit_mesh` (the
   light-source TMD rows' shading), `field_view_window` (the visible-tile

@@ -48,7 +48,7 @@ pub struct MonsterDef {
     /// SPD - turn-order initiative seed (record `stats[5]`, actor
     /// `+0x164/+0x166`). Feeds the per-turn initiative key the battle's
     /// next-actor selector reads (`+0x16c = speed + rand()%(speed/2+1) + 1`;
-    /// see [`crate::world::World`] initiative selection and
+    /// see `legaia_engine_core::world::World` initiative selection and
     /// `docs/subsystems/battle-formulas.md`). `0` leaves the battle on the
     /// round-robin turn-order fallback.
     pub speed: u16,
@@ -184,7 +184,7 @@ pub struct MonsterDef {
     /// Record `+0x3E` - the Seru a killing blow can **absorb**, as the
     /// player-magic index (`spell id - 0x80`, Gimard's `1` -> spell `0x81`);
     /// `0` for a monster carrying no Seru. Read by the arts resolver's
-    /// killing-blow arm ([`crate::world::World`]'s Seru absorb roll).
+    /// killing-blow arm (`legaia_engine_core::world::World`'s Seru absorb roll).
     /// Distinct from [`Self::seru_id`], which keys the engine's capture-spell
     /// registry.
     pub absorb_seru: u8,

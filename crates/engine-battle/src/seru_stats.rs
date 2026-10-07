@@ -221,11 +221,11 @@ pub fn vanilla_seru_table() -> SeruStatTable {
 }
 
 /// Roster definitions used by the legacy [`LevelUpTracker`] when no
-/// per-character roster has been wired through [`crate::world::World`].
+/// per-character roster has been wired through `legaia_engine_core::world::World`.
 ///
 /// Vahn / Noa / Gala start with one Seru each; their early-game roster
 /// expands as the player progresses through the story. The shipped IDs
-/// match the in-game default order surfaced by `crates/engine-core::seru_learning`.
+/// match the in-game default order surfaced by `crates/engine-battle::seru_learning`.
 pub mod default_rosters {
     /// Vahn's starting roster - one elemental Seru.
     pub const VAHN: &[u16] = &[0];

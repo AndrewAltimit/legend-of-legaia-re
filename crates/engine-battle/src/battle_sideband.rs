@@ -17,9 +17,9 @@
 //! | `1` | phases `0` / `1` - caption, hold timer, any-press skip, `ctx[+0x6B0]` | `World::tick_battle_sideband` + the tutorial box queue |
 //! | `1` | phase `2` - the overlay-967 hook `0x801F6B70` | dispatch on flow edges (`World::set_battle_flow`); completion tail + `ctx[+0x6B4]` countdown per frame (`World::tick_battle_sideband`) |
 //! | `1` | phase `3` - the battle-teardown staging `FUN_80025358` (PROT 0978) | the countdown's expiry raises it; `ctx[+0x6CE]` counts to the frame driver's `0x43` exit gate |
-//! | `2` | the arrival module `FUN_801F69F4` | [`crate::battle_stage_module::arrival_tick`] |
+//! | `2` | the arrival module `FUN_801F69F4` | `legaia_engine_core::battle_stage_module::arrival_tick` |
 //! | `2` | pad clear + camera pull-back while the module is still paging in | unreachable in the engine - the module is resident from the first frame |
-//! | `3` | the form-transition module `FUN_801F69D8` | [`crate::battle_stage_module::form_transition_tick`] |
+//! | `3` | the form-transition module `FUN_801F69D8` | `legaia_engine_core::battle_stage_module::form_transition_tick` |
 //!
 //! It is **not** libgpu-band vendor infrastructure despite sitting between
 //! the PsyQ veneers: it reads the game's own battle context, dispatches into

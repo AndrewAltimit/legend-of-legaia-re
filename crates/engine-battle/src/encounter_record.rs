@@ -101,7 +101,7 @@ pub const RIM_ELM_TRAINING_FORMATION_ID: u16 = 4;
 /// the opcode-decoded interact selector: a field interaction record desyncs
 /// under linear disassembly (its embedded message bytes alias opcodes), so the
 /// entity is recognised by its inline dialog block, found structurally. See
-/// [`crate::man_field_scripts::first_inline_dialog_offset`] and
+/// `legaia_engine_core::man_field_scripts::first_inline_dialog_offset` and
 /// [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
 pub const RIM_ELM_SPARRING_CARRIER_TILE: (u8, u8) = (76, 65);
 

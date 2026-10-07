@@ -146,7 +146,7 @@ impl LevelUpObservation {
 /// The Noa and Gala observations exposed below capture the *settled*
 /// pre→settled diff (multi-frame collapse) so consumers see the total
 /// delta the level-up event grants. The phase split is documented in
-/// [`crate::capture_observations::char_level_up`].
+/// `legaia_engine_core::capture_observations::char_level_up`.
 pub mod observations {
     use super::LevelUpObservation;
 
@@ -208,7 +208,7 @@ pub mod observations {
     ///   of the battle reward)
     ///
     /// The 3-phase write split (record write → live copy → settle) is
-    /// documented in [`crate::capture_observations::char_level_up`].
+    /// documented in `legaia_engine_core::capture_observations::char_level_up`.
     pub fn noa_4_level_jump() -> LevelUpObservation {
         LevelUpObservation {
             label: "Noa 4-level jump".into(),
@@ -243,7 +243,7 @@ pub mod observations {
     ///
     /// The 2-phase write split (record write → live copy + settle in
     /// one frame) is documented in
-    /// [`crate::capture_observations::char_level_up`].
+    /// `legaia_engine_core::capture_observations::char_level_up`.
     pub fn gala_4_level_jump() -> LevelUpObservation {
         LevelUpObservation {
             label: "Gala 4-level jump".into(),

@@ -77,9 +77,9 @@ pub const PARTY_CLUT_SLOTS: usize = 3;
 /// (`ctx[+0x894 + slot*0x1E0]`), the per-affliction latch (`actor[+0x220]`),
 /// and the staged row the upload comes from (`ctx[+0xE34]`).
 ///
-/// Lives on [`crate::battle_hud::BattleHud`] because that is the one
+/// Lives on `legaia_engine_core::battle_hud::BattleHud` because that is the one
 /// per-frame battle struct both hosts own; [`Self::arm`] is driven from
-/// [`crate::battle_hud::BattleHud::sync_status`], which every host already
+/// `legaia_engine_core::battle_hud::BattleHud::sync_status`, which every host already
 /// calls once per slot per frame.
 #[derive(Debug, Clone, Default)]
 pub struct StatusClutState {

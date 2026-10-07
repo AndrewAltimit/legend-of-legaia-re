@@ -32,7 +32,7 @@
 //!   against the active region via
 //!   [`crate::region_encounter::RegionEncounterTracker`] - the per-region
 //!   rate + formation-range model the world-map path already uses (see
-//!   [`crate::world::World::set_world_map_regions`]).
+//!   `legaia_engine_core::world::World::set_world_map_regions`).
 //!
 //! See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md)
 //! for the byte-level MAN layout.
@@ -167,7 +167,7 @@ pub fn formation_defs_from_man(man_bytes: &[u8]) -> Vec<FormationDef> {
 
 /// Resolve both the [`EncounterTable`] and its per-row [`FormationDef`]s for
 /// a scene in one call - the pair the field scene-entry path installs via
-/// [`crate::world::World::install_man_encounter`].
+/// `legaia_engine_core::world::World::install_man_encounter`.
 ///
 /// Returns `None` when [`encounter_table_from_man`] does (invalid MAN, or
 /// no rollable formations).
@@ -182,7 +182,7 @@ pub fn scene_encounter_from_man(
 
 /// Resolve a formation row to its [`crate::encounter_record::EncounterRecord`]
 /// shape. Useful for engines that have a roll result and want to install
-/// it via [`crate::world::World::install_encounter_from_record`].
+/// it via `legaia_engine_core::world::World::install_encounter_from_record`.
 pub fn formation_record_for_row(
     man_bytes: &[u8],
     row_index: usize,

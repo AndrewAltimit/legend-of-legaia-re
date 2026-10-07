@@ -61,7 +61,7 @@ impl SavedChain {
     /// Lower this editor-side chain into the on-save record shape
     /// ([`legaia_save::SavedChainRecord`]) for `char_slot`. The directional
     /// [`Command`]s pack to their `as_byte` values (1=L, 2=R, 3=D, 4=U),
-    /// which is exactly what [`crate::battle_arts::synthetic_power`] and
+    /// which is exactly what `legaia_engine_core::battle_arts::synthetic_power` and
     /// `chain_matches_record` consume on the battle side.
     pub fn to_record(&self, char_slot: u8) -> legaia_save::SavedChainRecord {
         legaia_save::SavedChainRecord {

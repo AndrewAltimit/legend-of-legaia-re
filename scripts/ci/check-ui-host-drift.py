@@ -4040,8 +4040,10 @@ def _selftest_frame_case(
 # `engine-session` is engine surface too: both play hosts hold its
 # `BootSession` and tick it, so a call into it is a call both can make.
 # `engine-screens` likewise: the shop-family composition both hosts call.
+# `engine-battle` holds the battle kernels engine-core re-exports.
 ENGINE_API_CRATES = (
     "engine-core",
+    "engine-battle",
     "engine-vm",
     "engine-ui",
     "engine-audio",

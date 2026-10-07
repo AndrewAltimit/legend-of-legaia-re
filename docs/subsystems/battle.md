@@ -2569,7 +2569,7 @@ Of the disc's `3E FF` sites whose row the bundle MAN carries, two more rows carr
 
 The map id is `_DAT_80084540`, the loaded scene's **raw CDNAME define** (`town01` = `3`, `town0b` = `0x0C`, `town0c` = `0x15`, `map01` = `0x55`; every catalogued save state reads the define of the scene named at `0x80084548`), carried as `BattleState::map_id` and also read by the formation roll's scripted-ambush arm and the intro style picker. It is two above the extraction index `Scene::start` holds, which the intro picker had been reading - so its `0x3E` / `0x3F` arm on `3` / `0x0C` / `0x15` could never match.
 
-Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
+Engine mirror: [`engine-core::battle_seats`](../../crates/engine-battle/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
 ### The Ra-Seru-forbidden bit of the special-battle word
 
@@ -3850,7 +3850,7 @@ The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 
 | `0x1A` Special Art Starter | 1 | |
 | `0x1B..=0x32` | 1 | per-character art body |
 
-Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
+Implementation: [`crates/engine-battle::ap_gauge`](../../crates/engine-battle/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
 
 ### What a Spirit turn does to the gauge, and what it draws
 
@@ -3866,7 +3866,7 @@ Retail captures of the band agree (`ctx[+0x6D0] = 0x800`, a 188-wide bar under a
 
 From-scratch port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
-Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
+Implementation: [`crates/engine-battle::battle_stats`](../../crates/engine-battle/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
 ## Item catalog
 
@@ -4902,7 +4902,7 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 
 `EncounterTable` holds the per-scene rows + 1/256 trigger rate + safe-zone rectangles. The accessory / status modifiers scale the effective rate multiplicatively via `EncounterTracker::set_rate_modifiers` - the statically pinned `FUN_801D9E1C` shifts (High Encounter passive `0x3B` = `<<2`, Low Encounter `0x3C` = `>>1`, system flags `0x1D`/`0x1E` = `<<1`/`>>1`; see [encounter.md](../formats/encounter.md#random-encounter-trigger-path)), refreshed from the party ability mask + flag bank each step. (An earlier additive `add_rate_bias` knob modeled accessories that don't exist in retail; it is removed.)
 
-Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
+Implementation: [`crates/engine-battle::encounter`](../../crates/engine-battle/src/encounter.rs).
 
 ### The session is a bracket, not the roll
 
@@ -5156,7 +5156,7 @@ let obs = legaia_engine_core::levelup::observations::vahn_mc8_to_mc9();
 let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 ```
 
-`LevelUpObservation::to_curve` produces a `StatGrowthCurve::PerLevel` vector that emits the per-level *average* inside the observed range and falls back to `StatGain::default` outside it. Implementation: [`crates/engine-core::levelup`](../../crates/engine-core/src/levelup.rs).
+`LevelUpObservation::to_curve` produces a `StatGrowthCurve::PerLevel` vector that emits the per-level *average* inside the observed range and falls back to `StatGain::default` outside it. Implementation: [`crates/engine-battle::levelup`](../../crates/engine-battle/src/levelup.rs).
 
 ## CDNAME → MV STR cutscene routing
 
@@ -5197,7 +5197,7 @@ Per-character per-Seru capture-point accumulator. Each captured Seru contributes
 
 `SeruDef::learnable_mask` is a 3-bit per-character mask (bit 0 = Vahn, bit 1 = Noa, bit 2 = Gala) so single-character Seru can teach only their bearer. `record_capture` is the pure resolver; `SeruCaptureSession` drives the post-capture banner sequence (`Capturing → Announcing[i] → Done`) for engines to render.
 
-Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/src/seru_learning.rs).
+Implementation: [`crates/engine-battle::seru_learning`](../../crates/engine-battle/src/seru_learning.rs).
 
 ### The retail capture roll (`FUN_801ec3e4`)
 
@@ -5282,7 +5282,7 @@ reachable behind `LEGAIA_ARTS_SAVED_LIST=1`.
 
 Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks into the battle command queue at battle start.
 
-Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine-core/src/tactical_arts_editor.rs).
+Implementation: [`crates/engine-battle::tactical_arts_editor`](../../crates/engine-battle/src/tactical_arts_editor.rs).
 
 ## Battle rewards composite
 

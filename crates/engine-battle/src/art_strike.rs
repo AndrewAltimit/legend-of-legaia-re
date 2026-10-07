@@ -77,7 +77,7 @@ impl ScheduledCue {
     /// `code < 0x32`) nor an authored visual (its prototype-table word is
     /// zero on disc), so nothing routes it - the strike's real visuals ride
     /// the committed clip's effect script
-    /// ([`crate::action_effect_script`]). See [`legaia_art::HitCue`].
+    /// (`legaia_engine_core::action_effect_script`). See [`legaia_art::HitCue`].
     pub fn is_hit_effect(&self) -> bool {
         self.kind == 0x4C
     }

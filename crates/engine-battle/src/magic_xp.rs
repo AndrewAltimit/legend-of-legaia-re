@@ -13,7 +13,7 @@
 //!
 //! - [`thresholds_from_scus`] decodes the threshold table off the user's
 //!   `SCUS_942.54` (no Sony bytes committed - same pattern as
-//!   [`crate::shop_catalog::ShopItemData::from_scus`]);
+//!   `legaia_engine_core::shop_catalog::ShopItemData::from_scus`);
 //! - the record accessors read/write the `+0x8` XP array through
 //!   [`legaia_save::CharacterRecord::raw`], so the accrued XP round-trips
 //!   through saves for free.

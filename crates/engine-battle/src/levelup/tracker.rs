@@ -21,7 +21,7 @@ pub struct LevelUpResult {
     pub battle_gained: [u16; 6],
 }
 
-/// Per-party XP and level state. Owned by [`crate::world::World`].
+/// Per-party XP and level state. Owned by `legaia_engine_core::world::World`.
 ///
 /// Call [`grant_xp`] after each battle win; call [`apply_to_record`] with the
 /// returned result to bump the character record's HP/MP maxima.
