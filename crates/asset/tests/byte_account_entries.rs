@@ -1093,6 +1093,39 @@ fn the_save_screen_text_slots_are_claimed() {
     );
 }
 
+/// The DEBUG MODE overlay's value-monitor rows name their label tables in
+/// a data word (`+0x24`), and both tables are claimed through it.
+#[test]
+fn the_value_monitor_name_tables_are_claimed() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 971) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(971),
+        label: "0971".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    let tables: Vec<(usize, usize)> = acc
+        .claims
+        .iter()
+        .filter(|c| c.detail.starts_with("value-monitor name table"))
+        .map(|c| (c.start + 0x801C_E818, c.end - c.start))
+        .collect();
+    assert!(tables.contains(&(0x801C_F800, 0x70)), "{tables:x?}");
+    assert!(tables.contains(&(0x801C_F870, 0x20)), "{tables:x?}");
+}
+
 /// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
 /// and claiming it at the stride leaves the entry near whole.
 #[test]

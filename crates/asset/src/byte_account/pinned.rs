@@ -70,6 +70,9 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     if prot_index == MENU_OVERLAY {
         claim_save_text_slots(buf, sink);
     }
+    if prot_index == DEBUG_MENU_PROT_INDEX {
+        claim_value_monitor_name_tables(buf, sink);
+    }
     claim_consumer_pinned_tables(buf, sink, prot_index);
     if prot_index == ARENA_PROT_INDEX {
         claim_arena_course_ladder(buf, sink);
@@ -1034,6 +1037,70 @@ pub(super) fn claim_subdraw_records(buf: &[u8], sink: &mut Sink) {
         recs.len(),
         crate::muscle_dome::SUBDRAW_PTR_TABLE_LEN
     ));
+}
+
+/// PROT entry of the DEBUG MODE overlay whose value-monitor rows
+/// [`CONSUMER_PINNED_TABLES`] carries.
+const DEBUG_MENU_PROT_INDEX: u32 = 971;
+
+/// Bytes per value-monitor name label: `FUN_8001C93C`'s kind-1 arm reads the
+/// row's `+0x24` table at `value << 4` (`sll a0,a0,0x4` at `0x8001C9F8`).
+const VALUE_MONITOR_LABEL_BYTES: usize = 0x10;
+
+/// The name tables the DEBUG MODE value-monitor rows point at. A kind-1 row
+/// draws `*(row + 0x24) + (value << 4)` as a label, so the table is reached
+/// through a data word rather than a formed address. Each distinct in-image
+/// table runs to the next one, or to the rows themselves for the last, and is
+/// claimed only when that span is whole sixteen-byte labels, each a printable
+/// NUL-terminated string inside its slot.
+pub(super) fn claim_value_monitor_name_tables(buf: &[u8], sink: &mut Sink) {
+    const BASE: u32 = 0x801C_E818;
+    let Some(rows) = CONSUMER_PINNED_TABLES
+        .iter()
+        .find(|t| t.prot == DEBUG_MENU_PROT_INDEX)
+    else {
+        return;
+    };
+    let rows_off = (rows.base_va - BASE) as usize;
+    let mut tables: Vec<usize> = (0..rows.count)
+        .filter_map(|k| {
+            let row = rows_off + k * rows.stride;
+            let kind = legaia_bytes::u16_le(buf, row)?;
+            let table = legaia_bytes::u32_le(buf, row + 0x24)?;
+            (kind == 1 && table > BASE && table < rows.base_va).then(|| (table - BASE) as usize)
+        })
+        .collect();
+    tables.sort_unstable();
+    tables.dedup();
+    let mut n = 0usize;
+    for (i, &start) in tables.iter().enumerate() {
+        let end = tables.get(i + 1).copied().unwrap_or(rows_off);
+        if (end - start) % VALUE_MONITOR_LABEL_BYTES != 0 {
+            continue;
+        }
+        let labels_ok = buf[start..end].chunks(VALUE_MONITOR_LABEL_BYTES).all(|l| {
+            let len = l.iter().position(|&b| b == 0).unwrap_or(l.len());
+            len > 0 && len < l.len() && l[..len].iter().all(|&b| (0x20..0x7F).contains(&b))
+        });
+        if !labels_ok {
+            continue;
+        }
+        sink.claim(
+            start,
+            end,
+            OWNER_STRING,
+            format!(
+                "value-monitor name table, {} x 0x10 labels (row +0x24, FUN_8001C93C kind 1)",
+                (end - start) / VALUE_MONITOR_LABEL_BYTES
+            ),
+        );
+        n += 1;
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} value-monitor name table(s) named by the rows' +0x24 words"
+        ));
+    }
 }
 
 /// First of the menu overlay's six `0x80`-byte save-screen text slots.

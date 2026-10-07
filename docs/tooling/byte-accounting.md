@@ -963,7 +963,12 @@ claim.
 
 The `0971` rows are the layout `FUN_8001C93C` draws - `+0x00` kind, `+0x04`
 y, `+0x08` value pointer, `+0x0E` label, `+0x24` name table - walked inline
-rather than handed to that routine. The `0977` count is the runtime-index
+rather than handed to that routine. The name tables are reached through the
+rows themselves: a kind-1 row draws `*(row + 0x24) + (value << 4)`, so each
+distinct in-image `+0x24` word opens a table of sixteen-byte labels that runs
+to the next one, or to the rows for the last. Both are claimed that way, after
+a check that the span is whole labels, each a printable string inside its
+slot (`claim_value_monitor_name_tables`). The `0977` count is the runtime-index
 rule's own layout inference, not an instruction's immediate, and it agrees with
 the seventeen sprite descriptors the Muscle Dome hub's HUD port already parses
 there ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md));
