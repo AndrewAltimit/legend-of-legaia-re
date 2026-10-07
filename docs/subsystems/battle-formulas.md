@@ -1320,9 +1320,8 @@ this roll and does not miss on it. The `+0x16C` the refund tests is the
 while the queued Item action is still owed a turn. Retail's "Miss" on a normal attack is the
 [limb-vs-height mismatch](#the-limb-vs-height-miss) in the melee kernel's head.
 
-**Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; the
-`battle_session` resolver still applies it per strike. `World::apply_basic_attack`
-**does not** - it used to, and the consequence was a fight running backwards.
+**Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; no live
+strike path applies it. `World::apply_basic_attack` **does not** - it used to, and the consequence was a fight running backwards.
 Each actor's `+0x168` value lives in the World-side `battle.accuracy` /
 `battle.evasion` arrays, and the two sides are seeded from different stats:
 party slots from each character's AGL-derived `acc`/`eva` (via

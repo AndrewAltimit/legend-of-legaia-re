@@ -33,9 +33,7 @@ use legaia_engine_shell::replay::{ReplayFile, ReplayMeta};
 use legaia_parity::mode_trace_oracle::{ModeTraceFrame, mode_trace_to_jsonl};
 use sha2::{Digest, Sha256};
 
-/// Build a deterministic starting world. Mirrors the
-/// `battle_session_drives_action_sm_to_monster_wipe` synthetic harness:
-/// 8 actors, fixed RNG seed, three spawned party slots at non-zero HP.
+/// Build a deterministic starting world: 8 actors, fixed RNG seed, three spawned party slots at non-zero HP.
 ///
 /// Two calls with identical `rng_seed` must produce structurally
 /// identical worlds (every field that influences `tick`'s evolution is

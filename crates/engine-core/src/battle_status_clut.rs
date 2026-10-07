@@ -79,8 +79,8 @@ pub const PARTY_CLUT_SLOTS: usize = 3;
 ///
 /// Lives on [`crate::battle_hud::BattleHud`] because that is the one
 /// per-frame battle struct both hosts own; [`Self::arm`] is driven from
-/// [`crate::battle_hud::BattleHud::sync_status`], which every host and the
-/// `battle_session` driver already call once per slot per frame.
+/// [`crate::battle_hud::BattleHud::sync_status`], which every host already
+/// calls once per slot per frame.
 #[derive(Debug, Clone, Default)]
 pub struct StatusClutState {
     /// The pristine palette per party slot - retail `ctx[+0x894 + slot*0x1E0]`.

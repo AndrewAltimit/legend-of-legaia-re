@@ -27,7 +27,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 
 **From-scratch engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
-- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
+- [Battle round lifecycle](#battle-round-lifecycle) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
 - [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
@@ -3897,64 +3897,6 @@ The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` a
 
 Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/src/battle_round.rs).
 
-## Battle command runner
-
-Sits between the player-input layer and the action state machine. One `BattleRunner` per battle session; engines feed it raw player commands per turn; it ticks no SM itself - hosts drive the per-frame action SM through their existing loop.
-
-`begin_round` delegates to `BattleRound::begin` for AP refresh + stat recompute, `push_command` / `push_chained_art` gate input against `ApGauge` and surface a typed `OutOfAp` error, `pop_command` / `pop_chained_art` refund the cost cleanly, `commit_turn` runs the queue through `resolve_action_queue` (Miracle / Super expansion) and stashes the resolved per-slot `ActionQueue`s. `end_round` drives `BattleRound::end` for tick-damage drainage.
-
-Per-slot buffers + chained-art lists let the player switch between party members mid-turn without losing state. The runner is the **input → queue** half of the battle pipeline; the SM tick itself runs through the existing `step_battle` loop.
-
-Implementation: [`crates/engine-core::battle_runner`](../../crates/engine-core/src/battle_runner.rs).
-
-## BattleSession Resolve driver
-
-`BattleSession` owns the action SM during the `Resolve` phase. After
-`commit_turn` succeeds, the session builds a `ResolveDriver` queue
-containing one entry per party slot whose resolved action queue is
-non-empty, in slot order (`0 → 1 → 2`). Slot routing:
-
-| Resolved queue contains | Action category byte |
-|---|---|
-| At least one `ActionConstant::RegularStarter` | `TacticalArts (0)` |
-| Otherwise (directional commands only) | `Attack (3)` |
-
-Each `BattleSession::tick` during `Resolve`:
-
-1. Drains `World::pending_battle_events` into HUD popups + session events.
-2. If the head-of-queue attacker hasn't been armed yet, sets
-   `world.battle_ctx.{active_actor, queued_action, action_state}` and
-   the attacker's `BattleActor::{action_category, active_target}` to
-   point at the first alive monster slot.
-3. Calls `world.tick()` exactly once.
-4. Clears `ActorFlags::ADVANCE_DONE` on `AttackRecovery` (the render-side
-   "recovery anim finished" edge the session simulates inline since it
-   doesn't render).
-5. On `Transition { from: AttackChain, to: AttackRecovery }`, applies a
-   from-scratch formula strike against the attacker's `active_target`:
-   reads `atk` + `udf` + `acc` + `eva` off `BattleRound::stats`, rolls
-   accuracy via `accuracy_roll`, folds variance via `psyq_rand_step`,
-   writes the result back through `BattleActor::hp` and emits
-   `SessionEvent::HpChanged`.
-6. On `EndOfAction`, pops the head of the queue and re-arms next frame.
-
-When the queue drains (no more attackers) or `StepOutcome::BattleComplete`
-fires, the session drops the driver and transitions to `RoundOutro`
-(queue-drained path) or relies on the routed `BattleEnd` event to land
-the terminal phase (`Victory` / `Defeat`). Engines that prefer to drive
-`world.tick()` themselves can skip `commit_turn` from the session and
-fall through the legacy "observe events only" Resolve path.
-
-The deterministic RNG seed used for the accuracy + variance rolls is
-exposed as `BattleSession::rng_seed` (configurable via
-`with_rng_seed(seed)` before `begin_round`).
-
-End-to-end coverage:
-[`crates/engine-core/tests/end_to_end_gameplay_loop.rs::battle_session_drives_action_sm_to_monster_wipe`](../../crates/engine-core/tests/end_to_end_gameplay_loop.rs)
-exercises the full pipeline - encounter trigger → BattleSession setup →
-`push_command` per slot → commit via `SessionInput { start: true, .. }` →
-Resolve → `BattlePhase::Victory`.
-
 ## Battle HUD model
 
 Renderer-agnostic UI state for the in-battle screen. Holds per-slot HP / MP / AP / status-icon state plus a queue of damage popups and battle-event log lines. `engine-render::battle_hud_draws_for` turns one of these into a `Vec<TextDraw>` for the GPU pipeline; engines that render via a different path (web / terminal) read the same struct directly.
@@ -5103,17 +5045,7 @@ Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates 
 
 The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster. Retail seats at most four monsters, so a fifth engine slot has no ring entry; that slot, an un-seated host (all seats at the origin), and a ring entry that is not a live monster each fall the cursor back to the plain scan. See [`battle-action.md`](battle-action.md#actor-pool-leaf-helpers) for the two kernels.
 
-`BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the
-wiring API engines drive when a command needs a target. The session charges AP
-up-front, opens the picker, and stashes the command in `pending_target_command`.
-When the picker resolves, `maybe_close_picker_with_world` writes the resolved
-slot to `BattleActor::active_target` (the field the action SM reads at strike
-time via `host.actor(actor_slot).active_target`) and admits the buffered command
-into the runner queue without re-charging AP. Sweep targets write a `0xFF`
-sentinel; cancellation drops the command without admitting it. Engines that
-already have a `&World` borrow at picker-open time use [`open_target_picker`];
-engines that need the same active-target write at open-time (sweep / self) call
-[`open_target_picker_mut`].
+A sweep reaches the action SM as retail's target-group code, not a sentinel: the live command flow writes `+0x1DD = 8` for the party and `9` for the enemy row (absolute numbering, mirrored for a monster caster), and a self-target writes the caster's own slot - the values `FUN_801E295C`'s cast-begin split (`sltiu v0,t2,0x8` at `0x801E433C`) and self-skip (`beq v0,t2` at `0x801E4350`) decode.
 
 ## Encounter trigger - runtime memory layout
 
@@ -5348,7 +5280,7 @@ reachable behind `LEGAIA_ARTS_SAVED_LIST=1`.
 
 ## Tactical Arts chain editor
 
-Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks back to `BattleRunner::push_chained_art` at battle start.
+Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks into the battle command queue at battle start.
 
 Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine-core/src/tactical_arts_editor.rs).
 
@@ -5686,7 +5618,7 @@ drops it - until `finish_battle` tears the battle down with its fade actor.
 
 The two hosts say it through different channels, and the difference is load-bearing. The native window draws a bounded HUD line (`World::show_encounter_hint`). The browser prints its notice from the page's status bar off `LegaiaRuntime::scene_rolls_encounters` - **not** through the overlay draw list, because the page treats a non-empty overlay as owning the frame (it clears the canvas and returns before the dialog layer), so a passive hint routed there would suppress every NPC dialogue for the first seconds of a town.
 
-The spine began as physical-attack-only, single-formation; the Arts / Magic / Item submenus (above) and monster AI turns layer on top of it. The damage path for art-driven strikes flows through `apply_art_strike` → `fold_battle_event` in the SM-driven `battle_session` runner, and the player-driven Arts submenu reuses the same `apply_art_strike` kernel directly. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
+The spine began as physical-attack-only, single-formation; the Arts / Magic / Item submenus (above) and monster AI turns layer on top of it. The player-driven Arts submenu routes art-driven strikes through the `apply_art_strike` kernel. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
 
 ## End-to-end gameplay loop integration test
 
@@ -5699,13 +5631,11 @@ The spine began as physical-attack-only, single-formation; the Arts / Magic / It
 5. **Rewards** - call `World::apply_battle_loot` to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.
 6. **Save round-trip** - `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
 
-The crate ships four test variants:
+The crate ships these test variants:
 
 | Test | Purpose |
 |---|---|
 | `synthetic_party_completes_full_gameplay_loop` | The default CI cycle; hand-spins the action SM with `apply_strike`. |
-| `battle_session_phase_transitions_during_loop` | Smoke around the BattleSession side; verifies the session reaches `CommandInput`. |
-| `battle_session_drives_action_sm_to_monster_wipe` | Drives the same loop through `BattleSession::tick` instead of `world.tick` - `push_command` → `SessionInput { start: true }` → Resolve → `BattlePhase::Victory`. The session owns the action SM during `Resolve`. |
 | `real_battle_data_encounter_drives_loop` | Disc-gated: scans an early `PROT.DAT` entry for a valid `EncounterRecord` byte pattern, installs it via `World::install_encounter_from_record`, and runs the battle through to `MonsterWipe`. Closes the synthetic-formation leak in the field → battle handoff. |
 | `real_psx_memory_card_save_drives_full_loop` | Disc-gated: boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card. |
 

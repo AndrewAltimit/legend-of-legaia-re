@@ -48,8 +48,8 @@ pub struct DiscTables {
     /// their `formation_id` into concrete monster slot definitions.
     pub formation_table: crate::monster_catalog::FormationTable,
     /// Optional monster catalog - paired with `formation_table`. Engines
-    /// look up [`crate::monster_catalog::MonsterDef`] by id when
-    /// initialising the [`crate::battle_session::BattleSession`].
+    /// look up [`crate::monster_catalog::MonsterDef`] by id when seating
+    /// a battle.
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
     /// Optional battle-action move-power table (PROT 0898, runtime VA
     /// `0x801F4F5C`). When present, the monster special-attack damage path

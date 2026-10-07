@@ -19,15 +19,14 @@
 //! The cursor moves left/right between valid candidates; up/down (where
 //! the kind allows) flips between the party row and the monster row.
 //! Cross confirms; Circle aborts. The session emits typed events the
-//! engine can fold into HUD blips and BattleSession.
+//! engine can fold into HUD blips.
 //!
 //! ## Integration
 //!
-//! Engines run the target picker between the BattleRunner's
-//! `push_command` (which records the action constant) and the
-//! `commit_turn` step. The picker's [`TargetPickerSession::outcome`]
-//! provides the resolved target slot or "abort" outcome; on abort,
-//! the engine pops the just-pushed command via `BattleRunner::pop_command`.
+//! The picker's [`TargetPickerSession::outcome`] provides the resolved
+//! target slot or "abort" outcome; the battle menu that opened it
+//! ([`crate::battle_magic`], the live loop's command flow) commits or
+//! drops the buffered command on that outcome.
 
 /// The kind of target the action expects. Drives validation + cursor
 /// motion.
@@ -173,20 +172,6 @@ impl SlotState {
     /// analysis's receiver gate on for every call site of the first one.
     pub const fn with_seat(self, x: i16, z: i16) -> Self {
         Self { x, z, ..self }
-    }
-}
-
-impl SlotState {
-    /// Build from a [`crate::battle_session::SessionSlotInfo`]. A slot is
-    /// "present" when its `record` is populated; alive state is supplied
-    /// by the caller from the live `BattleActor::hp` field.
-    pub fn from_session_slot(info: &crate::battle_session::SessionSlotInfo, hp: u16) -> Self {
-        Self {
-            present: info.record.is_some(),
-            alive: hp > 0,
-            x: 0,
-            z: 0,
-        }
     }
 }
 
@@ -627,8 +612,6 @@ pub struct EnemyMenuRow {
 /// browser `play_battle.rs`) via [`crate::battle_hud::battle_enemy_target_rows`],
 /// which stands occupancy in for the retail id table and feeds each slot's
 /// live world X.
-/// `BattleSession::rebuild_enemy_menu_rows` is a second, session-side
-/// caller that remains off every host path - see its own note.
 pub fn enemy_menu_rows(
     formation: [u8; FORMATION_SLOTS],
     dedup_suffix: &str,

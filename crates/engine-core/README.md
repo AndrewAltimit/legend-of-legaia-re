@@ -15,7 +15,7 @@ native window.
 - [Asset cache](#asset-cache)
 - [Frame timing](#frame-timing)
 - [Composite `World`](#composite-world)
-- [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_runner`, `battle_session`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
+- [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
 - [Scene resources + VRAM](#scene-resources--vram)
 - [Dialogue, save/load, and loot](#dialogue-saveload-and-loot)
 - [Minigame rules engines](#minigame-rules-engines)
@@ -261,20 +261,6 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,
   returns death count.
-- `battle_runner` - `BattleRunner` sits between player input and the
-  action SM. `begin_round` / `commit_turn` / `end_round` bracket each
-  turn; `push_command` / `push_chained_art` gate input against
-  `ApGauge`; `commit_turn` resolves the queue through
-  `resolve_action_queue` (Miracle / Super expansion). Per-slot buffers
-  preserve state across `active_party_slot` switches.
-- `battle_session` - `BattleSession` composes the runner + round + HUD
-  into a single state machine. Owns the action SM during the `Resolve`
-  phase: on `commit_turn` it builds a per-slot `ResolveDriver` queue,
-  arms `world.battle_ctx`, calls `world.tick` once per `BattleSession::tick`,
-  applies from-scratch formula damage on `AttackChain → AttackRecovery`
-  transitions, and advances to the next attacker on `EndOfAction`. The
-  `Resolve → RoundOutro → Victory / Defeat` transition observes the
-  routed `BattleEnd` event. See `docs/subsystems/battle.md#battlesession-resolve-driver`.
 - `battle_input` - `BattleCommandSession`: the player-driven command
   picker for the live gameplay loop. A small state machine (command menu
   → target select → confirm) driven a frame at a time from `World::input`.
@@ -562,8 +548,8 @@ presentation left to the host:
   retail windowing behind the `retail_static_window` option).
 - `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
   target-menu row dedup / labelling and the overlap-relaxation layout
-  (`FUN_801D9D3C`). `BattleSession::enemy_menu_rows` rebuilds the rows every
-  time a picker opens.
+  (`FUN_801D9D3C`), reached each battle frame through
+  `battle_hud::battle_intro_names` on both hosts.
 - `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
   context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
   fixed-template spawn (`FUN_801DE478`), the list-panel row layout

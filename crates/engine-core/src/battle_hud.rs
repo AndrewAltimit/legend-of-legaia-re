@@ -365,8 +365,8 @@ pub struct BattleHud {
     /// 6-line scrolling log column.
     pub log_capacity: usize,
     /// The status CLUT recolour latch + party palette copies - pass 4 of
-    /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host and
-    /// the `battle_session` driver already call once per slot per frame) and
+    /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host
+    /// already calls once per slot per frame) and
     /// drained by the host's mid-battle VRAM pass through
     /// [`crate::battle_status_clut::StatusClutState::step`].
     pub status_clut: crate::battle_status_clut::StatusClutState,

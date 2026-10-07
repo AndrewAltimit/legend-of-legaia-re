@@ -3,7 +3,7 @@
 //! SCUS-resident helpers around the CD streaming reader. They
 //! sit one layer above the libcd primitives at `0x8005Dxxx` and one
 //! layer below the per-format loaders ([`scene_resources`],
-//! [`battle_session`], etc.) The trait exposed here lets the engine
+//! the battle loaders, etc.) The trait exposed here lets the engine
 //! layer plug in either:
 //!
 //! - a synthetic `MemoryVfs`-backed implementation for offline /

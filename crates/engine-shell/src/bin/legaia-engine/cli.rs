@@ -31,7 +31,7 @@ use std::path::PathBuf;
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
         parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
         sim-trace, retail-compare\n    \
-        synthetic state drivers:  battle, inventory, equip, title, save-select, encounter,\n                              \
+        synthetic state drivers:  inventory, equip, title, save-select, encounter,\n                              \
         target-pick, chain-editor, seru-capture"
 )]
 pub(crate) struct Cli {
@@ -1234,30 +1234,6 @@ pub(crate) enum Cmd {
     Config {
         #[command(subcommand)]
         cmd: ConfigCmd,
-    },
-    /// Drive a synthetic battle round end-to-end: party of 3 vs N
-    /// monsters, headless ticking through `BattleSession` phases.
-    /// Reports per-phase events for inspection.
-    #[command(display_order = 29)]
-    Battle {
-        /// Number of monster slots (1..=5). Each is initialised with HP
-        /// equal to `--monster-hp`.
-        #[arg(long, default_value_t = 1)]
-        monsters: u8,
-        /// Per-monster initial HP.
-        #[arg(long, default_value_t = 50)]
-        monster_hp: u16,
-        /// Maximum number of session ticks to run before exiting.
-        #[arg(long, default_value_t = 256)]
-        max_ticks: u64,
-        /// Pre-seeded turn script - comma-separated key letters fed once
-        /// per tick during the CommandInput phase. Each character maps
-        /// to one input bit:
-        ///   `R/L/U/D` direction; `c` cross; `o` circle; `t` triangle;
-        ///   `s` square (Spirit); `S` start (commit). All other chars
-        ///   advance one tick with no input. Default empty.
-        #[arg(long, default_value = "")]
-        script: String,
     },
     /// Drive an inventory-use session against a synthetic World. Prints
     /// the cursor moves + commit outcome.

@@ -4191,3 +4191,56 @@ mod capture_hold_tests {
         );
     }
 }
+
+/// The live command flow's sweep encoding: a group-shaped cast reaches the SM
+/// as retail's group code (`8` party / `9` enemy row, absolute numbering),
+/// never a sentinel, and a self-target stays the caster's own slot - the
+/// value `FUN_801E295C`'s cast-begin split (`sltiu v0,t2,0x8` at
+/// `0x801E433C`) and its self-skip (`beq v0,t2` at `0x801E4350`) expect.
+#[cfg(test)]
+mod sweep_code_tests {
+    use super::*;
+    use crate::spells::{SpellDef, SpellTarget};
+    use vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
+
+    fn staged_target(caster: u8, target: SpellTarget, targets: Vec<u8>) -> u8 {
+        let mut world = World::default();
+        world.enter_battle(3, 2);
+        let def = SpellDef {
+            id: 0x81,
+            target,
+            ..SpellDef::default()
+        };
+        world.arm_player_cast(caster, &def, targets);
+        world.actors[caster as usize].battle.active_target
+    }
+
+    #[test]
+    fn a_party_casters_sweeps_carry_retail_group_codes() {
+        assert_eq!(
+            staged_target(0, SpellTarget::AllAllies, vec![0, 1, 2]),
+            TARGET_GROUP_PARTY
+        );
+        assert_eq!(
+            staged_target(0, SpellTarget::AllEnemies, vec![3, 4]),
+            TARGET_GROUP_ENEMIES
+        );
+    }
+
+    #[test]
+    fn a_monster_casters_sweeps_are_mirrored() {
+        assert_eq!(
+            staged_target(3, SpellTarget::AllAllies, vec![3, 4]),
+            TARGET_GROUP_ENEMIES
+        );
+        assert_eq!(
+            staged_target(3, SpellTarget::AllEnemies, vec![0, 1, 2]),
+            TARGET_GROUP_PARTY
+        );
+    }
+
+    #[test]
+    fn a_self_target_is_the_casters_own_slot() {
+        assert_eq!(staged_target(1, SpellTarget::SelfOnly, vec![1]), 1);
+    }
+}

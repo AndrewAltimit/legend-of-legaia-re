@@ -16,8 +16,7 @@
 //!
 //! On battle start, engines pull the active character's
 //! [`ChainLibrary::saved`] and render the recall list. Selecting a saved
-//! chain pushes the sequence through `BattleRunner::push_command` /
-//! `push_chained_art`.
+//! chain pushes the sequence into the battle command queue.
 
 use legaia_art::queue::Command;
 use std::collections::HashMap;

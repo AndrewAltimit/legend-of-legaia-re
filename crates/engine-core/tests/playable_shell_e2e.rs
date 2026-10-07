@@ -1,14 +1,9 @@
 //! End-to-end smoke test for the playable-shell loop.
 //!
 //! Drives a synthetic world through the boot UI → encounter trigger →
-//! battle target pick → command commit → save → reload round trip,
+//! formation resolve → save → reload round trip,
 //! asserting state survives across the cycle.
 
-use legaia_art::Character;
-use legaia_engine_core::battle_session::{
-    BattlePhase, BattleSession, SessionInput, SessionSlotInfo, SubPhase,
-};
-use legaia_engine_core::battle_stats::StatRecord;
 use legaia_engine_core::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
@@ -17,7 +12,6 @@ use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monst
 use legaia_engine_core::save_select::{
     SaveSelectMode, SaveSelectSession, SelectInput, SelectOutcome, SlotContent, SlotSnapshot,
 };
-use legaia_engine_core::target_picker::TargetKind;
 use legaia_engine_core::title::{TitleInput, TitleOutcome, TitleSession};
 use legaia_engine_core::world::{Actor, SceneMode, World};
 
@@ -134,86 +128,6 @@ fn encounter_trigger_resolves_to_formation_def() {
 }
 
 #[test]
-fn battle_session_target_picker_subphase_round_trip() {
-    let mut s = BattleSession::new();
-    s.set_party([Character::Vahn, Character::Noa, Character::Gala]);
-    for (i, name) in ["Vahn", "Noa", "Gala"].iter().enumerate() {
-        s.set_slot_info(
-            i as u8,
-            SessionSlotInfo {
-                name: (*name).into(),
-                is_party: true,
-                record: Some(StatRecord {
-                    base_attack: 50,
-                    base_udf: 30,
-                    base_ldf: 25,
-                    base_accuracy: 80,
-                    base_evasion: 20,
-                    ..Default::default()
-                }),
-                mp_max: 30,
-            },
-        );
-    }
-    // Two monsters present.
-    s.set_slot_info(
-        3,
-        SessionSlotInfo {
-            name: "Goblin".into(),
-            is_party: false,
-            record: Some(StatRecord::default()),
-            mp_max: 0,
-        },
-    );
-    s.set_slot_info(
-        4,
-        SessionSlotInfo {
-            name: "Wolf".into(),
-            is_party: false,
-            record: Some(StatRecord::default()),
-            mp_max: 0,
-        },
-    );
-    s.set_monster_count(2);
-
-    let mut w = build_world_with_party();
-    w.actors[3].battle.hp = 50;
-    w.actors[3].battle.max_hp = 50;
-    w.actors[4].battle.hp = 30;
-    w.actors[4].battle.max_hp = 30;
-
-    s.begin_round(&mut w);
-    assert_eq!(s.phase(), BattlePhase::RoundIntro);
-
-    // Force into CommandInput.
-    let mut events = Vec::new();
-    while !matches!(s.phase(), BattlePhase::CommandInput) {
-        events.extend(s.tick(&mut w, SessionInput::default()));
-    }
-    assert_eq!(s.sub_phase(), SubPhase::CommandSelect);
-
-    // Open the picker.
-    let mut evs = Vec::new();
-    s.open_target_picker(&w, TargetKind::SingleEnemy, 0, None, &mut evs);
-    assert_eq!(s.sub_phase(), SubPhase::TargetPick);
-
-    // Confirm.
-    let confirm = SessionInput {
-        cross: true,
-        ..Default::default()
-    };
-    let evs = s.tick(&mut w, confirm);
-    let confirmed = evs.iter().any(|e| {
-        matches!(
-            e,
-            legaia_engine_core::battle_session::SessionEvent::TargetConfirmed { .. }
-        )
-    });
-    assert!(confirmed, "expected TargetConfirmed event after cross");
-    assert_eq!(s.sub_phase(), SubPhase::CommandSelect);
-}
-
-#[test]
 fn save_full_load_full_round_trips_v2_extension() {
     // Save a populated world to LGSF v2, parse it back, and verify the
     // extension block survived.
@@ -263,163 +177,6 @@ fn save_full_load_full_round_trips_v2_extension() {
     assert_eq!(w2.party.saved_chains[0].name, "Combo A");
     // Tactical-arts learned bit re-marked.
     assert!(w2.party.tactical_arts.is_learned(0, 5));
-}
-
-#[test]
-fn target_picker_wiring_writes_active_target_and_admits_buffered_command() {
-    // Closes the wiring gap noted in the post-#26 session-recommendations:
-    // BattleSession opened the target picker but didn't route the resolved
-    // target back into the runner's command queue or the actor's
-    // `active_target` field. After the post-#26 batch 13 wiring, both
-    // happen on `TargetConfirmed` (when called via `tick_command_input`'s
-    // mutable-world path).
-    use legaia_art::Command;
-    let mut s = BattleSession::new();
-    s.set_party([Character::Vahn, Character::Noa, Character::Gala]);
-    for (i, name) in ["Vahn", "Noa", "Gala"].iter().enumerate() {
-        s.set_slot_info(
-            i as u8,
-            SessionSlotInfo {
-                name: (*name).into(),
-                is_party: true,
-                record: Some(StatRecord {
-                    base_attack: 50,
-                    base_udf: 30,
-                    base_ldf: 25,
-                    base_accuracy: 80,
-                    base_evasion: 20,
-                    ..Default::default()
-                }),
-                mp_max: 30,
-            },
-        );
-    }
-    s.set_slot_info(
-        3,
-        SessionSlotInfo {
-            name: "Goblin".into(),
-            is_party: false,
-            record: Some(StatRecord::default()),
-            mp_max: 0,
-        },
-    );
-    s.set_slot_info(
-        4,
-        SessionSlotInfo {
-            name: "Wolf".into(),
-            is_party: false,
-            record: Some(StatRecord::default()),
-            mp_max: 0,
-        },
-    );
-    s.set_monster_count(2);
-    let mut w = build_world_with_party();
-    w.actors[3].battle.hp = 50;
-    w.actors[3].battle.max_hp = 50;
-    w.actors[4].battle.hp = 30;
-    w.actors[4].battle.max_hp = 30;
-    s.begin_round(&mut w);
-    // Force into CommandInput by ticking through the intro.
-    while !matches!(s.phase(), BattlePhase::CommandInput) {
-        let _ = s.tick(&mut w, SessionInput::default());
-    }
-    // Push a command with single-enemy targeting. Runner buffer stays
-    // empty until the picker resolves.
-    let ok = s.push_command_with_target(
-        &mut w,
-        Command::Right,
-        legaia_engine_core::target_picker::TargetKind::SingleEnemy,
-        0,
-    );
-    assert!(ok, "command should admit");
-    assert_eq!(s.sub_phase(), SubPhase::TargetPick);
-    // Cross - confirm target. Wiring writes `active_target` and admits
-    // the buffered command into the runner queue.
-    let confirm = SessionInput {
-        cross: true,
-        ..Default::default()
-    };
-    let evs = s.tick(&mut w, confirm);
-    let confirmed = evs.iter().any(|e| {
-        matches!(
-            e,
-            legaia_engine_core::battle_session::SessionEvent::TargetConfirmed { .. }
-        )
-    });
-    assert!(confirmed);
-    let pushed = evs.iter().any(|e| {
-        matches!(
-            e,
-            legaia_engine_core::battle_session::SessionEvent::CommandPushed {
-                slot: 0,
-                command: Command::Right,
-            }
-        )
-    });
-    assert!(pushed, "buffered command should auto-admit on confirm");
-    // Active-target write - the picker confirmed monster slot 0 (the first
-    // alive enemy). The active_target byte is the *row-relative* slot
-    // index emitted by `PickerOutcome::Single` (so `0` here, even though
-    // the absolute battle-actor slot is 3).
-    assert_eq!(w.actors[0].battle.active_target, 0);
-    assert_eq!(s.runner.current_buffer(), &[Command::Right]);
-    assert_eq!(s.sub_phase(), SubPhase::CommandSelect);
-}
-
-#[test]
-fn target_picker_cancel_drops_buffered_command_keeps_runner_empty() {
-    use legaia_art::Command;
-    let mut s = BattleSession::new();
-    s.set_party([Character::Vahn, Character::Noa, Character::Gala]);
-    for i in 0..3 {
-        s.set_slot_info(
-            i,
-            SessionSlotInfo {
-                name: format!("p{i}"),
-                is_party: true,
-                record: Some(StatRecord::default()),
-                mp_max: 30,
-            },
-        );
-    }
-    s.set_slot_info(
-        3,
-        SessionSlotInfo {
-            name: "G".into(),
-            is_party: false,
-            record: Some(StatRecord::default()),
-            mp_max: 0,
-        },
-    );
-    s.set_monster_count(1);
-    let mut w = build_world_with_party();
-    w.actors[3].battle.hp = 50;
-    w.actors[3].battle.max_hp = 50;
-    s.begin_round(&mut w);
-    while !matches!(s.phase(), BattlePhase::CommandInput) {
-        let _ = s.tick(&mut w, SessionInput::default());
-    }
-    let ok = s.push_command_with_target(
-        &mut w,
-        Command::Down,
-        legaia_engine_core::target_picker::TargetKind::SingleEnemy,
-        0,
-    );
-    assert!(ok);
-    let cancel = SessionInput {
-        circle: true,
-        ..Default::default()
-    };
-    let evs = s.tick(&mut w, cancel);
-    let cancelled = evs.iter().any(|e| {
-        matches!(
-            e,
-            legaia_engine_core::battle_session::SessionEvent::TargetCancelled
-        )
-    });
-    assert!(cancelled);
-    // Runner buffer empty - cancellation drops the buffered command.
-    assert!(s.runner.current_buffer().is_empty());
 }
 
 #[test]
@@ -476,44 +233,14 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
         .formation(roll.formation_id)
         .expect("vanilla formation")
         .clone();
-    let mut bs = BattleSession::new();
-    bs.set_party([Character::Vahn, Character::Noa, Character::Gala]);
-    for i in 0..3 {
-        bs.set_slot_info(
-            i,
-            SessionSlotInfo {
-                name: format!("p{i}"),
-                is_party: true,
-                record: Some(StatRecord::default()),
-                mp_max: 30,
-            },
-        );
+    // The battle itself is the live loop's (`World::enter_battle` and the
+    // round flow), exercised by its own tests; this smoke only checks the
+    // formation resolves to catalogued monsters.
+    for slot in formation.slots.iter() {
+        assert!(w.tables.monster_catalog.get(slot.monster_id).is_some());
     }
-    for (i, slot) in formation.slots.iter().enumerate() {
-        let monster = w
-            .tables
-            .monster_catalog
-            .get(slot.monster_id)
-            .expect("monster def");
-        let actor_idx = 3 + i;
-        w.actors[actor_idx].battle.hp = monster.hp;
-        w.actors[actor_idx].battle.max_hp = monster.hp;
-        bs.set_slot_info(
-            (3 + i) as u8,
-            SessionSlotInfo {
-                name: monster.name.clone(),
-                is_party: false,
-                record: Some(StatRecord::default()),
-                mp_max: 0,
-            },
-        );
-    }
-    bs.set_monster_count(formation.slots.len() as u8);
-    bs.begin_round(&mut w);
-    assert_eq!(bs.phase(), BattlePhase::RoundIntro);
 
-    // End the encounter (skip the action SM - the runner is already
-    // exercised in unit tests).
+    // End the encounter.
     w.end_encounter_battle();
 
     // 5. Save the world to a temp slot.
