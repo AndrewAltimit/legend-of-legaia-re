@@ -880,6 +880,37 @@ in `actor + 0x50`, drawn by the `FUN_801d67f0` hook) over the "YOU" / "WIN!" /
 "LOSE..." / "DRAW" / "ROUND" / "FIGHT!" / "PERFECT!!" / "GAME OVER" cells of
 the widget table.
 
+### The round-result banners
+
+The resolution SM's tail (`FUN_801d3468`, `0x801D3864..0x801D39F0`) raises
+them once per round, gated by the sub-state `DAT_801DBF84`, the first frame a
+fighter's HP (`record +0x08`) is down, and reads which off the two HPs and
+the untouched flag `DAT_801DBF24`. The cabinet raises that flag at the
+round's go (`0x801D04E0`), and both exchange arms that damage slot 0 clear
+it (`0x801D375C`, `0x801D37B8`). Every spawn goes through the screen-centre
+wrapper at `(0xA0, 0x78)` with the template `0x801DB9C4`. The two-word
+banners shift the second word right by `0x30`, in the delay slot of the next
+`jal`, and "YOU" left by the same.
+
+| Round | Widgets (x) | Announcer `FUN_8003D53C(0x20, ch, dur)` |
+|---|---|---|
+| both HPs down | DRAW `0x0A` (`0xA0`) | ch `4`, `0x35` |
+| player down | YOU `0x07` (`0x70`) + LOSE... `0x09` (`0xD0`) | ch `3`, `0x6D` |
+| foe down, player hit | YOU `0x07` (`0x70`) + WIN! `0x08` (`0xD0`) | ch `2`, `0x45` |
+| foe down, player untouched | PERFECT!! `0x11` (`0xA0`) | ch `5`, `0x39` |
+
+The perfect arm also increments `DAT_801DBF20`. **Confirmed** (disassembly).
+
+In the port they are `BakaChrome::raise_result`, raised by `BakaFight`'s
+`tick_result_banner` and drawn in the chrome frame every surface already
+draws: the native window and the browser play page through
+`hud_widget_quads`, the minigames page through `baka_chrome_json`. Retail's
+lifetime belongs to the spawn template, which the port does not run. The port
+holds the banners for the duel state's round-over hold (`0xB5` frames), then
+lets the next round's banner, deferred meanwhile, take the screen. On the
+deciding round the banners stand until the cabinet reaches its tally.
+**Inferred** - no library capture holds a result screen.
+
 ### Impact, cue and afterimage
 
 Three small bodies sit under the exchange path, and all three have shapes

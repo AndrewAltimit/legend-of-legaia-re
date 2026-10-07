@@ -563,6 +563,13 @@ pub struct BakaFight {
     chrome: crate::baka_fighter_chrome::BakaChrome,
     /// The chrome frame the last tick produced.
     chrome_frame: crate::baka_fighter_chrome::ChromeFrame,
+    /// The round-result banner sub-state `DAT_801DBF84`: non-zero once this
+    /// round's result banners are up, so they rise once per round.
+    result_latch: bool,
+    /// `DAT_801DBF24` - the player has not been hit this round. Raised at the
+    /// round's setup, cleared by the two exchange arms that damage slot 0;
+    /// a win with it still up is the PERFECT!! banner.
+    player_untouched: bool,
     /// The cabinet shell state machine (`FUN_801CF388`), stepped once per
     /// tick. Retail has the nesting the other way up - the cabinet SM owns the
     /// frame and the fight resolution runs under it - but the port's host
@@ -724,6 +731,8 @@ impl BakaFight {
             score_rows: [0; 3],
             chrome: crate::baka_fighter_chrome::BakaChrome::default(),
             chrome_frame: crate::baka_fighter_chrome::ChromeFrame::default(),
+            result_latch: false,
+            player_untouched: true,
             cabinet: {
                 let mut c = crate::baka_cabinet::BakaCabinet::new();
                 c.enter_duel();
@@ -1497,6 +1506,11 @@ impl BakaFight {
     /// crit override, special full-hit round win)
     fn apply_damage(&mut self, loser: usize) -> (i32, bool, bool) {
         let winner = loser ^ 1;
+        if loser == 0 {
+            // `sw zero,-0x40DC` in both arms that damage slot 0
+            // (`0x801D375C`, `0x801D37B8`).
+            self.player_untouched = false;
+        }
         // The retail ring write (`_DAT_8007b6d8 = 9`) sits at the top of
         // FUN_801D3B18, before the damage arithmetic - so a double-KO draw
         // (which applies damage twice) queues the cue twice, as it does here.
@@ -1619,6 +1633,10 @@ impl BakaFight {
             self.f[winner].round_wins += 1;
         }
         self.accumulate_round_score(winner);
+        // The result banners rise first (retail's banner tail runs ahead of
+        // the round setup), so the round banner asked for here waits out
+        // their hold rather than drawing over them.
+        self.tick_result_banner();
         self.chrome
             .start_round_banner(crate::baka_fighter_chrome::ROUND_BANNER_SPRITE);
         if self.f[winner].round_wins >= ROUND_WIN_TARGET {
@@ -1766,8 +1784,57 @@ impl BakaFight {
         c.phase = c.phase.wrapping_add(frame_step as i16);
     }
 
-    /// The rules half of [`Self::tick_with_input`].
+    /// The rules half of [`Self::tick_with_input`], then the round-result
+    /// banner tail the resolution SM runs after it.
     fn tick_rules(&mut self, frame_step: i32, face_button: bool) {
+        self.tick_rules_body(frame_step, face_button);
+        self.tick_result_banner();
+    }
+
+    /// The round-result banners (`FUN_801D3468`'s tail, `0x801D3864..`):
+    /// once per round - the sub-state `DAT_801DBF84` - the first frame a
+    /// fighter's HP is down, the chrome raises the banner the two HPs and
+    /// the untouched flag name ([`crate::baka_fighter_chrome::RoundResult`]).
+    /// They stand for the duel state's round-over hold
+    /// ([`crate::baka_fighter_chrome::RESULT_HOLD_FRAMES`]) and the next
+    /// round's banner waits for them, as retail draws it from the round
+    /// setup after the hold; on the deciding round they stand through the
+    /// win flourish / loss / GAME OVER screens and come down when the
+    /// cabinet moves on to its tally. Retail's lifetime is the spawn
+    /// template's (`0x801DB9C4`), which the port does not run, so the hold
+    /// is the cabinet's state timer. The next round's start re-arms the latch
+    /// and the untouched flag.
+    ///
+    /// PORT: FUN_801d3468 (`0x801D3864..0x801D39F0`)
+    fn tick_result_banner(&mut self) {
+        use crate::baka_cabinet::{ST_DUEL, ST_GAME_OVER, ST_LOSE, ST_PERFECT};
+        use crate::baka_fighter_chrome::RoundResult;
+        // Past the decided match (the tally, the sheet, the next rung) the
+        // cabinet's own screens own the frame.
+        if matches!(self.phase, MatchPhase::MatchOver(_))
+            && !matches!(
+                self.cabinet.state(),
+                ST_DUEL | ST_PERFECT | ST_LOSE | ST_GAME_OVER
+            )
+        {
+            self.chrome.clear_result();
+            return;
+        }
+        if self.result_latch || self.cabinet.front_end() {
+            return;
+        }
+        let result = match (self.f[0].hp <= 0, self.f[1].hp <= 0) {
+            (true, true) => RoundResult::Draw,
+            (true, false) => RoundResult::Lose,
+            (false, true) if self.player_untouched => RoundResult::Perfect,
+            (false, true) => RoundResult::Win,
+            (false, false) => return,
+        };
+        self.chrome.raise_result(result);
+        self.result_latch = true;
+    }
+
+    fn tick_rules_body(&mut self, frame_step: i32, face_button: bool) {
         // The HUD renderer latches the running maximum once per frame, so it
         // runs whatever the phase.
         if self.max_combo <= self.f[1].combo {
@@ -1808,6 +1875,10 @@ impl BakaFight {
                 // the idle (`0x801CFFB0` / `0x801CFFC0`) and snaps the camera.
                 self.rate_divisor = STRIKE_RATE_DIVISOR;
                 self.special_latch = false;
+                // The banner sub-state and the untouched flag re-arm with the
+                // round (`DAT_801DBF84`, `DAT_801DBF24`).
+                self.result_latch = false;
+                self.player_untouched = true;
                 self.motion = Default::default();
                 self.camera.round_setup();
                 self.setup_pending = true;
@@ -2803,6 +2874,38 @@ mod tests {
         let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), 1);
         f.ai_controlled = [false, false]; // deterministic: drive both by hand
         f
+    }
+
+    /// The resolution SM's banner tail: the first frame the foe is down with
+    /// the player untouched raises PERFECT!!, once; a hit on the player turns
+    /// the next round's win into YOU WIN!; the banners come down when the
+    /// cabinet leaves the decided round.
+    #[test]
+    fn a_decided_round_raises_its_result_banner_once() {
+        use crate::baka_fighter_chrome::{RESULT_PERFECT_SPRITE, RESULT_WIN_SPRITE};
+        let mut f = fight();
+        f.f[1].hp = 0;
+        f.tick_result_banner();
+        let ids: Vec<u16> = f.chrome.result_sprites().iter().map(|a| a.id).collect();
+        assert_eq!(
+            ids,
+            vec![RESULT_PERFECT_SPRITE],
+            "untouched win is PERFECT!!"
+        );
+        f.chrome.clear_result();
+        f.tick_result_banner();
+        assert!(
+            f.chrome.result_sprites().is_empty(),
+            "latched: once per round"
+        );
+
+        let mut g = fight();
+        g.apply_damage(0);
+        g.f[0].hp = g.f[0].hp.max(1);
+        g.f[1].hp = 0;
+        g.tick_result_banner();
+        let ids: Vec<u16> = g.chrome.result_sprites().iter().map(|a| a.id).collect();
+        assert_eq!(ids[0], RESULT_WIN_SPRITE, "a hit player's win is YOU WIN!");
     }
 
     /// Every announcer line the chrome starts over a whole match was on a
