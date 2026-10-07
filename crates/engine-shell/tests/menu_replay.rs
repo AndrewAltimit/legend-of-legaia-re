@@ -116,6 +116,15 @@ fn tap(session: &mut BootSession, mask: u16) {
     let _ = session.tick();
     session.host.world.set_pad(0);
     let _ = session.tick();
+    // A press that opened the menu: the field darkens for a few frames
+    // before the menu exists (`BootSession::pause_wipe`), and a player waits
+    // for it to appear before pressing on.
+    for _ in 0..64 {
+        if session.pause_wipe().menu_spawned() {
+            break;
+        }
+        let _ = session.tick();
+    }
 }
 
 fn tap_button(session: &mut BootSession, b: PadButton) {

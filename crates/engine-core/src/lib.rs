@@ -133,6 +133,7 @@ pub mod overworld_ground_cue;
 pub mod packet_color;
 pub mod part_motion;
 pub mod pause_screens;
+pub mod pause_wipe;
 pub mod place_name_banner;
 pub mod prize_exchange;
 pub mod publisher_logos;

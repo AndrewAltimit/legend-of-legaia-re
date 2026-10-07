@@ -2248,6 +2248,19 @@ impl LegaiaRuntime {
                 legaia_engine_ui::screen_prim::fade_prim(u32::from(level) * 0x01_01_01, 2, 0),
             );
         }
+        // The pause menu's wipe, at the same place in the list as the shop's
+        // fade (the native window's quad too): the field darkening before the
+        // menu spawns and brightening after it closes.
+        if let Some(level) = self
+            .scene_host
+            .session()
+            .and_then(|s| s.pause_wipe().fade_level())
+        {
+            prims.insert(
+                (*at).min(prims.len()),
+                legaia_engine_ui::screen_prim::fade_prim(u32::from(level) * 0x01_01_01, 2, 0),
+            );
+        }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (
                 prims.len() as u32,

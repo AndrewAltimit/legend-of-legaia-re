@@ -535,6 +535,25 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Run a just-opened pause menu's wipe out until the menu exists - the
+    /// frames a player spends watching the field go dark. For drivers that
+    /// open the menu and then press into it straight away.
+    pub fn play_menu_settle(&mut self) {
+        for _ in 0..64 {
+            if self.play_menu.is_none() || self.pause_menu_spawned() {
+                return;
+            }
+            self.play_menu_input(0);
+        }
+    }
+
+    /// Whether the pause wipe has spawned the menu (always, outside a wipe).
+    pub(crate) fn pause_menu_spawned(&self) -> bool {
+        self.scene_host
+            .session()
+            .is_none_or(|s| s.pause_wipe().menu_spawned())
+    }
+
     /// The open root picker: the session's `BootSession::field_menu`.
     fn root_menu(&self) -> Option<&FieldMenuSession> {
         self.scene_host
@@ -804,6 +823,17 @@ impl LegaiaRuntime {
         if self.play_menu.is_none() {
             return;
         }
+        // The menu spawns partway through the field's wipe to black
+        // (`BootSession::pause_wipe`, retail `FUN_801ED308` phase 1): until
+        // then each tick only advances the wipe, the pad goes nowhere, and
+        // the page keeps drawing the field under the wipe's quad.
+        if !self.pause_menu_spawned() {
+            if let Some(session) = self.scene_host.session_mut() {
+                session.step_pause_wipe();
+            }
+            self.rebuild_screen_geom();
+            return;
+        }
         // A save-refusal notice owns the pad while it is up - the same
         // pre-empt the native window makes, so the edge that dismisses the
         // box does not also drive the menu behind it.
@@ -1050,6 +1080,10 @@ impl LegaiaRuntime {
         else {
             return r#"{"open":false,"sprites":[],"texts":[]}"#.to_string();
         };
+        // Nothing to draw before the wipe spawns the menu: the field shows.
+        if !self.pause_menu_spawned() {
+            return r#"{"open":false,"sprites":[],"texts":[]}"#.to_string();
+        }
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
         let mut sprites: Vec<SpriteDraw> = Vec::new();
         let mut texts: Vec<TextDraw> = Vec::new();

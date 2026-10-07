@@ -68,6 +68,18 @@ write as a level assignment inverts the exit fade. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
+Around all of it the field fades to black and back. The pause-menu session
+`FUN_801ED308` (the field overlay's handler `0x30`) raises the same level
+word by `10 * frame_step` a frame from `0` and spawns the menu only once
+`level + 0x70 > 0xF2`, so the field darkens for a few frames before any
+window - a save point's Save screen included - exists; on the close it lowers
+the level the same way with the field running again. Both phases reach the
+screen through the wipe emitter `FUN_8003479C`. Port:
+`engine-core::pause_wipe::PauseWipe`, owned by `BootSession` (opened by
+`press_field_menu`, released by `close_field_menu`); both play hosts keep the
+field drawing until `menu_spawned`, route no input to the menu before it, and
+draw `fade_level` as the subtractive quad the shop's opening fade uses.
+
 ### `FUN_801DAEF4` - save-to-slot driver (224 bytes, sub-screen 0x19)
 
 The save half of the `0x18` / `0x19` card-driver pair - `0x18` reads the card,

@@ -99,6 +99,7 @@ fn menu_draws(rt: &LegaiaRuntime) -> (usize, usize) {
 fn open_row(rt: &mut LegaiaRuntime, row: usize) {
     rt.play_menu_close();
     rt.play_menu_open();
+    rt.play_menu_settle();
     for _ in 0..row {
         rt.play_menu_input(DOWN);
     }
@@ -457,6 +458,7 @@ fn rung2b_a_refused_load_raises_the_refusal_notice() {
     // The plain top-level menu, for reference.
     rt.play_menu_close();
     rt.play_menu_open();
+    rt.play_menu_settle();
     let (plain_sprites, plain_texts) = menu_draws(&rt);
 
     open_row(&mut rt, ROW_LOAD);

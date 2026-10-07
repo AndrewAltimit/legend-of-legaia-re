@@ -1403,7 +1403,10 @@ pub const MENU_PRESS_GAP: u64 = 12;
 pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::input::PadButton)> {
     use legaia_engine_core::input::PadButton;
     let mut out = vec![(0, PadButton::Start)];
-    let mut t = 0;
+    // The field darkens for up to fourteen ticks before the menu exists and
+    // takes a press (`BootSession::pause_wipe`), so the first press waits
+    // one gap longer.
+    let mut t = MENU_PRESS_GAP;
     let mut press = |b: PadButton| {
         t += MENU_PRESS_GAP;
         out.push((t, b));

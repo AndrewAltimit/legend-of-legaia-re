@@ -262,6 +262,9 @@ pub struct BootSession<S: AudioSink> {
     /// Driver for the two-stage card flow (pill row -> block grid). Shared
     /// with the windowed host so the second stage is one implementation.
     save_flow: SaveScreenFlow,
+    /// The field's fade to black around the pause menu (`FUN_801ED308`'s
+    /// `_DAT_8007B440`) - see [`legaia_engine_core::pause_wipe`].
+    pause_wipe: legaia_engine_core::pause_wipe::PauseWipe,
     /// The save / load pick the last finished Save sub-session produced, if
     /// any. **Not** acted on here: the persistence backend is host-owned (a
     /// save directory, a card image), so `BootSession` runs the *flow* and
@@ -928,6 +931,7 @@ impl<S: AudioSink> BootSession<S> {
             save_rack: SaveRack::Blocks(Vec::new()),
             save_port_blocks: Vec::new(),
             save_flow: SaveScreenFlow::new(),
+            pause_wipe: Default::default(),
             last_save_commit: None,
             spell_level_notice: None,
             art_learned_notice: None,
@@ -1152,6 +1156,10 @@ impl<S: AudioSink> BootSession<S> {
             if scripted {
                 self.host.world.note_scripted_menu_opened();
             }
+            // The field darkens before the menu exists (`FUN_801ED308`
+            // phase 1): hosts draw the field under the wipe and route no
+            // input to the menu until `pause_wipe().menu_spawned()`.
+            self.pause_wipe.open();
             return PauseMenuPress::Opened { scripted };
         }
         if start_edge && self.host.world.field_menu_press_denied() {
@@ -1165,6 +1173,8 @@ impl<S: AudioSink> BootSession<S> {
     /// menu is open.
     pub fn close_field_menu(&mut self) {
         if self.field_menu.take().is_some() {
+            // The field brightens back under the lifting wipe (phase 4).
+            self.pause_wipe.close();
             // The sub-session goes with it: a menu closed out from under an
             // open screen must not leave that screen holding the pad the next
             // time the menu opens.
@@ -1180,6 +1190,20 @@ impl<S: AudioSink> BootSession<S> {
             // resumes it once. Twin of `play_menu_close` on the browser host.
             self.host.world.release_menu_entry_context_park();
         }
+    }
+
+    /// The pause menu's field wipe: whether the menu has spawned yet and the
+    /// fade quad to draw over the field while it ramps.
+    pub fn pause_wipe(&self) -> &legaia_engine_core::pause_wipe::PauseWipe {
+        &self.pause_wipe
+    }
+
+    /// Advance the pause wipe one frame. [`Self::tick`] does this itself; a
+    /// host that runs the menu frames without ticking the session (both play
+    /// hosts) calls it on those frames until the menu has spawned.
+    pub fn step_pause_wipe(&mut self) {
+        let step = self.host.world.clock.frame_step;
+        self.pause_wipe.tick(step);
     }
 
     /// Whether the in-field pause menu is open (the engine equivalent of
@@ -1225,6 +1249,10 @@ impl<S: AudioSink> BootSession<S> {
     /// shipped hosts implemented the stack privately. Keeping it on the
     /// session is what lets an oracle and a host walk the same screens.
     fn tick_field_menu(&mut self) -> bool {
+        // No menu exists until the wipe spawns it; the pad goes nowhere.
+        if !self.pause_wipe.menu_spawned() {
+            return false;
+        }
         let pad = &self.host.world.input;
         // The edge word every menu surface in this subsystem reads. A held
         // mask is one event: `just_pressed` is `pad & !pad_prev`.
@@ -1521,6 +1549,7 @@ impl<S: AudioSink> BootSession<S> {
         // driver that ticks the session - every headless run - parked on it
         // forever. The native window still takes its own arm first (it also
         // skips its per-frame tail); both call the same kernel.
+        self.step_pause_wipe();
         let input = &self.host.world.input;
         let edge = input.pad() & !input.pad_prev();
         if self.step_name_entry_frame(edge) {

@@ -307,7 +307,21 @@ impl PlayWindowApp {
             // as retail's engaged-bit branch does - and then the boot-UI arm
             // is not taken, or the window would route input and draws to a
             // menu that is not there while the scene tick stayed skipped.
-            let press = if self.menu_runtime.is_open() {
+            // The menu spawns partway through the field's wipe to black
+            // (`BootSession::pause_wipe`): until then the field keeps drawing
+            // under the wipe and ticking (with the world in `Menu`, so the
+            // player stands still), and the boot-UI arm takes the frame from
+            // the tick the menu exists.
+            if !self.boot_ui.is_active()
+                && self.session.field_menu_is_open()
+                && self.session.pause_wipe().menu_spawned()
+            {
+                self.boot_ui = BootUiState::FieldMenu { sub: None };
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                continue;
+            }
+            let press = if self.menu_runtime.is_open() || self.session.field_menu_is_open() {
                 legaia_engine_session::PauseMenuPress::None
             } else {
                 self.session.press_field_menu(pressed_edge & 0x0008 != 0)
@@ -324,11 +338,8 @@ impl PlayWindowApp {
                     self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
                 }
                 self.tick_menu_sfx();
-                self.boot_ui = BootUiState::FieldMenu { sub: None };
-                // The boot-UI state is set above, so the readout's
-                // predicate already answers "suppressed" - step the
-                // kernel on the opening frame rather than one frame
-                // later, as every other short-circuit arm here does.
+                // The boot-UI arm waits for the wipe to spawn the menu
+                // (above); this frame the field holds still under it.
                 self.tick_field_party_hud();
                 self.prev_pad = self.pad;
                 continue;
@@ -3453,6 +3464,17 @@ impl PlayWindowApp {
             // (`MenuRuntime::shop_fade_level`; the browser page draws the
             // same quad).
             if let Some(level) = self.menu_runtime.shop_fade_level() {
+                screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
+                    u32::from(level) * 0x01_01_01,
+                    2,
+                    0,
+                ));
+            }
+            // The pause menu's wipe: the field darkening before the menu
+            // spawns and brightening after it closes (`FUN_801ED308`'s
+            // `_DAT_8007B440` through the wipe emitter) - the same
+            // subtractive quad as the shop's opening fade.
+            if let Some(level) = self.session.pause_wipe().fade_level() {
                 screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
                     u32::from(level) * 0x01_01_01,
                     2,
