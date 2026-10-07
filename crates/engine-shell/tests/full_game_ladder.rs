@@ -1726,18 +1726,23 @@ fn solo_duel(w: &legaia_engine_core::world::World) -> bool {
 /// guard for the foe's swings and halves its specials, so the rounds the foe
 /// spends against it cost little, and a Delilas special (Che's Megaton
 /// Press, Lu's Plasma Strike) lands on a guarded member far more often than
-/// not. Below three fifths of its HP the member holds the stance round after
+/// not. Below five eighths of its HP the member holds the stance round after
 /// round until the heal arm ahead of this one has topped it up.
 fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     if !solo_duel(w) {
         return false;
     }
     let a = &w.actors[usize::from(actor)].battle;
-    // Held round after round below three fifths, or while one of the foe's
+    // Held round after round below five eighths, or while one of the foe's
     // heaviest rounds so far (a Delilas special lands most of a member's HP
     // at once) would drop the member unguarded.
     let threat = BIGGEST_HIT.with(std::cell::Cell::get);
-    let low = u32::from(a.hp) * 5 < u32::from(a.max_hp) * 3 || u32::from(a.hp) <= threat;
+    // A Delilas round varies by its swing count: Che's took 716 one round
+    // and 903 two rounds later, so an Arts round waits while the member sits
+    // within three twentieths again of the worst unguarded round seen, and
+    // below five eighths of its HP (a 900-HP Gala at 62% swung into 903).
+    // Half again starved the fight: Gala guarded and healed to the cap.
+    let low = u32::from(a.hp) * 8 < u32::from(a.max_hp) * 5 || u32::from(a.hp) * 20 <= threat * 23;
     // The choice is latched per foe round: the fighter re-reads the menu on
     // every pad poll until the press lands, and a choice that flipped under
     // it would press something else.
@@ -6640,6 +6645,21 @@ fn on_tile(session: &BootSession, tile: (i16, i16)) -> bool {
 
 /// Press `mask` for one frame and release on the next: every menu surface
 /// reads `just_pressed`, so a held mask is one event.
+/// Press Start and wait out the pause wipe: retail's field session raises
+/// the wipe level from black-free to full before it spawns the menu
+/// (`FUN_801ED308`), and the menu takes no input until then
+/// (`BootSession::pause_wipe`). A press sent into the wipe is lost, and the
+/// field heal then walked out of a menu it never drove.
+fn open_pause_menu(session: &mut BootSession) {
+    tap_pad(session, PadButton::Start.mask());
+    for _ in 0..120 {
+        if session.field_menu.is_none() || session.pause_wipe().menu_spawned() {
+            break;
+        }
+        let _ = session.tick();
+    }
+}
+
 fn tap_pad(session: &mut BootSession, mask: u16) {
     session.host.world.set_pad(mask);
     let _ = session.tick();
@@ -6713,7 +6733,7 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
     if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
         return 0;
     }
-    tap_pad(session, PadButton::Start.mask());
+    open_pause_menu(session);
     if session.field_menu.is_none() {
         return 0;
     }
@@ -6853,7 +6873,7 @@ fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
     {
         return false;
     }
-    tap_pad(session, PadButton::Start.mask());
+    open_pause_menu(session);
     if session.field_menu.is_none() {
         return false;
     }

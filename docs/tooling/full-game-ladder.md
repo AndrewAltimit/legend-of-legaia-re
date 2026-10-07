@@ -499,6 +499,12 @@ half that in the Spirit stance. So once the shield has dropped, on the rounds
 the cast can come, every member above 55% of its HP takes Spirit; the others
 are the heal arm's, and the even rounds are the party's to act on.
 
+A lone member against a foe of several times its HP (the `nilboa` Delilas
+duels) alternates a Spirit round with an Arts round, and holds the stance
+while it sits below five eighths of its HP or within three twentieths again
+of the foe's worst unguarded round so far: a Delilas round's size follows its
+swing count, and Che's went from 716 to 903 two rounds apart.
+
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
 round, so the first may act after the foe), but never with the same item
