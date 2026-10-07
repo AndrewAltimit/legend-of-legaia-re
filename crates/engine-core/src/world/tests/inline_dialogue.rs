@@ -492,3 +492,31 @@ fn a_talk_face_at_on_another_placement_turns_it_to_its_bind() {
     let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
     assert!(d.min(0x1000 - d) <= 1, "the NPC faces the player: {h:#x}");
 }
+
+#[test]
+fn a_talkers_own_face_at_turns_the_talker() {
+    // `4C 85 <lo> <hi> F8` with no target byte acquires the talker itself:
+    // its walk kernel turns it toward the player (`rayman` `P1[6]`, Kina).
+    let mut world = World {
+        mode: crate::world::SceneMode::Field,
+        ..World::default()
+    };
+    world.spawn_actor(0);
+    world.player_actor_slot = Some(0);
+    world.actors[0].move_state.world_x = 2368;
+    world.actors[0].move_state.world_z = 2496;
+    world.npcs.positions.insert(4, (3136, 3136));
+    let body = vec![0x4C, 0x85, 0x0A, 0x00, 0xF8, 0x1F, b'K', 0x00];
+    world.start_inline_dialogue_with_prologue(body, 0, 5);
+    world.dialog.inline.as_mut().unwrap().npc_slot = Some(4);
+    assert_eq!(run_inline_until_box(&mut world), b"K");
+    for _ in 0..12 {
+        world.tick_field_npc_motions();
+    }
+    let h = i32::from(*world.npcs.headings.get(&4).expect("heading written"));
+    let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
+    assert!(
+        d.min(0x1000 - d) <= 1,
+        "the talker faces the player: {h:#x}"
+    );
+}

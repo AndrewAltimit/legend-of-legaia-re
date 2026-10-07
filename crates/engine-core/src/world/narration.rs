@@ -3645,6 +3645,26 @@ impl World {
             {
                 break;
             }
+            // The talker's own face-at (`4C 85|8E|8F <lo> <hi> <bind>`, no
+            // target byte): retail's acquire arm resolves the context itself
+            // (`s5 = ctx`), raises the talker's own `0x400` and advances by
+            // five (`0x801E2148..0x801E21DC`); the talker's actor tick then
+            // runs the walk kernel's FaceTarget leg (`0x8003BD44..0x8003BD50`),
+            // whose terminal frame clears the bit (`0x80038004`). The leg is
+            // armed here so the talker turns. The op itself still runs on the
+            // stand-in context below, which keeps the bit up: a record that
+            // waits for the turn (`rayman` `P1[6]`, Kina, follows its
+            // `4C 85 10 00 F8` with `B3 13 0A`) parks there as before. Releasing
+            // the park when the leg lands is retail's flow, but it runs Kina's
+            // guide beat to its end and the full-game ladder's pad route then
+            // loops on the `rayman` walk-ons (see `motion-vm.md`).
+            // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C, FUN_8003BC08
+            if let Some(slot) = host.world.dialog.stepping_inline_npc
+                && let Some(ramp) =
+                    crate::inline_dialogue::TalkFaceRamp::from_own_acquire(&id.bytecode, id.pc)
+            {
+                host.world.face_leg_npc(slot, ramp);
+            }
             // A halt-acquire of a placement (`CC <id> 85|8E|8F <lo> <hi>
             // <bind>`): the target's walk kernel turns it toward the bind
             // while the talk runs on past the op, as in a cutscene record
