@@ -1141,6 +1141,10 @@ impl BakaFight {
             rung_prize: self.cfg[1].gold_reward,
             hp: [self.f[0].hp, self.f[1].hp],
             combo_taken: [self.f[0].combo, self.f[1].combo],
+            // `FUN_801D3468` advances the round timer only once the round is
+            // decided (a finisher flag or both HPs at zero) - in the port,
+            // once the exchange that decided it has left the fight phase.
+            round_clock: !matches!(self.phase, MatchPhase::Fighting),
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
@@ -1865,8 +1869,14 @@ impl BakaFight {
                 return;
             }
             MatchPhase::RoundOver(_) => {
-                // Next round starts on the following tick (the retail banner
-                // sequence sits here).
+                // The round stays decided - fighters, HP and the result
+                // banner as they were - until the cabinet's duel state has
+                // run the round timer to `0xB5` and moved to its round setup
+                // (`0x801D0620..0x801D063C`, the timer zeroed with it); the
+                // next round starts there.
+                if self.cabinet.state() == crate::baka_cabinet::ST_DUEL {
+                    return;
+                }
                 self.round += 1;
                 self.f[0].reset_round();
                 self.f[1].reset_round();
@@ -3251,8 +3261,10 @@ mod tests {
     fn the_cabinet_shell_banks_the_rung_prize_and_advances_the_stage() {
         let mut f = fight();
         let stage_before = f.cabinet().stage();
-        f.f[0].round_wins = ROUND_WIN_TARGET;
-        // The cabinet's round bracket has to run out before it reads the win.
+        f.f[0].round_wins = ROUND_WIN_TARGET - 1;
+        f.end_round(0, false);
+        // The cabinet's round bracket - counted from the deciding exchange -
+        // has to run out before it reads the win.
         for _ in 0..0xB6 {
             f.tick(1);
         }
@@ -3323,17 +3335,20 @@ mod tests {
         let mut f = fight();
         let mut rounds = 0;
         let mut guard = 0;
+        let mut was_over = false;
         while !f.match_over() {
             guard += 1;
             assert!(guard < 10_000, "match terminates");
             match f.phase() {
                 MatchPhase::Fighting => {
+                    was_over = false;
                     f.choose(0, BakaAttack::B);
                     f.choose(1, BakaAttack::A);
                 }
                 MatchPhase::RoundOver(w) => {
                     assert_eq!(w, 0);
-                    rounds += 1;
+                    rounds += u32::from(!was_over);
+                    was_over = true;
                 }
                 MatchPhase::MatchOver(_) => {}
             }
@@ -3343,6 +3358,34 @@ mod tests {
         assert_eq!(f.round_wins(0), ROUND_WIN_TARGET);
         assert_eq!(rounds, 1, "second round win ends the match directly");
         assert_eq!(f.gold_reward(), 30);
+    }
+
+    /// A decided round holds - HP, round counter and result banner as they
+    /// were - for the cabinet's `0xB5`-frame round timer, counted from the
+    /// deciding exchange (`FUN_801D3468` advances it only once the round is
+    /// decided; the duel state reads it at `0x801D0620`), however long the
+    /// fight ran before the KO.
+    #[test]
+    fn a_decided_round_holds_for_the_result_timer_from_the_ko() {
+        let mut f = fight();
+        // A long fight first: the timer must not have been counting.
+        for _ in 0..0x200 {
+            f.tick(1);
+        }
+        f.f[1].hp = 0;
+        f.end_round(0, false);
+        assert!(matches!(f.phase(), MatchPhase::RoundOver(0)));
+        let round = f.round;
+        let mut held = 0;
+        while matches!(f.phase(), MatchPhase::RoundOver(_)) {
+            assert_eq!(f.f[1].hp, 0, "the KO'd HP stays down while held");
+            assert_eq!(f.round, round);
+            f.tick(1);
+            held += 1;
+            assert!(held < 0x400, "the round restarts");
+        }
+        assert!((0xB5..=0xB8).contains(&held), "held {held} ticks");
+        assert_eq!(f.round, round + 1);
     }
 
     #[test]

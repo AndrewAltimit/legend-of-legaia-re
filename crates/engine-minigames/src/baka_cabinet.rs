@@ -995,6 +995,12 @@ pub struct CabinetInput {
     pub hp: [i32; 2],
     /// Per-slot consecutive-hits-taken counters, for the HUD pass.
     pub combo_taken: [i32; 2],
+    /// The round's result clock runs: the fight resolution SM's condition
+    /// for advancing the round timer `DAT_801DBF88` this frame
+    /// (`FUN_801D3468`, `0x801D3614..0x801D3668`) - either fighter's
+    /// finisher flag `+0x2C` (`0x801DBFE8` / `0x801DC090`, raised when a
+    /// special lands its full chain, `0x801D3C2C`) or both HPs at zero.
+    pub round_clock: bool,
 }
 
 /// PORT: FUN_801cf388 - the Baka Fighter cabinet's top-level state machine.
@@ -1612,19 +1618,21 @@ impl BakaCabinet {
 
     /// The duel state's own body: the round bracket plus the pause-menu edge.
     ///
-    /// One port-side departure, and it is the timer. Retail's duel state only
-    /// *reads* the round timer `DAT_801DBF88` against `0xB5` - it never
-    /// advances it, because the fight resolution SM (`FUN_801D3468`) and the
-    /// actor tick own that counter. The port's cabinet has no such sibling
-    /// driving it, so it advances the timer itself; the threshold, the
-    /// bookkeeping it gates and the exits are retail's.
+    /// Retail's duel state only *reads* the round timer `DAT_801DBF88`
+    /// against `0xB5` (`0x801D0620`); the fight resolution SM `FUN_801D3468`
+    /// advances it, by the frame step, only on the frames its round is
+    /// decided ([`CabinetInput::round_clock`]). So the hold is counted from
+    /// the deciding exchange, not from the duel's start. The port's cabinet
+    /// advances the word itself on exactly those frames.
     fn tick_duel(&mut self, input: &CabinetInput, f: &mut CabinetFrame) {
         let step = input.frame_step;
         // The menu cursor is re-zeroed every duel frame, not on entry to the
         // menu - so a re-opened pause menu always starts on its first row.
         self.menu_cursor = 0;
         if self.state_timer < 0xB5 {
-            self.state_timer += step;
+            if input.round_clock {
+                self.state_timer += step;
+            }
         } else {
             // Round over.
             self.state_timer = 0;
@@ -2084,6 +2092,7 @@ mod tests {
         let won = CabinetInput {
             frame_step: 1,
             player_round_wins: 2,
+            round_clock: true,
             win_target: 2,
             rung_prize: 40,
             ..Default::default()
@@ -2107,6 +2116,7 @@ mod tests {
         messy.enter_duel();
         let scrappy = CabinetInput {
             opponent_round_wins: 1,
+            round_clock: true,
             ..won
         };
         for _ in 0..0xB6 {
@@ -2122,6 +2132,7 @@ mod tests {
         let lost = CabinetInput {
             frame_step: 1,
             opponent_round_wins: 2,
+            round_clock: true,
             win_target: 2,
             ..Default::default()
         };
@@ -2231,6 +2242,7 @@ mod tests {
         let won = CabinetInput {
             frame_step: 1,
             player_round_wins: 2,
+            round_clock: true,
             opponent_round_wins: 1,
             win_target: 2,
             rung_prize: 10,

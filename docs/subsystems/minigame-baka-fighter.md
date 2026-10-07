@@ -906,7 +906,8 @@ In the port they are `BakaChrome::raise_result`, raised by `BakaFight`'s
 draws: the native window and the browser play page through
 `hud_widget_quads`, the minigames page through `baka_chrome_json`. Retail's
 lifetime belongs to the spawn template, which the port does not run. The port
-holds the banners for the duel state's round-over hold (`0xB5` frames), then
+holds the banners for the duel state's round-over hold (`0xB5` frames from the
+deciding exchange, the same frames the round itself stays decided), then
 lets the next round's banner, deferred meanwhile, take the screen. On the
 deciding round the banners stand until the cabinet reaches its tally.
 **Inferred** - no library capture holds a result screen.
@@ -1790,10 +1791,18 @@ tick beats a real ladder opponent and banks the parsed prize). Host
 simplifications, documented in the module: exchange recovery is immediate
 (cooldowns pace re-entry).
 
-One host departure is worth naming: retail's duel state only *reads* the round
-timer `DAT_801DBF88` against `0xB5` - the fight resolution SM and the actor tick
-are what advance it - while the port's cabinet has no sibling driving it and so
-advances it itself. The threshold and everything it gates are retail's.
+Retail's duel state only *reads* the round timer `DAT_801DBF88` against
+`0xB5` (`0x801D0620`); the fight resolution SM advances it, by the frame step,
+only on the frames its round is decided (`0x801D3614..0x801D3668`): either
+fighter's finisher flag `+0x2C` - raised by `FUN_801D3B18` when a special lands
+its full chain (`0x801D3C2C`), which is how a KO ends a round - or both HPs at
+zero. So the round-over hold runs `0xB5` frames from the deciding exchange, and
+until the duel state sees it out and moves to the round setup (zeroing the
+timer, `0x801D063C`) the fighters, their HP and the result banners stay as the
+exchange left them. The port's cabinet advances the word itself on those frames
+(`CabinetInput::round_clock`), and `BakaFight` holds `RoundOver` until the
+cabinet has left the duel state, so all three surfaces show the decided round
+for the whole hold.
 
 The **cabinet shell** (`FUN_801cf388`) runs from-scratch as
 `engine-core::baka_cabinet::BakaCabinet`, and `BakaFight` owns one, stepping it
