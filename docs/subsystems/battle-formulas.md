@@ -541,7 +541,8 @@ Its HP delta is built from live battle stats in three stages - all byte-traced
 from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls. In the
 pseudocode below `INT` is the actor's `+0x168` stat (for monsters that is
 record `+0x18`, the bestiary INT column; for the party caster it is the
-character's `+0x168` accuracy line) - **not** the AGL action gauge (`+0x0E`):
+character record's live INT `+0x11A`, which the battle loader copies in with no
+equipment fold) - **not** the AGL action gauge (`+0x0E`):
 
 ```c
 // Stage 1 - rolls (FUN_801dd0ac, summon branch attacker_slot == 7)
@@ -1185,7 +1186,20 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 | `+0x18` | `+0x168/+0x16A` | **INT** | magical damage / magic defense (summon/arts kernel) + accuracy/evasion seed (selector 9); the bestiary INT column |
 | `+0x1A` | `+0x164/+0x166` | **SPD** | turn-order initiative seed |
 
-> **Stat names** match the game's own labels (the "Power Up" buff prints *"agility increased!"* and bumps `+0x0E`) and the fan bestiaries; the curated `enemies.toml` `agl` / `int` columns byte-match `+0x0E` / `+0x18` (see `gamedata/tests/enemy_stats_vs_disc`). Earlier drafts of this doc swapped two of them - what was labeled "SP/spirit" is **AGL** (`+0x0E`), and what was labeled "AGL" is **INT** (`+0x18`). The `+0x168` actor slot ("accuracy" below) is therefore the monster's INT; party members seed `+0x168` from their AGL-derived accuracy instead (an engine model). Per Meth962, INT "affects your magical damage and defense against other magical spells" - which the summon/arts kernel (`FUN_801dd0ac`) bears out: attacker INT is a damage term, defender INT a mitigation term.
+> **Stat names** match the game's own labels (the "Power Up" buff prints
+> *"agility increased!"* and bumps `+0x0E`) and the fan bestiaries; the curated
+> `enemies.toml` `agl` / `int` columns byte-match `+0x0E` / `+0x18` (see
+> `gamedata/tests/enemy_stats_vs_disc`). Earlier drafts of this doc swapped two
+> of them - what was labeled "SP/spirit" is **AGL** (`+0x0E`), and what was
+> labeled "AGL" is **INT** (`+0x18`). The `+0x168` actor slot ("accuracy" below)
+> is therefore the monster's INT, a full halfword (Songi's boosted 324 does not
+> fit a byte, and every reader loads it with `lhu`); a party member's is its INT
+> too - `FUN_80053CB8` loads record `+0x11A` into `+0x16A` (`0x80053F88`) and
+> copies it to `+0x168` (`0x800541CC`), and its equipment loop folds only the
+> UDF / LDF / SPD bytes. Per Meth962, INT "affects your magical damage and
+> defense against other magical spells" - which the summon/arts kernel
+> (`FUN_801dd0ac`) bears out: attacker INT is a damage term, defender INT a
+> mitigation term.
 
 **Battle-load stat boost.** The record halfwords above are *not* the values the fight uses. After the plain copy, `FUN_80054CB0` boosts four combat stats, picking one of two profiles by the battle-context flag `_DAT_8007BD24 + 0x287` (= `(*(u8*)0x8007BD60 >> 5) & 4`, bit 7 of a per-battle flags byte set by `FUN_800513F0`):
 
@@ -1323,16 +1337,15 @@ while the queued Item action is still owed a turn. Retail's "Miss" on a normal a
 **Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; no live
 strike path applies it. `World::apply_basic_attack` **does not** - it used to, and the consequence was a fight running backwards.
 Each actor's `+0x168` value lives in the World-side `battle.accuracy` /
-`battle.evasion` arrays, and the two sides are seeded from different stats:
-party slots from each character's AGL-derived `acc`/`eva` (via
-`compute_battle_stats` in `seed_party_battle_stats`), monster slots from
-`MonsterDef::accuracy`/`evasion` (both = the monster's INT, record `+0x18`). A
-level-one party carries AGL around 100 where the opening bestiary carries INT
-around 12, so gating melee on `acc / (acc + eva)` gave the party an ~89% hit
-rate and the monsters ~11%. Regression:
-`apply_basic_attack_does_not_roll_accuracy`.
-
-For party members, both accuracy and evasion derive from the character's AGL with the same scaling, so the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied. (For monsters, `+0x168` is loaded directly from record `+0x18` = INT.) That the two sides read different record columns at all is an **engine model**, and it is why any surviving consumer of these arrays needs re-checking before it is trusted for balance.
+`battle.evasion` arrays, both seeded from INT: party slots from the
+character's INT less its equipment INT bytes (`seed_party_battle_stats`),
+monster slots from the boosted record `+0x18` (the battle seed in
+`field_loop`). An earlier seeding took the party side from AGL, which put
+Vahn's 190 where retail reads his 147 and gave every party summon and every
+monster special's defender roll the wrong stat; when that seeding was paired
+with a melee accuracy gate, a level-one party (AGL around 100) against the
+opening bestiary (INT around 12) hit ~89% of the time and the monsters ~11%.
+Regression: `apply_basic_attack_does_not_roll_accuracy`.
 
 #### Stat-buff selectors (1..7)
 

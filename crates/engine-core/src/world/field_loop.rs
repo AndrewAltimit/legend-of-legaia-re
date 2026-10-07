@@ -466,7 +466,6 @@ impl World {
                 let bs = def.installed_stats(scripted);
                 let (agl, attack, udf, ldf, intel, speed) =
                     (bs[0], bs[1], bs[2], bs[3], bs[4], bs[5]);
-                let int_byte = intel.min(u8::MAX as u16);
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;
                 a.battle.max_hp = def.hp;
@@ -500,11 +499,18 @@ impl World {
                 if let Some(s) = self.battle.speed.get_mut(mslot) {
                     *s = speed;
                 }
+                // INT into the `+0x168` halfword, whole: `FUN_80054CB0`
+                // stores the boosted record `+0x18` with `sh`
+                // (`0x8005520C`, `0x8005530C`), and every reader
+                // (`FUN_801DD0AC`, both damage wrappers, selector 9 of
+                // `FUN_800402F4`) loads it with `lhu`. A byte clamp here
+                // understated every late boss's magic attack and magic
+                // defence - Songi's 324 read as 255.
                 if let Some(s) = self.battle.accuracy.get_mut(mslot) {
-                    *s = int_byte;
+                    *s = intel;
                 }
                 if let Some(s) = self.battle.evasion.get_mut(mslot) {
-                    *s = int_byte;
+                    *s = intel;
                 }
             }
         }

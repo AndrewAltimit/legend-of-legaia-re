@@ -136,7 +136,7 @@ pub fn arts_physical_predamage_lazy(
     attacker_roll = apply_status_weaken(attacker_roll, attacker.status);
 
     // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
-    if target.guard == 4 {
+    if target.guard == GUARD_SPIRIT_STANCE {
         defender = defender.saturating_mul(2);
     }
     defender = apply_status_weaken(defender, target.status);

@@ -592,11 +592,29 @@ impl World {
             if let Some(s) = self.battle.equip_atk.get_mut(slot) {
                 *s = equip_atk;
             }
+            // The `+0x168` halfword is the character's **INT**, not an
+            // AGL-derived accuracy: `FUN_80053CB8` loads record `+0x11A`
+            // (the live INT, `0x80053F88`) into `+0x16A` and copies it to
+            // `+0x168` (`0x800541CC`), with no equipment fold - the loop at
+            // `0x80054010..0x80054144` adds only the UDF / LDF / SPD bytes.
+            // Every reader treats it as INT: the summon roll's `caster*2`
+            // term, the defender roll's `INT*2` against a monster special,
+            // the AGL-status roll and selector 9. So the line is the
+            // aggregator's INT (base plus any accessory percent boost) less
+            // the equipment INT bytes, which retail shows in the menu only.
+            let equip_int: i32 = record
+                .equip
+                .iter()
+                .filter(|&&id| id != 0)
+                .filter_map(|&id| self.tables.equipment_table.get(id))
+                .map(|m| i32::from(m.int))
+                .sum();
+            let int_line = (i32::from(stats.int) - equip_int).clamp(0, 999) as u16;
             if let Some(s) = self.battle.accuracy.get_mut(slot) {
-                *s = stats.acc;
+                *s = int_line;
             }
             if let Some(s) = self.battle.evasion.get_mut(slot) {
-                *s = stats.eva;
+                *s = int_line;
             }
             // Resolved SPD (base + the equipment table's footwear bonus). This
             // used to be computed into `StatRecord::base_spd`, folded by the

@@ -764,11 +764,14 @@ impl World {
     /// Build the defender-side [`SummonRollActor`] for an actor slot - the
     /// stat bridge shared by the monster special-attack roll
     /// ([`Self::enemy_move_predamage`]) and the player summon roll
-    /// ([`Self::player_summon_predamage`]). AGL = `battle_accuracy` (the
-    /// `+0x168` AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
+    /// ([`Self::player_summon_predamage`]). INT = `battle_accuracy` (the
+    /// `+0x168` halfword); HP = `battle.hp` (`+0x14c`); the two
     /// defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
     /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`];
-    /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
+    /// the guard byte (`+0x1de`) reads `4` for a party member in the Spirit
+    /// stance, which the scale stage `FUN_801dd864` doubles the defender roll
+    /// on (`0x801DD8F4`) ahead of the finisher's own guard halve; status-weaken
+    /// (`+0x16e`) defaults to none.
     pub(in crate::world::battle) fn summon_roll_defender(
         &self,
         slot: u8,
@@ -797,7 +800,17 @@ impl World {
             stat_a,
             stat_b,
             status: 0,
-            guard: 0,
+            guard: if self
+                .battle
+                .guarding
+                .get(slot as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                vm::battle_formulas::GUARD_SPIRIT_STANCE
+            } else {
+                0
+            },
         })
     }
 
