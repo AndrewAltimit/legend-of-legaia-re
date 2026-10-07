@@ -46,9 +46,10 @@
 //! REF: FUN_80021DF4 - the per-frame actor tick whose kind-7 arm is the
 //! other retail route into the enqueue.
 //!
-//! **The field-VM opcode is the minor route, not the whole of it.** No
-//! on-disc scene script uses sub-op `0x12`, so that arm never fires on retail
-//! data - but a reference scan finds `FUN_800468A4` reached from two other
+//! **The field-VM opcode is not the whole of it.** Sub-op `0x12` ships in the
+//! ten ending-vignette scenes (the photo grab of the drawn frame into
+//! `(512, 0)`, `docs/subsystems/script-vm.md`) - and a reference scan finds
+//! `FUN_800468A4` reached from two other
 //! places, and the busier one is not a script at all: the per-frame actor tick
 //! `FUN_80021DF4` calls it at `0x80022CB0` on its **kind-7** arm
 //! (`lh v1,0x5A(actor); li v0,7`), i.e. an actor whose draw *is* a VRAM

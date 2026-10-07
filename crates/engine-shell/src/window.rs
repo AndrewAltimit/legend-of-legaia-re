@@ -112,6 +112,11 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
+    /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
+    /// the capture frame - the vignette record that spawned it ran before
+    /// the record the seed resumes.
+    pub seat_panel: Option<legaia_engine_core::screen_fx::PanelWidget>,
     /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
@@ -427,6 +432,9 @@ impl ScreenshotConfig {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
                 <[u8; 3]>::try_from(c).ok()
             }),
+            seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
+                .ok()
+                .and_then(|v| legaia_parity::retail_compare::panel_from_env(&v)),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')

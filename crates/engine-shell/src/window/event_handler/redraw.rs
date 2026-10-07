@@ -750,6 +750,13 @@ impl PlayWindowApp {
                 self.session.host.world.presentation.clear_rgb = rgb;
                 self.session.host.world.presentation.clear_ramp = None;
             }
+            if due && let Some(p) = sc.seat_panel {
+                let world = &mut self.session.host.world;
+                let mut fx = std::mem::take(&mut world.presentation.fx);
+                fx.panel = Some(p);
+                world.presentation.fx_frame = fx.tick(0, |i| world.system_flag_test(i));
+                world.presentation.fx = fx;
+            }
             if due {
                 for &(record, model) in &sc.seat_object_models {
                     self.session
@@ -3507,6 +3514,25 @@ impl PlayWindowApp {
                 (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
                 _ => scene,
             };
+            // A field-VM `43 12` copy that reads the display framebuffer
+            // (the ending vignettes' photo grab into `(512, 0)`) waits for
+            // this frame: land it in the CPU VRAM's display page, and the
+            // next drain (`apply_world_clut_fx`) runs the copy. Shared
+            // handshake `World::framebuffer_grab_pending`; the browser page
+            // lands its own frame through `play_land_frame_grab`.
+            if self.session.host.world.framebuffer_grab_pending()
+                && let Some(base) = self.cpu_vram_base.as_mut()
+            {
+                match r.capture_scene_rgba(legaia_engine_render::RenderTarget::Scene(&scene)) {
+                    Ok(img) => {
+                        legaia_engine_render::vram_capture::land_display_frame(
+                            &img.rgba, img.width, img.height, base,
+                        );
+                        self.session.host.world.land_framebuffer();
+                    }
+                    Err(e) => log::error!("play-window: framebuffer grab: {e:#}"),
+                }
+            }
             // The intro's primitives composite *over* the scene in one frame.
             // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
             // mode which clears and draws nothing but quads, so it could never

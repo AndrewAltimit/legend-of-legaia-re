@@ -85,6 +85,9 @@ pub struct AmbientFxState {
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
     pub(crate) vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
+    /// The frame-grab handshake for a rect copy that reads the display
+    /// framebuffer - see [`crate::world::World::framebuffer_grab_pending`].
+    pub frame_grab: FrameGrab,
     /// Capture alignment for the retail comparison's frame: a retail state's
     /// live mode-3 cycler snapshots (adds, mode and white amount per captured
     /// rect), written over the matching parts' own values when
@@ -122,6 +125,7 @@ impl AmbientFxState {
             script_vram_moves: Vec::new(),
             script_vram_stp: Vec::new(),
             vram_rect_copies: Vec::new(),
+            frame_grab: FrameGrab::default(),
             cell_fx_seed: Vec::new(),
             vram_rect_seed: Vec::new(),
         }
@@ -132,4 +136,25 @@ impl Default for AmbientFxState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The frame-grab handshake behind an op-`0x43` sub-`0x12` copy whose
+/// source is the display framebuffer.
+///
+/// On the console the framebuffer is VRAM, so `43 12 00 00 00 00 40 01 E0 00
+/// 00 02 00 00` - every ending vignette's (`edteien`, `edbylon`, ... `P2`) -
+/// copies the frame the GPU just drew (`(0, 0)`, `320 x 224`) to `(512, 0)`,
+/// and the image panel `43 13` spawns over that rect shows it as the
+/// vignette's photo. The port draws into a GPU attachment the software VRAM
+/// never sees, so a host that can read its frame back opts in with
+/// [`Self::enabled`]: a framebuffer-reading copy then waits in the queue
+/// until the host has landed a frame in the display rect and called
+/// [`crate::world::World::land_framebuffer`]. A host that cannot (the
+/// headless session) leaves it off and the copy runs at once, as before.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameGrab {
+    /// The host lands its frame into VRAM on request.
+    pub enabled: bool,
+    /// A frame has been landed since the last framebuffer copy ran.
+    pub landed: bool,
 }

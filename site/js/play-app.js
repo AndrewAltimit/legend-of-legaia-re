@@ -3095,6 +3095,21 @@ void main() {
           this.renderer.uploadVram(rt.field_vram_bytes());
         } catch (e) { /* presentation-only; keep playing without the capture */ }
       }
+      /* A field-VM `43 12` copy that reads the display framebuffer (the
+       * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
+       * frame: read it back and land it; the next field-VRAM pass runs the
+       * copy and the ordinary dirty re-upload carries it. The native
+       * window's twin is its redraw's `framebuffer_grab_pending` block. */
+      if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
+          rt.play_frame_grab_pending()) {
+        try {
+          const gl = this.renderer.gl;
+          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_land_frame_grab(buf, cw, ch);
+        } catch (e) { /* presentation-only */ }
+      }
 
       /* Screen-space PSX primitives over the finished 3D frame: the
        * field-to-battle transition's five style bodies + backdrop + fade,

@@ -304,6 +304,10 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// The live image-panel widget ([`retail_panel`]), handed to the image
+    /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
+    /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
+    pub panel: Option<legaia_engine_core::screen_fx::PanelWidget>,
     /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
@@ -473,6 +477,111 @@ fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: usize) -> Ve
         .flat_map(|row| (0..w).map(move |col| (row, col)))
         .map(|(row, col)| texels[((row + h - dy % h) % h) * w + (col + w - dx % w) % w])
         .collect()
+}
+
+/// The image-panel widget's handler (`FUN_801F849C`, PROT 0900).
+const PANEL_TICK: u32 = 0x801F_849C;
+
+/// The first live image-panel widget on a retail state's actor lists
+/// ([`legaia_engine_core::screen_fx::PanelWidget`]'s field map: current
+/// `+0x14..+0x1A` / `+0x24`, targets `+0x3C..+0x42` / `+0x26`, base sizes
+/// `+0xB8..+0xBC`, tween `+0x9C` / `+0x9E`, spawn size `+0xAA` / `+0xAC`,
+/// texel origin `+0xA4` / `+0xA8`, pages `+0xA0` / `+0xA2`).
+///
+/// The ending vignettes spawn the panel from the vignette's own record
+/// (`43 12` grabs the drawn frame into `(512, 0)`, `43 13` shows it), and a
+/// capture is usually parked in the credits record that runs after it -
+/// `ending_panel_corner` holds record 13, the panel already shrunk to the
+/// corner - so a seed that resumes the running record never spawns it.
+pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_core::screen_fx::PanelWidget> {
+    let n = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PANEL_TICK)?;
+    let h = |o: u32| game_anchors::i16_at(ram, n + o);
+    Some(legaia_engine_core::screen_fx::PanelWidget {
+        cur: [h(0x14), h(0x16), h(0x18), h(0x1A), h(0x24)],
+        target: [h(0x3C), h(0x3E), h(0x40), h(0x42), h(0x26)],
+        base: [h(0xB8), h(0xBA), h(0xBC)],
+        t: h(0x9C),
+        dur: h(0x9E),
+        w0: h(0xAA),
+        h0: h(0xAC),
+        u: game_anchors::u8_at(ram, n + 0xA4),
+        v: game_anchors::u8_at(ram, n + 0xA8),
+        texpage: game_anchors::u16_at(ram, n + 0xA0),
+        texpage2: game_anchors::u16_at(ram, n + 0xA2),
+    })
+}
+
+/// The VRAM the panel samples - its spawn-size rect from the first page's
+/// origin plus the texel offset (the second page continues it to the
+/// right) - with the state's texels there.
+fn panel_source_rects(
+    p: &legaia_engine_core::screen_fx::PanelWidget,
+    vram: &[u8],
+) -> Vec<SeededVramRect> {
+    let x = (p.texpage & 0xF) * 64 + u16::from(p.u);
+    let y = ((p.texpage >> 4) & 1) * 256 + u16::from(p.v);
+    let (w, h) = (p.w0.clamp(0, 1024) as u16, p.h0.clamp(0, 512) as u16);
+    if w == 0 || h == 0 || vram.len() != 1024 * 512 * 2 {
+        return Vec::new();
+    }
+    let texels = (0..h)
+        .flat_map(|row| (0..w).map(move |col| (row, col)))
+        .map(|(row, col)| {
+            let o = (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
+            u16::from_le_bytes([vram[o], vram[o + 1]])
+        })
+        .collect();
+    vec![((x, y, w, h), texels)]
+}
+
+/// [`retail_panel`] as `LEGAIA_SEAT_PANEL`: the widget's fields as
+/// comma-separated integers in [`panel_from_env`]'s order.
+pub fn panel_env(p: &legaia_engine_core::screen_fx::PanelWidget) -> String {
+    let mut v: Vec<i32> = Vec::new();
+    v.extend(p.cur.iter().map(|&x| i32::from(x)));
+    v.extend(p.target.iter().map(|&x| i32::from(x)));
+    v.extend(p.base.iter().map(|&x| i32::from(x)));
+    v.extend([
+        i32::from(p.t),
+        i32::from(p.dur),
+        i32::from(p.w0),
+        i32::from(p.h0),
+        i32::from(p.u),
+        i32::from(p.v),
+        i32::from(p.texpage),
+        i32::from(p.texpage2),
+    ]);
+    v.iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Inverse of [`panel_env`].
+pub fn panel_from_env(s: &str) -> Option<legaia_engine_core::screen_fx::PanelWidget> {
+    let v: Vec<i32> = s
+        .split(',')
+        .map(|t| t.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    if v.len() != 21 {
+        return None;
+    }
+    let h = |i: usize| v[i] as i16;
+    Some(legaia_engine_core::screen_fx::PanelWidget {
+        cur: [h(0), h(1), h(2), h(3), h(4)],
+        target: [h(5), h(6), h(7), h(8), h(9)],
+        base: [h(10), h(11), h(12)],
+        t: h(13),
+        dur: h(14),
+        w0: h(15),
+        h0: h(16),
+        u: v[17] as u8,
+        v: v[18] as u8,
+        texpage: v[19] as u16,
+        texpage2: v[20] as u16,
+    })
 }
 
 /// [`retail_scroll_rects`] as the bytes of a `LEGAIA_SEAT_VRAM_RECTS` file:
@@ -862,6 +971,7 @@ impl RetailObs {
                 Vec::new()
             },
             scroll_rects: Vec::new(),
+            panel: None,
             object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_models(ram)
             } else {
@@ -946,6 +1056,10 @@ impl RetailObs {
             && matches!(self.class, StateClass::Field | StateClass::WorldMap)
         {
             self.scroll_rects = retail_scroll_rects(ram, v);
+            self.panel = retail_panel(ram);
+            if let Some(p) = self.panel {
+                self.scroll_rects.extend(panel_source_rects(&p, v));
+            }
         }
     }
 
@@ -984,6 +1098,9 @@ impl RetailObs {
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
+        }
+        if let Some(p) = self.panel {
+            env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));
         }
         if !self.scroll_rects.is_empty() {
             let dir = crate::retail_compare_image::work_dir(out_dir);

@@ -1324,12 +1324,19 @@ Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
 `enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
 the host the one or two calls in emission order.
 
-Only `op43_sub12_calls` is wired. The host trait method that receives the
-calls has a no-op default body and no renderer implements it, so
-`build_packet` and `enqueue` are exercised by tests alone - wiring them
-needs a GP0-level host owning an ordering table and the back-buffer flag.
-No on-disc scene script uses sub-op `0x12`, so the arm never fires on
-retail data either way.
+The ten ending-vignette scenes (`edteien`, `edbylon`, `edbalden`,
+`edretoin`, `edkorout`, `edbubu`, ...) each issue
+`43 12 00 00 00 00 40 01 E0 00 00 02 00 00` just before the image panel
+`43 13` with the same payload: copy the frame the GPU has drawn (`(0, 0)`,
+`320 x 224`) to `(512, 0)`, which the panel then shows as the vignette's
+photo, shrinking it into a corner beside the credit names. On the console
+the framebuffer is VRAM; the port's frame lives in a GPU attachment, so the
+copy waits on a frame-grab handshake (`World::framebuffer_grab_pending` /
+`land_framebuffer`, `crate::world::FrameGrab`): a play host reads its drawn
+frame back into the display page (`legaia_engine_ui::vram_capture::land_display_frame`),
+and the next drain (`World::apply_vram_rect_copies`) runs the copy. Both play
+hosts take part; a host that cannot read back leaves the handshake off and
+the copy runs at once.
 
 ### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 

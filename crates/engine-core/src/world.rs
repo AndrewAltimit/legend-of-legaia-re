@@ -104,7 +104,7 @@ mod types;
 mod world_map_state;
 mod world_toggles;
 
-pub use ambient_fx_state::{AmbientFxState, SeededVramRect};
+pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
 pub use audio_residency::{
     DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
     SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
@@ -220,6 +220,7 @@ mod scene_program;
 pub use scene_program::SceneProgramFrame;
 mod vm_hosts;
 mod vram_rect_fx;
+pub use vram_rect_fx::FRAMEBUFFER_LAND_RECT;
 pub use vram_rect_fx::OT_LEN_UNBOUNDED;
 mod worldmap;
 

@@ -2503,6 +2503,42 @@ impl LegaiaRuntime {
             .unwrap_or(false)
     }
 
+    /// Whether a field-VM `43 12` copy is waiting on the drawn frame
+    /// (`World::framebuffer_grab_pending` - the ending vignettes' photo
+    /// grab). The page answers like the transition capture: read back the
+    /// field 3D pass and hand it to [`Self::play_land_frame_grab`].
+    pub fn play_frame_grab_pending(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| h.world.framebuffer_grab_pending())
+    }
+
+    /// Land the drawn frame (RGBA readback, bottom-up rows, WebGL order) in
+    /// the scene VRAM's display page and release the held copy, which the
+    /// next field-VRAM pass runs - the native window's twin of the same
+    /// handshake (`legaia_engine_ui::vram_capture::land_display_frame`).
+    pub fn play_land_frame_grab(&mut self, rgba: &[u8], width: u32, height: u32) {
+        let row = width as usize * 4;
+        if row == 0 || rgba.len() < row * height as usize {
+            return;
+        }
+        let flipped: Vec<u8> = rgba[..row * height as usize]
+            .chunks_exact(row)
+            .rev()
+            .flatten()
+            .copied()
+            .collect();
+        let Some(host) = self.scene_host.host_mut() else {
+            return;
+        };
+        let Some(res) = host.resources.as_mut() else {
+            return;
+        };
+        legaia_engine_ui::vram_capture::land_display_frame(&flipped, width, height, &mut res.vram);
+        host.world.land_framebuffer();
+        self.field_vram_dirty = true;
+    }
+
     /// Land the field-frame capture: blit the RGBA readback (bottom-up rows,
     /// WebGL order) into the texture-page rects the armed style samples,
     /// inside a clone of the scene VRAM. From this call on

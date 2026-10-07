@@ -49,6 +49,22 @@ fn unpack_yx(word: u32) -> (u16, u16) {
 /// the slot it passes is the constant `6`.
 pub const OT_LEN_UNBOUNDED: i32 = i32::MAX;
 
+/// The display buffers' VRAM extent: the two `320 x 240` pages at `(0, 0)`
+/// and `(0, 240)` (`legaia_engine_vm::vram_rect_copy::BACK_BUFFER_Y_BIAS`).
+const FRAMEBUFFER_W: i16 = 320;
+const FRAMEBUFFER_H: i16 = 480;
+
+/// Where a host lands its drawn frame for a framebuffer copy: the front
+/// display page from its first drawn row. Retail's draw offset is `(0, 4)`
+/// (the `320 x 224` drawing area, `docs/subsystems/renderer.md`), and the
+/// port's logical row `y` is retail's draw row `y`, so the frame's rows land
+/// at VRAM rows `4..240` - a host passes its frame's top `236` rows.
+pub const FRAMEBUFFER_LAND_RECT: (u16, u16, u16, u16) = (0, 4, 320, 236);
+
+fn reads_framebuffer(c: &RectCopyCall) -> bool {
+    c.src_x < FRAMEBUFFER_W && c.src_y < FRAMEBUFFER_H && c.w > 0 && c.h > 0
+}
+
 impl World {
     /// Queue the one or two `FUN_800468A4` calls the field-VM arm resolved -
     /// the `FieldHost::op43_vram_rect_copy` host hook.
@@ -73,7 +89,18 @@ impl World {
         back_buffer: bool,
     ) -> bool {
         let mut wrote = false;
+        let grab = self.ambient.frame_grab;
+        let hold = grab.enabled && !grab.landed;
+        let mut held = Vec::new();
+        let mut read_frame = false;
         for call in std::mem::take(&mut self.ambient.vram_rect_copies) {
+            if reads_framebuffer(&call) {
+                if hold {
+                    held.push(call);
+                    continue;
+                }
+                read_frame = true;
+            }
             let EnqueueOutcome::Linked { packet, .. } =
                 enqueue(call, OT_LEN_UNBOUNDED, back_buffer)
             else {
@@ -90,7 +117,32 @@ impl World {
             vram.move_image(sx, sy, w, h, dx, dy);
             wrote = true;
         }
+        self.ambient.vram_rect_copies = held;
+        if read_frame {
+            self.ambient.frame_grab.landed = false;
+        }
         wrote
+    }
+
+    /// `true` while a queued rect copy reads the display framebuffer and the
+    /// host has not landed a frame for it yet - the host's cue to read its
+    /// last drawn frame back into [`FRAMEBUFFER_LAND_RECT`] and call
+    /// [`Self::land_framebuffer`]. Always `false` unless the host opted in
+    /// ([`crate::world::FrameGrab::enabled`]).
+    pub fn framebuffer_grab_pending(&self) -> bool {
+        let g = self.ambient.frame_grab;
+        g.enabled && !g.landed && self.ambient.vram_rect_copies.iter().any(reads_framebuffer)
+    }
+
+    /// The host has written its frame into the display rect: the held
+    /// framebuffer copies run on the next drain.
+    pub fn land_framebuffer(&mut self) {
+        self.ambient.frame_grab.landed = true;
+    }
+
+    /// Opt a host in to the frame-grab handshake ([`crate::world::FrameGrab`]).
+    pub fn enable_frame_grab(&mut self, on: bool) {
+        self.ambient.frame_grab.enabled = on;
     }
 }
 
@@ -158,6 +210,33 @@ mod tests {
         w.queue_vram_rect_copies(&[call((10, 20), (0, 4), (300, 43))]);
         assert!(!w.apply_vram_rect_copies(&mut vram, false));
         assert_eq!(vram.pixel(300, 43), 0);
+    }
+
+    /// With the host opted in, a copy that reads the display framebuffer
+    /// (the ending vignettes' `43 12` photo grab) waits until the host lands
+    /// a frame; a copy elsewhere in VRAM runs at once either way.
+    #[test]
+    fn a_framebuffer_copy_waits_for_the_landed_frame() {
+        let mut w = World::new();
+        w.enable_frame_grab(true);
+        let mut vram = legaia_tim::Vram::new();
+        stamp(&mut vram, 600, 300, 0x0F0F);
+        w.queue_vram_rect_copies(&[
+            call((0, 0), (1, 1), (512, 0)),
+            call((600, 300), (1, 1), (700, 300)),
+        ]);
+        assert!(w.framebuffer_grab_pending());
+        assert!(w.apply_vram_rect_copies(&mut vram, false));
+        assert_eq!(vram.pixel(700, 300), 0x0F0F);
+        assert_eq!(vram.pixel(512, 0), 0);
+        stamp(&mut vram, 0, 0, 0x7FFF);
+        w.land_framebuffer();
+        assert!(!w.framebuffer_grab_pending());
+        assert!(w.apply_vram_rect_copies(&mut vram, false));
+        assert_eq!(vram.pixel(512, 0), 0x7FFF);
+        // The landing is spent on the copy it fed.
+        w.queue_vram_rect_copies(&[call((0, 0), (1, 1), (513, 0))]);
+        assert!(w.framebuffer_grab_pending());
     }
 
     /// The VM hands the arm's two-page split through as two calls; both land.

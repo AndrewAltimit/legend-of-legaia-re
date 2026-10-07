@@ -238,6 +238,16 @@ engine verdict:
   undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
   columns, period `2` on a step-`3` frame, fire every tick.
 
+  So is an ending vignette's photo panel. The vignette record grabs the
+  drawn frame into `(512, 0)` (`43 12`) and shows it through the image
+  panel (`43 13`, shrunk to a corner by `43 14`), and a capture is usually
+  parked in the credits record that runs after it - `ending_panel_corner`
+  holds record 13 - so the seed, which resumes the running record, never
+  spawns the panel. The state's live panel widget (`retail_panel`, handler
+  `FUN_801F849C`) goes to the child as `LEGAIA_SEAT_PANEL`, installed on the
+  frame it captures, and the texels it samples ride the
+  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
+
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
   state's bytes go to the child as `LEGAIA_SEAT_CLEAR` and are written over

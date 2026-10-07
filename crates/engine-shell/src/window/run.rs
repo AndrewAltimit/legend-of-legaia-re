@@ -550,6 +550,9 @@ pub(super) fn cmd_play_window_with_record(
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.
     session.host.world.toggles.use_vm_dialogue = vm_dialogue;
+    // The window lands its drawn frame for a framebuffer-reading `43 12`
+    // copy (the ending vignettes' photo grab) - see the redraw's grab.
+    session.host.world.enable_frame_grab(true);
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
     session.host.world.locomotion.follow_terrain_height = terrain_y;

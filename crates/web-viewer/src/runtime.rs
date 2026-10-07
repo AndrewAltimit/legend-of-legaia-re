@@ -694,6 +694,9 @@ impl LegaiaRuntime {
         // wall footprint, solid NPC bodies, per-step terrain follow, and NPCs
         // walking their MAN-authored routes.
         host.world.toggles.use_vm_dialogue = true;
+        // The page lands its drawn frame for a framebuffer-reading `43 12`
+        // copy (`play_land_frame_grab`), as the native window does.
+        host.world.enable_frame_grab(true);
         host.world.locomotion.follow_terrain_height = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
