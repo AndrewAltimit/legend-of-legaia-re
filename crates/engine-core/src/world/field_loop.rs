@@ -724,6 +724,16 @@ impl World {
         if let Some(res) = self.step_field_cross_context_actor_op() {
             return Some(res);
         }
+        // A facing op aimed at a placement (`B8 <id> ..`, `CC <id> 85 ..`)
+        // turns that placement, not the system context.
+        let pc = self.field_pc;
+        let bc = std::mem::take(&mut self.field_bytecode);
+        let routed = self.run_placement_facing_op(&bc, pc);
+        self.field_bytecode = bc;
+        if let Some(next_pc) = routed {
+            self.field_pc = next_pc;
+            return Some(FieldStepResult::Advance { next_pc });
+        }
         let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
         let bc_ptr: *const Vec<u8> = &self.field_bytecode;
         let pc = self.field_pc;
@@ -1245,5 +1255,56 @@ mod arrival_facing_tests {
         w.face_player_sector(6);
         assert_eq!(w.locomotion.arrival_facing, 0xC00);
         assert_eq!(w.actors[0].move_state.render_26, 0x400);
+    }
+}
+
+#[cfg(test)]
+mod placement_facing_op_tests {
+    use crate::world::World;
+
+    fn world_with_channel() -> World {
+        let mut w = World::new();
+        w.field_vm.channels = vec![crate::field_channels::FieldChannel {
+            placement_index: 5,
+            ctx: legaia_engine_vm::field::FieldCtx {
+                script_id: 0x21,
+                ..Default::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(5, (1000, 1000));
+        w
+    }
+
+    /// `rikuroa`'s entry script stands a chest with `B8 21 84 00`: the
+    /// compass write lands on placement `0x21`, not on the system context
+    /// running it (retail `+0x26 = 0x800`, engine `0x000`).
+    #[test]
+    fn a_system_script_compass_write_turns_the_named_placement() {
+        let mut w = world_with_channel();
+        w.load_field_script_at(vec![0xB8, 0x21, 0x84, 0x00, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.npcs.headings.get(&5), Some(&0x000));
+        assert_eq!(w.field_pc, 4);
+    }
+
+    /// A budgeted turn on another placement runs as its own leg while the
+    /// script runs on, and snaps onto the compass entry.
+    #[test]
+    fn a_system_script_rotate_leg_plays_out_on_the_field_tick() {
+        let mut w = world_with_channel();
+        w.npcs.headings.insert(5, 0x800);
+        w.load_field_script_at(vec![0xB8, 0x21, 0x86, 0x08, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.field_pc, 4, "the caller runs on");
+        assert!(w.npcs.rotate_legs.contains_key(&5));
+        for _ in 0..8 {
+            w.tick_field_npc_motions();
+        }
+        assert!(w.npcs.rotate_legs.is_empty());
+        assert_eq!(w.npcs.headings.get(&5), Some(&0x400));
     }
 }

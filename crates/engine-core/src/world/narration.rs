@@ -3625,21 +3625,13 @@ impl World {
             // (`World::face_leg_npc`). Run on the stand-in context it turned
             // nobody: the talk's "Noa looks at Vahn" beats stood still.
             // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
-            if let Some((t, ramp)) =
-                crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(&id.bytecode, id.pc)
-                && let Some(slot) = {
-                    let view = host.world.channel_view();
-                    crate::field_channels::resolve_target(view, t)
-                        .map(|ci| &view[ci])
-                        .filter(|ch| !ch.object_bind)
-                        .and_then(|ch| u8::try_from(ch.placement_index).ok())
-                }
-            {
-                host.world.face_leg_npc(slot, ramp);
+            // A cross-context `B8 <id> ..` turn lands on `<id>` the same way;
+            // stepped on the talk's context it turned the talker instead.
+            if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
                 }
-                id.pc += 6;
+                id.pc = next_pc;
                 id.park_frames = 0;
                 continue;
             }
@@ -4099,12 +4091,98 @@ impl World {
         done
     }
 
+    /// The placement slot a cross-context target byte names: the channel
+    /// whose script id is `t` (`FUN_8003C83C`), when it is a placement - not
+    /// the player (`0xF8`), the system channel (`0xFB`) or an object bind.
+    fn placement_slot_for_target(&self, t: u8) -> Option<u8> {
+        if t == 0xF8 || t == 0xFB {
+            return None;
+        }
+        let view = self.channel_view();
+        crate::field_channels::resolve_target(view, t)
+            .map(|ci| &view[ci])
+            .filter(|ch| !ch.object_bind)
+            .and_then(|ch| u8::try_from(ch.placement_index).ok())
+    }
+
+    /// A facing op aimed at another placement from a context that is not a
+    /// cutscene timeline (the scene's system script, a talk record):
+    /// `B8 <id> <op0> <op1>` - the compass write, or with a budget the
+    /// `0x38` RotateToAngle leg - and `CC <id> 85|8E|8F <lo> <hi> <bind>`,
+    /// the FaceTarget leg. `FUN_8003C83C` resolves `<id>` to that actor, so
+    /// the op turns it, not the context running the op, and for a
+    /// placement target both arms advance the caller (`0x801DEEFC`,
+    /// `0x801E21B8`). Returns the PC past the op, or `None` when the op is
+    /// not one of these or the target is not a placement. `rikuroa`'s entry
+    /// script stands two of its chests with `B8 21 84 00` / `B8 23 84 00`.
+    ///
+    /// REF: FUN_801DE840 (case 0x38, 0x801E2148..0x801E21DC), FUN_8003C83C
+    pub fn run_placement_facing_op(&mut self, bc: &[u8], pc: usize) -> Option<usize> {
+        let op = *bc.get(pc)?;
+        if op & 0x80 == 0 {
+            return None;
+        }
+        let slot = self.placement_slot_for_target(*bc.get(pc + 1)?)?;
+        match op & 0x7F {
+            0x38 => {
+                let (op0, op1) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?);
+                self.npcs.face_legs.remove(&slot);
+                self.npcs.rotate_legs.remove(&slot);
+                if op1 & 0x7F == 0 {
+                    if let Some(h) =
+                        crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
+                    {
+                        self.npcs.headings.insert(slot, h);
+                    }
+                } else {
+                    let cur = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+                    let mut leg = crate::cutscene_timeline::TimelineFacing {
+                        slot: Some(slot),
+                        state: vm::motion_vm::MotionState {
+                            yaw: (cur as u16) & 0x0FFF,
+                            speed: 1,
+                            ..Default::default()
+                        },
+                        program: [0x38, op0, op1],
+                        resume_pc: pc + 4,
+                        frames: 0,
+                    };
+                    if !self.step_npc_rotate_leg(&mut leg) {
+                        self.npcs.rotate_legs.insert(slot, leg);
+                    }
+                }
+                Some(pc + 4)
+            }
+            0x4C => {
+                let (_, ramp) = crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)?;
+                self.face_leg_npc(slot, ramp);
+                Some(pc + 6)
+            }
+            _ => None,
+        }
+    }
+
+    /// One frame of a free-standing `0x38` rotate leg; `true` once it snaps.
+    fn step_npc_rotate_leg(&mut self, leg: &mut crate::cutscene_timeline::TimelineFacing) -> bool {
+        leg.frames += 1;
+        let r = vm::motion_vm::step(
+            &mut leg.state,
+            vm::motion_vm::MotionTarget::default(),
+            &leg.program,
+        );
+        if leg.state.yaw_written {
+            self.set_timeline_facing(leg.slot, leg.state.yaw as i16);
+        }
+        r == vm::motion_vm::StepResult::Done || leg.frames >= WALK_PARK_TIMEOUT
+    }
+
     /// Arm a free-standing NPC face-at leg (a talk record's
     /// `CC <id> 85|8E|8F ..`): its first frame now, the rest on the field
     /// tick ([`Self::tick_field_npc_face_legs`]). A new leg replaces one the
     /// actor had in flight - retail overwrites `+0x94`.
     pub fn face_leg_npc(&mut self, slot: u8, mut ramp: crate::inline_dialogue::TalkFaceRamp) {
         self.npcs.face_legs.remove(&slot);
+        self.npcs.rotate_legs.remove(&slot);
         if !self.step_npc_face_leg(slot, &mut ramp) {
             self.npcs.face_legs.insert(slot, ramp);
         }
@@ -4116,6 +4194,11 @@ impl World {
         for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
             if !self.step_npc_face_leg(slot, &mut ramp) {
                 self.npcs.face_legs.insert(slot, ramp);
+            }
+        }
+        for (slot, mut leg) in std::mem::take(&mut self.npcs.rotate_legs) {
+            if !self.step_npc_rotate_leg(&mut leg) {
+                self.npcs.rotate_legs.insert(slot, leg);
             }
         }
     }

@@ -143,6 +143,9 @@ pub struct FieldNpcState {
     /// which keeps its own), keyed by slot and stepped once per field tick
     /// ([`crate::world::World::tick_field_npc_face_legs`]).
     pub face_legs: std::collections::BTreeMap<u8, crate::inline_dialogue::TalkFaceRamp>,
+    /// Budgeted `B8 <id> ..` rotate legs the same contexts armed, keyed and
+    /// stepped alongside [`Self::face_legs`].
+    pub rotate_legs: std::collections::BTreeMap<u8, crate::cutscene_timeline::TimelineFacing>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
@@ -271,6 +274,7 @@ impl FieldNpcState {
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),
             face_legs: std::collections::BTreeMap::new(),
+            rotate_legs: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
             object_ambient: std::collections::BTreeMap::new(),
