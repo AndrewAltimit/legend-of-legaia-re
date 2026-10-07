@@ -1598,6 +1598,20 @@ from a row is one the walk never entered.
 | 0910 Swordie | 1, 1, 4, 8, 17, 46, 1, 65, 1, 25, 53, then `0xFF` |
 | 0911 Orb | 1, 1, 4, 32, 25, 54, **jump to 9**, 76, 66, then `0xFF` |
 
+These are dwells in retail **passes** at the measured frame step of `4`; the
+engine runs a body once a vsync, so a ported countdown advances by the speed
+scalar alone a tick and lasts four times as many ticks (PROT 0910's arm 7 is
+`256` engine ticks, `65` passes here). PROT 0904's arms 11 and 12 are the
+exception the port does not yet reproduce: both are ramps on `ctx[+0x6D8]`
+(arm 10 zeroes it at `0x801F7768`; arm 11 adds `(step * scalar) >> 1` a pass
+and holds below `0x100`, `0x801F778C..0x801F77BC`; arm 12 adds
+`(step * scalar) << 3` and sweeps its ray at `ctx[+0x6D8] & 0xFFF` until
+`0x1000`, `0x801F7AE4` / `0x801F7EF0`), which the 20 / 16 above measure. The
+engine runs each in one tick, its sweep ray on a band-long accumulator, and
+the band itself is not paced by PROT 0904 (no module profile), so holding the
+arms would end the band before the sweep. Porting the ramps needs the band
+pacing first.
+
 Three of the seven walks skip arms outright. PROT 0911's arm `5` jumps to `9`
 (the `sb s7,0x279` at `0x801F7780`), which this page already records; PROT 0905's
 arm `5` jumps to `8` the same way, and PROT 0907's fork arm `13` jumps to `15`.
