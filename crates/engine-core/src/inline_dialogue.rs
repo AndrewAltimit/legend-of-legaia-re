@@ -192,6 +192,20 @@ impl TalkFaceRamp {
         ))
     }
 
+    /// The leg an **own-context** halt-acquire at `pc` hands the executing
+    /// actor: `4C 85|8E|8F <lo> <hi> <bind>`, five bytes with no target
+    /// byte, so the arm's resolved target is the context itself.
+    pub fn from_own_acquire(bytes: &[u8], pc: usize) -> Option<Self> {
+        let op = bytes.get(pc..pc + 5)?;
+        if op[0] != 0x4C || !matches!(op[1], 0x85 | 0x8E | 0x8F) {
+            return None;
+        }
+        Some(Self {
+            program: [0x4C, op[1], op[2], op[3], op[4]],
+            accum: 0,
+        })
+    }
+
     /// One visit of the walk kernel: turn `yaw` (engine heading space) at
     /// `(x, z)` toward `(tx, tz)` by `speed` frames of the budget. Returns
     /// the new heading and whether this was the terminal frame - the one on

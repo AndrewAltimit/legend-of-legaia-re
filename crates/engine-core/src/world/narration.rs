@@ -3140,6 +3140,30 @@ impl World {
                     None if ext.is_some() && !self_target => None,
                     None => Some(channels[i].placement_index as u8),
                 };
+                // A face-at acquire on a placement - the record's own actor
+                // (`4C 85 <lo> <hi> <bind>`, `rikuroa`'s Noa turning toward
+                // the placement she was seated beside) or another one
+                // (`CC <id> 85 ..`): the target's walk kernel runs the leg.
+                // It is armed here and stepped from the next field tick,
+                // once the seats this pre-run writes have surfaced.
+                // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
+                if let Some(slot) = self.field_vm.executing_channel
+                    && let Some((ramp, width)) =
+                        crate::inline_dialogue::TalkFaceRamp::from_own_acquire(bc, pc)
+                            .map(|r| (r, 5))
+                            .or_else(|| {
+                                crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
+                                    .filter(|_| target.is_some())
+                                    .map(|(_, r)| (r, 6))
+                            })
+                {
+                    self.field_vm.executing_channel = None;
+                    self.field_vm.executing_object = None;
+                    self.npcs.rotate_legs.remove(&slot);
+                    self.npcs.face_legs.insert(slot, ramp);
+                    channels[i].pc = pc + width;
+                    continue;
+                }
                 let result = {
                     let mut host = FieldHostImpl { world: self };
                     match target {
@@ -3630,6 +3654,19 @@ impl World {
             // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
             // A cross-context `B8 <id> ..` turn lands on `<id>` the same way;
             // stepped on the talk's context it turned the talker instead.
+            // The talker's own `4C 85 <lo> <hi> <bind>` turns the talker.
+            if let Some(slot) = host.world.dialog.stepping_inline_npc
+                && let Some(ramp) =
+                    crate::inline_dialogue::TalkFaceRamp::from_own_acquire(&id.bytecode, id.pc)
+            {
+                host.world.face_leg_npc(slot, ramp);
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc += 5;
+                id.park_frames = 0;
+                continue;
+            }
             if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
@@ -4920,6 +4957,43 @@ mod tests {
         assert_eq!(w.npcs.headings.get(&4), Some(&0x123));
         let p = &w.actors[0].move_state;
         assert_eq!((p.world_x, p.world_z, p.render_26), (3000, 3100, 0x456));
+    }
+
+    /// A placement's spawn section that turns its own actor toward another
+    /// (`4C 85 00 00 16` in `rikuroa` `P1[3]`, Noa facing the placement she
+    /// is seated beside) arms the walk kernel's FaceTarget leg on that
+    /// placement, which the next field tick lands.
+    #[test]
+    fn a_spawn_prologue_own_face_at_turns_the_placement() {
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        // Record 0 at offset 0: `25`, `4C 85 00 00 16`, `21`; record 1 at 7.
+        let man = vec![0x25, 0x4C, 0x85, 0x00, 0x00, 0x16, 0x21, 0x25, 0x21];
+        let ch = |slot: usize, id: u16, off: usize| FieldChannel {
+            placement_index: slot,
+            ctx: FieldCtx {
+                script_id: id,
+                ..FieldCtx::default()
+            },
+            record_offset: off,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        };
+        w.field_vm.channels = vec![ch(3, 0x10, 0), ch(9, 0x16, 7)];
+        w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+        w.npcs.positions.insert(3, (8896, 9664));
+        w.npcs.positions.insert(9, (8896, 10664));
+        w.pre_run_field_channel_prologues();
+        assert!(w.npcs.face_legs.contains_key(&3), "the leg is armed");
+        w.tick_field_npc_motions();
+        // Straight down +Z: engine heading 0.
+        assert_eq!(w.npcs.headings.get(&3), Some(&0));
+        assert!(w.npcs.face_legs.is_empty());
     }
 
     /// A player ExecMove queues the scene-record one-shot only when its pick
