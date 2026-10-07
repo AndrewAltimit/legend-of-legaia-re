@@ -97,6 +97,18 @@ pub enum MinigameSubId {
     Dance,
 }
 
+/// Salt the fishing session's `rand` seed folds a frame count into
+/// (`FISHING_SEED_SALT ^ frame`). Engine glue: retail's `rand` is the BIOS
+/// global, whose state at overlay entry is not pinned. Every host seeds the
+/// same way - the play hosts with the world frame, the standalone minigames
+/// page with its stepped-frame count.
+pub const FISHING_SEED_SALT: u32 = 0xF15B_0972;
+
+/// Salt the Muscle Dome leg's damage stream folds a frame count into
+/// (`DOME_SEED_SALT ^ frame`), on every host - the same glue as
+/// [`FISHING_SEED_SALT`].
+pub const DOME_SEED_SALT: u32 = 0x4D55_5343;
+
 /// Global `music_01` track the Baka Fighter duel overlay's init loads:
 /// sound-test **55** (`M112` "Sol disco fever"), i.e. extraction PROT entry
 /// `1043`, the entry the init's own `FUN_8001FC00(0x415, ...)` names (see

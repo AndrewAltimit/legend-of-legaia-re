@@ -698,7 +698,8 @@ window.MgMuscle = (function () {
         lastOpts.monster = monster;
       }
       const seed = (lastOpts.seed != null ? lastOpts.seed
-        : (Date.now() & 0x7fffffff)) >>> 0;
+        : (typeof api.minigame_seed === 'function' ? api.minigame_seed('muscle')
+          : (Date.now() & 0x7fffffff))) >>> 0;
       if (!api.muscle_start_vs(lastOpts.char, lastOpts.level, monster, seed)) {
         return false;
       }
@@ -740,7 +741,7 @@ window.MgMuscle = (function () {
      * and it is still one round of the ladder. */
     function beginSelect() {
       mode = 'select';
-      selectSub = 'menu';
+      syncMenu();
       /* A new turn re-prices the Ra-Seru list off the live gauge. */
       magicRows = null;
       magicWhy = '';
@@ -751,39 +752,57 @@ window.MgMuscle = (function () {
       setBanner('ROUND ' + n, null, hubEnv(2, 0).total || 70);
     }
 
-    function commit(slot) {
-      if (mode !== 'select') return false;
-      if (selectSub === 'menu' || selectSub === 'attackmenu') {
-        selectSub = 'input';  /* a commit is directional input */
-      }
-      if (selectSub !== 'input') return false;
-      const before = st();
-      const ok = api.muscle_commit(slot);
-      /* Confirm blip on a committed command; cursor blip on a rejected one
-       * (overspend / queue full) - fitted assignment over the traced ids. */
-      playCue(ok ? 'confirm' : 'cursor', ok ? 0.5 : 0.35);
-      if (ok) {
-        const state = st();
-        const cmd = (before.hand[slot] || {}).cmd;
-        spawnPennant(cmd, state.queue[0].length - 1, state);
-        /* Retail auto-end: the input phase closes on its own the moment no
-         * command is affordable (recomp capture: ctx+6 0x50 -> 0x5a on the
-         * exhausting press). */
-        if (api.muscle_selection_exhausted && api.muscle_selection_exhausted()) {
-          selectSub = 'review';
-        }
-      }
-      return ok;
+    /* The selection is the engine's command flow (`muscle_select`, the
+     * session's `select_input` - the call the play hosts' world tick makes):
+     * the round prompt, the ring, Auto | Command, the direction entry and
+     * its review, the Ra-Seru list and Begin | Reselect, every screen's
+     * rule the battle session's. The page only turns keys into pad bits,
+     * reads back which screen is up (`muscle_menu_json`) and draws it. It
+     * used to run its own copy of that flow over the low-level commit calls
+     * - no round prompt, Spirit fighting on the spot, its own screen order. */
+    const SELECT_BIT = { left: 1, right: 2, up: 4, down: 8, confirm: 16, back: 32, triangle: 64 };
+    function syncMenu() {
+      let m = null;
+      try { m = JSON.parse(api.muscle_menu_json()); } catch (e) { m = null; }
+      if (!m || !m.screen) return;
+      if (m.screen === 'magic' && selectSub !== 'magic') magicRows = readMagicRows();
+      selectSub = m.screen;
+      confirmSel = m.cursor | 0;
+      artsPage = m.list_page;
     }
-
-    /* Commit the hand card matching a pad direction (the retail attack
-     * input: directions go straight onto the AP gauge). */
-    function commitDir(dir) {
+    /* A hand slot's direction, pressed (the page's 1-4 shortcuts). */
+    function commit(slot) {
+      const hand = st().hand || [];
+      const dir = hand[slot] ? (CMD[hand[slot].cmd] || {}).dir : null;
+      if (dir && mode === 'select') selectPress(dir);
+    }
+    function selectPress(name) {
+      const bit = SELECT_BIT[name];
+      if (!bit) return;
+      const before = st();
+      const ev = api.muscle_select(bit);
+      syncMenu();
       const state = st();
-      if (!state.live) return false;
-      const hand = state.hand || [];
-      const i = hand.findIndex(c => (CMD[c.cmd] || {}).dir === dir);
-      return i >= 0 ? commit(i) : false;
+      /* A direction that went onto the AP gauge glides its pennant in. */
+      const q0 = (before.queue && before.queue[0]) || [];
+      const q1 = (state.queue && state.queue[0]) || [];
+      if (q1.length > q0.length) spawnPennant(q1[q1.length - 1], q1.length - 1, state);
+      if (q1.length < q0.length) pennantFx = [];
+      if (ev === 'cursor') playCue('cursor', 0.4);
+      else if (ev === 'confirm' || ev === 'fight') playCue('confirm', 0.5);
+      else if (ev === 'refused') {
+        magicWhy = selectSub === 'magic' ? 'not_enough_mp' : '';
+        playCue('blip', 0.3);
+      }
+      if (ev !== 'refused') magicWhy = '';
+      if (ev === 'fight') fight();
+      else if (ev === 'run') {
+        /* Run on the round prompt: the leg is given up, as the play hosts
+         * report it (the contest settles as a run). */
+        mode = 'decided';
+        reportLeg(false, 0, state.turn, state.hp_max[0]);
+        setBanner('RAN', 'the contest is given up — SPACE to start again', 100000, 'bad');
+      }
     }
 
     /* The learned-arts rows the Triangle list pages through (SCUS
@@ -794,17 +813,6 @@ window.MgMuscle = (function () {
         catch (e) { artsRows = []; }
       }
       return artsRows;
-    }
-
-    /* Triangle: open the arts list / next page / close past the last page
-     * (retail: the caption cycles "View Hyper Arts list" -> "View Next
-     * page"; inert when the fighter knows no arts). */
-    function artsListKey() {
-      const rows = artsList();
-      if (!rows.length) return;
-      const pages = Math.ceil(rows.length / 5);
-      artsPage = artsPage + 1 >= pages ? -1 : artsPage + 1;
-      playCue('cursor', 0.4);
     }
 
     /* Close selection and play the round out. */
@@ -847,7 +855,8 @@ window.MgMuscle = (function () {
 
     function fight() {
       magicRows = null;
-      api.muscle_end_selection();
+      /* Begin closed both fighters' selections inside the engine's flow;
+       * the turn resolves through the shared kernel. */
       api.muscle_resolve();
       playQueue = JSON.parse(api.muscle_round_log_json());
       /* The committed queue resolved through the character's real arts
@@ -871,67 +880,7 @@ window.MgMuscle = (function () {
     function key(name) {
       if (mode === 'intro') { if (introLive && introFvOk) introPress = true; else beginSelect(); return; }
       if (mode !== 'select') return;
-      if (selectSub === 'menu') {
-        if (name === 'left') {            /* Attack -> Auto | Command */
-          selectSub = 'attackmenu';
-          playCue('cursor', 0.4);
-        } else if (name === 'down') {     /* Spirit: end selection, fight */
-          playCue('confirm', 0.5);
-          fight();
-        } else if (name === 'right') {    /* Ra-Seru: the magic command */
-          const why = api.muscle_open_magic ? api.muscle_open_magic() : 'no_loadout';
-          if (why) { magicWhy = why; playCue('blip', 0.3); }
-          else { magicWhy = ''; selectSub = 'magic'; magicRows = readMagicRows(); playCue('cursor', 0.4); }
-        } else if (name === 'up') {
-          /* Item: retail crosses it out on the dome's item-forbidden
-           * courses and the arm refuses. The port has no bag here either. */
-          playCue('blip', 0.3);
-        }
-      } else if (selectSub === 'magic') {
-        if (name === 'back') {
-          if (api.muscle_close_magic) api.muscle_close_magic();
-          selectSub = 'menu';
-          playCue('cursor', 0.4);
-        } else if (name === 'up' || name === 'down') {
-          if (api.muscle_magic_move) api.muscle_magic_move(name === 'up' ? -1 : 1);
-          playCue('cursor', 0.35);
-        }
-      } else if (selectSub === 'attackmenu') {
-        if (name === 'left') {
-          /* Auto: commit commands automatically while the budget lasts
-           * (greedy in hand order - the retail Auto picker itself is
-           * unpinned), then go straight to the review. */
-          playCue('confirm', 0.5);
-          let guard = 0;
-          while (guard++ < 32) {
-            if (!api.muscle_commit(0) && !api.muscle_commit(1) &&
-                !api.muscle_commit(2) && !api.muscle_commit(3)) break;
-          }
-          pennantFx = [];
-          selectSub = 'review';
-        } else if (name === 'right') {    /* Command: manual input */
-          selectSub = 'input';
-          playCue('cursor', 0.4);
-        } else if (name === 'back') { selectSub = 'menu'; playCue('cursor', 0.4); }
-      } else if (selectSub === 'input') {
-        if (name === 'back') {
-          artsPage = -1;
-          selectSub = 'menu';
-          playCue('cursor', 0.4);
-        } else if (name === 'triangle') {
-          artsListKey();
-        } else if (name === 'left' || name === 'right' ||
-                 name === 'up' || name === 'down') commitDir(name);
-      } else if (selectSub === 'review') {
-        /* any input advances to the Begin | Reselect confirm */
-        selectSub = 'confirm';
-        confirmSel = 0;
-        playCue('cursor', 0.4);
-      } else if (selectSub === 'confirm') {
-        if (name === 'left') { confirmSel = 0; playCue('cursor', 0.35); }
-        else if (name === 'right') { confirmSel = 1; playCue('cursor', 0.35); }
-        else if (name === 'back') { selectSub = 'review'; }
-      }
+      selectPress(name);
     }
 
     /* SPACE / Confirm: advances whatever the current presentation mode is. */
@@ -942,40 +891,7 @@ window.MgMuscle = (function () {
         /* Retail skips only the two card holds, not the whole visit. */
         if (introLive && introFvOk) introPress = true; else beginSelect();
       } else if (mode === 'select') {
-        if (selectSub === 'magic') {
-          /* Confirm the row under the cursor. A refusal leaves the list
-           * open, which is retail's answer to an unaffordable pick. */
-          const why = api.muscle_magic_confirm ? api.muscle_magic_confirm() : 'no_loadout';
-          if (why) { magicWhy = why; playCue('blip', 0.3); return; }
-          magicWhy = '';
-          selectSub = 'menu';
-          playCue('confirm', 0.5);
-          fight();
-          return;
-        }
-        if (selectSub === 'input') {
-          /* End the input early: to the queue review. */
-          artsPage = -1;
-          selectSub = state.queue[0].length ? 'review' : 'input';
-          if (state.queue[0].length) playCue('confirm', 0.5);
-          return;
-        }
-        if (selectSub === 'review') { selectSub = 'confirm'; confirmSel = 0; playCue('cursor', 0.4); return; }
-        if (selectSub === 'confirm') {
-          if (confirmSel === 1 && api.muscle_reset_selection) {
-            /* Reselect: retail throws the queue away and restores the
-             * budget, back to a clean input. */
-            api.muscle_reset_selection();
-            pennantFx = [];
-            selectSub = 'input';
-            playCue('cursor', 0.4);
-            return;
-          }
-          playCue('confirm', 0.5);
-          fight();
-          return;
-        }
-        fight();
+        selectPress('confirm');
       } else if (mode === 'playback') {
         /* Skip: settle every pending event instantly. */
         while (playQueue.length) applyEvent(playQueue.shift(), true);
@@ -1048,10 +964,8 @@ window.MgMuscle = (function () {
          * back to the cluster, no beat, no keypress. */
         api.muscle_next_turn();
         mode = 'select';
-        selectSub = 'menu';
         pennantFx = [];
-        confirmSel = 0;
-        artsPage = -1;
+        syncMenu();
       } else if (state.phase === 'won' || state.phase === 'lost') {
         mode = 'decided';
         if (state.phase === 'won') {
@@ -1107,7 +1021,7 @@ window.MgMuscle = (function () {
         }
       } else {
         mode = 'select';
-        selectSub = 'menu';
+        syncMenu();
       }
     }
 
@@ -2167,6 +2081,19 @@ window.MgMuscle = (function () {
           drawApPlate(state);
           drawStatusPlate(state);
           if (selectSub === 'confirm') drawConfirmMenu(state);
+        } else if (selectSub === 'target') {
+          /* Auto's target cursor (the battle picker over the one foe). */
+          drawHeaderChips(state, true);
+          drawFoeChip(state, 168);
+          drawStatusPlate(state);
+          if (!banner) text('SPACE target · ESC back', 160, 108, 6, '#aeb6c4', 'center', '');
+        } else if (selectSub === 'prompt') {
+          /* The round prompt every turn opens on (`0x1E`): Begin | Run. */
+          drawHeaderChips(state);
+          rChip('Begin', 96, 84, confirmSel === 0 ? 'gold' : 'blue', 40);
+          rChip('Run', 176, 84, confirmSel === 1 ? 'gold' : 'blue', 40);
+          drawStatusPlate(state);
+          if (!banner) text('←→ pick · SPACE confirm', 160, 108, 6, '#aeb6c4', 'center', '');
         } else if (selectSub === 'menu') {
           drawHeaderChips(state);
           drawCommandCluster(state);

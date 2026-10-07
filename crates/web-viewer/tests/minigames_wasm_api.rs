@@ -777,3 +777,51 @@ fn the_baka_chrome_glyph_draws_carry_the_engine_stamp() {
         "the ROUND banner pages the glyph strip at least once"
     );
 }
+
+/// The page's Muscle Dome selection is the engine's command flow
+/// (`muscle_select` over `MuscleDomeSession::select_input`, the play hosts'
+/// call): every turn opens on the round prompt, Begin opens the ring, the
+/// ring's Attack arm raises `Auto | Command`, Auto fills the string and
+/// raises `Begin | Reselect`, and Begin closes both fighters' selections.
+#[test]
+fn the_dome_selection_runs_the_engines_command_flow() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    const LEFT: u32 = 1;
+    const CROSS: u32 = 16;
+    assert!(mg.muscle_start(), "a dome leg starts");
+    let screen = |mg: &LegaiaMinigames| -> String {
+        let m: serde_json::Value = serde_json::from_str(&mg.muscle_menu_json()).unwrap();
+        m["screen"].as_str().unwrap_or("").to_string()
+    };
+    assert_eq!(screen(&mg), "prompt", "a turn opens on the round prompt");
+    assert_eq!(mg.muscle_select(CROSS), "confirm");
+    assert_eq!(screen(&mg), "menu", "Begin opens the command ring");
+    mg.muscle_select(LEFT);
+    assert_eq!(screen(&mg), "attackmenu", "the ring's Attack arm");
+    mg.muscle_select(LEFT);
+    // Under the default "Select" attack option, Auto opens the target
+    // cursor over the one opponent; Cross takes it.
+    assert_eq!(screen(&mg), "target", "Auto opens the target cursor");
+    mg.muscle_select(CROSS);
+    assert_eq!(
+        screen(&mg),
+        "confirm",
+        "Auto fills the string and raises Begin | Reselect"
+    );
+    let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    assert!(
+        !st["queue"][0].as_array().unwrap().is_empty(),
+        "Auto committed directions"
+    );
+    assert_eq!(
+        mg.muscle_select(CROSS),
+        "fight",
+        "Begin closes the selection"
+    );
+    let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    assert_eq!(st["phase"], "resolve");
+    eprintln!("[ran] dome selection through the engine's command flow");
+}

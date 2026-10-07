@@ -87,9 +87,12 @@ fn a_settled_turn_returns_to_the_command_cluster_and_raises_no_screen() {
         "the turn arm must take the next turn itself (retail writes \
          ctx[6] = 0x14 and carries on). Arm was:\n{arm}"
     );
+    // Back into the selection, on whatever screen the engine's command flow
+    // raises (every turn opens on the round prompt, the round driver's
+    // turn-top arm) - read back through `syncMenu`, not a page-chosen screen.
     assert!(
-        arm.contains("mode = 'select'") && arm.contains("selectSub = 'menu'"),
-        "the turn arm must land back on the command cluster. Arm was:\n{arm}"
+        arm.contains("mode = 'select'") && arm.contains("syncMenu()"),
+        "the turn arm must land back on the engine's command flow. Arm was:\n{arm}"
     );
 }
 

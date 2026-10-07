@@ -387,7 +387,7 @@ impl SceneHost {
         if let Some(name) = opponent_name.filter(|n| !n.is_empty()) {
             session.set_opponent_name(name);
         }
-        let seed = 0x4D55_5343 ^ self.world.frame as u32;
+        let seed = crate::minigame_entry::DOME_SEED_SALT ^ self.world.frame as u32;
         if let Some(model) =
             DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)
         {

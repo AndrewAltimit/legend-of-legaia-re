@@ -2425,7 +2425,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (n >= 1 && n <= 4) { e.preventDefault(); muscleCommit(n - 1); }
       else if (dir) { e.preventDefault(); muscleKey(dir); }
       else if (b === 'Triangle') { e.preventDefault(); muscleKey('triangle'); }
-      else if (e.code === 'Escape' || e.code === 'Backspace') { e.preventDefault(); muscleKey('back'); }
+      else if (b === 'Circle' || e.code === 'Escape' || e.code === 'Backspace') { e.preventDefault(); muscleKey('back'); }
       else if (b === 'Cross' || b === 'Start') { e.preventDefault(); muscleConfirm(); }
     }
   });
@@ -2597,7 +2597,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const lure = +$('fishing-lure').value;
     const rod = +$('fishing-rod').value;
     const s = fishSave || { points: 0, best: 0, best_fish: 0, casts: 0, purchased: 0 };
-    const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
+    /* The play hosts' seed rule (salt ^ frame count), not a page random. */
+    const seed = (typeof api.minigame_seed === 'function' ? api.minigame_seed('fishing')
+      : (Date.now() ^ (Math.random() * 0x7fffffff))) >>> 0;
     api.fishing_pond_start(venue, lure, rod, s.casts | 0, s.points | 0,
                            s.best | 0, s.best_fish >>> 0, s.purchased >>> 0, seed);
     fishLive = true;

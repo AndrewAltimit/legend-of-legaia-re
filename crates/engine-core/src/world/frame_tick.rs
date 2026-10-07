@@ -2775,9 +2775,7 @@ impl World {
         venue: usize,
         venue_map: Option<crate::fishing::PondVenue>,
     ) {
-        /// Salt for the frame-derived seed (engine glue: retail's `rand` is
-        /// the BIOS global, whose state at overlay entry is not pinned).
-        const FISHING_SEED_SALT: u32 = 0xF15B_0972;
+        use crate::minigame_entry::FISHING_SEED_SALT;
         self.resolve_fishing_entry_rod();
         let bag = &self.party.inventory;
         let mut lure = self.minigames.fishing_lure;

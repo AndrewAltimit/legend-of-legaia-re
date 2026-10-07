@@ -333,6 +333,22 @@ impl LegaiaMinigames {
         n
     }
 
+    /// The RNG seed a session of `game` (`"fishing"`, `"muscle"`) starts on:
+    /// the salt the play hosts fold the world frame into
+    /// ([`legaia_engine_core::minigame_entry::FISHING_SEED_SALT`] /
+    /// [`legaia_engine_core::minigame_entry::DOME_SEED_SALT`]), folded with
+    /// this page's stepped-frame count. The page used to seed off
+    /// `Date.now()` / `Math.random()`, a rule of its own. `0` for an unknown
+    /// game.
+    pub fn minigame_seed(&self, game: &str) -> u32 {
+        use legaia_engine_core::minigame_entry::{DOME_SEED_SALT, FISHING_SEED_SALT};
+        match game {
+            "fishing" => FISHING_SEED_SALT ^ self.sim_frames,
+            "muscle" => DOME_SEED_SALT ^ self.sim_frames,
+            _ => 0,
+        }
+    }
+
     /// Drop the undrained backlog - a game was (re)started or the tab was
     /// hidden, and the gap must not come back as catch-up frames.
     pub fn resync_sim_clock(&mut self) {
