@@ -1505,7 +1505,7 @@ impl World {
             return;
         }
         if self.npcs.facing_save.is_none() {
-            let prev = self.npcs.headings.get(&slot).copied().unwrap_or(0);
+            let prev = self.npcs.heading(slot);
             self.npcs.facing_save = Some((slot, prev));
         }
         self.npcs.headings.insert(slot, engine_bearing(dx, dz));
@@ -1612,7 +1612,13 @@ impl World {
             if chan.live.is_some() {
                 continue;
             }
-            let engine = (self.npcs.headings.get(slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+            let engine = (self
+                .npcs
+                .headings
+                .get(slot)
+                .copied()
+                .unwrap_or(super::SPAWN_HEADING)
+                & 0x0FFF) as u16;
             chan.vm.heading = engine.wrapping_sub(0x800) & 0x0FFF;
         }
     }
@@ -1739,8 +1745,7 @@ impl World {
             }
             // The ambient ops live in retail heading space; the engine's
             // render heading is the same compass rotated a half turn.
-            let engine_heading =
-                (self.npcs.headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+            let engine_heading = (self.npcs.heading(slot) & 0x0FFF) as u16;
             let retail_heading = engine_heading.wrapping_sub(0x800) & 0x0FFF;
             // Seat the channel where the spawn prologue left the actor: the
             // wander op's AABB guard is absolute, so a channel started at
@@ -2288,7 +2293,7 @@ impl World {
                     // reads the live `+0x26`), so a leg that never moves - or
                     // one whose first frame is blocked - keeps it instead of
                     // snapping to the compass origin.
-                    yaw: (self.npcs.headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16,
+                    yaw: (self.npcs.heading(slot) & 0x0FFF) as u16,
                     ..Default::default()
                 },
                 target: (tx, tz),
@@ -2339,7 +2344,7 @@ impl World {
         // Seed the one-shot VM state from the NPC's current facing so the leg
         // rotates *from* where it stands (a full match for retail's actor
         // `+0x26` seed) and mask into the 12-bit yaw space the op expects.
-        let cur_yaw = (self.npcs.headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+        let cur_yaw = (self.npcs.heading(slot) & 0x0FFF) as u16;
         let mut state = vm::motion_vm::MotionState {
             world_x: cx,
             world_z: cz,
@@ -4189,6 +4194,25 @@ mod face_target_tests {
         // atan2(dx=100, dz=0) = +pi/2 -> 12-bit yaw 0x400 (X+); the one-shot
         // FaceTarget leg snaps straight onto it.
         assert_eq!(w.npcs.headings.get(&3), Some(&0x0400));
+    }
+
+    /// An NPC nothing has turned stands at the spawn default, retail
+    /// `+0x26 = 0` - engine `0x800`, the pose the hosts draw for an absent
+    /// heading. The talk snap saves that pose and the teardown puts it back,
+    /// rather than the opposite compass point an `unwrap_or(0)` read gave.
+    #[test]
+    fn talk_restore_of_an_unturned_npc_returns_the_spawn_heading() {
+        let mut w = World::new();
+        w.player_actor_slot = Some(0);
+        w.actors[0].active = true;
+        w.actors[0].move_state.world_x = 100;
+        w.actors[0].move_state.world_z = 0;
+        w.npcs.positions.insert(3, (0, 0));
+        assert_eq!(w.npcs.heading(3), crate::world::SPAWN_HEADING);
+        w.face_field_npc_at_player(3);
+        assert_eq!(w.npcs.headings.get(&3), Some(&0x0400));
+        w.release_talk_facing();
+        assert_eq!(w.npcs.heading(3), crate::world::SPAWN_HEADING);
     }
 
     /// The face driver rotates toward the bearing from an arbitrary start and

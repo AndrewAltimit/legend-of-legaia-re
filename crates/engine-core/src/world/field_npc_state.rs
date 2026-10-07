@@ -68,10 +68,11 @@ pub struct FieldNpcState {
     /// the player: `0` = travel Z+), keyed by placement slot. Written by
     /// `Self::tick_field_npc_motions` from each walk step's direction, and
     /// retained when the walker stops (an NPC keeps facing the way it last
-    /// moved). Absent for NPCs that have never walked - hosts render those
-    /// unrotated (the placement record carries no facing byte; scripted
-    /// initial facings are the per-actor field-VM channels, not yet
-    /// executed).
+    /// moved). Absent for an NPC nothing has turned yet, which stands at the
+    /// spawn default: retail's seater leaves `+0x26 = 0` (Z-), the engine's
+    /// [`SPAWN_HEADING`]. Hosts draw an absent entry as that default (the
+    /// identity yaw); read it through [`Self::heading`], which applies it,
+    /// never as `unwrap_or(0)` - engine `0` is the opposite compass point.
     pub headings: std::collections::HashMap<u8, i16>,
     /// Live per-NPC **pitch / roll** - retail `actor+0x24` and `actor+0x28`,
     /// the X and Z Euler angles the scripted-motion VM's `0x15` / `0x16`
@@ -260,7 +261,19 @@ pub struct FieldNpcState {
     pub cull_view: Option<crate::world::field_npc_cull::FieldCullView>,
 }
 
+/// The heading a placement stands in before anything turns it, in the
+/// engine's [`FieldNpcState::headings`] space: retail `+0x26 = 0` (Z-),
+/// which is `engine = retail + 0x800`. The placement record carries no
+/// facing byte; a spawn prologue's `0x4C 0x51` / `0x38` seeds the others.
+pub const SPAWN_HEADING: i16 = 0x800;
+
 impl FieldNpcState {
+    /// The live heading of placement `slot`, the spawn default
+    /// ([`SPAWN_HEADING`]) when nothing has written one.
+    pub fn heading(&self, slot: u8) -> i16 {
+        self.headings.get(&slot).copied().unwrap_or(SPAWN_HEADING)
+    }
+
     pub fn new() -> Self {
         Self {
             solid: false,

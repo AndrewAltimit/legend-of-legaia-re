@@ -519,7 +519,7 @@ impl World {
                     for (i, &id) in ids.iter().enumerate() {
                         let slot = self.talk_participant_slot(id);
                         if let Some(&pos) = self.npcs.positions.get(&slot) {
-                            let heading = self.npcs.headings.get(&slot).copied().unwrap_or(0);
+                            let heading = self.npcs.heading(slot);
                             talk.saved[i] = Some((pos, heading));
                         }
                     }
@@ -574,7 +574,7 @@ impl World {
                     // (`_DAT_80089118/20` = negated pose).
                     let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
                     if let Some(&(nx, nz)) = self.npcs.positions.get(&npc) {
-                        let heading = self.npcs.headings.get(&npc).copied().unwrap_or(0);
+                        let heading = self.npcs.heading(npc);
                         let ny = self.sample_field_floor_height(i32::from(nx), i32::from(nz));
                         if let Some(a) = self
                             .player_actor_slot

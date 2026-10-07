@@ -124,7 +124,7 @@ pub use disc_tables::DiscTables;
 pub use encounter_state::EncounterState;
 pub use field_carrier_state::FieldCarrierState;
 pub use field_locomotion::FieldLocomotion;
-pub use field_npc_state::FieldNpcState;
+pub use field_npc_state::{FieldNpcState, SPAWN_HEADING};
 pub use field_prop_state::FieldPropState;
 pub use field_script_actor_state::{
     FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,

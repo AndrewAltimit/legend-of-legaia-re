@@ -1407,7 +1407,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 w.npcs
                     .positions
                     .get(&slot)
-                    .map(|&pos| (pos, w.npcs.headings.get(&slot).copied().unwrap_or(0)))
+                    .map(|&pos| (pos, w.npcs.heading(slot)))
             });
             (saved, saved_party, saved_party_len, saved_leader)
         } else {
