@@ -1018,8 +1018,10 @@ fn beat_progress_option(session: &BootSession) -> Option<usize> {
         return None;
     }
     let (count, targets, bc) = open_picker(session)?;
+    // The branch runs to its first `0x21`: "I'm ready" plays some eighty
+    // instructions of the jump down before its `44 63`.
     let spawns = |mut at: usize| {
-        for _ in 0..48 {
+        for _ in 0..512 {
             let Ok(i) = legaia_asset::field_disasm::decode(&bc, at) else {
                 return false;
             };
@@ -1951,6 +1953,193 @@ fn wanted_mp_item(
     .map(|(_, id)| (id, actor))
 }
 
+/// The Fury Boost worth using now, and on whom (the acting member itself):
+/// in a fight that forbids running against a foe of ten times the party's
+/// largest HP or more, a member whose Miracle Art string costs more than its
+/// command pool, but not more than the pool the boost buys. The item raises
+/// the actor's `+0x1F9` charge byte, and every round boundary after it
+/// restores the pool `+0x154` to `base * 7 / 5 + 8` (cap `0x120`) instead of
+/// the base (`FUN_801D88CC` loop A, `World::apply_fury_boost_item`), so one
+/// turn spent buys a Miracle Art every round after. Koru's timed fight
+/// (`0xB6`: 20000 HP, the all-party finisher on round counter `4`) is lost on
+/// spells and short Arts strings alone.
+fn wanted_fury_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+    actor: u8,
+) -> Option<(u8, u8)> {
+    use legaia_engine_core::items::ItemEffect;
+    if !w.battle.no_escape || solo_duel(w) {
+        return None;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let i = usize::from(actor);
+    if i >= n || w.battle.fury_boost.get(i).copied().flatten().is_some() {
+        return None;
+    }
+    let ours = (0..n)
+        .map(|k| u32::from(w.actors[k].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    if !(n..w.actors.len()).any(|k| {
+        let a = &w.actors[k].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 10
+    }) {
+        return None;
+    }
+    if !miracle_armed(w, actor) {
+        return None;
+    }
+    let roster = w.party_roster_slot(i);
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let miracle = legaia_art::MIRACLE_ARTS
+        .iter()
+        .find(|m| m.character == character)?;
+    // Every direction costs the same outside the weapon arm (`+0x74`), and the
+    // Miracle string is typed with whatever the arm costs: price it at the
+    // dearest press, as the entry will.
+    let press = w
+        .battle
+        .swing_costs
+        .get(roster)
+        .copied()
+        .unwrap_or([legaia_engine_core::arts_command_input::FAVORED_COST; 4])
+        .into_iter()
+        .max()
+        .unwrap_or(u16::MAX);
+    let cost = u32::from(press) * miracle.commands.len() as u32;
+    let base = u32::from(w.actors[i].battle.agl_base);
+    let boosted = (base * 7 / 5 + 8).min(0x120);
+    if cost <= base || cost > boosted {
+        return None;
+    }
+    let mut ids = ids;
+    ids.find(|&id| {
+        w.tables
+            .item_catalog
+            .get(id)
+            .is_some_and(|e| e.usable_in_battle && matches!(e.effect, ItemEffect::ActionGauge))
+    })
+    .map(|id| (id, actor))
+}
+
+/// The attack Elixir worth handing out now, and to whom: in the same fights
+/// as [`wanted_fury_item`], a member that will not type a Miracle Art itself
+/// gives one to a member that does (Fury-boosted or already paid for) and
+/// carries no Attack buff yet. The class-7 Elixir ramps the target's attack
+/// scalar `x6/5` for the rest of the battle, and a Miracle Art is one strike
+/// against Koru's defence, so the ramp buys more than the summon the giver
+/// gives up.
+fn wanted_power_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+    actor: u8,
+) -> Option<(u8, u8)> {
+    use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+    use legaia_engine_core::spells::BuffStat;
+    if !w.battle.no_escape || solo_duel(w) {
+        return None;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    if usize::from(actor) >= n || miracle_ready(w, actor) || miracle_armed_fury(w, actor) {
+        return None;
+    }
+    let ours = (0..n)
+        .map(|k| u32::from(w.actors[k].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    if !(n..w.actors.len()).any(|k| {
+        let a = &w.actors[k].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 10
+    }) {
+        return None;
+    }
+    let target = (0..n as u8).find(|&m| {
+        m != actor
+            && w.actors[usize::from(m)].battle.hp > 0
+            && (w
+                .battle
+                .fury_boost
+                .get(usize::from(m))
+                .copied()
+                .flatten()
+                .is_some()
+                || miracle_ready(w, m))
+            && !w
+                .battle
+                .buffs
+                .iter()
+                .any(|b| b.slot == m && b.stat == BuffStat::Attack)
+    })?;
+    let table = w.tables.item_effects.as_ref()?;
+    ids.filter(|&id| {
+        w.tables
+            .item_catalog
+            .get(id)
+            .is_some_and(|e| e.usable_in_battle)
+            && matches!(table.stat_effect(id),
+                Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Attack))
+    })
+    // The single-stat Elixir before the four-stat one.
+    .min_by_key(|&id| match table.stat_effect(id) {
+        Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
+        _ => usize::MAX,
+    })
+    .map(|id| (id, target))
+}
+
+/// Whether `actor` is (or is about to be) a Miracle typist through a Fury
+/// Boost: boosted already, or [`wanted_fury_item`] would buy one.
+fn miracle_armed_fury(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    w.battle
+        .fury_boost
+        .get(usize::from(actor))
+        .copied()
+        .flatten()
+        .is_some()
+        && miracle_armed(w, actor)
+        || wanted_fury_item(
+            w,
+            w.party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id),
+            actor,
+        )
+        .is_some()
+}
+
+/// Whether `actor` can type its Miracle Art this turn: the marker is armed
+/// and the live command pool (`+0x154`, what the entry seeds from) pays for
+/// the whole string at the dearest press.
+fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let i = usize::from(actor);
+    if i >= w.party.party_count.clamp(1, 3) as usize || !miracle_armed(w, actor) {
+        return false;
+    }
+    let roster = w.party_roster_slot(i);
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let Some(miracle) = legaia_art::MIRACLE_ARTS
+        .iter()
+        .find(|m| m.character == character)
+    else {
+        return false;
+    };
+    let press = w
+        .battle
+        .swing_costs
+        .get(roster)
+        .copied()
+        .unwrap_or([legaia_engine_core::arts_command_input::FAVORED_COST; 4])
+        .into_iter()
+        .max()
+        .unwrap_or(u16::MAX);
+    u32::from(press) * miracle.commands.len() as u32 <= u32::from(w.actors[i].battle.agl)
+}
+
 /// Whether `actor`'s Miracle marker is armed (a Ra-Seru equipped): the queue
 /// builder replaces a typed Miracle string with the Miracle row only then.
 fn miracle_armed(w: &legaia_engine_core::world::World, actor: u8) -> bool {
@@ -1974,11 +2163,44 @@ fn wanted_spell(
         .enumerate()
         .filter(|(_, r)| r.affordable)
         .filter_map(|(i, r)| match w.tables.spell_catalog.get(r.id)?.effect {
-            SpellEffect::Damage { base_power, .. } => Some((i, base_power)),
+            SpellEffect::Damage { base_power, .. } => {
+                Some((i, u32::from(base_power) * spell_affinity_pct(w, r.id)))
+            }
             _ => None,
         })
         .max_by_key(|&(_, p)| p)
         .map(|(i, _)| i)
+}
+
+/// The element-affinity percent a Seru-magic cast lands with on the first
+/// standing foe: `matrix[summon creature element][foe element]`
+/// (`FUN_801dd864`), the attacker element being the summoned creature's
+/// record `+0x1D`, not the caster's. `100` when either element is unknown.
+fn spell_affinity_pct(w: &legaia_engine_core::world::World, spell_id: u8) -> u32 {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let Some(aff) = w.tables.element_affinity.as_ref() else {
+        return 100;
+    };
+    let Some(atk) = w.tables.summon_creatures.get(&spell_id).map(|d| d.element) else {
+        return 100;
+    };
+    let Some(def) = w
+        .actors
+        .iter()
+        .skip(n)
+        .find(|a| a.battle.hp > 0)
+        .and_then(|a| {
+            a.battle_element.or_else(|| {
+                w.tables
+                    .monster_catalog
+                    .get(a.battle_monster_id?)
+                    .map(|d| d.element)
+            })
+        })
+    else {
+        return 100;
+    };
+    u32::from(aff.affinity_pct(atk, def).unwrap_or(100))
 }
 
 thread_local! {
@@ -2157,9 +2379,13 @@ fn fight_pad(session: &BootSession) -> u16 {
             .command
             .as_ref()
             .map_or(w.battle_ctx.active_actor, |c| c.actor);
-        let want =
-            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed)).or_else(|| {
-                wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+        let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+            .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
+            .or_else(|| {
+                wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+            })
+            .or_else(|| {
+                wanted_power_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
             });
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
@@ -2231,7 +2457,10 @@ fn fight_pad(session: &BootSession) -> u16 {
             wanted_item(w, bag.into_iter()).is_some()
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
-        let magic = || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor));
+        // A Miracle Art the live pool pays for outdamages any summon the
+        // hand can cast (Koru: ~2000 against Aluru's ~1300).
+        let magic =
+            || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor)) && !miracle_ready(w, cmd.actor);
         let drink = || {
             let bag: Vec<u8> = w
                 .party
@@ -2241,6 +2470,18 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .map(|(id, _)| *id)
                 .collect();
             wanted_mp_item(w, bag.into_iter(), cmd.actor).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        let fury = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            (wanted_fury_item(w, bag.clone().into_iter(), cmd.actor).is_some()
+                || wanted_power_item(w, bag.into_iter(), cmd.actor).is_some())
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
         return match &cmd.phase {
@@ -2260,6 +2501,9 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
             // Out of MP for its best spell in a boss fight: a drink.
             CommandPhase::Menu { .. } if lesson.is_none() && drink() => PadButton::Up.mask(),
+            // A boss too big for spells and short strings: the turn that buys
+            // a Miracle Art every round after.
+            CommandPhase::Menu { .. } if lesson.is_none() && fury() => PadButton::Up.mask(),
             // One party-wide hit from death with nothing to heal: the stance.
             CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
@@ -6654,7 +6898,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     let mut walked: BTreeSet<u8> = BTreeSet::new();
     let mut touched: BTreeSet<u8> = BTreeSet::new();
     let mut examined: BTreeSet<(u8, u8)> = BTreeSet::new();
-    let overreach = overreaching_records(&mf, &man, 2);
+    let overreach = overreaching_records(session, &mf, &man, 2);
     // A stager's record is often a staged conversation (`tunnelc` P1[4],
     // Xain: `0x323`, `0x324`, `0x325`, then the fight), each contact
     // playing the next stage, so stagers are approached every round until
@@ -6806,11 +7050,29 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 || overreach.contains(&usize::from(rec))
                 || ran >= MAX_BEATS
             {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() && !walked.contains(&rec) {
+                    eprintln!(
+                        "    [beat-skip] {name} P2[{rec}] door {} overreach {}",
+                        doors.contains(&rec),
+                        overreach.contains(&usize::from(rec))
+                    );
+                }
+                continue;
+            }
+            if record_stages_fight(&mf, &man, 2, usize::from(rec))
+                && record_overreaches(&mf, &man, 2, usize::from(rec), true)
+            {
                 continue;
             }
             let pass = partition2_record_gates(&mf, &man, usize::from(rec))
                 .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
             if !pass {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [beat-skip] {name} P2[{rec}] gates {:?}",
+                        partition2_record_gates(&mf, &man, usize::from(rec))
+                    );
+                }
                 continue;
             }
             walked.insert(rec);
@@ -7150,7 +7412,7 @@ fn prop_beats(
     };
     let setters0 = wanted(0);
     let setters2 = wanted(2);
-    let over0 = overreaching_records(mf, man, 0);
+    let over0 = overreaching_records(session, mf, man, 0);
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let sets_wanted = |rec: usize| {
@@ -7268,6 +7530,7 @@ fn next_anchor_has(flag: u16) -> bool {
 /// left alone - a long cutscene sets and clears many a scratch flag the
 /// anchor never shows.
 fn overreaching_records(
+    session: &BootSession,
     mf: &legaia_asset::man_section::ManFile,
     man: &[u8],
     partition: usize,
@@ -7281,8 +7544,25 @@ fn overreaching_records(
         .flat_map(|(c1, _)| c1)
         .collect();
     let latching = |part: usize| -> BTreeSet<usize> {
-        walk_partition_gflag_sites(mf, man, part)
+        let sites = walk_partition_gflag_sites(mf, man, part);
+        // A latch the record lowers again itself is a hold for its own
+        // span, not a latch: `nilboa` P2[20] raises `0x00F` (the C1 gate of
+        // the stepping-stone hops P2[8] / P2[9]) for the jump onto the
+        // challenge ledge and clears it on landing, before it spawns the
+        // Delilas family's challenge P2[21].
+        let lowered: BTreeSet<(usize, u16)> = sites
+            .iter()
+            .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Clear)
+            .map(|s| (s.record, s.flag))
+            .collect();
+        sites
             .into_iter()
+            .filter(|s| !lowered.contains(&(s.record, s.flag)))
+            // Nor is a flag the record hands to the scene it leaves for,
+            // whose entry script consumes it: `concnow` P2[18], the way into
+            // Conkram's past, raises `0x423` and changes scene to `conc2`,
+            // whose P1[0] tests and clears it.
+            .filter(|s| !handoff_cleared(session, mf, man, part, s.record).contains(&s.flag))
             .filter(|s| {
                 s.bank == FlagBank::System
                     && s.kind == FlagKind::Set
@@ -7317,6 +7597,72 @@ fn overreaching_records(
     out
 }
 
+thread_local! {
+    /// The system flags each scene's entry script (partition 1 record 0)
+    /// clears, by scene name.
+    static ENTRY_CLEARS: std::cell::RefCell<HashMap<String, BTreeSet<u16>>> =
+        Default::default();
+}
+
+/// The flags record `(part, rec)` raises for the scene it changes to: those
+/// the entry scripts of its `0x3F` destinations (other than this scene)
+/// clear.
+fn handoff_cleared(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> BTreeSet<u16> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
+    use legaia_engine_core::man_field_scripts::{
+        FlagBank, partition_record_span, walk_partition_gflag_sites,
+    };
+    let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
+        return BTreeSet::new();
+    };
+    let body = &man[start..start + len];
+    let here = scene_name(session);
+    let dests: BTreeSet<String> = LinearWalker::new(body, pc0)
+        .flatten()
+        .filter(|i| matches!(i.info, InsnInfo::SceneChange { .. }))
+        .filter_map(|i| scene_change_name(body, &i))
+        .map(|d| d.to_ascii_lowercase())
+        .filter(|d| *d != here)
+        .collect();
+    let index = &session.host.index;
+    dests
+        .iter()
+        .flat_map(|d| {
+            ENTRY_CLEARS.with(|c| {
+                c.borrow_mut()
+                    .entry(d.clone())
+                    .or_insert_with(|| {
+                        let Some(dman) = Scene::load(index, d)
+                            .ok()
+                            .and_then(|sc| sc.field_man_payload(index).ok().flatten())
+                        else {
+                            return BTreeSet::new();
+                        };
+                        let Ok(dmf) = legaia_asset::man_section::parse(&dman) else {
+                            return BTreeSet::new();
+                        };
+                        walk_partition_gflag_sites(&dmf, &dman, 1)
+                            .iter()
+                            .filter(|s| {
+                                s.record == 0
+                                    && s.bank == FlagBank::System
+                                    && s.kind == FlagKind::Clear
+                            })
+                            .map(|s| s.flag)
+                            .collect()
+                    })
+                    .clone()
+            })
+        })
+        .collect()
+}
+
 /// Did the retail run leave boss stager placement `p1_record` alone before
 /// the next milestone? Of the system flags its own record cleanly SETs and
 /// no record of the scene ever CLEARs - flags that, once set, would still
@@ -7329,6 +7675,23 @@ fn stager_overreaches(
     man: &[u8],
     p1_record: usize,
 ) -> bool {
+    record_overreaches(mf, man, 1, p1_record, false)
+}
+
+/// [`stager_overreaches`] for any record: of the system flags record
+/// `(partition, record)` cleanly SETs and no record of the scene ever
+/// CLEARs, the next anchor carries none. A walk-on band that stages a fight
+/// is held to it as a stager is: `deene` P2[18] raises `0x6B5` and installs
+/// formation 11 (a 64800 HP fight), and no anchor from `zora_castle` on
+/// carries `0x6B5` (cleared again by the entry script) or the `0x6B6` of
+/// P2[19], the sequel the entry script spawns on it after the fight.
+fn record_overreaches(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    partition: usize,
+    record: usize,
+    follow_fight: bool,
+) -> bool {
     use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let sites: Vec<_> = (0..3)
         .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
@@ -7339,11 +7702,25 @@ fn stager_overreaches(
         .filter(|s| s.kind == FlagKind::Clear)
         .map(|s| s.flag)
         .collect();
+    let mut records = vec![(partition, record)];
+    if follow_fight {
+        // The fight's sequel: the entry script's post-battle return spawns
+        // the record a pending flag of this one names.
+        let pending: BTreeSet<u16> = sites
+            .iter()
+            .filter(|s| s.partition == partition && s.record == record && s.kind == FlagKind::Set)
+            .map(|s| s.flag)
+            .collect();
+        records.extend(
+            entry_spawns_on(mf, man, &pending)
+                .into_iter()
+                .map(|r| (2, r)),
+        );
+    }
     let lasting: BTreeSet<u16> = sites
         .iter()
         .filter(|s| {
-            s.partition == 1
-                && s.record == p1_record
+            records.contains(&(s.partition, s.record))
                 && s.kind == FlagKind::Set
                 && s.flag != 0
                 && !cleared.contains(&s.flag)
@@ -7351,6 +7728,45 @@ fn stager_overreaches(
         .map(|s| s.flag)
         .collect();
     !lasting.is_empty() && !lasting.iter().any(|&f| next_anchor_has(f))
+}
+
+/// The partition-2 records the scene's entry script (partition 1 record 0)
+/// spawns right behind a test of one of `flags`: the post-battle hand-off a
+/// pending flag set before `3E FF` arms (`deene` P1[0]: `76 B5`, `66 B5`,
+/// `44 27`).
+fn entry_spawns_on(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    flags: &BTreeSet<u16>,
+) -> BTreeSet<usize> {
+    use legaia_asset::field_disasm::{FlagKind as Kind, InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let mut out = BTreeSet::new();
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 1, 0) else {
+        return out;
+    };
+    let base = mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
+    let n2 = mf.partitions.get(2).map_or(0, Vec::len);
+    let mut armed = 0usize;
+    for insn in LinearWalker::new(&man[start..start + len], pc0).flatten() {
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: Kind::Test,
+                idx,
+                ..
+            } => armed = if flags.contains(&idx) { 4 } else { 0 },
+            InsnInfo::SpawnRecord { global_index } if armed > 0 => {
+                if let Some(r) = usize::from(global_index).checked_sub(base)
+                    && r < n2
+                {
+                    out.insert(r);
+                }
+                armed = 0;
+            }
+            _ => armed = armed.saturating_sub(1),
+        }
+    }
+    out
 }
 
 /// Rounds of the talk + walk-on beat passes per scene visit.

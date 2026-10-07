@@ -100,7 +100,9 @@ carries a comment naming the flags that put it there - the Fire Path goes
 through `geremi`, Vidna and `stone` (the Star Pearl that opens the `tunnela`
 door; the cheapest route rides `ropeway2`'s elevator, whose door opens only
 after Xain), Rogue Tower through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
-waits on), Zora Castle through `son`, Noaru Valley back through its own start
+waits on), Zora Castle back through its own start scene `nilboa` (Koru's
+fight thaws the overworld's way south, see below), then `deene` and `son`,
+Noaru Valley back through its own start
 scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
 to `concend`), then `concend`, `jou` and `retockin` (the way back from Drake
 was by land and cart, not the Uru Mais warp), and Sol Tower back through its own
@@ -200,10 +202,17 @@ a **latch** - a flag some partition-2 C1 gate of the scene reads - that the
 next anchor does not carry: retail had not played it, and its latch shuts the
 record the story takes (`conc2` P2[12] latches `0x3E1`, the C1 gate of the
 `juui1` hand-off P2[20], and the walk-on P2[11] spawns P2[12] as its
-epilogue). A boss stager is skipped on the same evidence: its own record
+epilogue). A latch the same record lowers again is a hold for its own span,
+not a latch: `nilboa` P2[20] raises `0x00F` (the C1 gate of the
+stepping-stone hops) for its jump down to Koru and clears it on landing. A
+boss stager is skipped on the same evidence: its own record
 sets a flag the next anchor lacks and no record of the scene clears, so
 retail never fought there (`town0b` P1[36], a loss-allowed fight, raises
-`0x5C0` before its `3E FF 03`).
+`0x5C0` before its `3E FF 03`). A walk-on band that stages a fight is held
+to it too, counting the sequel the entry script spawns on the band's
+pending flag after the fight: `deene` P2[18] raises `0x6B5` before a
+64800 HP fight, and P2[19], which P1[0] spawns on it, raises the `0x6B6`
+no later anchor carries.
 
 A talk or walk-on beat whose record ends on `3E FF` has committed a fight
 that starts only after the record is gone, so the beat is fought before the
@@ -751,15 +760,26 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   west lane is held by P2[7] at `(42, 89)` until `0x142`, the Caruban beat.
   That is why `west_voz_forest` sits after `drake_castle_revisited`, where
   the pad hand drains `suimon` and crosses `bylon` to the `vell` door.
-- From `nivora_late`, `map03`'s door out of `nilboa` (P2[34], `(10..14, 9)`)
-  lands on the overworld's north half, and `son`'s portal `(45, 84)` lies on
-  the south half with no walkable join. The retail run did not walk it: the
-  `zora_castle` anchor carries `nilboa` P2[25]'s `0x56D` (the scene's
-  exit after the Delilas duels, a `0x3F` to `map03` with a parked entry) and flags from
-  `bubu1`, `deene` (P2[14], `0x60B` / `0x60C`, the same pair `son`'s
-  P1[4] and `map03`'s P2[13] / P2[14] set on their crossings) and
-  `dream`, none of them a waypoint. The spine names only `son`, so the pad
-  hand leaves by the walk-on door and stalls on the north half.
+- From `nivora_late`, the overworld's north half (where `nilboa`'s door
+  P2[34] lands) and its south half (`deene`, `son`) join only once `0x378`
+  is up: `map03`'s entry script P1[0] tests it and clears the walls at
+  `(84..89, 70..74)` (`4C 70`). `0x378` is set by `map03` P2[15], the Koru
+  cutscene the entry script spawns on `nilboa` P2[25]'s `0x592`, and P2[25]
+  is the entry script's own post-battle hand-off on `0x47A` - the flag the
+  Delilas family's challenge `nilboa` P2[21] raises before staging Koru
+  (`3E FF 20`), which the ledge band P2[20] spawns on its "I'm ready"
+  branch. So `zora_castle` names `nilboa` itself as its first waypoint.
+  The `son` portal `(45, 84)` is walled in: it is the landing of the boat
+  ride `map03` P2[13], spawned on `0x575`, which `deene` P2[14] raises
+  (the anchor carries that record's `0x37E`), hence the `deene` waypoint.
+- Koru (monster `0xB6`, 20000 HP) is a timed fight: its AI casts the
+  all-party finisher on round counter `4` (`timed_fight.rs`), so the party
+  has five rounds. Spells and short Arts strings fall a few hundred HP
+  short. The fighter spends a member's first turn on a Fury Boost when that
+  buys a Miracle Art (the `+0x1F9` byte makes every later round boundary
+  restore the pool to `base * 7 / 5 + 8`), prefers the Miracle over any
+  summon once the live pool pays for it, and has a member with no Miracle
+  hand Power Elixirs to the Miracle typists.
 - `chitei2` joins its parts through machinery as well as walls. The
   transporter at `(100, 102)` is a kind-0 teleport to `(94, 24)` and the
   planner rides it. The cages along row 102 (partition-0 records 6..11, each a
