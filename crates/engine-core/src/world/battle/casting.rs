@@ -38,6 +38,11 @@ const VERA_SPELL_ID: u8 = 0x83;
 const ORB_SPELL_ID: u8 = 0x89;
 const SPOON_SPELL_ID: u8 = 0x91;
 
+/// The two high-block summons that strike nothing and credit spell XP in
+/// their own arm: Horn (PROT 0930) and Jedo (PROT 0931).
+const HORN_SPELL_ID: u8 = 0x9C;
+const JEDO_SPELL_ID: u8 = 0x9D;
+
 impl World {
     /// Deduct `def`'s MP cost from `caster` and fold its effect onto each
     /// absolute actor slot in `targets`. The direct-fold entry: MP is spent
@@ -143,6 +148,15 @@ impl World {
         // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
         let is_party_summon_cast = (caster as usize) < self.party.party_count as usize
             && crate::summon::has_summon_body(def.id);
+        // The high block (`0x99..=0xA0`) trains the spell too: its modules
+        // strike through the same slot-7 body, and the two that strike
+        // nothing (Horn, Jedo outside a scripted fight) credit inline
+        // ([`crate::summon::module_trains_spell_xp`]).
+        let trains_spell_xp = (caster as usize) < self.party.party_count as usize
+            && crate::summon::module_trains_spell_xp(def.id);
+        // Jedo's non-scripted arm strikes nothing, so no finisher tail runs
+        // for it; it credits a flat grant per living monster seat instead.
+        let jedo_banish = def.id == JEDO_SPELL_ID && !self.battle.scripted_fight;
         // Shiny bonus: when the casting character learned this Seru's spell
         // from a shiny capture, every cast deals +35% damage (on top of the
         // normal roll). Mirrors the retail `--shiny-seru` damage hook
@@ -154,6 +168,9 @@ impl World {
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
         let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
         let mut summon_xp_gain: u32 = 0;
+        if trains_spell_xp {
+            summon_xp_gain = self.inline_module_spell_xp(def.id, jedo_banish);
+        }
         // The Seru-magic **side-effect stager** (`FUN_801F3D3C`). Retail's
         // summon module calls it once as the cast commits, before any hit, and
         // the damage finisher then reads the staged percent on every hit - so
@@ -253,7 +270,8 @@ impl World {
             // Per-hit spell-XP gain (FUN_801ddb30 tail): the final damage
             // delta against the target's live/max HP at the moment of the hit
             // (the snapshot taken above, before the fold applies the damage).
-            if is_party_summon_cast
+            if trains_spell_xp
+                && !jedo_banish
                 && let crate::spells::SpellOutcome::Damage { amount, .. } = &outcome
             {
                 summon_xp_gain =
@@ -275,7 +293,7 @@ impl World {
         }
         // Bank the accrued XP and run the once-per-cast level-up check
         // (FUN_801e70bc fires at summon return, state 0x36).
-        if is_party_summon_cast {
+        if trains_spell_xp {
             self.accrue_summon_spell_xp(caster, def.id, summon_xp_gain);
         }
         // Cast band (live-loop path): seat the move's battle-FX at the first
@@ -906,6 +924,46 @@ impl World {
                 Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
             }
             _ => None,
+        }
+    }
+
+    /// The spell XP a striking-free high-block module credits in its own arm,
+    /// read off the battle before the cast folds.
+    ///
+    /// - **Horn** walks every party seat and credits `+3` for a seat missing
+    ///   HP and `+1` for a seat carrying a status
+    ///   ([`crate::magic_xp::horn_seat_xp_gain`]).
+    /// - **Jedo** outside a scripted fight (`jedo_banish`) credits
+    ///   [`crate::magic_xp::JEDO_XP_PER_LIVING_MONSTER`] per monster seat
+    ///   whose HP is non-zero.
+    ///
+    /// Every other id returns `0` - its XP comes from the per-hit tail.
+    ///
+    /// REF: FUN_801F6A74 (PROT 0930), FUN_801F6A58 (PROT 0931)
+    fn inline_module_spell_xp(&self, spell_id: u8, jedo_banish: bool) -> u32 {
+        let party_count = self.party.party_count as usize;
+        match spell_id {
+            HORN_SPELL_ID => (0..party_count)
+                .filter_map(|seat| self.actors.get(seat).map(|a| (seat, a)))
+                .map(|(seat, a)| {
+                    crate::magic_xp::horn_seat_xp_gain(
+                        a.battle.hp,
+                        a.battle.max_hp,
+                        self.battle.status_effects.display_flags(seat as u8) != 0,
+                    )
+                })
+                .sum(),
+            JEDO_SPELL_ID if jedo_banish => {
+                let living = self
+                    .actors
+                    .iter()
+                    .take(BATTLE_SLOTS)
+                    .skip(party_count)
+                    .filter(|a| a.battle.max_hp != 0 && a.battle.hp != 0)
+                    .count() as u32;
+                living * crate::magic_xp::JEDO_XP_PER_LIVING_MONSTER
+            }
+            _ => 0,
         }
     }
 

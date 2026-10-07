@@ -167,6 +167,28 @@ pub const FLUTE_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x96..=0x98;
 /// `summon_binding_base_high`).
 pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 
+/// Whether a party member's cast of `spell_id` trains the spell (credits the
+/// record's `+0x8` XP word and runs the `FUN_801E70BC` level check).
+///
+/// The finisher's XP tail (`FUN_801DDB30`, `0x801DE440`) keys on attacker
+/// slot 7 with no spell-id test, and every module of the base, evolved and
+/// high blocks strikes through `FUN_801DD0AC(0x12, 7, seat)` - the high block
+/// included (Juggernaut `0x801F7E0C`, Palma `0x801F8114`, Mule `0x801F7E4C`,
+/// Jedo's scripted arm `0x801F8438`, Meta `0x801F7BA0`, Terra `0x801F7CCC`,
+/// Ozma `0x801F8E04`, each with `li a1,0x7`). The two that strike nothing
+/// credit inline instead: Horn `0x9C` per party seat and Jedo `0x9D` per
+/// living monster outside a scripted fight
+/// ([`crate::magic_xp::horn_seat_xp_gain`],
+/// [`crate::magic_xp::JEDO_XP_PER_LIVING_MONSTER`]). `FUN_801E70BC`'s own
+/// tripled-threshold set names `0x99` / `0x9B` / `0xA0`. The flute ids
+/// `0x96..=0x98` are item casts the caster's spell list never carries, so
+/// they are left out.
+///
+/// REF: FUN_801DDB30 (`0x801DE440` slot-7 gate), FUN_801E70BC
+pub fn module_trains_spell_xp(spell_id: u8) -> bool {
+    has_summon_body(spell_id) || HIGH_SUMMON_IDS.contains(&spell_id)
+}
+
 /// The whole player-summon spell-id span, base through high block. Every id in
 /// it resolves through the same linear stager arithmetic - see
 /// [`summon_stager_prot_entry`].

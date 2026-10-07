@@ -226,6 +226,40 @@ pub fn module_heal_xp_gain(spell_id: u8, magic_level: u8, hp: u16, max_hp: u16) 
     }
 }
 
+/// Horn (`0x9C`, PROT 0930) spell-XP grant for one party seat.
+///
+/// Horn strikes nothing - it never calls `FUN_801DD0AC`, so the finisher's
+/// slot-7 tail never runs for it - and credits the caster's XP word in its
+/// own restore arm instead. The arm walks **every** party seat
+/// (`0 .. *(ctx)+0`, `0x801F786C..0x801F7B1C`), refills the seat to its max
+/// HP, clears its status word `+0x16E`, and bumps the XP word twice:
+/// `+3` when the seat was missing HP (`beq a2,zero` at `0x801F7978`, add at
+/// `0x801F79A0`) and `+1` when its status word was non-zero (`beq v0,zero` at
+/// `0x801F79B8`, add at `0x801F7A14`). Both bumps sit behind the special-battle
+/// word `0x8007BAC0`, which the engine applies where the gain banks.
+///
+/// REF: FUN_801F6A74 (PROT 0930 restore arm)
+pub fn horn_seat_xp_gain(hp: u16, max_hp: u16, status_word_nonzero: bool) -> u32 {
+    let missing = u32::from(max_hp != hp);
+    3 * missing + u32::from(status_word_nonzero)
+}
+
+/// Jedo (`0x9D`, PROT 0931) spell XP per living monster seat in a fight that
+/// is **not** scripted.
+///
+/// Jedo's module branches on the scripted-fight flag `ctx[+0x287]`
+/// (`beq v0,zero` at `0x801F8344`): a scripted fight takes the striking arm
+/// (`FUN_801DD0AC(0x12, 7, seat)` per living monster, so the finisher's
+/// slot-7 tail credits XP per hit as for every damaging summon); any other
+/// fight takes the arm at `0x801F8558`, which strikes nothing and instead, for
+/// each monster seat `3..=6` whose HP `+0x14C` is non-zero, bumps the caster's
+/// magic-rank counter (record `+0x9C`, `0x801F8658`), sets the seat's `+0x21C`
+/// to `0xC8`, and adds `3` to the cast spell's XP word (`0x801F86C0`) behind
+/// the special-battle word.
+///
+/// REF: FUN_801F6A58 (PROT 0931 non-scripted arm)
+pub const JEDO_XP_PER_LIVING_MONSTER: u32 = 3;
+
 /// Menu-cast heal spell-XP grant - PORT: FUN_800402F4 (HP-heal arms).
 ///
 /// Single-target arm (case body `0x80040470`): `+0xC` when the target's
@@ -365,6 +399,16 @@ mod tests {
                 "id {id:#x} hp {hp}"
             );
         }
+    }
+
+    /// Horn's per-seat grant: `+3` for a seat missing HP, `+1` for a seat
+    /// with a status word, both stacking; a full, clean seat earns nothing.
+    #[test]
+    fn horn_seat_xp_grants() {
+        assert_eq!(horn_seat_xp_gain(10, 10, false), 0);
+        assert_eq!(horn_seat_xp_gain(9, 10, false), 3);
+        assert_eq!(horn_seat_xp_gain(10, 10, true), 1);
+        assert_eq!(horn_seat_xp_gain(0, 10, true), 4);
     }
 
     /// Minimal synthetic PS-X EXE: header + zeroed text with a threshold

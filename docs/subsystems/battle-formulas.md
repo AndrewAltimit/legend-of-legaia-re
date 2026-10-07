@@ -1002,9 +1002,30 @@ Engine: kernels `battle_formulas::summon_spell_xp_gain` /
 `SCUS_942.54`, disc-gated `magic_xp_disc`); live wiring
 `World::cast_spell_on_slots` → `World::accrue_summon_spell_xp` (XP persists in
 the record's `+0x8` bytes, so it round-trips through saves). "Summon
-attacker" covers the base and the evolved Seru blocks (`0x81..=0x95`): the
-tail tests only for attacker slot 7 (`0x801DE440`), and both blocks cast
-through that body.
+attacker" covers the base, evolved and high blocks (`0x81..=0x95`,
+`0x99..=0xA0`): the tail tests only for attacker slot 7 (`0x801DE440`) and
+finds the slot by the live spell id `actor[+0x1DF]`, and every damaging
+module strikes through `FUN_801DD0AC(0x12, 7, seat)` - the high block too
+(Juggernaut `0x801F7E0C`, Palma `0x801F8114`, Mule `0x801F7E4C`, Meta
+`0x801F7BA0`, Terra `0x801F7CCC`, Ozma `0x801F8E04`). Port:
+`summon::module_trains_spell_xp`.
+
+Two high-block modules strike nothing and credit the XP word in their own
+arm, behind the same special-battle gate:
+
+- **Horn** `0x9C` (PROT 0930) walks every party seat
+  (`0x801F786C..0x801F7B1C`), refills it to max HP and clears its status word
+  `+0x16E`, crediting `+3` for a seat that was missing HP (`0x801F79A0`) and
+  `+1` for a seat that carried a status (`0x801F7A14`). Port
+  `magic_xp::horn_seat_xp_gain`.
+- **Jedo** `0x9D` (PROT 0931) branches on the scripted-fight flag
+  `ctx[+0x287]` (`0x801F8344`). A scripted fight takes the striking arm, so
+  the tail credits per hit. Any other fight takes `0x801F8558`, which strikes
+  nothing: per monster seat `3..=6` with non-zero HP it bumps the caster's
+  magic-rank counter (record `+0x9C`), sets the seat's `+0x21C` to `0xC8`,
+  and credits `+3`. Port `magic_xp::JEDO_XP_PER_LIVING_MONSTER`; the
+  non-scripted arm's effect on the monsters is not ported (the engine still
+  folds the catalog's placeholder outcome).
 
 The three heal modules accrue in their own arm instead, per healed seat,
 into the same XP word (`+0x5D0 + slot * 4` off `0x80084140` is record

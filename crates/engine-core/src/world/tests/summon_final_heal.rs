@@ -158,6 +158,72 @@ fn non_summon_spell_accrues_no_spell_xp() {
     );
 }
 
+/// Re-key the `summon_xp_world` record + def onto another spell id.
+fn summon_xp_world_for(
+    id: u8,
+    enemy_hp: u16,
+    enemy_max_hp: u16,
+) -> (World, crate::spells::SpellDef) {
+    let mut world = summon_xp_world(enemy_hp, enemy_max_hp);
+    let mut list = world.party.roster.members[0].spell_list();
+    list.ids[0] = id;
+    world.party.roster.members[0].set_spell_list(list);
+    let mut def = gimard_spell_def();
+    def.id = id;
+    (world, def)
+}
+
+fn xp_of(world: &World, id: u8) -> u32 {
+    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], id).unwrap();
+    crate::magic_xp::spell_xp(&world.party.roster.members[0], slot)
+}
+
+/// The high block strikes through the same slot-7 body (`FUN_801DD0AC(0x12,
+/// 7, seat)` in every damaging module, e.g. Meta at `0x801F7BA0`), so the
+/// finisher's tail credits it per hit like a base cast.
+#[test]
+fn high_block_damage_cast_accrues_spell_xp() {
+    for id in [0x99u8, 0x9A, 0x9B, 0x9E, 0x9F, 0xA0] {
+        let (mut world, def) = summon_xp_world_for(id, 4000, 4000);
+        let before = world.actors[1].battle.hp;
+        world.cast_spell_on_slots(0, &def, &[1]);
+        let damage = (before - world.actors[1].battle.hp) as u32;
+        let expected = vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
+        assert!(expected > 0, "id {id:#x}");
+        assert_eq!(xp_of(&world, id), expected, "id {id:#x}");
+    }
+}
+
+/// Horn credits per party seat in its own arm: `+3` missing HP, `+1` status.
+#[test]
+fn horn_credits_per_party_seat() {
+    let (mut world, mut def) = summon_xp_world_for(0x9C, 4000, 4000);
+    def.target = crate::spells::SpellTarget::AllAllies;
+    def.effect = crate::spells::SpellEffect::HealAll { amount: 10 };
+    world.actors[0].battle.hp = 300;
+    world.cast_spell_on_slots(0, &def, &[0]);
+    assert_eq!(xp_of(&world, 0x9C), 3);
+}
+
+/// Jedo outside a scripted fight strikes nothing and credits `+3` per living
+/// monster; inside one it strikes, and the tail credits per hit.
+#[test]
+fn jedo_credits_per_living_monster_outside_a_scripted_fight() {
+    let (mut world, def) = summon_xp_world_for(0x9D, 4000, 4000);
+    world.actors[2].battle.max_hp = 100;
+    world.actors[2].battle.hp = 0;
+    world.cast_spell_on_slots(0, &def, &[1]);
+    assert_eq!(xp_of(&world, 0x9D), 3, "one living monster, one dead");
+
+    let (mut world, def) = summon_xp_world_for(0x9D, 4000, 4000);
+    world.battle.scripted_fight = true;
+    let before = world.actors[1].battle.hp;
+    world.cast_spell_on_slots(0, &def, &[1]);
+    let damage = (before - world.actors[1].battle.hp) as u32;
+    let expected = vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
+    assert_eq!(xp_of(&world, 0x9D), expected);
+}
+
 #[test]
 fn final_heal_revives_and_consumes_one_lost_grail() {
     use legaia_save::Party;
