@@ -7550,13 +7550,103 @@ fn overreaching_records(
         // the stepping-stone hops P2[8] / P2[9]) for the jump onto the
         // challenge ledge and clears it on landing, before it spawns the
         // Delilas family's challenge P2[21].
+        // Only a record that carries the party along a chain of arcs (two
+        // or more op `0x43` arcs on the `0xF8` channel: `nilboa`'s stepping
+        // stones to the Koru ledge) is exempted. A stair band (`dohaty` P2[3..8]) holds `0x00F` the same
+        // way around its walk legs, and a single-arc ledge (`jouind`
+        // P2[0] / P2[6..9]) around one drop; both play nothing, and walking
+        // one strands the hand on the far side.
+        let base =
+            mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
+        let carries = |rec: usize| {
+            use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
+            use legaia_engine_core::man_field_scripts::partition_record_span;
+            partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
+                LinearWalker::new(&man[start..start + len], pc0)
+                    .flatten()
+                    .filter(|i| {
+                        i.extended == Some(0xF8)
+                            && matches!(
+                                i.info,
+                                InsnInfo::ActorCtrl {
+                                    kind: ActorCtrlKind::ArcJump { .. },
+                                    ..
+                                }
+                            )
+                    })
+                    .count()
+                    >= 2
+            })
+        };
         let lowered: BTreeSet<(usize, u16)> = sites
             .iter()
             .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Clear)
+            .filter(|s| carries(s.record))
             .map(|s| (s.record, s.flag))
+            .collect();
+        // A record that also raises a still-clear flag the next anchor
+        // carries is the beat retail played, and its latch sits on another
+        // branch: `concnow` P2[15], the third vision, raises `0x3EF` on the
+        // visit the story takes and jumps past the `0x3D2` arm a later
+        // visit plays.
+        let w = &session.host.world;
+        // A decode-coherent site counts even where its two bytes also read
+        // as text (`nilboa` P2[25]'s `55 6D`, "Um"): the record's dialogue
+        // is `0x1F`-framed, so the walk is past it.
+        let wanted_by = |part: usize| -> BTreeSet<usize> {
+            walk_partition_gflag_sites(mf, man, part)
+                .iter()
+                .filter(|s| {
+                    s.bank == FlagBank::System
+                        && s.kind == FlagKind::Set
+                        && s.clean
+                        && !s.debug_menu
+                        && !w.system_flag_test(s.flag)
+                        && NEXT_ANCHOR_FLAGS
+                            .with(|a| a.borrow().as_ref().is_some_and(|f| f.contains(&s.flag)))
+                })
+                .map(|s| s.record)
+                .collect()
+        };
+        let wanted_here = wanted_by(part);
+        let wanted2 = wanted_by(2);
+        // The chain counts: what the record spawns (three levels), and the
+        // sequel the entry script spawns on a flag one of them raises
+        // before a fight (`nilboa` P2[20] spawns the challenge P2[21],
+        // whose `0x47A` has P1[0] spawn P2[25], which raises the `0x56D`
+        // the next anchor carries).
+        let set_by = |part: usize, rec: usize| -> BTreeSet<u16> {
+            walk_partition_gflag_sites(mf, man, part)
+                .iter()
+                .filter(|s| {
+                    s.record == rec && s.bank == FlagBank::System && s.kind == FlagKind::Set
+                })
+                .map(|s| s.flag)
+                .collect()
+        };
+        let played: BTreeSet<usize> = sites
+            .iter()
+            .map(|s| s.record)
+            .collect::<BTreeSet<usize>>()
+            .into_iter()
+            .filter(|&rec| {
+                if wanted_here.contains(&rec) {
+                    return true;
+                }
+                let spawned = spawned_p2(mf, man, part, rec, base, 3);
+                let mut chain: Vec<(usize, usize)> = vec![(part, rec)];
+                chain.extend(spawned.iter().map(|&r| (2, r)));
+                spawned.iter().any(|r| wanted2.contains(r))
+                    || chain.iter().any(|&(p, r)| {
+                        entry_spawns_on(mf, man, &set_by(p, r))
+                            .iter()
+                            .any(|q| wanted2.contains(q))
+                    })
+            })
             .collect();
         sites
             .into_iter()
+            .filter(|s| !played.contains(&s.record))
             .filter(|s| !lowered.contains(&(s.record, s.flag)))
             // Nor is a flag the record hands to the scene it leaves for,
             // whose entry script consumes it: `concnow` P2[18], the way into
@@ -7571,6 +7661,14 @@ fn overreaching_records(
                     && !s.debug_menu
                     && latches.contains(&s.flag)
                     && !next_anchor_has(s.flag)
+            })
+            .inspect(|s| {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [latch] P{part}[{}] sets latch {:#05X}",
+                        s.record, s.flag
+                    );
+                }
             })
             .map(|s| s.record)
             .collect()
@@ -8231,7 +8329,17 @@ fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
                 if !talked {
                     last = Run::Parked(format!("pad walk to talk P1[{slot}]: {e}"));
                 }
-                continue;
+                // A walk stopped by the counter in front of the NPC still
+                // leans in: the probe decides whether it reaches over
+                // (`concnow` P1[12] / P1[13], the gate guards at (90, 119),
+                // behind the wall row 118 their talk paints away).
+                let (px, pz) = player_xz(session);
+                let me = dispatch_tile(px, pz);
+                let near = (me.0 - i32::from(npc_tile.0)).abs() <= 2
+                    && (me.1 - i32::from(npc_tile.1)).abs() <= 2;
+                if attempt > 0 || !near {
+                    continue;
+                }
             }
         }
         let npc = move |s: &BootSession| s.host.world.npcs.positions.get(&slot).copied();
@@ -8240,6 +8348,14 @@ fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
             return Run::Entered(scene);
         }
         if !facing(session) {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "      [talk-face] P1[{slot}] player {:?} npc {:?} probe {:?}",
+                    player_xz(session),
+                    session.host.world.npcs.positions.get(&slot),
+                    session.host.world.field_interact_probe_slot()
+                );
+            }
             if !talked {
                 let w = &session.host.world;
                 last = Run::Parked(format!(

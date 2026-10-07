@@ -202,9 +202,20 @@ a **latch** - a flag some partition-2 C1 gate of the scene reads - that the
 next anchor does not carry: retail had not played it, and its latch shuts the
 record the story takes (`conc2` P2[12] latches `0x3E1`, the C1 gate of the
 `juui1` hand-off P2[20], and the walk-on P2[11] spawns P2[12] as its
-epilogue). A latch the same record lowers again is a hold for its own span,
-not a latch: `nilboa` P2[20] raises `0x00F` (the C1 gate of the
-stepping-stone hops) for its jump down to Koru and clears it on landing. A
+epilogue). Three shapes are not overreach. A record that raises a
+still-clear flag the next anchor carries - itself, through what it spawns,
+or through the sequel the entry script spawns on a flag one of them raises
+before a fight - is the beat retail played, its latch a hold or another
+branch's: `nilboa` P2[20] holds `0x00F` (the C1 gate of the stepping-stone
+hops) for its jump down to Koru, and its chain (P2[21], then P1[0]'s P2[25]
+on `0x47A`) raises `0x56D`; `concnow` P2[15] raises `0x3EF` and jumps past
+the `0x3D2` arm. A chain of arcs (two or more on the `0xF8` channel, the
+stepping stones) that lowers its own hold again is a crossing, not a beat
+retail skipped; a stair band (`dohaty` P2[3..8]) or a single-arc ledge
+(`jouind` P2[0], P2[6..9]) with the same hold stays skipped, since walking
+one strands the hand on the far side. And a flag the record hands to the
+scene it changes to, whose entry script clears it, is no latch (`concnow`
+P2[18] raises `0x423` for `conc2`). A
 boss stager is skipped on the same evidence: its own record
 sets a flag the next anchor lacks and no record of the scene clears, so
 retail never fought there (`town0b` P1[36], a loss-allowed fight, raises
@@ -780,6 +791,19 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   restore the pool to `base * 7 / 5 + 8`), prefers the Miracle over any
   summon once the live pool pays for it, and has a member with no Miracle
   hand Power Elixirs to the Miracle typists.
+- From `zora_castle`, `concnow`'s way into Conkram's past is the walk-on
+  P2[17], which spawns P2[18] (`0x3F` to `conc2`) once the visions P2[13]
+  .. P2[16] have run; its other `conc2` bands lie behind walls. The guards
+  at the gate, P1[12] / P1[13], stand at `(11520, 15232)` (a placement byte
+  with bit 7 set: the corner between rows 118 and 119), and their talk,
+  once `0x3EF` is up, raises `0x5F8` and clears the walls at
+  `(89..90, 115..120)`. The pad hand stops at `z = 15038` in front of them,
+  and the interact probe (64 ahead, a 72-unit box) does not reach the
+  guards from there. The pad hand also finds no walk to the vision P2[16]
+  at `(64, 15)` (its walk component ends at `(37, 17)`), whose `0x3CE` is
+  P2[17]'s C2 gate, so the segment stalls in `concnow`. Whether retail
+  talks to the guards from that spot, and what joins the `(64, 15)` room,
+  is not yet pinned; a capture in `concnow` would decide both.
 - `chitei2` joins its parts through machinery as well as walls. The
   transporter at `(100, 102)` is a kind-0 teleport to `(94, 24)` and the
   planner rides it. The cages along row 102 (partition-0 records 6..11, each a
