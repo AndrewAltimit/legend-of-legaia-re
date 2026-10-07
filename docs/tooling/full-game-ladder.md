@@ -560,7 +560,8 @@ clips and matches the same arts a windowed one does. Beyond that:
   flipped, so Up raises the selection.
 - A sparring tutorial validates each commit against its lesson, so the
   fighter takes the ring's up arm (Item, using the first item) for the Items
-  lesson and its down arm for Spirit.
+  lesson, its down arm for Spirit, and `Command` with the Somersault
+  (`Up Down Up`) for the hyper-arts drill, where an Auto attack is refused.
 
 `LEGAIA_FGL_TRACE=1` prints one line per played beat: what ran, how it ended
 and the flags it set - and, as `[hop]`, the hop failure that sent the pass to

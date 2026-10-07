@@ -2485,7 +2485,9 @@ fn direction_mask(b: u8) -> u16 {
 ///
 /// A sparring tutorial validates each commit against its lesson, so there
 /// the hand keeps to the lesson: the up arm (using the first item) for the
-/// Items lesson, the down arm for Spirit, and `Auto` for the attack lessons.
+/// Items lesson, the down arm for Spirit, `Auto` for the attack lesson and
+/// `Command` with the Somersault for the hyper-arts drill (an Auto attack is
+/// that lesson's wrong-lesson rewind).
 fn fight_pad(session: &BootSession) -> u16 {
     use legaia_engine_core::arts_command_input::ArtsInputPhase;
     use legaia_engine_core::battle_input::CommandPhase;
@@ -2574,7 +2576,17 @@ fn fight_pad(session: &BootSession) -> u16 {
     if let Some(arts) = w.battle.arts_input.as_ref() {
         return match &arts.phase {
             ArtsInputPhase::Entering => {
-                let plan = arts_plan(w, arts);
+                // The hyper-arts lesson's drill is `[High] [Low] [High]` -
+                // Vahn's Somersault, `Up Down Up` - checked at the entry's
+                // confirm.
+                let plan = if lesson == Some(TutorialLesson::HyperArts) {
+                    use legaia_art::queue::Command;
+                    [Command::Up, Command::Down, Command::Up]
+                        .map(Command::as_byte)
+                        .to_vec()
+                } else {
+                    arts_plan(w, arts)
+                };
                 if arts.buffer.len() < plan.len() && plan.starts_with(&arts.buffer) {
                     direction_mask(plan[arts.buffer.len()])
                 } else {
@@ -2662,7 +2674,11 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && magic() && !solo_duel(w) => {
                 PadButton::Right.mask()
             }
-            CommandPhase::AttackMode { .. } if lesson.is_none() => PadButton::Right.mask(),
+            CommandPhase::AttackMode { .. }
+                if lesson.is_none() || lesson == Some(TutorialLesson::HyperArts) =>
+            {
+                PadButton::Right.mask()
+            }
             // A random encounter on a pad travel leg is fled: the prompt's
             // Right takes Run. A lone member worn down by a string of fights
             // wipes on whichever one the RNG happens to deal - a finding

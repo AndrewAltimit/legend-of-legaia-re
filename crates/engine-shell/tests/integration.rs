@@ -69,6 +69,7 @@ mod sfx_table_live;
 mod sfx_vab_bank;
 mod soak_harness;
 mod tetsu_spar_picker_disc;
+mod tetsu_spar_somersault;
 mod tile_board_draw_live;
 mod tower_lift_arrival_disc;
 mod training_battle;

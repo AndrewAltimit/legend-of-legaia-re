@@ -291,7 +291,7 @@ the current lesson is not teaching.
 | `50` | `0x801F6CAC` | Run selected - always rejected, always rewinds. |
 | `60` | `0x801F6DCC` | Item window opened - the item lesson explains the two windows; every other lesson rewinds. |
 | `80` | `0x801F6E4C` | Arts command-entry screen - combo hint (lesson 0) or the drill instruction (lesson 3). |
-| `90` | `0x801F6EE4` | Target select; for lesson 3 it first validates the entered command buffer. |
+| `90` | `0x801F6EE4` | Target select; for lesson 3 it first validates the entered command buffer. Reads seat 0's Auto flag `ctx[+0x266]`. |
 | `100` | `0x801F7060` | Target confirm - unconditional, lesson-independent. |
 | `110` | `0x801F7088` | Validates the committed `actor[+0x1DE]` category against the lesson (`3` attack, `1` item, `4` spirit; hyper arts expects `3`, since it is reached through Attack). |
 | `120` | `0x801F6D30` | The Auto / Command attack-mode prompt - free choice for lesson 0, forced `[Command]` for lesson 3. |
@@ -300,6 +300,17 @@ The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 (`0x0F, 0x0E, 0x0F`) and accepts it at three alignments of the command buffer
 `actor[+0x1DF..=+0x1E3]`, each a differently-masked load at `0x801F6FD8`. When
 `_DAT_801D46C4 == 1` the buffer is auto-filled for the player at `0x801F6FB0`.
+`[High] [Low] [High]` is the swing bytes `0F 0E 0F` - Vahn's Somersault,
+`Up Down Up` - so a Somersault preceded by up to two other arrows passes too.
+
+The handler reads `ctx[+0x266]` first (`0x801F6F48` / `0x801F6F78`). That byte
+is seat 0's per-fighter **Auto** flag (written on the attack-mode prompt; see
+[`battle-action.md`](battle-action.md)), not a "seen" latch: in lesson 0 it
+moves the follow-up box from the `0xB0` anchor (style `5`) to the `0xCC` one
+(style `3`), and in lesson 3 an Auto attack with no auto-fill is the
+wrong-lesson rewind (`0x801F6F98`) - the drill is only ever checked on a
+`Command` entry, the path a player reaches through the forced `[Command]`
+prompt of state `120`.
 
 The completion tail `0x801F7380` fires once `ctx[0x28A]` reaches `4`: it bumps
 the lesson to `5`, writes `ctx[0x06] = 0xC8` (`0x801F73DC`) and `ctx[0x07] =
@@ -934,11 +945,21 @@ differ from retail and are deliberate:
   no engine hook point yet.
 - **Every commit meets the `110` validator.** The handler reads the category
   off the active actor (`lbu v1,0x1de(v0)` at `0x801F70E0`), so each of the
-  three committing surfaces reaches it with its own byte: the Attack target
-  confirm with `3`, Spirit with `4`, and the item window's use with `1`
-  (`World::tick_battle_item_menu`, checked before the copy is consumed). An
-  item commit that skipped the validator left the Items lesson unaccepted
-  forever, and the spar never ended.
+  four committing surfaces reaches it with its own byte: the Attack target
+  confirm with `3`, the arts entry's target confirm with `3`, Spirit with
+  `4`, and the item window's use with `1` (`World::tick_battle_item_menu`,
+  checked before the copy is consumed). A surface that skipped the validator
+  leaves its lesson unaccepted forever and the spar never ends - the item
+  window once did, and so did the arts entry, which is the only way to
+  perform the hyper-arts lesson's Somersault.
+- **The arts entry raises its own two states.** The entry opens on `80`;
+  leaving it (the confirm, or the press that exhausts the gauge) is retail's
+  `0x50 -> 0x5A`, which `World::tick_battle_arts_input` raises as `90` with
+  the entered arrows written into the hook's command buffer as the gauge's
+  swing bytes; the review's cancel is `0x5A -> 0x50` and re-raises `80`.
+- **Unresolved surfaces can rewind too.** The target cursor (`90`) and the
+  attack-mode prompt (`120`) carry wrong-lesson rewinds; the engine honours
+  them as it does a resolved commit's, by reopening the command menu.
 - **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
   sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
   for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the

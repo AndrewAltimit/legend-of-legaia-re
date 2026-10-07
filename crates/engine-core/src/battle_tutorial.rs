@@ -487,9 +487,15 @@ pub enum CountdownTick {
 /// Live inputs the hook handlers read besides the flow state and lesson.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TutorialInputs {
-    /// `ctx[0x266]` - set once the target-select explainer has been shown, so
-    /// the follow-up box moves from the `0xB0` anchor to the `0xCC` one.
-    pub target_explainer_seen: bool,
+    /// `ctx[0x266]` - seat 0's per-fighter **Auto** flag, the byte the
+    /// command SM writes on the attack-mode prompt (`1` on the `Auto` chip
+    /// `0x801D17D0`, `0` on `Command` `0x801D1760`, `0` every frame the ring
+    /// is up `0x801D11A8`). The flow-state `90` hook reads it at
+    /// `0x801F6F48` / `0x801F6F78`: in the attack lesson it moves the
+    /// follow-up box from the `0xB0` anchor to the `0xCC` one, and in the
+    /// hyper-arts lesson an Auto attack is the wrong-lesson rewind - the
+    /// drill is only ever checked on a `Command` entry.
+    pub auto_attack: bool,
     /// `_DAT_801D46C8` - clears on the very first command prompt, so the
     /// lesson-0 turn-start shows the directional explainer once and the
     /// highlight explainer thereafter.
@@ -593,8 +599,8 @@ pub fn dispatch(
 
         // --- 90: target select (0x801F6EE4) ---
         (90, Attacks) => {
-            // ctx[0x266] picks the follow-up box's anchor.
-            let style = if inputs.target_explainer_seen { 3 } else { 5 };
+            // ctx[0x266] (the Auto flag) picks the follow-up box's anchor.
+            let style = if inputs.auto_attack { 3 } else { 5 };
             two(msg::SELECT_TARGET, 0, msg::TARGET_EXPLAIN, style)
         }
         (90, HyperArts) => {
@@ -602,9 +608,10 @@ pub fn dispatch(
             // player entered.
             let buf = if inputs.autofill_drill {
                 DRILL_AUTOFILL
-            } else if inputs.target_explainer_seen {
-                // Not auto-filled and the explainer already ran: retail takes
-                // the wrong-lesson rewind rather than re-checking.
+            } else if inputs.auto_attack {
+                // Not auto-filled and the attack was taken on `Auto`: retail
+                // takes the wrong-lesson rewind (`0x801F6F98`) - an Auto
+                // attack enters no arrows to check.
                 return TutorialEmission::rewind(msg::WRONG_HYPER_ARTS);
             } else {
                 inputs.command_buffer

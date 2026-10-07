@@ -212,7 +212,19 @@ impl World {
         // just mirror onto the retail command-flow byte `ctx[+0x06]`.
         let resolution = session.resolved();
         if resolution.is_none() {
-            self.sync_battle_flow(Some(&session.phase));
+            // The `90` hook reads seat 0's Auto flag `ctx[+0x266]`, which
+            // the pick just made writes (`note_auto_attack_pick` above).
+            if let Some(tut) = self.battle.tutorial.as_mut() {
+                tut.inputs.auto_attack = self.battle.auto_combo.pending;
+            }
+            // An unresolved surface's hook can rewind too: the target cursor
+            // (`90`) refuses an Attack outside the attack lessons and an
+            // Auto attack in the hyper-arts drill, and the attack-mode
+            // prompt (`120`) refuses Attack in the Items / Spirit lessons.
+            if self.sync_battle_flow(Some(&session.phase)) {
+                self.open_battle_command(session.actor);
+                return;
+            }
         }
         if self.battle.tutorial.is_some()
             && let Some(res) = resolution
@@ -902,7 +914,47 @@ impl World {
                     });
             }
         }
+        let was_entering = matches!(
+            session.phase,
+            crate::arts_command_input::ArtsInputPhase::Entering
+        );
         session.input(ev, party, monsters);
+
+        // Sparring tutorial: the entry's own two flow states. Leaving the
+        // entry is retail's `0x50 -> 0x5A` (the confirm, or the exhausting
+        // press), whose hook checks the hyper-arts drill against the swing
+        // bytes the gauge wrote to `actor[+0x1DF..]`; the review's cancel is
+        // `0x5A -> 0x50` and re-raises the entry hook. The commit is the
+        // `110` validator with category `3` (an art is an Attack). Either
+        // hook's rewind discards the entry and reopens the command menu.
+        if self.battle.tutorial.is_some() {
+            use crate::arts_command_input::ArtsInputPhase as P;
+            use crate::battle_flow::BattleFlowState as Flow;
+            let rejected = match &session.phase {
+                P::Entering if !was_entering => self.set_battle_flow(Flow::ArtsCommandEntry),
+                P::Review | P::Targeting { .. } | P::Confirmed { .. } if was_entering => {
+                    let mut buf = [0u8; 5];
+                    for (dst, &b) in buf.iter_mut().zip(session.committed_string()) {
+                        *dst = legaia_art::Command::from_byte(b)
+                            .map_or(0, |c| c.as_action().as_byte());
+                    }
+                    if let Some(tut) = self.battle.tutorial.as_mut() {
+                        tut.inputs.command_buffer = buf;
+                        // The `Command` chip cleared the Auto flag.
+                        tut.inputs.auto_attack = false;
+                    }
+                    self.set_battle_flow(Flow::TargetSelect)
+                }
+                _ => false,
+            };
+            let rejected = rejected
+                || (matches!(session.phase, P::Confirmed { .. }) && self.battle_tutorial_commit(3));
+            if rejected {
+                let actor = session.actor;
+                self.open_battle_command(actor);
+                return;
+            }
+        }
 
         match session.resolved() {
             Some(ArtsInputResolution::Confirmed {
