@@ -174,6 +174,24 @@ impl TalkFaceRamp {
         })
     }
 
+    /// The leg a halt-acquire at `pc` hands a **non-player** target: the
+    /// cross-context `CC <id> 85|8E|8F <lo> <hi> <bind>` form with `<id>`
+    /// neither the player (`F8`) nor the system channel (`FB`). Returns the
+    /// target id with the leg.
+    pub fn from_npc_acquire(bytes: &[u8], pc: usize) -> Option<(u8, Self)> {
+        let op = bytes.get(pc..pc + 6)?;
+        if op[0] != 0xCC || matches!(op[1], 0xF8 | 0xFB) || !matches!(op[2], 0x85 | 0x8E | 0x8F) {
+            return None;
+        }
+        Some((
+            op[1],
+            Self {
+                program: [0x4C, op[2], op[3], op[4], op[5]],
+                accum: 0,
+            },
+        ))
+    }
+
     /// One visit of the walk kernel: turn `yaw` (engine heading space) at
     /// `(x, z)` toward `(tx, tz)` by `speed` frames of the budget. Returns
     /// the new heading and whether this was the terminal frame - the one on

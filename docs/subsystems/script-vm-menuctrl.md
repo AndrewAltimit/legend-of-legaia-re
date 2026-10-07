@@ -263,18 +263,29 @@ camera shake. The scene reset `FUN_8003A024` zeroes it on every load
 
 #### `4C 85` / `8E` / `8F`: halt-acquire and the player face-turn
 
-The standard halt-acquire on the resolved cross-context target; on success the
-caller advances past the op (`iVar24 = 5`, `overlay_0897_801de840.txt:6550` /
-`overlay_world_map_801de840.txt:7179`). The cutscene timeline uses it to
-freeze its vignette actors, then pokes them beat by beat.
+The standard halt-acquire on the resolved cross-context target. The arm
+(`0x801E2148..0x801E21DC`) stores the op's own address into the target's
+`+0x94`, zeroes its `+0x54` and raises its `0x400`, then advances the caller
+by five (`li s7,5` at `0x801E21B8`). Those bytes are the walk kernel's `0x4C`
+FaceTarget leg (`FUN_8003774C`, [motion-vm.md](motion-vm.md)), which the
+target's actor tick runs while `0x400` is up: the target turns toward actor
+bind `<id>` (`0xF8` = the player) over the `u16` frame budget, a budget of
+zero snapping at once, and the leg's terminal frame clears the target's halt
+(`0x80038004`). So the op is not a freeze: every actor a cutscene record
+acquires this way turns to face someone.
 
-Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the same bytes are the
-walk kernel's `0x4C` FaceTarget leg (`FUN_8003774C`,
-[motion-vm.md](motion-vm.md)): the player turns toward actor bind `<id>` over
-the `u16` frame budget, and the leg's terminal frame clears the halt on the
-player and on the caller (`0x80038004` / `0x80038028`). A cutscene record
-therefore waits on the turn - `jouine` `P2[5]` turns Vahn toward Cort this way
-before the evolved-Cort fight.
+Aimed at an NPC or a party placement, the caller runs on while the actor
+turns, and the record's next cross-context op on that actor waits for the
+turn (the halted-target refusal). Cutscene records issue over a thousand of
+these on NPCs and as many again on the Noa / Gala placements - "Noa turns to
+Vahn" is `CC <noa> 85 <budget> F8`. The port arms the leg as
+`CutsceneTimeline::npc_faces`.
+
+Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the arm also raises the
+caller's own `0x400` (`0x801E21B4..0x801E21CC`), and the leg's terminal frame
+clears both (`0x80038004` / `0x80038028`). A cutscene record therefore waits
+on the player's turn - `jouine` `P2[5]` turns Vahn toward Cort this way before
+the evolved-Cort fight.
 
 #### `4C 89`: the dialog auto-press
 

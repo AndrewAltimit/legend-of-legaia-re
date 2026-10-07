@@ -1363,6 +1363,18 @@ impl World {
                 tl.npc_facings.push(fw);
             }
         }
+        // NPC face-at legs (`CC <id> 85|8E|8F ..`): the target's walk kernel
+        // turns it toward the bind while the record runs on; the actor stays
+        // held for the script until the leg's terminal frame, and on it.
+        // REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
+        for mut face in std::mem::take(&mut tl.npc_faces) {
+            npc_glide_hold.push(face.slot);
+            face.frames += 1;
+            if !self.step_npc_face_leg(face.slot, &mut face.ramp) && face.frames < WALK_PARK_TIMEOUT
+            {
+                tl.npc_faces.push(face);
+            }
+        }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
         // the record poked onto the player is still playing; retail's clip
         // tick latches `+0x62 & 0x100` on its last frame and the spin falls
@@ -1616,6 +1628,7 @@ impl World {
                 let own_npc_glide_target = opcode_byte & 0x80 != 0
                     && (!tl.npc_glides.is_empty()
                         || !tl.npc_walks.is_empty()
+                        || !tl.npc_faces.is_empty()
                         || !npc_glide_hold.is_empty())
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && vm::field::peek_extended(&tl.bytecode, pc)
@@ -1627,6 +1640,7 @@ impl World {
                             npc_glide_hold.contains(&slot)
                                 || tl.npc_glides.iter().any(|g| g.slot == slot)
                                 || tl.npc_walks.contains(&slot)
+                                || tl.npc_faces.iter().any(|f| f.slot == slot)
                         });
                 if halted_target || own_glide_target || own_npc_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);
@@ -1793,6 +1807,7 @@ impl World {
                     let slot = channels[ci].placement_index as u8;
                     tl.npc_glides.retain(|g| g.slot != slot);
                     tl.npc_facings.retain(|f| f.slot != Some(slot));
+                    tl.npc_faces.retain(|f| f.slot != slot);
                     if tl.npc_walks.contains(&slot) {
                         tl.npc_walks.retain(|&w| w != slot);
                         host.world.npcs.motions.remove(&slot);
@@ -1930,6 +1945,43 @@ impl World {
                     }
                     tl.facing_wait = Some(leg);
                     break;
+                }
+                // Halt-acquire of an NPC (`CC <id> 85|8E|8F <lo> <hi> <bind>`
+                // against a placement channel): the target turns to face the
+                // bind over the op's budget while the record runs on past the
+                // op (`CutsceneTimeline::npc_faces`). Run as a plain
+                // halt-acquire on the channel context, it set a flag and
+                // nothing turned: Noa and Gala faced wherever their last
+                // walk left them through every "turns to Vahn" beat.
+                // REF: FUN_801DE840 (0x801E2148..0x801E21DC)
+                if let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                    && let Some((_, ramp)) =
+                        crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(&tl.bytecode, pc)
+                {
+                    if pc < tl.visited.len() {
+                        tl.visited[pc] = true;
+                    }
+                    let slot = channels[ci].placement_index as u8;
+                    host.world.npcs.positions.entry(slot).or_insert((
+                        channels[ci].ctx.world_x as i16,
+                        channels[ci].ctx.world_z as i16,
+                    ));
+                    // The kernel runs in the same actor tick that armed it, so
+                    // the leg takes its first frame now.
+                    let mut face = crate::cutscene_timeline::TimelineNpcFace {
+                        slot,
+                        ramp,
+                        frames: 1,
+                    };
+                    tl.npc_faces.retain(|f| f.slot != slot);
+                    tl.npc_facings.retain(|f| f.slot != Some(slot));
+                    if !host.world.step_npc_face_leg(slot, &mut face.ramp) {
+                        tl.npc_faces.push(face);
+                    }
+                    npc_glide_hold.push(slot);
+                    tl.pc = pc + 6;
+                    continue;
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
@@ -2517,6 +2569,13 @@ impl World {
         // without the record, so land it on its compass entry here rather
         // than leave the actor frozen mid-ramp.
         if tl.done {
+            for mut face in std::mem::take(&mut tl.npc_faces) {
+                for _ in 0..WALK_PARK_TIMEOUT {
+                    if self.step_npc_face_leg(face.slot, &mut face.ramp) {
+                        break;
+                    }
+                }
+            }
             for fw in std::mem::take(&mut tl.npc_facings) {
                 if let Some(h) =
                     crate::man_field_scripts::facing_index_to_engine_heading(fw.program[1] & 0xF)
@@ -3984,6 +4043,38 @@ impl World {
         done
     }
 
+    /// One walk-kernel visit of an NPC face-at leg
+    /// ([`crate::cutscene_timeline::CutsceneTimeline::npc_faces`]): turn
+    /// placement `slot` toward the actor the bind names - the player for
+    /// `0xF8`. Returns `true` on the terminal frame, or when the NPC has no
+    /// position or the bind resolves to nothing (the leg then ends at once).
+    ///
+    /// REF: FUN_8003774C (the 0x4C arm: `0xF8` resolves to `_DAT_8007C364`)
+    pub fn step_npc_face_leg(
+        &mut self,
+        slot: u8,
+        ramp: &mut crate::inline_dialogue::TalkFaceRamp,
+    ) -> bool {
+        let bind = ramp.program[4];
+        let target = if bind == 0xF8 {
+            self.player_actor_slot
+                .and_then(|s| self.actors.get(usize::from(s)))
+                .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        } else {
+            self.talk_face_target(bind)
+        };
+        let (Some((tx, tz)), Some(&(x, z))) = (target, self.npcs.positions.get(&slot)) else {
+            return true;
+        };
+        // A never-posed NPC stands at the retail spawn default `0` (engine
+        // `0x800`).
+        let yaw = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+        let speed = self.clock.display_frame_step.max(1);
+        let (yaw, done) = ramp.step(x, z, yaw as u16, tx, tz, speed);
+        self.set_timeline_facing(Some(slot), yaw as i16);
+        done
+    }
+
     pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
         let Some(mut ramp) = id.face_ramp else {
             return;
@@ -4581,6 +4672,67 @@ mod tests {
         assert_eq!(w.actors[0].move_state.render_26, 0x23B);
         let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert_eq!(tl.pc, 6, "record resumed past the 6-byte acquire");
+    }
+
+    /// A halt-acquire of an **NPC** (`CC <id> 85 <lo> <hi> F8`) turns that
+    /// placement toward the bind - here the player, the cutscenes'
+    /// "Noa turns to Vahn" - over the op's budget, while the record runs on
+    /// past the op (only a player target halts the caller); the record's
+    /// next op on the NPC waits for the turn. The geometry is the jouine
+    /// capture's mirrored, so the NPC lands a half-turn from the player's
+    /// `0x23B`.
+    #[test]
+    fn cutscene_timeline_npc_halt_acquire_turns_the_npc_to_its_bind() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 2368;
+        w.actors[0].move_state.world_z = 2496;
+        w.actors[0].move_state.render_26 = 0x800;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x26,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (3136, 3136));
+        // Turn, then a second op on the same NPC (a `B1 26 18` bit clear),
+        // then a long wait.
+        let bc = vec![
+            0xCC, 0x26, 0x85, 0x0A, 0x00, 0xF8, 0xB1, 0x26, 0x18, 0x4A, 0xFF, 0x7F,
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        {
+            let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+            assert_eq!(tl.npc_faces.len(), 1, "the turn runs as an NPC leg");
+            assert_eq!(tl.pc, 6, "the record ran on to the next op, held on it");
+            assert!(tl.player_face.is_none(), "the player is not turned");
+        }
+        assert_eq!(w.actors[0].move_state.render_26, 0x800, "player untouched");
+        for _ in 0..12 {
+            w.step_cutscene_timeline();
+        }
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+        assert!(
+            tl.npc_faces.is_empty(),
+            "the leg's terminal frame released it"
+        );
+        assert!(tl.pc > 6, "the held op ran once the turn landed");
+        let h = i32::from(*w.npcs.headings.get(&4).expect("heading written"));
+        let d = (h - (0x23B + 0x800)).rem_euclid(0x1000);
+        assert!(d.min(0x1000 - d) <= 1, "NPC faces the player: {h:#x}");
     }
 
     /// A player ExecMove queues the scene-record one-shot only when its pick

@@ -88,6 +88,7 @@ records the label as `pending_scene` in the detail
 | GTE `H` | `0x8007B6F4` | |
 | camera eye | `0x800840B8/BC/C0` | the view builder's translation words |
 | camera focus | `0x80089118` / `0x80089120` | the world X / Z the view orbits, stored negated |
+| headings | `actor + 0x26` | the player's, and every field-actor-ticked (`FUN_8003BC08`) node's keyed by its flat record `+0x50` ([below](#the-facing-channel)) |
 | BGM track word | `0x8007BAC8` | written by op `0x35`'s start arms |
 | fog-pool gate | `0x8007B854` | written only by op `0x4C` nibble 3 ([field-ambient-fx](../subsystems/field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)) |
 | party / flags / bag / gold | `0x80084140`, `0x1A18` bytes | the live game-state window |
@@ -1112,6 +1113,7 @@ measured channels.
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
+| `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
@@ -1126,6 +1128,29 @@ their own they check the seeding and whatever the settle window changes (an
 entry script that grants or takes an item, a heal). `flags` does the same
 for the flag bank: its misses are bits the engine's entry scripts wrote
 during the settle window, or bits the save round trip does not carry.
+
+### The facing channel
+
+Retail's heading is `+0x26` on every actor node; the engine keeps the
+player's as `render_26` and each placement's in `World::npcs.headings`, both
+a half-turn from retail's space (`engine = retail + 0x800`; a placement with
+no entry is the spawn default, retail `0`). A retail node is matched to its
+placement by the flat record index `+0x50` (`N0 + slot`, `FUN_8003A1E4`), and
+is scored only when the engine holds that placement within 96 units of
+retail's position - a placement in the wrong place is the position's miss,
+not the heading's - and not on the off-map park seat, where nothing is drawn.
+The detail lists every heading more than a sixteenth turn off with both
+values, and tags the party-bank placements (`+0x10 & 0x01000000`). Set
+`LEGAIA_RC_FACING_DUMP` to print every matched pair.
+
+The channel measures whichever leg wrote the heading - an entry pose, a
+cutscene face-at or rotate, an ambient look-around - so a miss on a wandering
+villager is usually ambient phase rather than a defect. The phase gate
+samples on the first frame the engine's record reaches retail's PC, which is
+not always the frame retail is on: a record that sits on an op waiting for a
+turn to land compares the engine's turn mid-ramp against retail's landed one
+(`new_game_cutscene_intro_a`'s flat 8, held at `B3 08 0A` behind a 40-frame
+`B8 08 86 28`).
 
 ## The image channel
 

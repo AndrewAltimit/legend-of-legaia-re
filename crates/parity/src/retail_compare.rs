@@ -305,6 +305,48 @@ pub struct RetailObs {
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
     pub clear_rgb: Option<[u8; 3]>,
+    /// The player's heading `+0x26` (retail space, `0` = -Z).
+    pub player_facing: Option<i16>,
+    /// Every field-actor-ticked placement's heading ([`retail_actor_facings`]).
+    pub actor_facings: Vec<ActorFacing>,
+}
+
+/// One field actor's heading as a retail state holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActorFacing {
+    /// `+0x50`, the record's flat MAN index.
+    pub flat: u16,
+    /// `+0x26`, the yaw (retail space: `0` = -Z, 12-bit).
+    pub facing: i16,
+    /// `+0x14` / `+0x18`.
+    pub x: i16,
+    pub z: i16,
+    /// `+0x64`, the live model id (bank-relative ids are not resolved).
+    pub model: i16,
+    /// `+0x10`.
+    pub flags: u32,
+}
+
+/// The heading `+0x26` of every actor the field actor tick (`FUN_8003BC08`)
+/// runs, keyed by its flat MAN index `+0x50` (first node per index).
+pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
+    let player = game_anchors::player_ptr(ram);
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            seen.insert(flat).then(|| ActorFacing {
+                flat,
+                facing: game_anchors::i16_at(ram, n + 0x26),
+                x: game_anchors::i16_at(ram, n + 0x14),
+                z: game_anchors::i16_at(ram, n + 0x18),
+                model: game_anchors::i16_at(ram, n + 0x64),
+                flags: game_anchors::u32_at(ram, n + 0x10),
+            })
+        })
+        .collect()
 }
 
 /// The draw environment's clear colour bytes (`r0 / g0 / b0`).
@@ -819,6 +861,12 @@ impl RetailObs {
                 Vec::new()
             },
             clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
+            player_facing: game_anchors::player_ptr(ram).map(|p| rd16(ram, p + 0x26)),
+            actor_facings: if matches!(class, StateClass::Field) {
+                retail_actor_facings(ram)
+            } else {
+                Vec::new()
+            },
             slot_table: {
                 let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
                 ram.get(lo..lo + 0x200)
@@ -1039,6 +1087,11 @@ pub struct EngineObs {
     pub menu_subscreen: Option<u8>,
     /// On a capture inside a running script: the phase gate's outcome.
     pub script: Option<ScriptPhase>,
+    /// The player's heading in retail space (`render_26 - 0x800`).
+    pub player_facing: Option<i16>,
+    /// Each partition-1 placement's heading (retail space) and position,
+    /// keyed by its retail flat MAN index (`N0 + slot`).
+    pub npc_facings: BTreeMap<u16, (i16, i16, i16)>,
 }
 
 /// Records which track the field VM starts.
@@ -1273,6 +1326,33 @@ fn sample_engine(
     // The engine's `_DAT_8007BAC8`: a park-sentinel start (`0x1000`, the
     // ending scenes') reaches no director, but it is the word retail holds.
     let bgm_id = session.host.bgm_track_word.or(director.last);
+    let player_facing = world.player_actor_slot.and_then(|s| {
+        world
+            .actors
+            .get(s as usize)
+            .map(|a| a.move_state.render_26.wrapping_sub(0x800))
+    });
+    let n0 = session
+        .host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+        .and_then(|man| legaia_asset::man_section::parse(&man).ok())
+        .map(|mf| mf.header.partition_counts[0].max(0) as u16);
+    let world = &session.host.world;
+    let npc_facings = n0
+        .map(|n0| {
+            world
+                .npcs
+                .positions
+                .iter()
+                .map(|(&slot, &(x, z))| {
+                    let h = world.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+                    (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     EngineObs {
         scene,
         mode,
@@ -1285,6 +1365,8 @@ fn sample_engine(
         save,
         menu_subscreen,
         script: None,
+        player_facing,
+        npc_facings,
     }
 }
 
@@ -1405,6 +1487,7 @@ pub const CHANNELS: &[&str] = &[
     "position",
     "footing",
     "camera",
+    "facing",
     "bgm",
     "fog_gate",
     "party",
@@ -1585,6 +1668,89 @@ pub(crate) fn inventory_score(
     )
 }
 
+/// A placement standing farther than this from its retail position is a
+/// position miss, not a facing one: its heading is not scored.
+const FACING_SEAT_RADIUS: f64 = 96.0;
+
+/// The facing channel: the player's heading and every placement the engine
+/// holds near its retail position, each wrapped-angle delta on its own
+/// falloff (an eighth turn and more scores zero). Mismatches beyond a
+/// sixteenth turn are listed by flat index with both headings.
+pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f64, String)> {
+    let part = |r: i16, e: i16| falloff(angle_delta(r, e), 32.0, 512.0);
+    let mut parts = Vec::new();
+    let mut miss = Vec::new();
+    if let (Some(r), Some(e)) = (retail.player_facing, engine.player_facing) {
+        parts.push(part(r, e));
+        if angle_delta(r, e) > 256.0 {
+            miss.push(format!("player r={:#05x} e={:#05x}", r & 0xFFF, e & 0xFFF));
+        }
+    }
+    let mut skipped = 0;
+    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+    let dump = std::env::var_os("LEGAIA_RC_FACING_DUMP").is_some();
+    for a in &retail.actor_facings {
+        let Some(&(e, ex, ez)) = engine.npc_facings.get(&a.flat) else {
+            continue;
+        };
+        if dump {
+            eprintln!(
+                "facing {}: flat {} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                retail.scene,
+                a.flat,
+                a.flags,
+                a.model,
+                a.x,
+                a.z,
+                a.facing & 0xFFF,
+                ex,
+                ez,
+                e & 0xFFF
+            );
+        }
+        // A parked actor (the off-map seat) is not drawn: its heading is
+        // not on screen.
+        if (a.x, a.z) == (hide, hide) {
+            continue;
+        }
+        let dx = f64::from(i32::from(ex) - i32::from(a.x));
+        let dz = f64::from(i32::from(ez) - i32::from(a.z));
+        if (dx * dx + dz * dz).sqrt() > FACING_SEAT_RADIUS {
+            skipped += 1;
+            continue;
+        }
+        parts.push(part(a.facing, e));
+        if angle_delta(a.facing, e) > 256.0 {
+            miss.push(format!(
+                "flat {}{} at ({}, {}) model {} r={:#05x} e={:#05x}",
+                a.flat,
+                if a.flags & 0x0100_0000 != 0 {
+                    " (party)"
+                } else {
+                    ""
+                },
+                a.x,
+                a.z,
+                a.model,
+                a.facing & 0xFFF,
+                e & 0xFFF
+            ));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let n = parts.len();
+    let score = parts.iter().sum::<f64>() / n as f64;
+    Some((
+        score,
+        format!(
+            "{n} actors scored, {skipped} off their retail seat; misses: [{}]",
+            miss.join("; ")
+        ),
+    ))
+}
+
 /// The camera channel: mean of pitch, yaw (wrapped), `H` and the three eye
 /// words, each on its own falloff.
 pub(crate) fn camera_score(r: &CameraObs, e: &CameraObs) -> (f64, String) {
@@ -1632,6 +1798,11 @@ pub fn compare(
         det.insert(name.to_string(), detail);
     };
 
+    if retail.class == StateClass::Field
+        && let Some((score, detail)) = facing_score(retail, engine)
+    {
+        put("facing", score, detail);
+    }
     let scene_ok = engine.scene.as_deref() == Some(retail.scene.as_str());
     put(
         "scene",
