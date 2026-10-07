@@ -20,8 +20,8 @@
 
 [headline]
 contiguous_progresses = 35
-contiguous_pad = 26
-tier_sum = 137
+contiguous_pad = 35
+tier_sum = 140
 
 [segments]
 rim_elm = 4
@@ -50,12 +50,12 @@ usha_research = 4
 nivora = 4
 nivora_late = 4
 zora_castle = 4
-conkram_past = 3
+conkram_past = 4
 rogue_tower = 4
 jette_fortress = 4
 jette_fortress_late = 4
-noaru_valley = 3
-bio_castle = 3
+noaru_valley = 4
+bio_castle = 4
 cort_chamber = 4
 ending = 4
 credits = 4
