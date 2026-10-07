@@ -5782,8 +5782,11 @@ fn pad_walk(
     }
     // A player low on HP heals before setting out, not after the next
     // encounter has already rolled - or, with nothing to heal with, burns an
-    // Incense so the next encounter never rolls.
-    pad_field_heal(session, 500);
+    // Incense so the next encounter never rolls. A travel leg's encounter
+    // can open on a back attack, which takes a round before the party acts
+    // (`vozz`'s F4: ~120 to each member, then a caught Run), so the walk sets
+    // out above two thirds.
+    pad_field_heal(session, 650);
     pad_field_repel(session, 500);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
         let w = &session.host.world;

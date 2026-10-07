@@ -339,9 +339,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
-- before a boss, and whenever the weakest member is below half HP, the hand
-  heals through the pause menu: Start, Items, Use, the first HP restorative,
-  the weakest member, Circle back out;
+- before a boss, and whenever a walk sets out with the weakest member below
+  two thirds of its HP (a travel leg's encounter can open on a back attack,
+  a round before the party acts), the hand heals through the pause menu:
+  Start, Items, Use, the first HP restorative, the weakest member, Circle
+  back out;
 - still below half HP after that, in a scene that rolls encounters, with an
   Incense (`0x8A`) in the bag and its window `_DAT_8007B600` run out, the
   hand burns one: Start, Items, Use, the Incense row, Yes. The region roll
