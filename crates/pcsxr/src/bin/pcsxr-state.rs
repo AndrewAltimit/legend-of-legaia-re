@@ -38,7 +38,8 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Extract a PSX-virtual-address window out of a state's main RAM.
+    /// Extract a PSX-virtual-address window out of a state's main RAM or its
+    /// scratchpad (`0x1F800000..0x1F800400`).
     Extract {
         save: PathBuf,
         #[arg(long, value_parser = parse_addr, default_value = "0x801C0000")]
@@ -150,14 +151,24 @@ fn main() -> Result<()> {
             out,
         } => {
             anyhow::ensure!(start < end, "start {start:#x} must be below end {end:#x}");
-            anyhow::ensure!(
-                (0x8000_0000..=0x8020_0000).contains(&start) && end <= 0x8020_0000,
-                "window {start:#x}..{end:#x} must sit in KSEG0 main RAM \
-                 (0x80000000..0x80200000)"
-            );
             let st = SaveState::from_path(&save)?;
-            let ram = st.main_ram();
-            let bytes = &ram[(start - 0x8000_0000) as usize..(end - 0x8000_0000) as usize];
+            // The 1 KiB scratchpad is the other window a script's transient
+            // state lives in (the camera's visible tile window `0x1F8003E8`,
+            // the walk-region box `0x1F800384`).
+            let bytes = if (0x1F80_0000..0x1F80_0400).contains(&start) && end <= 0x1F80_0400 {
+                let sp = st
+                    .scratchpad()
+                    .ok_or_else(|| anyhow::anyhow!("state carries no scratchpad"))?;
+                &sp[(start - 0x1F80_0000) as usize..(end - 0x1F80_0000) as usize]
+            } else {
+                anyhow::ensure!(
+                    (0x8000_0000..=0x8020_0000).contains(&start) && end <= 0x8020_0000,
+                    "window {start:#x}..{end:#x} must sit in KSEG0 main RAM \
+                     (0x80000000..0x80200000) or the scratchpad (0x1F800000..0x1F800400)"
+                );
+                let ram = st.main_ram();
+                &ram[(start - 0x8000_0000) as usize..(end - 0x8000_0000) as usize]
+            };
             match out {
                 Some(path) => std::fs::write(&path, bytes)?,
                 None => {
