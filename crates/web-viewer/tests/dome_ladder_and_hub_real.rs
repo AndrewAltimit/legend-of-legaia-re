@@ -2,7 +2,7 @@
 //! lists** both come off a real disc and both agree with the bytes they claim
 //! to have been read from.
 //!
-//! Two chains are asserted, and neither asserts any Sony byte:
+//! Three chains are asserted, and none asserts any Sony byte:
 //!
 //! 1. PROT 0977's course descriptor table decodes as three courses whose
 //!    round counts match the populated-cell counts of its own score table,
@@ -13,6 +13,8 @@
 //!    and assert it still encodes a `jal` to the emitter the row implies.
 //!    A row whose call site drifted stops being documentation and starts
 //!    being a test failure.
+//! 3. A contest played to a win on the minigames page composes the page's
+//!    victory banner, the one host path into `FUN_801DBA90`'s port.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -202,5 +204,79 @@ fn a_hub_screen_lands_inside_the_retail_frame() {
     assert!(
         tally.len() > hud::HUB_SCORE_TALLY_LABELS.len(),
         "the tally draws its labels and its digits"
+    );
+}
+
+/// A contest played to a win on the browser minigames page, then the page's
+/// own victory-banner read - the call `site/js/minigame-muscle.js` makes when
+/// `state.phase === 'won'`.
+///
+/// The banner's index half is `MuscleDomeSession::reward_banner`, which
+/// decodes through `FUN_801DBA90`'s port (`battle_cast_dispatch::reward_banner`).
+/// Retail reaches that standalone composer from nowhere - its in-battle twin is
+/// `FUN_801D8DE8` case `0x59` - so no retail situation drives it; this page
+/// does, on every won contest, and this is the rung that drives the page
+/// there. Each turn commits every card the budget allows, which is the page's
+/// own commit/close/resolve sequence, and a level-99 Vahn against the
+/// archive's first populated monster settles it within the turn budget.
+#[test]
+fn a_won_contest_composes_the_page_reward_banner() {
+    use legaia_web_viewer::minigames::LegaiaMinigames;
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(bytes) = std::fs::read(&disc) else {
+        eprintln!("[skip] disc unreadable");
+        return;
+    };
+    let mut mg = LegaiaMinigames::new();
+    mg.load_disc(bytes).expect("load_disc");
+    let json = |s: String| -> serde_json::Value { serde_json::from_str(&s).expect("json") };
+    assert_eq!(
+        json(mg.muscle_reward_banner_json())["ok"],
+        false,
+        "no banner before a contest"
+    );
+    let roster = json(mg.muscle_roster_json());
+    let monster = roster[0]["id"].as_u64().expect("roster non-empty") as u16;
+    assert!(mg.muscle_start_vs(0, 99, monster, 0x2A), "contest starts");
+
+    let mut phase = String::new();
+    for _ in 0..64 {
+        for slot in 0..4 {
+            mg.muscle_commit(slot);
+        }
+        mg.muscle_end_selection();
+        mg.muscle_resolve();
+        phase = json(mg.muscle_state_json())["phase"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if phase == "won" || phase == "lost" {
+            break;
+        }
+        mg.muscle_next_turn();
+    }
+    assert_eq!(phase, "won", "a level-99 lead settles the contest");
+
+    let banner = json(mg.muscle_reward_banner_json());
+    assert_eq!(
+        banner["ok"], true,
+        "a live contest composes a banner: {banner}"
+    );
+    let spell = banner["spell"].as_str().unwrap_or_default();
+    let text = banner["text"].as_str().unwrap_or_default();
+    assert!(
+        !spell.is_empty(),
+        "the reward spell names off the SCUS table"
+    );
+    assert!(
+        text.contains(spell),
+        "the banner text carries the reward spell: {banner}"
+    );
+    eprintln!(
+        "[ok] reward banner composed ({} chars)",
+        text.chars().count()
     );
 }
