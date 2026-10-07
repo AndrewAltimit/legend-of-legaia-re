@@ -308,7 +308,10 @@ drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to
 (89, 80), a one-way hop it cannot climb back). A script that fires on the walk and changes no flag, more than a couple of
 dozen times on one walk, makes that walk a stall: `retock` P2[26], the Mt.
 Letona checkpoint, turns the party back every time it is crossed without
-Lord Saryu's key, and re-crossing it ate the segment's budget. A script that
+Lord Saryu's key, and re-crossing it ate the segment's budget. The count is
+per record as well as per park site: `jouinc`'s camera bands P2[3..57], one
+every three tiles of the way to `jouind`, all park at the same `pc` and op,
+and walking past twenty-five of them read as one script firing 25 times. A script that
 carries the walker to a landing it has carried it to before, leaving the same
 flags, is a loop after the third time even when the flags it toggles keep the
 first count from building: `chitei2`'s transport rides between (98, 102) and
@@ -694,6 +697,10 @@ row, the guard, Yes. The third row is the slot a player keeps the least for:
 against Songi the Defender Chain's evasion, which Vahn and Noa carry second,
 is worth more than their third-slot Wonder Amulet and Spirit Talisman, and
 equipping the jewel there instead of over the chain wins on more streams.
+The strike combo still drops a full member, so the heal arm ignores a
+biggest-hit-seen larger than a member's whole HP when it sizes "in danger":
+holding everyone near full against a hit no heal outlasts had the guarded
+hand spending most turns on items.
 The retry is reported as `pad (retried with element-N guards)`. The Jette
 fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
 50000 HP boss the unguarded hand loses at about half its HP, and wins once

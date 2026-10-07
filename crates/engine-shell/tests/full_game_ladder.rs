@@ -1927,7 +1927,14 @@ fn wanted_item(
         // A party-wide hit's per-member share swings by a tenth or more
         // between casts (Van Saryu's Earthquake: 550, then 609 on a 690-HP
         // Gala), so the margin over it is a quarter.
-        let hit = (threat + threat / 8).max(aoe + aoe / 4).min(max * 95 / 100);
+        // A single hit bigger than the member's whole HP is one no heal
+        // outlasts: holding the member near full against it only spends
+        // every turn on items (Songi's 3..6-strike combo drops a full
+        // 1956-HP Gala, and the hand healed round after round instead of
+        // attacking).
+        let single = threat + threat / 8;
+        let single = if threat >= max { 0 } else { single };
+        let hit = single.max(aoe + aoe / 4).min(max * 95 / 100);
         if duel {
             return pct.max(hit).max(max * 3 / 5);
         }
@@ -6488,9 +6495,12 @@ fn pad_walk(
             // they were: a refusal's step back, not a band walked through
             // (`nilboa` P2[26] / P2[27] re-dress the boulder room in place).
             let turned_back = before.0 == flags_now && before.1 != cell_of(px, pz);
-            let n = refires
-                .entry(site.clone())
-                .or_insert((0, flags_now.clone()));
+            // Keyed on the record as well as the park site: `jouinc`'s
+            // camera bands P2[3..57], one every three tiles of the way to
+            // `jouind`, all park at `pc=0x000C op=0x50`, and walking past
+            // twenty-five of them read as one script firing 25 times.
+            let key = format!("{site} {rec_label}");
+            let n = refires.entry(key.clone()).or_insert((0, flags_now.clone()));
             if n.1 == flags_now {
                 n.0 += 1;
             } else {
@@ -6527,7 +6537,7 @@ fn pad_walk(
             // walk rode it back and forth for most of a segment's budget.
             if before.1 != cell_of(px, pz) {
                 let c = landings
-                    .entry((site.clone(), flags_now.clone(), cell_of(px, pz)))
+                    .entry((key, flags_now.clone(), cell_of(px, pz)))
                     .or_insert(0u32);
                 *c += 1;
                 if *c > WALK_SCRIPT_CYCLES {
