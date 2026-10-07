@@ -16,7 +16,7 @@ deterministically, reduced to the input that matters.
 ## The driver
 
 One run is `(scene, seed, frames)`. Each run opens a fresh
-[`BootSession`](../../crates/engine-shell/src/boot.rs), seeds the retail
+[`BootSession`](../../crates/engine-session/src/boot.rs), seeds the retail
 New Game party, mounts an empty two-port card rack, seeds the world RNG from
 the run seed, and enters the scene live (`enter_scene_live`) with the random
 encounter loop and player-driven battles armed. It then ticks `frames`
@@ -153,11 +153,11 @@ TOML ignores.
 
 ```bash
 # the fixed-budget gate: a few scenes + the five minigames, asserts no panic
-cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_smoke
+cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_smoke
 
 # a long soak (report-only unless LEGAIA_SOAK_STRICT=1)
 LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG=big \
-  cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_long -- --nocapture
+  cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_long -- --nocapture
 ```
 
 | variable | meaning |
@@ -187,14 +187,14 @@ the checks on, into its own target directory:
 CARGO_TARGET_DIR=target/soak-checked \
 CARGO_PROFILE_RELEASE_TEST_OVERFLOW_CHECKS=true \
 CARGO_PROFILE_RELEASE_TEST_DEBUG_ASSERTIONS=true \
-  cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_long -- --nocapture
+  cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_long -- --nocapture
 ```
 
 ## Reproducing and triaging a finding
 
 ```bash
 LEGAIA_SOAK_REPLAY=target/soak/big/replays/<slug>.replay.toml LEGAIA_SOAK_TRACE=60 \
-  cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+  cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 ```
 
 `LEGAIA_SOAK_REPLAY` takes a file or a directory of them. `LEGAIA_SOAK_TRACE=N`

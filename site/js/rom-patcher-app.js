@@ -78,9 +78,7 @@ let wasmMod = null;
 async function ensureWasm(setStatus) {
   if (wasmMod) return wasmMod;
   setStatus('Loading patcher (WASM) ...');
-  const v = window.LEGAIA_WASM_V || '0';
-  wasmMod = await import('../wasm/legaia_web_viewer.js?v=' + v);
-  await wasmMod.default(new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, import.meta.url));
+  wasmMod = await window.LegaiaWasm.load();
   return wasmMod;
 }
 
@@ -756,9 +754,7 @@ function setupEquipmentEditor(wasm, fileInput, discBytes) {
   return { load, clear, collect };
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+const escapeHtml = window.escapeHtml;
 
 // --- Prices & names: structured editors over the disc's own tables ----------
 // Friendly rows over the same `fishing_prices` / `location_renames` strings

@@ -201,10 +201,7 @@ multi-level captures see in their "settle" frame is therefore the battle-end
 resync of the live pools, not a grant.
 
 So crossing a threshold mid-dungeon raises the ceiling and leaves the player
-exactly as hurt as they were. `apply_to_record` and `World::apply_battle_xp`
-both used to restore current HP / MP to the new maximum, which made every
-level-up a free full heal; the pad-driven `critical_path_replay` crossing was
-measurably leaning on it.
+exactly as hurt as they were.
 
 **Jitter (modeled, opt-in).** The per-level `rand() % (2×jitter+1) − jitter`
 spread is implemented as an **opt-in** layer:
@@ -342,7 +339,7 @@ For Noa the captured triplet pins three phases:
 |---|---|---|
 | Record write | pre → mid₁ | `+0x11C..+0x12D` (record stat window), `+0x004..+0x005` (XP), `+0x130` (rank counter +1) |
 | Live copy | mid₁ → mid₂ | `+0x104..+0x11B` (HP_max, MP_max, six u16 live stats) |
-| Settle | mid₂ → post | `+0x106 / +0x10A / +0x10E` (live HP_cur / MP_cur / AP_cur settle - the level-up refill) |
+| Settle | mid₂ → post | `+0x106 / +0x10A / +0x10E` (live HP_cur / MP_cur / AP_cur settle - the battle-end resync, not a refill) |
 
 Gala's level-up runs in two phases (record write, then live copy + settle
 collapsed into one frame).
@@ -420,8 +417,8 @@ After a battle win with `BattleEndCause::MonsterWipe`:
    crossings. Multi-level jumps collapse into a single `LevelUpResult` with
    summed HP/MP gains.
 5. For each level-up: `LevelUpTracker::apply_to_record(result, record)` bumps
-   `hp_max` and `mp_max`, restores `hp_cur` and `mp_cur` to the new maxima
-   (retail restores full HP/MP on level-up), and writes `result.new_level`
+   `hp_max` and `mp_max`, leaves `hp_cur` and `mp_cur` where the fight left
+   them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), and writes `result.new_level`
    back to the record's `+0x130` level byte via `CharacterRecord::set_level`.
    Independent of whether a threshold was crossed, `apply_battle_xp` re-stamps
    the record's cumulative XP (`+0x0`), next-level threshold (`+0x4`, slots-1/2
@@ -457,11 +454,11 @@ and world-agnostic:
 - Line 1 (yellow): `LEVEL UP! (char N -> Lv M)`
 - Line 2 (green): `HP +X  MP +Y`
 
-Both hosts draw it at the same anchor `(8, 60)` - the native `play-window`
-through `LEVEL_UP_BANNER_PEN` in `window/hud.rs`, and the browser play page
-through its `LEVEL_UP_PEN` twin in `web-viewer::play_shop`. The two pens are
-paired constants: the [host-drift](../tooling/host-drift.md) gate is what keeps
-a change to one from leaving the other behind.
+Both hosts draw it at the same anchor `(8, 60)` in the 320x240 stage, scaled
+to the surface with the rest of the stage text: the pen is one constant,
+`legaia_engine_screens::LEVEL_UP_PEN`, and the banner is one call
+(`legaia_engine_screens::banner_stage_draws`) both the native `play-window`
+and the browser play page reach.
 
 The hosts substitute the character's roster name for the builder's `char N`
 ordinal when the roster carries one, falling back to `P<n>` only for an unnamed

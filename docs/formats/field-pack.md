@@ -243,7 +243,7 @@ confirming an overlay rather than a data buffer.
 | `0x8015CBD0..0x80184C89` | ~152 KB | Asset descriptor table contents |
 | `0x80098900..0x800BE5FC` | ~132 KB | Other heap-resident scene buffers |
 | `0x80084140..0x80084398` | 526 B | Scene-bundle metadata |
-| `0x801F3488..0x801F69D8` | 7.6 KB | Post-overlay scratch |
+| `0x801F3488..0x801F69D8` | 7.6 KB | Top of slot A below slot B - the resident overlay image's tail ([memory map](../reference/memory-map.md)) |
 
 The 9 KB overlay slot does **not** change between mc2 and mc0 - both are town-resident
 saves sharing a town overlay there.

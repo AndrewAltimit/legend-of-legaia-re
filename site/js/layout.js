@@ -97,9 +97,11 @@ const NAV = [
     items: [
       { href: 'subsystems/index.html',          text: 'Subsystems index',         key: 'subsystems/index' },
       { href: 'subsystems/boot.html',           text: 'Boot path',                key: 'subsystems/boot' },
+      { href: 'subsystems/boot-internals.html', text: 'Boot path: internals',     key: 'subsystems/boot-internals', indent: true },
       { href: 'subsystems/asset-loader.html',   text: 'Asset loader',             key: 'subsystems/asset-loader' },
       // Runtime VMs
       { href: 'subsystems/script-vm.html',      text: 'Field / event VM',         key: 'subsystems/script-vm' },
+      { href: 'subsystems/script-vm-internals.html', text: 'Script VM: internals', key: 'subsystems/script-vm-internals', indent: true },
       { href: 'subsystems/field-locomotion.html', text: 'Field locomotion',       key: 'subsystems/field-locomotion' },
       { href: 'subsystems/actor-vm.html',       text: 'Actor / sprite VM',        key: 'subsystems/actor-vm' },
       { href: 'subsystems/move-vm.html',        text: 'Move-table VM',            key: 'subsystems/move-vm' },
@@ -114,8 +116,10 @@ const NAV = [
       { href: 'subsystems/arts-command-gauge.html', text: 'Arts command gauge',   key: 'subsystems/arts-command-gauge' },
       // Per-domain runtime
       { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
+      { href: 'subsystems/world-map-internals.html', text: 'World map: internals', key: 'subsystems/world-map-internals', indent: true },
       { href: 'subsystems/history-world-map.html', text: 'Chapter-1 hub sweep (history)', key: 'subsystems/history-world-map', indent: true },
       { href: 'subsystems/world-overview-viewer.html', text: 'World-overview viewer', key: 'subsystems/world-overview-viewer' },
+      { href: 'subsystems/vr-mode.html',        text: 'VR mode (WebXR)',          key: 'subsystems/vr-mode', indent: true },
       { href: 'subsystems/save-screen.html',    text: 'Save screen',              key: 'subsystems/save-screen' },
       { href: 'subsystems/shop.html',           text: 'Shop',                     key: 'subsystems/shop' },
       { href: 'subsystems/inn.html',            text: 'Inn',                      key: 'subsystems/inn' },
@@ -124,7 +128,9 @@ const NAV = [
       { href: 'subsystems/cutscene-internals.html', text: 'Cutscene: internals',  key: 'subsystems/cutscene-internals', indent: true },
       // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
+      { href: 'subsystems/audio-internals.html', text: 'Audio: internals',        key: 'subsystems/audio-internals', indent: true },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
+      { href: 'subsystems/renderer-internals.html', text: 'Renderer: internals',  key: 'subsystems/renderer-internals', indent: true },
       { href: 'subsystems/shading.html',        text: 'Shading and palettes',     key: 'subsystems/shading', indent: true },
       { href: 'subsystems/engine.html',         text: 'Engine port plan',         key: 'subsystems/engine' },
     ],

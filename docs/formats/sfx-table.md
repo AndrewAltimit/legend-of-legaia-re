@@ -404,8 +404,7 @@ mode. A slot left open over another bank's samples
 (`SfxBankResidency::stale_open_slot`, slot 6 in a minigame) is left unstaged by
 the hosts, so its cues are silent where retail plays the stale header over the
 wrong samples. Both play hosts restage the region from it every
-tick (`AudioBgmDirector::sync_shared_region` on the native window,
-`LegaiaRuntime::sync_shared_region` on the browser play page), above the slot-0
+tick through the one director they share (`AudioBgmDirector::sync_shared_region`), above the slot-0
 system bank inside the reserved SFX window, and resolve a routed cue to its own
 slot or to silence. A slot-6 side-band bank is staged there too rather than in
 the BGM tail. The dance's bank does not fit the port's window, so the dance
@@ -428,8 +427,8 @@ and route each cue through `slot_for_category(descriptor.category)`; the 30
 category-`6` descriptors key PROT 0876 in the field and are silent in battle,
 where retail's slot 6 is closed. The single category-`11` cue (`0x50`, the
 level-up jingle) is staged the way retail stages it, at results time:
-`AudioBgmDirector::stage_transient_sfx_vab` (and the browser's
-`stage_transient_reward_bank`) uploads PROT 0889 into the free tail of the BGM
+`AudioBgmDirector::ensure_reward_bank` (the director both play hosts run)
+uploads PROT 0889 into the free tail of the BGM
 region behind the battle theme when the results frame queues the cue; before
 that the cue is silent. The bank is dropped when a track's samples overrun it or
 the world is back in a field-family mode, whose init closes slot `11` - not on
@@ -648,8 +647,9 @@ one-shot through the from-scratch SPU. So the duel hit `0x09` renders out of
 PROT 0869 and the shared UI blips `0x20` / `0x21` / `0x37` and the strike `0x1A`
 out of PROT 0868, even though the same duel overlay writes all of them.
 
-The live engine mirrors this: `BootSession` uploads the slot-0 bank into the
-bottom of one dedicated top region of SPU RAM at boot (`stage_sfx_vab`, with the
+The live engine mirrors this: the director uploads the slot-0 bank into the
+bottom of one dedicated top region of SPU RAM when it is staged
+(`AudioBgmDirector::stage_resident_slot0`, with the
 scene-BGM allocator capped below the region so a BGM upload can't stomp the SFX
 samples), refills the rest of the region per mode
 ([above](#one-region-per-mode-slot-2-and-slot-6)) - the class-2 bank in battle

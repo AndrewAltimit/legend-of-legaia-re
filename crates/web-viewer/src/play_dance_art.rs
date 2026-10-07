@@ -51,9 +51,9 @@ impl LegaiaRuntime {
             .is_some_and(|a| a.dance_hud_art_staged())
             && self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.mode == SceneMode::Dance);
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             host.world.minigames.dance_hud_art_staged = staged;
         }
     }
@@ -64,7 +64,7 @@ impl LegaiaRuntime {
     /// native window emits with. Empty otherwise, when the text rows draw.
     pub(crate) fn dance_hud_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         use legaia_engine_ui::ui_dance as ud;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let views: Vec<ud::DanceHudQuadView> = host
@@ -93,7 +93,7 @@ impl LegaiaRuntime {
     /// same either/or the native window applies, off the same world flag.
     pub(crate) fn dance_countin_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         use legaia_engine_ui::ui_dance as ud;
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let mg = &host.world.minigames;

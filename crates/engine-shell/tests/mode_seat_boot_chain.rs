@@ -20,8 +20,8 @@
 
 use legaia_engine_core::mode::{BOOT_MODE_CHAIN, GameMode};
 use legaia_engine_shell::boot::FieldLiveOpts;
-use legaia_engine_shell::mode_trace_oracle::build_engine_mode_trace_field_live;
 use legaia_engine_shell::{BootConfig, BootSession};
+use legaia_parity::mode_trace_oracle::build_engine_mode_trace_field_live;
 
 /// The opening town - the scene the new-game template names.
 const SCENE: &str = "town01";

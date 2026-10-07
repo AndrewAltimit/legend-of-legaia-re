@@ -2111,8 +2111,8 @@ can paint. Two consequences fall out of keying on the renderer:
 
 Both hosts draw their pause-screen tabs and the shop's vendor plate / purse /
 item-info / sell-quantity windows through this dispatch, at their disc-parsed
-rects - the native window in `window/menu_draws.rs` + `window/shop_windows.rs`,
-the browser play page in `web-viewer::play_shop`. Window **36** joins them
+rects - the pause tabs from `window/menu_draws.rs` and `web-viewer::play_menu`,
+the shop windows from the one composition both hosts call (`legaia_engine_screens`). Window **36** joins them
 whenever the equipment-buy recipient sub-screen is up, through one shared
 composition (`engine-ui::recipient_picker_draws_for`), so its row order and
 cursor rows are the same on both. The frames, the picker, the paged lists and

@@ -10,11 +10,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_shell::vram_oracle::{
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::vram_oracle::{
     NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
     compute_static_mask, load_runtime_vram_from_save,
 };
-use legaia_mednafen::ScenarioManifest;
 
 fn word(buf: &[u8], x: usize, y: usize) -> u16 {
     let off = (y * VRAM_WIDTH + x) * 2;
@@ -22,7 +22,7 @@ fn word(buf: &[u8], x: usize, y: usize) -> u16 {
 }
 
 fn vram_to_words_at(vram: &legaia_tim::Vram, x: usize, y: usize) -> u16 {
-    let bytes = legaia_engine_shell::vram_oracle::vram_to_le_bytes(vram);
+    let bytes = legaia_parity::vram_oracle::vram_to_le_bytes(vram);
     word(&bytes, x, y)
 }
 

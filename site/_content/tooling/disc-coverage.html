@@ -20,21 +20,28 @@
   <h2>What this solves</h2>
   <p>The <a href="port-catalog.html">port catalog</a> tracks <em>dumped</em>, <em>documented</em> and <em>ported</em> over the set of addresses this project cites - the right instrument for steering work, but blind to a subsystem nobody has cited. <code>disc-coverage.py</code> takes the denominator from the disc instead. Reach for it when you want to know what code nobody has looked at yet, or when you want a progress figure that cannot flatter itself.</p>
   <p>The distinction runs in both directions: closing a byte-denominated gap <em>widens</em> the citation graph, because a newly dumped and documented function becomes a row on the port worklist. A rising port worklist after a dump pass is the measurement getting wider, not the work going backwards.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Dump headers</span><span class="desc">each Ghidra dump names its entry VA + byte length - a real interval</span><span class="crate">dump_header.py</span>
-    <span class="num">2</span><span class="layer">Merge + subtract</span><span class="desc">merged intervals subtracted from each image's extent leave the un-dumped remainder</span><span class="crate">disc-coverage.py</span>
-    <span class="num">3</span><span class="layer">Classify gaps</span><span class="desc">code vs data, then by shape - only one of six shapes is work</span><span class="crate">opcode/pointer statistics</span>
-    <span class="num">4</span><span class="layer">Attribute overlays</span><span class="desc">shared load addresses: credit an image only where its bytes hold the dump</span><span class="crate">dump-extent-attribution.csv</span>
-    <span class="num">5</span><span class="layer">Ratchet + worklist</span><span class="desc">coverage may only rise; the biggest code gaps become the dump worklist</span><span class="crate">--check</span>
-  </div>
+  <ol class="steps">
+    <li><b>Dump headers</b><span>each Ghidra dump names its entry VA + byte length - a real interval <code>dump_header.py</code></span></li>
+    <li><b>Merge + subtract</b><span>merged intervals subtracted from each image's extent leave the un-dumped remainder <code>disc-coverage.py</code></span></li>
+    <li><b>Classify gaps</b><span>code vs data, then by shape - only one of six shapes is work</span></li>
+    <li><b>Attribute overlays</b><span>shared load addresses: credit an image only where its bytes hold the dump <code>dump-extent-attribution.csv</code></span></li>
+    <li><b>Worklist</b><span>the biggest code gaps, ranked, become the dump worklist</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="quick-start">
   <h2>Quick start</h2>
-<pre><code>python3 scripts/ci/disc-coverage.py              # report -> target/disc-coverage/
-python3 scripts/ci/disc-coverage.py --md         # markdown to stdout as well
-python3 scripts/ci/disc-coverage.py --check      # ratchet against the baseline
-python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>python3 scripts/ci/disc-coverage.py</code></td><td>Report -> target/disc-coverage/</td></tr>
+      <tr><td><code>python3 scripts/ci/disc-coverage.py --md</code></td><td>Markdown to stdout as well</td></tr>
+      <tr><td><code>python3 scripts/ci/disc-coverage.py --check</code></td><td>Ratchet against the baseline</td></tr>
+      <tr><td><code>python3 scripts/ci/disc-coverage.py --update-baseline</code></td><td>Rewrite the baseline (needs a reason in the commit)</td></tr>
+    </tbody>
+  </table>
+  </div>
   <p>The data half reads <code>extracted/PROT/categorize.json</code>. That file is a <strong>cache</strong> written by <code>asset categorize</code> and never regenerated automatically, so a tree whose detectors have moved on keeps reporting a stale classification - and the gate passes either way. Regenerate before trusting a data figure or taking a baseline:</p>
   <div class="cli"><code>./target/release/asset categorize extracted/PROT</code></div>
 </section>
@@ -57,12 +64,7 @@ python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
     <li>Entries of an identical, exact size are the cheapest lead: a size repeating across a hundred entries is a fixed-layout format whatever its statistics look like.</li>
     <li>A statistical class can swallow content by dilution - a whole-buffer printable-ASCII ratio misses an image that is mostly bss with its literals in the first sector. Structure at a known offset beats a whole-buffer ratio.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the field maps that hid inside "placeholder"</summary>
-    <div class="disclosure-body">
-      <p>Every scene's <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md">field map</a> - collision grid, floor heights, object placements, door triggers - is a sparse <code>0x12000</code>-byte blob mostly zero on a small map. Before the <code>field_map</code> detector existed, those entries scattered across the statistical classes by nothing but how crowded each scene happened to be, and the largest single block of them sat inside the "explained placeholder" column. That is the inference being wrong at scale, and the reason the bullets above are phrased as they are.</p>
-    </div>
-  </details>
+  <p class="hint">A statistical class is an inference, not a format: every scene's sparse <code>0x12000</code>-byte field map once scattered across the statistical classes, mostly into "explained placeholder", until a structural detector claimed them.</p>
 </section>
 
 <section class="doc-section" id="code">
@@ -135,12 +137,7 @@ python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
       <p>The sweep asks two questions with opposite sensitivities to window length - <em>does this image reproduce the window at this VA</em> (fixed-offset test, three-instruction floor) and <em>do these bytes appear anywhere</em> (a search over millions of positions, eight-instruction floor); <code>--validate-short-floor</code> sets the relaxation from its own control. The code table carries three counts, and the unit matters: <strong>dumps</strong> is per dump <em>file</em>; <strong>VA-ambiguous</strong> is the share of an image's covered <em>bytes</em> the attribution could not place, which is the unit the coverage figure itself is stated in; <strong>by extent</strong> is the same question counted in whole extents. Reading the extent count as the discount on a byte figure withheld an upper bound from most of the slot-B band over fractions of a percent of its bytes - the corpus carries a long tail of 4-to-36-byte Ghidra fragments, and an extent count weighs each of those like a 6 KB module. Neither is per dump file: one extent can back dozens, and weighting by how often the same bytes were dumped measures the corpus, not the image.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: the starting point mistaken for the limit</summary>
-    <div class="disclosure-body">
-      <p>This page once concluded that the inner of two nested overlay spans could never be measured at all. That reading is <strong>falsified</strong>: address ambiguity is total for the inner span, but byte attribution then places most of its extents - what is structural is that it cannot be resolved by <em>address</em>, a statement about one method, not about the image. A second earlier claim, that the residue is mostly repaired by re-dumping, is also unsupported. Both are logged in <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>; companions <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md">dump-corpus-integrity</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md">phantom-print-index</a>.</p>
-    </div>
-  </details>
+  <p class="hint">"Unresolvable by address" is a statement about one method, not about an image: byte attribution still places most extents of a nested overlay span. Superseded readings are on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
 </section>
 
 <section class="doc-section" id="gate">

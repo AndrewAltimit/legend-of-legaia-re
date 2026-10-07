@@ -18,40 +18,13 @@
 <section class="doc-section" id="why">
   <h2>Why this exists</h2>
   <p>Reverse engineering yields raw records - an art's direction bytes, a spell's MP cost, a monster's stat block - but no names and no second source to check the numbers against. The curated tables supply both.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 210" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Walkthroughs feed TOML tables, which the gamedata crate loads; disc-gated tests join them to disc records, and the disc wins on disagreement">
-      <style>
-        .gd-box { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; rx: 4; }
-        .gd-disc { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.6; rx: 4; }
-        .gd-t { font: 600 13px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .gd-s { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
-        .gd-l { stroke: var(--text-muted); stroke-width: 1.4; fill: none; marker-end: url(#gd-arrow); }
-      </style>
-      <defs><marker id="gd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="10" y="30" width="150" height="56" class="gd-box"/>
-      <text x="85" y="50" class="gd-t">Walkthroughs</text>
-      <text x="85" y="68" class="gd-s">factual columns only</text>
-      <line x1="160" y1="58" x2="200" y2="58" class="gd-l"/>
-      <rect x="200" y="30" width="150" height="56" class="gd-box"/>
-      <text x="275" y="50" class="gd-t">data/gamedata/*.toml</text>
-      <text x="275" y="68" class="gd-s">stable snake_case keys</text>
-      <line x1="350" y1="58" x2="390" y2="58" class="gd-l"/>
-      <rect x="390" y="30" width="150" height="56" class="gd-box"/>
-      <text x="465" y="50" class="gd-t">legaia_gamedata</text>
-      <text x="465" y="68" class="gd-s">Database::load()</text>
-      <line x1="540" y1="58" x2="580" y2="58" class="gd-l"/>
-      <rect x="580" y="30" width="170" height="56" class="gd-box"/>
-      <text x="665" y="50" class="gd-t">Site pages + engine</text>
-      <text x="665" y="68" class="gd-s">arts, magic, shops, monsters</text>
-      <rect x="390" y="140" width="150" height="56" class="gd-disc"/>
-      <text x="465" y="160" class="gd-t">Disc records</text>
-      <text x="465" y="178" class="gd-s">SCUS tables, PROT 0867, MANs</text>
-      <line x1="465" y1="140" x2="465" y2="90" class="gd-l"/>
-      <text x="560" y="115" class="gd-s">disc-gated tests join by name;</text>
-      <text x="560" y="130" class="gd-s">a mismatch is fixed in the TOML</text>
-    </svg>
-    <figcaption>Walkthrough numbers become typed tables; disc-gated tests join each table to the matching disc record, and the disc is the tie-breaker.</figcaption>
-  </figure>
+  <ol class="steps">
+    <li><b>Walkthroughs</b><span>Factual columns only - costs, stats, stock, drops.</span></li>
+    <li><b><code>data/gamedata/*.toml</code></b><span>Typed tables with stable snake_case keys.</span></li>
+    <li><b><code>legaia_gamedata</code></b><span><code>Database::load()</code>, no disc needed.</span></li>
+    <li><b>Joined to the disc</b><span>Each table is matched by name to its disc record - SCUS tables, the monster archive, scene scripts. A mismatch is fixed in the TOML: the disc wins.</span></li>
+    <li><b>Site pages + engine</b><span>Arts, magic, shops, monsters, music.</span></li>
+  </ol>
   <ul class="bullets">
     <li>Art records parsed from the disc get a name and a retail AP cost to check against.</li>
     <li>Item ids seen in cheat codes and inventory bytes resolve to display names.</li>
@@ -189,7 +162,7 @@
 
 <section class="doc-section" id="invariants">
   <h2>Cross-validation</h2>
-  <p>Disc-free rules run with <code>cargo test -p legaia-gamedata</code>; the disc-gated joins skip without <code>extracted/SCUS_942.54</code>. The disc is the tie-breaker.</p>
+  <p>Two kinds of check keep the tables honest: internal rules that need no disc, and joins against the matching disc record. The disc is the tie-breaker.</p>
   <h3>Disc-free rules</h3>
   <ul class="bullets">
     <li>Every art's <code>action_constant</code> resolves to a name in <code>crates/art</code>; its direction bytes are in <code>1..=4</code> and equal the per-character mapping of its command tokens.</li>
@@ -198,20 +171,20 @@
     <li>Every shop / prize / fishing / Muscle Dome / drop / steal key resolves to an item row.</li>
     <li>Armor <code>slot</code> &isin; {armor, helmet, shoes}; <code>equip</code> &isin; {Vahn, Noa, Gala, None}; item <code>category</code> &isin; {consumable, permanent_stat, key, art_book, fishing_lure}.</li>
   </ul>
-  <h3>Disc-gated joins</h3>
+  <h3>Joins against the disc</h3>
   <table>
-    <thead><tr><th>Test</th><th>Joins</th><th>Result</th></tr></thead>
+    <thead><tr><th>Table</th><th>Joined to</th><th>Result</th></tr></thead>
     <tbody>
-      <tr><td><code>item_prices_vs_disc</code></td><td>Curated price vs the SCUS item record's <code>u16</code> at <code>+2</code></td><td>Zero mismatches</td></tr>
-      <tr><td><code>equip_slots_vs_disc</code></td><td>The equip table's four slot categories vs body / head / footwear / weapon</td><td>Name-exact; accessories absent from that table, as expected</td></tr>
-      <tr><td><code>accessory_passives_vs_disc</code></td><td><code>effect_class</code> vs the 64-slot passive index (descriptor <code>+3</code>)</td><td>72 of 73 name-join; zero mismatches (gap: "Light Ra-Seru Egg" vs disc "Light Egg")</td></tr>
-      <tr><td><code>enemy_stats_vs_disc</code></td><td>Stat columns vs the monster archive (PROT 0867), through the battle-load stat boost</td><td>All nine fields across 120+ enemies (&plusmn;1 on fractional factors)</td></tr>
-      <tr><td><code>magic_vs_disc</code></td><td>MP cost and target vs the SCUS spell table</td><td>21 Seru + 7 of 8 summons byte-exact (Juggernaut is outside the named region; Horn's target byte is enemy-side by design)</td></tr>
-      <tr><td><code>shop_inventory_vs_disc</code></td><td>Inline MAN stock records vs curated shops, by item-name set</td><td>Every disc shop matches; disc-only Soru's Bakery is asserted explicitly</td></tr>
-      <tr><td><code>casino_prizes_vs_disc</code></td><td>The PROT 0899 prize-exchange blocks vs curated prizes, on (name, coin price)</td><td>Byte-exact both ways; Earth Egg @ 100000 is a separate hidden exchange</td></tr>
+      <tr><td>Item prices</td><td>The SCUS item record's <code>u16</code> at <code>+2</code></td><td>Zero mismatches</td></tr>
+      <tr><td>Equipment slots</td><td>The equip table's four slot categories (body / head / footwear / weapon)</td><td>Name-exact; accessories are a separate system and absent from that table</td></tr>
+      <tr><td>Accessory passives</td><td>The 64-slot passive index (descriptor <code>+3</code>)</td><td>72 of 73 name-join, zero mismatches (the gap: "Light Ra-Seru Egg" is "Light Egg" on the disc)</td></tr>
+      <tr><td>Enemy stats</td><td>The monster archive (PROT 0867), through the battle-load stat boost</td><td>All nine fields across 120+ enemies (&plusmn;1 on fractional factors)</td></tr>
+      <tr><td>Magic</td><td>MP cost and target in the SCUS spell table</td><td>21 Seru + 7 of 8 summons byte-exact (Juggernaut sits outside the named region; Horn's target byte is enemy-side by design)</td></tr>
+      <tr><td>Shop stock</td><td>Inline stock records in the scene scripts, by item-name set</td><td>Every disc shop matches; the disc-only Soru's Bakery is expected</td></tr>
+      <tr><td>Casino prizes</td><td>The PROT 0899 prize-exchange blocks, on (name, coin price)</td><td>Byte-exact both ways; Earth Egg @ 100000 is a separate hidden exchange</td></tr>
     </tbody>
   </table>
-  <p>The enemy join is the one with a twist: the curated stats are what the player fights, and retail boosts the disc record at battle load - UDF / LDF &times;2, ATK &times;5/4, INT &times;9/8, HP / SPD / AGL unchanged - and scales rewards separately (EXP &times;3/4, gold &times;5/16). This international-vs-raw difficulty difference was first surfaced by Zetopheonix; the loader is on the <a href="../subsystems/battle.html">battle</a> page.</p>
+  <p>The enemy join has a twist: the curated stats are what the player fights, and the NTSC-U loader boosts the disc record at battle load with one of <strong>two profiles</strong>. A scripted (boss / story) fight installs UDF / LDF &times;2, ATK &times;5/4, INT &times;9/8; a random encounter installs UDF / LDF &times;7/4, ATK &times;1, INT &times;5/4. HP, SPD and AGL are unchanged in both, and rewards scale separately (EXP &times;3/4, gold &times;5/16). The curated table is the boss-fight view of every enemy, so for a random native it overstates defence by 8/7 and ATK by 5/4. The JP and PAL executables install the raw record unboosted - a regional difference first surfaced by Zetopheonix; the loader is on the <a href="../subsystems/battle.html">battle</a> page.</p>
   <details class="disclosure">
     <summary>Where the disc overrides the walkthroughs</summary>
     <div class="disclosure-body">
@@ -255,7 +228,7 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
       <tr><td>Magic</td><td>MP costs, elements and names for the spell-table offsets the damage / MP-cost formulas read</td></tr>
       <tr><td>Item keys</td><td>Stable identifiers, so a disc byte-id is one extra column rather than churn across consumers</td></tr>
       <tr><td>Enemy + boss stats</td><td>Hits-to-kill predictions from the formulas must match Meth's blocks (Jette: HP 34,567 / ATK 277 / UDF 412 / SPD 274)</td></tr>
-      <tr><td>Seru absorb rates</td><td>The engine's capture roll (<code>engine-core::seru_learning</code>) reads <code>Spell::absorb_lv1..3</code></td></tr>
+      <tr><td>Seru absorb rates</td><td>The per-level absorb chances (<code>Spell::absorb_lv1..3</code>) the Seru capture roll is checked against</td></tr>
       <tr><td>Magic XP curve</td><td>Per-cast levelling: <code>xp_*_target</code> award, <code>XP_TO_LEVEL</code> bump, <code>SCALING_BP</code> on the next cast</td></tr>
     </tbody>
   </table>
@@ -266,7 +239,7 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
   <table>
     <thead><tr><th>Function / table</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td>Battle-load stat boost</td><td><code>FUN_80054CB0</code></td><td>The &times;2 / &times;5/4 / &times;9/8 factors between the disc record and the curated in-battle stats</td></tr>
+      <tr><td>Battle-load stat boost</td><td><code>FUN_80054CB0</code></td><td>The two boost profiles between the disc record and the in-battle stats; the scripted-fight one reproduces the curated table</td></tr>
       <tr><td>Victory-spoils scaling</td><td><code>FUN_8004E568</code></td><td>EXP &times;3/4, gold &times;5/16</td></tr>
       <tr><td>Ability bitfield writer</td><td><code>FUN_80042558</code></td><td>Accessory passive index &rarr; bit in <code>char+0xF4</code></td></tr>
       <tr><td>Steal table</td><td><code>DAT_80077828</code></td><td><code>steal_chance</code> column is byte-exact</td></tr>

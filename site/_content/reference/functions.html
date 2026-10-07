@@ -9,43 +9,40 @@
   <dl class="kv">
     <dt>Naming</dt><dd><code>FUN_8003E4E8</code> = the function whose first instruction sits at RAM <code>0x8003E4E8</code>; <code>DAT_</code> / <code>PTR_</code> mark data and pointer tables the same way. "JT" is a jump table.</dd>
     <dt>Resident code</dt><dd><code>0x80010000..0x8007B800</code> - the executable <code>SCUS_942.54</code>, always loaded</dd>
-    <dt>Overlay code</dt><dd><code>0x801C0000+</code> - one game-mode overlay paged in at a time (field, battle, menu, title, cutscene)</dd>
+    <dt>Overlay code</dt><dd>Two RAM windows: slot A based at <code>0x801CE818</code> (one game-mode overlay at a time - field, battle, menu, title, minigame) and slot B at <code>0x801F69D8</code> (per-cast Seru-magic and summon modules, boss-stage modules). No overlay function lives below <code>0x801CE818</code>.</dd>
     <dt>Dumps</dt><dd><code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code>, overlays as <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code> (gitignored: Sony-derived; regenerable via <a href="../tooling/ghidra.html">Ghidra tooling</a>)</dd>
-    <dt>Full directory</dt><dd>Eleven Markdown pages under <code>docs/reference/functions/</code> - <a href="#full-reference">list below</a></dd>
-    <dt>Status per function</dt><dd><a href="../tooling/port-catalog.html">Port catalog</a> (dumped / documented / ported)</dd>
+    <dt>Full directory</dt><dd>One Markdown page per subsystem under <code>docs/reference/functions/</code> - <a href="#full-reference">list below</a></dd>
   </dl>
+  <nav class="see-also" aria-label="Subsystems on this page">
+    <span class="see-also-label">Jump to</span>
+    <a href="#fn-boot">Boot + asset loader</a>
+    <a href="#fn-vms">Game VMs</a>
+    <a href="#fn-cutscene">Cutscene + camera</a>
+    <a href="#fn-renderer">Renderer + GTE</a>
+    <a href="#fn-battle">Battle</a>
+    <a href="#fn-menu">Menu + title</a>
+    <a href="#fn-audio">Audio</a>
+    <a href="#fn-worldmap">World map</a>
+    <a href="#fn-bios">BIOS + libapi</a>
+    <a href="#full-reference">Full directory</a>
+  </nav>
 </section>
 
 <section class="doc-section" id="how-to-read">
   <h2>How to read an entry</h2>
   <p>The game shipped with no symbol names, so the address <em>is</em> the name and it is stable across every doc and probe in this project. Four things catch people out:</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 150" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two address bands: the always-resident SCUS executable from 0x80010000, and the overlay window from 0x801C0000 where one of several overlays is loaded at a time">
-      <style>
-        .fn-band { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
-        .fn-ov { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.6; }
-        .fn-t { font: 600 13px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .fn-s { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; dominant-baseline: middle; }
-        .fn-a { font: 11px 'JetBrains Mono', monospace; fill: var(--accent); dominant-baseline: middle; }
-      </style>
-      <rect x="20" y="40" width="330" height="56" class="fn-band"/>
-      <text x="185" y="60" class="fn-t">SCUS_942.54 (resident)</text>
-      <text x="185" y="78" class="fn-s">one function per address, always loaded</text>
-      <rect x="410" y="40" width="330" height="56" class="fn-ov"/>
-      <text x="575" y="60" class="fn-t">Overlay window</text>
-      <text x="575" y="78" class="fn-s">field / battle / menu / title / cutscene - one at a time</text>
-      <text x="20" y="118" class="fn-a">0x80010000</text>
-      <text x="290" y="118" class="fn-a">0x8007B800</text>
-      <text x="410" y="118" class="fn-a">0x801C0000</text>
-      <text x="670" y="118" class="fn-a">0x80200000</text>
-      <text x="380" y="68" class="fn-s">&hellip;</text>
-    </svg>
-    <figcaption>One address in the overlay window can name a <em>different</em> function depending on which overlay was resident when the dump was taken.</figcaption>
+  <figure class="diagram">
+    <div class="byte-map" role="img" aria-label="Three code regions: the always-resident SCUS executable from 0x80010000, overlay slot A based at 0x801CE818 holding one game-mode overlay at a time, and overlay slot B based at 0x801F69D8 holding one cast or stage module">
+      <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">from 0x80010000</span><span class="bm-name">SCUS_942.54</span><span class="bm-size">always loaded</span></div>
+      <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">base 0x801CE818</span><span class="bm-name">overlay slot A</span><span class="bm-size">one game mode at a time</span></div>
+      <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">base 0x801F69D8</span><span class="bm-name">overlay slot B</span><span class="bm-size">one cast / stage module</span></div>
+    </div>
+    <figcaption>One address inside an overlay slot can name a <em>different</em> function depending on which image was resident when the dump was taken.</figcaption>
   </figure>
   <table>
     <thead><tr><th>Trap</th><th>What to do</th></tr></thead>
     <tbody>
-      <tr><td><strong>Overlay addresses collide.</strong> Several overlays share <code>0x801C0000+</code>.</td><td>If an entry does not match the code you are reading, check which overlay you have first - <a href="../tooling/overlay-capture.html">overlay capture</a>, <a href="memory-map.html#overlays">overlay window</a>.</td></tr>
+      <tr><td><strong>Overlay addresses collide.</strong> Several images share each overlay slot.</td><td>If an entry does not match the code you are reading, check which overlay you have first - <a href="../tooling/overlay-capture.html">overlay capture</a>, <a href="memory-map.html#overlays">overlay window</a>.</td></tr>
       <tr><td><strong>"No static caller in SCUS" does not mean dead.</strong> Most game logic lives in overlays.</td><td>Zero callers in the executable means "needs an overlay sweep", not "unused".</td></tr>
       <tr><td><strong>Some printed addresses are phantoms.</strong> A dump can show a real body beside a VA no runtime image ever used.</td><td>Before treating an unfamiliar <code>0x801E&hellip;</code> / <code>0x8020&hellip;</code> as new, check <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/overlay-va-aliases.md" target="_blank" rel="noopener">overlay VA aliases</a>.</td></tr>
       <tr><td><strong>Decompiled C is a rendering.</strong> Ghidra promotes intra-function labels to fake <code>FUN_</code> calls, drops register arguments, reorders stores.</td><td>Read the disassembly; the artifact catalogue is on the <a href="../tooling/ghidra.html">Ghidra page</a>.</td></tr>
@@ -57,13 +54,13 @@
 <section class="doc-section" id="by-subsystem">
   <h2>Highlights by subsystem</h2>
 
-  <h3>Boot + asset loader</h3>
+  <h3 id="fn-boot">Boot + asset loader</h3>
   <p>How the disc's single big archive (<code>PROT.DAT</code>) gets found, indexed and streamed into RAM.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td>FUN_8003E4E8</td><td>Boot-time TOC loader: first 3 sectors of PROT.DAT into <code>0x801C70F0</code></td></tr>
-      <tr><td>FUN_8003E8A8</td><td>LBA resolver against the in-RAM TOC</td></tr>
+      <tr><td>FUN_8003E8A8</td><td>PROT TOC index resolver: returns the entry's <strong>sector count</strong> (the gap to the next entry); the start LBA is a side effect</td></tr>
       <tr><td>FUN_8003E6BC</td><td>Path-based file opener (<code>data\battle\efect.dat</code> etc.)</td></tr>
       <tr><td>FUN_8003EBE4 / FUN_8003EC70</td><td>Overlay loaders A / B; two overlays resident at once. B pages in the per-summon Seru-magic overlays</td></tr>
       <tr><td>FUN_8001F05C</td><td>Asset-type dispatcher (type byte &rarr; handler)</td></tr>
@@ -83,7 +80,7 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/boot.html">Boot</a><a href="../subsystems/asset-loader.html">Asset loader</a><a href="../formats/prot.html">PROT.DAT</a></div>
 
-  <h3>Game VMs</h3>
+  <h3 id="fn-vms">Game VMs</h3>
   <p>The bytecode interpreters that run scenes, menus, moves and actor motion - most of the game's logic is script, not native code.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
@@ -114,7 +111,7 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/script-vm.html">Field / event VM</a><a href="../subsystems/move-vm.html">Move VM</a><a href="../subsystems/motion-vm.html">Motion VMs</a><a href="../subsystems/actor-vm.html">Window-widget VM</a></div>
 
-  <h3>Cutscene, FMV and camera</h3>
+  <h3 id="fn-cutscene">Cutscene, FMV and camera</h3>
   <p>The movie player, the CD-XA voice streamer, and the field camera the story scenes drive.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
@@ -147,7 +144,7 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/cutscene.html">Cutscene</a><a href="../formats/str-fmv-table.html">FMV dispatch table</a><a href="../formats/xa.html">CD-XA</a></div>
 
-  <h3>Renderer + GTE</h3>
+  <h3 id="fn-renderer">Renderer + GTE</h3>
   <p>From an actor's mesh chain to GPU primitives: the per-actor render dispatcher, the TMD emit leaves and the animated-mesh poser.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
@@ -157,9 +154,9 @@
       <tr><td>FUN_80043390</td><td>Per-prim emit selector: SCUS table <code>0x8007657C</code> or the world-map overlay's fog-enabled table <code>0x801F8968</code></td></tr>
       <tr><td>FUN_8002735C</td><td>The 60-GTE-op table-driven TMD renderer; gated on actor <code>+0x42</code>, and unentered in every sampled mode</td></tr>
       <tr><td>FUN_8001B964</td><td>Animated-mesh renderer: poses TMD object <em>i</em> with ANM bone <em>i</em> (<code>R&middot;v + T</code>); skips unless object count = bone count</td></tr>
-      <tr><td>FUN_8001BE80</td><td>ANM per-(bone, frame) entry decoder (port <code>player_anm::BoneTransform</code>)</td></tr>
+      <tr><td>FUN_8001BE80</td><td>ANM per-(bone, frame) entry decoder</td></tr>
       <tr><td>FUN_80024D78</td><td>Actor object-table fill from the pool TMD</td></tr>
-      <tr><td>FUN_80024E80</td><td>Screen-fade primitive spawn (port <code>engine-core::fade::spawn_fade</code>)</td></tr>
+      <tr><td>FUN_80024E80</td><td>Screen-fade primitive spawn</td></tr>
       <tr><td>FUN_80026B4C / FUN_800268DC</td><td>TMD validate + register into <code>DAT_8007C018</code>; group-descriptor fixup</td></tr>
       <tr><td>FUN_8002C69C</td><td>HUD / menu / dialog sprite-batch POLY_FT4 emitter</td></tr>
       <tr><td>FUN_801F69D8</td><td>World-map top-view tile-visibility dispatcher (overlay)</td></tr>
@@ -183,13 +180,13 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/renderer.html">Renderer</a><a href="../formats/tmd.html">Legaia TMD</a><a href="../formats/anm.html">ANM</a><a href="../subsystems/world-map.html">World map</a></div>
 
-  <h3>Battle</h3>
+  <h3 id="fn-battle">Battle</h3>
   <p>The battle overlay's action state machine, HUD, loaders and the resident stat kernels.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td>FUN_801E295C</td><td>Battle action state machine (16 KB)</td></tr>
-      <tr><td>FUN_801D0748</td><td>Battle / level-up main tick; sub-states <code>0x1E / 0x32 / 0x6E / 0xFE</code></td></tr>
+      <tr><td>FUN_801D0748</td><td>Battle round driver: the round state machine every battle runs, Muscle Dome included - its one call site is the SCUS battle frame driver; sub-states <code>0x1E</code> / <code>0x32</code> / <code>0x6E</code> / <code>0xFE</code></td></tr>
       <tr><td>FUN_801D388C</td><td>Battle animation dispatcher (switch on animation type)</td></tr>
       <tr><td>FUN_801D5854</td><td>Per-pose camera / presentation driver (the anim system is <code>FUN_80047430</code> &rarr; <code>FUN_8004AD80</code> &rarr; <code>FUN_8004998C</code>)</td></tr>
       <tr><td>FUN_801D8DE8</td><td>HUD element renderer, 80-entry element table; shared with Muscle Dome</td></tr>
@@ -218,7 +215,7 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/battle.html">Battle</a><a href="../subsystems/battle-action.html">Battle action SM</a><a href="../subsystems/battle-formulas.html">Battle formulas</a></div>
 
-  <h3>Menu + title overlay</h3>
+  <h3 id="fn-menu">Menu + title overlay</h3>
   <p>The pause menu's window table and panel renderers, and the title screen's attract timer.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
@@ -243,7 +240,7 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/field-menu.html">Field menu</a><a href="../formats/window-script.html">Window scripts</a><a href="../subsystems/save-screen.html">Save screen</a></div>
 
-  <h3>Audio (PsyQ)</h3>
+  <h3 id="fn-audio">Audio (PsyQ)</h3>
   <p>Sony's libsnd / libspu stack as linked into the executable, plus the game's own bank loaders.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
@@ -253,7 +250,7 @@
       <tr><td>FUN_800243F0</td><td>BGM lookup (PROT-relative)</td></tr>
       <tr><td>FUN_8003E104</td><td><code>monster.snd</code> loader</td></tr>
       <tr><td>0x80061000..0x80067FFF</td><td>libsnd SsAPI sequencer cluster</td></tr>
-      <tr><td>FUN_80068D94</td><td><code>SsVabOpenHead</code> core: validates <code>pBAV</code>, builds the program &rarr; tone-page rank map, allocates SPU memory (port <code>engine-audio::VabBank::upload</code>)</td></tr>
+      <tr><td>FUN_80068D94</td><td><code>SsVabOpenHead</code> core: validates <code>pBAV</code>, builds the program &rarr; tone-page rank map, allocates SPU memory</td></tr>
       <tr><td>0x80068000..0x8006DFFF</td><td>libspu SPU control cluster</td></tr>
       <tr><td>FUN_80069B18</td><td>SPU DMA transfer state machine</td></tr>
       <tr><td>FUN_8001EBEC</td><td>Equipment-conditional per-character TMD group patch (objects 10 / 11 swap)</td></tr>
@@ -261,13 +258,13 @@
   </table>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/audio.html">Audio</a><a href="../formats/vab.html">VAB</a><a href="../formats/seq.html">SEQ</a></div>
 
-  <h3>World map + field debug tools</h3>
+  <h3 id="fn-worldmap">World map + field debug tools</h3>
   <p>The overworld controller, its developer menu, and the field overlay's debug editors the menu reaches into.</p>
   <table class="layout">
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td>FUN_801E76D4</td><td>World-map controller: top-view debug toggle, camera scroll / azimuth / zoom</td></tr>
-      <tr><td>FUN_801EAD98</td><td>Developer menu renderer, 24-entry list (display only; port <code>engine_vm::world_map_overlay</code>)</td></tr>
+      <tr><td>FUN_801EAD98</td><td>Developer menu renderer, 24-entry list (display only)</td></tr>
       <tr><td>FUN_801EE094 / FUN_801EE328 (0897)</td><td>The travel arts Riremito / Rula (subsystem handlers <code>0x29</code> / <code>0x2B</code>): what the Door of Light / Door of Wind items run through the pause-menu session <code>FUN_801ED308</code>; each scans the resident CDNAME define table <code>0x80088758</code> for its destination. The developer menu reaches them too</td></tr>
       <tr><td>FUN_801DBD04 (0897)</td><td>Dev-menu EVENT FLAG editor over ids <code>0..0xFFF</code>; can set any story flag including the spine gates</td></tr>
       <tr><td>FUN_801EF014 (0897)</td><td>Flag-window picker widget (op-<code>0x49</code>-installed); only genuine disc use is the Uru Mais warp-pad memory</td></tr>
@@ -293,8 +290,8 @@
   </details>
   <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/world-map.html">World map</a><a href="../formats/world-map-overlay.html">World-map overlay</a></div>
 
-  <h3>BIOS + libapi</h3>
-  <p>PlayStation kernel entry points and C-library routines the executable links in; ignored by the port catalog as PsyQ infrastructure.</p>
+  <h3 id="fn-bios">BIOS + libapi</h3>
+  <p>PlayStation kernel entry points and C-library routines the executable links in - PsyQ infrastructure, not game logic.</p>
   <table class="layout">
     <thead><tr><th>Address</th><th>Routine</th></tr></thead>
     <tbody>
@@ -304,7 +301,7 @@
       <tr><td>0x80056698+, stride 0x10</td><td>BIOS B-vector thunk cluster</td></tr>
     </tbody>
   </table>
-  <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/boot.html">Boot</a><a href="../tooling/port-catalog.html">Port catalog</a></div>
+  <div class="see-also"><span class="see-also-label">Reference</span><a href="../subsystems/boot.html">Boot</a></div>
 </section>
 
 <section class="doc-section" id="full-reference">

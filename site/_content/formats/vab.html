@@ -66,38 +66,54 @@
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
   <p>A bank is a fixed 32-byte header, a 128-slot program table, a packed run of 16-tone pages, a 256-entry sample-size table, and then the sample bodies.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td><code>magic</code></td><td><code>VABp</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>u32</td><td><code>version</code></td><td>Bank format version</td></tr>
-      <tr><td><code>+0x08</code></td><td>u32</td><td><code>id</code></td><td>Bank id</td></tr>
-      <tr><td><code>+0x0C</code></td><td>u32</td><td><code>size</code></td><td>Whole-bank byte size</td></tr>
-      <tr><td><code>+0x12</code></td><td>u16</td><td><code>ps</code></td><td>Number of <em>used</em> programs = number of tone pages that follow</td></tr>
-      <tr><td><code>+0x14</code></td><td>u16</td><td><code>ts</code></td><td>Total tone count</td></tr>
-      <tr><td><code>+0x16</code></td><td>u16</td><td><code>vs</code></td><td>Number of VAG sample bodies</td></tr>
-      <tr><td><code>+0x18</code></td><td>u8 &times; 4</td><td>master vol / pan, attr</td><td>Bank-wide mix defaults</td></tr>
-      <tr><td><code>+0x20</code></td><td>128 &times; 16</td><td><code>ProgAtr[128]</code></td><td>One slot per program number: <code>tones</code> byte, vol, pan, and reserved words retail reuses at open time</td></tr>
-      <tr><td><code>+0x820</code></td><td><code>ps</code> &times; 16 &times; 32</td><td><code>VagAtr</code> pages</td><td>Packed: one 16-tone page per used program, in slot order</td></tr>
-      <tr><td>after pages</td><td>256 &times; u16</td><td><code>vag_size[]</code></td><td>1-indexed sizes in 8-byte units; <code>[0]</code> is the spacer</td></tr>
-      <tr><td>after table</td><td>-</td><td>VAG bodies</td><td>SPU-ADPCM sample data, back to back - but in a <em>different chunk</em>, so on disc there is a 4-byte chunk header between this row and the one above it</td></tr>
-    </tbody>
-  </table>
+  <h3 id="vab-header">Bank header (32 bytes)</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">VABp</span><span class="bm-size">magic</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">version</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">id</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">size (fsize)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off">+0x10</span><span class="bm-name">-</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x12</span><span class="bm-name">ps</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x14</span><span class="bm-name">ts</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x16</span><span class="bm-name">vs</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">+0x18</span><span class="bm-name">master vol / pan, attrs</span><span class="bm-size">8 B</span></div>
+  </div>
+  <p><code>ps</code> is the number of <em>used</em> programs (and so of tone pages), <code>ts</code> the total tone count, <code>vs</code> the number of sample bodies.</p>
+  <h3 id="vab-body">Whole bank</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x000</span><span class="bm-name">header</span><span class="bm-size">32 B</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x020</span><span class="bm-name">ProgAtr[128]</span><span class="bm-size">16 B each</span></div>
+    <div class="bm-cell bm-accent" style="--w:5"><span class="bm-off">+0x820</span><span class="bm-name">VagAtr pages</span><span class="bm-size">ps &times; 16 &times; 32 B</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">after pages</span><span class="bm-name">vag_size[256]</span><span class="bm-size">u16, 1-indexed</span></div>
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off">&nbsp;</span><span class="bm-name">chunk hdr</span><span class="bm-size">4 B</span></div>
+    <div class="bm-cell" style="--w:6"><span class="bm-off">next chunk</span><span class="bm-name">VAG bodies</span><span class="bm-size">SPU-ADPCM</span></div>
+  </div>
+  <p>Each <code>ProgAtr</code> slot carries a <code>tones</code> byte, volume, pan and reserved words retail reuses at open time. The pages are packed, one per used program, in slot order. Sizes are in 8-byte units with <code>[0]</code> a spacer. The header part is <code>0x20 + 0x800 + 0x200&middot;ps + 0x200</code> bytes; the bodies follow in a <em>different chunk</em>, so on disc a 4-byte chunk header sits between the size table and the first sample block.</p>
+
+</section>
+
+<section class="doc-section" id="reading-a-stream-bank">
+  <h2>Finding the sample bodies</h2>
+  <p>The body chunk carries no magic. It is identified by length: chunk 0's payload is exactly the header part, and <code>header_part_len + body_len == fsize</code>. Its type byte is <code>0x01</code> in almost every bank and <code>0x03</code> in ten.</p>
+  <ul class="bullets">
+    <li>A reader that walks straight on from the size table lands on the body chunk's <em>header</em>, four bytes early. The SPU-ADPCM grid shows it: a block's high nibble is a filter index and only <code>0..=4</code> is legal, and the grid four bytes on is 100% legal where the naive origin scores about chance.</li>
+    <li>Six entries (<code>0886</code>, <code>1058</code>, <code>1059</code>, <code>1063</code>, <code>1064</code>, <code>1065</code>) put the SEQ chunk <em>before</em> the body chunk, so the naive origin is thousands of bytes off and no small alignment probe recovers it. Anything that indexes a body out of a stream entry has to walk the chunks.</li>
+  </ul>
+  <p>In the port, <code>crates/vab</code> has three entry points and picking the wrong one is a silent defect: <code>parse</code> for a bank at a known offset (its body spans are the chunk-header address), <code>parse_in_stream</code> for a bank inside a DATA_FIELD stream (spans already resolved), and <code>vag_body_origin_at</code> for the body chunk alone, walking forward from the end of the header part.</p>
 </section>
 
 <section class="doc-section" id="multi-bank">
   <h2>The one multi-bank archive</h2>
   <p>PROT extraction <code>0891</code> holds 206 banks - one per monster sound-effect set - in a single 5.7 MB entry that the game never loads whole. Its first sector is the index:</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>u32</td><td>reserved</td><td>Zero</td></tr>
-      <tr><td><code>+0x04</code></td><td>u32</td><td><code>count</code></td><td>206</td></tr>
-      <tr><td><code>+0x08</code></td><td><code>count+1</code> &times; u32</td><td><code>start_sector[]</code></td><td>Each bank's first sector, relative to the entry; the extra final word is the archive's own sector count</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-pad" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">reserved = 0</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">count = 206</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:12"><span class="bm-off">+0x08</span><span class="bm-name">start_sector[count + 1]</span><span class="bm-size">u32 each</span></div>
+  </div>
+  <p>Each word is a bank's first sector relative to the entry; the extra final word is the archive's own sector count.</p>
+
   <p>Bank <em>i</em> runs from <code>start_sector[i]</code> to <code>start_sector[i+1]</code>, so the table is bounded by its successor exactly the way a <a href="prot.html">PROT TOC</a> entry is. Each bank is a two-chunk stream in the shape above, a zero terminator, then sector padding the builder left its previous buffer contents in.</p>
-  <p>The reader is <code>FUN_8003E104</code>: it bounds the bank index against the count word, subtracts the two sector bounds and shifts both left by 11. Its callers pass <code>monster_id - 1</code>. The index is resident because the boot image stages one sector of the entry into RAM at start-up.</p>
+  <p>The reader is <code>FUN_8003E104</code>: it bounds the bank index against the count word, subtracts the two sector bounds and shifts both left by 11. Its callers pass <code>monster_id - 1</code>. The index is resident at <code>0x801C8980</code> because the boot image (PROT 0895) copies <code>0x400</code> bytes of the entry's first sector there at start-up.</p>
 </section>
 
 <section class="doc-section" id="program-slots-vs-tone-pages">
@@ -107,12 +123,12 @@
     <li>Retail builds the rank map once, at bank open: the open routine writes the running used-program count into each slot's <code>+8</code> reserved word, and the program-change handler reads it back as the page index (<a href="#how-we-know">how we know</a>).</li>
     <li>The open also stashes each VAG's SPU address <code>&gt;&gt; 3</code> into the <code>+0xC</code> / <code>+0xE</code> reserved slots.</li>
     <li>66 of the 218 wrapped banks - 43 of the 77 <code>music_01</code> banks - use <em>sparse</em> program sets, so indexing pages by the raw program number mis-tones or silently drops most of their instruments.</li>
-    <li>The engine expands pages into slot space at upload (<code>VabBank::upload</code>).</li>
+    <li>In the port, <code>engine-audio::VabBank::upload</code> expands pages into slot space.</li>
   </ul>
   <details class="disclosure">
     <summary>The unused-slot alias</summary>
     <div class="disclosure-body">
-      <p>Retail stores the rank counter <em>before</em> the used check increments it, so a program-change to an unused slot borrows the <em>next</em> used slot's page while keeping its own mvol/mpan. Real BGM exercises this - <code>music_01</code> PROT 868 program 5 and PROT 996 program 19 select gap slots that play through the alias - and the engine reproduces it (<code>real_seq_program_change_coverage.rs</code> pins the census). A change past the last used slot reads garbage beyond the tone region in retail; the engine leaves those voices silent.</p>
+      <p>Retail stores the rank counter <em>before</em> the used check increments it, so a program-change to an unused slot borrows the <em>next</em> used slot's page while keeping its own mvol/mpan. Real BGM exercises this - <code>music_01</code> PROT 868 program 5 and PROT 996 program 19 select gap slots that play through the alias - and the port reproduces it. A change past the last used slot reads garbage beyond the tone region in retail; the port leaves those voices silent.</p>
     </div>
   </details>
 </section>
@@ -149,28 +165,18 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
-    <thead><tr><th>Function / test</th><th>Address</th><th>What it proves</th><th>Source</th></tr></thead>
+  <details class="disclosure"><summary>Routines and corpus checks</summary>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Evidence</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td><code>SsVabOpenHead</code></td><td><code>FUN_80068D94</code></td><td>Rank map built at open into <code>ProgAtr+8</code>; VAG SPU address into <code>+0xC</code>/<code>+0xE</code></td><td><code>ghidra/scripts/funcs/80068d94.txt</code></td></tr>
-      <tr><td>Program-change handler</td><td><code>FUN_80068B98</code></td><td>Reads the rank byte back as the tone-page index; the unused-slot alias</td><td><code>ghidra/scripts/funcs/80068b98.txt</code></td></tr>
-      <tr><td><code>real_vab_program_mapping</code></td><td>-</td><td>Sparse program sets across the corpus; slot-space expansion is required</td><td><code>crates/engine-audio/tests/</code> (disc-gated)</td></tr>
-      <tr><td><code>real_vab_tone_attributes</code></td><td>-</td><td>Which tone fields retail populates; vibrato / portamento always zero</td><td><code>crates/engine-audio/tests/</code> (disc-gated)</td></tr>
-      <tr><td><code>corpus_vag_spacer</code></td><td>-</td><td><code>vag_table[0] == 0</code> in 424 / 424 banks</td><td><code>crates/vab/tests/</code> (disc-gated)</td></tr>
-      <tr><td><code>corpus_chunk_carriage</code></td><td>-</td><td>Chunk 0's payload is the header part in every bank, and the chunk-derived body origin is the only one with a legal ADPCM block grid</td><td><code>crates/vab/tests/</code> (disc-gated)</td></tr>
-      <tr><td>Multi-bank reader</td><td><code>FUN_8003E104</code></td><td>The 206-entry sector index: bound, <code>table[i]</code> / <code>table[i+1]</code>, <code>&lt;&lt; 11</code></td><td><code>ghidra/scripts/funcs/8003e104.txt</code></td></tr>
-      <tr><td><code>real_seq_program_change_coverage</code></td><td>-</td><td>Census of program changes that hit unused slots in real BGM</td><td><code>crates/engine-audio/tests/</code> (disc-gated)</td></tr>
+      <tr><td><code>SsVabOpenHead</code>, <code>FUN_80068D94</code> (<code>ghidra/scripts/funcs/80068d94.txt</code>)</td><td>Rank map built at open into <code>ProgAtr+8</code>; VAG SPU address into <code>+0xC</code>/<code>+0xE</code></td></tr>
+      <tr><td>Program change, <code>FUN_80068B98</code> (<code>ghidra/scripts/funcs/80068b98.txt</code>)</td><td>Reads the rank byte back as the tone-page index; the unused-slot alias</td></tr>
+      <tr><td>Multi-bank reader, <code>FUN_8003E104</code> (<code>ghidra/scripts/funcs/8003e104.txt</code>)</td><td>The 206-entry sector index: bound, <code>table[i]</code> / <code>table[i+1]</code>, <code>&lt;&lt; 11</code></td></tr>
+      <tr><td>Disc-wide corpus census</td><td>Sparse program sets; which tone fields are populated; <code>vag_table[0] == 0</code> in 424 / 424 banks; chunk 0 is the header part in every bank and the chunk-derived body origin is the only one with a legal ADPCM grid</td></tr>
     </tbody>
-  </table>
-  <p>Full spec with every field: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/vab.md">docs/formats/vab.md</a>.</p>
-</section>
-
-<section class="doc-section" id="api">
-  <h2>API</h2>
-<pre><code>use legaia_vab::parse_header;
-let header = parse_header(buf, offset)?;
-println!("VAB v{} ps={} ts={}", header.version, header.ps, header.ts);</code></pre>
-  <p>For bulk extraction of every VAB and per-program WAV files, see the <code>vab</code> CLI in <a href="../tooling/extraction.html">extraction tooling</a>. The decoder shares its F0/F1 filter constants with <a href="xa.html"><code>crates/xa</code></a>.</p>
+  </table></div>
+  </details>
+  <p>Full spec with every field: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/vab.md">docs/formats/vab.md</a>. For bulk extraction of every bank to per-program WAVs, see the <code>vab</code> CLI in <a href="../tooling/extraction.html">extraction tooling</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

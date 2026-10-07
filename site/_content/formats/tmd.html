@@ -11,7 +11,7 @@
     <dt>Magic</dt><dd><code>0x80000002</code> at offset 0 (stock PSX TMD is <code>0x00000041</code>)</dd>
     <dt>Where</dt><dd>Inside <a href="lzs.html">LZS</a>-compressed <a href="prot.html">PROT.DAT</a> entries: <a href="scene-bundles.html">scene bundles</a>, <a href="field-pack.html">field-packs</a>, the monster archive (PROT 867), <a href="character-mesh.html">character packs</a>, <a href="battle-data-pack.html">player battle files</a>. Type byte <code>2</code> in the <a href="asset-type.html">asset-type dispatcher</a>.</dd>
     <dt>Size</dt><dd>12-byte header, 28 bytes per object, then per-object vertex / normal / primitive blocks</dd>
-    <dt>Parser</dt><dd><code>crates/tmd</code> (<code>lib.rs</code>, <code>legaia_prims.rs</code>, <code>descriptor.rs</code>); OBJ export; CLI <code>tmd</code></dd>
+    <dt>Parser</dt><dd><code>crates/tmd</code> (<code>legaia_prims</code> walker, <code>descriptor</code> shape table, <code>mesh</code> builders); OBJ export; CLI <code>tmd</code></dd>
     <dt>Confidence</dt><dd>Confirmed - traced from the two retail renderers and pinned against every field / town mesh pack on the disc (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../subsystems/renderer.html">renderer</a>, <a href="character-mesh.html">character mesh assembly</a>, <a href="monster-animation.html">monster animation</a>, <a href="../viewer.html">asset viewer</a></dd>
   </dl>
@@ -24,76 +24,55 @@
     <li><strong>Offset pointers</strong> - the object table stores byte offsets that the game patches to RAM addresses on load; a file on disc always has <code>flags = 0</code>.</li>
     <li><strong>Fixed scale word</strong> - every object's <code>scale</code> is <code>0x00808080</code>, where stock TMD stores a signed log2 scale.</li>
     <li><strong>Shape by lookup table</strong> - the renderer resolves a group's record layout through a 6-row table, not the stock mode byte.</li>
-    <li><strong>No light sources</strong> - normals are authored but never transformed; shading is a baked colour word (<a href="#no-lighting">below</a>).</li>
+    <li><strong>Mostly baked shading</strong> - most rows carry a colour word that modulates the texel; only the &ldquo;lit&rdquo; rows carry normals, and only the field's per-primitive dispatcher shades them through the GTE light (<a href="#no-lighting">below</a>).</li>
   </ul>
 
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 230" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tmd-fig-title">
-      <title id="tmd-fig-title">Layout of a Legaia TMD: 12-byte header, 28-byte object table, then per-object vertex, normal and primitive blocks; the primitive section is a chain of groups</title>
-      <style>
-        .tm-lab  { font: 12px 'Inter', sans-serif; fill: var(--text-muted); }
-        .tm-mono { font: 11px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .tm-hdr  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .tm-blk  { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .tm-grp  { fill: none; stroke: var(--accent); stroke-width: 1.1; stroke-dasharray: 4 3; }
-        .tm-seg  { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .tm-arr  { stroke: var(--accent); stroke-width: 1.1; fill: none; }
-      </style>
-      <text x="16" y="42" class="tm-lab">file</text>
-      <rect x="60" y="24" width="90" height="34" class="tm-hdr"/><text x="105" y="41" class="tm-seg">header 12 B</text>
-      <rect x="150" y="24" width="150" height="34" class="tm-hdr"/><text x="225" y="41" class="tm-seg">objects, 28 B each</text>
-      <rect x="300" y="24" width="150" height="34" class="tm-blk"/><text x="375" y="41" class="tm-seg">vertices, 8 B each</text>
-      <rect x="450" y="24" width="150" height="34" class="tm-blk"/><text x="525" y="41" class="tm-seg">normals, 8 B each</text>
-      <rect x="600" y="24" width="280" height="34" class="tm-blk"/><text x="740" y="41" class="tm-seg">primitive section</text>
-      <text x="60" y="76" class="tm-mono">+0x00</text>
-      <text x="150" y="76" class="tm-mono">+0x0C</text>
-      <text x="375" y="76" class="tm-mono">12 + vert_top</text>
-      <text x="525" y="76" class="tm-mono">12 + normal_top</text>
-      <text x="740" y="76" class="tm-mono">12 + prim_top</text>
+  <h3 id="file-layout">File layout</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">header</span><span class="bm-size">12 B</span></div>
+    <div class="bm-cell bm-accent" style="--w:5"><span class="bm-off">+0x0C</span><span class="bm-name">objects</span><span class="bm-size">28 B each</span></div>
+    <div class="bm-cell" style="--w:5"><span class="bm-off">12 + vert_top</span><span class="bm-name">vertices</span><span class="bm-size">8 B each</span></div>
+    <div class="bm-cell" style="--w:5"><span class="bm-off">12 + normal_top</span><span class="bm-name">normals</span><span class="bm-size">8 B each</span></div>
+    <div class="bm-cell" style="--w:7"><span class="bm-off">12 + prim_top</span><span class="bm-name">primitive section</span><span class="bm-size">groups</span></div>
+  </div>
+  <p>The primitive section is a chain of groups, each an 8-byte header followed by <code>count</code> uniform records, with zero padding between groups:</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">group</span><span class="bm-name">header</span><span class="bm-size">8 B</span></div>
+    <div class="bm-cell" style="--w:7"><span class="bm-off">+8</span><span class="bm-name">count &times; (ilen &times; 4) bytes</span><span class="bm-size">records</span></div>
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">next group</span><span class="bm-name">header</span><span class="bm-size">8 B</span></div>
+    <div class="bm-cell" style="--w:5"><span class="bm-off">+8</span><span class="bm-name">records</span><span class="bm-size">&hellip;</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">&nbsp;</span><span class="bm-name">zero padding</span><span class="bm-size">&nbsp;</span></div>
+  </div>
+  <p>Pointer fields in the object table are offsets from the end of the 12-byte header; every block after the object table belongs to one object.</p>
 
-      <path class="tm-arr" d="M740 84 L740 122"/>
-      <path class="tm-arr" d="M734 116 L740 122 L746 116"/>
-      <text x="16" y="146" class="tm-lab">primitive section</text>
-      <rect x="150" y="128" width="120" height="34" class="tm-grp"/><text x="210" y="145" class="tm-seg">group header 8 B</text>
-      <rect x="270" y="128" width="230" height="34" class="tm-blk"/><text x="385" y="145" class="tm-seg">count &times; (ilen &times; 4) bytes</text>
-      <rect x="500" y="128" width="120" height="34" class="tm-grp"/><text x="560" y="145" class="tm-seg">group header</text>
-      <rect x="620" y="128" width="150" height="34" class="tm-blk"/><text x="695" y="145" class="tm-seg">count &times; (ilen &times; 4)</text>
-      <rect x="770" y="128" width="110" height="34" class="tm-blk" style="stroke-dasharray: 2 3"/><text x="825" y="145" class="tm-seg">zero padding</text>
-      <text x="150" y="190" class="tm-lab">group header = count, flags (picks the shape row), olen, ilen, flag, mode</text>
-      <text x="150" y="212" class="tm-lab">object n_primitive = sum of count over its groups; no per-primitive sub-headers</text>
-    </svg>
-    <figcaption>Pointer fields in the object table are offsets from the end of the 12-byte header; every block after the object table belongs to one object.</figcaption>
-  </figure>
 </section>
 
 <section class="doc-section" id="header-12-bytes">
   <h2>Header and object table</h2>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td>id</td><td>Always <code>0x80000002</code>. Bit 31 = FLIST (pointers are offsets from the header end); low byte = format version 2.</td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td>flags</td><td><code>0</code> on disc. The loader sets <code>1</code> after pointer fixup and skips a second fixup when it reads <code>1</code> - a tool must never write this word.</td></tr>
-      <tr><td><code>+0x08</code></td><td>4</td><td>nobj</td><td>Object count.</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">id = 0x80000002</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">flags (0 on disc)</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">nobj</span><span class="bm-size">u32</span></div>
+  </div>
+  <p>Bit 31 of <code>id</code> is FLIST (pointers are offsets from the header end); the low byte is format version 2. <code>flags</code> is <code>0</code> on disc; the loader sets it to <code>1</code> after pointer fixup and skips a second fixup when it reads <code>1</code>, so a tool must never write this word.</p>
+
   <p id="object-table-28-bytes-per-object-nobj">A TMD holds one or more <em>objects</em> - independent sub-meshes (a character's limbs, a scene's props). Each has a 28-byte descriptor; every <code>*_top</code> is a byte offset from the end of the header, so a static tool reads <code>12 + offset</code>.</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td>vert_top</td><td>Offset of the vertex array</td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td>n_vert</td><td>Vertex count</td></tr>
-      <tr><td><code>+0x08</code></td><td>4</td><td>normal_top</td><td>Offset of the normal array</td></tr>
-      <tr><td><code>+0x0C</code></td><td>4</td><td>n_normal</td><td>Normal count</td></tr>
-      <tr><td><code>+0x10</code></td><td>4</td><td>prim_top</td><td>Offset of the primitive section</td></tr>
-      <tr><td><code>+0x14</code></td><td>4</td><td>n_primitive</td><td>Sum of every group's <code>count</code> in the section</td></tr>
-      <tr><td><code>+0x18</code></td><td>4</td><td>scale</td><td>Always <code>0x00808080</code></td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">vert_top</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">n_vert</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">normal_top</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">n_normal</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x10</span><span class="bm-name">prim_top</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x14</span><span class="bm-name">n_primitive</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x18</span><span class="bm-name">scale = 0x00808080</span><span class="bm-size">u32</span></div>
+  </div>
+  <p><code>n_primitive</code> is the sum of every group's <code>count</code> in the object's primitive section.</p>
+
   <p id="vertex-normal-data">Vertices and normals are both <code>SVECTOR { i16 x, y, z, pad }</code> - 8 bytes, 16-bit integer coordinates, the native input of the PlayStation's geometry co-processor (GTE).</p>
   <details class="disclosure" id="relocation-sentinel">
     <summary>The <code>flags</code> word as relocation sentinel</summary>
     <div class="disclosure-body">
-      <p>The pointer-fixup routine early-returns when <code>flags == 1</code> and sets <code>flags = 1</code> before walking the object table, so re-registering an already-relocated TMD is a no-op. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet. A <code>1</code> on disc would make the game skip a relocation the mesh still needs. The from-scratch port parses to typed offsets instead of patching in place, so it does not reimplement the fixup.</p>
+      <p>The pointer-fixup routine early-returns when <code>flags == 1</code> and sets <code>flags = 1</code> before walking the object table, so re-registering an already-relocated TMD is a no-op. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet. A <code>1</code> on disc would make the game skip a relocation the mesh still needs. A parser that reads typed offsets instead of patching in place (as <code>crates/tmd</code> does) never needs the fixup.</p>
     </div>
   </details>
 </section>
@@ -101,18 +80,17 @@
 <section class="doc-section" id="primitive-section">
   <h2>Primitive groups and the shape table</h2>
   <p>The primitive section is a sequence of <strong>groups</strong>: an 8-byte header, then <code>count</code> records of <code>ilen &times; 4</code> bytes each (a record is one triangle or quad).</p>
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0</code></td><td>2</td><td>count</td><td>Records in this group</td></tr>
-      <tr><td><code>+2</code></td><td>2</td><td>flags</td><td>Selects the shape-table row; bit 1 = quad</td></tr>
-      <tr><td><code>+4</code></td><td>1</td><td>olen</td><td>SDK output length (GPU packet words)</td></tr>
-      <tr><td><code>+5</code></td><td>1</td><td>ilen</td><td>Record stride in words; bytes = <code>ilen &times; 4</code></td></tr>
-      <tr><td><code>+6</code></td><td>1</td><td>flag</td><td>SDK flag byte</td></tr>
-      <tr><td><code>+7</code></td><td>1</td><td>mode</td><td>SDK mode byte (FT3 / FT4 / GT3 / GT4 ...)</td></tr>
-      <tr><td><code>+8</code></td><td><code>count &times; ilen &times; 4</code></td><td>records</td><td>Uniform stride, no per-record header</td></tr>
-    </tbody>
-  </table>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0</span><span class="bm-name">count</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+2</span><span class="bm-name">flags</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+4</span><span class="bm-name">olen</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+5</span><span class="bm-name">ilen</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+6</span><span class="bm-name">flag</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+7</span><span class="bm-name">mode</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">+8</span><span class="bm-name">count &times; ilen &times; 4 bytes of records</span><span class="bm-size">records</span></div>
+  </div>
+  <p><code>flags</code> selects the shape-table row (bit 1 = quad); <code>ilen</code> is the record stride in words. <code>olen</code>, <code>flag</code> and <code>mode</code> are the SDK's output length, flag and mode bytes (FT3 / FT4 / GT3 / GT4 ...). Records have a uniform stride and no per-record header.</p>
+
   <h3 id="shape-table">The shape table</h3>
   <p>The renderer picks <code>row = ((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code> in a 6-row, 8-byte-stride table and reads two bytes from it: <strong>byte3</strong>, the shape selector, and <strong>byte4</strong>, the vertex-index offset in u16 units. <code>byte3 &amp; 3</code> is the family: <code>0</code> = F (flat colour), <code>1</code> = FT (flat, textured), <code>2</code> = G (gouraud colour), <code>3</code> = GT (gouraud, textured). The crate's <code>legaia_tmd::descriptor::TABLE</code> is the authoritative copy.</p>
   <table>
@@ -155,10 +133,10 @@
       <tr><td><strong>GT*</strong> baked</td><td>0x24..27</td><td>-</td><td>3 or 4 colour words; texture block from byte 12 (GT3) or 16 (GT4); vertex offsets at <code>byte4</code></td></tr>
     </tbody>
   </table>
-  <p>Check: an object's <code>n_normal</code> equals <code>1 &times; FT4 + 3 &times; GT3 + 4 &times; GT4</code> summed over its lit groups (Rim Elm env pack slot 36 object 0: <code>8 + 44&times;3 + 100&times;4 = 540</code>).</p>
+  <p>The one exception is the <strong>FT3</strong> lit tri, which puts its single normal <em>before</em> the vertices - which is what row 0's <code>byte4</code> (7, byte 14) encodes. Check: an object's <code>n_normal</code> equals <code>1 &times; FT4 + 3 &times; GT3 + 4 &times; GT4</code> summed over its lit groups (Rim Elm env pack slot 36 object 0: <code>8 + 44&times;3 + 100&times;4 = 540</code>).</p>
 
-  <h3 id="no-lighting">No light sources</h3>
-  <p>Neither retail renderer transforms a normal or issues a GTE lighting op. The only colour op is the depth cue; shading is the stored colour word modulating the texel on the GPU (<code>texel &times; colour / 128</code>). The lit rows' normals are authored and ignored. The port decodes normal indices only to know where the record ends, and re-derives smooth normals from geometry for its optional dynamic lighting - see <a href="../subsystems/renderer.html#lighting">renderer &sect; Lighting</a>.</p>
+  <h3 id="no-lighting">Where the light comes from</h3>
+  <p>Neither of the two table-walking renderers (<code>FUN_8002735C</code>, <code>FUN_80029888</code>) reads a normal or issues a GTE lighting op: their only colour op is the depth cue (<code>DPCS</code>), and shading is the stored colour word modulating the texel on the GPU (<code>texel &times; colour / 128</code>). The lit rows' normals are read by a different path - the field's per-primitive dispatcher <code>FUN_80043390</code>, which every measured field frame's polygons come from. Flags <code>0x10..=0x17</code> select its <code>NCCS</code> / <code>NCCT</code> handlers, which shade each corner through the GTE light from the normal index in the packet. Every other row is unlit. See <a href="../subsystems/shading.html">shading</a> and <a href="../subsystems/renderer.html#lighting">renderer &sect; Lighting</a>.</p>
 
   <details class="disclosure" id="vertex-index-offset">
     <summary>Vertex-index offset: where the two retail renderers disagree</summary>
@@ -174,7 +152,7 @@
           <tr><td>5, 7</td><td>0, 1</td><td><code>byte4</code> (7 / 6)</td><td><code>byte4 + 2</code> (9 / 8)</td></tr>
         </tbody>
       </table>
-      <p>The general renderer's fallback on rows 0/1 reads past the vertex indices into the normal block. The on-disc packets put a lit textured quad's four vertex indices at byte 12 for both rows, so the parser resolves <code>6</code> u16 units for both. Across every field / town env pack, offset 12 is the only candidate with zero out-of-range indices and it leaves the quads planar (0.78 units mean out-of-plane, vs 65-166 for the alternatives). Reading at the wrong offset makes indices exceed the vertex count and mesh builders drop the prims - a town house renders as a shredded pile. Guarded by <code>crates/engine-core/tests/env_mesh_prims_disc.rs</code>.</p>
+      <p>The general renderer's fallback on rows 0/1 reads past the vertex indices into the normal block. The on-disc packets put a lit textured quad's four vertex indices at byte 12 for both rows, so the parser resolves <code>6</code> u16 units for both. Across every field / town env pack, offset 12 is the only candidate with zero out-of-range indices and it leaves the quads planar (0.78 units mean out-of-plane, vs 65-166 for the alternatives). Reading at the wrong offset makes indices exceed the vertex count and mesh builders drop the prims - a town house renders as a shredded pile.</p>
     </div>
   </details>
   <details class="disclosure">
@@ -187,7 +165,8 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <details class="disclosure"><summary>Routines and disc sweep</summary>
+  <div class="table-wrap"><table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>Model register</td><td><code>FUN_80026B4C</code></td><td>Rejects any file whose first word is not <code>0x80000002</code>; writes the model into the pointer table at <code>0x8007C018</code></td><td><code>funcs/80026B4C.txt</code></td></tr>
@@ -195,9 +174,10 @@
       <tr><td>General renderer</td><td><code>FUN_8002735C</code>, table read <code>0x80027460..500</code></td><td>Shape-table row math, byte3 / byte4, quad remap <code>DAT_8007B410 = 00 01 03 02</code>; no normal read; only GTE colour op is <code>DPCS</code></td><td><code>funcs/8002735C.txt</code></td></tr>
       <tr><td>Lit renderer</td><td><code>FUN_80029888</code></td><td>Second reader of the shape table <code>DAT_8007326C</code>; per-byte3 quad chain; no <code>NC*</code> lighting op</td><td><code>funcs/80029888.txt</code></td></tr>
       <tr><td>Actor object-table rebuild</td><td><code>FUN_80024D78</code></td><td>Copies 28-byte objects from <code>tmd + 12 + i&times;28</code>; relies on the sentinel</td><td><code>funcs/80024D78.txt</code></td></tr>
-      <tr><td>Disc sweep</td><td>every field / town env pack</td><td>Vertex-offset 12 for lit quads; record layouts byte-exact on town01 props (pack 31 obj 315, pack 109 obj 114)</td><td><code>env_mesh_prims_disc.rs</code></td></tr>
+      <tr><td>Disc sweep</td><td>every field / town env pack</td><td>Vertex-offset 12 for lit quads; record layouts byte-exact on town01 props (pack 31 obj 315, pack 109 obj 114)</td><td>-</td></tr>
     </tbody>
-  </table>
+  </table></div>
+  </details>
 </section>
 
 <section class="doc-section" id="deep-dive">

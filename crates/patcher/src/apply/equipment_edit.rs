@@ -37,13 +37,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::equip_transplant::{
+    self, Transplant, packed_len, records_with_transplants, transplant_weapon,
+};
+use crate::party_swap::playerize::{rebuild_player_file, rebuild_player_file_unbounded};
 use anyhow::{Context, Result, bail};
 use legaia_asset::battle_data_pack;
 use legaia_asset::equip_stats::{BONUS_STRIDE, EquipSlot, EquipStatTable, bonus_table_file_offset};
-use legaia_asset::equip_transplant::{
-    self, Transplant, packed_len, records_with_transplants, transplant_weapon,
-};
-use legaia_asset::party_swap::playerize::{rebuild_player_file, rebuild_player_file_unbounded};
 
 use crate::disc::DiscPatcher;
 use crate::weapon_specialty::{self, PLAYERS, arm_cost_offset, up_cost_offset};
@@ -618,7 +618,7 @@ pub fn fall_through_notes(list: &[FallThrough]) -> Vec<String> {
 /// A weapon model carried over from another character's player file so a
 /// newly enabled owner holds it in battle: the donor record's weapon
 /// primitives and texture tile, seated on the new owner's own bare arm and
-/// swing records (`legaia_asset::equip_transplant`). The record keeps the
+/// swing records (`crate::equip_transplant`). The record keeps the
 /// donor weapon's arm cost.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelTransplant {
@@ -632,7 +632,7 @@ pub struct ModelTransplant {
     pub cost: u8,
     /// Degrees the weapon was rotated to sit in the new owner's hand
     /// frame (the hand channel's calibration; see
-    /// `legaia_asset::equip_hand_frame`), with the calibration residual.
+    /// `crate::equip_hand_frame`), with the calibration residual.
     pub reseat: Option<(f64, f64)>,
     /// Donor bones whose part of the weapon had no calibration and was
     /// left out.

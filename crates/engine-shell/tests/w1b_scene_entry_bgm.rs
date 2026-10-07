@@ -37,7 +37,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::BgmDirector;
-use legaia_engine_shell::audio_trace_oracle::{AudioTraceBuildOptions, build_engine_audio_trace};
+use legaia_parity::audio_trace_oracle::{AudioTraceBuildOptions, build_engine_audio_trace};
 
 /// One retail second at 60 Hz - the same window the audio-trace oracle uses.
 const FRAMES: u64 = 60;

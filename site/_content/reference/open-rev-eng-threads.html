@@ -4,54 +4,58 @@
   <p class="lede">The live list of this project's unsolved mysteries. Every row is a reverse-engineering <em>question</em> about how Legaia's runtime works that is still contested, with what is already known and the concrete next step that would close it. If you are looking for a way to contribute, this page is the invitation.</p>
 </header>
 
+<nav class="see-also" aria-label="Areas on this page">
+  <span class="see-also-label">Jump to</span>
+  <a href="#field">Field / locomotion</a>
+  <a href="#battle-rendering">Battle / rendering</a>
+  <a href="#audio">Audio / BGM</a>
+  <a href="#title-boot-overlays">Title / boot / overlays</a>
+  <a href="#containers-data-blobs">Containers / data blobs</a>
+  <a href="#measurement-tooling">Measurement + tooling</a>
+</nav>
+
 <section class="doc-section" id="overview" data-doc="what-this-page-is-for">
   <h2>How to use these three pages</h2>
-  <p>Reverse engineering a sealed game produces three kinds of knowledge: questions still being worked, questions answered, and readings that turned out to be wrong. Each has its own page, and the cheapest thing you can do before starting a hunt is check all three - if the question is not on this page, it is probably already answered or already disproved.</p>
+  <p>Reverse engineering a sealed game produces three kinds of knowledge: questions still being worked, questions answered, and readings that turned out to be wrong. Each has its own page. Before starting a hunt, check all three - if a question is not on this page, it is probably already answered or already disproved.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 200" role="img" aria-label="Thread lifecycle: a question moves from open to partial to mostly resolved, then to the settled register; a reading that is disproved leaves for the do-not-re-walk register">
+      <defs><marker id="ore-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="10" y="14" width="470" height="84" rx="8"/>
+      <text class="dg-sub" x="245" y="32">this page - live hunts</text>
+      <rect class="dg-node-accent" x="24" y="44" width="120" height="42" rx="6"/>
+      <text class="dg-label" x="84" y="70">open</text>
+      <rect class="dg-node-accent" x="182" y="44" width="120" height="42" rx="6"/>
+      <text class="dg-label" x="242" y="70">partial</text>
+      <rect class="dg-node-accent" x="340" y="44" width="128" height="42" rx="6"/>
+      <text class="dg-label" x="404" y="70">mostly resolved</text>
+      <rect class="dg-node-ok" x="540" y="40" width="200" height="50" rx="6"/>
+      <text class="dg-label" x="640" y="62">settled threads</text>
+      <text class="dg-sub" x="640" y="79">answer + evidence grade</text>
+      <rect class="dg-node-warn" x="300" y="138" width="200" height="50" rx="6"/>
+      <text class="dg-label" x="400" y="160">do not re-walk</text>
+      <text class="dg-sub" x="400" y="177">disproved, reasoning kept</text>
+      <path class="dg-edge" d="M144,65 H178" marker-end="url(#ore-arrow)"/>
+      <path class="dg-edge" d="M302,65 H336" marker-end="url(#ore-arrow)"/>
+      <path class="dg-edge" d="M468,65 H536" marker-end="url(#ore-arrow)"/>
+      <path class="dg-edge-dim" d="M242,86 V163 H296" marker-end="url(#ore-arrow)"/>
+      <text class="dg-edge-label" x="252" y="122">reading disproved</text>
+    </svg>
+    <figcaption>A question narrows left to right and leaves this page for one of two terminal registers. New evidence moves a row back here; it never edits a terminal row in place.</figcaption>
+  </figure>
   <table>
     <thead><tr><th>Page</th><th>Holds</th><th>Read it when</th></tr></thead>
     <tbody>
       <tr><td>This page</td><td>Live hunts: <span class="tag tag-open">open</span>, <span class="tag tag-partial">partial</span>, <span class="tag tag-mostly">mostly resolved</span></td><td>You are picking up work, or want to know whether a question is still contested.</td></tr>
-      <tr><td><a href="re-settled-threads.html">Settled threads</a></td><td>Answered questions, each carrying an evidence grade</td><td>You need the answer to something, or you are about to build on a claim and want to know how firmly it is pinned.</td></tr>
-      <tr><td><a href="re-do-not-re-walk.html">Do not re-walk</a></td><td>Falsified hypotheses, reasoning intact</td><td>A reading of the bytes looks obvious and you want to check nobody has already spent a week disproving it.</td></tr>
+      <tr><td><a href="re-settled-threads.html">Settled threads</a></td><td>Answered questions, each carrying an evidence grade</td><td>You need the answer to something, or are about to build on a claim and want to know how firmly it is pinned.</td></tr>
+      <tr><td><a href="re-do-not-re-walk.html">Do not re-walk</a></td><td>Falsified hypotheses, reasoning intact</td><td>A reading of the bytes looks obvious and you want to check nobody has already disproved it.</td></tr>
     </tbody>
   </table>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 190" width="100%" style="max-width:860px;font-family:var(--font-mono);font-size:12px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Thread lifecycle: open, partial, mostly resolved, then settled threads; a disproved reading leaves for do not re-walk">
-      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5">
-        <rect x="20" y="30" width="120" height="46" rx="6"/>
-        <rect x="180" y="30" width="120" height="46" rx="6"/>
-        <rect x="340" y="30" width="170" height="46" rx="6"/>
-      </g>
-      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.5">
-        <rect x="550" y="30" width="190" height="46" rx="6"/>
-        <rect x="340" y="118" width="170" height="46" rx="6"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="80" y="53">open</text>
-        <text x="240" y="53">partial</text>
-        <text x="425" y="53">mostly resolved</text>
-        <text x="645" y="47">settled threads<tspan x="645" dy="15" font-size="11" fill="var(--text-muted)">graded by evidence</tspan></text>
-        <text x="425" y="135">do not re-walk<tspan x="425" dy="15" font-size="11" fill="var(--text-muted)">reasoning kept</tspan></text>
-      </g>
-      <g stroke="var(--text-muted)" stroke-width="1.5" fill="var(--text-muted)">
-        <line x1="140" y1="53" x2="172" y2="53"/><polygon points="172,49 180,53 172,57"/>
-        <line x1="300" y1="53" x2="332" y2="53"/><polygon points="332,49 340,53 332,57"/>
-        <line x1="510" y1="53" x2="542" y2="53"/><polygon points="542,49 550,53 542,57"/>
-        <line x1="425" y1="76" x2="425" y2="110"/><polygon points="421,110 425,118 429,110"/>
-      </g>
-      <text x="440" y="98" font-size="11" fill="var(--text-muted)">reading disproved</text>
-    </svg>
-    <figcaption>A thread narrows left to right and leaves this page for one of two terminal registers.</figcaption>
-  </figure>
-  <p>A falsified row is kept forever with its reasoning, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
-  <p>Nothing on any of the three pages counts ports, tests or coverage. Detailed captures and decompiler dumps live in the linked pages and under <code>ghidra/scripts/funcs/</code>.</p>
+  <p>A falsified row is kept with its reasoning, because the reasoning <em>is</em> the deliverable - "the world-map slot-4 bodies are coastline wireframes" is a very plausible reading of those bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
 </section>
 
 <section class="doc-section" id="at-a-glance" data-doc="-">
   <h2>Where the live hunts are</h2>
-  <p>The live list is kept area by area below, one table per area, and each table holds every open question in that area. Nothing is summarised twice on this page: a digest table that restates the areas is a second place for a closed thread to keep looking open, which is exactly how this page once advertised a hunt that was already over.</p>
-  <p>Jump to an area: <a href="#field">field / locomotion</a> &middot; <a href="#battle-rendering">battle / rendering</a> &middot; <a href="#audio">audio / BGM</a> &middot; <a href="#title-boot-overlays">title / boot / overlays</a> &middot; <a href="#containers-data-blobs">containers / data blobs</a> &middot; <a href="#measurement-tooling">measurement + tooling</a>.</p>
-  <p>Three of the six carry no live hunt at all right now. That is a real state, not a gap - an area stays on the page with the note on what closed there last, because "this area has no open question" is itself worth knowing before you start one.</p>
+  <p>The live list is kept area by area below, one table per area holding every open question in it. An area with no open question stays on the page with a short list of what closed there last - "this area has nothing open" is worth knowing before you start a hunt in it. Nothing is summarised twice: a digest that restates the areas is a second place for a closed thread to keep looking open.</p>
 </section>
 
 <section class="doc-section" id="grades" data-doc="what-an-evidence-grade-means">
@@ -86,8 +90,19 @@
 
 <section class="doc-section" id="recently-corrected" data-doc="recently-corrected">
   <h2>Corrected claims</h2>
-  <p>Claims that stood on these pages and were overturned. They stay listed - a claim that was wrong once is the cheapest place to look for a claim that is still wrong - and each stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
-  <details class="disclosure"><summary>History: the overturned claims</summary><div class="disclosure-body">
+  <p>Claims that stood on these pages and were overturned. They stay listed, because a claim that was wrong once is the cheapest place to look for a claim that is still wrong; each stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
+  <ul class="bullets">
+    <li><strong>A save point opens the pause menu by itself.</strong> Op <code>0x49</code>'s <code>-1</code> rows are a scripted menu-button press: the enter half stores handler 7 before it reads the table, so the park does not simply stand until Start, and the menu-teardown leaf said to clear it has no reference on the disc. A capture at the Rim Elm save point pins the chain and its release.</li>
+    <li><strong>BGM sub-op 3 pauses and sub-op 4 re-attaches.</strong> The field VM's op-<code>0x35</code> arm table at <code>0x801CEE00</code> gives 3 = set pause bit 1 and 4 = clear it and replay the sequence from its start - the opposite of the earlier routing (<a href="re-do-not-re-walk.html#audio">falsified</a>).</li>
+    <li><strong>Sub-op 2 stops and rewinds; sub-op 3 is the key-off pause.</strong> Nothing a script writes resumes a track mid-phrase.</li>
+    <li><strong>The menu refusal after a Door of Light arrival on <code>map01</code> is bounded.</strong> The arrival tile is the cave mouth's walk-on trigger, and the menu opens on the first press after its script closes.</li>
+    <li><strong><code>FUN_801E0418</code> redraws the title's strips behind the Load window</strong>, from the title TIM (PROT 0890) - not memory-card messages from an unknown page.</li>
+    <li><strong>Nearer terrain hides about 1% of the overworld fog, not a fifth</strong>, and the ground's bucket key is <code>FUN_801F89B8</code>'s, not the mesh leaves'.</li>
+    <li><strong>The Rim Elm ambush seats its monsters from row 8, not the origin</strong>, and allows Run: the formation row's header byte is 0.</li>
+    <li><strong>A dialog picker slides in; it does not resize.</strong> The odd pager states count 24 frame-step units from off screen, and input opens only at count 0, 26 vsyncs after the press.</li>
+    <li><strong>Motion ops <code>0x37</code> / <code>0x41</code> are one compass walk</strong>, not two translate ops, and map01's cave-mouth walk-out is <code>B7 F8 00 81</code>, not <code>A2 F8 01</code>.</li>
+  </ul>
+  <details class="disclosure"><summary>Earlier corrections</summary><div class="disclosure-body">
     <ul class="bullets">
       <li><strong>A save point opens the pause menu by itself.</strong> The script's park is a menu-button press, not a context that waits for Start, and the menu teardown said to clear it is never called; a capture at the Rim Elm save point pins both. In the port, every save point had saved nothing.</li>
       <li><strong>A scene-local music id never loads the scene's own block.</strong> The loader computes that index only to test for a change, then loads a fixed fallback track from the shared bank; retail never stages a scene bank.</li>
@@ -191,148 +206,175 @@
 
 <section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
-  <p>The field is the game you spend most of your time in - walking towns and dungeons, triggering scripted events, crossing scene boundaries. Its logic lives in the field overlay (PROT 0897) and the 43-opcode script VM. No field thread is open.</p>
-  <p><strong>The region story-flag gate families</strong> closed with the two write orders no gate decided - doman&rsquo;s <code>0x3FB</code> against bubu2&rsquo;s pair, and deroa&rsquo;s walk-on latches <code>0x46E</code> / <code>0x46F</code> against <code>0x46D</code>. A disc-wide census finds that every reader of those flags tests that one flag and nothing else, no requires-all list names any of them, and no executable or overlay code calls the flag helpers with their ids. Nothing on the disc reads the pair together, so the order the route writes them in is unobservable rather than owed. The structure, the milestone brackets and the in-bracket orders the scripts do fix are all on <a href="re-settled-threads.html">settled threads</a>.</p>
-  <p>Four rows closed here. <strong>Camera-relative move-VM parts</strong> land where retail draws them: read against each save state's own RAM and primitive pool, the hit-spark billboards and the camera-locked quads fall on retail's packets to the pixel, at the six-fold size, on both hosts. <strong>Does a later keikoku MAN replace the Ravine pushback</strong> closed as no: the Ravine has one MAN, and every arm of its pushback walks the player back out. <strong>Does retail step helper contexts while a timeline sits on an open text box</strong> closed as yes: every context off text keeps its slice, and a second context that reaches text waits for the one shared box - the port now keeps a single box owner. <strong>The Tetsu fight</strong> seats and flags as retail does: a scripted row, so Run is refused, with the Ra-Seru bit raised by battle init and the lone monster at its fixed seat.</p>
-  <p><strong>Who sets a field NPC's moving-class bit</strong> closed: the placement seater sets it on every placed NPC and one opcode sets it at 26 spawn prologues; nothing clears it. Wiring what it gates showed the "motion-pause kick" is a standing-clip request, not a hold, and brought the per-actor visibility cull onto both hosts. The Door items' route closed with it - a capture of a Door of Light and a Door of Wind use matches the port phase for phase.</p>
-  <p>Five rows closed here. <strong>What clears the two halt bits an inn conversation sets</strong> is the conversation's own opening op, read a second time by the per-actor walk kernel as a twenty-frame "turn to face" order: its last frame clears both bits, 18 frames after they went up, with the text box already open - so the halt is a window in which the player turns toward the speaker, not a stall. <strong>Whom that turn faces</strong> is whatever actor the op names, not always the speaker: 40 of the 146 such ops in placement scripts name another actor. <strong>The field's attached light</strong> was already fixed when its row was written; the dark rim matches retail on both captured scenes. <strong>A script jump read as a screen-mode test</strong> tests the held d-pad against a compass table, and <strong>a scratchpad bit</strong> turns out to be the "stand on this tile and press Down" re-poll Rim Elm's beats use (<a href="re-settled-threads.html">settled</a>).</p>
-  <p>Four rows closed here. <strong>The region battle-setup half</strong> is ported on both hosts: a region's byte picks the battle backdrop, re-opens the Door of Light / Wind items and keeps or drops one backdrop object; only the world-map return point it also stores has no consumer in the port. <strong>Scripted arcs and attached sprites</strong> are drawn on both hosts, and the arc now waits for its target instead of skipping the op. <strong><code>kor5</code>'s <code>0x619</code></strong> was never a chain beat: the write sits in a record's spawn section, which retail runs once per scene load, and the engine had re-run it on every talk. <strong>The frame-step floor</strong> is the scene's: field init writes 2 and the opening scene's own script raises it to 3. And a capture settled <strong>where an inn conversation ends</strong>: at its last page, not at a failing halt on the next pass.</p>
-  <p><strong>Does the <code>kor5</code> chain write its tail flag without help</strong> closed as yes: with only the two trigger tiles poked and the chain's boss fight held at 1 HP, the record that writes <code>0x436</code> does so 3,336 frames after the previous beat clears, and the tail record fires on its first crossing. The 17,500-frame estimate was the probe's own - it re-triggered an earlier beat over the running chain and stalled it (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p><strong>Does retail's cold entry into <code>conc</code> clear flag <code>0x6DE</code></strong> closed as yes - twice - and the flag turned out not to be progress at all. A single-flag write watch across retail's own card-boot entry sees the scene load clear it from two entry scripts (not the two walk-on records the engine had blamed, which a cold entry never reaches), and from the first field frame the entry script's per-frame body sets it again every other frame, for as long as the party stands outside a box of tiles around the plaza. Teleporting the player into the box stops it dead. So <code>0x6DE</code> means "the party is not in the plaza", and the card-boot save held it set because that is where the save stands. The engine half was a real defect: the system script's position anchor sat at the origin in every scene but three, so every per-frame box test on the disc answered "outside"; it now follows the player each frame (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-
-  <p><strong>Does a scripted camera tile window survive into the next scene</strong> closed here: it does, by 78 frames. A per-frame poll across a real world-map-to-town door finds the scene word flipping at frame 37 while the window keeps the previous scene's values, re-stamped only at frame 115 and per region from there. The port's re-stamp-per-entry is not falsified; the <em>value</em> it stamps is - the engine's field default is a later region's window, not the one retail writes on entry. The same run retired the walk meant to produce it: a house door inside a town is an intra-scene warp, so it crosses no scene at all (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>Three field-VM opcodes closed here, none of them doing what its label said. <strong><code>4C 14</code></strong> clones an actor - it is the one eight-byte instruction in its nibble, and the extra byte names the source actor whose transform is copied onto a fading pool node; the seven-byte reading desynced 94 sites in six scenes from their first occurrence. <strong><code>4C 86</code></strong> spawns a <strong>reflection controller</strong>: the executing script makes itself the mirror image of the actor its last operand byte names, and the six signed halfwords are that controller's mirror line and tracking rect. <strong><code>4C 87</code></strong> retires every live one - and neither it nor its sibling <code>4C 9F</code> parks the script, because the advance sits in the retire call's own delay slot (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-
-  <p><strong>Does retail's equip screen offer a Goods-slot candidate</strong> closed here: yes, out of the item class-2 id space, through three builder cases the browse step selects by writing a content id per row. Their filter carries no character mask - the masked rule belongs to the armament half only - and 80 of 151 class-2 ids pass it (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p><strong>What consumes the fishing bite tick's per-cell fish weight</strong> closed here: it is the modulus of the caught fish's <strong>size</strong> roll, and the same value plus a constant becomes the render scale of the object the catch spawns. It touches neither the species roll nor the bite credit, so a deeper cell makes a bigger fish rather than a different one (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p><strong>Which view build the frame draws under</strong> closed here, and the answer is the <strong>first</strong>. Splitting each ordering-table link by its graphics command code over three runs - including the real world-map-to-town entry the question was asked about - gives 4289 polygons: 3861 under the first site, 428 under the second, and none under the third or either of the world-map module's pair, whose whole share is attribute packets and flat rectangles. The earlier link-count ranking was mixing those in with polygons (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p><strong>What a field submode returns to</strong> closed here: nothing reads the parked word. The submode enter stores it twice, neither the executable nor any of the 86 extracted overlay images loads it at any width, and a live read watch across an enter records none either - so the return rides the driver's own handler slot, and the port's collapsed chain drops a store retail never consumes (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>Three rows closed here at once, two of them camera. <strong>What composes the field camera's translation</strong> - the live eye trio <em>is</em> the eye-space translation and the focus is transformed through the scaled rotation into it, so there is no eye-back depth constant to calibrate; four readings fell with it, including a sibling routine that turned out to build another mode's view. <strong>What <code>edbylon</code> selects when the tile query misses</strong> - nothing does: no site re-queries the camera zone on a bare tile crossing, so the block is held from wherever the player last crossed a queried tile. And <strong>the Throw Out cursor</strong>, which is a bag slot; the displayed list hides empty slots while the cursor's payload does not, so the two disagree on exactly the bags a fixture never builds. Before them: <strong>what arms <code>_DAT_8007B8B8</code></strong> - it is a one-shot entry-mode <em>argument</em> rather than a latch, with ten writers and 25 readers across the 84 overlay images and six sites that write zero, so the field overlay's one ambient template is spawned per scene and not once at boot. And the <strong>coplanar residual tail</strong>: the curved-shell half was answered by reading retail's own display list (it never draws both copies), and the sliver half turned out to be the port's own repair pass - the leftover strip is exactly one nudge wide because the lift applied to that family lies inside the second plane. Both on <a href="re-settled-threads.html">settled threads</a>, the sliver reading on <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
-  <details class="disclosure"><summary>History: teien's hedge fill and Rim Elm's south gate (both closed)</summary><div class="disclosure-body">
-    <p><strong>teien's hedge-base ground fill had a false premise.</strong> Retail ships no kind-2-cell draw channel at all: a live <code>teien</code> field pass visits 1536 window cells and emits 370 - exactly the cells carrying <code>0x1000</code> - and none of the 42 that are <code>0x0800</code>-only. Only 8 of 84 images touch the object grid at all, only PROT 0900 / 0901 hold a per-cell pass, and each one's <code>andi 0x800</code> reads an <em>object record's</em> <code>+0x12</code> rather than a cell bit. The cell bit <code>0x8000</code> turns out to be a per-tile depth-sort flag. Answer on <a href="re-settled-threads.html">settled threads</a>; the falsified reading on <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
-    <p>Neither of the gate's two walk-on bands holds the player in - the exit record is ungated and the other is five inert bytes; a collision row painted by the gate object's own script does. Answer on <a href="re-settled-threads.html">settled threads</a>; the falsified force-walk reading is on <a href="re-do-not-re-walk.html#f-force-walk">do not re-walk</a>.</p>
+  <p>The field is the game you spend most of your time in - walking towns and dungeons, triggering scripted events, crossing scene boundaries. Its logic lives in the field overlay (PROT 0897) and the 43-opcode script VM.</p>
+  <p class="notice">No live hunt in this area.</p>
+  <details class="disclosure"><summary>Recently closed here</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Why the opening scene <code>opdeene</code> runs long after its long camera move</strong> - five script-record mechanisms: an NPC turn does not park the record, a clip poke waits on the actor's clip-end latch, an actor's walk ends its own leg, the camera ramp does not yield, and the closing wait honours the scroll only where the record asks for it.</li>
+      <li><strong>Who sets a field NPC's moving-class bit</strong> - the placement seater <code>FUN_8003A1E4</code> ORs <code>0x20000</code> into every placed NPC, op <code>31 11</code> sets it at 26 spawn prologues, and nothing on the disc clears it. What it gates is a standing-clip request, not a hold.</li>
+      <li><strong>What clears the two halt bits an inn conversation sets</strong> - the conversation's own opening op, read a second time by the walk kernel <code>FUN_8003774C</code> as a twenty-frame "turn to face" order whose last frame clears both bits. The halt is a window in which the player turns toward the speaker - or toward whichever actor the op names, which in 40 of 146 placement-script cases is not the speaker.</li>
+      <li><strong>Op <code>0x42</code> mode 1</strong> tests the held d-pad against a compass table, not a screen mode; <strong>scratchpad bit <code>0x80000</code></strong> is the "stand on this tile and press Down" re-poll Rim Elm's beats use.</li>
+      <li><strong><code>kor5</code>'s <code>0x619</code></strong> was never a chain beat: the write sits in a record's spawn section, which retail runs once per scene load. <strong>The frame-step floor</strong> is the scene's: field init writes 2 and the opening scene's script raises it to 3. <strong>An inn conversation ends</strong> at its last page, not at a failing halt on the next pass.</li>
+      <li><strong>Does the <code>kor5</code> chain write its tail flag without help</strong> - yes: the record that writes <code>0x436</code> fires 3,336 frames after the previous beat clears; a longer estimate was the probe re-triggering an earlier beat over the running chain.</li>
+      <li><strong>Is <code>juui1</code> dark outside its tint beats</strong> - no: the black run is the door fade; at rest the scene holds a dim purple vortex with the party visible. <strong>Why a <code>juui1</code> name hijack draws black</strong> - 446 of 498 clean op-<code>0x3F</code> doors are preceded by a white <code>ColorIntensity</code> the <em>departing</em> script runs as its door prologue; a hijack rewrites the destination and never runs it.</li>
+      <li><strong>Does a cold entry into <code>conc</code> clear flag <code>0x6DE</code></strong> - yes, from two entry scripts, and the entry script's per-frame body sets it again for as long as the party stands outside a box of tiles around the plaza. <code>0x6DE</code> means "the party is not in the plaza", not progress.</li>
+      <li><strong>Does a scripted camera tile window survive into the next scene</strong> - yes, by 78 frames: across a world-map-to-town door the scene word flips at frame 37 while the window keeps the previous scene's values until it is re-stamped at frame 115, per region from there. A house door inside a town is an intra-scene warp and crosses no scene.</li>
+      <li><strong>Field-VM <code>4C 14</code></strong> clones an actor - the one eight-byte instruction in its nibble; <strong><code>4C 86</code></strong> spawns a reflection controller and <strong><code>4C 87</code></strong> retires every live one. Neither <code>4C 87</code> nor <code>4C 9F</code> parks the script: the advance sits in the retire call's delay slot.</li>
+      <li><strong>Which scene scripts write the story flags a census surfaces</strong> - nine shipped scene scripts carry developer flag-setting menus whose arms are genuine flag-write ops, so an arm census over-counts writers of any flag a ladder covers (spine flag <code>0x142</code> was credited to six records instead of two).</li>
+      <li><strong>Does retail's equip screen offer a Goods-slot candidate</strong> - yes, from the item class-2 id space, through three builder cases with no character mask.</li>
+      <li><strong>What consumes the fishing bite tick's per-cell fish weight</strong> - the modulus of the caught fish's size roll, plus a render-scale offset; a deeper cell makes a bigger fish, not a different one.</li>
+      <li><strong>Which view build the frame draws under</strong> - the first: 3861 of 4289 polygons over three runs link under the first site, 428 under the second, none under the third.</li>
+      <li><strong>What a field submode returns to</strong> - nothing reads the parked word; the return rides the driver's own handler slot.</li>
+      <li><strong>What composes the field camera's translation</strong> - the live eye trio <em>is</em> the eye-space translation; there is no eye-back depth constant. <strong>What <code>edbylon</code> selects when the tile query misses</strong> - nothing re-queries on a bare tile crossing, so the block holds from the last queried tile. <strong>What arms <code>_DAT_8007B8B8</code></strong> - it is a one-shot entry-mode argument, not a latch.</li>
+      <li><strong>teien's hedge-base ground fill</strong> had a false premise: retail ships no kind-2-cell draw channel; the cell bit <code>0x8000</code> is a per-tile depth-sort flag. <strong>Rim Elm's south gate</strong> holds the player with a collision row painted by the gate object's own script, not a walk-on band (<a href="re-settled-threads.html#t-rim-elms-south-gate">settled</a>, <a href="re-do-not-re-walk.html#f-force-walk">falsified</a>).</li>
+      <li><strong>The region story-flag gate families</strong> - every reader of the contested flags tests that one flag alone, so the order a route writes them in is unobservable.</li>
+    </ul>
+    <p>Answers on <a href="re-settled-threads.html#field">settled threads</a>; the readings that fell, on <a href="re-do-not-re-walk.html#field">do not re-walk</a>.</p>
   </div></details>
-
-
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/script-vm.html">Field / event VM</a>
     <a href="../subsystems/field-locomotion.html">Field locomotion</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md" target="_blank" rel="noopener">Field map (.MAP)</a>
+    <a href="../subsystems/motion-vm.html">Motion VMs</a>
     <a href="../subsystems/renderer.html">Renderer</a>
-    <a href="../tooling/mednafen-automation.html">Mednafen automation</a>
-    <a href="../tooling/pcsx-redux-automation.html">PCSX-Redux automation</a>
   </div>
 </section>
 
 <section class="doc-section" id="battle-rendering" data-doc="battle--rendering">
   <h2>Battle / rendering</h2>
-  <p>Battles run in their own overlay with their own screen chrome - the enemy-name banner at the top, the party panels, the arts announcements. Most of that chrome is now pinned sprite by sprite, and every tick body of the cast-module band is decoded and ported; no hunt is live here.</p>
-  <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
-    <tbody>
-</tbody>
-  </table>
-  <p>Three rows closed here. <strong>The Rot and Curse marks</strong> over refused arms are drawn on both hosts: a Rot stamp on the Attack chip, the Curse plate on the Magic chip, and a Rot stamp on each rotted direction during arts entry. <strong>The overworld decoration cells</strong> are depth-cued per object toward far colour <code>0xD0</code>, on both hosts. <strong>The overworld fog sheets</strong> read too bright because the GPU writes a texture-blended pixel at 5-bit depth; both hosts now blend the screen primitives the same way.</p>
-  <p><strong>Does a monster's one-shot clip tween into its queued clip</strong> closed as yes, and ported: on its last frame the decoder blends into the first frame of the clip that plays next, carrying the entry's end-of-clip step on the Z axis, and at the clip's natural end the actor moves by that step - so a lunge ends forward without snapping back.</p>
-  <p><strong>Does the monster animation decoder share the field blender's re-blend retry</strong> closed as yes: it rewrites the next frame's angles in a scratch journal past the same threshold, and the port now poses monsters through a battle kernel that does the same.</p>
-  <p><strong>Is the overworld ground depth-cued</strong> closed as yes: the far colour is a literal <code>0x100</code> per channel set just before the terrain emitter runs, and both hosts now draw the cue (566 of 584 keikoku cells exact).</p>
-  <p><strong>Does Koru's timed-fight strip draw over or under the name tab</strong> closed as over, by disassembly: both are text actors on one list kept sorted by key, the tab's key is larger, and the list is drawn front to back onto the same ordering-table entry, so the strip covers the tab. Both hosts now hide the tab while the strip is up.</p>
-
-  <p>Three rows closed here, all on the overworld. <strong>The camera's vertical offset</strong> is written by the first overworld's own entry script, once, two frames after the scene starts; the port never reached that line because its system script sat anchored at the map origin outside field mode, so a whole-map "is the player here" test always failed. <strong>A routine read as a depth ramp</strong> builds the overworld's screen-curvature table, and retail bends every overworld vertex by it; both hosts now do, though the port also bends four rows of landmarks retail leaves flat. <strong>The field drop shadow</strong> - four textured quads over a projected grid at the actor's feet - is drawn on both hosts and matches retail's packets on every captured frame (<a href="re-settled-threads.html">settled</a>).</p>
-  <p>Three more rows closed here. <strong>The overworld camera</strong> is the field zone camera: the overworld is a field-run scene, and on every resident overworld state the live camera equals the zone composer's staged pose, so both hosts now run the zone camera there. <strong>The world-map fog</strong> runs on both hosts: the kingdom's system script is stepped on the overworld, widens the view window and raises the fog gate, and the spawner's overworld arm is modelled; what is left of its density is the fog row above. <strong>The enemy-target label</strong> is retail's target-select plaque on both hosts, centred on column 232 at row 162; the slide-in is not modelled (<a href="re-settled-threads.html">settled</a>).</p>
-  <p>Three more rows closed here. <strong>The commit log</strong> is drawn on both hosts - one row of name, command and target per committed member, scrolling up as the round fills; the slide-in and the round-start launch are not modelled. <strong>The native world map's white sheets</strong> were the field fog: a debug launch flag left the overworld in field mode. <strong>The spoils and shop ink</strong> is retail's default light-grey pen on every screen that had drawn full white.</p>
-  <p>Three rows closed here with a wire on both hosts. <strong>The party-wide commit-confirm screen</strong> is staged once, after the last member able to act, for every party size; its Reselect steps back one member - onto the <em>last</em> able member, not the first - and refunds that member's item. <strong>The Mist forest's missing native fog</strong> was the native scene VRAM lacking the effect-texture pool the fog page samples; retail keeps it resident under every field scene. <strong>Which host draws Koru's turn strip</strong> is both, and only its order against the tab stays open (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>Two threads closed here at once, both of them questions about whether a routine no capture had caught is reachable at all. <strong>Does any shipped actor raise the mesh-renderer gate</strong> closed with a yes that splits in two: the actor allocator stamps the halfword when a world-map <em>dev</em> counter has a bit up - booted clear, raised only by the debug menu and a pad ring - while the content-driven raiser is a move-VM opcode that writes its own operand into the field, and shipped move programs do issue it non-zero. What the 5089-zero census establishes is narrower than "nothing raises it": across the sampled modes no <em>drawn</em> actor had the bit up. And <strong>is the Muscle Dome match state machine entered by an ordinary battle</strong> closed on the bytes as well as on a capture - the routine has exactly one call site disc-wide, unconditional, inside the SCUS battle frame driver, and three non-dome battle states enter it hundreds of times over 700 frames each. It is the round state machine every battle runs; the dome is one of its callers' contexts.</p>
-
-  <p>No open threads here. The last one - <strong>what stages the dance widgets' second texture page</strong> - closed on the disc rather than on a capture: the page is boot-resident interface art out of the archive's unindexed head gap, so no archive entry stages it and no per-entry sweep could have found it (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>Closed here: <strong>who reads the GTE light matrix the per-actor render dispatcher writes inline</strong> - five sites, every one of them a normal-colour GTE command in the world-map handlers, with no overlay image containing one and nothing on the disc selecting the light matrix through the general matrix-vector command's matrix field. The question needed a census of GTE opcodes rather than a cross-reference query, because the matrix is consumed implicitly by the commands that read it. It corroborates the renderer page rather than changing it: the field path applies no light source. Before it: <strong>which frames gate each capture-class tick body's arms</strong>. Every arm of the band is decoded and ported, and the dwell turns out to be a module-resident countdown whose drain is a <em>per-arm</em> multiplier of a scratchpad frame byte - so the product shape holds for one family, not for the band. The last two arms needed a different <em>caster</em> rather than a different state: both stage the same clip, and the animation commit resolves a staged clip by indexing the caster's own spell-entry array with it, so a ten-entry monster reads its record's name text as a pointer. No monster record names either action, so retail never performs either cast. With it, <strong>where a slot-B module image's highest spawn record ends</strong>. Its own move-VM program bounds it, under four rules - round the end up to 4 because the records are word-aligned, let <code>HALT</code> outrank an armed idle loop, chain <code>[header][program]</code> rather than assume one record per pointer, and fall back to the last maximal <code>WAIT</code> the walk stepped over. The "within 4 bytes for about three quarters" figure that read as evidence of no static rule was the missing alignment step. Every image that has a highest record now bounds it, and the residue has a direction: no miss ever <em>terminates</em> above a measured end, so the rule never claims bytes the band does not bound.</p>
-
-  <p>Recently closed in this area: <strong>the eleven player-Seru tick bodies</strong>, now ported off their own disassembly rather than off the per-entry stager verdicts that stood in for them; and the two ready-work rows that asked the port to catch up with retail. The live loop stages the Seru-magic side-effect debuffs and installs the random-encounter boost profile, having first derived the scripted-fight gate the stager reads, and the dome seeds the special-battle word from its three story flags at entry, so a seeded course crosses out the Item chip and the top seed the Ra-Seru chip.</p>
-
-  <p>Before them: <strong>what makes a Ra-Seru chip render</strong>. The question had a false premise - the native window drew no dome command cluster at all - and the three gates are now in order: <code>ctx[+0x25F+member]</code>, then <code>+0x16E &amp; 0x1000</code>, then the special-battle word <code>0x8007BAC0 &amp; 0x200</code>, of which only the third selects a mark. The three emitters <code>FUN_801DBC30</code> (the red cross-out X), <code>FUN_801DBD04</code> (Attack) and <code>FUN_801DBEC4</code> (Ra-Seru sealed) are pinned cell by cell (<a href="re-settled-threads.html">settled threads</a>).</p>
-
-  <p>Before it: the battle-<strong>intro</strong> enemy-name banner - the question had a false premise. No placement record raises it; the flow-<code>0x0A</code> composer <code>FUN_801D9D3C</code> places its labels with immediate geometry at y = 48, nothing slides, and the intro timer tears them down (<a href="re-settled-threads.html#t-the-battle-intro-enemy-name-banner">settled</a>, <a href="re-do-not-re-walk.html#x-the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record">falsified reading</a>). Before it, the <code>+0x0E</code> kind-pair mapping and the element-badge palette selector both fell out of the widget-class table, and the status-element badge sheet <code>0x18..=0x20</code> is pinned cell by cell.</p>
-
-  <p>Recently closed in this area: pack-member growth (nothing outside a scene TMD pack holds a byte offset into it, so a rebuild is the only cost) and the signature-cast choreography question (the spawn layer is data in the art path's own record format; the lift and camera are module code) - both on <a href="re-settled-threads.html">the settled page</a>.</p>
+  <p>Battles run in their own overlay with their own screen chrome - the enemy-name banner, the party panels, the arts announcements - and the cast-module band that stages every spell. The overworld's rendering questions are filed here too.</p>
+  <p class="notice">No live hunt in this area.</p>
+  <details class="disclosure"><summary>Recently closed here</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Are camera-relative move-VM parts drawn camera-relative</strong> - yes: the hit-spark billboards and camera-locked quads fall on retail's packets to the pixel, at the six-fold size.</li>
+      <li><strong>Does a monster's one-shot clip tween into its queued clip</strong> - yes: on its last frame the decoder blends into the next clip's first frame, carrying the entry's end-of-clip Z step, so a lunge ends forward without snapping back. The monster decoder shares the field blender's re-blend retry.</li>
+      <li><strong>Which fights forbid the Ra-Seru chip</strong> - bit <code>0x200</code> of <code>_DAT_8007BAC0</code>, raised by battle init against first monster <code>0xAF</code> and by the Rim Elm ambush's formation roll, read by the ring's cross-out and its refused arm.</li>
+      <li><strong>Does Koru's timed-fight strip draw over or under the name tab</strong> - over: both are text actors on one key-sorted list drawn front to back onto the same ordering-table entry, and the tab's key is larger.</li>
+      <li><strong>Is the overworld ground depth-cued</strong> - yes, toward a literal far colour of <code>0x100</code> per channel; <strong>the decoration cells</strong> are cued per object toward <code>0xD0</code>; <strong>the fog sheets</strong> read too bright unless the texture blend's 5-bit truncation is reproduced.</li>
+      <li><strong>The overworld camera</strong> is the field zone camera; its <strong>vertical offset</strong> is written once by the first overworld's own entry script; <code>FUN_800271A8</code> builds the overworld's <strong>screen-curvature table</strong>, which bends every overworld vertex. <strong>The field drop shadow</strong> is four textured quads over a projected grid at the actor's feet.</li>
+      <li><strong>The enemy-target label</strong> is the target-select plaque centred on column 232, row 162; <strong>the commit log</strong> is one row of name, command and target per committed member; <strong>the spoils and shop ink</strong> is the default light-grey pen, not white; <strong>the party-wide commit-confirm screen</strong> is staged once after the last member able to act, and its Reselect steps back onto the <em>last</em> able member.</li>
+      <li><strong>Does any shipped actor raise <code>actor[+0x42]</code>, the mesh-renderer gate</strong> - yes, in two ways: the allocator stamps it when a world-map dev counter has a bit up, and a move-VM opcode writes its own operand there, which shipped move programs issue non-zero.</li>
+      <li><strong>Is <code>FUN_801D0748</code> entered by an ordinary battle</strong> - yes: it has exactly one call site on the disc, unconditional, inside the SCUS battle frame driver. It is the round state machine every battle runs; the Muscle Dome is one context of it.</li>
+      <li><strong>Which frames gate a cast-module tick body's arms</strong> - a module-resident countdown drained by a <em>per-arm</em> multiplier of a scratchpad frame byte; two arms stage a clip no monster record names, so retail never performs them.</li>
+      <li><strong>Where a slot-B module image's highest spawn record ends</strong> - its own move-VM program bounds it, with word alignment, <code>HALT</code> outranking an armed idle loop, and <code>[header][program]</code> chaining.</li>
+      <li><strong>Who reads the GTE light matrix the per-actor dispatcher writes</strong> - five normal-colour GTE commands in the world-map handlers; the field path applies no light source.</li>
+      <li><strong>What makes a Ra-Seru chip render</strong> - three gates in order (<code>ctx[+0x25F+member]</code>, <code>+0x16E &amp; 0x1000</code>, then <code>0x8007BAC0 &amp; 0x200</code>), of which only the third selects a mark.</li>
+      <li><strong>The battle-intro enemy-name banner</strong> - no placement record raises it; the composer <code>FUN_801D9D3C</code> places its labels with immediate geometry at y = 48 and nothing slides (<a href="re-settled-threads.html#t-the-battle-intro-enemy-name-banner">settled</a>, <a href="re-do-not-re-walk.html#x-the-battle-intro-banner-is-raised-from-a-top-seated-0x0303-placement-record">falsified</a>).</li>
+      <li><strong>What stages the dance widgets' second texture page</strong> - nothing per entry: the page is boot-resident interface art out of the archive's unindexed head gap.</li>
+    </ul>
+    <p>Answers on <a href="re-settled-threads.html#battle">settled threads</a>; the readings that fell, on <a href="re-do-not-re-walk.html#battle">do not re-walk</a>.</p>
+  </div></details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle.html">Battle</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">Cast modules</a>
+    <a href="../subsystems/world-map.html">World map</a>
+  </div>
 </section>
 
 <section class="doc-section" id="audio" data-doc="audio--bgm">
   <h2>Audio / BGM</h2>
-  <p>No audio thread is open.</p>
-  <p><strong>Is a field track the script left running audible under a mid-game movie&rsquo;s XA</strong> closed as yes, wherever the script left it sounding - town0d and jouine included, by their scripts&rsquo; own words. The movie path makes no sequencer call, so the captures in four scenes decide it per script; both unmeasured scenes end on a commit that attaches a fresh track a few beats before the movie starts. Reading those words found an engine defect: a timed release landing inside a pending track swap silenced the new score for good, and now it does not (<a href="re-settled-threads.html">settled</a>, <a href="../subsystems/audio.html">audio</a>).</p>
-  <p><strong>What the field init's slot-10 load serves</strong> closed as the <em>credits theme</em>, by disassembly and capture. It is not a bank of sound effects: the field init stages the credits score and its instrument bank into sound slot 10, starts the score itself, and raises a latch that makes the ordinary music loader stand aside. The ending save states hold that score in slot 10's buffer byte for byte, and the engine now plays it from the same two disc entries (<a href="re-settled-threads.html">settled</a>).</p>
-  <p><strong>Does a Muscle Dome round load the battle sound bank</strong> closed as yes, by capture: entering a round closes the field bank's slots and the battle loader stages the class-2 bank, exactly as an ordinary field battle does - which is what the port already did (<a href="re-settled-threads.html">settled</a>).</p>
-  <p><strong>Do the hosts play the field's scripted SFX cues</strong> closed as yes, on both. The two script opcodes hand their cue ids to the same four-slot ring retail keeps; both hosts replay it, the field's own sound bank is resident and swapped per mode with the battle bank it shares memory with, and a cue whose bank is closed is silent rather than played from the wrong bank.</p>
-  <p>The last three threads before it closed the same way: by fixing the instrument rather than the engine.</p>
-  <p><strong>Why the port sustains more sounding voices than retail on the same track</strong> closed as two instrument defects stacked, with no engine change owed. The "matched window" was never matched - pairing frame 0 of each side compares two different bars of one piece, and the retail window actually aligns 3111 frames into the engine trace, where both a symmetric and an intersection-only pitch score peak. Aligned, the two sides carry the same ten envelope-config words, the same key-on count on nine of ten tones, and 71 engine key-ons against 67 retail ones. What is left is in the envelope channel, and that channel is not on emulated time at all: the emulator steps its envelope on an <strong>audio-paced thread</strong>, so a per-frame save-state capture carries an uncontrolled amount of envelope motion - two captures of one state with no input agree on the voice pitch register for 5285 of 6000 voice-frames and on the envelope level for 404 of 1000. The comparand that survives is the <strong>key-on rate</strong>, which the score performs from the game's own frame handler, and on the aligned window the two sides agree (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-  <p>Two threads closed here at once, and both closed by fixing the instrument rather than the engine. <strong>Which voices the score allocates</strong> is now an ordinary comparison - the trace record carries envelope level, per-side volume, the envelope-config word and the reverb send for every voice from all three emitters. <strong>Why the engine's mix is quieter</strong> closed on that oracle's own criterion: the two channels it named as divergences were an instrument reading the wrong register, and a pairing of two different pieces of music. What survives is a window difference - the engine renders a track from its first tick where a retail save is frozen somewhere inside one - and that is the residual the row above carries.</p>
-  <p>Closed here: <strong>which battle state owns the only arm that reaches the high cue band</strong>. It is the Spirit / Item wait state, and the door into it is an ordinary <em>item</em> use - a spell cannot reach it, because the magic arm only routes ids below a threshold the player's own Seru block sits above. Fifteen injected casts finding the arm cold was the bound, not a sampling accident (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>The last thread here - a supposed second record family inside the battle sound bank - resolved as a neighbouring file's tone rows left in the sector (<a href="re-do-not-re-walk.html">do not re-walk</a>). The one before it - field-VM op-<code>0x35</code> sub-op <code>0xA</code> - closed as the track-swap <strong>commit</strong>; see <a href="re-settled-threads.html">settled threads</a>.</p>
+  <p>Music, sound effects and streamed voice: the SEQ sequencer, the VAB banks, and the field-VM opcodes that drive them.</p>
+  <p class="notice">No live hunt in this area.</p>
+  <details class="disclosure"><summary>Recently closed here</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Is a field track the script left running audible under a mid-game movie's XA</strong> - yes, wherever the script left it sounding: the movie path makes no sequencer call.</li>
+      <li><strong>What the field init's slot-10 load serves</strong> - the credits theme: the score and its instrument bank are staged into sound slot 10 and started directly, with a latch that makes the ordinary music loader stand aside.</li>
+      <li><strong>Does a Muscle Dome round load the battle sound bank</strong> - yes: entering a round closes the field bank's slots and stages the class-2 bank, exactly as an ordinary battle does.</li>
+      <li><strong>The field's scripted SFX cues</strong> - the two script opcodes hand their cue ids to a four-slot ring; the field's sound bank is resident and swapped per mode with the battle bank it shares memory with.</li>
+      <li><strong>Which battle state owns the only arm that reaches the high cue band</strong> - the Spirit / Item wait state, entered by an ordinary item use; a spell cannot reach it.</li>
+      <li><strong>Field-VM op-<code>0x35</code> sub-op <code>0xA</code></strong> is the track-swap commit; a supposed second record family inside the battle sound bank was a neighbouring file's tone rows left in the sector.</li>
+      <li><strong>How to compare a captured voice against retail</strong> - by the key-on rate on aligned windows: the emulator steps its envelope on an audio-paced thread, so a per-frame save-state capture cannot measure envelope statistics.</li>
+    </ul>
+    <p>Answers on <a href="re-settled-threads.html#audio">settled threads</a>; the readings that fell, on <a href="re-do-not-re-walk.html#audio">do not re-walk</a>.</p>
+  </div></details>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/audio.html">Audio subsystem</a>
-    <a href="music-tracks.html">Music-track disambiguation</a>
+    <a href="music-tracks.html">Music tracks</a>
   </div>
-</section>
-
-<section class="doc-section" id="containers-data-blobs" data-doc="containers--data-blobs">
-  <h2>Containers / data blobs</h2>
-  <p>No open threads here. The last one - <strong>whether the PAL text renderer remaps two accented bytes</strong> - closed as no: all four PAL executables draw a glyph straight from its byte, so the French and Italian discs really do show placeholder boxes where their script uses those two codes.</p>
-  <p>The last three threads here closed on one mechanism - the packer's buffer.</p>
-  <p><strong>Should byte accounting cut an inherited tail the way disc coverage does</strong> closed as yes, with <strong>one</strong> rule under both instruments. The disc was mastered through one buffer indexed by file offset and never cleared, so the bytes past an entry's own content are the bytes of the nearest <em>earlier</em> entry that reached that offset - an overlay, or not (the battle overlay and the boot image both end in a battle-effect file's bytes). Searching for that suffix over the whole entry reproduces the old cut on 82 of 83 images, and the same rule explains every scene bundle's last-sector residue and the compressed-container, pack and battle-sound-bank tails that had read as bytes a walker left behind. PROT 0901 was the last disagreement, and its own code settles it: its last routine returns well below the run, which opens mid-routine on its neighbour's epilogue (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-  <p><strong>Is the tutorial module part of the slot-B module band</strong> closed on the layout question rather than the band one. The layout walk is selected by the shared link base, which admits the image at 96.6%; its prompt pool is consumed - twenty-eight strings its own code forms - and its one frameless leaf is reached by a call from inside the image, which also retires "a slot-B image never calls itself". Which images the cast dispatcher reaches is a separate question, and its range stays where it was.</p>
-  <p><strong>What actually breaks a rebuilt character-pack container at battle load</strong> closed here: nothing a rebuild can do reaches the registrar, and the symptom is the truncated pack the third reading already named. A sixth reading corrects the fourth rather than the fifth. The loader <em>does</em> check integrity in its own frame - on one of its three entry arms it reads the raw container back out of <strong>VRAM</strong>, re-sums every word and compares against the sum taken at boot, reloading from the disc on a mismatch. But that guard sits on the decompress <em>source</em>, not on the pack the registrar walks, and the register-only arm jumps straight past it. And the leg the row kept open is not constructible: its "header size word" and its "decoded length" are one field - the descriptor's own size word, which both sizes the buffer and drives the length-driven decode - so a hand-built container can only truncate, never disagree. The probe the row left over has run too, and a RAM clobber cannot trip the guard: a genuine mismatch reloads and heals in about 45 frames, but corrupting the resident container leaves the sum identical, because the sum is taken over a read-back from VRAM (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-
-  <p>Closed here: <strong>which image holds the dev-menu row strings</strong> - the field overlay, at a file offset its own renderer forms the address of, with a live window byte-identical to that image's head. The other slot-A occupant aliases the same address and the two are never resident together, which is the whole of why it read as unattributable (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>Closed here: <strong>what writes the slot-B stage selector</strong> - the field entity tick does, off a system story flag, and battle latches its other value directly. Every access to the byte is of a form the project's address sweep cannot see, which is why it read as writerless for so long (<a href="re-settled-threads.html">settled</a>).</p>
-
-  <p>Recently closed here: the card-screen kanji page is sampled by <strong>nothing</strong> - the GPU-FIFO watch at card-screen entry draws no primitive from it, so the USA build ships the Japanese glyph page and never reads it (<a href="re-settled-threads.html">settled threads</a>).</p>
-</section>
-
-<section class="doc-section" id="measurement-tooling" data-doc="measurement--tooling">
-  <h2>Measurement + tooling</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
-    <tbody>
-      <tr data-row="which-save-state-library-entries-still-hold-a-patched-executable"><td>Which save-state library entries still hold a patched executable?</td><td><span class="tag tag-open">open</span> - narrowed: audited and tagged; the rest need human play</td><td>A save state made on a patched disc keeps that build's executable in memory forever. Every library state is now tagged with the patch family it carries, the playthrough anchors are re-shot on an unpatched disc, and every capture-graded claim re-checked against its family stands. Re-shooting the remaining boss, story and minigame states on an unpatched disc closes it.</td></tr>
-</tbody>
-  </table>
-  <p><strong>Why the opening scene <code>opdeene</code> runs long after its long camera move</strong> closed by capture and disassembly: a frame-by-frame capture of the untouched scene pinned five places the port waited where retail does not, or skipped a wait retail honours - a non-player character turning no longer holds the script, a clip poke waits for that clip to finish, an actor's walk ends its own leg, the camera ramp does not hold, and the closing wait honours the scroll only where the script asks for it. The scene now reaches its end within 2% of retail (<a href="re-settled-threads.html">settled</a>).</p>
-  <p><strong>Which engine draws hand a raw LCG state where retail calls BIOS <code>rand</code></strong> closed: the last three private seeds - the battle camera script, the camera shake and the Muscle Dome session - now borrow the one world stream, so every port that retail feeds from <code>rand</code> draws from the same shaped generator. The standalone minigames page has no world, so its contest holds the stream it lends through the same entry (<a href="re-settled-threads.html">settled</a>).</p>
-  <p><strong>Which live ports cover only part of their routine</strong> closed: every residue the audit named as still changing behaviour is ported. The last three were Baka Fighter's display clip (all three hosts pose the fighters from it), the victory load hold's stream request (a capture now sets its span) and the battle draw tick, whose crate barrier went when the pass moved into the VM crate.</p>
-  <p>Three threads closed here together. <strong>Which slot-B record walk bounds PROT 0944's top record</strong> closed on the walker, not the image: nothing in any consumer bounds the record band, and one walker had chained zero padding as a record. Both now stop at eight zero bytes, which moves twelve images and leaves the two instruments agreeing everywhere. <strong>Does any shipped beat take the screen-effect arm's second fork</strong> closed as no: a census of every writer of the gating bit over every image and scene script finds none the disc executes, and a motion-VM opcode pair fell with it - no scene authors either. <strong>Does the morph-weight spawner ever seat its handler</strong> closed by taking the seat, and a premise fell on the way: the spawner's model operand is an index into the <em>scene's</em> model bank, not the global pool, which is why two scenes looked unseatable - all five carrier scenes now seat, and all seventeen morph blocks fit their mesh vertex for vertex (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-  <p><strong>Which model owns the field screen-effect fade</strong> closed here, and the answer is the <strong>push</strong>. Retail's beat, logged frame by frame, is one spawner call per step from an effect actor the script arm creates - a (kind, blend, packed colour) triple, which is the push's shape exactly - while the global multiply tint holds neutral for all 900 frames of the capture, so the beat is not a global-tint fade at all. The row's premise was half wrong in the port's favour and half wrong against it: the float ramp it said both renderers read had <em>no</em> reader either, so both representations were dead, and the arm the port did implement was a third of one - retail's is a walk-out / walk-in <strong>pair</strong> whose blend and push kind come out of the sub-op byte, and whose all-zero operand clears the live actor rather than ramping to black (<a href="re-settled-threads.html">settled</a>, <a href="re-do-not-re-walk.html">do not re-walk</a>).</p>
-
-  <p>Four threads closed here before them, three of them the Equip screen's. <strong>What retail's equip item-info panel looks like</strong> closed by driving one: every library state parked on the screen sits at slot-pick with the panel blank, so the oracle was absent rather than disagreeing, and a pad ladder into the candidate list gives one populated frame per row - three stacked panels, the lowest of which only an item with a passive fills. <strong>Whether the port asks the compare-category question of the wrong row</strong> closed as yes and is fixed: retail's guard silences the four gear rows, so only the three accessory rows resolve a category, and the category follows the hovered <em>item</em> rather than the row. <strong>Where retail enters the list-reorder screen</strong> closed on one address - the pause menu's Status row is the only site that raises that sub-screen, and the port's Magic-screen shortcut was its own invention. <strong>Which per-frame kernels the hosts share</strong> closed by building the instrument the row asked for: a tier comparing, per paired kernel, the engine functions each host's body reaches. The first thing it found was the pairing's own failure mode - a native body that was empty, aliased to a browser kernel that does real work.</p>
-  <p>Closed here: <strong>which shipped scenes carry the two rarest field-VM script arms</strong> - one scene and three scenes respectively. The row asked for an instrument rather than an answer, and the instrument is the general one it predicted: a disc-wide opcode census over every scene's script stream, whose zeros separate "no fixture drives this arm" from "the disc contains nothing to drive it". Before it - <strong>eleven cast-band tick addresses statically live and never entered by any ladder</strong> - closed the way its own row predicted, by seating a cast per PROT <code>0903..0966</code> id. Two of the eleven turned out not to be cast bodies at all but AoE sweep stagers reached only through the AoE entry, so a ladder over the ordinary cast path could never have converted them; the rest were second arms of modules a ladder already entered once. Read a reach cell as a claim and not a measurement: the page audit checks addresses, not the prose beside them.</p>
-  <p>Recently closed here: <strong>when SCUS's one call into slot B runs</strong> - a probe driving a Slippery cast catches it firing 212 times in that single cast, across six module phases, always with the battle-running signal set; its gate has five writers inside PROT 0920 and never reaches zero on its own, so the three-site table the docs carried was incomplete. With it, the <strong>dashboard's Port %</strong>, which was dividing <em>and</em> multiplying by rows the ignore list removes, and the <strong>donor call sites</strong> the slot-B call-site filter admitted - cutting every call site and record target at the image's own content end drops the credited pointer in five of the six images. Before them, <strong><code>cast_earthquake</code>'s floor</strong>. The 2480-byte tail neither shape rule recognised is the module's <strong>spawn-record band</strong> - <code>[i16 model_sel][u16 reserved][move-VM bytecode]</code> records addressed by the consumer's own pointer-forming instruction, present in 62 of the 64 images. No earlier shape rule reached it because a record's bytecode contains a <code>lui</code> word by accident, which the data-segment test rejects. Before it, PROT 0901's middle band splits into <strong>nine</strong> routines - eight frameless tail-call leaves plus a framed ninth at <code>0x801F89B8</code> - and the boundary rule is the <code>j</code> that <em>leaves</em> the band, not every <code>j</code> in it (twenty sit there and only eight leave).</p>
 </section>
 
 <section class="doc-section" id="title-boot-overlays" data-doc="title--boot--overlays">
   <h2>Title / boot / overlays</h2>
-  <p>No open threads. The last one - <strong>which entry uploads the card-message page</strong> - closed on a capture: the strips are the title screen's own art (PROT 0890), redrawn behind the Load window when it is opened from the title, and the port draws them on both hosts.</p>
-  <p>The last thread closed here - <strong>the browser play page holding no mode seat</strong> - closed by being taken: the browser runtime now owns the same mode seat the native host does and enters MAIN INIT and CARD INIT through it. The thread had assumed a residency model was the blocker; what it needed was the seat, because an INIT mode lasts one frame <em>inside</em> the seat's own enter call and hands off to RUN before returning. That is also why no post-call sampler can witness one on either host, and why the parity witness is the edge <strong>count</strong> rather than a mode word.</p>
-  <p>The two threads before it both closed by capture. <strong>Nothing draws the <code>init.pak</code> WARNING screen</strong> - the TIM is uploaded to VRAM <code>(704, 0)</code> and given descriptor 1 of the table at <code>0x801F369C</code>, and no call site ever passes that id. And <strong>a cold boot always shows title sub-mode <code>0x10</code></strong>: the boot image raises <code>_DAT_8007BB00</code> unconditionally at <code>0x801CEB84</code>, so the <code>0x02</code> two-row menu is unreachable. Two readings fell with the second - the sub-mode word is <code>0x801F0204</code> and <code>0x801DD920</code> is only the instruction that writes it, and the slider <code>state[-0xEB4]</code> has no <code>[0, 0x2C]</code> range (both arms converge <em>on</em> <code>0x2C</code>).</p>
-  <p>The thread before those - the identity of PROT 0968 - closed by capture.</p>
-  <details class="disclosure"><summary>History: how PROT 0968 closed</summary><div class="disclosure-body">
-    <p>The <code>cort_evolved_battle_first_menu</code> PCSX-Redux state (first command menu of the evolved-Cort fight, before any cast) shows the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code> and entry 968 100% byte-resident at <code>0x801F69D8</code> over its own <code>0xA28</code> extent, with the field-side ladder states bracketing the page-in to the battle load. See <a href="re-settled-threads.html">settled threads &sect; PROT 0968</a>; the instrument is <code>scripts/mednafen/check-0968-residency.py</code>, which reads either emulator's states (dispatched on file extension).</p>
+  <p>Boot, the title screen, and which overlay image sits in which RAM window at which moment.</p>
+  <p class="notice">No live hunt in this area.</p>
+  <details class="disclosure"><summary>Recently closed here</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Which entry uploads the card-message page</strong> - none: the strips are the title screen's own art (PROT 0890), redrawn behind the Load window when it opens from the title.</li>
+      <li><strong>Nothing draws the <code>init.pak</code> WARNING screen</strong> - the TIM is uploaded to VRAM <code>(704, 0)</code> as descriptor 1 of the table at <code>0x801F369C</code>, and no call site passes that id.</li>
+      <li><strong>A cold boot always shows title sub-mode <code>0x10</code></strong> - the boot image raises <code>_DAT_8007BB00</code> unconditionally at <code>0x801CEB84</code>, so the <code>0x02</code> two-row menu is unreachable. The sub-mode word is <code>0x801F0204</code>.</li>
+      <li><strong>An INIT game mode lasts one frame</strong>, inside the mode seat's own enter call, before it hands off to RUN - which is why no post-call sampler can witness one.</li>
+      <li><strong>PROT 0968's identity</strong> - a boss-stage module, byte-resident at <code>0x801F69D8</code> in the first command menu of the evolved-Cort fight with the loader-B tracker <code>0x8007BC4C</code> reading <code>0x49</code>.</li>
+    </ul>
+    <p>Answers on <a href="re-settled-threads.html#title-boot-overlays">settled threads</a>.</p>
   </div></details>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../subsystems/boot.html">Boot sequence</a>
     <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
     <a href="../tooling/overlay-capture.html">Overlay capture</a>
+  </div>
+</section>
+
+<section class="doc-section" id="containers-data-blobs" data-doc="containers--data-blobs">
+  <h2>Containers / data blobs</h2>
+  <p>What a PROT entry's bytes are: the packer's layout, inherited tails, and which image a table belongs to.</p>
+  <p class="notice">No live hunt in this area.</p>
+  <details class="disclosure"><summary>Recently closed here</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Does the PAL text renderer remap <code>0xD7</code> and <code>0xF8</code></strong> - no: all four PAL executables address the glyph cell straight from the byte, so the French and Italian discs draw placeholder boxes there.</li>
+      <li><strong>Should byte accounting cut an inherited tail the way disc coverage does</strong> - yes, with one rule: the disc was mastered through one buffer indexed by file offset and never cleared, so the bytes past an entry's own content belong to the nearest <em>earlier</em> entry that reached that offset.</li>
+      <li><strong>Is PROT 0967 part of the slot-B module band</strong> - on layout, yes: the shared link base admits it, and its prompt pool is consumed by its own code.</li>
+      <li><strong>What breaks a rebuilt PROT 0874 container at battle load</strong> - a truncated pack; the loader's VRAM read-back checksum guards the decompress source, not the pack the registrar walks, and the "header size" and "decoded length" are one field.</li>
+      <li><strong>Which image holds the dev-menu row strings</strong> - the field overlay (PROT 0897); the other slot-A occupant aliases the same address and is never resident with it.</li>
+      <li><strong>Where PROT 0896 links</strong> - at <code>0x801D4DF0</code>, against an executable this disc does not carry: none of its 322 SCUS-range calls lands on a function entry of this <code>SCUS_942.54</code>.</li>
+      <li><strong>What draws VRAM <code>(384, 0)</code></strong> - <code>FUN_801D00F8</code> in the contest hub (PROT 0977), addressing it by texture page (<code>0x106</code> / <code>0x109</code>), never by the pixel column (<a href="../formats/ringside-still.html">ringside still</a>).</li>
+      <li><strong>Whether the <code>0x801E43E8</code> byte run is one table or two</strong> - three tables and a pad byte: a seven-byte browse map, a four-byte character equip mask, and eight halfwords of slot pictograms.</li>
+      <li><strong>What writes the slot-B stage selector</strong> - the field entity tick, off a system story flag; every access is in a form an absolute-address sweep cannot see.</li>
+      <li><strong>The card-screen kanji page</strong> is sampled by nothing: the USA build ships the Japanese glyph page and never reads it.</li>
+    </ul>
+    <p>Answers on <a href="re-settled-threads.html">settled threads</a>; the readings that fell, on <a href="re-do-not-re-walk.html#containers">do not re-walk</a>.</p>
+  </div></details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/prot.html">PROT.DAT</a>
+    <a href="../tooling/byte-accounting.html">Byte accounting</a>
+    <a href="../tooling/disc-coverage.html">Disc coverage</a>
+  </div>
+</section>
+
+<section class="doc-section" id="measurement-tooling" data-doc="measurement--tooling">
+  <h2>Measurement + tooling</h2>
+  <p>Questions about the project's own instruments - save states, reference sweeps, census tools - whose answers decide which of the other rows can be trusted.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
+    <tbody>
+      <tr data-row="which-save-state-library-entries-still-hold-a-patched-executable"><td>Which save-state library entries still hold a patched executable?</td><td><span class="tag tag-open">open</span> narrowed: audited and tagged; the rest need human play</td><td>A save state made on a patched disc keeps that build's executable in memory on every later load. Every library state is tagged with the patch family it carries, the playthrough anchors are re-shot on an unpatched disc, and every capture-graded claim checked against its family stands. Re-shooting the remaining boss, story and minigame states on an unpatched disc closes it.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <details class="disclosure"><summary>Recently closed here</summary><div class="disclosure-body">
+    <ul class="bullets">
+      <li><strong>Which references does the indexed form hide</strong> - 512 accesses, none in PROT 0897 / 0899; the counts that opened the row came from a scanner that never dropped an overwritten register.</li>
+      <li><strong>Which slot-B record walk bounds PROT 0944's top record</strong> - nothing in any consumer bounds the band; one walker had chained zero padding as a record.</li>
+      <li><strong>Does any shipped beat take op <code>0x34</code> sub-0's second arm</strong> - no: no writer of its gating bit is executed by the disc.</li>
+      <li><strong>Does the morph-weight spawner ever seat its handler</strong> - yes: its model operand indexes the <em>scene's</em> model bank, not the global pool, and all seventeen morph blocks fit their mesh vertex for vertex.</li>
+      <li><strong>Which model owns the field screen-effect fade</strong> - the push: one spawner call per step from an effect actor, a (kind, blend, packed colour) triple, while the global multiply tint holds neutral; retail's is a walk-out / walk-in pair whose all-zero operand clears the live actor.</li>
+      <li><strong>Do the field effect handlers <code>0x801E3E00</code> / <code>0x801E4D8C</code> / <code>0x801E5338</code> have a spawner</strong> - three answers: the attached light's keyframe script, the CLUT blend fade field-VM <code>4C DB</code> spawns, and no reference at all for the third.</li>
+      <li><strong>What retail's equip item-info panel looks like</strong> - three stacked panels, the lowest filled only by an item with a passive; the compare category follows the hovered item, and only the three accessory rows resolve one. <strong>Where retail enters the list-reorder screen</strong> - only from the pause menu's Status row.</li>
+      <li><strong>Where the ladder's <code>vell</code> milestone belongs</strong> - out of story order rather than unreachable: West Voz Forest writes <code>0x489</code> on entry, so the playthrough first enters it between Drake Castle revisited and Voz Forest.</li>
+      <li><strong>When SCUS's one call into slot B runs</strong> - 212 times in a single Slippery cast, across six module phases, always with the battle-running signal set.</li>
+      <li><strong>Which shipped scenes carry the two rarest field-VM script arms</strong> - one and three; the instrument is a disc-wide opcode census whose zeros separate "no fixture drives this arm" from "the disc has nothing to drive it".</li>
+    </ul>
+    <p>Answers on <a href="re-settled-threads.html#measurement">settled threads</a>; the readings that fell, on <a href="re-do-not-re-walk.html#measurement">do not re-walk</a>.</p>
+  </div></details>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/mednafen-automation.html">Mednafen automation</a>
+    <a href="../tooling/pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">Field-op census</a>
   </div>
 </section>
 
@@ -354,7 +396,6 @@
     <a href="re-settled-threads.html">Settled threads</a>
     <a href="re-do-not-re-walk.html">Do not re-walk</a>
     <a href="functions.html">Key functions</a>
-    <a href="../tooling/port-catalog.html">Port catalog</a>
     <a href="../tooling/ghidra.html">Ghidra tooling (decompiler artifacts)</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/worklist-classification.md" target="_blank" rel="noopener">Worklist classification</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory</a>

@@ -51,11 +51,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_shell::audio_trace_oracle::{
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::audio_trace_oracle::{
     AudioDivergenceKind, compare_voice_allocation_aligned, engine_trace_from_paths,
     first_audio_trace_divergence_multi, load_runtime_audio_trace_jsonl,
 };
-use legaia_mednafen::ScenarioManifest;
 
 const FRAMES: u64 = 60;
 

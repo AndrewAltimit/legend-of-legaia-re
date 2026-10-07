@@ -70,13 +70,10 @@ belongs to a crate carrying such a block. It is a type-check rather than a
 build and shares the profile `build-wasm.sh` and the CI wasm step use, so a
 warm run costs about a second.
 
-It is a hook tier for a reason worth writing down rather than an exception to
-the rule above. The `ci` job **does** build the wasm target - and it carries
-`if: github.event_name != 'pull_request'`, so that build happens after a merge
-to `main`, not on the pull request. The comment at the top of the workflow
-says the opposite ("so PR builds catch regressions before merge"); the `if` is
-what runs. Until the two agree, the hook is the browser host's only pre-merge
-compiler.
+It runs in two places. The pre-commit hook runs it on a staged file in such a
+crate, and the `pr-lint` job of `.github/workflows/main-ci.yml` runs it on
+every push to a pull request, beside `cargo fmt` and `cargo clippy`, so the
+browser host is compiled before a merge rather than only after one.
 
 ### A wasm export is a property of its impl block, and no compiler reads that
 
@@ -117,6 +114,16 @@ are graph nodes only; nothing classifies them.
 
 Per builder: **both hosts** → ok; **native only** → DRIFT (fails);
 **web only** → informational; **neither** → ORPHAN (fails).
+
+**A shared composer counts for the hosts that call it.** Some builders have no
+host call site at all: the shop-family screens' only caller is
+[`crates/engine-screens`](../../crates/engine-screens/README.md), the
+projection both hosts share. The gate's `SHARED_COMPOSERS` table names each
+such crate with its entry points, and a builder named in the crate's source is
+credited to exactly the hosts that **call** an entry (`shop_overlay_frame`).
+The credit is per host, not per crate: a host that stops calling the entry
+loses every builder behind it, so a one-host composition still reads as
+`DRIFT`.
 
 Every orphan is named on stdout, waived or not. A bare count cannot tell "the
 same six as yesterday" from "a builder's last caller was deleted this
@@ -586,7 +593,10 @@ one absence produced a projection difference, a simulation difference and two
 missing screens at once, with all seven tiers green.
 
 Ownership is a **field declaration or a construction** in that host's own
-shipped source. The three things that are not ownership are the three the page
+shipped source. Holding the session (`BootSession`, a field, a construction or
+a type alias of it) owns every type the session's own fields hold: both hosts
+reach the scene host and the camera through their session, so they own them
+through it. The three things that are not ownership are the three the page
 had: a `use` line, a match arm, and a borrowed parameter. Two shapes look like
 constructions and are not - `-> Camera {` is a return type and
 `impl Trait for Camera {` is an impl block - and the control suite pins every
@@ -800,8 +810,9 @@ remaining difference, the page advancing its clip players inside the step.
 
 This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
-reaches. Engine means the four wgpu-free crates both hosts link
-(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`). A host's own
+reaches. Engine means the six wgpu-free crates both hosts link
+(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`, `engine-session`,
+`engine-screens`). A host's own
 helpers are followed transitively, so a step spelled as five private methods
 is compared against a twin that inlines them.
 
@@ -1001,15 +1012,16 @@ a consumer empties" and "a typed channel narrowed at one host" are decidable
 per instance and not from a source pattern, which is why they are written up
 here and not gated.
 
-**Same override set, different bodies (tier 4's declared blind spot, now
-a worked example).** `WebBgmDirector` and `AudioBgmDirector` overrode the
-same six `BgmDirector` methods, and the browser's duplicate-start guard was
-id-only where the native one also asks "unpaused, and a sequencer is live" -
-so a track that ended or was paused never restarted on the field VM's
-re-emit, and the field music did not return after a battle. The same pass
-found the sequencer master volume unset (127 against native's 100), the
-loop policy hard-coded, and `stop` leaving the pause gate closed. The tier
-cannot see any of these; only the paired bodies can.
+**Same override set, different bodies (tier 4's declared blind spot, as a
+worked example).** Two `BgmDirector` implementations, one per host, can
+override the same six methods and still disagree inside them: a
+duplicate-start guard that asks only for the id, where the other also asks
+"unpaused, and a sequencer is live", never restarts a track that ended or was
+paused, so the field music does not return after a battle; an unset sequencer
+master volume plays 127 against 100; a `stop` that leaves the pause gate
+closed silences the next start. The tier cannot see any of these; only the
+paired bodies can. The shape is closed for BGM by having one body: both play
+hosts run `engine-session`'s `AudioBgmDirector`.
 
 **A `SceneMode` with no `engine-ui` builder is invisible to tier 1.** Four
 minigame sessions install themselves on both hosts from a scene's own door
@@ -1356,7 +1368,9 @@ about these is contested.
 
 ### The frame loop rules are engine-side
 
-Each host owns its display loop (winit's redraw natively, `requestAnimationFrame` on the page), and each used to spell out the rules that turn display frames into ticks. Four of those rules are kernels in `engine-core::frame_step` now, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
+Both play hosts run one engine frame: `legaia_engine_session::BootSession::tick` - the mode seat's frame, the camera's half before the world tick, the world tick, the tick's BGM events, the camera's half after it, the SFX queue dropped on a door, the field SFX routing, and the mode word adopted. The browser page holds a `BootSession` over its own audio output and declares at install what it does itself (the pause menu, the field CD-XA lane, the per-tick queue drains).
+
+What remains host-side is each host's display loop (winit's redraw natively, `requestAnimationFrame` on the page) and the steps it runs around the session's tick. Four of the rules that turn display frames into ticks are kernels in `engine-core::frame_step`, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
 | Rule | Was | Kernel |
 |---|---|---|
@@ -1810,8 +1824,9 @@ there and what carries the voice now.
 The cast-audio dispatcher `FUN_801F3990` (ported as
 `engine-vm::battle_cast_cue::cast_audio_cue`) still emits its cue band - the
 player leg `char_kind * 0x10 + 0xF8 ..`, the enemy leg `0x20C..0x20E` - and
-both hosts still classify it at fire time and decline it (`bgm.rs` logs and
-`continue`s, `play_sfx.rs` counts it on `voice_cues_dropped`). That band was
+both hosts still classify it at fire time and decline it (the shared
+director reports it as `voice_declined`, which the page counts on
+`voice_cues_dropped`). That band was
 not raised on either measured retail cast (`capture`, N = 2, exec
 breakpoints on all three routines - [`../subsystems/cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice)),
 so voicing it would add a sound retail does not make. Its decline is the
@@ -2948,10 +2963,12 @@ was assembled inline inside the text pass - so the sprite pass had no row count
 to size a frame from, and adding one meant either duplicating the panel build
 or moving it.
 
-The fix is the move: `shop_overlay_stage_draws` is a `&self` builder both
-passes call, and the rect comes from `shop_panel_rows` (distinct baselines in
-the text) plus `shop_panel_frame_rect` (pen, inset, width, row pitch), both in
-engine-ui and both called by both hosts. Sizing off the text rather than off
+The fix is the move: the shop-family overlay is one frame
+(`legaia_engine_screens::shop_overlay_frame`) the native redraw builds once
+and hands to both passes, and the rect comes from `shop_panel_rows` (distinct
+baselines in the text) plus `shop_panel_frame_rect` (pen, inset, width, row
+pitch), counted over the fallback panel's own rows only - not over the floor
+window or the code lock riding the same stage group. Sizing off the text rather than off
 the session is what lets a screen that grows a row grow its frame on both
 hosts, without either re-deriving a row count from a session shape the other
 does not hold.
@@ -3031,18 +3048,17 @@ harness provides, and the retail references (`v0_1_tetsu_dialogue_accept`
 for the dialogue box: border rows 9 and 63, columns 31..287, the same
 `(206, 206, 206)` ink) have no port frame to pair with.
 
-## The field SFX ring: one producer queue, two replays
+## The field SFX ring: one producer queue, one replay
 
 The field scripts' cue producers (field-VM op `0x36` sub `0` / `4`, the motion
 VM's op `0x09`) run inside `World::tick`, but the ring they write lives with
 the SPU, on the host side of the `engine-core` / `engine-audio` boundary. The
-world therefore queues each call as a `SfxRingOp` and **both** hosts replay the
-queue: the native `BootSession::route_field_sfx` into `AudioBgmDirector`, the
-browser play page's `route_field_sfx` into `PlaySfx::sched`. The two share the
-other halves too - the side-band bank resolver
-(`World::side_band_bank`) and the runtime-row lookup
-(`runtime_sfx_descriptor_in`) are engine functions, and each host only stages
-and keys. The minigames page has no field and no queue to drain.
+world therefore queues each call as a `SfxRingOp`, and one routine replays the
+queue for both play hosts: `AudioBgmDirector::route_world_sfx`, called from the
+native `BootSession::route_field_sfx` and the browser page's `route_field_sfx`.
+The side-band bank resolver (`World::side_band_bank`) and the runtime-row
+lookup (`runtime_sfx_descriptor_in`) are engine functions under it. The
+minigames page has no field and no queue to drain.
 
 Two things a one-host reading of this would get wrong. The ring ages by the
 vsyncs one host tick spans (`display_frame_step`, one), not by the game-tick
@@ -3052,21 +3068,19 @@ routed through `classify_cue` - the scheduler returns ring cues in their own
 list - because every runtime-bank id (`>= 0x200`) would otherwise land on the
 CD-XA voice leg and be declined.
 
-## The slot-2 / slot-6 SFX region: one residency, two restagers
+## The slot-2 / slot-6 SFX region: one residency, one restager
 
 Which bank the SPU region VAB slots `2` and `6` share holds is decided once, in
 the engine: `World::sync_sfx_residency` models retail's field-bank latch
 `0x8007BAFC` and the region's occupant off the world's mode edges (field and
 world map load PROT 0876 into slot 6, battle and the Baka duel PROT 0869 into
 slot 2, fishing / slot machine / dance their own banks), and field-VM op `0x36`
-sub `3` runs `World::release_field_audio`. Each play host only restages: the
-native `AudioBgmDirector::sync_shared_region` and the browser play page's
-`LegaiaRuntime::sync_shared_region`, both called from their `route_field_sfx`
-every tick, both placing the bank above the slot-0 system bank inside the same
-`SFX_BANK_SPU_BYTES` window. Both resolve a routed cue to its own slot or to
-silence (`bgm::resolve_sfx_slot` / `PlaySfx::resolve_slot`) - a class-2
-fallback on one host only would make a field cue audible there and silent on
-the other.
+sub `3` runs `World::release_field_audio`. The restage is the director's
+`AudioBgmDirector::sync_shared_region`, run every tick from `route_world_sfx`
+on both play hosts, placing the bank above the slot-0 system bank inside the
+`SFX_BANK_SPU_BYTES` window. A routed cue resolves to its own slot or to
+silence (`bgm::resolve_sfx_slot`); with one resolver, a class-2 fallback
+cannot make a field cue audible on one host and silent on the other.
 
 The minigames page keeps its own lazy per-slot staging
 (`LegaiaMinigames::stage_sfx_slot`, `prot_index_for_slot`), so its slot 2 is
@@ -3278,7 +3292,7 @@ engine entry, `World::install_retail_progression_tables`, and
 `load_disc` against it.
 
 This one is gated: **tier 13** takes every `world.install_*` / `world.set_*`
-call in `crates/engine-shell/src/boot.rs` and requires a shipped
+call in `crates/engine-session/src/boot.rs` and requires a shipped
 `crates/web-viewer` source to call the same method, or a `[[boot_install]]`
 waiver in `ui-host-drift-waivers.toml`. Run over the old boot it fails on
 `install_magic_xp_thresholds` and `set_accessory_passives`. It cannot see the
@@ -3503,11 +3517,11 @@ kernel both hosts call, so the two cannot drift on it again.
   latch under it, so the scene's own start restarted the track. The call now
   arms the hand-off and the page's scene entry performs it after the save
   lands - the native enter, load, then stop and restore order.
-- **Door-tick order.** The page replayed the new scene's entry ring ops before
-  it cleared the SFX queue (zero-delay entry cues fired, delayed ones were
-  dropped) and routed the BGM last. It now routes the BGM after the scene
-  tick, clears on the swap, and only then replays the ring - the native
-  `BootSession::tick` order.
+- **Door-tick order.** Replaying the new scene's entry ring ops before the
+  SFX queue is cleared fires its zero-delay entry cues into the old queue and
+  drops its delayed ones, and routing the BGM last stages a bank against the
+  outgoing track. Both hosts now run `BootSession::tick`, which routes the BGM
+  after the scene tick, clears on the swap, and only then replays the ring.
 - **Late audio.** The page's output exists only after a user gesture, and
   every start routed before it was dropped; the scene stayed silent until its
   script started music again. `audio_init` now starts the world's current
@@ -3552,12 +3566,10 @@ region above it.
   now lays a bank too large for the region across the SFX region, as retail
   opens VAB 10 at slot 0's base
   ([`audio.md`](../subsystems/audio.md#where-the-credits-bank-lands-in-spu-ram)).
-  While it is resident both hosts drop their resident SFX banks and key no cue
-  against the credits bank: the native director at the upload
-  (`AudioBgmDirector::reclaim_sfx_region`), the page at the next cue
-  (`LegaiaRuntime::reconcile_sfx_region`, the check the reward bank already
-  used). The next track that fits re-stages them through the same kernel on
-  both.
+  While it is resident the director drops its resident SFX banks and keys no cue
+  against the credits bank (`AudioBgmDirector::reclaim_sfx_region`, at the
+  upload); the next track that fits re-stages them. Both play hosts run that
+  director.
 - **No scene bank.** Both hosts staged the scene block's first VAB-bearing
   entry on every scene entry, and skipped it under a carried global track
   (`scene_bank_restage_wanted`). Retail stages no scene bank: a bank loads only
@@ -3714,8 +3726,9 @@ or the deviating host adopting the other's behaviour.
   (`PondSession::status_rows`).
 - **A nameless item in the shop.** On a load without the executable the
   native shop printed `item 42` and the page `Item 2A`, each spelling its own
-  fallback. Both shop label helpers read `MenuState::item_label` now, the
-  engine's `Item 2A` form, and a `SIM_PAIRS` row holds them to it.
+  fallback. One shop label helper reads `MenuState::item_label` now, the
+  engine's `Item 2A` form, in the composition both hosts call
+  (`legaia_engine_screens`).
 - **The damage numerals' font fallback on the page.** Both hosts sample
   retail's 24x24 cells off the battle VRAM once it exists and fall back to the
   font before. The page's fallback could never draw: its layout read the
@@ -3771,7 +3784,8 @@ or the deviating host adopting the other's behaviour.
   row holds both `arm_battle_intro` sites to it.
 - **The Seru-trade screen's text.** The offer list's title, owner rows and
   empty-list line and the confirm question were formatted once per host.
-  `seru_trade::trade_screen_text` is the text now, under a `SIM_PAIRS` row.
+  `seru_trade::trade_screen_text` is the text now, read by the one trade
+  draw both hosts reach (`legaia_engine_screens`).
 - **The shop root and Options row models.** Each host mapped
   `shop_menu_rows` onto its own label and ink table, and both left Quit
   white where retail's root window (`FUN_801D4868`) greys it with Sell on an
@@ -3779,7 +3793,9 @@ or the deviating host adopting the other's behaviour.
   engine-only Trade row takes the same rule. The Options screen's rows, the
   hand's row offset and the Key Config rows come from
   `OptionsSession::screen_model`; a host only borrows them into the view
-  types and places the popup. Two `SIM_PAIRS` rows.
+  types and places the popup, under a `SIM_PAIRS` row. The shop root needs
+  none: its one reader is the shared shop composition
+  (`legaia_engine_screens`).
 - **The save-select overlay sequence.** Each host sequenced the screen's
   overlays itself - the pills and their hand, the "Now checking" beat, the
   preview grid and info panel or its caption, the confirm messagebox - with

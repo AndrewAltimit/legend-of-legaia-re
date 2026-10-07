@@ -72,10 +72,9 @@
 //! list's kind dispatch (`engine-core`'s `shop::buy_list_confirm_route`)
 //! routes an equipment row into `shop::BuyRecipientSession`, and
 //! [`recipient_picker_draws_for`] below paints windows 25 / 41 beside the
-//! recipient list. That composition is what both hosts call - the browser
-//! play page through `web-viewer::play_shop::recipient_window_draws`, the
-//! native window through `window/shop_windows.rs::recipient_window_draws` -
-//! so neither can grow a row order, a cursor row or a note string the other
+//! recipient list. That composition is what both hosts call, through the one
+//! shared projection `legaia_engine_screens::recipient_window_draws` - so
+//! neither can grow a row order, a cursor row or a note string the other
 //! lacks. The pause equip flow (`legaia_engine_core::equip_session`) still
 //! draws its capture-pinned window set (ids 2 / 21 / 22 / 23) and never
 //! opens these - window 25's rect `(14, 40, 144, 52)` overlaps the party

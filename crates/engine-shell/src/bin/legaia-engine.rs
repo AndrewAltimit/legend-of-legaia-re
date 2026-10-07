@@ -19,10 +19,6 @@ mod cli;
 mod commands;
 #[path = "legaia-engine/launcher_window.rs"]
 mod launcher_window;
-#[path = "legaia-engine/shared.rs"]
-mod shared;
-#[path = "legaia-engine/window.rs"]
-mod window;
 
 use anyhow::Result;
 use clap::Parser;
@@ -34,8 +30,8 @@ use commands::{
     cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_sim_trace, cmd_target_pick, cmd_title,
     cmd_vram_oracle,
 };
+use legaia_engine_shell::window::{self, cmd_play_str, cmd_play_window, cmd_record};
 use std::path::Path;
-use window::{cmd_play_str, cmd_play_window, cmd_record};
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
 /// scene listings) into `head` terminates quietly instead of panicking with
@@ -64,7 +60,7 @@ fn main() -> Result<()> {
         },
     };
     match cmd {
-        Cmd::RetailCompare(args) => legaia_engine_shell::retail_compare_cli::run(args),
+        Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
         Cmd::Info {
             scene,
             extracted_root,

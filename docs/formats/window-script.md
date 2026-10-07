@@ -29,7 +29,7 @@ program (the VM re-reads byte 0 of the next slot after every dispatch,
 | `+1` | u8 | window id - index into the 52-record window descriptor table at `0x801E4738` ([`menu-windows`](../subsystems/field-menu.md); the VM computes `0x801E4738 + id*0x10` and reads the record's `x`/`y` as the instruction's default coordinates) |
 | `+2` | u16 LE | operand - packed position for opcodes `0x02`/`0x09` (`x = (w >> 7) & 0x1FE`, `y = w & 0xFF`), style byte for `0x03`, zero elsewhere on disc |
 
-Opcode semantics (create / snap / slide / close / global tick) are the
+Opcode semantics (create / snap / slide / close / close-all / destroy) are the
 interpreter's, documented with its port in `crates/engine-vm/src/lib.rs` and
 [actor-vm.md](../subsystems/actor-vm.md). Opcodes observed in disc programs:
 `0x01`, `0x02`, `0x04`, `0x05`, `0x06`, `0x0A`.
@@ -61,7 +61,7 @@ the randomizer's seru-trading vendor, which reuses exactly these scripts
 |---|---|---|---|
 | `0x801E4E38` | `0x16620` | `[05][01 21][01 2A][01 20][01 28][01 22][00]` - open vendor plate, picker, gold, `0x28`, `0x22` | shop picker open, `FUN_801DAFD4` |
 | `0x801E4E54` | `0x1663C` | `[04 28][04 2A][04 22][00]` - close the picker windows, keep gold + vendor plate | shop Sell transition, `FUN_801DAFD4` |
-| `0x801E4A78` | `0x16260` | `[05][00]` - global tick only | menu-open staging (multiple callers) |
+| `0x801E4A78` | `0x16260` | `[05][00]` - close-all: begin-close every live window (`FUN_80035A4C`) | menu-open staging (multiple callers) |
 | `0x801E4D50` / `0x801E4D78` | `0x16538` / `0x16560` | `[01 07][00]` - open window 7 | spell level-up notice, `FUN_801D9280` / `FUN_801D9594` |
 | `0x801E4EA8` / `0x801E4EDC` | `0x16690` / `0x166C4` | `[01 1F][00]` - open window 31 | Point Card toast, `FUN_801DB7F4` / `FUN_801DB380` |
 

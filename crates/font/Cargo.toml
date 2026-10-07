@@ -3,6 +3,8 @@ name = "legaia-font"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_font"
@@ -11,12 +13,25 @@ path = "src/lib.rs"
 [[bin]]
 name = "font-extract"
 path = "src/bin/font-extract.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap"]
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
+clap = { workspace = true, optional = true }
 flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-png = "0.17"
-log = "0.4"
+png.workspace = true
+log.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

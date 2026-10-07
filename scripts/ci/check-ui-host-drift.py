@@ -264,6 +264,17 @@ HOSTS = {
     "web": [REPO / "crates" / "web-viewer" / "src"],
 }
 
+# Shared **composition** crates: engine code that projects engine-core state
+# into engine-ui builders on both hosts' behalf, so a builder may have its only
+# call site there. Each maps its source root to the entry points a host calls.
+# A builder named in the crate's (non-test) source is credited to exactly the
+# hosts that call one of those entries - so a host that stops calling the
+# entry loses every builder behind it, and the reachability claim stays a
+# claim about each host rather than about the crate.
+SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
+    REPO / "crates" / "engine-screens" / "src": ("shop_overlay_frame",),
+}
+
 # A draw builder is a public fn whose return type mentions one of engine-ui's
 # own draw-record types - that is exactly "projects a view into
 # renderer-agnostic geometry", i.e. one screen's (or one screen fragment's)
@@ -354,17 +365,13 @@ LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
 
 # Host source files the paired-constant check reads. Named here rather than
 # discovered, because a pair is a claim about two specific declarations.
-NATIVE_WINDOW = "crates/engine-shell/src/bin/legaia-engine/window.rs"
-NATIVE_HUD = "crates/engine-shell/src/bin/legaia-engine/window/hud.rs"
-NATIVE_DEV_MENU = "crates/engine-shell/src/bin/legaia-engine/window/dev_menu.rs"
+NATIVE_WINDOW = "crates/engine-shell/src/window.rs"
+NATIVE_HUD = "crates/engine-shell/src/window/hud.rs"
+NATIVE_DEV_MENU = "crates/engine-shell/src/window/dev_menu.rs"
 WEB_PLAY_DEV_MENU = "crates/web-viewer/src/play_dev_menu.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
-NATIVE_BGM = "crates/engine-shell/src/bgm.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
-# The play page's BGM director (the browser twin of NATIVE_BGM's
-# `AudioBgmDirector`), carved out of runtime.rs so the audio lanes own it.
-WEB_BGM = "crates/web-viewer/src/play_bgm.rs"
 # The occlusion-fade tunables are the one paired set whose web half is a
 # plain script rather than a wasm crate - the browser play page holds them
 # in its GLSL module. `const NAME = <value>;` parses identically either way,
@@ -400,21 +407,6 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
     # test, which asserts the same rects against its own literal list rather
     # than against this constant.
     {
-        "what": "field shop / inn overlay pen - shop_draws_for's `pen` argument",
-        "native": (NATIVE_HUD, "SHOP_OVERLAY_PEN"),
-        "web": (WEB_PLAY_SHOP, "SHOP_PEN"),
-    },
-    {
-        "what": "level-up banner pen - level_up_draws_for's `pen` argument",
-        "native": (NATIVE_HUD, "LEVEL_UP_BANNER_PEN"),
-        "web": (WEB_PLAY_SHOP, "LEVEL_UP_PEN"),
-    },
-    {
-        "what": "capture banner pen - capture_banner_draws_for's `pen` argument",
-        "native": (NATIVE_HUD, "CAPTURE_BANNER_PEN"),
-        "web": (WEB_PLAY_SHOP, "CAPTURE_PEN"),
-    },
-    {
         "what": "dev-menu list pen - the origin both hosts hand to "
         "dev_menu_list_draws_for / dev_menu_cursor_xy for the developer row "
         "list",
@@ -435,15 +427,6 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "duplicate)",
         "native": (NATIVE_DEV_MENU, "RECORDS_LABELS"),
         "web": (WEB_PLAY_DEV_MENU, "RECORDS_LABELS"),
-    },
-    {
-        "what": "BGM transition click-guard ramp - the `fade_in_samples` "
-        "argument each host's BGM director hands to swap_bgm. Long enough and "
-        "the incoming track's intro is inaudible, which on a cutscene sting is "
-        "the whole cue; the browser held a 22050-sample serial cross-fade here "
-        "long after the native host had measured that down to two frames",
-        "native": (NATIVE_BGM, "TRANSITION_FADE_IN_SAMPLES"),
-        "web": (WEB_BGM, "TRANSITION_FADE_IN_SAMPLES"),
     },
     # The camera-occlusion fade is not an engine-ui screen - the shared
     # kernel here is a pair of hand-written twin shaders, so these four
@@ -536,31 +519,30 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # A row's `sites` map a host label to `(repo-relative path, fn name or None)`.
 # `None` means the whole file is the site, which is right when a host's
 # injection is a call made from a place the pairing should not pin.
-NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
-NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
-NATIVE_ASSETS = "crates/engine-shell/src/bin/legaia-engine/window/assets.rs"
+NATIVE_BOOT = "crates/engine-session/src/boot.rs"
+NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_select_helpers.rs"
+NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
-NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
-NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
-NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
-NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
+NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/window/boot_cutscene.rs"
+NATIVE_REDRAW = "crates/engine-shell/src/window/event_handler/redraw.rs"
+NATIVE_FIELD_RENDER = "crates/engine-shell/src/window/field_render.rs"
+NATIVE_GEOMETRY = "crates/engine-shell/src/window/geometry.rs"
 WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle/exports.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
 NATIVE_REDRAW_PASSES = (
-    "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs"
+    "crates/engine-shell/src/window/event_handler/redraw_passes.rs"
 )
-NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
+NATIVE_CAMERA_MOD = "crates/engine-shell/src/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
-NATIVE_SHOP_WINDOWS = "crates/engine-shell/src/bin/legaia-engine/window/shop_windows.rs"
-NATIVE_KEYBOARD = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs"
-NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
+NATIVE_KEYBOARD = "crates/engine-shell/src/window/event_handler/keyboard.rs"
+NATIVE_BATTLE = "crates/engine-shell/src/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 NATIVE_TITLE_SAVE = (
-    "crates/engine-shell/src/bin/legaia-engine/window/title_save_draws.rs"
+    "crates/engine-shell/src/window/title_save_draws.rs"
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
@@ -584,7 +566,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "opaque. Each billboard builder must take `EffectSprite::packet_tsb`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs",
+                "crates/engine-shell/src/window/geometry.rs",
                 "effect_billboard_mesh",
             ),
             "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
@@ -600,7 +582,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "kernel `fog_volume::stage_luminance` and stores it on the world",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/battle.rs",
+                "crates/engine-shell/src/window/battle.rs",
                 "enter_battle_render",
             ),
             "web": ("crates/web-viewer/src/play_battle_render.rs", "enter_battle_render"),
@@ -616,7 +598,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "keep a bank (or a scene table) of its own",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs",
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
                 "stage_fog_volume",
             ),
             "web": ("crates/web-viewer/src/play_fog_volume.rs", "fog_volume_frame"),
@@ -703,7 +685,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "(`MuscleDomeSurface::frame`, held as `muscle_surface`)",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "crates/engine-shell/src/window/minigames.rs",
                 "refresh_muscle_dome_gpu",
             ),
             "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_frame"),
@@ -717,7 +699,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "never a host-side orbit framing",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "crates/engine-shell/src/window/minigames.rs",
                 "refresh_muscle_dome_gpu",
             ),
             "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_vp"),
@@ -739,62 +721,19 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["arm_for_battle"],
     },
     {
-        "what": "seru-trade screen text, native vs play page - the offer "
-        "list's title and owner rows and the confirm question were formatted "
-        "once per host (the page even kept its own copy of the title and "
-        "empty-row strings). Both trade draws must read "
-        "`seru_trade::trade_screen_text`",
-        "sites": {
-            "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
-                "draw_shop_trade",
-            ),
-            "web": (WEB_PLAY_SHOP, "shop_trade_draws"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["trade_screen_text"],
-    },
-    {
-        "what": "shop root picker rows, native vs play page - each host "
-        "mapped `shop_menu_rows` onto its own label + ink table (and both "
-        "left Quit white where retail greys it with Sell on an empty bag). "
-        "Both shop builders must read `menu_runtime::shop_root_labels`",
-        "sites": {
-            "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/hud.rs",
-                "shop_overlay_stage_draws",
-            ),
-            "web": (WEB_PLAY_SHOP, "shop_stage_draws"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["shop_root_labels"],
-    },
-    {
         "what": "Options screen model, native vs play page - the rows, the "
         "hand's row offset and the Key Config rows were derived once per "
         "host from the session. Both Options builders must read "
         "`OptionsSession::screen_model`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "crates/engine-shell/src/window/menu_draws.rs",
                 "field_menu_sub_draws",
             ),
             "web": ("crates/web-viewer/src/play_menu.rs", "build_config"),
         },
         "mode": "symbols_all",
         "symbols": ["screen_model"],
-    },
-    {
-        "what": "shop item label, native vs play page - a nameless id (a "
-        "load without the executable) printed `item 42` in the native shop "
-        "and `Item 2A` on the page, each host spelling its own fallback. Both "
-        "shop label helpers must read `MenuState::item_label`",
-        "sites": {
-            "native": (NATIVE_SHOP_WINDOWS, "shop_item_name"),
-            "web": (WEB_PLAY_SHOP, "shop_item_label"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["item_label"],
     },
     {
         "what": "camera-occlusion fade gate, native vs play page - the gate "
@@ -971,6 +910,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["stage_transform", "scale_stage_text_draws"],
+    },
+    {
+        "what": "shop / prize / inn / banner overlay composition, native vs "
+        "play page - the screens' projection of engine-core state into "
+        "engine-ui draw lists lived once per host, line for line, and the "
+        "copies drifted (ink, toast, pictogram fallback, frame sizing, banner "
+        "scale). It lives once now, in `legaia_engine_screens`, and each host "
+        "frame must build the group through its entry. The native window "
+        "builds it in the redraw (once, for the text pass and the sprite "
+        "pass) and hands it to `build_hud`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_SHOP, "play_overlay_draws_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["shop_overlay_frame"],
     },
     {
         "what": "field / overworld / cutscene camera, native vs play page - "
@@ -1333,22 +1288,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["GameOverOutcome::ReturnToTitle"],
-    },
-    {
-        "what": "BGM start - a music change must install the incoming track "
-        "immediately. `swap_bgm` does; `crossfade_to` is a serial fade that "
-        "parks the new sequencer and rolls the old one down to silence first, "
-        "so the track has not begun a fade-length after the script asked for "
-        "it. The browser held the crossfade long after the native host had "
-        "measured it out, and the two calls live in different crates, so the "
-        "difference is invisible in a diff - audible only on a cutscene sting, "
-        "which is nearly all intro",
-        "sites": {
-            "native": (NATIVE_BGM, "start_inner"),
-            "web": (WEB_BGM, "play"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["swap_bgm"],
     },
     {
         "what": "dev-menu tick - both hosts drive the shared `DevMenuSession` "
@@ -1903,7 +1842,36 @@ def collect_uses(names: set[str]) -> dict[str, set[str]]:
                 body = strip_comments(path.read_text(encoding="utf-8"))
                 for name in word_set(body) & names:
                     uses[name].add(host)
+    for root, entries in SHARED_COMPOSERS.items():
+        callers = composer_callers(entries)
+        if not callers or not root.is_dir():
+            continue
+        for path in root.rglob("*.rs"):
+            if is_test_source(path):
+                continue
+            body = strip_comments(path.read_text(encoding="utf-8"))
+            for name in word_set(body) & names:
+                uses[name] |= callers
     return uses
+
+
+def composer_callers(entries: tuple[str, ...]) -> set[str]:
+    """Host labels whose shipped sources call one of a composer's entries.
+
+    A CALL (`entry(` after `.` / `::`), not a mention: a host defining a
+    same-named wrapper method does not count unless it also calls through."""
+    pattern = re.compile(r"[.:]\s*(?:" + "|".join(map(re.escape, entries)) + r")\s*\(")
+    out: set[str] = set()
+    for host, roots in HOSTS.items():
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for path in root.rglob("*.rs"):
+                if is_test_source(path):
+                    continue
+                if pattern.search(strip_comments(path.read_text(encoding="utf-8"))):
+                    out.add(host)
+    return out
 
 
 def load_waivers() -> dict[str, dict]:
@@ -3062,6 +3030,38 @@ def owns_type(text: str, name: str) -> bool:
     return False
 
 
+# The session type both hosts hold. A host that holds one owns every type its
+# fields hold - the scene host and the camera are the session's, and a host
+# reaches them through it.
+SESSION_TYPE = "BootSession"
+SESSION_SRC = REPO / "crates/engine-session/src/boot.rs"
+
+
+def session_part_types() -> set[str]:
+    """The type names [`SESSION_TYPE`]'s own field declarations mention."""
+    if not SESSION_SRC.is_file():
+        return set()
+    src = strip_comments(SESSION_SRC.read_text(encoding="utf-8"))
+    m = re.search(rf"\bpub struct {SESSION_TYPE}\b[^{{;]*\{{", src)
+    if not m:
+        return set()
+    start, end = brace_block(src, m.end() - 1)
+    field_types = re.findall(
+        r"^\s*(?:pub(?:\([^)]*\))?\s+)?[a-z_][a-z_0-9]*\s*:\s*([^,\n]*)",
+        src[start:end],
+        re.MULTILINE,
+    )
+    return set(re.findall(r"\b([A-Z][A-Za-z0-9_]*)\b", " ".join(field_types)))
+
+
+def holds_session(text: str) -> bool:
+    """A field or construction of the session type, or a type alias of it
+    (the page's `PageSession`)."""
+    return owns_type(text, SESSION_TYPE) or bool(
+        re.search(rf"\btype\s+\w+\s*=\s*[\w:]*\b{SESSION_TYPE}\b", text)
+    )
+
+
 def host_shipped_sources() -> dict[str, list[tuple[str, str]]]:
     """Per host label, every shipped (non-test) source as `(rel path, text)`."""
     out: dict[str, list[tuple[str, str]]] = {}
@@ -3099,9 +3099,13 @@ def check_owned_types(shipped: dict[str, list[tuple[str, str]]]) -> tuple[list[s
             )
             continue
         missing: list[str] = []
+        via_session = name in session_part_types()
         for host, rows in shipped.items():
-            if not any(owns_type(text, name) for _rel, text in rows):
-                missing.append(host)
+            if any(owns_type(text, name) for _rel, text in rows):
+                continue
+            if via_session and any(holds_session(text) for _rel, text in rows):
+                continue
+            missing.append(host)
         blocked = row.get("blocked_on")
         if missing and not blocked:
             problems.append(
@@ -3262,7 +3266,7 @@ def check_enum_coverage(
 # path has it", and no tier above can tell those apart, because both end at a
 # live call site. This one asks a different question: for every `World`
 # method the native window's keyboard arms call, is there a call site anywhere
-# outside the native `bin/` tree - the shared engine, or the browser hosts?
+# outside the native window - the shared engine, or the browser hosts?
 # If not, the phase exists in the engine and only a key press reaches it.
 #
 # Derived over the hotkey sources, so a new hotkey arm joins the measurement
@@ -3272,15 +3276,15 @@ def check_enum_coverage(
 # Scope:
 #
 # * it DOES prove every `world.<method>()` the hotkey arms call has (or does
-#   not have) a call site outside `crates/engine-shell/src/bin/`;
+#   not have) a call site in `SHARED_CALLER_ROOTS` (outside the native window);
 # * it does NOT prove that site is player-reachable, that it passes the same
 #   arguments, or that a phase with no hotkey arm at all is wired.
 
 # The native window's key-driven arms. `--key-script` delivers scripted keys
 # through these same handlers, which is why they are the tier's denominator.
 HOTKEY_SOURCES = [
-    "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs",
-    "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+    "crates/engine-shell/src/window/event_handler/keyboard.rs",
+    "crates/engine-shell/src/window/minigames.rs",
 ]
 
 # Where a shared (i.e. not hotkey-only) caller may live: the engine crates the
@@ -4033,7 +4037,17 @@ def _selftest_frame_case(
 # engine call that happens to be spelled `insert` is invisible. Stating the
 # hole is the point: the alternative is a report where two thirds of every
 # row is `len`, which is a report nobody reads.
-ENGINE_API_CRATES = ("engine-core", "engine-vm", "engine-ui", "engine-audio")
+# `engine-session` is engine surface too: both play hosts hold its
+# `BootSession` and tick it, so a call into it is a call both can make.
+# `engine-screens` likewise: the shop-family composition both hosts call.
+ENGINE_API_CRATES = (
+    "engine-core",
+    "engine-vm",
+    "engine-ui",
+    "engine-audio",
+    "engine-session",
+    "engine-screens",
+)
 
 # Names a `.name(` call cannot be attributed to the engine by name alone.
 # Ordinary std / core / collection / iterator methods that an engine type
@@ -4078,6 +4092,13 @@ SELF_FIELD_METHOD_RE = re.compile(r"\bself\.actors\.([a-z_][a-z_0-9]*)\s*\(")
 
 # How far a host helper chain is followed out of a kernel body.
 CONTENT_DEPTH = 8
+
+# Host fns the walk does not enter. The play page's `audio_director` builds
+# the shared `AudioBgmDirector` the first time anything needs it and stages
+# its resident banks against the disc - the native session's boot staging,
+# which no native frame kernel reaches either. Following it would charge
+# that one-time install to every frame step that fires a cue.
+CONTENT_WALK_STOPS = {"audio_director"}
 
 
 def engine_api_names() -> set[str]:
@@ -4140,7 +4161,7 @@ def kernel_engine_calls(
                 if c in api and c not in own:
                     calls.add(c)
             for c in SELF_METHOD_RE.findall(body) + SELF_FIELD_METHOD_RE.findall(body):
-                if c in own:
+                if c in own and c not in CONTENT_WALK_STOPS:
                     stack.append((c, depth + 1))
     return calls, len(seen), found
 
@@ -4297,7 +4318,7 @@ def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
 # Tier 13 - boot installs: does the page's disc load install every World
 # table the native boot does?
 #
-# The native boot (`crates/engine-shell/src/boot.rs`) installs disc tables
+# The native boot (`crates/engine-session/src/boot.rs`) installs disc tables
 # onto the world one call at a time, and the page's `load_disc` repeats the
 # list by hand. Nothing failed when the page's copy fell behind: every
 # consumer has a disc-free fallback, so six progression tables (XP curve +
@@ -4311,9 +4332,15 @@ def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
 # with a reason. The cure for the six was one engine entry both boots call
 # (`World::install_retail_progression_tables`), which is also what keeps this
 # list short.
+#
+# The page now builds the native session type over its host
+# (`BootSession::from_host`), so every install inside `from_host` runs on the
+# page too and counts as the page's: a page source that calls `from_host(`
+# inherits that body's installs. The ones outside it (`enter_field_live`'s
+# catalogs, ...) still need a page call of their own.
 # ---------------------------------------------------------------------------
 
-BOOT_NATIVE = REPO / "crates/engine-shell/src/boot.rs"
+BOOT_NATIVE = REPO / "crates/engine-session/src/boot.rs"
 BOOT_WEB_ROOT = REPO / "crates/web-viewer/src"
 BOOT_INSTALL_RE = re.compile(r"\bworld\s*\.\s*((?:install|set)_[a-z0-9_]+)\s*\(")
 
@@ -4329,21 +4356,36 @@ def boot_install_calls(text: str) -> set[str]:
     return set(BOOT_INSTALL_RE.findall(strip_all_comments(text)))
 
 
+def session_from_host_installs(boot_src: str) -> set[str]:
+    """The installs inside `BootSession::from_host`'s body - the ones a host
+    that builds its session through `from_host` runs without a call of its
+    own."""
+    m = re.search(r"\bpub fn from_host\s*\(", boot_src)
+    if not m:
+        return set()
+    brace = signature_end(boot_src, m.start())
+    if brace < 0:
+        return set()
+    start, end = brace_block(boot_src, brace)
+    return boot_install_calls(boot_src[start:end])
+
+
 def check_boot_installs() -> tuple[list[str], list[str], int]:
     """Tier 13. `(problems, waived_notes, native_installs_checked)`."""
     if not BOOT_NATIVE.is_file():
         return [f"boot installs: {BOOT_NATIVE.relative_to(REPO)} missing"], [], 0
-    native = boot_install_calls(BOOT_NATIVE.read_text(encoding="utf-8"))
+    native_src = BOOT_NATIVE.read_text(encoding="utf-8")
+    native = boot_install_calls(native_src)
     web: set[str] = set()
+    page_builds_session = False
     for path in sorted(BOOT_WEB_ROOT.rglob("*.rs")):
         if is_test_source(path):
             continue
-        web |= set(
-            re.findall(
-                r"\.\s*((?:install|set)_[a-z0-9_]+)\s*\(",
-                strip_all_comments(path.read_text(encoding="utf-8")),
-            )
-        )
+        text = strip_all_comments(path.read_text(encoding="utf-8"))
+        web |= set(re.findall(r"\.\s*((?:install|set)_[a-z0-9_]+)\s*\(", text))
+        page_builds_session |= bool(re.search(r"\bfrom_host\s*\(", text))
+    if page_builds_session:
+        web |= session_from_host_installs(native_src)
     waivers: dict[str, dict] = {}
     if WAIVERS.is_file():
         for row in tomllib.loads(WAIVERS.read_text(encoding="utf-8")).get("boot_install", []):

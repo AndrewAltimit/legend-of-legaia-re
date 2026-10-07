@@ -3,6 +3,8 @@ name = "legaia-iso"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_iso"
@@ -11,14 +13,27 @@ path = "src/lib.rs"
 [[bin]]
 name = "disc-extract"
 path = "src/bin/disc-extract.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
-sha2 = "0.10"
+clap = { workspace = true, optional = true }
+sha2.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true, optional = true }
 
 [dev-dependencies]
-sha2 = "0.10"
+sha2.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

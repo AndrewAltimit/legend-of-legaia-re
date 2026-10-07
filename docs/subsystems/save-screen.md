@@ -1187,7 +1187,7 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `0x0200` | 0x3C8 | display/global header (see below) |
 | `0x05C8` | 0x414 × 4 | character records (Vahn, Noa, Gala, Terra) - base `game+0x3C8` = live RAM `0x80084708` |
 | `0x14C0` | 0x358 | story-flag window (mirrors RAM `0x80085600..0x80085958`; the system-flag bank is its `+0x158..`, SC `0x1618..0x1818`) - overlaps record [3]'s tail |
-| `0x1818` | 0x90 | inventory array - 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) - overlaps record [3]'s tail |
+| `0x1818` | 0x200 | item bag - 256 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x80085B58`; the 72-slot `0x90` span is only the consumable page, see [inventory](inventory.md)) - overlaps record [3]'s tail |
 | `0x1A18` | 0x5E4 | end of the live-state copy (`RETAIL_LIVE_STATE_SIZE`): zero on a retail card, never read back - the engine-ext blob's region ([above](#the-engine-ext-blob-in-the-unread-tail)) |
 | `0x1FFC` | 4 | additive block checksum ([above](#save-block-checksum-fun_801e38d8)) |
 

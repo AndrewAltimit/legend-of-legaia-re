@@ -19,48 +19,24 @@
 
 <section class="doc-section" id="record-layout">
   <h2>Record layout (26 bytes)</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 1080 150" width="100%" style="max-width: 1080px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="26-byte move-power record: power at 0, strike Y offset at 2, move counter at 4, phase duration at 6, then single bytes homing at 8, tracking at 9, impact at 0xa, trail at 0xb, tag at 0xc, cue at 0xd, effect-list head at 0xe, and two four-byte effect lists at 0x12 (contact) and 0x16 (launch).">
-      <style>
-        .mp-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .mp-dim { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.3; stroke-dasharray: 3 3; }
-        .mp-off { font: 12px monospace; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
-        .mp-lab { font: 12px sans-serif; fill: currentColor; text-anchor: middle; }
-        .mp-tick { stroke: var(--text-muted); stroke-width: 1; }
-      </style>
-      <!-- 40 px per byte: 2-byte = 80, 4-byte = 160 -->
-      <rect class="mp-box" x="20" y="30" width="80" height="40"/><text class="mp-off" x="60" y="50">+00</text>
-      <rect class="mp-box" x="100" y="30" width="80" height="40"/><text class="mp-off" x="140" y="50">+02</text>
-      <rect class="mp-box" x="180" y="30" width="80" height="40"/><text class="mp-off" x="220" y="50">+04</text>
-      <rect class="mp-box" x="260" y="30" width="80" height="40"/><text class="mp-off" x="300" y="50">+06</text>
-      <rect class="mp-box" x="340" y="30" width="40" height="40"/><text class="mp-off" x="360" y="50">08</text>
-      <rect class="mp-box" x="380" y="30" width="40" height="40"/><text class="mp-off" x="400" y="50">09</text>
-      <rect class="mp-box" x="420" y="30" width="40" height="40"/><text class="mp-off" x="440" y="50">0a</text>
-      <rect class="mp-box" x="460" y="30" width="40" height="40"/><text class="mp-off" x="480" y="50">0b</text>
-      <rect class="mp-dim" x="500" y="30" width="40" height="40"/><text class="mp-off" x="520" y="50">0c</text>
-      <rect class="mp-box" x="540" y="30" width="40" height="40"/><text class="mp-off" x="560" y="50">0d</text>
-      <rect class="mp-box" x="580" y="30" width="160" height="40"/><text class="mp-off" x="660" y="50">+0e</text>
-      <rect class="mp-box" x="740" y="30" width="160" height="40"/><text class="mp-off" x="820" y="50">+12</text>
-      <rect class="mp-box" x="900" y="30" width="160" height="40"/><text class="mp-off" x="980" y="50">+16</text>
-      <!-- labels, wide fields -->
-      <text class="mp-lab" x="60" y="90">power (i16)</text>
-      <text class="mp-lab" x="140" y="90">strike Y off</text>
-      <text class="mp-lab" x="220" y="90">move counter</text>
-      <text class="mp-lab" x="300" y="90">phase length</text>
-      <text class="mp-lab" x="660" y="90">effect-list head (4)</text>
-      <text class="mp-lab" x="820" y="90">contact effects (4)</text>
-      <text class="mp-lab" x="980" y="90">launch effects (4)</text>
-      <!-- labels, single bytes: alternate two rows -->
-      <line class="mp-tick" x1="360" y1="70" x2="360" y2="80"/><text class="mp-lab" x="360" y="92">homing</text>
-      <line class="mp-tick" x1="400" y1="70" x2="400" y2="104"/><text class="mp-lab" x="400" y="116">tracking</text>
-      <line class="mp-tick" x1="440" y1="70" x2="440" y2="80"/><text class="mp-lab" x="440" y="92">impact</text>
-      <line class="mp-tick" x1="480" y1="70" x2="480" y2="104"/><text class="mp-lab" x="480" y="116">trail page</text>
-      <line class="mp-tick" x1="520" y1="70" x2="520" y2="80"/><text class="mp-lab" x="520" y="92">tag</text>
-      <line class="mp-tick" x1="560" y1="70" x2="560" y2="104"/><text class="mp-lab" x="560" y="116">sound cue</text>
-      <text class="mp-lab" x="540" y="142" style="fill: var(--text-muted)">dashed = no runtime reader &middot; 26 bytes per record, 44 records</text>
-    </svg>
-    <figcaption>One record, offsets in hex. Three overlay functions read it; only the damage kernel touches <code>+00</code>.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="Move-power record bytes 0x00 to 0x0D: power, strike Y offset, move counter, phase duration, homing, tracking, impact, trail page, tag, sound cue">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">power</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x02</span><span class="bm-name">strike Y offset</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x04</span><span class="bm-name">move counter</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x06</span><span class="bm-name">phase length</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2.6"><span class="bm-off">+0x08</span><span class="bm-name">homing</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2.6"><span class="bm-off">+0x09</span><span class="bm-name">tracking</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2.6"><span class="bm-off">+0x0A</span><span class="bm-name">impact</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2.6"><span class="bm-off">+0x0B</span><span class="bm-name">trail page</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-pad" style="--w:2.6"><span class="bm-off">+0x0C</span><span class="bm-name">tag</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2.6"><span class="bm-off">+0x0D</span><span class="bm-name">sound cue</span><span class="bm-size">u8</span></div>
+  </div>
+  <div class="byte-map" role="img" aria-label="Move-power record bytes 0x0E to 0x19: effect-list head, contact effects, launch effects">
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0E</span><span class="bm-name">effect-list head</span><span class="bm-size">u8 &times; 4</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x12</span><span class="bm-name">contact effects</span><span class="bm-size">u8 &times; 4</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x16</span><span class="bm-name">launch effects</span><span class="bm-size">u8 &times; 4</span></div>
+  </div>
+  <p>Two rows of one 26-byte record; hatched = no runtime reader. Three overlay functions read it, and only the damage kernel touches <code>+0x00</code>.</p>
   <p>The damage kernel reads <strong>only <code>+0x00</code></strong>. The action setup computes the record address once and caches it in the battle context; the per-frame tick reads the rest off that pointer. No consumer ever touches <code>+0x0c</code>.</p>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th><th>Confidence</th></tr></thead>
@@ -131,19 +107,15 @@
 </section>
 
 <section class="doc-section" id="runtime-resolution">
-  <h2>Engine wiring</h2>
-  <ul class="bullets">
-    <li><code>MovePowerCatalog</code> pairs the table with the map on <code>World::tables.move_power</code> and resolves a move id to a full <code>MoveFx</code> descriptor: every behavioural field, the impact-config join, each list byte classified as <code>Spawn</code> (3D), <code>AltEffect</code> (2D pool) or <code>Flash</code>.</li>
-    <li>The monster special-attack damage path rolls <code>+0x00</code> through the arts/physical kernel (<a href="../subsystems/battle-formulas.html">battle formulas</a>).</li>
-    <li><code>World::spawn_move_fx</code> stages a move's spawn records as a <code>SummonScene</code> at the fixed library base and drives each part through the ported move VM; <code>play-window</code> <code>H</code> cycles the spawnable moves. The shared cast path requests the spawn for any non-summon move with a spawnable entry.</li>
-    <li>The trail texpage (<code>+0x0b</code>) feeds the ported afterimage quad (<code>afterimage::build_afterimage_quad</code>); the sound cue (<code>+0x0d</code>) goes through the ported cue decode into the <a href="sfx-table.html">SFX ring</a>.</li>
-    <li>Player Seru-magic ids <code>0x81..=0x8b</code> route to the summon-creature path; plain physical attacks carry no move id.</li>
-  </ul>
-  <p><strong>Open:</strong> the exact per-part transform composition of the spawned scene-graph (the shared piece the summon renderer also waits on), and the cue-group dispatch from the damage-application primitive is not wired in the port.</p>
+  <h2>In the port</h2>
+  <p><code>legaia_asset::move_power</code> parses the table, the map and the side tables; <code>engine-core::move_power::MovePowerCatalog</code> resolves a move id to a full <code>MoveFx</code> descriptor (every behavioural field, the impact-config join, each list byte classified as a 3D spawn, a 2D pool effect or a flash). A cast of a non-summon move stages its spawn records through the same move VM the summon renderer uses (<code>World::spawn_move_fx</code>); the cue groups are placed by <code>engine-vm::battle_cue_group</code> from the battle-action applier. The exact per-part transform composition of a spawned scene-graph is the piece still shared-open with the summon renderer.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Readers of every field, and the byte-identity check</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -155,9 +127,10 @@
       <tr><td>Cue expander</td><td><code>FUN_801E22C8</code></td><td>Sole reader of the cue-group table (<code>addiu v1, v0, 0x6470</code> at <code>0x801E2374</code>); called from <code>FUN_800402F4</code>.</td><td><code>funcs/801e22c8.txt</code></td></tr>
       <tr><td>Table extent</td><td>-</td><td><code>0x801F4F5C + 44*26 = 0x801F53D4</code>, exactly where the impact-config table begins; the record count is pinned by the next referenced address.</td><td>overlay image</td></tr>
       <tr><td>Byte identity</td><td>-</td><td>The <code>0x801F4F5C..0x801F69D8</code> window is byte-identical across unrelated battle saves and matches the raw PROT 0898 bytes at file <code>0x26744</code>; the overlay loads at slot-A base <code>0x801CE818</code> (file <code>0x25178</code>).</td><td>battle save states</td></tr>
-      <tr><td>Engine oracles</td><td>-</td><td><code>move_power_map_is_special_attack_only</code>, <code>move_fx_records_vm_exec_disc</code> (all 54 unique prototype records execute through the ported move VM), <code>model_library_base_tracks_party_size</code>.</td><td>disc-gated tests</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="details">
@@ -193,7 +166,7 @@
   <details class="disclosure" id="no-reader-sweep">
     <summary>The <code>+0x0c</code> no-reader sweep - what the negative covers</summary>
     <div class="disclosure-body">
-      <p>Swept over <strong>bytes, not dumps</strong>: <code>SCUS_942.54</code> plus every overlay image in <code>static-overlays.toml</code>, every 4-byte word decoded independently, for every valid R3000 load / store and <code>j</code> / <code>jal</code> target (not COP2, which cannot address a record). Access shapes modelled: absolute constants (<code>lui</code>+<code>addiu</code>/<code>ori</code> pairs folded and tested against <code>[table, table + 44*26)</code>), base-folded displacements, <code>&times;26</code>-indexed registers, pointer-relative reads through <code>lw rD, 0x1014(rB)</code>, straddling loads, and data-resident pointers. No reference lands at a shifted offset, no data word holds an in-table address, and PROT 0898's five byte-width <em>loads</em> at literal displacement <code>0xc</code> all sit on unrelated RAM structs (the image has 134 memory operations at that displacement; the other 38 byte-width ones are stores). The one form an absolute scan cannot see is impossible here: <code>$gp</code> is <code>0x8007B318</code>, so a signed-16 displacement off it reaches <code>0x80073318..0x80083317</code> and the table sits about 1.5 MB outside that window. PROT 0965 and 0971 are now in the overlay map and inside the sweep; PROT 0896 is closed by bytes, producing zero hits in either base-independent encoding. <code>+0x0d</code>, by contrast, <em>is</em> read - once, as a byte, at <code>0x801E184C</code>, feeding the cue dispatcher.</p>
+      <p>Swept over <strong>bytes, not dumps</strong>: <code>SCUS_942.54</code> plus every overlay image in <code>static-overlays.toml</code>, every 4-byte word decoded independently, for every valid R3000 load / store and <code>j</code> / <code>jal</code> target (not COP2, which cannot address a record). Access shapes modelled: absolute constants (<code>lui</code>+<code>addiu</code>/<code>ori</code> pairs folded and tested against <code>[table, table + 44*26)</code>), base-folded displacements, <code>&times;26</code>-indexed registers, pointer-relative reads through <code>lw rD, 0x1014(rB)</code>, straddling loads, and data-resident pointers. No reference lands at a shifted offset, no data word holds an in-table address, and PROT 0898's five byte-width <em>loads</em> at literal displacement <code>0xc</code> all sit on unrelated RAM structs (the image has 134 memory operations at that displacement; the other 38 byte-width ones are stores). The one form an absolute scan cannot see is impossible here: <code>$gp</code> is <code>0x8007B318</code>, so a signed-16 displacement off it reaches <code>0x80073318..0x80083317</code> and the table sits about 1.5 MB outside that window. PROT 0896 is closed by bytes, producing zero hits in either base-independent encoding. <code>+0x0d</code>, by contrast, <em>is</em> read - once, as a byte, at <code>0x801E184C</code>, feeding the cue dispatcher.</p>
     </div>
   </details>
 
@@ -219,7 +192,7 @@
           <tr><td><code>+0x01</code></td><td>4</td><td>cue ids</td><td>Only the first <code>count</code> are read. Bit <code>0x80</code> = an <strong>actor</strong> cue (<code>FUN_801DFDF0(id &amp; 0x7F, pos, yaw)</code>, the strike pose); any other id indexes <em>both</em> effect side tables</td></tr>
         </tbody>
       </table>
-      <p>13 records fill <code>0x801F6470..0x801F64B5</code>, followed by padding and the <code>summon.DAT</code> path literal; callers never index past <code>0xC</code>. The table has exactly one consumer - a reference scan of SCUS plus every base-mapped overlay finds the address materialised once - while its two sibling tables are reached from five sites each, always in pairs. The caller is the damage-application primitive <code>FUN_800402F4</code> (eleven branches, group ids <code>5..0xC</code> literal or computed). The port has the kernel (<code>legaia_engine_vm::battle_cue_group::expand_cue_group</code>) and both tables but not that dispatch.</p>
+      <p>13 records fill <code>0x801F6470..0x801F64B5</code>, followed by padding and the <code>summon.DAT</code> path literal; callers never index past <code>0xC</code>. The table has exactly one consumer - a reference scan of SCUS plus every base-mapped overlay finds the address materialised once - while its two sibling tables are reached from five sites each, always in pairs. The caller is the damage-application primitive <code>FUN_800402F4</code> (eleven branches, group ids <code>5..0xC</code> literal or computed). The port carries the kernel, both tables and the per-branch dispatch (<code>legaia_engine_vm::battle_cue_group</code>).</p>
     </div>
   </details>
 

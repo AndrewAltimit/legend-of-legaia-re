@@ -1,66 +1,135 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; shading</div>
   <h1>Shading and palettes</h1>
-  <p class="lede">How Legaia turns a texture into the colour you see on screen - and why an exported texture's palettes can look wrong. A texel is an index; the colour comes out of video memory, not the file; the screen then multiplies it by a colour painted into the mesh. There is no light source anywhere.</p>
+  <p class="lede">How Legaia turns a texture into the colour you see on screen - and why an exported texture's palettes can look wrong. A texel is only an index; its colour comes out of video memory, not the texture's file; the GPU then multiplies it by a colour painted into the mesh. Only a small set of mesh rows is lit by a light source; everything else is painted.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Texel</dt><dd>A 4-bit (or 8-bit) index. 4bpp: the low nibble is the left texel.</dd>
-    <dt>Palette</dt><dd>16 (or 256) 15-bit colours plus an STP bit, read from the VRAM cell the primitive names at draw time - not from the texture's own file.</dd>
+    <dt>Palette</dt><dd>16 (or 256) 15-bit colours plus an STP bit, read from the VRAM cell the primitive names <em>at draw time</em> - not from the texture's own file.</dd>
     <dt>Transparency</dt><dd><code>0x0000</code> is never drawn; <code>0x8000</code> is opaque black.</dd>
     <dt>Shading</dt><dd><code>out = texel &times; colour / 128</code>. <code>0x80</code> is neutral; most field surfaces sit below it, so they draw darker than their texture.</dd>
-    <dt>Light source</dt><dd>None. Only the GTE depth cue (<code>DPCS</code> / <code>DPCT</code>), which pulls the colour toward a far colour.</dd>
+    <dt>Light source</dt><dd>Only on the light-source mesh rows (TMD group flags <code>0x10..=0x17</code>), shaded by the GTE light. Everything else uses its baked colour plus the depth cue.</dd>
     <dt>Blending</dt><dd>Per texel: STP colours of a semi-transparent primitive blend with the screen in one of four modes.</dd>
-    <dt>Output</dt><dd>15-bit framebuffer, dithered by retail (script-controlled); the port renders clean by default.</dd>
+    <dt>Output</dt><dd>15-bit framebuffer, dithered by retail (on at boot, script-controlled).</dd>
+    <dt>In the port</dt><dd>Shading defaults to retail; rasterisation (vertex snap, dither) defaults to clean, one switch away.</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="chain">
   <h2>The chain, step by step</h2>
-  <ol>
-    <li><strong>Index.</strong> The GPU fetches the texel's 4-bit index from the texture page.</li>
-    <li><strong>Palette lookup.</strong> The primitive carries a CLUT address; the GPU reads 16 halfwords at VRAM <code>((CBA &amp; 0x3F) &times; 16, CBA &gt;&gt; 6)</code>. Whatever the last upload left there is the palette.</li>
-    <li><strong>Transparency key.</strong> A <code>0x0000</code> entry skips the texel.</li>
-    <li><strong>Depth cue.</strong> The primitive's colour word is blended toward the far colour: <code>c + (far &minus; c) &times; IR0 / 4096</code>. Unfogged field scenes use <code>IR0 = 0</code>.</li>
-    <li><strong>Colour multiply.</strong> <code>texel &times; colour / 128</code>, clamped at 255.</li>
-    <li><strong>Blend.</strong> STP texels of a semi-transparent primitive mix with the screen: half-and-half, add, subtract, or add a quarter.</li>
-    <li><strong>Dither and write.</strong> 4&times;4 ordered dither, cut to 5 bits a channel.</li>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pixel colour pipeline, top to bottom. Texture side: texel index, palette read from VRAM at the primitive's CLUT cell, transparency key. Mesh side: colour word from the TMD or from the GTE light for light-source rows, then the depth cue toward the far colour. The two meet at the multiply texel times colour over 128, then blend with the screen, then dither and 15-bit write.">
+      <defs><marker id="sh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="150" y="18" text-anchor="middle">what a texture export shows</text>
+      <text class="dg-edge-label" x="560" y="18" text-anchor="middle">what the mesh adds</text>
+      <rect class="dg-group" x="30" y="26" width="240" height="250" rx="6"/>
+      <rect class="dg-group" x="440" y="26" width="240" height="180" rx="6"/>
+      <rect class="dg-node" x="50" y="40" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="150" y="63">1. Texel index</text>
+      <text class="dg-sub" x="150" y="81">4 or 8 bits from the page</text>
+      <rect class="dg-node-accent" x="50" y="124" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="150" y="147">2. Palette read</text>
+      <text class="dg-sub" x="150" y="165">from VRAM at the CBA cell</text>
+      <rect class="dg-node" x="50" y="208" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="150" y="231">3. Transparency key</text>
+      <text class="dg-sub" x="150" y="249">0x0000 skips the texel</text>
+      <rect class="dg-node" x="460" y="40" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="560" y="63">4. Colour word</text>
+      <text class="dg-sub" x="560" y="81">baked; lit rows: GTE light</text>
+      <rect class="dg-node" x="460" y="124" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="560" y="147">5. Depth cue</text>
+      <text class="dg-sub" x="560" y="165">toward far colour by IR0</text>
+      <rect class="dg-node-accent" x="255" y="300" width="210" height="54" rx="5"/>
+      <text class="dg-label" x="360" y="323">Multiply</text>
+      <text class="dg-sub" x="360" y="341">texel x colour / 128</text>
+      <rect class="dg-node" x="130" y="396" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="230" y="419">6. Blend</text>
+      <text class="dg-sub" x="230" y="437">STP texels, 4 modes</text>
+      <rect class="dg-node-ok" x="390" y="396" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="490" y="419">7. Dither + write</text>
+      <text class="dg-sub" x="490" y="437">4x4 ordered, 5 bits</text>
+      <path class="dg-edge" d="M150 94 L150 122" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M150 178 L150 206" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M560 94 L560 122" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M150 262 L150 288 L300 288 L310 298" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M560 178 L560 288 L420 288 L410 298" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M330 354 L270 394" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M330 423 L388 423" marker-end="url(#sh-arrow)"/>
+    </svg>
+    <figcaption>The texture half (left) is all a PNG export can show. The mesh half (right) is where "the game applies shading": the same palette entry lands darker, brighter or tinted depending on the primitive that draws it. The depth cue runs on the colour word before the multiply, so a textured primitive's far colour is <code>texel &times; far / 128</code>, not the far colour itself.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><b>Index</b><span>The GPU fetches the texel's index from the texture page.</span></li>
+    <li><b>Palette</b><span>16 halfwords at VRAM <code>((CBA &amp; 0x3F) &times; 16, CBA &gt;&gt; 6)</code> - whatever the last upload left there.</span></li>
+    <li><b>Key</b><span>A <code>0x0000</code> entry skips the texel, opaque primitive or not.</span></li>
+    <li><b>Colour word</b><span>One per primitive (flat) or per corner (gouraud), baked by the artists.</span></li>
+    <li><b>Depth cue</b><span><code>c + (far &minus; c) &times; IR0 / 4096</code>; unfogged field scenes use <code>IR0 = 0</code>.</span></li>
+    <li><b>Blend</b><span>STP texels mix with the screen: <code>B/2+F/2</code>, <code>B+F</code>, <code>B&minus;F</code> or <code>B+F/4</code>.</span></li>
+    <li><b>Dither</b><span>4&times;4 ordered offset, then each channel cut to 5 bits.</span></li>
   </ol>
 </section>
 
 <section class="doc-section" id="palettes">
   <h2>Why a texture's palettes can look wrong</h2>
   <p>An export decodes the image through one of the file's own palettes. Three Legaia habits make that differ from the game:</p>
-  <ul>
+  <ul class="bullets">
     <li><strong>One sheet, many palettes.</strong> A 4bpp UI or character sheet is one grid of indices that every sprite or polygon reads through <em>its own</em> palette. Each palette recolours the whole image, so in any one palette most of the sheet shows colours it is never drawn with. The status badges (Venom, Toxic, Stone...) are all different colours in game, each through its own palette.</li>
     <li><strong>A palette from another file.</strong> A draw names a VRAM cell, and that cell can belong to a different texture: three of the status badges use palettes uploaded by a small palette-only file that sits just before the UI sheet on the disc.</li>
-    <li><strong>A palette overwritten before use.</strong> Uploads are last-write-wins. The battle ASCII font's own palette is overwritten at boot by the menu font's palette strip, so the game always draws it through menu palette 13.</li>
+    <li><strong>A palette overwritten before use.</strong> Uploads are last-write-wins. The battle ASCII font's own palette is overwritten at boot by the menu glyph atlas's palette strip, so the game always draws it through a cell of that strip.</li>
   </ul>
-  <p>The <a href="../viewer.html#tim-catalog">asset viewer's TIM catalog</a> resolves these from your disc: its <strong>Palette</strong> list offers <strong>As the game draws it</strong> for the menu / battle UI sheet (every sprite through the palette the game uses for it), lists the palettes video memory really holds on the texture's row, and notes when a texture's own palette is never used or is all zeros.</p>
+  <p>A multi-row palette block also lands in VRAM as one flat strip on a single row, so "palette N" of a TIM is the cell 16&times;N entries along that row, not row N.</p>
+  <p>The <a href="../viewer.html#tim-catalog">asset viewer's TIM catalog</a> resolves these from your disc: its <strong>Palette</strong> list offers <strong>As the game draws it</strong> for the menu / battle UI sheet (every sprite through the palette the game uses for it, taken from the widget-class table), lists the palettes video memory really holds on the texture's row, and notes when a texture's own palette is never used or is all zeros. The ROM patcher's texture editor reads the same map.</p>
 </section>
 
 <section class="doc-section" id="brightness">
   <h2>Why the game looks darker (or brighter) than the texture</h2>
-  <p>Every mesh polygon carries a colour painted by the artists, one per corner on smooth-shaded polygons. The screen multiplies the texture by it, with <code>0x80</code> meaning "unchanged". A texel of <code>(200, 100, 50)</code> under <code>0x60</code> shows as <code>(150, 75, 37)</code>; under <code>0xC0</code> it clamps to <code>(255, 150, 75)</code>. Roughly four in five colour components in the field scenes sit below <code>0x80</code>. Menu and HUD sprites are drawn at exactly <code>0x80</code>, which is why a UI sheet decoded through the right palette matches the screen and a field texture does not.</p>
-  <p>Battles add two runtime terms: an ambient that the ground grid is shaded from (it dims while a summon is on screen and fades in at the start of every fight), and a per-actor tint that darkens distant bodies and colours status ailments.</p>
+  <p>Every mesh polygon carries a colour painted by the artists, one per corner on smooth-shaded polygons. The GPU multiplies the texture by it, with <code>0x80</code> meaning "unchanged". A texel of <code>(200, 100, 50)</code> under <code>0x60</code> shows as <code>(150, 75, 37)</code>; under <code>0xC0</code> it clamps to <code>(255, 150, 75)</code>. Roughly four in five colour components in the field scenes sit below <code>0x80</code>. Menu and HUD sprites are drawn at exactly <code>0x80</code>, which is why a UI sheet decoded through the right palette matches the screen and a field texture does not.</p>
+  <p id="light-rows"><strong>The light-source rows</strong> are the exception. They carry a normal instead of a colour word, and the GTE computes their colour from the scene light: the back colour (<code>0x20</code> a channel unless a script changes it) plus the light's intensity against the face, times the object colour. A face turned away from the light keeps about an eighth of its texel. <code>cave01</code>'s rock walls are built entirely from such rows; most scenes hold few or none (<a href="renderer-internals.html#light-rows">formula</a>).</p>
+  <p>Battles add two runtime terms: an ambient that the ground grid is shaded from (it dims while a summon is on screen and fades in at the start of every fight), and a per-actor tint that darkens distant bodies, colours status ailments and draws a rotted limb dark.</p>
 </section>
 
 <section class="doc-section" id="animated">
   <h2>Palettes that move</h2>
-  <p>Water, waterfalls and the world-map ocean animate by copying palette frames into the live cell (a <em>palette walk</em>); some creatures pulse by cycling hue and brightness on their palette every frame; the opening prologue rewrites every palette to gold sepia. An export shows the disc state, so a palette that looks like a strip of near-identical ramps is often a set of animation frames.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Mechanism</th><th>What moves</th><th>More</th></tr></thead>
+    <tbody>
+      <tr><td>Palette walk (frames copied into the live cell)</td><td>water, waterfalls, the world-map ocean</td><td><a href="world-map.html">World map</a></td></tr>
+      <tr><td>Hue / brightness cycler</td><td>"pulsating flesh", lightning flashes</td><td>field ambient FX</td></tr>
+      <tr><td>Scripted palette family (field-VM <code>4C 61</code>)</td><td>fades and one-shot palette stamps</td><td><a href="script-vm.html">Script VM</a></td></tr>
+      <tr><td>Prologue palette collapse</td><td>every uploaded palette rewritten to gold sepia</td><td><a href="cutscene.html#sepia-grade">Cutscene</a></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>An export shows the disc state, so a palette that looks like a strip of near-identical ramps is often a set of animation frames waiting to be walked into the live cell.</p>
 </section>
 
 <section class="doc-section" id="modders">
   <h2>Editing a texture</h2>
-  <ul>
+  <ul class="bullets">
     <li><strong>Edit indices, not one palette's colours.</strong> The same index means a different colour in every palette; check the region in the palette the game uses before repainting it.</li>
     <li><strong>Keep the transparency key.</strong> <code>0x0000</code> is "not drawn" everywhere; use <code>0x8000</code> for black.</li>
-    <li><strong>Don't pre-brighten.</strong> A dark look in game is the mesh colour, applied on top of your texture; brightening the file brightens every polygon that uses it.</li>
+    <li><strong>Don't pre-brighten.</strong> A dark look in game is the mesh colour or the depth cue, applied on top of your texture; brightening the file brightens every polygon that uses it.</li>
     <li><strong>All-zero palettes are placeholders</strong> filled in video memory by another texture of the same scene.</li>
+    <li><strong>Animated palettes overwrite the file's colours</strong> in the cells they walk.</li>
   </ul>
   <p>Replacing a texture on your disc is done in the <a href="../tooling/rom-patcher.html">ROM patcher</a>; the byte-level rules are on the <a href="../formats/tim.html">TIM page</a>.</p>
+</section>
+
+<section class="doc-section" id="port">
+  <h2>In the port</h2>
+  <p>The renderer's two halves point opposite ways. <strong>Shading defaults to retail</strong>: the baked colour word, the depth cue and the light-source rows, with no synthetic light on any game path (the play hosts layer the optional enhanced lighting over it). <strong>Rasterisation defaults to clean</strong>: vertex snap and the 15-bit dither are behind <code>set_psx_mode</code>. Affine UVs are not gated - they are always on, because they are the faithful behaviour.</p>
+  <dl class="kv">
+    <dt>Palette maps</dt><dd><code>legaia_asset::tim_palette_context</code> (which cell draws which texel; what the boot VRAM holds)</dd>
+    <dt>VRAM + palette decode</dt><dd><code>engine-render</code> (1024&times;512 R16Uint texture, decode in the fragment shader)</dd>
+    <dt>Multiply, cue, blend, dither</dt><dd><code>psx_modulate</code> / <code>psx_depth_cue</code> / <code>psx_blend</code> / <code>psx_dither</code> in the shader prelude, CPU mirror <code>psx_light</code></dd>
+    <dt>Light-source rows</dt><dd><code>engine-vm::field_light</code>, <code>engine-core::field_lit_mesh</code></dd>
+    <dt>Battle colour</dt><dd><code>engine-vm::battle_ground_grid</code>, <code>battle_actor_tint</code></dd>
+    <dt>Animated palettes</dt><dd><code>engine-core::clut_cell_fx</code>, <code>legaia_asset::clut_walk</code></dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -68,9 +137,11 @@
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="renderer.html">Renderer</a>
+    <a href="renderer-internals.html">Renderer internals</a>
     <a href="../formats/tim.html">PSX TIM</a>
     <a href="../formats/npc-palette.html">NPC palettes</a>
     <a href="battle.html">Battle</a>
     <a href="../viewer.html">Asset viewer</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/shading.md" target="_blank" rel="noopener">shading.md</a>
   </div>
 </section>

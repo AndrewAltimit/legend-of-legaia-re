@@ -1,0 +1,27 @@
+[package]
+name = "legaia-engine-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_session"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+legaia-art.workspace = true
+legaia-asset.workspace = true
+legaia-engine-audio.workspace = true
+legaia-engine-core.workspace = true
+legaia-engine-vm.workspace = true
+legaia-font.workspace = true
+legaia-iso.workspace = true
+legaia-save.workspace = true
+legaia-seq.workspace = true
+legaia-vab.workspace = true
+legaia-xa.workspace = true
+
+[dev-dependencies]
+legaia-engine-audio.workspace = true

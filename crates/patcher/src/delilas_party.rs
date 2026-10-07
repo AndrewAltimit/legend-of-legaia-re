@@ -1,7 +1,7 @@
 //! Delilas party swap: play as Gi / Lu / Che while the story's ravine
 //! duels (and the Muscle Dome Master legs) field Vahn / Noa / Gala.
 //!
-//! A pure model-and-name identity swap over `legaia_asset::party_swap`:
+//! A pure model-and-name identity swap over `crate::party_swap`:
 //! each playable character's battle files rebuild around the mapped
 //! sibling's model (their own animations, arts, stats and story are
 //! untouched), each sibling's monster block rebuilds around the mapped
@@ -18,9 +18,9 @@
 
 use anyhow::{Context, Result, bail};
 
+use crate::party_swap::{self, PlayerRig, fieldize, playerize, winpose};
 use legaia_asset::monster_archive;
 use legaia_asset::new_game;
-use legaia_asset::party_swap::{self, PlayerRig, fieldize, playerize, winpose};
 
 /// PROT entry of `readef.DAT` (the battle side-band streaming slots).
 pub const READEF_ENTRY: usize = 894;

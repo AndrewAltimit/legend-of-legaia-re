@@ -69,6 +69,8 @@
 //! was taken and brings the title theme back after the attract.
 
 use legaia_asset::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 use legaia_engine_core::cutscene::fmv_is_skippable;
 use legaia_engine_core::input::InputState;
 #[cfg(test)]
@@ -369,7 +371,7 @@ impl LegaiaRuntime {
     pub(crate) fn fmv_arm(&mut self, fmv_id: i16, origin: FmvOrigin) {
         let wanted = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|host| resolve_wanted(&mut self.fmv, host, &self.disc_files, fmv_id));
         match wanted.as_ref() {
             Some(w) => crate::console_log(&format!(
@@ -399,15 +401,9 @@ impl LegaiaRuntime {
     /// Stop the score through the page's BGM director - the same `stop` the
     /// native window's director runs for the attract.
     fn fmv_stop_score(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
+        if let Some(d) = self.scene_host.director_mut() {
             use legaia_engine_core::scene::BgmDirector;
-            let mut director = crate::play_bgm::WebBgmDirector {
-                out,
-                bank: &mut self.bgm_bank,
-                last_started: &mut self.bgm_last_started,
-            };
-            director.stop();
+            d.stop();
         }
     }
 
@@ -512,7 +508,7 @@ impl LegaiaRuntime {
     /// the label of the scene the hand-off entered (empty when none did).
     pub(crate) fn service_cutscene_fmv(&mut self) -> String {
         let mut fmv_handoff_scene = String::new();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return fmv_handoff_scene;
         };
         let active = (host.world.mode == SceneMode::Cutscene)
@@ -535,11 +531,11 @@ impl LegaiaRuntime {
         if self.fmv.armed_for() != Some((FmvOrigin::Cutscene, fmv_id)) {
             self.fmv_arm(fmv_id, FmvOrigin::Cutscene);
         }
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(session) = self.scene_host.session_mut() else {
             return fmv_handoff_scene;
         };
         // Retail's pad abort: the attract id only, on a face button / Select.
-        if skip_edge_from_input(fmv_id, &host.world.input) {
+        if skip_edge_from_input(fmv_id, &session.host.world.input) {
             self.fmv.request_finish();
         }
         let mut finished = false;
@@ -547,7 +543,7 @@ impl LegaiaRuntime {
             FmvPoll::Hold => {}
             FmvPoll::Finished { played } => {
                 finished = true;
-                host.world.finish_cutscene();
+                session.host.world.finish_cutscene();
                 if !played {
                     crate::console_log(&format!("cutscene: fmv_id={fmv_id} finished unplayed"));
                 }
@@ -557,8 +553,9 @@ impl LegaiaRuntime {
                 // without this left the page in the trigger scene - a
                 // different place from where the other two hosts land. Same
                 // shared kernel, same one-shot `World::take_finished_fmv`
-                // edge.
-                if let Some(outcome) = host.apply_pending_fmv_handoff() {
+                // edge. The session's hand-off also runs the scene swap's
+                // camera-globals reset and SFX-queue clear, as on a door.
+                if let Some(outcome) = session.apply_pending_fmv_handoff() {
                     if let legaia_engine_core::scene::FmvHandoffOutcome::Entered { scene, .. } =
                         &outcome
                     {
@@ -748,7 +745,7 @@ impl LegaiaRuntime {
     /// or outside the field (retail's dispatch only reads the trigger from
     /// field mode).
     pub fn play_fmv_trigger(&mut self, fmv_id: i16) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         if host.world.mode != SceneMode::Field {
@@ -790,12 +787,12 @@ mod tests {
         host.world.cutscene.return_mode = Some(SceneMode::Field);
         host.world.mode = SceneMode::Cutscene;
         host.world.cutscene.active_fmv = Some(fmv_id);
-        rt.scene_host = Some(host);
+        rt.scene_host.install(host, None).expect("session");
         rt
     }
 
     fn mode(rt: &LegaiaRuntime) -> SceneMode {
-        rt.scene_host.as_ref().unwrap().world.mode
+        rt.scene_host.host().unwrap().world.mode
     }
 
     /// Unsupported page (a cached bundle): the beat finishes the frame it
@@ -805,7 +802,7 @@ mod tests {
         let mut rt = runtime_in_cutscene(1);
         assert_eq!(rt.service_cutscene_fmv(), "");
         assert_eq!(mode(&rt), SceneMode::Field);
-        let host = rt.scene_host.as_mut().unwrap();
+        let host = rt.scene_host.host_mut().unwrap();
         assert_eq!(host.world.cutscene.active_fmv, None);
         assert_eq!(
             host.world.take_finished_fmv(),
@@ -869,7 +866,7 @@ mod tests {
             assert_eq!(rt.service_cutscene_fmv(), "");
             assert_eq!(mode(&rt), SceneMode::Cutscene, "held while the movie plays");
             assert_eq!(
-                rt.scene_host.as_ref().unwrap().world.cutscene.active_fmv,
+                rt.scene_host.host().unwrap().world.cutscene.active_fmv,
                 Some(1)
             );
         }
@@ -893,7 +890,7 @@ mod tests {
         assert_eq!(rt.service_cutscene_fmv(), "");
         assert_eq!(mode(&rt), SceneMode::Field);
         assert!(!rt.play_fmv_active());
-        let host = rt.scene_host.as_mut().unwrap();
+        let host = rt.scene_host.host_mut().unwrap();
         assert_eq!(host.world.cutscene.active_fmv, None);
         assert_eq!(host.world.take_finished_fmv(), None);
     }

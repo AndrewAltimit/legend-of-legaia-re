@@ -29,17 +29,23 @@
   NPC meshes name a slot through their per-primitive CBA field. Contents are scene-specific: the human-villager
   towns (town01/0b/0c/0d) share one palette set; balden, bubu1, urudre1, nilboa and chitei2 each carry their own.</p>
   <p>On disc, each TIM sits inside a type-<code>0x01</code> streaming chunk in the entry's tail:</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">chunk header</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">TIM magic 0x10</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">flags 0x08</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0C</span><span class="bm-name">CLUT bnum 0x20C</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x10</span><span class="bm-name">fb_x 0, fb_y 479</span><span class="bm-size">2&times;u16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x14</span><span class="bm-name">256 colours, 1 CLUT</span><span class="bm-size">2&times;u16</span></div>
+    <div class="bm-cell bm-dim" style="--w:12"><span class="bm-off">+0x18</span><span class="bm-name">CLUT data: 256 BGR555 halfwords</span><span class="bm-size">512 B</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">after</span><span class="bm-name">TIM image block</span><span class="bm-size">&hellip;</span></div>
+  </div>
   <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Example / meaning</th></tr></thead>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>u32</td><td>chunk header</td><td><code>(type &lt;&lt; 24) | size</code>; e.g. <code>0x01008220</code> = type <code>0x01</code> ("upload TIM"), payload <code>0x8220</code> bytes</td></tr>
-      <tr><td><code>+0x04</code></td><td>u32</td><td>TIM magic</td><td><code>0x00000010</code></td></tr>
-      <tr><td><code>+0x08</code></td><td>u32</td><td>TIM flags</td><td><code>0x00000008</code> = 4bpp + CLUT</td></tr>
-      <tr><td><code>+0x0C</code></td><td>u32</td><td>CLUT block size</td><td><code>0x20C</code> = 12-byte header + 512 data</td></tr>
-      <tr><td><code>+0x10</code></td><td>2 &times; u16</td><td><code>fb_x</code>, <code>fb_y</code></td><td>0, 479</td></tr>
-      <tr><td><code>+0x14</code></td><td>2 &times; u16</td><td><code>num_colors</code>, <code>num_cluts</code></td><td>256, 1</td></tr>
-      <tr><td><code>+0x18</code></td><td>512</td><td>CLUT data</td><td>256 BGR555 halfwords</td></tr>
-      <tr><td>after</td><td>-</td><td>image block</td><td>Standard TIM image block, typically 256&times;256 4bpp at <code>fb_x=832</code></td></tr>
+      <tr><td>chunk header</td><td><code>(type &lt;&lt; 24) | size</code>; e.g. <code>0x01008220</code> = type <code>0x01</code> ("upload TIM"), payload <code>0x8220</code> bytes</td></tr>
+      <tr><td>flags</td><td><code>0x08</code> = 4bpp with a CLUT</td></tr>
+      <tr><td>CLUT block</td><td><code>0x20C</code> bytes = 12-byte block header + 512 bytes of colours, landing at rect <code>(0, 479, 256, 1)</code></td></tr>
+      <tr><td>image block</td><td>a standard TIM image block, typically a 256&times;256 4bpp page at <code>fb_x=832</code></td></tr>
     </tbody>
   </table>
   <details class="disclosure">
@@ -62,9 +68,11 @@
 
 <section class="doc-section" id="multi-tim-clut-merge">
   <h2>Sharing the row: merge-zeros</h2>
-  <p>A town carries <strong>several</strong> row-479 TIMs - town01's entries 6..9 hold four, all targeting
-  the same VRAM cells. Two are "full" (slots 0..14 populated) and two are "partial" (slots 0..7-ish, the rest
-  zero-padded on disc). The upload resolves the race with <strong>merge-zeros semantics</strong>: a
+  <p>A town carries <strong>several</strong> row-479 TIMs - town01's entries 6..9 hold four, one per entry
+  (each entry has two TIM chunks; the other one puts its CLUT on row 473), all targeting the same VRAM cells.
+  Entries 7 and 8 are "full" (slots 0..14 populated); entries 6 and 9 are "partial" (slots 0..5 + 7, and
+  0..7, the rest zero-padded on disc). The engine's targeted upload resolves the race with
+  <strong>merge-zeros semantics</strong>: a
   <code>0x0000</code> halfword in a later upload never overwrites a non-zero halfword from an earlier one.
   The row ends up as the union of every TIM's non-zero slots.</p>
   <figure class="overlay-strip">
@@ -99,9 +107,8 @@
     <figcaption>Later uploads merge into the row; only non-zero halfwords land. The result is one fully populated palette row.</figcaption>
   </figure>
   <p>The semantics matter: with plain last-write-wins, the partial TIMs' trailing zeros would blank the full
-  TIMs' upper slots and the NPC meshes anchored there would lose their palettes. The engine implements the
-  merge in <code>legaia_tmd::vram_targeted::build_vram_targeted_from_buffers</code>, which runs the CLUT pass
-  second, after image blocks.</p>
+  TIMs' upper slots and the NPC meshes anchored there would lose their palettes. In the port the merge lives
+  in <code>legaia_tmd::vram_targeted</code>, which runs the CLUT pass second, after the image blocks.</p>
 </section>
 
 <section class="doc-section" id="retail-dispatch">
@@ -115,20 +122,9 @@
     <li>Emulator captures inside town01 with no battle yet: row 479 entirely zero.</li>
     <li>Captures mid- or post-battle: row 479 populated (PSX VRAM persists across scene transitions).</li>
   </ul>
-  <details class="disclosure">
-    <summary>Engine port: field-mode vs battle-mode dispatch</summary>
-    <div class="disclosure-body">
-      <p><code>SceneResources::build_targeted_with_options(..., SceneLoadKind::Field)</code> mirrors retail's
-      lazy upload by excluding every <code>scene_tmd_stream</code> entry's contributions - both the leading TMD
-      (a battle character mesh, never drawn from a field scene) and its type-0x01 TIM chunks. Field-mode VRAM
-      then matches retail town saves (row 479 zero), and the TMD pool excludes battle meshes that would fail the
-      prim filter for sampling missing CLUT rows. <code>SceneHost::enter_field_scene</code> uses <code>Field</code>.</p>
-      <p><code>SceneLoadKind::Battle</code> (the legacy default of <code>build_targeted</code>) uploads every
-      type-0x01 chunk eagerly and parses every embedded TMD - VRAM inflated vs retail's field state, but every
-      battle character mesh stays renderable for tests and diagnostic surfaces. Disc-gated regression tests hold
-      the town01 prim keep-ratio at 99.3% in battle mode and 100% in field mode.</p>
-    </div>
-  </details>
+  <p>In the port, a field scene load (<code>SceneLoadKind::Field</code>) mirrors this lazy upload: it leaves
+  out every <code>scene_tmd_stream</code> entry - both its leading TMD (a battle character mesh) and its TIM
+  chunks - so field VRAM matches a retail town (row 479 empty). The battle load kind uploads them.</p>
   <details class="disclosure">
     <summary>History: the falsified "two-list" shape of 0006_town01</summary>
     <div class="disclosure-body">
@@ -179,6 +175,10 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <p>The battle-init walker and the boot uploader are traced in the disassembly, and both bands are byte-matched against emulator VRAM dumps: row 479 is empty in a town before any battle and populated during and after one, while rows 510/511 are identical in every phase.</p>
+  <details class="disclosure">
+    <summary>Provenance: routines and captures</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -188,6 +188,8 @@
       <tr><td>VRAM captures</td><td>row 479 = blob offset <code>0xEF800</code></td><td>Row zero in pre-battle town saves, populated mid/post-battle; strips 510/511 byte-identical in every phase</td><td><a href="../tooling/mednafen-automation.html">mednafen automation</a> (<code>vram-dump</code>, <code>bracket-writer.py</code>)</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

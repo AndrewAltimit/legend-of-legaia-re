@@ -17,7 +17,7 @@
 //!
 //! ```text
 //! cargo llvm-cov clean --profraw-only
-//! cargo llvm-cov -p legaia-web-viewer --test soft_reset_records_page --no-report
+//! cargo llvm-cov -p legaia-web-viewer --test integration soft_reset_records_page:: --no-report
 //! cargo llvm-cov report --json --output-path target/cov-soft_reset_records_page.json
 //! ```
 //!

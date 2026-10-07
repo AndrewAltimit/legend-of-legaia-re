@@ -3837,7 +3837,7 @@ sets `0x400`" question dissolves into this negative.
 
 ## AP / Spirit gauge
 
-Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's `+0xC9` (`current_ap`) and `+0xCA` (`bonus_ap`) bytes. Pressing the Spirit button during command input adds `+5` AP exactly once per turn.
+Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's `+0xC9` (`current_ap`) and `+0xCA` (`bonus_ap`) bytes. The engine's `ApGauge` adds `+5` of its own command units for a Spirit press; that constant is not a retail value - what a retail Spirit turn does to the gauges is the subsection [below](#what-a-spirit-turn-does-to-the-gauge-and-what-it-draws).
 
 The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 5 AP, …, 60+ → 10 AP capped; `ap_base_for_level`). The engine seeds each party member's `ApGauge::base_ap` from that formula at battle entry - `seed_party_battle_stats` reads the live character level alongside the attack / defense fold, so a higher-level character chains more arts per turn. The round-start `reset_party_ap` then refills `current_ap` to that base, and Fury Boost extends from / reverts to it.
 

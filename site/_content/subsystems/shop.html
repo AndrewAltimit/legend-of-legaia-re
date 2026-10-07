@@ -12,7 +12,7 @@
     <dt>Screens</dt><dd>Menu overlay (PROT 0899) window-descriptor table; no separate shop overlay</dd>
     <dt>Purses</dt><dd>Gold <code>_DAT_8008459C</code>; Point Card <code>_DAT_800845B4</code>; casino coins <code>_DAT_800845A4</code> - all capped at 9,999,999</dd>
     <dt>Stack cap</dt><dd>99 per item id, enforced by the list ink and the quantity clamp</dd>
-    <dt>Engine</dt><dd><code>engine-core::shop</code> (<code>ShopSession</code>, quantity / recipient sessions), <code>shop_catalog</code>, <code>legaia_asset::shop_stock</code></dd>
+    <dt>In the port</dt><dd><code>engine-core::shop</code>, <code>engine-screens</code>, <code>legaia_asset::shop_stock</code></dd>
     <dt>Confidence</dt><dd>Confirmed - stock scan validated disc-wide; every screen traced in the menu overlay</dd>
     <dt>Used by</dt><dd><a href="../shops.html">Shops browser</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> shop shuffle, <a href="inventory.html">inventory</a></dd>
   </dl>
@@ -20,62 +20,47 @@
 
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 960 230" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shop screens: mode select leads to buy or sell list, then quantity, then confirm, which returns to the list; Triangle from a list exits">
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="20" y="70" width="170" height="50" rx="4" stroke="var(--accent)"/>
-        <rect x="280" y="20" width="170" height="50" rx="4"/>
-        <rect x="280" y="120" width="170" height="50" rx="4"/>
-        <rect x="530" y="70" width="170" height="50" rx="4"/>
-        <rect x="770" y="70" width="170" height="50" rx="4"/>
-        <rect x="280" y="180" width="170" height="40" rx="4"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="105" y="88">Buy / Sell / Quit</text>
-        <text x="105" y="106" fill="var(--text-muted)">window 0x2A</text>
-        <text x="365" y="45">Buy list</text>
-        <text x="365" y="145">Sell list</text>
-        <text x="615" y="88">Quantity</text>
-        <text x="615" y="106" fill="var(--text-muted)">1 .. max</text>
-        <text x="855" y="88">Confirm</text>
-        <text x="855" y="106" fill="var(--text-muted)">Yes commits</text>
-        <text x="365" y="200">Exit to field</text>
-      </g>
-      <g stroke="currentColor" fill="none" stroke-width="1.5">
-        <line x1="190" y1="90" x2="278" y2="48"/>
-        <line x1="190" y1="100" x2="278" y2="142"/>
-        <line x1="450" y1="48" x2="528" y2="90"/>
-        <line x1="450" y1="142" x2="528" y2="100"/>
-        <line x1="700" y1="95" x2="768" y2="95"/>
-        <path d="M 855 70 C 855 0, 365 0, 365 18"/>
-        <line x1="105" y1="120" x2="105" y2="200"/>
-        <line x1="105" y1="200" x2="278" y2="200"/>
-      </g>
-      <g fill="currentColor">
-        <polygon points="278,48 269,48 273,55"/>
-        <polygon points="278,142 269,142 273,135"/>
-        <polygon points="528,90 519,90 523,83"/>
-        <polygon points="528,100 519,100 523,107"/>
-        <polygon points="768,95 760,91 760,99"/>
-        <polygon points="365,18 361,10 369,10"/>
-        <polygon points="278,200 270,196 270,204"/>
-      </g>
-      <g fill="var(--text-muted)" text-anchor="middle">
-        <text x="610" y="12">confirm or cancel: back to the list</text>
-        <text x="734" y="84">Cross</text>
-        <text x="190" y="190">Quit / Triangle</text>
-      </g>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shop flow. Talking to a merchant runs field-VM op 0x49, which hands the stock to the menu overlay's mode panel: Buy, Sell or Quit. Buy opens the stock list priced from the item table, Sell the bag. Either list leads to the quantity stepper; buying equipment first asks who it is for. Committing moves the gold and returns to the list. Quit, or Triangle from a list, ends the shop and the script resumes past the merchant.">
+      <defs><marker id="sh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="110" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="95" y="134">Merchant</text><text class="dg-sub" x="95" y="152">field-VM op 0x49</text>
+      <rect class="dg-node-accent" x="200" y="110" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="275" y="134">Buy / Sell / Quit</text><text class="dg-sub" x="275" y="152">mode panel</text>
+      <rect class="dg-node" x="390" y="30" width="160" height="56" rx="5"/>
+      <text class="dg-label" x="470" y="54">Buy list</text><text class="dg-sub" x="470" y="72">stock x item prices</text>
+      <rect class="dg-node" x="390" y="190" width="160" height="56" rx="5"/>
+      <text class="dg-label" x="470" y="214">Sell list</text><text class="dg-sub" x="470" y="232">the bag, half price</text>
+      <rect class="dg-node" x="590" y="30" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="665" y="54">Who is it for?</text><text class="dg-sub" x="665" y="72">equipment only</text>
+      <rect class="dg-node-accent" x="590" y="130" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="665" y="154">Quantity</text><text class="dg-sub" x="665" y="172">stepper, commits</text>
+      <rect class="dg-node-ok" x="770" y="130" width="80" height="56" rx="5"/>
+      <text class="dg-label" x="810" y="154">Gold</text><text class="dg-sub" x="810" y="172">moves</text>
+      <rect class="dg-node" x="200" y="230" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="275" y="254">Exit</text><text class="dg-sub" x="275" y="272">script resumes</text>
+      <path class="dg-edge" d="M170 138 L198 138" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M350 130 L370 130 L370 58 L388 58" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M350 146 L370 146 L370 218 L388 218" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M550 58 L588 58" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M520 86 L520 150 L588 150" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M550 218 L570 218 L570 166 L588 166" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge-dim" d="M665 86 L665 128" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge" d="M740 158 L768 158" marker-end="url(#sh-arrow)"/>
+      <path class="dg-edge-dim" d="M810 130 L810 12 L470 12 L470 28" marker-end="url(#sh-arrow)"/>
+      <text class="dg-edge-label" x="640" y="24" text-anchor="middle">back to the list - keep shopping</text>
+      <path class="dg-edge" d="M275 166 L275 228" marker-end="url(#sh-arrow)"/>
+      <text class="dg-edge-label" x="267" y="204" text-anchor="end">Quit / Triangle</text>
     </svg>
-    <figcaption>Every confirm returns to the list so the player keeps shopping; the only way out is Quit on the mode panel or Triangle from a list.</figcaption>
+    <figcaption>Every commit returns to the list so the player keeps shopping; the only way out is Quit on the mode panel or Triangle from a list. Sell and Quit grey out together when the bag is empty.</figcaption>
   </figure>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Talk to the merchant</span><span class="desc">the scene script reaches op <code>0x49</code> sub-0; the field VM suspends and hands the stock bytes to the menu</span><span class="crate">field VM</span>
-    <span class="num">2</span><span class="layer">Mode panel</span><span class="desc">Buy / Sell / Quit; Sell and Quit grey out when the bag is empty</span><span class="crate">menu overlay</span>
-    <span class="num">3</span><span class="layer">List</span><span class="desc">buy list = the stock ids priced from the item table; sell list = the bag; rows grey when unaffordable or at 99</span><span class="crate">menu overlay</span>
-    <span class="num">4</span><span class="layer">Quantity + confirm</span><span class="desc">buy max = min(gold / price, 99, 99 &minus; held); sell max = held; equipment asks who it is for and equips on the spot</span><span class="crate">menu overlay</span>
-    <span class="num">5</span><span class="layer">Commit</span><span class="desc">gold moves, items go through the inventory add / consume helpers, the Point Card accrues 5%</span><span class="crate">inventory helpers</span>
-    <span class="num">6</span><span class="layer">Quit</span><span class="desc">the op-<code>0x49</code> tristate flips Armed &rarr; Done and the script resumes past the merchant</span><span class="crate">field VM</span>
-  </div>
+  <ol class="steps">
+    <li><b>Talk to the merchant</b><span>the script reaches op <code>0x49</code> sub-0; the field VM parks and hands the stock bytes to the menu</span></li>
+    <li><b>Pick a list</b><span>buy = the stock, priced from the item table; sell = the bag. Rows grey when unaffordable or at 99</span></li>
+    <li><b>Quantity</b><span>buy max = min(gold / price, 99, 99 &minus; held); sell max = held. Equipment asks who it is for and equips on the spot</span></li>
+    <li><b>Commit</b><span>gold moves, the bag updates, a Point Card accrues 5%</span></li>
+    <li><b>Quit</b><span>the op&rsquo;s tristate flips to Done and the script resumes past the merchant</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="stock-source">
@@ -135,20 +120,8 @@
 </section>
 
 <section class="doc-section" id="engine-port">
-  <h2>Engine port</h2>
-  <table class="data-table">
-    <thead><tr><th>Retail piece</th><th>Engine mirror</th></tr></thead>
-    <tbody>
-      <tr><td>stock record + prices</td><td><code>legaia_asset::shop_stock</code> scan &rarr; <code>shop_catalog</code> &rarr; <code>ShopInventory</code> on <code>World::shops.scene_shops</code></td></tr>
-      <tr><td>op-<code>0x49</code> trigger</td><td><code>FieldHost::op49_menu_request</code> &rarr; <code>World::try_arm_field_shop</code> / <code>finish_field_shop</code>; non-shop payloads (inn, save prompts) fail validation and arm nothing</td></tr>
-      <tr><td>screen routing</td><td><code>engine-vm::menu</code> (<code>commit_route</code> on Cross, <code>back_route</code> on Triangle); <code>ShopExit</code> auto-advances after the fade</td></tr>
-      <tr><td>commit</td><td><code>ShopSession::try_buy</code> / <code>try_sell</code>; grant kernel <code>World::buy_from_shop</code> refuses a buy past 99</td></tr>
-      <tr><td>Point Card</td><td><code>World::minigames.point_card</code> bank, <code>credit_point_card</code>; toast held on <code>MenuRuntime::point_card_toast</code>; kept out of <code>buy_from_shop</code> so the randomizer oracles stay retail-shaped</td></tr>
-      <tr><td>recipient picker</td><td><code>BuyRecipientSession</code>, live behind <code>MenuRuntime::retail_equipment_buy</code> (browser play page enables it)</td></tr>
-      <tr><td>ink + panels</td><td><code>shop_stock_row_ink</code>, <code>shop_root_command_rows</code>, <code>shop_sell_detail_panel</code> &rarr; <code>engine-ui::shop_draws_for</code>; the two quantity windows are <code>engine-ui</code>&rsquo;s own painters</td></tr>
-    </tbody>
-  </table>
-  <p>Gaps: the quantity screen is retail&rsquo;s stepper on both hosts now &mdash; one number under the pad, committing with no Yes/No screen &mdash; so the shop no longer reaches <code>ShopConfirm</code> at all; what is left is the sell-list scroll fix-up, which repairs a <em>paged</em> list the engine does not run, and the literal item restore amounts, which stay curated because they are overlay-resident rather than in the descriptor table.</p>
+  <h2>In the port</h2>
+  <p>The stock scan is <code>legaia_asset::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-core::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does. The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

@@ -29,7 +29,7 @@ impl LegaiaRuntime {
     pub(crate) fn world_map_marker_prims(&mut self) -> Vec<ScreenPrim> {
         let in_world_map = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.mode == SceneMode::WorldMap);
         if !in_world_map {
             return Vec::new();
@@ -39,12 +39,12 @@ impl LegaiaRuntime {
         // marker is the stand-in for when it did not (the native window's
         // gate is the same question about its own upload).
         let draw_player = self.player.is_none();
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &host.world;
         let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
-        let frame = resolve_field_camera(world, &self.camera, None, centre);
+        let frame = resolve_field_camera(world, self.scene_host.camera(), None, centre);
         marker_quads(world, &frame, aabb, draw_player)
             .iter()
             .map(|q| world_map_marker_prim(q.xy, q.rgba, q.depth))
@@ -66,12 +66,12 @@ impl LegaiaRuntime {
     /// at that state's own player position. The native window's twin is
     /// `play-window`'s `LEGAIA_SEAT`.
     pub fn play_debug_seat(&mut self, x: i16, z: i16) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let seated = host.debug_seat_standing(x, z);
         if seated {
-            self.camera.zone.arm_arrival();
+            self.scene_host.camera_mut().zone.arm_arrival();
         }
         seated
     }

@@ -58,15 +58,23 @@
 <section class="doc-section" id="site-2">
   <h2>Site 2 - the world-map location table</h2>
   <p>MAN section 5 is the chain terminator in every scene bundle, so its "body" is whatever trails the chain. In the three kingdom MANs that trailing data is the location table, and the MAN walker installs a pointer to its count byte (<a href="#how-we-know">how we know</a>). All three kingdom MANs carry a <strong>byte-identical copy of the whole 29-record table</strong>, filtered by <code>region</code> at draw time - so a rename must edit every kingdom MAN, not just the one whose continent the place sits on.</p>
+  <p>The table is a <code>u8 count</code> followed by <code>count</code> fixed 32-byte records:</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">region</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x01</span><span class="bm-name">x</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x02</span><span class="bm-name">y</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x03</span><span class="bm-name">flag</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+0x05</span><span class="bm-name">0</span><span class="bm-size">3 B</span></div>
+    <div class="bm-cell bm-dim" style="--w:20"><span class="bm-off">+0x08</span><span class="bm-name">name, NUL-padded ASCII</span><span class="bm-size">0x18 B</span></div>
+  </div>
   <table class="layout">
-  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><code>+0x00</code></td><td>u8</td><td><code>region</code> - 0 = Drake, 1 = Sebucus, 2 = Karisto</td></tr>
-    <tr><td><code>+0x01</code></td><td>u8</td><td>map x (world coordinate = <code>x &lt;&lt; 7</code>)</td></tr>
-    <tr><td><code>+0x02</code></td><td>u8</td><td>map y (world coordinate = <code>y &lt;&lt; 7</code>)</td></tr>
-    <tr><td><code>+0x03</code></td><td>u16</td><td>discovery flag, queried through <code>FUN_8003CE64</code> (<code>0x0484..0x04A0</code>; the two element caves share <code>0x048E</code> and differ by region)</td></tr>
-    <tr><td><code>+0x05</code></td><td>3 bytes</td><td>reserved, zero across the retail corpus</td></tr>
-    <tr><td><code>+0x08</code></td><td>0x18 bytes</td><td>name, NUL-padded ASCII</td></tr>
+    <tr><td><code>region</code></td><td>0 = Drake, 1 = Sebucus, 2 = Karisto</td></tr>
+    <tr><td><code>x</code>, <code>y</code></td><td>map position in tiles; world coordinate = value <code>&lt;&lt; 7</code></td></tr>
+    <tr><td><code>flag</code></td><td>discovery flag, queried through <code>FUN_8003CE64</code> (<code>0x0484..0x04A0</code>; the two element caves share <code>0x048E</code> and differ by region). Unaligned - it straddles the record's first word.</td></tr>
+    <tr><td>reserved</td><td>zero across the retail corpus</td></tr>
+    <tr><td>name</td><td>24 bytes including the terminating NUL, so at most 23 characters - the shared rename cap</td></tr>
   </tbody>
   </table>
   <p>The world-map band's per-frame label pass draws each record whose region matches the current kingdom and whose discovery flag is set (or the show-all debug flag is on): project the map position to the screen, draw the name, measure it, underline it. So the name is drawn <strong>at the place's own map position</strong>, gated on having discovered it (<a href="#how-we-know">how we know</a>).</p>
@@ -92,6 +100,10 @@
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <p>All three layouts are read off the disc; both MAN consumers are traced in the disassembly and the banner draw is confirmed live; and a rename on a patched disc reads back out of RAM at every site.</p>
+  <details class="disclosure">
+    <summary>Provenance: routines and probes</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
     <tbody>
@@ -100,9 +112,11 @@
       <tr><td>Banner spawn</td><td><code>FUN_8003AEB0</code> <code>0x8003BB40..0x8003BBDC</code></td><td>Name + system flag 2 gate a text-balloon spawn (template <code>0x8007431C</code>); the flag is cleared on every path</td><td><code>funcs/8003aeb0.txt</code>; live probe <code>autorun_location_banner_source.lua</code></td></tr>
       <tr><td>Save-screen latch</td><td>fade state machines, stores at <code>0x801EE638</code> / <code>0x801EAC7C</code> / <code>0x801EEAE4</code></td><td>The section-2 pointer copied into <code>_DAT_8007B44C</code>; their panel script <code>0x801F32B4</code> only closes every panel</td><td>PROT 0897 image</td></tr>
       <tr><td>Save-screen readers</td><td><code>0x801E1D9C</code> (row draw), <code>0x801E1A28</code> (copy to SC block <code>+0x200</code>)</td><td>The latch's two menu-overlay consumers - both save-screen, neither per-frame</td><td>menu-overlay dumps</td></tr>
-      <tr><td>Patched-disc read-back</td><td>-</td><td>A rename re-parses at every site; resized banner + edited world-map table read back out of live RAM</td><td><code>crates/patcher/tests/place_names_real.rs</code></td></tr>
+      <tr><td>Patched-disc read-back</td><td>-</td><td>A rename re-parses at every site; resized banner + edited world-map table read back out of live RAM</td><td>patched-disc round trip</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="editing-notes">
@@ -112,6 +126,7 @@
     <li><strong>Site 2</strong> - same-size overwrite of the record's 24-byte name field, then an LZS re-pack of each kingdom MAN.</li>
     <li><strong>Site 3</strong> - resize the section. No relocation work is needed: the partition tables and <code>u24_at_28</code> address the region <em>before</em> section 0, and sections 3..5 are reached by walking the chain, so rewriting section 2's length prefix moves every later section correctly by construction. What must move is the MAN's <strong>decompressed size</strong> in the scene bundle's descriptor word (<code>scene_asset_table::encode_size_word</code>).</li>
     <li>Every scene MAN is the last asset in its bundle, so the re-packed stream can grow into the entry's sector padding (smallest headroom in the corpus ~430 bytes). Clamp the budget to the entry's <a href="prot.html">true footprint</a>, never to an over-reading length.</li>
+    <li>Two scene bundles (one of them <code>bubu1</code>) declare five descriptors rather than the usual six or seven; a MAN finder must walk the descriptor table leniently, as the runtime walker does, and confirm the find by decoding it.</li>
     <li>Ten scene MANs carry an untranslated Shift-JIS name in section 2 (the ending scenes plus <code>other7</code>) and seven carry an empty one; both read as "no name".</li>
   </ul>
   <div class="see-also"><span class="see-also-label">Reference</span>

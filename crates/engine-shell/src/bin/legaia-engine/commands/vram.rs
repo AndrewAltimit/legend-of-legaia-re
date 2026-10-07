@@ -32,7 +32,7 @@ pub(crate) fn cmd_clut_trace(
     let scene =
         Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
 
-    let shared_scenes = crate::shared::load_shared_scenes(&index, |_, _| {});
+    let shared_scenes = legaia_engine_shell::host_setup::load_shared_scenes(&index, |_, _| {});
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
     let (resources, _upload_stats) = SceneResources::build_targeted(&scene, &shared_refs)?;
 

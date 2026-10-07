@@ -28,43 +28,13 @@
       <tr><td>Disc bridge</td><td><code>legaia_patcher::disc::DiscPatcher</code></td><td>Turns "byte <code>K</code> of PROT entry <code>N</code>" into physical sector writes through the <a href="../formats/prot.html">PROT.DAT</a> table of contents.</td></tr>
     </tbody>
   </table>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 150" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An edit addressed as PROT entry plus offset is resolved through the PROT table of contents to a logical offset in PROT.DAT, then through ISO 9660 to a disc sector, which is rewritten with fresh EDC and ECC">
-      <g fill="var(--bg-raised)" stroke="var(--border)" stroke-width="1.2">
-        <rect x="10" y="30" width="180" height="56" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
-        <rect x="240" y="30" width="180" height="56" rx="4"/>
-        <rect x="470" y="30" width="180" height="56" rx="4"/>
-        <rect x="700" y="30" width="190" height="56" rx="4" stroke="var(--accent)" stroke-width="1.6"/>
-      </g>
-      <g fill="none" stroke="var(--text-muted)" stroke-width="1.2">
-        <line x1="190" y1="58" x2="236" y2="58"/>
-        <line x1="420" y1="58" x2="466" y2="58"/>
-        <line x1="650" y1="58" x2="696" y2="58"/>
-      </g>
-      <g fill="var(--text-muted)">
-        <polygon points="236,54 240,58 236,62"/>
-        <polygon points="466,54 470,58 466,62"/>
-        <polygon points="696,54 700,58 696,62"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="100" y="50">edit</text>
-        <text x="100" y="68" fill="var(--text-muted)" font-size="11">(entry N, offset K)</text>
-        <text x="330" y="50">PROT TOC</text>
-        <text x="330" y="68" fill="var(--text-muted)" font-size="11">start_lba[N]*2048 + K</text>
-        <text x="560" y="50">ISO 9660</text>
-        <text x="560" y="68" fill="var(--text-muted)" font-size="11">PROT.DAT at prot_lba</text>
-        <text x="795" y="50">sector write</text>
-        <text x="795" y="68" fill="var(--text-muted)" font-size="11">2352 B + EDC/ECC</text>
-      </g>
-      <g fill="var(--text-muted)" text-anchor="middle" font-size="11">
-        <text x="100" y="118">legaia_patcher</text>
-        <text x="330" y="118">legaia_prot</text>
-        <text x="560" y="118">legaia_iso</text>
-        <text x="795" y="118">legaia_iso::write</text>
-      </g>
-    </svg>
-    <figcaption>The three hops of <code>DiscPatcher::patch_prot_entry</code>. <code>patch_named_file</code> is the sibling for edits straight into <code>SCUS_942.54</code>; <code>patch_monster_slot</code> wraps the battle_data archive.</figcaption>
-  </figure>
+  <ol class="steps">
+    <li><b>Edit</b><span>Addressed as (PROT entry <code>N</code>, offset <code>K</code>). <code>legaia_patcher</code></span></li>
+    <li><b>PROT TOC</b><span><code>start_lba[N] * 2048 + K</code> = an offset inside <code>PROT.DAT</code>. <code>legaia_prot</code></span></li>
+    <li><b>ISO 9660</b><span><code>PROT.DAT</code>'s own LBA turns that into a disc sector. <code>legaia_iso</code></span></li>
+    <li><b>Sector write</b><span>The 2352-byte sector is rewritten with fresh EDC/ECC. <code>legaia_iso::write</code></span></li>
+  </ol>
+  <p class="hint">These are the hops of <code>DiscPatcher::patch_prot_entry</code>. <code>patch_named_file</code> is the sibling for edits straight into <code>SCUS_942.54</code>; <code>patch_monster_slot</code> wraps the battle_data archive.</p>
   <h3>The editing rule</h3>
   <ul class="bullets">
     <li><strong>Same size, in place.</strong> No sector address, PROT entry or ISO directory record ever moves, so a patch is a pure byte overwrite plus checksum recompute. The disc image's size never changes.</li>
@@ -72,7 +42,7 @@
     <li><strong>Budget from the boundary.</strong> A MAN's re-pack budget is its span up to the next descriptor, not its current compressed length - otherwise a second pass over the same scene (encounters, then chests, then shops) would shrink the budget each time.</li>
     <li><strong>Doors and place names are the exception.</strong> A destination carries its scene name inline and a banner name is stored unpadded, so re-pointing or renaming changes a record's length. The <a href="../formats/man-relocation.html">MAN relocation engine</a> fixes every offset the resize disturbs and rewrites the descriptor's size word.</li>
   </ul>
-  <p>The error-correction math is the generic CD-ROM scheme (ECMA-130): EDC is a CRC over reversed polynomial <code>0xD8018001</code>, ECC is Reed-Solomon P/Q over GF(2<sup>8</sup>) with generator <code>0x11D</code>, and the header is treated as zero so parity is independent of the sector's address. It embeds no game bytes; the disc-gated <code>ecc_real</code> test reproduces real PROT.DAT sectors bit-for-bit.</p>
+  <p>The error-correction math is the generic CD-ROM scheme (ECMA-130): EDC is a CRC over reversed polynomial <code>0xD8018001</code>, ECC is Reed-Solomon P/Q over GF(2<sup>8</sup>) with generator <code>0x11D</code>, and the header is treated as zero so parity is independent of the sector's address. It embeds no game bytes, and it reproduces real <code>PROT.DAT</code> sectors bit-for-bit.</p>
 </section>
 
 <section class="doc-section" id="ladder">
@@ -241,38 +211,16 @@
 </section>
 
 <section class="doc-section" id="tests">
-  <h2>Tests</h2>
-  <p>Three layers. Disc-gated tests read <code>LEGAIA_DISC_BIN</code>; with it unset they skip and pass.</p>
+  <h2>How a patch is verified</h2>
+  <p>Three layers. The ones that need a real disc skip and pass when <code>LEGAIA_DISC_BIN</code> is unset, so CI runs without game data.</p>
   <table>
-    <thead><tr><th>Layer</th><th>Where</th><th>What it proves</th></tr></thead>
+    <thead><tr><th>Layer</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td>Disc-free unit tests</td><td><code>crates/lzs</code>, <code>crates/iso</code>, <code>crates/patcher</code></td><td>The encoder round-trips; sector encoding is idempotent and address-independent; the planner is seed-deterministic; hook stubs behave under <code>mips_sim</code>; a synthetic disc round-trips through the disc &rarr; ISO &rarr; PROT chain.</td></tr>
-      <tr><td>Disc round-trip oracles</td><td><code>crates/patcher/tests/*_real.rs</code></td><td>Patch a feature onto a scratch copy of a real disc, re-decode off the patched image, assert the multiset or invariant is preserved, every touched sector is EDC/ECC-valid, neighbours are untouched, and a fixed seed is byte-deterministic. For code hooks: the stock words match, the detour and routine decode as the hand-assembled bytes, and the build guard refuses an unknown layout.</td></tr>
-      <tr><td>Runtime oracles</td><td><code>crates/engine-core/tests/*_randomizer_runtime_e2e.rs</code></td><td>Drive the from-scratch engine's own grant / spawn / warp kernel over the patched bytes - chest, drop, encounter, steal, door - so a patch a savestate would mask (the scene or archive already resident in RAM) is observed. The engine cannot execute injected MIPS, so hook features are covered by the disc oracle plus an emulator playtest instead.</td></tr>
+      <tr><td>Disc-free unit checks</td><td>The encoder round-trips; sector encoding is idempotent and address-independent; the planner is seed-deterministic; hook stubs behave under the in-crate MIPS interpreter (<code>mips_sim</code>); a synthetic disc round-trips through the disc &rarr; ISO &rarr; PROT chain.</td></tr>
+      <tr><td>Disc round-trip oracles</td><td>Patch a feature onto a scratch copy of a real disc, re-decode off the patched image, and assert the multiset or invariant is preserved, every touched sector is EDC/ECC-valid, neighbours are untouched, and a fixed seed is byte-deterministic. Scripted and boss formations stay byte-identical. For code hooks: the stock words match, the detour and routine decode as the hand-assembled bytes, every landing region is dead and outside every live table, and the build guard refuses an unknown layout. Each oracle keeps a baseline pass so it cannot pass vacuously.</td></tr>
+      <tr><td>Runtime oracles</td><td>Drive the from-scratch engine's own grant / spawn / warp kernel over the patched bytes - chest, drop, encounter, steal, door - so a patch a savestate would mask (the scene or archive already resident in RAM) is observed. The engine cannot execute injected MIPS, so hook features are covered by the disc oracle plus an emulator playtest instead.</td></tr>
     </tbody>
   </table>
-  <details class="disclosure">
-    <summary>Per-feature oracle inventory</summary>
-    <div class="disclosure-body">
-      <table>
-        <thead><tr><th>Oracle</th><th>Asserts</th></tr></thead>
-        <tbody>
-          <tr><td><code>ecc_real</code>, <code>lzs_compress_roundtrip_real</code></td><td>Real PROT.DAT sectors re-encode bit-for-bit; real monster records and container sections round-trip and compress.</td></tr>
-          <tr><td><code>disc_patch_real</code>, <code>rando_cli_real</code></td><td>One drop patch re-decodes with neighbours untouched; a full-archive shuffle diffs into a PPF that reproduces the patched image.</td></tr>
-          <tr><td><code>encounter_patch_real</code></td><td>Counts and id multiset preserved per scene, ids in-pool; every scripted or boss formation (Tetsu <code>0x4F</code> among them) byte-identical.</td></tr>
-          <tr><td><code>chest_patch_real</code>, <code>shop_*</code>, <code>casino_*</code></td><td>Give-item site offsets unchanged, item multisets preserved; a targeted keikoku chest carries the new id in both the give operand and every announcement token.</td></tr>
-          <tr><td><code>steal_patch_real</code></td><td>Steal-item multiset preserved, every chance byte untouched.</td></tr>
-          <tr><td><code>door_*</code>, <code>house_door_*</code></td><td>Destination multisets preserved, names valid, sectors valid, image size unchanged; a census test pins per-scene entry/exit counts against a live-captured anchor.</td></tr>
-          <tr><td><code>equipment_drops_real</code>, <code>flee_exp_real</code>, <code>enemy_ally_real</code>, <code>shiny_seru_real</code></td><td>Each hook site holds its stock words; detour + routine + tables decode as planned; edits are surgical and compose in the shared gap; every landing region is dead and outside every live table.</td></tr>
-          <tr><td><code>seru_trade_real</code></td><td>Every piece lands in 0899, the schedule round-trips to the kernel's offers, the SCUS gap is untouched.</td></tr>
-          <tr><td><code>super_art_list_real</code>, <code>super_art_power_real</code>, <code>super_arts_pack_real</code>, <code>arts_ap_grant_real</code></td><td>Arena accounting intact; the Pack's runtime oracle executes the patched retail applier over a live queue and checks all fifteen added chains fire.</td></tr>
-          <tr><td><code>jewel_fix_real</code>, <code>approach_fix_real</code></td><td>Baseline words stock, exactly the planned words change, module windows contain no other module's bytes, re-application is refused or a no-op.</td></tr>
-          <tr><td><code>delilas_*_real</code>, <code>nivora_field_real</code>, <code>party_swap_real</code></td><td>The dome, cast, mirror and field-form halves of the Delilas features.</td></tr>
-          <tr><td><code>unused_content_real</code>, <code>monster_stats_*</code>, <code>move_power_*</code>, <code>element_affinity_*</code>, <code>spell_cost_*</code>, <code>equip_*</code>, <code>weapon_specialty_*</code></td><td>The remaining table and slot edits, each with a baseline pass so the oracle is non-vacuous.</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="hygiene">
@@ -280,7 +228,6 @@
   <ul class="bullets">
     <li>The crate never embeds, commits or redistributes game bytes. Injected routines are the project's own code; item and equipment ids come from the user's disc at patch time.</li>
     <li>A patched <code>.bin</code> contains Sony data and is never committed. The distribution form is a patcher plus seed, or the PPF the CLI emits - a PPF carries only the deltas between the user's original disc and the patched one and is meaningless without the original.</li>
-    <li>Disc-gated tests skip without <code>LEGAIA_DISC_BIN</code>; CI runs without disc data.</li>
   </ul>
 </section>
 

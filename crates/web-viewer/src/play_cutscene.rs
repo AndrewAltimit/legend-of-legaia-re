@@ -37,7 +37,7 @@ use legaia_engine_ui::{self as ui, TextDraw};
 
 impl LegaiaRuntime {
     fn world(&self) -> Option<&legaia_engine_core::world::World> {
-        self.scene_host.as_ref().map(|h| &h.world)
+        self.scene_host.host().map(|h| &h.world)
     }
 }
 
@@ -69,7 +69,7 @@ impl LegaiaRuntime {
     /// `Camera::reset_for_scene_entry`, run inside `enter_field` itself.
     pub fn play_abandon_opening_chain(&mut self) -> bool {
         self.scene_host
-            .as_mut()
+            .host_mut()
             .is_some_and(|h| h.world.abandon_opening_chain())
     }
 
@@ -135,7 +135,7 @@ impl LegaiaRuntime {
             return CLOSED.to_string();
         }
         let (Some(w), Some(assets)) = (
-            self.scene_host.as_ref().map(|h| &h.world),
+            self.scene_host.host().map(|h| &h.world),
             self.menu_assets.as_ref(),
         ) else {
             return CLOSED.to_string();
@@ -180,7 +180,7 @@ impl LegaiaRuntime {
     /// page draws the overlay ([`crate::play_name_entry`]), so the skip lands
     /// in the same naming prompt the native window reaches.
     pub fn play_take_prologue_handoff(&mut self, confirm: bool) -> String {
-        let Some(h) = self.scene_host.as_mut() else {
+        let Some(h) = self.scene_host.host_mut() else {
             return String::new();
         };
         match h.world.take_prologue_handoff(confirm) {

@@ -199,6 +199,17 @@ if command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Integration-test declarations. A crate's tests/*.rs build as one binary
+# (`autotests = false`), so a test file missing from tests/integration.rs is
+# never compiled or run, silently.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-integration-tests.py" ]]; then
+    printf '[pre-commit] integration-test declarations\n'
+    if ! python3 scripts/ci/check-integration-tests.py; then
+        exit 1
+    fi
+fi
+
 # Disc-denominated coverage ratchet. Unlike the port catalog, whose denominator
 # is the set of addresses this project cites, this measures against the game's
 # own bytes -- so it can notice a subsystem nobody has cited. It is a RATCHET:

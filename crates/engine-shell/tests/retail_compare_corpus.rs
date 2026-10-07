@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_shell::retail_compare::{
+use legaia_parity::retail_compare::{
     Baseline, RunOptions, SeedOrder, resolve_dirs, run_corpus, summarise,
 };
 

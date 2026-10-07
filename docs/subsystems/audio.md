@@ -607,9 +607,8 @@ fills, and slot `80` is a bank with no score, so those six have no pair to play
 space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
 `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
 uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
-rather than the scene VAB the field path stages. Both play hosts' owned-VAB staging
-(`AudioBgmDirector` and the audio-trace director natively, `WebBgmDirector` on the play
-page) split the entry with `engine-core::chunk_install::owned_bank_offsets` - the
+rather than the scene VAB the field path stages. Every owned-VAB staging
+(`AudioBgmDirector`, which both play hosts run, and the audio-trace director) splits the entry with `engine-core::chunk_install::owned_bank_offsets` - the
 installer walk's type-0 bank and type-2 score - rather than hunting it for the two magics;
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
@@ -1116,7 +1115,7 @@ A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, readin
 - **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across the corpus and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
 - **The output depth is `0x3264` on both sides**, in battle and field states alike. `vLOUT` / `vROUT` (SPU `0x1F801D84` / `0x86`) are what libspu's `SpuSetReverbDepth` writes, and they sit *outside* the 32-register preset block, so matching the Studio C coefficients says nothing about them. `mBASE` reads `0xF204`, i.e. a work area at `0x79020` of size `0x6FE0`, which is Studio C's own size - a second, independent confirmation of the preset.
 
-The engine installs that global half once at SPU init with [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this, for the native and browser hosts alike): `ReverbMode::StudioC` at the measured depth `reverb::RETAIL_OUTPUT_VOL`.
+The engine installs that global half once at SPU init with [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu.rs) (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this, for the native and browser hosts alike): `ReverbMode::StudioC` at the measured depth `reverb::RETAIL_OUTPUT_VOL`.
 
 #### Per-voice reverb send is the tone's mode bit 2
 
@@ -1353,7 +1352,7 @@ for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 
 | Module | Maps to |
 |---|---|
-| [`spu::Spu`](../../crates/engine-audio/src/spu/mod.rs) | The 24-voice mixer (one [`Voice`] per slot) + master volume + the [`spu::reverb`] network. |
+| [`spu::Spu`](../../crates/engine-audio/src/spu.rs) | The 24-voice mixer (one [`Voice`] per slot) + master volume + the [`spu::reverb`] network. |
 | [`spu::voice::Voice`](../../crates/engine-audio/src/spu/voice.rs) | Per-voice state: sample address, loop point, pitch, ADSR, L/R volume - the libspu `SpuSetVoiceAttr` surface. |
 | [`spu::adsr`](../../crates/engine-audio/src/spu/adsr.rs) | The 5-phase ADSR envelope (Attack-Decay-Sustain-Release-Off) with linear / exponential / increase / decrease modes per the standard PSX formula. Increasing phases step by the `+7..+4` (`7 - step_bits`) StepValue table; every *decreasing* phase (decay, linear/exponential release, sustain-decrease) steps by the `-8..-5` (`-8 + step_bits`) table - the two sign tables differ by one unit, so a decreasing phase driven from the increase table fades ~one step slow. The `(adsr1, adsr2)` words are read verbatim off the VAB tone metadata (a decoded tone's ADSR word equals the SPU `ADSRControl` register libspu writes at key-on - no transform). |
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
@@ -1395,9 +1394,9 @@ the motion VM's op `0x09` call the ring enqueue `FUN_80035B50` with the id
 straight from their bytecode, and op `0x36` sub `4` sets that slot's
 countdown through `FUN_80035BAC`
 ([`sfx-table.md`](../formats/sfx-table.md#the-fields-producers-op-0x36-and-the-motion-vms-op-0x09)).
-The engine queues each call on the world as a `SfxRingOp`; the native
-`BootSession::route_field_sfx` and the browser play page's `route_field_sfx`
-replay the queue onto their scheduler's four-slot ring every tick, and the
+The engine queues each call on the world as a `SfxRingOp`;
+`AudioBgmDirector::route_world_sfx`, which both play hosts call every tick,
+replays the queue onto the scheduler's four-slot ring, and the
 scheduler returns due ring cues in `SfxFireBatch::ring`, apart from the router
 queue. A ring id is keyed as the drainer `FUN_80016B6C` keys it: below `0x200`
 through the static table and its category's bank, at or above it through the
@@ -1532,10 +1531,8 @@ memo on every scene change as well. A door stages no bank, so the free tail is
 unchanged and the retry could never succeed; the memo now survives a door on
 both hosts, as retail's side-band request does.
 
-The native director calls `observe_bgm_end` after its own upload; the page's
-upload site (`WebBgmDirector::stage_owned`) does not see the SFX channel, so the
-page calls it before every read of the tail - each tick, each fire and each
-stage. The call is idempotent, so the two timings reach the same state.
+The director calls `observe_bgm_end` after every track upload and before each
+tail placement; the call is idempotent.
 
 ### The scheduler under a menu-overlay screen
 
@@ -2007,7 +2004,7 @@ busy level and has no drive to seek.
 Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, with the same `AudioTraceFrame` JSONL wire format on both:
 
 1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`. Convergence is "did any engine frame in the window match retail's voice mask?".
-2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/engine-shell/src/audio_trace_oracle.rs).
+2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/parity/src/audio_trace_oracle.rs).
 
 The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. The private SPU is configured through `set_retail_reverb` exactly as the shipped cpal host configures its own - an oracle whose engine differs from the engine cannot report a difference. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
 
@@ -2032,7 +2029,7 @@ Two known asymmetries the diff function explicitly models:
 
 Entry points:
 
-- Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
+- Library: [`legaia_parity::audio_trace_oracle`](../../crates/parity/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
 - CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), or `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture).
 - Disc-gated tests:
   - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
@@ -2107,7 +2104,7 @@ window, so the allocator is not the gap either.
 `first_audio_trace_divergence_multi` asks whether some engine frame's mask
 *covers* a retail frame's, which two windows taken at different moments of the
 same track can fail while playing identically. The per-voice comparison
-([`compare_voice_allocation`](../../crates/engine-shell/src/audio_trace_oracle.rs),
+([`compare_voice_allocation`](../../crates/parity/src/audio_trace_oracle.rs),
 `legaia-engine audio-trace --per-voice`) asks a different question: what were
 the sounding voices *doing*.
 
@@ -2156,13 +2153,13 @@ playthrough parked it. Pairing frame 0 of each therefore compares two
 different bars of one piece and reports the difference between the bars as a
 difference between the sides.
 
-[`best_alignment_offset`](../../crates/engine-shell/src/audio_trace_oracle.rs)
+[`best_alignment_offset`](../../crates/parity/src/audio_trace_oracle.rs)
 slides the retail window over the engine trace and scores each offset by the
 mean per-frame **Jaccard** of the two frames' sounding-pitch multisets. The
 symmetry matters: an intersection-only score ranks the busiest engine window
 first whatever it is playing, because a window with more voices contains more
 of retail's pitches by construction.
-[`compare_voice_allocation_aligned`](../../crates/engine-shell/src/audio_trace_oracle.rs)
+[`compare_voice_allocation_aligned`](../../crates/parity/src/audio_trace_oracle.rs)
 is `compare_voice_allocation` over the window that scores highest, and
 `audio-trace --per-voice` reports the offset it used.
 

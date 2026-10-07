@@ -16,8 +16,7 @@
     </tbody>
   </table>
   <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out.</p>
-
-  </section>
+</section>
 
 <section class="doc-section" id="battle-scene-init-residency">
   <h2>Battle scene-init residency window</h2>
@@ -32,7 +31,6 @@
     </tbody>
   </table>
   <p>The pair is <strong>post-load</strong> by design - both save frames resolve to a state where the loader function has already returned. The loader itself (which reads PROT entry <code>0x05C4</code> + sibling Seru blobs and populates the battle bundle) lives in an overlay slice not visible in either snapshot; only a mid-execution capture between the field&rarr;battle mode flip and this residency state could pin it directly.</p>
-  <p>Codified as <code>engine_core::capture_observations::battle_init_overlay</code>; disc-gated test <code>battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring</code>.</p>
 </section>
 
 <section class="doc-section" id="item-use-residency">
@@ -47,7 +45,6 @@
     </tbody>
   </table>
   <p>The captured pair uses a <strong>Healing Leaf</strong> (consumable HP-restore), not a spell-learn item, so it pins the residency window of the item-use battle-event handler but says nothing about the spell-learn writer to the displayed-skills array at <code>+0x185</code> - that writer needs its own capture pair.</p>
-  <p>Codified as <code>engine_core::capture_observations::item_use_battle_event</code>; disc-gated test <code>item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift</code>.</p>
 </section>
 
 <section class="doc-section" id="captured-stat-growth">
@@ -67,7 +64,7 @@
       <tr><td>Level-up</td><td><code>+0x130</code></td><td><code>0x02 &rarr; 0x03</code></td><td>displayed character level (+1 per level-up event; see <a href="level-up.html#record-fields">level-up</a>)</td></tr>
     </tbody>
   </table>
-  <p>The retail per-level growth source is in <code>SCUS_942.54</code>: the per-stat 98-entry curves at <code>DAT_800769CC</code> (stride <code>0x62</code>) + the parameter block at <code>DAT_80076918</code> that selects each stat's curve row, read and applied by the overlay level-up function <code>FUN_801E9504</code>. The engine applies them: <code>legaia_asset::level_up_tables::growth_tables_from_scus</code> parses the tables and <code>LevelUpTracker::with_growth_tables</code> installs per-character <code>StatGrowthCurve::PerLevel</code> (all 8 stats) at boot, byte-validated against the captured Noa L2&rarr;L3 single-level deltas - see <a href="level-up.html#stat-gains">level-up</a>.</p>
+  <p>The retail per-level growth source is in <code>SCUS_942.54</code>: the per-stat 98-entry curves at <code>DAT_800769CC</code> (stride <code>0x62</code>) and the parameter block at <code>DAT_80076918</code> that selects each stat's curve row, read and applied by the overlay level-up function <code>FUN_801E9504</code>. A captured Noa L2&rarr;L3 single-level step matches those tables byte for byte - see <a href="level-up.html#stat-gains">level-up</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

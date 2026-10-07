@@ -13,40 +13,36 @@
     <dt>Character record</dt><dd><code>0x414</code> bytes per member at <code>0x80084708 + n*0x414</code> (the save-file block)</dd>
     <dt>Monster record</dt><dd>Decoded archive slot (PROT 867), stat head at <code>+0x00</code>, mesh at <code>+0x04</code>, texture pool at <code>+0x08</code></dd>
     <dt>Heap</dt><dd>One ~1.23 MB best-fit heap; ~145 KB workable for distinct monster blocks</dd>
-    <dt>Engine</dt><dd><code>engine-core</code> (<code>BattleActor</code>, <code>battle_seats</code>, <code>MonsterMesh</code>), <code>engine-vm::battle_action</code>, <code>legaia_asset::monster_archive</code></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::monster_archive</code> (monster records); engine mirrors in <code>engine-core</code> (<code>battle_seats</code>, <code>MonsterMesh</code>)</dd>
     <dt>Confidence</dt><dd>Roster, context cursors, seats, camera, heap ledger, wipe path: Confirmed. A few actor-struct fields (<code>+0x3C/+0x40</code> mid-battle role, status timers): Inferred</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="actor-struct">
   <h2>Roster and actor struct</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 260" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 8-slot battle actor pointer table: slots 0 to 2 are the party, 3 to 7 the monsters; the context byte at offset 0x13 names the acting slot, whose pointer leads to one actor struct">
-      <defs><marker id="bi-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
-      <text x="20" y="24" fill="var(--text-muted)">0x801C9370 - 8 x u32 pointers</text>
-      <g stroke="var(--border)" fill="var(--bg-raised)">
-        <rect x="20" y="36" width="60" height="40"/><rect x="80" y="36" width="60" height="40"/><rect x="140" y="36" width="60" height="40"/>
-        <rect x="200" y="36" width="60" height="40"/><rect x="260" y="36" width="60" height="40"/><rect x="320" y="36" width="60" height="40"/><rect x="380" y="36" width="60" height="40"/><rect x="440" y="36" width="60" height="40"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="50" y="56">0</text><text x="110" y="56">1</text><text x="170" y="56">2</text>
-        <text x="230" y="56">3</text><text x="290" y="56">4</text><text x="350" y="56">5</text><text x="410" y="56">6</text><text x="470" y="56">7</text>
-      </g>
-      <path d="M20 86 L200 86" stroke="var(--accent)" stroke-width="2"/><text x="110" y="104" fill="var(--accent)" text-anchor="middle">party (formation order)</text>
-      <path d="M200 86 L500 86" stroke="var(--text-muted)" stroke-width="2"/><text x="350" y="104" fill="var(--text-muted)" text-anchor="middle">monsters (up to 5)</text>
-      <path d="M230 76 L230 150 L560 150" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#bi-arrow)"/>
-      <text x="250" y="140" fill="var(--text-muted)">table[ctx+0x13] = the acting actor</text>
-      <rect x="570" y="36" width="310" height="210" fill="var(--bg-raised)" stroke="var(--accent)"/>
-      <text x="586" y="58" fill="currentColor" font-weight="600">actor struct</text>
-      <g fill="var(--text-muted)">
-        <text x="586" y="82">+0x07   state byte</text>
-        <text x="586" y="102">+0x34 / +0x38   world X / Z</text>
-        <text x="586" y="122">+0x14C..  HP / MP / AGL pairs</text>
-        <text x="586" y="142">+0x16E  status halfword</text>
-        <text x="586" y="162">+0x1DD  target slot</text>
-        <text x="586" y="182">+0x1DE  action category</text>
-        <text x="586" y="202">+0x1DF..+0x1F2  action queue</text>
-        <text x="586" y="222">+0x230  mesh pointer</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 8-slot battle actor pointer table: slots 0 to 2 are the party, 3 to 7 the monsters; the context byte at offset 0x13 names the acting slot, whose pointer leads to one actor struct">
+      <defs><marker id="bi-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="20" y="24">0x801C9370 - 8 x u32 pointers</text>
+      <rect class="dg-node-accent" x="20" y="36" width="60" height="40"/><rect class="dg-node-accent" x="80" y="36" width="60" height="40"/><rect class="dg-node-accent" x="140" y="36" width="60" height="40"/>
+      <rect class="dg-node" x="200" y="36" width="60" height="40"/><rect class="dg-node" x="260" y="36" width="60" height="40"/><rect class="dg-node" x="320" y="36" width="60" height="40"/><rect class="dg-node" x="380" y="36" width="60" height="40"/><rect class="dg-node" x="440" y="36" width="60" height="40"/>
+      <text class="dg-label" x="50" y="60">0</text><text class="dg-label" x="110" y="60">1</text><text class="dg-label" x="170" y="60">2</text>
+      <text class="dg-label" x="230" y="60">3</text><text class="dg-label" x="290" y="60">4</text><text class="dg-label" x="350" y="60">5</text><text class="dg-label" x="410" y="60">6</text><text class="dg-label" x="470" y="60">7</text>
+      <text class="dg-sub" x="110" y="96">party (formation order)</text>
+      <text class="dg-sub" x="350" y="96">monsters (up to 5)</text>
+      <path class="dg-edge" d="M230 76 L230 150 L558 150" marker-end="url(#bi-arrow)"/>
+      <text class="dg-edge-label" x="250" y="140">table[ctx+0x13] = the acting actor</text>
+      <rect class="dg-node-accent" x="560" y="30" width="300" height="210" rx="4"/>
+      <text class="dg-label" x="710" y="54">actor struct</text>
+      <g class="dg-edge-label">
+        <text x="576" y="80">+0x07   state byte</text>
+        <text x="576" y="100">+0x34 / +0x38   world X / Z</text>
+        <text x="576" y="120">+0x14C..  HP / MP / AGL pairs</text>
+        <text x="576" y="140">+0x16E  status halfword</text>
+        <text x="576" y="160">+0x1DD  target slot</text>
+        <text x="576" y="180">+0x1DE  action category</text>
+        <text x="576" y="200">+0x1DF..+0x1F2  action queue</text>
+        <text x="576" y="220">+0x230  mesh pointer</text>
       </g>
     </svg>
     <figcaption>The pointer table is the battle's roster; a slot number is a combatant's identity for the whole fight.</figcaption>
@@ -155,7 +151,7 @@
       <tr><td>dome</td><td>two actors from one half-shell mesh</td><td>Half turn about Y by default; X mirror for stages listed at <code>0x80078B50</code></td></tr>
     </tbody>
   </table>
-  <p>Seats are two static tables of <code>[i16 x, y, z, pad]</code> entries selected by combatant count (party table <code>0x800775C8</code>, stride <code>0x18</code>; monster table <code>0x80077608</code>, stride <code>0x20</code>, alternate family four rows up). The values are on the <a href="battle.html#battle-background">main page</a>; engine mirror <code>engine-core::battle_seats</code>.</p>
+  <p>Seats are two static tables of <code>[i16 x, y, z, pad]</code> entries selected by combatant count (party table <code>0x800775C8</code>, stride <code>0x18</code>; monster table <code>0x80077608</code>, stride <code>0x20</code>, alternate family four rows up). The values are on the <a href="battle.html#battle-background">main page</a>.</p>
 </section>
 
 <section class="doc-section" id="character-record">
@@ -184,22 +180,14 @@
 <section class="doc-section" id="monster-record">
   <h2>Monster record</h2>
   <p>Each species is one LZS slot of <code>0x14000</code> bytes in the monster archive at <code>(id &minus; 1) &times; 0x14000</code>. The decoded block opens on a stat head; the loader copies stats into the actor and keeps the block pointer in a side table at <code>0x801C9348</code> so the spoils routine reads rewards without copying them.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 120" width="100%" style="max-width: 900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Decoded monster block layout: stat head, name string, Legaia TMD mesh, action entries, then the texture pool">
-      <g fill="var(--bg-raised)" stroke="var(--border)">
-        <rect x="20" y="30" width="150" height="50"/><rect x="170" y="30" width="110" height="50"/><rect x="280" y="30" width="200" height="50"/><rect x="480" y="30" width="190" height="50"/><rect x="670" y="30" width="210" height="50"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="95" y="49">stat head</text><text x="95" y="66" fill="var(--text-muted)">+0x00</text>
-        <text x="225" y="49">name</text><text x="225" y="66" fill="var(--text-muted)">NUL string</text>
-        <text x="380" y="49">Legaia TMD</text><text x="380" y="66" fill="var(--text-muted)">head +0x04</text>
-        <text x="575" y="49">action entries</text><text x="575" y="66" fill="var(--text-muted)">head +0x4C list</text>
-        <text x="775" y="49">texture pool</text><text x="775" y="66" fill="var(--text-muted)">head +0x08</text>
-      </g>
-      <text x="20" y="104" fill="var(--text-muted)">pool: 15 x 16 BGR555 CLUTs (0x1E0 bytes), then a 4bpp page 128 or 256 texels wide x 256 rows</text>
-    </svg>
-    <figcaption>One decoded archive slot. The mesh and pool offsets are block-relative and fixed up at load.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="Decoded monster block layout: stat head, name string, Legaia TMD mesh, action entries, then the texture pool">
+    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">stat head</span><span class="bm-size">stats, rewards, pointers</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">after head</span><span class="bm-name">name</span><span class="bm-size">NUL string</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">head +0x04</span><span class="bm-name">Legaia TMD</span><span class="bm-size">mesh</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">head +0x4C list</span><span class="bm-name">action entries</span><span class="bm-size">spells + clips</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">head +0x08</span><span class="bm-name">texture pool</span><span class="bm-size">15 CLUTs + 4bpp page</span></div>
+  </div>
+  <p class="hint">Widths are schematic. The pool is 15 &times; 16 BGR555 CLUTs (<code>0x1E0</code> bytes), then a 4bpp page 128 or 256 texels wide &times; 256 rows.</p>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Field</th><th>Destination</th></tr></thead>
     <tbody>
@@ -220,24 +208,24 @@
   <ul class="bullets">
     <li><strong>Action entries.</strong> Each entry's first byte is a tag: <code>2/3/4/5/0xB</code> are the hit-reaction clips (their slot indices land in actor <code>+0x1EF..+0x1F3</code>), <code>0x0C..0x1F</code> are castable attacks, <code>0x23</code> is special; the AGL cost sits at entry <code>+0x74</code>. The three global ids at <code>+0x21</code> are what appear on screen; the local entry ids only gate the pose.</li>
     <li><strong>Texture pool.</strong> Uploaded to CLUT row <code>484 + seat</code> and page column <code>(320 + seat &times; 64, 256)</code>; the on-disc CBA / TSB words are nominal and relocated per seat. Width is 128 texels unless the wide flag is set: <code>width = (pool_len &minus; 0x1E0) / 256 &times; 2</code>.</li>
-    <li><strong>Steal data</strong> is <em>not</em> here - it is a static SCUS table (<a href="../formats/steal-table.html">steal table</a>). The <a href="../monsters.html">monster viewer</a> and the engine's <code>MonsterMesh::battle_render_mesh</code> reproduce the same relocation.</li>
+    <li><strong>Steal data</strong> is <em>not</em> here - it is a static SCUS table (<a href="../formats/steal-table.html">steal table</a>). The <a href="../monsters.html">monster viewer</a> reproduces the same relocation.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="status-effects">
   <h2>Status bits</h2>
-  <p>Every ailment is a bit in the actor's status halfword. Two overlay legs set them - the hit leg (kind byte at art descriptor <code>+0x7A</code>) and the cast leg (spell descriptor byte <code>+0x0A</code>) - sharing one kind-to-bit map. Per-status timers live in the actor around <code>+0x130</code>; their layout is Inferred.</p>
+  <p>Every ailment is a bit in the actor's status halfword. Two overlay legs set them - the hit leg (kind byte at art descriptor <code>+0x7A</code>) and the cast leg (spell descriptor byte <code>+0x0A</code>) - sharing one kind-to-bit map. Per-status timers live in the actor around <code>+0x130</code>; their layout is Inferred, so the port's per-status turn counts are its own.</p>
   <table class="data-table">
-    <thead><tr><th>Status</th><th>Kind byte</th><th>Retail effect</th><th>Engine note</th></tr></thead>
+    <thead><tr><th>Status</th><th>Kind byte</th><th>Retail effect</th></tr></thead>
     <tbody>
-      <tr><td>Toxic</td><td>1</td><td>Drains <code>min(max_hp/16, 256)</code> per round, never kills; rolls &times;7/10; suppresses Venom's tick</td><td>4 turns (from-scratch duration)</td></tr>
-      <tr><td>Numb</td><td>2</td><td>Cannot act; clears when hit</td><td>3 turns</td></tr>
-      <tr><td>Venom</td><td>3</td><td>Drains <code>min(max_hp/32, 128)</code> per round, never kills; rolls &times;9/10</td><td>6 turns</td></tr>
-      <tr><td>Sleep</td><td>4</td><td>Cannot act; wakes when hit</td><td>3 turns</td></tr>
-      <tr><td>Confuse</td><td>5</td><td>Random target on the opposite side; a confused party member is delegated to the AI resolver</td><td>Party-side auto-strike is an engine stand-in</td></tr>
-      <tr><td>Curse</td><td>6</td><td>Blocks Magic</td><td>4 turns</td></tr>
-      <tr><td>Stone</td><td>7</td><td>Cannot act or be damaged, counts as defeated; a successful escape restores it (the run band floors 0-HP members at 1)</td><td>Whole battle</td></tr>
-      <tr><td>Faint</td><td>8</td><td>KO at 0 HP; revive only</td><td>Until cured</td></tr>
+      <tr><td>Toxic</td><td>1</td><td>Drains <code>min(max_hp/16, 256)</code> per round, never kills; rolls &times;7/10; suppresses Venom's tick</td></tr>
+      <tr><td>Numb</td><td>2</td><td>Cannot act; clears when hit</td></tr>
+      <tr><td>Venom</td><td>3</td><td>Drains <code>min(max_hp/32, 128)</code> per round, never kills; rolls &times;9/10</td></tr>
+      <tr><td>Sleep</td><td>4</td><td>Cannot act; wakes when hit</td></tr>
+      <tr><td>Confuse</td><td>5</td><td>Random target on the opposite side; a confused party member is delegated to the AI resolver</td></tr>
+      <tr><td>Curse</td><td>6</td><td>Blocks Magic</td></tr>
+      <tr><td>Stone</td><td>7</td><td>Cannot act or be damaged, counts as defeated; a successful escape restores it (the run band floors 0-HP members at 1)</td></tr>
+      <tr><td>Faint</td><td>8</td><td>KO at 0 HP; revive only</td></tr>
     </tbody>
   </table>
   <p>Bit <code>0x400</code> has no setter on the disc - every write that touches it is a clear (accessory cure, the per-round waker, item cures, the on-hit strip, battle exit). It is a latent status with a full consumer lifecycle and no infliction path. Rot (kind 5 in the art-record space) sets one random bit of <code>0x38</code>, greying out the rolled limb's attack command. Full writer inventory: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory" target="_blank" rel="noopener">battle.md</a>.</p>
@@ -262,11 +250,11 @@
 <section class="doc-section" id="wipe-path">
   <h2>The party-wipe path</h2>
   <p>The battle always exits the same way - into MAIN INIT - and the wipe fork lives one mode later. Three latches decide where MAIN INIT sends the game:</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Detect</span><span class="desc">The end-of-action gate counts living, non-petrified party members; none sets the end signal <code>0xFE</code> and wipe cause <code>5</code>, and clears the survived latch</span><span class="crate">FUN_801E295C 0x5A</span>
-    <span class="num">2</span><span class="layer">Exit</span><span class="desc">The exit selector writes <code>game_mode = 2</code> (MAIN INIT) wipe or no wipe, with the back-from-battle marker set; it never reads the wipe cause</span><span class="crate">FUN_80046A20</span>
-    <span class="num">3</span><span class="layer">Fork</span><span class="desc">With the survived latch clear and story-flag 0 clear, MAIN INIT writes <code>game_mode = 0x16</code> (CARD) with entry context <code>1</code>: the title screen with the cursor on Continue</span><span class="crate">FUN_8003AEB0</span>
-  </div>
+  <ol class="steps">
+    <li><b>Detect</b><span>The end-of-action gate counts living, non-petrified party members; none sets the end signal <code>0xFE</code> and wipe cause <code>5</code>, and clears the survived latch &middot; <code>FUN_801E295C</code> state <code>0x5A</code></span></li>
+    <li><b>Exit</b><span>The exit selector writes <code>game_mode = 2</code> (MAIN INIT) wipe or no wipe, with the back-from-battle marker set; it never reads the wipe cause &middot; <code>FUN_80046A20</code></span></li>
+    <li><b>Fork</b><span>With the survived latch and story flag 0 both clear, MAIN INIT writes <code>game_mode = 0x16</code> (CARD), entry context <code>1</code>: the title screen, cursor on Continue &middot; <code>FUN_8003AEB0</code></span></li>
+  </ol>
   <table class="data-table">
     <thead><tr><th>Latch</th><th>Set by</th><th>Cleared by</th><th>Role</th></tr></thead>
     <tbody>
@@ -276,12 +264,6 @@
     </tbody>
   </table>
   <p>Scripts reach the same hand-off directly through a helper twin of the gate body, called by the field-VM op <code>4C EA</code>. The mode-18/19 game-over artwork overlay (PROT 0902, 29 TIMs) has no static writer and exits to the debug menu: a dev harness around dev art. Nothing on the reachable path draws "GAME OVER".</p>
-  <details class="disclosure">
-    <summary>Details: the port's hand-off and the unseeded-party trap</summary>
-    <div class="disclosure-body">
-      <p>The port carries the scan faithfully, and it can represent a state retail cannot: a party that was never seated. <code>BattleActor::liveness</code> defaults to 0, and 0 means dead, so a world built without the roster projection would wipe on its first gate. <code>BattleActionHost::slot_seated</code> gates the wipe arm on <code>party_seated &gt; 0</code>; monster wipe still resolves so a port-only state can terminate (<code>unseeded_battle_wipe_guard.rs</code>). A real wipe raises <code>World::game_over</code>, which both hosts route to the title screen through <code>GameOverSession</code> - drawing nothing and reading no button, as retail does.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

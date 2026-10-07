@@ -7,7 +7,7 @@
 <section class="doc-section" id="need">
   <h2>What you need</h2>
   <ul class="bullets">
-    <li><strong>Your own copy of Legend of Legaia (USA)</strong> (<code>SCUS-94254</code>) as a <code>.bin</code> image (Mode 2/2352), or its <code>.cue</code> sheet. Packs are keyed to the USA disc, so they do not apply to the European or Japanese discs.</li>
+    <li><strong>Your own copy of Legend of Legaia (USA)</strong> (<code>SCUS-94254</code>) as a <code>.bin</code> image (Mode 2/2352), or its <code>.cue</code> sheet. Packs are keyed to the USA disc, so they do not apply to the European or Japanese discs. You can still <em>export</em> those discs to read their script next to yours: a Japanese export gives every line of the original Japanese dialog as readable text.</li>
     <li><strong>A text editor</strong> that saves UTF-8 - Notepad++, VS Code, Kate, or TextEdit in plain-text mode. The pack is a YAML file: plain text with indentation.</li>
     <li><strong>A way to apply the pack</strong>: the <a href="../tooling/rom-patcher.html">ROM patcher page</a>, which runs in your browser and uploads nothing, or the <code>legaia-patcher</code> program from a release archive (<a href="getting-started.html">getting started</a>).</li>
     <li><strong>An emulator</strong> to play the result.</li>
@@ -41,16 +41,37 @@
 <section class="doc-section" id="browser">
   <h2>Path A &middot; in your browser</h2>
   <p>The <a href="../tooling/rom-patcher.html">ROM patcher page</a> does everything in the tab. Your disc is read on your machine and never uploaded.</p>
-  <ol class="bullets">
-    <li><strong>Choose your disc</strong> under <em>Disc image</em>.</li>
-    <li><strong>Open the Language section</strong> at the top of the form.</li>
-    <li><strong>Export a starter pack.</strong> With <em>Language</em> set to <em>None</em>, press <em>Export a starter pack from my disc</em>. You get <code>legaia_en.working.yaml</code>: the whole game, every <code>translation:</code> empty. To continue an existing translation instead, choose that language (or <em>Import my own pack</em>) first - the button becomes <em>Export a working copy of this pack</em>, with that pack's lines filled in and the English beside each.</li>
-    <li><strong>Edit the pack</strong> in your text editor. Change the <code>language:</code> line near the top to your language code (<code>fr</code>, <code>pt-BR</code>, ...), add yourself under <code>contributors:</code>, and fill in <code>translation:</code> fields. The <a href="#markup">markup table</a> lists what to keep.</li>
-    <li><strong>Load your pack</strong>: set <em>Language</em> to <em>Import my own pack (.yaml)</em> and pick your file.</li>
-    <li><strong>Check pack against my disc.</strong> This runs the whole import in memory and reports, per section, how many lines would land and why the others would not. Nothing is written.</li>
-    <li><strong>Download skipped lines (.csv)</strong> appears when some lines did not land: one row per line with its <code>key</code> (search for it in your pack), a short <code>reason</code> and the full <code>message</code>. The <a href="#stayed-english">troubleshooting table</a> explains each one.</li>
-    <li><strong>Patch.</strong> Optionally tick <em>Give translated dialog more room</em> (<a href="#more-room">below</a>), then press <em>Patch &amp; download</em>. The language patch combines with any randomizer options you also chose. The patched disc image is for your own play only.</li>
-    <li><strong>Make a shareable pack (.yaml, no English)</strong> when you are ready to share. The downloaded file holds only your translations - that is the file to pass around.</li>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 150" role="img" aria-label="Translation loop: export a starter pack from your disc, edit translations in a text editor or the workbench, check against your disc, fix skipped lines and check again, then patch and download, and make a shareable pack">
+      <defs><marker id="tr-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="85" y="44">Export</text><text class="dg-sub" x="85" y="62">working pack</text>
+      <rect class="dg-node" x="185" y="20" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="260" y="44">Edit</text><text class="dg-sub" x="260" y="62">translation: fields</text>
+      <rect class="dg-node-accent" x="360" y="20" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="435" y="44">Check</text><text class="dg-sub" x="435" y="62">nothing written</text>
+      <rect class="dg-node" x="535" y="20" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="610" y="44">Patch</text><text class="dg-sub" x="610" y="62">disc for your play</text>
+      <rect class="dg-node-ok" x="710" y="20" width="140" height="56" rx="5"/>
+      <text class="dg-label" x="780" y="44">Share</text><text class="dg-sub" x="780" y="62">pack, no English</text>
+      <path class="dg-edge" d="M160 48 L183 48" marker-end="url(#tr-arrow)"/>
+      <path class="dg-edge" d="M335 48 L358 48" marker-end="url(#tr-arrow)"/>
+      <path class="dg-edge" d="M510 48 L533 48" marker-end="url(#tr-arrow)"/>
+      <path class="dg-edge" d="M685 48 L708 48" marker-end="url(#tr-arrow)"/>
+      <path class="dg-edge-dim" d="M435 76 L435 115 L260 115 L260 80" marker-end="url(#tr-arrow)"/>
+      <text class="dg-edge-label" x="348" y="134" text-anchor="middle">skipped lines (.csv): fix and check again</text>
+    </svg>
+    <figcaption>The loop: export once, then edit and check until the skipped-lines list is short enough; only the stripped pack leaves your machine.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><b>Choose your disc</b><span>Under <em>Disc image</em>, then open the <em>Language</em> section at the top of the form.</span></li>
+    <li><b>Export a starter pack</b><span>With <em>Language</em> set to <em>None</em>, press <em>Export a starter pack from my disc</em>: you get <code>legaia_en.working.yaml</code>, every <code>translation:</code> empty. To continue an existing translation, choose that language (or <em>Import my own pack</em>) first - the button becomes <em>Export a working copy of this pack</em>.</span></li>
+    <li><b>Edit the pack</b><span>Set the <code>language:</code> line to your code (<code>fr</code>, <code>pt-BR</code>, ...), add yourself under <code>contributors:</code>, fill in <code>translation:</code> fields. The <a href="#markup">markup table</a> lists what to keep.</span></li>
+    <li><b>Load it</b><span>Set <em>Language</em> to <em>Import my own pack (.yaml)</em> and pick your file.</span></li>
+    <li><b>Check pack against my disc</b><span>Runs the whole import in memory and reports, per section, how many lines land and why the others would not. Nothing is written.</span></li>
+    <li><b>Fix skipped lines</b><span><em>Download skipped lines (.csv)</em>: one row per line with its <code>key</code>, a <code>reason</code> and the full <code>message</code>; see the <a href="#stayed-english">troubleshooting table</a>.</span></li>
+    <li><b>Patch</b><span>Optionally tick <em>Give translated dialog more room</em> (<a href="#more-room">below</a>), then <em>Patch &amp; download</em>. Combines with any randomizer options. The patched image is for your own play only.</span></li>
+    <li><b>Make a shareable pack</b><span><em>Make a shareable pack (.yaml, no English)</em> - the file to pass around.</span></li>
   </ol>
   <h3 id="workbench">Editing in the workbench</h3>
   <p>Steps 3 to 7 can also happen on the <a href="../tooling/translation-workbench.html">translation workbench</a> page instead of in a text editor. Pick your disc there, then load a published pack, your own <code>.yaml</code>, or start fresh. Every line is listed with its English, a box for your translation, and live feedback as you type:</p>
@@ -65,28 +86,20 @@
 <section class="doc-section" id="cli">
   <h2>Path B &middot; on the command line</h2>
   <p>The same work in six steps with <code>legaia-patcher</code>. A <code>.cue</code> works wherever a <code>.bin</code> does.</p>
-<pre><code># 1. Export the disc's text into a working pack (once).
-legaia-patcher translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml
-
-# 2. Make an empty pack for your language.
-#    Add --resume site/lang/fr.yaml to start from a published pack.
-legaia-patcher translate init --lang fr --from legaia_en.yaml \
-    --contributor "Your Name" -o legaia_fr.yaml
-
-# 3. Fill in translation: fields. Working in a team?
-#    `init --chunk 500` splits the pack into pieces; merge puts them back.
-legaia-patcher translate merge --base legaia_fr.yaml \
-    --pack legaia_fr.001.yaml --pack legaia_fr.002.yaml -o legaia_fr.yaml
-
-# 4. Check it against your disc (nothing is written).
-legaia-patcher translate stats --pack legaia_fr.yaml --input "Legend of Legaia (USA).bin"
-
-# 5. Make the shareable pack.
-legaia-patcher translate strip --pack legaia_fr.yaml -o fr.yaml
-
-# 6. Apply it to a copy of your disc, and write a PPF patch as well.
-legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
-    --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf</code></pre>
+<ol class="steps">
+    <li><b>Export</b><span>the disc's text into a working pack (once).</span></li>
+    <li><b>Init</b><span>an empty pack for your language; <code>--resume site/lang/fr.yaml</code> starts from a published pack.</span></li>
+    <li><b>Translate</b><span>in your editor. Team? <code>init --chunk 500</code> splits the pack; <code>merge</code> puts the pieces back.</span></li>
+    <li><b>Stats</b><span>checks the pack against your disc; nothing is written.</span></li>
+    <li><b>Strip</b><span>makes the shareable pack.</span></li>
+    <li><b>Import</b><span>onto a copy of your disc, plus a PPF patch.</span></li>
+  </ol>
+  <div class="cli"><code>legaia-patcher translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml</code></div>
+  <div class="cli"><code>legaia-patcher translate init --lang fr --from legaia_en.yaml --contributor "Your Name" -o legaia_fr.yaml</code></div>
+  <div class="cli"><code>legaia-patcher translate merge --base legaia_fr.yaml --pack legaia_fr.001.yaml --pack legaia_fr.002.yaml -o legaia_fr.yaml</code></div>
+  <div class="cli"><code>legaia-patcher translate stats --pack legaia_fr.yaml --input "Legend of Legaia (USA).bin"</code></div>
+  <div class="cli"><code>legaia-patcher translate strip --pack legaia_fr.yaml -o fr.yaml</code></div>
+  <div class="cli"><code>legaia-patcher translate import --input "Legend of Legaia (USA).bin" --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf</code></div>
   <p><code>stats</code> and <code>import</code> print skipped lines grouped by reason; <code>--verbose</code> lists every line with its key. The tool never writes to your original image: <code>--output</code> is a new patched image for your own play, and <code>--patch</code> is a small PPF file that turns a clean disc into the translated one - a PPF is safe to share. Every flag: <a href="../tooling/translation.html#cli">CLI reference</a>.</p>
 </section>
 
@@ -111,7 +124,7 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
   </ul>
   <h3 id="screen-room">Room on screen</h3>
   <p>Fitting in bytes is not the same as fitting on screen. The game <strong>never wraps text for you</strong>: a dialog row breaks only where you put a <code>|</code> (or where a new line starts), and a row wider than the box simply runs past its edge. Names have the same limit sideways - an item name much wider than the English ones runs into the quantity column of the item list.</p>
-  <p>Rough widths, measured in the game's own proportional font: a dialog row holds about 244 pixels (three rows per box), an item name in the pause menu or a shop about 104. Narrow letters (<code>i</code>, <code>l</code>) take far less room than wide ones (<code>M</code>, <code>W</code>), so count pixels, not characters. The full table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dialog-font.md#line-width-and-wrapping" target="_blank" rel="noopener">line width and wrapping</a>.</p>
+  <p>Rough widths, measured in the game's own proportional font: a dialog row holds about 244 pixels (three rows per box), an item name in the pause menu or a shop about 104. Narrow letters (<code>i</code>, <code>l</code>) take far less room than wide ones (<code>M</code>, <code>W</code>), so count pixels, not characters. The full table is in <a href="../formats/dialog-font.html#line-width-and-wrapping">line width and wrapping</a>.</p>
   <p>The <a href="#workbench">workbench</a> measures each line as you type and draws it in the game's font. From the command line, <code>legaia-patcher translate space --input DISC.bin --pack my_pack.yaml</code> reports a whole pack's room.</p>
   <p class="hint">Every room rule, per section: <a href="../tooling/translation.html#budgets">budgets</a> in the reference.</p>
 </section>

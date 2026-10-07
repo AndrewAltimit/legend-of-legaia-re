@@ -7,12 +7,12 @@
 //! retail (no pin). Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::party_swap::cast_stage;
 use legaia_patcher::delilas_party::{
     CastRoutePolicy, DelilasMoveMode, PartyMapping, Sibling, apply_delilas_party,
 };
 use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
 use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::party_swap::cast_stage;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;

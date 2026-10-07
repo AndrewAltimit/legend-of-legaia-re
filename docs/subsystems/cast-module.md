@@ -2549,7 +2549,7 @@ mirror via `see ghidra/scripts/funcs/8004ad80.txt`; natural-cast playouts
 captured per-frame under PCSX-Redux (`autorun_delilas_enemy_cast_watch.lua`)
 pin the staging walks, the loop counter, and the phase-5 confirm gate.
 Patcher mirror: `legaia_patcher::delilas_cast` (expect-verified word edits
-against these images); staged player rows `legaia_asset::party_swap::cast_stage`.
+against these images); staged player rows `legaia_patcher::party_swap::cast_stage`.
 
 The entry tables and the image partition come from disassembly of the 0898
 image (`FUN_801F1ED4` at file `+0x236BC`, the tables at `0x801CF4EC` and

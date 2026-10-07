@@ -13,37 +13,31 @@
     <dt>Modes</dt><dd>Play page: Spectator / First-person (what Vahn sees). World overview: Diorama / On the ground</dd>
     <dt>Retail</dt><dd>None of this exists on the disc - VR sits alongside the port's other explicit toggles</dd>
   </dl>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vr-title" width="100%" style="max-width: 880px;">
-      <title id="vr-title">Per-frame VR fork: the page's draw closure is unchanged; each XR frame binds the XRWebGLLayer framebuffer, then for each eye scissors to that eye's viewport, swaps the view-projection builder for the eye's projection times inverse view times the world transform W, and calls the same draw closure</title>
-      <style>
-        .vr-box { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.3; }
-        .vr-soft { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.2; stroke-dasharray: 4 3; }
-        .vr-t { font: 600 11px 'Inter', sans-serif; fill: var(--text); text-anchor: middle; }
-        .vr-s { font: 10px 'JetBrains Mono', monospace; fill: var(--text-muted); text-anchor: middle; }
-        .vr-edge { fill: none; stroke: var(--text-muted); stroke-width: 1.3; marker-end: url(#vr-ah); }
-      </style>
-      <defs><marker id="vr-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="20" y="55" width="150" height="56" class="vr-box"/>
-      <text x="95" y="78" class="vr-t">XR frame</text>
-      <text x="95" y="96" class="vr-s">bind framebuffer</text>
-      <rect x="210" y="20" width="200" height="56" class="vr-soft"/>
-      <text x="310" y="43" class="vr-t">left eye</text>
-      <text x="310" y="61" class="vr-s">scissor + viewport shadow</text>
-      <rect x="210" y="95" width="200" height="56" class="vr-soft"/>
-      <text x="310" y="118" class="vr-t">right eye</text>
-      <text x="310" y="136" class="vr-s">scissor + viewport shadow</text>
-      <rect x="450" y="55" width="200" height="56" class="vr-box"/>
-      <text x="550" y="78" class="vr-t">vp = P &middot; V&#8315;&#185; &middot; W</text>
-      <text x="550" y="96" class="vr-s">VP builder shadowed</text>
-      <rect x="690" y="55" width="170" height="56" class="vr-box"/>
-      <text x="775" y="78" class="vr-t">renderAssembled</text>
-      <text x="775" y="96" class="vr-s">unchanged draw</text>
-      <path d="M170,83 L208,50" class="vr-edge"/>
-      <path d="M170,83 L208,120" class="vr-edge"/>
-      <path d="M410,48 L448,78" class="vr-edge"/>
-      <path d="M410,123 L448,90" class="vr-edge"/>
-      <path d="M650,83 L688,83" class="vr-edge"/>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Per-frame VR fork: each XR frame binds the XRWebGLLayer framebuffer, then for each eye scissors to that eye's viewport and swaps the view-projection builder for the eye's projection times inverse view times the world transform W, and calls the page's unchanged draw closure.">
+      <defs><marker id="vr-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="10" y="60" width="160" height="58" rx="5"/>
+      <text class="dg-label" x="90" y="85">XR frame</text>
+      <text class="dg-sub" x="90" y="103">bind framebuffer</text>
+      <rect class="dg-group" x="200" y="10" width="230" height="160" rx="6"/>
+      <text class="dg-edge-label" x="315" y="165" text-anchor="middle">per eye</text>
+      <rect class="dg-node" x="215" y="22" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="315" y="45">left eye</text>
+      <text class="dg-sub" x="315" y="63">scissor + viewport</text>
+      <rect class="dg-node" x="215" y="96" width="200" height="54" rx="5"/>
+      <text class="dg-label" x="315" y="119">right eye</text>
+      <text class="dg-sub" x="315" y="137">scissor + viewport</text>
+      <rect class="dg-node-accent" x="465" y="60" width="200" height="58" rx="5"/>
+      <text class="dg-label" x="565" y="85">vp = P &#183; V&#8315;&#185; &#183; W</text>
+      <text class="dg-sub" x="565" y="103">VP builder shadowed</text>
+      <rect class="dg-node-ok" x="700" y="60" width="170" height="58" rx="5"/>
+      <text class="dg-label" x="785" y="85">page draw</text>
+      <text class="dg-sub" x="785" y="103">unchanged closure</text>
+      <path class="dg-edge" d="M170 80 L213 52" marker-end="url(#vr-arrow)"/>
+      <path class="dg-edge" d="M170 98 L213 122" marker-end="url(#vr-arrow)"/>
+      <path class="dg-edge" d="M415 52 L463 80" marker-end="url(#vr-arrow)"/>
+      <path class="dg-edge" d="M415 122 L463 98" marker-end="url(#vr-arrow)"/>
+      <path class="dg-edge" d="M665 89 L698 89" marker-end="url(#vr-arrow)"/>
     </svg>
     <figcaption>The fork lives <em>around</em> the page's draw, not inside it: per eye, scissor the clear, hand the renderer the device's matrices, call the same closure the flat page calls.</figcaption>
   </figure>
@@ -61,7 +55,13 @@
 <section class="doc-section" id="transform">
   <h2>The world &rarr; XR transform</h2>
   <p>Legaia measures its world in arbitrary units; a headset measures in metres. One matrix converts, for a viewer at world point <code>p</code> facing <code>yaw</code> with <code>u</code> world units per metre:</p>
-  <pre><code>W = MirrorX &middot; RotY(-yaw) &middot; Scale(1/u) &middot; Translate(-p)</code></pre>
+  <ol class="steps">
+    <li><b>Translate(&minus;p)</b><span>Put the viewer's world point at the origin.</span></li>
+    <li><b>Scale(1/u)</b><span>World units to metres.</span></li>
+    <li><b>RotY(&minus;yaw)</b><span>Face the viewer's heading.</span></li>
+    <li><b>MirrorX</b><span>Carry the retail screen-X flip the device matrices cannot.</span></li>
+  </ol>
+  <p>Composed right to left: <code>W = MirrorX &middot; RotY(&minus;yaw) &middot; Scale(1/u) &middot; Translate(&minus;p)</code>.</p>
   <p>The XR reference space is <code>local-floor</code>, so the headset reports itself ~1.6 m above the physical floor - which becomes <code>1.6 &middot; u</code> world units above the scene's floor. The <em>only</em> thing deciding whether you stand in a town or tower over a continent is <code>u</code>.</p>
   <details class="disclosure">
     <summary>Why the world is mirrored</summary>
@@ -71,7 +71,7 @@
 
 <section class="doc-section" id="scale">
   <h2>World scale and viewing modes</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Page</th><th>Mode</th><th>Units/m</th><th>What it is</th></tr></thead>
     <tbody>
       <tr><td rowspan="2">World overview</td><td>Diorama</td><td>2000</td><td>A 16320-unit continent becomes an ~8 m tabletop model; eye height puts you 3200 world units above the sea.</td></tr>
@@ -86,7 +86,7 @@
 
 <section class="doc-section" id="controls">
   <h2>Locomotion + controls</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Input</th><th>Effect</th></tr></thead>
     <tbody>
       <tr><td>Left stick</td><td>Walk / fly horizontally, relative to where you are looking.</td></tr>
@@ -103,7 +103,7 @@
 <section class="doc-section" id="availability">
   <h2>Availability + session lifecycle</h2>
   <p>The VR button is always rendered - availability only changes what it says. With WebXR supported and a scene loaded it is the working <strong>Enter VR</strong>; otherwise it reads <strong>VR unavailable</strong> with the specific diagnostic on hover and click. The probe re-runs on the device-change event, so starting SteamVR after page load arms the button without a reload.</p>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
     <tbody>
       <tr><td>No <code>navigator.xr</code></td><td>WebXR needs a secure context - plain <code>http://</code> from a LAN IP has none. In a secure context: the browser has no WebXR.</td><td>Browse via <code>localhost</code> (SSH port-forward) or https; use Chrome / Edge.</td></tr>

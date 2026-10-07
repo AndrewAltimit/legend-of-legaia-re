@@ -103,14 +103,12 @@ anyone a play-page fix is live. When stale it names the drifted files, because
 
 The stamp answers "is the bundle on disk built from this tree?". A *served*
 bundle has a second staleness axis the stamp cannot see: the browser's own HTTP
-cache. `site/wasm/legaia_web_viewer.js` and `legaia_web_viewer_bg.wasm` are
-fetched from URLs that never change, while every `js/*.js` beside them is
-content-busted by `_gen.py` (see
-[`site-shell.md`](site-shell.md#script-cache-busting-is-content-addressed)). So
-a rebuilt engine can reach a returning browser late, or not at all, while the
-page scripts around it update immediately.
-
-How long "late" is comes from the response headers, and the two hosts differ:
+cache. `site/js/wasm-loader.js` versions both `site/wasm/` URLs with a content hash
+of the bundle (see
+[`site-shell.md`](site-shell.md#script-cache-busting-is-content-addressed)), so
+a rebuild changes the URLs - but only once `_gen.py` regenerates the pages
+that carry the hash. A rebuilt bundle served under pages generated before it
+keeps the old URLs, and then the headers decide how long the old engine wins:
 
 | Host | Headers on `wasm/*` | Stale window after a rebuild |
 |---|---|---|

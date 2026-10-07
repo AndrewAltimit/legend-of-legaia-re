@@ -2054,17 +2054,18 @@ The remaining hub legs, one level deep, decoded + driven by the disc-gated
   leg - `P2[13]` (C1 `0x15E` / C2 `0x15D`) -> `P2[14]` (C1 `0x169` / C2
   `0x15E`) -> `P2[15]` (C1 `[0x13, 0x142]` / C2 `0x169`; the final beat stops
   replaying once the Zeto flag sets). Ungated `P2[16]` SETs the `0x15D` entry
-  key. The `0x15E` beat is read cross-scene by `urudre1` `P2[0]` (the Uru
-  Mais dream tests the cave beat).
+  key.
 - **`vell`** - single exit `P2[10]` (band `(88..92,7)`). `P2[11]` self-latch
   C1=[`0x2AF`] (strictly vell-local Set/Test pair); `P2[7]` carries
-  `C1=[0x63A, 0x7]` **byte-identical to vozz `P2[7]`'s gate**, and `0x63A`
-  has ZERO script sites disc-wide (no writer anywhere in the MAN corpus -
-  open thread). Also carries a gate-4 trigger family (record 53, five
+  `C1=[0x63A, 0x7]` **byte-identical to vozz `P2[7]`'s gate**; `0x63A`'s
+  writers are late-game beats (rikuroa's post-Caruban variant MAN, retockin,
+  edretoin), so the spawn block passes for the whole first visit
+  ([settled](../reference/re-settled-threads.md#flag-0x63a---the-vellvozz-p27-gate-with-no-script-writer)). Also carries a gate-4 trigger family (record 53, five
   scattered tiles) not seen on the other legs.
-- **`suimon` is a pure corridor** - all three `P2` records are ungated `0x3F`
-  exits to `map01`; story variation only via the shared controller `P1[0]`
-  testing `0x142`.
+- **`suimon`'s three `P2` records are ungated `0x3F` exits to `map01`** -
+  records `0`/`1` to the northern component, record `2` to the southern one;
+  which chamber the player arrives in is flag `0x27B`
+  ([above](#the-overworld-is-not-one-walk-component)).
 - **The Drake Castle interior is FOUR scenes deep**: `jou -> jouina ->
   jouinb -> jouinc -> jouind`. `jouinb` (`[19,7,13]`) is fully ungated (no
   jouina-style `C1=[0xF]` busy-latch): `P2[9]` back to `jouina`, `P2[10]`
@@ -2072,7 +2073,7 @@ The remaining hub legs, one level deep, decoded + driven by the disc-gated
   `0x44D` door is passed the deep castle is open. The oracle's part F drives
   `jou -> jouina -> jouinb -> jouinc` end-to-end in one session (the door
   cutscene completes through the player-channel model) - the deepest driven
-  interior chain in the engine. `jouinc`/`jouind` decode is an open thread.
+  interior chain in the engine. `jouinc`/`jouind`'s partition-2 records are door-choreography families (a `0x00F` busy-mutex and a per-visit `0x4BE..0x4C2` band), not story gates - see [`script-vm.md`](script-vm.md#door-choreography-record-families-the-0x00f-busy-mutex--the-jouind-per-visit-band).
 - **Decoder asymmetry (pinned):** the partition-1 destination-table scan
   under-reports doors carried only by `P2` records (`jouinb`'s `jouina`
   return door) - the reverse of the `jou` `P2[5]` blind spot; the `P2`
@@ -3393,8 +3394,9 @@ function called from a 1332-byte parameter-prep wrapper:
 | `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
 | `0x801C2B2C` (phantom VA) | **Not a relocation copy.** It is `FUN_801D1344` printed `0xE818` low (PROT 0897 bases at `0x801CE818`; the dump was imported at `0x801C0000`), so its "`jal 0x801D8258` at `0x801C2C58`" is the same call `FUN_801D1344` makes at `0x801D1470`. PSX overlays are not relocated. See [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md). |
 
-The gate flag `_DAT_801F351C` is in the persistent `0x801F0000+` region,
-so it survives overlay swaps. One routine reads and clears it,
+The gate flag `_DAT_801F351C` is field-overlay data - PROT 0897's image
+runs to `0x801F3817` - so it is reloaded with the overlay rather than
+surviving a swap. One routine reads and clears it,
 `FUN_801D7EA0`; the "0897 sibling `FUN_801C9688`" earlier pages named is the
 same body printed `0xE818` low, compared with itself.
 
@@ -3412,7 +3414,7 @@ same body printed `0xE818` low, compared with itself.
 | `_DAT_8007B6B8` | Game-mode discriminator (value `0x20` = alternate sprite path). |
 | `_DAT_80083808` | World-map entity activation gate. |
 | `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
-| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` clears it after one emission (`0x801C9688` is the same body at a phantom VA, not a sibling). Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
+| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` clears it after one emission (`0x801C9688` is the same body at a phantom VA, not a sibling). Field-overlay data inside PROT 0897's image (which runs to `0x801F3817`), reloaded with the overlay rather than surviving a swap. |
 | `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the **sine** LUT at `0x8007B81C`. |
 | `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |

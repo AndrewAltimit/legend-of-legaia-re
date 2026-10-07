@@ -1,180 +1,175 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; motion VM</div>
   <h1>Per-actor motion VMs</h1>
-  <p class="lede">The interpreters that walk NPCs around. When a villager paces a patrol route, an actor turns toward you, a cutscene marches someone across the screen, or the camera glides after a character, one of <strong>two</strong> small bytecode VMs is stepping that actor, one instruction per frame. This page covers which VM does what, how an actor's facing changes, and where the bytecode lives on the disc.</p>
+  <p class="lede">The interpreters that walk NPCs around. When a villager wanders inside an invisible box, an actor turns toward a target, a cutscene marches someone across the screen, or a scene flips a story flag as its choreography plays, one of <strong>two</strong> small bytecode VMs in the main executable is stepping that actor. This page covers which VM does what, how an actor's facing changes, and where the bytecode lives on the disc.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
-  <p>An <em>actor</em> is the engine's record for one on-screen entity (the player, an NPC, a prop, a camera target). Every frame the field actor tick visits every actor and, depending on flag bits in the actor's word at <code>+0x10</code>, hands it to one of two interpreters - both in the main executable.</p>
-  <table>
-    <thead><tr><th>VM</th><th>Entry</th><th>Gate</th><th>What a player sees</th><th>Bytecode source</th></tr></thead>
+  <p>An <em>actor</em> is the engine's record for one on-screen entity (the player, an NPC, a prop, a camera target). Every frame the field actor tick visits every actor and, depending on flag bits in its word at <code>+0x10</code>, hands it to one of two interpreters.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>VM</th><th>Entry</th><th>Runs when</th><th>What a player sees</th><th>Bytecode source</th></tr></thead>
     <tbody>
-      <tr><td>Pursue / patrol / face-target</td><td><code>FUN_8003774C</code></td><td><code>+0x10 &amp; 0x400</code></td><td>NPCs closing on a target, camera follow, "walk here and face that"</td><td>Per-actor stream parked at <code>+0x94</code></td></tr>
-      <tr><td>Scripted motion / story flags</td><td><code>FUN_80038158</code></td><td><code>+0x10 &amp; 0x80</code></td><td>Ambient town wandering, idle turns, plus the story flags a scene flips as it plays</td><td>MAN tail-section 1 (parser <code>legaia_asset::man_motion</code>)</td></tr>
+      <tr><td>Pursue / walk kernel</td><td><code>FUN_8003774C</code></td><td><code>+0x10 &amp; 0x400</code></td><td>A scripted walk or glide, "walk here and face that", camera follow paths</td><td>The field-VM motion op itself, read in place through <code>+0x94</code></td></tr>
+      <tr><td>Ambient motion / flags</td><td><code>FUN_80038158</code></td><td><code>+0x10 &amp; 0x80</code></td><td>Town wandering, idle turns, model swaps, fades - and the story flags a scene flips as it plays</td><td>MAN tail-section 1 (parser <code>legaia_asset::man_motion</code>)</td></tr>
     </tbody>
   </table>
+  </div>
   <div class="notice">
     <p class="notice-title">Two traps</p>
-    <p>The NPC turning to look at you when you press the action button is <strong>neither</strong> VM - it is a single store in the dialog state machine (<a href="#talk-facing">talk-time facing</a>). And the scripted VM has a <em>static decoder</em> alongside its interpreter, because its bytecode arrives as disc data rather than through the actor tick's own buffer: <code>engine-vm::ambient_motion</code> runs the whole op table, <code>engine-core::man_field_scripts::npc_motion</code> answers questions about a stream without running it, and <code>engine-vm::motion_vm</code> is the other VM entirely.</p>
+    <p>The NPC turning to look at you when you press the action button is <strong>neither</strong> VM - it is a single store in the dialog state machine (<a href="#talk-facing">talk-time facing</a>). And the ambient VM's bytecode arrives as disc data, so it has a static decoder beside its interpreter: <code>engine-vm::ambient_motion</code> runs it, <code>engine-core::man_field_scripts::npc_motion</code> answers questions about a stream without running it, and <code>engine-vm::motion_vm</code> is the other VM entirely.</p>
   </div>
   <p>Both are distinct from the <a href="actor-vm.html">window-widget VM</a> and the <a href="move-vm.html">move-table VM</a>; the whole family is on the <a href="move-vm.html#vm-family">VM family table</a>.</p>
 </section>
 
 <section class="doc-section" id="driver">
   <h2>The driver: one tick, two arms</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mv-drv-title" width="100%" style="max-width: 880px;">
-      <title id="mv-drv-title">Per-actor tick: the height arm picks one law for the actor's Y, then the dispatch arm fires up to four routines on their own flag guards</title>
-      <style>
-        .mv-box { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.2; }
-        .mv-hi  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.4; }
-        .mv-t   { font: 11px var(--font-mono, monospace); fill: var(--text); text-anchor: middle; }
-        .mv-l   { font: 11px sans-serif; fill: var(--text-muted); text-anchor: middle; }
-        .mv-e   { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#mv-ah); }
-      </style>
-      <defs><marker id="mv-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="color: var(--text-muted)"/></marker></defs>
-      <rect x="20" y="95" width="150" height="60" class="mv-hi"/>
-      <text x="95" y="120" class="mv-t">field actor tick</text>
-      <text x="95" y="138" class="mv-t">FUN_8003BC08</text>
-      <rect x="230" y="20" width="200" height="62" class="mv-box"/>
-      <text x="330" y="44" class="mv-l">height arm</text>
-      <text x="330" y="62" class="mv-t">snap / hold / clamped turn</text>
-      <rect x="230" y="150" width="200" height="62" class="mv-box"/>
-      <text x="330" y="174" class="mv-l">dispatch arm</text>
-      <text x="330" y="192" class="mv-t">skipped if suppress bit set</text>
-      <path d="M170,115 L230,55" class="mv-e"/>
-      <path d="M170,135 L230,175" class="mv-e"/>
-      <rect x="500" y="10" width="360" height="42" class="mv-box"/>
-      <text x="680" y="28" class="mv-t">FUN_80039B7C  cutscene event-script pump</text>
-      <text x="680" y="44" class="mv-l">+0x10 &amp; 0x100, script at +0x90</text>
-      <rect x="500" y="70" width="360" height="42" class="mv-hi"/>
-      <text x="680" y="88" class="mv-t">FUN_8003774C  pursue / patrol / face-target VM</text>
-      <text x="680" y="104" class="mv-l">+0x10 &amp; 0x400</text>
-      <rect x="500" y="130" width="360" height="42" class="mv-hi"/>
-      <text x="680" y="148" class="mv-t">FUN_80038158  scripted-motion / flag VM</text>
-      <text x="680" y="164" class="mv-l">+0x10 &amp; 0x80, bytecode at +0x80</text>
-      <rect x="500" y="190" width="360" height="42" class="mv-box"/>
-      <text x="680" y="208" class="mv-t">FUN_800204F8  move-table consumer</text>
-      <text x="680" y="224" class="mv-l">+0x5C &gt; 0 or +0x10 &amp; 0x1000</text>
-      <path d="M430,181 L500,31" class="mv-e"/>
-      <path d="M430,181 L500,91" class="mv-e"/>
-      <path d="M430,181 L500,151" class="mv-e"/>
-      <path d="M430,181 L500,211" class="mv-e"/>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The per-actor tick FUN_8003BC08 has two arms. The height arm picks one law for the actor's Y. The dispatch arm, skipped when a global suppress bit is set, fires up to four routines on their own flag guards: the field-script slice on bit 0x100, the pursue VM on bit 0x400, the ambient motion VM on bit 0x80, and the move-table consumer when a move is active.">
+      <defs><marker id="mv-drv-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="20" y="120" width="170" height="60" rx="4" class="dg-node-accent"/>
+      <text x="105" y="145" class="dg-label">field actor tick</text>
+      <text x="105" y="163" class="dg-sub">FUN_8003BC08</text>
+      <rect x="240" y="40" width="210" height="60" rx="4" class="dg-node"/>
+      <text x="345" y="65" class="dg-label">height arm</text>
+      <text x="345" y="83" class="dg-sub">Y: snap, hold or step</text>
+      <rect x="240" y="200" width="210" height="60" rx="4" class="dg-node"/>
+      <text x="345" y="225" class="dg-label">dispatch arm</text>
+      <text x="345" y="243" class="dg-sub">unless suppressed</text>
+      <path class="dg-edge" d="M190 140 L215 140 L215 70 L238 70" marker-end="url(#mv-drv-ah)"/>
+      <path class="dg-edge" d="M190 160 L215 160 L215 230 L238 230" marker-end="url(#mv-drv-ah)"/>
+
+      <rect x="520" y="16" width="320" height="54" rx="4" class="dg-node"/>
+      <text x="680" y="38" class="dg-label">field-script slice</text>
+      <text x="680" y="56" class="dg-sub">+0x10 &amp; 0x100 - not a motion VM</text>
+      <rect x="520" y="84" width="320" height="54" rx="4" class="dg-node-accent"/>
+      <text x="680" y="106" class="dg-label">pursue / walk kernel</text>
+      <text x="680" y="124" class="dg-sub">+0x10 &amp; 0x400 - FUN_8003774C</text>
+      <rect x="520" y="152" width="320" height="54" rx="4" class="dg-node-accent"/>
+      <text x="680" y="174" class="dg-label">ambient motion / flag VM</text>
+      <text x="680" y="192" class="dg-sub">+0x10 &amp; 0x80 - FUN_80038158</text>
+      <rect x="520" y="220" width="320" height="54" rx="4" class="dg-node"/>
+      <text x="680" y="242" class="dg-label">move-table consumer</text>
+      <text x="680" y="260" class="dg-sub">+0x5C &gt; 0 or +0x10 &amp; 0x1000</text>
+      <path class="dg-edge" d="M450 230 L485 230 L485 43 L518 43" marker-end="url(#mv-drv-ah)"/>
+      <path class="dg-edge" d="M485 111 L518 111" marker-end="url(#mv-drv-ah)"/>
+      <path class="dg-edge" d="M485 179 L518 179" marker-end="url(#mv-drv-ah)"/>
+      <path class="dg-edge" d="M485 230 L485 247 L518 247" marker-end="url(#mv-drv-ah)"/>
     </svg>
-    <figcaption>One actor, one frame. The height arm picks a law for the actor's Y at <code>+0x16</code>; the dispatch arm then fires any of four routines whose flag guards pass. The highlighted boxes are the two motion VMs.</figcaption>
+    <figcaption>One actor, one frame. The highlighted boxes are the two motion VMs; any of the four routines whose guard passes runs. The field-script slice can start a walk by parking a motion op, which sets bit <code>0x400</code> and hands the actor to the pursue VM until it lands.</figcaption>
   </figure>
-  <p>The <strong>height arm</strong> runs first, for any live, non-frozen actor, and picks one law for its Y from the flag word: write a stored override, hold, step toward the sampled floor with a per-frame clamp, or snap straight onto it. The <strong>dispatch arm</strong> then fires the routines in the figure - unless a global suppress bit skips it wholesale.</p>
-  <p>The first routine, the cutscene pump, is <em>not</em> a motion VM: it steps a field/event-VM script one authored beat per cutscene phase tick. Any motion it causes is issued by the field-VM ops inside the script.</p>
-  <details class="disclosure">
-    <summary>Deep dive: facing-arm flag bits and the cutscene pump</summary>
-    <div class="disclosure-body">
-      <p>Height arm (live = <code>+0x5C &ge; 0</code>, not self-frozen = <code>+0x10 &amp; 2</code> clear). It writes the actor&rsquo;s <strong>Y position</strong> <code>+0x16</code>, not a heading &mdash; <code>FUN_80019278</code> is the bilinear ground-height sampler (it reads <code>+0x14</code>/<code>+0x18</code> as X/Z and averages four <code>.MAP</code> corner nibbles through the <code>0x1F80035C</code> ramp), and this VM&rsquo;s real facing writes all land at <code>+0x26</code>. Bit <code>0x20000000</code> writes <code>-(+0x8E)</code> outright, skipping both floor arms; else if neither a target bit (<code>0x20200</code>) nor the ambient enable <code>_DAT_8007B6A8</code> is set, <code>+0x16</code> holds; else bit <code>0x2000</code> selects the clamped step toward the sample (<code>rate = pad-held &times; 6</code>, a raw signed-difference clamp distinct from the frame-budget ramp below) and its absence snaps to it. The dispatch arm&rsquo;s suppress bit is <code>_DAT_1F800394 &amp; 0x400</code>.</p>
-      <p>The pump <code>FUN_80039B7C</code> reads the script at <code>*(actor+0x90) + *(actor+0x9E)</code> - the same <code>0x21</code>-terminated format the <a href="script-vm.html">field VM</a> reads - in lock-step with the global cutscene phase <code>_DAT_801F2734</code>. Its helper <code>FUN_80038050</code> skips the structural ops (<code>0x21</code> stop; <code>0x24/0x25/0x48</code> one byte; <code>0x27..0x2A</code> multi-way jump by modal depth; <code>0x4C</code> two or three bytes).</p>
-    </div>
-  </details>
+  <p>The <strong>height arm</strong> runs first for any live actor inside the camera's visible window. It writes the actor's <strong>Y position</strong>, not its heading: a stored override, a hold, a per-frame clamped step toward the sampled floor, or a snap onto it. Bit 1 of the flag word is a visibility cull rewritten every frame by the pre-update, so an actor outside the window holds its Y. The <strong>dispatch arm</strong> then fires the routines in the figure, unless the global suppress bit (<code>_DAT_1F800394 &amp; 0x400</code>) skips it wholesale.</p>
 </section>
 
 <section class="doc-section" id="how-it-works">
   <h2>The pursue VM</h2>
-  <p>A motion script is a stream of small instructions - "walk one tile south", "rotate to this angle", "move toward your target" - each addressed at an actor:</p>
-  <pre><code>+0  u8 op_byte         ; bits 0x7F = opcode, bit 0x80 = "select target"
-+1  u8 target_id       ; only present if bit 0x80 set
-+N  u8 operand[...]    ; opcode-specific</code></pre>
-  <p>With the high bit set, the VM resolves a target actor first: <code>0xF8</code> means "the player", <code>0xFB</code> follows the system actor list for a class match, and any other id scans the actor list matching the <strong>placement bind index</strong> at actor <code>+0x50</code>. The per-frame speed budget comes from the shared frame-time scratchpad; each step returns Yield (resume next tick) or Done.</p>
-  <table>
-    <thead><tr><th>Byte</th><th>Name</th><th>Semantics</th></tr></thead>
+  <p>This is the walk kernel the <a href="script-vm.html">field VM</a> hands its motion ops to. When a script runs <code>0x37</code>, <code>0x41</code> or <code>0x47</code>, it parks the op's address on the actor and sets the halt bit; each frame this VM interprets those same bytes in place until the leg finishes, then clears the halt bit so the script can resume. There is no separately synthesised motion bytecode.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">op</span><span class="bm-size">bit 0x80 = target</span></div>
+    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">target id</span><span class="bm-size">only if 0x80</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+N</span><span class="bm-name">operands</span><span class="bm-size">per opcode</span></div>
+  </div>
+  <p>With the high bit set, the target resolves first: <code>0xF8</code> means the player, <code>0xFB</code> the system actor, and any other id matches the actor's placement bind index at <code>+0x50</code>. Each tick spends the frame scalar's worth of progress; the leg returns "still running" or "done".</p>
+  <table class="data-table">
+    <thead><tr><th>Byte</th><th>Name</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>0x37</code> / <code>0x41</code></td><td>CompassWalkFast / CompassWalkSlow</td><td>One arm: walk along one of eight compass directions on the X/Z plane (axis table at <code>0x80073F14</code>), a tile per count at rate <code>0x80</code> or half a tile at <code>0x40</code>, over a budget the operand scales.</td></tr>
-      <tr><td><code>0x38</code></td><td>RotateToAngle</td><td>Yaw ramps toward an absolute compass angle over a frame budget; shortest-path or forced direction.</td></tr>
-      <tr><td><code>0x43</code></td><td>NoOp</td><td>Budget consumed, no mutation.</td></tr>
-      <tr><td><code>0x47</code></td><td>MoveTowardTarget</td><td>Step XZ toward the target, dominant axis first, snapping the facing to the compass every moving frame.</td></tr>
-      <tr><td><code>0x4C</code></td><td>FaceTarget</td><td>Yaw ramps to the target's <em>live</em> bearing - tracks a moving target.</td></tr>
-      <tr><td>(other)</td><td>Done</td><td>Terminate the leg.</td></tr>
+      <tr><td><code>0x37</code> / <code>0x41</code></td><td>Compass walk</td><td>Walk along one of eight compass directions (axis table at <code>0x80073F14</code>), a tile per count for <code>0x37</code>, half a tile for <code>0x41</code>, over a budget the operand scales</td></tr>
+      <tr><td><code>0x38</code></td><td>Rotate to angle</td><td>Ramp the yaw toward a compass angle over a frame budget; shortest arc or a forced direction</td></tr>
+      <tr><td><code>0x43</code></td><td>No-op</td><td>Budget consumed, nothing moves</td></tr>
+      <tr><td><code>0x47</code></td><td>Move toward target</td><td>Step X/Z toward a tile, dominant axis first, facing snapped to the compass</td></tr>
+      <tr><td><code>0x4C</code></td><td>Face target</td><td>Ramp the yaw to the target's <em>live</em> bearing - tracks a moving target</td></tr>
+      <tr><td>other</td><td>Done</td><td>End the leg, clear the halt bit</td></tr>
     </tbody>
   </table>
+  <p>The opcode numbers are the field VM's own: the jump table is indexed <code>(op &amp; 0x7F) &minus; 0x37</code> over <code>0x37..0x4C</code>, and every slot not listed above ends the leg.</p>
 </section>
 
 <section class="doc-section" id="facing">
   <h2>How an actor's facing changes</h2>
-  <p>Watch a villager walk and they only ever face one of eight directions, yet a scripted turn in a cutscene glides smoothly. That is two different laws, and which one an NPC gets is a property of the bytecode, not the situation.</p>
+  <p>Watch a villager walk and they only ever face one of eight directions, yet a scripted turn in a cutscene glides smoothly. Those are two different laws, and which one an actor gets is a property of the bytecode, not the situation.</p>
   <ul class="bullets">
-    <li><strong>Snap (walking).</strong> Every frame a <code>0x47</code> leg moves, it reduces the step to its axis signs, maps them through the eight-entry compass LUT, and writes the heading outright. Entry <code>i</code> is <code>i &times; 0x200</code>, so a walking actor's facing is always a compass point - there is no walk-turn interpolation anywhere in retail. A cold-boot town sample confirms it: every on-field actor's heading is a multiple of <code>0x200</code>.</li>
-    <li><strong>Ramp (the rotate ops).</strong> <code>0x38</code> and <code>0x4C</code> interpolate over a frame budget: each tick, <code>heading += arc &times; speed / remaining</code> measured from the <em>live</em> heading, and the terminal frame snaps exactly onto the target so rounding can never leave the actor short.</li>
+    <li><strong>Snap (walking).</strong> A <code>0x47</code> leg reduces its step to axis signs, maps them through the eight-entry compass LUT at <code>0x80073F04</code> and writes the heading outright. Entry <code>i</code> is <code>i &times; 0x200</code>, so a walking actor's facing is always a compass point, one value per leg - there is no walk-turn interpolation anywhere in retail. A cold-boot town sample confirms it: every on-field heading is a multiple of <code>0x200</code>.</li>
+    <li><strong>Ramp (the rotate ops).</strong> <code>0x38</code> and <code>0x4C</code> interpolate over a frame budget: each tick, <code>heading += arc &times; speed / remaining</code> measured from the <em>live</em> heading, and the terminal frame snaps exactly onto the target so rounding never leaves the actor short.</li>
   </ul>
   <h3 id="talk-facing">Talk-time facing is not this VM</h3>
-  <p>The NPC turning to face you on the action button is the easiest thing in the game to mis-attribute to FaceTarget - and it is not that op. It is a save / snap / restore triple in the per-actor dialog state machine: the heading is saved aside, one store snaps it toward the player in a single frame (no ramp), and the exit paths write the saved heading back. It runs only for moving-class actors - static props never turn.</p>
+  <p>The NPC turning to face you on the action button is easy to mis-attribute to Face target, and it is not that op. It is a save / snap / restore triple in the per-actor dialog state machine: the heading is saved aside, one store snaps it toward the player in a single frame (no ramp), and the exit paths write the saved heading back. It runs only for moving-class actors - static props never turn.</p>
   <div class="notice warn">
     <p class="notice-title">Port trap</p>
-    <p>The dialog snap calls the bearing helper with the <em>endpoints swapped</em> relative to FaceTarget, and without FaceTarget's <code>+0x800</code> half-turn - the swap <em>is</em> the half-turn, so the two agree. A port that copies the FaceTarget convention here and keeps the <code>+0x800</code> faces the NPC exactly backwards. Engine side: <code>World::face_field_npc_at_player</code> / <code>release_talk_facing</code>.</p>
+    <p>The dialog snap calls the bearing helper with the <em>endpoints swapped</em> relative to Face target, and without Face target's <code>+0x800</code> half-turn - the swap <em>is</em> the half-turn, so the two agree. Copying the Face target convention here and keeping the <code>+0x800</code> faces the NPC exactly backwards.</p>
   </div>
 </section>
 
 <section class="doc-section" id="second-vm">
-  <h2>The second motion VM: ambient life and story flags</h2>
-  <p>This is the interpreter behind a town's ambient life - villagers wandering inside an invisible box, idle turns, waits, tile teleports during a scene change - and, less visibly, the story flags a scene flips as its choreography plays: op <code>0x07</code> <strong>sets</strong> a system story flag, op <code>0x08</code> <strong>clears</strong> one, written straight into the same flag bank the field VM uses.</p>
-  <p>Dispatch is a 32-entry jump table indexed by <code>op - 1</code>; grouped by instruction width:</p>
-  <table>
-    <thead><tr><th>Width</th><th>Ops</th></tr></thead>
+  <h2>The ambient motion VM: town life and story flags</h2>
+  <p>This is the interpreter behind a town's ambient life - villagers wandering inside an invisible box, idle turns, waits, tile teleports - and, less visibly, the story flags a scene flips as its choreography plays: op <code>0x07</code> <strong>sets</strong> a story flag and op <code>0x08</code> <strong>clears</strong> one, in the same bank the field VM uses.</p>
+  <p>Most ops do not end the frame. The interpreter is a loop that runs until an op says it did work, so a stream can raise a story flag, swap a model and start three tweens between two frames. Only the walks, the waits, the facing ramps and the bit-wait stop it.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Op</th><th>Bytes</th><th>Ends the frame</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td><code>0x01</code> end / loop-back</td></tr>
-      <tr><td>2</td><td><code>0x05</code> wait; <code>0x10..0x12</code> bit set / clear / wait</td></tr>
-      <tr><td>3</td><td><code>0x02</code> requested-move pair; <code>0x03/0x19/0x20</code> directional step; <code>0x04</code> facing ramp; <code>0x07/0x08</code> flag set / clear; <code>0x09</code> queue an SFX cue; <code>0x0A/0x0B</code> translucency toggle; <code>0x0E</code> model swap; <code>0x0F</code> tile teleport + re-anchor; <code>0x17</code> default-move write</td></tr>
-      <tr><td>4</td><td><code>0x0D</code> facing ramp + tween channel</td></tr>
-      <tr><td>5</td><td><code>0x06</code> one random full-tile step in a home-relative box; <code>0x14..0x16</code> tween render scale / pitch / roll; <code>0x18</code> AABB wander</td></tr>
-      <tr><td>8 / 13</td><td><code>0x0C</code> tint + draw-mode fade; <code>0x13</code> <code>MoveImage</code> VRAM blit</td></tr>
+      <tr><td><code>01</code></td><td>1</td><td>no</td><td>Jump back to the stream's first op</td></tr>
+      <tr><td><code>02</code></td><td>3</td><td>no</td><td>Write the requested move / clip pair (only while the actor's default-move record is unset)</td></tr>
+      <tr><td><code>03</code> <code>19</code> <code>20</code></td><td>3</td><td>yes</td><td>Directional step along a compass heading</td></tr>
+      <tr><td><code>04</code></td><td>3</td><td>until done</td><td>Facing ramp inside the VM</td></tr>
+      <tr><td><code>05</code></td><td>2</td><td>yes</td><td>Wait, cut short by a touch</td></tr>
+      <tr><td><code>06</code></td><td>5</td><td>yes</td><td>One random full-tile step inside a home-relative box</td></tr>
+      <tr><td><code>07</code> / <code>08</code></td><td>3</td><td>no</td><td>Set / clear story flag <code>(s16)(b1 | b2 &lt;&lt; 8)</code></td></tr>
+      <tr><td><code>09</code></td><td>3</td><td>no</td><td>Queue an SFX cue</td></tr>
+      <tr><td><code>0A</code> / <code>0B</code></td><td>3</td><td>no</td><td>Raise / drop the translucent-draw bit</td></tr>
+      <tr><td><code>0C</code></td><td>8</td><td>no</td><td>Tint and draw-mode fade</td></tr>
+      <tr><td><code>0D</code></td><td>4</td><td>until done</td><td>Facing ramp handed to the shared ramp scheduler</td></tr>
+      <tr><td><code>0E</code></td><td>3</td><td>no</td><td>Model swap</td></tr>
+      <tr><td><code>0F</code></td><td>3</td><td>no</td><td>Tile teleport + re-anchor the home box</td></tr>
+      <tr><td><code>10</code> / <code>11</code></td><td>2</td><td>no</td><td>Set / clear one bit of a selectable halfword</td></tr>
+      <tr><td><code>12</code></td><td>2</td><td>always</td><td>Wait for that bit to <em>change</em> (the first tick seeds from its current value)</td></tr>
+      <tr><td><code>13</code></td><td>13</td><td>no</td><td><code>MoveImage</code> VRAM blit</td></tr>
+      <tr><td><code>14</code> <code>15</code> <code>16</code></td><td>5</td><td>no</td><td>Tween render scale / pitch / roll</td></tr>
+      <tr><td><code>17</code></td><td>3</td><td>no</td><td>Write the actor's default-move record</td></tr>
+      <tr><td><code>18</code></td><td>5</td><td>yes</td><td>Wander inside an axis-aligned box</td></tr>
     </tbody>
   </table>
-  <p><strong>The disc carrier is MAN tail-section 1</strong> - a record chain in the scene's script-and-data bundle that binds each motion stream to a placed actor at scene entry. This is the <em>only</em> disc source of this bytecode. Parser: <code>legaia_asset::man_motion</code>.</p>
-  <p>Three behaviours worth knowing before reading the deep dive:</p>
+  </div>
+  <p>Dispatch is a 32-entry jump table at <code>0x80010FE8</code> indexed <code>op &minus; 1</code>; slots <code>0x1A..0x1F</code> point back at the loop test and re-dispatch forever, as a rejected byte does.</p>
   <ul class="bullets">
-    <li><strong>Walking uses an axis-bitmask table</strong> sitting sixteen bytes past the compass LUT - every walk op reduces its heading index through it, which is why diagonal steps move both axes by the same per-tick amount.</li>
-    <li><strong>Walk ops collide with the player only</strong> - not the walkability grid, not other NPCs.</li>
+    <li><strong>The disc carrier is MAN tail-section 1</strong> - a record chain in the scene's script-and-data bundle that binds each stream to a placed actor at scene entry. It is the only disc source of this bytecode.</li>
+    <li><strong>Walk ops collide with the player only</strong> - not the walkability grid, not other NPCs. A wanderer can stroll through a fence; it cannot stroll through Vahn.</li>
+    <li><strong>The binding byte is a suppression mask, not an enable.</strong> With bit 0 set the stream defers while the player is engaged (talk, menu, beat), while the actor is busy, or while it is parked off-map; a zero byte keeps choreographing through a cutscene.</li>
     <li><strong>The ambient facing ops have no shortest-arc override</strong>, so an authored idle turn can deliberately take the long way round.</li>
-    <li><strong>Most ops do not end the frame.</strong> The interpreter loops until an arm sets its did-work register, so a stream can raise a story flag, swap a model and start three tweens between two frames. Only the walks, the waits, the facing ramps' stepping ticks and the bit-wait ever stop it - and the bit-wait stops it even on the frame it retires.</li>
-    <li><strong>Op <code>0x12</code> waits for its bit to <em>change</em></strong>, not to be set: the first tick seeds the wait from the bit's current value and the op then waits for the opposite state.</li>
   </ul>
   <details class="disclosure">
-    <summary>Deep dive: stream binding, speed encoding, op 0x17, the touch post</summary>
+    <summary>Stream binding, speed encoding, op 0x17 and the touch post</summary>
     <div class="disclosure-body">
-      <p><strong>Binding.</strong> <code>FUN_8003AEB0</code> (scene-entry map init) walks the MAN's u24-length-prefixed tail-section chain (<code>tail_base = MAN + 0x2B + 3&times;(N0+N1+N2) + u24_at_0x28</code>); <code>FUN_8003A9D4</code> walks section 1 as <code>[u8 count][s16 next_delta][count &times; (u8 actor_id, u8 enable)][motion stream]</code>. <code>0xF8</code> binds to the player, <code>0xFB</code> to the world-map entity node, anything else matches actor <code>+0x50</code> - which the placement spawner writes as <code>N0 + placement_index</code> (<code>N0</code> = the MAN's partition-0 record count), so binding <code>0x30</code> in town01 (<code>N0 = 36</code>) is placement 12, not raw index <code>0x30</code>. Streams open with a flag-selected variant header table re-evaluated every tick. The second byte of each pair is a <em>suppression</em> mask, not an enable: bit 0 set means the stream defers while the player is engaged, while the actor is busy, or while it sits parked off-map, and a zero byte runs the VM unconditionally.</p>
-      <p><strong>Reader / flag writes.</strong> The stream is read at <code>*(u32*)(actor+0x80) + *(u16*)(actor+0x84)</code>; op-7/op-8 write <code>DAT_80085758</code> with byte/bit math matching <code>FUN_8003CE08</code>. Jump table at <code>0x80010FE8</code>.</p>
-      <p><strong>Walk half.</strong> Directional steps share a case body at <code>0x800383F8</code>; the AABB wander lives at <code>0x80038B90</code>. Compass LUT at <code>0x80073F04</code>, axis-bitmask table at <code>0x80073F14</code> (<code>1</code>=+Z, <code>2</code>=-Z, <code>4</code>=+X, <code>8</code>=-X). Collision probes go through <code>FUN_801cf8ac</code> (player-only): a single compass point for directional steps, a three-point fan for the wander.</p>
-      <p><strong>Speed encoding.</strong> All walk ops step on the <code>0x80 &gt;&gt; (2 + bits)</code> per-frame ladder; directional steps carry <code>bits</code> in operand byte 1's low nibble, while <code>0x06</code> and <code>0x18</code> scatter a 4-bit selector over their operand bytes' high bits (<code>(b1&amp;0x80)&gt;&gt;4 | (b2&amp;0x80)&gt;&gt;5 | (b3&amp;0x80)&gt;&gt;6 | b4&gt;&gt;7</code>). Engine decode: <code>man_field_scripts::placement_wander_step</code> &rarr; <code>World::npcs.glide_speeds</code>.</p>
-      <p><strong>Facing ops.</strong> <code>0x04</code> (in-VM ramp, <code>0x8003859C</code>) and <code>0x0D</code> (hand-off to the generic ramp scheduler, <code>0x800386A4..0x80038828</code>) aim at <code>LUT[b1 &amp; 7]</code>, direction from <code>b1 &amp; 0x80</code>. The <code>&amp; 7</code> mask means they cannot reach the adjacent SCUS data the pursue VM's <code>&amp; 0xF</code> index can. Port: <code>engine-vm::ambient_motion</code>.</p>
-      <p><strong>Op 0x17 and the touch post.</strong> <code>[0x17, move_id, anim_id]</code> writes the per-actor default-move table <code>0x801C6470[bind_index &times; 4]</code>, guarded <code>&lt; 0x8C</code> (<code>0x8C</code> doubles as the "unset" sentinel). When two actors overlap, the collision probe posts the touched actor's bind index into the one-slot mailbox <code>DAT_80073F1C</code>, which the VM's wait-for-touch arm consumes; the post is dropped when the record's class byte is <code>0x8C</code>, so a placement with no move assigned can be walked into without waking its script. Engine: <code>man_field_scripts::motion_default_move_writes</code>, <code>engine-vm::motion_pause</code>.</p>
-      <p><strong>Flag census.</strong> <code>legaia-engine man-scripts --motion-flag-census</code> sweeps every scene MAN for op-7/op-8 sites. Disc-wide the surface is overworld walking-band choreography plus one town clear; the chapter-spine gate flags appear in <em>no</em> motion stream - their writers are field-VM script bytes (see <a href="script-vm.html">script-vm</a>).</p>
+      <p><strong>Binding.</strong> <code>FUN_8003AEB0</code> walks the MAN's tail-section chain and <code>FUN_8003A9D4</code> walks section 1 as <code>[u8 count][s16 next_delta][count &times; (u8 actor_id, u8 mask)][motion stream]</code>. <code>0xF8</code> binds to the player, <code>0xFB</code> to the world-map entity node, anything else matches actor <code>+0x50</code> - which the spawner writes as <code>N0 + placement_index</code> (<code>N0</code> = the MAN's partition-0 record count), so binding <code>0x30</code> in town01 (<code>N0 = 36</code>) is placement 12. Streams open with a flag-selected variant header re-evaluated every tick. The stream is read at <code>*(u32*)(actor+0x80) + *(u16*)(actor+0x84)</code>.</p>
+      <p><strong>Speed encoding.</strong> All walk ops step on the <code>0x80 &gt;&gt; (2 + bits)</code> per-frame ladder; directional steps carry <code>bits</code> in operand byte 1's low nibble, while <code>0x06</code> and <code>0x18</code> scatter a 4-bit selector over their operand bytes' high bits. The axis-bitmask table sixteen bytes past the compass LUT (<code>1</code> = +Z, <code>2</code> = &minus;Z, <code>4</code> = +X, <code>8</code> = &minus;X) is why diagonal steps move both axes equally.</p>
+      <p><strong>Op 0x17 and the touch post.</strong> <code>[17, move_id, anim_id]</code> writes the per-actor default-move table <code>0x801C6470[bind &times; 4]</code>, guarded <code>&lt; 0x8C</code>. When two actors overlap, the collision probe posts the touched actor's bind index into a one-slot mailbox the VM's wait arm consumes; the post is dropped when the record's class byte is <code>0x8C</code>, so a placement with no move assigned can be walked into without waking its script.</p>
+      <p><strong>Flag census.</strong> <code>legaia-engine man-scripts --motion-flag-census</code> sweeps every scene MAN for op-7 / op-8 sites. Disc-wide the surface is overworld walking-band choreography plus one town clear; the chapter-spine gate flags appear in no motion stream - their writers are field-VM script bytes.</p>
     </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: the flag-549 carrier</summary>
-    <div class="disclosure-body"><p>An earlier reading had town01's opening one-shot flag <code>549</code> set by op-7 from its own motion bytecode. The census shows no such site; the write is a direct code path. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
 </section>
 
 <section class="doc-section" id="port">
-  <h2>The port</h2>
+  <h2>In the port</h2>
   <ul class="bullets">
-    <li><code>engine-vm::motion_vm</code> ports all six pursue opcodes; the shared facing law lives in one LUT module so spawn-time and runtime facings cannot drift apart. A per-step <code>yaw_written</code> signal keeps an idle leg from clobbering a heading posed by another writer (the interact bearing).</li>
-    <li>Two deliberate departures: LUT indices <code>8..=15</code> are no-ops rather than reproducing retail's overread into adjacent executable data, and an unrecognised FaceTarget sub-mode terminates the leg instead of yielding forever like retail's inert arm.</li>
-    <li><code>World::tick_field_npc_motions</code> drives MAN-placed NPCs through the MoveTowardTarget step, one step per tick, moving the collision and interact boxes with them. Three start paths feed it: autonomous patrol routes (on by default in <code>play-window</code> and the browser play page; <code>play-window --no-live-npcs</code> turns them off, paused during dialogue), interaction-prologue walks, and the widget-VM glide.</li>
-    <li>The camera consumes the same machinery: field-VM op-<code>0x45</code> events for high-level state, plus optional motion-VM scripts for cinematic paths (<code>Camera::tick_script</code>). The default mode follows a target actor at a configured distance and height - the retail "follow the player" shape.</li>
-    <li>NPC pacing is decoded, not guessed: each placement's glide speed comes from its real walk-kernel step operands (<code>man_field_scripts::placement_glide_speed</code>), falling back to the facing-nibble heuristic only when a placement has no walk-kernel op at all - see <a href="field-locomotion.html#npc-glide-speed">field locomotion</a>.</li>
+    <li><code>engine-vm::motion_vm</code> is the pursue VM, with one LUT module for the facing law so spawn-time and runtime facings cannot drift apart. Two deliberate departures: LUT indices <code>8..=15</code> are no-ops rather than retail's over-read into adjacent executable data, and an unrecognised Face-target sub-mode ends the leg instead of yielding forever.</li>
+    <li><code>engine-vm::ambient_motion</code> runs the whole ambient op table.</li>
+    <li>NPC pacing is decoded, not guessed: each placement's glide speed comes from its real walk operands (<a href="field-locomotion.html#npc-glide-speed">field locomotion</a>).</li>
   </ul>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
-      <tr><td>Field actor tick</td><td><code>FUN_8003BC08</code></td><td>Height-arm law selection (Y at <code>+0x16</code>, not facing); the four dispatch guards; the global suppress bit.</td><td><code>ghidra/scripts/funcs/8003bc08.txt</code></td></tr>
-      <tr><td>Pursue VM</td><td><code>FUN_8003774C</code></td><td>Op set, target-select idiom (<code>0xF8/0xFB</code>), bind-index match at <code>+0x50</code>, compass LUT at <code>0x80073F04</code>.</td><td><code>8003774c.txt</code></td></tr>
-      <tr><td>Scripted VM</td><td><code>FUN_80038158</code></td><td>32-entry JT at <code>0x80010FE8</code>; op-7/op-8 flag writes; walk / wander case bodies.</td><td><code>80038158.txt</code></td></tr>
-      <tr><td>Stream binder</td><td><code>FUN_8003A9D4</code> / <code>FUN_8003AEB0</code></td><td>MAN tail-section-1 record chain; the <code>N0 + placement_index</code> bind law.</td><td><code>8003a9d4.txt</code></td></tr>
-      <tr><td>Dialog snap</td><td><code>FUN_80039B7C</code> (+ <code>FUN_801D5B5C</code>)</td><td>Save / snap / restore triple; moving-class guard; swapped-endpoint bearing call.</td><td><code>80039b7c.txt</code></td></tr>
-      <tr><td>Touch post</td><td><code>FUN_8003D038</code></td><td>One-slot mailbox; the class-<code>0x8C</code> drop guard.</td><td><code>8003d038.txt</code></td></tr>
-      <tr><td>Walk-facing law</td><td>recomp cold-boot sample</td><td>Every on-field heading is a multiple of <code>0x200</code>; all eight compass points appear.</td><td>recomp trace</td></tr>
+      <tr><td>Field actor tick</td><td><code>FUN_8003BC08</code></td><td>Height-arm law selection (Y at <code>+0x16</code>, not facing); the four dispatch guards; the global suppress bit</td><td><code>ghidra/scripts/funcs/8003bc08.txt</code></td></tr>
+      <tr><td>Visibility cull</td><td><code>FUN_801D79E8</code></td><td>Bit 1 rewritten each call from the region box and the camera's tile window</td><td>field overlay dump; <code>autorun_field_actor_cull.lua</code></td></tr>
+      <tr><td>Pursue VM</td><td><code>FUN_8003774C</code></td><td>Op set, target idiom (<code>0xF8/0xFB</code>), bind-index match at <code>+0x50</code>, compass LUT at <code>0x80073F04</code></td><td><code>8003774c.txt</code></td></tr>
+      <tr><td>Ambient VM</td><td><code>FUN_80038158</code></td><td>32-entry JT at <code>0x80010FE8</code>; the did-work loop; op-7 / op-8 flag writes</td><td><code>80038158.txt</code></td></tr>
+      <tr><td>Stream binder</td><td><code>FUN_8003A9D4</code> / <code>FUN_8003AEB0</code></td><td>MAN tail-section-1 record chain; the <code>N0 + placement_index</code> bind law</td><td><code>8003a9d4.txt</code></td></tr>
+      <tr><td>Dialog snap</td><td><code>FUN_80039B7C</code></td><td>Save / snap / restore triple; moving-class guard; swapped-endpoint bearing call</td><td><code>80039b7c.txt</code></td></tr>
+      <tr><td>Touch post</td><td><code>FUN_8003D038</code></td><td>One-slot mailbox; the class-<code>0x8C</code> drop guard</td><td><code>8003d038.txt</code></td></tr>
+      <tr><td>Walk-facing law</td><td>recomp cold-boot sample</td><td>Every on-field heading is a multiple of <code>0x200</code>; all eight compass points appear</td><td>recomp trace</td></tr>
     </tbody>
   </table>
   <p class="hint">Full write-up: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/motion-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/motion-vm.md</code></a>.</p>
@@ -186,7 +181,7 @@
     <span class="see-also-label">Reference</span>
     <a href="field-locomotion.html">Field locomotion (the player's own walk)</a>
     <a href="script-vm.html">Field / event VM</a>
-    <a href="actor-vm.html">Actor VM</a>
+    <a href="actor-vm.html">Window-widget VM</a>
     <a href="move-vm.html">Move-table VM</a>
     <a href="move-vm.html#vm-family">VM family</a>
     <a href="world-map.html">World-map controller</a>

@@ -8,7 +8,7 @@
 # with its NPC clip-end waits (AD <id> 08); it holds up, right, down, left
 # (60/60/90/90 frames). Fixed, the player leaves tile (36,31); boxed in
 # again, it stays there through the neutral tail and the signature returns.
-# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 4274860479

@@ -410,8 +410,7 @@ canvas.world-canvas {
     try {
       const buf = await prog.read(f, `Reading ${f.name}`);
       prog.indeterminate('Initialising decoder…');
-      const mod = await import('./wasm/legaia_web_viewer.js');
-      await mod.default();
+      const mod = await LegaiaWasm.load();
       viewer = new mod.LegaiaViewer('world-canvas');
       prog.indeterminate('Parsing PROT.DAT…');
       await prog.paint();

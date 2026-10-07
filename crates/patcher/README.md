@@ -1751,7 +1751,7 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   battle grunt voices resample from the siblings' voice banks in place
   (`delilas_voice`); the hero XA arts shouts follow `--delilas-arts-voice`
   (below). Seedless, not in any
-  preset - the swap machinery lives in `legaia_asset::party_swap`, the
+  preset - the swap machinery lives in `legaia_patcher::party_swap`, the
   disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
   § Delilas party swap.
 - `--delilas-arts-voice original|removed|adjusted` (default `original`)

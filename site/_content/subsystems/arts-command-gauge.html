@@ -1,44 +1,54 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; arts command gauge</div>
   <h1>Arts command gauge - weapon-specialty arm width</h1>
-  <p class="lede">When a character's turn opens the Arts input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by pressing directional commands. The weapon-hand swing costs more with an off-class weapon - the "longer arm input" players see. Two myths fall on this page: the off-class penalty is <strong>not a flat &times;2</strong>, and the cost is <strong>not computed at runtime at all</strong> - it is per-(character, weapon) data on the disc, which is what makes it editable.</p>
+  <p class="lede">When a character's turn opens the Arts input, the battle UI draws an <strong>action gauge</strong>: a per-turn pool the player spends by pressing directional commands. The weapon-hand swing costs more with an off-class weapon - the "longer arm input" players see. Two myths fall on this page: the off-class penalty is <strong>not a flat &times;2</strong>, and the cost is <strong>not computed at runtime at all</strong> - it is per-(character, weapon) data on the disc, which is what makes it editable. A named art is paid for separately, out of the Spirit gauge.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Cost byte</dt><dd>Runtime command record <code>DAT_801C9360[char][cmd] + 0x74</code> - one byte is both the AP price and the pennant width</dd>
-    <dt>Budget</dt><dd>The character's <strong>AGL</strong> stat seeds the turn pool at <code>ctx+0x6DC</code>; input ends when the next command would not fit</dd>
-    <dt>Disc source</dt><dd>The equipped weapon's section in the character's <a href="../formats/battle-data-pack.html">player battle file</a> (extraction 863..866), copied verbatim at battle load</dd>
+    <dt>Turn pool</dt><dd>The acting actor's <strong>AGL</strong> (<code>actor+0x154</code>), copied into <code>ctx+0x6DC</code>; input ends when the next command would not fit</dd>
+    <dt>Command cost</dt><dd>Runtime command record <code>DAT_801C9360[char][cmd] + 0x74</code> - one byte is both the AP price and the pennant width</dd>
     <dt>Tiers</dt><dd>30 favored / 42 off-class / 54 far tier - authored data, no class comparison in code</dd>
-    <dt>Editor</dt><dd>The <a href="../tooling/rom-patcher.html">ROM patcher</a>'s equipment editor and the randomizer's <code>--weapon-specialty</code> rewrite these bytes in place</dd>
+    <dt>Disc source</dt><dd>The equipped weapon's section in the character's <a href="../formats/battle-data-pack.html">player battle file</a> (extraction 863..866), copied verbatim at battle load</dd>
+    <dt>Art cost</dt><dd>A second gauge: the Spirit gauge <code>actor+0x170</code> (0..100), which carries between fights</dd>
+    <dt>Editor</dt><dd>The <a href="../tooling/rom-patcher.html">ROM patcher</a>'s equipment editor and the randomizer's <code>--weapon-specialty</code> rewrite the cost bytes in place</dd>
     <dt>Confidence</dt><dd>Confirmed - live-pinned and byte-validated against the disc; "command <code>0x0C</code> = the arm" is Inferred (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
 </section>
 
 <section class="doc-section" id="what-the-bar-does">
   <h2>What the AP bar does</h2>
-  <p>On your turn the Arts bar fills with a row of pennants, one per direction you press, and stops accepting input when the next pennant would not fit. Every direction has a price; three of the four never change. The fourth - the weapon-hand swing - is authored per weapon, and because the price is also the pennant's width, an off-class weapon <em>looks</em> wider and <em>fits</em> fewer commands in the same turn.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="acg-pennant-title" width="100%" style="max-width: 880px; font-family: var(--font-mono); font-size: 12px;">
-      <title id="acg-pennant-title">Arm pennant width by weapon class tier</title>
-      <g fill="var(--text-muted)"><text x="20" y="30">favored  (30)</text><text x="20" y="75">off-class (42)</text><text x="20" y="120">far tier  (54)</text></g>
-      <g fill="var(--bg-card)" stroke="var(--accent)" stroke-width="1.5">
-        <rect x="180" y="14" width="120" height="24"/><rect x="300" y="14" width="120" height="24"/><rect x="420" y="14" width="120" height="24"/><rect x="540" y="14" width="120" height="24"/><rect x="660" y="14" width="120" height="24"/>
-        <rect x="180" y="59" width="168" height="24"/><rect x="348" y="59" width="120" height="24"/><rect x="468" y="59" width="120" height="24"/><rect x="588" y="59" width="120" height="24"/>
-        <rect x="180" y="104" width="216" height="24"/><rect x="396" y="104" width="120" height="24"/><rect x="516" y="104" width="120" height="24"/><rect x="636" y="104" width="120" height="24"/>
-      </g>
-      <g fill="currentColor" font-size="11">
-        <text x="186" y="31">arm 30</text><text x="306" y="31">high 30</text><text x="426" y="31">low 30</text><text x="546" y="31">arm 30</text><text x="666" y="31">high 30</text>
-        <text x="186" y="76">arm 42</text><text x="354" y="76">high 30</text><text x="474" y="76">low 30</text><text x="594" y="76">arm 30</text>
-        <text x="186" y="121">arm 54</text><text x="402" y="121">high 30</text><text x="522" y="121">low 30</text><text x="642" y="121">arm 30</text>
-      </g>
-      <line x1="790" y1="8" x2="790" y2="140" stroke="var(--border)" stroke-dasharray="4 3"/>
-      <text x="798" y="76" fill="var(--text-muted)" font-size="11">AGL budget</text>
+  <p>On your turn the Arts bar fills with a row of pennants, one per direction you press, and stops accepting input when the next pennant would not fit. The pool is the character's AGL. Every direction has a price; three of the four never change. The fourth - the weapon-hand swing - is authored per weapon, and because the price is also the pennant's width, an off-class weapon <em>looks</em> wider and <em>fits</em> fewer commands in the same turn.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three turns with the same 150 AGL pool: with a favored weapon five commands fit; with an off-class weapon the two arm presses cost 42 each and only four commands fit with 6 AP left; with a far-tier weapon the arms cost 54 and only three commands fit with 12 AP left">
+      <text class="dg-label" x="80" y="48">favored weapon</text><text class="dg-sub" x="80" y="65">arm costs 30</text>
+      <rect class="dg-node-accent" x="170" y="34" width="110" height="38" rx="3"/><text class="dg-label" x="225" y="50">Arm</text><text class="dg-sub" x="225" y="65">30</text>
+      <rect class="dg-node-accent" x="284" y="34" width="110" height="38" rx="3"/><text class="dg-label" x="339" y="50">Arm</text><text class="dg-sub" x="339" y="65">30</text>
+      <rect class="dg-node" x="398" y="34" width="110" height="38" rx="3"/><text class="dg-label" x="453" y="50">High</text><text class="dg-sub" x="453" y="65">30</text>
+      <rect class="dg-node" x="512" y="34" width="110" height="38" rx="3"/><text class="dg-label" x="567" y="50">Low</text><text class="dg-sub" x="567" y="65">30</text>
+      <rect class="dg-node" x="626" y="34" width="110" height="38" rx="3"/><text class="dg-label" x="681" y="50">High</text><text class="dg-sub" x="681" y="65">30</text>
+      <text class="dg-edge-label" x="750" y="58">exactly spent</text>
+      <text class="dg-label" x="80" y="110">off-class weapon</text><text class="dg-sub" x="80" y="127">arm costs 42</text>
+      <rect class="dg-node-accent" x="170" y="96" width="156" height="38" rx="3"/><text class="dg-label" x="248" y="112">Arm</text><text class="dg-sub" x="248" y="127">42</text>
+      <rect class="dg-node-accent" x="330" y="96" width="156" height="38" rx="3"/><text class="dg-label" x="407" y="112">Arm</text><text class="dg-sub" x="407" y="127">42</text>
+      <rect class="dg-node" x="489" y="96" width="110" height="38" rx="3"/><text class="dg-label" x="544" y="112">High</text><text class="dg-sub" x="544" y="127">30</text>
+      <rect class="dg-node" x="603" y="96" width="110" height="38" rx="3"/><text class="dg-label" x="658" y="112">Low</text><text class="dg-sub" x="658" y="127">30</text>
+      <rect class="dg-group" x="717" y="96" width="21" height="38" rx="3"/>
+      <text class="dg-edge-label" x="750" y="120">6 AP left over</text>
+      <text class="dg-label" x="80" y="172">far-tier weapon</text><text class="dg-sub" x="80" y="189">arm costs 54</text>
+      <rect class="dg-node-accent" x="170" y="158" width="201" height="38" rx="3"/><text class="dg-label" x="271" y="174">Arm</text><text class="dg-sub" x="271" y="189">54</text>
+      <rect class="dg-node-accent" x="375" y="158" width="201" height="38" rx="3"/><text class="dg-label" x="476" y="174">Arm</text><text class="dg-sub" x="476" y="189">54</text>
+      <rect class="dg-node" x="580" y="158" width="110" height="38" rx="3"/><text class="dg-label" x="635" y="174">High</text><text class="dg-sub" x="635" y="189">30</text>
+      <rect class="dg-group" x="694" y="158" width="44" height="38" rx="3"/>
+      <text class="dg-edge-label" x="750" y="182">12 AP left over</text>
+      <path class="dg-edge-dim" d="M740 18 L740 214"/>
+      <text class="dg-edge-label" x="740" y="12" text-anchor="middle">AGL 150</text>
+      <text class="dg-edge-label" x="170" y="12">turn pool = the character's AGL</text>
     </svg>
-    <figcaption>Same AGL, three weapons. Only the weapon-hand arm changes width; the wider it is, the fewer commands the turn admits.</figcaption>
+    <figcaption>The same 150-AGL turn with three weapons, pressing Arm, Arm, then the legs. Only the weapon-hand arm changes width; the wider it is, the fewer commands the turn admits.</figcaption>
   </figure>
-  <table>
+  <table class="data-table">
     <thead><tr><th>Tier</th><th>Arm cost</th><th>Over base</th><th>Who lands here</th></tr></thead>
     <tbody>
       <tr><td>Favored class</td><td>30</td><td>-</td><td>Vahn with a sword, Noa with a claw, Gala with a club</td></tr>
@@ -51,18 +61,17 @@
 
 <section class="doc-section" id="how-the-gauge-consumes-it">
   <h2>How the gauge consumes it</h2>
-  <p>The gauge is assembled by the battle action handler; one case reads the cost, another spends it:</p>
-<pre><code>// gauge build (case 9 / 0x2C)
-cost = command_record[cmd] + 0x74;    // the arm width / AP cost byte
-gauge_slot.width = cost - 6;          // visual width on the bar
-
-// press (case 0xB)
-if (pool &lt; cost) return;              // not enough AP - input ends
-pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
+  <p>One battle-overlay routine builds the gauge and spends it:</p>
+  <ol class="steps">
+    <li><b>Seed</b><span>pool <code>ctx+0x6DC</code> = the acting actor's AGL <code>+0x154</code></span></li>
+    <li><b>Build</b><span>each chip reads its command's <code>+0x74</code> cost; the pennant is drawn <code>cost &minus; 6</code> pixels wide</span></li>
+    <li><b>Press</b><span>if the pool is below the cost, input ends; otherwise <code>pool &minus;= cost</code></span></li>
+  </ol>
   <p>One byte is both price and width - a larger button and a more expensive command are the same value. The pennant is a text window and its label has to fit: 30 is retail's floor, 24 is still legible, below that the label smears (the patcher refuses costs below 24). Two neighbours share the machinery:</p>
   <ul class="bullets">
     <li>The <strong>Muscle Dome hand</strong> deals and spends the same records: a dome card is a direction command, its cost is the same byte, the commit debits the same pool (<a href="../minigames.html">minigames</a>).</li>
-    <li>The <strong>enemy analogue</strong>: a monster fills its per-turn action queue by paying each move's <code>+0x74</code> cost out of its per-round AGL gauge - the same "wider cost = fewer commands" mechanic on the AI side (<a href="battle-action.html">battle action</a>).</li>
+    <li>The <strong>enemy analogue</strong> is not an analogue at all - it is the same mechanic. A monster fills its per-turn action queue by paying each move's <code>+0x74</code> cost out of the same AGL gauge, so a turn admits <code>AGL / cost</code> actions on either side (<a href="battle-action.html">battle action</a>).</li>
+    <li>A <strong>Spirit turn</strong> lengthens the next turn's pool to <code>min(base AGL &times; 7/5 + 8, 288)</code> (<a href="battle-formulas.html#small-formulas">formula</a>).</li>
   </ul>
   <div class="notice">
     <p class="notice-title">Two budgets, not one</p>
@@ -70,12 +79,27 @@ pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
   </div>
 </section>
 
+<section class="doc-section" id="art-cost">
+  <h2>What a named art costs</h2>
+  <p>The number of directions is paid from the AGL pool; the <em>art</em> those directions spell is paid from a different gauge - the Spirit gauge, <code>actor+0x170</code>, capped at 100. The game stores no per-art price. The arts queue builder computes it:</p>
+<pre><code>art cost = multiplier &times; command count
+multiplier = 11 for the character's first art row, 10 for rows 1-3, 6 from row 4 on
+             (halved while the AP Used Down passive - the Mettle Gem - is worn)</code></pre>
+  <ul class="bullets">
+    <li><strong>Example.</strong> Noa's Vulture Blade is a five-command art on a multiplier-10 row: 50 Spirit, 25 with the Mettle Gem.</li>
+    <li><strong>Where the gauge comes from.</strong> Every action pays +8 into Spirit at its Done step, a Spirit turn +32; the gauge is saved in the character record at the end of a fight and reloaded at the next, so a full gauge carries over.</li>
+    <li><strong>Where the charge lands.</strong> The builder only tentatively debits (so a chained second art sees what the first committed) and puts the real charge in an accumulator <code>actor+0x224</code>, subtracted once in the Done band. A mod that changes an art's cost has to move the accumulator.</li>
+    <li><strong>The pause menu's number is a second source.</strong> The AP the arts list shows is a byte of the static arts-name table, kept equal to the formula by hand for all 45 arts. A mod that changes one has to change the other.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="who-writes-it">
   <h2>Where the cost comes from</h2>
   <p>The game performs <strong>no class comparison</strong>. The cost is written once at battle load as a verbatim 43-word block copy out of the assembled battle-character buffer - no arithmetic between load and store, confirmed by a live write-watch across a field&rarr;battle transition. The source is the equipped weapon's section of the character's player battle file:</p>
-  <pre><code>section (LZS-decoded)
-  +0x04  u32 swing_rec   ; offset to the swing/arm command record
-  swing_rec + 0x74       ; u8 arm cost  &larr; the weapon-specialty byte</code></pre>
+  <dl class="kv">
+    <dt>Section <code>+0x04</code></dt><dd>u32 offset to the swing (arm) command record, in the LZS-decoded section</dd>
+    <dt>Record <code>+0x74</code></dt><dd>u8 arm cost - the weapon-specialty byte</dd>
+  </dl>
   <p>The descriptor table keys sections by item id, so each weapon has its own swing record <em>per character's file</em> - a claw is cheap in Noa's file and expensive in Gala's. Decoding all four files gives the byte-exact picture:</p>
   <table>
     <thead><tr><th>Character (file)</th><th>Favored &rarr; 30</th><th>Off-class &rarr; 42</th><th>Far &rarr; 54</th></tr></thead>
@@ -87,6 +111,21 @@ pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
   </table>
   <p>Cross-checked live: Gala + Nail Glove reads 42, Gala + Ra-Seru Club reads 30, matching his file's sections. The cost lives inside an LZS-compressed stream, so an editor decompresses the section, rewrites one byte, recompresses, and writes back within the slot footprint.</p>
   <p>"Off-class" itself is legible from the static item records: the description pointer is shared per weapon class and carries a <code>Best:&lt;character&gt;</code> token - knife/sword &rarr; Vahn, claw &rarr; Noa, club/axe &rarr; Gala. The Astral Sword has its own description, matches no character, and simply sits on the tier Noa reaches with any club.</p>
+</section>
+
+<section class="doc-section" id="status-limb-gating">
+  <h2>Status limb gating</h2>
+  <p>A <strong>Rot</strong>-class status stamps a hand-lettered "Rot" mark over individual command arrows and refuses their input. The stamp pass and the input gate read the same status bits, bit-for-bit - and the retail assignment is not one bit per arrow:</p>
+  <table class="data-table">
+    <thead><tr><th>Status bit</th><th>Stamps</th><th>Blocks</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x08</code> (limb 0)</td><td>the LEFT chip</td><td>Left</td></tr>
+      <tr><td><code>0x10</code> (limb 1)</td><td>the RIGHT chip</td><td>Right</td></tr>
+      <tr><td><code>0x20</code> (limb 2)</td><td>UP <strong>and</strong> DOWN</td><td>Up and Down</td></tr>
+      <tr><td><code>0x1000</code> (Curse)</td><td>the ring's Magic chip</td><td>Magic</td></tr>
+    </tbody>
+  </table>
+  <p>With all three limb bits set the whole Arm command is skipped and Attack is unusable. Rot rolls exactly one of the three limb bits per application.</p>
 </section>
 
 <section class="doc-section" id="every-weapon">
@@ -111,21 +150,6 @@ pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
   </details>
 </section>
 
-<section class="doc-section" id="status-limb-gating">
-  <h2>Status limb gating</h2>
-  <p>A <strong>Rot</strong>-class status grays individual command arrows and refuses their input. The gray-draw pass and the input gate read the same status bits, bit-for-bit - and the retail assignment is not one bit per arrow:</p>
-  <table>
-    <thead><tr><th>Status bit</th><th>Grays</th><th>Blocks</th></tr></thead>
-    <tbody>
-      <tr><td><code>0x08</code> (limb 0)</td><td>LEFT arrow</td><td>Square / dir 0</td></tr>
-      <tr><td><code>0x10</code> (limb 1)</td><td>RIGHT arrow</td><td>Circle / dir 3</td></tr>
-      <tr><td><code>0x20</code> (limb 2)</td><td>UP <strong>and</strong> DOWN</td><td>Triangle and Cross</td></tr>
-      <tr><td><code>0x1000</code> (Curse)</td><td>the whole MAGIC command</td><td>Magic</td></tr>
-    </tbody>
-  </table>
-  <p>With all three limb bits set, Attack is unusable. Rot rolls exactly one of the three limb bits per application.</p>
-</section>
-
 <section class="doc-section" id="execution-path">
   <h2>At execution: a different weapon read</h2>
   <p>Once a combo is committed, the execution resolver replays it one command per step and folds <em>half the equipment slot's attack</em> into the working ATK per swing - a read distinct from the gauge cost, covered in full on <a href="battle-formulas.html#physical-damage">battle formulas</a>. The battle loader deliberately folds no ATK at load; the fold happens here, per committed command.</p>
@@ -144,7 +168,7 @@ pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
       <tr><td>"The game checks the weapon's class against the character."</td><td>No comparison exists; the value is authored data. The equipment, item-property and accessory tables were each checked - none carries the cost.</td></tr>
       <tr><td>"The cost is recalculated when equipment changes."</td><td>Changing equipment alters only id bytes in the character record; the cost is read from the disc at the next battle load.</td></tr>
       <tr><td>"The Astral Sword has a unique penalty."</td><td>Its 54 is the same far tier Noa receives from any club or axe.</td></tr>
-      <tr><td>"The AP shown next to an art is what the bar charges."</td><td>Two different gauges: a named art is paid from the <em>Spirit</em> gauge (<code>actor+0x170</code>), not the bar's pool.</td></tr>
+      <tr><td>"The AP shown next to an art is what the bar charges."</td><td>Two different gauges: a named art is paid from the <em>Spirit</em> gauge (<code>actor+0x170</code>), not the bar's pool - see <a href="#art-cost">what a named art costs</a>.</td></tr>
     </tbody>
   </table>
 </section>
@@ -185,7 +209,7 @@ pool -= cost;                         // ctx+0x6DC, seeded from AGL</code></pre>
       <p>An emulator sweep of injected <code>+0x74</code> values established the pennant legibility floor (24). A separate <code>+2</code> in the build case is an empty-slot icon tweak, not the class penalty.</p>
     </div>
   </details>
-  <p class="hint">The full doc adds the gauge pool's AGL seed and Spirit refill, what a named art costs and where it is charged, the arts-AP override hook, and the port's input session: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a>.</p>
+  <p class="hint">The full doc adds the chip label words, the animation-rate restore after an action, the arts-AP override hook and register-level detail: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

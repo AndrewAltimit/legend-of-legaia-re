@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; vrchat world</div>
   <h1>Importing a world into VRChat</h1>
-  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop - plus a realism layer (dynamic lighting, a day/night cycle, swaying grass, black-space interior rooms with window light, wandering villagers) that ships on by default, the faithful look one foldout of unticks away - a grabbable equipment rack built from the items export, and a playable casino slot machine on its own cabinet. This guide goes from disc to standing in Rim Elm in about six steps - read the disclaimer first.</p>
+  <p class="lede">The engine exports any town or field scene as textured <code>.glb</code> files plus a manifest, and a Unity editor kit rebuilds it as a walkable, <strong>private</strong> VRChat world: the retail walk surface underfoot, villagers playing their spawn animations, doors that open as you approach and teleport you inside, the shoreline washing in and out, and the scene's music on a seamless loop. On top sits an optional realism layer (lighting, day/night, grass, wandering villagers), a grabbable equipment rack and a playable slot machine. Read the disclaimer first.</p>
 </header>
 
 <section class="doc-section" id="legal">
@@ -17,13 +17,35 @@
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
-  <div class="flow">
-    <div class="num">1</div><div class="layer">Export a scene</div><div class="desc">World glb + NPCs + props + music + manifest from your disc.</div><div class="crate">export-glb</div>
-    <div class="num">2</div><div class="layer">Make a worlds project</div><div class="desc">VRChat Creator Companion + glTFast + the kit.</div><div class="crate">Unity 2022.3</div>
-    <div class="num">3</div><div class="layer">Build the scene</div><div class="desc">One menu action wires the whole map from the manifest.</div><div class="crate">LegaiaWorldBuilder</div>
-    <div class="num">4</div><div class="layer">Spawn + test</div><div class="desc">Point the VRChat descriptor at the spawn marker, Build &amp; Test.</div><div class="crate">VRC SDK</div>
-    <div class="num">5</div><div class="layer">Make it alive</div><div class="desc">Wandering NPCs, grabbable weapons, more scenes joined by their portals.</div><div class="crate">Udon kit</div>
-  </div>
+  <ol class="steps">
+    <li><b>Export a scene</b><span><code>legaia-engine export-glb</code>: world, NPCs, props, music and a manifest, from your disc.</span></li>
+    <li><b>Make a worlds project</b><span>VRChat Creator Companion (Unity 2022.3) + glTFast + the kit.</span></li>
+    <li><b>Build the scene</b><span><em>Legaia &gt; Build Scene From Manifest</em> wires the whole map.</span></li>
+    <li><b>Spawn + test</b><span>Point the VRChat descriptor at the spawn marker; Build &amp; Test.</span></li>
+    <li><b>Make it alive</b><span>Wandering NPCs, grabbable weapons, more scenes joined by their portals.</span></li>
+  </ol>
+  <figure class="diagram">
+    <svg viewBox="0 0 820 200" role="img" aria-label="Data flow: your disc feeds legaia-engine export-glb, which writes the world glb, NPC and prop glbs, music WAVs and manifest.json; the Unity kit's LegaiaWorldBuilder reads the manifest and builds the world root with colliders, door teleports and the spawn">
+      <defs><marker id="vw-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="72" width="140" height="56" rx="5"/>
+      <text class="dg-label" x="80" y="96">your disc</text><text class="dg-sub" x="80" y="114">or extracted/</text>
+      <rect class="dg-node-accent" x="190" y="72" width="160" height="56" rx="5"/>
+      <text class="dg-label" x="270" y="96">export-glb</text><text class="dg-sub" x="270" y="114">retail-parity kernels</text>
+      <rect class="dg-group" x="385" y="10" width="190" height="180" rx="6"/>
+      <text class="dg-sub" x="480" y="28">glb-export/town01/</text>
+      <text class="dg-label" x="480" y="56">town01.glb</text>
+      <text class="dg-label" x="480" y="84">npcs/*.glb</text>
+      <text class="dg-label" x="480" y="112">props/*.glb</text>
+      <text class="dg-label" x="480" y="140">music/bgm_*.wav</text>
+      <text class="dg-label" x="480" y="168">manifest.json</text>
+      <rect class="dg-node-ok" x="615" y="72" width="195" height="56" rx="5"/>
+      <text class="dg-label" x="712" y="96">LegaiaWorldBuilder</text><text class="dg-sub" x="712" y="114">Unity root, private upload</text>
+      <path class="dg-edge" d="M150 100 L188 100" marker-end="url(#vw-arrow)"/>
+      <path class="dg-edge" d="M350 100 L383 100" marker-end="url(#vw-arrow)"/>
+      <path class="dg-edge" d="M575 100 L613 100" marker-end="url(#vw-arrow)"/>
+    </svg>
+    <figcaption>Everything game-derived is decoded from your disc by the exporter; the Unity kit itself carries no game data and only reads what the manifest describes.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="export">
@@ -37,24 +59,36 @@
     <li><code>music/bgm_*.wav</code> - the scene's entry BGM rendered through the engine's own SPU, cut to exactly its loop region so a looping AudioSource repeats it seamlessly.</li>
     <li><code>manifest.json</code> - transforms, labels, doorway-teleport triggers and landings, door tags, the suggested spawn, and the scale/axis conventions that tie it all together.</li>
   </ul>
-  <p>The default <code>--scale</code> is 1/128: one 128-unit walk tile becomes 1&nbsp;m. Retail's field proportions are generous, and in-headset the earlier 2&nbsp;m-per-tile default made the village loom over a real-scale player. NPC and prop files carry the scale baked on their root node, so one dragged into a Unity scene by hand is already world-sized.</p>
+  <p>The default <code>--scale</code> is 1/128: one 128-unit walk tile becomes 1&nbsp;m, which reads right against a real-scale player (retail's field proportions are generous; <code>1.0</code> keeps raw PSX units). NPC and prop files carry the scale baked on their root node, so one dragged into a Unity scene by hand is already world-sized.</p>
+  <table>
+    <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>--scene NAME</code></td><td>One CDNAME scene; repeat for several.</td></tr>
+      <tr><td><code>--all-scenes</code></td><td>Every scene that assembles; failures are reported and skipped.</td></tr>
+      <tr><td><code>--items</code></td><td>Every equipment item under <code>items/</code> (works without <code>--scene</code>).</td></tr>
+      <tr><td><code>--party</code></td><td>Vahn, Noa and Gala's field forms under <code>party/</code>, with a manifest shaped like a scene's so the builder places them like villagers.</td></tr>
+      <tr><td><code>--include-sky</code></td><td>Keep the sky-backdrop shells as horizon dressing.</td></tr>
+      <tr><td><code>--no-npcs</code> / <code>--no-props</code></td><td>Skip the villager or prop glbs.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="project">
   <h2>2 &middot; Set up a VRChat worlds project</h2>
-  <ol>
-    <li>Install the <a href="https://vcc.docs.vrchat.com/" target="_blank" rel="noopener">VRChat Creator Companion</a> and create a <strong>Worlds</strong> project (Unity 2022.3).</li>
-    <li>Add <strong>glTFast</strong> so Unity can import <code>.glb</code>: <em>Window &gt; Package Manager &gt; + &gt; Add package by name...</em> &rarr; <code>com.unity.cloud.gltfast</code>. On the VRChat-mandated 2022.3.22f1 editor, pin version <code>6.14.1</code> - newer glTFast releases require a newer Unity than the SDK allows, so the Package Manager refuses them. Equivalently, one line in <code>Packages/manifest.json</code> under <code>"dependencies"</code>: <code>"com.unity.cloud.gltfast": "6.14.1"</code>.</li>
-    <li>Copy the kit from the repo - <code>scripts/vrchat-world/world-project/Assets/LegaiaWorld/</code> - into the project's <code>Assets/</code>: the editor builder + its realism, camp-props and audio modules, a JSON reader, four small shaders, and eight UdonSharp behaviours (doorway teleport, proximity door, wander, day/night, rack pickup, torch, settings panel, firelight flicker).</li>
+  <ol class="steps">
+    <li><b>Create the project</b><span>Install the <a href="https://vcc.docs.vrchat.com/" target="_blank" rel="noopener">VRChat Creator Companion</a> and create a <strong>Worlds</strong> project (Unity 2022.3).</span></li>
+    <li><b>Add glTFast</b><span>So Unity can import <code>.glb</code>: <em>Window &gt; Package Manager &gt; + &gt; Add package by name...</em> &rarr; <code>com.unity.cloud.gltfast</code>, version <code>6.14.1</code>.</span></li>
+    <li><b>Copy the kit</b><span><code>scripts/vrchat-world/world-project/Assets/LegaiaWorld/</code> into the project's <code>Assets/</code>.</span></li>
   </ol>
-  <p class="hint">glTFast is a Unity-registry package, so it never appears inside the Creator Companion - and the VRChat packages live in <code>Packages/vpm-manifest.json</code>, so don't be alarmed when <code>Packages/manifest.json</code> shows no <code>com.vrchat.*</code> entries. Both are normal.</p>
+  <p class="hint">Pin glTFast to <code>6.14.1</code>: on the VRChat-mandated 2022.3.22f1 editor, newer releases require a newer Unity than the SDK allows, so the Package Manager refuses them. Equivalently, add <code>"com.unity.cloud.gltfast": "6.14.1"</code> under <code>"dependencies"</code> in <code>Packages/manifest.json</code>. glTFast is a Unity-registry package, so it never appears inside the Creator Companion, and the VRChat packages live in <code>Packages/vpm-manifest.json</code> - <code>Packages/manifest.json</code> showing no <code>com.vrchat.*</code> entries is normal.</p>
+  <p>The kit holds the editor builder with its realism, camp-props and audio modules, a JSON reader, four small shaders, and eight UdonSharp behaviours (doorway teleport, proximity door, wander, day/night, rack pickup, torch, settings panel, firelight flicker).</p>
 </section>
 
 <section class="doc-section" id="build">
   <h2>3 &middot; Import and build the scene</h2>
-  <ol>
-    <li>Copy the exported scene folder into the project, e.g. <code>Assets/LegaiaImports/town01/</code>, keeping <code>npcs/</code>, <code>props/</code> and <code>manifest.json</code> beside the world glb. Let Unity import - glTFast picks up every <code>.glb</code> with no material fixup needed.</li>
-    <li>Menu <strong>Legaia &gt; Build Scene From Manifest...</strong>, browse to the copied <code>manifest.json</code>, and <strong>Build scene</strong>.</li>
+  <ol class="steps">
+    <li><b>Copy the export in</b><span>e.g. <code>Assets/LegaiaImports/town01/</code>, keeping <code>npcs/</code>, <code>props/</code> and <code>manifest.json</code> beside the world glb. glTFast imports every <code>.glb</code> with no material fixup.</span></li>
+    <li><b>Build</b><span>Menu <strong>Legaia &gt; Build Scene From Manifest...</strong>, browse to the copied <code>manifest.json</code>, <strong>Build scene</strong>.</span></li>
   </ol>
   <p>Two default-on options are worth knowing before you press the button. <strong>Match explorer orientation</strong> mirrors the finished root on X so the scene reads the way this site's field-scene viewer presents it (the raw export genuinely is mirrored). <strong>Merged + welded</strong> builds one welded, double-sided collision mesh for the whole world instead of a collider per mesh - it closes the hairline seams a player capsule slips through, and because the source data's triangle winding is mixed, a single-sided collider would drop you through roughly half the floors.</p>
   <p>The result is one <code>Legaia_town01</code> root:</p>
@@ -70,18 +104,19 @@
 
 <section class="doc-section" id="descriptor">
   <h2>4 &middot; Descriptor, test, upload</h2>
-  <ol>
-    <li>Drop the SDK's <code>VRCWorld</code> prefab into the scene if the template didn't already.</li>
-    <li>Select it, expand the <strong>VRC Scene Descriptor</strong>'s <strong>Spawns</strong> list, and drag <code>Legaia_town01/LegaiaSpawn</code> into element 0, replacing the prefab's own <code>Spawn</code> child. Moving a spawn marker does nothing until the list references it. Players face the spawn transform's +Z, so rotate the marker toward the view you want.</li>
-    <li>Delete the template's <code>GridFloor</code> plane (or sink it far below as a fall catch) so it can't mask the real walk surface.</li>
-    <li><strong>VRChat SDK &gt; Show Control Panel &gt; Build &amp; Test</strong>. Doors and teleports react to <em>players</em>, so test in Build &amp; Test or ClientSim - flying the editor scene camera through a trigger does nothing.</li>
-    <li>When it feels right, <strong>Upload</strong>. A fresh world is private until you explicitly publish it to Community Labs - leave it private for <a href="#legal">legal reasons</a>.</li>
+  <ol class="steps">
+    <li><b>Add the descriptor</b><span>Drop the SDK's <code>VRCWorld</code> prefab into the scene if the template didn't already.</span></li>
+    <li><b>Set the spawn</b><span>In the <strong>VRC Scene Descriptor</strong>'s <strong>Spawns</strong> list, drag <code>Legaia_town01/LegaiaSpawn</code> into element 0. Players face the marker's +Z.</span></li>
+    <li><b>Remove the grid floor</b><span>Delete the template's <code>GridFloor</code> (or sink it far below as a fall catch) so it can't mask the real walk surface.</span></li>
+    <li><b>Build &amp; Test</b><span><strong>VRChat SDK &gt; Show Control Panel &gt; Build &amp; Test</strong>, or ClientSim.</span></li>
+    <li><b>Upload, privately</b><span>A fresh world stays private until you publish it to Community Labs - leave it private (<a href="#legal">why</a>).</span></li>
   </ol>
+  <p class="hint">Moving a spawn marker does nothing until the descriptor's list references it. Doors and teleports react to <em>players</em>, so flying the editor scene camera through a trigger does nothing.</p>
 </section>
 
 <section class="doc-section" id="alive">
   <h2>5 &middot; Making it feel alive</h2>
-  <ul>
+  <ul class="bullets">
     <li><strong>Wandering villagers</strong> - add the kit's <code>LegaiaNpcWander</code> behaviour to any NPC the builder placed and tune radius/speed. Movement is computed per player: fine for ambience, use synced variables if everyone must agree.</li>
     <li><strong>Grabbable weapons</strong> - <code>export-glb --items</code> exports every equipment item in the game (all four characters' weapons, Ra-Seru, armour, headgear, footwear). Copy the <code>items/</code> folder into <code>Assets/</code>, point the builder's <strong>Equipment props</strong> section at its manifest, and <em>Place equipment rack near spawn</em> lines every weapon up grounded on the world collider - scaled (half the world ratio by default: they are battle-mode models, oversized against field proportions), wrapped in a tight convex hull collider cooked from its rest pose, and wired as <code>VRC Pickup</code> physics props, so you can walk to the rack and hold Vahn's sword. Props spawn frozen on the rack and only go physical the first time someone drops one, so world load can't scatter them or drop them through the ground. Untick <strong>Weapons only</strong> to also rack the armour and Ra-Seru.</li>
     <li><strong>Camp props</strong> - the builder also places a settings panel and a small camp near spawn (all primitives + generated materials, no game data). The panel's world-space buttons mute the music for you alone or jump the shared day/night cycle to noon or midnight for everyone - click them while the board stands (grab it only by its bottom handle; the handle is the panel's whole grab collider so it can't swallow button clicks); the two torches and two campfires are pickups you can carry anywhere and light with <em>Use</em> - fire and smoke particles, a warm flickering point light (no visible glow orb), and a spatial synthesized crackle, with the lit state synced across the instance.</li>
@@ -106,7 +141,7 @@
 <section class="doc-section" id="realism">
   <h2>Realism enhancements</h2>
   <p>The builder window's <strong>Realism enhancements</strong> foldout layers a set of passes over the built root. Every pass defaults <strong>on</strong> - untick them all for the faithful retail-shaded scene. Everything the passes create is generated from scratch (shaders, dome and grass geometry, synthesized audio), so no game data is produced beyond what the export already decoded. An <em>apply to the already-built root</em> button reruns just these passes, so tuning a slider doesn't force a rebuild.</p>
-  <ul>
+  <ul class="bullets">
     <li><strong>Realistic lighting</strong> - the exported materials are unlit and the meshes carry no normals, so the pass generates smoothed normals, swaps in lit vertex-colour shaders, and adds a warm directional sun with soft shadows and a three-colour ambient. The baked retail shading keeps modulating every surface, so the scene holds its palette - Rim Elm at golden hour still looks like Rim Elm. Villagers and props get <em>light wrap</em>: on a low-poly face the lighting terminator cuts a harsh dark band, so their shading is flattened toward even light while buildings keep the full directional response.</li>
     <li><strong>Day / night cycle</strong> - an Udon behaviour sweeps the sun through a full day on a fixed cycle (night compressed), synced across all players from the shared server clock. Night genuinely darkens the landscape - the ambient and fog sweep down to a moonlit, blue-shifted fraction of their daytime values (a "night darkness" slider sets how far) - and <strong>night lamps</strong> light up: small warm lights in the village windows - light only, no visible bulb - anchored where the retail scene's own authored window-glow shafts meet the buildings, so light spills out of the windows exactly where retail painted it, plus burning stake torches planted beside each doorway and each tree (trees are found as green canopy clusters in the world mesh), all switched on only while the sun is down.</li>
     <li><strong>Sky + distance fog</strong> - a procedural skybox that tracks the sun (so it darkens with the cycle) and linear fog scaled to the scene's size.</li>
@@ -121,7 +156,7 @@
 
 <section class="doc-section" id="troubleshooting">
   <h2>Troubleshooting</h2>
-  <ul>
+  <ul class="bullets">
     <li><strong>Doors don't open / teleports do nothing</strong>: the Udon behaviours need the VRChat worlds SDK in the project, and they only react to players - test in Build &amp; Test or ClientSim. A door that opens but never teleports is usually a scene-exit portal whose target scene isn't built in this Unity scene.</li>
     <li><strong>Falling through the floor</strong>: use the default <strong>Merged + welded</strong> world collider - per-mesh colliders leave hairline seams and collide single-sided against mixed-winding source data.</li>
     <li><strong>Everything looks mirrored</strong>: the raw export is X-mirrored relative to the site's viewers; the builder's default-on <strong>Match explorer orientation</strong> compensates. If you unticked it, that's the whole difference.</li>

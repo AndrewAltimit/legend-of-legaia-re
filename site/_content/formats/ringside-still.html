@@ -59,6 +59,12 @@
     </svg>
     <figcaption>Only <code>rect.y</code> changes between the four uploads; <code>x</code>, <code>w</code> and <code>h</code> are written once.</figcaption>
   </figure>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x00000</span><span class="bm-name">band 0 &rarr; y 0</span><span class="bm-size">0xA000</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x0A000</span><span class="bm-name">band 1 &rarr; y 64</span><span class="bm-size">0xA000</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x14000</span><span class="bm-name">band 2 &rarr; y 128</span><span class="bm-size">0xA000</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x1E000</span><span class="bm-name">band 3 &rarr; y 192</span><span class="bm-size">0xA000</span></div>
+  </div>
   <table>
     <thead><tr><th>Field</th><th>Value</th><th>Where it comes from</th></tr></thead>
     <tbody>
@@ -74,6 +80,7 @@
 <section class="doc-section" id="what-names-the-rectangle">
   <h2>What names the rectangle</h2>
   <p>The rect lives at <code>0x801F735C</code> and is built by one arm of <code>FUN_801F6B24</code>. Three of its four halfwords are written once and never touched again:</p>
+<details class="disclosure"><summary>The stores, from the disassembly</summary>
 <pre><code>801f6be4  li   v0,0x180         ; rect.x = 384
 801f6bec  sh   v0,0x735c(at)
 801f6bf0  li   v0,0x140         ; rect.w = 320
@@ -81,6 +88,7 @@
 801f6bfc  li   v0,0x40          ; rect.h = 64
 801f6c04  sh   v0,0x7362(at)
 801f6c20  sh   zero,0x735e(at)  ; rect.y = 0, then 0x40 / 0x80 / 0xC0</code></pre>
+</details>
   <p>The read is <code>FUN_8003E964(sector, 0)</code> seeking <code>0 / 0x14 / 0x28 / 0x3C</code>, then <code>FUN_8003E800(dst, 0x14, 1)</code> for 20 sectors; the upload is <code>FUN_800583C8</code>, which is <code>LoadImage</code> - it hands the literal at <code>0x800156D4</code> to the debug hook before the libgpu vtable call.</p>
   <p>Those arms are one of <strong>two</strong> jump tables in the same routine. A <code>beqz</code> on the special-battle word <code>_DAT_8007BAC0</code> at <code>0x801F6BA8</code> picks between them: non-zero takes the 12-arm panel-still table at <code>0x801F6AA8</code> (these stills), zero takes the 19-arm field-restore table at <code>0x801F6AD8</code>, which uploads the field party's texture pages instead. So an ordinary battle teardown never reaches this rectangle - it reads a different table.</p>
 </section>
@@ -88,20 +96,24 @@
 <section class="doc-section" id="which-entry">
   <h2>Which entry is which</h2>
   <p>The PROT index is <strong>computed</strong>, not a literal, which is why a sweep for literal references finds no loader for either entry:</p>
+<p>In short: <code>raw TOC 0x4C7 + (current HP &lt; max HP / 2)</code>, read off party slot 0.</p>
+<details class="disclosure"><summary>The index computation, from the disassembly</summary>
 <pre><code>801f6b90  lhu  v0,0x4824(v0)    ; party slot 0 hp_max_record  (record +0x11C)
 801f6b98  lhu  v1,0x480e(v1)    ; party slot 0 hp_curr_live   (record +0x106)
 801f6ba4  srl  v0,v0,0x1
 801f6bac  sltu s0,v1,v0         ; s0 = current HP &lt; max / 2
 801f6c3c  addiu a0,s0,0x4c7     ; raw TOC 0x4C7 + s0
 801f6c40  jal  0x8003e8a8       ; the LBA resolver</code></pre>
+</details>
   <p>Raw TOC <code>0x4C7</code> / <code>0x4C8</code> are extraction <code>1221</code> / <code>1222</code> under the <a href="cdname.html">+2 correction</a>, and the same <code>s0</code> picks between the two dev-path strings on the dev-file branch - which is what ties each index to a filename. <code>1221</code> is <code>int.tim</code>, <code>1222</code> is <code>int2.tim</code>, and <code>int2.tim</code> is the <strong>below-half-HP</strong> variant. The record offsets are the live ones from the <a href="save-record.html">per-character save record</a>.</p>
   <p>Two details there are the kind a backward-only or literal-only scan loses: the index is formed by <code>addiu</code> <em>in the <code>jal</code>'s delay slot</em>, and the comparison reads the character record through <code>lhu</code> at a <code>gp</code>-free absolute pair rather than through any table.</p>
 </section>
 
 <section class="doc-section" id="what-draws-it">
   <h2>What draws it, and when</h2>
-  <p>The still is loaded at a battle's end and drawn a screen later, by the Muscle Dome's contest hub: two textured quads that address it by <em>texture page</em> (<code>0x106</code> and <code>0x109</code>, VRAM x 384 and 576) rather than by pixel column, one 320x240 image split at x = 192. The hub draws them only when it is <strong>re-entered</strong> after a finished leg, as the backdrop of the INTERVAL score tally and the ROUND card that follows - the first visit draws a different backdrop. Its brightness is the hub's backdrop fade level, which climbs to full with the INTERVAL heading, dims to half while the tally rolls, returns to full, and fades out with the ROUND card. Checkpoints from a dome contest played through three hub visits show both packets in the frame's primitive pool on the second and third visits, at the level the first of those arms had reached.</p>
-  <p>In the port both play hosts draw it the same way, from one set of engine kernels: the pick at the leg's end, the fade envelope, the two quads, and the sheet assembled band by band at the loader's own rectangles. The standalone minigames page does not.</p>
+  <p>The still is loaded at a battle's end and drawn a screen later, by the Muscle Dome's contest hub: two textured quads that address it by <em>texture page</em> (<code>0x106</code> and <code>0x109</code>, VRAM x 384 and 576) rather than by pixel column, one 320x240 image split at x = 192. The hub draws them only when it is <strong>re-entered</strong> after a finished leg, as the backdrop of the INTERVAL score tally and the ROUND card that follows - the first visit draws a different backdrop (a 3 &times; 2 tiling of a brick-wall sprite under a full-screen gradient quad). Its brightness is the hub's backdrop fade level, which climbs to full with the INTERVAL heading, dims to half while the tally rolls, returns to full, and fades out with the ROUND card. Checkpoints from a dome contest played through three hub visits show both packets in the frame's primitive pool on the second and third visits, at the level the first of those arms had reached.</p>
+  <p>Why a search for the rectangle once found nothing: the draw never materialises 384. A textured primitive addresses VRAM by <em>page index</em> (<code>384 / 64 = 6</code>), so the constants in the code are <code>0x106</code> / <code>0x109</code> (<code>0x100</code> = 16-bit direct colour), not <code>0x180</code>.</p>
+  <p><strong>In the port:</strong> the format is <code>legaia_asset::ringside_still</code>; the hub draw, fade envelope and HP pick run in the engine on both play hosts.</p>
 </section>
 
 <section class="doc-section" id="why-no-magic">

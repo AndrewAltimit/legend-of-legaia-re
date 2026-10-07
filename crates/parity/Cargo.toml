@@ -1,0 +1,35 @@
+[package]
+name = "legaia-parity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_parity"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+log.workspace = true
+legaia-art.workspace = true
+legaia-asset.workspace = true
+legaia-engine-core.workspace = true
+legaia-engine-vm.workspace = true
+legaia-engine-audio.workspace = true
+legaia-engine-session.workspace = true
+legaia-engine-render.workspace = true
+legaia-mednafen.workspace = true
+legaia-pcsxr.workspace = true
+legaia-prot.workspace = true
+legaia-save.workspace = true
+legaia-seq.workspace = true
+legaia-tim.workspace = true
+legaia-vab.workspace = true
+png.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -25,38 +25,14 @@
 
 <section class="doc-section" id="indexing">
   <h2>How an accessory grants its effect</h2>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 860 120" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow from equipped item id through the index byte to the ability bitfield and its consumers">
-      <style>
-        .ap-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .ap-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .ap-sub { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .ap-arrow { stroke: var(--accent); stroke-width: 1.2; fill: none; }
-        .ap-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-      </style>
-      <rect x="10" y="30" width="130" height="46" class="ap-box"/>
-      <text x="75" y="48" class="ap-seg">equipped item</text>
-      <text x="75" y="64" class="ap-sub">8 slots per character</text>
-      <path d="M 140 53 L 178 53"  class="ap-arrow"/><path d="M 172 47 L 178 53 L 172 59" class="ap-arrow"/>
-      <rect x="180" y="30" width="150" height="46" class="ap-box"/>
-      <text x="255" y="48" class="ap-seg">index byte</text>
-      <text x="255" y="64" class="ap-sub">descriptor +3 / equip +5</text>
-      <path d="M 330 53 L 368 53" class="ap-arrow"/><path d="M 362 47 L 368 53 L 362 59" class="ap-arrow"/>
-      <rect x="370" y="30" width="150" height="46" class="ap-box"/>
-      <text x="445" y="48" class="ap-seg">ability bitfield</text>
-      <text x="445" y="64" class="ap-sub">char +0xF4, 4 x u32</text>
-      <path d="M 520 53 L 558 53" class="ap-arrow"/><path d="M 552 47 L 558 53 L 552 59" class="ap-arrow"/>
-      <rect x="560" y="30" width="130" height="46" class="ap-box"/>
-      <text x="625" y="48" class="ap-seg">global mask</text>
-      <text x="625" y="64" class="ap-sub">party-wide OR</text>
-      <path d="M 690 53 L 728 53" class="ap-arrow"/><path d="M 722 47 L 728 53 L 722 59" class="ap-arrow"/>
-      <rect x="730" y="30" width="120" height="46" class="ap-box"/>
-      <text x="790" y="48" class="ap-seg">consumers</text>
-      <text x="790" y="64" class="ap-sub">test bit at use</text>
-      <text x="445" y="104" class="ap-note">index &gt;= 0x40 = sentinel, no bit set</text>
-    </svg>
-    <figcaption>Rebuilt every frame by the stat aggregator: item &rarr; index &rarr; bit &rarr; mask &rarr; point-of-use tests.</figcaption>
-  </figure>
+  <ol class="steps">
+    <li><b>Equipped item</b><span>eight slot bytes per character, record <code>+0x196</code></span></li>
+    <li><b>Index byte</b><span>descriptor <code>+3</code> (Goods) or equip row <code>+5</code></span></li>
+    <li><b>Ability bit</b><span>set bit <code>index</code> in <code>char +0xF4</code>; <code>&gt;= 0x40</code> sets nothing</span></li>
+    <li><b>Global mask</b><span>all three members OR'd together</span></li>
+    <li><b>Point of use</b><span>each mechanic tests its own bit</span></li>
+  </ol>
+  <p>The stat aggregator rebuilds this chain every frame, so un-equipping takes effect immediately.</p>
   <p>The per-frame stat aggregator walks each active party member's eight equipment-slot bytes
   (<a href="save-record.html">record</a> <code>+0x196</code>) and resolves each item to an index:</p>
   <pre><code>kind = item_table[id].byte(+0)
@@ -64,6 +40,12 @@ if kind == 1: index = equip_bonus[sub].byte(+5)
 if kind == 2: index = descriptor[sub].byte(+3)
 if index &lt; 0x40:
     char[+0xF4 + (index&gt;&gt;5)*4] |= 1 &lt;&lt; (index &amp; 0x1F)</code></pre>
+  <div class="byte-map" role="img" aria-label="Ability bitfield at character record +0xF4: four u32 words; the first holds passive indices 0x00 to 0x1F, the second 0x20 to 0x3F, the last two are out of reach of the 64-index space">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0xF4</span><span class="bm-name">indices 0x00..0x1F</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0xF8</span><span class="bm-name">indices 0x20..0x3F</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0xFC</span><span class="bm-name">beyond the 64-index space</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x100</span><span class="bm-name">beyond the 64-index space</span><span class="bm-size">u32</span></div>
+  </div>
   <ul class="bullets">
     <li><code>char +0xF4..+0x103</code> is the per-character 4&times;u32 ability bitfield - the home of the MP-cost bits (indices <code>0x04</code>/<code>0x05</code>).</li>
     <li>All three members' bitfields are then OR'd into a <strong>global</strong> 4&times;u32 mask - how party-wide passives are consumed.</li>
@@ -87,6 +69,11 @@ if index &lt; 0x40:
   <h2>Passive name/description table</h2>
   <p>A static 64-record table at <code>0x8007625C</code> (stride <code>0xC</code>) gives each index its menu
   name, effect description, and scope:</p>
+  <div class="byte-map" role="img" aria-label="Passive name table record, 12 bytes: scope u32, name pointer u32, description pointer u32">
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0</span><span class="bm-name">scope</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x4</span><span class="bm-name">&rarr; name</span><span class="bm-size">ptr</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x8</span><span class="bm-name">&rarr; description</span><span class="bm-size">ptr</span></div>
+  </div>
   <table class="layout">
   <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
   <tbody>
@@ -172,6 +159,9 @@ if index &lt; 0x40:
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the aggregator, the guard applier and every consumer</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -182,15 +172,11 @@ if index &lt; 0x40:
       <tr><td>Goods detail panel</td><td><code>FUN_801D0F1C</code> (menu overlay)</td><td>display-text gate on <code>descriptor +3 &lt; 0x40</code>; Point Card special case</td><td><code>funcs/overlay_menu_801d0f1c.txt</code></td></tr>
       <tr><td>Description resolver</td><td><code>FUN_80034250</code></td><td>same gate, static side</td><td><code>funcs/80034250.txt</code></td></tr>
       <tr><td>Escape roll</td><td><code>FUN_801E791C</code></td><td>bits <code>0x34</code>/<code>0x37</code> consumer semantics</td><td><code>funcs/overlay_*_801e791c.txt</code></td></tr>
-      <tr><td>Validation</td><td><code>accessory_passives_vs_disc</code>, <code>accessory_passive_real</code></td><td>every curated accessory effect matches its decoded index; sentinel invariants hold</td><td>disc-gated tests</td></tr>
     </tbody>
   </table>
-  <p>Parser: <code>legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus</code>
-  (CLI <code>asset accessory-passive &lt;SCUS&gt; [--json]</code>). Engine:
-  <code>engine-core::accessory_passives</code> maps item id &rarr; index + scope;
-  <code>World::refresh_party_ability_bits</code> ports the aggregator pass,
-  <code>World::party_has_ability</code> the mask test, and
-  <code>compute_battle_stats_with_passives</code> the percent boosts with the retail clamp block.
+    </div>
+  </details>
+  <p><strong>In the port:</strong> parser <code>legaia_asset::accessory_passive</code> (CLI <code>asset accessory-passive</code>); engine <code>engine-core::accessory_passives</code> - item id &rarr; index + scope, the per-frame bitfield rebuild, the party mask test, and the percent boosts under the retail clamp block.
   Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/accessory-passive-table.md" target="_blank" rel="noopener"><code>docs/formats/accessory-passive-table.md</code></a>.</p>
 </section>
 

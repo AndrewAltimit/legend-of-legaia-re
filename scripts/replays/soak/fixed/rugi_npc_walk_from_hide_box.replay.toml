@@ -4,7 +4,7 @@
 # soak-signature = "script_stall|rugi|timeline@0x00a7:opc7"
 # detail: script parked at one PC for 1800 frames
 # fixed: a spawned record's `4C 51` seat is published before a `C7` walk in the same slice reads it
-# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 3014004745

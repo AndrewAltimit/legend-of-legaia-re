@@ -23,6 +23,8 @@
 //! a `// PORT:` provenance tag lives in `legaia-engine-core`, not here.
 
 use super::*;
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::AudioSink;
 
 // Baka Fighter presentation exports (fighter meshes, HUD art, stage, poses)
 // live in a child module so this file stays the rules-engine shell.

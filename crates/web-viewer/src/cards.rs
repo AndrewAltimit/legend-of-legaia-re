@@ -108,7 +108,7 @@ impl LegaiaRuntime {
     pub(crate) fn write_session_into_card(&mut self, slot: usize, block: u8) -> Result<(), String> {
         let sf = self.world_mut().save_full();
         let resume = self.current_resume();
-        let index = self.scene_host.as_ref().map(|h| h.index.clone());
+        let index = self.scene_host.host().map(|h| h.index.clone());
         let card_slot = self
             .cards
             .get_mut(slot)
@@ -188,7 +188,7 @@ impl LegaiaRuntime {
     /// empty with no scene loaded.
     pub(crate) fn current_resume(&self) -> SaveResume {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| h.current_resume())
             .unwrap_or_default()
     }

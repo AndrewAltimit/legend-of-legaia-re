@@ -20,35 +20,25 @@
 <section class="doc-section" id="overview">
   <h2>What this solves</h2>
   <p>Most of Legaia's logic lives in overlays - code the game streams into RAM on demand - so a static search of the executable often finds no caller at all. A live probe sidesteps that: it lets the game run and records the program counter and return address at the moment of interest. Every probe is the same short lifecycle, factored into a shared library so a new one is a few dozen lines.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 190" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Probe lifecycle: WAIT_BOOT counts vsyncs while the BIOS boots; ARMED_LOADED loads the save state, reads registers, arms breakpoints and captures N vsyncs while hits log to CSV; DONE disarms, writes a final snapshot and quits">
-      <style>
-        .px-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .px-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-        .px-lab { font: 13px sans-serif; fill: currentColor; }
-        .px-sub { font: 11px monospace; fill: var(--text-muted); }
-        .px-arr { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: url(#px-head); }
-      </style>
-      <defs><marker id="px-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-muted)"/></marker></defs>
-      <rect x="20" y="40" width="170" height="60" rx="6" class="px-box"/>
-      <text x="105" y="64" text-anchor="middle" class="px-lab">WAIT_BOOT</text>
-      <text x="105" y="84" text-anchor="middle" class="px-sub">BIOS boots, ~60 vsyncs</text>
-      <path d="M190,70 L250,70" class="px-arr"/>
-      <rect x="252" y="40" width="200" height="60" rx="6" class="px-box"/>
-      <text x="352" y="64" text-anchor="middle" class="px-lab">ARMED_LOADED</text>
-      <text x="352" y="84" text-anchor="middle" class="px-sub">load state, arm breakpoints</text>
-      <path d="M452,70 L512,70" class="px-arr"/>
-      <rect x="514" y="40" width="200" height="60" rx="6" class="px-soft"/>
-      <text x="614" y="64" text-anchor="middle" class="px-lab">capture N vsyncs</text>
-      <text x="614" y="84" text-anchor="middle" class="px-sub">hits append CSV rows</text>
-      <path d="M614,100 L614,130 L352,130 L352,102" class="px-arr"/>
-      <text x="483" y="150" text-anchor="middle" class="px-sub">request_quit or frames elapsed</text>
-      <path d="M714,70 L774,70" class="px-arr"/>
-      <rect x="776" y="40" width="110" height="60" rx="6" class="px-box"/>
-      <text x="831" y="64" text-anchor="middle" class="px-lab">DONE</text>
-      <text x="831" y="84" text-anchor="middle" class="px-sub">disarm, quit</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 300" role="img" aria-label="Probe lifecycle: WAIT_BOOT counts vsyncs while the BIOS boots; ARMED_LOADED loads the save state, reads registers and arms breakpoints; the capture loop runs N vsyncs while breakpoint hits append CSV rows; DONE disarms, writes a final snapshot and quits">
+      <defs><marker id="px-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="300" height="56" rx="5"/>
+      <text class="dg-label" x="170" y="44">WAIT_BOOT</text><text class="dg-sub" x="170" y="62">BIOS boots, ~60 vsyncs</text>
+      <rect class="dg-node-accent" x="20" y="116" width="300" height="56" rx="5"/>
+      <text class="dg-label" x="170" y="140">ARMED_LOADED</text><text class="dg-sub" x="170" y="158">load state, read gp, arm breakpoints</text>
+      <rect class="dg-node" x="400" y="116" width="300" height="56" rx="5"/>
+      <text class="dg-label" x="550" y="140">capture N vsyncs</text><text class="dg-sub" x="550" y="158">each hit appends a CSV row</text>
+      <rect class="dg-node-ok" x="400" y="224" width="300" height="56" rx="5"/>
+      <text class="dg-label" x="550" y="248">DONE</text><text class="dg-sub" x="550" y="266">disarm, final snapshot, quit</text>
+      <path class="dg-edge" d="M170 76 L170 114" marker-end="url(#px-arrow)"/>
+      <path class="dg-edge" d="M320 144 L398 144" marker-end="url(#px-arrow)"/>
+      <path class="dg-edge-dim" d="M600 116 L600 96 L660 96 L660 112" marker-end="url(#px-arrow)"/>
+      <text class="dg-edge-label" x="630" y="88" text-anchor="middle">next vsync</text>
+      <path class="dg-edge" d="M550 172 L550 222" marker-end="url(#px-arrow)"/>
+      <text class="dg-edge-label" x="540" y="202" text-anchor="end">request_quit, or N frames elapsed</text>
     </svg>
-    <figcaption>The state machine every autorun shares, provided by <code>lib/probe/sm.lua</code> through <code>probe.run{...}</code>.</figcaption>
+    <figcaption>The state machine every autorun shares, provided by <code>lib/probe/sm.lua</code> through <code>probe.run{...}</code>. A probe only fills in what to arm and what to log per hit.</figcaption>
   </figure>
 </section>
 
@@ -257,9 +247,9 @@
   <h2>Patched-disc taint</h2>
   <p>A capture can measure a patched game while its log names the retail image. Two routes carry a patch in. The <strong>image route</strong>: PCSX-Redux applies <code>&lt;image&gt;.ppf</code> from beside the image, and the randomizer writes its <code>.ppf</code> beside its input disc, so every unstaged run on that path read patched sectors. The <strong>state route</strong>: the executable is read from the disc once, at boot, so a save state made on a patched disc keeps the patched executable forever - staging the disc does nothing for it.</p>
   <ul class="bullets">
-    <li><code>patch_taint_audit.py states</code> checks every library state's resident executable at the patcher's own hook sites; the manifest records the result as <code>resident_patch</code>. The S1..S5 playthrough anchors carry a shiny-seru + enemy-ally charm build; others carry a starting-bag preset, a town rename or the arts AP override.</li>
+    <li><code>patch_taint_audit.py states</code> checks every library state's resident executable at the patcher's own hook sites; the manifest records the result as <code>resident_patch</code>, so a probe can refuse a tainted state.</li>
     <li><code>patch_taint_audit.py logs</code> lists every run the emulator patched, and <code>ppf</code> decodes a patch file into disc files, PROT entries and executable addresses.</li>
-    <li>A patched byte matters only if the run reads it. The re-checked capture claims stand; one run (a field-to-battle load that jumped into an unpatched arena) is void.</li>
+    <li>A patched byte matters only if the run reads it: re-check a claim against the patch's decoded footprint before discarding it.</li>
   </ul>
 </section>
 
@@ -287,14 +277,14 @@
 <section class="doc-section" id="authoring">
   <h2>Authoring a new probe</h2>
   <p>Two shapes, in order of preference. A declarative spec covers "arm N breakpoints, log K columns" and "settle then dump"; a Lua autorun covers per-hit logic that depends on register state or dynamic arming.</p>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Pick the shape</span><span class="desc">Fixed breakpoints and CSV columns: a <code>.probe.toml</code> under <code>probes/</code>. Anything conditional: copy <code>autorun_slot4_consumer_pcs.lua</code>, the canonical ~145-line thin probe.</span><span class="crate">probes/ · lib/probe/spec</span>
-    <span class="num">2</span><span class="layer">Name addresses symbolically</span><span class="desc">Write <code>FUN_801DA51C</code> / <code>_DAT_801EF16C</code>, not hex; the resolver fails loudly on a typo, where a hex slip arms <code>nil</code> and logs zero hits. Regenerate with <code>build-symbols.py</code> after new dumps.</span><span class="crate">lib/probe/symbols</span>
-    <span class="num">3</span><span class="layer">Arm in <code>on_arm</code></span><span class="desc">Read <code>gp</code> from the live registers after the load, compute relative targets, arm with the width the access uses (1/2/4). Return the descriptor list.</span><span class="crate">lib/probe/bp</span>
-    <span class="num">4</span><span class="layer">Log in the callback</span><span class="desc">A write breakpoint fires <em>at</em> the store with live registers - read <code>PCSX.getRegisters()</code> directly. Write rows through <code>csv:row</code>; stack first-hit context with <code>append_call_context</code>.</span><span class="crate">lib/probe/csv · snapshot · watch</span>
-    <span class="num">5</span><span class="layer">Quit early</span><span class="desc">Set <code>ctx.request_quit = true</code> in <code>on_capture</code> once the stop condition is met instead of burning the frame budget.</span><span class="crate">lib/probe/sm</span>
-    <span class="num">6</span><span class="layer">Run and iterate</span><span class="desc"><code>run_probe.sh --lua ...</code>; the <code>.hits.txt</code> snapshot rewrites every 60 vsyncs, so tail it from another shell. Commit the Lua file and add a catalogue row; outputs stay gitignored.</span><span class="crate">run_probe.sh</span>
-  </div>
+  <ol class="steps">
+    <li><b>Pick the shape</b><span>Fixed breakpoints and CSV columns: a <code>.probe.toml</code> under <code>probes/</code>. Anything conditional: copy <code>autorun_slot4_consumer_pcs.lua</code>, the canonical thin probe.</span></li>
+    <li><b>Name addresses symbolically</b><span>Write <code>FUN_801DA51C</code> / <code>_DAT_801EF16C</code>, not hex: the resolver fails loudly on a typo, where a hex slip arms nothing and logs zero hits. Regenerate with <code>build-symbols.py</code> after new dumps.</span></li>
+    <li><b>Arm in <code>on_arm</code></b><span>Read <code>gp</code> from the live registers after the load, compute relative targets, arm with the width the access uses (1/2/4).</span></li>
+    <li><b>Log in the callback</b><span>A write breakpoint fires <em>at</em> the store with live registers. Write rows through <code>csv:row</code>; stack first-hit context with <code>append_call_context</code>.</span></li>
+    <li><b>Quit early</b><span>Set <code>ctx.request_quit = true</code> in <code>on_capture</code> once the stop condition is met.</span></li>
+    <li><b>Run and iterate</b><span><code>run_probe.sh --lua ...</code>; the <code>.hits.txt</code> snapshot rewrites every 60 vsyncs, so tail it from another shell. Commit the Lua file and add a catalogue row; outputs stay gitignored.</span></li>
+  </ol>
   <details class="disclosure">
     <summary>Details: the declarative <code>.probe.toml</code> schema</summary>
     <div class="disclosure-body">

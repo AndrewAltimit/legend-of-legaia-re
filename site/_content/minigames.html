@@ -2734,8 +2734,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       fishingSaveRow();
       return Promise.resolve(null);
     }
-    const url = new URL('wasm/legaia_web_viewer.js', document.baseURI).href;
-    return import(url).then(m => m.default().then(() => m)).then((mod) => {
+    return LegaiaWasm.load().then((mod) => {
       const j = JSON.parse(mod.card_fishing_json(stored.bytes, stored.meta.block));
       fishSave = Object.assign(j, { id: cs.saveId, block: stored.meta.block,
                                     name: stored.meta.name || cs.saveId });
@@ -2773,8 +2772,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (!st.live) return;
     const stored = LegaiaSaves.getSession(fishSave.id);
     if (!stored) return;
-    const url = new URL('wasm/legaia_web_viewer.js', document.baseURI).href;
-    import(url).then(m => m.default().then(() => m)).then((mod) => {
+    LegaiaWasm.load().then((mod) => {
       const patched = mod.card_patch_fishing(
         stored.bytes, fishSave.block,
         st.points, st.lure, st.rod, st.best, st.best_fish, st.casts,
@@ -3193,8 +3191,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     try {
       const buf = await prog.read(f, `Reading ${f.name}`);
       prog.indeterminate('Initialising the minigame engines…');
-      const mod = await import('./wasm/legaia_web_viewer.js');
-      await mod.default();
+      const mod = await LegaiaWasm.load();
       if (typeof mod.LegaiaMinigames !== 'function') {
         prog.fail('This build of the viewer has no minigame support.');
         return;
@@ -3365,9 +3362,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     return;
   }
 
-  const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
-    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
-  ));
 
   /* ---- Sol Tower floors ---- */
   const $floors = document.getElementById('sol-tower-floors');

@@ -69,14 +69,14 @@ impl LegaiaRuntime {
     /// install is refused. No retail scene installs a board, so this is the
     /// only way either host reaches the per-cell draw pass today.
     pub fn play_install_demo_tile_board(&mut self) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.install_demo_tile_board()
     }
 
     pub fn play_tile_board_slots(&self) -> Vec<u32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         tile_board::tile_actor_slots_needing_mesh(&h.world)
@@ -89,7 +89,7 @@ impl LegaiaRuntime {
     /// whether or not it has a mesh. The page's generic actor loop must skip
     /// these - see the module docs for what happens if it does not.
     pub fn play_tile_actor_slots(&self) -> Vec<u32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         (0..h.world.actors.len())
@@ -108,7 +108,7 @@ impl LegaiaRuntime {
     /// is the floor height under the tile centre, in the engine's Y-down
     /// field frame; the page negates it like every other world draw.
     pub fn play_tile_board_transforms(&self) -> Vec<f32> {
-        let Some(h) = self.scene_host.as_ref() else {
+        let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
         let draws = tile_board::tile_board_actor_draws(&h.world);
@@ -134,7 +134,7 @@ impl LegaiaRuntime {
         }
         let global = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.actors.get(slot as usize))
             .and_then(|a| a.tmd_ref.clone())
             .ok_or_else(|| {
@@ -194,7 +194,7 @@ mod tests {
     ///
     /// `play_tile_actor_mesh` is deliberately not exercised here: its error
     /// arm builds a `JsValue`, which aborts on a non-wasm32 target. The
-    /// no-scene path it guards is the same `scene_host.as_ref()` check the
+    /// no-scene path it guards is the same `scene_host.host()` check the
     /// three accessors below take.
     #[test]
     fn a_runtime_with_no_scene_reports_an_empty_board() {

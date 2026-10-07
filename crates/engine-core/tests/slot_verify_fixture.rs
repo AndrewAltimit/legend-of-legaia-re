@@ -24,7 +24,7 @@
 //! Regenerate after an intentional rules change with:
 //!
 //! ```text
-//! LEGAIA_BLESS_SLOT_FIXTURE=1 cargo test -p legaia-engine-core --test slot_verify_fixture
+//! LEGAIA_BLESS_SLOT_FIXTURE=1 cargo test -p legaia-engine-core --test integration slot_verify_fixture::
 //! ```
 
 use legaia_asset::slot_payout::SlotPayoutTable;
@@ -243,6 +243,6 @@ fn udon_slot_fixture_matches_engine_kernel() {
         committed.replace("\r\n", "\n"),
         generated,
         "slot-verify.json is stale - regenerate with LEGAIA_BLESS_SLOT_FIXTURE=1 \
-         cargo test -p legaia-engine-core --test slot_verify_fixture"
+         cargo test -p legaia-engine-core --test integration slot_verify_fixture::"
     );
 }

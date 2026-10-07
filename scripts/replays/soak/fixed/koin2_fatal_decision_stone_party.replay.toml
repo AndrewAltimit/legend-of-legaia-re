@@ -4,7 +4,7 @@
 # soak-signature = "battle_endless|koin2|battle:state:81"
 # detail: in Battle for 18001 frames
 # fixed: not a 0x70 park - Fatal Decision (PROT 0954) runs to completion each cast. Its Stone outcome sits in the typed status tracker, and the 0x5A wipe scan read only field_flags, so a petrified party never wiped; the SM re-seeded the caster's stale action forever while the live loop (which counts Stone) refused to pick a turn. The scan now reads status_word (the packed +0x16E)
-# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 2227185295

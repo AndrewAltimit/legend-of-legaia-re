@@ -19,7 +19,7 @@ pub(crate) fn cmd_play(
     // heuristic default) and, when neither `--str-file` nor `--disc` was
     // given, auto-resolve a `--scene op*` / `--scene edteien` request to its
     // paired FMV on disk. Shared with the windowed `play` path.
-    let (_cutscene_map, auto_str) = crate::shared::resolve_cutscene_map_and_str(
+    let (_cutscene_map, auto_str) = legaia_engine_shell::host_setup::resolve_cutscene_map_and_str(
         cutscene_map_path,
         scene,
         extracted_root,
@@ -43,7 +43,12 @@ pub(crate) fn cmd_play(
         );
     }
 
-    let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    let mut session = legaia_engine_shell::host_setup::open_boot_session(
+        scene,
+        enable_audio,
+        extracted_root,
+        disc,
+    )?;
     println!(
         "play: scene='{}' frames={} audio={} (entries={}, MES={}, VAB={}, SEQ={})",
         scene,

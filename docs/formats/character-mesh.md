@@ -224,7 +224,7 @@ and a truncated pack's offset table reads mesh payload as offsets - the
 bracket is the decoded length against the header, on a cold boot of the
 rebuilt disc, which no shipped patcher path produces.
 
-The editing contract is unchanged: `legaia_asset::party_swap::fieldize`
+The editing contract is unchanged: `legaia_patcher::party_swap::fieldize`
 keeps the first four words (`meta[0]`, `meta[1]`, `type<<24|size0`,
 `offset0`) byte-exact, which pins §0's decoded size at retail's 46 236
 bytes (pad the pack tail - retail itself pads ~19 KB in slot 4). A rebuild
@@ -404,7 +404,7 @@ tick trapped shows both silent while the `MoveImage` pair fires from the
 `autorun_s2s3_atlas_stamp.lua`). Not an upload defect, and not written by
 the pause menu (the menu-mode frame issues no image transfers at all). A
 later re-upload of the band (the battle effect-texture path) restores the
-disc bytes. Engine side: `field-disasm` decodes the op as `MenuCtrl op0=0x60`
+disc bytes. Engine side: `asset field-disasm` decodes the op as `MenuCtrl op0=0x60`
 with the six words; the world host's `FieldHost::op4c_n6_sub0_emitter6` hook
 queues them (`World::queue_script_vram_move`) and the windowed host drains
 the queue into its software VRAM as the rect copy
@@ -1113,9 +1113,10 @@ is identical (magic `0x80000002`).
 
 Per-character animation data is **not** in PROT 0874. The runtime per-action
 record consumed by the actor tick `FUN_80021DF4` and the overlay-resident
-per-frame animator lives in the [ANM container](anm.md) (asset type `0x06`);
-the actor receives a record pointer via `FUN_80024CFC`
-(`actor[+0x4C] = anm_base + record_offset`). Battle actions feed through a
+per-frame animator lives in the [ANM container](anm.md), loaded as the
+type-`0x05` MOVE buffer `_DAT_8007B888`; the clip driver `FUN_800204F8`
+binds a clip from it (`actor[+0x4C] = bank + record_offset`,
+`actor[+0x56] = 1`). Battle actions feed through a
 parallel consumer struct at `actor[+0x234]` - see `anm.md` § Per-actor anim
 state offsets.
 

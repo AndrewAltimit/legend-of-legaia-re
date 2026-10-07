@@ -40,7 +40,7 @@
 //!
 //! ```text
 //! cargo llvm-cov clean --workspace
-//! cargo llvm-cov -p legaia-engine-shell --test w5_native_minigame_ladder \
+//! cargo llvm-cov -p legaia-engine-shell --test integration w5_native_minigame_ladder:: \
 //!     --no-report -- --test-threads=1
 //! cargo llvm-cov report --json \
 //!     --output-path target/cov-w5_native_minigame_ladder.json

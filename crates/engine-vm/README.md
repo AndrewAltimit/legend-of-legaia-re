@@ -6,9 +6,9 @@ the format notes in `docs/subsystems/`, with no static-recompiled bytes from
 the original executable. The sections below cover the VMs proper; the rest of
 the crate is the battle-overlay and SCUS leaf kernels those VMs sit among.
 
-The crate also ships the `field-disasm` binary - a thin CLI over the
-side-effect-free field-VM disassembler this crate re-exports from
-`legaia-asset` (`field_disasm`). `field-disasm file` walks a raw script body,
+The side-effect-free field-VM disassembler this crate re-exports from
+`legaia-asset` (`field_disasm`) has its CLI on the `asset` binary:
+`asset field-disasm file` walks a raw script body,
 `scene-event-scripts` walks every record of a prescript container, and
 `scan-prot` sweeps a whole extracted `PROT.DAT` for FMV triggers. For a
 scene's genuine per-scene scripts - which live LZS-compressed inside the

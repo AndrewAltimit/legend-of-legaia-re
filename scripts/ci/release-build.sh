@@ -54,7 +54,7 @@ log() { printf '[release-build] %s\n' "$*"; }
 # one. See docs/tooling/releases.md.
 
 CLI_BINS=(
-    anm art asset cheat-tool disc-extract field-disasm font-extract
+    anm art asset cheat-tool disc-extract font-extract
     gamedata-tool legaia-extract legaia-patcher lzs-decode mdec mdt
     mednafen-state mes prot-extract save-tool seq tim tmd vab xa
 )
@@ -370,7 +370,7 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf '    gamedata-tool   curated game-data lookups (arts, items, enemies, shops)\n'
     printf '    cheat-tool      cheat-database inspector (databases built in)\n'
     printf 'Reverse engineering\n'
-    printf '    field-disasm    field-VM bytecode disassembler\n'
+    printf '    asset           asset formats; "asset field-disasm" walks field-VM bytecode\n'
     printf '    mednafen-state  emulator save-state analysis\n\n'
     printf 'Every binary supports --help and --version.\n\n'
     printf 'Guides:          https://github.com/%s/tree/main/docs/guides\n' \

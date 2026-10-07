@@ -19,38 +19,14 @@
 <section class="doc-section" id="when">
   <h2>What this solves</h2>
   <p>A PlayStation executable is a flat block of MIPS machine code with no symbols. Ghidra finds the function boundaries, recovers cross-references and renders each routine as C. The project keeps Ghidra's database local and commits only what is derived from it: format specs, function tables, and the port itself.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 150" width="100%" style="max-width:900px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pipeline: extracted executable, import at base 0x8000F800, analyze, post-script query, dump file on the host, cited by docs and port tags">
-      <g fill="var(--bg-raised)" stroke="var(--accent)" stroke-width="1.5">
-        <rect x="8" y="34" width="150" height="52" rx="6"/>
-        <rect x="186" y="34" width="150" height="52" rx="6"/>
-        <rect x="364" y="34" width="150" height="52" rx="6"/>
-        <rect x="542" y="34" width="150" height="52" rx="6"/>
-        <rect x="720" y="34" width="172" height="52" rx="6"/>
-      </g>
-      <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
-        <text x="83" y="53">SCUS_942.54<tspan x="83" dy="15">in extracted/</tspan></text>
-        <text x="261" y="53">import<tspan x="261" dy="15">base 0x8000F800</tspan></text>
-        <text x="439" y="53">analyze<tspan x="439" dy="15">functions + xrefs</tspan></text>
-        <text x="617" y="53">-postScript<tspan x="617" dy="15">one query</tspan></text>
-        <text x="806" y="53">funcs/&lt;addr&gt;.txt<tspan x="806" dy="15">asm + C</tspan></text>
-      </g>
-      <g stroke="var(--text-muted)" stroke-width="1.5" fill="var(--text-muted)">
-        <line x1="158" y1="60" x2="180" y2="60"/><polygon points="180,56 186,60 180,64"/>
-        <line x1="336" y1="60" x2="358" y2="60"/><polygon points="358,56 364,60 358,64"/>
-        <line x1="514" y1="60" x2="536" y2="60"/><polygon points="536,56 542,60 536,64"/>
-        <line x1="692" y1="60" x2="714" y2="60"/><polygon points="714,56 720,60 714,64"/>
-      </g>
-      <g fill="var(--text-muted)" font-size="11" text-anchor="middle">
-        <text x="83" y="112">read-only mount</text>
-        <text x="261" y="112">once per program</text>
-        <text x="439" y="112">minutes, once</text>
-        <text x="617" y="112">one exec per question</text>
-        <text x="806" y="112">cited by docs + PORT tags</text>
-      </g>
-    </svg>
-    <figcaption>Bring the service up once; every later question is one <code>docker compose exec</code>.</figcaption>
-  </figure>
+  <ol class="steps">
+    <li><b>SCUS_942.54</b><span>From <code>extracted/</code>, mounted read-only.</span></li>
+    <li><b>Import</b><span>At base <code>0x8000F800</code>, once per program.</span></li>
+    <li><b>Analyze</b><span>Functions and cross-references; minutes, once.</span></li>
+    <li><b>-postScript</b><span>One query per <code>docker compose exec</code>.</span></li>
+    <li><b>funcs/&lt;addr&gt;.txt</b><span>Disassembly + C on the host, cited by docs and <code>// PORT:</code> tags.</span></li>
+  </ol>
+  <p class="hint">Bring the service up once; every later question is one <code>docker compose exec</code>.</p>
 </section>
 
 <section class="doc-section" id="quick-start">
@@ -111,12 +87,12 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
 
 <section class="doc-section" id="adding-a-new-function-dump">
   <h2>Adding a function dump</h2>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Add the entry point</span><span class="desc">Append the address to <code>TARGETS</code> in <code>dump_funcs.py</code> - SCUS-resident addresses only. Overlay addresses (<code>&gt;= 0x801C0000</code>) go in a per-overlay <code>dump_&lt;label&gt;_overlay.py</code>, whose output is prefixed <code>overlay_&lt;label&gt;_</code> so aliased VAs cannot collide.</span><span class="crate">ghidra/scripts</span>
-    <span class="num">2</span><span class="layer">Dump just that one</span><span class="desc"><code>docker compose exec -e DUMP_ONLY=8002735c ghidra ... -postScript /scripts/dump_funcs.py</code>. Without <code>DUMP_ONLY</code> the whole catalogue re-dumps. The variable is read inside the container, so it must travel via <code>exec -e</code>.</span><span class="crate">dump_funcs.py</span>
-    <span class="num">3</span><span class="layer">Read the disassembly</span><span class="desc">Open <code>funcs/&lt;addr&gt;.txt</code>. Port and document from the instruction stream; the C is a hint about where to look (see <a href="#decompiler-artifacts">artifacts</a>).</span><span class="crate">funcs/</span>
-    <span class="num">4</span><span class="layer">Record it</span><span class="desc">Notable entry points join the <a href="../reference/functions.html">function directory</a>; a port carries a <code>// PORT: FUN_&lt;addr&gt;</code> tag the <a href="port-catalog.html">catalog</a> reads.</span><span class="crate">docs · crates</span>
-  </div>
+  <ol class="steps">
+    <li><b>Add the entry point</b><span>Append the address to <code>TARGETS</code> in <code>dump_funcs.py</code> - SCUS-resident addresses only. Overlay addresses (<code>&gt;= 0x801C0000</code>) go in a per-overlay <code>dump_&lt;label&gt;_overlay.py</code>, whose output is prefixed <code>overlay_&lt;label&gt;_</code> so aliased VAs cannot collide. <code>ghidra/scripts</code></span></li>
+    <li><b>Dump just that one</b><span><code>docker compose exec -e DUMP_ONLY=8002735c ghidra ... -postScript /scripts/dump_funcs.py</code>. Without <code>DUMP_ONLY</code> the whole catalogue re-dumps. The variable is read inside the container, so it must travel via <code>exec -e</code>. <code>dump_funcs.py</code></span></li>
+    <li><b>Read the disassembly</b><span>Open <code>funcs/&lt;addr&gt;.txt</code>. Port and document from the instruction stream; the C is a hint about where to look (see <a href="#decompiler-artifacts">artifacts</a>). <code>funcs/</code></span></li>
+    <li><b>Record it</b><span>Notable entry points join the <a href="../reference/functions.html">function directory</a>; a port carries a <code>// PORT: FUN_&lt;addr&gt;</code> tag the <a href="port-catalog.html">catalog</a> reads.</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="script-catalogue">

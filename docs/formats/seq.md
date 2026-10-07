@@ -138,19 +138,19 @@ Retail's VAB-open (`FUN_80068d94`) writes a running used-program counter into
 each slot's `+8` word and the program-change consumer reads it back as the
 tone-page index, so a change to an **unused** slot aliases onto the next used
 slot's page (past the last used slot it reads garbage beyond the tone region).
-The engine port instead gives unused slots an empty page - their notes don't
-resolve, so they play silence. This is a deliberate divergence
-(`engine-audio::vab_bind`).
+The engine port reproduces that aliasing (`engine-audio::vab_bind`): an
+unused slot inside the used range resolves to the next used slot's page, and a
+slot past the last used page stays empty and plays silence, where retail reads
+garbage.
 
-That divergence is exercised on the retail corpus: a disc sweep of every
+That behaviour is exercised on the retail corpus: a disc sweep of every
 in-container `[VAB][SEQ]` pair
 (`engine-audio/tests/real_seq_program_change_coverage.rs`) finds eight such
-ProgramChanges across four entries. Two are audible losses - retail aliases to
-a valid different page while the port goes silent, and notes follow (PROT 868
-prog 5, PROT 996 prog 19). The rest are benign: retail's own alias index runs
-past the tone region so it reads garbage too (PROT 994 prog 42), or no notes
-follow the change (PROT 988 prog 127). The audible cases are a candidate for a
-future fix to `vab_bind` (implement the `+8`-counter aliasing).
+ProgramChanges across four entries. Two are audible - retail aliases to a
+valid different page and notes follow (PROT 868 prog 5, PROT 996 prog 19) -
+and the port aliases them the same way. The rest are benign: retail's own
+alias index runs past the tone region so it reads garbage (PROT 994 prog 42),
+or no notes follow the change (PROT 988 prog 127).
 
 ## Stream termination and truncation
 

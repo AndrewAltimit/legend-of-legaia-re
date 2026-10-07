@@ -21,7 +21,7 @@ trait = "BgmDirector"
 type = "TraceBgmDirector"
 reason = """
 The `audio-trace` parity oracle's recording director
-(`crates/engine-shell/src/audio_trace_oracle.rs`), not a playback host. It
+(`crates/parity/src/audio_trace_oracle.rs`), not a playback host. It
 overrides the five scene-local hooks and leaves `start_owned_vab` /
 `queue_owned_vab` defaulted, and the consequence is real rather than
 cosmetic: those two carry every **global-pool** track (`bgm_id >= 2000`),

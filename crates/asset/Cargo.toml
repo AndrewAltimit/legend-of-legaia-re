@@ -3,6 +3,8 @@ name = "legaia-asset"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_asset"
@@ -11,34 +13,47 @@ path = "src/lib.rs"
 [[bin]]
 name = "asset"
 path = "src/bin/asset.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The command-line binary and its argument parser. On by default so
+# `cargo build` still builds every binary; library dependents take this
+# crate through [workspace.dependencies] with default features off, which
+# keeps clap out of library-only builds (the wasm bundle among them).
+cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
+clap = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
-legaia-anm = { path = "../anm" }
+legaia-anm.workspace = true
 legaia-bytes.workspace = true
-legaia-lzs = { path = "../lzs" }
+legaia-lzs.workspace = true
 # `byte_account`'s MES walker: a scene bundle's type-0x04 section is a MES
 # dialog container, and its record extents are what the accounting claims.
-legaia-mes = { path = "../mes" }
+legaia-mes.workspace = true
 # `byte_account`'s STR/MDEC overlay claims: the VLC table's packed blob is the
 # entry's second-largest residue run, and `strv2_table` already walks it - the
 # accounting measures the extent with that walk rather than re-implementing it.
-legaia-mdec = { path = "../mdec" }
-legaia-prot = { path = "../prot" }
-legaia-tim = { path = "../tim" }
-legaia-tmd = { path = "../tmd" }
+legaia-mdec.workspace = true
+legaia-prot.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
 # `minigame_sfx` decodes the minigame cue banks (efect.dat descriptors -> VAB
 # voices -> PCM), so the VAB reader is a real dependency, not just a test one.
-legaia-vab = { path = "../vab" }
-png = "0.17"
-sha2 = "0.10"
-toml = { version = "0.8", default-features = false, features = ["parse"] }
+legaia-vab.workspace = true
+png.workspace = true
+sha2.workspace = true
+toml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true, optional = true }
 
 [dev-dependencies]
-legaia-seq = { path = "../seq" }
+legaia-seq.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

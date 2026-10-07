@@ -408,9 +408,11 @@ structural statement that one id indexes both.
 The caller is the damage-application primitive `FUN_800402F4`, which reaches
 `jal 0x801e22c8` from eleven branches and chooses the group id per branch: eight
 literals (`5`..`0xC`), two computed, and one forwarding its own `param_2`. The
-port has the kernel (`legaia_engine_vm::battle_cue_group::expand_cue_group`) and
-now both of its tables, but not that dispatch - see the module's `NOT WIRED`
-note.
+port has the kernel (`legaia_engine_vm::battle_cue_group::expand_cue_group`),
+both of its tables, and the dispatch: `cue_group_for` maps the committed
+`(class, tier)` to the branch site, and the battle-action applier
+(`battle_action::spirit`) places the group once on the target, or once per
+occupied slot on the class-`1` arm.
 
 ### Effect-id → triggering-move inverse index (disc-derivable, no capture)
 

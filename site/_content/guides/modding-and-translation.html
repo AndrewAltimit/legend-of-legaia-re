@@ -31,12 +31,24 @@
 
 <section class="doc-section" id="randomize">
   <h2>1 &middot; Randomize (onto a scratch copy)</h2>
-<pre><code>./legaia-patcher randomize \
-    --input "/path/to/Legend of Legaia (USA).bin" \
-    --seed 12345 \
-    --patch legaia-12345.ppf \
-    --output legaia-12345.bin \
-    --manifest legaia-12345.toml</code></pre>
+  <div class="cli"><code>./legaia-patcher randomize --input "/path/to/Legend of Legaia (USA).bin" --seed 12345 --patch legaia-12345.ppf --output legaia-12345.bin --manifest legaia-12345.toml</code></div>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 170" role="img" aria-label="Randomize flow: your disc image is read-only input; the patcher writes a shareable PPF patch and manifest, and optionally a local patched bin plus cue">
+      <defs><marker id="mt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="55" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="105" y="79">your disc .bin</text><text class="dg-sub" x="105" y="97">--input, opened read-only</text>
+      <rect class="dg-node-accent" x="275" y="55" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="375" y="79">legaia-patcher</text><text class="dg-sub" x="375" y="97">--seed + feature flags</text>
+      <rect class="dg-node-ok" x="550" y="10" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="650" y="34">.ppf + manifest</text><text class="dg-sub" x="650" y="52">no Sony bytes: share it</text>
+      <rect class="dg-node-warn" x="550" y="102" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="650" y="126">patched .bin + .cue</text><text class="dg-sub" x="650" y="144">--output: local play only</text>
+      <path class="dg-edge" d="M200 83 L273 83" marker-end="url(#mt-arrow)"/>
+      <path class="dg-edge" d="M475 75 L548 42" marker-end="url(#mt-arrow)"/>
+      <path class="dg-edge" d="M475 91 L548 126" marker-end="url(#mt-arrow)"/>
+    </svg>
+    <figcaption>Your original image is never written to. What you share is the patch; the patched disc stays on your machine.</figcaption>
+  </figure>
   <p>A few seconds on a modern machine. The run prints a <code>disc: &lt;label&gt;</code> line identifying the input build, the resolved numeric seed (so any run can be reproduced), and a spoiler-safe change summary. The same seed + options over the same disc is byte-deterministic: you and a friend get identical patches. <code>--output</code> also writes a <code>.cue</code> beside the <code>.bin</code> so emulators can open it directly. <code>--dry-run</code> plans without writing.</p>
   <p><strong>Nothing is randomized unless asked.</strong> <code>--drops shuffle</code> re-rolls monster item drops; dozens of flags cover encounters, chests, steals, arts combos, doors, shops, monster stats, spell costs, equipment, and code-hook extras (<code>--equipment-drops</code>, <code>--flee-exp</code>, <code>--enemy-ally</code>, <code>--shiny-seru</code>, ...). Read-only preview subcommands - <code>drops</code>, <code>chests</code>, <code>steals</code>, <code>arts</code>, <code>doors</code>, <code>shops</code>, <code>monster-stats</code>, <code>spell-costs</code>, and more - list what a feature would touch before you commit.</p>
   <div class="see-also">
@@ -55,37 +67,45 @@
 <section class="doc-section" id="share-verify">
   <h2>3 &middot; Share and verify a patch</h2>
   <p>Share the <code>.ppf</code> (and the manifest). The recipient applies and checks it against their own dump in one step:</p>
-<pre><code>./legaia-patcher verify \
-    --input "/path/to/their Legend of Legaia (USA).bin" \
-    --patch legaia-12345.ppf \
-    --output legaia-12345.bin</code></pre>
+  <div class="cli"><code>./legaia-patcher verify --input "/path/to/their Legend of Legaia (USA).bin" --patch legaia-12345.ppf --output legaia-12345.bin</code></div>
   <p><code>verify</code> applies the patch to a copy, confirms every record applied cleanly, and re-parses the result. The same region guard applies here - that is what catches "this patch was built against a different disc" before anyone plays a corrupt hybrid.</p>
 </section>
 
 <section class="doc-section" id="monster-block">
   <h2>4 &middot; Hand-edit one monster (stats / element / name)</h2>
   <p>The randomizer shuffles monster stats wholesale; for a curated rebalance you edit records directly. Every monster lives in the <code>battle_data</code> archive (PROT entry 867) as an LZS-compressed block - <code>monster-block</code> does the slot math and the compression for you, so the edit loop is dump &rarr; hex-edit &rarr; write:</p>
+  <ol class="steps">
+    <li><b>Dump</b><span><code>monster-block --id 10 --dump m10.bin</code> writes the decoded block (<code>monster-stats</code> lists the 1-based ids).</span></li>
+    <li><b>Hex-edit</b><span>Change fields in the stat record at the top of <code>m10.bin</code> (layout below).</span></li>
+    <li><b>Write back</b><span><code>monster-block --id 10 --write m10.bin --output edited.bin --patch m10.ppf</code></span></li>
+  </ol>
   <div class="cli"><code>./legaia-patcher monster-block --input "/path/to/disc.bin" --id 10 --dump m10.bin</code></div>
-  <p>Edit <code>m10.bin</code> in any hex editor (<code>monster-stats</code> lists the 1-based ids). The stat record starts at <code>+0x00</code>:</p>
-  <table>
-    <thead><tr><th>Offset</th><th>Field</th><th>Type</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>Pointer to the name string (inside the same block)</td><td>u32</td></tr>
-      <tr><td><code>+0x0C</code></td><td>HP</td><td>u16</td></tr>
-      <tr><td><code>+0x0E</code></td><td>AGL</td><td>u16</td></tr>
-      <tr><td><code>+0x10</code></td><td>MP</td><td>u16</td></tr>
-      <tr><td><code>+0x12</code></td><td>ATK</td><td>u16</td></tr>
-      <tr><td><code>+0x14</code> / <code>+0x16</code></td><td>DEF</td><td>u16</td></tr>
-      <tr><td><code>+0x18</code></td><td>INT</td><td>u16</td></tr>
-      <tr><td><code>+0x1A</code></td><td>SPD</td><td>u16</td></tr>
-      <tr><td><code>+0x1D</code></td><td>Element</td><td>u8</td></tr>
-      <tr><td><code>+0x44</code></td><td>Gold</td><td>u16</td></tr>
-      <tr><td><code>+0x46</code></td><td>Exp</td><td>u16</td></tr>
-      <tr><td><code>+0x48</code> / <code>+0x49</code></td><td>Drop item / drop chance</td><td>u8</td></tr>
-    </tbody>
-  </table>
-  <p>All multi-byte fields are little-endian. Then re-pack onto a copy (and emit a shareable PPF):</p>
   <div class="cli"><code>./legaia-patcher monster-block --input "/path/to/disc.bin" --id 10 --write m10.bin --output edited.bin --patch m10.ppf</code></div>
+  <p>The stat record starts at <code>+0x00</code> of the dumped block; multi-byte fields are little-endian. The name is a NUL-terminated string elsewhere in the same block, at the block-relative offset the first word holds.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">name offset</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-pad" style="--w:8"><span class="bm-off">+0x04</span><span class="bm-name">effect + resource pointers</span><span class="bm-size">2 &times; u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x0C</span><span class="bm-name">HP</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x0E</span><span class="bm-name">AGL</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x10</span><span class="bm-name">MP</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x12</span><span class="bm-name">ATK</span><span class="bm-size">u16</span></div>
+  </div>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x14</span><span class="bm-name">DEF A</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x16</span><span class="bm-name">DEF B</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x18</span><span class="bm-name">INT</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x1A</span><span class="bm-name">SPD</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-pad" style="--w:1"><span class="bm-off">+0x1C</span><span class="bm-name">&nbsp;</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x1D</span><span class="bm-name">element</span><span class="bm-size">u8</span></div>
+  </div>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x3E</span><span class="bm-name">Seru id</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x3F</span><span class="bm-name">catch %</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x44</span><span class="bm-name">gold</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x46</span><span class="bm-name">EXP</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x48</span><span class="bm-name">drop item</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x49</span><span class="bm-name">drop %</span><span class="bm-size">u8</span></div>
+  </div>
   <p>The write is the same machinery as the randomizer - the block is recompressed (the encoder need not match Sony's bytes; the retail decoder accepts any valid stream), padded back into its fixed <code>0x14000</code>-byte slot, and the touched sectors get their EDC/ECC re-encoded. With <code>--output</code> the tool re-parses the patched image and confirms the record still decodes before declaring success. The equivalent flags on the extracted tree are <code>asset monster-archive --dump-block</code> / <code>--write-block</code> (<a href="extracting-assets.html">extracting assets</a>).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -98,11 +118,14 @@
 
 <section class="doc-section" id="texture-replace">
   <h2>4b &middot; Replace a texture</h2>
-  <p>Any texture on the disc can be swapped for your own PNG - same loop, three subcommands. First find it (coordinates + dimensions + curated labels; try grepping for "title"):</p>
+  <p>Any texture on the disc can be swapped for your own PNG - same loop, three subcommands:</p>
+  <ol class="steps">
+    <li><b>Find it</b><span><code>tim-list</code> prints coordinates, dimensions and curated labels (try grepping for "title").</span></li>
+    <li><b>Export</b><span><code>tim-export</code> writes it as an editable PNG.</span></li>
+    <li><b>Edit + replace</b><span>Keep the exact pixel size, then <code>tim-replace</code> patches it back.</span></li>
+  </ol>
   <div class="cli"><code>./legaia-patcher tim-list --input "/path/to/disc.bin"</code></div>
-  <p>Export it as an editable PNG:</p>
   <div class="cli"><code>./legaia-patcher tim-export --input "/path/to/disc.bin" --entry 890 --offset 0x14228 -o title.png</code></div>
-  <p>Edit it (keep the exact pixel size), then patch it back:</p>
   <div class="cli"><code>./legaia-patcher tim-replace --input "/path/to/disc.bin" --entry 890 --offset 0x14228 --png title.png --output edited.bin --patch title.ppf</code></div>
   <p>The replacement must keep the original's dimensions and fit its palette (the error names the offending pixels; <code>--quantize</code> folds extras to the nearest color), alpha becomes PSX transparency, and compressed (<code>lzs</code>-tier) textures apply only when the edit recompresses into the retail footprint. The same flow runs entirely in the browser on the <a href="../tooling/rom-patcher.html">ROM patcher</a> page (scan / thumbnails / preview).</p>
   <div class="see-also">

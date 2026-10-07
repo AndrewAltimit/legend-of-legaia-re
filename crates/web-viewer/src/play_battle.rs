@@ -274,7 +274,7 @@ impl LegaiaRuntime {
     /// invented town fights). Battles are player-driven, as the native
     /// `--player-battle` flag makes them.
     pub(crate) fn arm_live_battles(&mut self, scene: &str) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // One shared kernel with the native host (`BootSession::enter_field_live`
@@ -295,7 +295,7 @@ impl LegaiaRuntime {
     /// the browser twin of the native `sync_battle_render` mode-edge latch +
     /// `drain_and_log_battle_events`. Cheap no-op while no scene is up.
     pub(crate) fn tick_battle_presentation(&mut self) {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // Mode-edge latch: arm the ENCOUNTER! banner + build the battle 3D
@@ -324,7 +324,7 @@ impl LegaiaRuntime {
         // The battle camera is stepped inside `World::tick` for every host
         // (`World::tick_battle_camera`), independent of this page's render
         // build.
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // Floating damage / heal numbers: the live loop resolves HP itself
@@ -352,7 +352,7 @@ impl LegaiaRuntime {
         // used to leave this queue undrained, which is why every cast, art
         // impact and enemy special was visually a no-op here.
         self.drain_battle_effect_spawns_web();
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // Refresh per-slot rows + status icons through the shared fold, then
@@ -411,7 +411,7 @@ impl LegaiaRuntime {
         if self.game_over.is_some() {
             return Vec::new();
         }
-        let Some(w) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(w) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
         let Some(rects) = assets.chrome_rects() else {
@@ -452,7 +452,7 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        let Some(w) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(w) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
         let font = assets.font_ref();
@@ -520,7 +520,7 @@ impl LegaiaRuntime {
         use legaia_engine_core::arts_command_input::ArtsInputScreen as Sim;
         use legaia_engine_ui::arts_input as ai;
         let empty = (Vec::new(), Vec::new());
-        let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(bw) = self.scene_host.host().map(|h| &h.world) else {
             return empty;
         };
         if bw.dialogue_owns_input() {
@@ -607,7 +607,7 @@ impl LegaiaRuntime {
         // (retail `noa_levelup_banner`) - same gate as the native window.
         if self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.battle_result_screen_active())
         {
             return ui::BattleHudDraws {
@@ -622,7 +622,7 @@ impl LegaiaRuntime {
         let badges = assets.battle_badges();
         use legaia_engine_core::battle_hud as bh;
         let banner = self.battle_banner_message(assets);
-        let world = self.scene_host.as_ref().map(|h| &h.world);
+        let world = self.scene_host.host().map(|h| &h.world);
         // Every per-phase decision is the engine's (`battle_hud`'s
         // predicates carry retail's sub-draw script + action-SM rule), so
         // this page and the native window cannot disagree about which
@@ -715,7 +715,7 @@ impl LegaiaRuntime {
         assets: &crate::play_menu::PlayMenuAssets,
     ) -> Option<String> {
         assets.chrome_rects()?;
-        legaia_engine_core::battle_hud::battle_banner_message(&self.scene_host.as_ref()?.world)
+        legaia_engine_core::battle_hud::battle_banner_message(&self.scene_host.host()?.world)
     }
 
     /// The live battle command surface projected into the shared chip-cluster
@@ -732,7 +732,7 @@ impl LegaiaRuntime {
     pub(crate) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
         use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
         use legaia_engine_ui::battle_command_ui::ChipPhase;
-        let world = self.scene_host.as_ref().map(|h| &h.world)?;
+        let world = self.scene_host.host().map(|h| &h.world)?;
         let chips = battle_command_chips(world)?;
         // The two enums are separate types because `engine-ui` is a leaf
         // that does not link `engine-core`; the native window carries the
@@ -754,7 +754,7 @@ impl LegaiaRuntime {
     /// banner carrying a level-up / Seru-capture line, which the port raises
     /// after the fight has already handed the frame back to the field. Its
     /// text half rides the glyph array in
-    /// [`crate::play_shop`]'s `banner_stage_draws`. The native window has
+    /// `legaia_engine_screens::banner_stage_draws`. The native window has
     /// drawn that frame all along; this page returned empty here and dropped
     /// the banner's text in the same breath, so a field-side level-up showed
     /// nothing at all.
@@ -766,7 +766,7 @@ impl LegaiaRuntime {
     ) -> Vec<ui::SpriteDraw> {
         let in_dome = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.mode == SceneMode::MuscleDome);
         if in_dome && !self.dome_battle_chrome_up() {
             return Vec::new();
@@ -774,7 +774,7 @@ impl LegaiaRuntime {
         let in_battle = in_dome
             || self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.mode == SceneMode::Battle);
         if !in_battle {
             let (Some(rects), Some(message)) =
@@ -801,7 +801,7 @@ impl LegaiaRuntime {
         if let (Some(rects), Some(model)) = (
             assets.chrome_rects(),
             self.scene_host
-                .as_ref()
+                .host()
                 .and_then(|h| h.world.battle_item_menu_model()),
         ) {
             let (origin, scale) =
@@ -839,7 +839,7 @@ impl LegaiaRuntime {
                     phase,
                 },
                 self.scene_host
-                    .as_ref()
+                    .host()
                     .map(|h| legaia_engine_core::battle_hud::battle_ring_marks(&h.world))
                     .unwrap_or_default(),
                 origin,
@@ -858,7 +858,7 @@ impl LegaiaRuntime {
         use legaia_engine_core::battle_input::CommandPhase;
         use legaia_engine_core::target_picker::{CursorRow, PickerState};
 
-        let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(bw) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
         // Muscle Dome leg: the battle HUD's text half - the status plate and
@@ -1201,7 +1201,7 @@ impl LegaiaRuntime {
         if self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none() {
             return None;
         }
-        let world = &self.scene_host.as_ref()?.world;
+        let world = &self.scene_host.host()?.world;
         // The camera is the engine's (`World::battle_cam_pose`, stepped by
         // `World::tick`), so the layout needs no render build. It used to
         // read `play_battle_camera_vp`, which answers empty without a battle
@@ -1261,7 +1261,7 @@ impl LegaiaRuntime {
         self.battle_render.is_some()
             && self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.mode == legaia_engine_core::world::SceneMode::Battle)
     }
 
@@ -1354,7 +1354,7 @@ impl LegaiaRuntime {
         &self,
         font: &legaia_font::Font,
     ) -> Option<(i32, i32, i32, i32)> {
-        let tbox = self.scene_host.as_ref()?.world.battle_tutorial_box()?;
+        let tbox = self.scene_host.host()?.world.battle_tutorial_box()?;
         let width = ui::battle_tutorial_text_width(font, &tbox.text);
         let (x, y, w, h) = tbox.rect(width)?;
         Some((x as i32, y as i32, w as i32, h as i32))
@@ -1368,7 +1368,7 @@ impl LegaiaRuntime {
         &self,
         font: &legaia_font::Font,
     ) -> Vec<TutorialStageBox<'_>> {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         host.world
@@ -1407,7 +1407,7 @@ impl LegaiaRuntime {
         // one shared builder with the native window.
         if let Some(strip) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
         {
             out.extend(ui::timed_fight_strip_text_draws(
@@ -1444,7 +1444,7 @@ impl LegaiaRuntime {
         // Koru's timed-fight strip wears the same skin.
         if self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
             .is_some()
         {
@@ -1474,7 +1474,7 @@ impl LegaiaRuntime {
     /// the tutorial" is a *measurable* claim rather than a count of text rows
     /// that happen to be zero.
     pub fn play_battle_tutorial_json(&self) -> String {
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return r#"{"armed":false,"prompts":0,"flag_armed":false}"#.to_string();
         };
         let prompts = world.battle.tutorial_script.len();
@@ -1523,7 +1523,7 @@ impl LegaiaRuntime {
     /// running the native window without `--live-loop`.
     pub fn set_live_battles(&mut self, on: bool) {
         self.live_battles = on;
-        if let Some(h) = self.scene_host.as_mut() {
+        if let Some(h) = self.scene_host.host_mut() {
             h.world.toggles.live_gameplay_loop = on;
             h.world.battle.player_driven = on;
         }
@@ -1534,7 +1534,7 @@ impl LegaiaRuntime {
     /// (the two are separate knobs there; `set_live_battles` sets both).
     /// Off = each party turn auto-attacks the first living monster.
     pub fn set_player_driven_battles(&mut self, on: bool) {
-        if let Some(h) = self.scene_host.as_mut() {
+        if let Some(h) = self.scene_host.host_mut() {
             h.world.battle.player_driven = on;
         }
     }
@@ -1569,7 +1569,7 @@ impl LegaiaRuntime {
             Ok(_) => return "empty party spec".to_string(),
             Err(e) => return e,
         };
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return "no disc loaded".to_string();
         };
         if let Some(defaults) = host.new_game_defaults.as_ref() {
@@ -1600,7 +1600,7 @@ impl LegaiaRuntime {
     pub fn active_party_json(&self) -> String {
         let slots = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.party.active_party.clone())
             .unwrap_or_default();
         let body: Vec<String> = slots.iter().map(|i| i.to_string()).collect();
@@ -1612,7 +1612,7 @@ impl LegaiaRuntime {
     /// which is how the Magic arm is reachable in a test fight without
     /// playing to the Seru. Returns `false` with no roster record.
     pub fn learn_spell(&mut self, roster_slot: u8, spell_id: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let Some(record) = host
@@ -1636,7 +1636,7 @@ impl LegaiaRuntime {
     /// `music_01` pool.
     pub fn set_battle_bgm(&mut self, bgm_id: u16) {
         self.battle_bgm = Some(bgm_id);
-        if let Some(h) = self.scene_host.as_mut() {
+        if let Some(h) = self.scene_host.host_mut() {
             h.world.set_battle_bgm((bgm_id != 0).then_some(bgm_id));
         }
     }
@@ -1646,7 +1646,7 @@ impl LegaiaRuntime {
     /// so a town's designed silence doesn't read as a broken engine.
     pub fn scene_rolls_encounters(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.encounters.scene_rollable)
     }
 
@@ -1658,7 +1658,7 @@ impl LegaiaRuntime {
     pub fn debug_formation_rows(&self) -> String {
         let ids = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.registered_formation_ids())
             .unwrap_or_default();
         let body: Vec<String> = ids.iter().map(|i| i.to_string()).collect();
@@ -1688,7 +1688,7 @@ impl LegaiaRuntime {
     /// `#[cfg(not(target_arch = "wasm32"))]` and never crossed into the
     /// bundle.
     pub fn debug_force_battle(&mut self, row: i32) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let resolved = if row < 0 {
@@ -1717,7 +1717,7 @@ impl LegaiaRuntime {
     /// innkeeper's conversation without walking to it. The native twin is the
     /// screenshot harness's `LEGAIA_CAPTURE_TALK=<slot>@<tick>`.
     pub fn debug_talk_to_placement(&mut self, slot: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.trigger_field_interact(0xFF, slot);
@@ -1730,7 +1730,7 @@ impl LegaiaRuntime {
     /// indices; every seat keeps its ground). Pair with
     /// [`Self::debug_force_battle`] to watch one cast from a cold page.
     pub fn debug_seed_inflight_cast(&mut self, caster: u8, spell_id: u8, target: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.battle.inflight_seed = Some(legaia_engine_core::world::InflightCastSeed {
@@ -1749,7 +1749,7 @@ impl LegaiaRuntime {
     /// [`Self::debug_force_battle`] to watch one enemy special from a cold
     /// page.
     pub fn debug_seed_monster_cast(&mut self, seat: u8, spell_id: u8) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.battle.forced_monster_cast = Some((seat, spell_id));
@@ -1784,7 +1784,7 @@ impl LegaiaRuntime {
             return String::new();
         };
         self.game_over = None;
-        if let Some(h) = self.scene_host.as_mut() {
+        if let Some(h) = self.scene_host.host_mut() {
             h.world.game_over = false;
             // The wipe teardown defers the actor-table restore + mode flip so
             // the hold shows the frozen battle frame; complete it here or the
@@ -1802,7 +1802,7 @@ impl LegaiaRuntime {
     /// whether or not a save exists, because retail's wipe arm has one exit
     /// store.
     pub(crate) fn poll_game_over(&mut self) {
-        let wiped = self.scene_host.as_ref().is_some_and(|h| h.world.game_over);
+        let wiped = self.scene_host.host().is_some_and(|h| h.world.game_over);
         if !wiped || self.game_over.is_some() {
             return;
         }
@@ -1844,7 +1844,7 @@ mod live_hud_tests {
         let mut seen = false;
         for _ in 0..400 {
             rt.tick_frame().expect("tick");
-            let labels = rt.scene_host.as_ref().is_some_and(|h| {
+            let labels = rt.scene_host.host().is_some_and(|h| {
                 h.world.mode == SceneMode::Battle
                     && h.world.battle.intro_names_frames > 0
                     && !h.world.battle_entry_sweeping()
@@ -1898,7 +1898,7 @@ mod live_hud_tests {
         for _ in 0..300 {
             let open = rt
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.battle.command.is_some());
             if open {
                 break;
@@ -1907,7 +1907,7 @@ mod live_hud_tests {
         }
         assert!(
             rt.scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.battle.command.is_some()),
             "player-driven battle opens the command menu"
         );
@@ -1990,7 +1990,7 @@ mod live_hud_tests {
             for _ in 0..40 {
                 let phase = rt
                     .scene_host
-                    .as_ref()
+                    .host()
                     .and_then(|h| h.world.battle.command.as_ref())
                     .map(|c| {
                         (
@@ -2031,7 +2031,7 @@ mod live_hud_tests {
             }
         }
         {
-            let w = &rt.scene_host.as_ref().expect("host").world;
+            let w = &rt.scene_host.host().expect("host").world;
             let targeting = matches!(
                 w.battle.command.as_ref().map(|c| &c.phase),
                 Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
@@ -2150,7 +2150,7 @@ impl LegaiaRuntime {
         prims.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
             &self
                 .scene_host
-                .as_ref()
+                .host()
                 .map(|h| h.world.battle_arts_banner_quads())
                 .unwrap_or_default(),
             legaia_engine_ui::battle_numerals::VALUE_READOUT_OT,
@@ -2175,7 +2175,7 @@ impl LegaiaRuntime {
         // `cast_beam` kernel the native window draws it with.
         if let Some(c) = self
             .scene_host
-            .as_ref()
+            .host()
             .and_then(|h| h.world.cross_beam_draw())
         {
             prims.extend(legaia_engine_ui::cast_beam::cross_beam_prims(c));
@@ -2185,7 +2185,7 @@ impl LegaiaRuntime {
         // the native window composites it with.
         for (rgb, abr, ot) in self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.screen_fade_draws())
             .unwrap_or_default()
         {
@@ -2207,7 +2207,7 @@ impl LegaiaRuntime {
         // window's too: both halves wash the scene here, and the half that
         // also washes the text reaches the page's 2D overlay canvas through
         // `play_text_layer_washes_json`.
-        if let Some(host) = self.scene_host.as_ref() {
+        if let Some(host) = self.scene_host.host() {
             let (under, over) = legaia_engine_ui::screen_prim::screen_effect_push_prims_split(
                 &host.world.screen_tint_push_args(),
             );
@@ -2218,7 +2218,7 @@ impl LegaiaRuntime {
         // Same shared emitter as the native window's screen-prim pass, so
         // the two bars are one kernel across the two hosts rather than two
         // rect calculations that can drift.
-        if let Some(host) = self.scene_host.as_ref() {
+        if let Some(host) = self.scene_host.host() {
             prims.extend(legaia_engine_ui::screen_prim::cinematic_bar_prims(
                 host.world.presentation.cinematic_bar,
                 legaia_engine_ui::screen_prim::PSX_DISPLAY_H,
@@ -2249,7 +2249,7 @@ impl LegaiaRuntime {
     ) -> Option<Vec<legaia_engine_ui::screen_prim::ScreenPrim>> {
         use legaia_engine_core::encounter::EncounterPhase;
 
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             self.drop_battle_intro();
             return None;
         };
@@ -2312,7 +2312,7 @@ impl LegaiaRuntime {
         };
         use legaia_engine_vm::battle_trail::TRAIL_POINTS;
 
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &host.world;
@@ -2403,7 +2403,7 @@ impl LegaiaRuntime {
     /// row's own per-battle flags byte (`DAT_8007BD60` bit `0x80`, the only
     /// bit the selector reads), and the scene's PROT base (`DAT_80084540`).
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        let host = self.scene_host.as_ref().expect("caller checked");
+        let host = self.scene_host.host().expect("caller checked");
         // One engine-side resolver for all three inputs
         // (`SceneHost::battle_intro_style_inputs`) and one arming
         // (`BattleIntro::arm_for_battle`, the native window's call too): the
@@ -2489,7 +2489,7 @@ impl LegaiaRuntime {
     /// "the pass carries the wash".
     pub fn play_screen_effect_push_count(&self) -> u32 {
         self.scene_host
-            .as_ref()
+            .host()
             .map(|h| h.world.screen_tint_push_args().len() as u32)
             .unwrap_or(0)
     }
@@ -2507,7 +2507,7 @@ impl LegaiaRuntime {
     pub fn play_text_layer_washes_json(&self) -> String {
         let washes = self
             .scene_host
-            .as_ref()
+            .host()
             .map(|h| {
                 let mut w = legaia_engine_ui::screen_prim::text_layer_washes(
                     &h.world.screen_tint_push_args(),
@@ -2595,7 +2595,7 @@ impl LegaiaRuntime {
     /// `SceneMode::Battle` without walking the RNG. Tries every plausible
     /// formation row and returns `true` once the world is in battle.
     pub fn debug_start_test_battle(&mut self) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         let armed = (0u8..32).any(|row| host.world.trigger_scripted_battle(row));
@@ -2608,7 +2608,7 @@ impl LegaiaRuntime {
         for _ in 0..220 {
             if self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.mode == SceneMode::Battle)
             {
                 return true;
@@ -2616,7 +2616,7 @@ impl LegaiaRuntime {
             let _ = self.tick_frame();
         }
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.mode == SceneMode::Battle)
     }
 
@@ -2630,7 +2630,7 @@ impl LegaiaRuntime {
     /// raw flag poke rather than a "start the tutorial" hook: a test that can
     /// only ask for the outcome cannot tell a wired condition from a shim.
     pub fn debug_system_flag_set(&mut self, idx: u16) -> bool {
-        let Some(host) = self.scene_host.as_mut() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.system_flag_set(idx);
@@ -2640,7 +2640,7 @@ impl LegaiaRuntime {
     /// Read a system-flag-bank bit off the live world (`false` with no scene).
     pub fn debug_system_flag_test(&self, idx: u16) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.system_flag_test(idx))
     }
 }

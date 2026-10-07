@@ -12,7 +12,7 @@
 //! To intentionally regenerate the fixtures after a writer change:
 //!
 //! ```text
-//! LEGAIA_UPDATE_FIXTURES=1 cargo test -p legaia-save --test schema_fixture
+//! LEGAIA_UPDATE_FIXTURES=1 cargo test -p legaia-save --test integration schema_fixture::
 //! ```
 //!
 //! No Sony bytes appear in this test - the synthetic builder writes

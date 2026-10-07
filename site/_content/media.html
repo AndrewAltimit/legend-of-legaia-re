@@ -525,12 +525,6 @@
 
   // ---------------- BGM list ----------------
   /** Minimal HTML-escape for curated names dropped into row markup. */
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
   /** Re-render whichever BGM sub-view is active with the current search box. */
   function refreshBgmView() {
     const q = bgmSearch.value;
@@ -1024,8 +1018,7 @@
       const bytes = await prog.read(f, `Reading ${f.name}`);
       prog.indeterminate('Initialising decoder…');
       if (!wasmMod) {
-        wasmMod = await import('./wasm/legaia_web_viewer.js');
-        await wasmMod.default();
+        wasmMod = await LegaiaWasm.load();
       }
       audio = new wasmMod.LegaiaAudio();
       prog.indeterminate('Parsing PROT.DAT - this can take a few seconds…');

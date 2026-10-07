@@ -24,7 +24,9 @@
 //!    kernel that runs and produces silence is indistinguishable from an
 //!    unwired one at the call site; it is distinguishable at the samples.
 
-use crate::{Sequencer, SequencerProgress, Spu, StreamResampler};
+use std::cell::RefCell;
+
+use crate::{AudioSink, StreamResampler};
 
 /// Video frames per second the PSX runs at, for [`TestAudioSink::render_video_frame`].
 pub const VIDEO_HZ: u32 = 60;
@@ -85,17 +87,24 @@ impl SinkMeasure {
     }
 }
 
-/// Device-free stand-in for [`crate::AudioOut`]: the same mixing core, pulled
-/// by the caller instead of by an audio device.
+/// Device-free audio output: the same mixing core [`crate::AudioOut`] owns,
+/// pulled by the caller instead of by an audio device.
 ///
-/// Mirrors the `AudioOut` surface a host uses per frame, so a test can drive
-/// the real BGM/SFX plumbing: stage a [`crate::VabBank`] through
-/// [`Self::with_spu`], attach a [`Sequencer`], render a video frame's worth of
-/// output, pause, resume, swap tracks, and read back what the speakers would
-/// have received.
+/// It is an [`AudioSink`], so everything a host does to an output - stage a
+/// [`crate::VabBank`] through [`AudioSink::with_spu`], attach / pause / swap a
+/// [`crate::Sequencer`], play XA - runs through the same provided methods the
+/// cpal and browser outputs use, and a director generic over `AudioSink` runs
+/// over it unchanged. [`Self::render_frames`] then reads back what the
+/// speakers would have received.
 pub struct TestAudioSink {
-    state: StreamResampler,
+    state: RefCell<StreamResampler>,
     device_rate: u32,
+}
+
+impl AudioSink for TestAudioSink {
+    fn with_core<R>(&self, f: impl FnOnce(&mut StreamResampler) -> R) -> R {
+        f(&mut self.state.borrow_mut())
+    }
 }
 
 impl TestAudioSink {
@@ -104,7 +113,7 @@ impl TestAudioSink {
     /// resampling - the shape a parity assertion wants.
     pub fn new(device_rate: u32) -> Self {
         Self {
-            state: StreamResampler::new(device_rate.max(1)),
+            state: RefCell::new(StreamResampler::new(device_rate.max(1))),
             device_rate: device_rate.max(1),
         }
     }
@@ -114,86 +123,23 @@ impl TestAudioSink {
         (self.device_rate / VIDEO_HZ).max(1) as usize
     }
 
-    /// Run a closure against the SPU model - the [`crate::AudioOut::with_spu`]
-    /// mirror hosts stage VAB uploads and fire one-shot cues through.
-    pub fn with_spu<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&mut Spu) -> R,
-    {
-        f(&mut self.state.spu)
-    }
-
-    /// Install a sequencer immediately (mirror of
-    /// [`crate::AudioOut::attach_sequencer`]).
-    pub fn attach_sequencer(&mut self, seq: Sequencer) {
-        self.state.attach_sequencer(seq);
-    }
-
-    /// Detach + key-off the active sequencer (mirror of
-    /// [`crate::AudioOut::detach_sequencer`]).
-    pub fn detach_sequencer(&mut self) {
-        self.state.detach_sequencer();
-    }
-
-    /// Gate the sequencer clock without detaching it (mirror of
-    /// [`crate::AudioOut::set_sequencer_paused`]): closing the gate keys off
-    /// the sounding notes, exactly as under the device.
-    pub fn set_sequencer_paused(&mut self, paused: bool) {
-        self.state.set_sequencer_paused(paused);
-    }
-
-    /// Rewind the attached sequencer to its first event (mirror of
-    /// [`crate::AudioOut::rewind_sequencer`]).
-    pub fn rewind_sequencer(&mut self) {
-        self.state.rewind_sequencer();
-    }
-
-    /// Whether the sequencer clock is currently gated.
-    pub fn sequencer_paused(&self) -> bool {
-        self.state.sequencer_paused
-    }
-
-    /// Cross-fade to `new_seq` (mirror of [`crate::AudioOut::crossfade_to`]).
-    pub fn crossfade_to(&mut self, new_seq: Sequencer, fade_samples: u32) {
-        self.state.crossfade_to(new_seq, fade_samples);
-    }
-
-    /// Hard-swap the BGM track (mirror of [`crate::AudioOut::swap_bgm`]).
-    pub fn swap_bgm(&mut self, new_seq: Sequencer, fade_in_samples: u32) {
-        self.state.swap_bgm(new_seq, fade_in_samples);
-    }
-
-    /// Sequencer progress snapshot, `None` when nothing is attached.
-    pub fn sequencer_progress(&self) -> Option<SequencerProgress> {
-        self.state.sequencer_progress()
-    }
-
-    /// Monaural downmix (the retail options screen's Stereo/Monaural).
-    pub fn set_mono(&mut self, mono: bool) {
-        self.state.mono = mono;
-    }
-
-    /// Master mute gate - output zeroes while everything keeps ticking.
-    pub fn set_muted(&mut self, muted: bool) {
-        self.state.muted = muted;
-    }
-
     /// Pull one output frame - identical mixing math to the cpal callback.
-    pub fn next_frame(&mut self) -> (i16, i16) {
-        self.state.next_frame()
+    pub fn next_frame(&self) -> (i16, i16) {
+        self.state.borrow_mut().next_frame()
     }
 
     /// Pull `frames` output frames and report what they contained.
-    pub fn render_frames(&mut self, frames: usize) -> SinkMeasure {
+    pub fn render_frames(&self, frames: usize) -> SinkMeasure {
+        let mut state = self.state.borrow_mut();
         let mut m = SinkMeasure::default();
         for _ in 0..frames {
-            m.accumulate(self.state.next_frame());
+            m.accumulate(state.next_frame());
         }
         m
     }
 
     /// Pull one 60 Hz video frame's worth of output.
-    pub fn render_video_frame(&mut self) -> SinkMeasure {
+    pub fn render_video_frame(&self) -> SinkMeasure {
         self.render_frames(self.frames_per_video_frame())
     }
 }
@@ -201,6 +147,7 @@ impl TestAudioSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Sequencer;
     use crate::spu::ram::TransferDirection;
     use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
 
@@ -284,7 +231,7 @@ mod tests {
     /// sustaining under the whole attract movie.
     #[test]
     fn closing_the_pause_gate_keys_off_the_sounding_notes() {
-        let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
         let bank = sink.with_spu(held_tone_bank);
         sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
         let live = sink.render_frames(4_410);
@@ -335,7 +282,7 @@ mod tests {
     /// open - the re-attach of op-`0x35` sub-op `4`.
     #[test]
     fn a_rewind_replays_the_track_from_its_first_event() {
-        let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
         let bank = sink.with_spu(held_tone_bank);
         sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
         // Past the note-off at +2400 and the end of the track (2.5 s).
@@ -372,7 +319,7 @@ mod tests {
     #[test]
     fn the_post_key_off_decay_is_the_reverb_tail_not_the_envelope() {
         let key_off_and_measure = |dry: bool| -> (SinkMeasure, SinkMeasure) {
-            let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+            let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
             if dry {
                 sink.with_spu(|spu| {
                     spu.set_reverb_mode(crate::spu::ReverbMode::Off);
@@ -406,7 +353,7 @@ mod tests {
 
     #[test]
     fn an_idle_sink_emits_silence_and_says_so() {
-        let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
         let m = sink.render_video_frame();
         assert_eq!(m.frames, 735, "44100 / 60");
         assert!(m.is_silent(), "no source attached -> no output");
@@ -438,7 +385,7 @@ mod tests {
     fn mute_zeroes_the_output_without_stopping_the_clock() {
         // The gate is on the emitted frame only: a muted sink still advances
         // the SPU, so unmuting resumes mid-stream rather than replaying.
-        let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
         sink.set_muted(true);
         let m = sink.render_frames(64);
         assert!(m.is_silent());

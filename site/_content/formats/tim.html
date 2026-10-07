@@ -20,60 +20,24 @@
   <h2>What a TIM is</h2>
   <p>The PSX has 1&nbsp;MB of video memory (VRAM), one 1024&times;512 grid of 16-bit pixels. A TIM is a &ldquo;VRAM-ready&rdquo; image: a rectangle of pixel data plus the VRAM coordinates it uploads to. Most textures are palettised - 4-bit (16 colours) or 8-bit (256 colours) indices - and the palette, the <strong>CLUT</strong> (colour look-up table), is itself just another small rectangle of VRAM pixels, usually one row of 16 or 256 entries.</p>
 
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 760 150" width="100%" style="max-width:760px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte layout of a TIM: 8-byte header, optional CLUT block, image block; each block is a 12-byte rectangle header followed by pixel data">
-      <style>
-        .tb-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.3; }
-        .tb-soft { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 3 3; }
-        .tb-lab  { font: 12px sans-serif; fill: currentColor; }
-        .tb-sub  { font: 11px monospace; fill: var(--text-muted); }
-        .tb-off  { font: 11px monospace; fill: var(--accent); }
-      </style>
-      <rect class="tb-box" x="10" y="30" width="80" height="44"/>
-      <text class="tb-lab" x="50" y="48" text-anchor="middle">id</text>
-      <text class="tb-sub" x="50" y="64" text-anchor="middle">0x10</text>
-      <text class="tb-off" x="10" y="22">+0x00</text>
-
-      <rect class="tb-box" x="90" y="30" width="80" height="44"/>
-      <text class="tb-lab" x="130" y="48" text-anchor="middle">flags</text>
-      <text class="tb-sub" x="130" y="64" text-anchor="middle">bpp | clut</text>
-      <text class="tb-off" x="90" y="22">+0x04</text>
-
-      <rect class="tb-soft" x="180" y="30" width="270" height="44"/>
-      <text class="tb-lab" x="315" y="48" text-anchor="middle">CLUT block (if flag bit 3)</text>
-      <text class="tb-sub" x="315" y="64" text-anchor="middle">size, dx, dy, w, h  +  w*h BGR555 entries</text>
-      <text class="tb-off" x="180" y="22">+0x08</text>
-
-      <rect class="tb-box" x="460" y="30" width="290" height="44"/>
-      <text class="tb-lab" x="605" y="48" text-anchor="middle">image block</text>
-      <text class="tb-sub" x="605" y="64" text-anchor="middle">size, dx, dy, w, h  +  packed pixels</text>
-      <text class="tb-off" x="460" y="22">after CLUT</text>
-
-      <text class="tb-sub" x="10" y="100">block header (12 bytes):</text>
-      <rect class="tb-box" x="10" y="108" width="110" height="30"/>
-      <text class="tb-lab" x="65" y="127" text-anchor="middle">u32 size</text>
-      <rect class="tb-box" x="120" y="108" width="90" height="30"/>
-      <text class="tb-lab" x="165" y="127" text-anchor="middle">u16 dx</text>
-      <rect class="tb-box" x="210" y="108" width="90" height="30"/>
-      <text class="tb-lab" x="255" y="127" text-anchor="middle">u16 dy</text>
-      <rect class="tb-box" x="300" y="108" width="90" height="30"/>
-      <text class="tb-lab" x="345" y="127" text-anchor="middle">u16 w</text>
-      <rect class="tb-box" x="390" y="108" width="90" height="30"/>
-      <text class="tb-lab" x="435" y="127" text-anchor="middle">u16 h</text>
-      <text class="tb-sub" x="490" y="127">(dx,dy) = VRAM pos; w in halfwords</text>
-    </svg>
-    <figcaption>A TIM is an 8-byte header followed by up to two VRAM rectangles, each with its own 12-byte header.</figcaption>
-  </figure>
-
-  <table class="layout">
-    <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>+0x00</code></td><td>4</td><td>id</td><td><code>0x00000010</code></td></tr>
-      <tr><td><code>+0x04</code></td><td>4</td><td>flags</td><td>bits 0..2 pixel mode (0 = 4bpp, 1 = 8bpp, 2 = 16bpp, 3 = 24bpp); bit 3 = CLUT block present; bits 4+ zero on a real TIM</td></tr>
-      <tr><td><code>+0x08</code></td><td>12 + data</td><td>CLUT block (optional)</td><td><code>size</code> = 12 + w*h*2; <code>h</code> &gt; 1 means several palette rows</td></tr>
-      <tr><td>after CLUT</td><td>12 + data</td><td>image block</td><td><code>w</code> counts 16-bit VRAM halfwords - a 4bpp image 256 texels wide has <code>w = 64</code></td></tr>
-    </tbody>
-  </table>
+  <h3 id="tim-header">File header</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">id = 0x10</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">flags</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">+0x08</span><span class="bm-name">CLUT block (if flags bit 3)</span><span class="bm-size">12 + w&middot;h&middot;2</span></div>
+    <div class="bm-cell" style="--w:10"><span class="bm-off">after CLUT</span><span class="bm-name">image block</span><span class="bm-size">12 + pixels</span></div>
+  </div>
+  <p><code>flags</code> bits 0..2 are the pixel mode (0 = 4bpp, 1 = 8bpp, 2 = 16bpp, 3 = 24bpp), bit 3 says a CLUT block follows, and bits 4+ are zero on a real TIM.</p>
+  <h3 id="tim-block">Block header (CLUT and image alike)</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">size</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x04</span><span class="bm-name">dx</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x06</span><span class="bm-name">dy</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x08</span><span class="bm-name">w</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x0A</span><span class="bm-name">h</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">+0x0C</span><span class="bm-name">data</span><span class="bm-size">w&middot;h halfwords</span></div>
+  </div>
+  <p><code>(dx, dy)</code> is the VRAM position the rectangle uploads to; <code>size = 12 + w*h*2</code>. <code>w</code> counts 16-bit VRAM halfwords, not texels - a 4bpp image 256 texels wide has <code>w = 64</code>. A CLUT block with <code>h &gt; 1</code> holds several palette rows.</p>
   <p>Every TIM in the streaming files is 4bpp with a CLUT. Most sit inside <code>PROT.DAT</code> entries behind <a href="lzs.html">LZS compression</a>; two UI sheets sit in the unindexed gap before the first entry, where no per-entry walker reaches them.</p>
 </section>
 
@@ -87,8 +51,8 @@
       <tr><td>Menu-glyph / interior atlas (4bpp, 256&times;256, multi-row CLUT)</td><td><code>PROT.DAT[0x11218]</code>, head gap; <code>legaia_asset::menu_glyph_atlas</code></td><td>Rows render NEW GAME / CONTINUE / OPTIONS and smaller menu labels; also the shared interior page (below)</td></tr>
     </tbody>
   </table>
-<pre><code>asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 2   # panel chrome
-asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # cursor</code></pre>
+  <div class="cli"><code>asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 2</code></div>
+  <p class="hint">Any row 0..15 works; row 2 shows the panel chrome, row 7 the cursor.</p>
 </section>
 
 <section class="doc-section" id="flat-strip-cluts">
@@ -119,7 +83,7 @@ asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # cursor</code><
   <details class="disclosure">
     <summary>Details: how labels are assigned</summary>
     <div class="disclosure-body">
-      <p>A label is either a coarse visual category from reviewing decoded thumbnails (<code>environment</code>, <code>terrain</code>, <code>foliage</code>, <code>character</code>, <code>ui-text</code>, <code>effect</code>, <code>other</code>) or a precise role for a texture whose loader site is pinned (menu-glyph atlas, main-title sprite sheet, the four <code>init.pak</code> publisher / warning logos, the load-screen UI sheet, party portraits, empty-slot frame). <code>asset tim-render-distinct</code> decodes each distinct fingerprint to a local PNG and <code>scripts/asset-investigation/montage_tims.py</code> lays them into contact sheets; the PNGs stay local, only the fingerprint-to-label table is committed. The flat tier has an external reference decoder as its oracle; the deep tier has none, so its regression pins count + digest + a committed metadata reference.</p>
+      <p>A label is either a coarse visual category from reviewing decoded thumbnails (<code>environment</code>, <code>terrain</code>, <code>foliage</code>, <code>character</code>, <code>ui-text</code>, <code>effect</code>, <code>other</code>) or a precise role for a texture whose loader site is pinned (menu-glyph atlas, main-title sprite sheet, the four <code>init.pak</code> publisher / warning logos, the load-screen UI sheet, party portraits, empty-slot frame). <code>asset tim-render-distinct</code> decodes each distinct fingerprint to a local PNG and <code>scripts/asset-investigation/montage_tims.py</code> lays them into contact sheets; the PNGs stay local, only the fingerprint-to-label table is committed. The flat tier has an external reference decoder as its oracle; the deep tier has none.</p>
     </div>
   </details>
   <details class="disclosure">
@@ -151,22 +115,35 @@ asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # cursor</code><
   </ul>
 </section>
 
+<section class="doc-section" id="exported-palette">
+  <h2>Why an exported palette can look wrong</h2>
+  <p>A TIM export decodes the image through one of the file's own CLUT rows. That matches the screen only when three things hold, and on Legaia they often don't:</p>
+  <ul class="bullets">
+    <li><strong>Each palette recolours the whole image.</strong> A multi-palette sheet is one grid of indices that each sprite reads through its own palette, so any single palette shows most of the sheet in colours it is never drawn with.</li>
+    <li><strong>The draw names a VRAM cell, not a file.</strong> A sprite can take a palette another TIM uploaded (the system-UI sheet's status badges use the CLUT-only TIM at <code>PROT.DAT[0x1858]</code>), and a later upload can overwrite a TIM's own palette before anything draws it (the battle font's <code>(0, 510)</code> strip is covered by the menu-glyph atlas at boot).</li>
+    <li><strong>The screen multiplies the texel.</strong> The primitive's colour word (<code>texel * colour / 128</code>) and the depth cue sit on top of the palette.</li>
+  </ul>
+  <p><code>legaia_asset::tim_palette_context</code> resolves the first two from the disc - boot-time CLUT state, a per-rectangle palette map of the system-UI page, and an &ldquo;as drawn&rdquo; composite - and the viewer and ROM patcher read it. The whole colour chain is on <a href="../subsystems/shading.html">shading</a>.</p>
+</section>
+
 <section class="doc-section" id="vram-emulation-in-the-engine-port">
-  <h2>VRAM emulation in the engine port</h2>
-  <p><code>crates/engine-render</code> keeps a 1024&times;512 R16Uint VRAM page so the per-primitive palette and texture-page selectors (CBA / TSB) plus 4/8/15bpp CLUT decoding run in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes bind the right CLUT. Some character meshes reference CLUT rows in <em>other</em> PROT entries than their mesh; the viewer's <code>--vram-extra-dir</code> flag covers scene types whose chain is not traced.</p>
+  <h2>In the port</h2>
+  <p><code>crates/tim</code> parses and encodes; <code>crates/engine-render</code> keeps a 1024&times;512 R16Uint VRAM page so the per-primitive palette and texture-page selectors (CBA / TSB) and 4/8/15bpp CLUT decoding run in a fragment shader, with every sibling TIM uploaded so multi-page meshes bind the right CLUT.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
-  <table>
+  <details class="disclosure"><summary>Evidence behind each claim</summary>
+  <div class="table-wrap"><table>
     <thead><tr><th>Claim</th><th>Evidence</th></tr></thead>
     <tbody>
       <tr><td>Head-gap sheets at <code>0x018E0</code> / <code>0x11218</code>, row usage</td><td>Retail VRAM dumps byte-matched; the 32-byte panel CLUT signature occurs once on the disc - <a href="../subsystems/save-screen.html#sprite-sources">save screen, sprite sources</a></td></tr>
       <tr><td>Flat-strip upload on rows 478 / 510</td><td>VRAM row 510 byte-identical across every captured field save; town01 env CBA <code>(64, 510)</code> resolves only under the strip reading</td></tr>
-      <tr><td>Flat catalog completeness</td><td>Item-for-item match with an independent reference decoder (offsets, dimensions, bit depths, palette counts); disc-gated regression pins count + digest</td></tr>
-      <tr><td>Encoder round trip</td><td>Disc-gated test: <code>encode(decode(tim))</code> byte-identical for every raw-catalog TIM</td></tr>
+      <tr><td>Flat catalog completeness</td><td>Item-for-item match with an independent reference decoder (offsets, dimensions, bit depths, palette counts)</td></tr>
+      <tr><td>Encoder round trip</td><td><code>encode(decode(tim))</code> is byte-identical for every raw-catalog TIM</td></tr>
     </tbody>
-  </table>
+  </table></div>
+  </details>
 </section>
 
 <section class="doc-section" id="see-also">

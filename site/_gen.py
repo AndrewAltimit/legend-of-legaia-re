@@ -443,6 +443,8 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
     css = "../" * depth + "css/styles.css"
     layout_js = "../" * depth + "js/layout.js"
     main_js = "../" * depth + "js/main.js"
+    wasm_js = "../" * depth + "js/wasm-loader.js"
+    util_js = "../" * depth + "js/site-util.js"
     favicon = "../" * depth + "img/favicon.svg"
     if active_key in WIDE_PAGES:
         content_cls = "content wide-page"
@@ -462,6 +464,8 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
   <link rel="icon" href="{favicon}" type="image/svg+xml">
   <link rel="stylesheet" href="{css}">
   <script>window.LEGAIA_WASM_V="{_wasm_version()}";</script>
+  <script src="{util_js}"></script>
+  <script src="{wasm_js}"></script>
   {extra_head}
 </head>
 <body>
@@ -519,8 +523,10 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("writeups/disc-patching/g-ram-payload-carrier.html","Tier G - carrying a RAM patch on disc","writeups/disc-patching/g-ram-payload-carrier","writeups/disc-patching/g-ram-payload-carrier.html"),
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
     ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
+    ("subsystems/boot-internals.html","Boot path: internals",       "subsystems/boot-internals",  "subsystems/boot-internals.html"),
     ("subsystems/asset-loader.html","Asset loader",                 "subsystems/asset-loader",    "subsystems/asset-loader.html"),
     ("subsystems/script-vm.html",  "Field / event script VM",       "subsystems/script-vm",       "subsystems/script-vm.html"),
+    ("subsystems/script-vm-internals.html","Script VM: internals",  "subsystems/script-vm-internals","subsystems/script-vm-internals.html"),
     ("subsystems/field-locomotion.html","Field locomotion",          "subsystems/field-locomotion","subsystems/field-locomotion.html"),
     ("subsystems/actor-vm.html",   "Actor / sprite VM",             "subsystems/actor-vm",        "subsystems/actor-vm.html"),
     ("subsystems/move-vm.html",    "Move-table VM",                 "subsystems/move-vm",         "subsystems/move-vm.html"),
@@ -534,9 +540,12 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/arts-command-gauge.html","Arts command gauge",      "subsystems/arts-command-gauge","subsystems/arts-command-gauge.html"),
     ("subsystems/inventory.html",  "Inventory",                     "subsystems/inventory",       "subsystems/inventory.html"),
     ("subsystems/audio.html",      "Audio",                         "subsystems/audio",           "subsystems/audio.html"),
+    ("subsystems/audio-internals.html","Audio: internals",          "subsystems/audio-internals", "subsystems/audio-internals.html"),
     ("subsystems/renderer.html",   "Renderer",                      "subsystems/renderer",        "subsystems/renderer.html"),
+    ("subsystems/renderer-internals.html","Renderer: internals",     "subsystems/renderer-internals","subsystems/renderer-internals.html"),
     ("subsystems/shading.html",    "Shading and palettes",          "subsystems/shading",         "subsystems/shading.html"),
     ("subsystems/world-map.html",  "World map",                     "subsystems/world-map",       "subsystems/world-map.html"),
+    ("subsystems/world-map-internals.html","World map: internals",  "subsystems/world-map-internals","subsystems/world-map-internals.html"),
     ("subsystems/history-world-map.html","Chapter-1 hub sweep (history)","subsystems/history-world-map","subsystems/history-world-map.html"),
     ("subsystems/world-overview-viewer.html","World-overview viewer", "subsystems/world-overview-viewer","subsystems/world-overview-viewer.html"),
     ("subsystems/vr-mode.html",   "VR mode (WebXR)",               "subsystems/vr-mode",         "subsystems/vr-mode.html"),

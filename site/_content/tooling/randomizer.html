@@ -20,46 +20,40 @@
 <section class="doc-section" id="how">
   <h2>How a patch reaches the disc</h2>
   <p>A PlayStation disc is not a folder of files. Almost every value the randomizer changes sits inside a compressed block, on a sector whose checksums must be recomputed, at an address nothing else may move. Every feature on this page uses one of six techniques, from &ldquo;overwrite a byte in a table&rdquo; up to &ldquo;host new machine code in space the game never uses&rdquo;.</p>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 900 300" width="100%" style="max-width:900px" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tier-title" aria-label="The six patch tiers, from static-table edits to code hosted in an overlay's dead region">
-      <title id="tier-title">The six patch tiers, from static-table edits to code hosted in an overlay's dead region, with the features that use each</title>
-      <style>
-        .tl-box  { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .tl-t    { font: 600 12px 'Inter', sans-serif; fill: currentColor; }
-        .tl-k    { font: 600 12px 'JetBrains Mono', monospace; fill: var(--accent); }
-        .tl-cap  { font: 10px 'Inter', sans-serif; fill: var(--text-muted); }
-        .tl-ax   { stroke: var(--border); stroke-width: 1; }
-        .tl-arr  { fill: var(--text-muted); }
-      </style>
-      <line x1="20" y1="272" x2="880" y2="272" class="tl-ax"/>
-      <polygon points="880,272 872,268 872,276" class="tl-arr"/>
-      <text x="20" y="290" class="tl-cap">same-size in place</text>
-      <text x="452" y="290" class="tl-cap" text-anchor="middle">resizes one record</text>
-      <text x="868" y="290" class="tl-cap" text-anchor="end">new machine code</text>
-
-      <rect x="20"  y="200" width="136" height="60" class="tl-box"/>
-      <text x="30" y="220" class="tl-k">A</text><text x="46" y="220" class="tl-t">static tables</text>
-      <text x="30" y="238" class="tl-cap">steals, spell costs,</text><text x="30" y="251" class="tl-cap">equip bonuses</text>
-
-      <rect x="164" y="168" width="136" height="60" class="tl-box"/>
-      <text x="174" y="188" class="tl-k">B</text><text x="190" y="188" class="tl-t">inside LZS slots</text>
-      <text x="174" y="206" class="tl-cap">drops, monster stats,</text><text x="174" y="219" class="tl-cap">arts, difficulty</text>
-
-      <rect x="308" y="136" width="136" height="60" class="tl-box"/>
-      <text x="318" y="156" class="tl-k">C</text><text x="334" y="156" class="tl-t">script operands</text>
-      <text x="318" y="174" class="tl-cap">chests, shops,</text><text x="318" y="187" class="tl-cap">encounters</text>
-
-      <rect x="452" y="104" width="136" height="60" class="tl-box"/>
-      <text x="462" y="124" class="tl-k">D</text><text x="478" y="124" class="tl-t">MAN relocation</text>
-      <text x="462" y="142" class="tl-cap">doors, place names,</text><text x="462" y="155" class="tl-cap">starting-bag overflow</text>
-
-      <rect x="596" y="72" width="136" height="60" class="tl-box"/>
-      <text x="606" y="92" class="tl-k">E</text><text x="622" y="92" class="tl-t">rodata-gap code</text>
-      <text x="606" y="110" class="tl-cap">flee EXP, enemy ally,</text><text x="606" y="123" class="tl-cap">shiny Seru</text>
-
-      <rect x="740" y="40" width="136" height="60" class="tl-box"/>
-      <text x="750" y="60" class="tl-k">F</text><text x="766" y="60" class="tl-t">overlay dead space</text>
-      <text x="750" y="78" class="tl-cap">Seru trading,</text><text x="750" y="91" class="tl-cap">Super Arts list</text>
+  <figure class="diagram">
+    <svg viewBox="0 0 780 360" role="img" aria-label="The six patch tiers, top to bottom: A static tables, B inside LZS slots, C script operands (all same-size in place), D MAN relocation (resizes one record), E rodata-gap code and F overlay dead space (new machine code), each with the features that use it">
+      <defs><marker id="tl-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-edge" d="M24 20 L24 340" marker-end="url(#tl-arrow)"/>
+      <rect class="dg-node" x="44" y="14" width="230" height="42" rx="5"/>
+      <text class="dg-label" x="159" y="40">A &middot; static tables</text>
+      <path class="dg-edge-dim" d="M274 35 L300 35"/>
+      <text class="dg-edge-label" x="308" y="39" style="font-size:12px">steals, spell costs, equip bonuses</text>
+      <rect class="dg-node" x="44" y="68" width="230" height="42" rx="5"/>
+      <text class="dg-label" x="159" y="94">B &middot; inside LZS slots</text>
+      <path class="dg-edge-dim" d="M274 89 L300 89"/>
+      <text class="dg-edge-label" x="308" y="93" style="font-size:12px">drops, monster stats, arts</text>
+      <rect class="dg-node" x="44" y="122" width="230" height="42" rx="5"/>
+      <text class="dg-label" x="159" y="148">C &middot; script operands</text>
+      <path class="dg-edge-dim" d="M274 143 L300 143"/>
+      <text class="dg-edge-label" x="308" y="147" style="font-size:12px">chests, shops, encounters</text>
+      <rect class="dg-node-warn" x="44" y="176" width="230" height="42" rx="5"/>
+      <text class="dg-label" x="159" y="202">D &middot; MAN relocation</text>
+      <path class="dg-edge-dim" d="M274 197 L300 197"/>
+      <text class="dg-edge-label" x="308" y="201" style="font-size:12px">doors, place names, bag overflow</text>
+      <rect class="dg-node-accent" x="44" y="230" width="230" height="42" rx="5"/>
+      <text class="dg-label" x="159" y="256">E &middot; rodata-gap code</text>
+      <path class="dg-edge-dim" d="M274 251 L300 251"/>
+      <text class="dg-edge-label" x="308" y="255" style="font-size:12px">flee EXP, enemy ally, shiny Seru</text>
+      <rect class="dg-node-accent" x="44" y="284" width="230" height="42" rx="5"/>
+      <text class="dg-label" x="159" y="310">F &middot; overlay dead space</text>
+      <path class="dg-edge-dim" d="M274 305 L300 305"/>
+      <text class="dg-edge-label" x="308" y="309" style="font-size:12px">Seru trading, Super Arts list</text>
+      <path class="dg-edge-dim" d="M600 18 L612 18 L612 160 L600 160"/>
+      <text class="dg-edge-label" x="622" y="93">same-size in place</text>
+      <path class="dg-edge-dim" d="M600 180 L612 180 L612 214 L600 214"/>
+      <text class="dg-edge-label" x="622" y="201">resizes one record</text>
+      <path class="dg-edge-dim" d="M600 234 L612 234 L612 322 L600 322"/>
+      <text class="dg-edge-label" x="622" y="282">new machine code</text>
     </svg>
     <figcaption>Tier A: <a href="../writeups/disc-patching/a-static-tables.html">static tables</a> &middot; B: <a href="../writeups/disc-patching/b-lzs-slots.html">LZS slots</a> &middot; C: <a href="../writeups/disc-patching/c-field-vm-operands.html">field-VM operands</a> &middot; D: <a href="../writeups/disc-patching/d-man-relocation.html">MAN relocation</a> &middot; E: <a href="../writeups/disc-patching/e-rodata-gap-code.html">rodata-gap code</a> &middot; F: <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead region</a>.</figcaption>
   </figure>
@@ -75,12 +69,10 @@
 <section class="doc-section" id="cli">
   <h2>CLI: <code>legaia-patcher</code></h2>
   <p>The scriptable path: disc + seed in, a portable PPF out (default <code>&lt;input&gt;.ppf</code>), optionally a patched <code>.bin</code> + <code>.cue</code> (<code>--output</code>) and a spoiler-safe TOML run record (<code>--manifest</code>). Disc arguments take a raw Mode 2/2352 <code>.bin</code> or a <code>.cue</code>. The seed resolves from a number or a hashed string and is always printed, so a run reproduces byte-for-byte.</p>
-<pre><code>legaia-patcher randomize --input DISC.bin --seed myrun --drops shuffle \
-    --encounters shuffle --chests shuffle --shops shuffle --steals shuffle \
-    --doors shuffle --door-coupling coupled --starting-items 3 \
-    --patch run.ppf --manifest run.toml
-legaia-patcher verify --input DISC.bin --patch run.ppf     # apply to a copy + sanity-check
-legaia-patcher chests --input DISC.bin                     # read-only listing</code></pre>
+  <div class="cli"><code>legaia-patcher randomize --input DISC.bin --seed myrun --drops shuffle --encounters shuffle --chests shuffle --shops shuffle --steals shuffle --doors shuffle --door-coupling coupled --starting-items 3 --patch run.ppf --manifest run.toml</code></div>
+  <div class="cli"><code>legaia-patcher verify --input DISC.bin --patch run.ppf</code></div>
+  <div class="cli"><code>legaia-patcher chests --input DISC.bin</code></div>
+  <p><code>verify</code> applies the patch to a copy and sanity-checks it; <code>chests</code> is one of the read-only listings below.</p>
   <table class="layout">
     <thead><tr><th>Subcommand</th><th>Does</th></tr></thead>
     <tbody>
@@ -842,7 +834,7 @@ legaia-patcher chests --input DISC.bin                     # read-only listing</
 
 <section class="doc-section" id="modules">
   <h2>Under the hood</h2>
-  <p>The crate's module map, the per-feature test inventory and the no-Sony-bytes rules are on <a href="randomizer-internals.html">randomizer internals</a>: <a href="randomizer-internals.html#modules" id="tests">modules</a> &middot; <a href="randomizer-internals.html#tests">tests</a> &middot; <a href="randomizer-internals.html#hygiene" id="hygiene">hygiene</a>.</p>
+  <p>The crate's module map, how a patch is verified, and the no-Sony-bytes rules are on <a href="randomizer-internals.html">randomizer internals</a>: <a href="randomizer-internals.html#modules" id="tests">modules</a> &middot; <a href="randomizer-internals.html#tests">tests</a> &middot; <a href="randomizer-internals.html#hygiene" id="hygiene">hygiene</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

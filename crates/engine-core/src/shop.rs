@@ -1313,9 +1313,9 @@ pub const PASSIVE_NONE: u8 = 0x40;
 /// chain **twice**, once for the passive's name and again for its
 /// description, rather than caching the index)
 ///
-/// Consumed by the web shop's window-39 draw
-/// (`web-viewer::play_shop::sell_detail_window_draws`, closures off the
-/// item-effect descriptors + equip-bonus records). NB this chain differs
+/// Consumed by the shared window-39 draw both hosts call
+/// (`legaia_engine_screens::sell_detail_window_draws`, closures off the
+/// item-effect descriptors + `DiscEquipInfo::row_passive_index`). NB this chain differs
 /// from the Items screen's
 /// ([`crate::pause_screens::MenuTextTables::item_passive_lines`], which
 /// reads `legaia_asset::accessory_passive::AccessoryPassiveTable::passive_index`)
@@ -1387,11 +1387,10 @@ pub struct SellDetailPanel {
 /// PORT: FUN_801d5ae8 (menu-overlay item detail / sell panel content renderer)
 ///
 /// This is **window 39** (rect `(14, 95, 144, 53)`, descriptor
-/// `renderer_va = 0x801D5AE8`). The browser play page lays the pens out
-/// for the sell list (`web-viewer::play_shop::sell_detail_window_draws`),
-/// where it replaces window **34** (`item_description_draws_for`) - the
-/// buy-side info window with no price row and no passive lines. The native
-/// window still draws 34 for both lists.
+/// `renderer_va = 0x801D5AE8`). Both play hosts lay the pens out for the
+/// sell list (`legaia_engine_screens::sell_detail_window_draws`), where it
+/// replaces window **34** (`item_description_draws_for`) - the buy-side info
+/// window with no price row and no passive lines.
 pub fn shop_sell_detail_panel(
     window: (i16, i16),
     staged: i32,

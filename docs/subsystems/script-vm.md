@@ -2775,20 +2775,20 @@ each, is in
 None is a port site, and the check that settles any of them is the one already
 stated in pitfall 2 above - performed at the *correct* base.
 
-## Disassembler tool: `field-disasm`
+## Disassembler tool: `asset field-disasm`
 
-`crates/engine-vm/src/bin/field_disasm.rs` is a CLI that walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the *width* logic of `crate::field::step` without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps.
+`asset field-disasm` ([`field_disasm_cli.rs`](../../crates/asset/src/bin/asset/field_disasm_cli.rs)) is a CLI that walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the *width* logic of `crate::field::step` without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps.
 
-The binary ships in release archives and builds to `target/release/field-disasm`
-(`cargo build --release`; or `cargo run -p legaia-engine-vm --bin field-disasm -- …`).
+It is a subcommand group of the `asset` binary, which ships in release archives
+(`cargo build --release`; or `cargo run -p legaia-asset --bin asset -- field-disasm …`).
 
 ```bash
 # Walk a raw script body, print each opcode + operand:
-field-disasm file <PATH>
+asset field-disasm file <PATH>
 
 # Detect a [u16 count][u16 offsets[count]] prescript at the start of <PATH>
 # and walk every record body individually:
-field-disasm scene-event-scripts <PATH> [--summary]
+asset field-disasm scene-event-scripts <PATH> [--summary]
 
 # Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
 # their CDNAME label and decoded fmv_id (filtered to the retail valid
@@ -2796,7 +2796,7 @@ field-disasm scene-event-scripts <PATH> [--summary]
 # 0x801D0A6C carries 23 32-byte slots - the nine retail slots 0..=8
 # dispatch every movie on the disc, slots 9..=22 point at dev files).
 # --prot takes an extracted PROT.DAT, not a raw .bin disc image:
-field-disasm scan-prot --prot <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
+asset field-disasm scan-prot --prot <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```
 
 The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.

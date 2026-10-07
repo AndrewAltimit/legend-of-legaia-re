@@ -1390,7 +1390,7 @@
 "801e4420" = "body = syscall + zero-absolute lb loads = data misdecoded as code, no valid function"
 "801ee5b0" = "540 insns all zero-absolute lb loads - data region misdecoded as code"
 "801e473c" = "DATA: the menu window-descriptor table (52 records), not code - see docs/subsystems/field-menu.md. The dump is a 256-byte hex listing; the table is parsed by legaia_asset::menu_windows."
-"801f0000" = "Region boundary, not a function entry: the docs citing 0x801F0000 (boot.md, world-map.md, memory-map.md, battle-action.md) all name it as the base of the persistent post-overlay region, never as a call target. The only dump covering the VA is a 4 KB window listing from overlay_magic_level_up_full.bin."
+"801f0000" = "Not a function entry: the docs citing 0x801F0000 (boot.md, world-map.md, battle-action.md) use it as a lui base (the title state struct `lui a2,0x801f`) or as the wrong base a PROT 0905 dump was imported at, never as a call target. It is not a persistent region either: the field, menu and battle images extend over it (PROT 0897 / 0899 to 0x801F3817, 0898 to 0x801F7017), and 0x801F8004..0x801F8F28 are PROT 0900 slot-B screen widgets (docs/reference/memory-map.md). The only dump covering the VA is a 4 KB window listing from overlay_magic_level_up_full.bin."
 "801f4000" = "Region boundary, not a function entry: the sole citation (docs/subsystems/battle.md) names 0x801CE800..0x801F4000 as the encounter-trigger overlay residency window. The only dump covering the VA is a 4 KB window listing."
 # 801e5154 removed after an `--audit-ignored` re-read. The DATA reading is the
 # MENU overlay's (0899), where 0x801E5xxx is the save-UI record/pointer band.

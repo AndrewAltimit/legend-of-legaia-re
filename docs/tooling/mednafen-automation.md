@@ -494,7 +494,7 @@ against trusting a drifted slot:
   honour it.
 - **`ram_fingerprint_sha256`** - sha256 of the first 64 KiB of main RAM in the
   save state. Computed directly from the save (no emulator re-run) by
-  `legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint`. The mode-trace
+  `legaia_parity::mode_trace_oracle::save_ram_fingerprint`. The mode-trace
   oracle tests (`mode_trace_e3`, `v0_1_playthrough`) gate the live-slot fallback
   on this digest: a slot that no longer matches the catalogued value is
   **skipped, not failed** - comparing the engine against an arbitrary save

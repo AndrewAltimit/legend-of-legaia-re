@@ -3602,3 +3602,154 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
   .disc-chip .txt { display: none; }
   .tb-search .kbd { display: none; }
 }
+
+/* ---- Doc diagrams -------------------------------------------------------
+   Shared visual vocabulary for the reference pages (subsystems / formats /
+   reference). Three components:
+
+   figure.diagram  - frame for an inline SVG (flow, state machine, call graph).
+                     Inside the SVG use the dg-* classes instead of inline
+                     fill/stroke so every diagram themes the same way:
+                       .dg-node  .dg-node-accent  .dg-node-warn  .dg-node-ok
+                       .dg-label (node title)  .dg-sub (muted second line)
+                       .dg-edge  .dg-edge-dim  .dg-edge-label  .dg-group
+                     Arrowheads: put <marker class="dg-arrow"> in the SVG's
+                     own <defs> with a page-unique id.
+   .steps          - an HTML pipeline (ol > li > b + span) that wraps into a
+                     vertical list on a phone; prefer it over SVG for a plain
+                     linear sequence.
+                     Add .steps-vertical for long procedures.
+   .byte-map       - an HTML record / sector layout: one .bm-cell per field,
+                     style="--w:N" = its width in bytes (relative flex grow),
+                     children .bm-off (offset), .bm-name, .bm-size. Add
+                     .bm-accent / .bm-dim / .bm-pad to a cell to tint it.
+   .dg-note        - muted caption line under a byte-map or table.
+   On phones a figure.diagram scrolls inside its frame; .dg-fit opts out. */
+figure.diagram {
+  margin: 1.5rem 0;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 6px;
+  padding: 1rem 1rem 0.75rem;
+}
+figure.diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+figure.diagram figcaption {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+figure.diagram .dg-node        { fill: var(--bg-card); stroke: var(--border-hi); stroke-width: 1; }
+figure.diagram .dg-node-accent { fill: var(--accent-soft); stroke: var(--accent-line); stroke-width: 1; }
+figure.diagram .dg-node-warn   { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1; }
+figure.diagram .dg-node-ok     { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1; }
+figure.diagram .dg-group       { fill: none; stroke: var(--border); stroke-dasharray: 4 3; }
+figure.diagram .dg-label       { fill: var(--text-bright); text-anchor: middle; }
+figure.diagram .dg-sub         { fill: var(--text-muted); text-anchor: middle; font-size: 11px; }
+figure.diagram .dg-edge        { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+figure.diagram .dg-edge-dim    { fill: none; stroke: var(--text-dim); stroke-width: 1.2; stroke-dasharray: 4 3; }
+figure.diagram .dg-edge-label  { fill: var(--text-muted); font-size: 11px; }
+figure.diagram .dg-arrow path  { fill: var(--accent); }
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 1.25rem 0;
+  padding: 0;
+  counter-reset: dgstep;
+}
+.steps > li {
+  counter-increment: dgstep;
+  flex: 1 1 9rem;
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent-line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem 0.65rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.steps > li::before {
+  content: counter(dgstep);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+  margin-right: 0.4rem;
+}
+.steps > li > b { color: var(--text-bright); font-weight: 600; }
+.steps > li > span { display: block; color: var(--text-muted); margin-top: 0.2rem; }
+
+.byte-map {
+  display: flex;
+  margin: 1.25rem 0;
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+.byte-map .bm-cell {
+  flex: var(--w, 1) 1 0;
+  min-width: 3.2rem;
+  padding: 0.4rem 0.45rem;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  overflow: hidden;
+}
+.byte-map .bm-cell:last-child { border-right: 0; }
+.byte-map .bm-accent { background: var(--accent-soft); }
+.byte-map .bm-dim    { background: var(--bg-raised); }
+.byte-map .bm-pad    { background: repeating-linear-gradient(135deg, var(--bg-raised) 0 6px, var(--bg-card) 6px 12px); }
+.byte-map .bm-off  { color: var(--text-dim); font-size: 0.68rem; }
+.byte-map .bm-name { color: var(--text-bright); overflow-wrap: anywhere; }
+.byte-map .bm-size { color: var(--text-muted); font-size: 0.68rem; }
+
+/* Long procedures: one step per row instead of a wrapping card strip. */
+.steps.steps-vertical { flex-direction: column; }
+.steps.steps-vertical > li { flex: none; }
+
+/* Muted one-line caption under a byte-map / table ("not to scale", units). */
+.dg-note { color: var(--text-dim); font-size: 0.8rem; margin: -0.75rem 0 1.25rem; }
+
+/* Tags never break mid-word inside narrow table cells. */
+td .tag, th .tag { white-space: nowrap; }
+.byte-map .bm-name { overflow-wrap: break-word; word-break: normal; hyphens: manual; }
+
+/* Phones: a diagram keeps a legible minimum width and scrolls inside its
+   frame instead of shrinking its 11-12px text to ~5px. A diagram that is
+   genuinely narrow opts out with .dg-fit. */
+@media (max-width: 720px) {
+  figure.diagram:not(.dg-fit) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  figure.diagram:not(.dg-fit) > svg { min-width: 600px; }
+  figure.diagram:not(.dg-fit) > figcaption { position: sticky; left: 0; max-width: calc(100vw - 4rem); }
+}
+
+@media (max-width: 720px) {
+  .byte-map { flex-direction: column; }
+  .byte-map .bm-cell {
+    flex: none;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.6rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .byte-map .bm-cell:last-child { border-bottom: 0; }
+  .byte-map .bm-off { min-width: 3.5rem; }
+  .byte-map .bm-size { margin-left: auto; }
+}

@@ -25,44 +25,17 @@
   <pre><code>kind        = item_table[id].byte(+0)            ; 1 = equipment
 bonus_index = item_table[id].byte(+1)
 record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></pre>
-  <figure class="overlay-strip">
-    <svg viewBox="0 0 880 100" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One 8-byte equipment record: five stat-bonus bytes, a passive slot, an equip mask, and a slot byte">
-      <style>
-        .eq-seg { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
-        .eq-off { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
-        .eq-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
-        .eq-box { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.2; }
-        .eq-dim { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.1; }
-      </style>
-      <rect x="20"  y="30" width="100" height="34" class="eq-box"/>
-      <rect x="120" y="30" width="100" height="34" class="eq-box"/>
-      <rect x="220" y="30" width="100" height="34" class="eq-box"/>
-      <rect x="320" y="30" width="100" height="34" class="eq-box"/>
-      <rect x="420" y="30" width="100" height="34" class="eq-box"/>
-      <rect x="520" y="30" width="110" height="34" class="eq-dim"/>
-      <rect x="630" y="30" width="110" height="34" class="eq-box"/>
-      <rect x="740" y="30" width="120" height="34" class="eq-box"/>
-      <text x="70"  y="51" class="eq-seg" dominant-baseline="middle">INT</text>
-      <text x="170" y="51" class="eq-seg" dominant-baseline="middle">ATK</text>
-      <text x="270" y="51" class="eq-seg" dominant-baseline="middle">UDF</text>
-      <text x="370" y="51" class="eq-seg" dominant-baseline="middle">LDF</text>
-      <text x="470" y="51" class="eq-seg" dominant-baseline="middle">SPD</text>
-      <text x="575" y="51" class="eq-seg" dominant-baseline="middle">passive</text>
-      <text x="685" y="51" class="eq-seg" dominant-baseline="middle">who</text>
-      <text x="800" y="51" class="eq-seg" dominant-baseline="middle">slot</text>
-      <text x="70"  y="20" class="eq-off">+0</text>
-      <text x="170" y="20" class="eq-off">+1</text>
-      <text x="270" y="20" class="eq-off">+2</text>
-      <text x="370" y="20" class="eq-off">+3</text>
-      <text x="470" y="20" class="eq-off">+4</text>
-      <text x="575" y="20" class="eq-off">+5</text>
-      <text x="685" y="20" class="eq-off">+6</text>
-      <text x="800" y="20" class="eq-off">+7</text>
-      <text x="270" y="88" class="eq-note">five bonus bytes - never AGL</text>
-      <text x="690" y="88" class="eq-note">character mask + slot/Ra-Seru byte</text>
-    </svg>
-    <figcaption>One 8-byte record per equippable item. The <code>+5</code> passive slot is <code>0x40</code> (no passive) on every retail row.</figcaption>
-  </figure>
+  <div class="byte-map" role="img" aria-label="One 8-byte equipment record: INT, ATK, UDF, LDF and SPD bonus bytes, a passive slot, an equip character mask, and a slot byte">
+    <div class="bm-cell bm-accent"><span class="bm-off">+0</span><span class="bm-name">INT</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent"><span class="bm-off">+1</span><span class="bm-name">ATK</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent"><span class="bm-off">+2</span><span class="bm-name">UDF</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent"><span class="bm-off">+3</span><span class="bm-name">LDF</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent"><span class="bm-off">+4</span><span class="bm-name">SPD</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-dim"><span class="bm-off">+5</span><span class="bm-name">passive</span><span class="bm-size">0x40 = none</span></div>
+    <div class="bm-cell"><span class="bm-off">+6</span><span class="bm-name">who</span><span class="bm-size">mask</span></div>
+    <div class="bm-cell"><span class="bm-off">+7</span><span class="bm-name">slot</span><span class="bm-size">&amp;0x60 | Ra-Seru</span></div>
+  </div>
+  <p>Five bonus bytes (tinted) - none of them AGL - then the passive slot, which is <code>0x40</code> (no passive) on every retail row, the character mask, and the slot / Ra-Seru byte.</p>
   <table class="layout">
   <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Meaning</th></tr></thead>
   <tbody>
@@ -78,7 +51,7 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></p
   </table>
   <ul class="bullets">
     <li>Each byte's stat target is pinned by tracing the equip-screen aggregator's five accumulators back to the live character-record stat block (<a href="#how-we-know">how we know</a>). Equipment never modifies AGL - the AGL accumulator takes no equipment add.</li>
-    <li>The <code>+1</code>/<code>+2</code>/<code>+3</code> magnitudes are byte-exact against the curated gamedata; <code>+0</code>/<code>+4</code> have no external cross-check, but the disc-gated test asserts the slot invariant (INT only on head gear, SPD only on footwear).</li>
+    <li>The <code>+1</code>/<code>+2</code>/<code>+3</code> magnitudes are byte-exact against the curated gamedata; <code>+0</code>/<code>+4</code> have no external cross-check, but the slot invariant holds across every row: INT only on head gear, SPD only on footwear.</li>
   </ul>
 </section>
 
@@ -102,7 +75,7 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></p
 </section>
 
 <section class="doc-section" id="parser">
-  <h2>Parser + engine consumption</h2>
+  <h2>In the port</h2>
   <p><code>legaia_asset::equip_stats::EquipStatTable::from_scus</code> resolves the property + bonus tables from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map). <code>EquipBonus::equips_party_slot</code> maps a party slot (<code>0</code> Vahn, <code>1</code> Noa, <code>2</code> Gala) to its mask bit, matching the retail equip-screen gate.</p>
   <p>In the engine, <code>DiscEquipInfo</code> lifts the <code>+6</code> mask and <code>+7</code> category keyed by real item ids; the equip session filters each character's per-slot item list on it, so a Vahn-only weapon never appears in Noa's weapon picker.</p>
 </section>
@@ -114,6 +87,9 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></p
 
 <section class="doc-section" id="how-we-know">
   <h2>How we know</h2>
+  <details class="disclosure">
+    <summary>Provenance: the aggregator's five adds and the two <code>+5</code> readers</summary>
+    <div class="disclosure-body">
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
@@ -121,9 +97,10 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></p
       <tr><td>Accumulator pre-loader</td><td><code>FUN_801CF5D0</code></td><td>Loads the five accumulators from the character record's live-stat block (<code>+0x110..+0x11B</code>: AGL, ATK, UDF, LDF, SPD, INT), fixing each equip byte's stat target.</td><td><code>funcs/overlay_shop_save_801cf5d0.txt</code></td></tr>
       <tr><td>Passive aggregator (equip arm)</td><td><code>FUN_80042558</code></td><td>The <code>kind == 1</code> arm reads <code>+5</code> as a passive index.</td><td><code>funcs/80042558.txt</code></td></tr>
       <tr><td>Item-detail renderer</td><td><code>FUN_801D5AE8</code>, reads at <code>0x801D5C90..A0</code></td><td>Second <code>+5</code> reader: row-keyed lookup, <code>&lt; 0x40</code> bound, passive name table at <code>0x8007625C</code>.</td><td><code>funcs/overlay_menu_801d5ae8.txt</code></td></tr>
-      <tr><td>Disc-gated tests</td><td><code>equip_stats_real</code>, <code>equip_modifiers_disc</code>, <code>equip_slots_vs_disc</code></td><td>Bytes, masks and slot types against the real executable + curated gamedata; the <code>+5</code> sentinel across all rows; the engine equip-gate chain end to end.</td><td>-</td></tr>
     </tbody>
   </table>
+    </div>
+  </details>
   <p>The per-instruction walkthrough of the five adds is in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/equipment-table.md#the-five-adds-in-instruction-order" target="_blank" rel="noopener">source doc</a>.</p>
   <details class="disclosure"><summary>History: the "agility / speed pair" reading</summary>
     <div class="disclosure-body">

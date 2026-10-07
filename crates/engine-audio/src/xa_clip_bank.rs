@@ -231,6 +231,25 @@ impl XaClipBank {
         } as u64;
         Some((own * per_sector).min(clip.frames() as u64) as usize)
     }
+
+    /// The staged `(slot, channel)` clip cut at the retail read span
+    /// ([`Self::cut_frames`], at least one frame) - what a
+    /// `FUN_8003D53C(clip, channel, dur)` request plays. `None` when the clip
+    /// is not staged or cuts to nothing.
+    pub fn cut(&self, slot: u8, channel: u8, duration_sectors: u32) -> Option<XaClip> {
+        let clip = self.clip(slot, channel)?;
+        let frames = self
+            .cut_frames(slot, channel, duration_sectors)
+            .unwrap_or(0)
+            .max(1);
+        let take = if clip.stereo { frames * 2 } else { frames };
+        let pcm = clip.pcm[..take.min(clip.pcm.len())].to_vec();
+        (!pcm.is_empty()).then_some(XaClip {
+            pcm,
+            sample_rate: clip.sample_rate,
+            stereo: clip.stereo,
+        })
+    }
 }
 
 #[cfg(test)]

@@ -143,6 +143,19 @@ pub const GLOBAL_BGM_BASE: u16 = 2000;
 /// fallback no shipped script takes.
 pub const SCENE_LOCAL_BGM_FALLBACK_ID: u16 = GLOBAL_BGM_BASE + 2;
 
+/// The `music_01` track whose bytes a start of `bgm_id` loads: the id itself
+/// for a global track, [`SCENE_LOCAL_BGM_FALLBACK_ID`] for a scene-local one.
+/// Every path that starts a track by id - the op-`0x35` route, a card load's
+/// restore, the browser's late start - resolves through this one rule; the
+/// director still keys its same-track suppression on `bgm_id`.
+pub fn bgm_bank_id(bgm_id: u16) -> u16 {
+    if bgm_id < GLOBAL_BGM_BASE {
+        SCENE_LOCAL_BGM_FALLBACK_ID
+    } else {
+        bgm_id
+    }
+}
+
 /// The `FieldEvent::Bgm` sub-op the **engine** raises to stop the score -
 /// the battle and minigame restores when no field track was playing. It is
 /// not a retail op-`0x35` word: the field overlay's arm table (`0x801CEE00`)

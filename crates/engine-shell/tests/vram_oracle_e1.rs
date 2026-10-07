@@ -32,12 +32,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_shell::vram_oracle::{
+use legaia_mednafen::ScenarioManifest;
+use legaia_parity::vram_oracle::{
     NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
     clear_world_map_clut_cycle_rows, compute_static_mask, first_static_upload_divergence,
     load_runtime_vram_from_save, refine_mask_with_shared_band,
 };
-use legaia_mednafen::ScenarioManifest;
 
 /// A scene only yields a trustworthy static mask when its captures are
 /// genuinely different same-scene states. If more than this fraction of the

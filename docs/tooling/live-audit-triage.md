@@ -135,7 +135,7 @@ callbacks is unreachable - including `handle_keyboard`, `handle_redraw`,
 
 Verified by walking reverse edges from each affected anchor: every chain
 terminates at an `impl ApplicationHandler` method and at nothing else. This
-affects `crates/engine-shell/src/bin/legaia-engine/window/` and every
+affects `crates/engine-shell/src/window/` and every
 `asset-viewer` GUI app.
 
 **It was not a root-set gap.** The `[[bin]]` root is followed correctly:
@@ -403,7 +403,7 @@ section the regression set. A reachability change that flips any row here back
 to inert has reintroduced one of the four defects.
 
 **winit dispatch.** Each of these is reached from an `impl ApplicationHandler`
-callback in `crates/engine-shell/src/bin/legaia-engine/window/`:
+callback in `crates/engine-shell/src/window/`:
 
 - `confirm_menu` - from `handle_keyboard` in `window/event_handler/keyboard.rs`.
 - `cash_out` - from `World::exit_slot_machine`, itself from `handle_keyboard`.

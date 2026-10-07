@@ -23,12 +23,12 @@
     <li><strong>Turn a session into a regression fixture</strong> - add <code>[[expected]]</code> rows and <code>replay --strict</code> fails the moment the engine stops reaching the same scene on the same frame.</li>
     <li><strong>Measure how far the engine can be played</strong> with the pad as the only actuator - the two ladders below score chapter 1 that way.</li>
   </ul>
-  <div class="flow">
-    <span class="num">1</span><span class="layer">Record</span><span class="desc">play in the window; every pad-mask change is logged, Escape flushes the file</span><span class="crate">legaia-engine record</span>
-    <span class="num">2</span><span class="layer">Replay file</span><span class="desc"><code>j-replay-v1</code> TOML: meta + sparse pad events + optional checkpoints</span><span class="crate">replay.rs</span>
-    <span class="num">3</span><span class="layer">Replay</span><span class="desc">a synthetic <code>World</code> ticks once per frame; per-frame mode trace out as JSONL</span><span class="crate">legaia-engine replay</span>
-    <span class="num">4</span><span class="layer">Assert</span><span class="desc"><code>--strict</code> vs <code>[[expected]]</code>; the gate runs the file twice and diffs the traces</span><span class="crate">determinism_j2.rs</span>
-  </div>
+  <ol class="steps">
+    <li><b>Record</b><span>play in the window; every pad-mask change is logged, Escape flushes the file <code>legaia-engine record</code></span></li>
+    <li><b>Replay file</b><span><code>j-replay-v1</code> TOML: meta + sparse pad events + optional checkpoints <code>replay.rs</code></span></li>
+    <li><b>Replay</b><span>a synthetic <code>World</code> ticks once per frame; per-frame mode trace out as JSONL <code>legaia-engine replay</code></span></li>
+    <li><b>Assert</b><span><code>--strict</code> vs <code>[[expected]]</code>; running the file twice must give identical traces</span></li>
+  </ol>
 </section>
 
 <section class="doc-section" id="quick-start">
@@ -100,12 +100,7 @@ active_scene = "town01"</code></pre>
     </tbody>
   </table>
   <p>The pad-inversion arithmetic, the door-identity clause and the baseline parser are covered by disc-free unit tests, so the file stays non-vacuous in CI where the ladder skips.</p>
-  <details class="disclosure">
-    <summary>History: the first stall, and the hazard set that sealed a dungeon</summary>
-    <div class="disclosure-body">
-      <p>The first run's stall - <a href="../reference/re-settled-threads.html#t-rim-elms-south-gate">Rim Elm's south gate</a> - found a defect every seated oracle is blind to, and its first two diagnoses were both wrong, which is the argument for self-describing stalls. On <code>keikoku</code>, a planner avoiding "trigger tiles within 12, seat tile included" reached one sub-cell; dropping the seat tile reached one chamber; avoiding only the arrival record's band reached the dungeon - the self-block and an over-wide radius were each seals in their own right. The rung's first draft also passed on a backed-out leg (aiming 47 tiles away, walking two, reporting a clean transition); <code>LEGAIA_CPR_RUNG5_BACKOUT=1</code> re-aims the leg at its own entrance to demonstrate the rung now reads unclear.</p>
-    </div>
-  </details>
+  <p class="hint">A stall that describes itself (parked op, failing gates, unset flags) is the point of the ladder: guesses about why a walk stopped are usually wrong, and a planner that avoids too many trigger tiles can seal itself out of a dungeon.</p>
 </section>
 
 <section class="doc-section" id="frontier">

@@ -402,7 +402,7 @@ impl LegaiaRuntime {
         // Chrome atlas + window table off the loaded PROT, best-effort: a
         // PROT.DAT-only load may lack the overlay slices, in which case the
         // menu still renders its glyphs (no gold frame).
-        let (chrome, windows) = match self.scene_host.as_ref() {
+        let (chrome, windows) = match self.scene_host.host() {
             Some(host) => {
                 let idx = &host.index;
                 let panel = {
@@ -488,7 +488,7 @@ impl LegaiaRuntime {
     }
 
     fn menu_world(&self) -> Option<&legaia_engine_core::world::World> {
-        self.scene_host.as_ref().map(|h| &h.world)
+        self.scene_host.host().map(|h| &h.world)
     }
 }
 
@@ -525,24 +525,24 @@ impl LegaiaRuntime {
         // `BootSession::tick` applies (`World::scripted_menu_open_pending`).
         let scripted = self
             .scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.scripted_menu_open_pending());
         if !scripted
             && self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| !h.world.field_menu_open_allowed())
         {
             // A press the menu lock refuses buzzes (`0x23` on the SFX ring,
             // which the page's scheduler drains); every other refusal is
             // silent. The native window makes the same call.
-            if let Some(h) = self.scene_host.as_mut() {
+            if let Some(h) = self.scene_host.host_mut() {
                 h.world.field_menu_press_denied();
             }
             return;
         }
         let mut session = FieldMenuSession::new();
-        let resume_mode = match self.scene_host.as_mut() {
+        let resume_mode = match self.scene_host.host_mut() {
             Some(host) => {
                 let world = &mut host.world;
                 session.money = world.party.money.max(0) as u32;
@@ -650,7 +650,7 @@ impl LegaiaRuntime {
         let Some(menu) = self.play_menu.take() else {
             return;
         };
-        if let Some(host) = self.scene_host.as_mut() {
+        if let Some(host) = self.scene_host.host_mut() {
             host.world.mode = menu.resume_mode;
             // A scripted menu press (a save point's `49 01`, a `49 0D` ready
             // check) parks its op until the menu it opened closes; the close
@@ -661,7 +661,9 @@ impl LegaiaRuntime {
         // not at the next tick's reconcile - the same call
         // `BootSession::close_field_menu` makes, so the two hosts hold the
         // same word in the frames between the close and the next tick.
-        self.mode_seat.adopt_scene_mode(menu.resume_mode);
+        self.scene_host
+            .seat_mut()
+            .adopt_scene_mode(menu.resume_mode);
     }
 
     /// Whether a Start edge would open the pause menu right now:
@@ -676,7 +678,7 @@ impl LegaiaRuntime {
     /// see, because no Rust symbol is missing.
     pub fn play_menu_can_open(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.field_menu_open_allowed())
     }
 
@@ -694,7 +696,7 @@ impl LegaiaRuntime {
         self.play_menu.is_none()
             && self
                 .scene_host
-                .as_ref()
+                .host()
                 .is_some_and(|h| h.world.scripted_menu_open_pending())
     }
 
@@ -722,7 +724,7 @@ impl LegaiaRuntime {
     /// [`FieldMenuGate`].
     pub fn play_scene_save_allowed(&self) -> bool {
         self.scene_host
-            .as_ref()
+            .host()
             .is_some_and(|h| h.world.party.scene_save_allowed)
     }
 
@@ -920,7 +922,7 @@ impl LegaiaRuntime {
                 // editor extension); it hands back a committed rebind. A
                 // title-opened Load has no scene yet, and no Status screen
                 // either, so it steps the session alone.
-                rebound = match self.scene_host.as_ref() {
+                rebound = match self.scene_host.host() {
                     Some(host) => field_menu_dispatch::tick_open_subsession(
                         session.as_mut(),
                         edge,
@@ -962,7 +964,7 @@ impl LegaiaRuntime {
                     // router every host shares (equip swap / item use /
                     // spell cast / arts / reorder); only the card rack and
                     // the options store are this host's.
-                    let handoff = match self.scene_host.as_mut() {
+                    let handoff = match self.scene_host.host_mut() {
                         Some(host) => {
                             let mut done =
                                 field_menu_dispatch::finish_subsession(*session, &mut host.world);
@@ -1025,7 +1027,7 @@ impl LegaiaRuntime {
             // installed on the host world at `load_disc` (spell / equipment /
             // item), matching the native shell's `FieldMenuSubsession::build`.
             let rack = SaveRack::CardPorts(self.card_slot_snapshots());
-            let sub = self.scene_host.as_ref().map(|host| {
+            let sub = self.scene_host.host().map(|host| {
                 let world = &host.world;
                 let chain = world.chain_library();
                 let mut built = FieldMenuSubsession::build(
