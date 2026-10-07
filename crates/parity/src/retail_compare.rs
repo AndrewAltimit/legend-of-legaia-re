@@ -1122,7 +1122,9 @@ impl RetailObs {
         if let Some(p) = self.panel {
             env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));
         }
-        if let Some(h) = self.seat_heading() {
+        // The frame child always stands in retail's heading: it seats no
+        // arrival facing of its own, and the image channel scores no heading.
+        if let Some(h) = self.player_heading {
             env.push(("LEGAIA_SEAT_HEADING", (h & 0x0FFF).to_string()));
         }
         if !self.scroll_rects.is_empty() {
