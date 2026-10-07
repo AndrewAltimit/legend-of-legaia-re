@@ -1416,8 +1416,8 @@ at the neutral `0x80` painted both walls at their raw texel
 
 ### One glide frame ahead, or a few frames into an arrival
 
-Two field states miss retail for timing the seed does not replay, not for a
-compose the port gets wrong:
+These field states miss retail for timing the seed does not replay, not for
+a compose the port gets wrong:
 
 - `kor5_post_436_organic` holds its camera mid-glide: the state's mover
   (`FUN_801DC0BC` on the actor lists) is `69` frames into an `80`-frame
@@ -1437,6 +1437,20 @@ compose the port gets wrong:
   port, past its settle, draws them at full strength over the cave's holes.
   The same frame shows the scene geometry at full brightness while the word
   reads `27`, so the word is not a multiply on the whole field frame there.
+- `keikoku_chest_open` shows the party HP readout over a chest whose record
+  is already running: the chest actor (`P1`, `+0x50 = 19`) is engaged
+  (`+0x10 & 0x100`), stepping (`+0x9C = 0`) and parked on its lid's end-latch
+  wait `2D 08` at `+0x2F`, and its lid clip cursor `+0x68` reads `16` at rate
+  `8` - two ticks into the clip, which is the display lag. The readout is the
+  pre-touch frame's. The rule that hides it is the one the port runs: the
+  runner `FUN_80039B7C` raises the player's `+0x10 & 0x80000` on every frame
+  it steps the context (`0x80039DB8..0x80039DD4`), and `FUN_801D0D38` takes
+  its rearm arm on that bit (`0x801D0DCC..0x801D0DD8`), which reloads the
+  countdown and leaves through `0x801D1314` without drawing. That the
+  state's own RAM holds the bit clear is inferred to be the snapshot landing
+  partway through a three-vsync logic frame, before the chest's tick runs
+  (no capture pins it); the countdown `_DAT_801F348C = 0` is the readout the
+  displayed frame drew.
 
 ### A poked player keeps the arrival focus
 
