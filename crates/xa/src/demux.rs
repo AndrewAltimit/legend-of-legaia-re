@@ -35,7 +35,7 @@
 //! - bits 2..3:    sample rate (00 = 37.8 kHz, 01 = 18.9 kHz)
 //! - bits 4..5:    bits/sample (00 = 4-bit, 01 = 8-bit)
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use legaia_iso::raw::{RawDisc, SECTOR_SIZE};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -149,14 +149,38 @@ pub fn demux_disc_range(
         let raw = disc
             .read_raw_sector(start_lba + s)
             .with_context(|| format!("read sector {} of XA stream", start_lba + s))?;
-        let mut sub_bytes = [0u8; 8];
-        sub_bytes.copy_from_slice(&raw[SUBHEADER_OFFSET..SUBHEADER_OFFSET + 8]);
-        let (sub, ok) = parse_subheader(&sub_bytes);
-        if !ok || !sub.is_audio() || !sub.is_form2() {
-            continue;
-        }
-        let key = (sub.file_no, sub.ch_no);
-        let stream = by_key.entry(key).or_insert_with(|| ChannelStream {
+        push_sector(&mut by_key, &raw);
+    }
+    Ok(by_key.into_values().collect())
+}
+
+/// Bytes in one raw Mode 2 sector, as a host slices a run of them out of a
+/// disc image it holds in memory.
+pub const RAW_SECTOR_BYTES: usize = SECTOR_SIZE;
+
+/// [`demux_disc_range`] over a run of raw 2352-byte sectors already in
+/// memory (a host that holds the disc bytes rather than a file). Same
+/// grouping, same skips; a trailing partial sector is ignored.
+pub fn demux_raw_sectors(sectors: &[u8]) -> Vec<ChannelStream> {
+    let mut by_key: BTreeMap<(u8, u8), ChannelStream> = BTreeMap::new();
+    for raw in sectors.as_chunks::<SECTOR_SIZE>().0 {
+        push_sector(&mut by_key, raw);
+    }
+    by_key.into_values().collect()
+}
+
+/// Append one raw sector's audio to its `(file_no, ch_no)` stream, skipping
+/// a sector whose subheader copies disagree or that is not Form 2 audio.
+fn push_sector(by_key: &mut BTreeMap<(u8, u8), ChannelStream>, raw: &[u8]) {
+    let mut sub_bytes = [0u8; 8];
+    sub_bytes.copy_from_slice(&raw[SUBHEADER_OFFSET..SUBHEADER_OFFSET + 8]);
+    let (sub, ok) = parse_subheader(&sub_bytes);
+    if !ok || !sub.is_audio() || !sub.is_form2() {
+        return;
+    }
+    let stream = by_key
+        .entry((sub.file_no, sub.ch_no))
+        .or_insert_with(|| ChannelStream {
             file_no: sub.file_no,
             ch_no: sub.ch_no,
             sample_rate: sub.sample_rate(),
@@ -165,17 +189,12 @@ pub fn demux_disc_range(
             audio: Vec::new(),
             sector_count: 0,
         });
-        // The 18 sound groups live at sector bytes 24..2328 (= 2304 bytes).
-        // The 20 bytes between 2328..2348 are padding, then 4 bytes EDC.
-        let audio_off = USER_DATA_OFFSET;
-        let audio_end = audio_off + AUDIO_BYTES_PER_SECTOR;
-        if audio_end > SECTOR_SIZE {
-            bail!("sector {} smaller than expected", start_lba + s);
-        }
-        stream.audio.extend_from_slice(&raw[audio_off..audio_end]);
-        stream.sector_count += 1;
-    }
-    Ok(by_key.into_values().collect())
+    // The 18 sound groups live at sector bytes 24..2328 (= 2304 bytes).
+    // The 20 bytes between 2328..2348 are padding, then 4 bytes EDC.
+    stream
+        .audio
+        .extend_from_slice(&raw[USER_DATA_OFFSET..USER_DATA_OFFSET + AUDIO_BYTES_PER_SECTOR]);
+    stream.sector_count += 1;
 }
 
 /// Convenience: open a `.bin` disc image and demux a byte range starting

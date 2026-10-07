@@ -11,6 +11,7 @@
 
 pub mod bgm;
 pub mod boot;
+pub mod xa_banks;
 
 pub use bgm::AudioBgmDirector;
 pub use boot::{BootConfig, BootSession, PauseMenuPress};

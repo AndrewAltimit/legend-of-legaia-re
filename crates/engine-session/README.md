@@ -14,6 +14,11 @@ builds for native and `wasm32` alike.
   that turns field-VM BGM events into sequencers and fires SFX cues, VAB
   slot residency and the battle duck, generic over the audio output
   (`legaia_engine_audio::AudioSink`).
+- [`xa_banks`](src/xa_banks.rs) - the CD-XA voice banks' staging: which
+  files the arts shouts and the battle one-shot clips come from, and how a
+  file's demuxed channels become bank entries. The native boot reads the
+  sectors off the disc image, the play page slices them out of its disc
+  bytes; both stage through `install_shout_file` / `install_clip_file`.
 
 Both types are generic over the audio output. `engine-shell` names the
 native instantiations (`legaia_engine_shell::BootSession` =

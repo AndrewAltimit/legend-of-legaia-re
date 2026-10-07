@@ -547,6 +547,31 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "CD-XA shout staging, native boot vs play page - which channels "
+        "of XA2 / XA4 / XA6 become shouts, how a shout is trimmed and which "
+        "SCUS cue pools ride with it were written out once per host (the "
+        "page's PlayXa restated the native reader). Both stage each shout "
+        "file through `xa_banks::install_shout_file`",
+        "sites": {
+            "native": ("crates/engine-session/src/boot.rs", "read_arts_shout_bank"),
+            "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["install_shout_file"],
+    },
+    {
+        "what": "CD-XA one-shot clip staging, native boot vs play page - the "
+        "clip-slot file table, the per-channel decode and the interleave "
+        "width the retail read span divides by. Both stage each clip file "
+        "through `xa_banks::install_clip_file`",
+        "sites": {
+            "native": ("crates/engine-session/src/boot.rs", "read_battle_xa_clip_bank"),
+            "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["install_clip_file"],
+    },
+    {
         "what": "fishing session affordance row, native vs play page - each "
         "host names the same three session actions (menu, quit, prizes) "
         "with its own keys; the page once printed only the menu, so a "
