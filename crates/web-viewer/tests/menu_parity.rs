@@ -681,3 +681,54 @@ fn run_commit_beat(rt: &mut LegaiaRuntime) {
         rt.play_menu_input(0);
     }
 }
+
+/// A **cold** page - the disc loaded, no scene entered yet, the player's card
+/// in port 1 - is what a returning player sees: the title's Continue must
+/// open the Load screen, walk it to a block, and park the save for the page
+/// to resume. Every other Continue test stands in a scene first.
+#[test]
+fn a_cold_title_continue_loads_a_save_off_the_card() {
+    let Some(disc) = std::env::var("LEGAIA_DISC_BIN").ok() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read disc");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load_disc");
+    rt.insert_card(0, card_with_save(1, "Vahn", 1234), "card A".into())
+        .expect("insert card into port 1");
+    assert!(
+        rt.boot_title_has_save_data(),
+        "the card makes Continue live"
+    );
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on Continue
+    let mut outcome = String::new();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+        outcome = rt.boot_title_step(CROSS);
+        if !outcome.is_empty() {
+            break;
+        }
+    }
+    eprintln!(
+        "[cold] outcome={outcome:?} title_active={} submode={:#x} menu_open={}",
+        rt.boot_title_is_active(),
+        rt.boot_title_submode(),
+        rt.play_menu_is_open()
+    );
+    assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
+    assert!(rt.play_menu_sub_is_open(), "the Load screen is up");
+    rt.play_menu_input(CROSS); // SLOT 1
+    for _ in 0..200 {
+        rt.play_menu_input(0);
+    }
+    rt.play_menu_input(CROSS); // block 1 -> "Do you wish to load?"
+    rt.play_menu_input(LEFT);
+    rt.play_menu_input(CROSS);
+    run_commit_beat(&mut rt);
+    assert!(rt.play_menu_take_load(), "the Load parked its save");
+}
