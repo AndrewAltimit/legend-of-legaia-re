@@ -1605,11 +1605,17 @@ scalar alone a tick and lasts four times as many ticks (PROT 0910's arm 7 is
 `ctx[+0x6D8]`: arm 10 zeroes it (`0x801F7768`), arm 11 adds
 `(step * scalar) >> 1` a pass and holds below `0x100`
 (`0x801F778C..0x801F77BC`) before it retargets and zeroes the word, and arm
-12 adds `(step * scalar) << 3` and sweeps its ray at `ctx[+0x6D8] & 0xFFF`
-until `0x1000` (`0x801F7AE4` / `0x801F7EF0`) - the 20 / 16 above. The port
-runs both at 64 ticks (`cast_seru_ticks_a::theeder_ramp_per_tick`), tests the
-cone at the ray the tick sweeps, and gives PROT 0904 a module profile whose
-outcome arm is the sweep, so the band holds `0x36` until the ray has turned.
+12 adds `(step * scalar) << 3` until `0x1000` (`0x801F7AE4` / `0x801F7EF0`) -
+the 20 / 16 above. That word is a sweep **phase**, not a bearing: the ray
+runs from a root `0x5C` ahead of the summon (height `-0x11D`) to a tip `2/3`
+of a unit away at the summon's facing plus `sin[phase & 0xFFF] / 16`
+(`0x801F7B90..0x801F7C4C`), so it swings `+-0x100` (22.5 degrees) about the
+facing, and the cone (`+-0x30`, both bearings measured from the root) only
+ever reaches the monsters in that arc. The port runs both ramps at 64 ticks
+(`cast_seru_ticks_a::theeder_ramp_per_tick`), builds the ray with
+`theeder_ray_tip`, tests the cone against it, and gives PROT 0904 a module
+profile whose outcome arm is the sweep, so the band holds `0x36` until the
+phase has run its turn.
 Its camera arms are not ported: the director only passes, and case 6 keeps
 the caster.
 

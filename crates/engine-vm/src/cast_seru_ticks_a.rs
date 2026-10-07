@@ -633,11 +633,13 @@ pub const fn theeder_ramp_per_tick(phase: u8) -> u16 {
     }
 }
 
-/// The ray bearing PROT 0904's sweep arm tests the cone against on the tick
-/// it is about to run: `ctx+0x6D8` after the arm's own ramp
+/// The sweep word PROT 0904's arm 12 builds its ray from on the tick it is
+/// about to run: `ctx+0x6D8` after the arm's own ramp
 /// ([`theeder_ramp_per_tick`]), masked to a turn (`andi v0,v0,0xfff` at
-/// `0x801F7B98`). The host resolves cone membership with it before the tick.
-pub const fn theeder_sweep_bearing(ctx_6d8: u16) -> u16 {
+/// `0x801F7B98`). It is a **phase**, not a bearing: the ray's bearing is the
+/// summon's facing plus `sin[phase] / 16` ([`theeder_ray_tip`]). The host
+/// resolves cone membership with the tip before the tick.
+pub const fn theeder_sweep_phase(ctx_6d8: u16) -> u16 {
     ctx_6d8.wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM)) & 0x0FFF
 }
 /// The render flag PROT 0904 raises the summon seat to in arm 4.
@@ -652,18 +654,20 @@ pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 /// victim register untouched, which is why the ring sweep addresses seats
 /// through the actor table rather than through that register.
 ///
-/// Arm 12 is an **expanding-ring sweep**, not a single hit. `ctx+0x6D8` grows
-/// by the frame delta times `8` each tick (`0x801F7AE4`), and the arm walks
+/// Arm 12 is a **swinging-ray sweep**, not a single hit. `ctx+0x6D8` grows
+/// by the frame delta times `8` each tick (`0x801F7AE4`) and swings a ray
+/// from the beam root `+-0x100` about the summon's facing
+/// ([`theeder_ray_tip`]); the arm walks
 /// `actor_table[3 ..= 6]` - a hard-coded `sltiu s3, 0x7`, not `ctx[+1]` -
 /// hitting each seat that is alive, is not already reacting (`+0x1D9 == 0`),
-/// is inside a `+-0x30` cone of the ring's direction (`0x801F7D0C`), and is
+/// is inside a `+-0x30` cone of the ray seen from its root (`0x801F7D0C`), and is
 /// not [`FLAG_NON_TARGETABLE`]. Per hit: `FUN_801DD0AC(0x11, 7, seat)` -
 /// the `0x11` is in the `bne` delay slot at `0x801F7D2C` - the unsigned clamp
 /// at `0x801F7D6C`, `+0x10 +=`, `+0x14C -=`, `+0x04 = 0x3FF0000`, render flag
 /// `= 0`, `+0x21F = 2` and [`stage_reaction_bits`]. The arm advances only
 /// once `ctx+0x6D8` has passed `0x1000`, so the sweep repeats for as long as
-/// the ring is growing and the `+0x1D9` guard is what stops a seat being hit
-/// twice.
+/// the ray is swinging and the `+0x1D9` guard is what stops a seat being hit
+/// twice. A seat outside the swing's arc is never hit.
 ///
 /// Other simulation state: `ctx+0x278 = 0` in arm 0 (`0x801F6C10`), the
 /// summon seat's render flag `= 4` in arm 4 and `= 0` in arm 5, its clip pair
@@ -791,6 +795,114 @@ pub const THEEDER_HIT_RENDER_21F: u8 = 2;
 /// call `World::seats_in_cone`); this constant is here so the two sides quote
 /// one number.
 pub const THEEDER_CONE_HALF_WIDTH: u16 = 0x30;
+
+// --- PROT 0904 geometry: the points the arms build and the packets draw ---
+
+/// How far ahead of the summon seat the beam's root sits (`* 0x5C` against
+/// the facing's sine / cosine, e.g. `0x801F7B0C..0x801F7B30`).
+pub const THEEDER_MOUTH_REACH: i32 = 0x5C;
+/// The beam root's height (`li v0,-0x11d` at `0x801F7B7C`; retail Y is down).
+pub const THEEDER_MOUTH_Y: i16 = -0x11D;
+/// Arm 9's prong tips: `0xA0` along the facing (`* 0xA0`) ...
+pub const THEEDER_PRONG_REACH: i32 = 0xA0;
+/// ... and their height (`0xFEB2`).
+pub const THEEDER_PRONG_Y: i16 = -0x14E;
+/// What arm 8 seeds arm 9's countdown with, per unit of speed scalar
+/// (`*puVar14 = scalar * 0x78`).
+pub const THEEDER_PRONG_COUNT: i32 = 0x78;
+/// The arm the two lightning prongs draw in (`FUN_801F815C` twice a pass)
+/// while its countdown drains.
+pub const THEEDER_PRONG_ARM: u8 = 9;
+/// The arm that seeds [`THEEDER_PRONG_ARM`]'s countdown.
+pub const THEEDER_PRONG_SEED_ARM: u8 = 8;
+/// The arm the trail retracts in (`FUN_801F8B84`, held while it returns
+/// non-zero).
+pub const THEEDER_RETRACT_ARM: u8 = 13;
+/// Capacity of the sweep's trail ring at `0x801F90FC` (the count word
+/// `0x801F91FC` is capped at `0xF`, `sltiu v0,v0,0x10` at `0x801F8974`, and
+/// the shift writes one past it).
+pub const THEEDER_TRAIL_CAP: usize = 15;
+
+/// `(t * k) / 4096` truncated toward zero - the `bgez` / `addiu 0xfff` /
+/// `sra 0xc` idiom every point in the module is built with.
+fn scale_q12(t: i16, k: i32) -> i16 {
+    ((i32::from(t) * k) / 4096) as i16
+}
+
+/// The beam root, `[x, y, z]` in retail battle space: `THEEDER_MOUTH_REACH`
+/// ahead of the summon seat `(x, z)` along `facing`, at
+/// [`THEEDER_MOUTH_Y`].
+pub fn theeder_mouth(x: i16, z: i16, facing: u16) -> [i16; 3] {
+    let (s, c) = crate::battle_action::motion::trig12(facing);
+    [
+        x.wrapping_add(scale_q12(s, THEEDER_MOUTH_REACH)),
+        THEEDER_MOUTH_Y,
+        z.wrapping_add(scale_q12(c, THEEDER_MOUTH_REACH)),
+    ]
+}
+
+/// Arm 12's ray tip at sweep word `c` (`ctx+0x6D8` after the arm's ramp),
+/// read off `0x801F7B90..0x801F7C80`.
+///
+/// The ray does **not** turn a full circle: its bearing is the summon's
+/// facing plus `sin[c & 0xFFF] / 16`, a swing of `+-0x100` (22.5 degrees)
+/// about the facing over one turn of `c`. Its length is `2/3` of the unit
+/// circle (`* 0x55555556` on the doubled sample) and its height bobs by
+/// `sin[(c * 2) & 0xFFE] / 16` about [`THEEDER_MOUTH_Y`].
+pub fn theeder_ray_tip(mouth: [i16; 3], facing: u16, c: u16) -> [i16; 3] {
+    let swing = crate::battle_action::motion::sin12(c & 0x0FFF) / 16;
+    let bearing = facing.wrapping_add(swing as u16) & 0x0FFF;
+    let (s, co) = crate::battle_action::motion::trig12(bearing);
+    let bob = crate::battle_action::motion::sin12(c.wrapping_mul(2) & 0x0FFE) / 16;
+    [
+        mouth[0].wrapping_add(((i32::from(s) * 2) / 3) as i16),
+        bob.wrapping_add(THEEDER_MOUTH_Y),
+        mouth[2].wrapping_add(((i32::from(co) * 2) / 3) as i16),
+    ]
+}
+
+/// Arm 11's short charge beam: the root plus `sin / 8` along the facing
+/// (`0x801F77C0..`, `addiu 7` / `sra 3`), both at [`THEEDER_MOUTH_Y`].
+pub fn theeder_charge_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
+    let (s, c) = crate::battle_action::motion::trig12(facing);
+    [
+        mouth[0].wrapping_add(s / 8),
+        THEEDER_MOUTH_Y,
+        mouth[2].wrapping_add(c / 8),
+    ]
+}
+
+/// Arm 11's exit frame: the full-length ray straight down the facing
+/// (`2/3` of the unit circle), the first sample the trail takes.
+pub fn theeder_ray_rest_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
+    let (s, c) = crate::battle_action::motion::trig12(facing);
+    [
+        mouth[0].wrapping_add(((i32::from(s) * 2) / 3) as i16),
+        THEEDER_MOUTH_Y,
+        mouth[2].wrapping_add(((i32::from(c) * 2) / 3) as i16),
+    ]
+}
+
+/// Arm 9's two prong tips about the summon seat `(x, z)`: `0xA0` along the
+/// facing plus `0x5C` a quarter turn to either side, at
+/// [`THEEDER_PRONG_Y`] (`0x801F7600..0x801F7700`, two `FUN_801F815C` calls).
+pub fn theeder_prong_tips(x: i16, z: i16, facing: u16) -> [[i16; 3]; 2] {
+    let (s, c) = crate::battle_action::motion::trig12(facing);
+    let side = |turn: u16| {
+        let (ss, sc) = crate::battle_action::motion::trig12(turn & 0x0FFF);
+        [
+            x.wrapping_add(scale_q12(s, THEEDER_PRONG_REACH))
+                .wrapping_add(scale_q12(ss, THEEDER_MOUTH_REACH)),
+            THEEDER_PRONG_Y,
+            z.wrapping_add(scale_q12(c, THEEDER_PRONG_REACH))
+                .wrapping_add(scale_q12(sc, THEEDER_MOUTH_REACH)),
+        ]
+    };
+    [
+        side(facing.wrapping_add(0x400)),
+        side(facing.wrapping_sub(0x400)),
+    ]
+}
 
 /// One past the last monster seat both row sweeps in this set walk
 /// (`sltiu rX, 0x7` at `0x801F7E84` in PROT 0904, `0x801F74A8` in PROT 0906
@@ -1881,8 +1993,8 @@ mod tests {
         assert_eq!(seats[7].target_code, TARGET_CODE_ENEMY_ROW);
     }
 
-    /// Arm 12 turns its ray a full circle at eight times the scalar a tick
-    /// (64 ticks) and holds until it has; arm 10 zeroes the word first.
+    /// Arm 12 runs its sweep word through one turn at eight times the scalar
+    /// a tick (64 ticks) and holds until it has; arm 10 zeroes the word first.
     #[test]
     fn theeder_sweeps_for_one_turn_of_the_ray() {
         let mut seats = row();
@@ -1897,7 +2009,7 @@ mod tests {
         let mut ticks = 0;
         while ctx.phase == THEEDER_SWEEP_ARM {
             assert_eq!(
-                theeder_sweep_bearing(ctx.ctx_6d8),
+                theeder_sweep_phase(ctx.ctx_6d8),
                 ctx.ctx_6d8
                     .wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM))
                     & 0xFFF

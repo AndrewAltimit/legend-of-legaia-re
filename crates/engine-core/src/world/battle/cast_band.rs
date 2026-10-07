@@ -1972,14 +1972,42 @@ impl World {
             .unwrap_or((0, 0))
     }
 
+    /// PROT 0904's beam root and arm-12 ray tip for sweep word `ctx_6d8`
+    /// (before the arm's ramp - the tip is built from the ramped word, as the
+    /// tick builds it), from the summon seat's live position and facing
+    /// (retail reads slot 7's `+0x34` / `+0x38` / `+0x46`).
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 12, `0x801F7AF4..0x801F7C80`)
+    pub(in crate::world) fn theeder_ray(
+        &self,
+        summon_slot: u8,
+        ctx_6d8: u16,
+    ) -> ([i16; 3], [i16; 3]) {
+        use vm::cast_seru_ticks_a as ta;
+        let (x, z, facing) = self
+            .actors
+            .get(summon_slot as usize)
+            .map(|a| {
+                (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.battle.facing_angle,
+                )
+            })
+            .unwrap_or((0, 0, 0));
+        let mouth = ta::theeder_mouth(x, z, facing);
+        let tip = ta::theeder_ray_tip(mouth, facing, ta::theeder_sweep_phase(ctx_6d8));
+        (mouth, tip)
+    }
+
     /// Which of `seats` lie inside a `+-half_width` cone about `bearing`, as
-    /// seen from `centre` - the geometry PROT 0904's expanding-ring sweep
+    /// seen from `centre` - the geometry PROT 0904's swinging-ray sweep
     /// gates each hit on, and the one thing the module's arm 12 needs from its
     /// host.
     ///
     /// Retail's shape, read off `0x801F7CA0..0x801F7D14`: two calls to the
-    /// 12-bit atan2 `FUN_80019B28` against the **same** second point (the ring
-    /// centre) - one from the ring's rim point at angle `ctx+0x6D8`, one from
+    /// 12-bit atan2 `FUN_80019B28` against the **same** second point (the
+    /// beam root) - one from the ray's tip, one from
     /// the seat - each `+0x800` and masked to `0xFFF`, then
     /// `|ref - seat| - 0x30` compared **unsigned** against `0xFB1`. That
     /// comparison is the wrap: a difference below `0x30` underflows past
@@ -3098,12 +3126,17 @@ impl World {
                     let cone_seats: Vec<u8> =
                         if entry == 904 && ctx.phase == ticks_a::THEEDER_SWEEP_ARM {
                             use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
-                            // The ray the sweep arm tests this tick: `ctx+0x6D8`
-                            // after its own ramp (the tick body advances the word).
-                            let centre = self.cast_seat_xz(seat_slot);
+                            // The ray the sweep arm tests this tick: from the
+                            // beam root ahead of the summon seat to the tip the
+                            // word `ctx+0x6D8` (after its own ramp) swings about
+                            // the summon's facing.
+                            let (mouth, tip) = self.theeder_ray(seat_slot, ctx.ctx_6d8);
+                            let bearing = vm::battle_action::bearing_12bit_approx(
+                                mouth[2], mouth[0], tip[2], tip[0],
+                            );
                             self.seats_in_cone(
-                                centre,
-                                ticks_a::theeder_sweep_bearing(ctx.ctx_6d8),
+                                (mouth[0], mouth[2]),
+                                bearing,
                                 THEEDER_CONE_HALF_WIDTH,
                                 ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
                             )

@@ -835,6 +835,44 @@ fn the_ring_cone_wraps_at_both_ends() {
     assert!(hit.is_empty(), "the cone reached {hit:?} from a gap");
 }
 
+/// PROT 0904's ray swings `+-0x100` about the summon's facing, not a full
+/// circle (`0x801F7B90..0x801F7C80`): over one sweep it reaches a seat
+/// straight ahead and never one behind the summon or off to its side.
+#[test]
+fn the_theeder_ray_only_reaches_the_arc_ahead_of_the_summon() {
+    use legaia_engine_vm::cast_seru_ticks_a::THEEDER_CONE_HALF_WIDTH;
+    let mut world = module_code_world();
+    // Summon at the origin facing +Z (bearing 0).
+    world.actors[7].move_state.world_x = 0;
+    world.actors[7].move_state.world_z = 0;
+    world.actors[7].battle.facing_angle = 0;
+    let place = |w: &mut World, slot: usize, x: i16, z: i16| {
+        w.actors[slot].battle.seat = Some((x, z));
+    };
+    place(&mut world, 3, 0, 2000); // dead ahead
+    place(&mut world, 4, 0, -2000); // behind
+    place(&mut world, 5, 2000, 0); // a quarter turn off
+    let mut ever = std::collections::BTreeSet::new();
+    for c in (0u16..0x1000).step_by(8) {
+        let (mouth, tip) = world.theeder_ray(7, c);
+        let bearing = legaia_engine_vm::battle_action::bearing_12bit_approx(
+            mouth[2], mouth[0], tip[2], tip[0],
+        );
+        let d = bearing.wrapping_add(0x100) & 0xFFF;
+        assert!(
+            d <= 0x200,
+            "ray bearing {bearing:#x} left the +-0x100 swing"
+        );
+        ever.extend(world.seats_in_cone(
+            (mouth[0], mouth[2]),
+            bearing,
+            THEEDER_CONE_HALF_WIDTH,
+            3..6,
+        ));
+    }
+    assert_eq!(ever.into_iter().collect::<Vec<_>>(), vec![3]);
+}
+
 /// PROT 0910 (Swordie, spell `0x88`) lands its four slashes from the cast band
 /// seam: the module's own timers schedule them and each landing stages the
 /// victim's reaction clip, while the HP outcome stays the fold's (a neutral
