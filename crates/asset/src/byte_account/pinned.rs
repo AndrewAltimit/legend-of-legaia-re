@@ -64,6 +64,9 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     if prot_index == STR_OVERLAY_PROT_INDEX {
         claim_str_overlay_tables(buf, sink);
     }
+    if prot_index == WORLD_MAP_RENDER_PROT_INDEX {
+        claim_world_map_prim_dispatch(buf, sink);
+    }
     claim_consumer_pinned_tables(buf, sink, prot_index);
     if prot_index == ARENA_PROT_INDEX {
         claim_arena_course_ladder(buf, sink);
@@ -992,6 +995,61 @@ pub(super) fn claim_subdraw_records(buf: &[u8], sink: &mut Sink) {
         recs.len(),
         crate::muscle_dome::SUBDRAW_PTR_TABLE_LEN
     ));
+}
+
+/// PROT entry of the world-map render overlay (slot B, base `0x801F69D8`).
+pub(super) const WORLD_MAP_RENDER_PROT_INDEX: u32 = 901;
+
+/// Slot-B link base the world-map render overlay loads at.
+const SLOT_B_BASE: u32 = 0x801F_69D8;
+
+/// The per-prim dispatch row SCUS's `FUN_80043390` switches to while the
+/// world-map overlay is resident: it forms `0x801F8968` itself (`lui
+/// s4,0x8020` / `addiu s4,s4,-0x7698` at `0x800435F4..F8`), indexes it by the
+/// prim group's `flags >> 1`, and adds no alpha offset on this branch, so one
+/// twenty-slot row is the whole table (`docs/subsystems/world-map.md`).
+const WORLD_MAP_PRIM_DISPATCH_VA: u32 = 0x801F_8968;
+
+/// Slots in one dispatch row.
+const PRIM_DISPATCH_SLOTS: usize = 20;
+
+/// The four lit low-mode dispatchers slots `8..12` share with the SCUS
+/// table at `0x8007657C`.
+const PRIM_DISPATCH_LOW_MODE: [u32; 4] = [0x8004_409C, 0x8004_423C, 0x8004_4434, 0x8004_45B0];
+
+/// Claim the world-map render overlay's per-prim dispatch row
+/// ([`WORLD_MAP_PRIM_DISPATCH_VA`]), after a shape check: slots `0..8` are
+/// zero (the index space below the lit rows, not padding), slots `8..12` are
+/// the SCUS low-mode quartet, and slots `12..20` - the eight untextured and
+/// textured high-mode emit leaves - each point into this image's own code.
+/// The consumer is the executable's, so the row cannot be read off a `lui`
+/// pair in this image the way [`CONSUMER_PINNED_TABLES`] rows are.
+pub(super) fn claim_world_map_prim_dispatch(buf: &[u8], sink: &mut Sink) {
+    let start = (WORLD_MAP_PRIM_DISPATCH_VA - SLOT_B_BASE) as usize;
+    let end = start + 4 * PRIM_DISPATCH_SLOTS;
+    let words: Option<Vec<u32>> = (start..end)
+        .step_by(4)
+        .map(|o| legaia_bytes::u32_le(buf, o))
+        .collect();
+    let Some(words) = words else {
+        return;
+    };
+    let own_top = SLOT_B_BASE + start as u32;
+    let ok = words[..8].iter().all(|&w| w == 0)
+        && words[8..12] == PRIM_DISPATCH_LOW_MODE
+        && words[12..]
+            .iter()
+            .all(|&w| (SLOT_B_BASE..own_top).contains(&w) && w % 4 == 0);
+    if !ok {
+        sink.note("no world-map prim dispatch row at 0x801F8968: shape check failed");
+        return;
+    }
+    sink.claim(
+        start,
+        end,
+        OWNER_TOC,
+        "per-prim dispatch row read by FUN_80043390 (slots 8..11 SCUS, 12..19 this image)",
+    );
 }
 
 /// The battle overlay's unread second affinity block

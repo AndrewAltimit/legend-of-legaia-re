@@ -1025,6 +1025,37 @@ fn the_gameover_records_are_claimed_off_their_calls() {
     );
 }
 
+/// The world-map render overlay's per-prim dispatch row passes its shape
+/// check and is claimed, which leaves the image no residue but slack.
+#[test]
+fn the_world_map_prim_dispatch_row_is_claimed() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 901) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(901),
+        label: "0901".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    let row = acc
+        .claims
+        .iter()
+        .find(|c| c.detail.starts_with("per-prim dispatch row"))
+        .unwrap_or_else(|| panic!("dispatch row claimed; notes: {:?}", acc.notes));
+    assert_eq!((row.start, row.end - row.start), (0x1F90, 80));
+}
+
 /// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
 /// and claiming it at the stride leaves the entry near whole.
 #[test]
