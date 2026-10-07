@@ -3407,10 +3407,6 @@ impl World {
         use legaia_engine_vm::cast_seru_ticks_b as seru;
         use vm::cast_module_ticks::{AoeHit, SweepHit};
 
-        // The scratchpad frame-delta byte `0x1F80037D` every body in the band
-        // paces on. The engine ticks once per displayed frame, so it is `1`.
-        const FRAME_DELTA: u8 = 1;
-
         fn lift(hits: &[SweepHit]) -> Vec<AoeHit> {
             hits.iter()
                 .map(|h| AoeHit {
@@ -3431,10 +3427,19 @@ impl World {
             // runs `swordie_slash_step` with a neutral wrapper return: the
             // clamp, the hit counter and the per-slash reaction clip are
             // live, the HP outcome stays the fold's.
+            //
+            // Retail runs the body once a battle pass, which spans the frame
+            // step's vsyncs, and drains by `rate * speed` there; the engine
+            // runs it once a vsync, so its `rate` is `1` (passing the frame
+            // step ran both timers at twice retail's speed). `speed` is the
+            // scalar itself - the battle seating's normal rate `8` - not `1`:
+            // the thresholds scale with it, and arm 7 stores it as the
+            // summon's animation rate `+0x21D`, which at `1` played the
+            // strike at an eighth of normal speed.
             910 => {
                 let clock = seru::SwordieClock {
-                    rate: self.clock.frame_step.max(1),
-                    speed: FRAME_DELTA,
+                    rate: 1,
+                    speed: vm::battle_anim_rate::RATE_NORMAL,
                 };
                 let mut slashes = self.casting.module_swordie;
                 let (step, hits) = seru::swordie_tick(

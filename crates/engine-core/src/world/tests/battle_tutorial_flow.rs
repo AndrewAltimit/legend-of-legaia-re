@@ -411,8 +411,10 @@ fn the_completion_countdown_takes_the_sparring_fight_back_to_the_field() {
     while world.mode == SceneMode::Battle && frames < 2000 {
         world.set_pad(0);
         let _ = world.tick();
-        // Both counters drain by the frame step `DAT_1F800393`.
-        vsyncs += u32::from(world.clock.frame_step.max(1));
+        // Both counters drain by the frame step `DAT_1F800393` per battle
+        // pass, and a pass spans that many vsyncs: the world ticks once a
+        // vsync, so each tick is one.
+        vsyncs += 1;
         saw_phase3 |= world.battle.sideband.phase == 3;
         frames += 1;
     }
@@ -480,7 +482,7 @@ fn a_press_skips_the_completion_countdown_once_the_sign_off_box_is_gone() {
     }
     assert_eq!(world.mode, SceneMode::Field);
     assert!(
-        frames * u32::from(world.clock.frame_step.max(1)) <= 0x43 + 4,
+        frames <= 0x43 + 4,
         "phase 3 exits at ctx[+0x6CE] = 0x43, took {frames} frames"
     );
 }

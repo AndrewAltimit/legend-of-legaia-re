@@ -33,7 +33,10 @@ impl World {
         let stage_id = self.battle.stage_id;
         sb::BattleSidebandInputs {
             submode: stage_id,
-            frame_step: self.clock.frame_step.max(1),
+            // Retail runs the side-band once a battle pass and advances its
+            // ramps by the frame step there; the engine runs it once a vsync
+            // ([`super::BATTLE_PASS_STEP_PER_TICK`]).
+            frame_step: super::BATTLE_PASS_STEP_PER_TICK,
             // The `0xB5` formation's flow sits at `0x0C` until the arrival
             // hands it back (flow state `0x0A`'s `0xB5` arm stores it
             // directly, `0x801D0DEC..0x801D0E0C`).
@@ -160,7 +163,8 @@ impl World {
         // the sign-off box is aged here (Cross skips it; it is non-waiting
         // style 9).
         self.tick_battle_tutorial_boxes();
-        let step = self.clock.frame_step.max(1);
+        // Per battle pass by the frame step, so one a vsync tick.
+        let step = super::BATTLE_PASS_STEP_PER_TICK;
         let Some(tut) = self.battle.tutorial.as_mut() else {
             return;
         };
@@ -292,7 +296,8 @@ impl World {
                 anim_rate: a.battle.anim_rate.get(),
             },
         };
-        let step = self.clock.frame_step.max(1);
+        // Per battle pass by the frame step, so one a vsync tick.
+        let step = super::BATTLE_PASS_STEP_PER_TICK;
         let effects = stage::arrival_tick(&mut self.battle.arrival, &mut v, step);
         self.battle.sideband.phase = v.phase;
         self.battle.sideband.ramp_delay = v.ramp_delay;
@@ -355,7 +360,8 @@ impl World {
             camera: self.stage_camera_or_seed(),
             seats: std::array::from_fn(|i| seat_of(self, slots[i])),
         };
-        let step = self.clock.frame_step.max(1);
+        // Per battle pass by the frame step, so one a vsync tick.
+        let step = super::BATTLE_PASS_STEP_PER_TICK;
         let mut st = self.battle.form_transition;
         let effects = {
             let mut rand = || self.next_rand() as u16;

@@ -1559,3 +1559,32 @@ fn vera_runs_its_fades_beside_the_band_flash() {
         "drawn beside the band flash"
     );
 }
+
+/// PROT 0910's wind-up (arm 7) drains `speed << 8` by `rate * speed` a
+/// battle pass, so it lasts 256 vsyncs whatever the cadence - 256 engine
+/// ticks, one vsync each, at any frame step - and its exit sets the summon's
+/// animation rate to the speed scalar, the battle's normal rate.
+#[test]
+fn the_swordie_wind_up_lasts_256_vsync_ticks_and_restores_the_normal_rate() {
+    let mut world = module_code_world();
+    world.clock.frame_step = 2;
+    world.casting.summon_actor_slot = Some(7);
+    world.actors[0].battle.active_target = 3;
+    world.casting.module_phase = 6;
+    world.run_cast_module_code(0x88, 0).expect("band entry");
+    assert_eq!(world.casting.module_phase, 7);
+    let mut ticks = 0;
+    while world.casting.module_phase == 7 {
+        world.run_cast_module_code(0x88, 0).expect("band entry");
+        ticks += 1;
+        assert!(ticks < 1000, "the wind-up never ended");
+    }
+    assert_eq!(
+        ticks, 257,
+        "2048 drained 8 a tick holds 256 ticks, the 257th advances"
+    );
+    assert_eq!(
+        world.actors[7].battle.anim_rate.get(),
+        legaia_engine_vm::battle_anim_rate::RATE_NORMAL
+    );
+}

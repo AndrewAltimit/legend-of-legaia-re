@@ -3832,7 +3832,8 @@ impl World {
         // visit, the leg-open ROUND card) have handed the leg over - retail
         // starts the battle only past the hub's arm `0x16`.
         if !self.minigames.muscle_hub.covers_leg() {
-            let step = u16::from(self.clock.frame_step.max(1));
+            // `ctx[+0x6D6] -= 0x1F800393` per battle pass, one a vsync tick.
+            let step = u16::from(super::battle::BATTLE_PASS_STEP_PER_TICK);
             if let Some(s) = self.minigames.muscle_dome.as_mut() {
                 s.tick_intro(step);
             }
