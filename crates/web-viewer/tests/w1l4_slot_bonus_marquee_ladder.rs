@@ -156,6 +156,32 @@ fn open_bonus_round(m: &mut SlotMachine, symbol: u8) -> usize {
 /// tally, the product and the credited payout are **one** state read three ways:
 /// `claimed[] -> tally() -> tally_product() == last_result().payout == balance
 /// delta`. A display copy could drift from the result; this cannot.
+/// The page's Space macro over the cabinet's buttons (`slotPress` in
+/// `site/_content/minigames.html`), driven through the shared per-frame
+/// kernel `slot_step`: one call is one machine frame. Returns what the press
+/// was aimed at, as the page's own dispatch names it.
+fn page_press(mg: &mut LegaiaMinigames) -> &'static str {
+    const CROSS: u32 = 0x40;
+    const STOP: [u32; 3] = [0x80, 0x40, 0x20];
+    let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
+    let (edge, what) = match st["phase"].as_str().unwrap_or("") {
+        "idle" if st["can_spin"] != true => return "broke",
+        "idle" => (CROSS, "spin"),
+        "spinning" => (CROSS, "spinup"),
+        "stopping" => match st["stop_open"]
+            .as_array()
+            .and_then(|a| a.iter().position(|v| v == true))
+        {
+            Some(r) => (STOP[r], "stop"),
+            None => return "none",
+        },
+        "payout" => (CROSS, "collect"),
+        _ => return "none",
+    };
+    mg.slot_step(edge);
+    what
+}
+
 #[test]
 fn a_played_bonus_round_pays_the_product_its_marquee_tallies() {
     let Some(d) = disc() else {
@@ -405,7 +431,7 @@ fn the_rounds_payout_caption_spells_the_product_on_the_disc_bank() {
 }
 
 /// The **page's** own machine reaches the bonus round through the surface the
-/// site drives - `slot_press` / `slot_tick` - and reports it through
+/// site drives - its Space macro over `slot_step` - and reports it through
 /// `slot_bonus_json`.
 ///
 /// The page has one key, so the aim here is the same schedule solve done from
@@ -425,7 +451,7 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
     };
     let mut mg = LegaiaMinigames::new();
     mg.load_disc(bytes).expect("load_disc");
-    assert!(mg.slot_start(SEED, BALANCE), "the machine racks");
+    assert!(mg.slot_start(BALANCE), "the machine racks");
 
     let row_of = |mg: &LegaiaMinigames, reel: usize| {
         (mg.slot_reel_pos()[reel] >> 8).rem_euclid(slot::STRIP_LEN) as usize
@@ -441,11 +467,11 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
 
     let mut opened = None;
     'spins: for spin in 1..=60usize {
-        if mg.slot_press() != "spin" {
+        if page_press(&mut mg) != "spin" {
             break;
         }
-        while mg.slot_press() == "spinup" {
-            mg.slot_tick();
+        while page_press(&mut mg) == "spinup" {
+            mg.slot_step(0);
         }
         // The press above already took reel 0's stop once spin-up cleared, so
         // aim the remaining reels and let reel 0 be wherever it landed.
@@ -461,14 +487,18 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
                     aimed = true;
                     break;
                 }
-                mg.slot_tick();
+                mg.slot_step(0);
             }
             let _ = aimed;
-            if mg.slot_press() == "none" {
+            if page_press(&mut mg) == "none" {
                 continue 'spins;
             }
         }
-        mg.slot_tick();
+        mg.slot_step(0);
+        // A win waits in the payout state for the collect press.
+        if page_press(&mut mg) == "collect" {
+            mg.slot_step(0);
+        }
         let bonus: serde_json::Value = serde_json::from_str(&mg.slot_bonus_json()).unwrap();
         if bonus["active"] == true {
             opened = Some(spin);
@@ -513,9 +543,9 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
         {
             sawnumeral = true;
         }
-        match mg.slot_press().as_str() {
+        match page_press(&mut mg) {
             "spinup" | "none" => {
-                mg.slot_tick();
+                mg.slot_step(0);
             }
             _ => {}
         }
@@ -565,9 +595,9 @@ fn the_minigames_page_rasterises_the_shared_cabinet() {
     };
     let mut mg = LegaiaMinigames::new();
     mg.load_disc(bytes).expect("load_disc");
-    assert!(mg.slot_start(SEED, BALANCE), "the machine racks");
+    assert!(mg.slot_start(BALANCE), "the machine racks");
     assert!(mg.slot_cabinet_ready(), "the resident set decodes");
-    mg.slot_tick();
+    mg.slot_step(0);
     let idle = mg.slot_frame_rgba(640, 240);
     assert_eq!(idle.len(), 640 * 240 * 4);
     let lit = idle.chunks(4).filter(|p| p[..3] != [0, 0, 0]).count();
@@ -575,9 +605,9 @@ fn the_minigames_page_rasterises_the_shared_cabinet() {
         lit > 640 * 240 / 2,
         "the machine covers the frame: {lit} lit px"
     );
-    assert!(mg.slot_spin(), "a spin is charged");
+    assert_eq!(page_press(&mut mg), "spin", "a spin is charged");
     for _ in 0..10 {
-        mg.slot_tick();
+        mg.slot_step(0);
     }
     assert_ne!(mg.slot_frame_rgba(640, 240), idle, "the reels turned");
     eprintln!("[ran] cabinet raster: {lit} lit px");

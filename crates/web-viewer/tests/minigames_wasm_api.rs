@@ -355,16 +355,39 @@ fn baka_duel_on_the_real_roster_decides() {
     );
 }
 
+/// The page's Space macro over the cabinet's buttons (`slotPress` in
+/// `site/_content/minigames.html`), driven through the shared per-frame
+/// kernel `slot_step`: one call is one machine frame. Returns what the press
+/// was aimed at, as the page's own dispatch names it.
+fn page_press(mg: &mut LegaiaMinigames) -> &'static str {
+    const CROSS: u32 = 0x40;
+    const STOP: [u32; 3] = [0x80, 0x40, 0x20];
+    let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
+    let (edge, what) = match st["phase"].as_str().unwrap_or("") {
+        "idle" if st["can_spin"] != true => return "broke",
+        "idle" => (CROSS, "spin"),
+        "spinning" => (CROSS, "spinup"),
+        "stopping" => match st["stop_open"]
+            .as_array()
+            .and_then(|a| a.iter().position(|v| v == true))
+        {
+            Some(r) => (STOP[r], "stop"),
+            None => return "none",
+        },
+        "payout" => (CROSS, "collect"),
+        _ => return "none",
+    };
+    mg.slot_step(edge);
+    what
+}
+
 #[test]
 fn slot_session_on_the_real_paytable_spins_and_pays() {
     let Some((mut mg, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    assert!(
-        mg.slot_start(0xC0FF_EE00, 60),
-        "real paytable starts a machine"
-    );
+    assert!(mg.slot_start(60), "real paytable starts a machine");
 
     let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
     assert_eq!(st["balance"], 60);
@@ -373,26 +396,26 @@ fn slot_session_on_the_real_paytable_spins_and_pays() {
 
     let mut credited = 0i64;
     for _ in 0..40 {
-        if !mg.slot_spin() {
+        if page_press(&mut mg) != "spin" {
             break;
         }
-        // Spin up, then stop all three reels.
-        for _ in 0..60 {
-            credited += mg.slot_tick() as i64;
+        // Spin up, stop all three reels, collect a win.
+        for _ in 0..120 {
             let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
-            if st["can_stop"] == true {
-                mg.slot_stop();
-            }
-            if st["stopped"] == 3 {
-                break;
+            match st["phase"].as_str() {
+                // A losing spin goes straight back to idle.
+                Some("idle") => break,
+                Some("payout") => {
+                    credited += i64::from(mg.slot_step(0x40));
+                    break;
+                }
+                _ => {
+                    page_press(&mut mg);
+                }
             }
         }
-        // The tally is automatic: one more frame and the spin is banked.
-        credited += mg.slot_tick() as i64;
     }
     let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
-    // Coins were staked (the balance moved off its opening 60) and the machine
-    // is back in a playable/idle state having tallied every spin.
     assert_ne!(st["balance"], 60, "the machine took / paid coins");
     assert!(
         st["net_take"].as_i64().unwrap() != 0,
@@ -401,56 +424,60 @@ fn slot_session_on_the_real_paytable_spins_and_pays() {
     assert!(credited >= 0);
 }
 
-/// The site drives the machine with **one key**. `slot_press` is that key: it
-/// spins from idle, takes the three reel stops in sequence, and the frame tally
-/// banks the win without a collect input. Three presses stop three reels; the
-/// fourth starts the next spin.
+/// A resolved win counts itself in over state 4's timed tally
+/// (`FUN_801cf0d8`), and a Cross press finishes the count at once - the play
+/// hosts' kernel (`SlotMachine::frame`), which the page's frame step now runs.
+/// This test used to assert the page's own rule - the whole win banked on the
+/// frame it resolved - and now asserts the shared one.
 #[test]
-fn one_press_spins_stops_and_the_payout_banks_itself() {
+fn a_win_counts_in_and_a_press_finishes_the_count() {
     let Some((mut mg, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    assert!(mg.slot_start(0xC0FF_EE00, 60), "machine racks");
-
+    assert!(mg.slot_start(600), "machine racks");
     let state = |mg: &LegaiaMinigames| -> serde_json::Value {
         serde_json::from_str(&mg.slot_state_json()).unwrap()
     };
-
-    // Press 1: charge the bet and spin up.
-    assert_eq!(mg.slot_press(), "spin");
-    assert_eq!(state(&mg)["balance"], 60 - 3, "the bet is charged");
-    // The reels are still ramping - retail refuses a stop, and so does this.
-    assert_eq!(mg.slot_press(), "spinup");
-    while state(&mg)["can_stop"] != true {
-        mg.slot_tick();
+    for _ in 0..150 {
+        let what = page_press(&mut mg);
+        if what == "broke" {
+            break;
+        }
+        if state(&mg)["phase"] == "payout" {
+            let st = state(&mg);
+            let before = st["balance"].as_i64().unwrap();
+            let payout = st["last"]["payout"].as_i64().unwrap();
+            if payout < 3 {
+                // Too small to see the count part-way; let it count in.
+                while state(&mg)["phase"] == "payout" {
+                    mg.slot_step(0);
+                }
+                continue;
+            }
+            // Four frames of the timed tally: part of the win, not all of it.
+            let mut counted = 0i64;
+            for _ in 0..4 {
+                counted += i64::from(mg.slot_step(0));
+            }
+            let st = state(&mg);
+            assert_eq!(st["phase"], "payout", "still counting");
+            assert!(
+                counted > 0 && counted < payout,
+                "{counted} of {payout} counted"
+            );
+            assert_eq!(st["balance"].as_i64().unwrap(), before + counted);
+            // Cross finishes the count at once.
+            let rest = i64::from(mg.slot_step(0x40));
+            assert_eq!(rest, payout - counted, "the press banks the rest");
+            let st = state(&mg);
+            assert_eq!(st["phase"], "idle");
+            assert_eq!(st["balance"].as_i64().unwrap(), before + payout);
+            eprintln!("[ran] slot win of {payout}: {counted} counted in, {rest} on the press");
+            return;
+        }
     }
-
-    // Presses 2..4: one reel each, in order.
-    for reel in 1..=3 {
-        assert_eq!(mg.slot_press(), "stop", "press stops reel {reel}");
-        assert_eq!(state(&mg)["stopped"], reel, "reels stop in sequence");
-        mg.slot_tick();
-    }
-
-    // No collect input anywhere above: the frame tally banked it, and the
-    // machine is idle with the evaluated spin still latched for the display.
-    let st = state(&mg);
-    assert_eq!(
-        st["phase"], "idle",
-        "the machine tallied itself back to idle"
-    );
-    assert!(st["last"].is_object(), "the resolved spin stays latched");
-    let payout = st["last"]["payout"].as_i64().unwrap();
-    assert_eq!(
-        st["balance"].as_i64().unwrap(),
-        60 - 3 + payout,
-        "the payout is in the balance without a collect input"
-    );
-
-    // And the next press starts a fresh spin off that balance.
-    assert_eq!(mg.slot_press(), "spin");
-    assert_eq!(state(&mg)["phase"], "spinning");
+    panic!("150 presses never resolved a win: {}", mg.slot_state_json());
 }
 
 /// An empty machine reports `"broke"` rather than spinning on credit - the host
@@ -462,8 +489,8 @@ fn a_press_on_an_empty_machine_is_broke_not_a_free_spin() {
         return;
     };
     // Under the 3-coin gate from the start.
-    assert!(mg.slot_start(0xC0FF_EE00, 2));
-    assert_eq!(mg.slot_press(), "broke");
+    assert!(mg.slot_start(2));
+    assert_eq!(page_press(&mut mg), "broke");
     let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
     assert_eq!(st["balance"], 2, "no coins moved");
     assert_eq!(st["phase"], "idle");

@@ -753,7 +753,7 @@ host's per-frame list has grown a member the other's has not.
 
 It also covers two of the three hosts, and for a structural reason rather than
 an oversight: the minigames page has no frame path to walk. It exports one
-tick per minigame (`dance_tick`, `baka_tick`, `slot_tick`, `fishing_pond_tick`,
+tick per minigame (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`,
 `muscle_tick_time_meter`), each called by its own page module, so there is no
 fall-through list for an arm to skip part of. A shared frame path is the thing
 this tier measures; that host does not have one.

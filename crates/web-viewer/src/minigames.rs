@@ -122,12 +122,9 @@ pub struct LegaiaMinigames {
     /// HUD records and the cabinet mesh - what the native window draws from.
     pub(crate) slot_cabinet: Option<legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets>,
     /// The marquee's counters for this page's own machine (the play hosts'
-    /// `SlotMarqueeClock` twin), the dot buffer they composed this frame, and
-    /// the payout caption this page holds after its auto-collect (see
-    /// [`Self::slot_tick`]): `(figure, frames up)`.
+    /// `SlotMarqueeClock` twin) and the dot buffer they composed this frame.
     slot_clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
     slot_dots: Vec<u8>,
-    slot_caption: Option<(i32, i32)>,
     /// The retail dialog font (PROT.DAT font TIM + the SCUS width table), for
     /// the slot machine's rules pages - the play hosts draw the same text
     /// through their own copy.
@@ -361,7 +358,6 @@ impl LegaiaMinigames {
             slot_cabinet: None,
             slot_clock: Default::default(),
             slot_dots: Vec::new(),
-            slot_caption: None,
             slot_font: None,
             slot_sfx: None,
             baka_names: None,
@@ -1425,8 +1421,12 @@ impl LegaiaMinigames {
     // ----------------------------------------------------------------- slots
 
     /// Start a slot session on the disc's payout table with `balance` coins in
-    /// the machine. Returns `false` when the payout table didn't decode.
-    pub fn slot_start(&mut self, seed: u32, balance: i32) -> bool {
+    /// the machine, on the overlay's own literal seed
+    /// ([`legaia_engine_core::slot_machine::SLOT_RNG_SEED`]) - the one the play
+    /// hosts rack every cabinet with. Returns `false` when the payout table
+    /// didn't decode.
+    pub fn slot_start(&mut self, balance: i32) -> bool {
+        let seed = legaia_engine_core::slot_machine::SLOT_RNG_SEED;
         let Some(payouts) = self.slot_payouts.clone() else {
             return false;
         };
@@ -1437,63 +1437,55 @@ impl LegaiaMinigames {
             .unwrap_or_default();
         self.slot = Some(SlotMachine::new(payouts, seed, balance).with_paylines(paylines));
         self.slot_clock = Default::default();
-        self.slot_caption = None;
         true
     }
 
-    /// Charge the bet and start a spin. `false` when the machine isn't idle or
-    /// the balance is under the 3-coin gate.
-    pub fn slot_spin(&mut self) -> bool {
-        self.slot.as_mut().is_some_and(|m| m.spin())
-    }
-
-    /// Advance the reels one frame and **tally a resolved spin automatically**.
+    /// One frame of the machine on this frame's packed retail pad-edge word
+    /// (`0x40` Cross, `0x80` Square, `0x20` Circle, `0x10` Triangle, `0x100`
+    /// Select, `0x1000` / `0x4000` Up / Down, `0x04` / `0x01` L1 / L2): the
+    /// shared [`SlotMachine::frame`] the play hosts' world tick runs. Cross
+    /// spins at idle, Square / Cross / Circle stop reels 0 / 1 / 2, Cross
+    /// finishes a win's timed tally at once, Triangle / Select open the
+    /// cash-out flow.
     ///
-    /// The retail cabinet has three stop buttons and a payout tray; a browser
-    /// page has one key. Collecting is therefore not an input here: the moment
-    /// the third reel lands and the spin evaluates
-    /// ([`SlotPhase::Payout`]), this runs the machine's own state-4 credit
-    /// ([`SlotMachine::collect`] - the payout arithmetic is untouched) and the
-    /// machine drops back to idle. The evaluated spin stays latched in
-    /// `last_result`, so the host can keep the winning line lit until the next
-    /// spin is charged. Returns the coins credited on this frame (`0` on a
-    /// losing spin or any frame that didn't resolve one).
-    pub fn slot_tick(&mut self) -> i32 {
+    /// This page used to run its own path: a resolved spin banked whole on
+    /// the frame it evaluated (retail counts it in over state 4's timed
+    /// tally, `11` or `1` coins every other frame), and one key stopped the
+    /// reels left to right. Both were rules the cabinet does not have; the
+    /// page's one-key convenience is now an input macro in its script that
+    /// picks which cabinet button to press.
+    ///
+    /// Returns the coins credited this frame - one tally transfer, or the
+    /// rest of the count on a Cross press.
+    /// The machine's static-table cues (`< 0x200`) are keyed here; its
+    /// runtime-bank cues are this page's own `slotPlay` path, drained and
+    /// dropped.
+    pub fn slot_step(&mut self, packed: u32) -> i32 {
         let Some(m) = self.slot.as_mut() else {
             return 0;
         };
-        // What the spin owes before this tick's timed tally moves any of it,
-        // so the credit reported is the whole win however it reaches the
-        // balance.
+        let was_payout = m.phase() == SlotPhase::Payout;
         let owed = m.payout_left();
-        m.tick();
-        let credited = if m.phase() == SlotPhase::Payout {
-            m.collect();
-            owed
+        let _ = m.frame(packed);
+        let credited = if was_payout {
+            owed - m.payout_left()
         } else {
             0
         };
-        // The marquee. The auto-collect above drops the machine's own payout
-        // caption the frame it rises, so this page holds it itself - the
-        // figure and its slide-in clock - until it has been up as long as the
-        // play page's (`SLOT_CAPTION_FRAMES`) or the next spin is charged.
-        if credited > 0 {
-            self.slot_caption = Some((credited, 1));
-        } else if let Some((_, f)) = self.slot_caption.as_mut() {
-            *f += 1;
-        }
-        if m.phase() == SlotPhase::Spinning || self.slot_caption.is_some_and(|(_, f)| f > 110) {
-            self.slot_caption = None;
-        }
-        let mut frame = m.marquee();
-        if let Some((payout, f)) = self.slot_caption {
-            frame.payout = payout;
-            frame.payout_frame = f;
-        }
+        let cues: Vec<i16> = m
+            .take_sounds()
+            .ring
+            .into_iter()
+            .map(|(_, id)| id)
+            .filter(|&id| (0..0x200).contains(&id))
+            .collect();
+        let frame = m.marquee();
+        let reach = m.anticipation();
         if let Some(c) = self.slot_cabinet.as_ref() {
-            self.slot_dots = self
-                .slot_clock
-                .frame(&frame, m.anticipation(), &c.scene.messages);
+            self.slot_dots = self.slot_clock.frame(&frame, reach, &c.scene.messages);
+        }
+        for id in cues {
+            self.minigame_sfx_cue(id as u16);
         }
         credited
     }
@@ -1566,116 +1558,6 @@ impl LegaiaMinigames {
         legaia_engine_ui::screen_prim_raster::rasterize_rgba(&prims, c.vram.as_u16(), w, h)
     }
 
-    /// One frame of the machine's cash-out flow on the retail packed pad-edge
-    /// word (`SlotMachine::cash_out_input`): Triangle / Select open the
-    /// submenu, Up / Down move it, Cross / L1 take a row, Circle / L2 back out,
-    /// and under three coins the not-enough-coins prompt comes up instead of
-    /// a refused spin. The page calls it every frame before [`Self::slot_tick`];
-    /// `true` means the flow owns the frame (spin / stop presses do nothing).
-    /// A machine that has committed its cash-out reads `cashed_out` in
-    /// [`Self::slot_state_json`]; the page then banks it and racks a new one.
-    ///
-    /// The submenu's own cues (`0x20` / `0x21` / `0x37`) are static-table
-    /// ids, keyed here through [`Self::minigame_sfx_cue`]; the machine's
-    /// runtime-bank cues are this page's `slotPlay` path, so they are drained
-    /// and dropped.
-    pub fn slot_pad(&mut self, packed: u32) -> bool {
-        let Some(m) = self.slot.as_mut() else {
-            return false;
-        };
-        let owned = m.cash_out_input(packed);
-        let cues: Vec<i16> = m
-            .take_sounds()
-            .ring
-            .into_iter()
-            .map(|(_, id)| id)
-            .filter(|&id| (0..0x200).contains(&id))
-            .collect();
-        for id in cues {
-            self.minigame_sfx_cue(id as u16);
-        }
-        owned
-    }
-
-    /// Stop the leftmost still-spinning reel. `false` when stopping isn't
-    /// allowed yet (the reels are still spinning up).
-    pub fn slot_stop(&mut self) -> bool {
-        self.slot.as_mut().is_some_and(|m| m.stop_next_reel())
-    }
-
-    /// Stop reel `reel` (0..=2) with its own button - the cabinet's three
-    /// stop buttons, Square / Cross / Circle for reels 0 / 1 / 2
-    /// (`FUN_801CF0D8` state 3, `0x801CF70C..0x801CF7E0`), the same map the
-    /// play window's world tick reads. `false` when that reel cannot stop
-    /// (not spinning, still spinning up, or already stopped).
-    pub fn slot_stop_reel(&mut self, reel: u32) -> bool {
-        self.slot
-            .as_mut()
-            .is_some_and(|m| m.stop_reel(reel as usize))
-    }
-
-    /// Tally the latched payout into the balance and return to idle. Returns
-    /// the credited coins. [`Self::slot_tick`] already does this on the frame a
-    /// spin resolves; this stays for hosts that drive the tally themselves.
-    pub fn slot_collect(&mut self) -> i32 {
-        self.slot.as_mut().map(|m| m.collect()).unwrap_or(0)
-    }
-
-    /// The machine's **single input**: one press means whatever the machine's
-    /// phase says it means. Folds the cabinet's three stop buttons onto one
-    /// key by taking them in sequence - press to spin, then press once per
-    /// reel, left to right.
-    ///
-    /// Returns what the press did:
-    /// - `"spin"` - idle, and the bet was charged (the reels are spinning up);
-    /// - `"spinup"` - the reels are still ramping, so retail refuses a stop.
-    ///   The host may hold the press and re-issue it when `can_stop` opens;
-    /// - `"stop"` - the next still-spinning reel took its stop;
-    /// - `"collect"` - a press landed on a resolved spin before the frame
-    ///   tally ran: it was tallied, but the balance can't fund another spin;
-    /// - `"broke"` - idle and under the 3-coin gate. The machine is empty; the
-    ///   host racks a new one;
-    /// - `"none"` - no machine, or it has cashed out.
-    pub fn slot_press(&mut self) -> String {
-        let Some(m) = self.slot.as_mut() else {
-            return "none".to_string();
-        };
-        let what = match m.phase() {
-            // A press can only beat the frame tally by landing in the same
-            // frame the third reel did. Tally it, then treat the press as the
-            // spin it was meant to be.
-            SlotPhase::Payout => {
-                m.collect();
-                if m.spin() { "spin" } else { "collect" }
-            }
-            SlotPhase::Idle => {
-                if m.spin() {
-                    "spin"
-                } else {
-                    "broke"
-                }
-            }
-            // A press during the spin-up is a face-button edge: retail
-            // latches `DAT_801D3790` off it, which widens (rarefies) the next
-            // roll's feature odds.
-            SlotPhase::Spinning => {
-                m.latch_spin_up(true);
-                "spinup"
-            }
-            SlotPhase::Stopping => {
-                if m.stop_next_reel() {
-                    "stop"
-                } else {
-                    "none"
-                }
-            }
-            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving | SlotPhase::CashedOut => {
-                "none"
-            }
-        };
-        what.to_string()
-    }
-
     /// Live machine state. `window` is the 3x3 grid of symbol ids actually on
     /// screen (`window[reel][0..3]` = top / payline / bottom row), read off the
     /// live reel positions so the page can render a spinning machine.
@@ -1740,7 +1622,7 @@ impl LegaiaMinigames {
         format!(
             concat!(
                 r#"{{"live":true,"phase":{},"balance":{},"cost":{},"can_spin":{},"#,
-                r#""can_stop":{},"stopped":{},"feature_mode":{},"bonus_spins":{},"#,
+                r#""can_stop":{},"stop_open":[{},{},{}],"stopped":{},"feature_mode":{},"bonus_spins":{},"#,
                 r#""net_take":{},"window":[{}],"payouts":[{}],"last":{}}}"#
             ),
             jstr(phase),
@@ -1748,6 +1630,9 @@ impl LegaiaMinigames {
             m.spin_cost(),
             m.can_spin(),
             m.can_stop(),
+            m.can_stop() && m.reel_stop_open(0),
+            m.can_stop() && m.reel_stop_open(1),
+            m.can_stop() && m.reel_stop_open(2),
             m.reels_stopped(),
             m.feature_mode(),
             m.bonus_spins(),

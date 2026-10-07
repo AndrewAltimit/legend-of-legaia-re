@@ -528,12 +528,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-reels" id="slot-reels" hidden></div>
         <div class="mg-verdict" id="slot-verdict"></div>
         <p class="mg-controls">
-          <b><kbd>Space</kbd> is the whole machine.</b> Press it to spin, then once more per
-          reel to stop them left to right. The cabinet itself has a stop button per reel -
-          <kbd data-pad-key="Square">V</kbd> (Square), <kbd data-pad-key="Cross">Z</kbd> (Cross)
+          <b><kbd>Space</kbd> plays the whole machine.</b> Press it to spin, once more per
+          reel to stop them left to right. A win counts itself into the balance; a press
+          finishes the count at once. Those are the cabinet's own buttons:
+          <kbd data-pad-key="Cross">Z</kbd> (Cross) spins and finishes the count,
+          and <kbd data-pad-key="Square">V</kbd> (Square), <kbd data-pad-key="Cross">Z</kbd> (Cross)
           and <kbd data-pad-key="Circle">X</kbd> (Circle) stop the left, middle and right reel
-          in any order. A win banks itself; when the coins run out, a press racks a fresh
-          machine. Clicking the machine counts as a press.
+          in any order. When the coins run out, a press racks a fresh machine. Clicking the
+          machine counts as a press.
         </p>
         <div class="mg-hud">
           <span>Coins <b class="mg-big" id="slot-balance">0</b></span>
@@ -2256,9 +2258,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   function slotReset() {
-    const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+    /* The machine racks on the overlay's own literal seed (the engine's
+     * SLOT_RNG_SEED), the one the play hosts use - not a page random. */
     const start = slotStartBalance();
-    if (!api || !api.slot_start(seed, start)) {
+    if (!api || !api.slot_start(start)) {
       verdict($('slot-verdict'), 'The payout table did not decode from this disc.', 'bad');
       return;
     }
@@ -2339,48 +2342,58 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   /* ---- the one control ----
    *
-   * The cabinet has three stop buttons and a payout tray. Space folds them
-   * onto one key - the per-reel buttons are in the keydown handler - so the
-   * three stops are taken in sequence and the tray tallies itself:
-   * press to spin, press once per reel, and the win is already in the balance
-   * by the time the reels settle. `slot_press` (the WASM API) is the dispatch;
-   * this only decides what to SAY about it, and what an empty machine means. */
+   * The cabinet has a spin / collect button (Cross) and three stop buttons
+   * (Square / Cross / Circle for reels 0 / 1 / 2); every rule about them is
+   * the engine's `SlotMachine::frame`, the kernel the play hosts' world tick
+   * runs. Space is this page's one-key convenience, and it is only that: an
+   * input macro that presses the cabinet button the machine is waiting for -
+   * Cross at idle (spin), the leftmost still-open reel's stop button while
+   * the reels are stoppable, Cross on a resolved spin (it finishes the
+   * timed tally at once; left alone the win counts itself in), Cross inside
+   * the cash-out flow. The page used to bank a win whole on the frame it
+   * resolved. The page used to run
+   * its own path here, auto-collecting and stopping reels in order on one
+   * call. */
+  const SLOT_REEL_BUTTON = ['Square', 'Cross', 'Circle'];
   function slotPress() {
     if (!api) return;
     const st = JSON.parse(api.slot_state_json());
     if (!st.live) { slotReset(); return; }
-    /* The cash-out flow owns the button: Space takes the row / turns the
-     * page / leaves the prompt, as Cross does on the cabinet. */
-    if (SLOT_MENU_PHASES.has(st.phase)) { slotPadEdges |= SLOT_PAD.Cross; return; }
     if (st.phase === 'idle' && !st.can_spin) {   /* empty: rack a fresh machine */
       slotReset();
       return;
     }
-    const did = api.slot_press();
-    if (did === 'spin') {
+    if (st.phase === 'spinning') {
+      /* The ramp refuses a stop: hold the press for the first open reel. */
+      slotPendingStop = true;
+      slotPadEdges |= SLOT_PAD.Cross;            /* the spin-up latch's face edge */
+      return;
+    }
+    if (st.phase === 'stopping') {
+      const r = (st.stop_open || []).indexOf(true);
+      if (r >= 0) slotPadEdges |= SLOT_PAD[SLOT_REEL_BUTTON[r]];
+      return;
+    }
+    slotPadEdges |= SLOT_PAD.Cross;
+    if (st.phase === 'idle') {
       slotPendingStop = false;
       verdict($('slot-verdict'), 'Spinning - press again to stop each reel.', '');
-    } else if (did === 'spinup') {
-      slotPendingStop = true;                    /* taken as soon as stops open */
+      /* The casino floor's own track ("Sol casino", global BGM 2018 - the slot
+       * overlay starts none, so retail hears the host scene's. koin1's entry
+       * script picks it on the casino-floor arm; the Vidna cabinet's host
+       * scene plays that town's track instead). Starts with the first spin. */
+      MgBgm.start('slot');
     }
-    /* The casino floor's own track ("Sol casino", global BGM 2018 - the slot
-     * overlay starts none, so retail hears the host scene's. koin1's entry
-     * script picks it on the casino-floor arm; the Vidna cabinet's host scene
-     * plays that town's track instead). Starts with the first spin. */
-    if (did === 'spin' || did === 'spinup') MgBgm.start('slot');
   }
 
   function slotFrame() {
-    /* The machine's cash-out flow first, on this frame's pad edges (retail's
-     * state 1 tests its submenu edge before any spin input): Triangle /
-     * Select open the menu, and under three coins the machine's own
-     * not-enough-coins prompt replaces the refused spin. */
+    /* The machine's whole frame on this frame's packed pad edges - the
+     * engine's `SlotMachine::frame`, the play hosts' kernel. It returns the
+     * coins this frame's tally moved (one transfer, or the rest on a
+     * press), which is also the payout cue. */
     const edges = slotPadEdges;
     slotPadEdges = 0;
-    if (typeof api.slot_pad === 'function') api.slot_pad(edges);
-    /* The tick tallies a resolved spin on its own - there is no collect input.
-     * It returns the coins it banked, which is also the payout cue. */
-    const credited = api.slot_tick();
+    const credited = api.slot_step(edges);
     slotTick++;
     let st = JSON.parse(api.slot_state_json());
     if (!st.live) return;
@@ -2405,8 +2418,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     if (slotPendingStop && st.can_stop) {
       slotPendingStop = false;
-      api.slot_press();
-      st = JSON.parse(api.slot_state_json());
+      slotPress();                               /* lands on the next frame */
     }
     /* The live bonus state, including the claimed-column tally the marquee
      * prints. It is read off the machine's own latch, so it is the same state
@@ -2439,19 +2451,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       slotPlay(st.feature_mode === 2 ? 'reach2' : 'reach1', 0.5);
     }
     if (credited > 0) {
-      /* The retail tally counts the coins in one at a time, ticking each -
-       * run the tick at counter cadence, capped so a jackpot doesn't rattle
-       * for half a minute. */
-      const ticks = Math.max(1, Math.min(10, Math.round(credited / 3)));
-      for (let i = 0; i < ticks; i++) {
-        setTimeout(() => slotPlay('payout_tick', 0.5), i * 90);
-      }
+      /* One tally transfer is one tick (retail keys `CUE_PAYOUT_TICK` per
+       * transfer); a press that finished the count ticks once. */
+      slotPlay('payout_tick', 0.5);
     }
-    /* The spin resolved on this frame: the last reel's stop evaluated it and the
-     * tally put the machine back at idle (a press can beat the tally by a frame,
-     * so 'payout' is a legal predecessor too). */
-    const resolved = (slotPrev.phase === 'stopping' || slotPrev.phase === 'payout')
-                     && st.phase === 'idle';
+    /* The spin resolved on this frame: the last reel's stop evaluated it -
+     * into the payout state, which counts a win in, or straight back to
+     * idle on a loss. */
+    const resolved = slotPrev.phase === 'stopping'
+                     && (st.phase === 'payout' || st.phase === 'idle');
     slotPrev = { stopped: st.stopped, phase: st.phase, feature: st.feature_mode };
 
     /* With a save loaded, the machine is the session wallet: every balance
@@ -2616,31 +2624,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         else if (n >= 1 && n <= 3) { e.preventDefault(); bakaChoose(n); }
       }
     } else if (active === 'slot') {
-      /* Space is the machine's advertised button (every prompt on the panel
-       * says "press space"). It arrives here through its Start binding -
-       * the engine's default table answers Start to both Space and Enter -
-       * so the dispatch stays on pad buttons and a rebind follows it.
-       * Cross still lands for pad-consistency with the other games. */
-      /* While the reels run, each has its own stop button, as on the
-       * cabinet (FUN_801CF0D8 state 3): Square / Cross / Circle stop reels
-       * 0 / 1 / 2 - the play window's map too. Space stays the page's
-       * one-button fold (spin, then one stop per press, left to right). */
-      /* The machine's cash-out menu: Triangle / Select open it, and while it
-       * (or the not-enough-coins prompt) is up every pad button goes to it. */
-      if (slotOnScreen() && SLOT_PAD[b] !== undefined) {
-        const cur = JSON.parse(api.slot_state_json());
-        if (SLOT_MENU_PHASES.has(cur.phase)
-            || (cur.phase === 'idle' && (b === 'Triangle' || b === 'Select'))) {
-          e.preventDefault();
-          slotPadEdges |= SLOT_PAD[b];
-          return;
-        }
+      /* Every pad button is the cabinet's own and lands on the machine's
+       * frame as a packed edge (`SlotMachine::frame` decides what it means:
+       * Cross spins / collects / stops reel 1, Square / Circle stop reels
+       * 0 / 2, Triangle / Select open the cash-out flow). Space - the panel's
+       * advertised key, arriving through its Start binding so a rebind
+       * follows it - is the page's macro over those buttons (`slotPress`). */
+      if (!slotOnScreen()) return;
+      if (b === 'Start') { e.preventDefault(); slotPress(); }
+      else if (SLOT_PAD[b] !== undefined) {
+        e.preventDefault();
+        if (!e.repeat) slotPadEdges |= SLOT_PAD[b];
       }
-      const reelOf = { Square: 0, Cross: 1, Circle: 2 }[b];
-      const st = (reelOf !== undefined && slotOnScreen() && api.slot_stop_reel)
-        ? JSON.parse(api.slot_state_json()) : null;
-      if (st && st.can_stop) { e.preventDefault(); api.slot_stop_reel(reelOf); }
-      else if ((b === 'Start' || b === 'Cross') && slotOnScreen()) { e.preventDefault(); slotPress(); }
     } else if (active === 'fishing') {
       /* Pad map: Circle casts (a port binding - retail casts on Cross /
        * Square and Circle abandons the cast), Cross (reel bit 0x40) = reel A, Square

@@ -205,9 +205,9 @@ impl SceneHost {
     /// overlay init's own `DAT_801d4114 = _DAT_800845A4`; `exit_slot_machine`
     /// performs the symmetric state-100 commit back.
     fn enter_slot_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        /// The literal LCG seed the slot overlay's init writes to
-        /// `DAT_801d3c80`.
-        const SLOT_RNG_SEED: u32 = 0x6C0A_2AF0;
+        // The literal LCG seed the slot overlay's init writes to
+        // `DAT_801d3c80`.
+        use crate::slot_machine::SLOT_RNG_SEED;
         let Some(payouts) = legaia_asset::slot_payout::parse(loaded) else {
             return false;
         };

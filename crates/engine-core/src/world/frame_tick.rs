@@ -3197,37 +3197,17 @@ impl World {
     /// PORT: the slot overlay's per-frame driver (`FUN_801cf0d8` reel SM;
     /// the confirmed kernels live in [`crate::slot_machine`]).
     fn tick_slot_machine(&mut self) {
-        use crate::slot_machine::SlotPhase;
-        let Some(phase) = self.minigames.slot_machine.as_ref().map(|m| m.phase()) else {
+        use crate::slot_machine::SlotFrameOutcome;
+        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
+        let Some(m) = self.minigames.slot_machine.as_mut() else {
             // Mode is SlotMachine but no session installed - drop back.
             self.mode = self.minigames.slot_return_mode;
             return;
         };
-        let confirm = self.input.just_pressed(input::PadButton::Cross);
-        let stop_buttons = [
-            input::PadButton::Square,
-            input::PadButton::Cross,
-            input::PadButton::Circle,
-        ]
-        .map(|b| self.input.just_pressed(b));
-        let face_edge = [
-            input::PadButton::Triangle,
-            input::PadButton::Circle,
-            input::PadButton::Cross,
-            input::PadButton::Square,
-        ]
-        .iter()
-        .any(|&b| self.input.just_pressed(b));
-        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
-        let Some(m) = self.minigames.slot_machine.as_mut() else {
-            return;
-        };
-        m.tick();
-        // The cash-out submenu, its rules pages, the not-enough-coins prompt
-        // and the leave fade own the pad when they are up; state 1 tests the
-        // submenu edge before any spin input.
-        if m.cash_out_input(packed) {
-            if m.phase() == SlotPhase::CashedOut {
+        // The cabinet's whole frame (`SlotMachine::frame`), shared with the
+        // standalone minigames page.
+        match m.frame(packed) {
+            SlotFrameOutcome::CashedOut => {
                 // State 100's tail: the bank commit and the return warp
                 // (`FUN_80026018`), the same pair the Start escape runs.
                 self.route_slot_sounds();
@@ -3235,36 +3215,10 @@ impl World {
                 self.close_minigame_round_trip();
                 return;
             }
-            self.route_slot_sounds();
-            return;
-        }
-        m.latch_spin_up(face_edge);
-        match phase {
-            SlotPhase::Idle => {
-                if confirm {
-                    m.spin();
-                }
-            }
-            SlotPhase::Spinning => {}
-            SlotPhase::Stopping => {
-                for (reel, button) in stop_buttons.into_iter().enumerate() {
-                    if button {
-                        m.stop_reel(reel);
-                    }
-                }
-            }
-            SlotPhase::Payout => {
-                if confirm {
-                    m.collect();
-                }
-            }
-            SlotPhase::CashedOut => {
-                // Committed: restore the interrupted mode (the host reads the
-                // session out via [`World::exit_slot_machine`]).
-                self.mode = self.minigames.slot_return_mode;
-            }
-            // Owned by `cash_out_input` above.
-            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving => {}
+            // Committed: restore the interrupted mode (the host reads the
+            // session out via [`World::exit_slot_machine`]).
+            SlotFrameOutcome::Committed => self.mode = self.minigames.slot_return_mode,
+            SlotFrameOutcome::Stepped => {}
         }
         self.route_slot_sounds();
     }

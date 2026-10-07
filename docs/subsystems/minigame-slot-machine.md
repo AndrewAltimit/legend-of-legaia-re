@@ -244,8 +244,9 @@ buttons while the reels spin up makes the next spin's reach and hot modes
 rarer - the mode-1 odds in the lowest net-take bracket go from `1/700` to
 `1/900..=1/999`. An earlier reading called the word a "richer-odds flag",
 which has the effect backwards and never named a writer. Port:
-`SlotMachine::latch_spin_up`, called by `World::tick_slot_machine` (native
-window and play page) and by the standalone page's `slot_press`. The port's
+`SlotMachine::latch_spin_up`, called by the per-frame kernel `SlotMachine::frame`, which
+every host runs (`World::tick_slot_machine` on the native window and the play
+page, `slot_step` on the standalone page). The port's
 tick leaves the spin-up one frame before retail's test runs on the expiring
 frame, so an edge on exactly that frame does not latch. **Confirmed**
 (disassembly).
