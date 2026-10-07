@@ -596,7 +596,7 @@ impl FieldActors {
             if host.world.field_npc_render_scale(e.placement.index) == Some(0) {
                 (x, z) = (hide, hide);
             }
-            let facing = host.world.npcs.headings.get(&slot).copied().unwrap_or(2048) as f32;
+            let facing = host.world.npcs.heading(slot) as f32;
             let y = host.world.field_npc_render_y(slot, x, z) as f32;
             out.extend_from_slice(&[x as f32, y, z as f32, facing]);
         }

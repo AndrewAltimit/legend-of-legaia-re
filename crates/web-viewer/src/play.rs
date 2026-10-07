@@ -1895,7 +1895,7 @@ impl LegaiaRuntime {
                 a.move_state.world_z,
             );
             let active = a.active && a.tmd_ref.is_some() && !(x == hide && z == hide);
-            let facing = h.world.npcs.headings.get(&slot).copied().unwrap_or(2048) as f32;
+            let facing = h.world.npcs.heading(slot) as f32;
             out.extend_from_slice(&[
                 f32::from(slot),
                 x as f32,

@@ -1367,7 +1367,7 @@ fn sample_engine(
                 .positions
                 .iter()
                 .map(|(&slot, &(x, z))| {
-                    let h = world.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+                    let h = world.npcs.heading(slot);
                     (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
                 })
                 .collect()
