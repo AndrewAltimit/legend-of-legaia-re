@@ -2962,41 +2962,26 @@ impl World {
             None => Vec::new(),
         };
         for e in &events {
-            match *e {
-                // The cadence-match strike splash spawns its three parts into
-                // the shared effect pool. The producer is the session's own
-                // event, not a venue actor, so every host that ticks the world
-                // gets the burst.
-                PondEvent::Splash => {
-                    let parts = crate::fishing_chrome::splash_burst(
-                        crate::fishing_actors::SCREEN_CENTRE.0,
-                        crate::fishing_actors::SCREEN_CENTRE.1,
-                        crate::minigame_fx::SPLASH_SPRITE_ID,
-                        SPLASH_SPREAD,
-                    );
-                    self.minigames.fx.spawn_splash(&parts);
-                }
-                // The hook cue `_DAT_8007B6DA`. It used to live on the native
-                // window's line actor, which made the strike audible on one
-                // surface; the cue queue is drained by every host.
-                PondEvent::Hooked(_) => self
-                    .minigames
-                    .pending_sfx
-                    .push(u16::from(crate::fishing_actors::HOOK_CUE)),
-                // The catch raises the celebration cue plus whichever of the
-                // four score-gated burst cues it unlocked (`FUN_801d4948`).
-                PondEvent::Landed(points) => {
-                    self.minigames
-                        .pending_sfx
-                        .push(u16::from(crate::fishing_actors::CELEBRATE_CUE));
-                    for burst in crate::fishing_actors::celebration_bursts(points) {
-                        if let Some(cue) = burst.cue {
-                            self.minigames.pending_sfx.push(u16::from(cue));
-                        }
-                    }
-                }
-                PondEvent::Snapped | PondEvent::Recast => {}
+            // The cadence-match strike splash spawns its three parts into
+            // the shared effect pool. The producer is the session's own
+            // event, not a venue actor, so every host that ticks the world
+            // gets the burst.
+            if matches!(e, PondEvent::Splash) {
+                let parts = crate::fishing_chrome::splash_burst(
+                    crate::fishing_actors::SCREEN_CENTRE.0,
+                    crate::fishing_actors::SCREEN_CENTRE.1,
+                    crate::minigame_fx::SPLASH_SPRITE_ID,
+                    SPLASH_SPREAD,
+                );
+                self.minigames.fx.spawn_splash(&parts);
             }
+            // The hook and catch cues - one kernel shared with the minigames
+            // page. The hook cue used to live on the native window's line
+            // actor, which made the strike audible on one surface; the cue
+            // queue is drained by every host.
+            self.minigames
+                .pending_sfx
+                .extend(super::minigame_state::pond_event_cues(e));
         }
         self.minigames.fishing_events = events;
     }

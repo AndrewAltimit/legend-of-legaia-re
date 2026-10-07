@@ -526,6 +526,15 @@ impl LegaiaMinigames {
         );
         let events = p.take_events();
         let mut out = hub_events;
+        // The hook and catch cues, through the kernel `World::tick` queues
+        // them with for the two play hosts. This page keyed neither.
+        let cues: Vec<u16> = events
+            .iter()
+            .flat_map(legaia_engine_core::world::pond_event_cues)
+            .collect();
+        for cue in cues {
+            self.minigame_sfx_cue(cue);
+        }
         for e in &events {
             match *e {
                 PondEvent::Splash => {

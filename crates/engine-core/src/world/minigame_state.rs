@@ -410,3 +410,29 @@ impl FishingCaptionText {
         self
     }
 }
+
+/// The SFX cues one pond event raises, in order: the hook cue on a strike
+/// (`_DAT_8007B6DA`), and on a catch the celebration cue plus whichever of
+/// the four score-gated burst cues it unlocked (`FUN_801d4948`). Splash,
+/// snap and recast raise none here (the splash is a spawn into the effect
+/// pool, not a cue).
+///
+/// One answer for every host that runs a pond: [`World::tick`] queues these
+/// for both play hosts, and the standalone minigames page keys them off its
+/// own session's events - which played no hook or catch sound at all before.
+pub fn pond_event_cues(e: &crate::fishing::PondEvent) -> Vec<u16> {
+    use crate::fishing::PondEvent;
+    match *e {
+        PondEvent::Hooked(_) => vec![u16::from(crate::fishing_actors::HOOK_CUE)],
+        PondEvent::Landed(points) => {
+            let mut cues = vec![u16::from(crate::fishing_actors::CELEBRATE_CUE)];
+            cues.extend(
+                crate::fishing_actors::celebration_bursts(points)
+                    .filter_map(|b| b.cue)
+                    .map(u16::from),
+            );
+            cues
+        }
+        PondEvent::Splash | PondEvent::Snapped | PondEvent::Recast => Vec::new(),
+    }
+}
