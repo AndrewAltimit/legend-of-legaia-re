@@ -212,6 +212,11 @@ pub(super) enum PinnedCount {
     /// a table whose field reads sit too far from the index arithmetic for
     /// that rule's straight-line scan.
     Layout { next: u32, site: u32 },
+    /// A counted loop whose index starts at the `li` at `first` and runs while
+    /// the `sltiu` / `slti` at `bound` holds: the count is the difference of
+    /// the two immediates. The index is subtracted back to zero before the
+    /// table is addressed, so neither immediate alone is the count.
+    Range { first: u32, bound: u32 },
 }
 
 /// One table whose base, stride and count are each read off a consumer
@@ -232,7 +237,7 @@ pub(super) struct ConsumerPinnedTable {
 /// Tables the generic array rules cannot size, each pinned by the
 /// instructions that consume it and re-checked against this image's own words
 /// before it is claimed.
-pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 7] = [
+pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 13] = [
     // DEBUG MODE's variable-monitor rows: the `FUN_8001C93C` row layout
     // (`+0x00` kind, `+0x04` y, `+0x08` value pointer, `+0x0E` label, `+0x24`
     // name table), walked inline by the menu loop at `0x801CEBC0`. The kind
@@ -361,6 +366,102 @@ pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 7] = [
         count_from: PinnedCount::Loop { site: 0x801D_2A34 },
         what: "Baka Fighter per-index score words (FUN_801D2A28)",
     },
+    // The battle overlay's two per-command scalar tables, each five bytes,
+    // indexed by `(cmd - 0x0C) mod 5` that `FUN_801EC3E4` computes once and
+    // keeps at `sp+0x18`: `addiu a1,a1,-0xC`, the `0x66666667` reciprocal
+    // divide by five, and `a1 - 5 * q` (`0x801EC588..0x801EC5C0`). The
+    // defender-side scalar is read once (`0x801EC678`), the attacker-side
+    // one twice (`0x801ECE9C`, `0x801ED308`). Each is followed by three
+    // zero bytes of word alignment before the next table.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_64E4,
+        stride: 1,
+        count: 5,
+        forms: &[(0x801E_C678, 0x801F_64E4)],
+        count_from: PinnedCount::Domain {
+            what: "(queue command - 0x0C) mod 5, FUN_801EC3E4 0x801EC588..0x801EC5C0",
+        },
+        what: "defender-side per-command scalar (FUN_801EC3E4)",
+    },
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_64EC,
+        stride: 1,
+        count: 5,
+        forms: &[(0x801E_CE9C, 0x801F_64EC), (0x801E_D308, 0x801F_64EC)],
+        count_from: PinnedCount::Domain {
+            what: "(queue command - 0x0C) mod 5, FUN_801EC3E4 0x801EC588..0x801EC5C0",
+        },
+        what: "attacker-side per-command scalar (FUN_801EC3E4)",
+    },
+    // The Miracle Art trigger rows `FUN_801EED1C` copies into the action
+    // queue: base formed at `0x801EF4E8`, row `(char_id - 1) << 4`, sixteen
+    // bytes per row (`sltiu v0,v0,0x10` at `0x801EF520`). The next address
+    // the image forms is the Super Art `find` table at `0x801F6524`
+    // (`0x801EFA38`), which closes three whole rows - Vahn, Noa, Gala
+    // ([`art-data.md`](../../../docs/formats/art-data.md)).
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_64F4,
+        stride: 0x10,
+        count: 3,
+        forms: &[(0x801E_F4E8, 0x801F_64F4)],
+        count_from: PinnedCount::Layout {
+            next: 0x801F_6524,
+            site: 0x801E_FA38,
+        },
+        what: "Miracle Art trigger rows (FUN_801EED1C)",
+    },
+    // The Super Art `replace` strings `FUN_801EF9E4` writes over a matched
+    // queue tail: base formed at `0x801EFA58`, element `char * 0x50 +
+    // entry * 0x10` with `entry < 5` (`slti v0,a1,0x5` at `0x801EFBE0`), so
+    // five sixteen-byte strings per character. The next formed address, the
+    // opening-shot table at `0x801F66D8` (`0x801EA558`), closes fifteen.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_65E8,
+        stride: 0x10,
+        count: 15,
+        forms: &[(0x801E_FA58, 0x801F_65E8)],
+        count_from: PinnedCount::Layout {
+            next: 0x801F_66D8,
+            site: 0x801E_A558,
+        },
+        what: "Super Art replace strings, 3 characters x 5 (FUN_801EF9E4)",
+    },
+    // The monster cast pick's opening-shot bytes, `0x801F66D8 + id - 0x25`
+    // ([`crate::spell_anim_pairs::OPENING_SHOT_VA`]). The index is a spell id
+    // with no upper bound check; the next formed address is the status-guard
+    // mask table at `0x801F672C` (`0x801F07DC`), which closes eighty-four
+    // bytes - ids `0x25..0x79`. A higher id reads the guard masks.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: crate::spell_anim_pairs::OPENING_SHOT_VA,
+        stride: 1,
+        count: 0x54,
+        forms: &[(0x801E_A558, crate::spell_anim_pairs::OPENING_SHOT_VA)],
+        count_from: PinnedCount::Layout {
+            next: 0x801F_672C,
+            site: 0x801F_07DC,
+        },
+        what: "monster cast opening-shot bytes (spell_anim_pairs)",
+    },
+    // The four direction commands' status-guard masks, `lh` at
+    // `0x801F672C + (cmd - 0x0C) * 2` in `FUN_801F0450`'s command loop:
+    // `li s2,0xC` at `0x801F07BC`, `sltiu v0,v0,0x10` at `0x801F0A04`.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_672C,
+        stride: 2,
+        count: 4,
+        forms: &[(0x801F_07DC, 0x801F_672C)],
+        count_from: PinnedCount::Range {
+            first: 0x801F_07BC,
+            bound: 0x801F_0A04,
+        },
+        what: "direction-command status-guard masks (FUN_801F0450)",
+    },
 ];
 
 /// The address the `lui` at file offset `at` forms with the first following
@@ -403,6 +504,18 @@ pub(super) fn claim_consumer_pinned_tables(buf: &[u8], sink: &mut Sink, prot_ind
                 matches!(w >> 26, 0x09..=0x0B) && (w & 0xFFFF) as usize == t.count
             }),
             PinnedCount::Domain { .. } => true,
+            PinnedCount::Range { first, bound } => {
+                let imm = |site: u32, ops: &[u32]| {
+                    legaia_bytes::u32_le(buf, at(site))
+                        .filter(|w| ops.contains(&(w >> 26)))
+                        .map(|w| (w & 0xFFFF) as usize)
+                };
+                // `li` is `addiu rt,zero,imm` / `ori rt,zero,imm`.
+                matches!(
+                    (imm(first, &[0x09, 0x0D]), imm(bound, &[0x0A, 0x0B])),
+                    (Some(a), Some(b)) if b > a && b - a == t.count
+                )
+            }
             PinnedCount::Layout { next, site } => {
                 lui_pair_address(buf, at(site)) == Some(next)
                     && next > t.base_va
@@ -420,6 +533,9 @@ pub(super) fn claim_consumer_pinned_tables(buf: &[u8], sink: &mut Sink, prot_ind
         let count_why = match t.count_from {
             PinnedCount::Loop { site } => format!("loop bound at {site:#010x}"),
             PinnedCount::Domain { what } => format!("index domain: {what}"),
+            PinnedCount::Range { first, bound } => {
+                format!("loop from {first:#010x} to the bound at {bound:#010x}")
+            }
             PinnedCount::Layout { next, .. } => {
                 format!("whole records to the next formed address {next:#010x}")
             }

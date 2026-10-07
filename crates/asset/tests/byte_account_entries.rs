@@ -933,6 +933,53 @@ fn the_str_overlay_data_segment_is_claimed_structurally() {
     );
 }
 
+/// The battle overlay's small consumer-pinned tables between the side-band
+/// filename strings and the guard masks: each row's cited `lui` sites and
+/// bound still read as stated, so every one is claimed, and the entry
+/// carries no residue but slack.
+#[test]
+fn the_battle_overlay_command_tables_are_consumer_pinned() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 898) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(898),
+        label: "0898".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    // The claim list keeps only the largest claims, so these rows are
+    // checked through the walker's refusal note instead: a row whose cited
+    // instruction no longer reads as stated says so and claims nothing.
+    let refused: Vec<_> = acc
+        .notes
+        .iter()
+        .filter(|n| n.contains("not claimed: a cited instruction"))
+        .collect();
+    assert!(refused.is_empty(), "refused rows: {refused:?}");
+    let work: usize = acc
+        .residue
+        .iter()
+        .filter(|r| {
+            !matches!(
+                r.shape,
+                ResidueShape::ZeroPad | ResidueShape::Alignment | ResidueShape::RepeatedFill
+            )
+        })
+        .map(|r| r.len)
+        .sum();
+    assert_eq!(work, 0, "0898 non-slack residue");
+}
+
 /// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
 /// and claiming it at the stride leaves the entry near whole.
 #[test]

@@ -81,6 +81,12 @@ pub const ELEMENT_COUNT: usize = 8;
 /// record's `+0x1D` byte, which on the disc never exceed `7` - so rows `8..16`
 /// of that index, which is what this block would be, are never formed. Dead
 /// data the link carried, most likely an earlier tuning of the matrix.
+///
+/// It is not a regional variant either. The PAL (`SCES_019.45`) and Japanese
+/// (`SCPS_100.59`) battle overlays carry the same 64 bytes directly after the
+/// same `96 / 104` matrix, and the `row * 8` byte-table reads in each image
+/// form only the matrix base (PAL `0x801F679C`, JP `0x801F87B8`, at the
+/// images' own link bases) - never the block's.
 pub const UNREAD_AFFINITY_BLOCK_VA: u32 = 0x801F_5428;
 
 /// Raw PROT 0898 file offset of [`UNREAD_AFFINITY_BLOCK_VA`].

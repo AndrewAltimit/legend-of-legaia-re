@@ -608,8 +608,8 @@ it.
 | `0972` | `0x2FA` and `0x9D78` up, claimed | the species names the species table's `+0x00` pointers name, and the twenty-nine HUD sprite records `legaia_asset::fishing_sprites` already decoded | the pool had no claim of its own: the species table and the sprite parser were both bound, their bytes were not |
 | `0977` | `0x3048` and `0x3108`, and the head label pool, claimed | the arena's course ladder: the score table at `0x801D1860` (three rows of sixteen `i32` cells, formed at `0x801D10E8` / `0x801D1234`), the twenty-nine `{ label_va, monster_id }` round records at `0x801D1920`, and the opponent names at the head of the image | no instruction forms an address in the round records because none needs to: the descriptor table at `0x801D1A08` holds a `first_round` pointer per course and `FUN_801D1510` walks from it. The names are reached only through those records ([a pointer table is not its pool](#a-pointer-table-is-not-its-pool)) |
 | `0898` | `0x25EB0`, 1220 B, claimed | the battle HUD's sub-draw step records behind the `0x801F4D34` pointer table, `[count][anim][panel]` plus `count` `(record, mode)` pairs | - |
-| `0898` | `0x26C10`, 64 B, claimed as dead data | a second 8x8 percentage block between the element-affinity matrix and the summon power-percent table, with stronger values than the shipped matrix | nothing forms an address in it, and the matrix's `atk * 8 + def` index would reach it only for an element above `7`, which no character entry or record `+0x1D` byte on the disc holds (`element_affinity::UNREAD_AFFINITY_BLOCK_VA`) |
-| `0898` | `0x27CCB` and `0x27DCF`, about 400 B | the small byte tables behind `0x801F64E4` / `0x801F64EC` / `0x801F64F4` (`FUN_801EC3E4`, `FUN_801EED1C`) and `0x801F65E8` / `0x801F66D8` / `0x801F672C` (`FUN_801EF9E4`, `FUN_801E9FD4`, `FUN_801F0450`) | each base is formed, but the index reads (`lbu 0x18(sp)`, actor `+0x1DF` less `0x25`) carry no bound check, so the extent of each is not yet measured off a consumer |
+| `0898` | `0x26C10`, 64 B, claimed as dead data | a second 8x8 percentage block between the element-affinity matrix and the summon power-percent table, with stronger values than the shipped matrix | nothing forms an address in it, and the matrix's `atk * 8 + def` index would reach it only for an element above `7`, which no character entry or record `+0x1D` byte on the disc holds (`element_affinity::UNREAD_AFFINITY_BLOCK_VA`). The PAL and Japanese battle overlays carry the same 64 bytes after the same matrix, and their matrix readers form only the matrix base too |
+| `0898` | `0x27CCC` up to `0x801F6734`, claimed | the two five-byte per-command scalars at `0x801F64E4` / `0x801F64EC` (`FUN_801EC3E4`), the Miracle Art trigger rows at `0x801F64F4` (`FUN_801EED1C`), the Super Art replace strings at `0x801F65E8` (`FUN_801EF9E4`), the monster casts' opening-shot bytes at `0x801F66D8` (`FUN_801E9FD4`) and the four status-guard masks at `0x801F672C` (`FUN_801F0450`) | - each is a [consumer-pinned row](#a-runtime-index-states-its-stride-and-a-consumer-its-count) whose extent comes from an index domain, a loop or the next formed address ([below](#the-battle-overlays-command-tables)) |
 | `0927` / `0912` / `0895` | claimed | spawn records | `0912`'s is formed in a saved register fifty-nine words above its call ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)); `0927`'s and `0895`'s chain exactly onto a pointer-credited record ([below](#a-record-chain-pinned-at-both-ends)) |
 | `0896` | `0x855B` up, about 470 B | the SJIS-bearing words at `0x801DD34B` and the short record runs at `0x801DD44D` / `0x801DD49D` | their consumers are the foreign build's routines, whose callee layouts are not the USA SCUS ones the record rules key on. The `a0`-formed pool from `0x801DD554` is claimed: it is twenty-eight window programs for the image's own interpreter `FUN_801D896C` ([below](#the-window-programs-are-read-off-their-interpreters-calls)) |
 | `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/asset/src/byte_account/pinned.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
@@ -927,7 +927,7 @@ them are [below](#a-table-its-consumers-pin).
 
 ### A table its consumers pin
 
-Three tables defeat both array rules for reasons the rules are right to refuse,
+Some tables defeat both array rules for reasons the rules are right to refuse,
 and each is pinned instead by the instructions that consume it, re-checked
 against the image's own words before the claim is made
 (`CONSUMER_PINNED_TABLES` in
@@ -949,6 +949,30 @@ rule's own layout inference, not an instruction's immediate, and it agrees with
 the seventeen sprite descriptors the Muscle Dome hub's HUD port already parses
 there ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md));
 the `0971` count is the loop's, and the `0972` count is the species table's.
+
+#### The battle overlay's command tables
+
+The last non-slack run in `0898` was six small tables in a row, every one of
+them already read by a port or a parser and none of them bound. Their extents
+come from three different sources, which is why no single rule sized them:
+
+| Table | Base, stride, count | Where the count comes from |
+|---|---|---|
+| defender-side per-command scalar | `0x801F64E4`, 1, 5 | the index is `(cmd - 0x0C) mod 5`, which `FUN_801EC3E4` computes once with a reciprocal divide by five (`0x801EC588..0x801EC5C0`) and keeps at `sp+0x18`; three zero bytes of word alignment follow |
+| attacker-side per-command scalar | `0x801F64EC`, 1, 5 | the same `sp+0x18` index, read at `0x801ECE9C` and `0x801ED308` ([`art-data.md`](../formats/art-data.md)) |
+| Miracle Art trigger rows | `0x801F64F4`, `0x10`, 3 | row `(char_id - 1) << 4` in `FUN_801EED1C`; the next formed address, the Super Art `find` table at `0x801F6524`, closes three rows |
+| Super Art replace strings | `0x801F65E8`, `0x10`, 15 | `FUN_801EF9E4` addresses `char * 0x50 + entry * 0x10` with `entry < 5`; the next formed address, `0x801F66D8`, closes fifteen |
+| monster cast opening-shot bytes | `0x801F66D8`, 1, `0x54` | indexed `id - 0x25` with no bound; the next formed address, `0x801F672C`, closes the ids `0x25..0x79` |
+| status-guard masks | `0x801F672C`, 2, 4 | `FUN_801F0450`'s command loop runs `li s2,0xC` to `sltiu 0x10`, reading `lh` at `(cmd - 0x0C) * 2` |
+
+The last table needed a count form of its own (`PinnedCount::Range`): the loop
+index starts at `0x0C` and is subtracted back to zero before the table is
+addressed, so neither immediate alone is the count - their difference is.
+
+The opening-shot read has no upper bound, so a spell id of `0x79` or more
+would take its shot byte from the guard masks. The one arm that stages such
+ids, the boss-sibling mapping at `0x801EB814` ([`spell-table.md`](../formats/spell-table.md)),
+writes `actor[+0x1DF]` and jumps to `0x801EBDAC`, past the read.
 
 ### A pointer-bump loop states its array's length
 
