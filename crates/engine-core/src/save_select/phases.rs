@@ -130,11 +130,18 @@ pub enum SelectPhase {
     /// outcome: the write / read beat ("Saving to MEMORY CARD" / "Now
     /// Loading" over "Do not remove MEMORY CARD") for the first
     /// [`COMMIT_RESULT_FRAMES`]-exceeding stretch of `frames_remaining`, then
-    /// the result line ("Save successful." / "Load successful.") for the
-    /// last [`COMMIT_RESULT_FRAMES`]. A face button skips the result line,
-    /// as retail's result arm adds a whole hold (`+0x5A`) on a press. Ends in
-    /// `Done(Saved)` / `Done(Loaded)` by the session's mode - the host
-    /// commits on that outcome exactly as it did from the confirm.
+    /// the result line for the last [`COMMIT_RESULT_FRAMES`].
+    ///
+    /// The **write happens inside the beat**, as on retail: a Save holds the
+    /// beat at its last write frame until the host has moved the bytes and
+    /// answered through [`SaveSelectSession::report_commit`]
+    /// (`SaveScreenFlow::save_request` hands it the request), so the result
+    /// line is the write's real result - "Save successful." or retail's
+    /// "Unable to save." - never a promise. A Load's bytes were already read
+    /// for the grid, so its report is in from the start. A face button skips
+    /// the result line, as retail's result arm adds a whole hold (`+0x5A`) on
+    /// a press. Success ends in `Done(Saved)` / `Done(Loaded)`; a failed write
+    /// returns to the block grid.
     ///
     /// Retail strings and the mode test that picks them live in PROT 0899:
     /// `0x801E2B50..0x801E2B7C` picks "Saving to MEMORY CARD" or "Now
@@ -143,8 +150,21 @@ pub enum SelectPhase {
     Committing {
         slot: u8,
         frames_remaining: u16,
+        report: CommitReport,
     },
     Done(SelectOutcome),
+}
+
+/// The host's answer to a [`SelectPhase::Committing`] beat's card op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitReport {
+    /// The host has not moved the bytes yet; the beat holds at its last
+    /// write frame until it does.
+    Pending,
+    /// The op went through.
+    Ok,
+    /// The op failed: the result line reads retail's failure message.
+    Failed,
 }
 
 /// Frames the result line of [`SelectPhase::Committing`] holds when no
@@ -325,6 +345,11 @@ pub enum SelectEvent {
     /// User confirmed the load from the slot-preview screen (X on
     /// SlotPreview).
     LoadConfirmed {
+        slot: u8,
+    },
+    /// A Save's write failed; its failure line has been read and the session
+    /// is back on the block grid.
+    CommitFailed {
         slot: u8,
     },
     /// User cancelled out of the slot-preview screen back to browsing.

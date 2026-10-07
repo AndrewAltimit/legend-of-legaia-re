@@ -1276,6 +1276,11 @@ impl<S: AudioSink> BootSession<S> {
                 self.save_flow.install_blocks(port, blocks);
             }
             edge = self.save_flow.before_tick(s, pressed);
+            // A card Save's write: `BootSession` has no save backend, so the
+            // write is the latch below and always goes through.
+            if self.save_flow.save_request(s).is_some() {
+                self.save_flow.finish_save_request(s, true);
+            }
         }
         // No key table here: a headless driver has no bindings to rebind.
         let _ = tick_open_subsession(active, edge, None, &self.host.world);
@@ -1300,7 +1305,12 @@ impl<S: AudioSink> BootSession<S> {
             // The outcome names the card port, the grid names the block.
             // Persisting it is the host's: `BootSession` has no save
             // backend, so the pick is latched for the caller.
-            SubsessionHandoff::Save(s) => self.last_save_commit = self.save_flow.commit(&s),
+            SubsessionHandoff::Save(s) => {
+                self.last_save_commit = self
+                    .save_flow
+                    .commit(&s)
+                    .or_else(|| s.outcome().and(self.save_flow.written_save()))
+            }
             SubsessionHandoff::Options(state) => self.options_state = state,
         }
         if let Some(menu) = self.field_menu.as_mut() {

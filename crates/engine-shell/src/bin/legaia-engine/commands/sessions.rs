@@ -299,6 +299,9 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
                 SelectEvent::LoadConfirmed { slot } => {
                     println!("  tick {i}: load confirmed on slot {slot}")
                 }
+                SelectEvent::CommitFailed { slot } => {
+                    println!("  tick {i}: write failed on slot {slot}")
+                }
                 SelectEvent::SlotPreviewCancelled { slot } => {
                     println!("  tick {i}: slot preview cancelled on slot {slot}")
                 }

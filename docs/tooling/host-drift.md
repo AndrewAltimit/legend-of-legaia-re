@@ -863,7 +863,8 @@ Retail moves save bytes in one place, the card driver behind the save screen
 behind that screen - the native save directory and `--card` image, the
 page's card rack - and one **commit applier** that turns the screen's
 `SaveCommit` into I/O (`apply_save_commit` / `apply_card_save_commit`
-natively, `apply_card_outcome` on the page). The tier pins every shipped
+natively, `apply_card_outcome` on the page), plus the write a Save's commit
+beat asks for (`write_save_commit` / `service_card_save`). The tier pins every shipped
 call of each rack primitive (`write_slot_save`, `read_slot_save`,
 `write_save_into_card`, `MountedCard::save_at`, the page's
 `write_session_into_card` / `load_session_from_card`) to its applier, so a

@@ -473,12 +473,28 @@ A "Yes" does not return at once. The write / read runs under a messagebox -
 the frame-scalar accumulator reaches `0x5A` (`slti v0,v0,0x5B` at
 `0x801DF9D8`), a press adding a whole hold to cut it short.
 
+The write panel is `FUN_801E1C1C` **mode 4** (`0x801E28EC`), not a format
+dialog: it slides on `_DAT_801F01CC` from x `576` to `160` at a fixed
+`y = 0x50`, boxes itself with `FUN_801E36C4(x, 0x50, 0x11C, 0x20)` and centres
+the message (behind a two-space lead, `0x801CF54C`) at `x + 0x1A` and "Do not
+remove MEMORY CARD" at `x` on `y = 0x60`. The result line is
+`FUN_801E3EE0(msg, 0xA0, 0x60)` in a box `FUN_801E36C4(0xA0, 0x60, 13 * n, 0xD)`,
+`n` being the text drawer's own `(strlen + 1) / 2` return. A failed op reads
+retail's "Unable to save." / "Unable to load data." from the same pool. The
+result arm's skip stores cue `0x20` (`0x801DF91C`).
+
 The port: `SelectPhase::Committing` carries the two halves between the
 confirm and the outcome (`COMMIT_WORK_FRAMES`, then `COMMIT_RESULT_FRAMES` =
-90), `SaveScreenFlow::confirm_prompt` picks the question and `commit_banner`
-the lines, and both hosts draw them through `save_select_overlay_draws`. The
-host still commits on the outcome, so the result line precedes the write by
-the length of the beat; a write that then fails raises the refusal notice.
+90). A Save's beat holds on its last write frame until the host has written:
+`SaveScreenFlow::save_request` hands each host the rack cell while the write
+panel is up, and `finish_save_request` reports the result (the result line
+is the write's real outcome; a failure returns to the grid) and drops the
+port's block cache, so the grid re-reads the card and shows the new save. A
+Load's block was read for the grid already, so it is landed on the outcome as
+before. On the result line the flow narrows any face button to one Cross,
+which the shared menu-cue rule sounds as `0x20`; the write panel takes no
+input. `SaveScreenFlow::confirm_prompt` picks the question, `commit_banner`
+the lines, and engine-ui's `card_banner_draws_for` the geometry above.
 
 #### Which op is which direction
 
@@ -1492,7 +1508,7 @@ slide). The five animator timers + their modes:
 | `1` | (constant `0`) | Static header tabs (Load / Save) | held at `(48, 6)` (no animation) |
 | `2` | `DAT_801ef194` | "Load" tab + active-slot pill composite | `(160, 96) → (48, 40)` (slides up-left to upper-left, with `-0x18 = -24` x post-shift) |
 | `3` | `DAT_801ef1a4` | "Do you wish to load? / save? / overwrite?" confirm dialog | `(160, 344) → (160, 88)` (slides up from below stage) |
-| `4` | `_DAT_801f01cc` | Card-init / format dialog (variant of mode 0) | `(576, 112) → (160, 112)` (slides in from further-right) |
+| `4` | `_DAT_801f01cc` | The write / read panel ("Saving to MEMORY CARD" / "Now Loading"; drawn at a fixed `y = 0x50`) | `(576, 112) → (160, 112)` (slides in from further-right) |
 
 The dispatcher increments each timer per frame and clamps:
 

@@ -862,6 +862,7 @@ impl LegaiaRuntime {
             // borrow below: reading a port lifts fifteen SC blocks, which is
             // the one thing the kernel cannot do for itself.
             self.service_card_read();
+            self.service_card_save();
 
             let mut session_done = false;
             let mut edge = edge;
@@ -1513,6 +1514,35 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Answer a card Save's commit beat: write the live session into the
+    /// block it asked for while "Saving to MEMORY CARD" is up, and report the
+    /// result so the beat's result line is the write's real outcome.
+    fn service_card_save(&mut self) {
+        let request = self.play_menu.as_ref().and_then(|m| match m.sub.as_ref() {
+            Some(PlaySub::Session(session)) => match session.as_ref() {
+                FieldMenuSubsession::Save(s) => m.save_flow.save_request(s),
+                _ => None,
+            },
+            _ => None,
+        });
+        let Some(request) = request else {
+            return;
+        };
+        let ok = match self.write_session_into_card(request.port as usize, request.cell + 1) {
+            Ok(()) => true,
+            Err(e) => {
+                crate::console_log(&format!("play menu: card save failed: {e}"));
+                false
+            }
+        };
+        if let Some(m) = self.play_menu.as_mut()
+            && let Some(PlaySub::Session(session)) = m.sub.as_mut()
+            && let FieldMenuSubsession::Save(s) = session.as_mut()
+        {
+            m.save_flow.finish_save_request(s, ok);
+        }
+    }
+
     /// Commit a finished Load / Save session against the memory-card rack.
     ///
     /// [`SaveScreenFlow::commit`] resolves the port off the session's outcome
@@ -1629,7 +1659,11 @@ impl LegaiaRuntime {
             slide_t: m.slide_t,
             info_t: m.info_t,
             now_checking: m.now_checking,
-            banner: m.banner,
+            banner: m.banner.map(|b| ui::CardBannerView {
+                lines: b.lines,
+                work: b.work,
+                slide_t: b.slide_t,
+            }),
             preview,
             confirm: m.confirm,
         };

@@ -100,13 +100,8 @@ pub fn now_checking_text_draws_for(
     )
 }
 
-/// The two centred lines of a card-operation messagebox, on the "Now
-/// checking" panel's rows: the card-read beat, the write / read beat
-/// ("Saving to MEMORY CARD" / "Now Loading" over "Do not remove MEMORY
-/// CARD") and the result line ("Save successful." / "Load successful.").
-/// An empty second line centres the first on the panel - the result
-/// messages are single lines (`FUN_801E36C4(160, 96, ...)` in the menu
-/// overlay's result arm).
+/// The two centred lines of a card-operation messagebox on the "Now
+/// checking" panel's rows (the card-read beat).
 pub fn card_banner_text_draws_for(
     font: &legaia_font::Font,
     lines: (&str, &str),
@@ -114,41 +109,148 @@ pub fn card_banner_text_draws_for(
     stage_scale: u32,
     slide_offset: (i32, i32),
 ) -> Vec<TextDraw> {
-    let scale = stage_scale.max(1);
-    let color = SAVE_SELECT_TITLE_COLOR;
     let mut out = Vec::with_capacity(48);
+    emit_centered_text(
+        &mut out,
+        font,
+        lines.0,
+        DIALOG_TEXT_CENTER_X + slide_offset.0,
+        NOW_CHECKING_TEXT_LINE1_Y + slide_offset.1,
+        stage_origin,
+        stage_scale,
+    );
+    emit_centered_text(
+        &mut out,
+        font,
+        lines.1,
+        DIALOG_TEXT_CENTER_X + slide_offset.0,
+        NOW_CHECKING_TEXT_LINE2_Y + slide_offset.1,
+        stage_origin,
+        stage_scale,
+    );
+    out
+}
 
-    let emit_centered = |out: &mut Vec<TextDraw>, text: &str, top_y: i32| {
-        let layout = font.layout_ascii(text);
-        let left_x = DIALOG_TEXT_CENTER_X - (layout.advance_x as i32 / 2) + slide_offset.0;
-        let top_y = top_y + slide_offset.1;
-        for g in &layout.glyphs {
-            let sx = left_x + g.dst_x;
-            let sy = top_y + g.dst_y;
-            out.push(TextDraw {
-                dst: (
-                    stage_origin.0 + sx * scale as i32,
-                    stage_origin.1 + sy * scale as i32,
-                    g.width * scale,
-                    g.height * scale,
-                ),
-                src: (g.atlas_x, g.atlas_y, g.width, g.height),
-                color,
-            });
+/// `FUN_801E3EE0(text, center_x, y)`'s placement: the string centred on
+/// `center_x`, glyph tops at `top_y` (the caller passes retail's `y + 7`).
+fn emit_centered_text(
+    out: &mut Vec<TextDraw>,
+    font: &legaia_font::Font,
+    text: &str,
+    center_x: i32,
+    top_y: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    let scale = stage_scale.max(1);
+    let layout = font.layout_ascii(text);
+    let left_x = center_x - (layout.advance_x as i32 / 2);
+    for g in &layout.glyphs {
+        out.push(TextDraw {
+            dst: (
+                stage_origin.0 + (left_x + g.dst_x) * scale as i32,
+                stage_origin.1 + (top_y + g.dst_y) * scale as i32,
+                g.width * scale,
+                g.height * scale,
+            ),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color: SAVE_SELECT_TITLE_COLOR,
+        });
+    }
+}
+
+/// The save / load commit beat's messagebox, as a host hands it over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CardBannerView<'a> {
+    pub lines: (&'a str, &'a str),
+    /// The write / read panel (`true`) or the result line.
+    pub work: bool,
+    /// The write panel's slide timer, `0..=0x1000`.
+    pub slide_t: u16,
+}
+
+/// The write / read panel: `FUN_801E1C1C` mode 4 (PROT 0899
+/// `0x801E28EC..`), slid on `_DAT_801F01CC` from x `576` to the stage centre
+/// at a fixed `y = 0x50`. Its box is `FUN_801E36C4(x, 0x50, 0x11C, 0x20)`
+/// (`0x801E2BAC..0x801E2BB8`); the message, copied behind a two-space lead,
+/// is centred at `x + 0x1A` on `y = 0x50` and "Do not remove MEMORY CARD" at
+/// `x` on `y = 0x60` (`0x801E2B88..0x801E2BA8`), each `+7` to the glyph top.
+pub const CARD_WORK_PANEL: (i32, i32, i32, i32) = (0x50, 0x11C, 0x20, 0x1A);
+/// The write panel's slide start x (`(576, 112) -> (160, 112)`).
+pub const CARD_WORK_SLIDE_START_X: i32 = 576;
+/// The result line: `FUN_801E3EE0(msg, 0xA0, 0x60)` and a box
+/// `FUN_801E36C4(0xA0, 0x60, 13 * ((len + 1) / 2), 0xD)` around it
+/// (`0x801DF934..0x801DF9B0`) - the width is the text drawer's own
+/// `(strlen + 1) / 2` return times 13.
+pub const CARD_RESULT_Y: i32 = 0x60;
+
+/// Sprites + text for [`CardBannerView`], at retail's geometry.
+pub fn card_banner_draws_for(
+    font: &legaia_font::Font,
+    rects: Option<&SaveMenuAtlasRects>,
+    banner: &CardBannerView<'_>,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> (Vec<SpriteDraw>, Vec<TextDraw>) {
+    let mut sprites = Vec::new();
+    let mut texts = Vec::new();
+    if banner.work {
+        let (y, w, h, lead) = CARD_WORK_PANEL;
+        let x = CARD_WORK_SLIDE_START_X
+            + (NOW_CHECKING_SLIDE_TARGET_X - CARD_WORK_SLIDE_START_X) * i32::from(banner.slide_t)
+                / 0x1000;
+        if let Some(rects) = rects {
+            nine_slice_panel_into(
+                &mut sprites,
+                rects,
+                messagebox_rect(x, y, w, h),
+                stage_origin,
+                stage_scale,
+                false,
+            );
         }
-    };
-
-    if lines.1.is_empty() {
-        emit_centered(
-            &mut out,
-            lines.0,
-            (NOW_CHECKING_TEXT_LINE1_Y + NOW_CHECKING_TEXT_LINE2_Y) / 2,
+        emit_centered_text(
+            &mut texts,
+            font,
+            banner.lines.0,
+            x + lead,
+            y + 7,
+            stage_origin,
+            stage_scale,
+        );
+        emit_centered_text(
+            &mut texts,
+            font,
+            banner.lines.1,
+            x,
+            y + 0x10 + 7,
+            stage_origin,
+            stage_scale,
         );
     } else {
-        emit_centered(&mut out, lines.0, NOW_CHECKING_TEXT_LINE1_Y);
-        emit_centered(&mut out, lines.1, NOW_CHECKING_TEXT_LINE2_Y);
+        let x = DIALOG_TEXT_CENTER_X;
+        let half = (banner.lines.0.len() as i32 + 1) / 2;
+        if let Some(rects) = rects {
+            nine_slice_panel_into(
+                &mut sprites,
+                rects,
+                messagebox_rect(x, CARD_RESULT_Y, 13 * half, 0xD),
+                stage_origin,
+                stage_scale,
+                false,
+            );
+        }
+        emit_centered_text(
+            &mut texts,
+            font,
+            banner.lines.0,
+            x,
+            CARD_RESULT_Y + 7,
+            stage_origin,
+            stage_scale,
+        );
     }
-    out
+    (sprites, texts)
 }
 
 // ---------------------------------------------------------------------------

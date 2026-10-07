@@ -265,7 +265,8 @@ impl SaveSelectSession {
             SelectPhase::Committing {
                 slot,
                 frames_remaining,
-            } => self.tick_committing(slot, frames_remaining, input, &mut events),
+                report,
+            } => self.tick_committing(slot, frames_remaining, report, input, &mut events),
             SelectPhase::Done(_) => {}
         }
         self.advance_slide_anim();
@@ -577,6 +578,12 @@ impl SaveSelectSession {
                         self.phase = SelectPhase::Committing {
                             slot,
                             frames_remaining: COMMIT_WORK_FRAMES + COMMIT_RESULT_FRAMES,
+                            // A Load's block was read and parsed for the
+                            // grid already; only a Save has bytes to move.
+                            report: match self.mode {
+                                SaveSelectMode::Load => CommitReport::Ok,
+                                SaveSelectMode::Save => CommitReport::Pending,
+                            },
                         };
                         events.push(SelectEvent::Confirmed { slot, kind });
                         return;
@@ -604,12 +611,23 @@ impl SaveSelectSession {
         &mut self,
         slot: u8,
         frames_remaining: u16,
+        report: CommitReport,
         input: SelectInput,
         events: &mut Vec<SelectEvent>,
     ) {
+        // The write beat's last frame waits for the host's answer.
+        if report == CommitReport::Pending && frames_remaining <= COMMIT_RESULT_FRAMES + 1 {
+            return;
+        }
         let in_result = frames_remaining <= COMMIT_RESULT_FRAMES;
         let skip = in_result && (input.cross || input.circle || input.triangle);
         if frames_remaining == 0 || skip {
+            if report == CommitReport::Failed {
+                // Retail's failure line has been read; the player picks again.
+                self.phase = SelectPhase::SlotPreview { slot };
+                events.push(SelectEvent::CommitFailed { slot });
+                return;
+            }
             let outcome = match self.mode {
                 SaveSelectMode::Load => {
                     events.push(SelectEvent::LoadConfirmed { slot });
@@ -623,7 +641,52 @@ impl SaveSelectSession {
         self.phase = SelectPhase::Committing {
             slot,
             frames_remaining: frames_remaining - 1,
+            report,
         };
+    }
+
+    /// Whether a Save's beat is waiting for the host to move the bytes.
+    pub fn awaiting_commit_report(&self) -> bool {
+        matches!(
+            self.phase,
+            SelectPhase::Committing {
+                report: CommitReport::Pending,
+                ..
+            }
+        )
+    }
+
+    /// The host's answer to [`Self::awaiting_commit_report`]: the write went
+    /// through (`true`) or failed. No-op outside a waiting beat.
+    pub fn report_commit(&mut self, ok: bool) {
+        if let SelectPhase::Committing { report, .. } = &mut self.phase
+            && *report == CommitReport::Pending
+        {
+            *report = if ok {
+                CommitReport::Ok
+            } else {
+                CommitReport::Failed
+            };
+        }
+    }
+
+    /// The beat's report (`None` outside [`SelectPhase::Committing`]).
+    pub fn commit_report(&self) -> Option<CommitReport> {
+        match self.phase {
+            SelectPhase::Committing { report, .. } => Some(report),
+            _ => None,
+        }
+    }
+
+    /// Frames since the beat began (`0` outside it) - the clock the write
+    /// panel's slide-in runs on.
+    pub fn committing_elapsed(&self) -> u16 {
+        match self.phase {
+            SelectPhase::Committing {
+                frames_remaining, ..
+            } => (COMMIT_WORK_FRAMES + COMMIT_RESULT_FRAMES).saturating_sub(frames_remaining),
+            _ => 0,
+        }
     }
 
     /// The write / read half of [`SelectPhase::Committing`] is up (as

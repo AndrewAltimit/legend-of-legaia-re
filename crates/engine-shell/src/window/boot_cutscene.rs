@@ -84,8 +84,90 @@ impl PlayWindowApp {
             flow.install_blocks(port, blocks);
         }
         let edge = flow.before_tick(session, edge);
+        let request = flow.save_request(session);
         self.save_flow = flow;
+        // A card Save writes while "Saving to MEMORY CARD" is up, and the
+        // beat's result line reports what the write did - retail's order.
+        if let Some(request) = request {
+            let ok = self.write_save_commit(request);
+            let mut flow = std::mem::take(&mut self.save_flow);
+            if let BootUiState::SaveSelect(s)
+            | BootUiState::FieldMenu {
+                sub: Some(FieldMenuSubsession::Save(s)),
+            } = &mut self.boot_ui
+            {
+                flow.finish_save_request(s, ok);
+            }
+            self.save_flow = flow;
+        }
         edge
+    }
+
+    /// Write the live session into the rack cell a Save's commit beat asked
+    /// for: port 1 is the save directory (`slot_NN`), port 2 the `--card`
+    /// image (block `cell + 1`, written back to its file). `true` when the
+    /// bytes are down.
+    fn write_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
+        let resume = self.session.current_resume();
+        let sf = self.session.host.world.save_full();
+        match commit.port {
+            0 => match write_slot_save(&self.save_dir, commit.cell, &sf, &resume) {
+                Ok(p) => {
+                    log::info!(
+                        "save screen: saved slot {} to {} (scene '{}', '{}')",
+                        commit.cell,
+                        p.display(),
+                        resume.scene,
+                        resume.location
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::warn!("save screen: save slot {} failed: {e:#}", commit.cell);
+                    false
+                }
+            },
+            1 => {
+                let index = self.session.host.index.clone();
+                let Some(card) = self.card.as_mut() else {
+                    log::warn!("save screen: port 2 holds no card; nothing written");
+                    return false;
+                };
+                let block = commit.cell + 1;
+                let wrote = legaia_engine_core::card_write::write_save_into_card(
+                    card,
+                    block,
+                    &sf,
+                    &resume,
+                    Some(&index),
+                )
+                .map_err(anyhow::Error::msg)
+                .and_then(|w| card.persist().map(|_| w));
+                match wrote {
+                    Ok(w) => {
+                        log::info!(
+                            "save screen: saved card block {block} as save {} (scene '{}'{})",
+                            w.save_slot,
+                            resume.scene,
+                            if w.ext_written {
+                                ""
+                            } else {
+                                ", engine ext withheld"
+                            }
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        log::warn!("save screen: card save into block {block} failed: {e:#}");
+                        false
+                    }
+                }
+            }
+            p => {
+                log::warn!("save screen: port {} holds no card; nothing written", p + 1);
+                false
+            }
+        }
     }
 
     /// Move the bytes a finished save screen asked for.
@@ -152,20 +234,9 @@ impl PlayWindowApp {
                 }
             },
             SaveCommitKind::Save => {
-                let resume = self.session.current_resume();
-                let sf = self.session.host.world.save_full();
-                match write_slot_save(&self.save_dir, slot, &sf, &resume) {
-                    Ok(p) => log::info!(
-                        "save screen: saved slot {slot} to {} (scene '{}', '{}')",
-                        p.display(),
-                        resume.scene,
-                        resume.location
-                    ),
-                    Err(e) => {
-                        log::warn!("save screen: save slot {slot} failed: {e:#}");
-                        self.save_flow
-                            .refuse(legaia_engine_core::save_screen::SaveRefusal::CardWriteFailed);
-                    }
+                if !self.write_save_commit(commit) {
+                    self.save_flow
+                        .refuse(legaia_engine_core::save_screen::SaveRefusal::CardWriteFailed);
                 }
             }
         }
@@ -195,37 +266,8 @@ impl PlayWindowApp {
             return false;
         }
         if matches!(commit.kind, SaveCommitKind::Save) {
-            let sf = self.session.host.world.save_full();
-            let resume = self.session.current_resume();
-            let index = self.session.host.index.clone();
-            let Some(card) = self.card.as_mut() else {
-                return false;
-            };
-            let block = cell + 1;
-            let wrote = legaia_engine_core::card_write::write_save_into_card(
-                card,
-                block,
-                &sf,
-                &resume,
-                Some(&index),
-            )
-            .map_err(anyhow::Error::msg)
-            .and_then(|w| card.persist().map(|_| w));
-            match wrote {
-                Ok(w) => log::info!(
-                    "save screen: saved card block {block} as save {} (scene '{}'{})",
-                    w.save_slot,
-                    resume.scene,
-                    if w.ext_written {
-                        ""
-                    } else {
-                        ", engine ext withheld"
-                    }
-                ),
-                Err(e) => {
-                    log::warn!("save screen: card save into block {block} failed: {e:#}");
-                    self.save_flow.refuse(SaveRefusal::CardWriteFailed);
-                }
+            if !self.write_save_commit(commit) {
+                self.save_flow.refuse(SaveRefusal::CardWriteFailed);
             }
             return false;
         }

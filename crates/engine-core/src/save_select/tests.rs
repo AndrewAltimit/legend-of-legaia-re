@@ -694,6 +694,10 @@ fn run_commit_beat(s: &mut SaveSelectSession) {
         if s.committing_work() == Some(false) {
             saw_result = true;
         }
+        // The host's write, answered at once.
+        if s.awaiting_commit_report() {
+            s.report_commit(true);
+        }
         s.tick(SelectInput::default());
     }
     assert!(saw_result, "the result line showed before the outcome");

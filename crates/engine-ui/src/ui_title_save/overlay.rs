@@ -57,7 +57,7 @@ pub struct SaveSelectOverlayView<'a> {
     /// and the result line after a confirmed Save or Load (two lines; an
     /// empty second line centres the first). Drawn on the "Now checking"
     /// panel.
-    pub banner: Option<(&'a str, &'a str)>,
+    pub banner: Option<CardBannerView<'a>>,
     pub preview: Option<SaveSelectPreviewView<'a>>,
     /// The confirm prompt and its Yes / No cursor.
     pub confirm: Option<(&'a str, u8)>,
@@ -192,22 +192,11 @@ pub fn save_select_overlay_draws(
             ));
         }
     }
-    if let Some(lines) = view.banner {
-        if let Some(rects) = rects {
-            out.sprites.extend(now_checking_panel_draws_for(
-                rects,
-                stage_origin,
-                stage_scale,
-                (0, 0),
-            ));
-        }
-        out.texts.extend(card_banner_text_draws_for(
-            font,
-            lines,
-            stage_origin,
-            stage_scale,
-            (0, 0),
-        ));
+    if let Some(banner) = view.banner.as_ref() {
+        let (sprites, texts) =
+            card_banner_draws_for(font, rects, banner, stage_origin, stage_scale);
+        out.sprites.extend(sprites);
+        out.texts.extend(texts);
     }
     // The confirm is retail's centred messagebox (mode 3 of the slide-in
     // primitive), sliding up from below the stage on top of the preview.

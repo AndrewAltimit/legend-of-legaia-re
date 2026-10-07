@@ -167,7 +167,11 @@ impl PlayWindowApp {
             slide_t: m.slide_t,
             info_t: m.info_t,
             now_checking: m.now_checking,
-            banner: m.banner,
+            banner: m.banner.map(|b| legaia_engine_render::CardBannerView {
+                lines: b.lines,
+                work: b.work,
+                slide_t: b.slide_t,
+            }),
             preview,
             confirm: m.confirm,
         };

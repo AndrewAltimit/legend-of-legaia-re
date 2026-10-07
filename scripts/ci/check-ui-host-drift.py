@@ -4435,9 +4435,9 @@ SAVE_IO_ROUTES = [
         "host": "native",
         "root": "crates/engine-shell/src/window",
         "primitives": {
-            "write_slot_save": {"apply_save_commit"},
+            "write_slot_save": {"write_save_commit"},
             "read_slot_save": {"apply_save_commit"},
-            "write_save_into_card": {"apply_card_save_commit"},
+            "write_save_into_card": {"write_save_commit"},
             "save_at": {"apply_card_save_commit"},
         },
     },
@@ -4445,7 +4445,7 @@ SAVE_IO_ROUTES = [
         "host": "web",
         "root": "crates/web-viewer/src",
         "primitives": {
-            "write_session_into_card": {"apply_card_outcome"},
+            "write_session_into_card": {"apply_card_outcome", "service_card_save"},
             "load_session_from_card": {"apply_card_outcome"},
             "write_save_into_card": {"write_session_into_card"},
             "save_at": {"load_session_from_card"},
