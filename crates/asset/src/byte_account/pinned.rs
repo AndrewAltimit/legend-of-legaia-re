@@ -68,6 +68,9 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     if prot_index == ARENA_PROT_INDEX {
         claim_arena_course_ladder(buf, sink);
     }
+    if prot_index == crate::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32 {
+        claim_fishing_species_names(buf, sink);
+    }
     if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
         claim_field_probe_tables(buf, sink);
     }
@@ -171,6 +174,29 @@ pub(super) fn claim_arena_course_ladder(buf: &[u8], sink: &mut Sink) {
     ));
 }
 
+/// The species names the fishing species table's `+0x00` pointers name - the
+/// banner string `FUN_801D4004` prints for a hooked fish. The table itself is
+/// a [`pinned_overlay_tables`] row; its pool is the head of the image, which
+/// nothing else reaches.
+pub(super) fn claim_fishing_species_names(buf: &[u8], sink: &mut Sink) {
+    use crate::fishing_species as fish;
+    let Some(species) = fish::parse(buf) else {
+        return;
+    };
+    for sp in &species {
+        let Some(name) = sp.name(buf) else {
+            continue;
+        };
+        let off = (sp.name_ptr_va - fish::FISHING_OVERLAY_BASE_VA) as usize;
+        sink.claim(
+            off,
+            off + name.len() + 1,
+            OWNER_STRING,
+            "fishing species name (fishing_species)",
+        );
+    }
+}
+
 /// Where a consumer-pinned table's count comes from.
 #[derive(Clone, Copy)]
 pub(super) enum PinnedCount {
@@ -206,7 +232,7 @@ pub(super) struct ConsumerPinnedTable {
 /// Tables the generic array rules cannot size, each pinned by the
 /// instructions that consume it and re-checked against this image's own words
 /// before it is claimed.
-pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 3] = [
+pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 7] = [
     // DEBUG MODE's variable-monitor rows: the `FUN_8001C93C` row layout
     // (`+0x00` kind, `+0x04` y, `+0x08` value pointer, `+0x0E` label, `+0x24`
     // name table), walked inline by the menu loop at `0x801CEBC0`. The kind
@@ -272,6 +298,68 @@ pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 3] = [
             site: 0x801D_10E8,
         },
         what: "contest hub sprite records",
+    },
+    // The dance overlay's per-dancer motion scripts: `FUN_801D0640` forms the
+    // base at `0x801D0674`, indexes it `actor[+0x50] << 7` (one `0x80`-byte
+    // row per script) plus `actor[+0x9C] * 2`, and reads `(clip, frames)`
+    // halfword pairs until a negative clip rewinds the cursor. Nothing bounds
+    // `+0x50`; the next address the image forms, `0x801D46CC`
+    // (`0x801D2630`), closes four whole rows.
+    ConsumerPinnedTable {
+        prot: 980,
+        base_va: 0x801D_44CC,
+        stride: 0x80,
+        count: 4,
+        forms: &[(0x801D_0674, 0x801D_44CC)],
+        count_from: PinnedCount::Layout {
+            next: 0x801D_46CC,
+            site: 0x801D_2630,
+        },
+        what: "dance motion-script rows ((clip, frames) pairs, -1 rewinds)",
+    },
+    // The first of the two step-index lists `FUN_801CF470` picks between on
+    // `_DAT_801D514C` (`0x801CF5F8..0x801CF60C`): words read `lw` at
+    // `index * 4`, ending on a `-1`. The other list's base, `0x801D4488`, is
+    // the next address the image forms and closes eighteen whole words.
+    ConsumerPinnedTable {
+        prot: 980,
+        base_va: 0x801D_4440,
+        stride: 4,
+        count: 18,
+        forms: &[(0x801C_F5FC, 0x801D_4440)],
+        count_from: PinnedCount::Layout {
+            next: 0x801D_4488,
+            site: 0x801C_F608,
+        },
+        what: "dance step-index list A (u32, -1 terminated)",
+    },
+    // The Baka Fighter developer dump `FUN_801D553C` (retail's `ot5stat.txt`)
+    // walks its fighter-code labels with a pointer it keeps in a stack slot:
+    // the base is formed at `0x801D5588` (and again at `0x801D56DC`), stored
+    // at `sp+0x32C`, bumped `addiu v1,v1,0x10` per pass, and the pass count
+    // is `sltiu v0,s7,0x11` at `0x801D5754` - seventeen sixteen-byte labels.
+    // The pointer-bump rule cannot see a pointer that lives in memory.
+    ConsumerPinnedTable {
+        prot: 976,
+        base_va: 0x801D_B7A8,
+        stride: 0x10,
+        count: 17,
+        forms: &[(0x801D_5588, 0x801D_B7A8), (0x801D_56DC, 0x801D_B7A8)],
+        count_from: PinnedCount::Loop { site: 0x801D_5754 },
+        what: "Baka Fighter dev-dump fighter labels (FUN_801D553C)",
+    },
+    // `FUN_801D2A28`'s per-index score words, added into `_DAT_801DBED8`:
+    // the index is `_DAT_801DBEC8` clamped by `slti v0,a3,0x14` at
+    // `0x801D2A34` (and `li a3,0x13`), so twenty words from the base formed
+    // at `0x801D2A48`.
+    ConsumerPinnedTable {
+        prot: 976,
+        base_va: 0x801D_70C4,
+        stride: 4,
+        count: 20,
+        forms: &[(0x801D_2A48, 0x801D_70C4)],
+        count_from: PinnedCount::Loop { site: 0x801D_2A34 },
+        what: "Baka Fighter per-index score words (FUN_801D2A28)",
     },
 ];
 
@@ -1146,6 +1234,13 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 fish::CADENCE_TEMPLATE_COUNT * fish::CADENCE_TEMPLATE_STRIDE,
                 OWNER_RECORD,
                 "fishing reel-cadence templates (fishing_species)",
+            ),
+            (
+                (crate::fishing_sprites::FISHING_SPRITE_TABLE_VA - SLOT_A) as usize,
+                crate::fishing_sprites::FISHING_SPRITE_COUNT
+                    * crate::fishing_sprites::FISHING_SPRITE_STRIDE,
+                OWNER_RECORD,
+                "fishing HUD sprite records (fishing_sprites)",
             ),
             (
                 (fex::EXCHANGE_TABLE_VA_PAGE0 - SLOT_A) as usize,
