@@ -853,6 +853,36 @@ content waiver from outliving the thing it described. A row is not a licence
 for the difference; it is a statement of **where the other host does the same
 work**, in the form the waiver rules above require.
 
+## Tier 14 - save routing: does every save go through the retail screen?
+
+`check_save_io_routes` / `SAVE_IO_ROUTES` / `PAGE_CARD_RACK_RULES` in the
+same file.
+
+Retail moves save bytes in one place, the card driver behind the save screen
+([`save-screen.md`](../subsystems/save-screen.md)). Each host owns the bytes
+behind that screen - the native save directory and `--card` image, the
+page's card rack - and one **commit applier** that turns the screen's
+`SaveCommit` into I/O (`apply_save_commit` / `apply_card_save_commit`
+natively, `apply_card_outcome` on the page). The tier pins every shipped
+call of each rack primitive (`write_slot_save`, `read_slot_save`,
+`write_save_into_card`, `MountedCard::save_at`, the page's
+`write_session_into_card` / `load_session_from_card`) to its applier, so a
+hotkey or page button that saves or loads around the screen fails as `SAVE
+BYPASS`. A primitive with no shipped call at all fails too: a renamed applier
+must not leave the tier checking nothing.
+
+The page half is a text check on `site/_content/play.html`: port 1 starts
+with the browser card, the card is formatted by the engine
+(`formatted_memory_card`), and both the disc load and a trap recovery
+remount the rack. The native window's port 1 is its save directory
+whatever the player does; without those three the page's Save screen opened
+on two empty ports.
+
+Not covered: the page's save bar imports a `.lgsf` or a card block and
+resumes it directly. That is page chrome for getting a save into the browser
+at all - the native twin is `legaia-engine load` - and it moves no bytes
+into a card.
+
 ## What a screenshot pair adds to a green row, and what it does not
 
 Every tier here is a source measurement, and a row closed by one is a claim
