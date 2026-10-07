@@ -151,6 +151,10 @@ pub struct CutsceneGlide {
     interp: CutsceneCameraInterp,
     /// [`crate::world::FrameClock::display_frames`] at the previous advance.
     mark: u64,
+    /// A capture alignment the next [`Self::advance`] lands after its step:
+    /// every gliding component this many display frames short of its target
+    /// ([`Self::align_frames_left`]).
+    align_left: Option<u32>,
 }
 
 impl CutsceneGlide {
@@ -182,7 +186,19 @@ impl CutsceneGlide {
         let apply = u32::from(world.camera.state.apply_trigger);
         let mode = world.camera.state.mode;
         let steps = self.take_steps(world.clock.display_frames);
-        self.interp.glide_view(target, apply, mode, steps)
+        let view = self.interp.glide_view(target, apply, mode, steps);
+        match self.align_left.take() {
+            Some(left) => self.interp.set_frames_left(left).unwrap_or(view),
+            None => view,
+        }
+    }
+
+    /// Have the next [`Self::advance`] leave every gliding component exactly
+    /// `left` display frames short of its target - the retail-compare image
+    /// channel's alignment of a capture taken mid-glide
+    /// ([`CutsceneCameraInterp::set_frames_left`]). Not a game path.
+    pub fn align_frames_left(&mut self, left: u32) {
+        self.align_left = Some(left);
     }
 
     /// No scripted shot owns this frame: drop the held pose so the next shot

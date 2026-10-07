@@ -703,6 +703,17 @@ impl PlayWindowApp {
             if due && let Some(fog) = sc.seat_fog.take() {
                 self.session.host.world.fog.install_snapshot(&fog);
             }
+            // A capture taken mid-glide shows the shot as far along as
+            // retail's mover had come (its frame-skip history, which no
+            // replay reproduces): the gate carries the frames it had left on
+            // the displayed frame, and this frame's view lands exactly there.
+            if due
+                && let Some(left) = sc.script_gate.as_ref().and_then(|g| g.glide_left)
+                && left > 0
+            {
+                self.cutscene_glide.align_frames_left(left as u32);
+                self.session.camera.align_glide_frames_left(left);
+            }
             if due {
                 for &(record, model) in &sc.seat_object_models {
                     self.session

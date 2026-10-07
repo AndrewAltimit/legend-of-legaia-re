@@ -665,24 +665,32 @@ impl CutsceneCameraInterp {
                     self.curve[i] = mode;
                 }
                 self.done[i] = self.done[i].saturating_add(steps).min(self.total[i]);
-                let s = if self.total[i] == 0 {
-                    1.0
-                } else {
-                    self.done[i] as f32 / self.total[i] as f32
-                };
-                let s = crate::camera_mover::curve_unit(s, self.curve[i]);
-                let angle = i == Self::PITCH || i == Self::YAW || i == Self::ROLL;
-                let delta = if angle {
-                    wrap_pi(self.target[i] - self.start[i])
-                } else {
-                    self.target[i] - self.start[i]
-                };
-                self.cur[i] = self.start[i] + delta * s;
-                if angle {
-                    self.cur[i] = wrap_pi(self.cur[i]);
-                }
+                self.cur[i] = self.component_at_progress(i);
             }
         }
+        self.pose()
+    }
+
+    /// Component `i` at its own progress `done / total` along its curve.
+    fn component_at_progress(&self, i: usize) -> f32 {
+        let s = if self.total[i] == 0 {
+            1.0
+        } else {
+            self.done[i] as f32 / self.total[i] as f32
+        };
+        let s = crate::camera_mover::curve_unit(s, self.curve[i]);
+        let angle = i == Self::PITCH || i == Self::YAW || i == Self::ROLL;
+        let delta = if angle {
+            wrap_pi(self.target[i] - self.start[i])
+        } else {
+            self.target[i] - self.start[i]
+        };
+        let v = self.start[i] + delta * s;
+        if angle { wrap_pi(v) } else { v }
+    }
+
+    /// The held pose, in [`Self::glide`]'s tuple shape.
+    fn pose(&self) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {
         (
             [self.cur[0], self.cur[1], self.cur[2]],
             self.cur[3],
@@ -691,6 +699,39 @@ impl CutsceneCameraInterp {
             self.cur[5],
             [self.cur[6], self.cur[7], self.cur[8]],
         )
+    }
+
+    /// Put every gliding component exactly `left` frames short of its target
+    /// and return the resulting view - a capture-alignment aid, not a game
+    /// path. Retail's mover counts its progress in display frames credited by
+    /// the adaptive frame-skip factor (`DAT_1F800393`), so how far a glide has
+    /// come at a given script phase is the frame-skip history since the beat,
+    /// which no replay reproduces; a retail state's own mover (`+0x9E` duration
+    /// less `+0x9C` progress) says how much it had left. A component with no
+    /// glide armed (`total == 0`, or a target equal to its start) is left
+    /// where it is.
+    ///
+    /// REF: FUN_801DC0BC (`t = min(t + DAT_1F800393, d)`)
+    pub fn set_frames_left(&mut self, left: u32) -> Option<FieldCameraView> {
+        if !self.initialized {
+            return None;
+        }
+        for i in 0..10 {
+            if self.total[i] == 0 || self.target[i] == self.start[i] {
+                continue;
+            }
+            self.done[i] = self.total[i].saturating_sub(left);
+            self.cur[i] = self.component_at_progress(i);
+        }
+        let (focus, pitch, yaw, roll, h, tr_eye) = self.pose();
+        Some(FieldCameraView {
+            focus,
+            pitch,
+            yaw,
+            roll,
+            h,
+            tr_eye,
+        })
     }
 }
 
@@ -793,5 +834,32 @@ mod tests {
         assert!(a.iter().all(|v| v.is_finite()));
         assert!(a != b, "zoom must change the framing");
         assert!(a != c, "pan must change the framing");
+    }
+
+    /// A capture alignment puts a gliding component exactly `left` frames
+    /// short of its target along the beat's curve, and leaves a component
+    /// with no glide armed alone.
+    #[test]
+    fn set_frames_left_lands_the_glide_on_the_requested_progress() {
+        let mut i = CutsceneCameraInterp::new();
+        assert!(
+            i.set_frames_left(3).is_none(),
+            "nothing held before a glide"
+        );
+        let v = |h: f32| FieldCameraView {
+            focus: [0.0; 3],
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+            h,
+            tr_eye: [0.0, 0.0, 100.0],
+        };
+        i.glide_view(v(400.0), 0, 1, 0);
+        // A linear 80-frame glide of H from 400 to 480, 70 frames in.
+        let at70 = i.glide_view(v(480.0), 80, 1, 70);
+        assert!((at70.h - 470.0).abs() < 1e-3);
+        let at69 = i.set_frames_left(11).expect("held");
+        assert!((at69.h - 469.0).abs() < 1e-3, "{}", at69.h);
+        assert_eq!(at69.tr_eye, [0.0, 0.0, 100.0], "unarmed components hold");
     }
 }

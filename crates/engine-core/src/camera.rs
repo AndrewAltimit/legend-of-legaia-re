@@ -482,6 +482,23 @@ impl Camera {
     /// handler; the view build it feeds is `FUN_800172C0` (Euler kernel
     /// `FUN_80026988`).
     ///
+    /// Put the mover in flight exactly `left` display frames short of its
+    /// duration and re-derive the globals from it - a capture-alignment aid
+    /// for the retail-compare image channel, not a game path. Retail's
+    /// mover credits the adaptive frame-skip factor per logic tick
+    /// (`t = min(t + DAT_1F800393, d)`), so the progress a glide has made at
+    /// a given script phase is frame-skip history no replay reproduces; a
+    /// retail state's own mover (`+0x9E - +0x9C`) says how much it had left.
+    /// No-op with no glide in flight.
+    ///
+    /// REF: FUN_801DC0BC
+    pub fn align_glide_frames_left(&mut self, left: i32) {
+        if let Some(mv) = self.mover.as_mut() {
+            mv.t = (mv.d - left).clamp(0, mv.d);
+            self.globals.0 = mv.values();
+        }
+    }
+
     /// Take this frame's `apply_trigger == 0` Configure beats as packed
     /// component snaps, ready for
     /// [`legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components`].

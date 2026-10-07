@@ -296,6 +296,20 @@ a wait, had grown past the sapling retail shows. A camera glide in flight is
 taken back the same way: the displayed frame had `2 * step` more vsyncs of
 glide left (`kor5_post_436_organic`'s closing shot).
 
+The gate is met on the first engine tick whose glide has no more left than
+that, which is not the same progress: the mover credits the adaptive
+frame-skip factor per logic tick (`t = min(t + DAT_1F800393, d)`,
+`FUN_801DC0BC`), so how far a glide has come at a script phase is the
+frame-skip history since its beat, and the engine's counter lands a frame
+or two past retail's. On the frame it captures, the image child puts the
+glide exactly the gate's frames short of its end
+(`Camera::align_glide_frames_left` for the mover the follow frame reads,
+`CutsceneGlide::align_frames_left` for the op-`0x45` shot), keeping the
+engine's own start and end poses. `kor5_post_436_organic` was one frame
+further along an 80-frame linear glide (pitch `600` against retail's `590`,
+eye Z `7622` against `7552`); on a tiled floor that one frame cost a quarter
+of the image score.
+
 A capture parked on the PC right after a record's `0x3F` scene change is
 inside the departing scene's transition hold: the record spins on its
 `26 FF FF` tail while the streaming actor (`FUN_8001FD44`) holds the old
@@ -1358,18 +1372,21 @@ texel and the left wall rises past neutral. A port that drew the lit rows
 at the neutral `0x80` painted both walls at their raw texel
 ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
 
-### One ease step behind, or a few frames into an arrival
+### One glide frame ahead, or a few frames into an arrival
 
-Two field states score low on the image channel for timing the seed does
-not replay, not for a compose the port gets wrong:
+Two field states miss retail for timing the seed does not replay, not for a
+compose the port gets wrong:
 
-- `kor5_post_436_organic` holds its camera mid-ease toward the block a
-  walk-on loader staged (staging `0x801C6EA8` / `0x801F3580`: pitch `700`,
-  yaw `0`, `H` `400`, eye Z `8320`); retail reads `590 / -108 / 407`, eye Z
-  `7552`, the port `600 / -98 / 406`, eye Z `7622`. All three channels sit
-  the same fraction of the remaining distance ahead - one step of the same
-  ease - so the ease law agrees and the start frame does not; on a tiled
-  floor that one step costs a third of the image score.
+- `kor5_post_436_organic` holds its camera mid-glide: the state's mover
+  (`FUN_801DC0BC` on the actor lists) is `69` frames into an `80`-frame
+  linear glide whose pair block runs pitch `-100 -> 700`, yaw `-780 -> 0`,
+  eye Z `2740 -> 8320`, `H` `448 -> 400`. Retail reads `590 / -108 / 407`,
+  eye Z `7552` - exactly the pairs at `69 / 80` - and the headless seed
+  `600 / -98 / 406`, eye Z `7622`, the same pairs at `70 / 80`: the glide
+  law and its endpoints agree, and the frame-skip history that put retail's
+  counter on `69` does not replay. The `camera` channel keeps reporting
+  that one frame; the image child lands the glide on retail's progress
+  ([above](#mid-script-states)) and the frame matches.
 - `retona_field_card_boot` was caught a few frames into the card load's
   arrival: the op `4C 12` word `0x8007BCB8..BA` reads `27` (mid-ramp), and
   the fog pool holds 27 particles whose ages are all under half of the
