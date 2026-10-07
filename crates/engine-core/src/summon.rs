@@ -84,9 +84,7 @@
 //!   `FUN_801F7088` build is the **world-map top-view tile renderer** aliasing
 //!   the same `0x801Fxxxx` band, not the battle-summon code.)
 
-use legaia_asset::summon_overlay::{
-    RENDER_NODE_MODE_A, RENDER_NODE_MODE_B, SummonOverlay, SummonPart,
-};
+use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
 
 /// Per-frame opcode budget for one part's move-VM tick (defensive cap; retail
@@ -390,7 +388,7 @@ fn is_mesh_sel(model_sel: i16) -> bool {
 /// "Part render-tail" for the full table.
 ///
 /// Only the two values the spawner `FUN_80021B04` seeds from a record's
-/// `model_sel` sentinel ([`RENDER_NODE_MODE_A`] `0x4000`, [`RENDER_NODE_MODE_B`]
+/// `model_sel` sentinel ([`legaia_asset::summon_overlay::RENDER_NODE_MODE_A`] `0x4000`, [`legaia_asset::summon_overlay::RENDER_NODE_MODE_B`]
 /// `0x4001`) are classified statically here - the rest of the `+0x5A` space is
 /// rebound at runtime by move-VM anim ops, which the engine abstracts
 /// away (it carries no `+0x5A` cell), so this is the faithful static surface.
@@ -415,11 +413,16 @@ impl RenderMode {
     /// default the engine models through its normal part transform.
     // PORT: FUN_80021B04 (the +0x5A seeding: 0x4000 -> 3, 0x4001 -> 5);
     // REF: FUN_80021DF4 (the per-mode draw/emit dispatch, host-delegated).
+    ///
+    /// The classification is the spawn's own: `SpawnSubmode::classify` (the
+    /// init-word test at `0x80021cc0`) is the one decoder, and the two
+    /// render-mode-node arms it names are the two values here.
     pub fn from_model_sel(model_sel: i16) -> Option<Self> {
-        match model_sel {
-            RENDER_NODE_MODE_A => Some(RenderMode::Particle),
-            RENDER_NODE_MODE_B => Some(RenderMode::SoundEmitter),
-            _ => None,
+        use legaia_engine_vm::move_vm::SpawnSubmode;
+        match SpawnSubmode::classify(model_sel as u16) {
+            SpawnSubmode::Keyframe => Some(RenderMode::Particle),
+            SpawnSubmode::Tween => Some(RenderMode::SoundEmitter),
+            SpawnSubmode::Negative | SpawnSubmode::Default => None,
         }
     }
 
@@ -1148,7 +1151,9 @@ fn apply_translation_update(state: &mut ActorState, origin: [i16; 3], frame_delt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
+    use legaia_asset::summon_overlay::{
+        RENDER_NODE_MODE_A, RENDER_NODE_MODE_B, SummonOverlay, SummonPart,
+    };
 
     /// The images that call `FUN_801F3D3C`: `0903..=0923` minus 0907
     /// (Nighto) and 0916 (Aluru) - base and evolved blocks alike, Spoon
