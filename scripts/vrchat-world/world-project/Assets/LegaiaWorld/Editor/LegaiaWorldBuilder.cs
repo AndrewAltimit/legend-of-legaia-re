@@ -1421,6 +1421,41 @@ namespace LegaiaWorld
             }
         }
 
+        /// True for a world node HideStaticTwin disabled whose animated prop
+        /// still stands at its spot. The prop carries no collider of its own,
+        /// so the merged collider keeps the twin's geometry: a re-bake that
+        /// swept only active nodes dropped every animated building (town01's
+        /// shop, the house on the hill) out of collision. A twin whose prop
+        /// was deleted is left out with it.
+        static bool IsHiddenStaticTwin(MeshFilter mf, GameObject world)
+        {
+            // The realism pass swaps in a renamed lit copy of the mesh
+            // (`mesh_13_anim6_lit_69`), so match on the twin stem only.
+            var stem = System.Text.RegularExpressions.Regex.Match(
+                mf.sharedMesh.name, @"^mesh_\d+_anim\d+");
+            if (mf.gameObject.activeSelf || !stem.Success)
+                return false;
+            string meshName = stem.Value;
+            var parent = mf.transform.parent;
+            if (parent != null && !parent.gameObject.activeInHierarchy)
+                return false;
+            var propRoot = world.transform.parent != null
+                ? world.transform.parent.Find("props") : null;
+            if (propRoot == null)
+                return false;
+            string propName = "prop_" + meshName.Substring("mesh_".Length);
+            var p = world.transform.InverseTransformPoint(mf.transform.position);
+            foreach (Transform prop in propRoot)
+            {
+                if (prop.name != propName || !prop.gameObject.activeInHierarchy)
+                    continue;
+                var q = propRoot.InverseTransformPoint(prop.position);
+                if ((p - q).sqrMagnitude < 1e-4f)
+                    return true;
+            }
+            return false;
+        }
+
         /// True when this submesh belongs in world collision. Opaque and
         /// cutout surfaces are always solid. Semi-transparent surfaces
         /// represent light (window shafts, glow cones) - the player should
@@ -1485,9 +1520,11 @@ namespace LegaiaWorld
         static void AddMergedCollider(GameObject world, string sceneName)
         {
             var combine = new List<CombineInstance>();
-            foreach (var mf in world.GetComponentsInChildren<MeshFilter>())
+            foreach (var mf in world.GetComponentsInChildren<MeshFilter>(true))
             {
                 if (mf.sharedMesh == null) continue;
+                if (!mf.gameObject.activeInHierarchy && !IsHiddenStaticTwin(mf, world))
+                    continue;
                 var toLocal = world.transform.worldToLocalMatrix * mf.transform.localToWorldMatrix;
                 for (int sm = 0; sm < mf.sharedMesh.subMeshCount; sm++)
                 {

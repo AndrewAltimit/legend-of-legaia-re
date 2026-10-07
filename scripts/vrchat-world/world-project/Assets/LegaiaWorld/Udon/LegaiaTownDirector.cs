@@ -608,6 +608,10 @@ namespace LegaiaWorld
             LegaiaNpcStation s = b.NightStation();
             if (s == null || b.Dead())
                 return false;      // dead villagers take the seat on respawn
+            // From here on this is a shift (a host already sat at the stool
+            // by a day game when night falls simply stays on it), and dawn
+            // will release it - but only a shift, never a day game.
+            b.BeginNightShift();
             if (b.NightHostSeated())
             {
                 b.HoldStation(nightHostHold);

@@ -389,6 +389,50 @@ namespace LegaiaWorld
                     }
                     Debug.Log("[Legaia] CommonPrefabs: merged collider follows " + probed +
                         " moved world node(s).");
+
+                    // The re-bake must keep the hidden static twins of the
+                    // animated props (the props carry no collider): a short
+                    // ray along the normal of each twin's largest triangle
+                    // hits the world collider ON that triangle (a ray down
+                    // through the bounds would just find the ground).
+                    int twins = 0;
+                    foreach (var mf in worldT.GetComponentsInChildren<MeshFilter>(true))
+                    {
+                        if (mf.gameObject.activeSelf || mf.sharedMesh == null ||
+                            !mf.sharedMesh.name.StartsWith("mesh_") ||
+                            !mf.sharedMesh.name.Contains("_anim"))
+                            continue;
+                        var v = mf.sharedMesh.vertices;
+                        var t = mf.sharedMesh.triangles;
+                        Vector3 c = Vector3.zero, n = Vector3.zero;
+                        float best = 0f;
+                        for (int i = 0; i + 2 < t.Length; i += 3)
+                        {
+                            Vector3 a = mf.transform.TransformPoint(v[t[i]]);
+                            Vector3 e1 = mf.transform.TransformPoint(v[t[i + 1]]) - a;
+                            Vector3 e2 = mf.transform.TransformPoint(v[t[i + 2]]) - a;
+                            Vector3 cr = Vector3.Cross(e1, e2);
+                            if (cr.magnitude > best)
+                            {
+                                best = cr.magnitude;
+                                n = cr.normalized;
+                                c = a + (e1 + e2) / 3f;
+                            }
+                        }
+                        if (best <= 0f)
+                            continue;
+                        bool hit = false;
+                        foreach (var h in Physics.RaycastAll(c + n * 0.1f, -n, 0.2f, ~0,
+                                     QueryTriggerInteraction.Ignore))
+                            if (h.collider == worldCol && (h.point - c).magnitude < 0.02f)
+                                hit = true;
+                        if (!hit)
+                            Fail("hidden static twin '" + mf.name + "' (" + mf.sharedMesh.name +
+                                 ") lost its collision in the merged-collider re-bake");
+                        twins++;
+                    }
+                    Debug.Log("[Legaia] CommonPrefabs: merged collider keeps " + twins +
+                        " hidden animated-prop twin(s).");
                 }
             }
 
