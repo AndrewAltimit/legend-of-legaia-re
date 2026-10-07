@@ -4402,6 +4402,17 @@ the cluster slides in again from the right edge with its running count.
 slide that hit opened. Engine: `BattleHud::push_popup` restarts the
 cluster's `age` on each landed damage hit.
 
+The `0x51` fade-down closes it the same way in reverse. The band's teardown -
+countdown under `0xC`, once per action (`0x801E6158..0x801E6214`) - wipes the
+element list (`FUN_801D99BC` at `0x801E6170`) and, when the action landed
+damage (`_DAT_8007BD14 != 0`), re-spawns record 80 with mode `1`
+(`FUN_801D8DE8(0x50, 1)` at `0x801E6360`), which places it at seat B and
+glides it out to seat A. A `0x51` capture taken before the teardown still
+shows the cluster at rest (`noa_levelup_fight_pre`); the continuation band
+`0x52` lies past it and shows none (`rim_elm_gimard_seru_capture_after`).
+Engine: `BattleHud::close_combo_on_fade_down`, keyed on the action SM's own
+teardown latch.
+
 The ring's right arm is record 10, and its string is chosen in `FUN_801D8DE8`'s
 own case (`0x801D8EC8`): `0x801F4B9E + char_id * 10` - the character's
 Ra-Seru, `Meta` / `Terra` / `Ozma` for `char_id` `1..=3` - when the member's
