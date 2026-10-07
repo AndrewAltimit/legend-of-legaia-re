@@ -1053,13 +1053,11 @@ and one **before** it `AP * 2 + 8`: 17 AP becomes 50 or 42, 42 becomes 100 or
 92.
 
 These observations - the per-action `+8` applied at the end of the actor's own
-action, Spirit's `+32` in its place, the Miracle Art's 9-AP remainder, and the
-level-9 Vera / Orb / Spoon doubling with its ordering pairs - were first
+action, Spirit's `+32` in its place, a party member's AP rising when an
+enemy's kicks and punches land on them, the Miracle Art's 9-AP remainder, and
+the level-9 Vera / Orb / Spoon doubling with its ordering pairs - were first
 reported by the_rabidsquirel (community research, save-state testing on
-retail); the sites above are the disassembly behind them. The same report has
-AP rising after an ordinary kick or punch lands; the bytes give the attacker
-nothing for that, so a rise there comes from the damage-taken row (a hit the
-attacker took in the same exchange) or from the `+8` itself.
+retail); the sites above are the disassembly behind them.
 
 Port: the accrual is `engine-vm::battle_action::done` (`done_cleanup`), the
 damage fill `battle_formulas::spirit_gauge_fill`, and the tier-4 doubling
@@ -2157,7 +2155,8 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
   grounds the curated enemy tables in `legaia-gamedata`.
 - **the_rabidsquirel** - the battle AP accrual, first reported from
   save-state testing on retail: the per-action `+8` at the end of the actor's
-  own action, Spirit's `+32` in its place, the 9 AP a Miracle Art leaves, and
+  own action, Spirit's `+32` in its place, the AP a party member gains when
+  an enemy's hit lands on them, the 9 AP a Miracle Art leaves, and
   the level-9 Vera / Orb / Spoon heal doubling the target's AP, with the
   before / after-turn pairs that pin its order. Checked against the
   disassembly under [the battle AP gauge](#the-battle-ap-gauge---every-writer).

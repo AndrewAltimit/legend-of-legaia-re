@@ -226,7 +226,7 @@ caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pr
   <p>The 0..100 AP gauge that Super and Miracle Arts spend fills three ways, and nothing else in the battle code adds to it:</p>
   <ul class="bullets">
     <li><strong>End of every action</strong>: the actor's art cost comes off first, then <code>+8</code> goes on - or <code>+32</code> for a Spirit action, in place of the 8, not on top of it. The AP Boost accessories add a quarter or a tenth of that. So a Miracle Art (99 AP) from a full gauge leaves <strong>9</strong>.</li>
-    <li><strong>Taking a hit</strong>: the defender gains <code>max(1, damage &times; 100 / max HP)</code>. Dealing damage gives the attacker nothing.</li>
+    <li><strong>Taking a hit</strong>: the defender gains <code>max(1, damage &times; 100 / max HP)</code>. The attacker's own hit adds nothing to its gauge.</li>
     <li><strong>A level-9 Vera, Orb or Spoon</strong> doubles each healed ally's AP, capped at 100. Order matters: healed after their turn, 17 AP becomes <code>(17 + 8) &times; 2 = 50</code>; healed before it, <code>17 &times; 2 + 8 = 42</code>.</li>
   </ul>
   <p>First reported by the_rabidsquirel from save-state testing on retail, and confirmed against the battle overlay's code.</p>
@@ -329,7 +329,7 @@ caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pr
   <ul class="bullets">
     <li><strong>ZetaPhoenix</strong> - the Offense Value / Defense Value shape, the per-command equipment halving, the <code>Rnd(1..1.125)</code> reading, the juggle / angle / distance terms, the juggleability question (his guess - the state of the damage animation - was right) and the worked example, all measured against the running game and checked here against the disassembly. His <a href="https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link" target="_blank" rel="noopener">Legaia Arts Data spreadsheet</a> is what the <code>legaia-art</code> trigger tables are validated against.</li>
     <li><strong>Meth962</strong> - the original forum analyses the above corrects: <a href="https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=800&amp;sid=b9049876cd2bcdd56c9eb66fe8614cf4&amp;start=30" target="_blank" rel="noopener">thread 800</a> and <a href="https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=941&amp;sid=10471c996f5bab205174f85853bf65e7" target="_blank" rel="noopener">thread 941</a> (Wayback Machine); his <a href="https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721" target="_blank" rel="noopener">100% walkthrough</a> grounds the curated enemy tables.</li>
-    <li><strong>the_rabidsquirel</strong> - <a href="#ap-gauge">how the AP gauge fills</a>: the end-of-action <code>+8</code>, Spirit's <code>+32</code> in its place, the 9 AP a Miracle Art leaves, and the level-9 heal that doubles a target's AP, measured with save states on retail.</li>
+    <li><strong>the_rabidsquirel</strong> - <a href="#ap-gauge">how the AP gauge fills</a>: the end-of-action <code>+8</code>, Spirit's <code>+32</code> in its place, the AP a party member gains when an enemy's hit lands on them, the 9 AP a Miracle Art leaves, and the level-9 heal that doubles a target's AP, measured with save states on retail.</li>
   </ul>
 </section>
 
