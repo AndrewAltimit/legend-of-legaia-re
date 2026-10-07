@@ -886,20 +886,17 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   hand Power Elixirs to the Miracle typists.
 - From `zora_castle`, `concnow`'s way into Conkram's past is the walk-on
   P2[17], which spawns P2[18] (`0x3F` to `conc2`) once the visions P2[13]
-  .. P2[16] have run; its other `conc2` bands lie behind walls. The guards
-  at the gate, P1[12] / P1[13], stand at `(11520, 15232)` (a placement byte
-  with bit 7 set: the corner between rows 118 and 119), and their talk,
-  once `0x3EF` is up, raises `0x5F8` and clears the walls at
-  `(89..90, 115..120)`. The pad hand stops at `z = 15038` in front of them,
-  and the interact probe (64 ahead, a 72-unit box) does not reach the
-  guards from there. The far side does no better: south of the gate the
-  wall stops the player at `z = 15424`, and the gate's teleport
-  (89..92, 122..124) lands in a closed pocket at (59, 82) whose only way out
-  is back. The pad hand also finds no walk to the vision P2[16]
-  at `(64, 15)` (its walk component ends at `(37, 17)`), whose `0x3CE` is
-  P2[17]'s C2 gate, so the segment stalls in `concnow`. Whether retail
-  talks to the guards from that spot, and what joins the `(64, 15)` room,
-  is not yet pinned; a capture in `concnow` would decide both.
+  .. P2[16] have run; its other `conc2` bands lie behind walls. The gate
+  guards P1[12] / P1[13] stand at `(11520, 15232)`, inside the gate's wall
+  line (collision rows 118..121, cols 88..91), which their talk paints
+  open (`4C 70`, cols 89..90) once `0x3EF` is up, raising `0x5F8`. The
+  facing probe cannot reach them from either side (the wall stops the
+  player at `z = 15038` north and `z = 15424` south; the probe reaches 64
+  ahead plus a 72-unit box). What it reaches is P1[26], an undrawn
+  placement one tile in front of them at `(11520, 15104)` whose
+  interaction is `B1 3D 08`, the touched mark on guard P1[13]: a talk
+  proxy (see [`field-locomotion.md`](../subsystems/field-locomotion.md)).
+  Through it the pad hand opens the gate and reaches `conc2`.
 - `chitei2`'s parts join only through `deroa`. The Rapid Transport System is
   `deroa`'s platform hub (P2[11]); `chitei2`'s three switches (P0[32..34]) only
   pick where it goes (`0x4EF` / `0x4F0`), and each parks the player on the

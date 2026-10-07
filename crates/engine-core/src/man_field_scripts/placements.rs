@@ -415,3 +415,63 @@ pub fn placement_scripted_menu_record(
         first_segment: body.len(),
     })
 }
+
+/// The partition-1 placement a **talk proxy** hands its interaction to, or
+/// `None` for any other placement.
+///
+/// A proxy is a text-free placement whose interaction section - from the
+/// spawn terminator to the next raw `0x21` - raises the touched mark on
+/// another actor: a cross-context `B1 <id> 08` (`+0x10 |= 0x100`, the bit the
+/// touch post `FUN_801D5B5C` sets and the context runner `FUN_80039B7C`
+/// steps a record on). Pressing the action button at the proxy therefore
+/// runs the other actor's conversation. `concnow` P1[26] is one: an
+/// undrawn actor (`4C 40` scale `0` in its spawn section) standing one tile
+/// in front of the gate guards at (89, 117), whose touch runs guard P1[13]'s
+/// record - the guards themselves stand inside the gate's wall, out of the
+/// facing probe's reach (64 ahead, a 72-unit box) from either side.
+///
+/// `<id>` is a flat actor index (partition-0 objects first); only a target
+/// inside partition 1 is returned, as a partition-1 index.
+///
+/// REF: FUN_801D5B5C, FUN_80039B7C, FUN_801CF9F4
+pub fn placement_talk_proxy_target(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<usize> {
+    if placement_inline_prologue(man_file, man, p).is_some() {
+        return None;
+    }
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return None;
+    }
+    let body = &man[start..end];
+    let entry_pc = placement_interaction_entry_pc(body, p.script_pc0, body.len());
+    if entry_pc == p.script_pc0 {
+        return None;
+    }
+    let n0 = man_file.partitions.first().map_or(0, Vec::len);
+    let n1 = man_file.partitions.get(1).map_or(0, Vec::len);
+    for insn in LinearWalker::new(body, entry_pc) {
+        let Ok(insn) = insn else {
+            return None;
+        };
+        if body.get(insn.pc).copied() == Some(0x21) {
+            break;
+        }
+        if let (
+            InsnInfo::CFlag {
+                kind: FlagKind::Set,
+                bit: 8,
+            },
+            Some(id),
+        ) = (insn.info, insn.extended)
+        {
+            let flat = usize::from(id);
+            return (flat >= n0 && flat - n0 < n1 && flat - n0 != p.index).then(|| flat - n0);
+        }
+    }
+    None
+}

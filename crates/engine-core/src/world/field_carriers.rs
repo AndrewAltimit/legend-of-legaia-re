@@ -129,6 +129,7 @@ impl World {
         // mechanism `0x3F` was wrongly standing in for.
         self.npcs.dialog.clear();
         self.npcs.dialog_prologue.clear();
+        self.npcs.talk_proxies.clear();
         self.npcs.positions.clear();
         self.npcs.glide_y.clear();
         self.npcs.entry_positions.clear();
@@ -191,6 +192,19 @@ impl World {
                     .positions
                     .entry(slot)
                     .or_insert((placement.world_x, placement.world_z));
+            }
+            // A **talk proxy**: an undrawn text-free placement whose
+            // interaction raises another actor's touched mark (`B1 <id> 08`),
+            // so the action button at it runs that actor's conversation
+            // (`concnow` P1[26] for the gate guard P1[13]).
+            // REF: FUN_801D5B5C, FUN_80039B7C
+            if let Some(target) =
+                crate::man_field_scripts::placement_talk_proxy_target(man_file, man, &placement)
+                && let Ok(target) = u8::try_from(target)
+            {
+                self.npcs
+                    .talk_proxies
+                    .insert(slot, (target, (placement.world_x, placement.world_z)));
             }
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),

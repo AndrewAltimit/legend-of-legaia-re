@@ -1378,6 +1378,16 @@ impl World {
             }
             consider(slot, ax, az, &mut best);
         }
+        // A talk proxy is box-tested at its own spawn position and answers
+        // with the actor whose conversation its touch runs: `concnow`
+        // P1[26], one tile in front of the gate, for guard P1[13], who
+        // stands in the wall line beyond the probe's reach.
+        // REF: FUN_801cf9f4, FUN_801D5B5C
+        for &(target, (ax, az)) in self.npcs.talk_proxies.values() {
+            if self.npcs.positions.contains_key(&target) {
+                consider(target, ax, az, &mut best);
+            }
+        }
         best.map(|(_, s)| s)
     }
 

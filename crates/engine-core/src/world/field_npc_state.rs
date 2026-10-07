@@ -38,6 +38,12 @@ pub struct FieldNpcState {
     /// simplified path ignores this and uses `field_npc_dialog` unchanged.
     pub dialog_prologue:
         std::collections::HashMap<u8, crate::man_field_scripts::InlineDialogPrologue>,
+    /// Talk proxies: placement `slot` -> (the placement whose conversation
+    /// its interaction runs, the proxy's own spawn position). A proxy is an
+    /// undrawn actor the facing probe can reach where the real speaker
+    /// cannot be reached ([`crate::man_field_scripts::placement_talk_proxy_target`]).
+    /// The probe admits the proxy's position and answers with the target.
+    pub talk_proxies: std::collections::HashMap<u8, (u8, (i16, i16))>,
     /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
     /// same `slot` as [`crate::world::FieldNpcState::dialog`]. Populated at field-scene entry
     /// from the MAN actor placements. The interaction probe
@@ -282,6 +288,7 @@ impl FieldNpcState {
             solid: false,
             dialog: std::collections::HashMap::new(),
             dialog_prologue: std::collections::HashMap::new(),
+            talk_proxies: std::collections::HashMap::new(),
             positions: std::collections::HashMap::new(),
             entry_positions: std::collections::HashMap::new(),
             headings: std::collections::HashMap::new(),

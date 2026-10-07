@@ -361,6 +361,7 @@ mod super_art_live_battle;
 mod system_flag_census_disc;
 mod talk_face_acquire_bind_disc;
 mod talk_facing_static_class_disc;
+mod talk_proxy_disc;
 mod talk_skips_spawn_section_disc;
 mod thread_camera_roll_execution;
 mod title_attract_handoff;

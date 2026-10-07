@@ -791,6 +791,18 @@ field.
   the blocked step's touch, and stops blocking via its `31 00`; the cupboard blocks silently, opens
   only on interact, grants once under its `70 xx` searched-flag guard, shows the found/empty
   message, and swings shut when the box is dismissed).
+- **A talk proxy answers for the actor it touches.** The facing probe walks
+  the whole actor list (`FUN_801CF9F4`): a point 64 ahead from
+  `DAT_801F2254`, box-tested at `0x40 + 0x20 - 0x18` = 72 around a
+  moving-class actor's live position (`flags & 0x01020000`), or at `0x50`
+  around a static actor's footprint centre; the hit is a talk when the
+  actor carries `0x40020000`. An undrawn placement can therefore stand in
+  for a speaker the probe cannot reach: its interaction raises the other
+  actor's touched mark (`B1 <id> 08`), and the context runner
+  (`FUN_80039B7C`) then steps that actor's record. The port reads such
+  placements at scene entry (`placement_talk_proxy_target`) and the probe
+  answers a hit on the proxy with its target. `concnow` P1[26] is the
+  gate guards' proxy. Disc-gated: `engine-core/tests/talk_proxy_disc.rs`.
 - **A prop record that walks the player carries them.** A cross-context
   walk-to-tile on the player (`C7 F8 <tx> <tz> <mode>`) parks the calling
   record until the walk kernel lands the player (`FUN_801DE840`
