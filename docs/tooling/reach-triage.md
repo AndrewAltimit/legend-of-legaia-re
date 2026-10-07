@@ -908,7 +908,7 @@ get there. All eight `save_subscreen.rs` bodies run - three from
 `SaveScreenFlow`'s own card-rack ticking and five from `w1g_save_subscreen_ladder`,
 whose gate was the entry context rather than a pad stream (see
 [below](#the-five-sub-screens-were-behind-an-entry-context-no-host-constructs)) -
-and `world/field_movement.rs`'s `800467e8` runs from the driven walks. The
+and `world/field_movement/locomotion.rs`'s `800467e8` runs from the driven walks. The
 wiring claim underneath the first is unchanged: no host opens a shop through
 that machine, which is `--live-audit`'s row and not this page's.
 
@@ -1330,7 +1330,7 @@ of state the gate *is* and then runs the ordinary engine path. All four are in
   resolver. `l3_confused_monster_target_gate` lands Confuse on a monster and
   drives the fight, contrasting against an unconfused monster in the same
   battle so "it targeted the party band" cannot pass vacuously.
-- `world/field_movement.rs` (`801d2404`) - the ledge hop. No fixture was
+- `world/field_movement/locomotion.rs` (`801d2404`) - the ledge hop. No fixture was
   needed: `field_ledge_hop_disc` already walked the player into a real
   `town01` ledge and verified the whole arc, and the row survived only because
   that test was not in the union.
