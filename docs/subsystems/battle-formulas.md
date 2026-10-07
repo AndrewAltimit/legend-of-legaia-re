@@ -49,7 +49,7 @@ own finisher; blocking and the limb-height "Miss" are separate mechanics.
 ## Contents
 
 - [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [juggle window](#the-juggle-window---what-makes-a-monster-juggleable) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
-- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [Spirit gauge extension](#spirit-gauge-extension)
+- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [Spirit gauge extension](#spirit-gauge-extension) · [AP gauge writers](#the-battle-ap-gauge---every-writer)
 - [Stats and the actor record](#stats-and-the-actor-record) - [applicator `FUN_800402F4`](#damage-application-primitive---fun_800402f4) · [stat block mapping](#actor-stat-block--monster-record-mapping) · [initiative](#initiative-key-seeding-fun_801da780) · [formation advantage](#formation-advantage-fun_80051d84) · [spell list](#spell-list-record-0x4c) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9](#selector-9---accuracy--evasion-roll) · [stat buffs](#stat-buff-selectors-17)
 - [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte) · [Seru-magic side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
 - [Rewards and costs](#rewards-and-costs) - [victory spoils](#victory-spoils-rewards) · [MP cost](#mp-cost--ability-bit-modifiers) · [RNG](#rng-primitive)
@@ -1024,6 +1024,49 @@ extended value, so the next turn's arts input opens on the longer bar. State
 `0x3E`'s item class 5 stages the same `min(base * 7 / 5 + 8, 0x120)` shape off
 the target. The `100` cap is the Spirit gauge's, not a second damage cap, and
 nothing here is written to HP.
+
+### The battle AP gauge - every writer
+
+The 0..100 AP gauge Super and Miracle Arts spend is the battle actor's
+`+0x170` halfword (the "Spirit gauge" above). A byte census of
+`sh rX,0x170(rY)` over PROT 0898 finds eighteen stores; the only other images
+that store it are the three light-row heal modules, PROT 0938 (Chaos Breath)
+and four SCUS battle-load / per-frame sites (among them the Maximum AP
+passive's pin at 100, `0x8004CECC`). Grouped by what they do:
+
+| Writer | Site | Effect |
+|---|---|---|
+| per-action accrual | `FUN_801E295C` state `0x50`, `0x801E5D60..0x801E5E8C` | `gauge -= +0x224` (the turn's accrued art cost), then `+0x224 = 8`, or `0x20` when the action category `+0x1DE` is `4` (Spirit); a party seat adds the AP Boost passives on record `+0xF8` (`0x200`: `acc / 4`, `0x100`: `acc / 10`); then `gauge += acc`, capped at 100 |
+| damage taken | `FUN_801DDB30` `0x801DE1C8..0x801DE2D8`, `FUN_801EC3E4` `0x801EDB80..0x801EDCC8` | the **defender** gains `max(1, damage * 100 / maxHP)` plus the same two passive arms, capped at 100 ([the two copies](#the-spirit-gauge-fill-is-duplicated)) |
+| arts builder | `FUN_801EED1C` `0x801EF490..0x801EF994` | a transient debit per chained art and its refund at the builder's tail - net zero; the real spend is the state-`0x50` subtraction ([arts-command-gauge.md](arts-command-gauge.md#where-the-charge-actually-lands)) |
+| level-9 heal | PROT 0905 `0x801F7F24..0x801F7F48`, PROT 0911 `0x801F7E10..0x801F7E3C`, PROT 0919 `0x801F8394..0x801F83C0` | cure tier `4` doubles each cured seat's gauge, capped at 100 |
+| clamps | `FUN_801DABA4` `0x801DAC04..0x801DAC1C`, `FUN_801E9FD4` `0x801EB960..0x801EB974` | the dead-slot sweep caps at 100; monster `0x8A`'s Chaos Breath pick cuts its own gauge to 50 |
+
+No store credits the actor that **dealt** the damage. The rest of the
+accrual's behaviour follows from the table. Every action ends with `+8`, but a
+Spirit action ends with `+32` **instead** of it, not `+32 + 8`, because both
+are the one accumulator byte. The `+8` lands after the action's own spend in
+the same block, so a 99-AP Miracle Art from a full gauge leaves
+`100 - 99 + 8 = 9`. And because the heal doubles whatever the gauge holds at
+that moment, a level-9 heal **after** the target's turn yields `(AP + 8) * 2`
+and one **before** it `AP * 2 + 8`: 17 AP becomes 50 or 42, 42 becomes 100 or
+92.
+
+These observations - the per-action `+8` applied at the end of the actor's own
+action, Spirit's `+32` in its place, the Miracle Art's 9-AP remainder, and the
+level-9 Vera / Orb / Spoon doubling with its ordering pairs - were first
+reported by the_rabidsquirel (community research, save-state testing on
+retail); the sites above are the disassembly behind them. The same report has
+AP rising after an ordinary kick or punch lands; the bytes give the attacker
+nothing for that, so a rise there comes from the damage-taken row (a hit the
+attacker took in the same exchange) or from the `+8` itself.
+
+Port: the accrual is `engine-vm::battle_action::done` (`done_cleanup`), the
+damage fill `battle_formulas::spirit_gauge_fill`, and the tier-4 doubling
+`cast_seru_ticks_a::cure_tier4_ap`, which the Vera and Orb ticks run. Spoon
+is not doubled in the engine yet: its module runs as a phase-chain body, and
+the engine stages the cure selector only for the base Seru block
+(`0x81..=0x8B`), not for the evolved block (`0x8C..=0x95`) Spoon's id sits in.
 
 ## Stats and the actor record
 
@@ -2112,6 +2155,12 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
   against other magical spells") is what the summon kernel bears out, and his
   [100% walkthrough](https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721)
   grounds the curated enemy tables in `legaia-gamedata`.
+- **the_rabidsquirel** - the battle AP accrual, first reported from
+  save-state testing on retail: the per-action `+8` at the end of the actor's
+  own action, Spirit's `+32` in its place, the 9 AP a Miracle Art leaves, and
+  the level-9 Vera / Orb / Spoon heal doubling the target's AP, with the
+  before / after-turn pairs that pin its order. Checked against the
+  disassembly under [the battle AP gauge](#the-battle-ap-gauge---every-writer).
 - The disassembly: `ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` /
   `overlay_battle_action_801ec3e4.txt` (the kernel), `overlay_0898_801e295c.txt`
   (the action state machine that writes the angle and distance words),

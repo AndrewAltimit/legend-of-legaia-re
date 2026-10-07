@@ -2145,7 +2145,13 @@ Three ticks in the band switch on a **cure tier** `1..=4` and `and` a keep-mask
 into the target's `+0x16E`: PROT 0905 (Vera) at `0x801F7D68`, PROT 0911 (Orb)
 at `0x801F7BE4` and PROT 0919 (Spoon) at `0x801F8168`. The masks are
 `0xFFFC` / `0xFF84` / `0xFB84` / `0xFB84`, and tier `4` additionally doubles
-`+0x170` under a `0x64` clamp (`0x801F7F24..0x801F7F48`).
+the battle AP gauge `+0x170` under a `0x64` clamp (Vera
+`0x801F7F24..0x801F7F48`, Orb `0x801F7E10..0x801F7E3C`, Spoon
+`0x801F8394..0x801F83C0`) - the level-9 heal doubling first reported by
+the_rabidsquirel from retail save-state testing
+([battle-formulas.md](battle-formulas.md#the-battle-ap-gauge---every-writer)).
+Orb and Spoon skip a dead seat whole, but `+0x16E & 4` skips only their HP
+store: the cure ladder still runs on that seat.
 
 The tier is **not** module data. All three read the same battle-overlay word
 `0x801F6960`, which sits below the slot-B base and is the Seru side-effect
