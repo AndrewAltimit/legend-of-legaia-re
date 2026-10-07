@@ -150,7 +150,9 @@ impl World {
     ///
     /// PORT: FUN_80046A20 (`0x80047058..0x80047098`, the `0x801F6964` hold)
     pub(in crate::world) fn tick_timed_message(&mut self) {
-        let step = i32::from(self.clock.frame_step.max(1));
+        // Per battle pass by the frame step, so one a vsync tick
+        // ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]).
+        let step = i32::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
         let Some(b) = self.battle.message_banner.as_mut() else {
             return;
         };

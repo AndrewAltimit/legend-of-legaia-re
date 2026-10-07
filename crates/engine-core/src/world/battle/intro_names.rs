@@ -59,14 +59,16 @@ impl World {
             .is_some_and(|c| c.entry_sweep_counter().is_some())
     }
 
-    /// One frame of the intro timer: `ctx[+0x6D6] -= 0x1F800393`, expiring
-    /// at or below zero (`0x801D0E3C..0x801D0E58`). The timer holds while
-    /// the entry sweep runs ([`Self::battle_entry_sweeping`]).
+    /// One tick of the intro timer: `ctx[+0x6D6] -= 0x1F800393` per battle
+    /// pass, expiring at or below zero (`0x801D0E3C..0x801D0E58`) - one a
+    /// vsync tick ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]).
+    /// The timer holds while the entry sweep runs
+    /// ([`Self::battle_entry_sweeping`]).
     pub(in crate::world) fn step_battle_intro_names(&mut self) {
         if self.battle_entry_sweeping() {
             return;
         }
-        let step = u16::from(self.clock.frame_step.max(1));
+        let step = u16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
         self.battle.intro_names_frames = self.battle.intro_names_frames.saturating_sub(step);
     }
 }

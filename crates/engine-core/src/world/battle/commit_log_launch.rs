@@ -24,18 +24,22 @@
 
 use super::*;
 
-/// What one engine tick adds to a tracked widget glide's `elapsed` byte.
+/// What one engine tick adds to a battle-pass counter that retail advances
+/// by the frame step: a tracked widget glide's `elapsed` byte, the intro
+/// names' hold, the timed message's hold.
 ///
 /// `FUN_801D9BBC` adds the frame step `*(0x1F800393)` per battle pass
 /// (`lbu v1,0x393(v1)` / `addu v0,a0,v1` at `0x801D9C18..0x801D9C28`), and a
 /// pass spans that many vsyncs, so a glide's `total` counts vsyncs: the
-/// sixteen-frame raise lasts sixteen vsyncs at any cadence. The world ticks
-/// once per vsync (the action SM's own timers drain by `1` a tick), so the
-/// per-tick step is `1`. Stepping by the frame step on every tick ran each
-/// glide at twice retail's speed under the battle's step of `2`
+/// sixteen-frame raise lasts sixteen vsyncs at any cadence. The holds drain
+/// the same way (`ctx[+0x6D6] -= 0x1F800393`, `0x801D0E3C..0x801D0E58`;
+/// the `0x801F6964` hold in `FUN_80046A20`). The world ticks once per vsync
+/// (the action SM's own timers drain by `1` a tick), so the per-tick step is
+/// `1`. Stepping by the frame step on every tick ran each of them at twice
+/// retail's speed under the battle's step of `2`
 /// (`nivora_duel_mid_blazing_slash`: retail's plaque and bar are ten of
 /// sixteen into their raise, the engine's had landed).
-pub(in crate::world) const WIDGET_GLIDE_STEP_PER_TICK: u8 = 1;
+pub(in crate::world) const BATTLE_PASS_STEP_PER_TICK: u8 = 1;
 
 /// Placement record 7 - the active-actor readout bar.
 const READOUT_BAR_ELEMENT: u8 = 7;
@@ -47,12 +51,12 @@ impl World {
             Some(legaia_engine_vm::battle_commit_log::LogLaunch::new(inbound));
     }
 
-    /// One tick of the launch glide ([`WIDGET_GLIDE_STEP_PER_TICK`]). A
+    /// One tick of the launch glide ([`BATTLE_PASS_STEP_PER_TICK`]). A
     /// settled inbound launch retires - the log is back at rest; a settled
     /// outbound one stays, which keeps the log hidden until the member
     /// returns to the ring or commits.
     pub(in crate::world) fn step_commit_log_launch(&mut self) {
-        let step = WIDGET_GLIDE_STEP_PER_TICK;
+        let step = BATTLE_PASS_STEP_PER_TICK;
         if let Some(l) = self.battle.commit_log_launch.as_mut() {
             l.step(step);
             if l.inbound && l.settled() {
@@ -111,10 +115,10 @@ impl World {
     }
 
     /// One tick of the two action-plate glides, on the step the commit log's
-    /// launch takes ([`WIDGET_GLIDE_STEP_PER_TICK`]; `FUN_801D9BBC` walks
+    /// launch takes ([`BATTLE_PASS_STEP_PER_TICK`]; `FUN_801D9BBC` walks
     /// every tracked widget in one pass).
     pub(in crate::world) fn step_action_plate_glides(&mut self) {
-        let step = WIDGET_GLIDE_STEP_PER_TICK;
+        let step = BATTLE_PASS_STEP_PER_TICK;
         for g in [
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
