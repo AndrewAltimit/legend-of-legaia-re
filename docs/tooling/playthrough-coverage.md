@@ -367,7 +367,7 @@ check is to hide the root and run:
 mv saves saves.off
 for f in $(grep -rl 'saves/' crates/*/tests/); do
   pkg=$(basename "$(dirname "$(dirname "$f")")")
-  cargo test -p "legaia-$pkg" --test "$(basename "$f" .rs)"
+  cargo test -p "legaia-$pkg" --test integration "$(basename "$f" .rs)::"
 done
 mv saves.off saves
 ```

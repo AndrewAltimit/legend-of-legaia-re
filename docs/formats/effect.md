@@ -493,8 +493,8 @@ What the shape says:
   `0xB0` and `0x1E`, `0x27`, `0x28`, `0x2A`, `0x2B`, `0x2C` are `0xD0`. Those
   are VRAM x coordinates, not sound ids - see the
   [bit-7 multiplex](#how-a-move-reaches-this-2d-pool---the-bit-7-multiplex).
-  `legaia_asset::move_power::EffectAuxTables` still calls the accessor
-  `effect_sfx` and the CLI still prints it as `sfx=`; the name is a leftover
+  The accessor is `legaia_asset::move_power::EffectAuxTables::effect_clut_x`,
+  but the CLI still prints the column as `sfx=`; that label is a leftover
   from the superseded reading.
 
 Move ids resolve to names through the SCUS spell-name table

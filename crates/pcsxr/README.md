@@ -45,7 +45,13 @@ corpora into one scene index), and `extract` mirrors `mednafen-state extract`
 (same `--start`/`--end`/`--out` flags, same KSEG0 VA semantics) so a
 state-reading script can dispatch on file extension and accept either
 emulator's states - `scripts/mednafen/check-0968-residency.py` does exactly
-that.
+that. `vram` writes the raw 1 MiB VRAM (or, with `--display-crop`, the
+on-screen rectangle sized by the `GP1(0x08)` resolution) - the raw-blob sibling
+of `mednafen-state vram-dump`.
+
+The `gpu` module (`PcsxGpu`) reads the state's GPU submessage: `GPUSTAT`, the
+last value written for each GP1 command, and the VRAM image, located by the same
+structural rule as the RAM.
 
 A `.sstate` is **not** main RAM only. Its memory submessage carries four
 length-delimited blobs - RAM, BIOS ROM, parallel port and a 64 KiB `hardware`
@@ -72,6 +78,7 @@ engine's behaviour against the captured retail facts. The anchor search reads
 - `crates/pcsxr/tests/anchor_load.rs` - the reader's own oracle (reads back each
   anchor's pinned facts).
 
-Depends only on `legaia-mednafen` (for the anchor search) + `flate2`; never on
+Depends only on `legaia-mednafen` (for the anchor search), `flate2` and
+`serde_json` (plus `clap` behind the default `cli` feature); never on
 `legaia-engine-core`, so the dev-only oracle edges stay acyclic. No Sony bytes are
 committed - the `.sstate` files are gitignored, local-only under `saves/library/`.

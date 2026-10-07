@@ -864,7 +864,7 @@ descriptor `0x801F2930`, live in the port as `world::effects`' blend-fade arm
 **Do the camera-snap and ocean-only kernels run on any host** closed in two
 halves: `Camera::take_camera_snap_beats` was a ladder gap and is entered now
 (`opdeene` publishes the cutscene camera arm, the only page branch that reads
-the bank); `FieldSceneAnim::ocean_only` is the damaged-bundle fallback and no
+the bank); `ClutWalkAnim::Ocean` is the damaged-bundle fallback and no
 shipped kingdom reaches it - all three install the slot-5 CLUT walker
 ([falsified](re-do-not-re-walk.md#world-map--kingdom-bundles)).
 

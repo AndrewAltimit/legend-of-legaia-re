@@ -1,7 +1,7 @@
 # legaia-prot
 
 `PROT.DAT` / `DMY.DAT` table-of-contents reader, `CDNAME.TXT` symbol map,
-and the standalone TIM-pack subformat.
+and the TIM-pack reader.
 
 `PROT.DAT` is the master archive that holds most of the disc's game data:
 characters, monsters, fields, dialog, sound. `DMY.DAT` shares its TOC
@@ -54,12 +54,19 @@ random blobs).
   implementation. The module also pins the `+2` word skew between the RAM
   word array and `Archive::toc`.
 
-- `timpack` - the standalone TIM-pack subformat used by some PROT
-  entries (notably `tim.dat`). Header is
-  `(magic_lo, magic_hi, count<16, marker=0x01)` followed by word offsets;
-  `byte_offset = word_index * 4 + 4`. Distinct from `legaia-asset::pack`
-  (DATA_FIELD streaming) and from the field-pack / effect-bundle
-  formats handled in `legaia-asset`.
+- `timpack` - reader for an `asset::pack` of TIMs sitting behind a
+  DATA_FIELD `TIM_LIST` chunk header (`(TIM_LIST << 24) | payload_len`), as in
+  `tim.dat`. Not a container of its own: the `marker == 0x01` it tests is the
+  chunk header's type byte, and `byte_offset = word_index * 4 + 4` is the pack's
+  own offset math shifted past that header. See
+  [`docs/formats/tim-pack.md`](../../docs/formats/tim-pack.md).
+
+- `locate` - owner lookup for a `PROT.DAT` byte offset (backs
+  `prot-extract locate`, below).
+
+- `region` - the retail region enum (`Na` / `Jp` / `Eu`), re-exported as
+  `legaia_prot::Region`, so region-specific addresses derive from one place
+  ([`docs/reference/builds.md`](../../docs/reference/builds.md)).
 
 ## CLI
 
@@ -94,7 +101,9 @@ The owner logic is `legaia_prot::locate` (unit-tested); it shares the
 
 ## See also
 
-- [`docs/formats/prot.md`](../../docs/formats/prot.md) - TOC math, CDNAME
-  inheritance rules, the three pack-format gotchas.
+- [`docs/formats/prot.md`](../../docs/formats/prot.md) - TOC math, why the
+  entry size is the gap to the next entry, the in-RAM TOC.
+- [`docs/formats/cdname.md`](../../docs/formats/cdname.md) - CDNAME
+  inheritance rules and the `+2` numbering space.
 - [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md)
   - runtime path: boot loader → in-RAM TOC → `FUN_8003e8a8` LBA resolver.

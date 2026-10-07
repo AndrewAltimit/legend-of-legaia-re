@@ -441,10 +441,10 @@ Cell pitch is the drawn width plus one; the quads are `0x2C` at colour
 
 Placing it is a **host** job, not a HUD-builder job: the seat is the struck
 actor's projected screen position, which only the layer holding the camera
-knows. The native window projects the actor under the FX camera and emits the
-cells as screen-space VRAM quads (retail's own texels, since the battle loader
-has already made the atlas resident); the browser play page has no
-screen-space VRAM sink, so it draws the same layout through
+knows. Both hosts project the actor under the FX camera and emit the cells as
+screen-space VRAM quads through one builder, `engine-ui::battle_numerals`
+(retail's own texels, since the battle loader has already made the atlas
+resident). Before the battle VRAM exists a host falls back to
 `engine-ui::battle_value_readout_draws_for`, the dialog-font fallback - retail's
 cells and pitch, different letterforms. `engine-ui`'s HUD builder draws the
 popup queue only under `LEGAIA_DIAG_HUD`.

@@ -617,7 +617,7 @@ descriptor drops.
 |---|---|---|---|
 | `cd_dma.rs` | 1 | `8003dda0` | **Re-verdicted `REPLACED-BY`** - see below. `ProtCdDmaHost` is constructed only inside `#[cfg(test)]` and the disc-gated `cd_dma_real_prot` test; no crate outside `engine-core` names `cd_dma`, and `overlay_loader`'s only non-test implementor is that same test-only host. Six sibling addresses have left this page - see below. |
 | `stream_file.rs` | 2 | `800559ec` `80055ac8` | **Re-verdicted `REPLACED-BY`** - see below. `StreamFileHost` has exactly one production mention - its own `impl` line. Every construction is a unit test or the disc-gated `stream_file_real` oracle. Three sibling addresses have left this page - see below. |
-| `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | Closed: `mode::ModeSeat` wraps `ModeDriver` and `engine-shell`'s `BootSession` owns one, driving it every frame; `World::tick` resolves `runs_master_frame_driver` (and so `per_frame_stage`) on every host. |
+| `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | Closed: `mode::ModeSeat` wraps `ModeDriver` and `engine-session`'s `BootSession` owns one, driving it every frame; `World::tick` resolves `runs_master_frame_driver` (and so `per_frame_stage`) on every host. |
 | `prize_exchange.rs` | 1 | `801dc1cc` | Closed: `World::try_arm_prize_exchange` (op-`0x49` sub-op 7) stages the session and `MenuRuntime::tick` drives it on both hosts; the koin1 interaction oracle `prize_exchange_disc.rs` reaches it from a real record. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
 | `save_select/card_io.rs` | 1 | `801e3294` | Closed: the same flow keeps a `CardIoMachine` for as long as a card screen is up and advances it through `card_frame_tick` each frame, with the poll status taken from the host's own block backend. |
@@ -787,7 +787,7 @@ in `per_frame_stage` and the inner level wired to every host as `World::tick`
 level is what has no seat.
 
 **The seat is taken on both hosts, and two of the three blockers this page
-named were gone before it was.** `engine-shell`'s `BootSession` owns a
+named were gone before it was.** `engine-session`'s `BootSession` owns a
 `mode::ModeSeat` and drives it once per frame from `tick`; the browser play
 page's `LegaiaRuntime` owns one too and reconciles it from its own frame path.
 `docs/subsystems/boot.md`

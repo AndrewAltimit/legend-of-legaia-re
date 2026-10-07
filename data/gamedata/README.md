@@ -15,7 +15,7 @@ is recorded in [`enemies.toml`](enemies.toml)). We keep the *factual*
 data only (item names, prices, art command sequences, MP costs, monster
 locations). No prose passages from any of the guides are committed; that
 would be a copyright issue. Only the tables are mined, and they are
-cross-validated against each other, with the `table.rs` canonical names
+cross-validated against each other, with the `legaia_art::tables` canonical names
 from [`crates/art`](../../crates/art) used as the authority for arts
 where they overlap.
 

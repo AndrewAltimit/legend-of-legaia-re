@@ -556,8 +556,8 @@ shape with the zero case and the ailment arm removed: `mp <= max/4` -> `9`,
 `mp <= max/2` -> `6`, else `7`. So an empty MP bar inks orange, not red.
 
 Port: `engine-ui::{menu_hp_ink, menu_hp_ink_with_status, menu_mp_ink}`. The
-ailment arm has no live caller - no view struct carries `+0x12E` yet - so the
-panels go through the `status == 0` wrapper.
+party view structs carry the `+0x12E` halfword as `status`, so the field
+panels call the ailment arm directly; `menu_hp_ink` is its `status == 0` case.
 
 ### Which scenes the menu opens in
 
@@ -1639,11 +1639,12 @@ rows through the shared list channel, which is how both hosts draw window
 11 with the list renderer they already call - at the cost of the row
 count column showing `0`, since retail's destination rows have no count.
 
-What a committed pick does not yet do is **enter** the world map at the
-landmark: the port writes the destination triple to
+A committed pick writes the destination triple to
 `World::menu.pending_warp` and the escape flag to
-`World::menu.pending_escape`, and nothing drains either. The bag
-decrement, the exit code and the staged triple are all committed.
+`World::menu.pending_escape`; `World::drain_staged_menu_warp` consumes both
+on the next tick, resolving the scene through the TOC names and leaving the
+pause session with the world-map-warp exit code (a miss logs retail's
+`UNFIND MAP NUMBER %d` and drops the use).
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
 live list window from descriptor 15 to descriptor 16 (live-window

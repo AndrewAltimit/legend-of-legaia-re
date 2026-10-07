@@ -1022,8 +1022,8 @@ TMD walk:
   there (`town01` = warm sandy pebbles; an earlier engine heuristic that
   borrowed the dome's nearest "grass vertex" sampled a blue texel region in
   `town01` and painted the floor sky-blue). Engine mirror:
-  `build_battle_ground_grid` in `play-window`, over the kernels in
-  `engine-core::battle_backdrop`.
+  `build_battle_ground_grid` in `play-window` (an alias of
+  `legaia_asset::battle_backdrop::build_ground_grid_rgbc`).
   The historical overlay capture filed under the `0896` label (a mislabeled
   slot-A window image; PROT 0896 itself is neither the battle background nor
   an overlay that loads here) shows the same grid renderer + `_DAT_8007b814`
@@ -2881,7 +2881,7 @@ The trail a swinging weapon leaves is one semi-transparent `POLY_FT4` per emitte
 
 The launch position is **not** the bare actor position: retail re-seeds its stack pair from `actor[+0x34..+0x3B]` at the top of every record iteration and runs the scale + facing rotation on it before the terminator test, so the quad the seed loop copies out carries the terminator record's own placement.
 
-Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id rather than pointer, one shared launch point rather than four identical copies), installed by the live per-frame walk in `World::step_actor_effect_script` and read back through `World::casting.move_fx_streak`. `engine-render::streak_pass` projects it once per frame and hands the corners to the ported packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are unchanged. The native window appends the quads to its screen-space textured batch.
+Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id rather than pointer, one shared launch point rather than four identical copies), installed by the live per-frame walk in `World::step_actor_effect_script` and read back through `World::casting.move_fx_streak`. `engine-ui::streak_pass` projects it once per frame and hands the corners to the ported packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are unchanged. The native window appends the quads to its screen-space textured batch.
 
 Two disclosed departures. The **projection** is the engine camera's, not the GTE's: `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes, which is the same operation `FUN_800195A8` performs in view space - but the engine's battle camera carries no GTE rotation/translation pair to feed the exact port (`billboard::project_billboard`). And retail links each packet at the projected billboard's own OT bucket, inside the scene; the engine's screen-space batch draws them over the actors instead of interleaved with them.
 
@@ -3103,7 +3103,7 @@ Per-frame helper that walks the 3 active party members (stride `0x414` - see [ch
 2. ORs the character's "active abilities" 16-byte block at `+0xF4..0x100` into a global 4×u32 bitmask at `0x80074358..0x80074368`. This is the "currently-active accessory effects" register read by every other game system.
 3. For each character, calls `FUN_800432BC` / `FUN_80042DBC` to add/remove temporary spells per the active spell-slot layout at `+0x2B0`.
 
-The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` - `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from most damage / status code paths (the action validator `FUN_8003FB10` does **not** call it - see [battle-action.md](battle-action.md#action-validator-fun_8003fb10)), so a from-scratch port models it as `BattleState::ability_active(u8) -> bool`.
+The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` - `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from most damage / status code paths (the action validator `FUN_8003FB10` does **not** call it - see [battle-action.md](battle-action.md#action-validator-fun_8003fb10)), ported as `World::party_has_ability(index)` against `World::party.party_ability_mask`.
 
 `FUN_800349EC` and `FUN_80035EA8` are the HP / MP threshold UI classifiers - given a character index they compare current vs max and return one of `2` (dead/zero) / `6` (low) / `7` (warn) / `9` (healthy). The dialog renderer keys text colour on the result.
 
@@ -3408,7 +3408,7 @@ Because the X wobble is shared inside an edge, the strip keeps its width and sna
 
 Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` returned for the bottom billboard, so the strip is depth-flat.
 
-Ported as `legaia_engine_render::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection is `project_ribbon_corners`, and arena allocation plus OT linking stay on the retail-renderer side that engine-render replaces.
+Ported as `legaia_engine_ui::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection is `project_ribbon_corners`, and arena allocation plus OT linking stay on the retail-renderer side that the port replaces.
 
 
 ### How the tint words reach the pixel
@@ -3687,9 +3687,9 @@ other than `0xA7` - the byte it reads is `gp+0x9F4`, which with
 presentation arm the tint SM `FUN_80050120` dispatches on.
 
 Every row is ported in `engine-vm::battle_impact_fx` and applied by
-`World::tick_battle_impact_fx`, except the tag-`0x67` ribbon: its
-`FUN_801E1D98` call is surfaced as `ClipImpactWrite::effect_at_target`
-and the streak pass does not yet raise a ribbon from it.
+`World::tick_battle_impact_fx`. The tag-`0x67` ribbon's `FUN_801E1D98`
+call is surfaced as `ClipImpactWrite::effect_at_target`, staged on
+`World::battle.clip_ribbon` and drawn on both hosts by `engine-ui::streak_pass::clip_ribbon_quads`.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
@@ -3891,7 +3891,7 @@ Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items
 
 ## Battle round lifecycle
 
-`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle.attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Toxic / Venom tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
+`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle.attack` / `battle.defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Toxic / Venom tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
 
 The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Numb / Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
 
@@ -3899,7 +3899,7 @@ Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/sr
 
 ## Battle command runner
 
-Sits between the player-input layer and the action state machine. One `BattleRunner` per battle session; engines feed it raw player commands per turn and call `tick_action` to drive the per-frame action SM.
+Sits between the player-input layer and the action state machine. One `BattleRunner` per battle session; engines feed it raw player commands per turn; it ticks no SM itself - hosts drive the per-frame action SM through their existing loop.
 
 `begin_round` delegates to `BattleRound::begin` for AP refresh + stat recompute, `push_command` / `push_chained_art` gate input against `ApGauge` and surface a typed `OutOfAp` error, `pop_command` / `pop_chained_art` refund the cost cleanly, `commit_turn` runs the queue through `resolve_action_queue` (Miracle / Super expansion) and stashes the resolved per-slot `ActionQueue`s. `end_round` drives `BattleRound::end` for tick-damage drainage.
 
@@ -4935,7 +4935,7 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 The bank is decoded from the user's `SCUS_942.54` `DAT_8006F198` descriptor table at boot (`SfxTable::from_scus` → `SfxBank::from_descriptors`, see [`sfx-table.md`](../formats/sfx-table.md)) and plays through the per-scene music VAB. The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued into the director's scheduler at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick advances the queue and keys matured cues on through the SPU. Cues touch only the SPU (no RNG), so battle determinism is unaffected; a missing bank / VAB / free voice silently drops the cue.
 
-Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs); the host-side bank decode + per-tick drive live in `crates/engine-shell` (`AudioBgmDirector::{set_sfx_bank,enqueue_sfx,tick_sfx_frame}`).
+Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs); the host-side bank decode + per-tick drive live in `crates/engine-session` (`AudioBgmDirector::{set_sfx_bank,enqueue_sfx,tick_sfx_frame}`).
 
 ## Inventory item-use session
 
@@ -5484,9 +5484,9 @@ enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
 (down + log id into `battle_captures`), and `EscapeRequested` sets
 `World::battle.escaped` so the item tick returns to the field via
 `finish_battle` (no loot).
-- **Magic** opens a `battle_magic::BattleSpellSession` on `World::battle.spell_menu` (built by `World::build_battle_spell_session` from the caster's learned spells off their roster record + live MP, MP-gated). The picker kind matches the spell's `SpellTarget` shape. On confirm `World::apply_battle_spell` deducts MP once, resolves each affected slot through `spells::cast_spell` (caster magic from `World::battle.magic`, target magic-defense reusing `World::battle.defense`), and folds the outcome into the live actor table via `World::fold_spell_outcome`. All `SpellOutcome` shapes apply:
+- **Magic** opens a `battle_magic::BattleSpellSession` on `World::battle.spell_menu` (built by `World::build_battle_spell_session` from the caster's learned spells off their roster record + live MP, MP-gated). The picker kind matches the spell's `SpellTarget` shape. On confirm the session commits a `PendingPartyAction::Spell` through `World::commit_party_command`, and the cast runs as the caster's action-SM dispatch: `World::cast_spell_on_slots` deducts MP once, resolves each affected slot through `spells::cast_spell` (caster magic from `World::battle.magic`, target magic-defense reusing `World::battle.defense`), and folds the outcome into the live actor table via `World::fold_spell_outcome`. All `SpellOutcome` shapes apply:
     - damage / heal / cure / revive;
-    - **buffs** (`World::apply_battle_buff` writes the delta straight into the per-slot `battle_attack` / `battle_defense` / `battle_magic` scalar with refresh semantics + a per-turn timer aged in the re-arm path, reverted exactly on expiry);
+    - **buffs** (`World::apply_battle_buff` writes the delta straight into the per-slot `battle.attack` / `battle.defense` / `battle.magic` scalar with refresh semantics + a per-turn timer aged in the re-arm path, reverted exactly on expiry);
     - **capture** (`World::resolve_capture` rolls vs the monster's missing-HP fraction - reliable only on a weakened Seru - downing it and logging the id into `World::seru.battle_captures` on success);
     - and **escape** (sets `World::battle.escaped`, and the spell tick returns to the field via `finish_battle` with no loot).
     - Accuracy / Evasion / Speed buffs are tracked but have no live-loop scalar to move yet.
@@ -5522,7 +5522,7 @@ there collapses to the one art whose command string the chain ends with
 While any submenu is open both the SM and the command session are parked;
 `World::tick_battle_arts_input` / `tick_battle_{arts,spell,item}_menu` drives it
 from `World::input`. On a completed action the result is applied, the relevant
-popup is surfaced (`battle_hit_fx`), and the action SM is **parked at
+popup is surfaced (`World::drain_battle_hit_fx`), and the action SM is **parked at
 `EndOfAction`** so the re-arm block cycles to the next combatant - a cast / art
 / item use is the actor's whole turn, no Attack-SM strike fires. Backing out
 reopens the command menu for the same actor. Implementation:
@@ -5546,7 +5546,7 @@ an executed action.
 Capturing a monster (magic capture roll or a capture item) downs it and logs its **monster id** into `World::seru.battle_captures`.
 
 - `World::finish_battle` resolves these through `World::resolve_captures`: each captured monster id maps to a **Seru id** via `MonsterCatalog`'s `MonsterDef::seru_id`, and `seru_learning::record_capture` banks that Seru's capture points against `World::seru.log` for every active party slot eligible by the Seru's `learnable_mask`.
-- When a slot's accumulated points cross the Seru's `learn_threshold` the taught spell id joins that character's learned list, and `World::build_battle_spell_session` unions the roster's saved spells with `seru_log.learned_spells(slot)` so a freshly-learned spell is immediately castable - no save/load round-trip needed.
+- When a slot's accumulated points cross the Seru's `learn_threshold` the taught spell id joins that character's learned list, and `World::build_battle_spell_session` unions the roster's saved spells with `World::seru.log.learned_spells(slot)` so a freshly-learned spell is immediately castable - no save/load round-trip needed.
 - The accepted `CaptureOutcome`s are stashed in `World::seru.last_capture_outcomes` (`drain_last_capture_outcomes`); `resolve_captures` also builds the first accepted capture into `World::party.current_capture_banner` (a `seru_learning::SeruCaptureSession`), the sibling of `World::party.current_level_up_banner`.
 - `World::tick` advances the banner one frame per call and clears it when the session reaches `Done`, so it plays out over the field after the battle ends. The session's `current_banner()` yields the active line (`"Captured: <Seru>!"` then per-learn `"<char> learned <spell>!"`); the play-window renders it via `legaia_engine_render::capture_banner_draws_for`.
 - `resolve_captures` always drains `battle_captures`; with an empty `World::seru.registry` (the default) it banks nothing - the monster is still downed, but no Seru is learned.
@@ -5564,7 +5564,7 @@ That asymmetry is not cosmetic. Battle **entry** was never gated - a field carri
 Two action-SM gates are driven in retail by the render / animation systems and by nothing in the port, so `World::live_battle_tick` retires each on the frame its state is reached:
 
 - `ADVANCE_DONE` at `AttackRecovery` - retail clears it when the recovery animation finishes.
-- The caster's `spell_iter` (`actor+0x1FA`) at `MagicSustain` (`0x2B`). The SM only ever *sets* this byte; retail's cast-animation system counts it down. Without the edge, `magic_sustain`'s `stay` held forever, so **any battle in which a monster or party member cast a spell stopped dead** - which is most real encounters, and is a large part of what "battles don't work" looked like from the outside. Regression: `a_spell_cast_does_not_park_the_action_sm` in `crates/engine-core/tests/battle_always_resolves.rs`; the real-data version is `crates/engine-shell/tests/scene_encounter_rollable.rs`, which drives a `map03` encounter from the disc's own region table through to a resolved battle.
+- The caster's `spell_iter` (`actor+0x1FA`) at `MagicSustain` (`0x2B`). The SM only ever *sets* this byte; retail's cast-animation system counts it down. Without the edge, `magic_sustain`'s `stay` held forever, so **any battle in which a monster or party member cast a spell stopped dead** - which is most real encounters, and is a large part of what "battles don't work" looked like from the outside. Regression: `a_monster_cast_does_not_park_the_action_sm` in `crates/engine-core/tests/battle_always_resolves.rs`; the real-data version is `crates/engine-shell/tests/scene_encounter_rollable.rs`, which drives a `map03` encounter from the disc's own region table through to a resolved battle.
 
 #### The strike-pacing gate must always be able to retire
 
@@ -5850,7 +5850,7 @@ display buffers, decayed one wash step per frame, overdrawn with each frame's
 row strips - is uploaded into a spare VRAM rect and drawn as textured backdrop
 quads behind the live strips, so the gaps between departing rows show the
 fading trail rather than black
-(`engine-render::battle_intro::CURTAIN_TRAIL_RECT` + siblings). Two disclosed
+(`engine-ui::battle_intro::CURTAIN_TRAIL_RECT` + siblings). Two disclosed
 approximations: the wash drain (`FUN_80046978`) scales its constant by the
 scratchpad brightness byte, taken at full brightness; and retail's display is
 double-buffered, so its per-buffer trail may interleave at half this rate -

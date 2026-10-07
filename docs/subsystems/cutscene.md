@@ -993,7 +993,7 @@ The *"It was the Seru."* caption appears between `opdeene`'s two crawls, as a ce
 
 **From-scratch port.** The engine blits that scene texture rather than rendering text. On entering `opdeene`, [`cutscene_caption::decode_opdeene_caption`](../../crates/engine-core/src/cutscene_caption.rs) locates the 112×32 4bpp TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry is `0x0000`, so [`legaia_tim::decode_rgba8`] gives it alpha 0 - only the glyphs are opaque), stored on `World::cutscene.caption`.
 
-[`World::tick`](../../crates/engine-core/src/world/frame_tick.rs) fades `cutscene_caption_alpha` in while the caption is target-visible - after the first crawl block scrolls out (`cutscene_narration_seq == 1` and narration inactive) - and back out; the host uploads the image once as a sprite atlas and emits one centered, alpha-tinted `SpriteDraw`. The caption is bounded to a retail-like ~2 s beat (`CAPTION_HOLD_FRAMES`) so the engine's currently-longer inter-crawl timeline gap doesn't leave it frozen; it also fades on the second crawl opening, whichever comes first. Disc-gated oracle: `crates/engine-core/tests/opdeene_caption_playback.rs`.
+[`World::tick`](../../crates/engine-core/src/world/frame_tick.rs) fades `World::cutscene.caption_alpha` in while the caption is target-visible - after the first crawl block scrolls out (`World::cutscene.narration_seq == 1` and narration inactive) - and back out; the host uploads the image once as a sprite atlas and emits one centered, alpha-tinted `SpriteDraw`. The caption is bounded to a retail-like ~2 s beat (`CAPTION_HOLD_FRAMES`) so the engine's currently-longer inter-crawl timeline gap doesn't leave it frozen; it also fades on the second crawl opening, whichever comes first. Disc-gated oracle: `crates/engine-core/tests/opdeene_caption_playback.rs`.
 
 How the image origin was pinned (cold-boot probes in `scripts/pcsx-redux/`): a **text-path census** (`autorun_text_census.lua`) over the whole `opdeene` leg shows the only text renderers that fire are the crawl roller `FUN_80037174` and the MES glyph renderer `FUN_80036888`, both rendering **only** the 22 ASCII crawl pages (resident at `0x80109D89` / `0x8010A581`); the balloon spawner `FUN_8003C764`, text-actor register `FUN_8003541C`, single-line `FUN_8003CC98` and dialog-glyph emitter `FUN_8003C1F8` fire **zero** times.
 
@@ -1336,19 +1336,18 @@ need `≥ 5`).
 `CFLAG_TST` (`B3 <id> <bit>` = op `0x33` with the `0x80` bit, targeting a spawned channel's
 `ctx[+0x50]` id and testing `ctx.flags & (1 << bit)`) is the beat-completion wait: retail's
 `4C 85` acquire freezes the channel, a poke drives its beat, `B2 <id> 0A` resumes it, and the
-timeline **halts** at the `B3` until the awaited bit is set. `step_cutscene_timeline` models that
+timeline **halts** at the `B3` while the awaited bit is set (retail's op-`0x33` arm holds the PC on a set bit and advances once it clears, `0x801DEE44`). `step_cutscene_timeline` models that
 handshake: on a failing cross-context `0x33` it **PARKS** ([`CutsceneTimeline::channel_wait`]) -
 holding the PC on the flag-test op and, each subsequent tick, re-testing the awaited channel's
-bit, resuming past the op only once it is set (a later poke or the walk kernel landing the leg raises
-it; the channel's own script does not run). The park is
-bounded by `CHANNEL_WAIT_PARK_TIMEOUT`: a channel our port cannot advance to its flag-set falls
+bit, resuming past the op only once it is clear (the channel's own script does not run). The park is
+bounded by `CHANNEL_WAIT_PARK_TIMEOUT`: a channel our port cannot advance to drop the flag falls
 back to the by-width step-past (the prior behaviour) so the prologue never stalls. Bit 10 (`0x400`,
 the halt/busy bit the acquire sweep toggles) is a suspension *verify* (`B3 <id> 0A`), not a
 completion wait, so it keeps the width step-past; the local/global flag-tests `0x2D`/`0x30` and a
 bare (non-cross-context) `0x33` step past too. Real timed `0x4A` WAIT_FRAMES and the `0x49`
 STATE_RESUME name-entry suspend are still honoured. Unit-covered by
-`cutscene_timeline_parks_on_channel_wait_until_flag_set` (parks while the flag is clear, resumes
-the tick it is set) + the timeout fallback.
+`cutscene_timeline_parks_on_channel_wait_until_flag_clears` (parks while the flag is set, resumes
+the tick it clears) + the timeout fallback.
 
 **Player-channel (`0xF8`) ExecMove / halt-acquire completion.** Door-cutscene records drive the
 **player** through the same handshake: `A2 F8 <move_id>` (ExecMove) pokes a move-table clip onto

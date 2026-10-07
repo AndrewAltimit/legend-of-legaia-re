@@ -243,7 +243,7 @@ Each arm resolves one or more of the character record's five equipment slots (`+
 
 This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md): the seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds **neither** INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches ATK **working** here instead, per committed command. The seeder's omission is correct, not a gap.
 
-Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`; the live loop seeds a party slot's `battle_attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`). The player-facing formula this fold feeds is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
+Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`; the live loop seeds a party slot's `battle.attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`). The player-facing formula this fold feeds is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
 
 ## Who writes the cost
 

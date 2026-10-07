@@ -21,6 +21,7 @@ native window.
 - [Minigame rules engines](#minigame-rules-engines)
 - [Smaller modules worth knowing](#smaller-modules-worth-knowing)
 - [Other major modules](#other-major-modules)
+- [Module index](#module-index)
 - [See also](#see-also)
 
 ## What it provides
@@ -96,7 +97,7 @@ each a plain data struct in its own `world/*.rs` file. Access is
 | `camera` / `presentation` / `ambient` | `CameraRig` / `ScreenFxState` / `AmbientFxState` | Camera snapshot + ease + register file; fades, tints, cinematic bars; CLUT cyclers, VDF pulse, VRAM moves. |
 | `audio` / `move_vm` / `clock` | `AudioState` / `MoveVmGlobals` / `FrameClock` | BGM + SFX cue slots + battle cue queues; move-VM pools and globals; frame-step factor, vsync accumulators, tick counters. |
 | `tables` / `flags` / `toggles` | `DiscTables` / `StoryFlagState` / `WorldToggles` | Disc-parsed static tables; story / system flag words; engine behaviour toggles. |
-| `script_actors` / `fog` | `FieldScriptActorState` / `FogPool` | Scripted arcs, the NPC height channel and attached lights; the fog-particle pool. |
+| `script_actors` / `fog` / `fog_volume` | `FieldScriptActorState` / `FogPool` / `FogVolume` | Scripted arcs, the NPC height channel and attached lights; the fog-particle pool; the volumetric-fog enhancement. |
 
 #### `SceneMode::Battle`
 
@@ -445,7 +446,7 @@ story flags, money, inventory, per-character ext, saved chains.
 resulting level-ups. It is the runtime side the randomizer's disc-gated
 oracles drive to prove a patched drop actually reaches the player.
 
-`move_power::request_move_fx_spawn` raises the battle move-FX request for
+`World::request_move_fx_spawn` raises the battle move-FX request for
 non-summon casts and specials, off the parsed `move_power` table.
 
 ## Minigame rules engines
@@ -604,9 +605,10 @@ presentation left to the host:
   `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
   CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; the battle
   actor tick in `world::actors` drains them into the SFX ring.
-- `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
-  lookup, host-agnostic input binding, and scene-name → map-id
-  resolution.
+- `input::Mapping`, `scene::DefaultMapIdResolver` - host-agnostic input
+  binding and scene-name → map-id resolution. (Effect lookup,
+  `EffectCatalog`, is `legaia_engine_vm::effect_vm`'s; the scene host loads
+  it from `efect.dat`.)
 
 ## Other major modules
 
@@ -643,6 +645,71 @@ presentation left to the host:
   template.
 - `cd_dma` / `overlay_loader` / `stream_file` - the CD streaming host traits
   and overlay / stream loaders.
+
+## Module index
+
+The modules the sections above do not walk, grouped by family. The module
+docs carry the retail provenance.
+
+- **Actor model + hosts** - `actor_handler` (the actor's `+0x0C` per-frame
+  handler identity), `actor_alloc_host` / `move_buffer_host` (the `World`
+  impls of `engine-vm`'s allocator and MOVE-buffer host traits),
+  `part_motion` (a move-VM part's motion block between steps),
+  `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
+  `camera_rel_glide`, `object_effect` (the `0x80083FF8` object-effect table).
+- **Battle** - `battle_anim` (per-actor clip playback), `battle_events`
+  (the action SM's event queue), `battle_arts` / `battle_magic` (the Arts and
+  Magic submenus), `battle_open` (the formation open banner),
+  `battle_party_form` (a member's assembled battle form, once for both
+  hosts), `battle_cam_inputs`, `battle_afterimage` (Super / Miracle Art
+  ghosts), `battle_body_blend`, `battle_effect_clut` / `battle_status_clut`
+  (effect palette stage, status recolour), `battle_sideband_textures`
+  (`readef.DAT` pages), `battle_steal` (death spoils), `battle_return_flags`
+  (MAIN INIT's back-from-battle story-flag arm), `sfx_cue` (cue id → ring /
+  XA clip), `magic_xp`, `retail_magic`, `seru_learning`, `seru_stats`,
+  `tactical_arts` (learn-on-use), `spell_party_broadcast` (`FUN_8003053C`).
+- **Field** - `field_events` (the field VM's event queue), `field_ground`
+  (walk-ground heightfield as a render surface), `field_lit_mesh` (the
+  light-source TMD rows' shading), `field_view_window` (the visible-tile
+  crop), `field_occlusion` (the occlusion fade's visibility gate),
+  `coplanar_draws`, `drop_shadow`, `fog_particles` (retail `fog_set`),
+  `fog_volume` (volumetric fog, an enhancement), `clut_fx` /
+  `clut_walk_anim` (scripted CLUT cells, the CLUT-walk shimmer), `vdf_pulse`
+  (enhancement), `register_ramp` (op `0x43` camera zone ramp), `walk_regen`,
+  `text_balloon` (`4C E1`), `place_name_banner`, `field_audio_release`,
+  `field_actor_clone` (`4C 14`), `field_actor_program` (the voice-over
+  scene actor), `field_submode_screen` / `field_submode_code_lock` /
+  `field_submode_flag_window` (op-`0x49` submode host and two handlers),
+  `field_save_screen_actor`, `scene_transition_actor` (the transition
+  streaming actor), `cutscene_script_elements`.
+- **Cutscene + movie** - `cutscene_narration` (subtitle roller),
+  `cutscene_caption`, `movie_audio` (what a movie does to the score),
+  `mdec_dma_sync`.
+- **Overworld** - `overworld_curvature`, `overworld_draw_order`,
+  `overworld_ground_cue`, `world_map_markers` (not retail: marker quads).
+- **Menus + screens** - `menu_cues`, `menu_glyph_atlas`, `menu_input`
+  (`FUN_801d688c`), `menu_item_category`, `menu_list_rows`,
+  `menu_open_sequence`, `menu_validator`, `status_screen`, `spell_menu`,
+  `key_rebind`, `list_order`, `name_entry`, `save_screen` (the save
+  screen's host half), `debug_char_editor`, `dev_menu_host`,
+  `dialog_pacing` / `dialog_picker_slide` (typewriter reveal, picker slide),
+  `title_screen_atlas`, `publisher_logos`, `game_over` (party wipe → title),
+  `prize_exchange` (casino sub-screen `0x20`).
+- **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
+  `minigame_floor`, `minigame_status` (the engine's affordance rows),
+  `dance_cast_scene`, `dance_tutorial`, `fishing_scene`, `fishing_chrome`,
+  `fishing_exchange_input`, `baka_fighter_chrome`, `baka_impact_fx`,
+  `muscle_ringside`, `other_game_overlay` (PROT 0977 kernels),
+  `casino_coin_bank` (op `4C E5`), `effect_default_arm` /
+  `effect_sprite_arm` (render-mode-4 emitters as per-frame meshes).
+- **Scene loading + session** - `scene_assets`, `scene_bundle`,
+  `scene_live` (a headless live scene preview for viewers), `scene_name_sync`,
+  `resume` (where a load resumes and a New Game starts), `chunk_install`
+  (sound-stream chunk routing), `encounter_registry`, `sound_state`,
+  `fade_ramp`, `retail_pad` (`FUN_8001822c`), `scus_leaf_kernels`.
+- **Cheats + capture pins** - `cheats` (the play hosts' cheat mutations),
+  `cheat_applier` + `ram_map` (parsed GameShark codes → engine cells),
+  `capture_observations` (codified save-state findings).
 
 ## See also
 

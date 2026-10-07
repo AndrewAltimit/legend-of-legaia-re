@@ -146,7 +146,7 @@ tmd vram-dump extracted/tmd_scan/0148_retock/raw_off000004.tmd -o vram.png \
 # walked prim counts, bytes consumed vs section size, vertex-index range
 tmd validate-prims extracted/tmd_scan
 
-# Diagnostic only: try PsyQ standard primitive sizes per mode byte. Legaia
+# Diagnostic only (`legaia_prim_probe`): try PsyQ standard primitive sizes per mode byte. Legaia
 # uses a custom layout, so this is expected to *fail* to consume cleanly -
 # it exists to demonstrate that the standard reading doesn't fit.
 tmd probe extracted/tmd_scan/0148_retock/raw_off000004.tmd

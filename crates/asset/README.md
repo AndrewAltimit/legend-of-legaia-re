@@ -31,6 +31,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`element_affinity`](#element_affinity)
   - [`seru_side_effect`](#seru_side_effect)
   - [`formation_census`](#formation_census)
+  - [`battle_backdrop`](#battle_backdrop)
   - [`battle_camera_table`](#battle_camera_table)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -64,7 +65,9 @@ Side-effect-free disassembler for the field/event-VM bytecode (the opcode
 stream `FUN_801DE840` executes): the per-opcode width/format decoder plus
 `LinearWalker`. Lives here (next to the MAN/scene parsers that carry the
 bytecode) so disc tooling can walk scripts without the engine; the executing
-VM re-exports it as `legaia_engine_vm::field_disasm`.
+VM re-exports it as `legaia_engine_vm::field_disasm`. CLI: `asset field-disasm
+file|scene-event-scripts|scan-prot`; `asset field-op-census` is the disc-wide
+opcode census built on it ([`docs/tooling/field-op-census.md`](../../docs/tooling/field-op-census.md)).
 
 ## Byte accounting (`byte_account`)
 
@@ -131,8 +134,8 @@ attached from the source entry - the structural fix for the VA-aliasing identity
 problem the `overlay_<label>_<addr>` dump naming works around. `recover_base`
 recovers the load base statically from the overlay's own internal `jal` call
 graph; `as_loaded` / `fingerprint` / `verify_fingerprint` back the committed map
-(`data/static-overlays.toml`); `ghidra_import_jython` / `ghidra_import_driver`
-emit the Ghidra import helpers. CLI: `asset overlay list/extract/verify/ghidra/generate`.
+(`crates/asset/data/static-overlays.toml`); `ghidra_import_jython` / `ghidra_import_driver`
+emit the Ghidra import helpers. CLI: `asset overlay list/extract/verify/ghidra/scan/find-sig/generate`.
 Complements the dynamic save-state captures (it does not address runtime values).
 See [`docs/tooling/static-overlay-pipeline.md`](../../docs/tooling/static-overlay-pipeline.md).
 
@@ -461,16 +464,10 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | `battle_char_assembly` | Battle character-mesh assembler: selects a player file's five equipment sections by equipped item ids and splices them into the merged battle TMD (bone tags + attach bones; `PORT: FUN_80052770` case 4 / `FUN_800536BC` / `FUN_80053898`), plus `relocate_tsb_cba` - the registration-time per-slot TSB/CBA rewrite into the runtime VRAM band (`PORT: FUN_80053a28`; texpages `x in [512, 896), y = 256`, CLUT row `481 + slot`). Assembly + relocation reproduces the live runtime blob. |
 | `battle_char_assembly` (battle animations) | The character's battle animations from `record[0]` of the same file (`battle_animations` / `idle_battle_animation`: action-offset table at the record head, monster-format `[parts][frames][9-byte TRS]` stream at entry `+0xAC`, `parts` = skeleton bones, entry first byte = action tag with tags `2..5`/`0xB` the hit-reaction family, rate byte at `+0x78` - the in-battle pose source for the assembled mesh, NOT PROT 1203), plus the per-object pose-channel map (`anm_bones` + `expand_animation_for_objects`; equipment extras ride their attach bone). |
 | `battle_char_assembly` (swing + art animations) | The runtime action table's equipment half: `swing_battle_animations` decodes the per-equipped-item weapon-swing records (section payload `+0x04`/`+0x08`, runtime slots `0xC..0xF`; splice `PORT: FUN_80052FA0`, record shape `FUN_800557B8`), `swing_command_costs` reduces them to the four `+0x74` AP prices the Arts input and the Muscle Dome both charge per command, and `art_animation_bank` / `art_animation` the record[0] `+0x58` art-anim bank (`[u32 count]` + `0xD0`-stride matcher+entry records; dynamic slots `0x10`/`0x11` via `FUN_8004AD80`), resolving each record's keyframe stream through its `readef.DAT` `"ME"` archive (`art_me_archive`). |
-| `battle_char_assembly` (equipment cuts) | `equip_diff` (presentation diff of one loadout against the all-defaults assembly), `equip_item` (the exact palette cut of a held item out of its bone object, graded `own-object` / `separate` / `welded` / `fused`), `equip_isolate` (the opinionated **item-alone** cut: colour diff against the bare limb for held items and headgear, identity for body and footwear, plus the committed per-record override table `data/equip-isolation.toml`; `item_mesh` hands the cut back as object-local geometry), and `equip_repair` (the **grip bridge**: pairs the open rims a welded weapon leaves where the fist hid the shaft - same object, facing, coaxial - and lofts a tube between them; never caps a lone rim). Background: `docs/formats/battle-data-pack.md`. |
+| `battle_char_assembly` (equipment cuts) | `equip_diff` (presentation diff of one loadout against the all-defaults assembly), `equip_item` (the exact palette cut of a held item out of its bone object, graded `own-object` / `separate` / `welded` / `fused`), `equip_isolate` (the opinionated **item-alone** cut: colour diff against the bare limb for held items and headgear, identity for body and footwear, plus the committed per-record override table `crates/asset/data/equip-isolation.toml`; `item_mesh` hands the cut back as object-local geometry), and `equip_repair` (the **grip bridge**: pairs the open rims a welded weapon leaves where the fist hid the shaft - same object, facing, coaxial - and lofts a tube between them; never caps a lone rim). See `docs/formats/battle-data-pack.md`. |
 | `battle_char_assembly::loadout` | The shared **loadout kernel** over all of the above: assemble one character at one equipped-id set (mesh minus `200+` byte-copy duplicates, VRAM band, labelled action/swing/art clip bank, per-item cuts) plus the two per-item `.glb` bakers (`item_only_glb` grip-repaired item-alone, `item_glb` exact cut with host limb) and the section catalog/labels. One implementation behind the site's characters-page equipment viewer and `legaia-engine export-glb --items`. |
 | `mesh_raster` | Software rasteriser for a posed `VramMesh` (textured through PSX VRAM, depth-buffered, framed to fit, optional card framing: sticks stood on their long axis, compact pieces as worn) - the site's per-item card thumbnails and the disc-gated contact sheets, where a GPU context is unavailable or unwanted. |
 | `me_archive` | `"ME"` keyframe-stream archive (`PORT: FUN_8002B28C` walk + `FUN_8002A9CC` channel-delta codec): `['M']['E'][u8 count][u16 sizes (bit 15 = compressed)][bodies]` → packed `[parts][frames][9-byte TRS]` streams. The art-animation stream source in `readef.DAT` slots `3*char+1` / `3*char+2`. Sibling container of the raw inline record[0] streams - same pose format, different encoding ([`battle-data-pack.md`](../../docs/formats/battle-data-pack.md#two-container-encodings-one-pose-format)). |
-| `party_swap` | Party ↔ Delilas battle-model swap. Both animation systems address poses by part index, so a swap is a part permutation plus a pivot-anchored rest-pose bake: `playerize_player_file` rebuilds a `PLAYERn` file so the character wears a sibling's model under their own clips, `fieldize_pack` / `fieldize_pack_npc` do the field-form (PROT 0874) direction. |
-| `party_swap::moveset` | The whole-archive sibling rebuild behind `--delilas-moves delilas`: `swing_entries` picks a sibling's distinct attack clips out of the `0x0C..=0x1F` action-tag band (minus the caller's signature chain), and `rebuild_moveset_archive` re-emits a character's art `"ME"` slot as the carried signature stream plus one retargeted entry per clip. Rebuilding rather than extending is forced by the slot budget - retail leaves 20374 / 2446 / 17361 free bytes - and made safe by the record `+0x0A` stream index being a free-standing pointer. |
-| `party_swap::cast_stage` | The staged CASTER rows behind the patcher's Megaton Press cast route: `build_staged_cast_rows` authors real wind-up/payoff action entries (the sibling's clips through `winpose::retarget_clip`, re-encoded raw-packed) on player rows `0x0A`/`0x0B`, hosted in the record[0] face-pixel payloads (dead on a playerized file), with the retail Block entry re-homed onto placeholder row `0x06`; `push_up_desc_table` reclaims the descriptor-table slack as compressed-stream footprint. |
-| `party_swap::winpose` | The clip-side rebuilds: `rebuild_idle_stream` (a character's battle idle re-authored from a monster idle, rewritten **in place at its exact retail length** - the record[0] stream is raw, so holding `parts`/`frames` needs no relocation - with frame 0 re-anchored on the host rest), `retarget_clip`, `rebuild_art_slot_entry` / `rebuild_base_slot` for the `readef.DAT` art slots, and `encode_channel_delta`, the encoder side of `me_archive`'s codec. |
-| `party_swap::enemy_anim` | The enemy-side animation mirror: hero idles + hero Hyper chains re-authored into the swapped monster blocks, so the duel-side Vahn / Noa / Gala fight under their own clips inside the monster-archive format. |
-| `party_swap::nivora_field` | The duel field scene: PROT 0639 members 106-108 (the siblings' field NPC meshes) re-emitted as the mapped heroes' field rigs - a whole-pack rebuild, since the 112 members tile the stream with zero slack. |
 | `face_anim` | Battle facial animation (`PORT: FUN_8004C7B4`): the action entries' eye (`+0x8C`) / mouth (`+0x98`) keyframe tracks (`FaceTracks` / `battle_face_tracks`), the static `SCUS_942.54` face-frame tables (`FaceFrameTables::from_scus`, `DAT_80076824..0x80076908`) and the per-frame stamp selection (`FaceFrameTables::stamps` → `MoveImage` rects the engine applies via `legaia_tim::Vram::move_image`). See [`battle-data-pack.md` § Facial animation tracks](../../docs/formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98). |
 | `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) - `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
 | `field_char_textures` | Field-character texture pack (PROT 0874 §2, "etim.dat"): eight TIM entries; 1/2/3 are the Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478). CLI `asset field-char-tex`. |
@@ -676,8 +673,8 @@ slot table `scene_asset_table` and its `scene_v12_table` variant are in the
 | `battle_ui_strings` | Pinned disc coordinates of the battle command / prompt / banner labels. |
 | `boot_overlay` | Boot-time overlay + side-band asset resolution (which PROT entry each loader parameter names). CLI `asset boot-overlay`. |
 | `dance_art` / `dance_cast` | Dance-minigame presentation art (PROT 1230 TIM pack, HUD widget table, face-stamp rig) and cast / choreography tables. |
-| `equip_hand_frame` / `equip_transplant` | Cross-character weapon transplant: the hand-frame calibration between two player battle files, and the section-record grafting. |
 | `player_file_annex` | Player battle files whose slot region is annexed outside the PROT entry. |
+| `fishing_captions` / `fishing_sprites` | The fishing HUD's lure-row caption strings (`FUN_801D13F0`) and its 20-byte HUD sprite table drawn by the shared quad emitter `FUN_801D63B0` (PROT 0972). |
 | `field_probe_tables` | The field overlay's three probe-offset tables, bound to their readers. |
 | `switch_tables` | `switch` jump tables in any overlay image, found from their dispatch. |
 | `inherited_tail` | Where an overlay image stops being its own content (the donor bytes at the end of its extent). |
@@ -694,6 +691,8 @@ slot table `scene_asset_table` and its `scene_v12_table` variant are in the
 ```bash
 asset describe         <input>            # parse + print descriptor
 asset decode           <input> --type-size 0xTTSSSSSS --offset 0xNN [--mode lzs|raw] [-o <out>]
+asset scan             <PROT dir>         # entries that fully decode as player.lzs containers
+asset stream / scan-stream                # streaming-container chunk list / PROT-wide sweep
 asset categorize       <PROT dir> [--cdname <CDNAME.TXT>]   # e.g. extracted/PROT
 asset account          <entry.BIN|index> [--funcs <dir>] [--depth N] [--json]
 asset find-overlay     <PROT dir>         # MIPS-code candidate scan
@@ -715,13 +714,18 @@ asset character-pack / battle-char-pack / field-char-tex
 asset player-anm / player-anm-scan
 asset scene-v12 / scene-v12-scan
 asset man / man-scan                      # MAN multi-section walker (--with-encounter)
+asset field-disasm / field-op-census      # field-VM disassembler + disc-wide opcode census
 asset boot-overlay     [--prot-dir extracted/PROT]  # which entry each boot loader param names
 asset slot-scene       <PROT 0975 .BIN> [--art <PROT 1200 .BIN>]  # reel cylinder + dot marquee
+asset slot-art         <PROT 0975 .BIN> <PROT 1200 .BIN> [--out <dir>]  # slot art + data as PNGs + JSON (VRChat kit)
 asset kingdom-slot / slot4-png            # world-map kingdom bundles
 asset summon-overlay   <PROT 0905 .BIN>
-asset move-power / element-affinity       # PROT 0898 battle-overlay tables (--json)
+asset summon-readef    <PROT 0893|0894 .BIN> [--texture-png-dir <dir>]   # side-band streaming slots
+asset move-power / element-affinity / seru-side-effect   # PROT 0898 battle-overlay tables (--json)
+asset formation-census <PROT.DAT|PROT dir> [--json]   # per-monster formation rows, scripted vs random
 asset summon-creatures                    # summon -> creature map (--scus, --json)
 asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
+asset shop-stock                          # every town gold shop's stock (MAN op-0x49 sites) joined to item names + prices
 asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables (--json)
 asset sfx-table / new-game / level-up             # more SCUS_942.54 tables (--json)
 asset extract          <entry.BIN> --out <dir>   # unpack a streaming entry's TIM_LIST / TMD chunks

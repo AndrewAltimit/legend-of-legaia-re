@@ -349,7 +349,7 @@ The practical alternative is a **runtime snapshot capture**:
   reverse-magic-search), and tags each placement ``kind: 'bulk_terrain'``
   when ``actor[+0x90]`` is outside the MAN buffer or ``'man_actor'``
   otherwise.
-- ``site/extract-world-placements.py`` merges the resulting JSON into
+- `scripts/asset-investigation/extract-world-placements.py` merges the resulting JSON into
   ``site/world-overview.json`` under ``bulk_terrain_placements`` per
   kingdom (alongside the existing ``placements`` and
   ``live_placements`` fields). The world-overview viewer renders both

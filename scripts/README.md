@@ -11,13 +11,14 @@ hard pre-commit gate. Every gate and every committed data artifact is listed
 below. One-off probes under `asset-investigation/` are grouped by subject
 rather than enumerated, and that is the only place a name may be missing.
 
-Two files stay at this top level because they are operational entry points
-referenced by code, not analysis one-offs:
+Three files stay at this top level because they are operational entry points,
+not analysis one-offs:
 
 | File | Role |
 |---|---|
 | `scenarios.toml` | The save-state / capture **scenario manifest** (`ScenarioManifest`). Hard-wired as a default path in `legaia-engine` and the disc-/library-gated oracle tests, so it lives at a stable location. |
 | `manage-states.py` | Curates the save-state catalogue that `scenarios.toml` indexes (list / fingerprint / import mednafen + PCSX states). |
+| `e2e-delilas-party.sh` | End-to-end check for the patcher's `--delilas-party` mod: patch a fresh image, verify it statically (`legaia-patcher delilas-verify`), then run a live PCSX-Redux encounter pass. |
 
 ## Layout
 
@@ -35,7 +36,7 @@ referenced by code, not analysis one-offs:
 | [`lib/`](#lib) | Sourced bash helpers shared by the shell scripts: process control that cannot match the caller, and run-and-capture that reports the real exit code. |
 | `models/` | Blender-side mesh generators for the custom monster-model track (`generate_twintail_duelist.py`, `lu_twintails_mod.py`) - authoring companions to `legaia-patcher monster-model`. |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
-| `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests. |
+| `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests, plus the committed ladder baselines the disc-gated replay tests ratchet (`*_baseline.toml`, e.g. `full_game_baseline.toml` for [`full-game-ladder.md`](../docs/tooling/full-game-ladder.md)) and the spine scripts they drive (`chapter1_spine.toml`, `full_game_spine.toml`). |
 
 ### ci/
 
@@ -58,15 +59,23 @@ in the hook, and must self-skip everywhere else.
 - `check-site-doc-mirrors.py` - hard gate: a `site/_content/` page that restates a `docs/` page must claim every `##` heading of its source through a `data-doc` attribute. `_gen.py` never reads `docs/`, so a mirror drops whole areas of its source while still building and still passing the link gate. See [`docs/tooling/site-shell.md`](../docs/tooling/site-shell.md).
 - `check-js-case-fold-chains.py` - hard gate over `site/**/*.js`: a `.toLowerCase()` / `.toUpperCase()` written on one literal of a `+` chain folds only that literal while reading as if it folds the pair. That is how the texture filter's search vocabulary shipped half-folded, making every disc-cased word unsearchable. Self-tests its detectors on every run. See [`docs/tooling/site-shell.md`](../docs/tooling/site-shell.md).
 - `check-js-sticky-frame-state.py` - hard gate over the play page's frame loop: every `TmdRenderer` setter that only stores a value (NCLIP cull, colour grade, depth cue, palette grade, overworld curvature) must be staged in `_stageFrameState`, ahead of the field / battle / minigame draw branches, or be classified as branch-owned. Self-tests its classifier. See [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md#sticky-renderer-state-staged-on-one-draw-branch).
+- `check-js-depth-space.py` - hard gate over `site/js/`: every GLSL ES fragment shader drawn into the play page's log-depth buffer must write `gl_FragDepth` in the same space (or carry a reasoned waiver), since a shader keeping `gl_FragCoord.z` compiles, draws and silently fails the depth test. See [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md).
+- `check-css-cascade-order.py` - hard gate over the site CSS: an `@media` declaration that a later unconditional rule of equal specificity shadows at every width. See [`docs/tooling/site-shell.md`](../docs/tooling/site-shell.md).
 - `check-js-classic-module-syntax.py` - hard gate joining the committed page sources' script tags to `site/js/`: module-only syntax (`import.meta`, static import/export) in a file loaded without `type="module"` is a parse error that kills the whole script, visible only in a browser. That is how the world-overview viewer shipped dead. Self-tests its detectors on every run. See [`docs/tooling/site-shell.md`](../docs/tooling/site-shell.md).
 - `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
+- `port_tag_reader.py` - the one `// PORT:` / `// REF:` marker reader shared by `port-catalog.py`, `check-port-tags.py` and `check-port-provenance.py`, so a wrapped address list reads the same in all three.
 - `check-port-provenance.py` - asks whether a `// PORT:` address names the right
   routine, which no other gate does. Ranked worklist off the disassembly; not in
-  the hook. See [`docs/tooling/port-provenance.md`](../docs/tooling/port-provenance.md).
+  the hook. Reviewed findings live in `port-provenance-waivers.toml`, each with
+  what was read and what it showed. See [`docs/tooling/port-provenance.md`](../docs/tooling/port-provenance.md).
 - `disc-coverage.py` (+ `disc-coverage-baseline.json`) - **hard gate**: coverage measured against the disc's own bytes rather than against our citations, ratcheted against a committed baseline. Self-skips without `extracted/` and the dump corpus, so it also runs in CI as a SKIPPED step. See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md).
+- `byte-account-coverage.py` (+ `byte-account-baseline.json`) - **hard gate** (`--check`): ratchets the disc-wide byte accounting (`asset account` swept by `asset-investigation/byte-account-sweep.py`), the third denominator beside the code and recognition figures. Self-skips without disc data. See [`docs/tooling/byte-accounting.md`](../docs/tooling/byte-accounting.md).
+- `retail-compare.py` (+ `retail-compare-baseline.json`) - driver over `legaia-engine retail-compare`: resolves the save library and extracted disc (also from a worktree), builds the engine, writes the report; `--check` asserts the committed ratchet, `--bless` merges new values in. Skips without data. See [`docs/tooling/retail-compare.md`](../docs/tooling/retail-compare.md).
+- `replay-port-coverage.py` - joins `cargo llvm-cov` output for the replay ladders against the port catalog's anchors: what a pad-driven run actually executes, against what the static graph calls live. See [`docs/tooling/reach-triage.md`](../docs/tooling/reach-triage.md).
 - `update-progress-metrics.py` - refresh `progress-metrics.json` from `disc-coverage.py` + `port-catalog.py`. Run locally on a machine with disc data and commit the result; the site build has none and can only render what is committed.
 - `check-progress-metrics-freshness.py` - **warn-only** in the hook: compares the committed `progress-metrics.json` the landing-page tiles render against `port-catalog-baseline.json` beside it. Both files are committed, so it needs no disc, no corpus and no catalog pass; `--live` adds the expensive comparison and `--strict` exits 1. It never rewrites the JSON - that is a deliberate, reviewed commit. See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md).
 - `progress-metrics.json` - that committed output, read by `site/_gen.py` for the landing page.
+- `image-port-status.json` (+ `image-scoped-verdicts.toml`) - the per-image port table `update-progress-metrics.py` also writes for `site/_gen.py`, and the per-image verdicts for VA-aliased addresses it reads (the ignore list keys by bare VA, so it cannot say what the routine is in one image). See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md#per-image-port-status).
 - `check-shell-observer-traps.py` - hard gate over the shell corpus for the three "observer inside the observed" defects (pipe exit status, self-matching `pkill`/`pgrep`, `grep`'s no-match exit 1). Self-tests its detectors on every run. See [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
 - `check-ui-host-drift.py` (+ `ui-host-drift-waivers.toml`) - hard gate: every `engine-ui` draw builder must reach both hosts, paired host geometry constants must carry equal values, and paired simulation injection sites must name the same kernels. See [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md).
 - `check-trait-override-symmetry.py` (+ `trait-override-waivers.toml`) - hard gate: an `engine-core` trait whose methods all carry default bodies lets a host forget a hook with no compile error, so every host implementing one must override the same set. Same page.
@@ -109,6 +118,8 @@ directory.
 - `auto-name-overlay.py` - auto-label an imported overlay.
 - `disasm-overlay-fn.py` + `mips_gte.py` - capstone MIPS disassembly with COP2/GTE annotation.
 - `gpu_packets.py` + `find-addprim-emitters.py` + `analyze-walk-ground-tiles.py` - PSX GPU-primitive decode + emitter/ground-tile analysis.
+- `split-tail-call-band.py` - cuts a frameless tail-call band (leaves sharing one epilogue, no frame and no `jr ra`) into its leaves at the `j` sites that leave the band.
+- `find-gte-light-consumers.py` - disc-wide census of the GTE commands that read the light matrix (`NCS` / `NCT` / `NCDS` / `NCDT` / `NCCS` / `NCCT`, `MVMVA` with matrix 1) over SCUS and every based overlay image.
 - `call-graph.py` / `scan_funcs_for_addr_range.py` - call-graph + address-range scans over the Ghidra dumps.
 - `dump_header.py` - the ONE parser for a dump's `size=` / `entry=` header, imported by every instrument over the corpus. Each used to carry its own regex, and since the corpus spells each field several ways, each silently rejected a different subset of real dumps.
 - `check-dump-stat-drift.py` - **hard gate**: committed prose quoting a dump statistic the dump no longer reports. A stale caveat ("the dump is empty, do not port this") suppresses work with no trace that it did.
@@ -120,6 +131,8 @@ directory.
 - `resolve-phantom-va.py` - byte-level owner resolution for a printed VA against named candidate readings; picks up the short bodies and data regions the base-integrity sweep declines to judge.
 - `locate-entry-image.py` - which based overlay image actually holds a worklist address's function entry, from disc bytes (stack-frame prologue + in-image `jal` sites). Disambiguates the VA aliasing at the shared `0x801CE818` / `0x801F69D8` bases; prints both signals rather than a verdict, because leaf entries have no frame and jump-table / SCUS-called entries have no in-overlay `jal`.
 - `find-address-word-refs.py` - who references an address, in **all five** forms at once: literal LE word (function-pointer table / actor-template slot), `lui`+`addiu`/`ori` materialisation, `jal`, `j`, PC-relative branch. Sweeps SCUS, the based overlay images and (`--prot`) the raw bytes of every extracted PROT entry, so "no caller" becomes a statement about the disc rather than about one tool's blind spot. `--range` answers "who references this table", `--home` marks the branch hits a slot sibling contributes at the shared base. See [`docs/tooling/address-reference-scan.md`](../docs/tooling/address-reference-scan.md).
+- `find-gp-relative-refs.py` - the sibling for the forms that scan cannot see: `disp($gp)` small-data access, `lui`+load/store pairs, and a materialised base plus a displacement (every scratchpad access). Same page.
+- `mips_walk.py` - the register walk both reference scans share (copies, indexed bases, delay slots, branch forks), so their precision is defined once.
 
 See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
 [`docs/tooling/static-overlay-pipeline.md`](../docs/tooling/static-overlay-pipeline.md).

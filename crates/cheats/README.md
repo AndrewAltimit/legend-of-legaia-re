@@ -18,9 +18,9 @@ The crate exposes:
   writes; conditional codes are first-class).
 - [`Database`] - a collection of entries plus deduplication
   helpers.
-- [`parse_gs_text`] / [`parse_mednafen_cht`] - format-specific
-  parsers.
-- [`classify`] - assign each address a [`Category`] (per-character
+- [`parse_gs_text`] / [`parse_mednafen_cht`] (modules `gs_text` /
+  `mednafen_cht`) - format-specific parsers.
+- [`classify_address`] / `Database::classify` - assign each address a [`Category`] (per-character
   record, inventory slot, battle actor pool, engine global,
   mini-game scratch, …) plus a stable subtype label.
 

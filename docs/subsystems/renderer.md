@@ -387,7 +387,7 @@ from the SCUS PSX-EXE directly (`t_addr = 0x80010000`, file offset =
 Engine port: `legaia_engine_vm::prim_dispatch` models this table - `slot_to_kind`
 (topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11), and
 `RenderMode::applies_depth_cue` (the SCUS fog banks). The `NCCS`/`NCCT` kernels
-live in `legaia_engine_render::gte::lighting` and are exercised by the `gte_trace`
+live in `legaia_engine_ui::gte::lighting` and are exercised by the `gte_trace`
 parity oracle, but no wgpu path yet draws the world-map slot-4 meshes, so the lit
 handlers are a faithful data model rather than a wired render path. This is a low
 priority: retail itself is not observed dispatching to these handlers at runtime
@@ -612,7 +612,7 @@ hardware, not detail:
   quotient, and the corner lands near `OFX + 2 * IR1` rather than at any
   sentinel - the classic PSX behind-the-lens smear.
 
-Port: [`legaia_engine_render::billboard`](../../crates/engine-ui/src/billboard.rs),
+Port: [`legaia_engine_ui::billboard`](../../crates/engine-ui/src/billboard.rs),
 which runs both through the same `gte_divide` / `saturate_sxy` kernels the
 `Camera::transform` COP2 oracle is pinned against.
 
@@ -2284,11 +2284,11 @@ what follows is the shape of the answer it measures, not a status table.
 
 `engine-render` links wgpu, so `web-viewer` cannot depend on it. Every kernel
 that lives there - `psx_dither`, `psx_blend`, `dyn_light`, the shadow half of `scene_lights`,
-`occlusion_fade`, `billboard`, `streak_pass` - is native-only **as code**, and
+`occlusion_fade` - is native-only **as code**, and
 a browser twin has to be a second implementation in GLSL or JS. Kernels that
 live in `engine-core`, `engine-vm`, `engine-ui` or `legaia-tmd` are shared as
 one implementation and are the ones tier 7 can pair by name - which is why
-`gte`, `vram_capture` and the `battle_intro` emitter migrated to `engine-ui`
+`gte`, `vram_capture`, `billboard`, `streak_pass` and the `battle_intro` emitter migrated to `engine-ui`
 (re-exported at their old `engine-render` paths): they were ordinary
 arithmetic that happened to live beside wgpu, and moving them is what let the
 play page draw the transition style bodies at all.
@@ -2299,16 +2299,17 @@ surface call it"; the fragment half is one law expressed twice in two shading
 languages, and only a rendered frame from each host can compare those (see
 [host-drift.md](../tooling/host-drift.md#the-two-hosts-do-not-share-a-shading-law)).
 
-### Kernels that are native-only by intent
+### Kernels expressed twice by intent
 
 Not every asymmetry is a defect. Three are deliberate:
 
-- **`set_psx_mode`** (vertex snap + 15-bit dither) is opt-in and defaults off,
-  so a browser with no toggle renders the same *default* the native window
-  does. What the browser lacks is the switch, not the faithful output.
+- **`set_psx_mode`** (vertex snap + 15-bit dither) is opt-in and defaults off
+  on both hosts; the page's "PSX rasterisation" box drives its own GLSL twin
+  (`setPsxMode`).
 - **`set_dynamic_lighting`**'s shadow maps are an enhancement and
-  pixel-identical when off; the rest of enhanced lighting reaches the page
-  through the shared `scene_lighting` kernel.
+  pixel-identical when off; the page draws its own (`setDynShadows`, the
+  "Lamp shadows" box), and the rest of enhanced lighting reaches it through
+  the shared `scene_lighting` kernel.
 - **`LEGAIA_DIAG_*`** bisect gates are development instruments; the
   [tier 6](../tooling/host-drift.md#tier-6---diagnostics-is-a-debug-draw-off-on-both-hosts)
   rule is only that an *additive* one needs a default-off twin.

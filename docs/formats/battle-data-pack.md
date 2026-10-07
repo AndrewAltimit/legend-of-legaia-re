@@ -422,7 +422,7 @@ built, not copied (`legaia_patcher::equip_transplant`; the patcher's
    three skeletons' arm-bone frames differ: the same Short Sword runs along
    `-Y` in Vahn's hand frame, `-Z` in Noa's and `(0, +0.5, +0.85)` in
    Gala's, and the wrist origin sits at a different point along the shaft
-   (`crates/asset/examples/hand_frame_fit.rs` measures it). So each
+   (`crates/patcher/examples/hand_frame_fit.rs` measures it). So each
    channel's geometry is re-seated through a rigid transform calibrated
    from the disc itself (`legaia_patcher::equip_hand_frame`): every weapon
    both files carry (the `any`-owner knives, Short Sword, claws, clubs and

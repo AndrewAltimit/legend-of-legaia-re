@@ -17,7 +17,7 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   `engine-shell`; the reverb-routing accessors pinned retail's global
   Studio C reverb (the C7-REVERB hunt - see `docs/subsystems/audio.md`).
 - Decode the frame's GPU primitive pool and libgpu ordering table
-  (`prim_pool`): every standard textured and untextured polygon plus both
+  (`prim_pool`, with `source_hunt` for the tables behind it): every standard textured and untextured polygon plus both
   sprite sizes, pool discovery, ordering-table discovery by the `ClearOTagR`
   signature, and a cycle-guarded chain walk that recovers true draw order.
 - Diff main RAM between two snapshots - coalesce per-byte changes into
@@ -31,6 +31,13 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   scenarios in one shot. `ScenarioManifest::mednafen_save_path` resolves a
   scenario's save preferring its immutable `saves/library` backup (by
   `backup_fingerprint`) over the wipe-prone live `.mc{slot}`.
+
+Modules: `container` (MDFNSVST section index), `extract` (main RAM), `psx`
+(CPU / GTE register snapshot), `gpu` / `spu` (typed section accessors),
+`prim_pool` + `source_hunt` (prim-pool decode, fixed-stride source-table
+search), `prim_dispatch` (per-prim renderer table decode), `diff`, `bisect`,
+`scenarios`, `game_anchors` (scene / mode / position shared with
+`legaia-pcsxr`).
 
 ## CLI
 

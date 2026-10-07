@@ -36,6 +36,10 @@ let total_width = layout.advance_x;
 
 `Font::wrap_bytes` / `layout_wrapped` are engine conveniences with no retail counterpart.
 
+`glyph_count::typewriter_glyph_count` ports retail `FUN_80036044`: the unit count the field dialog pager's typewriter reveal steps through (not a width). `Font::with_sprite_cells` attaches the menu sprite cells retail blits beside the font (menu numerals, the list page header and arrows), addressed by the `sprite_cell_ids` constants.
+
+`Font::placeholder()` is the no-disc fallback: a hand-rolled 5x7 ASCII bitmap (`builtin`), so a first run before `font-extract` still draws readable text.
+
 The crate does **not** depend on a renderer - it only produces glyph rectangles in atlas coordinates and screen-relative offsets. Renderer integration lives in `legaia-engine-render`.
 
 ### Accented Latin

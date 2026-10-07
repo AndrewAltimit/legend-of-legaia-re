@@ -5,9 +5,9 @@ Legend of Legaia is a 1998 PlayStation 1 RPG by Contrail / Prokion / SCEI. This 
 The work runs on two coordinated tracks under one repo (`-re` = both *reverse-engineering* and *reimplementation*):
 
 1. **Asset preservation + format docs.** Extract every asset on the disc, document every format with Ghidra-traced provenance, build round-trip parsers.
-2. **Engine reimplementation.** From-scratch Rust port of the engine - render via winit + wgpu, audio via the existing XA + VAB decoders, optional WASM target. End-user model: ship the engine binary, the user supplies the disc image, the engine extracts and runs.
+2. **Engine reimplementation.** From-scratch Rust port of the engine - render via winit + wgpu, audio via the existing XA + VAB decoders and a from-scratch SPU, and a WASM build for the browser. End-user model: ship the engine binary, the user supplies the disc image, the engine extracts and runs.
 
-The reimplementation is **fresh Rust written from the format docs and the Ghidra-traced dumps** - not a decompilation project, and not a static recompilation of `SCUS_942.54`. Sony IP (the executable, ROM contents, asset bytes) is **never** committed to this repo; `extracted/` is gitignored and disc-gated tests skip when `LEGAIA_DISC_BIN` is unset. See the root [`README.md`](../README.md#you-bring-the-disc) for the full legal position.
+The reimplementation is **fresh Rust written from the format docs and the Ghidra-traced dumps** - not a decompilation project, and not a static recompilation of `SCUS_942.54`. Retail behaviour is the measured ground truth and a retail-faithful mode stays testable, but the port is not bound by it: enhancements such as enhanced lighting, volumetric fog, the camera-occlusion fade, precise movement and VR ship as toggles, several on by default ([`subsystems/engine.md`](subsystems/engine.md#fidelity-and-enhancements)). Sony IP (the executable, ROM contents, asset bytes) is **never** committed to this repo; `extracted/` is gitignored and disc-gated tests skip when `LEGAIA_DISC_BIN` is unset. See the root [`README.md`](../README.md#you-bring-the-disc) for the full legal position.
 
 ## How the layers stack
 
@@ -50,6 +50,8 @@ Choose by what you're trying to do:
 | Understand a specific file format | [`formats/overview.md`](formats/overview.md) → per-format page |
 | Understand how a runtime subsystem works | [`subsystems/`](subsystems/) - boot, asset loader, script VM, move VM, renderer, audio, battle, minigames |
 | Understand the Rust engine port | [`subsystems/engine.md`](subsystems/engine.md) |
+| Measure the port against retail | [`tooling/retail-compare.md`](tooling/retail-compare.md), [`tooling/host-drift.md`](tooling/host-drift.md) |
+| Export scenes to Blender / Unity / VRChat | [`tooling/vrchat-world-export.md`](tooling/vrchat-world-export.md) |
 | Reverse a new function in Ghidra | [`tooling/ghidra.md`](tooling/ghidra.md) |
 | Capture a runtime overlay | [`tooling/overlay-capture.md`](tooling/overlay-capture.md) |
 | Look up a key function or RAM address | [`reference/functions.md`](reference/functions.md), [`reference/memory-map.md`](reference/memory-map.md) |
@@ -62,13 +64,15 @@ Choose by what you're trying to do:
 
 ## Workspace
 
-The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library plus an optional binary per crate. Each crate's `README.md` documents its own scope and CLI.
+The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
 
 **Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset`; the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `patcher`.
 
-**Track 2 - engine.** `engine-core` (world + scene host), `engine-vm` (the ported VMs and battle SM), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists), `engine-shell` (the `legaia-engine` binary), plus `asset-viewer` and the `web-viewer` WASM target.
+**Track 2 - engine.** `engine-core` (world + scene host), `engine-vm` (the ported VMs and battle SM), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists), `engine-session` (the `BootSession` + BGM director every play host ticks), `engine-screens` (the shop-family screens composed once for both hosts), `engine-shell` (the `legaia-engine` binary), `parity` (the retail parity oracles and comparison corpus), plus `asset-viewer` and the `web-viewer` WASM target.
 
-Run `cargo build --release` for all binaries, `cargo test --workspace --profile release-test` for all tests (release opt-level without LTO, the profile CI tests under; `--release` also works). Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
+The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu / winit / cpal dependency, which is what lets the same session code run natively and in `wasm32`.
+
+Run `cargo build --release` for all binaries, `cargo test --workspace --profile release-test` for all tests (release opt-level without LTO, the profile CI tests under). Each crate's `tests/*.rs` build as one `integration` binary, so a single file runs as `cargo test -p <crate> --test integration foo::`. Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
 
 ## Public docs vs operational state
 

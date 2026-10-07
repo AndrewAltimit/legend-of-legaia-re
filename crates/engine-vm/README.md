@@ -1,9 +1,11 @@
 # legaia-engine-vm
 
 From-scratch Rust ports of Legaia's runtime VMs, one module each. Every one is
-written from the decompiled source in `ghidra/scripts/funcs/<addr>.txt` plus
-the format notes in `docs/subsystems/`, with no static-recompiled bytes from
-the original executable. The sections below cover the VMs proper; the rest of
+written from the routine's disassembly (the decompiled C in
+`ghidra/scripts/funcs/<addr>.txt` is a reading aid, not the evidence - see
+[`ghidra.md`](../../docs/tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims))
+plus the format notes in `docs/subsystems/`, with no static-recompiled bytes
+from the original executable. The sections below cover the VMs proper; the rest of
 the crate is the battle-overlay and SCUS leaf kernels those VMs sit among.
 
 The side-effect-free field-VM disassembler this crate re-exports from
@@ -410,33 +412,61 @@ consumption-site mirrors remain where they are used - liveness/kind gating in
 
 ## Other modules
 
-The crate's remaining modules are leaf kernels; the larger families:
+The crate's remaining modules are leaf kernels; by family:
 
-- `anim_vm` - the per-actor animation runtime wrapping the actor-tick anim
-  dispatch (`FUN_80024CFC` seat, `FUN_8004998C`'s `BoneFrame` unpack).
-- `menu` - the engine's pause / shop / inn menu state machine (not a port of
-  a single retail routine); `title_overlay` is the title-screen tick
-  `FUN_801DD35C`.
-- `camera_mover` - the cutscene camera glide behind field-VM op `0x45`
-  (`FUN_801DC0BC`); `battle_camera` - the battle camera's tween step table and
-  shake jitter.
-- `battle_intro_transition` (+ `battle_intro_styles` / `_tiles` / `_swirl` /
-  `_particles`) - the field-to-battle transition overlay's state machine and
-  per-style kernels; `engine-ui::battle_intro` is its draw half.
-- `cast_module_ticks` / `cast_arm_ticks` / `cast_seru_ticks_a` /
-  `cast_seru_ticks_b` - the slot-B cast-module tick bodies (PROT 0903..0966);
-  see [`cast-module.md`](../../docs/subsystems/cast-module.md).
-- `battle_chrome` - the battle screen's name plaque, party status readout and
-  command-chip geometry `engine-ui::battle_command_ui` mirrors.
-- `move_vm_overlay_ext` / `move_ext_strip` - the op-`0x2F` extension VM
-  (`FUN_801D362C`) and its sub-op `0x2C` scanline strip emitter
-  (`FUN_801D31B0`).
-- `prim_dispatch` / `vdf_morph` - the per-prim renderer dispatch
-  (`FUN_80043390`) and VDF vertex-morph staging (`FUN_8001C604`).
-- `world_map_overlay` and the `world_map_*` family - the world-map overlay's
-  dev menu, panels, CLUT fade, dim and horizon leaves.
-- `field_*` - field-overlay leaves: actor billboards, reflection, timers,
-  ledge-hop arc, passive-ability HUD, player clip, warp tile.
+- **Animation + actors** - `anim_vm` (the per-actor animation runtime:
+  `FUN_80024CFC` seat, `FUN_8004998C`'s `BoneFrame` unpack), `actor_alloc`
+  (the allocator host traits), `move_buffer` (`FUN_800204F8` /
+  `FUN_80020740`), `camera_rel_actor` (`FUN_80021248`'s parameter block),
+  `menu_actor_seed`, `gte_divide` (the GTE's UNR reciprocal).
+- **Menus + title** - `menu` (the engine's pause / shop / inn menu state
+  machine, not a port of a single retail routine), `dev_equip_commit` (the
+  per-slot equip commit), `title_overlay` (the title tick `FUN_801DD35C`) and
+  `title_prim`, `gameover_banner` (`FUN_801CE844`).
+- **Cameras** - `camera_mover` (the op-`0x45` cutscene glide,
+  `FUN_801DC0BC`), `battle_camera` (tween step table and shake jitter).
+- **Battle transition** - `battle_intro_transition` (+ `battle_intro_styles`
+  / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
+  the field-to-battle overlay's state machine and per-style kernels;
+  `engine-ui::battle_intro` is its draw half.
+- **Battle presentation** - `battle_chrome` (name plaque, party readout and
+  the command-chip geometry `engine-ui::battle_command_ui` mirrors),
+  `battle_actor_draw` (`FUN_80048A08`'s per-object decisions),
+  `battle_pose_blend`, `battle_anim_rate` (arts slow-motion),
+  `battle_impact_fx`, `battle_trail` (the weapon trail's schedule),
+  `battle_hp_bar` / `battle_gauge` (bar ramp, gauge colour),
+  `battle_gauge_rearm`, `battle_commit_log`, `battle_cursor_pose`,
+  `battle_record_writer`, `battle_cue_group`, `move_no_effect_guard` (the
+  "No effect." banner).
+- **Battle rules leaves** - `battle_helpers`, `scus_battle_helpers`,
+  `battle_damage_wrappers` (`FUN_801DD4B0` / `FUN_801DD6B4`),
+  `battle_target_group` (`FUN_801DCEAC`), `battle_separation`,
+  `seru_side_effect`, `battle_stream_slot` (the `summon.dat` / `readef.DAT`
+  streaming transfer).
+- **Casts** - `cast_module_ticks` / `cast_arm_ticks` / `cast_seru_ticks_a` /
+  `cast_seru_ticks_b` (the slot-B cast-module tick bodies, PROT 0903..0966),
+  `cast_module_camera` (the summon modules' own camera and countdown),
+  `cast_fatal_decision` (PROT 0954), `battle_cast_census`,
+  `battle_cast_cue`, `battle_cast_dispatch`; see
+  [`cast-module.md`](../../docs/subsystems/cast-module.md).
+- **Move VM extension + render** - `move_vm_overlay_ext` / `move_ext_strip`
+  (the op-`0x2F` extension VM `FUN_801D362C` and its sub-op `0x2C` scanline
+  strip `FUN_801D31B0`), `prim_dispatch` / `vdf_morph` (the per-prim
+  renderer dispatch `FUN_80043390`, VDF vertex-morph staging
+  `FUN_8001C604`), `vram_rect_copy` (GP0 `0x80`, field-VM sub-op
+  `0x43`/`0x12`).
+- **Field overlay leaves** - `field_helpers` (the field dispatcher's
+  helpers), `field_light` (the GTE light the light-source TMD rows shade
+  through), `field_state_pick`, `field_actor_billboard`,
+  `field_actor_reflect`, `field_actor_timers`, `field_ledge_hop_arc`,
+  `field_passive_hud`, `field_player_clip`, `field_warp_tile`,
+  `code_lock_actor`, `baka_hub_actors` (the op-`0x49` submode system-actor
+  family), `panel_backread_loader` (PROT 0978's staged loader),
+  `cutscene_trigger` (every retail FMV trigger site), `dance_marker`.
+- **World map** - `world_map_overlay` and `world_map_panel` /
+  `world_map_panel_actors` / `world_map_dev_menu` / `world_map_clut_fade` /
+  `world_map_dim` / `world_map_horizon`, plus `travel_art_actor` (Riremito
+  and Rula).
 
 ## See also
 

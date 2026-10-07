@@ -99,8 +99,17 @@ navigation logic depends on the GPU backend.
 - `ui_fishing_hub` / `ui_fishing_exchange` / `ui_fishing_rod` - the fishing
   venue's hub menu and help pages, its point-exchange sub-screen, and the
   first-person rod's faces (`PondSession::rod_faces`) as flat prims.
+- `ui_fishing_sprite` - the fishing HUD's sprite quads (the overlay's shared
+  emitter `FUN_801D63B0` and its digit wrappers) as `POLY_GT4`s sampling the
+  venue's own HUD page.
 - `ui_slot_paylines` - the slot machine's five projected paylines as the prim
   set's line kind.
+- `ui_slot_cabinet` - the slot machine's 3D scene as screen primitives:
+  cabinet mesh, reel cylinders, glass, marquee and coin HUD, projected
+  through the machine's camera and linked at depth-derived OT buckets.
+- `shop_screen` - the gold shop's screen composition: window frames, the
+  Buy / Sell / Quit picker, the paged lists and the party-compare column.
+  `legaia-engine-screens` projects the live shop state into it.
 - `ui_text_lines` - positioned `(bytes, x, y, marked)` / `(bytes, x, y, pen)`
   lines to `TextDraw`s, the last step every engine-laid-out text screen shares.
 - `ringside_backdrop` - the Muscle Dome hub's ringside still: the two
@@ -126,6 +135,13 @@ shared leaf:
 - `screen_prim` - screen-space PSX primitives (`ScreenPrim` / `ScreenQuad` /
   `FlatQuad`), the four ABR blend classes, and `build_geometry`, the one
   ordering-table walk either host consumes.
+- `screen_prim_raster` - a CPU rasteriser for a `ScreenPrim` list, running
+  the screen-prim shaders' per-pixel rules for a surface with no GPU pass
+  (a 2D canvas). A presentation path, not a parity oracle.
+- `prim_near_reject` - retail's per-primitive `OTZ` near cut, the test every
+  TMD prim handler behind `FUN_80043390` runs before it links a packet.
+- `cast_beam` - PROT 0948's Cross Beam packets (`FUN_801F726C`): the two
+  sine-swept screen-space beams the cast module's tick draws.
 - `minigame_fx` - the draw builder for `engine-core`'s effect-part pool and
   for the dance run's own sprite-part emits: one placeholder-cell
   materialisation, so a part looks the same on the native HUD, the play
@@ -166,8 +182,11 @@ tests reference the builders unchanged. The GPU-resident batch wrappers
 `legaia-engine-render` because they hold wgpu handles.
 
 Depends only on `legaia-asset`, `legaia-engine-vm`, `legaia-font`,
-`legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` - no wgpu, no
-winit - so it links into the lean WASM play build.
+`legaia-tim`, `legaia-tmd`, `glam`, `serde`, `serde_json`, and `bytemuck` -
+no wgpu, no winit, and not `legaia-engine-core` - so it links into the lean
+WASM play build. The projection from live `engine-core` state into these
+builders, where it would otherwise be written once per host, lives in
+[`legaia-engine-screens`](../engine-screens/README.md).
 
 ## Whole-screen compositions
 

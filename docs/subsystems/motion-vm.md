@@ -399,7 +399,7 @@ The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` sh
 
 `World::face_field_npc_toward` is the engine's entry into this op for a
 scripted pose: it runs the `0x4C` FaceTarget leg for one step, rotating the
-NPC's heading toward a point and settling it into `field_npc_headings` (which
+NPC's heading toward a point and settling it into `World::npcs.headings` (which
 the renderer reads). The **talk-time** pose does not go through it - see the
 section below. Separately, the interacted
 `0x4C 0x51` op's byte-+4 move-anim id (retail actor `+0x5C`, consumed by the

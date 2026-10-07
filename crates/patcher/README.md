@@ -103,6 +103,7 @@ full design.
   - [Equipment bonuses](#equipment-bonuses)
   - [Equip mask](#equip-mask)
   - [Weapon specialty](#weapon-specialty)
+  - [Equipment editor](#equipment-editor-command-costs-and-equip-owners)
   - [Arts](#arts)
   - [Arts damage power](#arts-damage-power-arts_power-module)
   - [Super Art damage power](#super-art-damage-power-super_art_power-module)
@@ -850,6 +851,33 @@ Weapon-specialty randomizer (`weapon_specialty` module).
   (counted in the report) rather than aborting - in practice every section
   re-packs.
 
+## Equipment editor (command costs and equip owners)
+
+Manual, seedless equipment edits (`apply::equipment_edit`), applied after
+[`--weapon-specialty`](#weapon-specialty) so a named value wins.
+
+- `--swing-cost CHAR:ITEM[:up]=COST` sets the Arts-gauge cost (AP per press,
+  and the pennant width plus 6) of one command for one character: the
+  `+0x74` byte of the swing record in that item's section of the character's
+  player battle file. Weapons and the Ra-Seru arm price Left / Right, footwear
+  prices Down and, with `:up`, Up; `default` / `raseru` / `feet` address a
+  section's default record. Decompress, rewrite, recompress in place.
+- `--equip-owner ITEM=OWNERS` (`V`/`N`/`G`, `any`, `none`) rewrites the `+6`
+  equip-character mask of the item's SCUS bonus row (items sharing a row move
+  together). For a **weapon** the model is carried into the new owner's file
+  (`equip_transplant`): the weapon's primitives are cut out of the donor
+  record, re-seated through the per-class hand-frame calibration
+  (`equip_hand_frame`, measured by `examples/hand_frame_fit.rs`) onto the
+  owner's bare arm, and appended to the owner's weapon section. Room comes from
+  re-packing PROT 863..865 and moving their boundaries, then from parking the
+  slot region in the `DMY.DAT` annex (same-size image, still a PPF);
+  `--allow-relayout` grows the image as a last resort (`--output` only, no
+  PPF). `--no-model-transplant` keeps the default-look fall-through.
+- `legaia-patcher equipment --input disc.bin` lists every equippable item with
+  its owners and per-character command costs, plus each file's default records.
+
+Full reference: [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#equipment-editor-command-costs-and-equip-owners).
+
 ## Arts
 
 Tactical-Arts button-combo randomizer (`arts` module).
@@ -1361,8 +1389,8 @@ always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 ## Delilas party swap (`delilas_party` module family)
 
 The largest new-content family - play *as* Gi / Lu / Che while the ravine
-duels field Vahn / Noa / Gala. One orchestrator, eight support modules;
-this table is the map, the full mechanism reference is
+duels field Vahn / Noa / Gala. One orchestrator plus support modules, including the
+`party_swap` model-swap machinery; this table is the map, the full mechanism reference is
 [`docs/tooling/randomizer.md` § Delilas party swap](../../docs/tooling/randomizer.md#delilas-party-swap):
 
 | Module | Carries |
@@ -1376,11 +1404,19 @@ this table is the map, the full mechanism reference is
 | `delilas_cast` | The retail cast route: SCUS queue-hook stub + expect-verified word edits in PROT 958/959/960 ([cast-module.md](../../docs/subsystems/cast-module.md)), plus the un-folded stage caves: staging stores `jal` into SCUS-resident repoint code so the player caster walks the FULL retail clip chain (folded two-row fallback when the LZS budget refuses); the hosted-clip timing laws live in the cast-route section of [randomizer.md](../../docs/tooling/randomizer.md). `CastRoutePolicy::Install` wires it; the frontend passes `ArenaTaken` when shiny-Seru / show-super-arts / arts-AP own the SCUS arena, and the route **silently downgrades** to the art-side signature, noted in the apply summary. |
 | `enemy_anim_mirror` | Hero idles + hero Hyper chains written into the swapped monster blocks (the enemy-side animation mirror). |
 | `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs (PROT 0639 members 106-108, whole-pack re-emit). |
+| `party_swap` | Party ↔ Delilas battle-model swap. Both animation systems address poses by part index, so a swap is a part permutation plus a pivot-anchored rest-pose bake: `playerize_player_file` rebuilds a `PLAYERn` file so the character wears a sibling's model under their own clips, `fieldize_pack` / `fieldize_pack_npc` do the field-form (PROT 0874) direction. |
+| `party_swap::moveset` | The whole-archive sibling rebuild behind `--delilas-moves delilas`: `swing_entries` picks a sibling's distinct attack clips out of the `0x0C..=0x1F` action-tag band (minus the caller's signature chain), and `rebuild_moveset_archive` re-emits a character's art `"ME"` slot as the carried signature stream plus one retargeted entry per clip. Rebuilding rather than extending is forced by the slot budget - retail leaves 20374 / 2446 / 17361 free bytes - and made safe by the record `+0x0A` stream index being a free-standing pointer. |
+| `party_swap::cast_stage` | The staged CASTER rows behind the patcher's Megaton Press cast route: `build_staged_cast_rows` authors real wind-up/payoff action entries (the sibling's clips through `winpose::retarget_clip`, re-encoded raw-packed) on player rows `0x0A`/`0x0B`, hosted in the record[0] face-pixel payloads (dead on a playerized file), with the retail Block entry re-homed onto placeholder row `0x06`; `push_up_desc_table` reclaims the descriptor-table slack as compressed-stream footprint. |
+| `party_swap::winpose` | The clip-side rebuilds: `rebuild_idle_stream` (a character's battle idle re-authored from a monster idle, rewritten **in place at its exact retail length** - the record[0] stream is raw, so holding `parts`/`frames` needs no relocation - with frame 0 re-anchored on the host rest), `retarget_clip`, `rebuild_art_slot_entry` / `rebuild_base_slot` for the `readef.DAT` art slots, and `encode_channel_delta`, the encoder side of `me_archive`'s codec. |
+| `party_swap::enemy_anim` | The enemy-side animation mirror: hero idles + hero Hyper chains re-authored into the swapped monster blocks, so the duel-side Vahn / Noa / Gala fight under their own clips inside the monster-archive format. |
+| `party_swap::nivora_field` | The duel field scene: PROT 0639 members 106-108 (the siblings' field NPC meshes) re-emitted as the mapped heroes' field rigs - a whole-pack rebuild, since the 112 members tile the stream with zero slack. |
+| `party_swap::fieldize` / `party_swap::event_field` | The field-form direction (PROT 0874 + the story scenes' Delilas NPC meshes rebuilt as the mapped heroes'). |
+| `party_swap::weapon_fuse` | Fuses the host's own equipped weapon, with its real texture, into the swapped hand (also the item-alone cut `equip_transplant` reuses). |
 | `mips_sim` | In-crate MIPS interpreter the hook stubs execute under in unit tests (load-delay-accurate). |
 
 Disc oracles: `delilas_party_real`, `delilas_cast_stage_real`,
 `delilas_cast_remap_real`, `enemy_anim_mirror_real`, `nivora_field_real`,
-plus `party_swap_real` on the asset side.
+`party_swap_real` and its `party_swap_*_real` siblings.
 
 ## Texture replacement (`texture` module)
 
@@ -1723,6 +1759,14 @@ legaia-patcher randomize --input DISC.bin --seed mart --shops random --casino sh
 # Confirm a shared patch applies cleanly to your own disc before playing.
 legaia-patcher verify --input DISC.bin --patch run.ppf
 ```
+
+Two read-only helpers serve the PCSX-Redux probe harness rather than players:
+`scus-pokes --patched P --baseline B` prints `0xADDR:0xWORD` RAM pokes for
+every SCUS word where a patched disc differs from its baseline (a save state
+carries the old resident SCUS - see the save-state trap in
+[`docs/tooling/pcsx-redux-automation.md`](../../docs/tooling/pcsx-redux-automation.md)),
+and `delilas-pokes [--custom-items]` prints the Delilas-dome SCUS-side injection
+in the same `LEGAIA_POKES` form.
 
 ### Randomize flags
 

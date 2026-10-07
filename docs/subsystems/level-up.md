@@ -56,7 +56,7 @@ The engine ships the real curve twice, cross-validating itself:
   scaling arithmetic, no table bytes copied.
 - `legaia_asset::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4`
   + the formula from the user's `SCUS_942.54` at boot and
-  `legaia_engine_shell::BootSession` installs it over `LevelUpTracker::xp_table`
+  `legaia_engine_session::BootSession` installs it over `LevelUpTracker::xp_table`
   - byte-identical to the derived constants.
 
 Empirically validated against the character records across the save-state
@@ -425,7 +425,7 @@ After a battle win with `BattleEndCause::MonsterWipe`:
    corrected via `threshold_for`), and displayed-level byte (`+0x130`) - the
    three fields the retail applier maintains and the Status menu draws.
 6. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed
-   to `World::battle_events`.
+   to `World::pending_battle_events`.
 7. `World::party.current_level_up_banner` is set to the last character who levelled up.
 
 ### Hydration on load
@@ -548,7 +548,7 @@ field-VM arm at `0x801E28E4`. Which character it writes comes from the class alo
 [item-effect-table.md](../formats/item-effect-table.md#arts-books-class-111213-the-tier-is-an-art-id)
 for the roster-slot derivation and for why the picked target is ignored.
 
-A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair. Three new unit tests in `legaia_save::character::displayed_skills_*` exercise the typed accessor's BEFORE/AFTER round-trip + the `MAX_DISPLAYED_SKILLS` clamp.
+A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair. Three unit tests in `legaia_save::character` (`displayed_skills_*`) exercise the typed accessor's BEFORE/AFTER round-trip + the `MAX_DISPLAYED_SKILLS` clamp.
 
 ## Open items
 
@@ -595,8 +595,8 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   boot - parser `legaia_asset::level_up_tables::xp_thresholds_from_scus`
   (disc-gated `level_up_tables_real`), installed by `BootSession` (disc-gated
   `new_game_seed::boot_installs_the_real_retail_xp_curve_from_disc`). The stale
-  scanners [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
-  / [`scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
+  scanners [`ghidra/scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
+  / [`ghidra/scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
   (targeting `0x8007123C`) are superseded.
 - **Overlay display.** The retail level-up overlay shows per-stat increments
   (STR, INT, VIT, etc.) with an animated counter. Only HP/MP are tracked in the

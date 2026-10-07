@@ -3,18 +3,17 @@
 Partial parser for Legaia MES (asset type `0x04`) blobs.
 
 MES is the SCUS asset-type byte `0x04` in dispatcher `FUN_8001f05c`. The
-dispatcher just allocates a 4-byte-aligned buffer and decodes the
-payload (LZS or raw); the bytecode interpreter and format-specific
-parsing live in an overlay we haven't fully reversed.
+dispatcher allocates a 4-byte-aligned buffer and decodes the payload (LZS or
+raw); the byte encoding is read off the four SCUS text routines
+(`FUN_8003CA38` stride walker, `FUN_80036044` glyph count, `FUN_80036888`
+renderer, `FUN_80036514` substitution expander).
 
 ## Two on-disc layouts
 
-Both have been observed in real RAM captures (a town-init blob and an
-in-dialog blob):
-
 ### `Format::Compact`
 
-Magic `0x00000404` (LE bytes `04 04 00 00`) followed by 36 zero bytes,
+Magic `0x00000404` (LE bytes `04 04 00 00`) followed by 36 zero bytes
+(offsets in the `compact` constants module),
 a 16-byte header of runtime-patched pointers, a 32-byte i16 array, an
 8-byte "count + size" word pair, then a u24 LE offset table, then
 bytecode at the end. Used for short message sets (~4 KB).
@@ -25,20 +24,23 @@ No fixed magic. A stream of variable-stride records marked by recurring
 `0x44 0x78` markers (typically every 20–36 bytes). Used for large
 NPC-dialog sets.
 
-## Bytecode tokens (observed in `Format::Compact`)
+## Bytecode tokens
 
-| Token | Meaning |
+`iter_tokens` streams a message as `Token`s using the shared byte
+classification of the four SCUS routines:
+
+| Bytes | `Token` |
 |---|---|
-| `0x00` | end-of-message terminator (very common). |
-| `0x61 XX` | print glyph `XX`. Confirmed by an observed sequential run `61 9D 61 9E ... 61 AA` - clearly an alphabet sequence. |
-| `0x65 XX` | similar single-byte-arg opcode (likely "small numeric" or "wait N frames"). |
-| `0x4C XX` | 2-byte token (1-byte arg) - recurring control. |
-| `0x26 XX YY` | 3-byte token (2-byte arg) - possibly "page break" when arg is `0xFEFF`. |
-| `0x21 0x21 0x26 0xFE 0xFF` | recurring 5-byte sequence - likely a fixed page-break / message-boundary marker. |
+| `0x00..=0x1E` | `EndOfMessage` - the walker stops. |
+| `0x1F..=0x7F` (not `0x5E`), `0xA0..=0xBF`, `0xD0..=0xFE` | `Glyph` - font tile index. |
+| `0xC0` / `0xC6` / `0xC8..=0xCD` `XX` | `WideGlyph` (2-byte stride). |
+| `0xC1..=0xC5` / `0xC7` `XX` | `Substitute` - character / item / magic / art / terrain name. |
+| `0xCE XX` (alias `0x5E`) | `Spacing` - advance without a glyph. |
+| `0xCF XX` (alias `0xFF`) | `SkipTwo`. |
+| `0x80..=0x9F` | `Control` - glyphs to the walker, but the dialog pager `FUN_801D84D0` halts on them. |
 
-All other opcodes are emitted as `Token::Unknown` with the raw byte.
-Future reverse-engineering of the bytecode interpreter (when a
-dialog-rendering overlay is captured) will fill in the meanings.
+The input aliases are normalised in the iterator. Per-byte detail and the
+name tables each substitution reads: [`docs/formats/mes.md`](../../docs/formats/mes.md#bytecode-encoding).
 
 ## What this crate does NOT do
 
@@ -51,17 +53,16 @@ dialog-rendering overlay is captured) will fill in the meanings.
   translation codec (`legaia-patcher translate export`, see
   [`docs/tooling/translation/`](../../docs/tooling/translation/index.md)) is the
   user-facing dialog-text path.
-- Validate offset tables against the bytecode region. The offset-table
-  base/encoding (u24 LE vs another stride) is empirical and not yet
-  cross-checked against the interpreter.
 - Handle `Format::Records` beyond locating record boundaries.
 
 ## Bytecode interpreter
 
-`interp::Interpreter` walks the offset-table-driven bytecode of a
-`Format::Compact` blob and emits a higher-level `MesEvent` stream
-(`Glyph` / `EndOfMessage` / `PageBreak` / `Op65` / `Op4c` / `Op26` /
-`Unknown`). `Interpreter::render_summary` formats events as a printable
+`interp::Interpreter` (`FUN_80036514`) walks the offset-table-driven bytecode
+of a `Format::Compact` blob and emits a higher-level `MesEvent` stream
+(`Glyph` / `WideGlyph` / `Substitute` with a `SubstituteKind` / `Spacing` /
+`SkipTwo` / `Control` / `EndOfMessage`). `DialogPlayer` paces it a few glyphs
+per frame and pauses on `Control` bytes; `validate_compact` walks every
+message and flags ones that read as non-bytecode. `Interpreter::render_summary` formats events as a printable
 diff-friendly form; `EventStats` is a histogram. See
 [`docs/formats/mes.md`](../../docs/formats/mes.md) for the event
 catalogue.
