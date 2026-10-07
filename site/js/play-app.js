@@ -3103,10 +3103,18 @@ void main() {
       if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
           rt.play_frame_grab_pending()) {
         try {
+          /* Read the PSX display rect, not the canvas: the largest centred
+           * 4:3 rect of the drawing buffer, which is the 320 x 240 screen the
+           * engine projects onto. A canvas that is not 4:3 (fullscreen, a
+           * resized window) would otherwise squash or widen the photo; read
+           * this way both hosts land the same texels. */
           const gl = this.renderer.gl;
-          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+          const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+          const cw = Math.min(bw, Math.floor(bh * 4 / 3));
+          const ch = Math.min(bh, Math.floor(cw * 3 / 4));
+          const x0 = Math.floor((bw - cw) / 2), y0 = Math.floor((bh - ch) / 2);
           const buf = new Uint8Array(cw * ch * 4);
-          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          gl.readPixels(x0, y0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
           rt.play_land_frame_grab(buf, cw, ch);
         } catch (e) { /* presentation-only */ }
       }

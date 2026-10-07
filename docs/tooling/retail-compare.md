@@ -246,7 +246,13 @@ engine verdict:
   spawns the panel. The state's live panel widget (`retail_panel`, handler
   `FUN_801F849C`) goes to the child as `LEGAIA_SEAT_PANEL`, installed on the
   frame it captures, and the texels it samples ride the
-  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
+  `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects. The second
+  page's rect runs to the far edge its quad reaches, not the image's: the
+  handler starts that quad at `u + 0x100 + 0xE` and ends it at
+  `u + w0 + 0x10` (`0x801F8838..0x801F88B0`), sixteen texels past the
+  `320`-wide grab, and the `43 12` split copies source `+0xF0` for `0x60`
+  columns to cover them. A seed cut at the image's width left those texels
+  unseeded and the panel's right edge drew whatever the engine held there.
 
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the

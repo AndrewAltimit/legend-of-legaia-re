@@ -513,27 +513,43 @@ pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_core::screen_fx::PanelWi
     })
 }
 
-/// The VRAM the panel samples - its spawn-size rect from the first page's
-/// origin plus the texel offset (the second page continues it to the
-/// right) - with the state's texels there.
+/// The VRAM the panel samples, with the state's texels there: page 0 from
+/// the texel origin over the spawn size (one page at most), and - for a
+/// panel wider than a page - page 1 out to the far edge its quad's `u`
+/// reaches. That edge is not the image's: `FUN_801F849C` starts the second
+/// quad at `u + 0x100 + 0xE` and ends it at `u + w0 + 0x10`
+/// (`0x801F8838..0x801F88B0`, byte-wrapped), past the `320`-wide grab, and
+/// the `43 12` split copies `0x60` columns from source `+0xF0` to match
+/// (`legaia_engine_vm::vram_rect_copy::op43_sub12_calls`) - so a seed cut at
+/// the image's own width left the strip's last texels unseeded.
 fn panel_source_rects(
     p: &legaia_engine_core::screen_fx::PanelWidget,
     vram: &[u8],
 ) -> Vec<SeededVramRect> {
-    let x = (p.texpage & 0xF) * 64 + u16::from(p.u);
-    let y = ((p.texpage >> 4) & 1) * 256 + u16::from(p.v);
-    let (w, h) = (p.w0.clamp(0, 1024) as u16, p.h0.clamp(0, 512) as u16);
-    if w == 0 || h == 0 || vram.len() != 1024 * 512 * 2 {
+    let (w0, h) = (p.w0.clamp(0, 1024) as u16, p.h0.clamp(0, 512) as u16);
+    if w0 == 0 || h == 0 || vram.len() != 1024 * 512 * 2 {
         return Vec::new();
     }
-    let texels = (0..h)
-        .flat_map(|row| (0..w).map(move |col| (row, col)))
-        .map(|(row, col)| {
-            let o = (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
-            u16::from_le_bytes([vram[o], vram[o + 1]])
-        })
-        .collect();
-    vec![((x, y, w, h), texels)]
+    let page = |tp: u16| ((tp & 0xF) * 64, ((tp >> 4) & 1) * 256 + u16::from(p.v));
+    let grab = |x: u16, y: u16, w: u16| -> SeededVramRect {
+        let texels = (0..h)
+            .flat_map(|row| (0..w).map(move |col| (row, col)))
+            .map(|(row, col)| {
+                let o =
+                    (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
+                u16::from_le_bytes([vram[o], vram[o + 1]])
+            })
+            .collect();
+        ((x, y, w, h), texels)
+    };
+    let (x0, y0) = page(p.texpage);
+    let mut out = vec![grab(x0 + u16::from(p.u), y0, w0.min(0x100))];
+    if p.texpage2 != 0 {
+        let (x1, y1) = page(p.texpage2);
+        let far = u16::from(p.u.wrapping_add(p.w0 as u8).wrapping_add(0x10)) + 1;
+        out.push(grab(x1, y1, far));
+    }
+    out
 }
 
 /// [`retail_panel`] as `LEGAIA_SEAT_PANEL`: the widget's fields as
