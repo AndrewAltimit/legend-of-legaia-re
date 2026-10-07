@@ -714,6 +714,10 @@ impl PlayWindowApp {
                 self.cutscene_glide.align_frames_left(left as u32);
                 self.session.camera.align_glide_frames_left(left);
             }
+            if due && let Some(rgb) = sc.seat_clear {
+                self.session.host.world.presentation.clear_rgb = rgb;
+                self.session.host.world.presentation.clear_ramp = None;
+            }
             if due {
                 for &(record, model) in &sc.seat_object_models {
                     self.session

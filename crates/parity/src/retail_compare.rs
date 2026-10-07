@@ -301,6 +301,26 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
+    /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
+    /// ([`retail_clear_rgb`]).
+    pub clear_rgb: Option<[u8; 3]>,
+}
+
+/// The draw environment's clear colour bytes (`r0 / g0 / b0`).
+const DRAW_ENV_CLEAR: u32 = 0x8007_BF5D;
+
+/// The clear colour a field state's frame is filled with wherever no
+/// primitive lands: the draw environment's `r0 / g0 / b0` (`0x8007BF5D..5F`),
+/// which op `4C 13` writes and the MAN loader zeroes. It is the system
+/// script's history - `town01`'s entry loop sets cave brown inside its cliff
+/// box only on a pass the player is free for, and the opening holds the
+/// player from the install pass on (the `rim_elm_zoom_intro` capture's system
+/// context is still parked on its install-pass PC, the colour black) - which
+/// a seed that runs the loop before the resume cannot reproduce. The image
+/// child writes it over the engine's on the frame it captures.
+pub fn retail_clear_rgb(ram: &[u8]) -> [u8; 3] {
+    [0, 1, 2].map(|i| game_anchors::u8_at(ram, DRAW_ENV_CLEAR + i))
 }
 
 use legaia_engine_core::world::SeededVramRect;
@@ -798,6 +818,7 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
             slot_table: {
                 let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
                 ram.get(lo..lo + 0x200)
@@ -899,6 +920,9 @@ impl RetailObs {
                     .collect::<Vec<_>>()
                     .join(","),
             ));
+        }
+        if let Some([r, g, b]) = self.clear_rgb {
+            env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
         }
         if !self.scroll_rects.is_empty() {
             let dir = crate::retail_compare_image::work_dir(out_dir);

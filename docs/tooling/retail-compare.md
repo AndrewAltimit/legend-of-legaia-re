@@ -237,6 +237,17 @@ engine verdict:
   undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
   columns, period `2` on a step-`3` frame, fire every tick.
 
+  So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
+  (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
+  state's bytes go to the child as `LEGAIA_SEAT_CLEAR` and are written over
+  the engine's on the frame it captures (`retail_clear_rgb`). It is system
+  script history. `town01`'s entry loop sets cave brown inside its cliff box
+  on any pass the player is free for, and the opening holds the player from
+  the install pass on, so `rim_elm_zoom_intro`'s system context is still
+  parked on its install-pass PC (`+0x9F`) and the frame clears black; the
+  seed's settle window ran the loop before the resume, the engine cleared
+  brown, and the semi-transparent sea (`(B + F) / 2`) blended into it.
+
   The `cort_evolved_pre_battle` walls that still read differently are not
   a scroller's: they sample texture page `(512, 0)` through CLUT
   `(16, 502)` (the state's display list), outside both `jouine` scroller

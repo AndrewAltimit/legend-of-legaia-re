@@ -101,6 +101,10 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
+    /// draw environment's `r0 / g0 / b0`), written over the engine's on the
+    /// capture frame - the system script's op-`4C 13` history.
+    pub seat_clear: Option<[u8; 3]>,
     /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
@@ -404,6 +408,10 @@ impl ScreenshotConfig {
                     .ok()
                     .map(|v| legaia_parity::retail_compare::fog_from_env(&v)),
             ),
+            seat_clear: std::env::var("LEGAIA_SEAT_CLEAR").ok().and_then(|v| {
+                let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
+                <[u8; 3]>::try_from(c).ok()
+            }),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')
