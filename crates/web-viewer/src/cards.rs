@@ -560,6 +560,33 @@ mod tests {
         assert!(rt2.card_block_snapshots(0)[4].present, "cell 4 = block 5");
     }
 
+    /// A save the page writes with the disc loaded must load back. With the
+    /// disc in hand the writer stamps the slot portrait, which sits inside
+    /// the block's summed range; stamping it after the checksum left every
+    /// browser save captioned "Damaged data." on the next Load.
+    #[test]
+    fn a_save_written_with_the_disc_loads_back_undamaged() {
+        let Some(bytes) = std::env::var("LEGAIA_DISC_BIN")
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+        else {
+            eprintln!("LEGAIA_DISC_BIN unset - skipping");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("disc loads");
+        rt.enter_field("town01").expect("enter town01");
+        rt.insert_card_core(0, blank_card(), "browser".into())
+            .expect("blank card mounts");
+        for block in [1u8, 1, 2] {
+            rt.write_session_into_card(0, block).unwrap();
+            let cell = &rt.card_block_snapshots(0)[block as usize - 1];
+            assert!(cell.present, "block {block} holds the save");
+            assert!(!cell.damaged, "block {block} must verify on Load");
+        }
+        eprintln!("[ran] disc-backed save verifies on load");
+    }
+
     /// Every filename on a memory card must be unique - the BIOS
     /// directory is keyed by it. A card written by retail numbers its
     /// saves by the save-select list position, so a save filed as `-03`

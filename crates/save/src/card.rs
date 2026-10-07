@@ -196,6 +196,12 @@ pub fn write_retail_block_identity(
             sc_block[off..off + RETAIL_ICON_FRAME_BYTES].copy_from_slice(&icon.pixels);
         }
     }
+    // The header, the title digits and the portrait all sit inside the
+    // summed range (the sum starts at the `SC` magic), and retail's composer
+    // sums the staging block only after every one of them is in place
+    // (`0x801e1be0`). Restamp here so an identity written after the payload
+    // does not leave a block the loader refuses as "Damaged data.".
+    restamp_sc_block_checksum(sc_block);
     Ok(())
 }
 
@@ -1783,8 +1789,14 @@ mod tests {
         for off in RETAIL_ICON_FRAME_OFFSETS {
             assert_eq!(&block[off..off + RETAIL_ICON_FRAME_BYTES], &icon.pixels);
         }
-        // Nothing past the header region moved.
-        assert!(block[RETAIL_GAME_DATA_OFFSET..].iter().all(|&b| b == 0));
+        // Nothing past the header region moved but the checksum word, which
+        // now covers the identity just written.
+        assert!(
+            block[RETAIL_GAME_DATA_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET]
+                .iter()
+                .all(|&b| b == 0)
+        );
+        assert!(sc_block_checksum_valid(&block));
     }
 
     #[test]
