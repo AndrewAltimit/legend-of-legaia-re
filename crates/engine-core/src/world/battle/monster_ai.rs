@@ -813,6 +813,7 @@ impl World {
             .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
             .unwrap_or((0, Vec::new(), Vec::new()));
         self.battle.monster_strike_entries.clear();
+        let cut = std::mem::take(&mut self.battle.monster_ai_state.cut_strike_stream);
         // The gauge retail spends is the actor's **live** `+0x154`, which the
         // round boundary (`BattleRound::boundary`, the port of `FUN_801D88CC`)
         // restores from `+0x156` once per round. A slot whose base `+0x156` was
@@ -855,7 +856,14 @@ impl World {
                 .iter()
                 .filter_map(|&pick| entries.get(pick as usize).copied())
                 .collect();
-            (stream.len() as u8).max(1)
+            // The `0xB3` arm's cut: the stream keeps its first entry only
+            // (retail zeroes `+0x1E0..+0x1ED` after the picks are written).
+            if cut {
+                self.battle.monster_strike_entries.truncate(1);
+                1
+            } else {
+                (stream.len() as u8).max(1)
+            }
         } else {
             1
         };
@@ -1002,6 +1010,7 @@ impl World {
                     .get(slot as usize)
                     .map(|a| a.battle.spirit_gauge)
                     .unwrap_or(0),
+                core_category: category,
             };
             let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;

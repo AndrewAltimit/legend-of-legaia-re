@@ -99,6 +99,11 @@ pub struct MonsterAiState {
     /// Per-slot scratch for monster `0xB3`'s `record+0x1C` queue-armed byte
     /// (`0x16`/`0x17`); modelled here rather than on the record.
     pub b3_armed: [u8; 8],
+    /// Set by the `0xB3` arm on the turn it arms: retail zeroes the caster's
+    /// action-stream entries `+0x1E0..+0x1ED` (`0x801EBC08..0x801EBC18`), so
+    /// the physical strike the generic core already queued lands as its first
+    /// entry alone. The strike-budget pass consumes it.
+    pub cut_strike_stream: bool,
 }
 
 impl Default for MonsterAiState {
@@ -109,6 +114,7 @@ impl Default for MonsterAiState {
             recent_targets: [0xFF; 4],
             mode_flags: 0,
             b3_armed: [0; 8],
+            cut_strike_stream: false,
         }
     }
 }
@@ -168,6 +174,11 @@ pub struct MonsterAiCtx {
     /// gauge is clamped back to `0x32` (see the `0x8a` case + the returned
     /// [`AiCast::spirit_gauge_writeback`]).
     pub spirit_gauge: u16,
+    /// `actor+0x1DE` as the generic core left it ahead of the `switch`: `3`
+    /// when it picked a physical strike (`0x801EA1F4`), `2` when it picked an
+    /// affordable cast (`0x801EA528`). Monster `0xB3` arms its party-wide cast
+    /// only on a physical turn.
+    pub core_category: u8,
 }
 
 /// One AI-script override: the monster casts `spell_id` (action category `2` =
@@ -471,15 +482,20 @@ pub fn decide(
                 return Some(AiCast::magic(id.wrapping_add(1), 8));
             }
         }
-        // 0xB3: needs actor SP / record+0x1C interplay - the queue-armed half is
-        // modelled via `b3_armed`; the SP scan is not.
+        // 0xB3 (`0x801EBB84..0x801EBC34`): the record `+0x1C` byte is the
+        // queue-armed latch, modelled via `b3_armed`. Armed (`0x17`), every
+        // turn is the party-wide cast. It arms only on a turn the core picked
+        // a physical strike (`lbu v1,0x1de(s4)` / `li v0,0x3` at
+        // `0x801EBBAC`, ahead of the rand draw), and the arming turn's strike
+        // stream is cut to its first entry.
         0xb3 => {
             let i = ctx.caster_slot as usize % state.b3_armed.len();
             if state.b3_armed[i] == 0x17 {
                 return Some(cast_all_enemies(0xb3));
             }
-            if rng() & 1 == 0 && ctx.mp > 0xfe && ctx.hp <= half {
+            if ctx.core_category == 3 && rng() & 1 == 0 && ctx.mp > 0xfe && ctx.hp <= half {
                 state.b3_armed[i] = 0x17;
+                state.cut_strike_stream = true;
             } else {
                 state.b3_armed[i] = 0x16;
             }
@@ -582,6 +598,7 @@ mod tests {
             field_flags: 0,
             allies_with_mp: 0,
             spirit_gauge: 0,
+            core_category: 3,
         }
     }
 
@@ -591,6 +608,33 @@ mod tests {
             spirit_gauge: gauge,
             ..ctx(id, 100, 100, 100)
         }
+    }
+
+    #[test]
+    fn b3_arms_only_on_a_physical_turn() {
+        // Below half HP with MP to spare: a cast turn neither arms nor draws.
+        let mut state = MonsterAiState::new();
+        let mut draws = 0;
+        let mut rng = || {
+            draws += 1;
+            0u32
+        };
+        let magic_turn = MonsterAiCtx {
+            core_category: 2,
+            ..ctx(0xB3, 100, 1000, 3000)
+        };
+        assert_eq!(decide(&magic_turn, &mut state, &mut rng), None);
+        assert_eq!(draws, 0);
+        assert_eq!(state.b3_armed[3], 0x16);
+        assert!(!state.cut_strike_stream);
+        // A physical turn arms it and cuts that turn's strike stream; the
+        // next turn is the party-wide cast.
+        let physical_turn = ctx(0xB3, 100, 1000, 3000);
+        assert_eq!(decide(&physical_turn, &mut state, &mut || 0), None);
+        assert_eq!(state.b3_armed[3], 0x17);
+        assert!(state.cut_strike_stream);
+        let cast = decide(&magic_turn, &mut state, &mut || 0).expect("armed cast");
+        assert_eq!((cast.spell_id, cast.target_class), (0xB3, 8));
     }
 
     #[test]
