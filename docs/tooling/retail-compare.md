@@ -1616,6 +1616,31 @@ is checkable even where the pose is not. Two seeding limits follow.
   *down* through the wrap to `4051`, while the drive hands `0x6E` the engine's
   `0x0C` framing at `2620`, a shortest arc up. No word in the state records
   the camera before the cast, so the start is a seeding limit.
+- **A yaw base the walk swung.** `shiny_refactor_gimard_levelup` is held in
+  the Done band's `0x51` after Gimard's breath killed its victim; the step
+  table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
+  facing`, `TR (0, 0x500, prescale(0x800))`), which the engine now frames to
+  the unit in eye and focus. The yaw base is not recoverable: PROT 0903's
+  arm 10 stores `0x200` and its walk arm swings it by `6 * scalar` a vsync
+  for as long as the creature walks, and the prologue's drift runs on top,
+  so the word the Done band reads is the walk's length plus the time since
+  - a creature walk the headless seed does not run, and one the image
+  child's walk times on its own geometry.
+- **A counter the drive has to wait for.**
+  `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
+  counterattack on a monster's swing. The drive plays rounds until a counter
+  fires on the capture's seat and cursor, and that is many rounds in (the
+  engine's Vahn reaches it some 1100 HP lower than retail's), so the swing it
+  counters comes from another monster at another seat: the case-7 focus is
+  the midpoint with a target on the far side of the party. The rounds are
+  the drive's own; nothing in the capture recovers the history that put
+  retail's counter on monster slot 4.
+- **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
+  Tail Fire's `16` on retail's Vahn and the engine's `7`: the
+  summon-magic roll and the finisher's no-damage floor are `rand()` draws,
+  and Vahn holds the Spirit stance in both (the doubled defence and the
+  guard halve), so the figure is one realisation of the stream rather than
+  a check of the kernel.
 - **An effect's life against the flash.** In `meta_summon_mid_cast`
   (`0x34`, the flash-in nine vsyncs into its ramp) retail still draws the
   invoke clip's ray fan (21 `POLY_GT3` on the battle effect page `0x27`,
