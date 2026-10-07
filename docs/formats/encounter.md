@@ -323,6 +323,13 @@ partition-1 placements and maps each interactable actor to a `FieldCarrierConfig
 - the pinned sparring partner (`is_rim_elm_sparring_carrier`, by tile + model)
 becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
 `Npc` keyed by its record index; decorative/warp placements carry no carrier.
+Tile and model alone do not make the carrier: the later Rim Elm variants
+(`town0b`, `town0c`, `town0d`) place Tetsu on the same tile with the same
+model, and their records are talk-only. The sparring carrier is installed only
+when the placement's own partition-1 record names row `4` in a scripted-battle
+op (`man_field_scripts::record_battle_entry_rows`) - the only way retail enters
+the fight - so talking to Tetsu in the mist-attack town stays a conversation
+(`crates/engine-shell/tests/town0b_battle_softlock.rs`).
 `World::install_field_carriers_from_man` installs that derived set and returns the
 sparring carrier's slot; `enter_field_scene` calls it on every field entry (the
 counterpart to the MAN encounter-table install), so the carriers are live from

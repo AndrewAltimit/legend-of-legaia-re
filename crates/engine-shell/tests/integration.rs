@@ -72,6 +72,7 @@ mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
 mod tile_board_draw_live;
 mod tower_lift_arrival_disc;
+mod town0b_battle_softlock;
 mod training_battle;
 mod v0_1_playthrough;
 mod vram_oracle_e1;

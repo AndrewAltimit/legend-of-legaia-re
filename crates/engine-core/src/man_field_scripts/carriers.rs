@@ -50,11 +50,22 @@ pub struct DerivedFieldCarrier {
 /// derives from the MAN is the carrier's *identity and placement* - which actor
 /// is the carrier, where it stands, and that the scene actually contains it -
 /// rather than fabricating a standalone carrier with no MAN linkage.
+///
+/// The pinned tile and model are not enough on their own: the later Rim Elm
+/// variants (`town0b` / `town0c` / `town0d`) place Tetsu on the same tile
+/// with the same model, and only `town01`'s record carries the fight
+/// (`3E FF 04` in `P1[10]`). The carrier is installed only when the
+/// placement's own record names the training row in a scripted-battle op
+/// ([`record_battle_entry_rows`]) - the only way retail enters the fight -
+/// so talking to Tetsu in the mist-attack town stays a conversation.
 pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedFieldCarrier> {
+    let training_row = crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID as u8;
     classify_placements(man_file, man)
         .into_iter()
         .filter_map(|(p, kind)| {
-            let config = if is_rim_elm_sparring_carrier(&p) {
+            let config = if is_rim_elm_sparring_carrier(&p)
+                && record_battle_entry_rows(man_file, man, 1, p.index).contains(&training_row)
+            {
                 FieldCarrierConfig::ScriptedEncounter {
                     formation_id: crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID,
                 }
