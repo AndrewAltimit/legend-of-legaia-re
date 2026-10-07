@@ -1708,6 +1708,22 @@ is where the glide starts from:
 Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
 so the capture's own glide history is not fully explained either.
 
+The order is not what parts the two sides, and replaying retail's round does
+not close the gap. The capture is round `0` (`ctx[+0x28A] = 0`) with both
+initiative keys `+0x16C` spent, and a key is spent only by the action SM's
+`0x0C` dispatch (`sh zero,0x16c(s3)` at `0x801E2CDC`), so Gobu Gobu had
+already dispatched in retail too - and all twelve battle streams put it
+ahead of Vahn in the engine. What parts them is where that action left the
+two: retail stands Gobu Gobu on `(0, 0)` and Vahn on `(-7, -338)`, the
+engine's swing walks Gobu Gobu about `250` units on and pushes Vahn `164`
+back. Seeding the spent keys into the replay (the monster sits the round
+out) stands both on retail's ground but starts Vahn's glide from the commit
+confirm's case-9 swing instead, and the frame scores worse on all three
+(`image` `.493` to `.343`), as it does on most of the battle class's other
+drives. Preferring a stream on which no bystander walked finds none that
+seats Vahn first in round `0`; the one it takes plays a monster cast first
+and scores `.278`.
+
 ### An ease-out camera carries its history
 
 Retail rebuilds its camera tween every frame
@@ -1726,7 +1742,12 @@ is checkable even where the pose is not. Two seeding limits follow.
   queue itself is no obstacle - the player entered it through the arts input,
   and the drive replays the same entry from the saved command string - but no
   word says how long retail's camera had been easing off the input close-up,
-  so the engine's strike still carries part of that close-up's pitch.
+  so the engine's strike still carries part of that close-up's pitch. The
+  two eases are as far along - `587` and `589` units short of the endpoint -
+  but close on it from opposite sides: retail's step table climbs
+  (`+66` a pass, live `1191`), while the engine's starts at `3240`, where the
+  commit's case-9 framing left it, and descends (`2360`). The start is the
+  seeding limit; the frame reads it as the stage turned some 100 degrees.
 - **The frame step.** The walker adds `increment * frame_step` a pass, with
   the step rebuilt each frame from the duration history at `0x80084098`
   (`frame_step`). The summon close-up's `a3 = 3` lands every pass at step `3`
