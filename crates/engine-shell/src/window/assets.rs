@@ -72,6 +72,11 @@ impl PlayWindowApp {
         // Pose source for the scene's animated actors + placed static objects.
         let scene_bundle = self.find_scene_anm_bundle();
         let mut lit_sources = std::collections::HashMap::new();
+        #[allow(clippy::type_complexity)]
+        let mut diag_census_out: (
+            Vec<Option<legaia_engine_core::draw_census::MeshCensus>>,
+            Option<legaia_engine_core::draw_census::MeshCensus>,
+        );
         let (
             vram_opt,
             font_opt,
@@ -100,6 +105,19 @@ impl PlayWindowApp {
                 .map_err(|e| log::error!("font upload: {e:#}"))
                 .ok();
             let mut meshes = Vec::new();
+            // `LEGAIA_DIAG_DRAWS`: the census beside each pushed mesh.
+            let mut census: Vec<Option<legaia_engine_core::draw_census::MeshCensus>> = Vec::new();
+            let census_on = self.draw_census.is_some();
+            let mesh_census = |v: &legaia_tmd::mesh::VramMesh| {
+                census_on.then(|| {
+                    legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                        &v.positions,
+                        &v.cba_tsb,
+                        &v.colors,
+                        &v.indices,
+                    )
+                })
+            };
             let mut tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)> = Vec::new();
             // `res.tmds` index for each pushed mesh (meshes skip empty-prim
             // TMDs, so this is the bridge back to a `ResolvedTmd`).
@@ -323,6 +341,8 @@ impl PlayWindowApp {
                             lit_sources.insert(meshes.len(), (vmesh.clone(), lit_vertices));
                         }
                         tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
+                        census.resize(meshes.len(), None);
+                        census.push(mesh_census(&vmesh));
                         meshes.push(m);
                         tmd_src_index.push(src_i);
                     }
@@ -417,6 +437,8 @@ impl PlayWindowApp {
                                     lit_sources.insert(meshes.len(), (vmesh.clone(), posed_lit));
                                 }
                                 slot.vram = Some(meshes.len());
+                                census.resize(meshes.len(), None);
+                                census.push(mesh_census(&vmesh));
                                 meshes.push(m);
                                 tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
                             }
@@ -466,6 +488,7 @@ impl PlayWindowApp {
             // The CPU copy the visible-tile crop re-uploads a cropped index
             // list from (`ground_crop` in `handle_redraw`).
             let mut ground_src: Option<GroundSource> = None;
+            let mut ground_census: Option<legaia_engine_core::draw_census::MeshCensus> = None;
             if let Some(scene) = self.session.host.scene.as_ref()
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
@@ -495,6 +518,9 @@ impl PlayWindowApp {
                             hf.positions.len()
                         );
                         world_map_hf = Some(m);
+                        if let Some(c) = mesh_census(&vmesh) {
+                            ground_census = Some(c);
+                        }
                         ground_src = Some(GroundSource {
                             vmesh,
                             flat_refs,
@@ -505,6 +531,7 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("heightfield upload skipped: {e:#}"),
                 }
             }
+            diag_census_out = (census, ground_census);
             (
                 vram,
                 font,
@@ -845,6 +872,13 @@ impl PlayWindowApp {
             }
         }
         self.meshes = meshes;
+        if let Some(d) = self.draw_census.as_mut() {
+            *d = super::DrawCensusDiag {
+                meshes: std::mem::take(&mut diag_census_out.0),
+                ground: diag_census_out.1.take(),
+                ..Default::default()
+            };
+        }
         self.scene_tmd_data = tmd_data;
         self.field_terrain_draws = field_terrain_draws;
         self.field_lit.sources = lit_sources;

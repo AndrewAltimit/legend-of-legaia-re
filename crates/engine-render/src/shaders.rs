@@ -1370,6 +1370,14 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if effect_clipped(in.world_pos) {
         discard;
     }
+    // Retail GTE NCLIP winding rejection, the same test as the opaque entry:
+    // retail's prim leaves cull a semi prim's back face exactly as they cull
+    // an opaque one, so without it an open translucent strand blends twice
+    // wherever its far side faces the camera.
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
+        discard;
+    }
     // Double-sided pair copies: blend only the camera-facing one (see
     // fs_main - same rule so a flagged semi prim can't double-blend).
     if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
@@ -1610,6 +1618,14 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // pre-scale (retail folds that scale into the blend itself).
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if effect_clipped(in.world_pos) {
+        discard;
+    }
+    // Retail GTE NCLIP winding rejection, the same test as the opaque entry:
+    // retail's prim leaves cull a semi prim's back face exactly as they cull
+    // an opaque one, so without it an open translucent strand blends twice
+    // wherever its far side faces the camera.
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
         discard;
     }
     // Double-sided pair copies: same facing discard as the opaque entry

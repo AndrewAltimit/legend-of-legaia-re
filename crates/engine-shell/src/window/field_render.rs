@@ -228,6 +228,8 @@ impl PlayWindowApp {
         lit.terrain.clear();
         lit.placement.clear();
         lit.posed.clear();
+        let census_on = self.draw_census.is_some();
+        let mut lit_census: Vec<legaia_engine_core::draw_census::MeshCensus> = Vec::new();
         // `LEGAIA_DIAG_NO_LIT_ROWS` leaves the lit rows at their neutral
         // texel, for before/after frames.
         if lit.sources.is_empty() || std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_some() {
@@ -267,6 +269,14 @@ impl PlayWindowApp {
                 .map_err(|e| log::warn!("lit env mesh upload skipped: {e:#}"))
                 .ok()?;
             shaded.push(up);
+            if census_on {
+                lit_census.push(legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                    &mesh.positions,
+                    &mesh.cba_tsb,
+                    &colors,
+                    &mesh.indices,
+                ));
+            }
             let v = shaded.len() - 1;
             keys.insert((mesh_idx, rot), v);
             Some(v)
@@ -289,6 +299,9 @@ impl PlayWindowApp {
         lit.terrain = terrain;
         lit.placement = placement;
         lit.posed = posed;
+        if let Some(d) = self.draw_census.as_mut() {
+            d.lit = lit_census;
+        }
     }
 
     /// Re-shade the env draws when the live field light no longer matches
@@ -320,6 +333,14 @@ impl PlayWindowApp {
         let v = &src.vmesh;
         let indices =
             legaia_engine_core::field_ground::crop_indices(&v.positions, &v.indices, Some(cells));
+        if let Some(d) = self.draw_census.as_mut() {
+            d.ground_crop = Some(legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                &v.positions,
+                &v.cba_tsb,
+                &v.colors,
+                &indices,
+            ));
+        }
         // An empty crop is a real answer (no ground cell in the rectangle),
         // kept as `(stamp, None)` so the full ground does not stand in for it.
         if indices.is_empty() {

@@ -898,6 +898,10 @@ struct PlayWindowApp {
     /// placement draw takes (parallel to the two draw lists) and the light
     /// they were shaded under - a different live light rebuilds them.
     field_lit: FieldLitMeshes,
+    /// `LEGAIA_DIAG_DRAWS=<path>`: the per-draw census beside the uploaded
+    /// meshes, written as texture families every frame
+    /// (`legaia_engine_core::draw_census`). `None` with the variable unset.
+    draw_census: Option<DrawCensusDiag>,
     /// Live floor-height-ladder patch for the four field draw lists above: the
     /// per-draw ladder rungs plus the ladder currently folded into their Y, so
     /// a script that sets a rung oscillating (op `0x4C` nibble-9) moves the
@@ -2094,4 +2098,17 @@ mod battle_camera_tests {
             }
         }
     }
+}
+
+/// The meshes' census for `LEGAIA_DIAG_DRAWS`, aligned with the upload lists
+/// it shadows.
+#[derive(Default)]
+pub(super) struct DrawCensusDiag {
+    /// Parallel to `meshes` (shorter when a later append has no census).
+    meshes: Vec<Option<legaia_engine_core::draw_census::MeshCensus>>,
+    /// Parallel to `field_lit.meshes`.
+    lit: Vec<legaia_engine_core::draw_census::MeshCensus>,
+    /// The full walk-ground mesh and the visible-tile crop of it.
+    ground: Option<legaia_engine_core::draw_census::MeshCensus>,
+    ground_crop: Option<legaia_engine_core::draw_census::MeshCensus>,
 }

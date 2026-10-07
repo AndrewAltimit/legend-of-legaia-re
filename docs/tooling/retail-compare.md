@@ -1230,6 +1230,33 @@ into (`pause_menu::stage_transform`), not from the capture's origin, so a
 surface the window manager resized off `960 x 720` still compares the
 picture.
 
+### Comparing a frame draw by draw
+
+A block score says where a frame differs, not which draw makes it differ.
+The retail side of a per-draw comparison needs no emulator: a state's RAM
+holds the frame's packets on its ordering tables
+(`mednafen-state display-list --json`, `scripts/mednafen/display-list.py`
+for a PCSX-Redux state), each with its CLUT, tpage, screen corners and
+colour. The engine side is the draw census (`legaia_engine_core::draw_census`):
+with `LEGAIA_DIAG_DRAWS=<path>` set, `play-window` keeps a census beside every
+uploaded field mesh (scene meshes, the lit-row and morph copies, the ground
+crop) and writes each frame's textured draws, folded through the draw's own
+view-projection, as one JSON line per texture family `(CLUT, tpage & 0x1FF)`:
+on-stage triangle count, how many of those wind clockwise, screen bounds and
+mean colour word, with the CPU VRAM the pass samples beside it
+(`<path>.vram`). Add the variable to a child's `cmd.sh`
+(`LEGAIA_RC_CHILD_LOG=1`) and run
+
+```
+scripts/ci/draw-family-diff.py RETAIL.json ENGINE.jsonl
+```
+
+which prints the families one side draws and the other does not, or whose
+count or colour parts. The census counts triangles before the shader's
+winding test, so a family whose engine count is about twice retail's, split
+between the windings, is one retail's `NCLIP` halves. Player, NPC and effect
+meshes are not in the census.
+
 ## The ratchet
 
 `scripts/ci/retail-compare-baseline.json` holds, per state label, each
@@ -1413,6 +1440,20 @@ the right wall, whose faces turn from the light, falls to an eighth of its
 texel and the left wall rises past neutral. A port that drew the lit rows
 at the neutral `0x80` painted both walls at their raw texel
 ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
+
+### A translucent wall drawn from both sides
+
+`cort_evolved_pre_battle`'s flesh walls read uniformly brighter in the port
+than in retail, every band of the frame by the same margin. The draw census
+puts the difference on the semi-transparent strand overlays: retail's packets
+for those families all carry one winding, the port's split between both. The
+field pass culls back faces by a fragment test (`set_backface_cull`), and the
+textured and untextured semi-transparency passes re-draw the semi prims
+through their own fragment entries, which did not repeat the test - so every
+translucent strand whose far side faced the camera blended a second time.
+Retail's prim leaves apply `NCLIP` to a semi prim exactly as to an opaque one;
+both blend entries now discard the same winding the opaque entry does (the
+browser page runs one fragment program for both passes and already did).
 
 ### One glide frame ahead, or a few frames into an arrival
 

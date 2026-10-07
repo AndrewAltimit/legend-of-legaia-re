@@ -3271,6 +3271,59 @@ impl PlayWindowApp {
             // the retail mechanism - the 3D scene darkens while the narration
             // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
+            // `LEGAIA_DIAG_DRAWS=<path>`: this frame's textured draws as
+            // texture families (`draw_census`), rewritten every frame so the
+            // file holds the captured one.
+            if let Some(d) = self.draw_census.as_ref()
+                && let Some(path) = std::env::var_os("LEGAIA_DIAG_DRAWS")
+            {
+                type Census = legaia_engine_core::draw_census::MeshCensus;
+                let mut by_ptr: std::collections::HashMap<
+                    *const legaia_engine_render::UploadedVramMesh,
+                    &Census,
+                > = std::collections::HashMap::new();
+                for (m, c) in self.meshes.iter().zip(&d.meshes) {
+                    if let Some(c) = c {
+                        by_ptr.insert(m as *const _, c);
+                    }
+                }
+                for (m, c) in self.field_lit.meshes.iter().zip(&d.lit) {
+                    by_ptr.insert(m as *const _, c);
+                }
+                for (idx, m) in &self.field_morph_live {
+                    if let Some(Some(c)) = d.meshes.get(*idx) {
+                        by_ptr.insert(m as *const _, c);
+                    }
+                }
+                if let (Some((_, Some(m))), Some(c)) = (&self.ground_crop, &d.ground_crop) {
+                    by_ptr.insert(m as *const _, c);
+                }
+                if let (Some(m), Some(c)) = (&self.ground_heightfield, &d.ground) {
+                    by_ptr.insert(m as *const _, c);
+                }
+                let rows = legaia_engine_core::draw_census::family_rows(
+                    draws.iter().filter_map(|dr| {
+                        by_ptr
+                            .get(&(dr.mesh as *const _))
+                            .map(|c| (*c, dr.mvp.to_cols_array()))
+                    }),
+                    320.0,
+                    240.0,
+                );
+                // The CPU VRAM the field pass samples, beside it
+                // (`<path>.vram`, 1 MiB little-endian), so a family whose
+                // count and colour agree but whose pixels part can be read
+                // against the state's own VRAM.
+                if let Some(v) = self.cpu_vram_base.as_ref() {
+                    let mut vp = path.clone();
+                    vp.push(".vram");
+                    let _ = std::fs::write(vp, v.as_bytes());
+                }
+                let _ = std::fs::write(
+                    path,
+                    legaia_engine_core::draw_census::family_rows_jsonl(&rows),
+                );
+            }
             {
                 let mut tex = vec![None; draws.len()];
                 for (i, c) in clip_marks {

@@ -63,6 +63,7 @@ pub mod dialog;
 pub mod dialog_pacing;
 pub mod dialog_picker_slide;
 pub mod dialog_window;
+pub mod draw_census;
 pub mod drop_shadow;
 pub mod equip_session;
 pub mod equipment;

@@ -1450,6 +1450,7 @@ pub(super) fn cmd_play_window_with_record(
         field_placement_color_cell_keys: Vec::new(),
         field_terrain_draws: Vec::new(),
         field_lit: Default::default(),
+        draw_census: std::env::var_os("LEGAIA_DIAG_DRAWS").map(|_| Default::default()),
         field_floor_wave: Default::default(),
         coplanar_env_offsets: std::collections::HashMap::new(),
         field_terrain_color_draws: Vec::new(),
