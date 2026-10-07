@@ -2111,4 +2111,6 @@ pub(super) struct DrawCensusDiag {
     /// The full walk-ground mesh and the visible-tile crop of it.
     ground: Option<legaia_engine_core::draw_census::MeshCensus>,
     ground_crop: Option<legaia_engine_core::draw_census::MeshCensus>,
+    /// The VDF morph rebuilds, keyed like `field_morph_live`.
+    morph: std::collections::HashMap<usize, legaia_engine_core::draw_census::MeshCensus>,
 }

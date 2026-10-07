@@ -1242,8 +1242,10 @@ with `LEGAIA_DIAG_DRAWS=<path>` set, `play-window` keeps a census beside every
 uploaded field mesh (scene meshes, the lit-row and morph copies, the ground
 crop) and writes each frame's textured draws, folded through the draw's own
 view-projection, as one JSON line per texture family `(CLUT, tpage & 0x1FF)`:
-on-stage triangle count, how many of those wind clockwise, screen bounds and
-mean colour word, with the CPU VRAM the pass samples beside it
+on-stage triangle count, how many of those wind clockwise and how many are
+semi-transparent, clip-space depth range, screen bounds and mean colour word
+(the VDF morph rebuilds are counted as drawn, not as authored), with the CPU
+VRAM the pass samples beside it
 (`<path>.vram`). Add the variable to a child's `cmd.sh`
 (`LEGAIA_RC_CHILD_LOG=1`) and run
 
@@ -1633,9 +1635,20 @@ each record's captured model (`retail_object_models`,
 `LEGAIA_SEAT_OBJECT_MODELS`) on the frame it captures. The dance floor's
 palette cells are on the strobe the photosensitivity section describes
 ([field-ambient-fx](../subsystems/field-ambient-fx.md#photosensitivity-guard)),
-re-keyed every game tick, so the CLUT in the state's VRAM is not the one the
-displayed frame drew with: retail's floor glows green where the engine's,
-seeded from that CLUT, stays dark.
+re-keyed every game tick.
+
+The floor itself is drawn on both sides - every floor packet of the state's
+display list has an engine triangle in the same family, place and colour. What
+blacks it out in the port is the load fade: record 6's colour tween pushes a
+full-screen `POLY_F4` under ABR `2` (`B - F`), and the push in the state's own
+display list is grey `141`, linked after every scene packet. That list is the
+one the GPU drew into the **back** buffer: VRAM's draw buffer holds a frame
+whose floor the subtract has taken to black, while the displayed buffer is an
+older frame under a much lighter push, with the floor still green. During the
+hall load retail's display trails its logic by more than the usual two game
+frames, so the compared frame is earlier in the fade than any state the RAM
+describes. The port's frame matches the draw buffer's darkness, not the
+display's.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.

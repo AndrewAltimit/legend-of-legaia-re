@@ -13,7 +13,9 @@ frame it captured.
 
 A family is `(CLUT, tpage & 0x1FF)`. For each, the report gives the
 triangle count on the 320 x 240 stage (a quad is two), the screen bounds and
-the mean colour word on each side, sorted by the retail count. A family one
+the mean colour word on each side, sorted by the retail count, with how
+many triangles each side marks semi-transparent (a packet's command bit 1,
+the engine's ABE). A family one
 side draws and the other does not, or one whose bounds or colour part, is
 where a frame difference lives - the ground cells a crop drops, a wall drawn
 through a different colour path. Untextured packets have no family and are
@@ -68,8 +70,10 @@ def retail_families(dl: dict) -> dict:
         if key is None and "clut" in p:
             key = (p["clut"], None)
         n = 2 if len(verts) == 4 else 1
-        e = fam.setdefault(key, {"tris": 0, "b": [1e9, 1e9, -1e9, -1e9], "c": [0.0, 0.0, 0.0]})
+        e = fam.setdefault(key, {"tris": 0, "semi": 0, "b": [1e9, 1e9, -1e9, -1e9], "c": [0.0, 0.0, 0.0]})
         e["tris"] += n
+        if p.get("cmd", 0) & 2:
+            e["semi"] += n
         xs = [v[0] for v in verts]
         ys = [v[1] for v in verts]
         e["b"] = [min(e["b"][0], *xs), min(e["b"][1], *ys), max(e["b"][2], *xs), max(e["b"][3], *ys)]
@@ -86,7 +90,12 @@ def engine_families(path: Path) -> dict:
         if not line.strip():
             continue
         r = json.loads(line)
-        fam[(r["clut"], r["tpage"])] = {"tris": r["tris"], "b": r["bounds"], "c": r["color"]}
+        fam[(r["clut"], r["tpage"])] = {
+            "tris": r["tris"],
+            "semi": r.get("semi", 0),
+            "b": r["bounds"],
+            "c": r["color"],
+        }
     return fam
 
 
@@ -109,19 +118,22 @@ def main() -> int:
     ef = engine_families(a.engine)
     untex = rf.pop(None, None)
     keys = sorted(set(rf) | set(ef), key=lambda k: -max(rf.get(k, {}).get("tris", 0), ef.get(k, {}).get("tris", 0)))
-    print("%-6s %-6s %7s %7s  %-24s %-24s  %-15s %-15s" % (
-        "clut", "tpage", "retail", "engine", "retail bounds", "engine bounds", "retail colour", "engine colour"))
+    print("%-6s %-6s %7s %7s %9s  %-24s %-24s  %-15s %-15s" % (
+        "clut", "tpage", "retail", "engine", "semi r/e", "retail bounds", "engine bounds",
+        "retail colour", "engine colour"))
     shown = 0
     for k in keys:
         r, e = rf.get(k), ef.get(k)
         rn, en = (r or {}).get("tris", 0), (e or {}).get("tris", 0)
+        rs, es = (r or {}).get("semi", 0), (e or {}).get("semi", 0)
         differs = (rn == 0) != (en == 0) or (rn and en and (max(rn, en) > 2 * min(rn, en)))
+        differs = differs or (rn and en and (rs == 0) != (es == 0))
         if not a.all and not differs and r and e:
             dc = max(abs(x - y) for x, y in zip(r["c"], e["c"]))
             if dc < 12:
                 continue
-        print("%04X   %-6s %7d %7d  %-24s %-24s  %-15s %-15s" % (
-            k[0], "%03X" % k[1] if k[1] is not None else "-", rn, en,
+        print("%04X   %-6s %7d %7d %9s  %-24s %-24s  %-15s %-15s" % (
+            k[0], "%03X" % k[1] if k[1] is not None else "-", rn, en, "%d/%d" % (rs, es),
             fmt_b(r and r["b"]), fmt_b(e and e["b"]), fmt_c(r and r["c"]), fmt_c(e and e["c"])))
         shown += 1
         if shown >= a.top:

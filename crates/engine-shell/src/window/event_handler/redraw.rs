@@ -1389,6 +1389,17 @@ impl PlayWindowApp {
                     &vmesh.indices,
                 ) {
                     self.field_morph_live.insert(*mesh_idx, m);
+                    if let Some(d) = self.draw_census.as_mut() {
+                        d.morph.insert(
+                            *mesh_idx,
+                            legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                                &vmesh.positions,
+                                &vmesh.cba_tsb,
+                                &vmesh.colors,
+                                &vmesh.indices,
+                            ),
+                        );
+                    }
                 }
             }
             for (slot, halves) in npc_morph_rebuilds {
@@ -3291,7 +3302,7 @@ impl PlayWindowApp {
                     by_ptr.insert(m as *const _, c);
                 }
                 for (idx, m) in &self.field_morph_live {
-                    if let Some(Some(c)) = d.meshes.get(*idx) {
+                    if let Some(c) = d.morph.get(idx) {
                         by_ptr.insert(m as *const _, c);
                     }
                 }
