@@ -243,7 +243,7 @@ pub(super) struct ConsumerPinnedTable {
 /// Tables the generic array rules cannot size, each pinned by the
 /// instructions that consume it and re-checked against this image's own words
 /// before it is claimed.
-pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 13] = [
+pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 15] = [
     // DEBUG MODE's variable-monitor rows: the `FUN_8001C93C` row layout
     // (`+0x00` kind, `+0x04` y, `+0x08` value pointer, `+0x0E` label, `+0x24`
     // name table), walked inline by the menu loop at `0x801CEBC0`. The kind
@@ -371,6 +371,42 @@ pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 13] = [
         forms: &[(0x801D_2A48, 0x801D_70C4)],
         count_from: PinnedCount::Loop { site: 0x801D_2A34 },
         what: "Baka Fighter per-index score words (FUN_801D2A28)",
+    },
+    // The save menu's twelve-byte sprite cells: `FUN_801E3FF0` addresses
+    // `a0 * 12` (`sll v1,a0,1` / `addu` / `sll v1,v1,2`) off the base it forms
+    // at `0x801E4028` and reads `+6` / `+8` as the cell's size into a
+    // `0x2C` textured quad. The index is a caller immediate with no bound; the
+    // next formed address, the quad records at `0x801E50A8`, closes eight
+    // whole cells.
+    ConsumerPinnedTable {
+        prot: 899,
+        base_va: 0x801E_5048,
+        stride: 12,
+        count: 8,
+        forms: &[(0x801E_4028, 0x801E_5048), (0x801E_2298, 0x801E_5048)],
+        count_from: PinnedCount::Layout {
+            next: 0x801E_50A8,
+            site: 0x801E_2F1C,
+        },
+        what: "save-menu sprite cells (FUN_801E3FF0)",
+    },
+    // The save menu's twenty-byte quad records: `FUN_801E2EE4` addresses
+    // `(a3 & 0x3FF) * 20` off the base it forms at `0x801E2F1C` and reads
+    // `+0x0C`, `+0x0F` and `+0x13` into a `0x3C` gouraud-textured quad - the
+    // same record shape the contest hub's sprite table uses. The next formed
+    // address, the card read buffer at `0x801E5120` (`0x801DFAA0`), closes
+    // six whole records.
+    ConsumerPinnedTable {
+        prot: 899,
+        base_va: 0x801E_50A8,
+        stride: 0x14,
+        count: 6,
+        forms: &[(0x801E_2F1C, 0x801E_50A8)],
+        count_from: PinnedCount::Layout {
+            next: 0x801E_5120,
+            site: 0x801D_FAA0,
+        },
+        what: "save-menu quad records (FUN_801E2EE4)",
     },
     // The battle overlay's two per-command scalar tables, each five bytes,
     // indexed by `(cmd - 0x0C) mod 5` that `FUN_801EC3E4` computes once and

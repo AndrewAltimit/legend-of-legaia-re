@@ -677,6 +677,16 @@ control byte past its first. PROT `0896` is a Japanese build whose labels are
 `[count][SJIS pairs][NUL]` records padded to a word; the menu overlay carries
 two SJIS glyph strings of its own.
 
+Nor is the first zero byte always the end. The dialog tokens that take an
+argument byte - the substitution tokens `0xC1..=0xC5` and `0xC7`, the `0xCE`
+escape and the `0xCF` colour change ([`dialog-font.md`](../formats/dialog-font.md)) -
+carry it whatever its value, and `0xC1 0x00` is the lead party member's name.
+Stopping at that byte cut every "*name* will equip" / "*name* can now use"
+message at its first token and left the rest as `ascii_text` residue in the
+menu overlay and in four slot-B cast modules; the walk now consumes a token and
+its argument as one unit before it tests for NUL, the way the text expander
+does.
+
 Two guards keep a coincidence out. A target already inside a claim is left to
 that claim, and a pair issued from the image's inherited tail is ignored,
 because that is the donor's code forming the donor's addresses. The rule is
@@ -948,6 +958,8 @@ claim.
 | `0971` | DEBUG MODE's variable-monitor rows | `0x801CF890`, `0x28`, 22 | the loop bumps three pointers that start at fields `+0x04`, `+0x08` and `+0x1E`, never at a row start; the row start is the `lh v1,-0x770(at)` kind read at `0x801CEC24`, and the bound is `sltiu v0,s0,0x16` at `0x801CECE0` |
 | `0972` | per-species motion records | `0x801D8534`, 8, 10 | the index is the hooked species id `0x801D91CC`, which no bound check guards; its domain is the ten-row species table, and the tenth record ends exactly on the unformed `HIT` string at `0x801D8584` |
 | `0977` | the contest hub's sprite records | `0x801D170C`, `0x14`, 17 | `FUN_801D050C` / `FUN_801D08EC` read most fields over a hundred words below the index `addu`, past the runtime-index rule's straight-line scan, so the fixed accesses at elements 1 and 4 looked like fields no indexed access reads; the next formed address, `0x801D1860`, closes seventeen whole records |
+| `0899` | the save menu's sprite cells | `0x801E5048`, 12, 8 | `FUN_801E3FF0` scales its index as `(a0 * 3) << 2` and the callers hand it immediates; the next formed address, `0x801E50A8`, closes eight cells |
+| `0899` | the save menu's quad records | `0x801E50A8`, `0x14`, 6 | `FUN_801E2EE4` indexes `(a3 & 0x3FF) * 20`, the contest hub's record shape; the next formed address, the card read buffer `0x801E5120`, closes six records |
 
 The `0971` rows are the layout `FUN_8001C93C` draws - `+0x00` kind, `+0x04`
 y, `+0x08` value pointer, `+0x0E` label, `+0x24` name table - walked inline

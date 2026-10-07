@@ -1033,7 +1033,22 @@ pub(super) const FORMED_STRING_PRINTABLE_DEN: usize = 4;
 /// there are not one.
 pub(super) fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
     let tail = buf.get(off..)?;
-    let len = tail.iter().position(|&b| b == 0)?;
+    // A dialog token that takes an argument byte - the substitution tokens
+    // `0xC1..=0xC5` / `0xC7`, the `0xCE` escape and the `0xCF` colour change
+    // (`docs/formats/dialog-font.md`) - carries that byte whatever its value,
+    // and `0xC1 0x00` is the lead party member's name, not a terminator. The
+    // text walk consumes the pair before it tests for NUL, so this does too.
+    let mut len = 0usize;
+    loop {
+        match tail.get(len)? {
+            0 => break,
+            0xC1..=0xC5 | 0xC7 | 0xCE | 0xCF => {
+                tail.get(len + 1)?;
+                len += 2;
+            }
+            _ => len += 1,
+        }
+    }
     if len == 0 {
         return None;
     }
@@ -1054,7 +1069,7 @@ pub(super) fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
             && body
                 .get(i + 1)
                 .is_some_and(|&t| matches!(t, 0x40..=0x7E | 0x80..=0xFC));
-        if (body[i] == 0xCE && i + 1 < len) || sjis {
+        if (matches!(body[i], 0xC1..=0xC5 | 0xC7 | 0xCE | 0xCF) && i + 1 < len) || sjis {
             printable += 2;
             i += 2;
             continue;

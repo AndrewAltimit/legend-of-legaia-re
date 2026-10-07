@@ -493,3 +493,17 @@ fn loop_bounded_arrays_reads_count_stride_and_base_off_the_loop() {
     runtime[..4].copy_from_slice(&0x0280_B821u32.to_le_bytes()); // move s7,s4
     assert!(loop_bounded_arrays(&runtime, 0).is_empty());
 }
+
+#[test]
+fn a_dialog_token_argument_is_not_a_terminator() {
+    // `0xC1 0x00` names the lead party member; the string runs on to the
+    // real NUL.
+    let mut s = b"@".to_vec();
+    s.extend_from_slice(&[0xC1, 0x00]);
+    s.extend_from_slice(b" will equip\0");
+    assert_eq!(cstring_end(&s, 0), Some(s.len()));
+    // A plain string still stops at its first NUL.
+    assert_eq!(cstring_end(b"Load\0Save\0", 0), Some(5));
+    // A token whose argument byte is past the buffer names nothing.
+    assert_eq!(cstring_end(&[b'A', 0xCF], 0), None);
+}
