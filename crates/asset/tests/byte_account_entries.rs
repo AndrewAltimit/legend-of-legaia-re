@@ -980,6 +980,51 @@ fn the_battle_overlay_command_tables_are_consumer_pinned() {
     assert_eq!(work, 0, "0898 non-slack residue");
 }
 
+/// The game-over overlay hands its letter spawn record to `FUN_80021B04`
+/// through a saved register (`s5`, formed above a `jal` and copied to `$a2`
+/// inside the loop), and its handler template to `FUN_80024C88` in `$a1`.
+/// Both are claimed off those calls.
+#[test]
+fn the_gameover_records_are_claimed_off_their_calls() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 902) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(902),
+        label: "0902".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    const BASE: usize = 0x801C_E818;
+    let starts = |what: &str| -> Vec<usize> {
+        acc.claims
+            .iter()
+            .filter(|c| c.detail.starts_with(what))
+            .map(|c| c.start + BASE)
+            .collect()
+    };
+    assert!(
+        starts("spawn record").contains(&0x801C_ECBC),
+        "letter spawn record: {:?}",
+        starts("spawn record")
+    );
+    let templates = starts("actor template");
+    assert!(
+        templates.contains(&0x801C_ED20),
+        "FUN_80024C88 template: {templates:?}"
+    );
+}
+
 /// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
 /// and claiming it at the stride leaves the entry near whole.
 #[test]

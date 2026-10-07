@@ -823,20 +823,26 @@ globals sized by their load from 63 to 70.
 
 ### A record is sized by the call that receives it
 
-Four callees take a pointer to a record whose extent they fix:
+Five callees take a pointer to a record whose extent they fix:
 
 | Callee | Argument | Extent |
 |---|---|---|
 | `FUN_80021B04` (spawn) | `$a2` | `[i16 model_sel][u16 reserved][move-VM bytecode]`, to the program's `HALT`, armed idle loop, or never-retiring `WAIT` |
 | `FUN_80050ED4` (its pool wrapper) | `$a2` | the same |
 | `FUN_80020DE0` (actor allocator) | `$a0` | a 24-byte static actor template, fixed by the allocator's field copies ([`runtime-libs.md`](../reference/functions/runtime-libs.md#static-actor-templates)) |
+| `FUN_80024C88` (positioned actor spawn) | `$a1` | the same template - it moves `$a1` to `$a0` and calls the allocator, reading only the position halfwords of its own `$a0` |
 | `FUN_8001C93C` (value-monitor list drawer) | `$a1` | `$a0` rows of `0x28` bytes: the loop runs `$a0` times and every arm advances the row pointer by `0x28`; the count must be an `li` the caller loads, and the whole array must be data the image owns |
 
 `claim_spawn_records` claims, in every mapped image, the record at each value
 such a call is handed: the argument register is walked back from the call's
 delay slot to its last writer, which must be a formed `addiu` or a copy of a
 register that resolves the same way (`move a2,s3` - retail stages the pointer in
-a saved register), with no other call crossed. A `switch` whose arms each load
+a saved register), with no other call crossed while the walk still tracks a
+caller-saved register. Once it has followed a copy into `s0..s7` or `s8` a call
+in between does not end it, because the ABI preserves those across a call: the
+game-over overlay (`0902`) forms its letter spawn record in `s5` above a
+`jal 0x80024C88` and copies it to `$a2` inside the loop that spawns the nine
+letters. A `switch` whose arms each load
 `$a2` in the delay slot of a `j` to one shared `jal` is followed too: every `j`
 landing on the call, or a few words above it with nothing between writing the
 register, contributes its own delay-slot value. And an image-local routine that
