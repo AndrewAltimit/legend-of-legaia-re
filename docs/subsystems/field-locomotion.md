@@ -1856,6 +1856,15 @@ parks the player on tile (0, 0) for the ride (`A3 F8 00 00`) before the arrival
 `MoveTo`. Read through the structural fallback, the out-of-service arm dropped
 the player into the void corner of the map.
 
+A move the record takes back is not a landing either. A switch that shows its
+effect parks the player elsewhere for the camera and then copies a stand-in
+actor's position back into the player: `chitei2`'s Rapid Transport switches
+(P0[32..34]) store the player's spot in actor `0x39` (`CC 39 37`), move the
+player to (44, 47) to watch the car (`A3 F8 2C 2F`), and end with
+`CC F8 E3 39`, the [`4C E3` position copy](script-vm-menuctrl.md#4c-e3-position-copy-teleport)
+run in the player's context. Both decodes skip a player move that such a copy
+follows; read as a door, the switches dropped the player onto the car's track.
+
 ### The arrival bracket
 
 A lift ride lands the player on the partner lift's platform, and the riding

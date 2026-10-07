@@ -526,6 +526,30 @@ fn grid_byte_to_world_decodes_half_tiles() {
 }
 
 #[test]
+fn a_player_move_put_back_by_a_position_copy_is_not_a_door() {
+    // `chitei2`'s Rapid Transport switches park the player at (44, 47) to
+    // watch the car (`A3 F8 2C 2F`), then copy the stand-in actor 0x39's
+    // spot back into the player (`CC F8 E3 39`): contact moves nobody.
+    let (mf, man) =
+        man_with_placement_script(&[0xA3, 0xF8, 0x2C, 0x2F, 0xCC, 0xF8, 0xE3, 0x39, 0x21]);
+    let placements = mf.actor_placements(&man);
+    assert_eq!(placement_walk_touch_event(&mf, &man, &placements[0]), None);
+    // A move after the restore is still where the record leaves the player.
+    let (mf, man) = man_with_placement_script(&[
+        0xA3, 0xF8, 0x2C, 0x2F, 0xCC, 0xF8, 0xE3, 0x39, 0xA3, 0xF8, 20, 30, 0x21,
+    ]);
+    let placements = mf.actor_placements(&man);
+    assert_eq!(
+        placement_walk_touch_event(&mf, &man, &placements[0]),
+        Some(WalkTouchEvent::PlayerMoveTo {
+            world_x: grid_byte_to_world(20),
+            world_z: grid_byte_to_world(30),
+            facing: None,
+        })
+    );
+}
+
+#[test]
 fn walk_touch_event_classifies_portal_and_player_moveto() {
     // A genuine door-warp placement -> Warp.
     let (mf, man) = man_with_placement_script(&[0x3E, 103, 0, 0, 0, 0]);
