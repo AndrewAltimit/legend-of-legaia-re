@@ -355,7 +355,7 @@ This is a worked example of the drift shape in [`tooling/host-drift.md`](../tool
 
 #### A battle billboard's centre is Y-flipped
 
-The pool integrates in raw PSX units, **Y down**: a spark climbing off the floor runs negative. The battle view-projection both hosts share (`battle_cam_script::battle_vp`) carries a trailing `scale(1, -1, 1)` that cancels the per-model Y-flip every mesh draw carries, so it consumes Y-up input. A billboard has no model matrix, so its centre is flipped before the corners are built (`engine-vm::effect_billboard::battle_billboard_centre`, called by both hosts). Fed the raw position, a spark rising past an actor's head projected the same height below its feet - the Spirit charge's sparkles drew entirely off the bottom of the frame. Dust at `y = 0` reads the same either way, which is how the inversion survived. The field cameras compose the world flip themselves and take the raw position.
+The pool integrates in raw PSX units, **Y down**: a spark climbing off the floor runs negative. The battle view-projection both hosts share (`battle_cam_script::battle_vp`) carries a trailing `scale(1, -1, 1)` that cancels the per-model Y-flip every mesh draw carries, so it consumes Y-up input. A billboard has no model matrix, so its centre is flipped before the corners are built (`engine-ui::effect_billboard::battle_billboard_centre`, called by both hosts). Fed the raw position, a spark rising past an actor's head projected the same height below its feet - the Spirit charge's sparkles drew entirely off the bottom of the frame. Dust at `y = 0` reads the same either way, which is how the inversion survived. The field cameras compose the world flip themselves and take the raw position.
 
 #### Battle effect parts morph through `vdf.dat`
 
@@ -371,7 +371,7 @@ The effect-script **table form** (`0x801F6324` prototypes, `World::spawn_action_
 
 `FUN_800195A8` transforms the sprite **centre** through the GTE camera matrix (`FUN_8003D344`, one `MVMVA`), then forms the four corners by adding the half-extents to that *already-transformed* view-space centre, then resets the rotation matrix to identity with `TRX/TRY/TRZ = 0` before the `RTPT`. The camera matrix therefore multiplies the centre and never touches the half-extents.
 
-In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`, a **4x uniform scale**. A port that offsets the corners in *world* space and draws the quad under the same scaled MVP puts the half-extents through the 4x a second time, so every battle effect sprite comes out exactly `BATTLE_WORLD_SCALE` too large - a 32-texel puff reaching 1280 view units either side instead of 320. The shared correction is `engine-vm::effect_billboard::world_half_extents(size, view_scale)`; the native window passes its `fx_scale` (the same factor it composes into `fx_cam`) into `effect_sprite_corners`.
+In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`, a **4x uniform scale**. A port that offsets the corners in *world* space and draws the quad under the same scaled MVP puts the half-extents through the 4x a second time, so every battle effect sprite comes out exactly `BATTLE_WORLD_SCALE` too large - a 32-texel puff reaching 1280 view units either side instead of 320. The shared correction is `engine-ui::effect_billboard::world_half_extents(size, view_scale)`; the native window passes its `fx_scale` (the same factor it composes into `fx_cam`) into `effect_sprite_corners`.
 
 #### "The spawns fire and nothing appears" is mostly the atlas, not the pipeline
 

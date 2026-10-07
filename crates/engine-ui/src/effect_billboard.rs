@@ -96,7 +96,7 @@ mod tests {
     /// model's flipped vertex lands on.
     #[test]
     fn a_rising_spark_projects_above_the_feet() {
-        use crate::battle_cam_script::{BattleCamPose, battle_vp};
+        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
         let pose = BattleCamPose {
             pitch: 128.0,
             yaw: 2048.0,

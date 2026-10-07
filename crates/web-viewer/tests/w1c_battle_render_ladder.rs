@@ -492,7 +492,7 @@ fn tap(rt: &mut LegaiaRuntime, mask: u16) {
 /// plaque draws **only** while the picker's cursor sits on the enemy row,
 /// which is precisely the precondition `retail_enemy_step` needs - so its
 /// glyphs are the honest probe for "the ring could run".
-const STRIP_SURFACE_Y: i64 = 3 * (legaia_engine_vm::battle_chrome::TARGET_SELECT_Y as i64 - 2);
+const STRIP_SURFACE_Y: i64 = 3 * (legaia_engine_ui::battle_chrome::TARGET_SELECT_Y as i64 - 2);
 
 fn strip_glyphs(rt: &mut LegaiaRuntime) -> usize {
     let v = json(&rt.play_overlay_draws_json(W, H));

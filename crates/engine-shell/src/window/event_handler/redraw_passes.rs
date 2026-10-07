@@ -448,8 +448,9 @@ impl PlayWindowApp {
             // the same call.
             if self.session.host.world.mode == SceneMode::Battle {
                 for s in &mut sprites {
-                    s.world_pos =
-                        legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos);
+                    s.world_pos = legaia_engine_render::effect_billboard::battle_billboard_centre(
+                        s.world_pos,
+                    );
                 }
             }
             if sprites.is_empty() {

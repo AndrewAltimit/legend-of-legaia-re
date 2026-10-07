@@ -57,6 +57,7 @@ pub use legaia_tim;
 
 pub mod afterimage;
 pub mod arts_input;
+pub mod battle_chrome;
 pub mod battle_command_ui;
 pub mod battle_hud_chrome;
 pub mod battle_intro;
@@ -70,6 +71,7 @@ mod battle_tutorial_box;
 pub mod billboard;
 pub mod cast_beam;
 mod dialog_reading_box;
+pub mod effect_billboard;
 pub mod field_party_hud;
 pub mod gte;
 mod incense_notice_box;

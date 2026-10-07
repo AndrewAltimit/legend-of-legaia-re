@@ -2074,7 +2074,7 @@ mod live_hud_tests {
         // 960x720 -> stage scale 3, origin (0,0); the target-select plaque
         // (placement record 0x29) pens its name at stage Y 162 - 2 = 160 ->
         // surface y 480, content box centred on stage x 0xE8.
-        let pen_y = 3 * (i64::from(legaia_engine_vm::battle_chrome::TARGET_SELECT_Y) - 2);
+        let pen_y = 3 * (i64::from(legaia_engine_ui::battle_chrome::TARGET_SELECT_Y) - 2);
         let strip_glyphs = v["texts"]
             .as_array()
             .expect("texts array")

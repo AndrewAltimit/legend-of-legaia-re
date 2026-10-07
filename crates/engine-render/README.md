@@ -389,7 +389,7 @@ engine-vm types (matches the existing `ShopRow` / `level_up_draws_for`
 pattern).
 
 The default surface is retail's, off the packet-pinned
-`engine-vm::battle_chrome`: per-member roster panels (102x48 at `y 164`) at
+`engine-ui::battle_chrome`: per-member roster panels (102x48 at `y 164`) at
 rest, replaced for the acting member by the full-width active-actor bar at
 `(8, 188)`, each carrying name / `HP` label + `cur` right-aligned + `max`
 running forward / the same pair for `MP` - and **no gauge bar**. A top-left

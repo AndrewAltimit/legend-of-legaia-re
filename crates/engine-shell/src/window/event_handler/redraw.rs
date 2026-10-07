@@ -3169,7 +3169,7 @@ impl PlayWindowApp {
             // centre, the corner adds follow it, and the matrix is reset to
             // identity before the projection), so the half-extents must not go
             // through the 4x a second time. See
-            // `legaia_engine_vm::effect_billboard`.
+            // `legaia_engine_render::effect_billboard`.
             let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
                 BATTLE_WORLD_SCALE
             } else {
@@ -3790,7 +3790,7 @@ impl PlayWindowApp {
         for s in sprites.iter().take(4) {
             // The same centre the billboard builder draws around.
             let c = if battle {
-                legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos)
+                legaia_engine_render::effect_billboard::battle_billboard_centre(s.world_pos)
             } else {
                 s.world_pos
             };

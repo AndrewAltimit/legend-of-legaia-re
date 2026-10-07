@@ -1970,7 +1970,7 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 ///
 /// Every port picker that can park on the enemy row is consulted: the command
 /// session (Attack), the arts list, the spell list and the arts-input bar's
-/// own cursor. Seat law: `legaia_engine_vm::battle_chrome::target_select_plaque_x`.
+/// own cursor. Seat law: `legaia_engine_ui::battle_chrome::target_select_plaque_x`.
 ///
 /// REF: FUN_801D5854 (`0x801D5B28..0x801D5BAC`)
 pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {

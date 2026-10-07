@@ -136,7 +136,7 @@ pub const ATLAS_RECT_ATR_ICONS: [(u32, u32, u32, u32); 3] =
 /// Atlas placement of the **battle roster panel background** - one 102x48
 /// marbled plate, the whole of a resting party member's readout skin.
 ///
-/// Natural sheet coordinates: `engine_vm::battle_chrome::PANEL_BG` is
+/// Natural sheet coordinates: `engine_ui::battle_chrome::PANEL_BG` is
 /// `(0, 0, 102, 48)` on the system-UI sheet through sub-palette 0, and the
 /// atlas's `(0..102, 0..48)` corner is free, so the rect reads the same on
 /// both sides.
@@ -969,7 +969,7 @@ pub fn build_atlas(
     // Battle-screen chrome - the roster panel plate, the blue plate 3-slice
     // and the `/` separator, three more sub-palettes of the same system-UI
     // plane. All at their natural sheet coordinates
-    // (`engine_vm::battle_chrome`), which the atlas happens to leave free.
+    // (`engine_ui::battle_chrome`), which the atlas happens to leave free.
     add_battle_chrome_sprites(&mut out, &panel_parsed, panel_src_w)?;
 
     // The nine status-element badges the exclusive ladder selects, each on
@@ -1309,7 +1309,7 @@ fn add_element_badge_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::R
 /// plate, the blue plate 3-slice and the `/` separator.
 ///
 /// Three sub-palettes of the system-UI plane, all pinned in
-/// `engine_vm::battle_chrome` off retail's display list - sub-palette 0 for
+/// `engine_ui::battle_chrome` off retail's display list - sub-palette 0 for
 /// the panel, 4 for the blue plate row at `v = 0`, 5 for the separator.
 /// The carved-gold plate row at `v = 64` is not repeated here: it is the
 /// same art the field menu's tab banner already bakes.

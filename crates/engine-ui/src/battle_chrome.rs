@@ -246,7 +246,7 @@ pub const fn plate_width(interior_w: u16) -> u16 {
 
 /// The plaque, the party bar and every command chip are one law over one data
 /// source. Each is a record of the **screen-element placement table** at
-/// `0x80076C10` ([`crate::battle_party_panel::ELEMENT_PLACEMENT_TABLE`],
+/// `0x80076C10` ([`legaia_engine_vm::battle_party_panel::ELEMENT_PLACEMENT_TABLE`],
 /// layout in `docs/reference/memory-map.md`), and the plate is derived from
 /// the record's content box rather than stored:
 ///
@@ -259,7 +259,7 @@ pub const fn plate_width(interior_w: u16) -> u16 {
 /// tall, and `rec.w` **is** the interior width - which is why a plate is
 /// sized to its content with the final body tile clipped. The same `-8` / `-4`
 /// content-to-plate bias appears in
-/// [`crate::battle_party_panel::cross_out_mark`], the other overlay leaf that
+/// [`legaia_engine_vm::battle_party_panel::cross_out_mark`], the other overlay leaf that
 /// frames a content box.
 ///
 /// The law is packet-verified on four surfaces at once: plaque `(16, 12)` w=63
@@ -852,7 +852,7 @@ mod tests {
 
     #[test]
     fn panel_seats_match_the_text_anchors_the_overlay_publishes() {
-        use crate::battle_party_panel::panel_anchors;
+        use legaia_engine_vm::battle_party_panel::panel_anchors;
         for size in 1..=3u8 {
             let seats = panel_seats(size);
             let (primary, secondary) = panel_anchors(size).unwrap();

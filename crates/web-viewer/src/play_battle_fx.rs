@@ -260,7 +260,7 @@ fn transform_dir(m: &[f32; 16], v: [f32; 3]) -> [f32; 3] {
 /// `EFFECT_TEXEL_WORLD` extra scale is `1.0` (the sprite's `size` is already
 /// the retail pass-2 world size), so it does not appear here.
 ///
-/// The half-extents come through [`legaia_engine_vm::effect_billboard`]
+/// The half-extents come through [`legaia_engine_ui::effect_billboard`]
 /// because retail forms the corners in **view** space, after the camera
 /// transform (`FUN_800195A8`), so they must not take the battle base matrix's
 /// `BATTLE_WORLD_SCALE` a second time - the module carries the instruction
@@ -273,7 +273,7 @@ fn sprite_corners(
 ) -> [[f32; 3]; 4] {
     let c = sprite.world_pos;
     let (hw, hh) =
-        legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
+        legaia_engine_ui::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
     let mut out = [[0.0f32; 3]; 4];
     // TL, TR, BL, BR: (-r +u), (+r +u), (-r -u), (+r -u).
     for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
@@ -382,7 +382,7 @@ impl LegaiaRuntime {
             // and a billboard has no model matrix to carry the flip - the
             // native window builds around the same flipped centre.
             sprite.world_pos =
-                legaia_engine_vm::effect_billboard::battle_billboard_centre(sprite.world_pos);
+                legaia_engine_ui::effect_billboard::battle_billboard_centre(sprite.world_pos);
             let [u0, v0] = sprite.uv;
             let u1 = u0
                 .saturating_add(sprite.uv_size[0].saturating_sub(1))
@@ -704,7 +704,7 @@ impl LegaiaRuntime {
                 std::mem::swap(&mut v0, &mut v1);
             }
             let c = flip(sprite.world_pos);
-            let (hw, hh) = legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, 1.0);
+            let (hw, hh) = legaia_engine_ui::effect_billboard::world_half_extents(sprite.size, 1.0);
             let mut corners = [[0.0f32; 3]; 4];
             for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
                 .into_iter()
@@ -1278,7 +1278,7 @@ mod tests {
         // `== size[0]`, which is what the oversize looked like from inside the
         // browser host.
         let (hw, hh) =
-            legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
+            legaia_engine_ui::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
         assert!((tr[0] - tl[0] - 2.0 * hw).abs() < 1e-4, "width = 2 * hw");
         assert!((tl[1] - bl[1] - 2.0 * hh).abs() < 1e-4, "height = 2 * hh");
         // Non-vacuity: the kernel really does shrink, so a host that skipped

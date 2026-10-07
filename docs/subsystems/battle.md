@@ -3944,8 +3944,8 @@ the **active-actor bar**: one plate run at `(8, 188)` with a 288-px interior,
 so it spans `x 8..=312`. The bar does not hide the panels by not drawing them;
 retail parks the whole cluster at `y = 230`, under its 228-line display window.
 Seats, sub-palettes and the 3-slice plate law are pinned in
-`engine-vm::battle_chrome`; `engine-ui`'s name-pen anchors read the
-`engine-vm` kernels directly (`battle_party_panel::panel_anchors`, falling
+`engine-ui::battle_chrome`; `engine-ui`'s name-pen anchors read the
+kernels directly (`engine-vm`'s `battle_party_panel::panel_anchors`, falling
 back to `battle_chrome::panel_seats` plus the pinned text inset for the seats
 retail writes no anchor for), the panel *backgrounds* still carry a local
 seat mirror, and `engine-shell`'s HUD tests hold the drawn output to the
@@ -4104,7 +4104,7 @@ the RAM image **is** the frame's packet stream - each `SPRT` carries its own
 `(x, y)`, `(u, v)`, `(w, h)` and CLUT id inline, and the `DR_TPAGE` node
 traversed before it fixes the texture page. Cross-checked against a
 full-VRAM dump of the same frame (`mednafen-state vram-dump`). Port:
-[`engine-vm::battle_chrome`](../../crates/engine-vm/src/battle_chrome.rs).
+[`engine-ui::battle_chrome`](../../crates/engine-ui/src/battle_chrome.rs).
 
 Anchors used: the Tetsu-tutorial progression `v0_1_battle_command_menu` /
 `v0_1_battle_command_submenu`, the three-member `party_battle_gobu_gobu`,

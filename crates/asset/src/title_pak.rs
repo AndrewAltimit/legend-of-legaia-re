@@ -547,7 +547,7 @@ pub const OVERLAY_SYSTEM_UI_ATR_PALETTES: [usize; 3] = [0, 2, 1];
 // The battle HUD's whole skin is four rects of this one TIM, each read out
 // of retail's own display list (`SPRT` packets in a mednafen battle save
 // state); the seats and sub-palettes are pinned in
-// `legaia_engine_vm::battle_chrome`, and these are its source rects.
+// `legaia_engine_ui::battle_chrome`, and these are its source rects.
 // -----------------------------------------------------------------------
 
 /// Battle **roster-panel background** - the 102x48 marbled plate one
