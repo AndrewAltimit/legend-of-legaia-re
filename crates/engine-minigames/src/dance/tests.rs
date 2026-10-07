@@ -666,31 +666,6 @@ fn the_entry_stages_the_qualifier_floor() {
 }
 
 #[test]
-fn the_dance_view_window_is_centred_where_the_fields_is_offset() {
-    let e = dance_scene_entry();
-    let (x0, z0, x1, z1) = e.view_window;
-    // Symmetric about the camera on both axes.
-    assert_eq!(x1, -x0);
-    assert_eq!(z1, -z0);
-    assert_eq!(i32::from(x1 - x0), 16);
-    assert_eq!(i32::from(z1 - z0), 20);
-
-    // The field's default is offset instead - further ahead than behind
-    // and further left than right - so the two are not the same box even
-    // though both are deeper than wide.
-    let f = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
-    assert_ne!(f.2, -f.0);
-    assert_ne!(f.3, -f.1);
-    assert_ne!(e.view_window, f);
-    // And the dance floor is the larger box on both axes.
-    assert!(x1 - x0 > f.2 - f.0);
-    assert!(z1 - z0 > f.3 - f.1);
-
-    // Y is above the origin: the dancer's spawn height is negative.
-    assert!(e.dancer_spawn.1 < 0);
-}
-
-#[test]
 fn countin_banner_slides_holds_then_fades() {
     // Slide-in: two half-bright halves flying in from 0xb4 toward centre.
     let s0 = dance_countin_banner_envelope(0);

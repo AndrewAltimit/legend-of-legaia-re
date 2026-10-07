@@ -74,7 +74,7 @@ because they are the names a small `impl` block also wants.
 `impl_type`, and a free function has none, so free-function edges are never
 gated however many definitions share the name. `countdown_frame` existed twice -
 in `crates/engine-minigames/src/baka_fighter_chrome.rs`, called every frame by the
-Baka round chrome, and in `crates/engine-core/src/dance_tutorial.rs`, called by
+Baka round chrome, and in `crates/engine-minigames/src/dance_tutorial.rs`, called by
 nothing - and the one bare call linked to both.
 
 **A bare identifier matching a free function.** The `IDENT_RE` pass links a bare
@@ -343,7 +343,7 @@ so a recurrence is recognisable rather than re-derived.
 | `800198e0`, `80058298`, `80058490` | `engine-vm/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |
 | `80053cb8` | `engine-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
-| `801d0750` | `engine-core/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
+| `801d0750` | `engine-minigames/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
 | `801e5b4c` | `engine-vm/src/world_map_overlay.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `baka_hub_actors::entry_list` calls it where retail's only `jal` sits. |
 | `801ead98` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
 | `801eca08` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
@@ -361,7 +361,7 @@ so a recurrence is recognisable rather than re-derived.
 | `8002574c` | `asset/src/boot_overlay.rs` | STALE-TAG | Same subcommand reads `CARD_TIM_EXTRACTION_INDEX`. Also the `const` coarse-anchor shape: the tag reports as `anchor = module`. |
 | `801cfff0`, `801d069c`, `801d0fa8`, `801d3230` | `asset/src/minigame_slot_scene.rs` | STALE-TAG | `asset slot-scene` drives the reel kernels, the composer, the clear path and the placement blit. The remaining gap is a *renderer*, not a caller, and now says so. |
 | `801cf56c`, `801cf740` | `mdec/src/str_player.rs` | STALE-TAG | `mdec str-plan` calls both on `DecodeEnv`. The real gaps (the ring drops per-frame dimensions; the port decodes whole frames) are unchanged and kept as prose. |
-| `801d26cc` | `engine-core/src/fishing_actors.rs` | STALE-TAG | `bite_interval` / `bite_credit_override` / `roll_hit_type` reached from the frame tick's `SceneMode::Fishing` arm -> `World::tick_fishing` -> `PondSession::tick` -> `BandCheck::tick` (`roll_hit_type` through `fishing::band_roll`). The file's blanket `# NOT WIRED` heading came off and ten still-inert items each took their own line. The chain this row first named ran through a second session type that has since been deleted; every host now runs `PondSession`. |
+| `801d26cc` | `engine-minigames/src/fishing_actors.rs` | STALE-TAG | `bite_interval` / `bite_credit_override` / `roll_hit_type` reached from the frame tick's `SceneMode::Fishing` arm -> `World::tick_fishing` -> `PondSession::tick` -> `BandCheck::tick` (`roll_hit_type` through `fishing::band_roll`). The file's blanket `# NOT WIRED` heading came off and ten still-inert items each took their own line. The chain this row first named ran through a second session type that has since been deleted; every host now runs `PondSession`. |
 | `801cf00c`, `801d6704` | `engine-core/src/mode_entry_init.rs` | FALSE-EDGE | Coarse anchors: `DuelOverlayInit` is a struct with no `impl`, `FIELD_INIT_STEPS` is a `const`. Both became `REF:`; the `PORT:` stays on `duel_overlay_init` and the file's fn anchors. The file is live through `field_spawn`. |
 | `801d84b4` | `engine-core/src/field_submode.rs` | FALSE-EDGE | Same shape: `CardRequest` is a struct and the file declares no `impl` at all, so the type anchor widened to a module live through `open_submode`. Now a `REF:`; `request_card_mode` keeps the `PORT:`. |
 | `801d4a60` | `engine-core/src/field_actor_program.rs` | FALSE-EDGE | `step` renamed `step_scene_program`. A free `fn step` is never receiver-gated and collected edges from the live `motion_vm::step` and from every reachable function naming a local `step` (`fishing_advance_cast(&mut self, step: i32)` fired it). Exposed `entry_successor` / `lift_step`, which then needed their own disclosures. |

@@ -22,7 +22,7 @@ fn species(index: usize, score_value: i32, strike_gate: i32) -> FishingSpecies {
 /// save.
 #[test]
 fn engine_pad_input_counts_retail_pad_nudges() {
-    use crate::input::PadButton as B;
+    use legaia_engine_vm::pad::PadButton as B;
     let m = |bs: &[B]| bs.iter().fold(0u16, |a, b| a | b.mask());
     // Cross + Square pressed together: ONE nudge (the reel pair is one
     // mask at `0x801D3458`), both reel bits held.

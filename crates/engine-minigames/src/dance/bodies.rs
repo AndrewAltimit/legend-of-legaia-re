@@ -1,7 +1,7 @@
 //! The floor's **bodies**: every 3D actor the dance overlay's spawner
 //! (`FUN_801d0190`) puts on the floor, with the clip each one shows this
 //! frame - the rules-side half of the dancer render. The mesh + pose half is
-//! [`crate::dance_cast_scene`], which every host draws through.
+//! `legaia_engine_core::dance_cast_scene`, which every host draws through.
 //!
 //! Two kinds of actor come out of the spawner
 //! (`see ghidra/scripts/funcs/overlay_dance_801d0190.txt`):

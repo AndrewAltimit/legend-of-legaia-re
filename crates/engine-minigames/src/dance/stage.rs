@@ -49,7 +49,7 @@ pub enum CountInStage {
 /// `DAT_801D5134` (`1` once the intro cue fired, `2` once the start cue did).
 ///
 /// Retail runs the below-10 states of `FUN_801cf470` before the beat clock
-/// starts; the port stages one of these on [`crate::world::World::enter_dance`]
+/// starts; the port stages one of these on `legaia_engine_core::world::World::enter_dance`
 /// and the world's dance tick plays it out, holding `DanceGame::advance` off
 /// until it finishes. Owning the counter here rather than in a host is what
 /// makes the native window, the browser play page and the minigames page
@@ -327,7 +327,7 @@ pub fn dance_clip_driver_gate(clip_id: i16, flags: u32) -> bool {
 }
 
 // Wired: the dance entry's five face-stamp calls resolve their dancer slots
-// through it (`crate::dance_venue::entry_face_stamps`, applied to the venue
+// through it (`legaia_engine_core::dance_venue::entry_face_stamps`, applied to the venue
 // VRAM by `DanceVenue::build` on the native window and both browser pages).
 // The per-frame face draw on the browser page still resolves its rig from the
 // disc cast table's per-dancer kind (`castRigs()` in
@@ -418,7 +418,7 @@ pub struct DanceSceneEntry {
     /// Scratchpad bytes `0x1F8003E8..EB` - the camera's visible tile window,
     /// as `(min_x, min_z, max_x, max_z)` signed tiles. **Symmetric** about the
     /// camera on both axes, where the field's default
-    /// ([`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`]) is offset
+    /// (`legaia_engine_core::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`) is offset
     /// forward and to the left; the dance floor is also two tiles wider and
     /// four deeper.
     pub view_window: (i8, i8, i8, i8),
@@ -452,14 +452,14 @@ pub struct DanceSceneEntry {
 /// PORT: FUN_801CEF54 (`0x801cef54..0x801cf46c`)
 ///
 /// WIRED on all three hosts, in two halves. The **mode** half is
-/// [`crate::world::World::enter_dance`]: the actor this entry spawns from the
+/// `legaia_engine_core::world::World::enter_dance`: the actor this entry spawns from the
 /// template at `0x801D42E4` is the beat clock (`FUN_801cf470` is that
 /// template's tick word), which is [`DanceGame`] + [`CountIn`] there. The
-/// **venue** half is [`crate::dance_venue`]: `sync_dance_venue` stages the
+/// **venue** half is `legaia_engine_core::dance_venue`: `sync_dance_venue` stages the
 /// record's globals over the walked-in scene on the first dance frame -
 /// [`DanceSceneEntry::scene_block_base`] into the `_DAT_80084540` mirror,
 /// [`DanceSceneEntry::view_window`] into the camera's visible-tile window, and
-/// the camera [`crate::dance_venue::venue_camera`] builds from
+/// the camera `legaia_engine_core::dance_venue::venue_camera` builds from
 /// [`DanceSceneEntry::dancer_spawn`] / [`DanceSceneEntry::camera_pair`] /
 /// [`DanceSceneEntry::camera_angles`] / [`DanceSceneEntry::gte_h`], which the
 /// frame resolver's `FieldCameraFrame::Venue` arm frames through - and
@@ -523,7 +523,7 @@ pub struct DanceSceneStage {
 
 // PARTIALLY WIRED: `World::enter_dance` / `World::exit_dance` apply the record's
 // `clear_pad_latch` through `InputState::clear_edges`, and
-// `crate::dance_venue::sync_dance_venue` runs the block-base restore
+// `legaia_engine_core::dance_venue::sync_dance_venue` runs the block-base restore
 // (`restores_scene_block_base`) on the first frame after the dance, together
 // with the view-window restore. `restores_caller_scene` needs no write: the
 // port never unloads the walked-in scene, so there is no name to copy back.

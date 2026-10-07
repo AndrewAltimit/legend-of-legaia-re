@@ -50,7 +50,7 @@ pub struct DanceGame {
     /// The tick's camera keyframe track (`FUN_801CF470` at
     /// `0x801CF51C..0x801CF7D8`), when the run was started from a real
     /// overlay image.
-    pub(super) camera: Option<crate::dance_venue::DanceCameraTrack>,
+    pub(super) camera: Option<super::DanceCameraTrack>,
     /// The how-to mode's Disco King ([`DemoDancer`]), spawned beside the
     /// floor by `FUN_801d0190`'s mode-2 tail.
     pub(super) demo: Option<DemoDancer>,
@@ -193,7 +193,7 @@ impl DanceGame {
         for (class, m) in game.markers.iter_mut().enumerate() {
             m.class = class as u16;
         }
-        game.camera = crate::dance_venue::DanceCameraTrack::from_overlay(overlay);
+        game.camera = super::DanceCameraTrack::from_overlay(overlay);
         game.finish_programs = super::finish_programs(overlay);
         game.spawn_dancer_actors(&spawns);
         // PORT: FUN_801d0190 (the mode-2 Disco King spawn, 0x801D0338..0x801D0390)
@@ -204,8 +204,8 @@ impl DanceGame {
     }
 
     /// Attach the dance hall's choreography bank (the `other7` scene's MOVE
-    /// ANM bundle, [`crate::dance_venue::dance_clip_bank`]): every descriptor
-    /// clip's length in ticks - [`crate::field_anim::clip_end_ticks`] on the
+    /// ANM bundle, `legaia_engine_core::dance_venue::dance_clip_bank`): every descriptor
+    /// clip's length in ticks - [`legaia_engine_vm::field_player_clip::clip_end_ticks`] on the
     /// record's frame count and the rate's per-record step - so a judge move
     /// holds the dancer for exactly as long as retail's clip driver plays it.
     ///
@@ -226,11 +226,15 @@ impl DanceGame {
                 else {
                     continue;
                 };
-                let step =
-                    crate::field_anim::clip_step(c.rate, rec.blends(), (rec.flag & 0xFF) as u8);
+                let step = legaia_engine_vm::field_player_clip::clip_step(
+                    c.rate,
+                    rec.blends(),
+                    (rec.flag & 0xFF) as u8,
+                );
                 map.insert(
                     (id, c.rate),
-                    crate::field_anim::clip_end_ticks(rec.frame_count, step).max(1),
+                    legaia_engine_vm::field_player_clip::clip_end_ticks(rec.frame_count, step)
+                        .max(1),
                 );
             }
         }
@@ -376,24 +380,21 @@ impl DanceGame {
     }
 
     /// Advance the camera keyframe track one tick
-    /// ([`crate::dance_venue::DanceCameraTrack::tick`]) and return the pose
+    /// ([`DanceCameraTrack::tick`](super::DanceCameraTrack::tick)) and return the pose
     /// it wrote. `None` with no track (a chart-only run) or while the gate
     /// holds the camera (the how-to demo).
-    pub fn advance_camera(
-        &mut self,
-        frame_delta: u8,
-    ) -> Option<crate::dance_venue::DanceCameraPose> {
+    pub fn advance_camera(&mut self, frame_delta: u8) -> Option<super::DanceCameraPose> {
         let mode = self.mode;
         self.camera.as_mut()?.tick(mode, frame_delta)
     }
 
     /// The camera track's current pose without advancing it.
-    pub fn camera_pose(&self) -> Option<crate::dance_venue::DanceCameraPose> {
+    pub fn camera_pose(&self) -> Option<super::DanceCameraPose> {
         self.camera.as_ref()?.pose(self.mode)
     }
 
     /// The camera keyframe track, when the run carries one.
-    pub fn camera_track(&self) -> Option<&crate::dance_venue::DanceCameraTrack> {
+    pub fn camera_track(&self) -> Option<&super::DanceCameraTrack> {
         self.camera.as_ref()
     }
 

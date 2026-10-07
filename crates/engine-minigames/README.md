@@ -11,9 +11,11 @@ at its old path (`legaia_engine_core::dance`, `legaia_engine_core::slot_machine`
 
 | Module | Covers |
 |---|---|
+| `dance` / `dance_tutorial` | Noa's dance rhythm minigame: beat clock, timing-window judge, groove gauge, the floor cast and sprite-part pools, the camera keyframe track, the tutorial. See [`minigame-dance.md`](../../docs/subsystems/minigame-dance.md). |
 | `baka_fighter` / `baka_cabinet` / `baka_fighter_chrome` / `baka_impact_fx` / `baka_duel` | The Baka Fighter duel: round state machine, rock-paper-scissors resolver, the cabinet shell, the round chrome, impact effects, and the duel's camera and fighter-clip kernels. See [`minigame-baka-fighter.md`](../../docs/subsystems/minigame-baka-fighter.md). |
 | `slot_machine` | The casino slot machine: reel state machine, dual RNG, five-payline payout. See [`minigame-slot-machine.md`](../../docs/subsystems/minigame-slot-machine.md). |
-| `minigame_actor` | The overlay band's shared actor record. |
+| `fishing` / `fishing_actors` / `fishing_chrome` / `fishing_hub` | The fishing minigame's `PondSession`, its rod / lure / line actors, the venue chrome and the hub screen. See [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md). |
+| `minigame_actor` / `minigame_fx` / `minigame_floor` | The overlay band's shared actor record, effect-part pool and venue floor grid. |
 | `other_game_overlay` | PROT 0977 kernels shared by the hub-band games (step scaling, voice cues, the score-tally ramp). |
 
 ## What stays in `engine-core`, and why
@@ -29,6 +31,12 @@ simulation crate:
   cameras out of a loaded `Scene` / `SceneResources`. Where such a module
   carried a pure kernel (the duel camera, the dance camera track), the kernel
   moved here and the module re-exports it.
+- **Disc and scene readers** - `dance::stage_dance_hud_vram` (reads the HUD
+  art through a `ProtIndex`) and `fishing_actors::rod_mesh_from_scene` (lifts
+  the rods out of a loaded `Scene`). `engine-core`'s `dance`, `fishing_actors`
+  and `fishing_hub` are thin modules that glob-re-export the crate's module
+  and add only these, so `legaia_engine_core::dance::*` still names both
+  halves.
 - **Muscle Dome** - `muscle_dome` and `muscle_ringside` are an ordinary battle
   under the hood (spells, the battle command menu, the arts input), so they
   sit with the battle modules.

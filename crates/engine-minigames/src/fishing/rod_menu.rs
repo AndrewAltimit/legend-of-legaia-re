@@ -91,7 +91,7 @@ pub const ENTRY_ROD_PROBES: u32 = 6;
 ///
 /// PORT: FUN_801CF070 (`0x801cf35c..0x801cf39c`)
 ///
-/// WIRED: [`crate::world::World::resolve_fishing_entry_rod`] runs it over the
+/// WIRED: `legaia_engine_core::world::World::resolve_fishing_entry_rod` runs it over the
 /// party's live bag and writes the result back to the persistent rod cell,
 /// which `World::enter_fishing_session` seeds the session's rod from. Every
 /// entry reaches it through `SceneHost::enter_fishing_from_overlay` - the

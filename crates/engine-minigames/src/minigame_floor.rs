@@ -260,7 +260,7 @@ pub const STEP_LAYER_KIND: usize = 2;
 /// Record stride of [`STEP_LAYER_KIND`]: the resident byte `DAT_8007B31A`
 /// (the per-kind stride table at `0x8007B318` reads `04 04 04 08 ..` in the
 /// library states; kind `3`'s `8` is
-/// [`crate::field_regions::REGION_RECORD_STRIDE`]).
+/// [`legaia_engine_vm::field_regions::REGION_RECORD_STRIDE`]).
 pub const STEP_RECORD_STRIDE: usize = 4;
 
 /// Find the step-layer record for grid cell `(gx, gz)` in one layer block
@@ -545,20 +545,20 @@ pub enum MarkerTemplate {
 /// `+4k+2`, count `s16` at `+4k+4`, stride `_DAT_8007B318[kind]` - for the
 /// first record whose `rec[0]`/`rec[1]` match the cell, primary `+0x10000`
 /// first and `+0x12000` on a miss. At `kind == 1` that is exactly the
-/// [`crate::field_regions::TileTrigger`] table, so the marker's clip index is
+/// [`legaia_engine_vm::field_regions::TileTrigger`] table, so the marker's clip index is
 /// [`TileTrigger::record`] `+ 1` of the record
-/// [`crate::field_regions::lookup_tile_trigger`] already returns.
+/// [`legaia_engine_vm::field_regions::lookup_tile_trigger`] already returns.
 ///
 /// The `6 ..= 9` window is an unsigned `clip - 6 < 4` test, so it is exactly
 /// the four marker clips; everything else falls through to the plain template.
 ///
-/// [`TileTrigger::record`]: crate::field_regions::TileTrigger::record
+/// [`TileTrigger::record`]: legaia_engine_vm::field_regions::TileTrigger::record
 // PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
 // REF: FUN_801d3ec0, FUN_801d3f54 (the two-layer kind-N record lookup the clip
 // index comes out of)
 // WIRED: [`MarkerFloor::build`] calls this for every drawn cell of a venue's
 // floor rect, resolving the clip index through the same kind-1
-// primary-then-fallback tile scan `crate::field_regions` ports, and the browser
+// primary-then-fallback tile scan `legaia_engine_vm::field_regions` ports, and the browser
 // minigames page draws the tiles it classes as markers. Measured on the real
 // venue: `other7` yields ten marker tiles, classes `[2, 2, 2, 4]`, and all ten
 // swap mesh inside 240 frames
@@ -618,7 +618,7 @@ impl MarkerFloor {
     /// Resolve every marker cell of the floor rect.
     ///
     /// `triggers_primary` / `triggers_fallback` are the `.MAP` trigger block's
-    /// kind-1 sub-tables ([`crate::field_regions::parse_tile_triggers`] over
+    /// kind-1 sub-tables ([`legaia_engine_vm::field_regions::parse_tile_triggers`] over
     /// `+0x10000` then `+0x12000`) - the same two-layer scan
     /// `FUN_801D3F54(1, x, z)` performs, which is where the marker's clip index
     /// comes from ([`marker_template`]).
@@ -634,8 +634,8 @@ impl MarkerFloor {
         width: i32,
         height: i32,
         neighbour_block: bool,
-        triggers_primary: &[crate::field_regions::TileTrigger],
-        triggers_fallback: &[crate::field_regions::TileTrigger],
+        triggers_primary: &[legaia_engine_vm::field_regions::TileTrigger],
+        triggers_fallback: &[legaia_engine_vm::field_regions::TileTrigger],
         script: legaia_engine_vm::dance_marker::MarkerScript,
     ) -> Self {
         let mut tiles = Vec::new();
@@ -646,7 +646,7 @@ impl MarkerFloor {
             // Retail spells the clip index `rec[2] + 1`, with `0` standing for
             // "no record here" - so an absent record and a record whose byte is
             // `0xFF` stay distinguishable.
-            let marker = crate::field_regions::lookup_tile_trigger(
+            let marker = legaia_engine_vm::field_regions::lookup_tile_trigger(
                 triggers_primary,
                 triggers_fallback,
                 tx,

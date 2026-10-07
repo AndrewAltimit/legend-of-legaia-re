@@ -54,7 +54,7 @@ impl PondInput {
     /// word rotated into the packed retail layout (`_DAT_8007B874`): D-pad
     /// left, D-pad right and the reel pair as one mask, never the cast.
     pub fn from_engine_pad(pad: u16, pad_prev: u16) -> Self {
-        use crate::input::PadButton as B;
+        use legaia_engine_vm::pad::PadButton as B;
         let mut reel_mask = 0u32;
         if pad & B::Cross.mask() != 0 {
             reel_mask |= REEL_A_PAD_BIT;
@@ -179,12 +179,12 @@ pub struct PondSession {
 /// Retail reads both regions off the one resident scene buffer
 /// (`*_DAT_1F8003EC`); the port keeps the same buffer and the parsed
 /// `+0x10000` region block beside it, because
-/// [`crate::field_regions::RegionTable`] borrows rather than owns.
+/// [`legaia_engine_vm::field_regions::RegionTable`] borrows rather than owns.
 #[derive(Debug, Clone)]
 pub struct PondVenue {
     /// The venue scene's `.MAP` buffer.
     pub map: Vec<u8>,
-    /// Its `+0x10000` region block ([`crate::scene::Scene::field_map_region_block`]).
+    /// Its `+0x10000` region block (`legaia_engine_core::scene::Scene::field_map_region_block`).
     pub region_block: Option<Vec<u8>>,
     /// The angler's world `x` - the point the cast offsets from.
     pub anchor_x: i16,

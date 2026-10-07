@@ -405,7 +405,7 @@ because the *descriptions* are accurate reads of real fishing routines.
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
 Engine port:
-[`legaia_engine_core::dance`](../../crates/engine-core/src/dance.rs) is the
+[`legaia_engine_minigames::dance`](../../crates/engine-minigames/src/dance.rs) (re-exported as `legaia_engine_core::dance`) is the
 from-scratch rules engine driven by that parsed chart + [scoring
 tables](#the-rival-dancers-score-for-real) - the beat clock (`FUN_801cf470`),
 the per-dancer handler (`FUN_801d1358`: latch decay, chain-cursor reset,

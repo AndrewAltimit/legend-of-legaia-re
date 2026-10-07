@@ -276,6 +276,7 @@ legend-of-legaia-re/
 │   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
 │   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
+│   ├── engine-minigames/         # Minigame rules engines: slot machine, Baka Fighter, dance, fishing
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + from-scratch SPU + SEQ sequencer

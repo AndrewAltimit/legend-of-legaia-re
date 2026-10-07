@@ -476,7 +476,7 @@ impl LegaiaMinigames {
             .field_map_index(&index)
             .and_then(|i| index.entry_bytes_extended(i).ok());
         let region_block = scene.field_map_region_block(&index).ok().flatten();
-        let rod_mesh = legaia_engine_core::fishing_actors::RodMesh::from_scene(&scene);
+        let rod_mesh = legaia_engine_core::fishing_actors::rod_mesh_from_scene(&scene);
 
         Some(FishingScene {
             env,

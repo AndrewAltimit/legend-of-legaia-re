@@ -195,7 +195,7 @@ impl SceneHost {
             anchor_x: lead.x,
             anchor_z: lead.z,
             facing: lead.facing,
-            rod_mesh: crate::fishing_actors::RodMesh::from_scene(&scene),
+            rod_mesh: crate::fishing_actors::rod_mesh_from_scene(&scene),
         })
     }
 

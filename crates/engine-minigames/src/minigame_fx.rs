@@ -13,7 +13,7 @@
 //! **Where it lives is the whole point.** Held by a host, a pool ages only on
 //! that host, which is how the play window came to be the one surface on
 //! which a fishing splash existed at all. Held on
-//! [`crate::world::MinigameState`] it ages inside the world tick, and every
+//! `legaia_engine_core::world::MinigameState` it ages inside the world tick, and every
 //! host that ticks the world drains the same parts through one draw builder.
 //!
 //! ## The coordinate space is the producer's, not this pool's

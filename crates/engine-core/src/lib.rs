@@ -55,7 +55,6 @@ pub mod cutscene_script_elements;
 pub mod cutscene_timeline;
 pub mod dance;
 pub mod dance_cast_scene;
-pub mod dance_tutorial;
 pub mod dance_venue;
 pub mod debug_char_editor;
 pub mod dev_menu;
@@ -81,9 +80,7 @@ pub mod field_menu_dispatch;
 pub mod field_occlusion;
 pub use legaia_engine_vm::field_regions;
 pub mod field_view_window;
-pub mod fishing;
 pub mod fishing_actors;
-pub mod fishing_chrome;
 pub mod fishing_exchange_input;
 pub mod fishing_hub;
 pub mod fishing_scene;
@@ -114,8 +111,6 @@ pub mod menu_runtime;
 pub mod menu_validator;
 pub mod menu_widget;
 pub mod minigame_entry;
-pub mod minigame_floor;
-pub mod minigame_fx;
 pub mod minigame_status;
 pub mod mode;
 pub mod model_bank;
@@ -579,6 +574,6 @@ pub mod scene_transition_actor;
 // The minigame rules engines live in `legaia-engine-minigames`; re-exported
 // here so every host and test keeps its `legaia_engine_core::<module>` path.
 pub use legaia_engine_minigames::{
-    baka_cabinet, baka_fighter, baka_fighter_chrome, baka_impact_fx, minigame_actor,
-    other_game_overlay, slot_machine,
+    baka_cabinet, baka_fighter, baka_fighter_chrome, baka_impact_fx, dance_tutorial, fishing,
+    fishing_chrome, minigame_actor, minigame_floor, minigame_fx, other_game_overlay, slot_machine,
 };

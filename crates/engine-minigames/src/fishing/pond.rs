@@ -317,7 +317,7 @@ impl PondSession {
                         let region = venue
                             .region_block
                             .as_deref()
-                            .and_then(crate::field_regions::RegionTable::parse);
+                            .and_then(legaia_engine_vm::field_regions::RegionTable::parse);
                         lure.probe(&venue.map, region.as_ref(), self.casts, fs)
                     }
                     _ => Default::default(),
