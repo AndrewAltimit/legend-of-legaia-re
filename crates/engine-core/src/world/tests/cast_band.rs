@@ -511,6 +511,75 @@ fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
     );
 }
 
+/// A one-member roster whose record carries `spell_id` at magic level `level`
+/// (the cure ladder reads the record, not the actor).
+fn roster_with_spell(world: &mut World, spell_id: u8, level: u8) {
+    let mut member = legaia_save::CharacterRecord::parse(&[0u8; 0x414]).expect("blank record");
+    let mut list = member.spell_list();
+    list.count = 1;
+    list.ids[0] = spell_id;
+    list.levels[0] = level;
+    member.set_spell_list(list);
+    world.party.roster.members = vec![member];
+}
+
+/// Re-enter the module from arm 0 through `last`, each arm until it lets the
+/// phase through (the counted arms hold on the module's own countdown).
+fn drive_module_through(world: &mut World, spell_id: u8, last: u8) {
+    for arm in 0..=last {
+        if world.casting.module_phase > arm {
+            continue;
+        }
+        world.casting.module_phase = arm;
+        for _ in 0..2048 {
+            if world.run_cast_module_code(spell_id, arm).is_none() {
+                break;
+            }
+            if world.casting.module_phase != arm {
+                break;
+            }
+        }
+    }
+}
+
+/// A level-9 Vera (cure tier 4, the light row's top band) doubles the
+/// target's battle AP gauge `+0x170`, capped at 100 - PROT 0905
+/// `0x801F7F24..0x801F7F48`. First reported by the_rabidsquirel from retail
+/// save-state testing; a lower tier leaves AP alone.
+#[test]
+fn a_level_nine_vera_doubles_the_targets_ap() {
+    use legaia_engine_vm::cast_seru_ticks_a::VERA_RESTORE_ARM;
+    for (tier, before, after) in [(4u8, 17u16, 34u16), (4, 60, 100), (3, 17, 17)] {
+        let mut world = module_code_world();
+        world.casting.summon_actor_slot = Some(7);
+        world.battle_ctx.active_actor = 0;
+        world.actors[0].battle.spirit_gauge = before;
+        world.battle_ctx.follow_up_pending = tier;
+        roster_with_spell(&mut world, 0x83, 9);
+        drive_module_through(&mut world, 0x83, VERA_RESTORE_ARM);
+        assert_eq!(
+            world.actors[0].battle.spirit_gauge, after,
+            "tier {tier}, AP {before}"
+        );
+    }
+}
+
+/// A level-9 Orb doubles every living party seat's AP gauge the same way -
+/// PROT 0911 `0x801F7E10..0x801F7E3C`.
+#[test]
+fn a_level_nine_orb_doubles_the_party_ap() {
+    use legaia_engine_vm::cast_seru_ticks_b::ORB_ARM5_TARGET_PHASE;
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x89), Some(911));
+    world.casting.summon_actor_slot = Some(7);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.spirit_gauge = 26;
+    world.battle_ctx.follow_up_pending = 4;
+    roster_with_spell(&mut world, 0x89, 9);
+    drive_module_through(&mut world, 0x89, ORB_ARM5_TARGET_PHASE);
+    assert_eq!(world.actors[0].battle.spirit_gauge, 52);
+}
+
 // ---------------------------------------------------------------------------
 // PROT 0907 (Nighto): the kill / confuse fork, driven at the band
 // ---------------------------------------------------------------------------

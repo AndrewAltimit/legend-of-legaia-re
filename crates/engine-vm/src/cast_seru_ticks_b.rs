@@ -924,8 +924,8 @@ pub fn orb_heal_amount(magic_level: u8) -> u32 {
 ///   Death mark `crate::cast_module_ticks::FLAG_KISS_OF_DEATH_MARK` names.
 ///
 /// Any other selector clears nothing. Selector `4` additionally doubles the
-/// victim's `+0x170` with a ceiling of `0x64`, which has no mirror on
-/// [`CastActorState`] and is reported rather than applied.
+/// seat's AP gauge `+0x170` with a ceiling of `0x64`
+/// (`0x801F7E10..0x801F7E3C`, [`crate::cast_seru_ticks_a::cure_tier4_ap`]).
 pub fn orb_cleanse_mask(selector: u8) -> Option<u16> {
     match selector {
         1 => Some(0xFFFC),
@@ -942,8 +942,9 @@ pub struct SeruHeal {
     pub seat: u8,
     /// HP actually restored, after the clamp to `maxHP - HP`.
     pub restored: u16,
-    /// `true` when this seat's `+0x170` was doubled (selector `4` only).
-    pub doubled_resist: bool,
+    /// `true` when this seat's AP gauge `+0x170` was doubled (selector `4`
+    /// only).
+    pub doubled_ap: bool,
 }
 
 /// PROT 0911 (Orb, action id `0x89`) tick body.
@@ -963,11 +964,13 @@ pub struct SeruHeal {
 ///   advance, which is why `6`, `7` and `8` are unreachable;
 /// * `9` - un-hide the party seats (`+0x21C = 0`, `+0x04 = 0x20080200`),
 ///   `ctx[+0x278] = 0`, summon `+0x21C = 0xFF`, then the heal sweep over
-///   `actor_table[0 .. ctx[+0]]`: skip a dead seat, skip `+0x16E & 4`,
+///   `actor_table[0 .. ctx[+0]]`: skip a dead seat, and unless `+0x16E & 4`
 ///   `restored = min(amount, maxHP - HP)`, `+0x14C += restored`,
 ///   `+0x10 = -restored` (a **store**, not an accumulate - the bar delta is
 ///   overwritten with the negative of the heal), then the cleanse ladder when
-///   the caster's magic level is at least [`ORB_CLEANSE_MIN_LEVEL`];
+///   the caster's magic level is at least [`ORB_CLEANSE_MIN_LEVEL`] - whose
+///   selector-`4` arm also doubles the seat's AP gauge `+0x170`, capped at
+///   100;
 /// * `0x0A` - hold until the module's countdown expires, then phase `0xFF`;
 /// * `0xFF` - return zero.
 ///
@@ -1030,20 +1033,35 @@ pub fn orb_tick(
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
-                if v.hp == 0 || (v.flags & FLAG_NON_TARGETABLE) != 0 {
+                // A dead seat is skipped whole (`beq v0,zero,0x801f7e40` at
+                // `0x801F7A2C`); `+0x16E & 4` skips only the HP store
+                // (`0x801F7B7C`) and the cleanse ladder still runs.
+                if v.hp == 0 {
                     continue;
                 }
-                let restored = u32::from(cap).saturating_sub(u32::from(v.hp)).min(amount) as u16;
-                v.hp = v.hp.wrapping_add(restored);
-                v.hp_bar_delta = -i32::from(restored);
+                let stores_hp = (v.flags & FLAG_NON_TARGETABLE) == 0;
+                let restored = if stores_hp {
+                    let r = u32::from(cap).saturating_sub(u32::from(v.hp)).min(amount) as u16;
+                    v.hp = v.hp.wrapping_add(r);
+                    v.hp_bar_delta = -i32::from(r);
+                    r
+                } else {
+                    0
+                };
                 if let Some(m) = mask {
                     v.flags &= m;
                 }
-                healed.push(SeruHeal {
-                    seat,
-                    restored,
-                    doubled_resist: cleanse == Some(4),
-                });
+                let doubled_ap = cleanse == Some(4);
+                if doubled_ap {
+                    v.spirit_gauge = crate::cast_seru_ticks_a::cure_tier4_ap(v.spirit_gauge);
+                }
+                if stores_hp {
+                    healed.push(SeruHeal {
+                        seat,
+                        restored,
+                        doubled_ap,
+                    });
+                }
             }
             CastArmStep::Advance
         }
@@ -1688,6 +1706,36 @@ mod tests {
         }
         orb_tick(&mut ctx, &mut s, 7, 0, Some(4), |_| 400);
         assert_eq!(s[0].flags, 0, "selector 4 clears Venom, Toxic and the mark");
+    }
+
+    /// Selector `4` (a level-9 Orb) doubles every living seat's AP gauge,
+    /// capped at 100 - including a seat whose `+0x16E & 4` skipped the HP
+    /// store, since retail's ladder sits past that skip. A dead seat is
+    /// skipped whole.
+    #[test]
+    fn orb_selector_four_doubles_the_ap_gauge() {
+        let mut ctx = ctx_at(9);
+        let mut s = seats(8);
+        s[0].spirit_gauge = 17;
+        s[1].spirit_gauge = 60;
+        s[2].spirit_gauge = 20;
+        s[2].hp = 0;
+        s[3].spirit_gauge = 9;
+        s[3].flags |= FLAG_NON_TARGETABLE;
+        let (_, healed) = orb_tick(&mut ctx, &mut s, 7, 0, Some(4), |_| 400);
+        assert_eq!(s[0].spirit_gauge, 34);
+        assert_eq!(s[1].spirit_gauge, 100, "capped at 100");
+        assert_eq!(s[2].spirit_gauge, 20, "a dead seat is untouched");
+        assert_eq!(s[3].spirit_gauge, 18, "the ladder runs past the HP skip");
+        assert!(healed.iter().all(|h| h.doubled_ap));
+
+        for sel in [None, Some(1), Some(2), Some(3)] {
+            let mut ctx = ctx_at(9);
+            let mut s = seats(8);
+            s[0].spirit_gauge = 17;
+            orb_tick(&mut ctx, &mut s, 7, 0, sel, |_| 400);
+            assert_eq!(s[0].spirit_gauge, 17, "selector {sel:?} leaves AP alone");
+        }
     }
 
     #[test]

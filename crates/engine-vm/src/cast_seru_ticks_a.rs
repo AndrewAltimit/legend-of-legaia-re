@@ -784,12 +784,31 @@ pub const VERA_CURE_MASKS: [u16; 4] = [0xFFFC, 0xFF84, 0xFB84, 0xFB84];
 /// The cure ladder's own element row in the side-effect table - light.
 pub const CURE_ELEMENT: u8 = 5;
 
-/// Tier `4` also **doubles** the target's `+0x170` and clamps it to `0x64`
-/// (`0x801F7F24..0x801F7F48`: `+0x170 <<= 1`, stored, then `0x64` when the
-/// stored value is `>= 0x65`). The mirror carries no `+0x170`, so the port
-/// reports the doubling in [`VeraOutcome::doubled_resist`] rather than
-/// applying it.
-pub const VERA_TIER4_RESIST_CAP: u16 = 0x64;
+/// Tier `4` also **doubles** the target's battle AP gauge `+0x170` and clamps
+/// it to `0x64` (`0x801F7F24..0x801F7F48`: `+0x170 <<= 1`, stored, then
+/// `0x64` when the stored halfword is `>= 0x65`). All three light-row heal
+/// modules carry the same tail - PROT 0905 here, PROT 0911 at
+/// `0x801F7E10..0x801F7E3C`, PROT 0919 at `0x801F8394..0x801F83C0` - so a
+/// level-9 Vera / Orb / Spoon doubles the AP of every seat it cures. See
+/// [`cure_tier4_ap`].
+pub const CURE_TIER4_AP_CAP: u16 = 0x64;
+
+/// The cure ladder's tier-`4` AP write: `+0x170 = min(+0x170 << 1, 100)`,
+/// the doubling taken on the `u16` halfword the `sh` stores.
+///
+/// First reported by the_rabidsquirel (community research, save-state
+/// testing) as "level-9 healing magic doubles the target's AP"; the three
+/// module tails above are the disassembly behind it.
+///
+/// REF: FUN_801F69D8 (PROT 0905 `0x801F7F24..0x801F7F48`, PROT 0911 `0x801F7E10..0x801F7E3C`, PROT 0919 `0x801F8394..0x801F83C0`)
+pub fn cure_tier4_ap(spirit_gauge: u16) -> u16 {
+    let doubled = spirit_gauge.wrapping_shl(1);
+    if doubled > CURE_TIER4_AP_CAP {
+        CURE_TIER4_AP_CAP
+    } else {
+        doubled
+    }
+}
 /// The `+0x16E` bits whose presence makes PROT 0905's tiers `2..=4` play the
 /// cure cue and light the target's `+0x220..+0x223` markers
 /// (`andi v0, v0, 0x3c`).
@@ -835,10 +854,9 @@ pub struct VeraOutcome {
     /// `true` when the target was carrying one of [`VERA_CURE_CUE_BITS`], so
     /// retail played the cure cue and set `+0x220..+0x223`.
     pub cure_cue: bool,
-    /// `true` on tier `4`, where retail also doubles the target's `+0x170`
-    /// under [`VERA_TIER4_RESIST_CAP`]. The mirror has no such field, so the
-    /// write is reported, not applied.
-    pub doubled_resist: bool,
+    /// `true` on tier `4`, where the arm also doubled the target's AP gauge
+    /// `+0x170` under [`CURE_TIER4_AP_CAP`] ([`cure_tier4_ap`]).
+    pub doubled_ap: bool,
 }
 
 /// PROT 0905's restore amount, clamped exactly the way the bytes clamp it.
@@ -890,9 +908,11 @@ pub fn vera_heal_amount(magic_level: u8, hp: u16, max_hp: u16) -> u16 {
 /// and render flag `= 9` in arm 8, and the fade countdown in arm 10 that
 /// latches `0xFF`. Arm `0xFF` writes no actor state; it only returns `0`.
 ///
-/// Not ported: the packet arms, the cure cue's `+0x220..+0x223` markers and
-/// the tier-4 `+0x170` doubling (neither field is in the mirror), and the
-/// battle-overlay tier selector `0x801F6960`.
+/// Tier `4` also doubles the target's AP gauge `+0x170`, capped at 100
+/// ([`cure_tier4_ap`]).
+///
+/// Not ported: the packet arms, the cure cue's `+0x220..+0x223` markers, and
+/// the battle-overlay tier selector `0x801F6960` (the caller supplies it).
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -956,7 +976,10 @@ pub fn vera_tick(
                     out.cure_cue = r.cure_tier >= 2 && (t.flags & VERA_CURE_CUE_BITS) != 0;
                     t.flags &= mask;
                     out.cured = true;
-                    out.doubled_resist = r.cure_tier == 4;
+                    if r.cure_tier == 4 {
+                        t.spirit_gauge = cure_tier4_ap(t.spirit_gauge);
+                        out.doubled_ap = true;
+                    }
                 }
                 outcome = Some(out);
             }
@@ -1885,12 +1908,13 @@ mod tests {
         }
     }
 
-    /// Tier 4 is the only arm that also doubles `+0x170`.
+    /// Tier 4 is the only arm that also doubles the AP gauge `+0x170`.
     #[test]
-    fn tier_four_reports_the_resist_doubling() {
+    fn tier_four_doubles_the_ap_gauge() {
         for (tier, want) in [(1u8, false), (2, false), (3, false), (4, true)] {
             let mut seats = row();
             seats[3].flags = 0x0003;
+            seats[3].spirit_gauge = 17;
             let mut ctx = CastModuleCtx {
                 phase: VERA_RESTORE_ARM,
                 ..Default::default()
@@ -1908,9 +1932,37 @@ mod tests {
             );
             let out = out.unwrap();
             assert!(out.cured, "tier {tier}");
-            assert_eq!(out.doubled_resist, want, "tier {tier}");
+            assert_eq!(out.doubled_ap, want, "tier {tier}");
+            let ap = if want { 34 } else { 17 };
+            assert_eq!(seats[3].spirit_gauge, ap, "tier {tier}");
         }
-        assert_eq!(VERA_TIER4_RESIST_CAP, 0x64);
+        assert_eq!(CURE_TIER4_AP_CAP, 0x64);
+    }
+
+    /// The doubling caps at 100, and the community-reported pairs hold: a
+    /// heal after the target's turn doubles `AP + 8`; one before it doubles
+    /// `AP` and the turn-end `+8` lands afterwards.
+    #[test]
+    fn cure_tier4_ap_doubles_and_caps_at_one_hundred() {
+        assert_eq!(cure_tier4_ap(0), 0);
+        assert_eq!(cure_tier4_ap(25), 50);
+        assert_eq!(cure_tier4_ap(50), 100);
+        assert_eq!(cure_tier4_ap(51), 100);
+        assert_eq!(cure_tier4_ap(100), 100);
+        for (ap, after_turn, before_turn) in [
+            (17u16, 50u16, 42u16),
+            (9, 34, 26),
+            (42, 100, 92),
+            (26, 68, 60),
+            (34, 84, 76),
+        ] {
+            assert_eq!(cure_tier4_ap(ap + 8), after_turn, "after the turn, AP {ap}");
+            assert_eq!(
+                cure_tier4_ap(ap) + 8,
+                before_turn,
+                "before the turn, AP {ap}"
+            );
+        }
     }
 
     #[test]
