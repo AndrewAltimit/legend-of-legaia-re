@@ -892,7 +892,10 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   once `0x3EF` is up, raises `0x5F8` and clears the walls at
   `(89..90, 115..120)`. The pad hand stops at `z = 15038` in front of them,
   and the interact probe (64 ahead, a 72-unit box) does not reach the
-  guards from there. The pad hand also finds no walk to the vision P2[16]
+  guards from there. The far side does no better: south of the gate the
+  wall stops the player at `z = 15424`, and the gate's teleport
+  (89..92, 122..124) lands in a closed pocket at (59, 82) whose only way out
+  is back. The pad hand also finds no walk to the vision P2[16]
   at `(64, 15)` (its walk component ends at `(37, 17)`), whose `0x3CE` is
   P2[17]'s C2 gate, so the segment stalls in `concnow`. Whether retail
   talks to the guards from that spot, and what joins the `(64, 15)` room,
