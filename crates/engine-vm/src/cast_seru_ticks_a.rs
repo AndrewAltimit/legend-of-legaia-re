@@ -676,20 +676,33 @@ pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 /// latched into the module word `0x801F9200`. Arm `0xFF` restores the caster's
 /// `+0x1DD` from that word (`0x801F8124`).
 ///
-/// Not ported: the packet and camera arms, the ring geometry (the host
-/// supplies which seats are in the cone), and the arm-14 settle poll.
+/// The packet arms run too, against the summon seat's live position and
+/// facing (`geom`): arm 8 seeds and arm 9 drains the prong countdown
+/// (`scalar * 0x78`, drawing two lightning prongs a pass while it is
+/// non-negative), arm 10 empties the trail, arm 11 draws the charge beam
+/// while its ramp holds and the first trail sample on its exit, arm 12 draws
+/// and samples the sweeping beam, and arm 13 retracts the trail and holds
+/// until it is gone. What each tick drew is left in [`TheederFx::packet`]
+/// for the hosts ([`TheederPacket`]).
+///
+/// Not ported: the camera arms, the cone membership (the host supplies which
+/// seats are in it), and the arm-14 settle poll.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69D8 (PROT 0904; phase chain + the expanding-ring sweep; packet and camera arms unported)
+/// PORT: FUN_801F69D8 (PROT 0904; phase chain, the swinging-ray sweep and the packet arms; camera arms unported)
 pub fn theeder_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
     who: SeruSeats,
+    geom: TheederGeom,
+    fx: &mut TheederFx,
     mut rolls: impl FnMut(u8) -> Option<i32>,
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
     let site = SERU_HIT_SITES[1];
+    fx.packet = None;
+    let mouth = theeder_mouth(geom.x, geom.z, geom.facing);
     let step = run_chain(ctx, |c| match c.phase {
         0 => {
             c.ctx_278 = 0;
@@ -714,8 +727,29 @@ pub fn theeder_tick(
             }
             CastArmStep::Advance
         }
+        THEEDER_PRONG_SEED_ARM => {
+            c.ctx_6d8 = (THEEDER_PRONG_COUNT * crate::cast_module_camera::SPEED_SCALAR) as u16;
+            CastArmStep::Advance
+        }
+        THEEDER_PRONG_ARM => {
+            c.ctx_6d8 = c
+                .ctx_6d8
+                .wrapping_sub(crate::cast_module_camera::MODULE_DRAIN_PER_TICK as u16);
+            if (c.ctx_6d8 as i16) < 0 {
+                return CastArmStep::Advance;
+            }
+            fx.cell_seed = fx.cell_seed.wrapping_add(1);
+            fx.packet = Some(TheederPacket::Prongs {
+                mouth,
+                tips: theeder_prong_tips(geom.x, geom.z, geom.facing),
+                cells: fx.prong_cells(),
+            });
+            CastArmStep::Hold
+        }
         THEEDER_RAMP_RESET_ARM => {
             c.ctx_6d8 = 0;
+            // `sw zero,..` to the trail count `0x801F91FC` beside it.
+            fx.trail.reset();
             CastArmStep::Advance
         }
         THEEDER_RETARGET_ARM => {
@@ -726,8 +760,17 @@ pub fn theeder_tick(
                 .ctx_6d8
                 .wrapping_add(theeder_ramp_per_tick(THEEDER_RETARGET_ARM));
             if (c.ctx_6d8 as i16) < THEEDER_RETARGET_RAMP_END {
+                fx.packet = Some(TheederPacket::Charge {
+                    mouth,
+                    tip: theeder_charge_tip(mouth, geom.facing),
+                    level: c.ctx_6d8,
+                });
                 return CastArmStep::Hold;
             }
+            // The exit frame draws the full beam once (`FUN_801F8634`).
+            let tip = theeder_ray_rest_tip(mouth, geom.facing);
+            let drawn = fx.trail.sample(tip);
+            fx.packet = Some(TheederPacket::Sweep { mouth, tip, drawn });
             for slot in [who.caster, who.summon] {
                 if let Some(s) = seats.get_mut(slot as usize) {
                     s.target_code = TARGET_CODE_ENEMY_ROW;
@@ -740,6 +783,9 @@ pub fn theeder_tick(
             c.ctx_6d8 = c
                 .ctx_6d8
                 .wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM));
+            let tip = theeder_ray_tip(mouth, geom.facing, c.ctx_6d8);
+            let drawn = fx.trail.sample(tip);
+            fx.packet = Some(TheederPacket::Sweep { mouth, tip, drawn });
             for seat in FIRST_MONSTER_SEAT..MONSTER_ROW_END {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
@@ -769,11 +815,145 @@ pub fn theeder_tick(
                 CastArmStep::Advance
             }
         }
+        THEEDER_RETRACT_ARM => {
+            let drawn = fx.trail.drawn();
+            fx.packet = Some(TheederPacket::Retract { mouth, drawn });
+            if fx.trail.retract() != 0 {
+                CastArmStep::Hold
+            } else {
+                CastArmStep::Advance
+            }
+        }
         CHOREOGRAPHY_DONE_PHASE => CastArmStep::Finish,
         p if p <= THEEDER_SETTLE_ARM => CastArmStep::Advance,
         _ => CastArmStep::Finish,
     });
     (step, hits)
+}
+
+/// The summon seat's live `(x, z)` and facing - slot 7's `+0x34` / `+0x38`
+/// / `+0x46`, which every PROT 0904 packet arm builds its points from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TheederGeom {
+    pub x: i16,
+    pub z: i16,
+    pub facing: u16,
+}
+
+/// The engine ticks a module once a vsync, and retail runs it once a battle
+/// frame of `step` vsyncs; the trail samples (and retracts) once per retail
+/// pass at the measured frame step of `4`, so its fan spans the same arc of
+/// the swing as retail's.
+pub const THEEDER_TRAIL_PASS_TICKS: u8 = 4;
+
+/// PROT 0904's beam trail: the ring of past ray tips at `0x801F90FC` and its
+/// count `0x801F91FC`.
+///
+/// `FUN_801F8634` shifts the ring one place, writes the new tip at `[0]`,
+/// draws a fan quad between each consecutive pair (using the count from
+/// before the shift) and only then bumps the count, capped at `0xF`.
+/// `FUN_801F8B84` draws the same fan without sampling and drops the count by
+/// one, returning what is left; arm 13 holds while that is non-zero.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TheederTrail {
+    /// `hist[0]` is the newest tip.
+    pub hist: [[i16; 3]; THEEDER_TRAIL_CAP + 1],
+    /// The count word.
+    pub n: usize,
+    /// Engine ticks into the current retail pass.
+    pass: u8,
+}
+
+impl TheederTrail {
+    /// Arm 10's reset of the count word.
+    pub fn reset(&mut self) {
+        self.n = 0;
+        self.pass = 0;
+    }
+
+    /// `FUN_801F8634`'s ring half. On a pass boundary the ring shifts and
+    /// the count grows; between boundaries the newest slot tracks the live
+    /// tip. Returns the fan entries this call draws: pairs `hist[i]`,
+    /// `hist[i + 1]` for `i < drawn`.
+    pub fn sample(&mut self, tip: [i16; 3]) -> usize {
+        let on_pass = self.pass == 0;
+        self.pass = (self.pass + 1) % THEEDER_TRAIL_PASS_TICKS;
+        if !on_pass {
+            self.hist[0] = tip;
+            return self.n.saturating_sub(1);
+        }
+        let drawn = self.n;
+        for i in (1..=self.n.min(THEEDER_TRAIL_CAP)).rev() {
+            self.hist[i] = self.hist[i - 1];
+        }
+        self.hist[0] = tip;
+        self.n = (self.n + 1).min(THEEDER_TRAIL_CAP);
+        drawn
+    }
+
+    /// The fan entries a retract draws (the whole count).
+    pub fn drawn(&self) -> usize {
+        self.n
+    }
+
+    /// `FUN_801F8B84`'s count drop, once a pass. Returns what is left.
+    pub fn retract(&mut self) -> usize {
+        let on_pass = self.pass == 0;
+        self.pass = (self.pass + 1) % THEEDER_TRAIL_PASS_TICKS;
+        if on_pass {
+            self.n = self.n.saturating_sub(1);
+        }
+        self.n
+    }
+}
+
+/// PROT 0904's per-cast draw state: the trail, the last tick's packet, and
+/// the counter the prong texture cells are picked from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TheederFx {
+    pub trail: TheederTrail,
+    /// What the last tick drew, `None` on a tick that drew nothing.
+    pub packet: Option<TheederPacket>,
+    cell_seed: u32,
+}
+
+impl TheederFx {
+    /// The two prongs' 32-texel texture cells. Retail picks each from
+    /// `rand() & 3` (`0x801F830C`, a second draw discarded); the port takes
+    /// them from a per-cast counter so a cast's visuals never move the
+    /// battle's RNG stream.
+    fn prong_cells(&self) -> [u8; 2] {
+        let h = self.cell_seed.wrapping_mul(0x9E37_79B9);
+        [((h >> 13) & 3) as u8, ((h >> 21) & 3) as u8]
+    }
+}
+
+/// One tick's PROT 0904 packets, in retail battle space (Y down). The hosts
+/// project the points and build the primitives with
+/// `legaia_engine_ui::cast_theeder`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheederPacket {
+    /// Arm 9: two `FUN_801F815C` lightning prongs from the root to `tips`.
+    Prongs {
+        mouth: [i16; 3],
+        tips: [[i16; 3]; 2],
+        cells: [u8; 2],
+    },
+    /// Arm 11's hold: `FUN_801F83A4`'s charge beam at brightness `level`.
+    Charge {
+        mouth: [i16; 3],
+        tip: [i16; 3],
+        level: u16,
+    },
+    /// Arms 11 (exit) and 12: `FUN_801F8634` - the fan over the first
+    /// `drawn` trail pairs plus the beam core from the root to `tip`.
+    Sweep {
+        mouth: [i16; 3],
+        tip: [i16; 3],
+        drawn: usize,
+    },
+    /// Arm 13: `FUN_801F8B84` - the fan over the first `drawn` pairs, no core.
+    Retract { mouth: [i16; 3], drawn: usize },
 }
 
 /// The `+0x04` mesh-tint word PROT 0904's ring sweep stamps on every seat it
@@ -1959,7 +2139,14 @@ mod tests {
             phase: THEEDER_SWEEP_ARM,
             ..Default::default()
         };
-        let (_, hits) = theeder_tick(&mut ctx, &mut seats, WHO, |_| Some(25));
+        let (_, hits) = theeder_tick(
+            &mut ctx,
+            &mut seats,
+            WHO,
+            TheederGeom::default(),
+            &mut TheederFx::default(),
+            |_| Some(25),
+        );
         let seats_hit: Vec<u8> = hits.iter().map(|h| h.seat).collect();
         assert_eq!(seats_hit, vec![3, 6]);
         assert_eq!(seats[3].hp, 175);
@@ -1980,7 +2167,14 @@ mod tests {
         };
         let mut ticks = 0;
         while ctx.phase == THEEDER_RETARGET_ARM {
-            theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+            theeder_tick(
+                &mut ctx,
+                &mut seats,
+                WHO,
+                TheederGeom::default(),
+                &mut TheederFx::default(),
+                |_| None,
+            );
             ticks += 1;
             if ctx.phase == THEEDER_RETARGET_ARM {
                 assert_eq!(seats[0].target_code, 0, "no retarget while holding");
@@ -1996,6 +2190,84 @@ mod tests {
     /// Arm 12 runs its sweep word through one turn at eight times the scalar
     /// a tick (64 ticks) and holds until it has; arm 10 zeroes the word first.
     #[test]
+    fn theeder_packet_arms_draw_charge_sweep_and_retract() {
+        let mut seats = row();
+        let geom = TheederGeom {
+            x: 0,
+            z: 0,
+            facing: 0,
+        };
+        let mut fx = TheederFx::default();
+        // Arm 8 seeds arm 9's countdown; arm 9 draws prongs while it drains.
+        let mut ctx = CastModuleCtx {
+            phase: THEEDER_PRONG_SEED_ARM,
+            ..Default::default()
+        };
+        theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+        assert_eq!(ctx.phase, THEEDER_PRONG_ARM);
+        let mut prong_ticks = 0;
+        while ctx.phase == THEEDER_PRONG_ARM {
+            theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+            if matches!(fx.packet, Some(TheederPacket::Prongs { .. })) {
+                prong_ticks += 1;
+            }
+        }
+        // 0x78 * scalar drained by the scalar a tick: 120 drawing ticks.
+        assert_eq!(prong_ticks, 120);
+        // Arm 10 empties the trail; arm 11 charges, then samples on exit.
+        ctx.phase = THEEDER_RAMP_RESET_ARM;
+        theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+        theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+        assert!(matches!(fx.packet, Some(TheederPacket::Charge { .. })));
+        while ctx.phase == THEEDER_RETARGET_ARM {
+            theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+        }
+        assert!(matches!(
+            fx.packet,
+            Some(TheederPacket::Sweep { drawn: 0, .. })
+        ));
+        while ctx.phase == THEEDER_SWEEP_ARM {
+            theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+        }
+        // Sixteen passes cap the trail at 0xF.
+        assert_eq!(fx.trail.n, THEEDER_TRAIL_CAP);
+        // Arm 13 retracts one entry a pass and holds until none is left.
+        while ctx.phase < THEEDER_RETRACT_ARM {
+            theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+        }
+        let mut retract_ticks = 0;
+        while ctx.phase == THEEDER_RETRACT_ARM {
+            theeder_tick(&mut ctx, &mut seats, WHO, geom, &mut fx, |_| None);
+            assert!(matches!(fx.packet, Some(TheederPacket::Retract { .. })));
+            retract_ticks += 1;
+        }
+        assert_eq!(fx.trail.n, 0);
+        // Fifteen drops, one a pass: within a pass of fifteen passes.
+        let pass = usize::from(THEEDER_TRAIL_PASS_TICKS);
+        assert!(
+            ((THEEDER_TRAIL_CAP - 1) * pass + 1..=THEEDER_TRAIL_CAP * pass)
+                .contains(&retract_ticks),
+            "retract held {retract_ticks} ticks"
+        );
+    }
+
+    #[test]
+    fn theeder_ray_swings_about_the_facing() {
+        let mouth = theeder_mouth(0, 0, 0);
+        assert_eq!(mouth, [0, THEEDER_MOUTH_Y, 0x5C]);
+        // Phase 0: straight down the facing, 2/3 of a unit out.
+        assert_eq!(
+            theeder_ray_tip(mouth, 0, 0),
+            [0, THEEDER_MOUTH_Y, 0x5C + 0xAAA]
+        );
+        // A quarter phase: swung by sin/16 = +0x100.
+        let tip = theeder_ray_tip(mouth, 0, 0x400);
+        let (s, c) = crate::battle_action::motion::trig12(0x100);
+        assert_eq!(tip[0], (i32::from(s) * 2 / 3) as i16);
+        assert_eq!(tip[2], 0x5C + (i32::from(c) * 2 / 3) as i16);
+    }
+
+    #[test]
     fn theeder_sweeps_for_one_turn_of_the_ray() {
         let mut seats = row();
         let mut ctx = CastModuleCtx {
@@ -2003,7 +2275,14 @@ mod tests {
             ctx_6d8: 0x1234,
             ..Default::default()
         };
-        theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+        theeder_tick(
+            &mut ctx,
+            &mut seats,
+            WHO,
+            TheederGeom::default(),
+            &mut TheederFx::default(),
+            |_| None,
+        );
         assert_eq!((ctx.phase, ctx.ctx_6d8), (THEEDER_RETARGET_ARM, 0));
         ctx.phase = THEEDER_SWEEP_ARM;
         let mut ticks = 0;
@@ -2014,7 +2293,14 @@ mod tests {
                     .wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM))
                     & 0xFFF
             );
-            theeder_tick(&mut ctx, &mut seats, WHO, |_| None);
+            theeder_tick(
+                &mut ctx,
+                &mut seats,
+                WHO,
+                TheederGeom::default(),
+                &mut TheederFx::default(),
+                |_| None,
+            );
             ticks += 1;
         }
         assert_eq!(ticks, 64);
@@ -2460,7 +2746,17 @@ mod tests {
             let mut seats = row();
             let (frames, phase) = walk(|ctx| match entry {
                 903 => gimard_tick(ctx, &mut seats, WHO, None).0,
-                904 => theeder_tick(ctx, &mut seats, WHO, |_| None).0,
+                904 => {
+                    theeder_tick(
+                        ctx,
+                        &mut seats,
+                        WHO,
+                        TheederGeom::default(),
+                        &mut TheederFx::default(),
+                        |_| None,
+                    )
+                    .0
+                }
                 905 => vera_tick(ctx, &mut seats, WHO, None).0,
                 906 => gizam_tick(ctx, &mut seats, WHO, |_| None).0,
                 907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
@@ -2485,7 +2781,17 @@ mod tests {
             };
             let step = match entry {
                 903 => gimard_tick(&mut ctx, &mut seats, WHO, None).0,
-                904 => theeder_tick(&mut ctx, &mut seats, WHO, |_| None).0,
+                904 => {
+                    theeder_tick(
+                        &mut ctx,
+                        &mut seats,
+                        WHO,
+                        TheederGeom::default(),
+                        &mut TheederFx::default(),
+                        |_| None,
+                    )
+                    .0
+                }
                 905 => vera_tick(&mut ctx, &mut seats, WHO, None).0,
                 906 => gizam_tick(&mut ctx, &mut seats, WHO, |_| None).0,
                 907 => nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),

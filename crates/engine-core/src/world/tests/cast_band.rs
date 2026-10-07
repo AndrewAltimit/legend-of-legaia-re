@@ -1645,6 +1645,8 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
     world.arm_summon_stager(0, 0x82);
     let (mut retarget_ticks, mut sweep_ticks) = (0, 0);
     let mut done = false;
+    // Which packet kinds the module's draw side emitted, in first-seen order.
+    let mut kinds: Vec<&str> = Vec::new();
     for _ in 0..40_000 {
         match world.casting.module_phase {
             THEEDER_RETARGET_ARM => retarget_ticks += 1,
@@ -1655,6 +1657,19 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
             done = true;
             break;
         }
+        use legaia_engine_vm::cast_seru_ticks_a::TheederPacket as P;
+        let kind = match world.theeder_draw() {
+            Some(P::Prongs { .. }) => Some("prongs"),
+            Some(P::Charge { .. }) => Some("charge"),
+            Some(P::Sweep { .. }) => Some("sweep"),
+            Some(P::Retract { .. }) => Some("retract"),
+            None => None,
+        };
+        if let Some(k) = kind
+            && !kinds.contains(&k)
+        {
+            kinds.push(k);
+        }
         let _ = world.take_pending_summon_spawn();
         for a in world.actors.iter_mut() {
             a.battle.current_anim = a.battle.queued_anim;
@@ -1664,4 +1679,9 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
     assert!(retarget_ticks >= 64, "arm 11 held {retarget_ticks} ticks");
     assert!(sweep_ticks >= 64, "arm 12 held {sweep_ticks} ticks");
     assert!(world.casting.module_phase > THEEDER_SWEEP_ARM);
+    assert_eq!(kinds, vec!["prongs", "charge", "sweep", "retract"]);
+    assert!(
+        world.theeder_draw().is_none(),
+        "nothing draws past the band"
+    );
 }

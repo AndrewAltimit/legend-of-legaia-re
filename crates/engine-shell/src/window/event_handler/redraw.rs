@@ -3446,6 +3446,8 @@ impl PlayWindowApp {
             // draws under the HUD - the browser play page's GL pass sits
             // under its text canvas the same way.
             light_prims.extend(self.cross_beam_screen_prims());
+            // PROT 0904's (Theeder) beam: prongs, charge, sweep and trail.
+            light_prims.extend(self.theeder_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured, and split at

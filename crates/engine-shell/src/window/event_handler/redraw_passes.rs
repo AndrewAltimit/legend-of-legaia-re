@@ -874,6 +874,26 @@ impl PlayWindowApp {
             .unwrap_or_default()
     }
 
+    /// PROT 0904's (Theeder) beam packets this frame
+    /// ([`legaia_engine_core::world::World::theeder_draw`] through
+    /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
+    /// play page draws them with), projected with the battle camera at the
+    /// stage's 4:3 - the weapon trail's projection. Retail points are Y-down;
+    /// this host's battle space is Y-up, so Y is negated on the way in.
+    pub(super) fn theeder_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::battle_trail as bt;
+        let world = &self.session.host.world;
+        let Some(packet) = world.theeder_draw() else {
+            return Vec::new();
+        };
+        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
+        legaia_engine_render::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+            bt::project_stage_point(&mvp, [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])])
+        })
+    }
+
     /// This frame's field fog sheets (`legaia_engine_core::fog_particles`):
     /// the pool's render step (`FUN_8003F348` / `FUN_8003F3FC`, run from
     /// retail's field render pass) through the follow camera this frame

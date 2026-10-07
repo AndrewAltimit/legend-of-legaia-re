@@ -619,6 +619,7 @@ impl World {
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
         self.casting.module_ring_angle = 0;
+        self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
         self.casting.summon_stager = Some(SummonStager {
@@ -1984,20 +1985,42 @@ impl World {
         ctx_6d8: u16,
     ) -> ([i16; 3], [i16; 3]) {
         use vm::cast_seru_ticks_a as ta;
-        let (x, z, facing) = self
-            .actors
-            .get(summon_slot as usize)
-            .map(|a| {
-                (
-                    a.move_state.world_x,
-                    a.move_state.world_z,
-                    a.battle.facing_angle,
-                )
-            })
-            .unwrap_or((0, 0, 0));
-        let mouth = ta::theeder_mouth(x, z, facing);
-        let tip = ta::theeder_ray_tip(mouth, facing, ta::theeder_sweep_phase(ctx_6d8));
+        let g = self.theeder_geom(summon_slot);
+        let mouth = ta::theeder_mouth(g.x, g.z, g.facing);
+        let tip = ta::theeder_ray_tip(mouth, g.facing, ta::theeder_sweep_phase(ctx_6d8));
         (mouth, tip)
+    }
+
+    /// The summon seat's live `(x, z)` and facing, as PROT 0904 reads slot 7.
+    fn theeder_geom(&self, summon_slot: u8) -> vm::cast_seru_ticks_a::TheederGeom {
+        self.actors
+            .get(summon_slot as usize)
+            .map(|a| vm::cast_seru_ticks_a::TheederGeom {
+                x: a.move_state.world_x,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0x0FFF,
+            })
+            .unwrap_or_default()
+    }
+
+    /// PROT 0904's packets for this frame - what the Theeder module's last
+    /// tick drew (the arm-9 prongs, the arm-11 charge beam, the arm-11/12
+    /// sweeping beam and its trail, the arm-13 retract) - while its cast is
+    /// in the band. Both hosts project the points with their battle camera
+    /// and build the primitives with `legaia_engine_ui::cast_theeder`.
+    ///
+    /// REF: FUN_801F815C, FUN_801F83A4, FUN_801F8634, FUN_801F8B84
+    pub fn theeder_draw(&self) -> Option<vm::cast_seru_ticks_a::TheederPacket> {
+        if self.mode != SceneMode::Battle || self.casting.summon_stager.is_none() {
+            return None;
+        }
+        self.casting.module_theeder.packet
+    }
+
+    /// The trail ring [`Self::theeder_draw`]'s fan packets index
+    /// (`hist[0]` newest).
+    pub fn theeder_trail(&self) -> &[[i16; 3]] {
+        &self.casting.module_theeder.trail.hist
     }
 
     /// Which of `seats` lie inside a `+-half_width` cone about `bearing`, as
@@ -3177,9 +3200,18 @@ impl World {
                             // gets a zero roll and the arm's presentation half
                             // (render flag, reaction bits) runs.
                             let in_cone = cone_seats.clone();
-                            ticks_a::theeder_tick(&mut ctx, &mut seats, who, |seat| {
-                                in_cone.contains(&seat).then_some(0)
-                            })
+                            let geom = self.theeder_geom(seat_slot);
+                            let mut fx = self.casting.module_theeder;
+                            let run = ticks_a::theeder_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                geom,
+                                &mut fx,
+                                |seat| in_cone.contains(&seat).then_some(0),
+                            );
+                            self.casting.module_theeder = fx;
+                            run
                         }
                         905 => {
                             let restore = self.vera_restore(caster_slot, victim_slot, spell_id);

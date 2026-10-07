@@ -82,6 +82,10 @@ pub struct CastFxState {
     /// it holds), so the frame draws its packets
     /// ([`crate::world::World::cross_beam_draw`]).
     pub(crate) module_beam_live: bool,
+    /// PROT 0904's draw state: the beam trail ring and the packets its last
+    /// tick drew ([`crate::world::World::theeder_draw`]). Reset when a cast
+    /// is armed.
+    pub module_theeder: legaia_engine_vm::cast_seru_ticks_a::TheederFx,
     /// The phase-chain arm whose damage site has landed this pass through
     /// it: the band folds a chain body's hit on the tick its arm first runs
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
@@ -233,6 +237,7 @@ impl CastFxState {
             module_ring_angle: 0,
             module_beam_counter: 0,
             module_beam_live: false,
+            module_theeder: Default::default(),
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,

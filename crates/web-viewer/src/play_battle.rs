@@ -2181,6 +2181,9 @@ impl LegaiaRuntime {
         {
             prims.extend(legaia_engine_ui::cast_beam::cross_beam_prims(c));
         }
+        // PROT 0904's (Theeder) beam packets, through the `cast_theeder`
+        // kernel the native window draws them with.
+        prims.extend(self.theeder_prims());
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.
@@ -2337,6 +2340,31 @@ impl LegaiaRuntime {
     ///   layer this page previously did not draw at all.
     // REF: FUN_800485BC / FUN_801E1AB0 - per-host projection seat; the
     // packets and schedules live in engine-ui.
+    fn theeder_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let Some(packet) = world.theeder_draw() else {
+            return Vec::new();
+        };
+        // The page's placement law (as for the weapon trail): retail points
+        // scaled by BATTLE_WORLD_SCALE with Y as-is - the battle VP's
+        // trailing flip carries the Y-down axis.
+        let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
+        let pose = self.battle_cam_pose();
+        let vp = legaia_engine_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+            legaia_engine_ui::battle_trail::project_stage_point_cols(
+                &vp,
+                [
+                    f32::from(p[0]) * scale,
+                    f32::from(p[1]) * scale,
+                    f32::from(p[2]) * scale,
+                ],
+            )
+        })
+    }
+
     fn battle_fx_screen_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         use legaia_engine_ui::battle_trail as bt;
         use legaia_engine_ui::streak_pass::{

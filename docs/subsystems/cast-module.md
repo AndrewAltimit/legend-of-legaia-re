@@ -1619,6 +1619,26 @@ phase has run its turn.
 Its camera arms are not ported: the director only passes, and case 6 keeps
 the caster.
 
+PROT 0904's packet arms are drawn. Arm 8 seeds `ctx[+0x6D8] = scalar *
+0x78` and arm 9 drains it, drawing two lightning prongs a pass
+(`FUN_801F815C`, a textured `POLY_FT4` on texture page `0x27` / CLUT
+`0x7700`, one of four 32-texel cells by `rand() & 3`) from the beam root to
+points `0xA0` ahead and `0x5C` to either side (the 31-pass dwell). Arm 10
+empties the trail ring at `0x801F90FC` (count `0x801F91FC`). Arm 11 draws
+the charge beam (`FUN_801F83A4`, two `POLY_G4` glowing four pixels out from
+the line in `(L >> 5, L >> 5, L)` with `L` its ramp) while the ramp holds,
+and the full beam once on exit. Arm 12 draws `FUN_801F8634` every pass: it
+shifts the ray tip into the ring, fans a blue quad from each consecutive
+pair of past tips back to the root (`(16 - i) * 15`), edges it with a
+one-pixel line, caps the count at `0xF`, and draws the core from root to tip
+in `(0x40, 0x40, 0xC0)`. Arm 13 calls `FUN_801F8B84`, the same fan without
+the core, dropping the count by one a pass and holding until it is empty
+(the 15-pass dwell). The port runs these as `cast_seru_ticks_a::theeder_tick`
+with `TheederFx`, samples and retracts the ring once per retail pass, and
+both hosts build the primitives with `engine-ui::cast_theeder` from
+`World::theeder_draw`; the prong cells come from a per-cast counter rather
+than the battle RNG.
+
 Three of the seven walks skip arms outright. PROT 0911's arm `5` jumps to `9`
 (the `sb s7,0x279` at `0x801F7780`), which this page already records; PROT 0905's
 arm `5` jumps to `8` the same way, and PROT 0907's fork arm `13` jumps to `15`.
