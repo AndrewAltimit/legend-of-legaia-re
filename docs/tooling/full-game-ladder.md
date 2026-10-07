@@ -843,3 +843,10 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   starts). A reach beat that clears a flag the live state holds waits while
   another missing reach flag's band is out of reach: P2[11] clears the switch
   flags the `deroa` route needs, so the junction comes first.
+- The Jette fight (`chitei2` P2[13], band (16..18, 89)) that `noaru_valley`
+  passes through sits in a pocket whose way in is the kind-0 teleport at
+  (41, 124), below the door P0[2] / P0[3] at (40..41, 122). Both leaves run
+  `31 00`, but a player walking south down the corridor stops at z 15538, a
+  tile short of the teleport, so the pad tier stalls on the `map03` hop to
+  `concend` (whose portal waits on the fight's `0x4C8`). What opens that
+  last tile is not traced.
