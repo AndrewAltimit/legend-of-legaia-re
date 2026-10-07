@@ -493,6 +493,24 @@ sampled before any round ran. The acting seat is placed too, even on a
 captured Attack whose pair is a point on the walk the drive replays: the walk
 ends at its target whatever it starts from.
 
+**A push the capture already holds.** A capture inside an action stands its
+combatants where that action had already moved them - a target shoved back
+by its hits, a member knocked down by a spell - and the drive replays the
+action from that ground, so every push lands twice
+(`battle_gimard_tail_fire_a`'s Vahn ended `129` units behind his captured
+pair, and the framing that follows him lost Gimard off the frame's edge). No
+word in the capture holds the ground the action started from, but the
+engine's own replay measures the push: a driven action that reaches its
+phase is run once more on the same stream from `captured - drift`
+(`RetailBattle::undrift`, any axis moved by at least `UNDRIFT_MIN`), and the
+second run is kept when it stands the placed combatants nearer their
+captured pairs than the first (`ground_residual`). The acting seat's own
+drift is its approach, whose direction is the heading every framing case
+subtracts, so a seat that walked moves with its **target's** drift instead -
+the pair keeps the first run's geometry - and a caster that stood stays put.
+A capture past the end signal is not re-run: the win pose's own travel is
+not a push the capture holds twice.
+
 Two more facts go with the pair. On a capture past the end signal each
 placed combatant takes its heading `+0x46` (a `:facing` field after `:x:z`):
 the attack band's recompute stores it every frame of a swing and nothing turns
@@ -1626,15 +1644,16 @@ is checkable even where the pose is not. Two seeding limits follow.
   The capture holds no word that pins the idle phase.
 - **A capture after the action replays it from its end.**
   `player_steal_skeleton_banner` is saved in `0x20` with Vahn back on his
-  idle clip, the skeleton dead and the steal caption up. The seed stands
-  every combatant on the capture's ground pairs and drives the whole art
-  again, so the art's own drift and the knockback land a second time - the
-  engine's skeleton ends some 600 units past retail's - and the replayed
-  round draws its own initiative and steal roll: with Vahn seeded at his
-  captured `17` HP the skeletons kill him first under most of the seeds, and
-  the one seed that reaches the state does not roll the steal. The engine's
-  caption and the frame's timing are not what this state measures; nothing
-  in the capture recovers the pre-action ground or the round's draws.
+  idle clip, the skeleton dead and the steal caption up. The seed drives the
+  whole art again, and the replayed round draws its own initiative and steal
+  roll: with Vahn seeded at his captured `17` HP the skeletons kill him first
+  under most of the seeds, and the one seed that reaches the state does not
+  roll the steal. The art's own drift and knockback are taken back
+  ([above](#battle-states), a push the capture already holds), but the
+  replayed history is not retail's: the framing's focus still lands some
+  `270` units off retail's. The engine's caption and the frame's timing
+  are not what this state measures; nothing in the capture recovers the
+  round's draws.
 
 ## See also
 

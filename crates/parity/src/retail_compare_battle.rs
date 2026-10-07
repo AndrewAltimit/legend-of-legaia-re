@@ -686,6 +686,71 @@ impl RetailBattle {
         self.engine_ground()
     }
 
+    /// This capture with every combatant's ground pair moved back by what
+    /// the engine's replay of the action moved it
+    /// (`EngineBattle::ground_drift`), or `None` when nothing moved enough
+    /// to matter ([`UNDRIFT_MIN`]).
+    ///
+    /// A capture inside an action holds its combatants where the action had
+    /// **already** moved them - the knockback a strike landed, a target
+    /// shoved back by a hit - and the seed places them there before the
+    /// drive replays that same action from its start, so every push lands a
+    /// second time (`battle_gimard_tail_fire_a`: Vahn ends 129 units behind
+    /// his captured pair, and the framing that follows him loses Gimard off
+    /// the edge). No word in the capture holds the pre-action ground, but
+    /// the engine's own replay measures the push: seeding
+    /// `captured - drift` stands each combatant on retail's pair at the
+    /// phase.
+    ///
+    /// The acting seat is the exception. Its own drift is its approach,
+    /// which ends at its target from wherever it starts, and the direction
+    /// it walks in is the heading every framing case subtracts - so taking
+    /// the walk off its start turns the shot. An acting seat that walked
+    /// moves with its **target's** drift instead: the pair keeps the
+    /// geometry of the first run (`battle_melee_hit_spark`'s Vahn stays on
+    /// his side of the monster, at the same distance) and lands on retail's
+    /// ground. One that did not walk (a caster) stays put.
+    pub fn undrift(
+        &self,
+        drift: &[Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    ) -> Option<Self> {
+        // Past the end signal the sequencer poses the winners, and a win
+        // pose's own travel is not a push the capture holds twice.
+        if self.span_gate.is_end() {
+            return None;
+        }
+        let pc = usize::from(self.party_count);
+        let significant =
+            |d: Option<[i32; 2]>| d.filter(|[dx, dz]| dx.abs().max(dz.abs()) >= UNDRIFT_MIN);
+        let acting = usize::from(engine_seat(self.active_actor, self.party_count));
+        let target = (self.target_code < 8)
+            .then(|| usize::from(engine_seat(self.target_code, self.party_count)));
+        let measured = *drift;
+        let mut drift = measured;
+        if let Some(own) = drift.get_mut(acting) {
+            let target_drift = target
+                .filter(|&t| t != acting)
+                .and_then(|t| measured.get(t).copied().flatten());
+            *own = significant(*own).and_then(|_| significant(target_drift));
+        }
+        let mut out = self.clone();
+        let mut moved = false;
+        for (slot, d) in drift.iter().enumerate() {
+            let Some([dx, dz]) = significant(*d) else {
+                continue;
+            };
+            let pool = if slot < pc { slot } else { 3 + (slot - pc) };
+            let Some(Some([x, z])) = out.ground.get_mut(pool) else {
+                continue;
+            };
+            let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            *x = clamp(i32::from(*x) - dx);
+            *z = clamp(i32::from(*z) - dz);
+            moved = true;
+        }
+        moved.then_some(out)
+    }
+
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
     pub fn engine_defeat_lanes(
         &self,
@@ -1190,6 +1255,40 @@ pub struct EngineBattle {
     /// The track the engine plays during the fight.
     pub battle_bgm: Option<u16>,
     pub save: legaia_save::SaveFile,
+    /// Per engine slot, how far the replay moved a combatant the seed
+    /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
+    /// a driven action that reached its phase ([`RetailBattle::undrift`]).
+    pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+}
+
+/// The smallest replay drift, on either axis, [`RetailBattle::undrift`]
+/// takes back - under it the push is noise against the framings' own
+/// tolerance and a second run would only re-sample the same frame.
+pub const UNDRIFT_MIN: i32 = 16;
+
+/// How far a run left its placed combatants from the capture's own ground
+/// pairs at the phase, summed over the slots `seeded` placed (`seeded` is
+/// the capture the run was seeded from - `captured` itself, or its
+/// [`RetailBattle::undrift`]). `None` when the run measured no drift.
+pub fn ground_residual(
+    captured: &RetailBattle,
+    seeded: &RetailBattle,
+    run: &EngineBattle,
+) -> Option<i64> {
+    let want = captured.seeded_ground();
+    let from = seeded.seeded_ground();
+    let mut sum = None;
+    for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+        let (Some([wx, wz]), Some([fx, fz]), Some([dx, dz])) =
+            (want[slot], from[slot], run.ground_drift[slot])
+        else {
+            continue;
+        };
+        let ex = i64::from(fx) + i64::from(dx) - i64::from(wx);
+        let ez = i64::from(fz) + i64::from(dz) - i64::from(wz);
+        *sum.get_or_insert(0) += ex.abs() + ez.abs();
+    }
+    sum
 }
 
 /// The first registered formation row whose monster list equals `ids`.
@@ -1644,6 +1743,21 @@ pub fn run_engine_battle(
         cam.align_orbit_yaw(f32::from(retail.camera.yaw));
     }
     let world = &session.host.world;
+    // How far the drive moved each placed combatant: a capture of a running
+    // action stands its combatants where the action had already moved them,
+    // and the drive replays the action from there.
+    let mut ground_drift = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    if matches!(driven, Some(Some(_))) {
+        for (slot, d) in ground_drift.iter_mut().enumerate() {
+            let (Some([gx, gz]), Some(a)) = (ground[slot], world.actors.get(slot)) else {
+                continue;
+            };
+            *d = Some([
+                a.move_state.world_x as i32 - i32::from(gx),
+                a.move_state.world_z as i32 - i32::from(gz),
+            ]);
+        }
+    }
     let pose = world.battle_cam_pose();
     let camera = CameraObs {
         pitch: pose.pitch.round() as i16,
@@ -1681,6 +1795,7 @@ pub fn run_engine_battle(
         field_current,
         battle_bgm: snap.battle_bgm,
         save: snap.save,
+        ground_drift,
     })
 }
 

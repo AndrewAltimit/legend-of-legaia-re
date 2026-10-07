@@ -2105,6 +2105,7 @@ fn run_battle(
     // first run.
     let mut first = None;
     let mut reached = None;
+    let mut reached_victims = false;
     // A battle-end capture also wants retail's win pose: a run that reaches
     // the phase on another one is kept as the fallback while the remaining
     // streams are tried (`RetailBattle::win_pose`).
@@ -2156,6 +2157,7 @@ fn run_battle(
                         continue;
                     }
                     reached = Some(e);
+                    reached_victims = victims;
                     break 'search;
                 }
                 Ok(e) => {
@@ -2168,6 +2170,41 @@ fn run_battle(
             }
         }
     }
+    // A driven action replays the pushes its capture already holds; run the
+    // same stream once more from the ground the replay says retail started
+    // on (`RetailBattle::undrift`), and keep it when it still reaches the
+    // phase.
+    let undrifted;
+    let (battle, reached) = match reached
+        .as_ref()
+        .and_then(|e| battle.undrift(&e.ground_drift).map(|b| (b, e.rng_seed)))
+    {
+        Some((b, seed)) => match crate::retail_compare_battle::run_engine_battle(
+            opts.extracted,
+            retail,
+            &b,
+            seed,
+            reached_victims,
+        ) {
+            // Kept only when it stands the combatants nearer retail's pairs
+            // than the first run did - a replay whose push depends on where
+            // it starts can land further off.
+            Ok(e)
+                if e.mode == legaia_engine_core::world::SceneMode::Battle
+                    && e.driven.is_some_and(|d| d.is_some())
+                    && e.age_short.is_none()
+                    && crate::retail_compare_battle::ground_residual(battle, &b, &e)
+                        < reached.as_ref().and_then(|r| {
+                            crate::retail_compare_battle::ground_residual(battle, battle, r)
+                        }) =>
+            {
+                undrifted = b;
+                (&undrifted, Some(e))
+            }
+            _ => (battle, reached),
+        },
+        None => (battle, reached),
+    };
     let engine = match reached.or(off_pose).map(Ok).or(first) {
         Some(Ok(e)) => e,
         Some(Err(e)) => {
