@@ -550,10 +550,20 @@ impl SaveScreenFlow {
         if self.io_result <= 0 {
             return edge & !PadButton::Cross.mask();
         }
-        if session.mode() != SaveSelectMode::Load {
-            return edge;
-        }
-        if self.focused_block().is_some() {
+        // Retail's grid confirm (sub-mode `0x0B`, `0x801DEAB8..0x801DEB00`)
+        // takes the cell's `FUN_801E3F74` mode and accepts only mode `1` (a
+        // readable Legaia save) on a Load, and mode `1` or `3` (a free block)
+        // on a Save. Anything else - a block another game owns, a cell the
+        // card's free budget could not pay for - is refused without a prompt,
+        // so a full card of foreign files takes no save.
+        let accepted = match session.mode() {
+            SaveSelectMode::Load => self.focused_block().is_some(),
+            SaveSelectMode::Save => self
+                .blocks()
+                .get(self.grid_cursor as usize)
+                .is_some_and(|b| b.present || b.content == crate::save_select::SlotContent::Free),
+        };
+        if accepted {
             edge
         } else {
             edge & !PadButton::Cross.mask()
@@ -1312,6 +1322,43 @@ mod tests {
         s.tick(SelectInput::from_pad_edge(edge));
         assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
         assert_eq!(flow.commit(&s), None, "nothing loads");
+    }
+
+    /// Retail's grid confirm accepts a Save only over a Legaia save or a free
+    /// block (`FUN_801E3F74` mode 1 / 3, `0x801DEAB8..0x801DEB00`): a block
+    /// another game owns - the whole grid on a full card of foreign files -
+    /// takes the Cross without raising a prompt.
+    #[test]
+    fn a_save_is_refused_over_a_foreign_block() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
+        flow.install_blocks(
+            0,
+            (0..15)
+                .map(|i| match i {
+                    0 => SlotSnapshot::foreign(i),
+                    1 => block(i, true),
+                    _ => block(i, false),
+                })
+                .collect(),
+        );
+        // Cell 0: foreign - no prompt.
+        let edge = flow.before_tick(&mut s, cross());
+        assert_eq!(edge & cross(), 0, "a foreign block takes no save");
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        // Cell 1: a Legaia save - the overwrite question.
+        let edge = flow.before_tick(&mut s, PadButton::Right.mask());
+        s.tick(SelectInput::from_pad_edge(edge));
+        let edge = flow.before_tick(&mut s, cross());
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to overwrite?");
     }
 
     /// Over a block that already holds something, a Save asks to

@@ -558,13 +558,39 @@ block's sum when it builds the grid (`SlotSnapshot::damaged`, from
 answers a Load's beat with `CommitReport::Damaged` for such a block, and
 engine-ui draws the box (`CARD_DAMAGED_Y`).
 
+Which blocks a confirm may open is the grid's own test. Sub-mode `0x0B`
+(`0x801DEAB8..0x801DEB00`) takes the cell's `FUN_801E3F74` mode and accepts
+mode `1` (a readable Legaia save) on a Load, mode `1` or `3` (a free block) on
+a Save; any other cell takes the press without a prompt. So on a full card of
+Legaia saves every cell asks "Do you wish to overwrite?", and on a full card of
+other games' files no cell takes a save. Whether a claimed block is Legaia's is
+decided by its directory **filename** (one of the two regional prefixes), not
+by whether its bytes parse - the port's grid builder
+(`save_select::card_block_snapshots`) captions a claimed block with any other
+name foreign, and `SaveScreenFlow::before_tick` drops the Cross on it.
+
 The port bakes the three records and the texel into the shared save-menu
 atlas (`legaia_asset::title_pak::SAVE_MENU_ATLAS_*`), draws them in
 engine-ui's `card_banner_draws_for` / `confirm_dialog_badge_draws_for` /
 `slot_info_panel_draws_for`, holds a Load's beat for
 `COMMIT_LOAD_WORK_FRAMES`, and `save_select_overlay_draws` draws a parked
-banner alone. The subtractive darkening during the slide itself is not
-ported; the port cuts to black when the panel parks.
+banner alone.
+
+The darkening is one `FUN_80024EE4(1, 2, grey)` push per panel - a
+full-screen `B - F` quad linked into the panel's own ordering-table bucket
+after the panel's primitives, so it draws under the panel and over everything
+the dispatcher's tail links afterwards (header tab, pill, grid, info panel)
+and every deeper bucket. The grey rides the panel's slide timer: "Now
+checking" (mode `0`, `DAT_801EF160`) and the confirm (mode `3`,
+`DAT_801EF1A4`) take `min(t >> 5, 0x50)` (`0x801E1D14..0x801E1D34`), the
+write / read panel (mode `4`, `_DAT_801F01CC`) `min(t >> 4, 0xFF)`
+(`0x801E2D50..0x801E2D88`), which is black by the time it parks. engine-ui's
+`save_select_overlay_draws` emits the quad (`SaveScreenDarken`, a white atlas
+texel tinted `grey / 255`) at the panel's place in the sprite list and
+subtracts the grey from the ink of the texts already emitted, since both hosts
+draw text after sprites; the native window blends the quad through its ABR-2
+overlay span, the browser page subtracts the level from its canvas pixels at
+the same index (`AtlasBlitter::blitDarkened`).
 
 The port: `SelectPhase::Committing` carries the two halves between the
 confirm and the outcome (`COMMIT_WORK_FRAMES`, then `COMMIT_RESULT_FRAMES` =

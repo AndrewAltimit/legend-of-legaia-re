@@ -71,6 +71,10 @@ pub struct ScreenshotConfig {
     /// merchant's or innkeeper's conversation without walking to it. The
     /// browser twin is `LegaiaRuntime::debug_talk_to_placement`.
     pub talk_at: Option<(u64, u8)>,
+    /// `LEGAIA_CAPTURE_SHOP=<idx>@<tick>`: stage scene shop `idx` at `tick`
+    /// (`World::debug_arm_scene_shop`), the browser page's
+    /// `debug_arm_scene_shop` twin.
+    pub shop_at: Option<(u64, usize)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_parity::retail_compare_battle::PhaseGate`]) instead of
@@ -406,6 +410,10 @@ impl ScreenshotConfig {
             talk_at: std::env::var("LEGAIA_CAPTURE_TALK").ok().and_then(|v| {
                 let (slot, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
+            }),
+            shop_at: std::env::var("LEGAIA_CAPTURE_SHOP").ok().and_then(|v| {
+                let (idx, tick) = v.trim().split_once('@')?;
+                Some((tick.trim().parse().ok()?, idx.trim().parse().ok()?))
             }),
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()

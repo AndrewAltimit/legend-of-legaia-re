@@ -1207,7 +1207,7 @@
           /* By here a pause-menu row is open, so the engine has built its
              menu assets and the atlas is finally answerable for. */
           const cb = ensureChrome();
-          if (cb) cb.blit(ctx, md.sprites);
+          if (cb) cb.blitDarkened(ctx, md.sprites, md.darken);
           const fb = ensureFont();
           if (fb) fb.blit(ctx, md.texts);
         }

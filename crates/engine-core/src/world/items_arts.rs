@@ -1389,6 +1389,25 @@ impl World {
         Some(crate::shop::ShopSession::new(shop.inventory.clone()))
     }
 
+    /// Debug seam: stage scene shop `idx` exactly as its merchant's op-`0x49`
+    /// record would ([`Self::try_arm_field_shop`]'s staging - the pending
+    /// session plus the armed gate), so each host's ordinary
+    /// `take_pending_field_shop` drain opens it next frame. Lets a headless
+    /// driver audit the same real stock on both hosts without walking to the
+    /// merchant. `false` when the scene has no shop `idx` or one is armed.
+    pub fn debug_arm_scene_shop(&mut self, idx: usize) -> bool {
+        if self.shops.shop_armed {
+            return false;
+        }
+        let Some(session) = self.scene_shop_session(idx) else {
+            return false;
+        };
+        self.shops.pending_shop = Some(session);
+        self.shops.shop_armed = true;
+        self.shops.shop_open = true;
+        true
+    }
+
     /// Recognise + open a gold shop from a field-VM op-`0x49` sub-0 instruction
     /// (`instr` = the opcode byte onward: `[0x49][0x00][len][...][count][ids][name]`).
     ///

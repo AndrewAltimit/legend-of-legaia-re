@@ -144,6 +144,11 @@ impl PlayWindowApp {
             {
                 self.session.host.world.trigger_field_interact(0xFF, slot);
             }
+            if let Some((t, idx)) = self.screenshot.as_ref().and_then(|sc| sc.shop_at)
+                && t == self.tick_no
+            {
+                let _ = self.session.host.world.debug_arm_scene_shop(idx);
+            }
             if self.screenshot.is_some() {
                 let scripted_pad = self
                     .screenshot
@@ -3104,7 +3109,23 @@ impl PlayWindowApp {
             // other surface that samples this atlas is up, so there is no
             // contention with the chrome appended after it.
             let mut save_chrome_draw_vec = field_hud_draws.sprites;
-            save_chrome_draw_vec.extend(self.save_select_chrome_sprite_draws(w, h));
+            // The save screen's subtractive darkening under its active panel
+            // (`SaveScreenDarken`): one `B - F` draw inside this overlay, so
+            // everything before it in the vec is darkened and the panel after
+            // it is not - the same split the browser play page makes.
+            let mut save_chrome_blend = Vec::new();
+            {
+                let base = save_chrome_draw_vec.len() as u32;
+                let (save_sprites, darken) = self.save_select_chrome_sprite_draws(w, h);
+                if let Some(i) = darken {
+                    save_chrome_blend.push(legaia_engine_render::OverlayBlendSpan {
+                        start: base + i as u32,
+                        count: 1,
+                        abr: 2,
+                    });
+                }
+                save_chrome_draw_vec.extend(save_sprites);
+            }
             // The post-battle report's two framed windows (level-up above,
             // spoils below). Same atlas, and mutually exclusive with the
             // boot/menu chrome.
@@ -3159,7 +3180,7 @@ impl PlayWindowApp {
             let save_chrome_overlay = self.save_menu.as_ref().map(|sm| TextOverlay {
                 atlas: &sm.atlas,
                 draws: &save_chrome_draw_vec,
-                blend: &[],
+                blend: &save_chrome_blend,
             });
             let muscle_hub_overlay = self.muscle_hub.as_ref().map(|m| TextOverlay {
                 atlas: &m.atlas,

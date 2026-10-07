@@ -133,6 +133,31 @@
       }
       ctx.globalAlpha = 1;
     }
+    /* A draw list carrying the save screen's subtractive darkening
+     * (`darken: {at, level}`, the engine's `SaveScreenDarken`): retail pushes
+     * one `B - F` quad under its active panel. A 2D canvas has no subtract
+     * composite, so blit the sprites under the quad, subtract `level` from
+     * every channel of what the canvas holds, then blit the rest past the quad
+     * itself. The native window draws the same quad through its ABR-2
+     * pipeline. */
+    blitDarkened(ctx, draws, darken) {
+      if (!draws) return;
+      if (!darken || !(darken.level > 0)) { this.blit(ctx, draws); return; }
+      const at = Math.max(0, Math.min(draws.length, darken.at | 0));
+      this.blit(ctx, draws.slice(0, at));
+      const w = ctx.canvas.width, h = ctx.canvas.height, g = darken.level;
+      if (w > 0 && h > 0) {
+        const img = ctx.getImageData(0, 0, w, h);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i] > g ? d[i] - g : 0;
+          d[i + 1] = d[i + 1] > g ? d[i + 1] - g : 0;
+          d[i + 2] = d[i + 2] > g ? d[i + 2] - g : 0;
+        }
+        ctx.putImageData(img, 0, 0);
+      }
+      this.blit(ctx, draws.slice(at + 1));
+    }
   }
 
   /* The engine takes the camera's azimuth and quantises it to a quarter turn to
@@ -1854,7 +1879,7 @@ void main() {
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, ov.width, ov.height);
-        if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
+        if (this._menuChrome) this._menuChrome.blitDarkened(ctx, draws.sprites, draws.darken);
         if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
         return;
       }

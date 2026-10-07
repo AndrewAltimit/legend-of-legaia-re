@@ -182,6 +182,10 @@ pub const SAVE_MENU_ATLAS_NO_LABEL: (u32, u32, u32, u32) = (152, 160, 22, 16);
 /// Atlas placement of the progress-fill texel (a 4x4 cell of
 /// [`OVERLAY_SAVE_UI_PROGRESS_TEXEL_GREY`]; draws sample its centre).
 pub const SAVE_MENU_ATLAS_PROGRESS_TEXEL: (u32, u32, u32, u32) = (0, 192, 4, 4);
+/// Atlas placement of a 4x4 pure-white cell: the texel the save screen's
+/// subtractive darkening quad samples, so its tint is the grey level it
+/// subtracts (`FUN_80024EE4`'s packed colour) with no texel scaling.
+pub const SAVE_MENU_ATLAS_WHITE_TEXEL: (u32, u32, u32, u32) = (4, 192, 4, 4);
 
 /// Atlas placement of block numeral cell `block` (`0..15`, reading
 /// "`block + 1`"), or `None` past the card's last block. The fifteen cells
@@ -1022,6 +1026,7 @@ mod tests {
             SAVE_MENU_ATLAS_PROGRESS_TUBE,
             SAVE_MENU_ATLAS_NO_LABEL,
             SAVE_MENU_ATLAS_PROGRESS_TEXEL,
+            SAVE_MENU_ATLAS_WHITE_TEXEL,
         ]);
         for (i, a) in all.iter().enumerate() {
             assert!(a.0 + a.2 <= 256 && a.1 + a.3 <= 256, "{a:?} off the page");

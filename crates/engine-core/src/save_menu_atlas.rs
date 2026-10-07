@@ -1581,13 +1581,17 @@ fn add_card_work_sprites(dst: &mut [u8], tim: &legaia_tim::Tim, src_w: u32) -> a
         title_pak::OVERLAY_SAVE_UI_REC_PROGRESS_TUBE,
         title_pak::SAVE_MENU_ATLAS_PROGRESS_TUBE,
     );
-    let (x0, y0, tw, th) = title_pak::SAVE_MENU_ATLAS_PROGRESS_TEXEL;
     let grey = title_pak::OVERLAY_SAVE_UI_PROGRESS_TEXEL_GREY;
     let stride = (ATLAS_WIDTH * 4) as usize;
-    for y in y0..y0 + th {
-        for x in x0..x0 + tw {
-            let off = y as usize * stride + x as usize * 4;
-            dst[off..off + 4].copy_from_slice(&[grey, grey, grey, 255]);
+    for ((x0, y0, tw, th), v) in [
+        (title_pak::SAVE_MENU_ATLAS_PROGRESS_TEXEL, grey),
+        (title_pak::SAVE_MENU_ATLAS_WHITE_TEXEL, 255),
+    ] {
+        for y in y0..y0 + th {
+            for x in x0..x0 + tw {
+                let off = y as usize * stride + x as usize * 4;
+                dst[off..off + 4].copy_from_slice(&[v, v, v, 255]);
+            }
         }
     }
     Ok(())

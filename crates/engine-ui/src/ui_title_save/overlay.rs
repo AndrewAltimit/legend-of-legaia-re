@@ -68,7 +68,89 @@ pub struct SaveSelectOverlayView<'a> {
 pub struct SaveSelectOverlayDraws {
     pub texts: Vec<TextDraw>,
     pub sprites: Vec<SpriteDraw>,
+    /// The active panel's subtractive darkening, when one is up: see
+    /// [`SaveScreenDarken`].
+    pub darken: Option<SaveScreenDarken>,
 }
+
+/// The darkening `FUN_801E1C1C` pushes under its active panel:
+/// `FUN_80024EE4(1, 2, grey * 0x010101)` - one full-screen `B - F` quad
+/// (ABR `2`) linked into the same ordering-table bucket the panel uses, after
+/// the panel's own primitives. A later link in a bucket draws earlier, so the
+/// quad lands **under** the panel and **over** everything the dispatcher's
+/// tail links afterwards (header tab, pill, grid, info panel) and every deeper
+/// bucket. The grey level is per mode, off the panel's own slide timer:
+///
+/// | Mode | Panel | Grey |
+/// |---|---|---|
+/// | `0` | "Now checking" | `min(DAT_801EF160 >> 5, 0x50)` (`0x801E1D14..0x801E1D34`) |
+/// | `3` | the confirm | `min(DAT_801EF1A4 >> 5, 0x50)` (same tail) |
+/// | `4` | the write / read panel | `min(_DAT_801F01CC >> 4, 0xFF)` (`0x801E2D50..0x801E2D88`) |
+///
+/// `sprite` indexes [`SaveSelectOverlayDraws::sprites`]: that entry is the
+/// quad (a white texel tinted `grey / 255`), to be blended `B - F`; every
+/// sprite before it is under the darkening. The texts under it come
+/// pre-darkened - a glyph is a flat ink, so `max(0, ink - grey)` is exact -
+/// because both hosts draw their text after their sprites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveScreenDarken {
+    pub sprite: usize,
+    pub level: u8,
+}
+
+/// Mode `0` / `3`'s grey for a slide timer `t`.
+fn darken_level_small(t: u16) -> u8 {
+    (i32::from(t) >> 5).min(0x50) as u8
+}
+
+/// Mode `4`'s grey for its slide timer `t`.
+fn darken_level_panel(t: u16) -> u8 {
+    (i32::from(t) >> 4).min(0xFF) as u8
+}
+
+/// Push the darkening quad under the panel about to be emitted and darken
+/// the texts already emitted. A zero level pushes nothing.
+fn darken_under(
+    out: &mut SaveSelectOverlayDraws,
+    level: u8,
+    rects: Option<&SaveMenuAtlasRects>,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    if level == 0 || out.darken.is_some() {
+        return;
+    }
+    let g = f32::from(level) / 255.0;
+    for t in &mut out.texts {
+        for c in &mut t.color[..3] {
+            *c = (*c - g).max(0.0);
+        }
+    }
+    if rects.is_none() {
+        return;
+    }
+    let scale = stage_scale.max(1);
+    let (tx, ty, _, _) = legaia_asset::title_pak::SAVE_MENU_ATLAS_WHITE_TEXEL;
+    out.darken = Some(SaveScreenDarken {
+        sprite: out.sprites.len(),
+        level,
+    });
+    out.sprites.push(SpriteDraw {
+        dst: (
+            stage_origin.0,
+            stage_origin.1,
+            STAGE_W as u32 * scale,
+            STAGE_H as u32 * scale,
+        ),
+        src: (tx + 1, ty + 1, 2, 2),
+        color: [g, g, g, 1.0],
+    });
+}
+
+/// The stage the darkening quad covers (retail's 320x240 display rect).
+const STAGE_W: i32 = 320;
+/// Companion to [`STAGE_W`].
+const STAGE_H: i32 = 240;
 
 /// Retail's slide, `FUN_801E1C1C`: `start + (target - start) * t / 0x1000`
 /// (the engine's `save_select::interpolate_anim`).
@@ -117,6 +199,7 @@ pub fn save_select_overlay_draws(
             !chrome,
         ),
         sprites: Vec::new(),
+        darken: None,
     };
     if let Some(rects) = rects {
         let anchor = if view.single_pill {
@@ -152,6 +235,13 @@ pub fn save_select_overlay_draws(
         }
     }
     if view.now_checking {
+        darken_under(
+            &mut out,
+            darken_level_small(view.slide_t),
+            rects,
+            stage_origin,
+            stage_scale,
+        );
         let x = slide(
             NOW_CHECKING_SLIDE_START_X,
             NOW_CHECKING_SLIDE_TARGET_X,
@@ -211,6 +301,15 @@ pub fn save_select_overlay_draws(
         }
     }
     if let Some(banner) = view.banner.as_ref() {
+        if banner.work {
+            darken_under(
+                &mut out,
+                darken_level_panel(banner.slide_t),
+                rects,
+                stage_origin,
+                stage_scale,
+            );
+        }
         let block = view.preview.as_ref().map(|p| p.cell);
         let (sprites, texts) =
             card_banner_draws_for(font, rects, banner, block, stage_origin, stage_scale);
@@ -224,6 +323,13 @@ pub fn save_select_overlay_draws(
             CONFIRM_DIALOG_SLIDE_START_Y,
             CONFIRM_DIALOG_SLIDE_TARGET_Y,
             view.info_t,
+        );
+        darken_under(
+            &mut out,
+            darken_level_small(view.info_t),
+            rects,
+            stage_origin,
+            stage_scale,
         );
         if let Some(rects) = rects {
             out.sprites.extend(confirm_dialog_panel_draws_for(
@@ -346,6 +452,63 @@ mod tests {
         let (_, alone) = card_banner_draws_for(&font, None, &banner(0x1000), Some(0), (0, 0), 1);
         assert_eq!(parked.texts.len(), alone.len(), "only the banner draws");
         assert!(sliding.texts.len() > parked.texts.len());
+    }
+
+    /// The grey levels are retail's: modes 0 / 3 `min(t >> 5, 0x50)`, mode
+    /// 4 `min(t >> 4, 0xFF)`.
+    #[test]
+    fn darken_levels_follow_the_slide_timers() {
+        assert_eq!(darken_level_small(0), 0);
+        assert_eq!(darken_level_small(0x400), 0x20);
+        assert_eq!(darken_level_small(0x1000), 0x50);
+        assert_eq!(darken_level_panel(0x800), 0x80);
+        assert_eq!(darken_level_panel(0x1000), 0xFF);
+    }
+
+    /// The confirm's darkening sits between the preview it covers and the
+    /// confirm panel it leaves alone, and the texts already emitted come out
+    /// darker by the subtracted grey.
+    #[test]
+    fn the_confirm_darkens_what_is_under_it_and_not_itself() {
+        let font = legaia_font::Font::placeholder();
+        let cells = [SlotGridCell::default(); 15];
+        let base = SaveSelectOverlayView {
+            title: "Save",
+            rows: &[],
+            cursor: 0,
+            single_pill: true,
+            pills: &[0],
+            pill_cursor: None,
+            slide_t: 0x1000,
+            info_t: 0x1000,
+            now_checking: false,
+            banner: None,
+            preview: Some(SaveSelectPreviewView {
+                cells: &cells,
+                cell: 0,
+                info: None,
+                caption: Some("Able to save."),
+                panel_y_offset: 0,
+            }),
+            confirm: None,
+        };
+        let plain = save_select_overlay_draws(&font, None, &base, (0, 0), 1);
+        let confirm = save_select_overlay_draws(
+            &font,
+            None,
+            &SaveSelectOverlayView {
+                confirm: Some(("Do you wish to save?", 1)),
+                ..base
+            },
+            (0, 0),
+            1,
+        );
+        let g = 0x50 as f32 / 255.0;
+        for (a, b) in plain.texts.iter().zip(&confirm.texts) {
+            assert!((b.color[0] - (a.color[0] - g).max(0.0)).abs() < 1e-6);
+        }
+        assert!(plain.darken.is_none());
+        assert!(confirm.darken.is_none(), "no atlas, no quad");
     }
 
     #[test]

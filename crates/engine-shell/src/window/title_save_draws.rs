@@ -72,13 +72,18 @@ impl PlayWindowApp {
     /// Returns an empty vec when the save-menu atlas wasn't uploaded
     /// (e.g. running without a disc) or when the boot UI isn't in a
     /// SaveSelect / field-Save sub-state.
+    ///
+    /// The second half is the index of the save screen's subtractive
+    /// darkening quad in the returned list, if one is up
+    /// ([`legaia_engine_render::SaveScreenDarken`]) - the caller blends that
+    /// one draw `B - F`.
     pub(super) fn save_select_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> (Vec<legaia_engine_render::SpriteDraw>, Option<usize>) {
         if self.save_menu.is_none() {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         use legaia_engine_core::save_select::SaveSelectSession;
         // The save-select session (or field-menu Save sub-session) that
@@ -92,13 +97,13 @@ impl PlayWindowApp {
                 if let FieldMenuSubsession::Save(s) = active {
                     s
                 } else {
-                    return Vec::new();
+                    return (Vec::new(), None);
                 }
             }
-            _ => return Vec::new(),
+            _ => return (Vec::new(), None),
         };
-        self.save_select_overlay(session, surface_w, surface_h)
-            .sprites
+        let draws = self.save_select_overlay(session, surface_w, surface_h);
+        (draws.sprites, draws.darken.map(|d| d.sprite))
     }
 
     /// The save-select screen - both halves - through the shared

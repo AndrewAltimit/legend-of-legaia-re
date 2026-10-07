@@ -1087,6 +1087,9 @@ impl LegaiaRuntime {
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
         let mut sprites: Vec<SpriteDraw> = Vec::new();
         let mut texts: Vec<TextDraw> = Vec::new();
+        // The save screen's subtractive darkening (`ui::SaveScreenDarken`):
+        // the sprite index of its `B - F` quad and the grey it subtracts.
+        let mut darken: Option<(usize, u8)> = None;
 
         // The kind-0x0D entry pair replaces the root list rather than
         // overlaying it: both sub-screens open with `05 00` (close every
@@ -1099,7 +1102,15 @@ impl LegaiaRuntime {
             None => self.build_top_level(assets, menu, &mut sprites, &mut texts, origin, scale),
             Some(PlaySub::Session(sub)) => match sub.as_ref() {
                 FieldMenuSubsession::Save(s) => {
-                    self.build_save_select(assets, s, menu, &mut sprites, &mut texts, origin, scale)
+                    darken = self.build_save_select(
+                        assets,
+                        s,
+                        menu,
+                        &mut sprites,
+                        &mut texts,
+                        origin,
+                        scale,
+                    );
                 }
                 FieldMenuSubsession::Status(s) => {
                     self.build_status(assets, s, &mut sprites, &mut texts, origin, scale)
@@ -1156,6 +1167,10 @@ impl LegaiaRuntime {
             "open": true,
             "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
+            // The page's 2D canvas has no `B - F` composite: it blits the
+            // sprites before `at`, subtracts `level` from every channel of
+            // what is drawn, and blits the rest past the quad itself.
+            "darken": darken.map(|(at, level)| serde_json::json!({"at": at, "level": level})),
         })
         .to_string()
     }
@@ -1636,16 +1651,14 @@ impl LegaiaRuntime {
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
-    ) {
+    ) -> Option<(usize, u8)> {
         // The screen is the shared composition over the engine's overlay
         // sequence (`SaveScreenFlow::overlay_model` ->
         // `save_select_overlay_draws`), the native window's calls too. Its
         // text half draws with or without the chrome atlas: this page used
         // to return before every phase overlay when the atlas was absent,
         // leaving the title and nothing else.
-        let Some(m) = menu.save_flow.overlay_model(s) else {
-            return;
-        };
+        let m = menu.save_flow.overlay_model(s)?;
         let rows: Vec<ui::SaveSelectRow<'_>> = s
             .slots()
             .iter()
@@ -1710,8 +1723,10 @@ impl LegaiaRuntime {
             origin,
             scale,
         );
+        let darken = out.darken.map(|d| (sprites.len() + d.sprite, d.level));
         sprites.extend(out.sprites);
         texts.extend(out.texts);
+        darken
     }
 
     /// Items sub-screen: the retail four-window layout (command 13 / list

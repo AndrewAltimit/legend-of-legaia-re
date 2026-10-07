@@ -247,6 +247,15 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Debug seam for a headless driver: stage the live scene's shop `idx` as its merchant would
+    /// (`World::debug_arm_scene_shop`); the page's own drain opens it on the
+    /// next frame. The native twin is `LEGAIA_CAPTURE_SHOP=<idx>@<tick>`.
+    pub fn debug_arm_scene_shop(&mut self, idx: u32) -> bool {
+        self.scene_host
+            .host_mut()
+            .is_some_and(|h| h.world.debug_arm_scene_shop(idx as usize))
+    }
+
     /// `true` while a field-VM merchant shop is up. The page freezes field
     /// input and routes pad edges to [`Self::play_shop_input`] while this
     /// holds, the same way it defers to the pause menu.

@@ -40,7 +40,7 @@ fn card_with_save(block: u8) -> Vec<u8> {
     let f = card::DIR_FRAME_SIZE * block as usize;
     buf[f..f + 4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
     buf[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    buf[f + 10..f + 22].copy_from_slice(b"BASCUS-94254");
+    buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
     let b = card::BLOCK_SIZE * block as usize;
     let sc = &mut buf[b..b + card::BLOCK_SIZE];
     sc[..2].copy_from_slice(&card::SAVE_BLOCK_MAGIC);
