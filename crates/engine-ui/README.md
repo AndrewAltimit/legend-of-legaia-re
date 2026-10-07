@@ -184,9 +184,9 @@ shared leaf:
 
 ## Composition
 
-`legaia-engine-render` re-exports every item here at its historical crate-root
-path (`pub use legaia_engine_ui::*`) so native shell code, the asset-viewer, and
-tests reference the builders unchanged. The GPU-resident batch wrappers
+`legaia-engine-render` re-exports the items its native callers use at their
+historical crate-root path, through an explicit list rather than a glob, so a
+new item here does not silently join that crate's API. The GPU-resident batch wrappers
 (`TextOverlay` / `SpriteOverlay` / `UploadedSpriteAtlas`) stay in
 `legaia-engine-render` because they hold wgpu handles.
 

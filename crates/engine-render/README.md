@@ -7,9 +7,10 @@ renderer-agnostic UI draw-list builders (`status_screen_draws_for`,
 `options_draws_for`, `battle_hud_draws_for` and friends) are **defined in
 [`legaia-engine-ui`](../engine-ui/README.md)**, not here - the browser
 play page needs them without pulling in wgpu. `engine-render`
-re-exports that crate wholesale (`pub use legaia_engine_ui::*`), so
-`engine_render::status_screen_draws_for` still resolves; edit them in
-`engine-ui`.
+re-exports the items its native callers name through an explicit list at
+the crate root, so `engine_render::status_screen_draws_for` still resolves;
+edit them in `engine-ui`, and add a name to that list only when a native
+caller needs the old path.
 
 Owns a `wgpu` device + surface plus several render pipelines, sharing the
 same surface and depth attachment:

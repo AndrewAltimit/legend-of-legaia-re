@@ -45,8 +45,8 @@
 //!   field-to-battle transition emitter both hosts arm. Here for the same
 //!   reason as `screen_prim`: this crate is the leaf both hosts link.
 //!
-//! Extracted from `legaia-engine-render`, which re-exports every item here at
-//! its old path so native code + tests compile unchanged. The GPU-resident
+//! Extracted from `legaia-engine-render`, which re-exports the items its
+//! native callers name at their old path through an explicit list. The GPU-resident
 //! batch wrappers ([`TextOverlay`]/`SpriteOverlay`/`UploadedSpriteAtlas`) stay
 //! in `legaia-engine-render` because they hold wgpu handles.
 //!
