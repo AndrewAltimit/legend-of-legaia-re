@@ -45,7 +45,13 @@ three). Of the 27, 19 are [disclosed and receiver-gated
 dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 8 are
 the reach worklist, every one of which carries a verdict below: `8004629c`
 and `800485bc` (b), `801f2134` (c), and `801d31b0`, `801d553c`,
-`801dba90`, `801dd4c4`, `801f1a00` (d).
+`801dba90`, `801dd4c4`, `801f1a00` (d). Three of the eight have a union
+member asserting entry that postdates the figure - `801f2134` (the close
+tick behind `w1d_world_map_render_ladder`'s fill fade), `800485bc`
+(`w1c_battle_render_ladder` rung 6) and `801dba90`
+(`dome_ladder_and_hub_real`) - so the next export reads them entered, and
+`8004629c` is pinned content-gated by a disc census rather than by the
+captures alone.
 
 The ladder count belongs in the same breath as the other three, because none
 of them is a property of the port: every ladder that lands moves all three,
