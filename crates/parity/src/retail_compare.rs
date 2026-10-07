@@ -316,6 +316,9 @@ pub struct RetailObs {
     /// equals the arrival facing `_DAT_80073EFC` the entry script's `4C 3A`
     /// gave it; `None` once the pad has turned the player.
     pub player_facing: Option<i16>,
+    /// The player's heading `+0x26` (retail space), whatever turned it: the
+    /// seed stands the player in it, as it seats the position.
+    pub player_heading: Option<i16>,
     /// `_DAT_80073EFC`, the arrival facing.
     pub arrival_facing: i16,
     /// Every field-actor-ticked placement's heading ([`retail_actor_facings`]).
@@ -1000,6 +1003,7 @@ impl RetailObs {
             player_facing: game_anchors::player_ptr(ram)
                 .map(|p| rd16(ram, p + 0x26))
                 .filter(|&h| h == rd16(ram, ARRIVAL_FACING)),
+            player_heading: game_anchors::player_ptr(ram).map(|p| rd16(ram, p + 0x26)),
             arrival_facing: rd16(ram, ARRIVAL_FACING),
             actor_facings: if matches!(class, StateClass::Field) {
                 retail_actor_facings(ram)
@@ -1118,6 +1122,9 @@ impl RetailObs {
         if let Some(p) = self.panel {
             env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));
         }
+        if let Some(h) = self.seat_heading() {
+            env.push(("LEGAIA_SEAT_HEADING", (h & 0x0FFF).to_string()));
+        }
         if !self.scroll_rects.is_empty() {
             let dir = crate::retail_compare_image::work_dir(out_dir);
             let path = dir.join(format!("{label}.vrect.bin"));
@@ -1128,6 +1135,13 @@ impl RetailObs {
             }
         }
         env
+    }
+
+    /// The player heading the seed stands the player in: retail's `+0x26`
+    /// when the pad has turned it off the arrival facing, `None` while it
+    /// still holds the arrival facing (the engine's own entry gives that).
+    pub fn seat_heading(&self) -> Option<i16> {
+        self.player_heading.filter(|&h| h != self.arrival_facing)
     }
 
     /// [`Self::seed_latches`] as `LEGAIA_SEAT_LATCHES` for `play-window`
@@ -1340,6 +1354,15 @@ pub fn run_engine_with(
     if let Some([x, _, z]) = retail.player
         && session.host.debug_seat_standing(x, z)
     {
+        // A heading the pad turned is walk history exactly as the position
+        // is: stand the player in retail's, as the arrival facing so an
+        // entry script's `4C 3A` in the settle window hands over the same
+        // heading. One still on retail's arrival facing is left to the
+        // engine's own entry, which the facing channel scores.
+        if let Some(h) = retail.seat_heading() {
+            session.host.world.locomotion.arrival_facing = h;
+            session.host.world.apply_arrival_facing();
+        }
         match retail.camera_block {
             Some(block) => session.camera.zone.arm_arrival_over(block),
             None => session.camera.zone.arm_arrival(),

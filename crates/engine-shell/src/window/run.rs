@@ -745,6 +745,17 @@ pub(super) fn cmd_play_window_with_record(
             }) {
                 session.camera.zone.seat_focus_after_snap([fx, fz]);
             }
+            // `LEGAIA_SEAT_HEADING=H` (retail space, `0` = -Z): stand the
+            // seated player in the state's own heading, which is walk
+            // history like the position - as the arrival facing too, so an
+            // entry script's `4C 3A` hands over the same heading.
+            if let Some(h) = std::env::var("LEGAIA_SEAT_HEADING")
+                .ok()
+                .and_then(|h| h.trim().parse::<i16>().ok())
+            {
+                session.host.world.locomotion.arrival_facing = h;
+                session.host.world.apply_arrival_facing();
+            }
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
         } else {
             log::warn!("play-window: LEGAIA_SEAT='{seat}' not applied (want X,Z and a player)");
