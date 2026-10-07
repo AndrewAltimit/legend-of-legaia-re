@@ -14,85 +14,10 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+/// The raw PSX pad-bit layout; lives in `legaia_engine_vm::pad` so the
+/// minigame crate shares it.
+pub use legaia_engine_vm::pad::PadButton;
 use serde::{Deserialize, Serialize};
-
-/// Bit positions for the 16 pad buttons. Values match the PSX hardware
-/// layout (0x0001 = Select … 0x8000 = Square) so engine-side code can
-/// either use these typed constants or pack/unpack the raw word.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u16)]
-pub enum PadButton {
-    Select = 0x0001,
-    L3 = 0x0002,
-    R3 = 0x0004,
-    Start = 0x0008,
-    Up = 0x0010,
-    Right = 0x0020,
-    Down = 0x0040,
-    Left = 0x0080,
-    L2 = 0x0100,
-    R2 = 0x0200,
-    L1 = 0x0400,
-    R1 = 0x0800,
-    Triangle = 0x1000,
-    Circle = 0x2000,
-    Cross = 0x4000,
-    Square = 0x8000,
-}
-
-impl PadButton {
-    /// Numeric mask, identical to `self as u16`. Convenience for code that
-    /// works in raw u16 land.
-    pub fn mask(self) -> u16 {
-        self as u16
-    }
-
-    /// Human-readable name used in TOML config files and CLI output.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Select => "Select",
-            Self::L3 => "L3",
-            Self::R3 => "R3",
-            Self::Start => "Start",
-            Self::Up => "Up",
-            Self::Right => "Right",
-            Self::Down => "Down",
-            Self::Left => "Left",
-            Self::L2 => "L2",
-            Self::R2 => "R2",
-            Self::L1 => "L1",
-            Self::R1 => "R1",
-            Self::Triangle => "Triangle",
-            Self::Circle => "Circle",
-            Self::Cross => "Cross",
-            Self::Square => "Square",
-        }
-    }
-
-    /// Parse a button from its [`Self::name`] string. Returns `None` for
-    /// unknown names. Case-sensitive.
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "Select" => Some(Self::Select),
-            "L3" => Some(Self::L3),
-            "R3" => Some(Self::R3),
-            "Start" => Some(Self::Start),
-            "Up" => Some(Self::Up),
-            "Right" => Some(Self::Right),
-            "Down" => Some(Self::Down),
-            "Left" => Some(Self::Left),
-            "L2" => Some(Self::L2),
-            "R2" => Some(Self::R2),
-            "L1" => Some(Self::L1),
-            "R1" => Some(Self::R1),
-            "Triangle" => Some(Self::Triangle),
-            "Circle" => Some(Self::Circle),
-            "Cross" => Some(Self::Cross),
-            "Square" => Some(Self::Square),
-            _ => None,
-        }
-    }
-}
 
 /// Host-side latch for key **taps** shorter than a display frame.
 ///
