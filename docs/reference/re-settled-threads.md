@@ -2884,8 +2884,10 @@ which is why a dialogue-bearing placed actor installs its ambient tree exactly
 like a dedicated effect-actor script, and why an install placed *after* a `0x21`
 (`edkorout` P1[15]) does not fire at plain entry at all.
 
-Port: `engine-core::man_field_scripts::scene_entry_ambient_installs`, taking the
-**unconditional prefix** of that slice - a deliberate under-approximation, since
+Port: the scene-entry prologue pre-run executes the slice itself, so each
+install fires once at its context's position. The static census
+`engine-core::man_field_scripts::scene_entry_ambient_installs` takes the
+**unconditional prefix** of that slice for tests and the `.glb` export - a deliberate under-approximation, since
 a flag-gated install deeper in a record (`nilboa` P1[3], `suimon` P1[4]) depends
 on runtime state a static census cannot resolve. Disc-gated coverage
 `crates/engine-core/tests/ambient_entry_install_census_disc.rs`. Mechanism

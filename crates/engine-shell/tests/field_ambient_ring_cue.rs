@@ -53,9 +53,7 @@ fn kor5_ambient_script_writes_its_cue_into_ring_slot_3() {
     for frame in 0..400u32 {
         s.tick().expect("tick");
         for op in s.host.world.take_sfx_ring_ops() {
-            // Two seated parts run this record in the port and store the
-            // same id into the same slot on the same tick - one cue.
-            if op == SfxRingOp::WriteSlot(3, 0x204) && writes.last() != Some(&frame) {
+            if op == SfxRingOp::WriteSlot(3, 0x204) {
                 writes.push(frame);
             }
         }
@@ -82,6 +80,12 @@ fn kor5_ambient_script_writes_its_cue_into_ring_slot_3() {
     assert!(
         s.host.world.side_band_bank().is_some(),
         "kor5 requests a side-band bank for its ambient cue"
+    );
+    // One seated part stores the cue once per period, as retail's census
+    // sees one store per period.
+    assert!(
+        writes.windows(2).all(|w| w[0] != w[1]),
+        "the ambient record is seated once: {writes:?}"
     );
     // Retail repeats every 63 vsyncs. One session tick is one game tick of
     // `frame_step` vsyncs - two in a field scene - so that is 31-32 ticks.

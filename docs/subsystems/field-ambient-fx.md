@@ -915,8 +915,12 @@ oscillators.
 - Walker tables: `legaia_asset::clut_walk::{from_scene_bundle, scene_park_strips}`
   feeding `engine-core::clut_walk_anim`. VDF packs: `legaia_asset::scene_vdf`.
 - Ambient tree: `engine-core::world::ambient` (pool capped at the retail 143,
-  op-`0x25` record 0 refused), entry census
-  `engine-core::man_field_scripts::scene_entry_ambient_installs`; render tails
+  op-`0x25` record 0 refused), installed by the scene-entry prologue pre-run
+  (`World::pre_run_field_channel_prologues` executing each op-`0x34` sub-3,
+  once, at the executing context's position) - the static census
+  `engine-core::man_field_scripts::scene_entry_ambient_installs` names the
+  same records and is a tool for tests and the `.glb` export, not a second
+  installer; render tails
   `engine-core::clut_cell_fx` (mode 3) and `world::ambient::vram_scroll`
   (mode 4); morph kernels `engine-vm::vdf_morph` and
   `engine-core::world::npc_morph`; enhancement pulse `engine-core::vdf_pulse`.

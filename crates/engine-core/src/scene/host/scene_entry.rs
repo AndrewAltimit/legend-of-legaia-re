@@ -1203,25 +1203,19 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
-                    // Ambient effect stagers: retail's placement installer
-                    // pre-runs each P1 placement's spawn prologue for one
-                    // frame slice at scene load, and every op-0x34 sub-3 that
-                    // slice executes installs a prescript stager record
-                    // (`FUN_800252EC(arg + 1)` - see
-                    // `World::spawn_ambient_record`). The census is that
-                    // slice's unconditional prefix; note it must run BEFORE
-                    // `pre_run_field_channel_prologues` below, which is the
-                    // same retail pre-run seen from the actor-position side.
-                    // jou: one install (arg 0 → record 1) fans out into the
-                    // lightning director + fifteen CLUT-row cyclers + the
-                    // ambient SFX loop. town0e: the morph installer riding a
-                    // dialogue-bearing placement.
-                    // REF: FUN_8003A1E4
-                    for arg in crate::man_field_scripts::scene_entry_ambient_installs(
-                        &man_file, &man_bytes,
-                    ) {
-                        self.world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
-                    }
+                    // Ambient effect stagers are installed by the prologue
+                    // pre-run below and nowhere else: retail's placement
+                    // installer (`FUN_8003A1E4`) runs each P1 placement's
+                    // spawn prologue for one frame slice at scene load, and
+                    // each op-0x34 sub-3 that slice executes calls
+                    // `FUN_800252EC(arg + 1)` at the executing context's
+                    // position - one install per op. The slice's static census
+                    // (`man_field_scripts::scene_entry_ambient_installs`)
+                    // names the same records; installing from it as well runs
+                    // every ambient part twice (kor5's cue `0x204` then reaches
+                    // the SFX ring twice per period where retail stores it
+                    // once).
+                    // REF: FUN_8003A1E4, FUN_800252EC
                     // Initial NPC POSITIONS: the same retail pre-run also
                     // executes each record's story-flag-tested opening ops -
                     // the `0x23 MoveTo` park to the off-map sentinel for
