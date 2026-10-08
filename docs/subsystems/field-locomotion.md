@@ -2391,7 +2391,16 @@ The heading space itself is pinned from the locomotion's pad→facing writes (`F
 
 Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
 
-The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`.
+
+That static leg is only the guess for a record the load slice does not run.
+`World::pre_run_field_channel_prologues` executes every `0x24`/`0x25`
+prologue with retail's stop tests (an executed `0x21`, an unmoved PC, a
+sub-`0x20` byte - not a yield that hands back the next PC), drops the guess
+for those slots first, and takes the heading from the `4C 51` / `38` /
+`4C 48` ops on the arm the flags select. `dolk2`'s King Drake turns to index
+4 only while `0x178` is clear, and `dolk` `P1[22]` turns on a `38` that
+follows a `41` glide. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
 
 Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 toggles the special-model flag, the low nibble is the facing-LUT index - and the raw case-5-sub-1 asm reads the byte **nowhere else**, so the op carries no speed operand (byte +4 is the move-anim id written to `+0x5C`; the trailing `FUN_801D81E0` is an active-list relink via `FUN_800204A4`/`FUN_80020454`, not a bytecode builder). The old glide-speed reading of the same byte is a misattribution of the walk-kernel op `0x47`'s own operand encoding - see the reconcile note under [NPC glide speed](#npc-glide-speed).
 
