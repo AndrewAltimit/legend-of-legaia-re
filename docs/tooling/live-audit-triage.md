@@ -298,6 +298,12 @@ blocker is a table is the same error this page records for the panel painters.
 
 ## `engine-core` anchors
 
+Rows here predate the `engine-battle` / `engine-minigames` split; the modules
+those moved (slot machine, fishing prize and rod menu, dance types, the battle
+kernels) keep their verdicts but now live in those crates, re-exported by
+`engine-core`. A `file:line` site is where the anchor stood when the verdict
+was written - find the symbol by name, not by line.
+
 | addr | symbol | site | verdict |
 |---|---|---|---|
 | `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
@@ -550,9 +556,9 @@ Largest of the `WIRE` rows: it replaces existing gates, so it needs the retail
 arm semantics preserved case by case. `item_count_gate` follows for free as its
 arm-`0x82` callee.
 
-## `DELETE` row
+## `DELETE` row (acted)
 
-**`symbol_pad_bit`** (`801d4040`, `crates/engine-minigames/src/dance/types.rs:84`).
+**`symbol_pad_bit`** (`801d4040`, in `crates/engine-minigames/src/dance/types.rs`).
 `DanceDir::pad_bit` in the same file has identical arms (`0x80` / `0x20` /
 `0x10`), cites the same `FUN_801d4040`, and is the copy the live path uses -
 `World`'s dance tick references it from `world/frame_tick.rs`. The free function
@@ -560,8 +566,9 @@ adds only the "any other symbol scores 0" fallback for raw chart bytes, which
 the chart decoder never produces because it converts symbols to `DanceDir`
 first.
 
-Delete the free function and move the `// PORT: FUN_801d4040` tag onto
-`DanceDir::pad_bit`, so the address keeps its anchor.
+The verdict is acted: the free function is gone and the
+`// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit`, so the address keeps
+its anchor.
 
 ## `DISCLOSE` texts
 

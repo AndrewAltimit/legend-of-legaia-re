@@ -591,7 +591,9 @@ print `[skip]` and pass. `LEGAIA_FGL_ONLY=<id>,...` runs only the segments
 ending at those milestones and does not assert the baseline;
 `LEGAIA_FGL_NO_PAD=1` skips the pad tier, and `LEGAIA_FGL_RNG_SEED=<u32>`
 re-seeds the world rand stream once a pad segment is seeded, dealing it
-another hand. `LEGAIA_SCUS` defaults to the
+another hand; `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` does the same for the seated
+pass, which is how a seated boss fight is checked across streams.
+`LEGAIA_SCUS` defaults to the
 extracted tree's `SCUS_942.54`. Two part-A diagnostics:
 `LEGAIA_FGL_EDGES=<scene>,...` prints each named scene's out- and in-edges
 (`*` marks a scripted one), and `LEGAIA_FGL_GAINED=<id>,...` prints every flag

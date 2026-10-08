@@ -1,7 +1,9 @@
 # legaia-engine-session
 
-The game session both play hosts run, free of wgpu, winit and cpal so it
-builds for native and `wasm32` alike.
+The game session both play hosts run, free of wgpu and winit so it builds
+for native and `wasm32` alike. Audio reaches it through `engine-audio`, which
+links cpal on native targets only (`BootSession::open` / `open_disc` are built
+over its `AudioOut`); a `wasm32` build never links cpal.
 
 - [`BootSession`](src/boot.rs) / `BootConfig` - the scene host plus the
   per-frame order around its tick: the naming prompt, the mode seat, the

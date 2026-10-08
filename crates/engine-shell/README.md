@@ -59,7 +59,7 @@ authoritative list; the broad groups are:
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s, `--party` the party's field forms as villager-shaped `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes `saves/slot_NN.bin` with the loaded scene as its resume point (LGSF `LGX5`), and Continue / Load re-enter that scene before hydrating the world, as retail does; a file without one loads onto the current scene. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
 | Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios`, `retail-compare` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay, the scenario-hash suite and the [retail comparison corpus](../../docs/tooling/retail-compare.md). |
-| Synthetic sessions | `battle`, `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |
+| Synthetic sessions | `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |
 
 ### Memory-card images
 

@@ -341,9 +341,10 @@ pair per body per frame through `engine-core`'s
 
 ## Battle-overlay leaves outside the action SM
 
-More `0898` bodies whose kernels are ported here. All but `battle_burst` are
-reached from `engine-core` or a host; `battle_burst` carries a `NOT WIRED`
-disclosure (nothing in the engine spawns the move-VM actors it seats), and
+More `0898` bodies whose kernels are ported here. All are reached from
+`engine-core` or a host - `battle_burst` through
+`World::flush_battle_bursts`, which runs `run_burst` and seats each child on
+the arm's actor - and
 `battle_party_panel`'s label-actor open is `REPLACED-BY:` the immediate-mode
 battle HUD:
 

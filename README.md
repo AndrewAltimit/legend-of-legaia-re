@@ -251,7 +251,7 @@ legend-of-legaia-re/
 ├── docker/ghidra.Dockerfile      # wraps blacktop/ghidra:latest with host-UID mapping
 ├── crates/
 │   │   # Track 1 - preservation (disc → PNG / WAV / OBJ / JSON)
-│   ├── bytes/                    # Checked little-endian readers (used by asset + engine-core)
+│   ├── bytes/                    # Checked little-endian readers (asset, engine-core, engine-battle, patcher)
 │   ├── iso/                      # PSX disc reader + ISO9660 walker + sector write-back
 │   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
 │   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c) + re-packer
@@ -276,7 +276,8 @@ legend-of-legaia-re/
 │   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
 │   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
-│   ├── engine-minigames/         # Minigame rules engines: slot machine, Baka Fighter, dance, fishing
+│   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
+│   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, fishing, prize exchange, Muscle Dome ladder
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + from-scratch SPU + SEQ sequencer

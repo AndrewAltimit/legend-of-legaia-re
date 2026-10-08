@@ -178,8 +178,9 @@ over one set of profiles: the scoped export carries 42 files, every one under
 `crates/engine-shell/`, and reporting the same profiles with no `-p` carries
 652 across fifteen crates. The ladder's whole yield is in the second number -
 the dance HUD, the fishing chrome and actors, the Baka number drawers and the
-casino counter are `engine-core`, and the draw builders under them are
-`engine-ui`.
+casino counter live in `engine-minigames` (re-exported by `engine-core`), and
+the draw builders under them are `engine-ui` - so a ladder under
+`engine-core`'s tests runs code in two other crates.
 
 The failure mode is quiet in exactly the wrong direction: a scoped export shows
 the ladder joining the union and changing nothing, which reads identically to a
@@ -1021,7 +1022,7 @@ all of it executes under one ladder now.
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
 | `fishing/prize.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
-| `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+| `crates/engine-shell/src/window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
 
 **`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
 

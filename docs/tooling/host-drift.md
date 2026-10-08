@@ -250,8 +250,8 @@ is reached at runtime.
 | Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
 | save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
-| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu`. |
-| menu-open precondition | `symbols_all` on `field_menu_open_allowed`, across all three open sites. |
+| pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
+| pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
@@ -1297,11 +1297,10 @@ all three surfaces off the overlay's own part programs
 one-dancer run, stepped per frame as `World::step_dance_tutorial` does and
 drawn through the shared `ui_dance::dance_tutorial_draws_for`.
 
-Still open from that pass:
-
-- **The page refuses the pause menu while any dialog box is up**
-  (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
-  the native window asks alone. No retail evidence decides it yet.
+The pause-menu gate that pass left open - the page refusing the menu while
+any dialog box was up (`_hudState.dialog`), on top of the engine's
+`field_menu_open_allowed` - is gone: the page's `play_menu_open` goes through
+`BootSession::press_field_menu` like every other host.
 
 ## A rule spelled beside the shared predicate
 
@@ -2638,10 +2637,12 @@ Retail's GTE **NCLIP** winding rejection is the worked case:
 in-engine cutscene camera, off the overworld), the native window hands the
 word to `Renderer::set_backface_cull` and the page hands the same word to
 `TmdRenderer.setNclipCull`. Before that the page's assembled pass called
-`disable(CULL_FACE)` unconditionally. The battle clear colour - the sky on one
-host, a hard-coded near-black in
-[`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js) on the other - is the
-same shape and is still open.
+`disable(CULL_FACE)` unconditionally. The battle clear colour was the same
+shape - the sky on one host, a hard-coded near-black in
+[`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js) on the other - and is
+closed the same way: the page sets it from `play_scene_clear_color` (over
+the native window's `battle_stage_clear` selector) on both draw paths, the
+near-black kept only as the fallback for a bundle without the export.
 
 The page's prologue grade was a third instance and the subtlest, because
 nothing was missing that a reader would look for: the grade's *multiply* half
@@ -3210,7 +3211,7 @@ recipe rules came out of it, on top of the ones [above](#a-second-pass-frames-ma
 | `0x6E` Begin / Reselect, commit log, target plaque | labels, log rows, plaque at `x = 0xE8 - w / 2` | same | same |
 | Koru strip | not shot (no formation-0xB6 entry on either host short of the dome) | - | not paired |
 | scripted battle (op `0x3E`), talk entry at the interaction cursor | not shot (no positioned walk-to-NPC input on either host) | - | not paired |
-| fishing (`PondSession`) | status rows, digits, venue camera | status rows, digits, gauge fills, field camera | gauge fills were page-only; fixed. The venue pass is disclosed native-only ([fishing](#one-minigame-one-session-type)) |
+| fishing (`PondSession`) | status rows, digits, venue camera | status rows, digits, gauge fills, venue camera | gauge fills were page-only; fixed. Both hosts now run the venue pass (`fishing_venue::tick_fishing_venue_on_host`) and draw under `fishing_venue::venue_view` ([fishing](#one-minigame-one-session-type)) |
 | slot / Baka face buttons | prompts named the old buttons | same prompts | both hosts' prompt text was stale against the kernel; fixed |
 | title menu | two rows | two rows | same (the lit row follows each host's card state) |
 | battle letterbox, spoils ink | black letterbox, spoils text all `(206, 206, 206)` | canvas is the stage; the banner fell between two shots | native matches retail; page not shot |
@@ -4124,8 +4125,8 @@ banner and the cheats panel. Closed rows:
   and recipient screens' own purchase, sale and equip cues
   ([`shop.md`](../subsystems/shop.md#sound)). Neither host raised any, and
   the engine's quantity and recipient events named the cues in comments
-  only. `MenuRuntime::take_ui_cue` is the decision now, and a `SIM_PAIRS`
-  row holds both hosts' shop steps to it.
+  only. The decision is the engine's now: `MenuRuntime::step_field_session`
+  returns the cue, and a `SIM_PAIRS` row holds both hosts' shop steps to it.
 - **Start closed the pause menu outside the kernel on the page.** A
   root-level Start called `play_menu_close` directly, so it dismissed the
   save-point notice (which retail holds for Cross or Circle) and, under an
