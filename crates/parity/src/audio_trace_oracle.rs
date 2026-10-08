@@ -92,6 +92,14 @@ pub struct VoiceTraceFrame {
     /// tank.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reverb_send: Option<bool>,
+    /// Running count of key-ons this voice has taken (engine:
+    /// `Voice::key_on_count`). The difference between two frames is the
+    /// exact number of key-ons in between, including a re-key of a voice
+    /// that was still sounding - which the `active` edge cannot see. `None`
+    /// on both retail emitters: an SPU snapshot keeps no key-on history (the
+    /// retail count comes from `scripts/pcsx-redux/autorun_keyon_census.lua`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub key_ons: Option<u32>,
 }
 
 /// One sample of the SPU's voice-activity state.
@@ -600,6 +608,7 @@ fn sample_engine_frame(
             vol_right: Some(v.vol_right),
             adsr_control: Some(v.adsr_cfg.raw.0 as u32 | ((v.adsr_cfg.raw.1 as u32) << 16)),
             reverb_send: Some(v.reverb_send),
+            key_ons: Some(v.key_on_count()),
         });
     }
     AudioTraceFrame {
@@ -674,6 +683,7 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
             vol_right: v.vol_right,
             adsr_control: v.adsr_control,
             reverb_send: eon.map(|m| m & (1u32 << i) != 0),
+            key_ons: None,
         });
     }
     Ok(AudioTraceFrame {
@@ -1148,6 +1158,140 @@ pub fn compare_voice_allocation_aligned(
     }
 }
 
+/// Per-frame **exact** key-on counts off an engine trace: the sum over
+/// voices of the [`VoiceTraceFrame::key_ons`] deltas between consecutive
+/// frames, so a re-key of a voice that was still sounding counts. Index `i`
+/// holds the key-ons that landed between frames `i - 1` and `i`; index `0`
+/// is always zero. `None` when any frame lacks the counter (a retail trace,
+/// or an engine trace written before the field existed).
+pub fn engine_key_on_counts(frames: &[AudioTraceFrame]) -> Option<Vec<u32>> {
+    let mut out = Vec::with_capacity(frames.len());
+    let mut prev: Option<&AudioTraceFrame> = None;
+    for f in frames {
+        let n = match prev {
+            None => 0,
+            Some(p) => {
+                let mut n = 0u32;
+                for (a, b) in p.voices.iter().zip(f.voices.iter()) {
+                    n = n.wrapping_add(b.key_ons?.wrapping_sub(a.key_ons?));
+                }
+                n
+            }
+        };
+        if f.voices.iter().any(|v| v.key_ons.is_none()) {
+            return None;
+        }
+        out.push(n);
+        prev = Some(f);
+    }
+    Some(out)
+}
+
+/// Parse the CSV `scripts/pcsx-redux/autorun_keyon_census.lua` writes into
+/// per-vsync retail key-on counts (popcount of every `SpuSetKey` KON mask,
+/// index = post-load vsync). Allocator and clock rows, and rows before the
+/// capture loop starts (vsync `< 0`), are skipped.
+pub fn parse_keyon_census_csv(s: &str) -> Result<Vec<u32>> {
+    let mut out: Vec<u32> = Vec::new();
+    for (i, line) in s.lines().enumerate().skip(1) {
+        let mut cols = line.splitn(5, ',');
+        let (Some(vs), Some(mode), Some(mask)) = (cols.next(), cols.next(), cols.next()) else {
+            continue;
+        };
+        if mode != "1" {
+            continue;
+        }
+        let vsync: i64 = vs
+            .trim()
+            .parse()
+            .with_context(|| format!("key-on census line {}: vsync {vs:?}", i + 1))?;
+        let Ok(v) = usize::try_from(vsync) else {
+            continue;
+        };
+        let mask = u32::from_str_radix(mask.trim(), 16)
+            .with_context(|| format!("key-on census line {}: mask {mask:?}", i + 1))?;
+        if out.len() <= v {
+            out.resize(v + 1, 0);
+        }
+        out[v] += (mask & 0x00FF_FFFF).count_ones();
+    }
+    Ok(out)
+}
+
+/// Engine-vs-retail key-on count over an aligned window, both sides counted
+/// exactly (engine: [`engine_key_on_counts`]; retail: the
+/// [`parse_keyon_census_csv`] census).
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyOnCensusComparison {
+    /// Engine frame the census's vsync 0 lines up with.
+    pub offset: usize,
+    /// Retail key-ons the engine matched within one frame either side.
+    pub matched: u32,
+    pub engine_total: u32,
+    pub retail_total: u32,
+    /// `engine_total / retail_total`.
+    pub ratio: f64,
+}
+
+/// Align a retail key-on census against an engine trace's exact key-on
+/// counts and compare totals over the aligned window.
+///
+/// The alignment is on key-on **timing**, not on sounding pitches: the
+/// offset maximises the retail key-ons matched by an engine key-on within
+/// one frame (the two clocks quantise a beat onto adjacent vsyncs). A
+/// pitch-Jaccard alignment ([`best_alignment_offset`]) needs a capture of
+/// the SPU, and a capture's sounding state is on the host's audio clock.
+/// Returns `None` when the engine trace carries no key-on counters or is
+/// shorter than the census.
+pub fn compare_key_on_census(
+    engine: &[AudioTraceFrame],
+    census: &[u32],
+) -> Option<KeyOnCensusComparison> {
+    let ek = engine_key_on_counts(engine)?;
+    let n = census.len();
+    if n == 0 || ek.len() < n {
+        return None;
+    }
+    // (matched within one frame, matched on the exact frame): the second
+    // term breaks the tie a one-frame tolerance leaves between neighbouring
+    // offsets.
+    let matched_at = |off: usize| -> (u32, u32) {
+        let mut near_sum = 0u32;
+        let mut exact_sum = 0u32;
+        for (i, r) in census.iter().enumerate().filter(|(_, r)| **r > 0) {
+            let t = off + i;
+            let near = [t.checked_sub(1), Some(t), Some(t + 1)]
+                .into_iter()
+                .flatten()
+                .filter_map(|j| ek.get(j).copied())
+                .max()
+                .unwrap_or(0);
+            near_sum += (*r).min(near);
+            exact_sum += (*r).min(ek[t]);
+        }
+        (near_sum, exact_sum)
+    };
+    let (offset, (matched, _)) = (0..=ek.len() - n)
+        .map(|off| (off, matched_at(off)))
+        // Earliest offset wins a full tie, so a repeating phrase resolves to
+        // its first occurrence deterministically.
+        .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)))?;
+    let engine_total: u32 = ek[offset..offset + n].iter().sum();
+    let retail_total: u32 = census.iter().sum();
+    let ratio = if retail_total > 0 {
+        engine_total as f64 / retail_total as f64
+    } else {
+        0.0
+    };
+    Some(KeyOnCensusComparison {
+        offset,
+        matched,
+        engine_total,
+        retail_total,
+        ratio,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1548,5 +1692,71 @@ mod tests {
         BgmDirector::start(&mut d, 42, &[1, 2, 3]);
         assert!(d.sequencer().is_none());
         assert!(!d.is_playing());
+    }
+
+    fn keyed_frame(counts: &[u32]) -> AudioTraceFrame {
+        alloc_frame(
+            counts
+                .iter()
+                .map(|&k| VoiceTraceFrame {
+                    key_ons: Some(k),
+                    ..Default::default()
+                })
+                .collect(),
+        )
+    }
+
+    /// A re-key of a voice that never went silent is invisible to the
+    /// sounding-edge count and visible to the exact counter.
+    #[test]
+    fn exact_key_on_counts_see_a_rekey_of_a_sounding_voice() {
+        let mut a = keyed_frame(&[3, 0]);
+        a.voices[0].active = true;
+        let mut b = keyed_frame(&[4, 0]);
+        b.voices[0].active = true;
+        let c = keyed_frame(&[4, 2]);
+        assert_eq!(engine_key_on_counts(&[a, b, c]), Some(vec![0, 1, 2]));
+        // A frame without the counter (a retail trace) yields no counts.
+        assert_eq!(
+            engine_key_on_counts(&[alloc_frame(vec![voice(true, None)])]),
+            None
+        );
+    }
+
+    #[test]
+    fn keyon_census_csv_counts_kon_mask_bits_per_vsync() {
+        let csv = "vsync,mode,mask,ra,records\n\
+                   -1,alloc,01,80066590,win=1 vmax=24 prior=0\n\
+                   1,0,000001,80065F5C,\n\
+                   1,1,0003FE,80065F7C,1:9/0/1/0002\n\
+                   3,1,000C00,80065F7C,10:8/0/1/0002\n\
+                   60,clock,0,0,ms=1.0\n";
+        assert_eq!(parse_keyon_census_csv(csv).unwrap(), vec![0, 9, 0, 2]);
+    }
+
+    /// The census aligns on key-on timing, tolerates a one-frame skew, and
+    /// compares exact totals over the aligned window.
+    #[test]
+    fn keyon_census_aligns_on_timing_and_compares_totals() {
+        // Engine: cumulative per-voice counters; key-ons land at frames
+        // 5 (x3) and 8 (x1) and 12 (x2).
+        let per_frame = [0u32, 0, 0, 0, 0, 3, 0, 0, 1, 0, 0, 0, 2, 0];
+        let mut cum = 0u32;
+        let engine: Vec<_> = per_frame
+            .iter()
+            .map(|k| {
+                cum += k;
+                keyed_frame(&[cum])
+            })
+            .collect();
+        // Retail census: the same rhythm from its vsync 0, the second beat
+        // quantised one vsync late.
+        let census = [3u32, 0, 0, 0, 1, 0, 0, 2];
+        let c = compare_key_on_census(&engine, &census).expect("alignable");
+        assert_eq!(c.offset, 5);
+        assert_eq!(c.matched, 6);
+        assert_eq!(c.retail_total, 6);
+        assert_eq!(c.engine_total, 6);
+        assert!((c.ratio - 1.0).abs() < 1e-9);
     }
 }

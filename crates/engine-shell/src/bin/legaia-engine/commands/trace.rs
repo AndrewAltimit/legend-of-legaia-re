@@ -701,6 +701,10 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
         out_label
     );
 
+    if let Some(csv) = args.retail_keyon_csv {
+        print_key_on_census(&trace, csv)?;
+    }
+
     let divergence = match resolved.retail.as_ref() {
         None => return Ok(()),
         Some(ResolvedRetail::Snapshot(retail)) => {
@@ -753,6 +757,31 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
                 eprintln!("{msg}");
             }
         }
+    }
+    Ok(())
+}
+
+/// Render the exact key-on comparison for `--retail-keyon-csv`.
+fn print_key_on_census(engine: &[AudioTraceFrame], csv: &Path) -> Result<()> {
+    use legaia_parity::audio_trace_oracle::{compare_key_on_census, parse_keyon_census_csv};
+    let text = std::fs::read_to_string(csv)
+        .with_context(|| format!("read key-on census {}", csv.display()))?;
+    let census = parse_keyon_census_csv(&text)?;
+    match compare_key_on_census(engine, &census) {
+        Some(c) => eprintln!(
+            "  [key-on census] {} vsyncs aligned at engine frame {}: engine {} key-ons vs retail {} (ratio {:.3}); {} of retail's matched within one frame",
+            census.len(),
+            c.offset,
+            c.engine_total,
+            c.retail_total,
+            c.ratio,
+            c.matched,
+        ),
+        None => eprintln!(
+            "  [key-on census] not comparable: the engine trace ({} frames) must be at least as long as the census ({} vsyncs)",
+            engine.len(),
+            census.len()
+        ),
     }
     Ok(())
 }

@@ -502,6 +502,14 @@ pub(crate) enum Cmd {
         /// left loaded (`0x8007BAC8`), and the two routinely differ.
         #[arg(long, default_value_t = false)]
         per_voice: bool,
+        /// Retail key-on census CSV from
+        /// `scripts/pcsx-redux/autorun_keyon_census.lua`: every `SpuSetKey`
+        /// KON mask the game wrote, per emulated vsync. Aligns it on key-on
+        /// timing against the engine's exact per-voice key-on counters and
+        /// prints both totals - the key-on comparison that reads no SPU
+        /// state, so neither side's envelope clock can bias it.
+        #[arg(long)]
+        retail_keyon_csv: Option<PathBuf>,
     },
     /// PCM-window parity oracle - the I2 sibling of `audio-trace`.
     ///

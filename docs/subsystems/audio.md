@@ -2251,22 +2251,58 @@ uncontrolled amount of envelope motion. Two measurements pin it:
   the mean sounding-voice count itself reads `4.041` against `3.694`.
 
 A statistic that moves by nine percent when the host gets slower is not a
-parity comparand. What is left on this axis is the **key-on rate**
-(`VoiceAllocationStats::onsets_per_frame`, and `onset_ratio` on the
-comparison): a key-on is a register write the score performs from the game's
-own vsync handler, so it is on the emulated clock on both sides, and on the
-aligned window the two sides' rates agree.
+parity comparand. A key-on is: it is a register write the score performs from
+the game's own vsync handler, so it is on the emulated clock on both sides.
+But a capture can only *see* a key-on as a voice's envelope rising from zero
+(`VoiceAllocationStats::onsets_per_frame`, `onset_ratio` on the comparison),
+and that edge is read off the same host-clocked envelope. A short note can
+attack and drain between two captures and never be seen, and a note re-keyed
+while its voice still rings is no edge at all. The two captures of one state
+above report `122` and `130` edges over the same 250 emulated vsyncs.
 
-The alignment is not optional for this statistic either. Against the
-250-frame `s3_rimelm_freeroam` window, an engine trace of `3601` frames aligns
-at engine frame `3103` and reads `0.560` key-ons per frame against retail's
-`0.488` (ratio `1.148`); the 120-frame window aligns there too and reads
-`0.592` against `0.558` (ratio `1.060`). An engine trace only as long as the
-retail window has nowhere to slide - the best offset is frame `1`, the track's
-opening bars - and the same pairing then reads `0.244` against `0.488`, a
-ratio of `0.5` that is a statement about which bars were compared, not about
-the port. Ask `audio-trace` for at least the aligned frame plus the retail
-window's length. The capture probe that carries the
+### Count the key-ons, not the edges
+
+The exact count needs no SPU state on either side:
+
+- **Retail**:
+  [`autorun_keyon_census.lua`](../../scripts/pcsx-redux/autorun_keyon_census.lua)
+  breaks on `FUN_8006B854` (`SpuSetKey`) and logs every KON mask the per-frame
+  flush `FUN_80065BAC` hands it (`a0 = 1`, called from `0x80065F74`), with the
+  voice allocator's verdict at `0x80066C84` beside it. Per call, not per
+  capture, so it runs without the per-vsync save-state dump.
+- **Engine**: each trace voice carries `key_ons`, the voice's running
+  `Voice::key_on_count`; `engine_key_on_counts` differences consecutive
+  frames.
+
+`audio-trace --retail-keyon-csv <census.csv>` aligns the census on key-on
+timing (`compare_key_on_census`: the offset that matches the most retail
+key-ons within one frame, exact-frame matches breaking ties) and prints both
+totals. On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census aligns at
+engine frame `2936` and reads **`292` engine key-ons against `292` retail**,
+`286` of them on the same frame give or take one. No drops: the allocator
+never returns its out-of-range sentinel across the census, so every note-on
+the score issues reaches the KON register.
+
+The `1.148` the edge statistic reported on the same scenario is therefore not
+a key-on surplus. Two instrument effects made it. The edge count is
+host-clocked, as above. And the census and the older SPU capture of that
+scenario do not start at the same bar of the track: the capture's sounding
+pitches align it at engine frame `3103`, the census's key-on rhythm at
+`2936`, one phrase earlier, where the first 84 vsyncs carry the sparser
+accompaniment the census logs. The pitch-Jaccard alignment of a capture lands
+on a bar that rings the same pitches, which is not the same as one that keys
+the same notes. And the allocator's free-voice test reads each voice's
+envelope back off the SPU (`FUN_80065BAC` stores `ENVX`, fetched by
+`FUN_8006C9A8`, into `+0x06` of the `0x801CDB50` record at `0x80065C24`), so on
+PCSX-Redux even the **voice index** a note lands on varies from run to run of
+one state. It is not a comparand either.
+
+The alignment matters for any per-window statistic. An engine trace only as
+long as the retail window has nowhere to slide - the best offset is frame
+`1`, the track's opening bars - and an edge-rate pairing then reads `0.244`
+against `0.488`, a ratio of `0.5` that is a statement about which bars were
+compared, not about the port. Ask `audio-trace` for at least the aligned frame
+plus the retail window's length. The capture probe that carries the
 wall-clock stamp is
 [`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
 and `scripts/pcsx-redux/analyze_audio_clock.py` is the offline half.
