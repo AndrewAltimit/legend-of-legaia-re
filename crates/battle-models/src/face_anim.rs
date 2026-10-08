@@ -248,7 +248,7 @@ pub struct FaceStamp {
 
 /// PSX-EXE `t_addr` -> file-offset resolver (`SCUS_942.54` loads its data
 /// segment at `t_addr` from file offset `0x800`; same shape as the resolver
-/// in [`crate::steal_table`], kept local so this module stands alone).
+/// in `legaia_asset::steal_table`, kept local so this module stands alone).
 struct ExeMap {
     t_addr: u32,
     t_size: u32,

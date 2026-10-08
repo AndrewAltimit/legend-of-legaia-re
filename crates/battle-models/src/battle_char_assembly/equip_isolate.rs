@@ -163,7 +163,7 @@ pub fn rules() -> &'static RuleTable {
     static RULES: OnceLock<RuleTable> = OnceLock::new();
     RULES.get_or_init(|| {
         RuleTable::from_toml(RULES_TOML)
-            .expect("crates/asset/data/equip-isolation.toml is malformed")
+            .expect("crates/battle-models/data/equip-isolation.toml is malformed")
     })
 }
 

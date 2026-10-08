@@ -114,7 +114,7 @@ pub struct MonsterRecord {
     /// `0x801dd8dc`) - it is **not** copied into a live-actor field the way the
     /// `+0x0E..+0x1A` stats are. Id space `earth=0/water=1/fire=2/wind=3/
     /// thunder=4/light=5/dark=6/neutral=7` - matches
-    /// [`crate::element_affinity::Element`].
+    /// `legaia_asset::element_affinity::Element`.
     /// Pinned by correlating this byte against the curated enemy elements across
     /// the whole roster (the four party-table ids fire/wind/thunder/neutral
     /// reproduce exactly; water/earth/light/dark corroborate per-element), and
@@ -174,7 +174,7 @@ pub struct MonsterRecord {
     /// is `> 1` (`0` / `1` are empty / marker slots). Each id is a **global
     /// spell id** - the same value the AI writes into the live actor at
     /// `+0x1DF` and names through `&DAT_800754D0 + id*0xC`, so it resolves with
-    /// [`crate::spell_names::SpellNameTable`] (`0x27` -> `Tail Fire`). This is
+    /// `legaia_asset::spell_names::SpellNameTable` (`0x27` -> `Tail Fire`). This is
     /// distinct from the local `spells` ids above (the `+0x4C` action entries):
     /// those gate the AGL cost, these carry the on-screen name. Pinned from the
     /// AI spell picker `FUN_801E9FD4` (`overlay_0898`).
@@ -285,7 +285,7 @@ impl MonsterRecord {
 /// `0x80055234..0x8005523C`) and adds the profile's delta into both halves
 /// again. So the boosted value is what the working *and* the base half carry
 /// at battle start, which is what makes the base half a usable "has anything
-/// moved this stat since?" probe - see [`crate::seru_side_effect`].
+/// moved this stat since?" probe - see `legaia_asset::seru_side_effect`.
 ///
 /// Taking the raw block rather than a whole record lets a consumer that kept
 /// only the six stats (an engine's monster catalog) re-derive either profile.

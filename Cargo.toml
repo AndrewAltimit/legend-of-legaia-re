@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-minigames", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-minigames", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -46,6 +46,7 @@ legaia-bytes = { path = "crates/bytes" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }
+legaia-battle-models = { path = "crates/battle-models" }
 legaia-asset = { path = "crates/asset", default-features = false }
 legaia-cheats = { path = "crates/cheats", default-features = false }
 legaia-engine-audio = { path = "crates/engine-audio", default-features = false }

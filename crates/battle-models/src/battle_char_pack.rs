@@ -15,7 +15,7 @@
 //! captures pinned this pack during Baka Fighter sessions; it is **not** a
 //! minigame-exclusive roster.
 //!
-//! The field-form pack (PROT 0874 §0, see [`crate::character_pack`]) is the
+//! The field-form pack (PROT 0874 §0, see `legaia_asset::character_pack`) is the
 //! *field-only* low-poly walk/talk models; it is **not** used in battle. The
 //! captured battle scene loader `FUN_800520F0` fills the effect/model window
 //! `DAT_8007C018[3..]` from `etmd.dat`; the party-mesh load that installs this
@@ -70,7 +70,7 @@
 //! The chunk stride is exactly `0x8224` (4-byte header + a 33312-byte TIM);
 //! each TIM is a 256x256 4bpp image plus a 256-colour (16x16) sub-CLUT row at
 //! VRAM `(0, 490..=497)`. The character atlases sit just below the
-//! [row-479 NPC CLUT band](crate::npc_palette) but above the dialog-font
+//! [row-479 NPC CLUT band](legaia_asset::npc_palette) but above the dialog-font
 //! glyph band - the runtime uploads them via the same targeted-upload pass
 //! the field engine uses for scene textures.
 //!
@@ -96,7 +96,7 @@
 //! disc order. [`parse_atlases`] now walks the chunk chain and takes each row
 //! from the TIM, so the constants below are a pinned expectation rather than
 //! the source of the answer. This is the same over-read family as the
-//! title-TIM "duplicates" in [`crate::title_pak`].
+//! title-TIM "duplicates" in `legaia_asset::title_pak`.
 //!
 //! ## Slot identity
 //!
@@ -118,7 +118,7 @@
 //!
 //! | Pack | PROT entry | Layout | nobj (disc) | When resident |
 //! |---|---|---|---|---|
-//! | Field-form ([`crate::character_pack`]) | 874 §0 | `parse_player_lzs` -> LZS section -> `pack::extract_pack` | 12 / 12 / 12 / 3 / 2 | every field scene |
+//! | Field-form (`legaia_asset::character_pack`) | 874 §0 | `parse_player_lzs` -> LZS section -> `pack::extract_pack` | 12 / 12 / 12 / 3 / 2 | every field scene |
 //! | Battle-form (this module) | 1204 + 1205 | flat streaming-format: 5 TMD2 chunks, then 8 TIM chunks in the sibling entry | 15 / 16 / 15 / 20 / 15 | every BattleMode session |
 //!
 //! The same `DAT_8007C018[0..=4]` table is repointed between the two; only
@@ -126,12 +126,12 @@
 //!
 //! ## Asset type 0x09 (TMD2)
 //!
-//! Streaming chunks of type `0x09` are tagged "TMD2" in [`crate::AssetType`]
+//! Streaming chunks of type `0x09` are tagged "TMD2" in `legaia_asset::AssetType`
 //! but parse as standard Legaia TMDs (magic `0x80000002`). The distinction is
 //! a dispatcher tag: the field engine routes type-0x02 chunks through one
 //! installer chain and type-0x09 chunks (which only appear in this pack)
 //! through the battle-form chain. The TMD body shape is otherwise identical
-//! to the one documented in [`crate::tmd`].
+//! to the one documented in `legaia_asset::tmd`.
 
 use anyhow::{Context, Result, bail};
 

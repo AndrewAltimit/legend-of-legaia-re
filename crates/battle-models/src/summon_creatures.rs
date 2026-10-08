@@ -3,7 +3,7 @@
 //!
 //! A player summon renders its namesake creature through the ordinary rigid-TRS
 //! battle draw (the move-VM stager is the spawn/effect side-channel, not the
-//! visual - see [`crate::summon_overlay`] and the open-RE thread on the summon
+//! visual - see `legaia_asset::summon_overlay` and the open-RE thread on the summon
 //! visual). Each summon's creature is installed from the `summon.dat` group's
 //! actor-record slot (`legaia_asset::summon_readef`), and that slot's Legaia TMD
 //! is **byte-identical** to a record in the monster archive (PROT 867,

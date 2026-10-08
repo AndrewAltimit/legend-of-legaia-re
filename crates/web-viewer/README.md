@@ -875,7 +875,7 @@ in `crates/asset/tests/equip_item_real.rs`.
 opinionated cut of `battle_char_assembly::equip_isolate` under the section's
 default reading (colour diff against the bare limb for held items and
 headgear, geometry-and-colour identity for body and footwear) or the
-record's committed rule in `crates/asset/data/equip-isolation.toml`. The
+record's committed rule in `crates/battle-models/data/equip-isolation.toml`. The
 summary's per-item `isolation` object and the glTF root name carry the mode,
 the kept / dropped primitive counts and whether a rule hand-checked the
 record, and the grip repair's `bridges` / `bridged_triangles`

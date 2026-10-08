@@ -1,5 +1,5 @@
 # Item-alone isolation overrides for the equipment viewer's "just the item"
-# export - see `crates/asset/src/battle_char_assembly/equip_isolate.rs` for
+# export - see `crates/battle-models/src/battle_char_assembly/equip_isolate.rs` for
 # the heuristic these correct, and `docs/formats/character-mesh.md`
 # (Item isolation) for the vocabulary.
 #

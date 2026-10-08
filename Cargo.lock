@@ -1241,6 +1241,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-anm",
+ "legaia-battle-models",
  "legaia-bytes",
  "legaia-game-tables",
  "legaia-lzs",
@@ -1281,6 +1282,23 @@ dependencies = [
  "libc",
  "log",
  "winit",
+]
+
+[[package]]
+name = "legaia-battle-models"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-bytes",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-tmd",
+ "png",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]

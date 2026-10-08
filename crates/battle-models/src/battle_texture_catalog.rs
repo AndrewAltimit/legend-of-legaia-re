@@ -4,8 +4,8 @@
 //!
 //! ## Why this is a third tier
 //!
-//! [`crate::tim_catalog`] scans raw bytes for the TIM magic and
-//! [`crate::tim_deep_catalog`] scans LZS-decoded sections for the same
+//! `legaia_asset::tim_catalog` scans raw bytes for the TIM magic and
+//! `legaia_asset::tim_deep_catalog` scans LZS-decoded sections for the same
 //! magic. A player file's character art is invisible to both, and not
 //! because it hides better - **it is not a TIM**. The block is
 //!
@@ -53,7 +53,7 @@
 //!
 //! ## For a generic consumer
 //!
-//! [`BattleTextureBlock`] mirrors a [`crate::tim_deep_catalog`] row's shape
+//! [`BattleTextureBlock`] mirrors a `legaia_asset::tim_deep_catalog` row's shape
 //! (coordinates, dimensions, bpp, palette count, content hash, label), and
 //! [`decode_block`] turns one into RGBA given only the `PROT.DAT` image and
 //! its TOC spans. A texture browser can therefore list and render this
@@ -77,7 +77,7 @@ use crate::item_names::ItemNameTable;
 pub const PLAYER_FILE_ENTRIES: [u32; 4] = [863, 864, 865, 866];
 
 /// Smallest entry the scan bothers to probe - mirrors the same gate
-/// [`crate::categorize`] puts in front of `battle_data_pack::detect`, and
+/// `legaia_asset::categorize` puts in front of `battle_data_pack::detect`, and
 /// every retail player file is far above it.
 pub const MIN_PACK_BYTES: usize = 0x10000;
 

@@ -5,7 +5,7 @@ side-band streaming files (CDNAME block `bat_back_dat`): per-special-attack
 VRAM texture pages plus summon-creature actor records, streamed from disc
 mid-battle in fixed `0x10800`-byte (33-sector) slots while a cast plays.
 
-Parser: `crates/asset/src/summon_readef.rs`. Confidence: **Confirmed**
+Parser: `crates/battle-models/src/summon_readef.rs`. Confidence: **Confirmed**
 (byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
 
 ## PROT entries and how the dev paths resolve

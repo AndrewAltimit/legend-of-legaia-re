@@ -180,7 +180,7 @@
 //! *Battle-load stat boost* note) and `docs/subsystems/battle-formulas.md`.
 //!
 //! The same flag decides which Seru-magic **side-effect** debuffs can touch
-//! the enemy at all - see [`crate::seru_side_effect`].
+//! the enemy at all - see `legaia_asset::seru_side_effect`.
 //!
 //! ## Rewards (EXP / gold / drop)
 //!

@@ -24,9 +24,9 @@ This format is **distinct from**:
 - the [field-pack](field-pack.md) and [effect-bundle](effect.md) containers.
 
 Implementations:
-[`crates/asset/src/battle_char_palette.rs`](../../crates/asset/src/battle_char_palette.rs)
+[`crates/battle-models/src/battle_char_palette.rs`](../../crates/battle-models/src/battle_char_palette.rs)
 (the runtime-pinned `record[0]` + CLUT chain) and
-[`crates/asset/src/battle_data_pack.rs`](../../crates/asset/src/battle_data_pack.rs)
+[`crates/battle-models/src/battle_data_pack.rs`](../../crates/battle-models/src/battle_data_pack.rs)
 (the TMD-slot walker over the `[id, offset, size]` descriptor table).
 
 ## Contents
@@ -227,7 +227,7 @@ Two readings that look right and are not:
   by whether their corners fall outside it. That leaves 4-31 primitives
   straddling the boundary per weapon - the honest answer, since those
   primitives really do belong to both hand and weapon. Presentation aid
-  [`battle_char_assembly::equip_diff`](../../crates/asset/src/battle_char_assembly/equip_diff.rs).
+  [`battle_char_assembly::equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs).
 - **The `200+` extras are not weapon meshes.** They are usually
   byte-identical **duplicates** of the bone object they attach to, reached
   only through the equipment-variant track at entry `+0xA4`, so drawing one
@@ -251,7 +251,7 @@ two buckets apart is the **joint**: a TMD object is authored about its own
 bone origin, so the flesh half always reaches the origin and the held item
 never does.
 
-Three classes over the 81 records ([`equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)):
+Three classes over the 81 records ([`equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs)):
 
 | Class | Records | Shape |
 |---|---:|---|
@@ -293,8 +293,8 @@ nothing in it says which primitives are the axe and which are Vahn's wrist
 strap (which the palette cut, being about *material*, claims as item). So
 the item-alone export is a stated **policy** plus a committed per-record
 override table, and every result says whether a rule touched it
-([`equip_isolate`](../../crates/asset/src/battle_char_assembly/equip_isolate.rs),
-table `crates/asset/data/equip-isolation.toml`).
+([`equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs),
+table `crates/battle-models/data/equip-isolation.toml`).
 
 The policy: **the item is everything the section spliced in that is not the
 character's own flesh or an unchanged piece of them.** "Unchanged" is read
@@ -349,7 +349,7 @@ haft inside the closed fist was never modelled - the fingers covered it - so
 Vahn's Great Axe comes away as an axe head on a stub of shaft plus a pommel
 end, each terminating in an open ring of vertices where it met the fingers.
 No cut recovers what was never drawn, but the two rings say what was there,
-and [`equip_repair`](../../crates/asset/src/battle_char_assembly/equip_repair.rs)
+and [`equip_repair`](../../crates/battle-models/src/battle_char_assembly/equip_repair.rs)
 infers it: weld the item-alone mesh by `(object, position)`, walk its
 boundary edges into closed loops, and pair loops that are the two ends of one
 straight shaft - **same object**, opening directions (taken from the
@@ -1356,7 +1356,7 @@ pixel match against a rip of the real thing.
 
 ### The catalog tier
 
-[`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
+[`legaia_asset::battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs)
 is the third texture tier, alongside the raw and LZS TIM catalogs. It keys
 each block by `(PROT entry, record, section, pool offset)`, where
 `record = -1` marks the two header `record[0]` blocks and `section` then
@@ -1438,40 +1438,40 @@ is the frame the write expects back.
 
 Two parsers read these files:
 
-- [`legaia_asset::battle_char_palette`](../../crates/asset/src/battle_char_palette.rs)
+- [`legaia_asset::battle_char_palette`](../../crates/battle-models/src/battle_char_palette.rs)
   implements the runtime-pinned framing above (header words, descriptor
   chain, `record[0]` + sub-record palette assembly; byte-exact vs live battle
   VRAM).
-- [`legaia_asset::battle_char_assembly`](../../crates/asset/src/battle_char_assembly.rs)
+- [`legaia_asset::battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs)
   ports the battle-init consumer chain: equipment-section selection
   (`select_sections`), mesh splice (`assemble_character`), the TSB/CBA
   relocation (`relocate_tsb_cba`), and the texture-pool uploads at the
   pinned placement (`character_texture_uploads` and friends - see
   [Texture-pool VRAM placement](#texture-pool-vram-placement)).
-- [`legaia_asset::battle_char_assembly::equip_diff`](../../crates/asset/src/battle_char_assembly/equip_diff.rs)
+- [`legaia_asset::battle_char_assembly::equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs)
   is the presentation-side sibling: it classifies what one loadout changed
   against the all-defaults assembly by the radius-envelope test described in
   [Every section is bone geometry](#every-section-is-bone-geometry---the-item-is-not-its-own-object).
   Approximate by construction, and not a port of anything - retail never
   compares two assemblies.
-- [`legaia_asset::battle_char_assembly::equip_item`](../../crates/asset/src/battle_char_assembly/equip_item.rs)
+- [`legaia_asset::battle_char_assembly::equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs)
   is the exact cut: `item_partition` splits an equipped weapon / Ra-Seru
   section's objects into the held item and the limb by palette column, falls
   through to `fused` (the section's whole contribution) where there is no
   boundary, and grades the result (see
   [The item is still separable](#the-item-is-still-separable---by-palette-not-by-geometry)).
   Swept over all 132 records by `crates/asset/tests/equip_item_real.rs`.
-- [`legaia_asset::battle_char_assembly::equip_isolate`](../../crates/asset/src/battle_char_assembly/equip_isolate.rs)
+- [`legaia_asset::battle_char_assembly::equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs)
   is the opinionated cut on top of it: `isolate_item` keeps the item alone
   (no limb, no skin, no unchanged default) under a per-section reading plus
-  the committed override table `crates/asset/data/equip-isolation.toml`
+  the committed override table `crates/battle-models/data/equip-isolation.toml`
   (see [The item alone](#the-item-alone---an-opinionated-cut-with-a-committed-rule-table)).
   Swept, with the table's integrity, by `crates/asset/tests/equip_isolate_real.rs`.
-- [`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
+- [`legaia_asset::battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs)
   catalogs the same files' texture-pool blocks as a texture tier -
   see [The catalog tier](#the-catalog-tier) - and `resolve_block` /
   `assemble_clut_row` read one back out for decode or replacement.
-- [`legaia_asset::battle_data_pack`](../../crates/asset/src/battle_data_pack.rs)
+- [`legaia_asset::battle_data_pack`](../../crates/battle-models/src/battle_data_pack.rs)
   (the TMD-slot walker) reads the same descriptor table in the
   `[id, offset, size]` frame above. Detection validates the chain invariant
   (entry 0 at offset 0, `offset[i+1] == offset[i] + size[i]`, sector-aligned

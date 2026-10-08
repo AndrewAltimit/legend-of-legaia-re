@@ -101,7 +101,7 @@
       </table>
       <ul class="bullets">
         <li>A positional set-difference does not find added geometry (the armed hand shares as few as one vertex with the bare hand). The diff highlight uses a radius envelope around the bare object (<code>battle_char_assembly::equip_diff</code>).</li>
-        <li><strong>Item-alone</strong> export (<code>equip_isolate</code>, rules in <code>crates/asset/data/equip-isolation.toml</code>): colour diff against the bare counterpart for head / held items, identity test for body / feet, plus per-record overrides.</li>
+        <li><strong>Item-alone</strong> export (<code>equip_isolate</code>, rules in <code>crates/battle-models/data/equip-isolation.toml</code>): colour diff against the bare counterpart for head / held items, identity test for body / feet, plus per-record overrides.</li>
         <li><strong>Grip repair</strong> (<code>equip_repair</code>) lofts a tube between the two rims of a straight shaft on one object; nine of the 81 held items take a bridge, all Vahn's.</li>
         <li>Most <code>0xFF</code> (tag <code>200+</code>) surplus objects are byte-copies of their attach bone, drawn only through the <a href="#equipment-variant-track">variant track</a>. Sixteen are not (all of Noa's section-2 records, four of her section-3, three of Gala's section-3); <code>AssembledCharacter::duplicate_objects</code> tests by byte comparison.</li>
       </ul>

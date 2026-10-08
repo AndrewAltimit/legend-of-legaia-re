@@ -370,7 +370,7 @@ records being reverse-engineered:
   if the formulas predict the player needing N hits to defeat Jette
   at level 50, that result has to land near Meth's HP-34,567 /
   ATK-277 / UDF-412 / SPD-274 stat block. Same direction for the
-  monster-stat records `crates/asset/src/monster_archive.rs` lifts
+  monster-stat records `crates/battle-models/src/monster_archive.rs` lifts
   from PROT 0867 - the gamedata stat columns are the labels.
 - **Per-Seru absorption rates** ground the capture-roll reverse
   engineering: a kill against a Gimard rolls capture at 55% per
