@@ -76,6 +76,18 @@ was an engine defect, not an entry artifact: a field save folded actor slots
 `opurud`'s scripts re-stamp them from zeroed nodes - so the save zeroed both
 pools and the load re-seeded the "unjoined" members from the New Game
 template. `World::save_party` now folds actor mirrors back only in a battle.
+Its repro is `fixed/opurud_field_save_zeroes_party_records`; it needs the
+library card the `@PRO-00` label names.
+
+The soak reaches the round trip only where a random walk takes it. Its
+library-wide sibling is `engine-shell/tests/save_roundtrip_library.rs`: every
+Legaia save on the library cards is loaded through the card path both hosts
+take (`MountedCard::save_at`, then `BootSession::resume_save`), checked field
+for field against the block it came from, played on, and saved through a
+blank card (`card_write::write_save_into_card`), the LGSF codec and a second
+resume; each card's latest save repeats the round trip in a spread of
+scenes. The field VM's scratchpad word (`ext.story_flags`) is outside that
+comparison for the card path - no retail block carries it.
 
 A shop run is a pseudo-scene `<scene>+shop`, one per scene whose MAN carries
 a priced gold shop. Every `SHOP_VISIT_EVERY` free field frames it hands one of
@@ -282,6 +294,7 @@ regression.
 | `koin2_fatal_decision_stone_party` | a fight sat in Fatal Decision's capture band for 18000 frames | the `0x5A` wipe scan reads the packed `+0x16E` (`status_word`), so a petrified party wipes - the caster had been re-seeded forever |
 | `map01_overworld_beat_walk_never_steps` | `urudre2`'s hand-off beat on `map01` walked two placements with `C7` and parked on `B3 12 0A` for good | the world-map arm steps cross-context walk legs, as the field arm does |
 | `jouine_camera_glide_pan` | `jouine` `P2[16]` parked on `4C CD` for longer than the softlock window | harness: the camera glide countdown is in both digests - the pan is about 2200 frames and is the shot moving |
+| `opurud_field_save_zeroes_party_records` | `opurud+rt@PRO-00` lost records 1 and 2 on its save / load round trip | a field save keeps the records; actor mirrors fold back only in a battle |
 | `conc3_ambient_walker_seat_snapback` | a cutscene walk ran from the walker's off-stage wander box across the whole map | an ambient walker adopts the live seat a script's `0x23` writes; it had re-published its own stale coordinates on its next step |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 

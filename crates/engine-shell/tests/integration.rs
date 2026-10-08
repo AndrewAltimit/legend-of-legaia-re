@@ -60,6 +60,7 @@ mod resume_landing;
 mod retail_compare_corpus;
 mod ropeway_gondola_walk_off_disc;
 mod save_gate_field_menu;
+mod save_roundtrip_library;
 mod scenarios;
 mod scene_encounter_rollable;
 mod screen_widgets_live;
