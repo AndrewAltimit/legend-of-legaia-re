@@ -45,22 +45,23 @@ pub(in crate::world) enum HeadingOwner {
 
 impl World {
     /// Resolve the actor whose heading `ctx` carries: the player for the
-    /// `0xF8` context outside a placement step, else the placement channel
-    /// whose context id it is (an own-context write or a cross-context poke
-    /// alike), else the stepping placement or talk.
+    /// `0xF8` context outside a placement step; else the placement being
+    /// stepped (its own script or a poke on it), else the NPC whose talk the
+    /// inline runner runs (the runner's context carries no id of its own),
+    /// else the placement channel whose context id it is.
     pub(in crate::world) fn heading_owner(&self, ctx: &FieldCtx) -> Option<HeadingOwner> {
         let channel = self.field_vm.executing_channel;
         if channel.is_none() && ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
             return Some(HeadingOwner::Player);
         }
-        let by_id = self
-            .channel_view()
-            .iter()
-            .find(|c| !c.object_bind && c.ctx.script_id == ctx.script_id)
-            .and_then(|c| u8::try_from(c.placement_index).ok());
-        by_id
-            .or(channel)
+        channel
             .or(self.dialog.stepping_inline_npc)
+            .or_else(|| {
+                self.channel_view()
+                    .iter()
+                    .find(|c| !c.object_bind && c.ctx.script_id == ctx.script_id)
+                    .and_then(|c| u8::try_from(c.placement_index).ok())
+            })
             .map(HeadingOwner::Placement)
     }
 }
