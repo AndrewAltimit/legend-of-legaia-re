@@ -365,9 +365,16 @@ const AMBIENT_HEADING_OPS: [u8; 7] = [0x03, 0x04, 0x06, 0x0D, 0x18, 0x19, 0x20];
 /// `[u16 selector][s16 delta]` the preamble walks) carries a heading op
 /// before its loop-back `0x01`.
 pub fn retail_ambient_heading(ram: &[u8], n: u32) -> bool {
+    game_anchors::u32_at(ram, n + 0x10) & 0x500 == 0 && retail_stream_turns(ram, n)
+}
+
+/// Whether node `n` runs an ambient motion stream that walks or turns it
+/// (`+0x10 & 0x80`, a heading op in the variant its PC sits in), whatever
+/// holds it now: an engaged wanderer stopped where its walks left it.
+pub fn retail_stream_turns(ram: &[u8], n: u32) -> bool {
     use legaia_asset::man_motion::op_width;
     let flags = game_anchors::u32_at(ram, n + 0x10);
-    if flags & 0x80 == 0 || flags & 0x500 != 0 {
+    if flags & 0x80 == 0 {
         return false;
     }
     let stream = game_anchors::u32_at(ram, n + 0x80);
@@ -758,7 +765,7 @@ pub fn retail_walkers(ram: &[u8]) -> Vec<WalkerSeed> {
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
-        .filter(|&n| retail_ambient_heading(ram, n))
+        .filter(|&n| retail_stream_turns(ram, n))
         .filter_map(|n| {
             let flat = game_anchors::u16_at(ram, n + 0x50);
             seen.insert(flat).then(|| WalkerSeed {
@@ -1657,6 +1664,19 @@ pub fn run_engine_with(
             }
             if t == SETTLE_TICKS {
                 at_settle = Some(sample_engine(&mut session, retail, &director, None));
+            }
+            // The walkers stand where retail's left them before a talk is
+            // engaged: the talk snap turns a placement to the bearing from
+            // its seat, and a wanderer's seat is `rand()` history
+            // (`town01_npc16_dialogue_first_page`'s `P1[16]` wandered off
+            // its `4C 51` tile before the press).
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+                for w in &retail.walkers {
+                    session
+                        .host
+                        .world
+                        .seed_ambient_walker(w.flat, w.x, w.z, w.heading);
+                }
             }
             if t == crate::retail_compare_script::SCRIPT_RESUME_TICK
                 && crate::retail_compare_script::resume_record(&mut session.host, g)
