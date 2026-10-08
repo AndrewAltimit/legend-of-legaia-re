@@ -67,10 +67,15 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags. A third is not a scene question at all:
-`opurud+rt` fails its save / load round trip on the party records (records
-1 and 2 read zero at their first byte after the resume). The prologue scene
-has no save point in retail; the finding is not triaged further.
+gated off by the save's flags.
+
+`opurud+rt` once failed its save / load round trip on the party records
+(records 1 and 2 read zero at their first byte after the resume). That one
+was an engine defect, not an entry artifact: a field save folded actor slots
+1 and 2 back into the records, and in a field those slots are the scene's -
+`opurud`'s scripts re-stamp them from zeroed nodes - so the save zeroed both
+pools and the load re-seeded the "unjoined" members from the New Game
+template. `World::save_party` now folds actor mirrors back only in a battle.
 
 A shop run is a pseudo-scene `<scene>+shop`, one per scene whose MAN carries
 a priced gold shop. Every `SHOP_VISIT_EVERY` free field frames it hands one of

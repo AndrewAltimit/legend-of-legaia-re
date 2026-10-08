@@ -126,7 +126,7 @@ first box opens. The gate reads the live purse through `FieldHost::party_bank_va
 the debit is the record's own `ADD_MONEY`, and the restore is its own
 `4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Retail's
 record is the only copy of a member's pools; the port also keeps them on the
-party actor, which a battle seats from and `World::save_party` writes back
+party actor, which a battle seats from and writes back
 over the record, so the restore projects the record onto that actor as every
 field heal does - a rest that skipped it was undone by the next fight. Disc-gated
 oracle: `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, which drives the
@@ -167,11 +167,15 @@ inn session is cleared (`MenuRuntimeHost::commit` / `cancel`).
 On confirmation the engine calls `InnSession::can_afford(world_money)` before
 committing. The commit path (`commit_inn_confirm`):
 1. Deducts `InnSession::cost` from `World::party.money`.
-2. For each of the first `World::party.party_count` actor slots whose `active` flag
-   is set: restores `battle.hp` to `battle.max_hp` and `battle.mp` to the
-   roster record's `mp_max`. Inactive slots and the reserve bench are
+2. For each present-party member (the first `World::party.party_count`
+   ordinals, through `party_roster_slot`): sets the roster record's `hp_cur`
+   to `hp_max` and `mp_cur` to `mp_max`, then projects the record onto the
+   member's actor mirror (`mirror_roster_hp_mp`). The reserve bench is
    untouched.
-3. Calls `save_party()` to sync the roster records.
+
+The record is written directly because outside a battle it is the pool:
+`World::save_party` folds actor mirrors back only in battle, since a field's
+actor slots past the walking player belong to the scene.
 
 ## Key data structure
 

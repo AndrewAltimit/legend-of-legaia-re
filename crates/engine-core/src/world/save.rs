@@ -17,6 +17,17 @@ pub const FIELD_MENU_LOCK_BIT: u32 = 0x0800_0000;
 pub const FIELD_MENU_DENY_CUE: i16 = 0x23;
 
 impl World {
+    /// Whether actor slots `0..party_count` hold the party's own combatants,
+    /// so their HP / MP mirrors are live state a save must fold back into
+    /// the records: in a battle (the seats `enter_battle` builds), and on the
+    /// title screen, where no scene owns the table and a synthetic host
+    /// drives the mirrors directly. Every other mode runs over a scene's
+    /// actor table (field, overworld, the pause menu and minigames that
+    /// suspend one), whose slots past the walking player are not the party.
+    pub(crate) fn party_actors_are_party(&self) -> bool {
+        matches!(self.mode, SceneMode::Battle | SceneMode::Title)
+    }
+
     /// Whether projecting a party record onto actor `slot`
     /// ([`Self::load_party`], [`Self::set_active_party`]) may raise the slot.
     ///
@@ -120,6 +131,18 @@ impl World {
     /// Round-trip: `world.load_party(p); world.save_party() == p` modulo
     /// the HP/MP resync (which is a no-op when no battle has run yet).
     pub fn save_party(&mut self) -> legaia_save::Party {
+        // Outside a fight the records are the pools: retail keeps a member's
+        // HP / MP only at `0x80084708 + n*0x414`, and every field heal, the
+        // inn's `4C 82` restore and the card load write the record first. The
+        // actor table there is the scene's - slot 0 walks, every other slot
+        // is a P1 placement, clone or effect a scene script may re-stamp from
+        // a zeroed node - so a resync read an NPC's empty mirror into the
+        // second and third records. `opurud` does exactly that, and the next
+        // load took the zeroed record for an unjoined member and re-seeded
+        // it from the New Game template.
+        if !self.party_actors_are_party() {
+            return self.party.roster.clone();
+        }
         // Actor slot -> roster record follows the present-party composition:
         // under an [`crate::world::PartyState::active_party`] mapping, actor ordinal `i` mirrors
         // the character at `active_party[i]`, and characters NOT in the
