@@ -213,7 +213,9 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
     let report = legaia_vab::parse(&vab_carrier, vab_off).ok()?;
     let seq = legaia_seq::Seq::parse(&seq_bytes).ok()?;
 
+    // Wet, as every live host's mixer runs it (`StreamResampler`).
     let mut spu = legaia_engine_audio::Spu::new();
+    spu.set_retail_reverb();
     let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
         0x1000,
         legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,

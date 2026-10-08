@@ -1355,6 +1355,13 @@ boundary - on a zero-delta EOT the tick peaks and resets inside a single sample
 - which is why the counter exists. The site plays this as an
 `AudioBufferSourceNode` with `loopStart`/`loopEnd` set to one true period, so
 minigame BGM repeats without the seam a fixed-window hard-loop leaves.
+An off-line render has to build its SPU the way the live mixer core does
+(`StreamResampler`, which every output drives: cpal, WebAudio and the test
+sink): `Spu::new()` plus `set_retail_reverb()`. A bare `Spu::new()` renders
+the score dry, so the site's minigame and audio pages played music the play
+page and the native window play wet. With the reverb installed the pre-render
+equals the live core sample for sample (at the interpolator's two-sample lag;
+`test_sink::the_pre_render_path_matches_the_live_mixer_core`).
 
 **Controller census.** A disc-wide sweep of every SEQ-bearing PROT entry
 (`engine-audio/tests/real_seq_expressive_events.rs`) fixes which control
