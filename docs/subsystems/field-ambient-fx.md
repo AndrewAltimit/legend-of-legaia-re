@@ -507,9 +507,15 @@ ahead of the `SysFlag.Test`, so it is in the unconditional prefix and fires
 whichever way the flag reads. A census that discriminates on script *shape*
 (a record of nothing but nops, flag writes, the install and a self-loop)
 reports town0e as having no ambient install - the record is not pure, but
-the install is there. **Inferred:** the precise moment inside scene load; the
-pre-run mechanism is disassembly-settled and this record is inside its first
-slice, but no live capture has shown that slice running for this scene.
+the install is there. The moment inside scene load is read off the bytes too:
+MAIN INIT `FUN_801D6704` calls the MAN loader `FUN_8003AEB0` with
+`a0 = (s4 & 4) != 0` (`0x801D6D98..0x801D6DA8`), where `s4` ORs the bundle
+walk's and the streamed walk's dispatch returns and the MAN arm of
+`FUN_8001F05C` contributes the `4` (`ori s4,s4,4` at `0x8001F304`); the loader
+runs its spawn-and-pre-run loop over placements `1..count-1` only behind that
+flag (`sll v0,s5,0x10; beq` at `0x8003B89C`, loop `0x8003B8BC..0x8003B8EC`).
+town0e's bundle carries its MAN, so the install fires inside that loop. No live
+capture of this scene has shown it.
 
 The tree it installs is small and entirely about the VDF morphs: record 1 fans
 out into two render-mode nodes, three copies of the mesh record binding
