@@ -480,7 +480,10 @@ the fight forbids running, and so is one the region roll raises while a script
 carries the party across a rolling region - the tick's step moved the region
 counter with no scripted formation armed (`jouinb` P2[6], the rapids, rolls
 several on one ride, and fighting them at the end of a dungeon's MP cost a
-third of the segment's budget). A member in danger is healed before the run, unless
+third of the segment's budget). After two failed runs with nothing to heal with, against foes whose
+combined max HP is at most four times the party's, the hand fights instead:
+a lone chapter-1 Vahn on `map01` fled a pair of 99 HP monsters six rounds
+running and fell. A member in danger is healed before the run, unless
 the foes' last round took half or more of what the party still holds: a heal
 does not win that race, and the run is the better draw.
 

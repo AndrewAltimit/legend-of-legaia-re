@@ -1727,6 +1727,24 @@ fn wants_evil_magic_guard(w: &legaia_engine_core::world::World, actor: u8) -> bo
 
 /// Whether the foes' last round took half or more of the HP the party
 /// still holds: healing cannot keep pace with that, and fleeing can.
+/// Whether the hand has fled this fight twice and is still in it, against
+/// foes whose combined max HP the party's own outweighs by no more than four
+/// to one - a fight it can win by fighting. Every finished round of a fled
+/// fight is a failed run, since a run that lands ends the battle.
+fn runs_failing(w: &legaia_engine_core::world::World) -> bool {
+    let rounds = ROUND_HISTORY.with(|h| h.borrow().len());
+    if rounds < 3 {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let ours: u32 = (0..n).map(|i| u32::from(w.actors[i].battle.max_hp)).sum();
+    let theirs: u32 = (n..w.actors.len())
+        .filter(|&i| w.actors[i].battle.hp > 0)
+        .map(|i| u32::from(w.actors[i].battle.max_hp))
+        .sum();
+    theirs <= ours * 4
+}
+
 fn losing_race(w: &legaia_engine_core::world::World) -> bool {
     let last = ROUND_HISTORY.with(|h| h.borrow().last().copied().unwrap_or(0));
     last > 0 && last * 2 >= party_hp_key(w)
@@ -2692,10 +2710,16 @@ fn fight_pad(session: &BootSession) -> u16 {
             // healing is a turn under another such round, and the run is
             // the better draw (`vozz`'s three-monster F4 after a caught Run:
             // a Healing Leaf a round into ~250 a round, two members down).
+            // Two runs that failed (two finished rounds of a fight the hand
+            // only ever fled) and nothing to heal with make running a third
+            // time the worse draw against foes the party can beat: a lone
+            // chapter-1 Vahn on `map01` fled a pair of 99 HP monsters six
+            // rounds running and fell at the last.
             CommandPhase::RoundPrompt { .. }
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
                     && !w.battle.no_escape
-                    && (!heal() || losing_race(w)) =>
+                    && (!heal() || losing_race(w))
+                    && !runs_failing(w) =>
             {
                 PadButton::Right.mask()
             }
@@ -9705,11 +9729,12 @@ fn run_segment(
                 }) {
                     session.host.world.rng_state = s;
                 }
-                // A reload past the guard retry plays another hand: the
-                // rand stream advances with the time a player spends on the
-                // game-over screen and the card menu, which the reseat does
-                // not replay.
-                if attempt > 2 {
+                // A reload other than the guard retry plays another hand:
+                // the rand stream advances with the time a player spends on
+                // the game-over screen and the card menu, which the reseat
+                // does not replay. (The guard retry keeps the stream, so it
+                // measures the guard alone.)
+                if attempt > 1 && !(attempt == 2 && prepare.is_some()) {
                     let w = &mut session.host.world;
                     w.rng_state = w.rng_state.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
                 }
