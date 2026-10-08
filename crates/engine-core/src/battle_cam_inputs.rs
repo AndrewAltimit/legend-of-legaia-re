@@ -116,6 +116,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
     };
     let inputs = script::BattleCamInputs {
         phase,
+        frame_step: world.battle_frame_step(),
         acting,
         target: battle_post_action_target(world, acting_slot),
         // The far menu framing sizes its depth to - and centres on - the live

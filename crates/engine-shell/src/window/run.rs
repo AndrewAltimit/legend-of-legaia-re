@@ -256,6 +256,19 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
             world.seed_battle_backdrop_keep_object_1(k != 0);
         }
     }
+    // `LEGAIA_BATTLE_FRAME_STEP=step,state` (the retail-compare image
+    // channel): run the battle on frames of `step` vsyncs from the first tick
+    // the action SM reaches `state` (`World::seed_battle_frame_step`).
+    if let Some((step, state)) = std::env::var("LEGAIA_BATTLE_FRAME_STEP")
+        .ok()
+        .and_then(|s| {
+            let (a, b) = s.split_once(',')?;
+            Some((a.trim().parse::<u8>().ok()?, b.trim().parse::<u8>().ok()?))
+        })
+    {
+        world.seed_battle_frame_step(step, state);
+    }
+
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...]`: dispatch that
     // cast the moment the first command prompt opens - the retail comparison
     // corpus's replay of a capture taken mid-cast (`InflightCastSeed`), with

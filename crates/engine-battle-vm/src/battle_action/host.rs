@@ -563,6 +563,14 @@ pub trait BattleActionHost {
         0
     }
 
+    /// The battle frame the current tick falls in - the unit the root-motion
+    /// carry truncates over. Default: fixed frames of
+    /// [`crate::battle_action::motion::ROOT_MOTION_FRAME_VSYNCS`] display
+    /// ticks; a host replaying another frame step names its own.
+    fn battle_frame(&self) -> u64 {
+        self.display_tick() / crate::battle_action::motion::ROOT_MOTION_FRAME_VSYNCS
+    }
+
     /// Any pad activity this frame, as retail's packed pair
     /// `_DAT_8007B874 | _DAT_8007B938` (see
     /// `docs/subsystems/arts-command-gauge.md` on the packed layout). The

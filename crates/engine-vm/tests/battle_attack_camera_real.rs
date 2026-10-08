@@ -209,6 +209,7 @@ fn the_shared_camera_settles_on_the_per_art_framing() {
                 frames += 2;
                 let inputs = BattleCamInputs {
                     target: None,
+                    frame_step: 0,
                     entry_yaw: 0.0,
                     phase: phase_for(false, false, phase),
                     acting: Some(cam_actor),
@@ -271,6 +272,7 @@ fn an_unarmed_art_id_leaves_case_six_standing() {
         frames += 2;
         let inputs = BattleCamInputs {
             target: None,
+            frame_step: 0,
             entry_yaw: 0.0,
             phase: BattleCamPhase::Action,
             acting: Some(cam_actor),

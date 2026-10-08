@@ -23,6 +23,7 @@ mod effect_route;
 mod effect_teardown;
 mod fatal_decision;
 mod formation_span;
+mod frame_clock;
 mod homing;
 mod initiative;
 mod intro_names;
@@ -51,6 +52,7 @@ pub use cast_band::{
 };
 pub(in crate::world) use commit_log_launch::BATTLE_PASS_STEP_PER_TICK;
 pub use effect_route::RoutedEffectSpawn;
+pub use frame_clock::{BattleFrameClock, DEFAULT_BATTLE_FRAME_STEP};
 pub use message_banner::{
     ABSORB_BANNER_ELEMENT, BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,
     MAGIC_LEVEL_BANNER_ELEMENT, TIMED_MESSAGE_ELEMENT,

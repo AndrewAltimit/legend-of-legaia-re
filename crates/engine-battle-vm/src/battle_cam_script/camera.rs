@@ -127,7 +127,7 @@ impl Glide {
     /// One pass of a tween its caller **re-arms every pass**: the builder
     /// run over `frames` display frames, each component's per-frame
     /// increment `ceil(|current - target| / frames)` scaled by the camera
-    /// step's [`CHASE_FRAME_STEP`] frames - the walker task `FUN_8002149C`
+    /// step's [`BattleCamera::frame_step`] frames - the walker task `FUN_8002149C`
     /// adds `increment * frame_step` (`0x1F800393`) a pass and clamps on the
     /// endpoint. Rate-clamped (`steps_left == None`): the caller steps it
     /// once with [`BattleCamera::step_components`] and rebuilds next pass.
@@ -146,19 +146,22 @@ impl Glide {
         target: BattleCamPose,
         target_tr_z_raw: i32,
         frames: u32,
+        frame_step: f32,
     ) -> Self {
         let mut g = Self::linear(from, target, target_tr_z_raw, frames.max(1), true);
         for r in &mut g.rate {
-            *r *= CHASE_FRAME_STEP;
+            *r *= frame_step;
         }
         g.steps_left = None;
         g
     }
 }
 
-/// Display frames one camera step stands for: the walker's frame-step
-/// multiplier at retail's 30 Hz battle tick.
-pub(super) const CHASE_FRAME_STEP: f32 = 2.0;
+/// Display frames one camera step stands for by default: the walker's
+/// frame-step multiplier at retail's usual 30 Hz battle tick. Retail's step
+/// is load-adaptive (`FUN_80016B6C`); [`BattleCamera::set_frame_step`] runs
+/// the camera on another one.
+pub const DEFAULT_CAMERA_FRAME_STEP: u8 = 2;
 
 /// Step `v` toward `target` by at most `rate`, clamping at the target.
 pub(super) fn step_toward(v: f32, target: f32, rate: f32) -> f32 {
@@ -194,8 +197,13 @@ pub struct BattleCamera {
     pub(super) glides: std::collections::VecDeque<Glide>,
     /// `field_frames` value already consumed, for the 2-vsync step cadence.
     pub(super) last_frames: u64,
-    /// Sub-step vsync accumulator (steps fire every 2 frames).
+    /// Sub-step vsync accumulator (steps fire every [`Self::frame_step`]
+    /// frames).
     pub(super) frame_accum: u64,
+    /// Vsyncs one camera step spans - retail's frame step `DAT_1F800393`,
+    /// the multiplier the walker `FUN_8002149C` applies to every increment.
+    /// [`DEFAULT_CAMERA_FRAME_STEP`] unless a caller sets another.
+    pub(super) frame_step: u8,
     /// The acting actor the submenu close-up frames. Defaults to the
     /// measured solo-Vahn case; hosts that track the live battle actor call
     /// [`BattleCamera::set_actor`] so non-Vahn seats frame correctly.
@@ -372,6 +380,10 @@ pub fn battle_entry_yaw(camera_azimuth: u16) -> f32 {
 pub struct BattleCamInputs {
     /// The framing phase ([`phase_for`]).
     pub phase: BattleCamPhase,
+    /// The battle frame step in vsyncs the camera steps on
+    /// ([`BattleCamera::set_frame_step`]); `0` reads as
+    /// [`DEFAULT_CAMERA_FRAME_STEP`].
+    pub frame_step: u8,
     /// The acting battle actor, when one owns the framing.
     pub acting: Option<BattleCamActor>,
     /// The acting actor's **target** (`actor[+0x1DD]` through the actor
@@ -529,6 +541,11 @@ pub fn drive_on_stream(
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_cursor(inputs.cursor);
     cam.set_phase(inputs.phase);
+    cam.set_frame_step(if inputs.frame_step == 0 {
+        DEFAULT_CAMERA_FRAME_STEP
+    } else {
+        inputs.frame_step
+    });
     cam.advance_to(frames);
     *rng = cam.rand_state;
 }

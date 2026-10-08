@@ -209,7 +209,14 @@ impl RootMotionCarry {
     /// One tick's displacement for the tick's raw product `raw`
     /// ([`root_motion_raw`] at `frame_dt = 1`) on display frame `tick`.
     pub fn step(&mut self, tick: u64, raw: (i32, i32)) -> (i32, i32) {
-        let frame = tick / ROOT_MOTION_FRAME_VSYNCS;
+        self.step_in_frame(tick / ROOT_MOTION_FRAME_VSYNCS, raw)
+    }
+
+    /// [`Self::step`] with the battle frame the tick falls in named by the
+    /// caller - a host whose frames are not a fixed
+    /// [`ROOT_MOTION_FRAME_VSYNCS`] long (a replayed retail frame step,
+    /// `BattleActionHost::battle_frame`).
+    pub fn step_in_frame(&mut self, frame: u64, raw: (i32, i32)) -> (i32, i32) {
         if frame != self.frame {
             *self = Self {
                 frame,

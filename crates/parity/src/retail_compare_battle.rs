@@ -155,6 +155,9 @@ pub struct RetailBattle {
     pub flow: u8,
     /// `ctx[+0x07]`.
     pub action_state: u8,
+    /// The frame step the capture's frame ran at (`*(0x1F800393)`, rebuilt
+    /// from the frame-time ring - [`frame_step`]).
+    pub frame_step: u8,
     pub run_state: u8,
     pub stage_id: u8,
     pub scripted: bool,
@@ -950,6 +953,33 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 
 impl RetailBattle {
+    /// The battle frame step a replay of this capture runs its last stretch
+    /// on, and the action-SM state it takes effect in: the step the
+    /// capture's own frame ran at, from the first tick the engine reaches
+    /// the capture's state (`World::seed_battle_frame_step`). `None` when
+    /// that step is the engine's default or the state is not one the seed
+    /// covers.
+    ///
+    /// Retail's step is the maximum of its last sixteen frame times
+    /// ([`frame_step`]), so the ring a capture holds says what its newest
+    /// frames ran at and nothing about the frames before them. The seed
+    /// covers the summon band's close-up states `0x33` / `0x34`
+    /// ([`legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES`]): each
+    /// pass there re-arms `FUN_801DC0A0` case `0x12`'s three-frame tween,
+    /// which the walker lands in one step at step `3` and trails at step
+    /// `2`, and the states last a few frames, inside the ring's window.
+    /// Seeded into every action state alike, the step moved the battle
+    /// corpus's camera mean down (`.9699 -> .9653`, N=102): the strike and
+    /// module states' other per-frame paths are not generalised to another
+    /// step yet.
+    pub fn frame_step_seed(&self) -> Option<(u8, u8)> {
+        let in_action = matches!(self.seed_plan(), SeedPlan::Action { .. } | SeedPlan::Cast);
+        (in_action
+            && legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES.contains(&self.action_state)
+            && self.frame_step != legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP)
+            .then_some((self.frame_step, self.action_state))
+    }
+
     /// How the seed has to place the engine for this capture.
     pub fn seed_plan(&self) -> SeedPlan {
         if OPENING_FLOWS.contains(&self.flow) {
@@ -1237,6 +1267,7 @@ impl RetailBattle {
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
+            frame_step: frame_step(ram),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
@@ -1712,6 +1743,9 @@ pub fn run_engine_battle(
     let field_word = session.host.bgm_track_word.or(director.last);
     let field_current = session.host.world.audio.current_bgm;
     session.host.world.rng_state = rng_seed;
+    if let Some((step, state)) = battle.frame_step_seed() {
+        session.host.world.seed_battle_frame_step(step, state);
+    }
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");
     }

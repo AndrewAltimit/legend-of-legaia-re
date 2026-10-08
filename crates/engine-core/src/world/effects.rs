@@ -306,6 +306,7 @@ impl World {
         // `ctx[+0x27]` in its jump's delay slot (`sb zero, 0x16(s5)` at
         // `0x801E3A84`, `s5 = ctx + 0x11`), for monsters' chains as well as
         // the party's - so each attacking action gets one steal roll.
+        self.apply_battle_frame_step_seed();
         if let StepOutcome::Transition { from, to } = out {
             self.battle.steal.on_action_transition(from, to);
             // A new action's seed ends whatever flight held the last one's

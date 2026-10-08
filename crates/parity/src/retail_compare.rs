@@ -3167,6 +3167,11 @@ fn battle_image(
     }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
+    // The capture's own frame step over its last stretch, as the headless
+    // seed ran it (`RetailBattle::frame_step_seed`).
+    if let Some((step, state)) = battle.frame_step_seed() {
+        env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}")));
+    }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
     if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.display_phase_gate()) {

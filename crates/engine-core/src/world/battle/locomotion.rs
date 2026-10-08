@@ -503,8 +503,11 @@ impl World {
         }
         let (sin, cos) = motion::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, speed, 1, scale);
-        let tick = self.clock.display_frames;
-        let (dx, dz) = self.actors[slot].battle.root_carry.step(tick, raw);
+        let frame = self.battle_frame_id();
+        let (dx, dz) = self.actors[slot]
+            .battle
+            .root_carry
+            .step_in_frame(frame, raw);
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = ms.world_x.wrapping_add(dx as i16);
         ms.world_z = ms.world_z.wrapping_add(dz as i16);
@@ -534,8 +537,11 @@ impl World {
         let (speed, scale) = self.battle_root_motion_of(slot);
         let (sin, cos) = motion::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, speed.abs(), 1, scale);
-        let tick = self.clock.display_frames;
-        let (dx, dz) = self.actors[slot].battle.root_carry.step(tick, raw);
+        let frame = self.battle_frame_id();
+        let (dx, dz) = self.actors[slot]
+            .battle
+            .root_carry
+            .step_in_frame(frame, raw);
         // Per-axis clamp at the target's live position: a step never crosses
         // the body it is walking at (engine guard - retail's gate alone
         // suffices when the target sits at its seat).

@@ -72,7 +72,8 @@ impl BattleCamera {
         self.entry_sweep
     }
 
-    /// One camera step (two display frames) of the entry sweep. Returns
+    /// One camera step ([`BattleCamera::frame_step`] display frames) of the
+    /// entry sweep. Returns
     /// `false` once the sweep is over.
     pub(super) fn step_entry_sweep(&mut self) -> bool {
         let Some(counter) = self.entry_sweep else {
@@ -87,7 +88,7 @@ impl BattleCamera {
             self.hand_over_from_entry_sweep();
             return false;
         }
-        let fs = 2.0;
+        let fs = f32::from(self.frame_step);
         if counter < ENTRY_CASE2_FROM {
             self.pose.tr[1] += ENTRY_DRIFT_TR_Y * fs;
             self.pose.tr[2] -= ENTRY_DRIFT_TR_Z * fs;
@@ -99,12 +100,18 @@ impl BattleCamera {
                 focus: [0.0; 3],
             };
             let mut from = self.pose;
-            let g = Glide::chase(&mut from, target, ENTRY_CASE2_TR_Z_RAW, ENTRY_CASE2_FRAMES);
+            let g = Glide::chase(
+                &mut from,
+                target,
+                ENTRY_CASE2_TR_Z_RAW,
+                ENTRY_CASE2_FRAMES,
+                f32::from(self.frame_step),
+            );
             self.pose = from;
             self.step_components(&g);
             self.pose.yaw = self.pose.yaw.rem_euclid(4096.0);
         }
-        let next = counter + 2;
+        let next = counter + u32::from(self.frame_step);
         if next > ENTRY_COUNTER_LAST {
             self.entry_sweep = None;
             self.hand_over_from_entry_sweep();

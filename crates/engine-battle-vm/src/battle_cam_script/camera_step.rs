@@ -42,6 +42,7 @@ impl BattleCamera {
             glides: std::collections::VecDeque::new(),
             last_frames: frames_now,
             frame_accum: 0,
+            frame_step: DEFAULT_CAMERA_FRAME_STEP,
             actor,
             formation,
             target: None,
@@ -768,10 +769,26 @@ impl BattleCamera {
             (elapsed as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
         );
         self.frame_accum += elapsed;
-        while self.frame_accum >= 2 {
-            self.frame_accum -= 2;
+        let step = u64::from(self.frame_step.max(1));
+        while self.frame_accum >= step {
+            self.frame_accum -= step;
             self.step_once();
         }
+    }
+
+    /// Run the camera on a frame step of `vsyncs` from here on: a step every
+    /// `vsyncs` display frames, each walker increment scaled by it, as
+    /// retail's walker scales by `DAT_1F800393`. Retail measures that step
+    /// per frame from the frame's own cost (`FUN_80016B6C`), so the engine's
+    /// play runs the default; a replay that knows the step retail ran at
+    /// (the retail-compare drive, off a capture's frame-time ring) sets it.
+    pub fn set_frame_step(&mut self, vsyncs: u8) {
+        self.frame_step = vsyncs.max(1);
+    }
+
+    /// The camera's frame step in vsyncs ([`Self::set_frame_step`]).
+    pub fn frame_step(&self) -> u8 {
+        self.frame_step
     }
 
     /// One step of the walker toward the per-art pose.
@@ -810,6 +827,7 @@ impl BattleCamera {
             target,
             i32::from(f.pose.dist[2]),
             u32::from(f.duration_frames),
+            f32::from(self.frame_step),
         );
         self.pose = from;
         self.step_components(&g);
@@ -848,7 +866,13 @@ impl BattleCamera {
         let live = self.action_pose();
         let raw_z = self.live_action_framing().raw_z();
         let mut from = self.pose;
-        let g = Glide::chase(&mut from, live, raw_z, ACTION_STEPS * 2);
+        let g = Glide::chase(
+            &mut from,
+            live,
+            raw_z,
+            ACTION_STEPS * 2,
+            f32::from(self.frame_step),
+        );
         self.pose = from;
         self.glides.clear();
         self.glides.push_back(g);
@@ -920,7 +944,13 @@ impl BattleCamera {
     /// converge on the depth the pose took, not on the unmoved one.
     pub(super) fn retarget_post_action_glide(&mut self, live: BattleCamPose, raw_z: i32) {
         let mut from = self.pose;
-        let g = Glide::chase(&mut from, live, raw_z, POST_ACTION_STEPS * 2);
+        let g = Glide::chase(
+            &mut from,
+            live,
+            raw_z,
+            POST_ACTION_STEPS * 2,
+            f32::from(self.frame_step),
+        );
         self.pose = from;
         self.glides.clear();
         self.glides.push_back(g);
@@ -981,7 +1011,13 @@ impl BattleCamera {
                 let (target, raw_z) =
                     summon_cast_framing(self.actor, self.acting_body, c.accum, c.ramp);
                 let mut from = self.pose;
-                let g = Glide::chase(&mut from, target, raw_z, SUMMON_CAST_TWEEN_FRAMES);
+                let g = Glide::chase(
+                    &mut from,
+                    target,
+                    raw_z,
+                    SUMMON_CAST_TWEEN_FRAMES,
+                    f32::from(self.frame_step),
+                );
                 self.pose = from;
                 self.glides.clear();
                 self.step_components(&g);
@@ -1003,7 +1039,7 @@ impl BattleCamera {
                 if let Some(mut si) = self.spell_cam.take() {
                     si.accum = self.attack.ctx.accum;
                     si.live_yaw = self.pose.yaw;
-                    si.frame_step = SPELL_CAM_FRAME_STEP;
+                    si.frame_step = self.frame_step;
                     if let Some(shot) = spell_cam_case(&si).shot {
                         let mut from = self.pose;
                         let steps = (shot.frames / 2).max(1);

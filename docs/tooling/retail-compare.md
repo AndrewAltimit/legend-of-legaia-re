@@ -1872,17 +1872,18 @@ is checkable even where the pose is not. Two seeding limits follow.
   and trails its target by `14` units at step `2`, and the captures split
   that way: `theeder`, `gizam` and `nighto_summon_mid_cast` were saved on a
   step-`3` frame and read landed, `freed` and `swordie` on step `2` and read
-  the lag. The engine runs a fixed step `2`, so on a step-`3` capture it shows
-  the lag retail did not have. Seeding retail's step into the engine clock
-  would change every actor's cadence, not only the camera, so the corpus
-  keeps it as a seeding limit. On `theeder_summon_mid_cast` the lag is most
-  of what the `image` channel reads (the capture is in `0x33`, ahead of
-  PROT 0904's own arms, so the module's pacing does not reach it): the
-  close-up's eye sits `76` units
-  further back (TR z `2392` against `2316`), so the caster draws smaller and
-  higher, and the monster seated between the camera and the caster - a
-  near-camera ghost on both sides (`+0x08 = 0x83000000`, `B + F/4`) - spans
-  more of the frame.
+  the lag. The capture's step is recoverable - the frame driver keeps the
+  last sixteen frame times in RAM
+  ([battle](../subsystems/battle.md#the-battle-frame-step-is-the-frames-own-cost)),
+  and the step is their maximum - but only that window of it. A capture in
+  `0x33` / `0x34` whose step is not the engine's `2` has the drive install
+  it from the first tick of its state (`RetailBattle::frame_step_seed`,
+  `LEGAIA_BATTLE_FRAME_STEP` for the image child): `theeder` `image` `.380`
+  to `.538`, `nighto` `.876` to `.984`. Seeded into every action state
+  alike, the step lowered the battle camera mean (`.9699` to `.9653`, the
+  strike loop's `battle_vahn_tri_somersault_super` and the module states
+  losing most): their other per-frame paths are still written for step
+  `2`, so the corpus keeps the rest as a seeding limit.
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`

@@ -497,6 +497,10 @@ pub struct BattleState {
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
     pub vram_scrolls: Vec<crate::world::ambient::vram_scroll::VramScrollFx>,
+    /// How the engine's one-vsync ticks group into battle frames - the unit
+    /// the root-motion carry truncates over and the camera steps on
+    /// ([`crate::world::World::set_battle_frame_step`]).
+    pub frame_clock: crate::world::battle::BattleFrameClock,
     /// Battle VRAM uploads a cast's side-band stream made this frame - the
     /// `summon.dat` texture slots a player summon's case `0x32` streams to
     /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
@@ -789,6 +793,7 @@ impl BattleState {
             backdrop_rebound: false,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
+            frame_clock: Default::default(),
             vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,

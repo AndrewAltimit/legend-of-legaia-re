@@ -2076,6 +2076,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                 frames += 1;
                 let inputs = BattleCamInputs {
                     target: None,
+                    frame_step: 0,
                     entry_yaw: 0.0,
                     phase: phase_for_state(false, false, state, done),
                     acting: Some(BattleCamActor::default()),
@@ -2705,4 +2706,34 @@ fn gaza2_park_action_framing_matches_the_retail_step_targets() {
     assert_eq!(pose.tr[1], 1280.0);
     assert_eq!(pose.tr[2], 5324.0, "the live TR z");
     assert_eq!(pose.focus, [-785.0, 0.0, 39.0]);
+}
+
+/// A camera on a frame step of three steps once every three display frames
+/// and scales the walker by three: the summon close-up's three-frame tween
+/// (`a3 = 3`) then lands every step, where at the default step of two it
+/// covers two thirds of the gap and trails a moving target.
+#[test]
+fn a_frame_step_of_three_steps_every_third_frame_and_lands_a_three_frame_tween() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    assert_eq!(cam.frame_step(), DEFAULT_CAMERA_FRAME_STEP);
+    cam.set_frame_step(3);
+    let start = cam.last_frames;
+    cam.advance_to(start + 2);
+    assert_eq!(cam.frame_accum, 2, "two frames bank, no step yet");
+    cam.advance_to(start + 3);
+    assert_eq!(cam.frame_accum, 0, "the third frame fires the step");
+
+    let pose = |yaw: f32| BattleCamPose {
+        pitch: 0.0,
+        yaw,
+        tr: [0.0, 0.0, 0.0],
+        focus: [0.0; 3],
+    };
+    for (step, landed) in [(3.0, 300.0), (2.0, 200.0)] {
+        let mut from = pose(0.0);
+        let g = Glide::chase(&mut from, pose(300.0), 0, 3, step);
+        cam.pose = from;
+        cam.step_components(&g);
+        assert_eq!(cam.pose.yaw, landed, "step {step}");
+    }
 }

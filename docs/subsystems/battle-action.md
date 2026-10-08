@@ -1626,7 +1626,9 @@ Three of its properties, read from the SCUS disassembly
   clip death freezes him. The shift floors once a battle frame, so a
   heading's small axis keeps a frame's worth of it; the port ticks once a
   vsync and spreads each frame's total over its ticks
-  (`motion::RootMotionCarry`, frames of two vsyncs - the strike loop's
+  (`motion::RootMotionCarry`, over the battle frames
+  `World::battle_frame_id` names - two vsyncs unless a replay installs
+  another step, [`battle.md`](battle.md#the-battle-frame-step-is-the-frames-own-cost) - the strike loop's
   swing drift `0x801E386C..0x801E3994` takes the same carry). A per-tick
   shift had floored any axis under a unit a vsync to nothing: Vahn's
   strikes at heading `142` drifted straight up the `z` axis.

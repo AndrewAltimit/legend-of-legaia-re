@@ -1732,6 +1732,45 @@ and `5` are the same no-op tail slot:
 | `8` | `0x801D67D0` | end-of-action | the target |
 | `9` | `0x801D6EF4` | far Begin/Run framing | formation centre |
 
+### The battle frame step is the frame's own cost
+
+Every per-frame battle path - the camera walker `FUN_8002149C`, the effect
+waits, the root-motion term - scales by the frame step `DAT_1F800393`, and
+the frame driver `FUN_80016B6C` rebuilds that byte every frame from what the
+frame cost. The newest frame time (`FUN_800173BC`'s `VSync(1)` hblank
+count) goes into a sixteen-entry ring at `0x80084098`, index `gp+0x440`,
+clamped to `0x2BC` at `0x2D0` or more (`0x80017098..0x800170CC`); the step
+is the ring's maximum against `0xF1` / `0x1FF` / `0x2D1` - `1` / `2` / `3`,
+else `4` (`0x80017108..0x8001715C`) - raised to the floor `0x8007B9D8`
+(`0x80017170..0x80017198`). Only mode word `gp+0x4CE == 0x10` measures; a
+non-zero `gp+0x5D8` forces the step instead.
+
+The battle's floor is `1` in every catalogued battle state, so its step is
+the load alone and is not a property of the game state. Across the
+battle captures the ring reads `2` on about three in five; summon close-ups,
+module casts, the arts input and the Spirit-heavy Delilas fights read `3`
+(`theeder_summon_mid_cast` peaks at `625`, `gimard_burning_attack` sits at
+the `700` clamp), and two light casts and the battle-loading frame read
+`1`. A capture recovers only its newest sixteen frames this way:
+`gp+0x480` counts frames and the libetc vsync count `0x8007A894` counts
+vsyncs, but the frame counter restarts somewhere no `SCUS_942.54` store
+shows (only its increment at `0x80016BA8` is there) and nothing records the
+vsync count beside it, so the steps of a whole fight are lost. Two captures of
+one session show how mixed they are: `player_steal_skeleton_pre` to
+`_banner` is `304` vsyncs over `115` frames.
+
+The engine ticks once a vsync, which keeps every per-vsync rate whatever
+the step; the step only places the frame boundaries. `BattleFrameClock`
+groups the ticks into frames - two vsyncs by default - for the root-motion
+carry and the camera (`BattleCamera::set_frame_step`, which the walker's
+increments and the entry sweep also scale by). Play keeps the default; a
+replay that knows retail's step installs it (`World::seed_battle_frame_step`,
+from the first tick of a given action state). The retail-compare drive
+does so for a capture in the summon close-up `0x33` / `0x34`, where each
+pass re-arms case `0x12`'s three-frame tween: at step `3` the walker lands
+it every pass, at `2` it trails
+([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
+
 ### The post-strike two-shot (`FUN_801D5854` cases 7 and 8)
 
 Case `7` is the only framing in the set that orbits **both** combatants. Its
