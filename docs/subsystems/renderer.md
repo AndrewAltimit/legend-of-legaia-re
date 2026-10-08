@@ -2839,15 +2839,19 @@ the fade circle.
 "See-through walls" checkbox): `occl_keep` / `occl_bayer` GLSL twins in
 `site/js/webgl-shaders.js` (tunables mirrored at the top of that file -
 keep them in lockstep with `occlusion_fade.rs`), staged through
-`TmdRenderer.setOcclusionFocus(world_pos, strength, feet_pos)` (both points
-from the engine's `play_occlusion_focus` export) - `renderAssembled`
+`TmdRenderer.setOcclusionFocus(world_pos, strength, feet_pos)` (strength and
+both points from the engine's `play_occlusion_fade` export) - `renderAssembled`
 projects the focus with the same view-projection it builds for the scene
 draws, so the page never duplicates camera math - and the per-draw actor
 exemption rides the `u_occl_allow` uniform (`noOccl` on the player / NPC
-placements). `play-app.js` runs the same gate through the runtime's
-`field_player_occluded` export (falling back to always-armed on a stale
-wasm bundle) and clears the focus for battle and VR first-person (where
-the eye *is* the player). The other WebGL pages never stage a focus, so
+placements). The export runs the whole frame through the kernels the
+native window runs: the arming terms combine in
+`field_occlusion::host_fade_armed` (the host's toggle, a debug or VR
+first-person eye, a boot or menu-runtime screen owning the frame, plus the
+world's field mode, scripted shot and name-entry prompt), the visibility gate
+is `FieldOccluders::fully_occluded`, and the strength ramp is
+`field_occlusion::FadeRamp` (a quarter of the gap per frame, snapped and
+unstaged inside `0.01`). The other WebGL pages never stage a focus, so
 they are untouched.
 
 The host stages the focus in **field free-roam only** - the player's floor

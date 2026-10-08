@@ -307,6 +307,50 @@ impl LegaiaRuntime {
         }
     }
 
+    /// One frame of the camera-occlusion fade, gate to ramp, through the
+    /// kernels the native window's `stage_occlusion_fade` runs:
+    /// `field_occlusion::host_fade_armed` over the page's own terms, the
+    /// visibility gate against `eye_*` (RAW retail Y-down world - the page
+    /// negates its `_eye()` Y on the way in), then `FadeRamp::step`.
+    ///
+    /// `[strength, centre xyz, feet xyz]` in the page's Y-up draw frame when
+    /// a focus is to be staged, empty otherwise. The page used to carry the
+    /// ramp's ease and snap in `play-app.js`.
+    pub fn play_occlusion_fade(
+        &mut self,
+        eye_x: f32,
+        eye_y: f32,
+        eye_z: f32,
+        enabled: bool,
+        debug_camera: bool,
+        screen_owned: bool,
+    ) -> Vec<f32> {
+        use legaia_engine_core::field_occlusion as fo;
+        let cutscene = self.cutscene_owns_frame();
+        let terms = fo::FadeHostTerms {
+            enabled,
+            debug_camera,
+            screen_owned,
+        };
+        let focus = self.scene_host.host().and_then(|host| {
+            let w = &host.world;
+            if !fo::host_fade_armed(w, cutscene, terms) {
+                return None;
+            }
+            Some((fo::player_body_centre(w)?, fo::player_feet(w)?))
+        });
+        let Some((c, f)) = focus else {
+            self.occl_fade.reset();
+            return Vec::new();
+        };
+        let hidden = self.field_player_occluded(eye_x, eye_y, eye_z);
+        match self.occl_fade.step(hidden) {
+            // Retail Y-down -> the page's Y-up draw frame.
+            Some(s) => vec![s, c[0], -c[1], c[2], f[0], -f[1], f[2]],
+            None => Vec::new(),
+        }
+    }
+
     /// Project the lead onto the 240-line stage and hand the result to the
     /// field party HUD's decision kernel - the browser twin of the native
     /// window's `field_hud_projected_player_y`, and now the same derivation:

@@ -173,6 +173,11 @@ pub struct LegaiaRuntime {
     /// The last tick's screen primitives before the shop fade, and the index
     /// the fade goes in at ([`crate::play_battle`]'s `rebuild_screen_geom`).
     pub(crate) screen_prims_base: (Vec<legaia_engine_ui::screen_prim::ScreenPrim>, usize),
+    /// The camera-occlusion fade's strength ramp
+    /// (`engine-core::field_occlusion::FadeRamp`), stepped once per drawn
+    /// field frame by [`Self::play_occlusion_fade`] - the native window's
+    /// `occl_fade_strength` twin.
+    pub(crate) occl_fade: legaia_engine_core::field_occlusion::FadeRamp,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -401,6 +406,7 @@ impl LegaiaRuntime {
             disc_files: Vec::new(),
             battle_intro_geom: None,
             screen_prims_base: (Vec::new(), 0),
+            occl_fade: Default::default(),
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
             passive_hud_icons: Vec::new(),

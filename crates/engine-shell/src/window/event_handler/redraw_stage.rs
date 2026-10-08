@@ -513,29 +513,31 @@ impl PlayWindowApp {
         //    camera only - cutscene framing is authored, the debug
         //    orbit is a dev vantage, and battle / world map / boot UI
         //    frame their own subjects.
-        // 2. The **strength ramp**: ease toward the gate verdict a
-        //    quarter of the gap per frame (`OCCL_STRENGTH_EASE`,
-        //    mirrored by the browser play page's ramp) so the
-        //    screen-door dissolves in/out instead of popping while
-        //    the gate flips at cover edges.
+        // 2. The **strength ramp** (`field_occlusion::FadeRamp`, the
+        //    one the browser play page steps too): ease toward the gate
+        //    verdict so the screen-door dissolves in/out instead of
+        //    popping while the gate flips at cover edges.
         //
         // The staged focus is the player's body centre: the floor
         // tier under the actor (the same sampler the follow camera
         // anchors to) lifted half a character height (~130-unit mesh;
         // field world is retail Y-down, so up is negative).
-        const OCCL_STRENGTH_EASE: f32 = 0.25;
-        // The world half of the gate is the shared kernel
-        // (`field_occlusion::fade_armed`: field mode, no scripted shot);
-        // what stays here is genuinely this host's - its master toggle,
-        // a boot / pause panel owning the screen, and the `F3` debug
-        // vantage. The browser play page reads the same split.
-        let occl_focus = (self.occlusion_fade
-            && !self.boot_ui.is_active()
-            && !self.field_debug_camera
-            && legaia_engine_core::field_occlusion::fade_armed(
-                &self.session.host.world,
-                cutscene_cam.is_some(),
-            ))
+        //
+        // Arming is the shared `field_occlusion::host_fade_armed`: the
+        // world half (field mode, no scripted shot, no name-entry
+        // prompt) and this host's terms - its master toggle, the `F3`
+        // debug vantage, and a boot / menu-runtime screen owning the
+        // frame. The browser play page fills the same terms.
+        let host_terms = legaia_engine_core::field_occlusion::FadeHostTerms {
+            enabled: self.occlusion_fade,
+            debug_camera: self.field_debug_camera,
+            screen_owned: self.boot_ui.is_active() || self.menu_runtime.is_open(),
+        };
+        let occl_focus = legaia_engine_core::field_occlusion::host_fade_armed(
+            &self.session.host.world,
+            cutscene_cam.is_some(),
+            host_terms,
+        )
         .then(|| legaia_engine_core::field_occlusion::player_body_centre(&self.session.host.world))
         .flatten();
         let mut occl_staged = false;
@@ -568,14 +570,10 @@ impl PlayWindowApp {
                     self.field_occluders.fully_occluded(eye.to_array(), centre)
                 })
                 .unwrap_or(false);
-            let target = if fully_hidden { 1.0 } else { 0.0 };
-            let mut s = self.occl_fade_strength.get();
-            s += (target - s) * OCCL_STRENGTH_EASE;
-            if (s - target).abs() < 0.01 {
-                s = target;
-            }
-            self.occl_fade_strength.set(s);
-            if s > 0.01 {
+            let mut ramp = self.occl_fade_strength.get();
+            let staged = ramp.step(fully_hidden);
+            self.occl_fade_strength.set(ramp);
+            if let Some(s) = staged {
                 let clip = cam * Vec4::new(centre[0], centre[1], centre[2], 1.0);
                 if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
                     log::info!("occl-gate: staging focus clip {:?} strength {s:.2}", clip);
@@ -595,7 +593,7 @@ impl PlayWindowApp {
                 occl_staged = true;
             }
         } else {
-            self.occl_fade_strength.set(0.0);
+            self.occl_fade_strength.set(Default::default());
         }
         if !occl_staged {
             r.clear_occlusion_focus();

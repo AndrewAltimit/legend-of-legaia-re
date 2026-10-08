@@ -1600,7 +1600,7 @@ pub(super) fn cmd_play_window_with_record(
         dyn_shadows,
         occlusion_fade,
         field_occluders: Default::default(),
-        occl_fade_strength: std::cell::Cell::new(0.0),
+        occl_fade_strength: std::cell::Cell::new(Default::default()),
         scene_point_lights: Vec::new(),
         scene_prop_lights: Vec::new(),
         orbit_drag_last_x: None,

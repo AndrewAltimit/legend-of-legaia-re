@@ -4265,6 +4265,18 @@ banner and the cheats panel. Closed rows:
   (the page runs a footstep timer that keys nothing), and the casino prize
   counter's cues.
 
+## Per-frame decisions moved out of the hosts
+
+A side-by-side read of the native redraw and the play page found decisions
+each host had written out for itself - some in Rust on both sides, some in
+`play-app.js` - several of which had already drifted. Each is now one engine
+kernel both hosts call, pinned by a tier-3 `SIM_PAIRS` row on the kernel's
+name so a host that re-spells the decision locally fails the gate.
+
+| decision | kernel | what had drifted |
+|---|---|---|
+| occlusion-fade arming + strength ramp | `field_occlusion::host_fade_armed`, `FadeRamp` | the page carried the ramp's ease and snap in JS; the native window kept dissolving walls behind the pause menu and a name-entry prompt |
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;

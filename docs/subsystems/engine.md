@@ -320,7 +320,7 @@ Two responsibilities fall to any host that enters a scene without a door to arri
   - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
   - Hosts seating a player manually should also avoid gate-1 walk-on trigger tiles ([`SceneHost::tile_has_walk_on_trigger`]) - the first tick would fire it and warp the scene away.
   - If an entry-spawned record ends with the player parked inside a wall (a first-visit record's `MoveTo` choreography, e.g. izumi's spring), the helper-context teardown re-seats them at the resolved spawn (`World::step_helper_contexts`).
-- **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)), and neither culls geometry: a wall or roof between the lens and the player is handled by the camera-occlusion fade ([Fidelity and enhancements](#fidelity-and-enhancements)), which the browser stages through `play_occlusion_focus`.
+- **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)), and neither culls geometry: a wall or roof between the lens and the player is handled by the camera-occlusion fade ([Fidelity and enhancements](#fidelity-and-enhancements)), which the browser stages through `play_occlusion_fade`.
 
 ## Provenance + memory hygiene
 

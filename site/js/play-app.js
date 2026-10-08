@@ -599,11 +599,6 @@ void main() {
        * the focus itself is staged per field frame in `_frame` and never
        * during battle or VR first-person. */
       this.occlusionFade = true;
-      /* Eased occlusion-fade strength (0..1): ramps toward the visibility
-       * gate's verdict a quarter of the gap per frame (the native
-       * redraw.rs OCCL_STRENGTH_EASE twin) so the screen-door dissolves
-       * in/out instead of popping while the gate flips at cover edges. */
-      this._occlStrength = 0;
       /* Retail pause menu (Start): the state + navigation live in the engine
        * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
        * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
@@ -2862,67 +2857,25 @@ void main() {
       /* In VR first-person there is no third-person lens: the eye IS the
        * player, so nothing can "sit between" them - draw everything. */
       const fpLive = this._vrFp && this.vr && this.vr.isActive();
-      /* Camera-occlusion fade, two halves (native redraw.rs twin):
-       * 1. Visibility gate - the engine ray-casts a 5-point eye->player
-       *    cross against the static scene triangles (the shared
-       *    engine-core::field_occlusion kernel) and the fade arms only
-       *    when EVERY sample is blocked: a partially visible character
-       *    gets no fade at all. The kernel wants the eye in retail
-       *    Y-down world, so the draw-frame `_eye()` Y negates on the way
-       *    in. A wasm bundle predating the export falls back to the
-       *    always-armed fade rather than losing the feature.
-       * 2. Strength ramp - ease toward the verdict so the screen-door
-       *    dissolves in/out instead of popping at cover edges.
-       * The staged focus is the player's body centre (the same point the
-       * dead cull below used - draw frame, +90 up from the feet); the
-       * renderer projects it with the frame's own camera. */
-      /* The host's own arming terms, beside the engine's. The native window
-       * excludes its boot UI, the world map, a scripted shot and its `F3`
-       * debug vantage; this page excluded only battle and the minigames, so
-       * a pause menu, a name-entry prompt or a cutscene kept dissolving the
-       * walls behind them. The world-side half (field mode, no cutscene
-       * camera, a live player, the body centre itself) is the engine's
-       * `play_occlusion_focus`. */
-      const occlHostOk = this.occlusionFade && !fpLive && !this.debugCamera
-        && !menuOpen && !shopOpen && !namingOpen;
-      let occlFocus = null;
-      /* The floor point under the character (the feet-line rule's anchor):
-       * the engine's `player_feet`, the same floor-tier sample as the focus.
-       * A bundle predating it hands back 3 floats - the rule stays off. */
-      let occlFeet = null;
-      if (occlHostOk) {
-        if (typeof rt.play_occlusion_focus === 'function') {
-          try {
-            const f = rt.play_occlusion_focus();
-            if (f && f.length >= 3) occlFocus = [f[0], f[1], f[2]];
-            if (f && f.length >= 6) occlFeet = [f[3], f[4], f[5]];
-          } catch (_) { occlFocus = null; }
-        } else {
-          /* Cached-bundle fallback: the actor origin, which is the reading
-           * that put the hole off the character on any tile whose floor tier
-           * differs from the actor's own Y. */
-          occlFocus = [pt[0], -pt[1] + HALF_CHAR_HEIGHT, pt[2]];
-        }
-      }
-      if (occlFocus) {
-        let hidden = true;
-        if (typeof rt.field_player_occluded === 'function') {
+      /* Camera-occlusion fade (see-through walls): the engine's
+       * `play_occlusion_fade` runs the whole frame - the shared arming
+       * kernel (`field_occlusion::host_fade_armed`) over this page's terms,
+       * the 5-point visibility gate against the eye (retail Y-down, so the
+       * draw-frame `_eye()` Y negates on the way in) and the `FadeRamp`
+       * the native window steps. It answers `[strength, centre, feet]`
+       * when a focus is to be staged. The centre is the point the gate
+       * tested (`field_occlusion::player_body_centre`); the feet anchor the
+       * feet-line rule. A bundle predating the export draws no fade. */
+      if (typeof rt.play_occlusion_fade === 'function') {
+        let f = null;
+        try {
           const eye = this._eye();
-          hidden = !!rt.field_player_occluded(eye[0], -eye[1], eye[2]);
+          f = rt.play_occlusion_fade(eye[0], -eye[1], eye[2], !!this.occlusionFade,
+            !!(fpLive || this.debugCamera), !!(menuOpen || shopOpen || namingOpen));
+        } catch (_) { f = null; }
+        if (f && f.length >= 7) {
+          this.renderer.setOcclusionFocus([f[1], f[2], f[3]], f[0], [f[4], f[5], f[6]]);
         }
-        const target = hidden ? 1 : 0;
-        this._occlStrength += (target - this._occlStrength) * 0.25;
-        if (Math.abs(this._occlStrength - target) < 0.01) this._occlStrength = target;
-        if (this._occlStrength > 0.01) {
-          /* The focus IS the point `field_player_occluded` tested - the one
-           * `engine-core::field_occlusion::player_body_centre` kernel, which
-           * is why it arrives from the engine rather than being rebuilt
-           * here. Staging the fade at a different height than the gate proved
-           * occluded put the hole ~37px above the character's body centre. */
-          this.renderer.setOcclusionFocus(occlFocus, this._occlStrength, occlFeet);
-        }
-      } else {
-        this._occlStrength = 0;
       }
       if (OCCLUDER_CULL && !fpLive) {
         const eye = this._eye();
@@ -3921,7 +3874,6 @@ void main() {
     setOcclusionFade(on) {
       this.occlusionFade = !!on;
       if (!this.occlusionFade) {
-        this._occlStrength = 0;
         if (this.renderer) this.renderer.clearOcclusionFocus();
       }
     }

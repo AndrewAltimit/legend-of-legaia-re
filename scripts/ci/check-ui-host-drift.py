@@ -922,13 +922,21 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hole sat off the character. Its arming operands had drifted the same "
         "way - the native window excludes the boot UI, the world map, a "
         "scripted shot and the debug orbit, the page excluded only battle and "
-        "the minigames. Both sites must reach the shared kernels",
+        "the minigames, and the page carried the strength ramp's 0.25 ease "
+        "and 0.01 snap in play-app.js. The arming terms combine in "
+        "`field_occlusion::host_fade_armed` and the ramp is "
+        "`field_occlusion::FadeRamp`; both sites must reach every kernel",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY_CAMERA, "play_occlusion_focus"),
+            "web": (WEB_PLAY_CAMERA, "play_occlusion_fade"),
         },
         "mode": "symbols_all",
-        "symbols": ["player_body_centre", "player_feet"],
+        "symbols": [
+            "player_body_centre",
+            "player_feet",
+            "host_fade_armed",
+            "FadeHostTerms",
+        ],
     },
     {
         "what": "`apply == 0` Camera Configure snap beats, native vs play "

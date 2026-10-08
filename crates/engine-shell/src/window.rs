@@ -1445,7 +1445,7 @@ struct PlayWindowApp {
     /// so the screen-door dissolves in/out instead of popping while the
     /// gate flickers at cover edges. `Cell` because the redraw pass updates
     /// it while the renderer borrow is live.
-    occl_fade_strength: std::cell::Cell<f32>,
+    occl_fade_strength: std::cell::Cell<legaia_engine_core::field_occlusion::FadeRamp>,
     /// The current scene's derived point lights (world space), rebuilt by
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.
