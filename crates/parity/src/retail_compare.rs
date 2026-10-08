@@ -1049,8 +1049,25 @@ pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient:
                 scale: game_anchors::u16_at(ram, n + 0x72),
                 colour: game_anchors::u32_at(ram, n + 0x74),
                 level: game_anchors::u16_at(ram, n + 0x78),
+                pose: retail_pose_entries(ram, n),
             })
         })
+        .collect()
+}
+
+/// A mode-6 node's packed pose (`+0x4C` block: part count byte at `+0`,
+/// 8-byte entries from `+8`), or empty for any other node.
+fn retail_pose_entries(ram: &[u8], n: u32) -> Vec<[u8; 8]> {
+    if game_anchors::i16_at(ram, n + 0x5A) != 6 {
+        return Vec::new();
+    }
+    let block = game_anchors::u32_at(ram, n + 0x4C);
+    if (block & 0xFFE0_0000) != 0x8000_0000 {
+        return Vec::new();
+    }
+    let count = u32::from(game_anchors::u8_at(ram, block));
+    (0..count.min(32))
+        .map(|i| std::array::from_fn(|b| game_anchors::u8_at(ram, block + 8 + i * 8 + b as u32)))
         .collect()
 }
 
@@ -1059,8 +1076,13 @@ pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient:
 pub fn sprite_arms_env(s: &[legaia_engine_core::world::ambient::SpriteArmSeed]) -> String {
     s.iter()
         .map(|a| {
+            let pose: String = a
+                .pose
+                .iter()
+                .flat_map(|e| e.iter().map(|b| format!("{b:02x}")))
+                .collect();
             format!(
-                "{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{pose}",
                 a.record_off,
                 a.pos[0],
                 a.pos[1],
@@ -1081,8 +1103,20 @@ pub fn sprite_arms_env(s: &[legaia_engine_core::world::ambient::SpriteArmSeed]) 
 pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
     s.split(';')
         .filter_map(|e| {
-            let v: Vec<i64> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let mut fields: Vec<&str> = e.split(',').collect();
+            let pose_hex = if fields.len() == 11 {
+                fields.pop()?
+            } else {
+                ""
+            };
+            let v: Vec<i64> = fields
+                .iter()
+                .filter_map(|x| x.trim().parse().ok())
+                .collect();
             let [rec, x, y, z, r0, r1, r2, scale, colour, level] = <[i64; 10]>::try_from(v).ok()?;
+            let bytes: Vec<u8> = (0..pose_hex.len() / 2)
+                .filter_map(|i| u8::from_str_radix(pose_hex.get(i * 2..i * 2 + 2)?, 16).ok())
+                .collect();
             Some(legaia_engine_core::world::ambient::SpriteArmSeed {
                 record_off: rec as u32,
                 pos: [x as i16, y as i16, z as i16],
@@ -1090,6 +1124,7 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
                 scale: scale as u16,
                 colour: colour as u32,
                 level: level as u16,
+                pose: bytes.as_chunks::<8>().0.to_vec(),
             })
         })
         .collect()
@@ -3472,6 +3507,10 @@ mod tests {
             scale: 0x1000,
             colour: 0xC900_0000,
             level: 0x9B3,
+            pose: vec![
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [0xF0, 0, 0x1F, 0, 0, 0x80, 0x40, 0x80],
+            ],
         }];
         assert_eq!(sprite_arms_from_env(&sprite_arms_env(&s)), s);
     }

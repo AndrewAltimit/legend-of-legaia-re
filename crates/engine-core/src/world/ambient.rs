@@ -139,8 +139,11 @@ const MAX_PENDING_SCROLLS: usize = 64;
 /// ([`World::install_sprite_arm_snapshot`]): the stager record it runs
 /// (`+0x48` less the bundle base `_DAT_8007B8D0`), its position, rotation
 /// banks, render scale `+0x72`, far colour `+0x74` and depth-cue level
-/// `+0x78` - what the sheet's draw reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `+0x78` - what the sheet's draw reads - and, for a keyframe-pose node
+/// (`+0x5A == 6`), the 8-byte clip entries the mode-6 tail packed into its
+/// `+0x4C` block (entries from `+8`, `FUN_80021DF4` `0x80022EFC..`): where
+/// each of the node's sheets stands relative to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpriteArmSeed {
     pub record_off: u32,
     pub pos: [i16; 3],
@@ -148,6 +151,29 @@ pub struct SpriteArmSeed {
     pub scale: u16,
     pub colour: u32,
     pub level: u16,
+    pub pose: Vec<[u8; 8]>,
+}
+
+/// Seat a keyframe-pose node so its mode-6 pack reproduces `entries`: each
+/// part's current and target keyframes both hold the packed values, so the
+/// blend at any cursor packs them back byte for byte.
+fn seat_pose(st: &mut ActorState, entries: &[[u8; 8]]) {
+    if st.move_submode != 6 || entries.len() != st.keyframe_pose.len() {
+        return;
+    }
+    for (kf, e) in st.keyframe_pose.iter_mut().zip(entries) {
+        let x = i16::from(e[0]) | (i16::from(e[2] & 0x0F) << 8);
+        let y = i16::from(e[1]) | (i16::from(e[2] & 0xF0) << 4);
+        let z = i16::from(e[3]) | (i16::from(e[4] & 0x0F) << 8);
+        let (rxz, ry) = (i16::from(e[5]) << 4, i16::from(e[6]) << 4);
+        for base in [0usize, 6] {
+            kf[base + 1] = rxz;
+            kf[base + 2] = ry;
+            kf[base + 3] = x;
+            kf[base + 4] = y;
+            kf[base + 5] = z;
+        }
+    }
 }
 
 /// One live ambient move-VM part.
@@ -238,6 +264,7 @@ impl World {
             st.field_72 = seed.scale;
             st.field_74 = seed.colour;
             st.field_78 = seed.level;
+            seat_pose(st, &seed.pose);
         }
         // Retire what retail does not hold: a seeded record's surplus, and
         // every sheet of a record the state has none of.

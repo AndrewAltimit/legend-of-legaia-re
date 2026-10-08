@@ -304,6 +304,7 @@ fn a_sprite_arm_snapshot_reseats_sheets_by_record() {
         scale: 0x1000,
         colour: 0xC900_0000,
         level: 0x800,
+        pose: Vec::new(),
     };
     world.install_sprite_arm_snapshot(&[seed(100), seed(200)]);
     let live: Vec<_> = world.ambient.fx.iter().filter(|p| !p.finished).collect();
