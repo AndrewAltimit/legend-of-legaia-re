@@ -411,15 +411,26 @@ impl ScriptGate {
         }
         // An engaged placement: the engine runs the talk on its inline
         // runner, which holds the PC on a segment's start while its box is
-        // up - the same PC retail's `+0x9E` holds.
+        // up - the same PC retail's `+0x9E` holds. A multi-page box keeps
+        // the PC on its first segment and turns its pages inside the panel,
+        // marking each new page's row leads visited as the page opens; a
+        // gate on a later page is met once that page is on screen and
+        // typed, not on the turn (`town01_tetsu_topic_prompt` is parked on
+        // `+0x155`, the third page of the box `P1[10]` opens at `+0x4E`).
         if world.dialog.inline.as_ref().is_some_and(|id| {
+            let on_page = id
+                .panel
+                .as_ref()
+                .is_some_and(|p| p.row_leads().contains(&self.pc));
             id.prop_anchor.is_none()
                 && !id.done
                 && head_of(&id.bytecode) == self.head
-                && ((id.pc == self.pc
+                && (((id.pc == self.pc || on_page)
                     && id.ctx.wait_accum >= self.wait
                     && (!text || id.panel.as_ref().is_some_and(Self::page_up)))
-                    || (id.pc != self.pc && id.visited.get(self.pc).copied().unwrap_or(false)))
+                    || (id.pc != self.pc
+                        && !on_page
+                        && id.visited.get(self.pc).copied().unwrap_or(false)))
         }) {
             return true;
         }
