@@ -1202,9 +1202,22 @@ The detail lists every heading more than a sixteenth turn off with both
 values, and tags the party-bank placements (`+0x10 & 0x01000000`). Set
 `LEGAIA_RC_FACING_DUMP` to print every matched pair.
 
+A placement the ambient motion VM is turning is not scored either
+(`retail_ambient_heading`): its node runs `FUN_80038158` (`+0x10 & 0x80`, no
+script or pursue context holding it under `+0x500`), and the stream variant
+its PC sits in (`*(+0x80) + *(+0x84)`) carries a heading op - a directional
+or home-relative step, a ramp `0x04` / `0x0D`, or the wander `0x18` - before
+its loop-back. Its `+0x26` is where the stream stood at the capture instant:
+a `0x04` ramp loop's phase is ticks since the entry (`cave01`'s Piura sway
+between `0` and `0x800` on a 66-tick cycle, caught `24` ticks into a leg),
+and a wanderer's compass point is the `rand()` stream's pick, held through
+the next wait. Neither is replayed by the seed, so the heading is walk
+history exactly as the player's is. The detail counts them as `ambient`; a
+state whose only placements are ambient walkers measures no facing.
+
 The channel measures whichever leg wrote the heading - an entry pose, a
-cutscene face-at or rotate, an ambient look-around - so a miss on a wandering
-villager is usually ambient phase rather than a defect. The phase gate
+cutscene face-at or rotate, a talk snap - so a remaining miss is a leg the
+engine wrote differently or not at all. The phase gate
 samples on the first frame the engine's record reaches retail's PC, which is
 not always the frame retail is on: a record that sits on an op waiting for a
 turn to land compares the engine's turn mid-ramp against retail's landed one

@@ -339,6 +339,73 @@ pub struct ActorFacing {
     pub model: i16,
     /// `+0x10`.
     pub flags: u32,
+    /// The heading is ambient history: the actor runs the ambient motion VM
+    /// (`FUN_80038158`, [`retail_ambient_heading`]) on a stream that turns
+    /// it, so `+0x26` is where the stream's ramps and `rand()`-picked
+    /// wanders stood at the capture instant - time and stream history since
+    /// the entry, which no seed replays.
+    pub ambient: bool,
+}
+
+/// Motion-VM ops that write `+0x26`: the directional steps `0x03` / `0x19`
+/// / `0x20`, the ramps `0x04` / `0x0D`, the home-relative step `0x06` and
+/// the AABB wander `0x18` (`docs/subsystems/motion-vm.md`).
+const AMBIENT_HEADING_OPS: [u8; 7] = [0x03, 0x04, 0x06, 0x0D, 0x18, 0x19, 0x20];
+
+/// Whether actor node `n`'s heading is the ambient motion VM's: the VM is
+/// dispatched on it (`+0x10 & 0x80`), no script or pursue context holds it
+/// (`+0x10 & 0x500`, the busy test the interpreter defers to), and the
+/// variant its PC sits in (`*(+0x80) + *(+0x84)`, the variant table
+/// `[u16 selector][s16 delta]` the preamble walks) carries a heading op
+/// before its loop-back `0x01`.
+pub fn retail_ambient_heading(ram: &[u8], n: u32) -> bool {
+    use legaia_asset::man_motion::op_width;
+    let flags = game_anchors::u32_at(ram, n + 0x10);
+    if flags & 0x80 == 0 || flags & 0x500 != 0 {
+        return false;
+    }
+    let stream = game_anchors::u32_at(ram, n + 0x80);
+    if !(0x8000_0000..0x8020_0000).contains(&stream) {
+        return false;
+    }
+    let pc = stream + u32::from(game_anchors::u16_at(ram, n + 0x84));
+    // The variant whose code holds the PC.
+    let mut header = stream;
+    let mut code = None;
+    for _ in 0..64 {
+        let selector = game_anchors::u16_at(ram, header);
+        let delta = game_anchors::i16_at(ram, header + 2);
+        let end = if selector == 0xFFFF || delta <= 0 {
+            u32::MAX
+        } else {
+            header + delta as u32
+        };
+        if (header + 4..end).contains(&pc) {
+            code = Some(header + 4);
+            break;
+        }
+        if end == u32::MAX {
+            break;
+        }
+        header = end;
+    }
+    let Some(mut at) = code else {
+        return false;
+    };
+    for _ in 0..256 {
+        if at >= 0x8020_0000 {
+            break;
+        }
+        let op = game_anchors::u8_at(ram, at);
+        if AMBIENT_HEADING_OPS.contains(&op) {
+            return true;
+        }
+        match (op, op_width(op)) {
+            (0x01, _) | (_, None) => break,
+            (_, Some(w)) => at += w as u32,
+        }
+    }
+    false
 }
 
 /// The heading `+0x26` of every actor the field actor tick (`FUN_8003BC08`)
@@ -358,6 +425,7 @@ pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
                 z: game_anchors::i16_at(ram, n + 0x18),
                 model: game_anchors::i16_at(ram, n + 0x64),
                 flags: game_anchors::u32_at(ram, n + 0x10),
+                ambient: retail_ambient_heading(ram, n),
             })
         })
         .collect()
@@ -1871,6 +1939,7 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         }
     }
     let mut skipped = 0;
+    let mut ambient = 0;
     let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
     let dump = std::env::var_os("LEGAIA_RC_FACING_DUMP").is_some();
     for a in &retail.actor_facings {
@@ -1879,9 +1948,10 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         };
         if dump {
             eprintln!(
-                "facing {}: flat {} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                "facing {}: flat {}{} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
                 retail.scene,
                 a.flat,
+                if a.ambient { " (ambient)" } else { "" },
                 a.flags,
                 a.model,
                 a.x,
@@ -1901,6 +1971,13 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         let dz = f64::from(i32::from(ez) - i32::from(a.z));
         if (dx * dx + dz * dz).sqrt() > FACING_SEAT_RADIUS {
             skipped += 1;
+            continue;
+        }
+        // An ambient motion stream's heading is time and `rand()` history
+        // since the entry - the actor's walk history, as the player's is
+        // once the pad has turned it.
+        if a.ambient {
+            ambient += 1;
             continue;
         }
         parts.push(part(a.facing, e));
@@ -1929,7 +2006,7 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
     Some((
         score,
         format!(
-            "{n} actors scored, {skipped} off their retail seat; misses: [{}]",
+            "{n} actors scored, {skipped} off their retail seat, {ambient} ambient; misses: [{}]",
             miss.join("; ")
         ),
     ))
