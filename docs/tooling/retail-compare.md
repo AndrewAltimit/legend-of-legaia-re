@@ -528,7 +528,11 @@ monster's pick and target, the battle camera, the frame) moved whenever a
 field-side port changed how many draws it takes or how they are shaped,
 with nothing in the battle changed. The world stream is therefore set to a
 fixed seed just before `World::force_encounter`, on the headless seed and in
-the image child alike (`LEGAIA_BATTLE_RNG_SEED`). A capture of something a
+the image child alike (`LEGAIA_BATTLE_RNG_SEED`), and held there at the head
+of every tick of the field-side intro transition
+(`EncounterState::rng_hold`): the field's NPC and ambient programs keep
+drawing until the fight is in battle mode, and a pin before the transition
+alone let a fix to a scene's ambient installs re-deal its fights. A capture of something a
 draw decides is still one realisation of the stream, so the seeds in
 `BATTLE_RNG_SEEDS` are tried in order and the first under which the fight is
 still on, its opening reached a prompt, and the drive or replayed cast

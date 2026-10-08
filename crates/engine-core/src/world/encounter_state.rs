@@ -5,6 +5,16 @@
 
 /// Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
 pub struct EncounterState {
+    /// A tooling knob, not retail state: hold the world `rand()` stream at
+    /// this value at the head of every tick a forced encounter spends in its
+    /// field-side intro transition, and drop the hold once the fight is in
+    /// battle mode. The retail comparison corpus and `play-window --battle`
+    /// pin the stream at the entry so a fight's draws are a property of the
+    /// fight; the field keeps drawing through the transition (NPC and
+    /// ambient programs), so without the hold every field-side change to a
+    /// scene's draw count re-dealt the battle (`player_steal_skeleton_banner`
+    /// lost its phase to a dolk ambient-install fix).
+    pub rng_hold: Option<u32>,
     /// Pending scripted-encounter install (field-VM bare arm-encounter op
     /// `0x37`/`0x41`). When that op runs and [`crate::world::EncounterState::scripted_armed`]
     /// is set, the host records the bounded record window overlaying the opcode
@@ -74,6 +84,7 @@ pub struct EncounterState {
 impl EncounterState {
     pub fn new() -> Self {
         Self {
+            rng_hold: None,
             pending_scripted: None,
             scripted_armed: false,
             scripted_formation_pending: false,

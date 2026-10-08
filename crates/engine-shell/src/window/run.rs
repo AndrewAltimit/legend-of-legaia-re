@@ -327,6 +327,7 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         .and_then(|s| s.trim().parse::<u32>().ok())
     {
         world.rng_state = seed;
+        world.encounters.rng_hold = Some(seed);
     }
     if world.force_encounter(row) {
         log::info!(
@@ -334,6 +335,8 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              the normal encounter transition",
             world.active_scene_label
         );
+    } else {
+        world.encounters.rng_hold = None;
     }
 }
 

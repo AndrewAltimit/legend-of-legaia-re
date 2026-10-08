@@ -106,7 +106,10 @@ pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
 /// channel that rides the stream (monster picks, the camera and its framing,
 /// the frame) then moved whenever a field-side port changed its draw count
 /// or shape, with no change to the battle itself. Pinning the stream at the
-/// entry keeps a battle state's scores a property of the battle.
+/// entry - and holding it there through the field-side intro transition,
+/// whose NPC and ambient programs keep drawing
+/// (`EncounterState::rng_hold`) - keeps a battle state's scores a property
+/// of the battle.
 ///
 /// A capture taken on a monster's action (or on anything else a draw
 /// decides) is one realisation of the stream. When the first seed's drive or
@@ -1746,6 +1749,9 @@ pub fn run_engine_battle(
     let field_word = session.host.bgm_track_word.or(director.last);
     let field_current = session.host.world.audio.current_bgm;
     session.host.world.rng_state = rng_seed;
+    // Held through the intro transition, so the field's own draws there do
+    // not re-deal the fight (`EncounterState::rng_hold`).
+    session.host.world.encounters.rng_hold = Some(rng_seed);
     if let Some((step, state)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
     }
