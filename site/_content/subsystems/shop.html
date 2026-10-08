@@ -81,7 +81,7 @@
   <h2>Prices, purses and the Point Card</h2>
   <ul class="bullets">
     <li><strong>Buy price</strong> is the item table halfword; there is no per-shop price anywhere.</li>
-    <li><strong>Sell price</strong> is exactly half the buy price. A zero-priced item shows &ldquo;Cannot sell&rdquo;.</li>
+    <li><strong>Sell price</strong> is half the item table's price times the quantity, rounded down. A zero-priced item shows &ldquo;Cannot sell&rdquo;.</li>
     <li><strong>Stack cap 99.</strong> A row greys once the held count reaches 99, and the quantity picker clamps to <code>99 &minus; held</code>.</li>
     <li><strong>Point Card</strong> (item <code>0xFE</code>) is a third purse, passive while held. Each purchase credits <code>price / 20</code> per unit - 5% - before the gold debit; sales never accrue. A one-line toast (window 31) shows the balance after each buy.</li>
     <li><strong>Buying equipment</strong> first asks who it is for: a party row checks the equip mask and, on a match, equips immediately and returns the replaced piece to the bag.</li>
