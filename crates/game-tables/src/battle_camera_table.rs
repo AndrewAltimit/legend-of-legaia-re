@@ -35,7 +35,7 @@
 //! Static overlay data: VA `0x801F4D2C` maps to PROT 0898 file offset
 //! [`CAMERA_HEIGHT_FILE_OFFSET`] under the same link base
 //! ([`OVERLAY_LINK_BASE`]) that pins the move-power table (`0x801F4F5C` →
-//! `0x26744`; see [`crate::move_power`]) and the element-affinity matrix. The
+//! `0x26744`; see `legaia_asset::move_power`) and the element-affinity matrix. The
 //! offset falls inside the overlay's RAM-verified byte-identical `.text` +
 //! `.rodata` window, so the disc bytes are the runtime bytes.
 

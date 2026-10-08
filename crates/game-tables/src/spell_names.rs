@@ -12,7 +12,7 @@
 //!
 //! This is the table the **enemy** name lookup uses too. An enemy's cast is
 //! resolved to a *global* spell id (the monster record's magic-attack id at
-//! [`crate::monster_archive`] record `+0x21..=+0x23`), written into the live
+//! `legaia_asset::monster_archive` record `+0x21..=+0x23`), written into the live
 //! actor at `+0x1DF`, and named through `&DAT_800754D0 + id*0xC` - exactly the
 //! party path. So this parser turns a monster's magic-attack id into the same
 //! name the game prints (`0x27` -> `Tail Fire`).

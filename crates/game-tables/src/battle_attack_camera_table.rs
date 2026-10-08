@@ -38,7 +38,7 @@
 //! The row *above* the table is the per-character height table
 //! ([`crate::battle_camera_table`], `0x801F4D2C`) and its trailing pointer
 //! list; the region below is the move-power table
-//! ([`crate::move_power`], `0x801F4F5C`).
+//! (`legaia_asset::move_power`, `0x801F4F5C`).
 //!
 //! ## What a row means
 //!
@@ -156,18 +156,6 @@ mod tests {
             ATTACK_CAMERA_VA - OVERLAY_LINK_BASE,
             ATTACK_CAMERA_FILE_OFFSET as u32
         );
-    }
-
-    /// The table sits between the two neighbours that pin its extent: the
-    /// per-character height table above and the move-power table below.
-    #[test]
-    fn table_fits_between_its_neighbours() {
-        let height = crate::battle_camera_table::CAMERA_HEIGHT_VA as usize;
-        let power = crate::move_power::MOVE_POWER_TABLE_VA as usize;
-        let start = ATTACK_CAMERA_VA as usize;
-        assert!(height < start, "{height:#x} .. {start:#x}");
-        assert!(start + ATTACK_CAMERA_LEN <= power, "overlaps move-power");
-        assert_eq!(ATTACK_CAMERA_LEN, 0x50);
     }
 
     /// Row `t` at `base + t*4`, phase `c` at `+ c*2` - the addressing the

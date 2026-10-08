@@ -29,7 +29,7 @@
 //! ## Record layout (2 bytes, stride `0x02`)
 //!
 //! The table is indexed by **1-based monster id** (the same id space as
-//! [`crate::monster_archive`]); entry `M` sits at `TABLE_VA + M*2`. Entry `0`
+//! `legaia_asset::monster_archive`); entry `M` sits at `TABLE_VA + M*2`. Entry `0`
 //! is a reserved sentinel (there is no monster id 0).
 //!
 //! | Offset | Type | Field |

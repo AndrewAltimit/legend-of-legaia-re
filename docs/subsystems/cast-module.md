@@ -2248,7 +2248,7 @@ What this section adds is the consumer side: which three ticks read the latch,
 what each tier does to `+0x16E`, and that the element gate is the latch's
 value rather than a test.
 
-Parser: [`legaia_asset::seru_side_effect`](../../crates/asset/src/seru_side_effect.rs);
+Parser: [`legaia_asset::seru_side_effect`](../../crates/game-tables/src/seru_side_effect.rs);
 masks and constants at `legaia_engine_vm::cast_seru_ticks_a`; the latch is
 `BattleActionCtx::follow_up_pending` and `World::cure_selector` is what feeds
 the two ported ticks.

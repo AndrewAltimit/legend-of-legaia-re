@@ -1242,6 +1242,7 @@ dependencies = [
  "clap",
  "legaia-anm",
  "legaia-bytes",
+ "legaia-game-tables",
  "legaia-lzs",
  "legaia-mdec",
  "legaia-mes",
@@ -1613,6 +1614,15 @@ dependencies = [
  "png",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-game-tables"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-bytes",
+ "serde",
 ]
 
 [[package]]

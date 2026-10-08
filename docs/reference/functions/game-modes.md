@@ -52,7 +52,7 @@ scene's clamp - the primer is what makes "per entry" true.
 
 ## Game-mode state machine
 
-The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § Game-mode state machine](../../subsystems/boot.md#game-mode-state-machine). The full index → handler/param/name map is recovered from the disc by [`legaia_asset::mode_table`](../../../crates/asset/src/mode_table.rs) (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`).
+The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § Game-mode state machine](../../subsystems/boot.md#game-mode-state-machine). The full index → handler/param/name map is recovered from the disc by [`legaia_asset::mode_table`](../../../crates/game-tables/src/mode_table.rs) (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`).
 
 | Address | Role |
 |---|---|

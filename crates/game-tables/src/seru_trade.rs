@@ -36,7 +36,7 @@ pub const CONFIG_VERSION: u8 = 1;
 
 /// Virtual address the config blob is written to inside the preserved 1028-byte
 /// rodata zero gap at `0x8007AB38` (see [`item_names`] /
-/// [`crate::move_power`]). Placed near the top of the gap, clear of the two
+/// `legaia_asset::move_power`). Placed near the top of the gap, clear of the two
 /// MIPS-injection routines that live lower in it (the bonus-equipment routine at
 /// `0x8007AB80` and the flee-EXP routine at `0x8007AD00`), so the seru-trade
 /// config and those features coexist without overlap.

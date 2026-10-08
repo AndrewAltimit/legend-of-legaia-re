@@ -8,7 +8,7 @@
 //!   from the actor tick `FUN_80021DF4`). It reads `entry[3] & 0x1F` as a voice
 //!   count and `SpuKeyOn`s (`FUN_800653c8`) that many consecutive voices.
 //! * **`FUN_80016b6c`** - the SFX cue-ring drainer. It walks the 4-entry ring
-//!   `DAT_8007B6D8` (the same ring `FUN_8004fcc8` / [`crate::move_power`] sound
+//!   `DAT_8007B6D8` (the same ring `FUN_8004fcc8` / `legaia_asset::move_power` sound
 //!   cues write into), reads the descriptor, and programs each voice through
 //!   `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue).
 //!

@@ -5,7 +5,7 @@
 //! is the executable's ground-truth name for every item id - weapons, armor,
 //! accessories, consumables and key items all share one 256-entry id space.
 //! The same id space is what a monster record's `drop_item` byte
-//! ([`crate::monster_archive`]) indexes, so this table is how a raw drop id
+//! (`legaia_asset::monster_archive`) indexes, so this table is how a raw drop id
 //! becomes a readable name (e.g. `0x79` -> `Healing Berry`).
 //!
 //! ## Record layout (12 bytes, stride `0xC`)

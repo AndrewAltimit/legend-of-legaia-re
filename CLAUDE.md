@@ -221,6 +221,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/prot`](crates/prot/README.md) | `prot-extract` | PROT.DAT / DMY.DAT TOC, CDNAME map, standalone TIM-pack. |
 | [`crates/lzs`](crates/lzs/README.md) | `lzs-decode` | Legaia LZS decoder (reversed from `FUN_8001a55c`) + `compress` re-packer (greedy LZSS the retail decoder accepts; for editing assets). |
 | [`crates/asset`](crates/asset/README.md) | `asset` | The format hub: dispatcher, DATA_FIELD streaming, pack format, bundle detectors, `categorize`, and the side-effect-free field-VM disassembler `field_disasm`. |
+| [`crates/game-tables`](crates/game-tables/README.md) | - | The static data tables parsed straight out of `SCUS_942.54` and the overlay images (items, equipment, spells, level-up, steal, element affinity, mode / FMV / SFX / XA tables). Re-exported by `legaia-asset`. |
 | [`crates/tmd`](crates/tmd/README.md) | `tmd` | Legaia TMD parser + primitive walker + OBJ-with-faces export. |
 | [`crates/tim`](crates/tim/README.md) | `tim` | PSX TIM parser + PNG exporter + PNG-to-TIM encoder (texture replacement). |
 | [`crates/xa`](crates/xa/README.md) | `xa` | XA-ADPCM decoder + WAV exporter. |

@@ -9,6 +9,10 @@ type-specific handler. Each asset can be either LZS-compressed (the
 common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 (handled by `FUN_8001a8b0`, a sized memcpy).
 
+The static data tables live in [`legaia-game-tables`](../game-tables/README.md),
+which this crate re-exports at their old paths; the rows below still
+describe them as `legaia_asset::<module>`.
+
 ## Contents
 
 - [Core descriptor + decoder](#core-descriptor--decoder)

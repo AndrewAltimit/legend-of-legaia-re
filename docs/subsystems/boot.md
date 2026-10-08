@@ -198,7 +198,7 @@ so extraction entry 0896 remains unreachable from any static loader call (see th
 
 ##### Full handler map (recovered from the disc)
 
-[`legaia_asset::mode_table`](https://github.com/altimit-mii/legend-of-legaia-re/tree/main/crates/asset/src/mode_table.rs) reads the whole table out of `SCUS_942.54` (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`). Init handlers (even index) and per-frame handlers (odd index):
+[`legaia_asset::mode_table`](https://github.com/altimit-mii/legend-of-legaia-re/tree/main/crates/game-tables/src/mode_table.rs) reads the whole table out of `SCUS_942.54` (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`). Init handlers (even index) and per-frame handlers (odd index):
 
 | Mode | Name (disc string) | Init handler | Per-frame handler |
 |---|---|---|---|
