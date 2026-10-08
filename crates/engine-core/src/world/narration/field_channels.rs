@@ -198,9 +198,9 @@ impl World {
     /// skips the partition-1 spawn loop at `0x8003B8A0` when it is zero) runs
     /// none of it. Position writes are
     /// surfaced for every repositioned slot, and a slot the prologue parks
-    /// drops its glide pace and any in-flight leg. Headings are NOT derived from these
-    /// teleports - [`Self::seed_field_npc_facings`] carries the prologue's
-    /// facing ops.
+    /// drops its glide pace and any in-flight leg. A `4C 51` seat also writes
+    /// its LUT heading, on the arm the prologue actually took - over the
+    /// first-nibble guess [`Self::seed_field_npc_facings`] made at load.
     ///
     /// Call at scene entry after the carrier/channel install; the resulting
     /// positions snapshot into [`crate::world::FieldNpcState::entry_positions`], the state
@@ -231,6 +231,8 @@ impl World {
         // this pre-run just resolved. The `0x18` wander's containment box is
         // absolute world space, so a stale seat silently retires it.
         self.resync_ambient_start_positions();
+        // ... and on the headings its seats wrote.
+        self.resync_ambient_start_headings();
     }
 
     pub(super) fn step_field_channel_prologues(&mut self) {

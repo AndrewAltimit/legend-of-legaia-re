@@ -2592,6 +2592,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.world.field_vm.entry_prerun {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
+            // The case-5 sub-1 body stores the LUT heading into `+0x26`
+            // (`0x801E1900`) along with the tile, on whichever story arm
+            // the prologue took. The load-time facing seed reads the first
+            // nibble a linear walk meets, which is another arm's when the
+            // arms seat the actor differently: `town01` `P1[34]` stands at
+            // `(98, 15)` facing index 0 on its `0x226` arm, and the seed had
+            // turned it to the `(96, 58)` arm's index 7.
+            if let Some(slot) = self.world.field_vm.executing_channel
+                && let Some(heading) =
+                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+            {
+                self.world.npcs.headings.insert(slot, heading);
+            }
             return;
         }
         // A spawned partition-2 record's channel poke (the modal cutscene
