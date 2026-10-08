@@ -267,6 +267,11 @@ pub struct RetailBattle {
     /// and the per-actor draw skips it, so the seed lands it there rather
     /// than standing a body retail no longer draws.
     pub defeat_lanes: Vec<Option<u32>>,
+    /// Each pool slot's status word `+0x16E` (the ailment bits the tint
+    /// pass colours a body by - `0x1` Venom `0xFF2020`, `0x2` Toxic, ...,
+    /// [`legaia_engine_vm::status_effects::display_flags`]), `None` for an
+    /// empty slot.
+    pub status: Vec<Option<u16>>,
     /// The timed message up in the capture (HUD element `0x66`): the
     /// battle-overlay string its content word `0x800775B4` points at, and
     /// the hold `0x801F6964` left on it. `None` when the hold is spent.
@@ -760,6 +765,17 @@ impl RetailBattle {
             moved = true;
         }
         moved.then_some(out)
+    }
+
+    /// [`Self::status`] re-keyed to engine battle slots.
+    pub fn engine_status(&self) -> [Option<u16>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let pc = usize::from(self.party_count);
+        for (s, o) in out.iter_mut().enumerate() {
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            *o = self.status.get(pool).copied().flatten();
+        }
+        out
     }
 
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
@@ -1273,6 +1289,12 @@ impl RetailBattle {
                         .then(|| game_anchors::u32_at(ram, p + 4))
                 })
                 .collect(),
+            status: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| game_anchors::u16_at(ram, p + 0x16E))
+                })
+                .collect(),
             timed_message: {
                 let hold = game_anchors::u32_at(ram, TIMED_MESSAGE_HOLD) as i32;
                 let va = game_anchors::u32_at(ram, TIMED_MESSAGE_WORD);
@@ -1416,6 +1438,42 @@ pub struct BarSeed {
     /// A body seeded inside (or past) its defeat fade: the colour lanes it
     /// holds ([`RetailBattle::defeat_lanes`]).
     pub defeat_lanes: Option<u32>,
+    /// The ailments the capture's status word `+0x16E` carries
+    /// ([`seedable_status_bits`]); `0` for none.
+    pub status: u16,
+}
+
+/// The status-word bits a seed carries over: the ailments the engine tracks
+/// as [`legaia_engine_vm::status_effects::StatusKind`]s. The AI-delegation
+/// group `0x380` is left out - it is Rage's equipment passive or a charm, not
+/// an ailment the tracker models as one.
+pub fn seedable_status_bits(word: u16) -> u16 {
+    use legaia_engine_vm::status_effects::display_flags as f;
+    word & (f::AILMENT_MASK & !f::CONFUSE_MASK)
+}
+
+/// Raise the ailments `word` carries on engine slot `slot`.
+fn seed_status(world: &mut legaia_engine_core::world::World, slot: u8, word: u16) {
+    use legaia_engine_vm::status_effects::{StatusKind, display_flags as f};
+    let tracker = &mut world.battle.status_effects;
+    for (bit, kind) in [
+        (f::VENOM, StatusKind::Venom),
+        (f::TOXIC, StatusKind::Toxic),
+        (f::STONE, StatusKind::Stone),
+        (f::NUMB, StatusKind::Numb),
+        (f::SLEEP, StatusKind::Sleep),
+        (f::CURSE, StatusKind::Curse),
+    ] {
+        if word & bit != 0 {
+            tracker.apply(slot, kind);
+        }
+    }
+    for (limb, bit) in f::ROT_LIMBS.iter().enumerate() {
+        if word & bit != 0 {
+            tracker.apply(slot, StatusKind::Rot);
+            tracker.set_rot_limb(slot, limb as u8);
+        }
+    }
 }
 
 /// Seed the capture's HP / MP onto the engine actors (the engine enters a
@@ -1450,6 +1508,9 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
             a.battle.render_flag = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
             a.battle.render_color = lanes;
         }
+        if s.status != 0 {
+            seed_status(world, s.slot, s.status);
+        }
     }
 }
 
@@ -1463,9 +1524,13 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 (Some([x, z]), None) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
                 _ => format!("{}:{}:{}", s.slot, s.hp, s.mp),
             };
-            match s.defeat_lanes {
+            let head = match s.defeat_lanes {
                 Some(l) => format!("{head}:d{l:x}"),
                 None => head,
+            };
+            match s.status {
+                0 => head,
+                w => format!("{head}:s{w:x}"),
             }
         })
         .collect::<Vec<_>>()
@@ -1476,7 +1541,11 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
 pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
-            let (e, defeat_lanes) = match e.trim().rsplit_once(":d") {
+            let (e, status) = match e.trim().rsplit_once(":s") {
+                Some((head, w)) => (head, u16::from_str_radix(w, 16).ok()?),
+                None => (e.trim(), 0),
+            };
+            let (e, defeat_lanes) = match e.rsplit_once(":d") {
                 Some((head, l)) => (head, Some(u32::from_str_radix(l, 16).ok()?)),
                 None => (e.trim(), None),
             };
@@ -1499,6 +1568,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 ground,
                 facing,
                 defeat_lanes,
+                status,
             })
         })
         .collect()
@@ -1669,6 +1739,7 @@ pub fn run_engine_battle(
     let ground = battle.seeded_ground();
     let facing = battle.seeded_facing();
     let defeat_lanes = battle.engine_defeat_lanes();
+    let status = battle.engine_status();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -1693,6 +1764,10 @@ pub fn run_engine_battle(
                     defeat_lanes: (hp == 0)
                         .then(|| defeat_lanes.get(slot).copied().flatten())
                         .flatten(),
+                    status: (hp != 0)
+                        .then(|| status.get(slot).copied().flatten())
+                        .flatten()
+                        .map_or(0, seedable_status_bits),
                 })
             })
             .collect()
@@ -3292,10 +3367,16 @@ impl RetailBattle {
     /// `shiny_refactor_gimard_levelup`) reads the target already at `0` and
     /// faded, and a replay onto that corpse lands no damage, so the frame
     /// lacks the `DAMAGE` readout and the death retail's frame follows.
+    ///
+    /// Only a capture past the cast band (the Done band, `0x50` and above)
+    /// counts its dead as the cast's: one taken mid-cast reads monsters an
+    /// earlier action already killed at `0` too (`gilium_summon_mid_cast`),
+    /// and reviving those lands nothing before the phase.
     pub fn action_victims(&self) -> Vec<usize> {
-        if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3)
-            && self.seed_plan() != SeedPlan::Cast
-        {
+        let past_cast = self.seed_plan() == SeedPlan::Cast
+            && self.action_state
+                >= legaia_engine_vm::battle_action::ActionState::DoneCleanup.as_byte();
+        if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3) && !past_cast {
             return Vec::new();
         }
         self.monsters
@@ -3963,6 +4044,7 @@ mod tests {
                 ground: None,
                 facing: None,
                 defeat_lanes: None,
+                status: 0,
             },
             BarSeed {
                 slot: 4,
@@ -3971,10 +4053,36 @@ mod tests {
                 ground: Some([-4, -707]),
                 facing: Some(0x9F0),
                 defeat_lanes: Some(0),
+                status: 0,
+            },
+            BarSeed {
+                slot: 2,
+                hp: 330,
+                mp: 0,
+                ground: Some([10, 20]),
+                facing: None,
+                defeat_lanes: None,
+                status: 0x1,
+            },
+            BarSeed {
+                slot: 3,
+                hp: 9,
+                mp: 1,
+                ground: None,
+                facing: None,
+                defeat_lanes: Some(0xd0d),
+                status: 0x1C10,
             },
         ];
         assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
         assert!(bar_seeds_from_env("").is_empty());
+    }
+
+    #[test]
+    fn only_the_tracked_ailments_seed() {
+        // Rage's delegation group stays behind; Venom and a Rot limb pass.
+        assert_eq!(seedable_status_bits(0x0380 | 0x0001 | 0x0010), 0x0011);
+        assert_eq!(seedable_status_bits(0x0380), 0);
     }
 
     #[test]
