@@ -1486,6 +1486,28 @@ fn done_cleanup_rearms_the_command_gauge_slots() {
     assert_eq!(ctx.gauge_rearm_latch, 0);
 }
 
+/// The attack band's own passes take the same tail (`0x801E5F64`): once the
+/// acting member's art clip has ended (`+0x1D9 < 0x10`), a pass of `0x20`
+/// returns every slot to normal speed - not only the Done band - while a
+/// pass still on the art clip leaves the slow-motion standing.
+#[test]
+fn the_attack_band_restores_the_anim_rates_once_the_art_clip_ends() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    for a in &mut host.actors {
+        a.anim_rate = crate::battle_anim_rate::AnimRate(4);
+    }
+    host.actors[1].current_anim = 0x11;
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[3].anim_rate.get(), 4, "art clip still playing");
+    host.actors[1].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        host.actors[3].anim_rate.get(),
+        crate::battle_gauge_rearm::ANIM_RATE_SEED
+    );
+}
+
 /// The gate is real: a materialised art (`+0x1D9 >= 0x10`) on a party slot
 /// closes it and nothing is touched.
 #[test]

@@ -4391,10 +4391,15 @@ side-array mark at `0x801F6990` / the Miracle marker; default `2`), zeroes
 the banner clock `+0x28C`, and queues the per-character arts shout
 (`FUN_8004FCC8` ids `0x101/0x111/0x121` + per-follow-up variants) - which
 pins the `+0x28B` writer [`flash_ramp`](#arts-announcement-banner-fun_801e2524--fun_801e2650)
-was still missing. The restore is `FUN_801E93C8` (called from the Done arm at
-`0x801E5F64`): once the acting actor's materialised art clip has ended
-(party: `+0x1D9 < 0x10`; monster: committed record flag `+0x87 == 0`) every
-slot returns to `8` and `ctx[+0x243]` clears.
+was still missing. The restore is `FUN_801E93C8`, `jal`ed from the shared
+tail at `0x801E5F64` that the Done arm falls into and that `0x1E`, `0x1F` and
+`0x20` jump to on nearly every pass (`0x801E39AC`, `0x801E3A68`, `0x801E3A80`,
+`0x801E3AF8`, `0x801E3B18`, `0x801E56C8`, `0x801E55A0..0x801E5658`): once the
+acting actor's materialised art clip has ended (party: `+0x1D9 < 0x10`;
+monster: committed record flag `+0x87 == 0`) every slot returns to `8` and
+`ctx[+0x243]` clears. So the battle is back at full speed the pass the last
+art clip ends, and a monster that art killed plays the rest of its
+knockdown at normal speed rather than waiting for the Done band.
 
 **Port.** Kernel `legaia_engine_vm::battle_anim_rate`
 (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s

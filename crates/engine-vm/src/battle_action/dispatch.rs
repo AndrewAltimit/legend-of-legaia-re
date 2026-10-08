@@ -209,9 +209,31 @@ pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
         ActionState::AttackCloseRange => attack_close_range(host, ctx),
         ActionState::AttackStrike => attack_strike(host, ctx),
         ActionState::AttackShortStep => attack_short_step(host, ctx),
-        ActionState::AttackChain => attack_chain(host, ctx),
-        ActionState::AttackRecovery => attack_recovery(host, ctx),
-        ActionState::AttackReturn => attack_return(host, ctx),
+        // `0x1E`, `0x1F` and `0x20` leave through the shared tail at
+        // `0x801E5F64` on (nearly) every pass - the strike loop's hold and
+        // terminator exits (`0x801E39AC`, `0x801E3A68`, `0x801E3A80`),
+        // `0x1F`'s hold and exit (`0x801E3AF8`, `0x801E3B18`), `0x20`'s
+        // hold (`0x801E56C8`) and its way into the Done band
+        // (`0x801E55A0..0x801E5658`) - and that tail `jal`s the rate
+        // restore `FUN_801E93C8`. So the battle returns to normal speed the
+        // pass the acting party member's committed clip drops below `0x10`
+        // (its art clip has ended), not at the Done band: a monster killed
+        // by an art's last hit plays its knockdown at full speed.
+        ActionState::AttackChain => {
+            let out = attack_chain(host, ctx);
+            restore_action_anim_rates(host, ctx);
+            out
+        }
+        ActionState::AttackRecovery => {
+            let out = attack_recovery(host, ctx);
+            restore_action_anim_rates(host, ctx);
+            out
+        }
+        ActionState::AttackReturn => {
+            let out = attack_return(host, ctx);
+            restore_action_anim_rates(host, ctx);
+            out
+        }
 
         ActionState::MagicCastBegin => magic_cast_begin(host, ctx),
         ActionState::MagicPreCastWait => magic_pre_cast_wait(host, ctx),

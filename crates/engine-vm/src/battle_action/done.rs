@@ -108,7 +108,7 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
 /// early-outs.
 ///
 /// PORT: FUN_801E93C8 (call site; kernel in `battle_gauge_rearm`)
-fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
+pub(super) fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) {

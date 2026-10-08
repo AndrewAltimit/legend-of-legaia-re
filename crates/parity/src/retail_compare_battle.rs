@@ -3501,6 +3501,21 @@ fn run_drive(
                     .map(|a| (a.move_state.world_y, a.battle.facing_angle & 0xFFF))
                     .collect::<Vec<_>>()
             );
+            eprintln!(
+                "[rc] t={t} clips={:?}",
+                world
+                    .actors
+                    .iter()
+                    .take(8)
+                    .map(|a| a.battle_animation.as_ref().map(|p| (
+                        p.action_id(),
+                        p.cursor_sixteenths(),
+                        p.frame_count(),
+                        p.finished(),
+                        a.battle.anim_rate.get()
+                    )))
+                    .collect::<Vec<_>>()
+            );
         }
         let pad = if reached.is_some() {
             0
