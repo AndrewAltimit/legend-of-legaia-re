@@ -1354,3 +1354,61 @@ distinctive data is the per-frame pose scratch, which none of the module's
 range / root-motion siblings form - they read the pair it writes.
 """
 
+
+[[waiver]]
+key = "module-orphan:crates/engine-audio/src/sfx.rs:8004fcc8"
+reason = """
+Read against FUN_8004FCC8's disassembly and the tag holds: `sltiu s0,0x100`
+splits the voice arm (`addiu a1,s0,-0x100`, `srl a3,a1,3`, remap 1/3/5 to
+0x1A/0x1B/0x1C at 0x8004FD10..0x8004FD30) from the ring arm, which takes
+`id - 1` under 0x40 and compares `id + 0x19C` against `_DAT_8007B724`
+(`lw v1,-0x48DC(v1)` at 0x8004FDA4) - the decode `classify_cue` ports. The
+module's other tags (the cue drainer 80016B6C, the SPU 80065034) are its
+scheduler and sink, not data siblings; the routine's distinctive data is
+shared with FUN_8004FE5C, tagged one crate over in engine-core's sfx_cue.rs.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/cast_module_ticks.rs:801f8b90"
+reason = """
+PROT 0923 (summon_gilium)'s spawn stager, read in
+overlay_summon_gilium_0923_801f8b90.txt: arm 0 hands 0x801F9450 to
+FUN_80021B04 and stashes the handle at 0x801FA4D0, the two data words the
+finding lists and the tag text names. Band-structural, as the slot-B module
+waivers before the engine-battle-vm split said: each module is its own image
+with no internal jal, and its distinctive data is a private table at its own
+VAs, which no sibling image can share.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/battle_tutorial.rs:801da51c"
+reason = """
+The tag claims only the battle-entry stage-id tail, and the bytes say so:
+`li a0,0x19` (0x801DA67C), `jal 0x8003CE64` with `sb zero,-0x49B6(s0)` in its
+delay slot (stage id 0x8007B64A cleared), `beq v0,zero` past a `sb 1` and a
+`jal 0x8003CE34` clearing flag 0x19 (0x801DA698..0x801DA6B0) - which is
+`stage_id_at_battle_entry`. The module's siblings are overlay 967's prompt
+machine (801F747C / 801F7628), a different image the stage id pages in.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-effects/src/action_effect_script.rs:80026be0"
+reason = """
+FUN_80026BE0 is fourteen instructions: `jal 0x8005B818` with a0 = 0xA0,
+then `0x80070A2C` stored to 0x8007B81C and `0x80070A2C + 0x800` to
+0x8007B7F8 (0x80026BF0..0x80026C0C) - the LUT pair the tag says it installs.
+Its one datum is the SCUS sine table, which the module's overlay siblings
+(801DEA50 / 801E09F8) reach through those two pointers, never by address.
+"""
+
+[[waiver]]
+key = "non-entry:crates/engine-minigames/src/minigame_floor.rs:801d79e0"
+reason = """
+An entry, and a duplicate rather than a non-function: PROT 0972 (fishing)
+holds a 31-instruction leaf at 0x801D79E0 (no frame, opens `addu t0,zero,
+zero`) whose words equal field 0897's 0x801D5AE0 lead modulo relocation
+(30 of 31 exact, the 31st a relocated immediate). The worklist_duplicate row
+exists to keep the catalog from counting it as fresh work; the tag sits on
+the minigame overlays' own copy, the one PROT 0972's ground-height solver
+FUN_801D6028 calls (`jal` at 0x801D6168 and 0x801D6198).
+"""
