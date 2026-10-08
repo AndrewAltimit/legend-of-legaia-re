@@ -52,7 +52,6 @@ window.MgDance = (function () {
   'use strict';
 
   const SCALE = 2;                 /* retail 320x240 -> 640x480 canvas */
-  const A2R = (Math.PI * 2) / 4096; /* PSX angle units -> radians */
 
   /* Widget ids, as named in legaia_asset::dance_art (traced draw sites). */
   const W = {
@@ -88,14 +87,8 @@ window.MgDance = (function () {
     let intro = null;        /* pre-run count-in: {t} or null */
     let finished = false;
 
-    function rgbaCanvas(bytes, w, h) {
-      if (!bytes || bytes.length !== w * h * 4) return null;
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      c.getContext('2d').putImageData(
-        new ImageData(new Uint8ClampedArray(bytes), w, h), 0, 0);
-      return c;
-    }
+    /* shared helper: site/js/site-util.js */
+    const rgbaCanvas = window.LegaiaUtil.rgbaCanvas;
 
     function page(pal) {
       if (!(pal in pages)) pages[pal] = rgbaCanvas(api.dance_hud_page_rgba(pal), 256, 256);
@@ -1217,49 +1210,8 @@ window.MgDance = (function () {
     };
   }
 
-  /* Pose `base` (object-local verts) through `clip` at `frame` into `out`,
-   * then spin the whole figure `yaw` about Y and shift it `dx` along X - the
-   * retail per-object composition Rz.Ry.Rx . v + T with a world transform on
-   * top. Identical to minigame-baka.js's poser (the pose stream shape matches
-   * `baka_anim_pose_frames`). `vertBase` selects the dancer's slice of the
-   * combined buffers. */
-  function poseInto(out, base, oids, clip, frame, vertBase, dx, yaw) {
-    const pc = clip.parts, f = clip.frames;
-    const ff = ((frame % clip.frameCount) + clip.frameCount) % clip.frameCount;
-    const sin = new Float32Array(pc * 3), cos = new Float32Array(pc * 3);
-    const tr = new Float32Array(pc * 3);
-    for (let p = 0; p < pc; p++) {
-      const o = (ff * pc + p) * 6;
-      for (let k = 0; k < 3; k++) {
-        const a = f[o + 3 + k] * A2R;
-        sin[p * 3 + k] = Math.sin(a);
-        cos[p * 3 + k] = Math.cos(a);
-        tr[p * 3 + k] = f[o + k];
-      }
-    }
-    const wy = yaw || 0;
-    const wsin = Math.sin(wy), wcos = Math.cos(wy);
-    const n = oids.length;
-    for (let v = 0; v < n; v++) {
-      const vi = (vertBase + v) * 3;
-      const o = oids[v];
-      let x = base[vi], y = base[vi + 1], z = base[vi + 2];
-      if (o < pc) {
-        const sx = sin[o * 3], cxx = cos[o * 3];
-        const sy = sin[o * 3 + 1], cyy = cos[o * 3 + 1];
-        const sz = sin[o * 3 + 2], czz = cos[o * 3 + 2];
-        let ny = y * cxx - z * sx, nz = y * sx + z * cxx; y = ny; z = nz;
-        let nx = x * cyy + z * sy; nz = -x * sy + z * cyy; x = nx; z = nz;
-        nx = x * czz - y * sz; ny = x * sz + y * czz; x = nx; y = ny;
-        x += tr[o * 3]; y += tr[o * 3 + 1]; z += tr[o * 3 + 2];
-      }
-      const wx = x * wcos + z * wsin;
-      const wz = -x * wsin + z * wcos;
-      out[vi] = wx + (dx || 0);
-      out[vi + 1] = y;
-      out[vi + 2] = wz;
-    }
-  }
+  /* shared helper: site/js/site-util.js */
+  const poseInto = window.LegaiaUtil.poseClipInto;
 
   return { create };
 })();

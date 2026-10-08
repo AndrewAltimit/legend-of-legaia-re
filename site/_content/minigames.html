@@ -1895,14 +1895,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
   if (window.LegaiaSound) LegaiaSound.onChange((on) => { if (!on) slotSpinStop(); });
 
-  /* Wrap an RGBA8 buffer from the WASM API in an offscreen canvas. */
-  function rgbaCanvas(bytes, w, h) {
-    if (!bytes || bytes.length !== w * h * 4) return null;
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(bytes), w, h), 0, 0);
-    return c;
-  }
+  /* shared helper: site/js/site-util.js */
+  const rgbaCanvas = window.LegaiaUtil.rgbaCanvas;
 
   /* Decode the machine's textures + its 3D scene graph once, after a disc lands. */
   function slotLoadArt() {

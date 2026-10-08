@@ -30,7 +30,6 @@
   'use strict';
 
   const ANIM_FPS = 14;                 /* retail clip rate */
-  const A2R = (Math.PI * 2) / 4096;    /* PSX angle units -> radians */
 
   /* Retail 320x240 HUD frame. */
   const HUD_W = 320, HUD_H = 240;
@@ -1211,49 +1210,8 @@
     }
   }
 
-  /* Pose `base` (object-local verts) through `clip` at `frame` into `out`,
-   * then spin the whole figure `yaw` about Y and shift it `dx` / `dz` along
-   * X / Z. Exactly the retail per-object composition Rz.Ry.Rx . v + T (see
-   * mesh-view.js), with a world transform on top. `vertBase` selects the
-   * fighter's slice of the combined buffers. */
-  function poseInto(out, base, oids, clip, frame, vertBase, dx, yaw, dz) {
-    const pc = clip.parts, f = clip.frames;
-    const ff = ((frame % clip.frameCount) + clip.frameCount) % clip.frameCount;
-    const sin = new Float32Array(pc * 3), cos = new Float32Array(pc * 3);
-    const tr = new Float32Array(pc * 3);
-    for (let p = 0; p < pc; p++) {
-      const o = (ff * pc + p) * 6;
-      for (let k = 0; k < 3; k++) {
-        const a = f[o + 3 + k] * A2R;
-        sin[p * 3 + k] = Math.sin(a);
-        cos[p * 3 + k] = Math.cos(a);
-        tr[p * 3 + k] = f[o + k];
-      }
-    }
-    const wy = yaw || 0;
-    const wsin = Math.sin(wy), wcos = Math.cos(wy);
-    const n = oids.length;
-    for (let v = 0; v < n; v++) {
-      const vi = (vertBase + v) * 3;
-      const o = oids[v];
-      let x = base[vi], y = base[vi + 1], z = base[vi + 2];
-      if (o < pc) {
-        const sx = sin[o * 3], cxx = cos[o * 3];
-        const sy = sin[o * 3 + 1], cyy = cos[o * 3 + 1];
-        const sz = sin[o * 3 + 2], czz = cos[o * 3 + 2];
-        let ny = y * cxx - z * sx, nz = y * sx + z * cxx; y = ny; z = nz;
-        let nx = x * cyy + z * sy; nz = -x * sy + z * cyy; x = nx; z = nz;
-        nx = x * czz - y * sz; ny = x * sz + y * czz; x = nx; y = ny;
-        x += tr[o * 3]; y += tr[o * 3 + 1]; z += tr[o * 3 + 2];
-      }
-      /* world: yaw about Y, then the floor offset */
-      const wx = x * wcos + z * wsin;
-      const wz = -x * wsin + z * wcos;
-      out[vi] = wx + (dx || 0);
-      out[vi + 1] = y;
-      out[vi + 2] = wz + (dz || 0);
-    }
-  }
+  /* shared helper: site/js/site-util.js */
+  const poseInto = window.LegaiaUtil.poseClipInto;
 
   window.MinigameBakaView = MinigameBakaView;
 })();
