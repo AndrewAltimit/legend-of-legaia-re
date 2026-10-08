@@ -1598,7 +1598,10 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         return false;
     };
     let max = u32::from(a.battle.max_hp);
-    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    let learned = learned_round_due(w);
+    let threat = BIGGEST_HIT
+        .with(std::cell::Cell::get)
+        .max(learned.unwrap_or(0));
     // A foe winding up shows it: a capture-class charge body (Xain's Bull
     // Charge, PROT 0953 arm 0) sets its caster's ability latch
     // (`0x801C8FE0 + (seat - 3 + 1) * 4`) and deals nothing, and the next
@@ -1614,7 +1617,65 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     if hp > 0 && charged && quiet_last && u32::from(a.battle.hp) * 4 >= max {
         return true;
     }
-    hp > 0 && threat * 5 >= max * 2 && hp > threat / 2 + threat / 8 && big_round_due()
+    hp > 0
+        && threat * 5 >= max * 2
+        && hp > threat / 2 + threat / 8
+        && (big_round_due() || learned.is_some())
+}
+
+thread_local! {
+    /// What a lost attempt taught about the boss that wiped it: its monster
+    /// id, the parity of the battle's stretch index its party-wide hits came
+    /// on, and the per-member size of that hit. A player who reloads after
+    /// Rogue (`rugi` P2[38]) wiped the party knows its Wind / Thunder /
+    /// Flame comes every other round from the second, and guards the first
+    /// one too - the cadence arm ([`big_round_due`]) needs four rounds of
+    /// history, and a first hit that drops two members leaves a party that
+    /// revives one at a quarter HP per quiet round into the next hit.
+    /// Kept across the attempts of one segment; cleared when it starts.
+    static LEARNED_CADENCE: std::cell::Cell<Option<(u16, usize, u32)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The boss in this fight, if any: the first monster seat's id in a fight
+/// that forbids running.
+fn boss_monster_id(w: &legaia_engine_core::world::World) -> Option<u16> {
+    if !w.battle.no_escape {
+        return None;
+    }
+    w.actors.iter().find_map(|a| a.battle_monster_id)
+}
+
+/// The learned party-wide hit ([`LEARNED_CADENCE`]) when this fight is the
+/// boss it was learned on and the coming stretch is one of its heavy ones.
+fn learned_round_due(w: &legaia_engine_core::world::World) -> Option<u32> {
+    let (id, parity, aoe) = LEARNED_CADENCE.with(std::cell::Cell::get)?;
+    if boss_monster_id(w) != Some(id) {
+        return None;
+    }
+    let next = ROUND_HISTORY.with(|h| h.borrow().len());
+    (next % 2 == parity).then_some(aoe)
+}
+
+/// Read a lost battle's round history for a strict every-other-round
+/// party-wide hitter: two heavy stretches or more, all on one parity, never
+/// two in a row. Returns the parity.
+fn alternating_heavy_parity(history: &[u32]) -> Option<usize> {
+    let peak = history.iter().copied().max().unwrap_or(0);
+    if peak == 0 {
+        return None;
+    }
+    let heavy: Vec<usize> = history
+        .iter()
+        .enumerate()
+        .filter(|&(_, &x)| x * 3 >= peak)
+        .map(|(i, _)| i)
+        .collect();
+    let parity = *heavy.first()? % 2;
+    (heavy.len() >= 2
+        && heavy.iter().all(|i| i % 2 == parity)
+        && heavy.windows(2).all(|p| p[1] - p[0] == 2))
+    .then_some(parity)
 }
 
 /// Whether `actor` should take the Spirit stance against a party-wide hitter
@@ -2897,6 +2958,7 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             })
             .flatten()
     };
+    let boss = boss_monster_id(&session.host.world);
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
@@ -3063,6 +3125,24 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             }
             if boss_element.is_some() {
                 LOST_TO_ELEMENT.with(|l| l.set(boss_element));
+            }
+            let aoe = AOE_HIT.with(std::cell::Cell::get);
+            if let Some(id) = boss
+                && aoe > 0
+                && let Some(parity) = ROUND_HISTORY.with(|h| {
+                    // The stretch the wipe ended is a round too: the hit
+                    // that finished the party lands in it.
+                    let mut h = h.borrow().clone();
+                    h.push(ROUND_LOSS.with(std::cell::Cell::get).iter().sum());
+                    alternating_heavy_parity(&h)
+                })
+            {
+                if trace {
+                    eprintln!(
+                        "    [battle] learned: boss {id} hits party-wide ({aoe}) on stretch parity {parity}"
+                    );
+                }
+                LEARNED_CADENCE.with(|l| l.set(Some((id, parity, aoe))));
             }
             return Some(Run::Battle(format!(
                 "party wiped: {}",
@@ -9737,6 +9817,7 @@ fn run_segment(
     if with_pad && rep.tier >= Tier::Progresses {
         let mut prepare: Option<u8> = None;
         let mut attempt = 0u32;
+        LEARNED_CADENCE.with(|l| l.set(None));
         loop {
             attempt += 1;
             LOST_TO_ELEMENT.with(|l| l.set(None));

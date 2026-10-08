@@ -507,6 +507,18 @@ Spirit, ahead of healing itself when no ally is worse off; not on the round
 after a heavy one from a foe that has never hit hard twice running, and never
 against a foe that telegraphs its hit with a charge latch.
 
+The cadence read needs four rounds, and Rogue (`rugi` P2[38], 28200 HP) does
+not always leave them: its first party-wide hit, on the second stretch, takes
+about 1700 from members holding 1560..1802, and when it drops two of the three
+the party revives one at a quarter of its HP per quiet round into the next
+hit, which drops it again. A lost attempt is therefore remembered: when a boss
+wipes the party and its round history (the stretch the wipe ended included)
+shows party-wide hits on every other stretch, on one parity, never two in a
+row, the reload guards that boss's heavy stretches from the first one, sizing
+the threat by the hit it learned. Only a reload of the same segment against
+the same boss uses it; a fight the hand wins first time is played exactly as
+before.
+
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
 (`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time
