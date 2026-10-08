@@ -1788,7 +1788,10 @@ impl World {
         }
         match entry {
             909 => {
-                let (step, sweep) = seru::viguro_tick(ctx, seats, caster_slot, summon_slot, |_| 0);
+                let mut settle = self.casting.module_settle_countdown;
+                let (step, sweep) =
+                    seru::viguro_tick(ctx, seats, caster_slot, summon_slot, &mut settle, |_| 0);
+                self.casting.module_settle_countdown = settle;
                 (step, lift(&sweep.hits))
             }
             // PROT 0910 paces its strike on two timers - arm 7's wind-up and
@@ -1832,17 +1835,25 @@ impl World {
                 let spell_id = (entry - 903 + 0x81) as u8;
                 let cleanse =
                     self.cure_selector(caster_slot, spell_id, seru::ORB_CLEANSE_MIN_LEVEL);
-                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, cleanse, |s| {
-                    maxes.get(s as usize).copied().unwrap_or(0)
-                });
+                let mut settle = self.casting.module_settle_countdown;
+                let (step, _healed) =
+                    seru::orb_tick(ctx, seats, summon_slot, 0, cleanse, &mut settle, |s| {
+                        maxes.get(s as usize).copied().unwrap_or(0)
+                    });
+                self.casting.module_settle_countdown = settle;
                 (step, Vec::new())
             }
             912 => {
-                let (step, hits) = seru::freed_tick(ctx, seats, summon_slot, |_| 0);
+                let mut settle = self.casting.module_settle_countdown;
+                let (step, hits) = seru::freed_tick(ctx, seats, summon_slot, &mut settle, |_| 0);
+                self.casting.module_settle_countdown = settle;
                 (step, lift(&hits))
             }
             _ => {
-                let (step, hit) = seru::nova_tick(ctx, seats, summon_slot, victim_slot, 0);
+                let mut settle = self.casting.module_settle_countdown;
+                let (step, hit) =
+                    seru::nova_tick(ctx, seats, summon_slot, victim_slot, 0, &mut settle);
+                self.casting.module_settle_countdown = settle;
                 let hits: Vec<SweepHit> = hit.into_iter().collect();
                 (step, lift(&hits))
             }

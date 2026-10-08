@@ -631,6 +631,7 @@ impl World {
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
+        self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.summon_stager = Some(SummonStager {
             caster,
@@ -1368,6 +1369,7 @@ impl World {
         self.casting.fatal_decision = None;
         self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
+        self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_beam_counter = 0;
         self.casting.module_beam_live = false;

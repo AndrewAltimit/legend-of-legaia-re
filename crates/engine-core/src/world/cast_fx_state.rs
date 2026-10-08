@@ -119,6 +119,10 @@ pub struct CastFxState {
     /// ([`legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes`]) - the module
     /// image's own words in retail, so a fresh cast starts them at zero.
     pub module_swordie: legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes,
+    /// The settle countdown word PROT 0909 / 0911 / 0912 / 0913 arm after
+    /// their hit and drain before they write `0xFF`
+    /// (`legaia_engine_vm::cast_seru_ticks_b::SETTLE_DRAIN_PER_TICK`).
+    pub module_settle_countdown: i32,
     /// The resident player-Seru module's camera-arm state: its countdown
     /// word and the creature seat as the module placed it
     /// ([`legaia_engine_vm::cast_module_camera`]). Module-image words in
@@ -245,6 +249,7 @@ impl CastFxState {
             module_split_saved_target: None,
             // --- end W1-D ---
             module_swordie: Default::default(),
+            module_settle_countdown: 0,
             module_cam: Default::default(),
             capture_spell: None,
             caster_stages: None,
