@@ -158,6 +158,30 @@ fn apply_battle_loot_drops_item_when_chance_is_100() {
     assert_eq!(world.party.inventory.get(&0x42).copied(), Some(1));
 }
 
+/// The spoils routine saturates the purse at 99,999,999 (`0x8004F0C4..
+/// 0x8004F0FC`): a purse already at the cap stays there.
+#[test]
+fn battle_gold_saturates_the_purse_at_99_999_999() {
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    let mut cat = MonsterCatalog::new();
+    let mut def = MonsterDef::new(7, "Slime", 10, 5);
+    def.gold = 600;
+    cat.insert(def);
+    let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.party.money = 99_999_990;
+    let r = world.apply_battle_loot(&formation, &cat);
+    assert!(r.gold > 10);
+    assert_eq!(world.party.money, crate::world::BATTLE_GOLD_CAP);
+}
+
 #[test]
 fn a_raseru_forbidden_fight_pays_no_gold_exp_or_drop() {
     // `_DAT_8007BAC0 != 0` zeroes the gold (`0x8004F0AC`), each member's EXP

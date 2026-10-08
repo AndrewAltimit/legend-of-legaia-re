@@ -203,6 +203,7 @@ mod frame_tick;
 mod handler_actors;
 pub use handler_actors::TransitionSweepReport;
 mod items_arts;
+pub use items_arts::BATTLE_GOLD_CAP;
 mod narration;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
