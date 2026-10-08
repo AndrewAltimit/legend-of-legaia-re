@@ -1,7 +1,7 @@
 //! Key rebind session.
 //!
 //! Drives the per-key rebind sub-screen reachable from
-//! [`crate::options::OptionsSession`]: pick a [`PadButton`], then press the
+//! `legaia_engine_core::options::OptionsSession`: pick a [`PadButton`], then press the
 //! desired keyboard key. The session swaps the new key into the
 //! [`crate::input::Mapping`] table, evicting the previous binding (if any
 //! key was already bound to the same button, it gets cleared so two keys

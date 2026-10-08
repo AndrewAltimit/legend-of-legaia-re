@@ -18,7 +18,7 @@
 //! does not model what they mean, only that they are forwarded verbatim.
 //!
 //! Ported from the disassembly in `ghidra/scripts/funcs/8003053c.txt`; the
-//! record geometry is the same one [`crate::retail_magic`] and
+//! record geometry is the same one `legaia_engine_core::retail_magic` and
 //! `legaia_asset::spell_names` read.
 
 /// Stride of one record in the static spell-stats table `DAT_800754C8`.
@@ -113,7 +113,7 @@ impl BroadcastRoster {
 /// with `FUN_8003FB10` run as a *validity* gate per roster member - not an
 /// effect broadcast.
 ///
-/// WIRED: `crate::menu_validator::spell_affects_anyone` runs it with the
+/// WIRED: `legaia_engine_core::menu_validator::spell_affects_anyone` runs it with the
 /// validator over the roster records (`menu_validator::RosterValidator`), and
 /// `field_menu_dispatch::build_spell_session` - the Magic screen both play
 /// hosts open - greys and refuses every spell it answers `0` for.

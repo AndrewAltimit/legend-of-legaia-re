@@ -35,7 +35,7 @@
 //! There is therefore no Continue / Retry / Quit vocabulary anywhere on
 //! this path, and no artwork: the only `GAME OVER` string on the disc is
 //! in PROT 0902, the mode-18/19 overlay, which no retail path reaches
-//! (see [`crate::mode::GameMode::GameOverInit`] and
+//! (see `legaia_engine_core::mode::GameMode::GameOverInit` and
 //! `docs/subsystems/battle.md` § party wipe + the game-over overlay).
 //! The port's former three-row chooser was an engine invention standing in
 //! for a destination that was, at the time it was written, unpinned. It is
@@ -44,7 +44,7 @@
 //! What is left is the hand-off itself: a short hold on the frozen frame -
 //! retail spends it streaming the menu overlay off the disc - and then the
 //! title. Both hosts construct a [`GameOverSession`] off
-//! [`crate::world::World::game_over`] (native `BootUiState::GameOver`, the
+//! `legaia_engine_core::world::World::game_over` (native `BootUiState::GameOver`, the
 //! browser's post-battle overlay) and route [`GameOverOutcome::ReturnToTitle`]
 //! into the same title session their boot path uses.
 

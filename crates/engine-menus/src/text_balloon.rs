@@ -19,7 +19,7 @@
 //!   timer >= total it sets its own kill bit.
 //!
 //! **This is not the opening narration crawl** - the crawl is the `CC F8
-//! 80 N` roller actor (`FUN_80037174`, see [`crate::cutscene_narration`]).
+//! 80 N` roller actor (`FUN_80037174`, see `legaia_engine_core::cutscene_narration`).
 //! See `docs/subsystems/cutscene.md` and `docs/reference/functions.md`.
 //!
 //! ## The parent-link handshake
@@ -68,7 +68,7 @@ pub struct TextBalloon {
     /// Screen X (`+0x14`). `None` until a width measurement arrives -
     /// retail measures at spawn, but the engine's font atlas lives host-side,
     /// so the measurement comes back from the draw layer
-    /// ([`crate::world::World::commit_text_balloon_width`], fed by
+    /// (`legaia_engine_core::world::World::commit_text_balloon_width`, fed by
     /// `legaia_engine_ui::text_balloon_text_width`) on the first frame the
     /// balloon is drawable.
     pub x: Option<i16>,
@@ -149,7 +149,7 @@ impl TextBalloon {
     /// The pen `FUN_80036888(text, 0, 0, x, y)` prints at, in stage pixels.
     /// `None` until a host has committed a measurement
     /// ([`Self::center_with_width`] /
-    /// [`crate::world::World::commit_text_balloon_width`]).
+    /// `legaia_engine_core::world::World::commit_text_balloon_width`).
     pub fn pen(&self) -> Option<(i32, i32)> {
         self.x.map(|x| (i32::from(x), i32::from(self.y)))
     }

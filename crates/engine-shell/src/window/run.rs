@@ -1304,7 +1304,7 @@ pub(super) fn cmd_play_window_with_record(
     //      carries the 9-slice panel chrome (CLUT row 2).
     // Plus the optional menu-glyph TIM above for the HUD numerals.
     // The atlas builder composites both into one 256x256 RGBA atlas;
-    // see `crates/engine-core/src/save_menu_atlas.rs`. The 9-slice
+    // see `crates/engine-menus/src/save_menu_atlas.rs`. The 9-slice
     // tile geometry was pinned via `scripts/pcsx-redux/scan_panel_prims.py`
     // against sstate9's RAM dump - every primitive's source u/v + CLUT
     // is byte-pinned to the retail render.

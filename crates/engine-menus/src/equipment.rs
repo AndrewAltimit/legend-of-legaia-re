@@ -8,7 +8,7 @@
 //! Each entry produces a [`crate::battle_stats::ItemModifier`] that the
 //! aggregator (`compute_battle_stats`) reads on commit. Engines build
 //! the catalog at startup and pass it into [`EquipmentSession`] /
-//! [`crate::equip_session::EquipSession`] for the player UI.
+//! `legaia_engine_core::equip_session::EquipSession` for the player UI.
 //!
 //! The vanilla catalog is a from-scratch reconstruction approximating the
 //! retail values; the actual numeric stats live in the equipment table
@@ -327,7 +327,7 @@ impl DiscEquipInfo {
     /// The `+5` passive index of bonus **row** `bonus_index`, or the
     /// no-passive sentinel `0x40` when the row was not parsed.
     ///
-    /// This is the shape [`crate::shop::item_passive_index`]'s equipment arm
+    /// This is the shape `legaia_engine_core::shop::item_passive_index`'s equipment arm
     /// wants, and the reason it is row-keyed rather than id-keyed is that the
     /// retail renderer is: `FUN_801D5AE8` loads the item property record's
     /// `+1` byte and indexes `0x80074F68 + that * 8` directly
@@ -800,7 +800,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// still removes it. Without the fallback the item survives on the
 /// character and the script's precondition silently fails.
 ///
-/// Wired. `FieldHostImpl` in [`crate::world::vm_hosts`] overrides
+/// Wired. `FieldHostImpl` in `legaia_engine_core::world::vm_hosts` overrides
 /// `op4c_n5_sub2_take_item` - consume one from the bag, and **only** on the
 /// `0x100` miss call this kernel.
 ///
@@ -864,7 +864,7 @@ pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8
 /// into the caller's `agility_term` closure rather than taken here.
 ///
 /// REPLACED-BY: [`crate::battle_stats::compute_battle_stats`] over a
-/// trial-equipped record ([`crate::equip_session::EquipSession::preview_candidate`]),
+/// trial-equipped record (`legaia_engine_core::equip_session::EquipSession::preview_candidate`),
 /// which is what feeds the Equip screen's stat-compare columns on both hosts
 /// and needs no row word at all. The argument this kernel takes is a
 /// **class-tagged row-entry word** (`0x1000` / `0x6000` / `0x7000` /

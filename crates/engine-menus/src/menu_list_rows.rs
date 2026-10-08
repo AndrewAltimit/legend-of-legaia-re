@@ -5,7 +5,7 @@
 //! "Submenu state machines").
 //!
 //! The retail kind-4 list kernel (`FUN_80032A44`, navigation port at
-//! [`crate::pause_screens::list_kernel_navigate`]) only *reads* row entries;
+//! `legaia_engine_core::pause_screens::list_kernel_navigate`) only *reads* row entries;
 //! the entries themselves are built once, at window create / content refresh,
 //! by the SCUS content builder `FUN_80030628` (a per-content-id switch, jump
 //! table `0x80010D38`, index `content_id - 2`). This module ports the
@@ -32,7 +32,7 @@
 //!
 //! The shop buy list is the exception to everything below: its rows are keyed
 //! by **item id**, not by a bag slot, and its builder is live -
-//! `crate::shop::ShopInventory::from_stock_record` runs
+//! `legaia_engine_core::shop::ShopInventory::from_stock_record` runs
 //! [`build_shop_buy_rows`] over the stock record for the field-VM merchant
 //! both play hosts open and for the per-scene catalog.
 //!
@@ -50,9 +50,9 @@
 //!    [`legaia_asset::menu_windows`]. Adopting the sorted window list would
 //!    be a change of representation, not a call insertion.
 //! 2. REPLACED-BY: the typed rows every pause-menu screen already carries -
-//!    [`crate::pause_screens::PauseItemRow`],
+//!    `legaia_engine_core::pause_screens::PauseItemRow`,
 //!    [`crate::spell_menu::SpellRowView`],
-//!    [`crate::equip_session::EquipItem`]. That covers [`row_name_source`]
+//!    `legaia_engine_core::equip_session::EquipItem`. That covers [`row_name_source`]
 //!    and [`row_description_source`], which decode the class-tagged `u16`
 //!    entry word ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]). Nothing produces such a
 //!    word because the typed rows already carry the resolved name and
@@ -60,12 +60,12 @@
 //!    holds.
 //! 3. The three `FUN_80030628` bag builders. They want an **ordered bag-slot
 //!    array** and a per-row ink bit; the array exists now
-//!    ([`crate::world::ItemBag`] is retail's 256-slot physical array, indexed
+//!    (`legaia_engine_core::world::ItemBag` is retail's 256-slot physical array, indexed
 //!    by slot, bounded by the same active window), so
 //!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
-//!    window and `crate::field_menu_dispatch::build_pause_items_session`
+//!    window and `legaia_engine_core::field_menu_dispatch::build_pause_items_session`
 //!    takes its row order, which is what both hosts' Items screen draws.
-//!    [`crate::pause_screens::PauseItemRow`] still carries no ink field, so
+//!    `legaia_engine_core::pause_screens::PauseItemRow` still carries no ink field, so
 //!    the dim bit is computed and dropped at the draw - the *order* is
 //!    retail's, the greying is not yet. The row's **payload** does survive:
 //!    it is a bag slot, and Use / Throw Out / Sell remove from that slot
@@ -76,7 +76,7 @@
 //!    The two siblings are wired too, on the tables the "no engine table
 //!    carries this" note was wrong about. [`build_price_gated_rows`] wants the
 //!    item record's `+2` price halfword for **every** id, which is exactly
-//!    what [`crate::shop_catalog::ShopItemData`] holds - both hosts install it
+//!    what `legaia_engine_core::shop_catalog::ShopItemData` holds - both hosts install it
 //!    at boot for the merchant-record scan - not the open shop's stock list,
 //!    whose answer for an unstocked id is a floor of `1`.
 //!    [`build_throw_out_rows`] wants the equipment record's `+7` flags byte
@@ -87,7 +87,7 @@
 //!    id-sorted and the committed row was a slot walk, so on a bag whose slot
 //!    order is not ascending by id the player sold a different stack than the
 //!    hand was on. Both sides read one seat now
-//!    ([`crate::menu_runtime::MenuRuntime::sell_list_rows`]).
+//!    (`legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows`).
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
 //! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
@@ -97,7 +97,7 @@
 //! renderer-less containers the kind-4 list kernel draws from the entry
 //! words - which is why the builders and the resolvers close together.
 //!
-//! `crate::pause_screens::list_kernel_navigate` - the *navigation* half of
+//! `legaia_engine_core::pause_screens::list_kernel_navigate` - the *navigation* half of
 //! the same kernel - is the one piece that survived the flat-cursor
 //! translation and is live.
 
@@ -391,9 +391,9 @@ pub struct UseListCtx<'a> {
 ///
 /// Wired through `World::bag_use_rows`, which supplies the window's slot
 /// array and the applicability probe;
-/// `crate::field_menu_dispatch::build_pause_items_session` takes the
+/// `legaia_engine_core::field_menu_dispatch::build_pause_items_session` takes the
 /// resulting row order for the Items screen on both hosts. The dim bit
-/// survives as far as `crate::world::BagRow` and is dropped at the draw -
+/// survives as far as `legaia_engine_core::world::BagRow` and is dropped at the draw -
 /// see family 3 in the module heading.
 ///
 /// Walks the bag slots (`bag_ids[i]` = the item-id byte at
@@ -530,9 +530,9 @@ pub fn build_throw_out_rows(
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
 /// Wired through `World::bag_sell_rows` and
-/// `crate::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
+/// `legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
 /// sell-list draw and its sell commit read on both hosts. The price source is
-/// `crate::shop_catalog::ShopItemData` - the item record's `+2` halfword for
+/// `legaia_engine_core::shop_catalog::ShopItemData` - the item record's `+2` halfword for
 /// every id, already installed at boot - and **not** an open shop's stock
 /// list, whose answer for an id it does not sell is a floor of `1` that can
 /// never dim a row.
@@ -593,11 +593,11 @@ pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
 /// (`0x15`..`0x18`) and the three Goods rows reach **these** - a separate
 /// family with its own filter.
 ///
-/// Wired: `crate::equip_session::EquipSession::items_for_slot` builds the
+/// Wired: `legaia_engine_core::equip_session::EquipSession::items_for_slot` builds the
 /// three Goods slots' candidate list through this whenever the session
 /// carries disc restrictions (a `GoodsIndexTables` adapter answers the two
 /// questions the filter asks from `DiscEquipInfo::install_goods`), and
-/// `crate::pause_screens` hands those rows to both hosts' equip screen. So
+/// `legaia_engine_core::pause_screens` hands those rows to both hosts' equip screen. So
 /// the Goods list is retail's shape - Remove always first, the equipped item
 /// second as a no-commit row, then bag slots in slot order - while the four
 /// armament lists keep the engine's id-sorted rows.
@@ -684,14 +684,14 @@ pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
 /// PORT: FUN_80030628 (content-id-`0x0B` case, `0x80030D48..0x80030F98` -
 /// the shop **buy** list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
-/// Wired: `crate::shop::ShopInventory::from_stock_record` runs it over the
+/// Wired: `legaia_engine_core::shop::ShopInventory::from_stock_record` runs it over the
 /// stock record's own id run, and both builders of a live buy list call that:
 /// `World::try_arm_field_shop` (the field-VM op-`0x49` merchant, which both
 /// play hosts open through `take_pending_field_shop`) with the party's
-/// [`shop_tail_rows_allowed`] probe, and `crate::shop_catalog::scene_shops`
+/// [`shop_tail_rows_allowed`] probe, and `legaia_engine_core::shop_catalog::scene_shops`
 /// for the per-scene listing. The word's row order, conditional tail and
 /// hoisted-band class reach both hosts' buy list; its class selects the row
-/// ink through `crate::shop::shop_buy_row_ink`.
+/// ink through `legaia_engine_core::shop::shop_buy_row_ink`.
 ///
 /// This, not [`build_price_gated_rows`], is the shop's buy row layout.
 /// Content id `2` is the price-gated *bag* list (the sell side); the buy

@@ -998,7 +998,7 @@ in the same image, which is a layout fact and not an identity one.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/menu_list_rows.rs:80034250"
+key = "module-orphan:crates/engine-menus/src/menu_list_rows.rs:80034250"
 reason = """
 The corroborating datum is gp-relative and therefore invisible. FUN_80034250
 resolves the highlighted row's description through the item / goods tables

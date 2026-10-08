@@ -114,7 +114,7 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
     <summary>History: the cost table that does not exist</summary>
     <div class="disclosure-body"><p>A per-scene cost table in the menu overlay's data segment was the natural first guess; the disc has none. Three port defects hid the real path at once: <code>0x2A</code> decoded as nothing, the gate read an empty purse, and the clip spin was read as the end of the conversation. See <a href="../reference/re-settled-threads.html">settled threads</a>.</p></div>
   </details>
-  <p class="hint">Full provenance: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-core/src/inn.rs</code>, <code>crates/engine-core/src/inline_dialogue.rs</code>.</p>
+  <p class="hint">Full provenance: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-menus/src/inn.rs</code>, <code>crates/engine-core/src/inline_dialogue.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

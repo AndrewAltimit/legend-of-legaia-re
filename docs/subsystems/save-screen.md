@@ -708,7 +708,7 @@ One of the three per-frame calls the ticker `FUN_801E1114` makes. Its two
 siblings are not display-list emitters: `FUN_801E380C` is the in-flight
 transfer's completion step (it polls the array-A card events, closes the
 descriptor and latches the read / write failure flag - ported as
-[`card_bu_io::CardIoState::step`](../../crates/engine-core/src/card_bu_io.rs)),
+[`card_bu_io::CardIoState::step`](../../crates/engine-menus/src/card_bu_io.rs)),
 and `FUN_801E16E0` picks the status message from the last card result and
 runs the retry counters. `FUN_801E13B8` is the higher-level
 card-**operation** sequencer over the
@@ -741,7 +741,7 @@ image file back. Both writes go through one kernel,
 directory claim). Neither leaves an asynchronous BIOS beat for an
 issue-then-poll machine to sequence; wiring one would re-host the device layer
 rather than add behaviour. The `bu` layer below it is likewise ported, as
-[`engine-core::card_bu_io`](../../crates/engine-core/src/card_bu_io.rs).
+[`engine-core::card_bu_io`](../../crates/engine-menus/src/card_bu_io.rs).
 
 ### The `bu` file-I/O layer under the sequencer
 
@@ -749,7 +749,7 @@ The requests `FUN_801E13B8` issues land on a thin wrapper family over the
 PSX BIOS `bu` device. Every one of them formats its target the same way -
 two single-digit fields (controller port, card unit), a colon, then the
 filename - and then makes one BIOS call. Port:
-[`engine-core::card_bu_io`](../../crates/engine-core/src/card_bu_io.rs).
+[`engine-core::card_bu_io`](../../crates/engine-menus/src/card_bu_io.rs).
 
 | Routine | BIOS call | Notes |
 |---|---|---|

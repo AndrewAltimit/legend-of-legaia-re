@@ -273,7 +273,7 @@ pub enum InvalidReason {
 /// The prerequisite this row used to name - "a multi-target outcome **and** a
 /// matching applier" - needed no new outcome variant in the end:
 /// [`crate::spells::SpellOutcome::MultiHeal`] already carried the per-member
-/// grants, and [`crate::field_menu_dispatch::apply_spell_outcome`] now has an
+/// grants, and `legaia_engine_core::field_menu_dispatch::apply_spell_outcome` now has an
 /// arm for it. Before that arm a party-wide heal picked one member and healed
 /// only them, because [`crate::spells::cast_spell`]'s `HealAll` arm returns
 /// the grant for the **one** member it was handed and asks the caller to
@@ -330,7 +330,7 @@ impl SpellMenuSession {
 
     /// Attach the relevance probe's refusals - spell ids for which
     /// `FUN_8003053C` found no party member the spell would affect
-    /// (`crate::menu_validator::spell_affects_anyone`). Those rows grey,
+    /// (`legaia_engine_core::menu_validator::spell_affects_anyone`). Those rows grey,
     /// and a confirm on one is [`InvalidReason::NobodyAffected`].
     pub fn with_unaffected_spells(mut self, spell_ids: Vec<u8>) -> Self {
         self.unaffected = spell_ids;

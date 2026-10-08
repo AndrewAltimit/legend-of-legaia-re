@@ -18,7 +18,7 @@
 //! The packed layout is **not** the raw PSX pad word ([`crate::input::PadButton`]):
 //! the second libpad button byte (face/shoulder cluster) lands in bits 0-7 and
 //! the first byte (dpad/system cluster) in bits 8-15 - `mask = ~((b2 << 8) | b3)`.
-//! See the [`dev_menu`](legaia_engine_core::dev_menu) `PACK_*` constants for the named bits.
+//! See the `legaia_engine_core::dev_menu` `PACK_*` constants for the named bits.
 //!
 //! Retail behaviour pinned by the disassembly (`see ghidra/scripts/funcs/8001822c.txt`,
 //! corroborated instruction-for-instruction by the static-recomp rendering of

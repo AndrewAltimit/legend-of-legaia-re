@@ -142,7 +142,7 @@ impl NameEntryInput {
 }
 
 /// Mutable name-entry session. Install on the world via
-/// [`crate::world::World::open_name_entry`]; step it each frame with a
+/// `legaia_engine_core::world::World::open_name_entry`; step it each frame with a
 /// [`NameEntryInput`]; read [`NameEntry::state`] for `Done` to commit + close.
 #[derive(Clone, Debug)]
 pub struct NameEntry {
@@ -164,7 +164,7 @@ pub struct NameEntry {
     /// state 0 saves it to `0x801F2A84` (`0x801F0468..0x801F0474`), state 1
     /// holds the floor at `1` every frame (`0x801F0488`) and the close arm
     /// writes the saved word back (`0x801F09A0`); see
-    /// `crate::world::World::open_name_entry`.
+    /// `legaia_engine_core::world::World::open_name_entry`.
     pub saved_frame_step_floor: Option<u8>,
 }
 

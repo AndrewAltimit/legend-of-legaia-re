@@ -21,11 +21,11 @@
 //!   `legaia_engine_vm::Host`, mapping each callback to the retail helper
 //!   the VM dispatched to.
 //!
-//! The trigger point is [`crate::menu_runtime::MenuRuntime::tick`]: entering
+//! The trigger point is `legaia_engine_core::menu_runtime::MenuRuntime::tick`: entering
 //! the shop picker state runs the open script, entering the Sell state runs
 //! the slide-away script - the same two edges the retail dispatcher drives.
 //!
-//! [`World::install_menu_overlay_tables`]: crate::world::World::install_menu_overlay_tables
+//! [`World::install_menu_overlay_tables`]: legaia_engine_core::world::World::install_menu_overlay_tables
 
 use legaia_asset::widget_script;
 use legaia_engine_vm as vm;

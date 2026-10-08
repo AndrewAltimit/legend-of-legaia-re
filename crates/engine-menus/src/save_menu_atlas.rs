@@ -1046,7 +1046,7 @@ const CURSE_PLATE_TEXELS: (u32, u32, u32, u32) = (0x78, 0x60, 64, 16);
 const CURSE_PLATE_CLUT: (u16, u16) = (0, 476);
 
 /// Bake the command ring's three marks into `atlas` from the battle effect
-/// atlas (PROT 870, the entry `crate::scene::host::upload_flame_atlas_into_vram`
+/// atlas (PROT 870, the entry `legaia_engine_core::scene::host::upload_flame_atlas_into_vram`
 /// uploads on battle entry): the TIM whose image lands on page `(448, 0)`,
 /// each mark decoded through its own 16-colour palette on CLUT row 476.
 ///

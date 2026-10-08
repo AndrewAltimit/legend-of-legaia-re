@@ -250,7 +250,7 @@ impl TitleSession {
 
     /// [`Self::for_front_end`] opened on `row` - the row counter
     /// `_DAT_8007B820` a host carries across titles in its
-    /// [`crate::mode::ModeSeat::title_row`]. Retail never resets the counter,
+    /// `legaia_engine_core::mode::ModeSeat::title_row`. Retail never resets the counter,
     /// so a later title (a party wipe's, a backed-out Continue's) opens on
     /// whichever row the last one held. A CONTINUE row with nothing to
     /// continue folds to NEW GAME: the port greys that row out, and the
@@ -263,7 +263,7 @@ impl TitleSession {
     }
 
     /// The row counter as it stands (`0` NEW GAME, `1` CONTINUE) - what a
-    /// host hands [`crate::mode::ModeSeat::set_title_row`] each frame.
+    /// host hands `legaia_engine_core::mode::ModeSeat::set_title_row` each frame.
     pub fn row_counter(&self) -> u8 {
         self.menu
             .row_counter

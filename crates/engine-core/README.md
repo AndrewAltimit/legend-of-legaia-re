@@ -527,15 +527,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   `items_screen_draws_for` / `magic_screen_draws_for` builders in both
   hosts. See
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#items-screen).
-- `menu_arrange` - the Items screen's Arrange rank table (menu-overlay
-  `0x801E4A88`) + the retail bag-sort kernel (`FUN_801D64A8`).
-- `menu_widget` - the window-widget choreography: `MenuWidgetScripts`
-  resolves the window-script VM's programs out of the menu-overlay image
-  (`legaia_asset::widget_script`), and `MenuWidgetState` is the
-  `legaia_engine_vm::Host` window-list model the shop open / Sell
-  slide-away programs run against (`MenuRuntime::tick` drives the edges,
-  mirroring `FUN_801DAFD4`). See
-  [`docs/formats/window-script.md`](../../docs/formats/window-script.md).
 - `field_regions::window_rebuild_spawns_resident` - the sub-area **window
   rebuild** placed-object sweep (`FUN_801D7B50`), complement of the
   scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
@@ -663,13 +654,9 @@ docs carry the retail provenance.
 - **Overworld** - `overworld_curvature`, `overworld_draw_order`,
   `overworld_ground_cue`, `world_map_markers` (not retail: marker quads),
   `world_map_sky` (which frames draw the sky band).
-- **Menus + screens** - `menu_cues`, `menu_glyph_atlas`, `menu_input`
-  (`FUN_801d688c`), `menu_item_category`, `menu_list_rows`,
-  `menu_open_sequence`, `menu_validator`, `status_screen`, `spell_menu`,
-  `key_rebind`, `list_order`, `name_entry`, `save_screen` (the save
-  screen's host half), `debug_char_editor`, `dev_menu_host`,
-  `dialog_pacing` / `dialog_picker_slide` (typewriter reveal, picker slide),
-  `title_screen_atlas`, `publisher_logos`, `game_over` (party wipe → title),
+- **Menus + screens** - `menu_input` (`FUN_801d688c`), `menu_validator`,
+  `status_screen`, `list_order`, `save_screen` (the save screen's host half),
+  `dev_menu_host`,
   `prize_exchange` (casino sub-screen `0x20`; rules in `engine-minigames`).
 - **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
   `minigame_floor`, `minigame_status` (the engine's affordance rows),
@@ -689,6 +676,14 @@ docs carry the retail provenance.
   `fade` / `fade_ramp` / `pause_wipe`, `mode_entry_init`, `scene_name_sync`,
   `ram_map`, `capture_observations` and `draw_census` are re-exported from
   [`legaia-engine-system`](../engine-system/README.md).
+- **Menu front end** - `items`, `equipment`, `inventory_use`,
+  `menu_list_rows`, `menu_item_category`, `menu_arrange`, `spell_menu`,
+  `spell_party_broadcast`, `menu_widget`, `menu_open_sequence`, `menu_cues`,
+  `menu_glyph_atlas`, `save_menu_atlas`, `debug_char_editor`, `key_rebind`,
+  `publisher_logos`, `title`, `title_screen_atlas`, `name_entry`, `game_over`,
+  `card_flow`, `card_bu_io`, `dialog_window`, `dialog_pacing`,
+  `dialog_picker_slide`, `text_balloon` and `inn` are re-exported from
+  [`legaia-engine-menus`](../engine-menus/README.md).
 
 ## See also
 

@@ -2,7 +2,7 @@
 //! machine: the three routines the per-frame ticker `FUN_801E1114` drives
 //! over the state word `DAT_801F329C`.
 //!
-//! `save_select`'s [`CardIoMachine`](crate::save_select::CardIoMachine) is
+//! `save_select`'s `legaia_engine_core::save_select::CardIoMachine` is
 //! the layer below - it polls kernel events and publishes a status code.
 //! This module is what consumes that code:
 //!
@@ -638,7 +638,7 @@ pub fn block_title_digits(slot: u32) -> [u8; 2] {
 /// `FUN_801E1934` - the VRAM icon grab it does next (three `StoreImage`
 /// strips at `(0x3C0 + slot*4, 0xE0)` into block `+0x80` / `+0x100` /
 /// `+0x180`, plus the 16-entry CLUT row into `+0x60`) is a host job, and
-/// so is the final `memcpy` + [`checksum`](crate::save_select::save_block_checksum).
+/// so is the final `memcpy` + `legaia_engine_core::save_select::save_block_checksum`.
 ///
 /// PORT: FUN_801e1934
 pub fn save_block_summary(

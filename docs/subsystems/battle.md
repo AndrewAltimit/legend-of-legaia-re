@@ -3965,7 +3965,7 @@ cap at the record's per-stat cap constant; HP/MP max at 9999. (These items are
 field-only and absent from the captured battle traces, so the exact retail cap /
 refill rule is not byte-pinned - the engine uses self-consistent rules.)
 
-Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
+Implementation: [`crates/engine-core::items`](../../crates/engine-menus/src/items.rs).
 
 
 ## Battle round lifecycle
@@ -4095,7 +4095,7 @@ carved-gold plate row, which is the same art the field menu's tab banner
 already bakes. Source rects live in
 [`title_pak`](../../crates/asset/src/title_pak.rs) as
 `OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
-[`save_menu_atlas`](../../crates/engine-core/src/save_menu_atlas.rs) as
+[`save_menu_atlas`](../../crates/engine-menus/src/save_menu_atlas.rs) as
 `ATLAS_RECT_BATTLE_*`, all at their natural sheet coordinates except the
 numeral strip, whose own row the filigree tile holds.
 
@@ -5005,7 +5005,7 @@ State machine that drives the "open inventory → pick item → pick target → 
 
 Filters items by `InventoryContext` (battle vs field - `usable_in_battle` / `usable_in_field` from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved `ItemOutcome` into the engine's world state via `World::use_item`.
 
-Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-core/src/inventory_use.rs).
+Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-menus/src/inventory_use.rs).
 
 
 ## Encounter system
@@ -5309,7 +5309,7 @@ Slots match the retail `equip[8]` byte array at character record `+0x196`:
 | Ring 1/2 | 5/6 | Power / Defense / Speed / Hit Rings |
 | Accessory | 7 | Goblin Foot (encounter rate down) / Wisdom Ring (MP cost) / Lucky Charm (bonus EXP) |
 
-Implementation: [`crates/engine-core::equipment`](../../crates/engine-core/src/equipment.rs).
+Implementation: [`crates/engine-core::equipment`](../../crates/engine-menus/src/equipment.rs).
 
 ## Seru capture + spell learning
 

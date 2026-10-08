@@ -40,7 +40,7 @@
 //! - [`ItemEffect::StatBoost`]: permanently raises a base stat by
 //!   `delta` (capped by [`crate::battle_stats::StatRecord`] limits).
 //! - [`ItemEffect::Spirit`]: refunds `amount` AP into the active
-//!   character's [`crate::ap_gauge::ApGauge`].
+//!   character's `legaia_engine_core::ap_gauge::ApGauge`.
 //! - [`ItemEffect::Capture`]: marks the target monster slot with the
 //!   capture flag - battle's monster-wipe handler reads this.
 //! - [`ItemEffect::Escape`]: forces a Run / Escape outcome.
@@ -81,7 +81,7 @@ const PERMANENT_STAT_ITEMS: &[(u8, &str)] = &[
 /// retail ids + names. Each ramps the targeted battle-actor stat by ×6/5 for
 /// the rest of the battle. Seeded only when the on-disc effect table is
 /// installed ([`ItemCatalog::apply_buff_items`]); the buffed stats are resolved
-/// from that table at use time ([`crate::World::use_item`]).
+/// from that table at use time (`legaia_engine_core::World::use_item`).
 const BATTLE_BUFF_ITEMS: &[(u8, &str)] = &[
     (0x8B, "Power Elixir"),  // ATK
     (0x8C, "Shield Elixir"), // DEF (both facets)
@@ -104,7 +104,7 @@ const ACTION_GAUGE_ITEMS: &[(u8, &str)] = &[(0x81, "Fury Boost")];
 ///
 /// Seeded only when the on-disc effect table is installed
 /// ([`ItemCatalog::apply_arts_book_items`]); the insert itself runs in
-/// [`crate::World::use_item`].
+/// `legaia_engine_core::World::use_item`.
 const ARTS_BOOK_ITEMS: &[(u8, &str)] = &[
     (0x8F, "Fire Book I"),
     (0x90, "Fire Book II"),
@@ -182,17 +182,17 @@ pub enum ItemEffect {
     /// Permanent multi-stat increase (the class-6 *Water* line + the all-stats
     /// Honey / Miracle Water). A marker: the actual per-stat changes are
     /// resolved from the on-disc effect table at use time
-    /// ([`crate::World::use_item`]), so this is only ever installed when a real
+    /// (`legaia_engine_core::World::use_item`), so this is only ever installed when a real
     /// item-effect table is present (see [`ItemCatalog::apply_stat_items`]).
     StatUp,
     /// One-battle stat buff (the class-7 Elixirs). A marker: the buffed stats are
     /// resolved from the on-disc effect table at use time
-    /// ([`crate::World::use_item`]), which ramps each by ×6/5 for the battle.
+    /// (`legaia_engine_core::World::use_item`), which ramps each by ×6/5 for the battle.
     /// Only ever installed when a real table is present (see
     /// [`ItemCatalog::apply_buff_items`]).
     BattleBuff,
     /// One-battle action-gauge extension (the class-5 Fury Boost). A marker
-    /// handled in [`crate::World::use_item`]: it extends the target's AP gauge
+    /// handled in `legaia_engine_core::World::use_item`: it extends the target's AP gauge
     /// for the rest of the battle. Only installed when a real table is present
     /// (see [`ItemCatalog::apply_action_gauge_items`]).
     ActionGauge,
@@ -208,13 +208,13 @@ pub enum ItemEffect {
     },
     /// A Hyper-Art **book** (classes `11`/`12`/`13`). A marker: the roster
     /// slot and the art id are resolved from the on-disc descriptor at use
-    /// time ([`crate::World::use_item`]), which runs the applier's ordered
+    /// time (`legaia_engine_core::World::use_item`), which runs the applier's ordered
     /// insert into that character's displayed-skill list. Only ever installed
     /// when a real table is present (see [`ItemCatalog::apply_arts_book_items`]).
     ArtsBook,
     /// The **Point Card strike** (class `14`). A marker: the discharge reads
     /// the Point Card bank and applies it as damage at use time
-    /// ([`crate::World::use_item`]). Only ever installed when a real table is
+    /// (`legaia_engine_core::World::use_item`). Only ever installed when a real table is
     /// present, and no retail row carries the class (see
     /// [`ItemCatalog::apply_point_card_items`]).
     PointCardStrike,
@@ -430,10 +430,10 @@ impl ItemCatalog {
     /// all-stats Honey / Miracle Water) into the catalog from the real on-disc
     /// item-effect table. Each is installed as an [`ItemEffect::StatUp`] marker;
     /// the per-stat changes are resolved from the same table at use time
-    /// ([`crate::World::use_item`]).
+    /// (`legaia_engine_core::World::use_item`).
     ///
     /// These are seeded **only** when the disc table is present (called from
-    /// [`crate::World::set_item_effects`] / [`crate::World::set_item_catalog`]),
+    /// `legaia_engine_core::World::set_item_effects` / `legaia_engine_core::World::set_item_catalog`),
     /// so a disc-free build never offers an item that would resolve to a no-op.
     /// An item is added only if the installed table actually classifies it as a
     /// permanent stat-up (defensive against an edited table).
@@ -456,7 +456,7 @@ impl ItemCatalog {
     /// Seed the one-battle stat-buff Elixirs (class 7) into the catalog from the
     /// real on-disc item-effect table. Each is installed as an
     /// [`ItemEffect::BattleBuff`] marker (battle-only); the buffed stats are
-    /// resolved from the same table at use time ([`crate::World::use_item`]),
+    /// resolved from the same table at use time (`legaia_engine_core::World::use_item`),
     /// which ramps each by ×6/5 for the rest of the battle.
     ///
     /// Like [`Self::apply_stat_items`], seeded **only** when the disc table is
@@ -484,7 +484,7 @@ impl ItemCatalog {
     /// Seed the action-gauge-extension consumable (class 5, Fury Boost) into the
     /// catalog from the real on-disc item-effect table, as an
     /// [`ItemEffect::ActionGauge`] marker (battle-only). The extension is applied
-    /// to the target's AP gauge in [`crate::World::use_item`].
+    /// to the target's AP gauge in `legaia_engine_core::World::use_item`.
     ///
     /// Like the sibling seeders, installed **only** when the disc table is
     /// present and the id is actually classified as an action-gauge item.
@@ -507,7 +507,7 @@ impl ItemCatalog {
     /// Seed the nine Hyper-Art books (classes `11`/`12`/`13`) into the catalog
     /// from the real on-disc item-effect table, each as an
     /// [`ItemEffect::ArtsBook`] marker. The roster slot and the art id are
-    /// read back off the same table in [`crate::World::use_item`].
+    /// read back off the same table in `legaia_engine_core::World::use_item`.
     ///
     /// The shipped descriptors carry flag byte `0x83` - field-usable, not
     /// battle-usable, not discardable - so the books never appear in the
@@ -668,7 +668,7 @@ pub enum ItemOutcome {
 /// Bit position of a [`StatusKind`] in a status bitset (the `StatusKind` enum
 /// is fieldless, so its discriminant is the bit index). Shared by
 /// [`TargetSnapshot::status_mask`] and the item-menu usability gate.
-pub(crate) fn status_bit(kind: StatusKind) -> u8 {
+pub fn status_bit(kind: StatusKind) -> u8 {
     1u8 << (kind as u8)
 }
 

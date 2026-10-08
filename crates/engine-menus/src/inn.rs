@@ -1,6 +1,6 @@
 //! Inn UI state - rest confirmation and party HP / MP restore.
 //!
-//! `InnSession` is installed on [`crate::menu_runtime::MenuRuntime`] by
+//! `InnSession` is installed on `legaia_engine_core::menu_runtime::MenuRuntime` by
 //! `open_inn` before the menu VM enters `InnConfirm`. On confirmation the
 //! runtime deducts gold and restores every active party member's HP and MP to
 //! their current maximums via the world's live `BattleActor` mirrors.

@@ -1446,7 +1446,7 @@
 # The boot / init.pak overlay, PROT 0895 (slot A, base 0x801CE818). Its
 # publisher-logo half IS ported - the sequencer FUN_801CEFD4, the quad emitter
 # FUN_801CFBB8 and the two pair drawers FUN_801D0868 / FUN_801D08F0 all carry
-# `// PORT:` tags in crates/engine-core/src/publisher_logos.rs, and the quad
+# `// PORT:` tags in crates/engine-menus/src/publisher_logos.rs, and the quad
 # table is in docs/subsystems/boot.md. The rows here are the rest of the image:
 # a CD/asset streamer and a PSX memory-card driver, both of which the port
 # replaces wholesale (legaia-iso / legaia-prot / legaia-lzs for the first,

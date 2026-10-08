@@ -1350,6 +1350,7 @@ dependencies = [
  "legaia-cheats",
  "legaia-engine-battle",
  "legaia-engine-effects",
+ "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -1384,6 +1385,22 @@ dependencies = [
  "legaia-engine-minigames",
  "legaia-engine-vm",
  "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-menus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-engine-battle",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-font",
+ "legaia-mes",
+ "legaia-prot",
+ "legaia-save",
+ "legaia-tim",
 ]
 
 [[package]]

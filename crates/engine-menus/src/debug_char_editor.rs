@@ -54,7 +54,7 @@
 //!
 //! Source: `ghidra/scripts/funcs/overlay_save_ui_801d6e18.txt`.
 //!
-//! Wired: [`crate::dev_menu_host::DevMenuSession`]'s `PLAYER_PARAM` page
+//! Wired: `legaia_engine_core::dev_menu_host::DevMenuSession`'s `PLAYER_PARAM` page
 //! drives [`DebugEditor::tick`], and its per-frame tail runs
 //! [`clamp_record_stats`] over the whole party exactly as retail does.
 

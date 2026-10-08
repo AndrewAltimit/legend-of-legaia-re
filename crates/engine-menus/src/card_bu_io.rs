@@ -1,9 +1,9 @@
 //! Retail's memory-card **file I/O layer** - the `bu` device wrappers the
-//! save screen calls beneath [`save_select`](crate::save_select).
+//! save screen calls beneath `legaia_engine_core::save_select`.
 //!
 //! `save_select` already models the *screen*: the slot rack, the
 //! "Now checking" beat and its per-frame event poll
-//! ([`card_status_poll`](crate::save_select::card_status_poll)). This module
+//! (`legaia_engine_core::save_select::card_status_poll`). This module
 //! is the layer under it - the thin routines in the menu overlay that turn
 //! "port 1, block 0, this filename" into a PSX BIOS `bu` device path and run
 //! one `open`/`read`/`write`/`erase`/`format` against it, plus the two
@@ -17,7 +17,7 @@
 //! * Array **A** (`0x8007B9F0..0x8007B9FC`) is the *asynchronous* set. It is
 //!   drained before each `read`/`write` is issued and polled once per frame
 //!   afterwards - by `FUN_801E3900`
-//!   ([`card_status_poll`](crate::save_select::card_status_poll), with a
+//!   (`legaia_engine_core::save_select::card_status_poll`, with a
 //!   120-frame backstop) and by [`poll_events_a`], which is the same probe
 //!   with no backstop and first-handle-wins ordering.
 //! * Array **B** (`0x8007BA04..0x8007BA10`) is the *synchronous* set, used
@@ -50,7 +50,7 @@
 //! re-hosting the device layer rather than adding behaviour. The anchors here
 //! are kept as the decoded spec of retail's ordering - which flag is cleared
 //! before the call, which one the completion sets - and
-//! [`crate::save_select::card_frame_tick`] remains the frame hook a
+//! `legaia_engine_core::save_select::card_frame_tick` remains the frame hook a
 //! retail-shaped backend would tick, should one ever be wanted.
 //!
 //! Evidence: `ghidra/scripts/funcs/overlay_menu_801e37cc.txt`,
@@ -429,7 +429,7 @@ impl CardIoState {
 /// `FUN_801E435C` `TestEvent`s the four `0x8007B9F0..FC` handles in order
 /// and returns the 1-based index of the first that reports ready, or `0`.
 /// It is the sibling of `FUN_801E3900`
-/// ([`card_status_poll`](crate::save_select::card_status_poll)), which
+/// (`legaia_engine_core::save_select::card_status_poll`), which
 /// probes the same four handles but lets a **later** handle overwrite an
 /// earlier one and folds in the 120-frame timeout. The two disagree
 /// whenever more than one handle fires in the same frame.
@@ -451,7 +451,7 @@ pub fn poll_events_a(events: [bool; CARD_EVENTS]) -> u32 {
 /// `FUN_801E3A98` `TestEvent`s all four `0x8007BA04..0x8007BA10` handles
 /// and discards the results - `TestEvent` clears the flag it reports, so
 /// this is a drain, not a query. It is the array-B twin of `FUN_801E39A8`
-/// ([`card_events_drain`](crate::save_select::card_events_drain)).
+/// (`legaia_engine_core::save_select::card_events_drain`).
 ///
 /// PORT: FUN_801E3A98
 /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the

@@ -122,7 +122,7 @@ pub fn parse_category_table(overlay: &[u8]) -> Result<Vec<CategoryEntry>> {
 // `FieldMenuSubsession::tick_pad_edge` -> `EquipSession::input` ->
 // `EquipSession::best_equipment_now` -> the `weapon_category_score` closure ->
 // here; its retail caller is the same Best-Equipment chooser (`FUN_801CF88C`,
-// ported as `crate::equip_session::best_equipment_candidates`).
+// ported as `legaia_engine_core::equip_session::best_equipment_candidates`).
 //
 // The table itself comes off the disc: `World::install_menu_overlay_tables`
 // runs [`parse_category_table`] over the PROT 0899 image both hosts already

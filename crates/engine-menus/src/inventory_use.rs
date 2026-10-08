@@ -281,7 +281,7 @@ pub struct InventoryUseSession {
     /// Item ids the pause-menu Throw Out sub-flow discarded (whole stacks -
     /// the retail confirm zeroes both bytes of the bag slot pair,
     /// `FUN_801D8734`). Applied to the world by
-    /// [`crate::field_menu_dispatch::apply_inventory_outcome`] regardless of
+    /// `legaia_engine_core::field_menu_dispatch::apply_inventory_outcome` regardless of
     /// whether a use also completed.
     pub thrown_items: Vec<u8>,
     /// Physical bag slot of each entry in [`Self::thrown_items`], when the
@@ -298,7 +298,7 @@ pub struct InventoryUseSession {
     /// throw-out zeroes the whole stack while these take exactly one copy.
     /// A list, not an `Option`, because the Incense route returns to the Use
     /// list and can commit again before the screen closes.
-    /// Drained by [`crate::field_menu_dispatch::apply_inventory_outcome`].
+    /// Drained by `legaia_engine_core::field_menu_dispatch::apply_inventory_outcome`.
     pub consumed_items: Vec<u8>,
 }
 
@@ -798,7 +798,7 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
 /// ring states `0x5B`/`0x5D`. So a heal item's target list simply never
 /// contains an enemy row; the port's synthetic offensive items take the
 /// mirror rule.
-pub(crate) fn target_on_effect_side(effect: &ItemEffect, target: &TargetRow) -> bool {
+pub fn target_on_effect_side(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.is_enemy,
         _ => !target.is_enemy,

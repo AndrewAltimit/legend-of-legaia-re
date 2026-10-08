@@ -96,6 +96,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 CORE_SRC = REPO / "crates" / "engine-core" / "src"
 # Crates split out of engine-core whose traits engine-core re-exports.
 SPLIT_SRCS = [
+    REPO / "crates" / "engine-menus" / "src",
     REPO / "crates" / "engine-system" / "src",
 ]
 WAIVERS = Path(__file__).resolve().parent / "trait-override-waivers.toml"
