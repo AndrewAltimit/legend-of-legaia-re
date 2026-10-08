@@ -494,7 +494,12 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   nothing; a contest pays. Driven by `World::report_muscle_leg` /
   `World::settle_muscle_contest`. The contest ladder, course tables, damage
   model and hub envelopes are World-free and live in `engine-minigames`;
-  this module keeps the leg session and re-exports them.
+  the leg session, its command menu and ring live in `legaia-engine-menus`
+  (beside the battle command input they share). This module re-exports
+  both and keeps `magic_loadout_for`, which reads a fighter's loadout off
+  the live roster and hands the slice to `magic_loadout_of`. `timed_fight`
+  and `battle_open` split the same way: their kernels in
+  `legaia-engine-menus`, their `World` / `ProtIndex` readers here.
 - `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
   the arena shell, the ground grid, the lead's assembled battle form and the
   ladder's monster, posed off the session's turn edge and framed by

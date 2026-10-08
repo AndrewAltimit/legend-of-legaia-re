@@ -323,7 +323,7 @@ was written - find the symbol by name, not by line.
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
 | `801d06c8` | `buy` | `crates/engine-minigames/src/fishing/prize.rs:159` | FALSE INERT |
-| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome/session.rs` | FALSE INERT |
+| `801d0748` | `hp_left` / `turns_left` | `crates/engine-menus/src/muscle_dome/session.rs` | FALSE INERT |
 | `801d092c` | `max_qty` | `crates/engine-minigames/src/fishing/prize.rs:137` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-field/src/walk_regen.rs:86` | WIRE |
 | `801d0c3c` | `first_visible` | `crates/engine-minigames/src/fishing/prize.rs:98` | FALSE INERT |
@@ -380,7 +380,7 @@ Both closed, and they closed in opposite directions - which is the point of
 keeping them together. Neither could be settled from the audit row itself.
 
 **`timed_fight_turns_left`** (`801d0748`) was `DISCLOSE` while it lived in
-`crates/engine-core/src/muscle_dome.rs`, and the reason was a *deliberate*
+`crates/engine-menus/src/muscle_dome.rs`, and the reason was a *deliberate*
 non-read rather than a missing host: the strip it feeds is Koru's timed fight,
 and a dome round is an ordinary battle that ends on a knockout, so
 `MuscleDomeSession` must not consult a turn limit. The row is the

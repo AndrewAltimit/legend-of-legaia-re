@@ -12,8 +12,8 @@
 //! [`DomeMenu`] holds whichever of them owns the pad, so a dome selection is
 //! driven by the same step functions a battle selection is - and the HUD
 //! projects it through the same chip clusters and arts-input chrome
-//! (`crate::battle_hud::battle_command_chips`,
-//! `crate::world::World::arts_input_view`).
+//! (`legaia_engine_core::battle_hud::battle_command_chips`,
+//! `legaia_engine_core::world::World::arts_input_view`).
 //!
 //! What the session itself still owns is the dome bookkeeping those screens
 //! write into: the fighter's queue / budget / spent triple
@@ -481,7 +481,7 @@ impl MuscleDomeSession {
 
     /// The entry screen's view, while the direction entry or its review owns
     /// the pad - the snapshot the shared arts-input chrome draws from
-    /// (`crate::world::World::arts_input_view` hands it to the hosts during a
+    /// (`legaia_engine_core::world::World::arts_input_view` hands it to the hosts during a
     /// dome leg).
     pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
         let DomeMenu::Input(s) = &self.menu else {
@@ -522,9 +522,9 @@ impl MuscleDomeSession {
         &self,
         raseru_label: &str,
         confirm_labels: [&str; 2],
-    ) -> Option<crate::battle_hud::BattleCommandChips> {
-        use crate::battle_hud::{BattleCommandChips, CommandChipPhase};
+    ) -> Option<crate::battle_input::BattleCommandChips> {
         use crate::battle_input::AttackMode;
+        use crate::battle_input::{BattleCommandChips, CommandChipPhase};
         if self.phase != MusclePhase::Select || self.intro_up() {
             return None;
         }

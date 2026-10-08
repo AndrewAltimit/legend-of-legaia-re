@@ -78,7 +78,7 @@ fn a_turn_opens_on_the_round_prompt_and_run_flees() {
     let chips = s.command_chips("-", ["Begin", "Reselect"]).expect("chips");
     assert_eq!(
         chips.phase,
-        crate::battle_hud::CommandChipPhase::RoundPrompt
+        crate::battle_input::CommandChipPhase::RoundPrompt
     );
     assert_eq!(
         s.select_input(pad(|p| p.confirm = true)),
@@ -426,7 +426,7 @@ fn the_ring_s_right_arm_opens_the_ra_seru_list_and_a_cast_reaches_begin() {
 
 #[test]
 fn the_ring_chips_project_through_the_battle_cluster() {
-    use crate::battle_hud::CommandChipPhase;
+    use crate::battle_input::CommandChipPhase;
     let mut s = session();
     s.set_special_word(SPECIAL_ITEM_FORBIDDEN);
     let chips = s.command_chips("Meta", ["Begin", "Reselect"]).unwrap();

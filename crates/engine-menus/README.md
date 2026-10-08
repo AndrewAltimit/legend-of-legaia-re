@@ -49,7 +49,12 @@ link into a dependent crate.
   window set and the disc gold-shop catalog); see
   [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
 - **Battle command input** - `battle_input` (`BattleCommandSession`, the
-  player-driven command picker the live battle loop opens per party turn)
+  player-driven command picker the live battle loop opens per party turn,
+  and the chip-cluster model both it and the dome project), `battle_open`
+  (the formation open banner and its hold timers), `timed_fight` (Koru's
+  turn-limit gate and strip readout) and `muscle_dome` (one Muscle Dome leg:
+  `MuscleDomeSession`, its command menu, ring and loadout kernels, over the
+  contest ladder `legaia-engine-minigames` carries)
   and `option_values` (the options screen's value enums - Select Attack,
   battle camera, field HP display, ... - which engine-core's `options`
   session re-exports).

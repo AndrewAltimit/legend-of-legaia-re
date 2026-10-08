@@ -1,12 +1,12 @@
-//! Each dome fighter's magic / art loadout, built out of live `World`
-//! state. The stat profiles and damage model this feeds live in
+//! Each dome fighter's magic / art loadout, built out of the roster,
+//! spell and art state a live world holds. The stat profiles and damage model this feeds live in
 //! `legaia_engine_minigames::muscle_dome` (re-exported by the parent).
 
 use super::*;
 
 /// The equipment-slot index the Ra-Seru gate reads: `+0x199` for every
 /// character but Noa, whose arm reads `+0x198`. Same pair
-/// [`crate::battle_hud::battle_member_has_raseru`] carries - kept here as
+/// `legaia_engine_core::battle_hud::battle_member_has_raseru` carries - kept here as
 /// its roster-slot twin, because a dome fighter has no battle ordinal until
 /// the leg hands off to the battle.
 ///
@@ -29,24 +29,30 @@ pub(super) const NOA_ROSTER_SLOT: usize = 1;
 /// magic submenu builds it (`World::build_battle_spell_session`), so a dome
 /// cast offers the same rows the battle does.
 ///
-/// Returns `None` when the roster has no such member.
-pub fn magic_loadout_for(
-    world: &crate::world::World,
+/// The world slice it reads is passed in: `member` is the roster record in
+/// the seat, `captured` the spells the Seru log has learned for the slot
+/// this session, `catalog` the spell table and `ability_bits` the slot's
+/// ability word. engine-core's `muscle_dome::magic_loadout_for` passes them
+/// off a `World`.
+pub fn magic_loadout_of(
+    member: &legaia_save::CharacterRecord,
+    captured: &[u8],
+    catalog: &crate::spells::SpellCatalog,
+    ability_bits: u32,
     roster_slot: usize,
     special: u32,
-) -> Option<DomeMagic> {
-    let member = world.party.roster.members.get(roster_slot)?;
+) -> DomeMagic {
     let list = member.spell_list();
     let n = (list.count as usize).min(list.ids.len());
     let mut learned: Vec<u8> = list.ids[..n].to_vec();
-    for &sid in world.seru.log.learned_spells(roster_slot as u8) {
+    for &sid in captured {
         if !learned.contains(&sid) {
             learned.push(sid);
         }
     }
     let spells: Vec<crate::spells::SpellDef> = learned
         .iter()
-        .filter_map(|id| world.tables.spell_catalog.get(*id).cloned())
+        .filter_map(|id| catalog.get(*id).cloned())
         .collect();
     let live = member.live_stats();
     let gauge = member.hp_mp_sp();
@@ -56,7 +62,7 @@ pub fn magic_loadout_for(
         RASERU_SLOT
     };
     let has_raseru = member.equipment().slots[slot] != 0;
-    Some(DomeMagic {
+    DomeMagic {
         ring: DomeRing {
             special,
             // A dome fighter enters the leg unafflicted: the status halfword
@@ -67,15 +73,10 @@ pub fn magic_loadout_for(
         },
         mp: gauge.mp_cur,
         mp_max: gauge.mp_max,
-        ability_bits: world
-            .party
-            .character_ability_bits
-            .get(roster_slot)
-            .copied()
-            .unwrap_or(0) as u8,
+        ability_bits: ability_bits as u8,
         magic_power: live.int,
         spells,
-    })
+    }
 }
 
 /// One fighter's **normal-art catalog** for [`MuscleDomeSession::install_art_catalog`],

@@ -3,27 +3,7 @@
 
 use super::*;
 
-/// Which selection surface a chip cluster belongs to - the three clusters
-/// retail seats differently (`engine-ui::battle_command_ui::ChipPhase`
-/// carries the seats; this is the renderer-free twin hosts map onto it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandChipPhase {
-    RoundPrompt,
-    CommandRing,
-    AttackMode,
-    /// The party-wide `Begin | Reselect` screen (retail `0x6E`).
-    CommitConfirm,
-}
-
-/// The live command surface projected into chip labels: one `(label,
-/// enabled)` per chip of whichever prompt is up, in seat order, the cursor
-/// index and the cluster.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BattleCommandChips {
-    pub chips: Vec<(String, bool)>,
-    pub cursor: usize,
-    pub phase: CommandChipPhase,
-}
+pub use crate::battle_input::{BattleCommandChips, CommandChipPhase};
 
 /// The chip cluster this frame draws, or `None` when no command prompt
 /// owns the frame (a submenu, an arts session or a dialogue box wins).
