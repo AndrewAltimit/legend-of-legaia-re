@@ -182,7 +182,7 @@ impl LegaiaMinigames {
     }
 
     /// Decode a 4bpp TIM through 16-colour palette `pal` to RGBA8
-    /// (texel index 0 = transparent, everything else opaque).
+    /// (a texel whose CLUT word is `0x0000` is transparent, everything else opaque).
     pub(super) fn hud_tim_rgba(tim: &legaia_tim::Tim, pal: &[u16]) -> Vec<u8> {
         let w = tim.pixel_width();
         let h = tim.pixel_height();
@@ -191,10 +191,17 @@ impl LegaiaMinigames {
             for x in 0..w {
                 let byte = tim.image.data[y * (w / 2) + x / 2];
                 let idx = if x % 2 == 0 { byte & 0xF } else { byte >> 4 } as usize;
-                if idx == 0 {
+                // The GPU's rule, not an index rule: a texel is transparent
+                // when its CLUT word is `0x0000`, whatever index it sits at.
+                // Dropping index 0 instead punched holes wherever a sheet's
+                // entry 0 is a real colour (the dome hub's brick backdrop,
+                // whose dark texels let the arena show through as specks on
+                // the page while the native sprite pass drew them).
+                let word = *pal.get(idx).unwrap_or(&0);
+                if word == 0 {
                     continue;
                 }
-                let c = legaia_tim::bgr555_to_rgba8(*pal.get(idx).unwrap_or(&0));
+                let c = legaia_tim::bgr555_to_rgba8(word);
                 let o = (y * w + x) * 4;
                 out[o..o + 3].copy_from_slice(&c[..3]);
                 out[o + 3] = 255;
