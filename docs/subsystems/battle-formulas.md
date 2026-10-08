@@ -751,6 +751,20 @@ takes 98 from dark). The element ids 2/3/4 (fire/wind/thunder) and 7 (neutral) a
 byte-pinned; 0/1/5/6 (earth/water/light/dark) are inferred from the reciprocal
 pairs + the spell-table element vocabulary.
 
+The 64 bytes directly after the matrix (`0x801F5428`, file `0x26C10`) are a
+second 8x8 block of the same shape with much stronger values, and nothing reads
+them. Over `SCUS_942.54` and every PROT entry, no word, `jal`, `j`, branch or
+`lui` pair names any of its words (`find-address-word-refs.py --range --prot`)
+and no `gp`-relative access, `lui` + load pair or base-plus-displacement reaches
+any of its bytes (`find-gp-relative-refs.py --va --prot`). The matrix base is
+formed at eight `lui` sites - `FUN_801DD864`, four in `FUN_801EC3E4`, and the
+Seru side-effect stager `FUN_801F3D3C` at `0x801F3E4C` - and each indexes
+`atk * 8 + def` unchecked, so only an element byte of `8` or more could land in
+the block. None exists: the character table, every monster record `+0x1D` and
+every summon cast record `+0x1D` stay in `0..=7` (disc-gated tests in
+`crates/asset/tests/`). The PAL and Japanese battle overlays carry the same
+block after the same matrix.
+
 `FUN_801dd864` resolves each side's element id **by the actor's battle slot, not
 the spell**: a **party member** (slot `< 3`) looks its element up in the
 per-character table by **1-based** char id (`CHARACTER_ELEMENTS[char_id]` at

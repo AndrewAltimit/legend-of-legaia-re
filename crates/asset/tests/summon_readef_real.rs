@@ -162,3 +162,38 @@ fn retail_toc_index_resolution_and_slot_framing() {
         "summon group 0 actor record must carry the Burning Attack name"
     );
 }
+
+/// Every player summon cast's record `+0x1D` element is inside the matrix's
+/// `0..=7` id space.
+///
+/// The record is the attacker side of an element-affinity read that indexes
+/// the 8x8 matrix at `0x801F53E8` as `atk * 8 + def` with no bound check: the
+/// Seru side-effect stager `FUN_801F3D3C` (`lbu v1,0x1d(v0)` through
+/// `0x801C9358` at `0x801F3E5C`, `sll v1,v1,0x3` at `0x801F3E64`). An element
+/// of `8` or more would index past the matrix into the 64-byte block at
+/// `0x801F5428` that no instruction forms an address in
+/// (`element_affinity::UNREAD_AFFINITY_BLOCK_VA`). This pins the summon half of
+/// "no record on the disc reaches it"; the monster half is
+/// `monster_element_byte_is_in_range_and_pins_gimard_fire`.
+#[test]
+fn summon_cast_elements_stay_inside_the_affinity_matrix() {
+    let Some(root) = extracted_root() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let summon = entry_bytes(&root, &format!("{SUMMON_PROT_INDEX:04}_")).expect("entry 893");
+    let mut parsed = 0;
+    for id in summon_readef::PLAYER_CAST_IDS {
+        let Ok(cast) = summon_readef::parse_cast(&summon, id) else {
+            continue;
+        };
+        parsed += 1;
+        assert!(
+            (cast.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT,
+            "cast {id:#04x} element {} indexes past the 8x8 affinity matrix",
+            cast.element
+        );
+    }
+    assert!(parsed >= 11, "only {parsed} summon casts parsed");
+    eprintln!("[ran] {parsed} summon cast elements inside 0..=7");
+}
