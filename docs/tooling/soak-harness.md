@@ -49,6 +49,14 @@ on the card, so the pause menu's Load row - open in every scene, where Save
 is per-scene - has a file to resume, and random menu browsing reaches the
 card flow end to end.
 
+Any run label can end in `@<save>` (`town01+rt@PRO-14`): the run lifts that
+save from the library card (`LEGAIA_SOAK_CARD`, default the playthrough card)
+and plays the scene with its party, bag and story flags instead of the New
+Game party's, so late-game scenes are soaked with the party and flags they are
+reached with. `LEGAIA_SOAK_SAVE=<save>` applies it to the whole scene set.
+Whatever value check the seeded state already fails (the playthrough card
+holds a 255-count stack) belongs to the save and is not reported.
+
 A shop run is a pseudo-scene `<scene>+shop`, one per scene whose MAN carries
 a priced gold shop. Every `SHOP_VISIT_EVERY` free field frames it hands one of
 the scene's shops (`World::scene_shop_session`) to the menu runtime, as the
@@ -174,6 +182,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_BATTLE_FRAMES` | endless-battle threshold |
 | `LEGAIA_SOAK_HANG_SECS` | single-tick watchdog |
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
+| `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a
