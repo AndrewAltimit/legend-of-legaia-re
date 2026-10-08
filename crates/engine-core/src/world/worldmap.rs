@@ -216,7 +216,9 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return;
         }
-        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
+        // A committed fight holds the player from the rolling step on, as
+        // retail's trigger raises the engaged bit (`0x801DA2C0..0x801DA2D8`).
+        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 || self.encounter_owns_player() {
             return;
         }
         // Held d-pad → camera-relative direction bits. `sx`/`sy` are the raw
@@ -396,6 +398,11 @@ impl World {
         // (`FUN_801D9E1C` at `0x801DA174`, the same routine the field steps
         // through), so the step counter does not drain either.
         if self.locomotion.walk_regen_window != 0 {
+            return;
+        }
+        // The engaged / dialogue-pacing / warp gates (`0x801DA130..`): the
+        // step onto a door, a scripted walk or an open box rolls nothing.
+        if self.encounter_roll_held() {
             return;
         }
         if let Some(mut tracker) = self.world_map.region_tracker.take() {
@@ -614,6 +621,7 @@ impl World {
     /// the first tick and the fly-in never runs.
     fn auto_engage_world_map_portals(&mut self) {
         if self.dialogue_owns_input()
+            || self.encounter_owns_player()
             || self.cutscene_timeline_active()
             || self.world_map.entity_positions.is_empty()
         {

@@ -567,6 +567,27 @@ pin it. The engine mirrors the numbering in
 `region_encounter::EncounterRateSetting`, whose `Default` is the `1`
 pass-through.
 
+#### Steps that do not roll
+
+Between the region's battle-setup half and the rate scale, the reader
+returns without touching the counter on any of these conditions, and on a
+zero second argument (`0x801DA130..0x801DA180`):
+
+| Test | What it is |
+|---|---|
+| `*(_DAT_8007C364)+0x10 & 0x80000` | The player's engaged bit. A talk or touch raises it, and so does the script runner `FUN_80039B7C` on every frame it steps a context (`0x80039DB8..0x80039DD4`): a door record carrying the party out, a scripted walk and an open box all hold the roll. |
+| `_DAT_8007B6B4 != 0` | The dialogue-pacing countdown the runner arms as a context closes. |
+| `_DAT_8007B6B0 > 0` | The kind-0 warp timer between a teleport tile and its landing. |
+| `_DAT_8007B600 != 0` | The Incense window (`0x801DA174`). |
+
+A step onto a door therefore never also starts a fight. The trigger itself
+raises the same engaged bit (below), so a step that does roll stops the
+player where it stands for the battle intro and cannot carry on onto a door.
+The engine reads the first three as `World::encounter_roll_held` (gating
+both roll sites) and the trigger's lock as `World::encounter_owns_player`
+(gating overworld locomotion and portal contact); the disc-gated
+`world_map_door_encounter_disc` test pins both on `map01`'s door to `dolk2`.
+
 The scaled rate is subtracted from the step counter at `_DAT_8007B5FC`.
 Engine port: `region_encounter::EncounterRateModifiers` (applied on both
 the region tracker and the mean-rate session), refreshed each step from

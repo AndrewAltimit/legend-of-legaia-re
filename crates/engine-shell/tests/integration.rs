@@ -85,6 +85,7 @@ mod w5_native_minigame_ladder;
 mod w7_pause_learned_content_ladder;
 mod world_map_camera_offset_oracle;
 mod world_map_camera_remap;
+mod world_map_door_encounter_disc;
 mod world_map_fog_oracle;
 mod world_map_live;
 mod world_map_ocean_clut_live;
