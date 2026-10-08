@@ -85,7 +85,7 @@ impl PlayWindowApp {
         // frame's Y negation) or the raw battle stage (the stage model's
         // scale + Y-flip). Staged every frame; `None` stages nothing.
         self.stage_fog_volume(r, cam, in_world_map);
-        self.stage_scene_lights(r, cam, in_world_map);
+        self.stage_scene_lights(r, cam);
         self.stage_occlusion_fade(r, cam, cutscene_cam);
         FrameView {
             w,
@@ -425,12 +425,7 @@ impl PlayWindowApp {
 
     /// Enhanced lighting's mood and the derived scene point lights with
     /// their glow sprites (cleared off the field).
-    fn stage_scene_lights(
-        &self,
-        r: &legaia_engine_render::Renderer,
-        cam: Mat4,
-        in_world_map: bool,
-    ) {
+    fn stage_scene_lights(&self, r: &legaia_engine_render::Renderer, cam: Mat4) {
         // Enhanced lighting's mood: the persisted time of day over the
         // loaded scene (`scene_lighting::TimeOfDay::mood` - the same call
         // the browser play page makes). Cheap; staged every frame so a
@@ -440,53 +435,31 @@ impl PlayWindowApp {
         // Stage the derived scene point lights (the dynamic-lighting
         // enhancement's candle / wall-light layer) with this frame's
         // camera so the renderer can recover world space from the
-        // per-draw MVPs. Field free-roam only - battle / world map /
-        // boot UI clear them so the layer never lights the wrong
-        // coordinate space. Inert (zero staged count, no shadow pass)
-        // while dynamic lighting or the shadow sub-toggle is off.
-        // A menu-overlay screen that owns the frame (a shop, the casino
-        // prize counter) draws no field, so it stages no field light
-        // either: the halos are screen sprites and would otherwise glow
-        // through the black behind the windows.
-        if !self.boot_ui.is_active()
-            && !self.menu_runtime.covers_field()
-            && !in_world_map
-            && self.session.host.world.mode == SceneMode::Field
-            && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
-        {
-            // Per-frame selection: a scene can carry dozens of candle
-            // props but only 8 lights shade at once, so pick the ones
-            // nearest the player (falling back to the origin when no
-            // player actor is seated).
-            let w = &self.session.host.world;
-            let focus = w
-                .player_actor_slot
-                .and_then(|s| w.actors.get(s as usize))
-                .map(|a| {
-                    [
-                        a.move_state.world_x as f32,
-                        a.move_state.world_y as f32,
-                        a.move_state.world_z as f32,
-                    ]
-                })
-                .unwrap_or([0.0; 3]);
-            // The static lights plus every prop's set at the actor's
-            // live position (the same anchor the NPC draw uses).
-            let mut all = self.scene_point_lights.clone();
-            all.extend(legaia_engine_render::scene_lighting::place_prop_lights(
-                &self.scene_prop_lights,
-                |slot, spawn| w.field_npc_live_anchor(slot, spawn),
-            ));
-            let picked = legaia_engine_render::scene_lights::nearest_lights(&all, focus);
-            r.set_scene_lights(&picked, cam);
-            // Halos + soft light shafts around the picked lights (the
-            // bloom stand-in), scaled by the mood's glow.
-            r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
-                &picked, &mood,
-            ));
-        } else {
-            r.clear_scene_lights();
-            r.set_glow_sprites(&[]);
+        // per-draw MVPs. Which lights, and whether any light at all, is
+        // the shared `field_frame::field_scene_lights` the browser play
+        // page asks too: field free-roam only, nothing under a screen
+        // that owns the frame (the boot UI, a shop with the field faded
+        // out), the up-to-8 nearest the player. Inert (zero staged count,
+        // no shadow pass) while dynamic lighting or the shadow sub-toggle
+        // is off.
+        match legaia_engine_screens::field_frame::field_scene_lights(
+            &self.session.host,
+            self.boot_ui.is_active() || self.menu_runtime.covers_field(),
+            &self.scene_point_lights,
+            &self.scene_prop_lights,
+        ) {
+            Some((picked, _focus)) => {
+                r.set_scene_lights(&picked, cam);
+                // Halos + soft light shafts around the picked lights (the
+                // bloom stand-in), scaled by the mood's glow.
+                r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
+                    &picked, &mood,
+                ));
+            }
+            None => {
+                r.clear_scene_lights();
+                r.set_glow_sprites(&[]);
+            }
         }
     }
 

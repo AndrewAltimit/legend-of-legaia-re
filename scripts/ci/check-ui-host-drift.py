@@ -553,6 +553,20 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "enhanced lighting's scene-light selection, native vs play "
+        "page - each host spelled out the gate (field mode, not the world "
+        "map, no screen owning the frame), the focus and the prop-light "
+        "placement itself, and the page's gate lacked the screen term, so "
+        "a shop's black backdrop carried the scene's candle halos there. "
+        "Both ask `field_frame::field_scene_lights`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_lighting.rs", "play_lighting_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_scene_lights"],
+    },
+    {
         "what": "move-FX spawn to sound, native vs play page - each host "
         "took the pending spawn, seated it, took the cue and classified it "
         "itself, and the two had drifted on the classification's arms (the "

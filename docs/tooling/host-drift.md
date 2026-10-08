@@ -4276,6 +4276,7 @@ name so a host that re-spells the decision locally fails the gate.
 | decision | kernel | what had drifted |
 |---|---|---|
 | occlusion-fade arming + strength ramp | `field_occlusion::host_fade_armed`, `FadeRamp` | the page carried the ramp's ease and snap in JS; the native window kept dissolving walls behind the pause menu and a name-entry prompt |
+| scene-light selection | `engine-screens::field_frame::field_scene_lights` | the page's gate had no screen term, so a shop's black backdrop carried the scene's candle halos |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |
 
 ## Adding coverage

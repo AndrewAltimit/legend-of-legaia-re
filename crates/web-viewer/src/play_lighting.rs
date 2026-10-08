@@ -182,40 +182,33 @@ impl LegaiaRuntime {
         let mood = self.lighting_mood();
         let mut out: Vec<f32> = mood.uniforms(true).iter().flatten().copied().collect();
         out.extend_from_slice(&mood.window_word());
-        let field = self.scene_host.host().is_some_and(|h| {
-            h.world.mode == SceneMode::Field
-                && !h
-                    .scene
-                    .as_ref()
-                    .is_some_and(|s| legaia_engine_core::scene::is_world_map_scene(&s.name))
-        });
-        if !field {
-            out.extend_from_slice(&[0.0, 0.0]);
-            return out;
+        // Which lights, and whether any at all: the shared
+        // `field_frame::field_scene_lights` the native window asks, with
+        // this page's screen term (a menu-overlay screen with the field
+        // faded out draws no field, so it lights none).
+        if self
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.mode == SceneMode::Field)
+        {
+            self.ensure_scene_lights();
         }
-        self.ensure_scene_lights();
-        let (Some(host), Some(cache)) = (self.scene_host.host(), self.scene_lights.as_ref()) else {
+        let screen_owned = self.menu.covers_field();
+        let picked = match (self.scene_host.host(), self.scene_lights.as_ref()) {
+            (Some(host), Some(cache)) => legaia_engine_screens::field_frame::field_scene_lights(
+                host,
+                screen_owned,
+                &cache.statics,
+                &cache.props,
+            ),
+            _ => None,
+        };
+        let Some((picked, focus)) = picked else {
             out.extend_from_slice(&[0.0, 0.0]);
             return out;
         };
-        let w = &host.world;
-        let focus = w
-            .player_actor_slot
-            .and_then(|s| w.actors.get(s as usize))
-            .map(|a| {
-                [
-                    a.move_state.world_x as f32,
-                    a.move_state.world_y as f32,
-                    a.move_state.world_z as f32,
-                ]
-            })
-            .unwrap_or([0.0; 3]);
-        let mut all = cache.statics.clone();
-        all.extend(sl::place_prop_lights(&cache.props, |slot, spawn| {
-            w.field_npc_live_anchor(slot, spawn)
-        }));
         out.extend(sl::frame_packet(
-            &all,
+            &picked,
             focus,
             &mood,
             [rx, ry, rz],

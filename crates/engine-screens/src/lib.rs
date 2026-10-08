@@ -24,6 +24,7 @@ use legaia_engine_core::world::World;
 use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
 
 mod banners;
+pub mod field_frame;
 mod panel;
 mod prize;
 mod shop;
