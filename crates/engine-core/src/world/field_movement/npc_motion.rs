@@ -146,6 +146,21 @@ impl World {
     /// interaction leg, an ambient wander step) has earned a new
     /// heading, and restoring the pre-talk one would teleport its facing.
     ///
+    /// Whether the outstanding talk-pose save belongs to a placement whose
+    /// own context runs as the interaction timeline
+    /// (`CutsceneTimeline::interaction_slot`, a boss stager): the dialog SM
+    /// that snapped it is still engaged, so the restore waits for the
+    /// record's `0x21`.
+    pub fn interaction_timeline_holds_talk_facing(&self) -> bool {
+        let Some((slot, _)) = self.npcs.facing_save else {
+            return false;
+        };
+        self.cutscene
+            .timeline
+            .as_ref()
+            .is_some_and(|tl| !tl.done && tl.interaction_slot == Some(slot))
+    }
+
     /// PORT: FUN_80039B7C (the `+0x5A` -> `+0x26` interaction-end restore)
     pub fn release_talk_facing(&mut self) {
         let Some((slot, prev)) = self.npcs.facing_save.take() else {

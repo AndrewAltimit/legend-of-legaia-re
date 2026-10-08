@@ -1763,7 +1763,13 @@ impl World {
                 // path). Placed after the runner start above, so the frame the
                 // talk begins already counts as engaged and the save survives.
                 // REF: FUN_80039B7C
-                if !self.dialogue_owns_input() && self.dialog.active_inline_prologue.is_none() {
+                // A placement's own context resumed as the interaction
+                // timeline (a boss stager) is the same engaged SM: its
+                // restore waits for the timeline's `0x21`.
+                if !self.dialogue_owns_input()
+                    && self.dialog.active_inline_prologue.is_none()
+                    && !self.interaction_timeline_holds_talk_facing()
+                {
                     self.release_talk_facing();
                 }
                 // Screen-effect widgets (mask / sprite / panel / letterbox,

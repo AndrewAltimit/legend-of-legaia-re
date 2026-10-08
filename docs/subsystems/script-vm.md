@@ -375,7 +375,10 @@ ends at PC `0x99`, as the `s1_newgame_field` capture does).
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
 `CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the
-placement's own context and ends at its `0x21`), `World::drive_script_dialog`
+placement's own context and ends at its `0x21`; it is the same dialog-SM
+context, so it takes the state-1 face-the-player snap and holds that pose
+until the `0x21` teardown, `World::interaction_timeline_holds_talk_facing`),
+`World::drive_script_dialog`
 and `World::script_dialog_panel` (one box for the timeline and the helper
 contexts), and
 `World::pre_run_field_channel_prologues`, the only slice in which the engine
