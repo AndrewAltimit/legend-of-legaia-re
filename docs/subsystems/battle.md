@@ -3045,8 +3045,10 @@ The from-scratch engine ports it across `engine-core`:
 The picker drives the live loop's monster turns, folding a chosen cast through
 `cast_spell_on_slots` (the shared player/monster cast path) and parking the SM at
 `EndOfAction`. Scripted casts emit retail spell ids; they fold when the active
-catalog knows the id (the disc spell table, or the from-scratch monster block in
-`SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
+catalog knows the id (the disc spell table; a capture-class special resolves
+off its disc record through `World::monster_cast_def`) and otherwise degrade to
+a physical strike. `SpellCatalog::vanilla` is a disc-free test fixture; no boot
+catalog carries it.
 
 **Faithful default = uniform-random single target.** Retail's `OneEnemy` /
 physical target is a uniform random living party member (`rand % party_count`,
@@ -5651,7 +5653,7 @@ Both hosts arm the loop through one shared kernel, `World::arm_live_loop` (`crat
 The `legaia-engine play-window` host ships the loop **on**, matching the browser play page and the project's enhancement-forward default; retail-shaped inspection is one flag away:
 
 - `--no-live-loop` turns the encounter roll off (field VM + locomotion only - the scene-inspection mode). A battle the engine is already in still resolves.
-- `--no-player-battle` turns off the command menu, auto-attacking each party turn instead. By default battles are player-driven and the HUD renders party/monster HP plus the command menu / target cursor / arts + spell + item submenus (the host installs the vanilla spell + item catalogs; with `LEGAIA_DEMO_BATTLE_SEED=1` it also seeds demo items - Healing Leaf + Bomb - saved chains and a demo `Art1B` record into an empty save, so the ally-heal and offensive item paths are exercisable without a real save. Without the variable an empty save stays empty, as on retail).
+- `--no-player-battle` turns off the command menu, auto-attacking each party turn instead. By default battles are player-driven and the HUD renders party/monster HP plus the command menu / target cursor / arts + spell + item submenus (the host installs the boot spell catalog (the disc table) and the vanilla item catalog; with `LEGAIA_DEMO_BATTLE_SEED=1` it also seeds demo items - Healing Leaf + Bomb - saved chains and a demo `Art1B` record into an empty save, so the ally-heal and offensive item paths are exercisable without a real save. Without the variable an empty save stays empty, as on retail).
 - `--battle-bgm <id>` overrides the Battle↔Field music swap track: the live loop cross-fades to it on encounter and resumes the field track on battle end. The swap is on by default (retail's standard battle theme, global BGM `2026` = `music_labels::BATTLE_THEME_1_BGM_ID`, installed by `LiveLoopOpts::playable()`); `0` disables it. Ids route through the same director as field op-`0x35` starts - scene-local ids via the scene's BGM table, `>= 2000` via the global `music_01` pool. The browser twin is `LegaiaRuntime::set_battle_bgm`.
 
 ### Battle end, both hosts

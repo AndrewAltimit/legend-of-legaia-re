@@ -519,6 +519,20 @@ the threat by the hit it learned. Only a reload of the same segment against
 the same boss uses it; a fight the hand wins first time is played exactly as
 before.
 
+Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
+battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
+Dead End Crisis (`0xA1`), which in this fight writes a flat 9999 to every
+party seat - and the scene runs it with no scripted-loss latch, so the party
+must deal 20000 inside four rounds while each round's cast takes 600..700 off
+one member. The hand fights it without heal turns (`racing_a_finisher`):
+Vahn and Noa type their Fury-boosted Miracle Arts every round, Gala casts or
+hands out the attack Elixir, and spends a turn on a heal only when an Arts
+member would not live through Koru's biggest hit so far, never on the
+finisher's own round. A seated beat whose band stages a fight tops a party
+not near full up first, as the pad walk does, and the seated pass reloads a
+boss wipe with a fresh hand up to `PAD_WIPE_ATTEMPTS` times, as the pad pass
+does: on one stream the race is won or lost by a few dozen HP.
+
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
 (`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time

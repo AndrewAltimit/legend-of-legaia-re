@@ -463,19 +463,21 @@ A monster's cast is picked before the band is armed: `pick_monster_action`
 rolls the record's `+0x21..=+0x23` magic ids (retail's generic core of
 `FUN_801E9FD4`) and `take_monster_turn` keeps the pick only when
 `World::tables.spell_catalog` resolves the id at an affordable cost - otherwise the
-turn is a physical strike, silently. The boot catalog
-(`retail_magic::seru_magic_catalog_from_scus`) therefore carries every named,
-non-capture id below the player block as the SCUS table names it (Gimard's
-`+0x21` is `0x27` = Tail Fire, 16 MP, one enemy), with the disc as the single
-source: a vanilla placeholder on a real id under another name is replaced, a
-vanilla record on its real id under the same name keeps its effect class and
-takes the disc's cost. The fill skips capture-class ids, so a placeholder sitting on one stays:
-`0x40` is the disc's Curse and the demo "Reseal" capture. A monster's Curse
-therefore folds as a capture roll on a party seat; the roll is drawn but downs
-only a monster seat (`World::resolve_capture`), since downing a member wrote
-live HP with no readout seed and parked the `0x51` gate. Dropping the
-placeholder instead changes which bosses act on their first turn (Koru's
-opening Curse would degrade to a strike), so the catalog keeps it. The magnitude and impact status of the fold are the
+turn is a physical strike, silently. Retail has no catalog of its own: every
+cast reads its record by id off the SCUS table (`DAT_800754C8`; state `0x28`
+takes the `+3` MP byte at `0x801E4500`, capture route included), and a record
+without a name casts like a named one - the name only feeds the label. So the
+boot catalog (`retail_magic::seru_magic_catalog_from_scus`) is that table and
+nothing else: the player Seru band, and every non-capture record outside it,
+named or not, under the disc's name and cost (Gimard's `+0x21` is `0x27` =
+Tail Fire, 16 MP, one enemy; Koru's `+0x21` is the unnamed class-1 `0x10`).
+Capture-class records stay out; `World::monster_cast_def` builds them off the
+disc for the module route. `SpellCatalog::vanilla` is a disc-free test fixture
+and no boot catalog carries it: its fabricated ids are real monster ids
+(`0x26` Thunderbolt, `0x40` Curse, `0xA2..=0xA5` Koru's phase casts), and
+with them in, Koru's opening casts folded as harmless demo buffs and a
+monster's Curse as the demo "Reseal" capture on a party seat. A capture roll
+still downs only a monster seat (`World::resolve_capture`). The magnitude and impact status of the fold are the
 move-power record's (`World::enemy_move_power`, installed at scene entry).
 Disc-gated oracle: `spell_model_single_source_disc::the_boot_catalog_resolves_every_monster_special_the_archive_casts`.
 

@@ -1623,6 +1623,45 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         && (big_round_due() || learned.is_some())
 }
 
+/// Koru (`nilboa` P2[20], monster `0xB6`): its pick arm casts by the
+/// battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`,
+/// then Dead End Crisis (`0xA1`) on every mode after (`0x801EB568..`,
+/// `monster_ai::decide`), and in this fight that body writes a flat 9999 to
+/// every party seat (PROT 0961 arm 3, `0x801F7398`). The fight is a race:
+/// a heal spent before the fourth round is damage the party never deals,
+/// and nothing a member could be healed to survives the finisher.
+const KORU_MONSTER_ID: u16 = 0xB6;
+
+/// Whether this fight is a race against a timed finisher
+/// ([`KORU_MONSTER_ID`]): every turn goes to damage.
+fn racing_a_finisher(w: &legaia_engine_core::world::World) -> bool {
+    boss_monster_id(w) == Some(KORU_MONSTER_ID)
+}
+
+/// The race's last round: the battle-mode counter has reached the value
+/// Koru's pick arm answers with the finisher, so whatever the party does not
+/// deal before it acts is never dealt - no heal, no buff, only damage.
+fn finisher_round(w: &legaia_engine_core::world::World) -> bool {
+    racing_a_finisher(w) && w.battle.monster_ai_state.mode_flags >= 4
+}
+
+/// In a race, the one heal worth a turn: `actor` cannot throw a Miracle Art
+/// (its turn is the party's smallest damage) and a member that can would not
+/// live through the foe's biggest single-round loss so far. A member lost before
+/// the finisher costs every round it would have hit for; a heal from the
+/// summoner costs one cast.
+fn race_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if miracle_ready(w, actor) || finisher_round(w) {
+        return false;
+    }
+    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    threat > 0
+        && projected_hp(w)
+            .iter()
+            .enumerate()
+            .any(|(i, &h)| h > 0 && h <= threat && miracle_ready(w, i as u8))
+}
+
 thread_local! {
     /// What a lost attempt taught about the boss that wiped it: its monster
     /// id, the parity of the battle's stretch index its party-wide hits came
@@ -2599,13 +2638,28 @@ fn fight_pad(session: &BootSession) -> u16 {
             .command
             .as_ref()
             .map_or(w.battle_ctx.active_actor, |c| c.actor);
-        let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+        // A race against a timed finisher spends no turn on a heal, here as
+        // at the command menu.
+        let heal_want = if racing_a_finisher(w) && !race_heal(w, actor) {
+            None
+        } else {
+            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+        };
+        let want = heal_want
             .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
             .or_else(|| {
                 wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
             })
             .or_else(|| {
-                wanted_power_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+                (!finisher_round(w))
+                    .then(|| {
+                        wanted_power_item(
+                            w,
+                            (0..menu.filtered_items.len()).filter_map(listed),
+                            actor,
+                        )
+                    })
+                    .flatten()
             });
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
@@ -2677,6 +2731,9 @@ fn fight_pad(session: &BootSession) -> u16 {
     }
     if let Some(cmd) = w.battle.command.as_ref() {
         let heal = || {
+            if racing_a_finisher(w) && !race_heal(w, cmd.actor) {
+                return false;
+            }
             let bag: Vec<u8> = w
                 .party
                 .inventory
@@ -2711,7 +2768,8 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .map(|(id, _)| *id)
                 .collect();
             (wanted_fury_item(w, bag.clone().into_iter(), cmd.actor).is_some()
-                || wanted_power_item(w, bag.into_iter(), cmd.actor).is_some())
+                || (!finisher_round(w)
+                    && wanted_power_item(w, bag.into_iter(), cmd.actor).is_some()))
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
         return match &cmd.phase {
@@ -8056,6 +8114,16 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 }
                 r
             } else {
+                // A band that stages a fight is a boss's door: the seated
+                // run tops a party not near full up first, as the pad walk
+                // does before such a band. Koru (`nilboa` P2[20], see
+                // [`KORU_MONSTER_ID`]) is met straight off the tunnel beats
+                // at 50..80% and is a race no heal turn can be spared in.
+                if party_hp_permille(session) < 900
+                    && fight_band_tiles(session).contains(&(i32::from(tile.0), i32::from(tile.1)))
+                {
+                    pad_field_heal(session, 1000);
+                }
                 step_onto(session, tile);
                 run_while_moving(session, DEEP_EXIT_TICKS)
             };
@@ -9692,8 +9760,16 @@ fn run_segment(
     // P2[13], Jette) decided both the `progresses` and the `pad` tier on one
     // hand of the rand stream, so any change to how long a battle action
     // runs moved the segment.
+    // A wipe after the guard retry (or with no element to guard) is reloaded
+    // with a fresh hand, as the pad pass does, up to `PAD_WIPE_ATTEMPTS`
+    // attempts in all: Koru (`nilboa` P2[20]) is a race the party wins or
+    // loses by a few dozen HP on a given stream.
     let mut seated_prepare: Option<u8> = None;
+    let mut seated_attempt = 0u32;
+    LEARNED_CADENCE.with(|l| l.set(None));
     let seated = loop {
+        seated_attempt += 1;
+        let attempt = seated_attempt;
         LOST_TO_ELEMENT.with(|l| l.set(None));
         let prepare = seated_prepare;
         let seated = catch_unwind(AssertUnwindSafe(|| {
@@ -9723,6 +9799,12 @@ fn run_segment(
                 .and_then(|s| s.trim().parse().ok())
             {
                 session.host.world.rng_state = s;
+            }
+            // A reload other than the guard retry plays another hand (see
+            // the pad pass's reload).
+            if attempt > 1 && !(attempt == 2 && prepare.is_some()) {
+                let w = &mut session.host.world;
+                w.rng_state = w.rng_state.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
             }
             let mut trail = vec![landed];
             match run_while_moving(&mut session, SCRIPT_CEILING) {
@@ -9777,6 +9859,7 @@ fn run_segment(
         let wiped = matches!(&seated, Ok((_, Some(e), _)) if e.contains("party wiped"));
         match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
             Some(el) if wiped && seated_prepare.is_none() => seated_prepare = Some(el),
+            _ if wiped && seated_attempt < PAD_WIPE_ATTEMPTS => {}
             _ => break seated,
         }
     };
