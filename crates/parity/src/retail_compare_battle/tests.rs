@@ -335,6 +335,8 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                     0x0D, 0x0F, 0x0E, 0x19, 0x27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 ]),
                 cursor: Some(5),
+                fading: Some((3, 0xF0)),
+                spoils: true,
                 ..ActionSteer::default()
             },
         },

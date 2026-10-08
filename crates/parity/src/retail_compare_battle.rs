@@ -66,6 +66,8 @@ const SEAT_CHARS: u32 = 0x8007_BD10;
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
+const DEFEAT_FADE_STATE: u8 = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
 /// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
 /// the fight loads, `0x80..=0xC0` the entry sweep owns the camera, `0xFF`
 /// the battle tick runs (`FUN_80046A20`, `0x80046EEC..0x8004700C`).
@@ -279,6 +281,14 @@ pub struct RetailBattle {
     /// Record `0x51`'s content word `0x800773BC` is zero: the strike loop's
     /// counter swap cleared the target plaque.
     pub target_plate_cleared: bool,
+    /// The active seat's target (`+0x1DD`) in the defeat fade (`+0x21C ==
+    /// 2`, written by the death arm of `FUN_8004AD80` at `0x8004B66C`): its
+    /// colour word `+0x04`'s first 10-bit lane, which the fade walks down
+    /// from `0x200` by `dt << 3` a frame - so it dates the death commit.
+    pub target_fade_lane: Option<u16>,
+    /// The death-spoils caption is up: `ctx[+0x18]` holds HUD element
+    /// `0x5B`, which the steal / thief's-loot arm of `FUN_8004AD80` raises.
+    pub spoils_caption: bool,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -1301,6 +1311,14 @@ impl RetailBattle {
                 (hold > 0 && va != 0).then_some((va, hold.min(i32::from(i16::MAX)) as i16))
             },
             target_plate_cleared: game_anchors::u32_at(ram, TARGET_PLATE_WORD) == 0,
+            spoils_caption: game_anchors::u8_at(ram, ctx + 0x18)
+                == legaia_engine_core::battle_steal::STEAL_CAPTION_ELEMENT,
+            target_fade_lane: active.and_then(|p| {
+                let t = game_anchors::u8_at(ram, p + 0x1DD);
+                let tp = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(t.min(7)) * 4);
+                (t < 8 && in_ram(tp) && game_anchors::u8_at(ram, tp + 0x21C) == DEFEAT_FADE_STATE)
+                    .then(|| (game_anchors::u32_at(ram, tp + 4) & 0x3FF) as u16)
+            }),
         })
     }
 }
@@ -2206,6 +2224,25 @@ impl RetailBattle {
                         && matches!(self.caster_clip, 0x10 | 0x11)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.strike_cursor),
+                    // A party swing captured after its victim's death commit:
+                    // the close-up accumulator restarts on every idle cycle
+                    // of the attacker (its natural-end re-commit), so the
+                    // age alone matches the first cycle after the swing,
+                    // before the knockdown has ended. The defeat fade dates
+                    // the death (`player_steal_skeleton_banner`: lane
+                    // `0xF0`, 34 vsyncs into the fade, with the idle on its
+                    // second cycle).
+                    fading: self
+                        .target_fade_lane
+                        .filter(|_| {
+                            seat < 3
+                                && self.target_code >= 3
+                                && matches!(self.span_gate, SpanGate::Age { .. })
+                        })
+                        .map(|lane| (self.target_code, lane)),
+                    // The caption is the steal roll's outcome, a draw: a
+                    // stream whose kill rolls no steal shows another frame.
+                    spoils: seat < 3 && self.spoils_caption,
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {

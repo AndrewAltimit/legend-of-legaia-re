@@ -4366,7 +4366,9 @@ dash - are one per-actor byte and one per-actor draw walk, both SCUS-resident.
 `+0x21D` is the per-actor **animation-rate scalar**, normal `8`. The anim
 tick `FUN_80047430` advances each render node's 12.4 anim cursor by
 `(DAT_1F800393 * actor[+0x21D] * clip[+0x78]) >> 1` per game frame - `>> 2`
-on the idle branch (anim id `0`; `0x800476EC..0x80047764`) - so `4` is half
+only for a **Slowed** actor on idle (status `+0x16E & 0x1000` at
+`0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`; `0x800476D8..0x80047764`),
+so an ordinary idle loop advances as fast as any clip - and `4` is half
 speed, `2` quarter speed and `0` a freeze, and every animation-driven edge
 (swing pacing, root motion, the strike loop's per-clip gate) stretches with
 it. Battle seating (`FUN_800513F0`, `0x80051608`/`0x80051888`) seeds it from

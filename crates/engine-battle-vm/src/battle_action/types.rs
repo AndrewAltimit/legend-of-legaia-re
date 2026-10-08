@@ -427,8 +427,8 @@ pub struct BattleActor {
     /// name:
     ///
     /// * the SCUS anim tick `FUN_80047430` advances the render node's 12.4
-    ///   anim cursor by `(frame_dt * rate * clip_rate) >> 1` (`>> 2` on the
-    ///   idle branch), so `4` is half speed, `2` quarter speed, `0` a freeze;
+    ///   anim cursor by `(frame_dt * rate * clip_rate) >> 1` (`>> 2` for a
+    ///   Slowed actor on idle), so `4` is half speed, `2` quarter speed, `0` a freeze;
     /// * the arts after-image walk `FUN_80049348` spaces its two mesh ghosts
     ///   `8 / rate` frames apart, so the trail stretches as time slows;
     /// * the attack band multiplies it into the per-frame X/Z impact drift,

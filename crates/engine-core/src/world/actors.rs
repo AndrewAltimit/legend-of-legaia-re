@@ -300,19 +300,26 @@ impl World {
             // follows the tick in retail.
             let tween = self.battle_tween_target(i);
             let seru_staged = self.battle_ctx.multi_cast_gate != 0;
+            // The `>> 2` branch of the cursor advance is taken only by a
+            // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
+            // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other
+            // actor - idle included - advances on the `>> 1` branch.
+            let slowed = self.raw_status_word(i as u8) & vm::battle_anim_rate::SLOW_STATUS_BIT != 0;
             let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 player.set_tween_target(tween);
             }
+            let mut looped_recommit = false;
             let frame = if let Some(player) = &mut actor.battle_animation {
                 let before = player.current_frame();
                 // Retail rate law (`FUN_80047430`): the cursor advance
                 // scales by the per-actor anim-rate byte `+0x21D` - the
-                // arts slow-motion channel - and the idle branch runs at
-                // half the action-clip shift (`>> 2` vs `>> 1`).
+                // arts slow-motion channel - and a Slowed actor's idle runs
+                // at half the shift (`>> 2` vs `>> 1`).
                 let rate = actor.battle.anim_rate;
-                let idle = actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
-                let pose = player.tick_rated(rate, idle);
+                let slowed_idle =
+                    slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
+                let pose = player.tick_rated(rate, slowed_idle);
                 let after = player.current_frame();
                 // The natural end's displacement: the actor steps along its
                 // facing by the committed entry's `+0x0E` - the distance the
@@ -395,10 +402,25 @@ impl World {
                 if rearm_window || recommit {
                     actor.battle_effect_cursor = 0;
                 }
+                looped_recommit = recommit;
                 Some(after)
             } else {
                 None
             };
+            // The same re-commit runs the rest of the commit's resets: the
+            // per-clip hit index (`sb zero,0x1f4` at `0x8004B064`) and, for
+            // the acting actor, the battle camera's ramp / accumulator /
+            // latch (`0x8004BF50..0x8004BF78`). So an idle loop restarts
+            // `ctx[+0x87C]` every cycle: `player_steal_skeleton_banner`'s
+            // history ring holds Vahn's idle wrapping 22 vsyncs before the
+            // save, and its accumulator reads `176` - eight a vsync from that
+            // wrap, not from the idle's first commit 58 vsyncs back.
+            // PORT: FUN_80047430 (`0x80047B54`, the natural-end commit of a
+            // looping clip)
+            if looped_recommit {
+                self.actors[i].battle.input_cursor = 0;
+                self.note_active_clip_commit(i);
+            }
             // `+0x1F7`, written for every node right after its cursor
             // advance (`0x80047E28..0x80047E54`).
             // PORT: FUN_80047430 (`0x80047E1C..0x80047E54`, the juggle window)
@@ -1422,6 +1444,32 @@ impl World {
             }
             return;
         }
+        // A looping clip (the idle, the walk) is cut mid-cycle by the same
+        // two tick paths as a one-shot (`0x800478EC..0x80047948`): `+0x1DC`
+        // bit 0 commits at once, bit 1 only once the cursor frame is past the
+        // entry's gate frame by more than two frames, and both refuse an
+        // entry carrying the `+0x76` lock. The strike loop stages each byte
+        // under bit 1 (`0x801E3758`) over the idle that `0x19`'s arrival
+        // committed under bit 0 (`0x801E35C0`), so the first swing waits for
+        // idle frame 3 - `player_steal_skeleton_pre` holds Vahn on idle at
+        // cursor `0x20` with `0x0F` staged under bit 1. A byte staged under
+        // neither bit waits for the cycle's natural end in retail; the
+        // engine's looping player has no cycle edge to hand over on, so that
+        // case keeps committing at once.
+        // PORT: FUN_80047430 (`0x800478EC..0x80047948`, the looping-clip half)
+        let bits = actor.battle.flag_bits;
+        if !bits.has(vm::battle_action::ActorFlags::WINDUP_DONE)
+            && bits.has(vm::battle_action::ActorFlags::ADVANCE_DONE)
+            && let Some(p) = actor.battle_animation.as_ref()
+            && p.is_looping()
+        {
+            let (frames, lock) = p
+                .hit_source()
+                .map_or(([0; 4], 0), |s| (s.event_frames, s.event_lock));
+            if !vm::battle_action::event_commit_due(&frames, lock, p.current_frame()) {
+                return;
+            }
+        }
         self.commit_staged_battle_anim_at_boundary(i);
     }
 
@@ -1433,6 +1481,20 @@ impl World {
     /// player in place. Either way the stage latch `+0x1DC` bit 1
     /// (`ADVANCE_DONE`) clears, which is what lets the strike loop read its
     /// next byte.
+    /// The commit's battle-camera reset: when the committing actor is the
+    /// active one (`lbu v0,0x13(v1); bne s3,v0` then `sb zero,0x26e` /
+    /// `sw zero,0x87c` / `sb zero,0x26f` at `0x8004BF50..0x8004BF78`), the
+    /// framings that read the ramp / accumulator / latch run from this
+    /// clip's own start. The port bumps a counter the camera watches.
+    // REF: FUN_8004AD80
+    pub(in crate::world) fn note_active_clip_commit(&mut self, i: usize) {
+        if i == usize::from(self.battle_ctx.active_actor) {
+            self.battle_ctx.active_clip_commits =
+                self.battle_ctx.active_clip_commits.wrapping_add(1);
+            self.battle_ctx.active_clip_commit_frame = self.clock.display_frames;
+        }
+    }
+
     // PORT: FUN_8004AD80 (the commit body; boundary selection is the tick's)
     pub(in crate::world) fn commit_staged_battle_anim_at_boundary(&mut self, i: usize) {
         use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
@@ -1481,7 +1543,13 @@ impl World {
             actor.battle_effect_cursor = 0;
             actor.battle_anim_cue_cursor = 0;
             actor.battle.input_cursor = 0;
-            actor.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+            actor
+                .battle
+                .flag_bits
+                .clear(ActorFlags::ADVANCE_DONE | ActorFlags::WINDUP_DONE);
+            // The re-commit runs the same tail as an install, the camera
+            // reset included (`0x8004BF50..0x8004BF78`).
+            self.note_active_clip_commit(i);
             return;
         }
         // The install path re-zeroes the battle camera's ramp / accumulator /
@@ -1491,11 +1559,7 @@ impl World {
         // that reads them - the summon close-up's swing, the per-art arms -
         // runs from the clip's own start rather than from the action's.
         // REF: FUN_8004AD80
-        if i == usize::from(self.battle_ctx.active_actor) {
-            self.battle_ctx.active_clip_commits =
-                self.battle_ctx.active_clip_commits.wrapping_add(1);
-            self.battle_ctx.active_clip_commit_frame = self.clock.display_frames;
-        }
+        self.note_active_clip_commit(i);
         // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
         // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
         // dynamic slot number - so the latch keeps the RAW staged id, which
@@ -1563,13 +1627,15 @@ impl World {
             }
         }
         // Every commit zeroes the per-clip hit index (`sb zero,0x1f4` at
-        // `0x8004B064`) and releases the stage latch (bit 1 of `+0x1DC`,
-        // the `andi 0xFC` / `0xF8` at the two commit paths): the strike loop
-        // may now read the byte behind this one. Idle included.
+        // `0x8004B064`) and releases the stage latches (bits 0 and 1 of
+        // `+0x1DC`, the `andi 0xFC` / `0xF8` at the two commit paths): the
+        // strike loop may now read the byte behind this one. Idle included.
         {
             let a = &mut self.actors[i];
             a.battle.input_cursor = 0;
-            a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
+            a.battle
+                .flag_bits
+                .clear(ActorFlags::ADVANCE_DONE | ActorFlags::WINDUP_DONE);
         }
         let actor = &self.actors[i];
         // Staged idle: converge and resume the loop. A staged clip in
