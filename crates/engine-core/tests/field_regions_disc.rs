@@ -1,5 +1,5 @@
 //! Disc-gated structural oracle for the per-tile field-region ports
-//! (`crates/engine-core/src/field_regions.rs` - FUN_80017FBC /
+//! (`crates/engine-vm/src/field_regions.rs` - FUN_80017FBC /
 //! FUN_800180EC / FUN_801DBA20).
 //!
 //! Walks every CDNAME scene and asserts the retail data matches the shapes

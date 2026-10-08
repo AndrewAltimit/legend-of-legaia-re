@@ -312,9 +312,10 @@ impl SaveScreenFlow {
     /// the screen can say so instead of closing silently.
     ///
     /// Both hosts call this from their own commit appliers; the notice it
-    /// raises is drawn by one shared builder
-    /// (`legaia_engine_ui::save_refusal_box_draws_for`), so neither host can
-    /// answer a refused write with a log line the player never sees.
+    /// raises is drawn by one shared builder pair
+    /// (`legaia_engine_ui::save_refusal_panel_draws_for` /
+    /// `save_refusal_text_draws_for`), so neither host can answer a refused
+    /// write with a log line the player never sees.
     pub fn refuse(&mut self, reason: SaveRefusal) {
         self.refusal = Some((reason, SAVE_REFUSAL_FRAMES));
     }

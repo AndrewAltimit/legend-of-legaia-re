@@ -1293,7 +1293,7 @@ pub struct RebuiltIdle {
 /// it does not re-seat the character at all; it shears the torso off the
 /// body, which is what a 21-90 unit tear at every torso and pelvis joint
 /// looked like in game (measured against the 1.8-2.4 units retail's own
-/// idles carry: `crates/asset/tests/party_swap_idle_continuity_real.rs`).
+/// idles carry: `crates/patcher/tests/party_swap_idle_continuity_real.rs`).
 ///
 /// The two axes come from different places because they answer different
 /// questions.

@@ -250,7 +250,7 @@ pub fn spawn_move_actor<H: MoveSpawnHost + ?Sized>(
 //
 // REF: FUN_80050ed4 - the allocator that seats a part into this pool.
 // REF: FUN_800480d8 - the battle-scene teardown loop over the same table,
-//                     ported as legaia_engine_render::battle_actor_tick.
+//                     ported as legaia_engine_battle_vm::battle_actor_tick.
 // ---------------------------------------------------------------------------
 
 /// Slots in the part-actor pool `DAT_801C90F0` (`slti a1, 0x80`).
