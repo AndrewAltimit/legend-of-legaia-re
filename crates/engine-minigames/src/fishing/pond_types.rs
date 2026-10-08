@@ -172,6 +172,10 @@ pub struct PondSession {
     /// The fish end's last unclipped screen point (`0x801D9198`), which the
     /// next frame's rod yaw is measured against.
     pub(super) line_fish_prev: Option<(i16, i16)>,
+    /// The rod-creak countdown `_DAT_801D90C4`, in vsyncs.
+    pub(super) creak_timer: i32,
+    /// Creak cues raised since the last [`Self::take_rod_creaks`].
+    pub(super) rod_creaks: u32,
 }
 
 /// The venue bytes a host attaches so the cast lure has a world to land in.

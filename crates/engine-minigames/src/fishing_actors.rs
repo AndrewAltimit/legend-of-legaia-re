@@ -1415,12 +1415,15 @@ impl RodActor {
     /// reel or a fish on bends it (`0x801D2B04..0x801D2C30`), and the D-pad
     /// sides roll it (`0x801D382C..0x801D395C`).
     ///
-    /// The hooked arm's random `0x201` creak cue on the `_DAT_801D90C4` timer
-    /// is not modelled; the bend clamps read `_DAT_801D90F4`, which is `0`
-    /// from the landing to the snap, so they are the bare `0x1000` / `0x1800`.
+    /// The bend clamps read `_DAT_801D90F4`, which is `0` from the landing to
+    /// the snap, so they are the bare `0x1000` / `0x1800`. Returns whether a
+    /// hooked rod's bend ran past its `0x1800` cap this frame - the gate of
+    /// the creak cue (`0x801D2B84..0x801D2BAC`), whose timer is the
+    /// session's ([`crate::fishing::PondSession::take_rod_creaks`]).
     ///
     /// PORT: FUN_801d26cc (state 2: the rod lift, bend and roll writes)
-    pub fn drive(&mut self, d: RodDrive, frame_step: i32) {
+    pub fn drive(&mut self, d: RodDrive, frame_step: i32) -> bool {
+        let mut over_cap = false;
         let fs = frame_step.max(1);
         if d.held & 0x4000 != 0 {
             self.lift = (self.lift + 0x60 * fs).min(0x1000);
@@ -1432,6 +1435,7 @@ impl RodActor {
             }
             let cap = if d.hooked { 0x1800 } else { 0x1000 };
             if self.bend > cap {
+                over_cap = d.hooked;
                 self.bend = cap;
             }
         }
@@ -1453,6 +1457,7 @@ impl RodActor {
         } else if self.lean > self.lean_target {
             self.lean = (self.lean - ease).max(self.lean_target);
         }
+        over_cap
     }
 }
 

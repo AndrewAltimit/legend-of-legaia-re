@@ -865,3 +865,37 @@ fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
     assert_eq!(fishing_phase(&world), crate::fishing::PondPhase::Waiting);
     assert_eq!(ops.iter().filter(|o| **o == landing).count(), 1);
 }
+
+/// A hooked rod held past its bend cap creaks: cue `0x201` into ring slot 1,
+/// first on the frame the cap is crossed, then at most once per re-armed
+/// countdown (`rand() % 200 + 60` vsyncs).
+#[test]
+fn a_hooked_rod_bent_past_its_cap_creaks() {
+    let mut world = World::new();
+    world.enter_fishing_session(&fishing_test_tables(64), 0, None);
+    for _ in 0..3 {
+        fishing_frame(&mut world, 0);
+    }
+    fishing_cast(&mut world);
+    let _ = fishing_hold_until_hooked(&mut world);
+    let _ = world.take_sfx_ring_ops();
+    let creak = crate::world::SfxRingOp::WriteSlot(1, 0x201);
+    let cross = input::PadButton::Cross.mask();
+    let mut frames_with_creak = Vec::new();
+    for f in 0..120 {
+        if fishing_phase(&world) != crate::fishing::PondPhase::Hooked {
+            break;
+        }
+        fishing_frame(&mut world, cross);
+        if world.take_sfx_ring_ops().contains(&creak) {
+            frames_with_creak.push(f);
+        }
+    }
+    assert!(!frames_with_creak.is_empty(), "the rod creaks under load");
+    for w in frames_with_creak.windows(2) {
+        assert!(
+            w[1] - w[0] >= 60,
+            "re-armed at least 60 vsyncs out: {frames_with_creak:?}"
+        );
+    }
+}

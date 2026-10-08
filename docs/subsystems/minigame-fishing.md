@@ -1065,8 +1065,9 @@ direct ring stores, resolved through the venue scene's bundle (the fishing
 init loads no `efect.dat`): the lure landing stores `0x204` into slot 2 on
 the arm that bumps the cast counter (`0x801D2950`), and a purchase stores
 `0x206` into slot 0 (the confirm screen's Yes arm, `0x801D089C`); the port
-raises both. The hooked rod's random creak `0x201` (slot 1, `0x801D2BD0`) is
-not modelled. The [point exchange](#point-exchange-prize-shop) opens from the hub's row 3
+raises both, and the hooked rod's creak: `0x201` into slot 1 (`0x801D2BD0`)
+whenever a hooked rod is bent past its cap with the countdown `_DAT_801D90C4`
+spent, which then re-arms at `rand() % 200 + 60` vsyncs. The [point exchange](#point-exchange-prize-shop) opens from the hub's row 3
 (or the native window's `P`) and owns the pad while open: the engine steps it
 off the pad edge itself (`World::tick_fishing_hub`), as retail's state `0x78`
 does - Up / Down move, Cross or L1 trades one, Circle or L2 closes back to

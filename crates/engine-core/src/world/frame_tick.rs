@@ -3021,6 +3021,12 @@ impl World {
             Some(s) => {
                 let casts = s.persist().casts;
                 s.tick(pond_input, 1, FISHING_CAST_STEP);
+                for _ in 0..s.take_rod_creaks() {
+                    // The hooked rod's creak, `0x201` into ring slot 1.
+                    self.audio
+                        .sfx_ring_ops
+                        .push(crate::world::SfxRingOp::WriteSlot(1, 0x201));
+                }
                 (s.take_events(), s.persist().casts != casts)
             }
             None => (Vec::new(), false),
