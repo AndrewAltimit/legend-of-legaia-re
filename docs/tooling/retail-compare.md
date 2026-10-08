@@ -238,6 +238,18 @@ engine verdict:
   undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
   columns, period `2` on a step-`3` frame, fire every tick.
 
+  So are the VDF vertex-morph envelopes field actors run off op `0x4B`
+  ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain)).
+  Where an envelope stands is time since the arm: `town01`'s shoreline
+  objects (`P0[7]` and its siblings, `4B 03 ..`) run a tide whose lanes carry
+  the sea up the beach and back, and `town01_tetsu_topic_prompt` caught it
+  out, with sand where the engine's settle window had the surf in. Every
+  field-actor-ticked node with its envelope up (`+0x10 & 0x1000`) and armed
+  lanes (`+0x6C`) goes to the child as `LEGAIA_SEAT_MORPHS` - lane weights
+  `+0xA0 + i*2`, done mask `+0x7C`, control word `+0x62` (`retail_morphs`) -
+  and is written over the matching morph the engine armed itself on the frame
+  it captures (`World::seed_field_morph`, matched by flat index).
+
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
   panel (`43 13`, shrunk to a corner by `43 14`), and a capture is usually

@@ -77,6 +77,46 @@ impl World {
         self.mark_morph_dirty(owner);
     }
 
+    /// Capture alignment for the retail comparison's `play-window` child
+    /// (`LEGAIA_SEAT_MORPHS`): write a retail state's live envelope over the
+    /// morph of the field actor whose flat MAN index (`+0x50`) is `flat` -
+    /// the lane weights `+0xA0 + i*2`, the lane-done mask `+0x7C` and the
+    /// envelope control word `+0x62`. Where an envelope stands is time since
+    /// the op-`0x4B` arm (`town01`'s shoreline objects run a tide that
+    /// carries the sea up the beach and back), which no seed replays. Only a
+    /// morph the engine armed itself is written; the lanes' sub-entries and
+    /// ramp rates stay the engine's.
+    pub fn seed_field_morph(&mut self, flat: u16, weights: &[u16], done_mask: u32, env: u16) {
+        let Some(ci) = self
+            .field_vm
+            .channels
+            .iter()
+            .position(|c| c.ctx.script_id == flat)
+        else {
+            return;
+        };
+        let c = &self.field_vm.channels[ci];
+        let owner = if c.object_bind {
+            MorphOwner::Object(flat)
+        } else {
+            match u8::try_from(c.placement_index) {
+                Ok(s) => MorphOwner::Placement(s),
+                Err(_) => return,
+            }
+        };
+        let Some(st) = self.npcs.morphs.get_mut(&owner) else {
+            return;
+        };
+        let lanes = usize::from(st.keyframe_count).min(weights.len());
+        for (i, &w) in weights.iter().take(lanes).enumerate() {
+            vdf_morph::set_keyframe_weight(st, i, w);
+        }
+        st.field_7c = done_mask;
+        st.local_flags = env;
+        self.field_vm.channels[ci].ctx.local_flags = env;
+        self.mark_morph_dirty(owner);
+    }
+
     /// The channel context that owns `owner` (its `+0x10` / `+0x62` words).
     fn morph_channel(&self, owner: MorphOwner) -> Option<usize> {
         self.field_vm.channels.iter().position(|c| match owner {

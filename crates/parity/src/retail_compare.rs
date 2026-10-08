@@ -304,6 +304,9 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
+    /// the image child as `LEGAIA_SEAT_MORPHS`.
+    pub morphs: Vec<MorphSeed>,
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
@@ -732,6 +735,87 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
         .collect()
 }
 
+/// One field actor's live VDF morph envelope (op `0x4B`,
+/// `legaia_engine_core::world::npc_morph`): its flat MAN index `+0x50`, the
+/// lane weights `+0xA0 + i*2` over its `+0x6C` lanes, the lane-done mask
+/// `+0x7C` and the envelope control word `+0x62`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MorphSeed {
+    pub flat: u16,
+    pub weights: Vec<u16>,
+    pub done_mask: u32,
+    pub env: u16,
+}
+
+/// Every field-actor-ticked node whose envelope is up (`+0x10 & 0x1000`)
+/// with armed lanes - where its morph stands is time since the arm
+/// (`town01`'s shoreline tide), so the image child writes it over the
+/// engine's on the frame it captures (`World::seed_field_morph`).
+pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x10) & 0x1000 != 0)
+        .filter_map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            let lanes = u32::from(game_anchors::u8_at(ram, n + 0x6C)).min(8);
+            (lanes > 0 && seen.insert(flat)).then(|| MorphSeed {
+                flat,
+                weights: (0..lanes)
+                    .map(|i| game_anchors::u16_at(ram, n + 0xA0 + i * 2))
+                    .collect(),
+                done_mask: game_anchors::u32_at(ram, n + 0x7C),
+                env: game_anchors::u16_at(ram, n + 0x62),
+            })
+        })
+        .collect()
+}
+
+/// [`retail_morphs`] as `LEGAIA_SEAT_MORPHS`:
+/// `flat:w0/w1/..:done:env` per actor, `;`-joined, numbers in hex.
+pub fn morphs_env(m: &[MorphSeed]) -> String {
+    m.iter()
+        .map(|s| {
+            format!(
+                "{:x}:{}:{:x}:{:x}",
+                s.flat,
+                s.weights
+                    .iter()
+                    .map(|w| format!("{w:x}"))
+                    .collect::<Vec<_>>()
+                    .join("/"),
+                s.done_mask,
+                s.env
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`morphs_env`].
+pub fn morphs_from_env(v: &str) -> Vec<MorphSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            let flat = u16::from_str_radix(f.next()?, 16).ok()?;
+            let weights = f
+                .next()?
+                .split('/')
+                .map(|w| u16::from_str_radix(w, 16).ok())
+                .collect::<Option<Vec<u16>>>()?;
+            let done_mask = u32::from_str_radix(f.next()?, 16).ok()?;
+            let env = u16::from_str_radix(f.next()?, 16).ok()?;
+            Some(MorphSeed {
+                flat,
+                weights,
+                done_mask,
+                env,
+            })
+        })
+        .collect()
+}
+
 /// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_core::fog_particles`]).
 const FOG_POOL_PTR: u32 = 0x8007_B7E0;
 
@@ -1059,6 +1143,11 @@ impl RetailObs {
             },
             scroll_rects: Vec::new(),
             panel: None,
+            morphs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_morphs(ram)
+            } else {
+                Vec::new()
+            },
             object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_models(ram)
             } else {
@@ -1183,6 +1272,9 @@ impl RetailObs {
                     .collect::<Vec<_>>()
                     .join(","),
             ));
+        }
+        if !self.morphs.is_empty() {
+            env.push(("LEGAIA_SEAT_MORPHS", morphs_env(&self.morphs)));
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
@@ -3053,6 +3145,26 @@ mod tests {
         let mut ram = vec![0u8; 0x20_0000];
         ram[(MENU_SUBSCREEN & 0x1F_FFFF) as usize] = sub;
         ram
+    }
+
+    /// The morph-envelope seed survives its env form.
+    #[test]
+    fn morph_seeds_round_trip_through_their_env_form() {
+        let m = vec![
+            MorphSeed {
+                flat: 7,
+                weights: vec![0x1000, 0x0C5A, 0],
+                done_mask: 0x8000_0003,
+                env: 0x5015,
+            },
+            MorphSeed {
+                flat: 0x45,
+                weights: vec![0x10],
+                done_mask: 0,
+                env: 0x1000,
+            },
+        ];
+        assert_eq!(morphs_from_env(&morphs_env(&m)), m);
     }
 
     /// The capture-alignment seeds survive their env forms.

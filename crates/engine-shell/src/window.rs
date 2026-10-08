@@ -116,6 +116,10 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
+    /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
+    /// over the engine's on the capture frame (`World::seed_field_morph`).
+    pub seat_morphs: Vec<legaia_parity::retail_compare::MorphSeed>,
     /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
     /// the capture frame - the vignette record that spawned it ran before
@@ -423,6 +427,9 @@ impl ScreenshotConfig {
             seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare::panel_from_env(&v)),
+            seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")
+                .map(|v| legaia_parity::retail_compare::morphs_from_env(&v))
+                .unwrap_or_default(),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')
