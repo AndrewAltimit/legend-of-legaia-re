@@ -222,6 +222,25 @@ impl World {
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
     // REF: FUN_8003AEB0, FUN_80039B7C, FUN_8003BC08
     pub fn pre_run_field_channel_prologues(&mut self) {
+        // A record this slice executes sets its heading from the ops on the
+        // story arm it takes (`4C 51` seats, `38` compass turns), so the
+        // load-time first-nibble guess ([`Self::seed_field_npc_facings`])
+        // does not survive it: an arm the flags skip leaves the spawn
+        // default. `dolk2`'s King Drake (`P1[41]`) turns to index 4 only
+        // while `0x178` is clear, and `dolk2_market_noa` holds him at `0`.
+        if let Some(man) = self.field_vm.channels_man.clone() {
+            let executed: Vec<u8> = self
+                .field_vm
+                .channels
+                .iter()
+                .filter(|c| !c.object_bind && !c.done)
+                .filter(|c| matches!(man.get(c.record_offset + c.pc), Some(0x24 | 0x25)))
+                .filter_map(|c| u8::try_from(c.placement_index).ok())
+                .collect();
+            for slot in executed {
+                self.npcs.headings.remove(&slot);
+            }
+        }
         self.field_vm.entry_prerun = true;
         self.step_field_channel_prologues();
         self.field_vm.entry_prerun = false;
@@ -299,6 +318,13 @@ impl World {
                     channels[i].done = true;
                     break;
                 };
+                // `FUN_8003A1E4`'s loop tests the byte at the new PC before
+                // each call (`andi 0x7F; sltiu 0x20` at `0x8003A4EC`): a
+                // text lead or any other sub-`0x20` byte ends the load slice
+                // unexecuted.
+                if opcode_byte & 0x7F < 0x20 {
+                    break;
+                }
                 // Cross-context poke: resolve the extended target to another
                 // channel and run the op against that context.
                 let ext = vm::field::peek_extended(bc, pc);
@@ -382,8 +408,19 @@ impl World {
                         }
                     }
                     FieldStepResult::Yield { resume_pc } => {
+                        // Retail's load slice stops only on an executed
+                        // `0x21`, an unmoved PC or a sub-`0x20` byte
+                        // (`0x8003A4C4..0x8003A4F4`); a yield op that hands
+                        // back the next PC (a `41` axis glide armed on the
+                        // actor) runs on into the ops after it. `dolk`
+                        // `P1[22]` (`23 63 4F`, `41 06 01`, `38 86 00`) and
+                        // `izumi` `P1[1]` stand turned by the `38` past the
+                        // glide.
+                        let stalled = resume_pc == pc;
                         channels[i].pc = resume_pc;
-                        break;
+                        if opcode_byte & 0x7F == 0x21 || stalled {
+                            break;
+                        }
                     }
                     FieldStepResult::Halt { final_pc } => {
                         // Parked (conditional hold / halted cross-target):
