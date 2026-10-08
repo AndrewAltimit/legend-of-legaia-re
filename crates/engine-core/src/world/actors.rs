@@ -2327,6 +2327,29 @@ impl World {
     pub fn set_active_party(&mut self, slots: Vec<u8>) {
         let mut active = slots;
         active.truncate(3);
+        // Retail's New Game seeds all four live records from the SCUS
+        // template (`0x80084708 + n*0x414`, the seed routine's four-iteration
+        // loop), so a member who joins later already has a level-1 record.
+        // The engine's New Game roster is Vahn alone; a join naming a slot it
+        // lacks takes that slot's template row here, or the member would
+        // fight with 0 / 0 HP and the battle could never see the party wiped.
+        // Every slot up to the highest named one is filled, as retail's are:
+        // a roster grown to reach slot 2 must not leave a zeroed slot 1.
+        if let Some(tpl) = self.tables.starting_party.clone() {
+            let top = active.iter().copied().max().unwrap_or(0);
+            let missing: Vec<u8> = (0..=top)
+                .filter(|&r| {
+                    self.party
+                        .roster
+                        .members
+                        .get(usize::from(r))
+                        .is_none_or(|m| m.hp_mp_sp().hp_max == 0)
+                })
+                .collect();
+            if !missing.is_empty() {
+                self.seed_party_members(&tpl, &missing);
+            }
+        }
         for (member, &rslot) in active.iter().enumerate() {
             let Some(rec) = self.party.roster.members.get(rslot as usize) else {
                 continue;

@@ -193,6 +193,7 @@ impl World {
     ) {
         self.begin_new_game();
         if let Some(starting) = party {
+            self.tables.starting_party = Some(starting.clone());
             self.seed_starting_party(starting);
         }
         if let Some(inv) = inventory {
@@ -1001,6 +1002,26 @@ mod tests {
     /// Game roster) and every other battle ordinal resolved to a roster slot
     /// that did not exist: the HUD drew `P2 0/0` / `P3 0/0` and the battle
     /// actors never got HP mirrors.
+    /// A member joining a New Game party (the `0x3C` party add, which
+    /// installs the present-party list) takes its template row: retail's New
+    /// Game seeded all four live records, so Noa joins with her level-1
+    /// record, not a zeroed one that fights at 0 / 0 HP and keeps the battle
+    /// from ever seeing the party wiped.
+    #[test]
+    fn a_member_joining_a_new_game_party_gets_its_template_record() {
+        let mut world = World::new();
+        world.begin_new_game_seeded(Some(&four_row_template()), None);
+        assert_eq!(world.party.roster.members.len(), 1);
+        world.install_present_party_list(vec![0, 1]);
+        assert_eq!(world.party.party_count, 2);
+        let noa = world.party.roster.members[1].hp_mp_sp();
+        assert_eq!((noa.hp_max, noa.hp_cur), (150, 150));
+        assert_eq!(world.actors[1].battle.max_hp, 150);
+        assert_eq!(world.actors[1].battle.liveness, 1);
+        // Vahn's progress is not re-seeded by the join.
+        assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 180);
+    }
+
     #[test]
     fn a_named_present_party_gets_its_template_records() {
         let template = four_row_template();

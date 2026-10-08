@@ -7,6 +7,12 @@ use super::*;
 
 /// Disc-parsed static tables installed at boot / scene load (items, spells, arts, monsters, formations, move power, equipment, thresholds, CDNAME map).
 pub struct DiscTables {
+    /// The `SCUS_942.54` New Game starting-party template (`0x80078C4C`),
+    /// kept from [`crate::world::World::begin_new_game_seeded`]. Retail's
+    /// New Game seeds all four live records from it, so a member who joins
+    /// later (`0x3C` party add) arrives with its own row; the engine seeds
+    /// the record from here when the join names a slot the roster lacks.
+    pub starting_party: Option<legaia_asset::new_game::StartingParty>,
     /// The static `SCUS_942.54` win-pose table (`0x800788A0`) the results
     /// frame picks the leader's victory pose from. Installed at boot by the
     /// shell (`legaia_asset::victory_pose`); `None` on a disc-free build,
@@ -211,6 +217,7 @@ pub struct DiscTables {
 impl DiscTables {
     pub fn new() -> Self {
         Self {
+            starting_party: None,
             item_catalog: crate::items::ItemCatalog::default(),
             item_effects: None,
             spell_catalog: crate::spells::SpellCatalog::default(),
