@@ -31,6 +31,12 @@ use legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE;
 use legaia_engine_vm::move_vm::ActorState;
 use legaia_engine_vm::vdf_morph;
 
+/// The `+0x62` bits the ramp envelope `FUN_80020740` reads and writes:
+/// HOLD `0x400`, ADVANCE `0x800`, LANE0 snap-down `0x1000`, INIT `0x2000`,
+/// reset-on-complete `0x4000`, FROZEN `0x8000`
+/// (`legaia_engine_vm::move_buffer`).
+const MORPH_ENV_BITS: u16 = 0xFC00;
+
 /// Which field actor a morph belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MorphOwner {
@@ -112,8 +118,13 @@ impl World {
             vdf_morph::set_keyframe_weight(st, i, w);
         }
         st.field_7c = done_mask;
-        st.local_flags = env;
-        self.field_vm.channels[ci].ctx.local_flags = env;
+        // Only the envelope's own control bits: the low byte of `+0x62` is
+        // the clip cursor's, which the engine keeps on the prop's own
+        // animation state.
+        let word =
+            (self.field_vm.channels[ci].ctx.local_flags & !MORPH_ENV_BITS) | (env & MORPH_ENV_BITS);
+        st.local_flags = word;
+        self.field_vm.channels[ci].ctx.local_flags = word;
         self.mark_morph_dirty(owner);
     }
 
