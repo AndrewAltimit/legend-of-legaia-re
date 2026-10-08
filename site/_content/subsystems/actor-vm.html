@@ -77,6 +77,12 @@
       <p>An earlier reading placed the driver in an unindexed PROT.DAT gap after entry 0899. Recovering the menu overlay's base resolved the same image as PROT 0899 itself, which is why the shop, pause menu and save UI can all reach it. The same pass found the slide and snap helpers' names swapped (read off their tails, <code>FUN_800357FC</code> starts a slide and <code>FUN_800358C0</code> snaps) and what had been called a "global tick" helper to be close-all.</p>
     </div>
   </details>
+  <details class="disclosure">
+    <summary>The Rust port still uses the old names</summary>
+    <div class="disclosure-body">
+      <p><code>legaia_engine_vm::Opcode</code> was written under the sprite-engine reading and keeps its names: <code>SpawnDefault</code> (<code>01</code>), <code>SpawnAt</code> (<code>02</code>), <code>SetField1d</code> (<code>03</code>), <code>DeleteSprite</code> (<code>04</code>, really begin-close), <code>GlobalUpdate</code> (<code>05</code>, really close-all), <code>ClearField20</code> (<code>06</code>), <code>Effect</code> (<code>08</code>, really immediate destroy), <code>MotionAt</code> (<code>09</code>) and <code>EffectMotion</code> (<code>0A</code>). Its host calls follow the swapped helper reading too: it snaps on <code>01</code> / <code>02</code>, where retail slides, and slides on <code>09</code> / <code>0A</code>, where retail snaps. The engine's window host tracks only a target and a sliding flag, so the swap mostly shows on a re-issued open of a window that is already up.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="anm-connection">

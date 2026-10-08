@@ -56,8 +56,36 @@ The 13 jump-table slots (`0x801CED70`) decode to: open and slide home
 (`0x06`), immediate destroy (`0x08`), open and snap to a packed position or
 home (`0x09`), and a destroy / re-create / snap-back-in-place composite
 (`0x0A`); slots `0x07` and `0x0B..=0x0D` fall through as no-ops (helper
-names as in the overview above, read off the arms at `0x801D66A8..0x801D6850`). Full opcode table + Rust port:
-`crates/engine-vm/src/lib.rs`.
+names as in the overview above, read off the arms at `0x801D66A8..0x801D6850`).
+
+### The port's names predate this reading
+
+The Rust port (`legaia_engine_vm::Opcode`, `crates/engine-vm/src/lib.rs`)
+still carries the sprite-engine names it was written under, and its `Host`
+calls follow the older, swapped helper reading:
+
+| Op | Retail arm | Port variant | Port host call |
+|---|---|---|---|
+| `0x01` | open, **slide** home (`FUN_800357FC`) | `SpawnDefault` | `set_position` (a snap) |
+| `0x02` | open, **slide** to packed (`FUN_800357FC`) | `SpawnAt` | `set_position` (a snap) |
+| `0x03` | style byte `+0x1D` | `SetField1d` | `set_field_1d` |
+| `0x04` | begin-close (`FUN_80035978`) | `DeleteSprite` | `delete_sprite` |
+| `0x05` | close-all (`FUN_80035A4C`) | `GlobalUpdate` | `global_update` |
+| `0x06` | clear motion word `+0x20` | `ClearField20` | `clear_field_20` |
+| `0x08` | immediate destroy (`FUN_800319A8`) | `Effect` | `actor_effect` |
+| `0x09` | open, **snap** to packed or home (`FUN_800358C0`) | `MotionAt` | `start_motion` (a slide) |
+| `0x0A` | destroy, re-create, **snap** back to the captured `+0xA`/`+0xC` | `EffectMotion` | `start_motion` (a slide) |
+
+The slide/snap split is read off the helpers' tails: `0x80035874` copies
+the node's current `+0xA`/`+0xC` into the motion sub-object's source, writes
+the target and sets `+0x20 = 1`; `0x80035938` writes source and target alike
+and clears `+0x20`. So the port's host calls are swapped against retail on
+all four open arms, and so are the helper comments on the engine host
+(`engine-core::menu_widget::MenuWidgetState`). That host tracks no
+interpolated position - a window is a target plus a `sliding` flag, and
+`spawn` starts every fresh window sliding - so the swap mostly reaches a
+re-issued open of a window that already exists. Op `0x08` / `0x0A`'s destroy
+is also modelled as a counter (`effect_fires`) rather than a destroy.
 
 ## Where the programs live
 
