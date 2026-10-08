@@ -53,8 +53,13 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
     use crate::world::SceneMode;
     !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
         || host_panel_owns_frame
-        || world.dialog.current.is_some()
-        || world.dialog.inline.is_some()
+        // A conversation or a running interaction record is not a term
+        // here: retail hides the readout under one through the rearm arm
+        // alone - the player's engaged bit restarting the countdown
+        // ([`field_hud_rearm_held`], which asks the same dialogue state) -
+        // and that arm reads the bit a frame late
+        // ([`FieldPartyHud::rearm_term`]), so the frame a record first
+        // engages the player still draws it (`keikoku_chest_open`).
         || world.cutscene.text_balloon.is_some()
         || world.cutscene_timeline_active()
         // The naming prompt is modal on both hosts and neither had it in its

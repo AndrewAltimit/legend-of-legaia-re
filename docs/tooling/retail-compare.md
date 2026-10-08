@@ -1610,21 +1610,23 @@ a compose the port gets wrong:
 - `keikoku_chest_open` shows the party HP readout over a chest whose record
   is already running: the chest actor (`P1`, `+0x50 = 19`) is engaged
   (`+0x10 & 0x100`), stepping (`+0x9C = 0`) and parked on its lid's end-latch
-  wait `2D 08` at `+0x2F`, and its lid clip cursor `+0x68` reads `16` at rate
-  `8` - two ticks into the clip, which is the display lag. The readout is the
-  pre-touch frame's. The rule that hides it is the one the port runs: the
-  runner `FUN_80039B7C` raises the player's `+0x10 & 0x80000` on every frame
-  it steps the context (`0x80039DB8..0x80039DD4`), and `FUN_801D0D38` takes
-  its rearm arm on that bit (`0x801D0DCC..0x801D0DD8`), which reloads the
-  countdown and leaves through `0x801D1314` without drawing. The state's
-  RAM pins the order: the player object (`*0x8007C364`) holds `+0x10 =
-  0x090A0880`, the bit **set** (the `keikoku_chest_pre` state holds
-  `0x09020880`, clear), while the countdown `_DAT_801F348C` still reads `0`.
-  Under Field HP Display Immediate (`_DAT_800845C4 = 0`) and
-  `_DAT_8007B5F4 = 0` the rearm arm stores `0x28` there
-  (`0x801D0E24..0x801D0E2C`), so the HUD routine has not run since the bit
-  went up, and the displayed frame is the one drawn before it. The port's
-  frame, past the settle, is the one after - no readout - on both hosts.
+  wait `2D 08` at `+0x2F`. The player object (`*0x8007C364`) holds `+0x10 =
+  0x090A0880`, the engaged bit **set** (`keikoku_chest_pre` holds
+  `0x09020880`, clear), while the countdown `_DAT_801F348C` still reads `0`,
+  where a rearm under Field HP Display Immediate stores `0x28`
+  (`0x801D0E24..0x801D0E2C`). The order of the actor lists explains it, not a
+  display lag: `FUN_801D0D38` runs inside the player's tick `FUN_801D1344`
+  (`0x801D1660`), and the player node sits on `_DAT_8007C34C`, the first list
+  `FUN_80016444` walks (`0x800165A4`), ahead of `_DAT_8007C354`, whose
+  `FUN_8003BC08` steps the runner that raises the bit (`0x8003BD34`). On the
+  frame a record first engages the player the routine still sees the bit
+  clear and draws. Both hosts ask the rearm term one frame late
+  (`FieldPartyHud::rearm_term`), and the suppress kernel no longer hides the
+  readout on a conversation or interaction record by itself - retail hides it
+  under one only through that rearm. The capture is script-gated, so the
+  image child cannot phase-align the countdown to a tick (its `capture_tick`
+  is only the gate's deadline); a gated capture whose retail countdown reads
+  `0` pins the engine's at `0` instead.
 
 ### A poked player keeps the arrival focus
 

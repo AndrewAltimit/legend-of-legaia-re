@@ -1217,6 +1217,9 @@ pub struct FieldPartyHud {
     timer: i16,
     cached: Option<(i16, i16)>,
     last: Option<HudDecision>,
+    /// `field_hud_rearm_held` (engine-core) as the previous frame left it - what
+    /// retail's routine reads ([`Self::rearm_term`]).
+    engaged_prev: bool,
 }
 
 impl FieldPartyHud {
@@ -1227,6 +1230,25 @@ impl FieldPartyHud {
     /// Last frame's decision, for hosts that tick and draw in separate passes.
     pub fn decision(&self) -> Option<HudDecision> {
         self.last
+    }
+
+    /// The player-engaged rearm term **as retail's HUD routine sees it**:
+    /// the value `held` (`field_hud_rearm_held` (engine-core)) had at the end of the
+    /// previous frame. Returns that and stores this frame's.
+    ///
+    /// `FUN_801D0D38` runs inside the player's tick `FUN_801D1344`
+    /// (`jal 0x801D0D38` at `0x801D1660`), and the player node lives on the
+    /// first actor list `FUN_80016444` walks (`_DAT_8007C34C`, `lw a0,0x4(s0)`
+    /// / `jal 0x8002519C` at `0x800165A4`) - ahead of the field-object list
+    /// `_DAT_8007C354` whose per-actor tick `FUN_8003BC08` steps the script
+    /// runner that raises the engaged bit (`0x8003BD34`). So the frame a
+    /// record first engages the player still draws the readout: the
+    /// `keikoku_chest_open` state holds the bit raised and the countdown
+    /// unrearmed at `0`. The port ticks the world first and the HUD after
+    /// it, so it asks the term one frame late to keep retail's order; the
+    /// release lags the same frame.
+    pub fn rearm_term(&mut self, held: bool) -> bool {
+        std::mem::replace(&mut self.engaged_prev, held)
     }
 
     /// Drop the cached position so the next tick takes retail's scene-entry
@@ -1348,6 +1370,23 @@ mod tests {
         fn flag_clear(&mut self, id: i32) {
             self.0.remove(&id);
         }
+    }
+
+    /// The engaged rearm term reaches the countdown a frame late, both on
+    /// the raise and on the release: retail's HUD runs in the player's tick
+    /// ahead of the object list whose runner raises the bit.
+    #[test]
+    fn the_engaged_rearm_term_lags_one_frame() {
+        let mut hud = FieldPartyHud::new();
+        assert!(!hud.rearm_term(false));
+        assert!(!hud.rearm_term(true), "the raising frame still draws");
+        assert!(hud.rearm_term(true));
+        assert!(hud.rearm_term(false), "the release lags the same frame");
+        assert!(!hud.rearm_term(false));
+        // A scene-change rearm does not forget the term.
+        hud.rearm_term(true);
+        hud.rearm();
+        assert!(hud.rearm_term(false));
     }
 
     /// A suppressed frame stores nothing but the cached decision: retail's

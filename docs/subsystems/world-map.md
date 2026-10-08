@@ -595,8 +595,13 @@ engaged bit `+0x10 & 0x80000` (`lw a1,0x1c(s0)` off `0x8007C348` is
 context, so a script that holds the player keeps the countdown rearming and
 the HUD never comes up - which is why no ending scene, whose entry script
 spawns the credits record and never lets it end, shows a party readout. The
-port's `world_map_panel_host::field_hud_rearm_held` answers that term for
-both hosts.
+routine reads that bit a frame behind the runner: it runs in the player's
+tick `FUN_801D1344` (`jal 0x801D0D38` at `0x801D1660`), and the player node
+is on `_DAT_8007C34C`, the first actor list `FUN_80016444` walks, while the
+runner steps from `FUN_8003BC08` on the later `_DAT_8007C354` list - so the
+frame a record first engages the player still draws the readout. The port's
+`world_map_panel_host::field_hud_rearm_held` answers that term for both
+hosts, and `FieldPartyHud::rearm_term` delays it the same frame.
 
 The routine is field-overlay code (PROT 0897, slot A at `0x801CE818`), so it
 draws nothing on a frame that slot holds another image. The field-to-battle

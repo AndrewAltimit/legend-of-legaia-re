@@ -172,15 +172,27 @@ impl PlayWindowApp {
             self.field_party_hud.rearm();
         }
         // Retail's player-engaged rearm term: a script or conversation that
-        // holds the player restarts the idle countdown every frame.
-        if legaia_engine_core::world_map_panel_host::field_hud_rearm_held(&self.session.host.world)
-        {
+        // holds the player restarts the idle countdown every frame - read
+        // a frame late, the order retail's actor lists run in
+        // (`FieldPartyHud::rearm_term`).
+        let held = legaia_engine_core::world_map_panel_host::field_hud_rearm_held(
+            &self.session.host.world,
+        );
+        if self.field_party_hud.rearm_term(held) {
             self.field_party_hud.rearm();
         }
+        // A capture taken where a gate is met (a script or battle phase)
+        // has no tick to phase-align to: `capture_tick` is only its
+        // deadline. A retail countdown of `0` there is a drawn readout, so
+        // the countdown is pinned at `0` instead of held to the deadline.
+        let gated_drawn = self.screenshot.as_ref().is_some_and(|sc| {
+            (sc.script_gate.is_some() || sc.phase_gate.is_some()) && sc.hud_countdown == Some(0)
+        });
         // Capture harness: phase-align the countdown to the retail state
         // being compared (`LEGAIA_HUD_COUNTDOWN`).
         if let Some(sc) = self.screenshot.as_ref()
             && let Some(n) = sc.hud_countdown
+            && !gated_drawn
         {
             let mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(
                 &self.session.host.world,
@@ -232,6 +244,9 @@ impl PlayWindowApp {
             )
         {
             self.field_party_hud.cap_countdown(cap);
+        }
+        if gated_drawn {
+            self.field_party_hud.cap_countdown(0);
         }
     }
 
