@@ -1757,11 +1757,8 @@
 "801ddb00" = "Slot 3 of the same eight-entry corner-writer table at 0x801CEC40 (its word sits at 0x801CEC4C, its only reference). Seven `sh` stores of the POLY_F4 corner halfwords at a1[+0x08..+0x14] then `j 0x801DDBC4`, one word earlier than slot 0's join because the tail supplies the eighth halfword. Same scope as slot 0 and the dispatcher 801dd9d4. see ghidra/scripts/funcs/overlay_field_0897_801ddb00.txt"
 "801d1610" = "Muscle Dome arena full-screen gradient quad, (x, y, w, h, ot_slot). A real entry - own `addiu sp,sp,-0x28` prologue directly under the previous routine's `jr ra`, and `jal`ed from 0x801D01AC inside the backdrop 801d00f8 (ported as legaia_engine_ui::ringside_backdrop). It takes the scratchpad draw context 0x1F800314, bumps its +0x8C packet cursor by 0x24, writes a POLY_G4 (tag 0x08000000, code word 0x3A101010, top corners shaded 0x64 and bottom corners 0) spanning (x, y)..(x+w, y+h), and links it with 8003d2c4 at *(0x1F8003F4) + ot_slot*4, then appends a 0xC-byte libgpu draw-mode fill through 80059010 and links that too. Packet-and-OT-only, same family as the 801d6480 Baka Fighter gradient bar above. see ghidra/scripts/funcs/overlay_0977_slotA_801d1610.txt"
 
-# Slot-B world-map render overlay (PROT 0901, link base 0x801F69D8): same
-# packet-only shape as the slot-A rows above.
-"801f73e4" = "World-map top-view band strip: zeroes the camera roll global 0x8007B792 (saving it into s5) and restores it on exit, pushes the camera through 800172c0 / 8003d1ec / 8003d368, then loops five times emitting a 0x14-byte flat rect (tag 0x04000000) per band into the scratchpad prim arena at *(0x1F8003A0) - each screen-clipped against the 0x140-wide, 0x80-high draw area with the extent shrunk rather than the packet dropped - and links each with 8003d2c4, closing with one 0x98 SetDrawMode fill through 80059010 and a final link. No band count, colour or geometry is read from game state: the tint endpoints come from literals (0x00808080 / 0x00404040 + 0x64000000) selected by 8003ce64, and the row pitch is `i << 7`. The engine draws the world-map sky/band layer from engine-render's own draw list. Body resolves to world_map_render(901) at its mapped base. see ghidra/scripts/funcs/overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt"
-
-# Same overlay family, the 3D half: GTE matrix push / RotTrans / mesh submit
+# Slot-B world-map render overlay family (PROT 0901), the 3D half: GTE matrix
+# push / RotTrans / mesh submit
 # wrappers. Each pushes a matrix with 8005B268, transforms through 8003D344 or
 # 8003D368, submits with the shared mesh renderer 0x80043390. The two Baka Fighter rows also push and
 # pop a matrix with 8005B268 / 8005B308. The port renders minigame geometry through `engine-render`'s own

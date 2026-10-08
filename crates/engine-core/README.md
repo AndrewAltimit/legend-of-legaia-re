@@ -671,7 +671,8 @@ docs carry the retail provenance.
   `cutscene_caption`, `movie_audio` (what a movie does to the score),
   `mdec_dma_sync`.
 - **Overworld** - `overworld_curvature`, `overworld_draw_order`,
-  `overworld_ground_cue`, `world_map_markers` (not retail: marker quads).
+  `overworld_ground_cue`, `world_map_markers` (not retail: marker quads),
+  `world_map_sky` (which frames draw the sky band).
 - **Menus + screens** - `menu_cues`, `menu_glyph_atlas`, `menu_input`
   (`FUN_801d688c`), `menu_item_category`, `menu_list_rows`,
   `menu_open_sequence`, `menu_validator`, `status_screen`, `spell_menu`,

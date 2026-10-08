@@ -174,6 +174,7 @@ pub mod walk_regen;
 pub mod world;
 pub mod world_map;
 pub mod world_map_markers;
+pub mod world_map_sky;
 
 pub mod float_tween;
 

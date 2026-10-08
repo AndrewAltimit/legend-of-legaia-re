@@ -209,6 +209,7 @@ pub mod world_map_horizon;
 pub mod world_map_overlay;
 pub mod world_map_panel;
 pub mod world_map_panel_actors;
+pub mod world_map_sky;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;

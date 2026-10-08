@@ -2476,17 +2476,41 @@ genuine continent-**walk** RAM image that address disassembles as data, not
 code - the `0x801F76xx` range aliases across overlays.)
 
 **`FUN_801F73E4`** (608 bytes,
-`overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt`) is a
-per-cell GTE **emit helper** in the overview-render extension pack
-(byte-attributed to `world_map_render`, PROT 0901, by
-`classify-worklist.py --explain`), a sibling of the `FUN_801F69D8` sweep. It
-reads a screen-origin accumulator at `0x8007B792`, applies the GTE rotate /
-transfer pair (`FUN_800172C0` / `FUN_8003D1EC` / `FUN_8003D368`), derives a
-tile screen position from the transformed vertex plus the perspective-divided Z
-(`>> 6`), gates the fill colour word (`0x80808080` vs `0x40404040`) on a
-depth / visibility test (`FUN_8003CE64`), and posts a `0x14C`-command packet
-off the scratchpad prim cursor `0x1F8003A0`. Pure GTE/GPU primitive emitter -
-render-track, documented-not-ported.
+`overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt`,
+PROT 0901) is the **overworld sky band**. The terrain sweep `FUN_801F69D8`
+calls it first, unconditionally (`jal` at `0x801F6A18`), so every overworld
+frame draws it, and it links everything into the farthest ordering-table
+bucket (`*0x1F8003F4 + *0x1F8003A6 * 4 - 8`): the terrain draws over it.
+
+- **Placement.** It saves the yaw word `_DAT_8007B792`, zeroes it and rebuilds
+  the view (`FUN_800172C0`), loads `TR` with the raw eye trio
+  `0x800840B8` (`FUN_8003D1EC`), and `RTPS`es `(0, 0, 10000)`
+  (`FUN_8003D368`). Under the `6x` base matrix that vector's eye-space image
+  is `TR + 60000 * (0, -sin pitch, cos pitch)` - roll drops out - so `sy` is
+  the horizon row of the camera; the band's top edge is `sy + 16`.
+- **Scroll.** `x0 = ((sx + _DAT_80089118 / 64 + yaw) & 0xFF) - 0xFF`: the
+  negated player X over 64 (rounded toward zero) plus the saved yaw, wrapped
+  to one 256-pixel period. Sprite `n` of five sits at `x0 + 128 n`.
+- **Sprites.** Five `SPRT`s (command `0x64`), 128x128 each, alternating the
+  two tiles of the 8bpp page `(512, 256)` (draw-mode packet tpage `0x98`,
+  `FUN_80059010`) with CLUT `0x7A80`; the texture is the kingdom bundle's
+  256-colour TIM. Each is clipped against the left and top screen edges by
+  moving its `u` / `v` origin. The right-edge arm computes `w = 128 - (x -
+  320)`, which **widens** the last sprite past the screen rather than
+  narrowing it; the draw area crops the overhang.
+- **Colour.** `0x808080`, or `0x404040` once system flag `0x14C` is set
+  (`FUN_8003CE64`).
+- It restores the yaw word and rebuilds the view before returning, so the
+  rest of the frame draws under the camera it expected.
+
+Both resident overworld states' packets reproduce exactly at `OFY = 114`
+(Sebucus: band top `-60`, sprites at `x = 0 / 41 / 169 / 297`). The band is
+mostly hidden at the walk camera's pitch - the terrain fills the rows above
+the horizon - and shows where the visible-tile window or the coast leaves the
+top of the frame open. Port: `legaia_engine_vm::world_map_sky` (the packets),
+`legaia_engine_core::world_map_sky` (the gate both hosts call), and
+`legaia_engine_ui::screen_prim::sky_band_prims`, which depth-tests each quad
+at the far plane so it lands only where the scene drew nothing.
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →

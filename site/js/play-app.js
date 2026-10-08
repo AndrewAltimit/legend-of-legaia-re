@@ -303,6 +303,10 @@ void main() {
   if (u_log_depth.x > 0.5 && (a_flags & 2u) != 0u) {
     float den = a_depth - u_log_depth.y;
     v_log_depth = abs(den) > 0.0 ? logDepthOfW(u_log_depth.z / den) : 1.0;
+    /* The far plane itself (the overworld sky band) is the clear value
+     * exactly, so it lands only where the scene drew nothing - including
+     * in front of nothing in the far-bucket slice just short of it. */
+    if (a_depth >= 1.0) v_log_depth = 1.0;
   }
 }
 `;

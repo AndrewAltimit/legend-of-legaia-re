@@ -2172,6 +2172,10 @@ impl LegaiaRuntime {
         // `world_map_markers` kernel the native window draws them with
         // (`crate::play_world_map_markers`).
         prims.extend(self.world_map_marker_prims());
+        // The overworld sky band, the native window's `world_map_sky_prims`
+        // twin: far-plane depth-tested, so it fills only what the terrain
+        // left clear.
+        prims.extend(self.world_map_sky_prims());
         // PROT 0948's Cross Beam while its arm 3 runs, through the
         // `cast_beam` kernel the native window draws it with.
         if let Some(c) = self

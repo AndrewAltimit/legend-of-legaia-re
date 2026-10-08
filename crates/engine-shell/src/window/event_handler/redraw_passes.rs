@@ -568,6 +568,30 @@ impl PlayWindowApp {
             .collect()
     }
 
+    /// The overworld sky band (`FUN_801F73E4`) as screen primitives, through
+    /// the gate (`legaia_engine_core::world_map_sky`) and wrapper
+    /// (`screen_prim::sky_band_prims`) the browser play page calls. Each
+    /// quad is depth-tested at the far plane, so it fills only what the
+    /// terrain left clear - retail's farthest-bucket draw order.
+    pub(super) fn world_map_sky_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.session.camera,
+            None,
+            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
+        );
+        let sprites =
+            legaia_engine_core::world_map_sky::sky_band(world, &self.session.camera, &frame);
+        legaia_engine_render::screen_overlay::sky_band_prims(&sprites)
+    }
+
     pub(super) fn build_effect_model_draws(
         &self,
         r: &legaia_engine_render::Renderer,

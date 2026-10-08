@@ -1072,8 +1072,8 @@ whichever build's matrix was live when they were emitted
   Both sites are in **one** routine, `FUN_801F73E4` (608 bytes,
   `0x801F73E4..0x801F7644`), and the pair is a bracket rather than two
   independent builds. It saves the yaw word `_DAT_8007B792`, **zeroes it in the
-  first `jal`'s delay slot**, and rebuilds; draws one screen-fixed band - five
-  clipped quads plus a sprite, linked through `FUN_8003D2C4` off the scratchpad
+  first `jal`'s delay slot**, and rebuilds; draws the overworld sky band - up to
+  five clipped `SPRT`s and a draw-mode packet, linked through `FUN_8003D2C4` off the scratchpad
   prim cursor `0x1F8003A0`, with the colour chosen by the story flag `0x14C`
   through `FUN_8003CE64`; then restores the saved yaw and rebuilds again so the
   rest of the frame draws under the view it expected. So neither slot-B build is

@@ -482,6 +482,47 @@ pub fn world_map_marker_prim(
     })
 }
 
+/// OT bucket the overworld sky band links at: retail links it into the
+/// farthest bucket of the frame's table (`FUN_801F73E4`), so it is the first
+/// primitive drawn.
+pub const WORLD_MAP_SKY_OT: u32 = u32::MAX;
+
+/// The overworld sky band's `SPRT`s ([`legaia_engine_vm::world_map_sky`]) as
+/// opaque textured quads, both hosts' one wrapper.
+///
+/// Retail draws the band first and the terrain over it. A screen primitive
+/// composites after the scene, so each quad carries the **far-plane** depth
+/// (`1.0`) and is depth-tested: it lands only where the scene left the depth
+/// clear, i.e. behind every primitive the frame drew.
+///
+/// The sprite's `u + w` / `v + h` edge can reach `256`, one past a `u8`
+/// corner: it is held at `255`, the same edge the other full-tile `SPRT`
+/// wrappers use.
+pub fn sky_band_prims(sprites: &[legaia_engine_vm::world_map_sky::SkySprite]) -> Vec<ScreenPrim> {
+    use legaia_engine_vm::world_map_sky::{SKY_CLUT, SKY_TPAGE};
+    sprites
+        .iter()
+        .map(|s| {
+            let (x0, y0) = (s.x, s.y);
+            let (x1, y1) = (s.x.saturating_add(s.w), s.y.saturating_add(s.h));
+            let edge = |a: u8, n: i16| (i32::from(a) + i32::from(n)).clamp(0, 255) as u8;
+            let (u0, v0) = (s.u, s.v);
+            let (u1, v1) = (edge(s.u, s.w), edge(s.v, s.h));
+            ScreenPrim::Textured(ScreenQuad {
+                xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+                uv: [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+                clut: SKY_CLUT,
+                tpage: SKY_TPAGE,
+                color: s.color,
+                gouraud: None,
+                semi_transparent: false,
+                ot_index: WORLD_MAP_SKY_OT,
+                depth: Some(CornerDepth::new([1.0; 4])),
+            })
+        })
+        .collect()
+}
+
 /// The **screen-effect push** the field overlay's colour-tween actor emits
 /// once per frame - retail's `FUN_80024EE4(layer, blend, packed)` call, in
 /// retail's own argument order.
@@ -1416,5 +1457,30 @@ mod tests {
         assert_eq!(ys.iter().max().unwrap() - ys.iter().min().unwrap(), 1);
         assert_eq!(q.xy.iter().map(|c| c.0).max(), Some(60));
         assert!(line_quad((5.0, 5.0), (5.0, 5.0), [0; 4], false, 0, 0).is_none());
+    }
+
+    #[test]
+    fn sky_band_quads_sit_on_the_far_plane_behind_the_scene() {
+        use legaia_engine_vm::world_map_sky::{SKY_CLUT, SKY_TPAGE, SkySprite};
+        let s = SkySprite {
+            x: 0,
+            y: 0,
+            u: 87,
+            v: 188,
+            w: 41,
+            h: 68,
+            color: 0x80_8080,
+        };
+        let prims = sky_band_prims(&[s]);
+        let ScreenPrim::Textured(q) = prims[0] else {
+            panic!("sky sprite is textured");
+        };
+        assert_eq!(q.xy, [(0, 0), (41, 0), (0, 68), (41, 68)]);
+        // `v + h` = 256 holds at the u8 edge.
+        assert_eq!(q.uv, [(87, 188), (128, 188), (87, 255), (128, 255)]);
+        assert_eq!((q.clut, q.tpage), (SKY_CLUT, SKY_TPAGE));
+        assert!(!q.semi_transparent);
+        assert_eq!(q.depth.map(|d| d.get()), Some([1.0; 4]));
+        assert_eq!(q.ot_index, WORLD_MAP_SKY_OT);
     }
 }

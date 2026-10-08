@@ -3755,6 +3755,9 @@ impl PlayWindowApp {
             // `world_map_markers` kernel's quads, the browser play page's
             // twin (`crate::play_world_map_markers` there).
             screen_prims.extend(self.world_map_marker_prims());
+            // The overworld sky band (`FUN_801F73E4`): the shared gate and
+            // wrapper the browser play page draws it with.
+            screen_prims.extend(self.world_map_sky_prims());
             let target = |scene| present_target(scene, &screen_prims, &light_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
