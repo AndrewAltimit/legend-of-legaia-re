@@ -817,8 +817,12 @@ pub struct MorphSeed {
 /// Every field-actor-ticked node whose envelope is up (`+0x10 & 0x1000`)
 /// with armed lanes - where its morph stands is time since the arm
 /// (`town01`'s shoreline tide), so the image child writes it over the
-/// engine's on the frame it captures (`World::seed_field_morph`).
+/// engine's on the frame it captures (`World::seed_field_morph`). The
+/// weights are the **displayed** frame's: the RAM's taken back by the
+/// display lag ([`rewind_morph_weights`]).
 pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
+    let step = crate::retail_compare_battle::frame_step(ram).max(1);
+    let lag_frames = crate::retail_compare_battle::display_lag_vsyncs(ram) / u16::from(step);
     let mut seen = std::collections::BTreeSet::new();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
@@ -827,16 +831,82 @@ pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
         .filter_map(|n| {
             let flat = game_anchors::u16_at(ram, n + 0x50);
             let lanes = u32::from(game_anchors::u8_at(ram, n + 0x6C)).min(8);
-            (lanes > 0 && seen.insert(flat)).then(|| MorphSeed {
-                flat,
-                weights: (0..lanes)
+            (lanes > 0 && seen.insert(flat)).then(|| {
+                let mut weights: Vec<u16> = (0..lanes)
                     .map(|i| game_anchors::u16_at(ram, n + 0xA0 + i * 2))
-                    .collect(),
-                done_mask: game_anchors::u32_at(ram, n + 0x7C),
-                env: game_anchors::u16_at(ram, n + 0x62),
+                    .collect();
+                let up: Vec<i16> = (0..lanes)
+                    .map(|i| game_anchors::i16_at(ram, n + 0xB8 + i * 2))
+                    .collect();
+                let down: Vec<i16> = (0..lanes)
+                    .map(|i| game_anchors::i16_at(ram, n + 0xC8 + i * 2))
+                    .collect();
+                let done_mask = game_anchors::u32_at(ram, n + 0x7C);
+                let env = game_anchors::u16_at(ram, n + 0x62);
+                rewind_morph_weights(&mut weights, &up, &down, done_mask, env, step, lag_frames);
+                MorphSeed {
+                    flat,
+                    weights,
+                    done_mask,
+                    env,
+                }
             })
         })
         .collect()
+}
+
+/// Take a morph envelope's lane weights back `frames` game frames of
+/// `step` vsyncs each - the displayed frame's weights, not the RAM's.
+///
+/// The envelope (`FUN_80020740`, `legaia_engine_vm::move_buffer::envelope_tick`)
+/// moves a lane that has not peaked up by its `+0xB8` velocity times the
+/// frame step while the finishing bit (`done_mask` bit 31) is clear, and a
+/// peaked lane down by its `+0xC8` velocity once it is set (unless HOLD
+/// `0x0400` or FROZEN `0x8000` stops it). Run backwards over the lag, each
+/// lane retraces its own ramp, clamped to `0 ..= 0x1000`; a phase change
+/// inside the lag is not undone. Gated `jouine` (`cort_evolved_pre_battle`)
+/// is parked six vsyncs ahead of its displayed frame with its flesh-wall
+/// lanes rising `51` / `81` a vsync: seeded on the RAM's weights the wall
+/// was drawn further swollen than the frame on the TV.
+pub fn rewind_morph_weights(
+    weights: &mut [u16],
+    up: &[i16],
+    down: &[i16],
+    done_mask: u32,
+    env: u16,
+    step: u8,
+    frames: u16,
+) {
+    const HOLD: u16 = 0x0400;
+    const FROZEN: u16 = 0x8000;
+    const PEAK: i32 = 0x1000;
+    if env & FROZEN != 0 || frames == 0 {
+        return;
+    }
+    let finishing = done_mask & 0x8000_0000 != 0;
+    let n = weights.len();
+    let per = i32::from(step) * i32::from(frames);
+    for (lane, slot) in weights.iter_mut().enumerate() {
+        let bit = 1u32 << (lane & 0x1F);
+        let peaked = done_mask & bit != 0;
+        let w = i32::from(*slot as i16);
+        let rewound = if !peaked && !finishing {
+            let ramping = lane == 0 || done_mask & (1u32 << ((lane - 1) & 0x1F)) != 0;
+            if !ramping {
+                continue;
+            }
+            w - i32::from(up.get(lane).copied().unwrap_or(0)) * per
+        } else if finishing && peaked && env & HOLD == 0 {
+            let next_drained = lane + 1 == n || done_mask & (1u32 << ((lane + 1) & 0x1F)) == 0;
+            if !next_drained {
+                continue;
+            }
+            w + i32::from(down.get(lane).copied().unwrap_or(0)) * per
+        } else {
+            continue;
+        };
+        *slot = rewound.clamp(0, PEAK) as u16;
+    }
 }
 
 /// [`retail_morphs`] as `LEGAIA_SEAT_MORPHS`:
@@ -3276,6 +3346,33 @@ mod tests {
     }
 
     /// The capture-alignment seeds survive their env forms.
+    #[test]
+    fn morph_weights_rewind_their_own_ramp_by_the_display_lag() {
+        // Rising lane (not peaked, not finishing): back by up * step * frames.
+        let mut w = [0x0D26u16];
+        rewind_morph_weights(&mut w, &[51], &[51], 0, 0x4415, 3, 2);
+        assert_eq!(w, [0x0D26 - 51 * 6]);
+        // Clamped at zero.
+        let mut w = [100u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0, 0x1015, 3, 2);
+        assert_eq!(w, [0]);
+        // Draining lane (peaked + finishing): back *up* by down * step * frames.
+        let mut w = [0x0800u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0x8000_0001, 0x1000, 3, 2);
+        assert_eq!(w, [0x0800 + 58 * 6]);
+        // HOLD keeps a peaked lane; FROZEN keeps everything.
+        let mut w = [0x1000u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0x8000_0001, 0x0400, 3, 2);
+        assert_eq!(w, [0x1000]);
+        let mut w = [0x0400u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0, 0x8000, 3, 2);
+        assert_eq!(w, [0x0400]);
+        // A later lane waits for the one before it to peak.
+        let mut w = [0x0400u16, 0x0200];
+        rewind_morph_weights(&mut w, &[10, 10], &[0, 0], 0, 0, 1, 2);
+        assert_eq!(w, [0x0400 - 20, 0x0200]);
+    }
+
     #[test]
     fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
         let fx = vec![legaia_engine_core::clut_cell_fx::ClutCellFx {
