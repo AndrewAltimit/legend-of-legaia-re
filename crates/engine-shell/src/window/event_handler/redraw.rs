@@ -719,6 +719,11 @@ impl PlayWindowApp {
             if due && let Some(fog) = sc.seat_fog.take() {
                 self.session.host.world.fog.install_snapshot(&fog);
             }
+            // ... and the ambient tree's sprite-arm sheets where retail's
+            // emitters had put them (`LEGAIA_SEAT_SPRITE_ARMS`).
+            if due && let Some(arms) = sc.seat_sprite_arms.take() {
+                self.session.host.world.install_sprite_arm_snapshot(&arms);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on

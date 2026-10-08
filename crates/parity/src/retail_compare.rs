@@ -296,6 +296,10 @@ pub struct RetailObs {
     /// The live fog-pool records ([`retail_fog`]), handed to the image child
     /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
     pub fog: Vec<legaia_engine_core::fog_particles::FogParticle>,
+    /// The live draw-kind-4 sprite-arm sheets ([`retail_sprite_arms`]),
+    /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
+    /// the frame it captures.
+    pub sprite_arms: Vec<legaia_engine_core::world::ambient::SpriteArmSeed>,
     /// The live mode-4 scroller rects and their captured texels
     /// ([`retail_scroll_rects`]), handed to the image child as a
     /// `LEGAIA_SEAT_VRAM_RECTS` file.
@@ -1018,6 +1022,79 @@ pub fn fog_from_env(s: &str) -> Vec<legaia_engine_core::fog_particles::FogPartic
         .collect()
 }
 
+/// The stager bundle the ambient parts run out of (`_DAT_8007B8D0`); a
+/// part's `+0x48` points at its record inside it.
+const STAGER_BUNDLE_PTR: u32 = 0x8007_B8D0;
+
+/// Every live draw-kind-4 sprite-arm sheet on a retail state's actor lists,
+/// in list order: a part ticked by `FUN_80021DF4` with `+0x56 == 4` and the
+/// sprite-arm bit `+0x9E & 0x4000`, not halted (`+0x10 & 0x8`)
+/// ([`legaia_engine_core::world::ambient::SpriteArmSeed`] names the fields).
+pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
+    let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u16_at(ram, n + 0x56) == 4
+                && game_anchors::u16_at(ram, n + 0x9E) & 0x4000 != 0
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+        })
+        .filter_map(|n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48).checked_sub(base)?;
+            Some(legaia_engine_core::world::ambient::SpriteArmSeed {
+                record_off: rec,
+                pos: [0x14, 0x16, 0x18].map(|o| game_anchors::i16_at(ram, n + o)),
+                rot: [0x24, 0x26, 0x28].map(|o| game_anchors::i16_at(ram, n + o)),
+                scale: game_anchors::u16_at(ram, n + 0x72),
+                colour: game_anchors::u32_at(ram, n + 0x74),
+                level: game_anchors::u16_at(ram, n + 0x78),
+            })
+        })
+        .collect()
+}
+
+/// [`retail_sprite_arms`] as `LEGAIA_SEAT_SPRITE_ARMS`:
+/// `record,x,y,z,r24,r26,r28,scale,colour,level` per sheet, `;`-separated.
+pub fn sprite_arms_env(s: &[legaia_engine_core::world::ambient::SpriteArmSeed]) -> String {
+    s.iter()
+        .map(|a| {
+            format!(
+                "{},{},{},{},{},{},{},{},{},{}",
+                a.record_off,
+                a.pos[0],
+                a.pos[1],
+                a.pos[2],
+                a.rot[0],
+                a.rot[1],
+                a.rot[2],
+                a.scale,
+                a.colour,
+                a.level
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`sprite_arms_env`]; malformed entries are dropped.
+pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
+    s.split(';')
+        .filter_map(|e| {
+            let v: Vec<i64> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let [rec, x, y, z, r0, r1, r2, scale, colour, level] = <[i64; 10]>::try_from(v).ok()?;
+            Some(legaia_engine_core::world::ambient::SpriteArmSeed {
+                record_off: rec as u32,
+                pos: [x as i16, y as i16, z as i16],
+                rot: [r0 as i16, r1 as i16, r2 as i16],
+                scale: scale as u16,
+                colour: colour as u32,
+                level: level as u16,
+            })
+        })
+        .collect()
+}
+
 /// Every live mode-3 CLUT-cell cycler on a retail state's actor lists, in
 /// list order: a part ticked by `FUN_80021DF4` with render mode `+0x5A = 3`
 /// past its first armed frame (`+0x9C > 1`), as the snapshot its next
@@ -1278,6 +1355,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_sprite_arms(ram)
+            } else {
+                Vec::new()
+            },
             scroll_rects: Vec::new(),
             panel: None,
             walkers: if matches!(class, StateClass::Field) {
@@ -1404,6 +1486,12 @@ impl RetailObs {
         }
         if !self.fog.is_empty() {
             env.push(("LEGAIA_SEAT_FOG", fog_env(&self.fog)));
+        }
+        if !self.sprite_arms.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_SPRITE_ARMS",
+                sprite_arms_env(&self.sprite_arms),
+            ));
         }
         if !self.object_models.is_empty() {
             env.push((
@@ -3373,6 +3461,19 @@ mod tests {
         let mut w = [0x0400u16, 0x0200];
         rewind_morph_weights(&mut w, &[10, 10], &[0, 0], 0, 0, 1, 2);
         assert_eq!(w, [0x0400 - 20, 0x0200]);
+    }
+
+    #[test]
+    fn sprite_arm_seeds_round_trip_through_their_env_form() {
+        let s = vec![legaia_engine_core::world::ambient::SpriteArmSeed {
+            record_off: 0x728,
+            pos: [4224, -300, 9294],
+            rot: [0, 0x7C0, -3],
+            scale: 0x1000,
+            colour: 0xC900_0000,
+            level: 0x9B3,
+        }];
+        assert_eq!(sprite_arms_from_env(&sprite_arms_env(&s)), s);
     }
 
     #[test]

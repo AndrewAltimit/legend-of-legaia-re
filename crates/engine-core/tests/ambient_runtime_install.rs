@@ -271,3 +271,54 @@ fn a_spawned_child_inherits_the_spawners_heading() {
     assert!(child.state.world_x != 1000, "moved along its heading");
     assert_eq!(child.state.world_z, 1000, "not along Z");
 }
+
+/// The retail comparison's sprite-arm seed: sheets of a seeded record take
+/// the retail positions in order (cloning one to make up the count), and a
+/// sheet of a record the state holds none of is retired.
+#[test]
+fn a_sprite_arm_snapshot_reseats_sheets_by_record() {
+    use legaia_engine_core::world::ambient::SpriteArmSeed;
+    let mut world = World::default();
+    install_records(
+        &mut world,
+        &[
+            (-1, vec![0x08]),
+            (-1, vec![0x09, 0x0FFF, 0x08]),
+            (-1, vec![0x09, 0x0FFF, 0x08]),
+        ],
+    );
+    assert!(world.spawn_ambient_record(1, [0, 0, 0]));
+    assert!(world.spawn_ambient_record(2, [0, 0, 0]));
+    for p in world.ambient.fx.iter_mut() {
+        p.state.move_substate = 4;
+        p.state.field_9e = 0x4000;
+    }
+    let (rec_a, rec_b) = (
+        world.ambient.fx[0].record_off,
+        world.ambient.fx[1].record_off,
+    );
+    let seed = |x: i16| SpriteArmSeed {
+        record_off: rec_a as u32,
+        pos: [x, -10, 7],
+        rot: [0, 0x400, 0],
+        scale: 0x1000,
+        colour: 0xC900_0000,
+        level: 0x800,
+    };
+    world.install_sprite_arm_snapshot(&[seed(100), seed(200)]);
+    let live: Vec<_> = world.ambient.fx.iter().filter(|p| !p.finished).collect();
+    assert_eq!(live.len(), 2, "record a's two sheets; record b's retired");
+    assert!(
+        live.iter()
+            .all(|p| p.record_off == rec_a && p.state.field_78 == 0x800)
+    );
+    let xs: Vec<i16> = live.iter().map(|p| p.state.world_x).collect();
+    assert_eq!(xs, vec![100, 200]);
+    assert!(
+        world
+            .ambient
+            .fx
+            .iter()
+            .any(|p| p.record_off == rec_b && p.finished)
+    );
+}

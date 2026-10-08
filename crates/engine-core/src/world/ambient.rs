@@ -134,6 +134,22 @@ pub const MAX_AMBIENT_PARTS: usize = 143;
 /// ticks without ever passing a VRAM surface (headless sims, tests).
 const MAX_PENDING_SCROLLS: usize = 64;
 
+/// One live draw-kind-4 sprite-arm node of a **retail** state, as the
+/// retail comparison's image child installs it
+/// ([`World::install_sprite_arm_snapshot`]): the stager record it runs
+/// (`+0x48` less the bundle base `_DAT_8007B8D0`), its position, rotation
+/// banks, render scale `+0x72`, far colour `+0x74` and depth-cue level
+/// `+0x78` - what the sheet's draw reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpriteArmSeed {
+    pub record_off: u32,
+    pub pos: [i16; 3],
+    pub rot: [i16; 3],
+    pub scale: u16,
+    pub colour: u32,
+    pub level: u16,
+}
+
 /// One live ambient move-VM part.
 #[derive(Debug, Clone)]
 pub struct AmbientPart {
@@ -180,6 +196,64 @@ pub struct AmbientMorphPart {
 }
 
 impl World {
+    /// Seat the live sprite-arm nodes on a retail state's own
+    /// ([`SpriteArmSeed`]), record by record, in list order: where an
+    /// emitter has put each sheet and how far its fade has come is the
+    /// `rand()` stream's history since the entry, which no seed replays
+    /// (`garmel`'s cave mist, `map01`'s ridge bank). A record with more
+    /// retail nodes than live ones clones one of its own; surplus live nodes
+    /// and nodes of a record retail holds none of are retired. The image
+    /// child of the retail comparison calls this on the frame it captures,
+    /// as it installs the fog pool. A no-op for an empty snapshot.
+    pub fn install_sprite_arm_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
+        if seeds.is_empty() {
+            return;
+        }
+        let is_sheet = |p: &AmbientPart| {
+            !p.finished && p.state.move_substate == 4 && p.state.field_9e & 0x4000 != 0
+        };
+        let mut used: std::collections::HashMap<usize, usize> = Default::default();
+        for seed in seeds {
+            let off = seed.record_off as usize;
+            let n = used.entry(off).or_insert(0);
+            let live: Vec<usize> = (0..self.ambient.fx.len())
+                .filter(|&i| self.ambient.fx[i].record_off == off && is_sheet(&self.ambient.fx[i]))
+                .collect();
+            let idx = match live.get(*n) {
+                Some(&i) => i,
+                None => {
+                    let Some(&first) = live.first() else {
+                        continue;
+                    };
+                    let clone = self.ambient.fx[first].clone();
+                    self.ambient.fx.push(clone);
+                    self.ambient.fx.len() - 1
+                }
+            };
+            *n += 1;
+            let st = &mut self.ambient.fx[idx].state;
+            [st.world_x, st.world_y, st.world_z] = seed.pos;
+            st.world_y_mirror = seed.pos[1];
+            [st.render_24, st.render_26, st.render_28] = seed.rot;
+            st.field_72 = seed.scale;
+            st.field_74 = seed.colour;
+            st.field_78 = seed.level;
+        }
+        // Retire what retail does not hold: a seeded record's surplus, and
+        // every sheet of a record the state has none of.
+        let mut kept: std::collections::HashMap<usize, usize> = Default::default();
+        for p in self.ambient.fx.iter_mut() {
+            if !is_sheet(p) {
+                continue;
+            }
+            let k = kept.entry(p.record_off).or_insert(0);
+            *k += 1;
+            if *k > used.get(&p.record_off).copied().unwrap_or(0) {
+                p.finished = true;
+            }
+        }
+    }
+
     /// Spawn prescript stager record `id` as an ambient part at `origin`
     /// and run its first move-VM slice immediately (the `FUN_80021B04`
     /// spawn-time run - op-`0x25` children spawn recursively, each with its

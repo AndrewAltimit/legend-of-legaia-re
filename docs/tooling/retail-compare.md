@@ -225,6 +225,17 @@ engine verdict:
   was only where the pool had put its sheets. The headless seed keeps its
   own pool: its spawns draw the stream the battle half aligns on.
 
+  The ambient tree's draw-kind-4 sprite-arm sheets are the same case: an
+  emitter re-seats itself at a random point and yaw before each spawn
+  (`garmel`'s cave mist, [field-ambient-fx](../subsystems/field-ambient-fx.md#a-spawned-sheet-drifts-along-its-spawners-yaw)),
+  so the population matches retail's and the placement never does. The
+  image child takes the state's live sheets (`retail_sprite_arms`: part tick
+  `FUN_80021DF4`, `+0x56 == 4`, `+0x9E & 0x4000`, keyed by their stager
+  record `+0x48` less the bundle base `_DAT_8007B8D0`) as
+  `LEGAIA_SEAT_SPRITE_ARMS` and seats the engine's sheets of the same
+  record on them on the capture frame (`World::install_sprite_arm_snapshot`):
+  position, rotation banks, render scale, far colour and depth-cue level.
+
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
   rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the

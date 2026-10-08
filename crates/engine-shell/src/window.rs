@@ -137,6 +137,11 @@ pub struct ScreenshotConfig {
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
     pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_core::fog_particles::FogParticle>>>,
+    /// `LEGAIA_SEAT_SPRITE_ARMS`: a retail state's live sprite-arm sheets,
+    /// installed over the ambient pool's on the frame the capture is taken
+    /// (`World::install_sprite_arm_snapshot`); taken once.
+    pub seat_sprite_arms:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -423,6 +428,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_FOG")
                     .ok()
                     .map(|v| legaia_parity::retail_compare::fog_from_env(&v)),
+            ),
+            seat_sprite_arms: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
+                    .ok()
+                    .map(|v| legaia_parity::retail_compare::sprite_arms_from_env(&v)),
             ),
             seat_clear: std::env::var("LEGAIA_SEAT_CLEAR").ok().and_then(|v| {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
