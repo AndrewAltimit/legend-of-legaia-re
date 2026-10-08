@@ -798,6 +798,46 @@ impl LegaiaRuntime {
         per.into_iter().flatten().map(|v| v as f32).collect()
     }
 
+    /// Per-placement **scripted turn** (parallel to
+    /// [`Self::field_placement_slots`]), flattened 9 column-major floats per
+    /// placement: the rotation a script's op `0x38` / `4C 48` put on the
+    /// placed object's actor, relative to its bind-time `.MAP` angles, in the
+    /// page's Y-up frame (`F * turn * F`, `F = scale(1,-1,1)`). The page
+    /// left-multiplies each draw's linear part by it, about the draw's own
+    /// origin. Identity for an unturned placement; **empty** while nothing has
+    /// turned. The same `World::object_draw_turn_matrices` table the native
+    /// play-window folds into its placed draws.
+    pub fn field_placement_turns(&self) -> Vec<f32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let turns = h.world.object_draw_turn_matrices();
+        if turns.is_empty() {
+            return Vec::new();
+        }
+        let ident: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let mut out = Vec::with_capacity(f.placement_records.len() * 9);
+        for r in &f.placement_records {
+            let lin = r
+                .and_then(|r| turns.get(&r))
+                .map(|t| {
+                    // Column-major 3x3, conjugated by the Y flip: an element
+                    // that mixes Y with X or Z changes sign.
+                    let mut m = [0.0f32; 9];
+                    for c in 0..3 {
+                        for row in 0..3 {
+                            let flip = if (row == 1) != (c == 1) { -1.0 } else { 1.0 };
+                            m[c * 3 + row] = flip * t[c * 4 + row];
+                        }
+                    }
+                    m
+                })
+                .unwrap_or(ident);
+            out.extend_from_slice(&lin);
+        }
+        out
+    }
+
     /// Per-terrain-draw authored pitch (object record `+0x08`), parallel to
     /// [`Self::field_terrain_slots`]. Composed with yaw and roll in retail's
     /// `Rx * Ry * Rz` order, as the native window composes every terrain

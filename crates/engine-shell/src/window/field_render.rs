@@ -804,6 +804,7 @@ impl PlayWindowApp {
         // (`World::object_draw_displacements`). The bind record also keys
         // the prop's draw tint for the caller.
         let moves = self.session.host.world.object_draw_displacements();
+        let turns = self.session.host.world.object_draw_turn_matrices();
         let mut baked_v = Vec::new();
         let mut baked_c = Vec::new();
         let mut live_v = Vec::new();
@@ -828,12 +829,17 @@ impl PlayWindowApp {
                 .props
                 .get(&p.anchor)
                 .map(|s| s.record);
+            let base = match record.and_then(|r| turns.get(&r)) {
+                Some(t) => Mat4::from_cols_array(
+                    &legaia_engine_core::field_env::turn_placed_model(&p.model.to_cols_array(), t),
+                ),
+                None => p.model,
+            };
             let model = match record.and_then(|r| moves.get(&r)) {
                 Some(d) => {
-                    Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
-                        * p.model
+                    Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32)) * base
                 }
-                None => p.model,
+                None => base,
             };
             if !legaia_engine_core::field_view_window::placed_actor_visible(
                 &self.session.host.world,

@@ -129,6 +129,12 @@ pub struct FieldVmState {
     /// respawn the channel set can re-append the object-bind channels
     /// ([`crate::field_channels::spawn_object_channels`]).
     pub(crate) object_channel_binds: Vec<(usize, (i16, i16))>,
+    /// Bind-time rotation of each object-bind context, by flat record
+    /// ([`crate::man_field_scripts::object_script_bind_rots`]): the `.MAP`
+    /// angles `FUN_8003A55C` seeds the actor's `+0x24 / +0x26 / +0x28` with.
+    /// [`crate::world::World::object_draw_turns`] measures a script's turn
+    /// against it.
+    pub(crate) object_channel_rots: std::collections::HashMap<usize, [u16; 3]>,
     /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
     /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
     pub(crate) object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
@@ -203,6 +209,7 @@ impl FieldVmState {
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
+            object_channel_rots: Default::default(),
             object_slot_ramps: Vec::new(),
             actor_tints: std::collections::HashMap::new(),
             pending_record_spawns: Vec::new(),

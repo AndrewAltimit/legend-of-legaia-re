@@ -1881,15 +1881,25 @@ impl PlayWindowApp {
                 // overworld placements (`field_placement_moves` /
                 // `field_placement_models`).
                 let wm_moves = self.session.host.world.object_draw_displacements();
+                let wm_turns = self.session.host.world.object_draw_turn_matrices();
                 let wm_models = self.session.host.world.object_live_models().clone();
                 let wm_live = |records: &[Option<usize>], i: usize, model: &Mat4| {
                     let record = records.get(i).copied().flatten();
+                    let base = match record.and_then(|r| wm_turns.get(&r)) {
+                        Some(t) => Mat4::from_cols_array(
+                            &legaia_engine_core::field_env::turn_placed_model(
+                                &model.to_cols_array(),
+                                t,
+                            ),
+                        ),
+                        None => *model,
+                    };
                     let moved = match record.and_then(|r| wm_moves.get(&r)) {
                         Some(d) => {
                             Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
-                                * *model
+                                * base
                         }
-                        None => *model,
+                        None => base,
                     };
                     let first = record.is_some() && !records[..i].contains(&record);
                     let swap = record
@@ -2271,6 +2281,11 @@ impl PlayWindowApp {
                     // `World::object_draw_displacements`; the browser play
                     // page folds the same table in (`field_placement_moves`).
                     let object_moves = self.session.host.world.object_draw_displacements();
+                    // ... and at its actor's live angles: a script that turns
+                    // the object (op `0x38`, `4C 48`) turns the drawn mesh
+                    // about its origin (`World::object_draw_turn_matrices`,
+                    // the browser page's `field_placement_turns`).
+                    let object_turns = self.session.host.world.object_draw_turn_matrices();
                     // A placed object a script parks at the hide box after
                     // the scene built its draw lists (`rugi`'s entry script
                     // runs `A3 06 7F 7F` on the stone block the opened wall
@@ -2284,6 +2299,15 @@ impl PlayWindowApp {
                     let parked =
                         |record: Option<usize>| record.is_some_and(|r| object_parked.contains(&r));
                     let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
+                        let turned = record.and_then(|r| object_turns.get(&r)).map(|t| {
+                            Mat4::from_cols_array(
+                                &legaia_engine_core::field_env::turn_placed_model(
+                                    &model.to_cols_array(),
+                                    t,
+                                ),
+                            )
+                        });
+                        let model = &turned.unwrap_or(*model);
                         match record.and_then(|r| object_moves.get(&r)) {
                             Some(d) => {
                                 Mat4::from_translation(Vec3::new(

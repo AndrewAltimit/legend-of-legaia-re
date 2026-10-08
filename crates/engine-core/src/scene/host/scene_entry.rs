@@ -1327,6 +1327,14 @@ impl SceneHost {
                             crate::field_env::object_record_pack_slots(&placements, &binds),
                         );
                     }
+                    self.world.set_object_bind_rots(
+                        map_bytes
+                            .as_deref()
+                            .map(|map| {
+                                crate::man_field_scripts::object_script_bind_rots(map, &triggers)
+                            })
+                            .unwrap_or_default(),
+                    );
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban

@@ -732,6 +732,60 @@ pub fn placed_draw_displacements(
         .collect()
 }
 
+/// The rotation that takes an object drawn at its bind-time angles `seed` to
+/// the angles its actor holds now, `live` (both PSX `(pitch, yaw, roll)`, see
+/// [`crate::world::World::object_draw_turns`]): `R(live) * R(seed)^-1`, with
+/// `R = Rx * Ry * Rz` in the retail field frame - the composition
+/// `FUN_80026988` builds for the case-5 draw. Column-major 4x4, rotation
+/// only.
+///
+/// A host turns a placed draw about its own origin `o` (the model's
+/// translation) as `T(o) * M * T(-o) * model`, before the
+/// [`crate::world::World::object_draw_displacements`] translation.
+// REF: FUN_80026988, FUN_8001ADA4
+pub fn object_turn_matrix(seed: [u16; 3], live: [u16; 3]) -> [f32; 16] {
+    let r = |a: [u16; 3]| -> [[f32; 3]; 3] {
+        let ang = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
+        let (sx, cx) = ang(a[0]).sin_cos();
+        let (sy, cy) = ang(a[1]).sin_cos();
+        let (sz, cz) = ang(a[2]).sin_cos();
+        let rx = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]];
+        let ry = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]];
+        let rz = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]];
+        mul3(&mul3(&rx, &ry), &rz)
+    };
+    let (a, b) = (r(live), r(seed));
+    // R(seed) is orthonormal: its inverse is its transpose.
+    let bt: [[f32; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| b[j][i]));
+    let m = mul3(&a, &bt);
+    let mut out = [0.0f32; 16];
+    for c in 0..3 {
+        for row in 0..3 {
+            out[c * 4 + row] = m[row][c];
+        }
+    }
+    out[15] = 1.0;
+    out
+}
+
+/// Turn a placed draw's column-major `model` about its own origin (its
+/// translation column) by `turn` ([`object_turn_matrix`]):
+/// `T(o) * turn * T(-o) * model`. The translation is kept; only the linear
+/// part is left-multiplied.
+pub fn turn_placed_model(model: &[f32; 16], turn: &[f32; 16]) -> [f32; 16] {
+    let mut out = *model;
+    for c in 0..3 {
+        for row in 0..3 {
+            out[c * 4 + row] = (0..3).map(|k| turn[k * 4 + row] * model[c * 4 + k]).sum();
+        }
+    }
+    out
+}
+
+fn mul3(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
+    std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
+}
+
 /// The identity a window-owned placed draw shares with the actor the sub-area
 /// window sweep spawns for it: the footprint-anchor tile plus the X/Z the
 /// sweep computes (`tile * 0x80 + 0x40 + desc[+0]`, `tile * 0x80 - (desc[+4] -
@@ -880,6 +934,12 @@ pub fn story_hidden_records_for_scene(
     let mut w = crate::world::World::new();
     w.seed_free_roam_story_baseline(&scene.name);
     w.seed_field_channels(&man_file, &man_bytes);
+    w.set_object_bind_rots(
+        map_bytes
+            .as_deref()
+            .map(|map| crate::man_field_scripts::object_script_bind_rots(map, &triggers))
+            .unwrap_or_default(),
+    );
     w.seed_object_channels(&man_file, &man_bytes, &object_binds);
     w.hidden_object_records()
 }

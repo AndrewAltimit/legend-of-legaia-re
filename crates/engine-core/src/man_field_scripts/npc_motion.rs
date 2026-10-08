@@ -1052,6 +1052,29 @@ pub fn object_script_bind_seats(
     out
 }
 
+/// The bind-time rotation of each object-bind script context, keyed by flat
+/// record: the authored `.MAP` angles of the **first** object that binds the
+/// record ([`crate::field_regions::MapObject::rot`]), the same object whose
+/// world position seats the context ([`object_script_bind_seats`]).
+/// `FUN_8003A55C` copies them into the actor's `+0x24 / +0x26 / +0x28`, so a
+/// context's heading starts at the object's own yaw rather than `0`.
+// REF: FUN_8003A55C
+pub fn object_script_bind_rots(
+    map: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+) -> std::collections::HashMap<usize, [u16; 3]> {
+    let mut out = std::collections::HashMap::new();
+    for obj in crate::field_regions::parse_map_objects(map) {
+        if let Some(t) = triggers
+            .iter()
+            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
+        {
+            out.entry(usize::from(t.record)).or_insert(obj.rot);
+        }
+    }
+    out
+}
+
 /// The walk-touch effect of the MAN record at **flat** index `flat`: its first
 /// player-channel teleport (either op form - see [`PlayerMoveKind`]), or
 /// `None` when the record repositions nobody (a plain scenery / chest / sign

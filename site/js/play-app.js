@@ -1133,6 +1133,7 @@ void main() {
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
       this._objectMovesLive = false;
+      this._objectTurnsLive = false;
       this._objectTintsLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
@@ -2314,6 +2315,52 @@ void main() {
       this._objectMovesLive = mv.length > 0;
     }
 
+    /* A placed object a script has turned - op 0x38's compass write, op
+     * `4C 48`'s heading write (town0c's exit rocks, turned off the road once
+     * the story opens it) - draws at its actor's live angles, as retail's
+     * case-5 draw does. The engine hands back a per-placement 3x3 (column-
+     * major, page frame) to left-multiply into each draw's linear part, or an
+     * EMPTY array while nothing has turned; `_objectTurnsLive` restores the
+     * baked parts on the falling edge. The native window folds the same
+     * table (`World::object_draw_turn_matrices`) into its placed draws. */
+    _applyObjectTurns(rt) {
+      if (!rt.field_placement_turns) return;
+      const tv = rt.field_placement_turns();
+      if (!tv.length && !this._objectTurnsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const k = d.placeIdx * 9;
+        const t = k + 8 < tv.length ? tv.slice(k, k + 9) : null;
+        const turned = t && !(t[0] === 1 && t[4] === 1 && t[8] === 1);
+        if (!turned) {
+          /* Back to the baked draw: a yaw-only placement drops the matrix
+           * this pass made for it, a tilted one gets its linear part back. */
+          if (d.turnModel) { delete d.model; d.turnModel = false; }
+          else if (d.model && d.baseLin) {
+            for (let c = 0; c < 3; c++) {
+              for (let row = 0; row < 3; row++) d.model[c * 4 + row] = d.baseLin[c * 4 + row];
+            }
+          }
+          continue;
+        }
+        /* A yaw-only placement draws through the builder at draw time; a
+         * turned one needs a whole matrix, built from the same law. */
+        if (!d.model) {
+          d.model = placementModelScaledY(d.x, d.y, d.z, d.rotY, d.scale);
+          d.turnModel = true;
+        }
+        if (!d.baseLin) d.baseLin = Array.from(d.model.slice(0, 12));
+        for (let c = 0; c < 3; c++) {
+          for (let row = 0; row < 3; row++) {
+            let v = 0;
+            for (let j = 0; j < 3; j++) v += t[j * 3 + row] * d.baseLin[c * 4 + j];
+            d.model[c * 4 + row] = v;
+          }
+        }
+      }
+      this._objectTurnsLive = tv.length > 0;
+    }
+
     /* A camera-facing terrain / decoration cell (record flags +0x12 & 0x380:
      * rugi's candle glows, the vell forest trees) is rebuilt against this
      * frame's engine camera: retail's decoration pass FUN_801F7088 drops the
@@ -2726,6 +2773,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectTurns(rt);
       this._applyObjectParked(rt);
       this._applyObjectModels(rt);
       this._applyObjectTints(rt);

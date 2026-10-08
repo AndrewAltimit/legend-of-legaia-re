@@ -1845,6 +1845,22 @@ story-hidden gate's business. Like the hidden gate, the scale is baked with the
 scene's draw lists, so a script that ramps it mid-scene is not followed. Pinned
 by `crates/engine-core/tests/field_object_render_scale_disc.rs`.
 
+**A placed object draws at its actor's angles.** The scene-init sweep copies
+the record's `+0x08 / +0x0A / +0x0C` into the actor's `+0x24 / +0x26 / +0x28`
+(`FUN_8003A55C`), and case 5 composes those actor words, so a script that
+turns the object turns the drawn mesh. Op `0x38`'s simple path writes the
+compass entry into the executing context's own `+0x26` whatever kind of actor
+it is. `town0c`'s two exit rocks (partition-0 records 20 / 21) are the case
+that shows it: once system flag `0x141` is up their bind prologues run
+`38 83 00` / `38 87 00` and seat them at tiles `(22, 46)` / `(27, 45)`, so a
+retail state holds them at yaw `0x600` / `0xE00` where the `.MAP` authored
+`320` / `4000`. The port seeds each object-bind context's angles from its
+object (`man_field_scripts::object_script_bind_rots`), lets op `0x38` and
+`4C 48` move them, and both hosts turn a placed draw about its origin by the
+difference (`World::object_draw_turn_matrices`, `field_env::turn_placed_model`;
+the browser page reads `field_placement_turns`) before the scripted
+displacement (`World::object_draw_displacements`).
+
 **A placed object can lose its `.MAP` lift.** The scene-init sweep seats a
 bound object at `lut[nibble] + y_off` (`FUN_8003A55C`, `0x8003A640`), but the
 field actor tick `FUN_8003BC08` then rewrites `+0x16` with the floor sample

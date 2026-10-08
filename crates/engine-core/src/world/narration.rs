@@ -712,11 +712,9 @@ impl World {
         if !same_man || self.field_vm.channels.is_empty() {
             self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
             let binds = std::mem::take(&mut self.field_vm.object_channel_binds);
-            self.field_vm
-                .channels
-                .extend(crate::field_channels::spawn_object_channels(
-                    man_file, man, &binds,
-                ));
+            let mut obj = crate::field_channels::spawn_object_channels(man_file, man, &binds);
+            self.seat_object_channel_rots(&mut obj);
+            self.field_vm.channels.extend(obj);
             self.field_vm.object_channel_binds = binds;
             self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
             self.npcs.clip_cursors.clear();

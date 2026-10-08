@@ -383,13 +383,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // actor's `+0x26`. The extended `0xF8` (and a context that is the player)
     // turns the player; a placement channel stepping - its own script or a
     // poke on it - turns that placement; the inline talk runner turns the NPC
-    // whose record it runs. A context that is none of those (the system
-    // channel, a prop) has no actor heading the renderer reads.
+    // whose record it runs. Any other context turns itself: its own `+0x26`
+    // takes the retail heading, which is what an object-bind context's draw
+    // composes (`World::object_draw_turns`) - `town0c`'s exit rocks turn by
+    // `38 83 00` in their bind prologue.
     // REF: FUN_801DE840 (case 0x38), FUN_8003C83C
     fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
         let Some(heading) = crate::man_field_scripts::facing_index_to_engine_heading(index) else {
             return;
         };
+        if !player {
+            // Engine space is retail + 0x800.
+            ctx.field_26 = (heading as u16).wrapping_sub(0x800) & 0x0FFF;
+        }
         let channel = self.world.field_vm.executing_channel;
         if player
             || (channel.is_none()
