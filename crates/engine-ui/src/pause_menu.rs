@@ -589,8 +589,17 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 }
             }
             texts.extend(ctx.tab_title(window_ids::TAB_OPTIONS, "Options"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::OPTIONS_SCREEN_WINDOWS));
+            sprites.extend(ctx.window_chrome(&[window_ids::TAB_OPTIONS]));
             if let Some(rects) = ctx.chrome {
+                // The settings window, grown by the engine-only rows below
+                // the retail ten (Key Config) so they stay inside its frame.
+                let (fx, fy, fw, fh) = ctx.rects.frame_rect(window_ids::OPTIONS_MAIN);
+                sprites.extend(crate::menu_window_chrome_draws_for(
+                    rects,
+                    (fx, fy, fw, fh + crate::options_window_extra_height(v.rows)),
+                    ctx.origin,
+                    ctx.scale,
+                ));
                 if let Some(p) = v.popup.as_ref() {
                     sprites.extend(crate::menu_window_chrome_draws_for(
                         rects,

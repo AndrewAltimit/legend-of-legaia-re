@@ -28,6 +28,21 @@ pub struct OptionsRowView<'a> {
     pub advance: i32,
 }
 
+/// Rows retail's settings window (id 48, content `(24,40,256,148)`) is
+/// sized for: the layout table's ten.
+pub const OPTIONS_RETAIL_ROW_COUNT: usize = 10;
+
+/// Extra content height the settings window takes for the engine-only rows
+/// past the retail ten (the Key Config row): their advances. Zero on the
+/// retail display set, so the faithful window is untouched; without it the
+/// eleventh row's glyphs ran below the frame's bottom border.
+pub fn options_window_extra_height(rows: &[OptionsRowView<'_>]) -> i32 {
+    rows.iter()
+        .skip(OPTIONS_RETAIL_ROW_COUNT)
+        .map(|r| r.advance)
+        .sum()
+}
+
 /// The value-choice popup (retail window id 47), when a row is being
 /// edited.
 pub struct OptionsPopupDraw<'a> {
@@ -178,6 +193,13 @@ pub fn options_hand_cursor_sprite(
 
 /// Build [`TextDraw`]s for the key-rebind panel. Each row shows a button
 /// label paired with the currently-bound key string.
+///
+/// The panel shares the settings window (content `(24,40,256,148)`), which
+/// holds ten 14-px rows - not the sixteen buttons in one column, which ran
+/// off the bottom of the screen. The buttons sit in two columns of
+/// [`KEY_REBIND_COLUMN_ROWS`] (face buttons + D-pad, then shoulders +
+/// Start / Select / sticks), each [`KEY_REBIND_COLUMN_W`] wide, so the
+/// header, the rows and the footer hint all land inside the frame.
 pub fn key_rebind_draws_for(
     font: &legaia_font::Font,
     rows: &[(&str, &str)],
@@ -185,43 +207,60 @@ pub fn key_rebind_draws_for(
     awaiting: bool,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    const LINE_H: i32 = 14;
+    // The value popup's 13-px pitch: header, eight rows and a two-line
+    // hint then fit the settings window's frame.
+    const LINE_H: i32 = 13;
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
     let dim: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
 
+    const HEADER_H: i32 = 16;
     let mut out = Vec::new();
     out.extend(text_draws_for(&font.layout_ascii("KEY REBIND"), pen, gold));
 
+    let per_col = KEY_REBIND_COLUMN_ROWS;
     for (i, (button, key)) in rows.iter().enumerate() {
-        let y = pen.1 + LINE_H * 2 + i as i32 * LINE_H;
+        let col = (i / per_col) as i32;
+        let x = pen.0 + col * KEY_REBIND_COLUMN_W;
+        let y = pen.1 + HEADER_H + (i % per_col) as i32 * LINE_H;
         let selected = i as u8 == cursor;
         let color = if selected { gold } else { white };
         if selected {
-            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+            out.extend(text_draws_for(&font.layout_ascii(">"), (x, y), color));
         }
         out.extend(text_draws_for(
             &font.layout_ascii(button),
-            (pen.0 + 14, y),
+            (x + 10, y),
             color,
         ));
         let value = if selected && awaiting { "..." } else { *key };
         out.extend(text_draws_for(
             &font.layout_ascii(value),
-            (pen.0 + 100, y),
+            (x + KEY_REBIND_KEY_X, y),
             color,
         ));
     }
+    let shown = rows.len().min(per_col) as i32;
+    let hint_y = pen.1 + HEADER_H + shown * LINE_H + 2;
     out.extend(text_draws_for(
-        &font.layout_ascii("Cross: Bind  Circle: Cancel  Start: Save"),
-        (
-            pen.0,
-            pen.1 + LINE_H * 2 + rows.len() as i32 * LINE_H + LINE_H,
-        ),
+        &font.layout_ascii("Cross: Bind   Circle: Cancel"),
+        (pen.0, hint_y),
+        dim,
+    ));
+    out.extend(text_draws_for(
+        &font.layout_ascii("Start: Save"),
+        (pen.0, hint_y + LINE_H),
         dim,
     ));
     out
 }
+
+/// Buttons per column of the key-rebind panel.
+pub const KEY_REBIND_COLUMN_ROWS: usize = 8;
+/// Column pitch of the key-rebind panel (half the settings window's width).
+pub const KEY_REBIND_COLUMN_W: i32 = 128;
+/// Key-name inset inside a key-rebind column.
+pub const KEY_REBIND_KEY_X: i32 = 70;
 
 /// Menu ink 5 - the teal the confirm-prompt option rows stage
 /// (`DAT_8007B454 = 5` before each option string).
@@ -390,5 +429,79 @@ mod confirm_prompt_tests {
             (pen.0 + CONFIRM_HAND_X, pen.1 + 2 * CONFIRM_PROMPT_PITCH_Y)
         );
         assert_eq!(CONFIRM_OPTION_X - CONFIRM_HAND_X, 0x14);
+    }
+}
+
+#[cfg(test)]
+mod options_window_fit_tests {
+    use super::*;
+
+    /// Settings window (id 48) content rect.
+    const WIN: (i32, i32, i32, i32) = (24, 40, 256, 148);
+
+    /// Inside the window's frame (the border art sits 8 px past the
+    /// content rect; glyph cells are taller than their ink).
+    fn inside(d: &TextDraw, extra_h: i32) -> bool {
+        let (x, y, w, h) = d.dst;
+        x >= WIN.0 - 8
+            && y >= WIN.1 - 8
+            && x + w as i32 <= WIN.0 + WIN.2 + 8
+            && y + h as i32 <= WIN.1 + WIN.3 + 8 + extra_h
+    }
+
+    fn rows(n: usize) -> Vec<OptionsRowView<'static>> {
+        (0..n)
+            .map(|i| OptionsRowView {
+                label: if i == 10 {
+                    "Key Config"
+                } else {
+                    "Battle Camera"
+                },
+                value: Some(if i == 10 { "Edit" } else { "Normal" }),
+                teal: false,
+                // The retail layout: 14 px, 20 on the two separator rows.
+                advance: if i == 2 || i == 4 { 20 } else { 14 },
+            })
+            .collect()
+    }
+
+    #[test]
+    fn retail_ten_rows_keep_the_retail_window() {
+        assert_eq!(options_window_extra_height(&rows(10)), 0);
+    }
+
+    #[test]
+    fn key_config_row_stays_inside_the_grown_frame() {
+        let font = legaia_font::synthetic_for_tests();
+        let r = rows(11);
+        let extra = options_window_extra_height(&r);
+        assert_eq!(extra, 14);
+        let draws = options_draws_for(&font, &r, 10, None, (WIN.0, WIN.1));
+        assert!(!draws.is_empty());
+        let bad: Vec<_> = draws
+            .iter()
+            .filter(|d| !inside(d, extra))
+            .map(|d| d.dst)
+            .collect();
+        assert!(bad.is_empty(), "{bad:?}");
+        // Without the growth the Key Config glyphs cross the bottom edge.
+        assert!(draws.iter().any(|d| !inside(d, 0)));
+    }
+
+    #[test]
+    fn sixteen_button_rebind_panel_fits_the_settings_window() {
+        let font = legaia_font::synthetic_for_tests();
+        let names = [
+            "Cross", "Circle", "Triangle", "Square", "Up", "Down", "Left", "Right", "L1", "R1",
+            "L2", "R2", "Start", "Select", "L3", "R3",
+        ];
+        let rows: Vec<(&str, &str)> = names.iter().map(|n| (*n, "RShift")).collect();
+        let draws = key_rebind_draws_for(&font, &rows, 15, false, (WIN.0, WIN.1));
+        let bad: Vec<_> = draws
+            .iter()
+            .filter(|d| !inside(d, 0))
+            .map(|d| d.dst)
+            .collect();
+        assert!(bad.is_empty(), "{bad:?}");
     }
 }

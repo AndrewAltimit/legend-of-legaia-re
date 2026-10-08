@@ -1055,6 +1055,14 @@ Display sets the field party HUD's idle delay on both hosts
 no HUD - see [`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)),
 and the other settings persist in the engine's options config file.
 
+The port's one engine-only row, **Key Config**, hangs below the retail ten on
+hosts with a keyboard binding table. Window 48 is sized for the ten, so the
+settings frame grows by the extra rows' advances
+(`engine-ui::options_window_extra_height`; zero on the retail set). Its
+rebind sub-screen reuses the window and lays its sixteen buttons out in two
+columns of eight at the popup's 13-px pitch so the header, rows and hint fit
+the frame.
+
 ### Dev-menu EVENT FLAG editor (debug build only)
 
 The retail *debug* build's developer menu lives in overlay 0897 (the
