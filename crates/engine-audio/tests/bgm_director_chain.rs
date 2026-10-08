@@ -175,7 +175,10 @@ fn director_start_resolves_seq_and_renders_audio() {
 
     // Engine emits a BGM-start event ⇒ director.start fires.
     device.start(42, &seq_bytes);
-    let (l1, r1) = device.render_samples(2048, 5_000.0);
+    // One retail flush period (a vsync): the note-on is staged on the first
+    // tick and written at the flush boundary, as libsnd writes its key-on
+    // accumulator once per `SsSeqCalc`.
+    let (l1, r1) = device.render_samples(2048, 17_000.0);
     assert!(
         l1 > 8 || r1 > 8,
         "sequencer should produce audible output, got L={l1} R={r1}"
