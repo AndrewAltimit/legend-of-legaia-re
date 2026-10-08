@@ -3404,6 +3404,22 @@ impl World {
                 ctx.phase = next;
             }
         }
+        // The finishing arm's `ctx[+0x6DA] = 0x780`, which the Done band's
+        // case 6 frames from.
+        if run.tick_ported
+            && !run.busy
+            && let Some(yaw) = vm::cast_module_camera::capture_exit_yaw_base(
+                entry,
+                if has_trampoline {
+                    body.unwrap_or_default()
+                } else {
+                    vm::cast_module_camera::SINGLE_BODY
+                },
+            )
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.set_action_yaw_base(yaw);
+        }
 
         // Each view writes back only what the tick changed in it, folded onto
         // the slot's live state: the three views can name one actor (a

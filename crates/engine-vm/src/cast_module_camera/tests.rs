@@ -580,3 +580,16 @@ fn final_crisis_cuts_behind_cort_and_drifts_out() {
     dead_end_crisis_camera(&mut st, 0xFF, seats);
     assert_eq!(st.yaw_base, 0x780);
 }
+
+/// A capture body's finishing arm leaves the yaw counter at `0x780`: Zora's
+/// Glare (PROT 0940 `0x801F69F8`, `0x801F7208`) does, Ultra Charge (PROT
+/// 0962) does not, and the trampoline-less Evil Seru Magic is keyed on
+/// [`SINGLE_BODY`].
+#[test]
+fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
+    assert_eq!(capture_exit_yaw_base(940, 0x801F_69F8), Some(0x780));
+    assert_eq!(capture_exit_yaw_base(964, 0x801F_88EC), Some(0x780));
+    assert_eq!(capture_exit_yaw_base(966, SINGLE_BODY), Some(0x780));
+    assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
+    assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), None);
+}

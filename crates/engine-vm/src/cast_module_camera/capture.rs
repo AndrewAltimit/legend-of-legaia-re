@@ -78,6 +78,57 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
     }
 }
 
+/// The yaw counter `ctx[+0x6DA]` a capture body's **finishing arm** leaves:
+/// most bodies end on the same three stores - the busy result cleared, `sb
+/// zero,0xd` (the framing style) and `li 0x780` / `sh` into `ctx[+0x6DA]`
+/// (directly, or as `+2` off the `ctx + 0x6D8` base the body holds) - so
+/// the Done band's case 6 that follows frames from `0x780` plus its own
+/// drift, whatever the module did to the counter before. Keyed on `(entry,
+/// body)` like [`capture_camera_director`] (`SINGLE_BODY` for a module with
+/// no trampoline). `None` for a body whose finish leaves the counter alone.
+///
+/// | PROT | body | store |
+/// |---|---|---|
+/// | 0938 | `0x801F69EC` (`0xB7`) | `0x801F723C` |
+/// | 0940 | `0x801F69F8` (`0x3C`), `0x801F7240` (`0xAC`) | `0x801F7208`, `0x801F788C` |
+/// | 0941 | `0x801F6A04` (`0xB9`) | `0x801F72D4` |
+/// | 0942 | `0x801F69F4` (`0xAA`) | `0x801F7C70` |
+/// | 0943 | `0x801F6A04` (`0xB5`) | `0x801F6ECC` |
+/// | 0944 | `0x801F6A04` (`0x37`) | `0x801F7438` |
+/// | 0945 | `0x801F69F8` (`0xBA`) | `0x801F6EAC` |
+/// | 0950 | `0x801F6A24` (`0xAB`) | `0x801F7984` |
+/// | 0951 | `0x801F6A20` (`0x36`) | `0x801F77B0` |
+/// | 0952 | `0x801F6A0C` (`0xB8`) | `0x801F70E8` |
+/// | 0956 | `0x801F69D8` (`0x75`) | `0x801F7218` |
+/// | 0957 | `0x801F6A14` (`0x77`) | `0x801F790C` |
+/// | 0961 | `0x801F69D8` | `0x801F7840` |
+/// | 0963 | `0x801F6A20` | `0x801F8110` |
+/// | 0964 | `0x801F69D8` (`0xB0..=0xB2`), `0x801F88EC` (`0xAF`) | `0x801F8874`, `0x801F8BD0` |
+/// | 0965 | `0x801F69D8` | `0x801F7AA4` |
+/// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
+///
+/// The bodies of 0935..0937, 0939, 0946..0948, 0953, 0959, 0960 and 0962
+/// clear `ctx[+0x0D]` without the store.
+pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
+    const YAW: i32 = 0x780;
+    match (entry, body) {
+        (938, 0x801F_69EC)
+        | (940, 0x801F_69F8 | 0x801F_7240)
+        | (941 | 943 | 944, 0x801F_6A04)
+        | (942, 0x801F_69F4)
+        | (945, 0x801F_69F8)
+        | (950, 0x801F_6A24)
+        | (951, 0x801F_6A20)
+        | (952, 0x801F_6A0C)
+        | (956 | 961 | 965, 0x801F_69D8)
+        | (957, 0x801F_6A14)
+        | (963, 0x801F_6A20)
+        | (964, 0x801F_69D8 | 0x801F_88EC)
+        | (966, SINGLE_BODY) => Some(YAW),
+        _ => None,
+    }
+}
+
 /// The module-resident countdown word a directed capture body gates its arms
 /// on, by the caster's queued action id `+0x1DF` - what a save state's RAM
 /// holds of where in an arm the module is.

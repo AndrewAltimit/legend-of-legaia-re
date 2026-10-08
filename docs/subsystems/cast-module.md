@@ -2437,6 +2437,15 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   (`DEAD_END_CRISIS_CHAIN`), so the director runs the body's countdown table
   for its gates and leaves the phase alone.
 
+Most capture bodies also end on the same three stores in their finishing arm:
+the busy result cleared, `sb zero,0xd` (the framing style) and `0x780` into the
+yaw counter `ctx[+0x6DA]` - Zora's Glare at `0x801F7208` in PROT 0940, for one.
+The Done band's case 6 then frames from `0x780` plus its own drift, whatever the
+module did to the counter. The port applies it as the module finishes
+(`cast_module_camera::capture_exit_yaw_base`, which lists the bodies and their
+store sites); 0935..0937, 0939, 0946..0948, 0953, 0959, 0960 and 0962 clear the
+style without it.
+
 - **PROT 0938 `0xB7` (Cort's Mystic Circle, body `0x801F69EC`)** - arm 0's
   cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut
   to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`), the drifts of arms
