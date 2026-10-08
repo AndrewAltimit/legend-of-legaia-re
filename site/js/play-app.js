@@ -2813,6 +2813,13 @@ void main() {
       /* The renderer's sticky per-frame state, staged ahead of EVERY draw
        * branch (see `_stageFrameState`). */
       this._stageFrameState(rt);
+      /* The scene clear colour too: the engine's `World::frame_clear_rgb`
+       * already answers black for the four minigame modes (the native
+       * window clears every venue to it), but the page applied it only on
+       * the field and battle branches, so a minigame drawn through the
+       * renderer's own clear (the Baka title card, before its arena is in
+       * shot) kept the walked-in scene's colour - town01's brown. */
+      this._applySceneClear(rt);
       /* The volumetric ground fog draws over the field and battle frames
        * only - never over a minigame venue, which owns its own VRAM and
        * camera. Raised by the two branches below after their scene draw. */
