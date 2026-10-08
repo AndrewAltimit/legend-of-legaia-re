@@ -162,6 +162,9 @@
     </tbody>
   </table>
   <p>That refusal is how a cutscene choreographs its cast: it starts a walk on an NPC and runs on, and its next op on that NPC waits at the dispatcher until the walk lands. Only a walk aimed at the <em>player</em> parks the calling script as well. The context record's fields and every target rule are on <a href="script-vm-internals.html#context-struct">internals</a>.</p>
+  <h3 id="face-ats">Turning to face someone</h3>
+  <p>The same acquire is how a cutscene turns heads. <code>CC &lt;id&gt; 85 &lt;budget&gt; &lt;bind&gt;</code> (and its <code>8E</code> / <code>8F</code> siblings) hands the target actor the <a href="motion-vm.html">walk kernel's</a> face-target leg: it turns toward the bound actor (<code>F8</code> = the player) over a frame budget, zero snapping at once, and the leg's last frame clears the halt. "Noa turns to Vahn" is <code>CC &lt;noa&gt; 85 &lt;budget&gt; F8</code>; cutscene records issue over a thousand of these on NPCs and as many again on the Noa / Gala placements. Aimed at the player, the op parks the calling record too, so a cutscene waits for Vahn's turn before it moves on.</p>
+  <p>Outside a cutscene - a scene's entry script, a conversation - a face-at aimed at another actor still turns <em>that</em> actor, and in a conversation the talker's own face-at holds the record until the turn lands. Two neighbours finish the picture: <code>4C 3A</code> sets the player's heading to the <strong>arrival facing</strong> a door wrote from its direction byte (a card load and New Game zero it), and <code>4C 45</code> is a <strong>look turn</strong> - a rotation the animated renderer applies to one object of the rig, in every captured case the head, ahead of its keyframe pose. The port runs all of these on both play hosts.</p>
 </section>
 
 <section class="doc-section" id="opcode-summary">
