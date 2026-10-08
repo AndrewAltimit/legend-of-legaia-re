@@ -2276,14 +2276,36 @@ The exact count needs no SPU state on either side:
   `Voice::key_on_count`; `engine_key_on_counts` differences consecutive
   frames.
 
-`audio-trace --retail-keyon-csv <census.csv>` aligns the census on key-on
-timing (`compare_key_on_census`: the offset that matches the most retail
-key-ons within one frame, exact-frame matches breaking ties) and prints both
-totals. On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census aligns at
-engine frame `2936` and reads **`292` engine key-ons against `292` retail**,
-`286` of them on the same frame give or take one. No drops: the allocator
-never returns its out-of-range sentinel across the census, so every note-on
-the score issues reaches the KON register.
+`audio-trace --retail-keyon-csv <census.csv>` aligns the census on timing
+(`compare_key_on_census`) and prints both totals. Three rules keep that
+alignment honest:
+
+- **Align on the notes.** The census logs every `FUN_80066308` call (a
+  `note` row: owner, VAB, program, key, velocity) as well as the KON masks.
+  The engine keys a note the moment it fires, while retail stages the key-on
+  for the next flush, and `FUN_8006B854` parks the mask further while an SPU
+  transfer is busy (`_DAT_8007AF38 & 1`): on `rugi` a KON trails its note by
+  up to three vsyncs, which on a sparse score is enough to land a key-on
+  alignment on the wrong bar.
+- **Score each offset symmetrically.** The offset maximises the Jaccard of
+  retail events matched within one frame against both sides' totals, so a
+  dense engine window that merely contains every retail note does not
+  outscore the one that plays those notes and no others.
+- **Count the score only.** A field's ambient cues key voices next to the
+  music, and the engine trace plays the music alone; a keyed voice whose
+  libsnd note owner is `0x21` (the cue slot) is left out of the retail total.
+
+On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census aligns at engine
+frame `2936` and reads **`292` engine key-ons against `292` retail**, `286`
+of them on the same frame give or take one. No drops: the allocator never
+returns its out-of-range sentinel across the census, so every note-on the
+score issues reaches the KON register. Across field scenes cold-booted from a
+memory card (`retona`, `chitei2`, `vozz`, `conc`, `doman`, `kor5`, `vell`,
+`cave01`, `teien`) the totals agree exactly. The census is what found two
+sequencer defects: every tone layered over a key keys a voice
+([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)), and a
+note on an unused program slot keys none
+([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)).
 
 The `1.148` the edge statistic reported on the same scenario is therefore not
 a key-on surplus. Two instrument effects made it. The edge count is

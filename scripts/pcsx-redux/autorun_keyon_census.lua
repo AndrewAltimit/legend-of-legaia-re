@@ -24,6 +24,14 @@
 --   ra       caller
 --   records  for KON rows: `voice:tone_page/tone/vab_slot/owner` per keyed
 --            voice, read off the libsnd note record at 0x801CDB50 + v*0x36
+--            (owner 0021 = an SFX cue, anything else a sequence)
+-- plus three other row kinds in the `mode` column:
+--   note     one FUN_80066308 call: `mask` = owner key, records =
+--            vab/prog/key/vel - the score's note stream before allocation
+--   alloc    the allocator's verdict (winning voice, voice count, request
+--            priority; `DROP` when every voice outranks the note)
+--   clock    every 60 vsyncs: wall-clock ms, the open sequences' channel
+--            mute masks, the resolved PROT index, pool base and BGM id
 --
 -- Run (no save-state dumps per frame, so the emulator stays near real time):
 --   LEGAIA_FRAMES=4000 bash scripts/pcsx-redux/run_probe.sh \
@@ -146,9 +154,21 @@ probe.run({
             -- track the engine side must play for the census to compare;
             -- `0x8007BA9C` the PROT index it resolved to, `0x8007BC64` the
             -- global pool's base.
+            -- `mute=` is the per-channel note mask at `+0x80` of each open
+            -- sequence's track-0 record (`*(0x801CD2C0 + seq*4)`, stride
+            -- 0xB0): FUN_80061B24 drops a note-on whose channel bit is set.
             pcall(function()
-                csv:row("%d,clock,0,0,ms=%.1f prot=%d pool=%d bgm=%d",
-                    elapsed, now_ms(), probe.read_u32(0x8007BA9C),
+                local mutes = {}
+                for s = 0, 3 do
+                    local p = n32(probe.read_u32(0x801CD2C0 + s * 4))
+                    if probe.in_ram(p) then
+                        mutes[#mutes + 1] = string.format("%d:%04X", s,
+                            probe.read_u16(p + 0x80))
+                    end
+                end
+                csv:row("%d,clock,0,0,ms=%.1f mute=%s prot=%d pool=%d bgm=%d",
+                    elapsed, now_ms(), table.concat(mutes, "/"),
+                    probe.read_u32(0x8007BA9C),
                     probe.read_u32(0x8007BC64), probe.read_u16(0x8007BAC8))
             end)
         end
