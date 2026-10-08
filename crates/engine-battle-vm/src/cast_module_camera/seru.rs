@@ -91,6 +91,7 @@ pub const GIMARD_BREATH_CLUT_MOVE: ModuleVramMove = ModuleVramMove {
 /// | 8 | hold above `scalar << 7` | the CLUT move [`GIMARD_BREATH_CLUT_MOVE`], then the breath [`GIMARD_BREATH_SPAWNS`] on the creature |
 /// | 9 | hold above `scalar * 96` | - |
 /// | 10 | hold above `0` | - |
+/// | 12 | drain while positive, hold above `0` | - (the settle poll is the body's) |
 ///
 /// Arm 10 also stores the walk-in's framing context: depth `ctx[+0x6D0] =
 /// 0x800`, yaw base `ctx[+0x6DA] = 0x200`. Arm 11 is the walk-in: every pass
@@ -260,6 +261,13 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 ..ArmDirection::PASS
             }
         }
+        // The settle arm drains the `scalar * 192` arm 11 added before it
+        // polls the victim (`lw a0,0x7960` / `blez` / `subu` / `bgtz` at
+        // `0x801F7628..0x801F7654`): the Done band after Gimard starts some
+        // 192 vsyncs after the hit, by which time the breath's dead victim
+        // has faded to black and the tunnel's programs have halted
+        // (`shiny_refactor_gimard_levelup`).
+        12 => gate(st.countdown.0 > 0 && st.countdown.drain_above(0)),
         _ => ArmDirection::PASS,
     }
 }

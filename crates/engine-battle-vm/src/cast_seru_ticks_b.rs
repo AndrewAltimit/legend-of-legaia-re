@@ -310,14 +310,20 @@ pub const ROW_SWEEP_SEAT_END: u8 = 7;
 /// dead seat -> require +0x04  == 0   (the fade word has run out)
 /// ```
 ///
-/// The engine has no mirror for `+0x04`, so a dead seat is treated as
-/// settled: the fade is presentation, and holding the whole band on it would
-/// park the phase on state no host writes.
+/// `+0x04` is [`CastActorState::present_04`], the battle actor's render
+/// word, which a dead seat's defeat fade walks to zero - so the band holds
+/// until the row's dead have faded out, as retail's does.
 fn row_is_idle(seats: &[CastActorState], first: u8, end: u8) -> bool {
     (first..end).all(|s| {
         seats
             .get(s as usize)
-            .map(|a| a.hp == 0 || a.playing_anim == 0)
+            .map(|a| {
+                if a.hp == 0 {
+                    a.present_04 == 0
+                } else {
+                    a.playing_anim == 0
+                }
+            })
             .unwrap_or(true)
     })
 }

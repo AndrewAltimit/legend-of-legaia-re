@@ -1162,6 +1162,15 @@ runs at. PROT 0903 is one such module:
 | 6 | `0x801F7724`, `0x801F7794`, `0x801F7804` on the shot | the camera-relative fire tunnel |
 | 8 | `*(0x801F63A8)` (PROT 0898 record `0x801F5B28`, library mesh `0x18`) on the creature, after a 16x1 `MoveImage` of the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)` | the breath |
 
+Nothing in PROT 0903 kills the tunnel: its three programs halt on their own
+(`0x09` waits, a `0x0D` depth-cue fade-out, then `0x08`). What keeps them off
+the Done band is arm 12, which first drains the `scalar * 192` arm 11 added
+to the countdown (`0x801F7628..0x801F7654`) and then waits for a dead
+victim's render word `+0x04` to fade to zero, or a living one to return to
+idle (`0x801F765C..0x801F768C`). Arm 11 stamps the victim's burn
+presentation (`+0x04 = 0x3FF`, `+0x0C = 0x1000`, `+0x21C = 0`, `+0x21F = 1`)
+inside its targetable branch whether or not the host folds the damage there.
+
 PROT 0905 (Vera) reports its calls the same way. Its anchors are points the
 arm builds on its stack rather than seats - the framed point, or a step along
 the target's heading - so `SpawnAnchor` carries those shapes too

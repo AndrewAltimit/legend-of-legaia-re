@@ -1914,7 +1914,14 @@ is checkable even where the pose is not. Two seeding limits follow.
   for as long as the creature walks, and the prologue's drift runs on top,
   so the word the Done band reads is the walk's length plus the time since
   - a creature walk the headless seed does not run, and one the image
-  child's walk times on its own geometry.
+  child's walk times on its own geometry. The time since includes arm 12's
+  own hold: it drains the `scalar * 192` arm 11 added (192 vsyncs) and
+  then waits for the dead victim's render word `+0x04` to fade to zero, so
+  the Done band opens with the fire tunnel's programs already halted. The
+  tunnel parts run on retail's clock to the unit (`gimard_burning_attack`'s
+  `592` / `1360` waits at yaw base `1497` are the engine's at `1493`); an
+  engine that let arm 12 settle on the victim's zero HP alone reached `0x51`
+  some 190 vsyncs early, with the tunnel still drawn.
 - **A counter the drive has to wait for.**
   `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
   counterattack on a monster's swing. The drive plays rounds until a counter
