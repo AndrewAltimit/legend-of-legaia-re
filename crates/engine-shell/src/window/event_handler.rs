@@ -20,6 +20,8 @@ mod redraw_passes;
 mod redraw_prep;
 #[path = "event_handler/redraw_present.rs"]
 mod redraw_present;
+#[path = "event_handler/redraw_render.rs"]
+mod redraw_render;
 #[path = "event_handler/redraw_stage.rs"]
 mod redraw_stage;
 #[path = "event_handler/redraw_tick.rs"]

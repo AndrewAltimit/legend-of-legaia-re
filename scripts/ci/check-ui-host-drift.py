@@ -1583,6 +1583,7 @@ NATIVE_REDRAW_STEP_FILES = (
     "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
     "crates/engine-shell/src/window/event_handler/redraw_prep.rs",
     "crates/engine-shell/src/window/event_handler/redraw_present.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_render.rs",
     "crates/engine-shell/src/window/event_handler/redraw_stage.rs",
 )
 # Splice depth guard: the step tree is shallow, so a deeper chain is a cycle.

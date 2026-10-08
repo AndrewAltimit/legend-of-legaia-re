@@ -3,7 +3,28 @@
 //! single-shot capture) and the present - split out of `handle_redraw`.
 
 use super::super::*;
-use super::redraw::present_target;
+
+/// What the frame presents: the scene alone, or the scene with the
+/// field-to-battle transition's screen primitives composited over it.
+///
+/// A function rather than an inline expression because the screenshot
+/// harness has to capture the *same* target it presents - capturing a bare
+/// `Scene` there drops every transition style from the PNGs.
+pub(super) fn present_target<'a>(
+    scene: &'a RenderScene<'a>,
+    prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+    under_overlay: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+) -> RenderTarget<'a> {
+    if prims.is_empty() && under_overlay.is_empty() {
+        RenderTarget::Scene(scene)
+    } else {
+        RenderTarget::SceneWithScreenPrims {
+            scene,
+            prims,
+            under_overlay,
+        }
+    }
+}
 
 /// Stage the per-draw object-effect clips and NCLIP words on the renderer.
 pub(super) fn stage_draw_marks(
