@@ -481,27 +481,20 @@ impl PlayWindowApp {
                 (vmesh, cmesh)
             });
             // Raw retail Y-down transform; the camera's FIELD_WORLD_FLIP is
-            // the single net negation, as for every field placement.
-            let model = Mat4::from_translation(Vec3::new(
-                d.world_x as f32 + vd.lift[0],
-                d.world_y as f32 + vd.lift[1],
-                d.world_z as f32 + vd.lift[2],
-            )) * legaia_engine_render::battle_intro::placement_rotation(
-                d.rot_x, d.rot_y, d.rot_z,
-            );
+            // the single net negation, as for every field placement. The
+            // composition is `EnvDraw::place_point` (`Rx * Ry * Rz`, then the
+            // world position and the coplanar lift) - the one kernel the
+            // browser pages bake the same hall with.
             let base = textured.positions.len() as u32;
-            textured.positions.extend(
+            textured
+                .positions
+                .extend(vmesh.positions.iter().map(|p| d.place_point(*p, vd.lift)));
+            textured.normals.extend(
                 vmesh
-                    .positions
+                    .normals
                     .iter()
-                    .map(|p| model.transform_point3(Vec3::from(*p)).to_array()),
+                    .map(|n| Vec3::from(d.rotate(*n)).normalize_or_zero().to_array()),
             );
-            textured.normals.extend(vmesh.normals.iter().map(|n| {
-                model
-                    .transform_vector3(Vec3::from(*n))
-                    .normalize_or_zero()
-                    .to_array()
-            }));
             textured.uvs.extend_from_slice(&vmesh.uvs);
             textured.cba_tsb.extend_from_slice(&vmesh.cba_tsb);
             textured.colors.extend_from_slice(&vmesh.colors);
@@ -509,12 +502,9 @@ impl PlayWindowApp {
                 .indices
                 .extend(vmesh.indices.iter().map(|i| i + base));
             let base = untextured.positions.len() as u32;
-            untextured.positions.extend(
-                cmesh
-                    .positions
-                    .iter()
-                    .map(|p| model.transform_point3(Vec3::from(*p)).to_array()),
-            );
+            untextured
+                .positions
+                .extend(cmesh.positions.iter().map(|p| d.place_point(*p, vd.lift)));
             untextured.colors.extend_from_slice(&cmesh.colors);
             untextured.blend.extend_from_slice(&cmesh.blend);
             untextured

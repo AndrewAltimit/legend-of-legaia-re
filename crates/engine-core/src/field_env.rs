@@ -2035,17 +2035,10 @@ pub fn env_draws_world_aabb(
             // the box rather than the vertices is conservative by at most the
             // box's own slack and costs one pass per placement instead of one
             // per vertex.
-            let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
-            let (sn, cs) = ang.sin_cos();
-            let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
             for cx in [ext.0[0], ext.1[0]] {
                 for cy in [ext.0[1], ext.1[1]] {
                     for cz in [ext.0[2], ext.1[2]] {
-                        let w = [
-                            cs * cx + sn * cz + t[0],
-                            cy + t[1],
-                            -sn * cx + cs * cz + t[2],
-                        ];
+                        let w = d.place_point([cx, cy, cz], [0.0; 3]);
                         for ax in 0..3 {
                             lo[ax] = lo[ax].min(w[ax]);
                             hi[ax] = hi[ax].max(w[ax]);

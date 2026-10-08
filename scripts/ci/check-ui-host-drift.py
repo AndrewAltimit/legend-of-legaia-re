@@ -542,6 +542,8 @@ NATIVE_BATTLE = "crates/engine-shell/src/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
+NATIVE_MINIGAMES = "crates/engine-shell/src/window/minigames.rs"
+WEB_MINIGAMES_DANCE = "crates/web-viewer/src/minigames_dance.rs"
 NATIVE_TITLE_SAVE = (
     "crates/engine-shell/src/window/title_save_draws.rs"
 )
@@ -1198,6 +1200,20 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["render_positions"],
+    },
+    {
+        "what": "dance-hall placement composition, native vs browser - every "
+        "venue draw is placed through `EnvDraw::place_point` (Rx * Ry * Rz, "
+        "FUN_80026988, then the world position and the coplanar lift) on "
+        "both hosts. The browser bake once read the yaw alone, which stood the "
+        "hall's tilted video walls inside the back wall: the page drew brick "
+        "where the window drew the dancer screens, with every tier green",
+        "sites": {
+            "native": (NATIVE_MINIGAMES, "build_dance_venue_gpu"),
+            "web": (WEB_MINIGAMES_DANCE, "append_draw"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["place_point"],
     },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "

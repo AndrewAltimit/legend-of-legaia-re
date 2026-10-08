@@ -259,6 +259,7 @@ is reached at runtime.
 | walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
 | CD-XA staging | `symbols_all` on `xa_banks::install_shout_file` / `install_clip_file` across the native boot's two bank readers and the play page's `play_xa_install`. |
 | visible-tile crop | `symbols_all` on `field_view_window::field_view_cells` + `framing_is_retail` (whether a frame crops), `terrain_draw_visible` (the terrain list) and `field_ground::crop_indices` (the ground) across the native redraw / ground re-upload and the play page's crop exports. |
+| dance-hall placement composition | `symbols_all` on `EnvDraw::place_point` across the native venue upload (`build_dance_venue_gpu`) and the browser bake (`DanceEnv::append_draw`). |
 
 The last three exist because each named a divergence the reachability tier
 could not see, and each divergence was a *model* one rather than a missing
@@ -1090,6 +1091,18 @@ off by default natively (`--edge-collision` / `--solid-npcs` / `--live-npcs`
 opt-ins). The same engine, the same scene, two different games in a town.
 Native now defaults them on with `--no-*` opt-outs; a paired-defaults row
 would have caught it and none exists.
+
+**One transform spelled twice, with an axis missing.** The browser dance
+hall baked its venue draw list with each placement's yaw alone, while the
+native window placed the same draws through all three authored angles
+(`Rx * Ry * Rz`, `FUN_80026988`). The hall carries tilted placements - its
+three video walls among them - and the yaw-only bake stood them upright
+inside the back wall, so both browser pages drew bare brick where the window
+draws the dancer screens. Every tier was green: the geometry, the VRAM and the
+triangle count were identical, only the vertices moved. The composition is now
+one kernel, `field_env::EnvDraw::place_point`, which the dance hall, the
+fishing venue and the occlusion-fade occluder set all place through, and the
+dance pairing is a tier-3 row.
 
 **A typed channel narrowed at one host.** The web strike-SFX scheduler was
 `u8` end to end, so every cast cue the engine emits above `0xFF` was dropped
