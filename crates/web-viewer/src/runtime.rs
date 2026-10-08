@@ -756,10 +756,14 @@ impl LegaiaRuntime {
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
+        // A card Load's resume is not free-roam entry either: the party
+        // stands where the save says (`SceneHost::arm_resume_seat`), as on
+        // the native window, which has no relocation at all. Relocating it
+        // moved five of the library saves' parties across their maps.
         let in_opening = self.scene_host.host().is_some_and(|h| {
             h.world.cutscene.opening_chain_active || h.world.cutscene_timeline_active()
         });
-        if !in_opening {
+        if !in_opening && !resume {
             self.seat_player();
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
