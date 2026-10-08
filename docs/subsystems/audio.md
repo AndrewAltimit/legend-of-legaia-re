@@ -2323,7 +2323,7 @@ found three sequencer defects: every tone layered over a key keys a voice
 ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)), a
 note on an unused program slot keys none
 ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)), and a
-note released inside its own flush period never keys (the same section).
+note released inside its own flush period never keys (the same section); a repeated note-on of a key already sounding on its channel keys fresh voices without releasing the first (`FUN_80061B24` calls `FUN_80066308` straight), which is what brings the battle theme of `party_basic_attack_vs_gobu_gobu` to `205` against `205`.
 
 Two states do not compare, and neither for an audio reason. In
 `rikuroa_pre_caruban` the music is not the field track: its notes come from

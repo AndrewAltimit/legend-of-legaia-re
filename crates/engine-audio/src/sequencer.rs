@@ -677,9 +677,13 @@ impl Sequencer {
     }
 
     fn note_on(&mut self, spu: &mut Spu, channel: u8, key: u8, velocity: u8) {
-        // Drop the prior instance of this (channel, key) if it exists -
-        // libsnd silently restarts the voice.
-        self.note_off(spu, channel, key);
+        // A second note-on of a (channel, key) already sounding does NOT
+        // release the first: `FUN_80061B24` hands a non-zero velocity straight
+        // to `FUN_80066308`, which allocates fresh voices. A battle census
+        // sees both of two same-tick `prog 0 / key 60` notes key their two
+        // layers each (nine voices from five notes). The channel's next
+        // note-off for that key releases every voice holding it.
+        //
         // One voice per covering tone. A program may stack several tones over
         // one key (a layered instrument), and retail keys every one of them:
         // FUN_80068568 collects the tones whose `min..=max` covers the key,
@@ -1808,5 +1812,32 @@ mod tests {
         assert_eq!(keys_written(&spu), 0);
         seq.tick_sample(&mut spu);
         assert_eq!(keys_written(&spu), 1);
+    }
+
+    /// Two note-ons of one (channel, key) in one flush period both key -
+    /// FUN_80061B24 does not release the first - and the key's note-off
+    /// releases both.
+    #[test]
+    fn a_repeated_key_keys_again_without_releasing_the_first() {
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        let mut spu = Spu::new();
+        let on = ChannelMessage::NoteOn {
+            key: 60,
+            velocity: 100,
+        };
+        seq.fire_channel(&mut spu, 0, on);
+        seq.fire_channel(&mut spu, 0, on);
+        seq.flush_key_ons(&mut spu);
+        assert_eq!(keys_written(&spu), 2);
+        assert_eq!(seq.active.len(), 2);
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOff {
+                key: 60,
+                velocity: 0,
+            },
+        );
+        assert!(seq.active.is_empty());
     }
 }
