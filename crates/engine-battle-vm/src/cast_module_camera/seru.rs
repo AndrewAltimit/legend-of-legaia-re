@@ -91,7 +91,7 @@ pub const GIMARD_BREATH_CLUT_MOVE: ModuleVramMove = ModuleVramMove {
 /// | 8 | hold above `scalar << 7` | the CLUT move [`GIMARD_BREATH_CLUT_MOVE`], then the breath [`GIMARD_BREATH_SPAWNS`] on the creature |
 /// | 9 | hold above `scalar * 96` | - |
 /// | 10 | hold above `0` | - |
-/// | 12 | drain while positive, hold above `0` | - (the settle poll is the body's) |
+/// | 12 | drain while positive, hold above `0` | case 8 on the caster every pass (`jal 0x801D5854` with `(ctx[+0x13], 8)` at `0x801F761C`); the settle poll is the body's |
 ///
 /// Arm 10 also stores the walk-in's framing context: depth `ctx[+0x6D0] =
 /// 0x800`, yaw base `ctx[+0x6DA] = 0x200`. Arm 11 is the walk-in: every pass
@@ -261,13 +261,20 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 ..ArmDirection::PASS
             }
         }
-        // The settle arm drains the `scalar * 192` arm 11 added before it
-        // polls the victim (`lw a0,0x7960` / `blez` / `subu` / `bgtz` at
-        // `0x801F7628..0x801F7654`): the Done band after Gimard starts some
-        // 192 vsyncs after the hit, by which time the breath's dead victim
-        // has faded to black and the tunnel's programs have halted
-        // (`shiny_refactor_gimard_levelup`).
-        12 => gate(st.countdown.0 > 0 && st.countdown.drain_above(0)),
+        // The settle arm frames the caster through the action SM's case 8
+        // first, every pass (`lbu a0,0x13(s1)` / `jal 0x801D5854` with
+        // `a1 = 8` at `0x801F7618..0x801F7620`), then drains the
+        // `scalar * 192` arm 11 added before it polls the victim
+        // (`lw a0,0x7960` / `blez` / `subu` / `bgtz` at
+        // `0x801F7628..0x801F7654`). Case 8 over the breath's dead, still
+        // fading victim is its dead-target arm, which zeroes the yaw ladder
+        // `ctx[+0x6DA]` each pass (`sh zero,0x4(t0)` at `0x801D6B1C`) - so
+        // the Done band's case 6 starts from a ladder the walk's swing no
+        // longer holds (`shiny_refactor_gimard_levelup`).
+        12 => ArmDirection {
+            end_frame: true,
+            ..gate(st.countdown.0 > 0 && st.countdown.drain_above(0))
+        },
         _ => ArmDirection::PASS,
     }
 }

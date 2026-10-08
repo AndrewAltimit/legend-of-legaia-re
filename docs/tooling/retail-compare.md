@@ -1918,23 +1918,26 @@ is checkable even where the pose is not. Two seeding limits follow.
   *down* through the wrap to `4051`, while the drive hands `0x6E` the engine's
   `0x0C` framing at `2620`, a shortest arc up. No word in the state records
   the camera before the cast, so the start is a seeding limit.
-- **A yaw base the walk swung.** `shiny_refactor_gimard_levelup` is held in
-  the Done band's `0x51` after Gimard's breath killed its victim; the step
-  table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
-  facing`, `TR (0, 0x500, prescale(0x800))`), which the engine now frames to
-  the unit in eye and focus. The yaw base is not recoverable: PROT 0903's
-  arm 10 stores `0x200` and its walk arm swings it by `6 * scalar` a vsync
-  for as long as the creature walks, and the prologue's drift runs on top,
-  so the word the Done band reads is the walk's length plus the time since
-  - a creature walk the headless seed does not run, and one the image
-  child's walk times on its own geometry. The time since includes arm 12's
-  own hold: it drains the `scalar * 192` arm 11 added (192 vsyncs) and
-  then waits for the dead victim's render word `+0x04` to fade to zero, so
-  the Done band opens with the fire tunnel's programs already halted. The
-  tunnel parts run on retail's clock to the unit (`gimard_burning_attack`'s
-  `592` / `1360` waits at yaw base `1497` are the engine's at `1493`); an
-  engine that let arm 12 settle on the victim's zero HP alone reached `0x51`
-  some 190 vsyncs early, with the tunnel still drawn.
+- **A yaw base the settle arm zeroes.** `shiny_refactor_gimard_levelup` is
+  held in the Done band's `0x51` after Gimard's breath killed its victim; the
+  step table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
+  facing`, `TR (0, 0x500, prescale(0x800))`). The walk's swing does not reach
+  that word. PROT 0903's arm 12 calls case 8 on the caster every pass
+  (`jal 0x801D5854` with `a1 = 8` at `0x801F761C`), and over a dead victim
+  whose render word `+0x04` is still fading that is case 8's dead-target arm,
+  which stores `0` over `ctx[+0x6DA]` (`sh zero,0x4(t0)` at `0x801D6B1C`). A
+  write watch from `shiny_refactor_gimard_plus35` (the same run, arm 9) shows
+  the two writers alternating each frame - the prologue's drift, then the
+  zero - for the whole settle, so the Done band reads only the drift since
+  arm 12 ended (`56` at the capture, 54 vsyncs at step 2). Arm 12 lasts as
+  long as that fade: it also halves the victim's animation rate on every pass
+  (`+0x21D = scalar >> 1`, past the countdown's `bgtz`), which slows the dead
+  victim's knock-back clip, and it waits for the render word to reach zero
+  after the clip lands. What the engine still reads differently is the
+  caster's facing: the cast re-faces the caster onto the victim's seeded
+  position, and the state holds the victim where its knock-back left it, not
+  where it stood when the cast began (`4038` retail against `3983`) - a
+  seeding limit.
 - **A counter the drive has to wait for.**
   `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
   counterattack on a monster's swing. The drive plays rounds until a counter

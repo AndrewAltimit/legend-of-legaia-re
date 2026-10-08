@@ -69,6 +69,23 @@ impl BattleCamera {
         self.module_glide = Some(g);
     }
 
+    /// A module arm's call into the action SM's **case 8** on the acting
+    /// actor (`FUN_801D5854(ctx[+0x13], 8)`): the post-action framing of the
+    /// actor and its target, re-armed every pass over case 8's own `a3 =
+    /// 0xC`. Its dead-target arm zeroes the yaw ladder `ctx[+0x6DA]`
+    /// ([`Self::action_end_pose`]), which is the half a module's settle arm
+    /// leaves behind for the Done band's case 6.
+    ///
+    /// REF: FUN_801D5854 (case 8)
+    pub fn arm_module_end_frame(&mut self) {
+        let (target, raw_z) = self.action_end_pose();
+        let mut from = self.pose;
+        let steps = self.steps_of(POST_ACTION_STEPS);
+        let g = Glide::linear(&mut from, target, raw_z, steps, true);
+        self.pose = from;
+        self.module_glide = Some(g);
+    }
+
     /// A module arm's direct writes into the live camera globals (pitch, TR
     /// y, TR z in its prescaled units), added to the pose as it stands.
     pub fn nudge_module(&mut self, pitch: i16, tr_y: i16, tr_z: i16) {

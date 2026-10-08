@@ -1167,7 +1167,13 @@ Nothing in PROT 0903 kills the tunnel: its three programs halt on their own
 the Done band is arm 12, which first drains the `scalar * 192` arm 11 added
 to the countdown (`0x801F7628..0x801F7654`) and then waits for a dead
 victim's render word `+0x04` to fade to zero, or a living one to return to
-idle (`0x801F765C..0x801F768C`). Arm 11 stamps the victim's burn
+idle (`0x801F765C..0x801F768C`). Every pass of it, held or not, also frames
+the caster through the action SM's case 8 (`jal 0x801D5854` with `a1 = 8` at
+`0x801F761C`) - whose dead-target arm zeroes the yaw ladder `ctx[+0x6DA]` the
+walk swung, so the Done band's case 6 starts from the drift since the arm
+ended - and halves the victim's animation rate (`+0x21D = scalar >> 1` at
+`0x801F76D8`), which slows the dead victim's knock-back clip and so the fade
+the arm waits on. Arm 11 stamps the victim's burn
 presentation (`+0x04 = 0x3FF`, `+0x0C = 0x1000`, `+0x21C = 0`, `+0x21F = 1`)
 inside its targetable branch whether or not the host folds the damage there.
 PROT 0909, 0911, 0912 and 0913 close the same way: each hit arm re-arms its

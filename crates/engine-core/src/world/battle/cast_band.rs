@@ -1187,6 +1187,11 @@ impl World {
             };
             cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
         }
+        if run.as_ref().is_some_and(|r| r.camera_end_frame)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.arm_module_end_frame();
+        }
         // The module's seat arm (`FUN_801F19EC`): a seat owed since the
         // stager armed is requested as the module reaches it.
         let seat_arm = run
@@ -1739,6 +1744,9 @@ pub struct CastModuleCodeRun {
     /// The case-6 follow the module re-armed this frame
     /// ([`vm::cast_module_camera::ModuleFollow`]).
     pub camera_follow: Option<vm::cast_module_camera::ModuleFollow>,
+    /// The module framed the acting actor through case 8 this frame
+    /// ([`vm::cast_module_camera::ArmDirection::end_frame`]).
+    pub camera_end_frame: bool,
     /// The drift the module wrote into the camera globals this frame.
     pub camera_nudge: Option<vm::cast_module_camera::ModuleNudge>,
     /// A capture-class body's drift this frame

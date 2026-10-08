@@ -797,6 +797,19 @@ impl World {
                 d
             })
         };
+        // PROT 0903's settle arm halves the victim's animation rate on every
+        // pass, held or not: the store (`lbu v0,0x69(a0)` / `srl v0,v0,0x1` /
+        // `sb v0,0x21d(s2)` at `0x801F76C8..0x801F76D8`) sits past the
+        // countdown's `bgtz` at `0x801F7654`, which jumps to it. The body's
+        // own arm 12 runs only once the director lets the phase through, so
+        // the half the hold covers is stored here - it is what slows the dead
+        // victim's knock-back clip, whose fade the arm then waits out.
+        if entry == 903
+            && ctx.phase == ticks_a::GIMARD_SETTLE_ARM
+            && let Some(a) = self.actors.get_mut(usize::from(victim_slot))
+        {
+            a.battle.anim_rate = vm::battle_anim_rate::AnimRate(ticks_a::GIMARD_SETTLE_ANIM_RATE);
+        }
         run.camera_shot = direction.and_then(|d| d.shot);
         let mut capture_held = false;
         let mut capture_arm = None;
@@ -945,6 +958,7 @@ impl World {
             }
         }
         run.camera_follow = direction.and_then(|d| d.follow);
+        run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.vram_move = direction.and_then(|d| d.vram_move);
@@ -1956,6 +1970,7 @@ impl World {
             element_change: None,
             camera_shot: None,
             camera_follow: None,
+            camera_end_frame: false,
             camera_nudge: None,
             capture_drift: None,
             spawns: &[],
