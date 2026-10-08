@@ -143,6 +143,7 @@
         </tbody>
       </table>
       <p>One step larger silences music that plays; one step smaller does not fit slot 0 plus PROT 0869. Slot 6 <em>is</em> slot 2's region in retail, refilled per mode: PROT 0876 (the field bank) in the field and on the world map, PROT 0869 in battle, a minigame's own bank in its mode. A cue whose slot is closed is silent, as retail's drainer skips it.</p>
+      <p>One bank does not fit that window: the dance hall's (PROT 1231). Retail overruns into slot 3's closed base; the port has slot 0 below and the top of SPU RAM above, so it lays the overflow in the BGM region's free tail instead (a voice addresses each sample on its own, so a bank need not be contiguous). That half is a borrower: a track that reaches it drops the bank, and the director re-stages it once the free tail moves.</p>
     </div>
   </details>
   <details class="disclosure" id="ids-above-0x200">

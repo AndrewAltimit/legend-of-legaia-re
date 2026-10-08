@@ -132,11 +132,11 @@
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th></tr></thead>
     <tbody>
       <tr><td><code>0x0000</code></td><td>2</td><td><code>SC</code> magic; icon flags, title (Shift-JIS), 16-colour palette and 16x16 icon follow through <code>0x1FF</code></td></tr>
-      <tr><td><code>0x0200</code></td><td><code>0x3C8</code></td><td>Display / global header: location name <code>+0</code>, leader name <code>+0x54</code>, scene labels <code>+0x208</code> / <code>+0x218</code>, gold <code>+0x25C</code></td></tr>
+      <tr><td><code>0x0200</code></td><td><code>0x3C8</code></td><td>Display / global header: location name <code>+0</code>, leader name <code>+0x54</code>, scene labels <code>+0x208</code> / <code>+0x218</code>, play clock <code>+0x230</code> (RAM <code>0x80084570</code>, 60 ticks a second), gold <code>+0x25C</code></td></tr>
       <tr><td><code>0x05C8</code></td><td><code>0x414</code> &times; 4</td><td><a href="../formats/save-record.html">Character records</a> Vahn, Noa, Gala, Terra (RAM <code>0x80084708</code>)</td></tr>
       <tr><td><code>0x14C0</code></td><td><code>0x358</code></td><td>Story-flag window (RAM <code>0x80085600..0x80085958</code>), including the <code>0x200</code>-byte system-flag bank from <code>0x80085758</code>; overlaps Terra's tail</td></tr>
       <tr><td><code>0x1818</code></td><td><code>0x200</code></td><td>The <a href="inventory.html">item bag</a>, 256 &times; <code>(id, count)</code> (RAM <code>0x80085958</code>); ends the live-state copy at <code>0x1A18</code></td></tr>
-      <tr><td><code>0x1A18</code></td><td><code>0x5E4</code></td><td>Unread tail: zero on a retail card</td></tr>
+      <tr><td><code>0x1A18</code></td><td><code>0x5E4</code></td><td>Unread tail: zero on a retail card; a card the engine writes keeps its <code>LGXE</code> extension here (party composition, chain library), which retail never reads</td></tr>
       <tr><td><code>0x1FFC</code></td><td>4</td><td>Additive checksum of words <code>0..0x7FE</code></td></tr>
     </tbody>
   </table>
@@ -178,7 +178,7 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p><code>engine-core::save_select</code> models the screen and the card machine; the host decides what a &ldquo;port&rdquo; is - the browser mounts the player's own card images, the native window mounts its save directory. Every save on both play hosts goes through this screen - a gate checks that no host writes save bytes around it - and the load confirm, the overwrite question, the write and read panels and the damaged-block refusal all follow retail. The directory walk, the status poll and the checksum are line-for-line ports of the routines above, and <code>legaia_save</code> patches a real retail block in place and restamps its checksum, so an edited card save still loads on a PlayStation. The engine's own richer save container (LGSF) is described on the <a href="engine.html">engine page</a>.</p>
+  <p><code>engine-core::save_select</code> models the screen and the card machine; the host decides what a &ldquo;port&rdquo; is - the browser mounts the player's own card images, the native window mounts its save directory. Every save on both play hosts goes through this screen - a gate checks that no host writes save bytes around it - and the load confirm, the overwrite question, the write and read panels and the damaged-block refusal all follow retail. The directory walk, the status poll and the checksum are line-for-line ports of the routines above, and <code>legaia_save</code> patches a real retail block in place and restamps its checksum, so an edited card save still loads on a PlayStation. The play clock travels both ways: a retail block lifts as whole seconds and an engine-written block stores <code>seconds &times; 60</code> back, so its time prints on retail's own screen. A disc-gated test runs every save on the library memory cards through Load, play, Save and Load again on the shared kernels and requires the two readings to agree field for field and land in the same scene and track. The engine's own richer save container (LGSF) is described on the <a href="engine.html">engine page</a>.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

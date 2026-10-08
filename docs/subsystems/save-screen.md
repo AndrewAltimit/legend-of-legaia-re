@@ -1275,6 +1275,15 @@ loads with its own play time and a block an engine host writes prints its
 time on retail's save screen. An engine-authored block's `LGXE` tail carries
 the same seconds and wins on the lift.
 
+`engine-shell/tests/save_roundtrip_library.rs` holds the whole block to that:
+every save on the library memory cards is lifted through the card reader both
+hosts' Load uses, landed with `BootSession::resume_save`, saved through
+`card_write::write_save_into_card` after the scene has run, and loaded again.
+The two `save_full` readings must agree field for field - party records,
+story flags, items, gold, minigame purses, present party, position, audio
+levels and the play clock - and the second resume must land in the same scene
+on the same BGM.
+
 ### The engine-ext blob in the unread tail
 
 The compose direction copies `0x1A18` bytes of live state to the front of the
