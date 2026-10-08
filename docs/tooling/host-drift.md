@@ -4184,6 +4184,14 @@ banner and the cheats panel. Closed rows:
   rewound the picture. Both run `cutscene::MovieClock` now (the page through
   `play_fmv_due_frame`, handing in only the two clocks the engine cannot
   read): the cursor, the wall clock past the stall window, latched.
+- **A Good! banner on every dance step.** The dance page spawned the
+  `Good!` banner (widget 11) and keyed a sting on every matched note. In
+  retail's award routine `FUN_801d1af4` a plain matched note is tier 0 - no
+  banner, no sting; `Good!` + two stars is tier 2, a closed chain, which the
+  engine already spawns into its part pool on both hosts
+  ([`minigame-dance.md`](../subsystems/minigame-dance.md#rating-banners-per-tier-fun_801d1af4-body)).
+  The page's own spawn is gone, and a closed chain keys the tier-2 sting
+  rather than the `Cool!` cue.
 - **The movie skip.** The page tests the skip edge on every movie and the
   native window only on the title attract, but both ask
   `cutscene::fmv_skip_edge_hit`, which only `fmv_id 0` passes, and no scene

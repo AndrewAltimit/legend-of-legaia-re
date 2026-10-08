@@ -1009,12 +1009,15 @@ window.MgDance = (function () {
           (faces && faces.meta[0] && faces.meta[0].poses - 1) || 2);
         poseT[0] = 24;
         if (result === 'sequence') {
-          /* No JS spawn here: the rules engine spawned the banner + two stars
-           * into its own sprite-part pool on this same judge, and
-           * drawEngineParts() draws them from the ported emit dispatch. */
-        } else {
-          spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
+          /* No JS spawn here: the rules engine spawned the Good! banner + two
+           * stars into its own sprite-part pool on this same judge, and
+           * drawEngineParts() draws them from the ported emit dispatch; the
+           * tier-2 sting arrives through dance_take_award_sounds. */
         }
+        /* A plain matched note that does not close the chain is tier 0:
+         * retail spawns no banner and keys no sting for it. This page used
+         * to put a Good! banner and a sting on every hit, so the banner the
+         * native window shows only for a closed chain fired on each step. */
       }
     }
 
