@@ -460,6 +460,50 @@ fn a_lone_members_juggernaut_sweeps_the_engine_monster_row() {
     }
 }
 
+/// A lone member casting Freed (PROT 0912, spell `0x8A`): the body freezes,
+/// hides and hits retail's monster row `3..7`. Through the seam that row is
+/// the engine's compacted monsters `1..5`, so every engine monster is hit and
+/// the lone member - and the empty table above the monsters - is not.
+#[test]
+fn a_lone_members_freed_sweeps_the_engine_monster_row() {
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x8A), Some(912));
+    for i in 1..5 {
+        world.actors[i].battle_monster_id = Some(1);
+    }
+    for i in 5..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.actors[0].battle.active_target = 1;
+    let mut hit: Vec<u8> = Vec::new();
+    let mut froze = false;
+    for _ in 0..4000 {
+        let run = world.run_cast_module_code(0x8A, 0).expect("PROT 0912");
+        hit.extend(run.aoe_hits.iter().map(|h| h.seat));
+        froze |= (1..5).all(|i| world.actors[i].battle.anim_rate.get() == 0);
+        if !run.busy {
+            break;
+        }
+    }
+    hit.sort_unstable();
+    hit.dedup();
+    assert_eq!(
+        hit,
+        vec![1, 2, 3, 4],
+        "Freed's sweep reached the engine monsters"
+    );
+    assert!(froze, "arm 0x10 froze every engine monster");
+    assert_eq!(
+        world.actors[0].battle.anim_rate.get(),
+        8,
+        "the caster is untouched"
+    );
+}
+
 /// A full party's seat row is the engine's table unchanged: the kernels see
 /// the same views, so the map adds nothing for a party of three.
 #[test]
