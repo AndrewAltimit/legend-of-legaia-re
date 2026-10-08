@@ -184,7 +184,9 @@ pub struct DebugSeeds {
 
 /// The `--cheat-*` operands - the native twin of the browser play page's
 /// Cheats panel (its "No encounters" switch is `--no-live-loop` here, and
-/// `F7` at runtime). Every write is `legaia_engine_core::cheats`'.
+/// `F7` at runtime). Both hosts build the shared
+/// `legaia_engine_core::cheats::PlayerCheat` list and apply it through
+/// `World::apply_cheat`.
 #[derive(Debug, Default, Clone)]
 pub struct PlayCheats {
     pub level: Option<u8>,
@@ -192,6 +194,9 @@ pub struct PlayCheats {
     pub coins: Option<u32>,
     /// `ITEM[:QTY]` specs, resolved against the disc's item names.
     pub items: Vec<String>,
+    /// `--cheat-restore`: HP / MP refilled and the fallen revived at scene
+    /// entry.
+    pub restore: bool,
     pub max_ap: bool,
     pub seru_level: Option<u8>,
     pub arts: bool,
@@ -199,69 +204,44 @@ pub struct PlayCheats {
 }
 
 impl PlayCheats {
-    /// Apply every requested cheat to `world`, logging each outcome.
-    /// `templates` is the executable's New Game party template, which a
-    /// level below the current one is rebuilt from.
+    /// The requested cheats as the shared list
+    /// ([`legaia_engine_core::cheats::PlayerCheat`]) - the values the play
+    /// page's Cheats panel builds, in panel order.
+    pub fn list(&self) -> Vec<legaia_engine_core::cheats::PlayerCheat> {
+        use legaia_engine_core::cheats::PlayerCheat;
+        let mut out = Vec::new();
+        out.extend(self.level.map(PlayerCheat::PartyLevel));
+        if self.restore {
+            out.push(PlayerCheat::Restore);
+        }
+        if self.max_ap {
+            out.push(PlayerCheat::MaxAp);
+        }
+        out.extend(self.seru_level.map(PlayerCheat::GrantSeru));
+        if self.arts {
+            out.push(PlayerCheat::LearnAllArts);
+        }
+        if self.max_items {
+            out.push(PlayerCheat::MaxItems);
+        }
+        out.extend(self.gold.map(|g| PlayerCheat::Gold(i64::from(g))));
+        out.extend(self.coins.map(|c| PlayerCheat::Coins(u64::from(c))));
+        out.extend(self.items.iter().map(|s| PlayerCheat::give_item_spec(s)));
+        out
+    }
+
+    /// Apply every requested cheat to `world` through
+    /// `World::apply_cheat`, logging each outcome line. `templates` is the
+    /// executable's New Game party template, which a level below the current
+    /// one is rebuilt from.
     pub(crate) fn apply(
         &self,
         world: &mut legaia_engine_core::world::World,
         templates: Option<&legaia_asset::new_game::StartingParty>,
     ) {
-        if let Some(level) = self.level {
-            let got = world.cheat_set_party_level_with(level, templates);
-            log::info!("play-window: --cheat-level {level}: {got:?} (roster slot, level)");
-        }
-        if let Some(g) = self.gold {
-            let v = world.cheat_set_gold(i64::from(g));
-            log::info!("play-window: --cheat-gold -> {v}");
-        }
-        if let Some(c) = self.coins {
-            let v = world.cheat_set_coins(u64::from(c));
-            log::info!("play-window: --cheat-coins -> {v}");
-        }
-        if let Some(level) = self.seru_level {
-            let got = world.cheat_grant_seru(level);
-            log::info!("play-window: --cheat-seru {level}: {got:?}");
-        }
-        if self.arts {
-            let got = world.cheat_learn_all_arts();
-            log::info!("play-window: --cheat-arts: {got:?} (roster slot, new, known)");
-        }
-        if self.max_ap {
-            let n = world.cheat_max_ap();
-            log::info!("play-window: --cheat-max-ap: {n} member(s)");
-        }
-        if self.max_items {
-            let n = world.cheat_max_items();
-            log::info!("play-window: --cheat-max-items: {n} stack(s) raised to 99");
-        }
-        if self.items.is_empty() {
-            return;
-        }
-        let pairs = world.item_name_pairs();
-        for spec in &self.items {
-            let (query, qty) = match spec.rsplit_once(':') {
-                Some((q, n)) => match n.trim().parse::<u8>() {
-                    Ok(qty) => (q, qty),
-                    Err(_) => (spec.as_str(), 1),
-                },
-                None => (spec.as_str(), 1),
-            };
-            let query = query.replace(['-', '_'], " ");
-            match legaia_engine_core::cheats::resolve_item(
-                &query,
-                pairs.iter().map(|(i, n)| (*i, n.as_str())),
-            )
-            .and_then(|id| world.cheat_give_item(id, qty))
-            {
-                Some(g) => log::info!(
-                    "play-window: --cheat-item {spec}: id {:#04x} +{} (holding {})",
-                    g.id,
-                    g.granted,
-                    g.held
-                ),
-                None => log::warn!("play-window: --cheat-item {spec}: no single item matches"),
-            }
+        for cheat in self.list() {
+            let line = world.apply_cheat(&cheat, templates);
+            log::info!("play-window: --cheat-{}: {line}", cheat.key());
         }
     }
 }
@@ -1892,6 +1872,32 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
         KeyCode::Digit1 => "1",
         KeyCode::Digit2 => "2",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod cheat_list_host_tests {
+    /// Every row of the shared cheat list has a control on both hosts: a
+    /// `--cheat-<key>` flag here and a `cheat(rt, '<key>'` call on the play
+    /// page. "No encounters" is the one switch each host already had under
+    /// another name (`--no-live-loop` / `F7`, the page's checkbox).
+    #[test]
+    fn every_listed_cheat_has_a_control_on_both_hosts() {
+        let cli = include_str!("bin/legaia-engine/cli.rs");
+        let page = include_str!("../../../site/_content/play.html");
+        for (key, _) in legaia_engine_core::cheats::PLAYER_CHEAT_LIST {
+            if key == "encounters" {
+                assert!(cli.contains("no_live_loop"));
+                assert!(page.contains("play-cheat-no-encounters"));
+                continue;
+            }
+            let flag = format!("cheat_{}:", key.replace('-', "_"));
+            assert!(cli.contains(&flag), "native flag for cheat '{key}'");
+            let call = format!("cheat(rt, '{key}'");
+            assert!(page.contains(&call), "play page control for cheat '{key}'");
+        }
+        assert!(page.contains("cheat_apply_codes"), "page codes box");
+        assert!(cli.contains("cheat_file:"), "native --cheat-file");
     }
 }
 

@@ -1,146 +1,124 @@
 //! The play page's **Cheats** panel: thin wasm bindings over
-//! [`legaia_engine_core::cheats`], where every mutation lives (the native
-//! `play-window`'s `--cheat-*` flags call the same methods).
+//! [`legaia_engine_core::cheats::PlayerCheat`] - the one cheat list both
+//! hosts expose, applied through `World::apply_cheat` (the native
+//! `play-window`'s `--cheat-*` flags build the same values) - and over
+//! [`legaia_engine_core::cheat_applier::apply_text`] for pasted codes (the
+//! native `--cheat-file`).
 
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_core::cheats::PlayerCheat;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
+/// A [`PlayerCheat`] from the page's `(key, number, text)` triple.
+fn cheat_from_key(key: &str, n: f64, text: &str) -> Option<PlayerCheat> {
+    let byte = n.clamp(0.0, 255.0) as u8;
+    Some(match key {
+        "level" => PlayerCheat::PartyLevel(byte),
+        "restore" => PlayerCheat::Restore,
+        "max-ap" => PlayerCheat::MaxAp,
+        "seru" => PlayerCheat::GrantSeru(byte),
+        "arts" => PlayerCheat::LearnAllArts,
+        "max-items" => PlayerCheat::MaxItems,
+        "gold" => PlayerCheat::Gold(n as i64),
+        "coins" => PlayerCheat::Coins(n.max(0.0) as u64),
+        "item" => PlayerCheat::GiveItem {
+            query: text.to_string(),
+            qty: byte,
+        },
+        "encounters" => PlayerCheat::RandomEncounters(n != 0.0),
+        _ => return None,
+    })
+}
+
 impl LegaiaRuntime {
-    /// Set every present party member to `level` with the retail stat
-    /// growth: raising grants the XP, lowering rebuilds the character from
-    /// the executable's New Game template plus the growth for the levels it
-    /// keeps. Returns a one-line summary (empty roster -> a reason).
-    pub fn cheat_set_party_level(&mut self, level: u8) -> String {
+    fn apply_player_cheat(&mut self, cheat: &PlayerCheat) -> String {
         let Some(h) = self.scene_host.host_mut() else {
             return "no disc loaded".to_string();
         };
         let templates = h.new_game_defaults.as_ref().map(|d| d.party.clone());
-        let got = h
-            .world
-            .cheat_set_party_level_with(level, templates.as_ref());
-        if got.is_empty() {
-            return "no party members to level".to_string();
+        h.world.apply_cheat(cheat, templates.as_ref())
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// Apply one cheat from the shared list
+    /// ([`legaia_engine_core::cheats::PLAYER_CHEAT_LIST`]) by key, with a
+    /// numeric operand `n` (level, Seru level, gold, coins, quantity; `1` /
+    /// `0` for the encounters switch) and a text operand `text` (the item
+    /// query). Returns the one-line outcome the native window logs for the
+    /// same cheat. Unknown keys return a reason.
+    pub fn cheat_apply(&mut self, key: &str, n: f64, text: &str) -> String {
+        let Some(cheat) = cheat_from_key(key, n, text) else {
+            return format!("unknown cheat '{key}'");
+        };
+        self.apply_player_cheat(&cheat)
+    }
+
+    /// Paste-in cheat codes (GameShark lines or a Mednafen `.cht`), applied
+    /// through the engine's RAM-cell registry - the native `--cheat-file`
+    /// path. `strict` honours conditional codes. Returns the summary line.
+    pub fn cheat_apply_codes(&mut self, text: &str, strict: bool) -> String {
+        let Some(h) = self.scene_host.host_mut() else {
+            return "no disc loaded".to_string();
+        };
+        use legaia_engine_core::cheat_applier::{CheatTextFormat, apply_text};
+        match apply_text(&mut h.world, text, CheatTextFormat::sniff(text), strict) {
+            Ok(report) => report.summary(),
+            Err(e) => format!("codes not understood: {e}"),
         }
-        let parts: Vec<String> = got
-            .iter()
-            .map(|&(slot, lv)| format!("{} Lv {lv}", h.world.party_name(slot as usize)))
-            .collect();
-        parts.join(", ")
+    }
+
+    /// [`Self::cheat_apply`] `"level"` (kept for cached pages).
+    pub fn cheat_set_party_level(&mut self, level: u8) -> String {
+        self.apply_player_cheat(&PlayerCheat::PartyLevel(level))
     }
 
     /// Set the gold purse (clamped to the retail cap). Returns the purse.
     pub fn cheat_set_gold(&mut self, gold: f64) -> i32 {
-        self.scene_host
-            .host_mut()
-            .map_or(0, |h| h.world.cheat_set_gold(gold as i64))
+        self.apply_player_cheat(&PlayerCheat::Gold(gold as i64));
+        self.scene_host.host().map_or(0, |h| h.world.party.money)
     }
 
     /// Set the casino coin bank (clamped). Returns the bank.
     pub fn cheat_set_coins(&mut self, coins: f64) -> u32 {
+        self.apply_player_cheat(&PlayerCheat::Coins(coins.max(0.0) as u64));
         self.scene_host
-            .host_mut()
-            .map_or(0, |h| h.world.cheat_set_coins(coins.max(0.0) as u64))
+            .host()
+            .map_or(0, |h| h.world.minigames.casino_coins)
     }
 
-    /// Add `qty` of the item `query` names (an id, `0x`-hex id, or item
-    /// name). Returns a one-line summary for the page's status line.
+    /// [`Self::cheat_apply`] `"item"` (kept for cached pages).
     pub fn cheat_give_item(&mut self, query: &str, qty: u8) -> String {
-        let Some(h) = self.scene_host.host_mut() else {
-            return "no disc loaded".to_string();
-        };
-        let pairs = h.world.item_name_pairs();
-        let Some(id) = legaia_engine_core::cheats::resolve_item(
-            query,
-            pairs.iter().map(|(i, n)| (*i, n.as_str())),
-        ) else {
-            return format!("no single item matches '{query}'");
-        };
-        let name = pairs
-            .iter()
-            .find(|(i, _)| *i == id)
-            .map_or_else(|| format!("item {id:#04x}"), |(_, n)| n.clone());
-        match h.world.cheat_give_item(id, qty) {
-            Some(g) if g.granted == 0 && qty > 0 => {
-                format!("{name}: bag full or stack at 99 (holding {})", g.held)
-            }
-            Some(g) => format!("{name} +{} (holding {})", g.granted, g.held),
-            None => format!("no single item matches '{query}'"),
-        }
+        self.apply_player_cheat(&PlayerCheat::GiveItem {
+            query: query.to_string(),
+            qty,
+        })
     }
 
-    /// Restore every party member's HP / MP (works mid-battle too).
+    /// [`Self::cheat_apply`] `"restore"` (kept for cached pages).
     pub fn cheat_restore_party(&mut self) {
-        if let Some(h) = self.scene_host.host_mut() {
-            h.world.cheat_restore_party();
-        }
+        self.apply_player_cheat(&PlayerCheat::Restore);
     }
 
-    /// Fill every present member's AP (Spirit) gauge - record and, in battle,
-    /// the live gauge. Returns a one-line summary.
+    /// [`Self::cheat_apply`] `"max-ap"` (kept for cached pages).
     pub fn cheat_max_ap(&mut self) -> String {
-        match self.scene_host.host_mut().map(|h| h.world.cheat_max_ap()) {
-            None => "no disc loaded".to_string(),
-            Some(0) => "no party members".to_string(),
-            Some(n) => format!("AP full for {n} member(s)."),
-        }
+        self.apply_player_cheat(&PlayerCheat::MaxAp)
     }
 
-    /// Teach every present member all of its Seru magic at `level` (1..=9).
+    /// [`Self::cheat_apply`] `"seru"` (kept for cached pages).
     pub fn cheat_grant_seru(&mut self, level: u8) -> String {
-        let Some(h) = self.scene_host.host_mut() else {
-            return "no disc loaded".to_string();
-        };
-        let got = h.world.cheat_grant_seru(level);
-        if got.is_empty() {
-            return "no party members".to_string();
-        }
-        let parts: Vec<String> = got
-            .iter()
-            .map(|g| {
-                format!(
-                    "{} {} spells Lv {} (+{})",
-                    h.world.party_name(g.slot as usize),
-                    g.known,
-                    g.level,
-                    g.learned
-                )
-            })
-            .collect();
-        parts.join(", ")
+        self.apply_player_cheat(&PlayerCheat::GrantSeru(level))
     }
 
-    /// Teach every present member every art the executable lists for it.
+    /// [`Self::cheat_apply`] `"arts"` (kept for cached pages).
     pub fn cheat_learn_all_arts(&mut self) -> String {
-        let Some(h) = self.scene_host.host_mut() else {
-            return "no disc loaded".to_string();
-        };
-        let got = h.world.cheat_learn_all_arts();
-        if got.is_empty() {
-            return "no arts table on this disc load".to_string();
-        }
-        let parts: Vec<String> = got
-            .iter()
-            .map(|&(slot, new, known)| {
-                format!(
-                    "{} {known} arts (+{new})",
-                    h.world.party_name(slot as usize)
-                )
-            })
-            .collect();
-        parts.join(", ")
+        self.apply_player_cheat(&PlayerCheat::LearnAllArts)
     }
 
-    /// Raise every held stack and every usable consumable to 99.
+    /// [`Self::cheat_apply`] `"max-items"` (kept for cached pages).
     pub fn cheat_max_items(&mut self) -> String {
-        match self
-            .scene_host
-            .host_mut()
-            .map(|h| h.world.cheat_max_items())
-        {
-            None => "no disc loaded".to_string(),
-            Some(n) => format!("{n} item stack(s) raised to 99."),
-        }
+        self.apply_player_cheat(&PlayerCheat::MaxItems)
     }
 
     /// Snapshot for the panel: `{party:[{name,level,hp,hp_max,mp,mp_max,ap}],

@@ -17,22 +17,14 @@ fn apply_cheat_file(
 ) -> Result<()> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut db = if path
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.eq_ignore_ascii_case("cht"))
-        .unwrap_or(false)
-    {
-        legaia_cheats::parse_mednafen_cht(&text)?
-    } else {
-        legaia_cheats::parse_gs_text(&text)?
+    // The extension decides; a file with neither says which by its text -
+    // the same sniff the play page's pasted code list goes through.
+    use legaia_engine_core::cheat_applier::{CheatTextFormat, apply_text};
+    let format = match path.extension().and_then(|s| s.to_str()) {
+        Some(e) if e.eq_ignore_ascii_case("cht") => CheatTextFormat::MednafenCht,
+        _ => CheatTextFormat::sniff(&text),
     };
-    db.dedupe_identical();
-    let opts = legaia_engine_core::cheat_applier::ApplyOptions {
-        execute_conditionals: !strict,
-        skip_unmapped: false,
-    };
-    let report = legaia_engine_core::cheat_applier::apply(world, &db, opts);
+    let report = apply_text(world, &text, format, strict)?;
     eprintln!(
         "Cheat report ({} entries, {} writes; {} applied, {} unmapped, {} unknown):",
         report.per_entry.len(),

@@ -4,6 +4,7 @@
 #![deny(unsafe_code)]
 
 pub mod classify;
+pub mod code_lines;
 pub mod gs_text;
 pub mod mednafen_cht;
 pub mod taxonomy;
@@ -12,6 +13,7 @@ pub use classify::{
     BATTLE_ACTOR_BASE, BATTLE_ACTOR_STRIDE, CHAR_RECORD_BASES, Category, ClassifiedAddress,
     INVENTORY_BASE, INVENTORY_SLOTS, classify_address,
 };
+pub use code_lines::parse_code_lines;
 pub use gs_text::parse_gs_text;
 pub use mednafen_cht::parse_mednafen_cht;
 pub use taxonomy::{TaxonomyBucket, WriteTaxonomy, classify_writes, classify_writes_with_samples};

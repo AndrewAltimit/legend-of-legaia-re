@@ -552,6 +552,182 @@ impl World {
     }
 }
 
+/// One player cheat - the **one list** both play hosts expose. The native
+/// window maps its `--cheat-*` flags (and `F6` / `F7`) onto these, the play
+/// page's Cheats panel maps its buttons onto the same values, and both run
+/// them through [`World::apply_cheat`], so neither host owns a cheat the
+/// other lacks or words its outcome differently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlayerCheat {
+    /// Every present member to this level (retail growth; lowering rebuilds
+    /// from the New Game template).
+    PartyLevel(u8),
+    /// HP / MP refilled and the fallen revived, mid-battle included.
+    Restore,
+    /// Every present member's AP (Spirit) gauge to [`AP_GAUGE_MAX`].
+    MaxAp,
+    /// All Seru magic at this level (1..=9).
+    GrantSeru(u8),
+    /// Every art in each member's list.
+    LearnAllArts,
+    /// Every held stack and usable consumable to 99.
+    MaxItems,
+    /// The gold purse (clamped).
+    Gold(i64),
+    /// The casino coin bank (clamped).
+    Coins(u64),
+    /// Add `qty` of the item `query` names (id, `0x`-hex id or name).
+    GiveItem { query: String, qty: u8 },
+    /// Random encounters on (`true`) / off.
+    RandomEncounters(bool),
+}
+
+/// The cheat list as `(key, label)` rows, in panel order: the native flag is
+/// `--cheat-<key>`, the page's control carries the label. A host test pins
+/// that each row has a control on both hosts.
+pub const PLAYER_CHEAT_LIST: [(&str, &str); 10] = [
+    ("level", "Level"),
+    ("restore", "Restore HP/MP"),
+    ("max-ap", "Max AP"),
+    ("seru", "Grant Seru"),
+    ("arts", "Learn all arts"),
+    ("max-items", "Max items"),
+    ("gold", "Gold"),
+    ("coins", "Coins"),
+    ("item", "Item"),
+    ("encounters", "No encounters"),
+];
+
+impl PlayerCheat {
+    /// The [`PLAYER_CHEAT_LIST`] key of this cheat.
+    pub fn key(&self) -> &'static str {
+        match self {
+            PlayerCheat::PartyLevel(_) => "level",
+            PlayerCheat::Restore => "restore",
+            PlayerCheat::MaxAp => "max-ap",
+            PlayerCheat::GrantSeru(_) => "seru",
+            PlayerCheat::LearnAllArts => "arts",
+            PlayerCheat::MaxItems => "max-items",
+            PlayerCheat::Gold(_) => "gold",
+            PlayerCheat::Coins(_) => "coins",
+            PlayerCheat::GiveItem { .. } => "item",
+            PlayerCheat::RandomEncounters(_) => "encounters",
+        }
+    }
+
+    /// Parse an `ITEM[:QTY]` spec (QTY defaults to 1; `-` / `_` read as
+    /// spaces, so `healing-leaf:5` names "Healing Leaf").
+    pub fn give_item_spec(spec: &str) -> PlayerCheat {
+        let (query, qty) = match spec.rsplit_once(':') {
+            Some((q, n)) => match n.trim().parse::<u8>() {
+                Ok(qty) => (q, qty),
+                Err(_) => (spec, 1),
+            },
+            None => (spec, 1),
+        };
+        PlayerCheat::GiveItem {
+            query: query.replace(['-', '_'], " "),
+            qty,
+        }
+    }
+}
+
+impl World {
+    /// Apply one [`PlayerCheat`] and return the one-line outcome both hosts
+    /// show (the page's status line, the native log). `templates` is the
+    /// executable's New Game party, which a lowered level is rebuilt from.
+    pub fn apply_cheat(
+        &mut self,
+        cheat: &PlayerCheat,
+        templates: Option<&StartingParty>,
+    ) -> String {
+        match cheat {
+            PlayerCheat::PartyLevel(level) => {
+                let got = self.cheat_set_party_level_with(*level, templates);
+                if got.is_empty() {
+                    return "no party members to level".to_string();
+                }
+                let parts: Vec<String> = got
+                    .iter()
+                    .map(|&(slot, lv)| format!("{} Lv {lv}", self.party_name(slot as usize)))
+                    .collect();
+                format!("Level: {}", parts.join(", "))
+            }
+            PlayerCheat::Restore => {
+                self.cheat_restore_party();
+                "Party restored.".to_string()
+            }
+            PlayerCheat::MaxAp => match self.cheat_max_ap() {
+                0 => "no party members".to_string(),
+                n => format!("AP full for {n} member(s)."),
+            },
+            PlayerCheat::GrantSeru(level) => {
+                let got = self.cheat_grant_seru(*level);
+                if got.is_empty() {
+                    return "no party members".to_string();
+                }
+                let parts: Vec<String> = got
+                    .iter()
+                    .map(|g| {
+                        format!(
+                            "{} {} spells Lv {} (+{})",
+                            self.party_name(g.slot as usize),
+                            g.known,
+                            g.level,
+                            g.learned
+                        )
+                    })
+                    .collect();
+                format!("Seru: {}", parts.join(", "))
+            }
+            PlayerCheat::LearnAllArts => {
+                let got = self.cheat_learn_all_arts();
+                if got.is_empty() {
+                    return "no arts table on this disc load".to_string();
+                }
+                let parts: Vec<String> = got
+                    .iter()
+                    .map(|&(slot, new, known)| {
+                        format!("{} {known} arts (+{new})", self.party_name(slot as usize))
+                    })
+                    .collect();
+                format!("Arts: {}", parts.join(", "))
+            }
+            PlayerCheat::MaxItems => {
+                format!("{} item stack(s) raised to 99.", self.cheat_max_items())
+            }
+            PlayerCheat::Gold(g) => format!("Gold set to {}.", self.cheat_set_gold(*g)),
+            PlayerCheat::Coins(c) => format!("Coins set to {}.", self.cheat_set_coins(*c)),
+            PlayerCheat::GiveItem { query, qty } => {
+                let pairs = self.item_name_pairs();
+                let Some(id) = resolve_item(query, pairs.iter().map(|(i, n)| (*i, n.as_str())))
+                else {
+                    return format!("no single item matches '{query}'");
+                };
+                let name = pairs
+                    .iter()
+                    .find(|(i, _)| *i == id)
+                    .map_or_else(|| format!("item {id:#04x}"), |(_, n)| n.clone());
+                match self.cheat_give_item(id, *qty) {
+                    Some(g) if g.granted == 0 && *qty > 0 => {
+                        format!("{name}: bag full or stack at 99 (holding {})", g.held)
+                    }
+                    Some(g) => format!("{name} +{} (holding {})", g.granted, g.held),
+                    None => format!("no single item matches '{query}'"),
+                }
+            }
+            PlayerCheat::RandomEncounters(on) => {
+                self.cheat_set_random_encounters(*on);
+                if *on {
+                    "Random encounters on.".to_string()
+                } else {
+                    "Random encounters off.".to_string()
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,6 +752,55 @@ mod tests {
             StartingParty::from_members(vec![tpl("Vahn", 180), tpl("Noa", 150), tpl("Gala", 220)]);
         assert_eq!(w.seed_picker_party(&party, None), 3);
         w
+    }
+
+    #[test]
+    fn every_listed_cheat_key_names_one_variant() {
+        let cheats = [
+            PlayerCheat::PartyLevel(5),
+            PlayerCheat::Restore,
+            PlayerCheat::MaxAp,
+            PlayerCheat::GrantSeru(9),
+            PlayerCheat::LearnAllArts,
+            PlayerCheat::MaxItems,
+            PlayerCheat::Gold(1),
+            PlayerCheat::Coins(1),
+            PlayerCheat::give_item_spec("healing-leaf:5"),
+            PlayerCheat::RandomEncounters(false),
+        ];
+        let keys: Vec<&str> = cheats.iter().map(PlayerCheat::key).collect();
+        let listed: Vec<&str> = PLAYER_CHEAT_LIST.iter().map(|(k, _)| *k).collect();
+        assert_eq!(keys, listed);
+        assert_eq!(
+            PlayerCheat::give_item_spec("healing-leaf:5"),
+            PlayerCheat::GiveItem {
+                query: "healing leaf".into(),
+                qty: 5
+            }
+        );
+    }
+
+    #[test]
+    fn apply_cheat_reports_the_shared_outcome_line() {
+        let mut w = world_with_trio();
+        assert_eq!(
+            w.apply_cheat(&PlayerCheat::Gold(-5), None),
+            "Gold set to 0."
+        );
+        assert_eq!(
+            w.apply_cheat(&PlayerCheat::MaxAp, None),
+            "AP full for 3 member(s)."
+        );
+        let mut hurt = w.party.roster.members[1].hp_mp_sp();
+        hurt.hp_cur = 1;
+        w.party.roster.members[1].set_hp_mp_sp(hurt);
+        assert_eq!(
+            w.apply_cheat(&PlayerCheat::Restore, None),
+            "Party restored."
+        );
+        assert_eq!(w.party.roster.members[1].hp_mp_sp().hp_cur, 150);
+        w.apply_cheat(&PlayerCheat::RandomEncounters(false), None);
+        assert!(!w.toggles.live_gameplay_loop);
     }
 
     #[test]

@@ -727,14 +727,21 @@ impl PlayWindowApp {
         // play page's "No encounters", `--no-live-loop` at launch). F-keys,
         // like `F4`, because nothing can be bound to them.
         if matches!(code, KeyCode::F6) && state == ElementState::Pressed {
-            let n = self.session.host.world.cheat_max_ap();
-            log::info!("cheat: AP full for {n} member(s)");
+            let line = self
+                .session
+                .host
+                .world
+                .apply_cheat(&legaia_engine_core::cheats::PlayerCheat::MaxAp, None);
+            log::info!("cheat: {line}");
             return;
         }
         if matches!(code, KeyCode::F7) && state == ElementState::Pressed {
             let world = &mut self.session.host.world;
             let on = !world.toggles.live_gameplay_loop;
-            world.cheat_set_random_encounters(on);
+            world.apply_cheat(
+                &legaia_engine_core::cheats::PlayerCheat::RandomEncounters(on),
+                None,
+            );
             // The choice outlives this scene: the live-loop arming a card
             // Load / New Game / door entry runs (`World::arm_live_loop`
             // through `field_live_opts`) re-raised the roll, so `F7` off
