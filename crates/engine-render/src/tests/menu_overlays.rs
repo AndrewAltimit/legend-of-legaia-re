@@ -374,6 +374,56 @@ fn options_draws_popup_lists_choices() {
     );
 }
 
+/// The popup is a window over the settings window: no settings glyph is
+/// left inside its frame (the hosts lay all chrome before all text, so an
+/// unculled row printed through the popup body).
+#[test]
+fn options_popup_hides_the_settings_text_under_it() {
+    let font = legaia_font::synthetic_for_tests();
+    let rows = [
+        OptionsRowView {
+            label: "Battle Camera",
+            value: Some("Close"),
+            teal: false,
+            advance: 14,
+        },
+        OptionsRowView {
+            label: "Battle Command",
+            value: Some("Directional Buttons"),
+            teal: false,
+            advance: 14,
+        },
+    ];
+    let popup = OptionsPopupDraw {
+        rect: (170, 52, 128, 35),
+        choices: &["Close", "Normal", "Far"],
+        cursor: 1,
+    };
+    let bare = options_draws_for(&font, &rows, 0, None, (24, 40));
+    let with = options_draws_for(&font, &rows, 0, Some(&popup), (24, 40));
+    let (fx, fy, fw, fh) = legaia_engine_ui::options_popup_frame(popup.rect);
+    let inside = |d: &TextDraw| {
+        let (x, y, w, h) = d.dst;
+        x < fx + fw && x + w as i32 > fx && y < fy + fh && y + h as i32 > fy
+    };
+    assert!(
+        bare.iter().any(inside),
+        "the control: a value sits under the popup"
+    );
+    // Every glyph inside the frame now belongs to the popup (its text inset
+    // and cursor column start at the popup's own x).
+    assert!(
+        with.iter()
+            .filter(|d| inside(d))
+            .all(|d| d.dst.0 >= popup.rect.0)
+    );
+    assert!(
+        !with
+            .iter()
+            .any(|d| inside(d) && (40..54).contains(&d.dst.1) && d.dst.0 < popup.rect.0 + 0x14)
+    );
+}
+
 #[test]
 fn key_rebind_awaiting_renders_dots() {
     let font = legaia_font::synthetic_for_tests();

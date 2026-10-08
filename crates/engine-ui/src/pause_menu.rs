@@ -592,10 +592,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::OPTIONS_SCREEN_WINDOWS));
             if let Some(rects) = ctx.chrome {
                 if let Some(p) = v.popup.as_ref() {
-                    let (x, y, w, h) = p.rect;
                     sprites.extend(crate::menu_window_chrome_draws_for(
                         rects,
-                        (x - 6, y - 2, w + 12, h + 12),
+                        crate::options_popup_frame(p.rect),
                         ctx.origin,
                         ctx.scale,
                     ));

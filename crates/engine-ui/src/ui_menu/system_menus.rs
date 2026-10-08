@@ -107,6 +107,16 @@ pub fn options_draws_for(
         y += row.advance;
     }
     if let Some(p) = popup {
+        // The popup (window 47) is a window of its own, drawn over the
+        // settings window, so its opaque body hides the row text under it.
+        // The hosts lay all chrome before all text, so the occlusion is
+        // done here: settings glyphs inside the popup's frame are dropped.
+        let (fx, fy, fw, fh) = options_popup_frame(p.rect);
+        out.retain(|d| {
+            let (x, y, w, h) = d.dst;
+            let (w, h) = (w as i32, h as i32);
+            x + w <= fx || x >= fx + fw || y + h <= fy || y >= fy + fh
+        });
         const POPUP_LINE_H: i32 = 13;
         let (px, py, _, _) = p.rect;
         for (i, choice) in p.choices.iter().enumerate() {
@@ -126,6 +136,13 @@ pub fn options_draws_for(
         }
     }
     out
+}
+
+/// The options value popup's window frame around its content rect - the
+/// one rect the chrome pass frames and the text pass occludes with.
+pub fn options_popup_frame(content: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let (x, y, w, h) = content;
+    (x - 6, y - 2, w + 12, h + 12)
 }
 
 /// The options settings window's selected-row marker: the 16x16
