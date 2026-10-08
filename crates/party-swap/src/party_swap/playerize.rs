@@ -595,7 +595,7 @@ fn relayout_to_band(
 /// **Spirit** command plays - art-bank record 0, staged as anim id `0x10`
 /// by the command dispatcher `FUN_801D0748` at `0x801D16B0` - is one of
 /// them (`+0xA8 = [1, 53]` over a 58-frame clip, pair 1 = the armB hand).
-pub(crate) fn variant_object(attach_count: usize, nobj: usize) -> Option<usize> {
+pub fn variant_object(attach_count: usize, nobj: usize) -> Option<usize> {
     (attach_count > 0 && nobj > attach_count).then_some(attach_count)
 }
 
@@ -619,7 +619,7 @@ pub(crate) fn variant_object(attach_count: usize, nobj: usize) -> Option<usize> 
 /// exactly one surplus, and `rewrite_section_record` reads a retail TMD's
 /// length off its last object's `normal_top`, so an entry aliased backwards
 /// would leave that reading short of the real end.
-pub(crate) fn alias_variant_onto_bone(tmd: &mut [u8], variant: usize) -> Result<()> {
+pub fn alias_variant_onto_bone(tmd: &mut [u8], variant: usize) -> Result<()> {
     let entry = |i: usize| legaia_tmd::HEADER_SIZE + i * legaia_tmd::OBJECT_SIZE;
     let (src, dst) = (entry(variant), entry(variant - 1));
     if src + legaia_tmd::OBJECT_SIZE > tmd.len() {

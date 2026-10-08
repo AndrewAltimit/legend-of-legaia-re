@@ -1730,6 +1730,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-party-swap"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-bytes",
+ "legaia-lzs",
+ "legaia-tim",
+ "legaia-tmd",
+]
+
+[[package]]
 name = "legaia-patcher"
 version = "0.1.0"
 dependencies = [
@@ -1745,6 +1757,7 @@ dependencies = [
  "legaia-iso",
  "legaia-lzs",
  "legaia-mes",
+ "legaia-party-swap",
  "legaia-prot",
  "legaia-tim",
  "legaia-tmd",

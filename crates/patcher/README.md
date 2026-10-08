@@ -9,7 +9,8 @@ That machinery lives in [`legaia-disc-patch`](../disc-patch/README.md)
 (`disc`, `ppf`, `space_ledger`), which this crate re-exports at the old
 paths. Four patching families share that machinery (the translation
 pipeline itself is [`legaia-translate`](../translate/README.md), re-exported
-as `translation`):
+as `translation`, and the battle-model swap kernels are
+[`legaia-party-swap`](../party-swap/README.md), re-exported as `party_swap`):
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,
