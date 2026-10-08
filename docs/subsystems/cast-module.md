@@ -1367,17 +1367,24 @@ against an untargetable clone never ended.
 
 The fixed base `3` is right in retail for every party size: the battle
 loader seats monster `k` at pool slot `3 + k` and leaves a small party's
-seats `1..2` empty (`FUN_800513F0`, `addiu s0,s2,0x3` at `0x8005185C`). The
-engine compacts the monster row to `party_count + k`, so an engine-side seat
-expression built on that base goes through `World::engine_slot_for_retail_pool`:
-Element Change's first-monster record, the Mystic Shield seat, Theeder's cone
-over the monster row and Steal's monster test do. What still assumes a party
-of three is the kernels' own walks over the seat arrays the engine hands them
-(row sweeps `3..7`, `target_code < 3` party tests, `3 + ctx[+1]` seat
-arithmetic): those arrays are engine-indexed, identical to retail's pool for
-a party of three and not for one or two. The complete fix is a retail-shaped
-seat array (and retail caster / victim / target indices) at the
-`run_cast_module_code` seam.
+seats `1..2` empty (`FUN_800513F0`, `addiu s0,s2,0x3` at `0x8005185C`). In
+the Tetsu tutorial's solo capture those two slots are zeroed structs: HP
+`0`, `+0x16E` flags `0`, prim word `+0x04` `0`. The kernels are ported
+against that pool - row sweeps `3..7`, `target_code < 3` party tests,
+`3 + ctx[+1]` seat arithmetic - and the engine compacts its monster row to
+`party_count + k`.
+
+So the `run_cast_module_code` seam hands the kernels a retail-shaped seat
+row (`world::battle::cast_band::seat_map`): the party in `0..party_count`,
+zeroed empty seats up to `3`, the engine's monster row from `3` on. The
+caster, victim and summon seats, the `+0x1DD` target codes, `ctx[+0x13]`,
+Theeder's cone seats and Orb's max-HP lookup are mapped into that row;
+writes, hit seats and target codes are mapped back, and a write to an empty
+seat is dropped (retail's lands in a struct nothing reads). `ctx[+1]`
+counts the live seats of retail's `3..8` through the same map. For a party
+of three the map is the identity. Engine-side seat expressions outside the
+kernels (Element Change's first-monster record, the Mystic Shield seat,
+Steal's monster test) go through `World::engine_slot_for_retail_pool`.
 
 #### PROT 0955 is a six-spell cell
 
