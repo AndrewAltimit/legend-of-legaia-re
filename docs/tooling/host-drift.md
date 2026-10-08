@@ -4192,6 +4192,22 @@ banner and the cheats panel. Closed rows:
   ([`minigame-dance.md`](../subsystems/minigame-dance.md#rating-banners-per-tier-fun_801d1af4-body)).
   The page's own spawn is gone, and a closed chain keys the tier-2 sting
   rather than the `Cool!` cue.
+- **The pause menu on its own clock.** The page stepped the pause menu
+  and its sub-screens off a menu clock of its own - at least one step every
+  display frame, catching up to eight - so the save screen's "Now checking"
+  beat cleared in a quarter of the native window's time on a tick-locked
+  pair. It steps once per sim tick of the frame now (the shop's rule),
+  holding a press until a tick takes it.
+- **Four defects the pair showed on both hosts at once.** A side-by-side
+  only finds drift, but reading the two frames against the disassembly
+  found four shared-kernel defects identical on both: dialog choices
+  dropped party names (`PickerOption::label` carries no substitutions; both
+  now read `OwnedDialogPanel::picker_labels`, a `SIM_PAIRS` row), menu
+  descriptions lost their second line (`FUN_80036888` breaks on `0x7C`;
+  `broken_text_draws_for`), the Equip candidate step drew the closed party
+  and main windows through window 25 (its open script leads with
+  close-all), and the options popup let the rows under it print through
+  (`options_popup_frame` occludes them).
 - **The movie skip.** The page tests the skip edge on every movie and the
   native window only on the title attract, but both ask
   `cutscene::fmv_skip_edge_hit`, which only `fmv_id 0` passes, and no scene
