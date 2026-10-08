@@ -2191,7 +2191,8 @@ is `compare_voice_allocation` over the window that scores highest, and
 
 On the track-`2016` pairing the alignment is unambiguous and it is nowhere
 near frame 0: the retail window from `s3_rimelm_freeroam` lands at engine
-frame `3111` of a 3601-frame trace, and both scores - symmetric and
+frame `3103` of a 3601-frame trace (with the sequencer on retail's
+quantised tempo; `3111` at the written one), and both scores - symmetric and
 intersection-only - peak there. What the aligned windows then show is
 agreement in every channel that is a property of the score:
 
@@ -2255,8 +2256,8 @@ aligned window the two sides' rates agree.
 
 The alignment is not optional for this statistic either. Against the
 250-frame `s3_rimelm_freeroam` window, an engine trace of `3601` frames aligns
-at engine frame `3111` and reads `0.560` key-ons per frame against retail's
-`0.488` (ratio `1.148`); the 120-frame window aligns at `3112` and reads
+at engine frame `3103` and reads `0.560` key-ons per frame against retail's
+`0.488` (ratio `1.148`); the 120-frame window aligns there too and reads
 `0.592` against `0.558` (ratio `1.060`). An engine trace only as long as the
 retail window has nowhere to slide - the best offset is frame `1`, the track's
 opening bars - and the same pairing then reads `0.244` against `0.488`, a
