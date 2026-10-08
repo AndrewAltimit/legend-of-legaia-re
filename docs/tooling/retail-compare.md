@@ -234,7 +234,10 @@ engine verdict:
   record `+0x48` less the bundle base `_DAT_8007B8D0`) as
   `LEGAIA_SEAT_SPRITE_ARMS` and seats the engine's sheets of the same
   record on them on the capture frame (`World::install_sprite_arm_snapshot`):
-  position, rotation banks, render scale, far colour and depth-cue level.
+  position, rotation banks, render scale, far colour and depth-cue level,
+  and for a keyframe-pose node (`+0x5A == 6`, `map01`'s ridge bank) the
+  packed clip entries of its `+0x4C` block, seated as both keyframes of every
+  part so the mode-6 tail packs them back unchanged.
 
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
