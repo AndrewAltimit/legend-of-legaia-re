@@ -328,8 +328,26 @@ impl World {
             // terminator ahead hands the lists to the homing flight that
             // terminator seeds instead (`World::seed_homing_slots`), which
             // spawns them along the way and on landing, as retail does.
-            self.casting.homing_takes_lists = self.effect_script_terminates(caster as usize);
-            self.request_move_fx_spawn(def.id, fx_origin);
+            //
+            // A flight its terminator already seeded holds the lists
+            // (`CastFxState::homing_holds_lists`): only the move's sound cue
+            // surfaces, as on the deferred path.
+            if self.casting.homing_holds_lists == Some(caster) {
+                self.casting.homing_holds_lists = None;
+                if let Some(cue) = self
+                    .tables
+                    .move_power
+                    .as_ref()
+                    .and_then(|cat| cat.fx_for_move_id(def.id))
+                    .map(|fx| fx.sound_cue_id)
+                    .filter(|&c| c != 0)
+                {
+                    self.casting.pending_move_fx_cue = Some(cue);
+                }
+            } else {
+                self.casting.homing_takes_lists = self.effect_script_terminates(caster as usize);
+                self.request_move_fx_spawn(def.id, fx_origin);
+            }
         }
         true
     }

@@ -3171,7 +3171,15 @@ they are documented here rather than lifted whole into `engine-vm`.
   The spawns are the move's own list bytes: for a cast, whose fold would
   otherwise stage both lists at the target at once
   (`World::request_move_fx_spawn`), the flight takes them over when the
-  caster's script still has its terminator ahead. The hit stays with the cast
+  caster's script still has its terminator ahead - and also when the
+  terminator runs first. Retail has no fold to order against: a monster's
+  Tail Fire (move `0x27`, record `map[0x27] = 0x12`, both lists `[0x1B]`)
+  seeds its flight from Gimard's script before the engine's fold, and
+  `battle_gimard_tail_fire_b` holds two `0x1B` prototype nodes (record
+  `0x801F5A3C`) and nine live children of the `0x17` burst they run (record
+  `0x801F5DA4`, the wide arm's stager). So a flight seeded
+  ahead of a pending Magic-category fold emits, and the fold then stages
+  nothing (`CastFxState::homing_holds_lists`). The hit stays with the cast
   fold, and the census is not fed from the slots.
 
   Two details of that arm a decompiled reading loses. The `+0x1DC` writes are

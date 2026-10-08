@@ -308,6 +308,11 @@ impl World {
         // the party's - so each attacking action gets one steal roll.
         if let StepOutcome::Transition { from, to } = out {
             self.battle.steal.on_action_transition(from, to);
+            // A new action's seed ends whatever flight held the last one's
+            // effect lists.
+            if to == vm::battle_action::ActionState::ActionSeed.as_byte() {
+                self.casting.homing_holds_lists = None;
+            }
         }
         if let StepOutcome::Transition { from, to } = out
             && log::log_enabled!(log::Level::Debug)

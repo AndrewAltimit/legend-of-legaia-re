@@ -191,6 +191,12 @@ pub struct CastFxState {
     /// homing flight its caster's terminator is about to seed; taken by that
     /// seed (`World::seed_homing_slots`).
     pub(crate) homing_takes_lists: bool,
+    /// The caster whose homing flight took the move's effect lists ahead of
+    /// its cast's fold - a terminator that seeded the flight before the fold
+    /// ran (an enemy Tail Fire, `battle_gimard_tail_fire_b`). The fold reads
+    /// it and leaves the lists to the flight; cleared on the next action
+    /// seed (`0x0C`).
+    pub(crate) homing_holds_lists: Option<u8>,
     /// The text a directed summon module's arm last put up
     /// ([`legaia_engine_vm::cast_module_camera::ModuleCaption`]), cleared at
     /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
@@ -260,6 +266,7 @@ impl CastFxState {
             move_fx_streak: Default::default(),
             homing: Default::default(),
             homing_takes_lists: false,
+            homing_holds_lists: None,
             module_caption: None,
             pending_move_fx_cue: None,
             pending_burst_triggers: Vec::new(),
