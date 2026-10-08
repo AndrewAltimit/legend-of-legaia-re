@@ -12,13 +12,13 @@
 //! [`CutsceneTimeline`] is that context's state: cursor, halt and park
 //! bookkeeping (narration blocks, an owned inline dialog panel, channel
 //! handshakes, player / NPC walk, glide, facing and clip waits). The driver is
-//! [`crate::world::World::step_cutscene_timeline`], which runs one frame slice
+//! `legaia_engine_core::world::World::step_cutscene_timeline`, which runs one frame slice
 //! through the shared field VM ([`legaia_engine_vm::field::step`]): camera ops
 //! (`0x45`) and `MoveTo`s (`0x23`) fire by execution and emit the
-//! [`crate::field_events::FieldEvent`]s the runtime camera folds in, and flag
+//! `legaia_engine_core::field_events::FieldEvent`s the runtime camera folds in, and flag
 //! writes such as `GFLAG_SET 26` land by execution rather than by a static MAN
 //! walk. Installation is
-//! [`crate::world::World::install_cutscene_timeline_record`].
+//! `legaia_engine_core::world::World::install_cutscene_timeline_record`.
 //!
 //! ## Port boundary
 //!
@@ -33,7 +33,7 @@
 //! handshake parks the timeline until the channel answers. The inline
 //! narration op (`0xCC 0xF8 0x80 N`, which retail routes to the `FUN_8003C764`
 //! text-balloon path) is presented by
-//! [`crate::cutscene_narration::CutsceneNarration`]; the timeline suspends at
+//! `legaia_engine_core::cutscene_narration::CutsceneNarration`; the timeline suspends at
 //! each block while its pages play, and the actor-allocator host hook is
 //! scoped off while a modal timeline steps.
 
@@ -41,7 +41,7 @@ use legaia_engine_vm::field::FieldCtx;
 
 /// One executed instruction in a timeline op-stream trace.
 ///
-/// Recorded by [`crate::world::World::step_cutscene_timeline`] when the
+/// Recorded by `legaia_engine_core::world::World::step_cutscene_timeline` when the
 /// timeline's [`CutsceneTimeline::trace_enabled`] flag is set. The trace is the
 /// engine VM's *authoritative* decode of the record bytecode - it follows the
 /// real per-op PC stride, so it never drifts the way a linear disassembler does
@@ -85,9 +85,9 @@ pub enum TraceResult {
 /// (`FUN_8003C764`): a caption child context is spawned over the inline pages
 /// and the *parent* timeline halt-suspends at the op until the child exhausts
 /// them - so the choreography around a block runs between blocks, never under
-/// them. [`crate::world::World::step_cutscene_timeline`] mirrors that: when the
+/// them. `legaia_engine_core::world::World::step_cutscene_timeline` mirrors that: when the
 /// timeline PC reaches `op_offset` it installs the pages on the
-/// [`crate::cutscene_narration::CutsceneNarration`] presenter and parks until
+/// `legaia_engine_core::cutscene_narration::CutsceneNarration` presenter and parks until
 /// the presenter completes, then resumes at `end`.
 // REF: FUN_8003C764
 #[derive(Debug, Clone)]
@@ -116,11 +116,11 @@ pub struct NarrationSite {
 /// `0x801DEE44`) and otherwise restores the entry PC `s4` (`0x801DEE4C`). So
 /// the wait is on a busy bit dropping, not on a completion bit rising.
 ///
-/// [`crate::world::World::step_cutscene_timeline`] models that park with this
+/// `legaia_engine_core::world::World::step_cutscene_timeline` models that park with this
 /// record instead of stepping past the flag-test by instruction width: it
 /// leaves the PC on the op and, each subsequent tick, re-tests the awaited
 /// channel's flag, resuming past the op once the bit is clear (bounded by
-/// [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`] so a channel our port never
+/// `legaia_engine_core::world::CHANNEL_WAIT_PARK_TIMEOUT` so a channel our port never
 /// clears falls back to the by-width step-past).
 ///
 /// Bit 10 (`0x400`, the halt/busy bit the acquire sweep toggles) is excluded -
@@ -132,21 +132,21 @@ pub struct NarrationSite {
 pub struct ChannelWait {
     /// Cross-context target id (`ctx[+0x50]`) the timeline is waiting on - the
     /// raw operand byte resolved through
-    /// [`crate::field_channels::resolve_target`].
+    /// `legaia_engine_core::field_channels::resolve_target`.
     pub target_id: u8,
     /// Context-flag bit index (`ctx.flags & (1 << bit)`) that signals the
     /// awaited channel's beat completed.
     pub bit: u8,
     /// Frames the timeline has been parked here, bounded by
-    /// [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`].
+    /// `legaia_engine_core::world::CHANNEL_WAIT_PARK_TIMEOUT`.
     pub frames: u32,
 }
 
 /// A spawned field-VM context running the `opdeene` cutscene-timeline record.
 ///
-/// Built by [`crate::world::World::load_cutscene_timeline_from_man`] from the
+/// Built by `legaia_engine_core::world::World::load_cutscene_timeline_from_man` from the
 /// partition-2 record that issues `GFLAG_SET 26`; stepped by
-/// [`crate::world::World::step_cutscene_timeline`] until it executes that write
+/// `legaia_engine_core::world::World::step_cutscene_timeline` until it executes that write
 /// (the timeline's terminal op) or its safety cap forces it complete.
 #[derive(Debug, Clone)]
 pub struct CutsceneTimeline {
@@ -168,7 +168,7 @@ pub struct CutsceneTimeline {
     pub done: bool,
     /// Frames the timeline has been stepping (for the safety cap).
     pub frames: u32,
-    /// When `true`, [`crate::world::World::step_cutscene_timeline`] appends a
+    /// When `true`, `legaia_engine_core::world::World::step_cutscene_timeline` appends a
     /// [`TraceEntry`] per executed instruction to [`Self::trace`]. Off by
     /// default (no overhead on the normal opening path); turned on for the RE
     /// op-stream correlation harness.
@@ -180,7 +180,7 @@ pub struct CutsceneTimeline {
     /// `town01` hand-off. The `town01` opening timeline sets this `false` - it
     /// drives the establishing shot + name-entry handoff, not a scene change,
     /// so it must never arm a prologue hand-off. See
-    /// [`crate::world::World::step_cutscene_timeline`].
+    /// `legaia_engine_core::world::World::step_cutscene_timeline`.
     pub arms_prologue_handoff: bool,
     /// The record's inline narration blocks, in script order (parsed once at
     /// install). Every crawl block opens its roller **non-blocking** - the
@@ -210,7 +210,7 @@ pub struct CutsceneTimeline {
     /// panel's final PC (past the consumed segment).
     pub dialog: Option<crate::dialog::OwnedDialogPanel>,
     /// When [`Self::dialog`] was opened, in
-    /// [`crate::world::FieldVmState::dialog_claims`] order - which of several
+    /// `legaia_engine_core::world::FieldVmState::dialog_claims` order - which of several
     /// contexts holding text got to the shared box first.
     pub dialog_claim: u64,
     /// Per-byte "an instruction was executed here" map over
@@ -235,7 +235,7 @@ pub struct CutsceneTimeline {
     /// clip play out over the following frames; the engine's player pokes
     /// complete synchronously, so this countdown stands in for the playout -
     /// a following player-channel halt-acquire parks until it drains. Armed
-    /// to [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`]; decremented once per
+    /// to `legaia_engine_core::world::CHANNEL_WAIT_PARK_TIMEOUT`; decremented once per
     /// parked tick.
     // REF: FUN_8003C83C
     pub player_move_frames: u32,
@@ -254,7 +254,7 @@ pub struct CutsceneTimeline {
     // REF: FUN_8003BDE0
     pub player_wait: Option<usize>,
     /// When `true`, completing this timeline un-parks every NPC left at the
-    /// off-map hide box ([`crate::world::World::restore_hidden_field_npcs`]).
+    /// off-map hide box (`legaia_engine_core::world::World::restore_hidden_field_npcs`).
     /// Set ONLY by the `town01` opening install: that record hides the
     /// townsfolk for its establishing shot and nothing reloads the scene
     /// before free-roam, so the overrides must be dropped explicitly.
@@ -363,7 +363,7 @@ pub struct CutsceneTimeline {
     pub npc_faces: Vec<TimelineNpcFace>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
-    /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
+    /// end-latch length at its own step (`legaia_engine_core::field_anim::clip_end_ticks`).
     /// Retail's clip tick `FUN_800204F8` latches the end flag `0x100` into
     /// the player's `+0x62` when the cursor reaches the last frame
     /// (`0x800206E4..0x8002072C`), and a record waits for it with
@@ -380,7 +380,7 @@ pub struct CutsceneTimeline {
     /// (`AD <id> 08` against a placement whose clip cursor the world owns).
     /// The spin re-tests each frame until the actor's clip tick
     /// (`FUN_800204F8`) latches `+0x62 & 0x100`; past
-    /// [`crate::world::NPC_CLIP_SPIN_TIMEOUT`] frames (a held clip never
+    /// `legaia_engine_core::world::NPC_CLIP_SPIN_TIMEOUT` frames (a held clip never
     /// latches) the record steps past by width instead.
     // REF: FUN_800204F8 (the latch), FUN_801DE840 (op 0x2D)
     pub npc_clip_spin_frames: u32,

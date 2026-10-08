@@ -6,7 +6,8 @@
 //! choreography, category / arrange tables and open sequence, name entry,
 //! the title and publisher-logo phases, the card write flow and `bu` I/O,
 //! the debug character editor, key rebinding, game over, the inn, and the
-//! field dialog pager's row window, pacing, picker slide and text balloon:
+//! field dialog pager (panel, row window, pacing, picker slide, text
+//! balloon) and the inline-dialogue / cutscene-timeline context state:
 //! the `World`-free half of the engine's menu layer.
 //!
 //! Every module's whole dependency closure inside the engine is in this
@@ -28,7 +29,9 @@ use legaia_engine_vm::menu_input;
 
 pub mod card_bu_io;
 pub mod card_flow;
+pub mod cutscene_timeline;
 pub mod debug_char_editor;
+pub mod dialog;
 pub mod dialog_pacing;
 pub mod dialog_picker_slide;
 pub mod dialog_window;
@@ -36,6 +39,7 @@ pub mod equip_session;
 pub mod equipment;
 pub mod field_menu;
 pub mod game_over;
+pub mod inline_dialogue;
 pub mod inn;
 pub mod inventory_use;
 pub mod item_bag;

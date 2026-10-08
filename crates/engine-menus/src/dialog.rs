@@ -18,7 +18,7 @@
 //! opener - it is the name-based scene-change packet (`strcpy` into
 //! `0x8007050C` / `0x80084548`, `_DAT_1F800394 |= 0x40`, then
 //! `FUN_8001D7F8`), and nothing in this module implements it; the tag moved
-//! to the op-`0x3F` arm in `crate::world`'s field-VM host.
+//! to the op-`0x3F` arm in `legaia_engine_core::world`'s field-VM host.
 //!
 //! Provenance: the per-page glyph accumulation + page-break gate mirror the
 //! retail dialog window pager `FUN_801D84D0` in the dialog overlay (see
@@ -29,7 +29,7 @@
 //! REF: FUN_80036888
 //! REF: FUN_80039B7C, FUN_801DE840
 
-use legaia_mes::{DialogPlayer, Interpreter, MesEvent, PlayerState};
+use legaia_mes::{DialogPlayer, Format as MesFormat, Interpreter, MesEvent, PlayerState};
 use std::sync::Arc;
 
 /// Decode every `0x1F`-lead text segment in a field-VM inline dialog buffer
@@ -298,7 +298,7 @@ pub struct OwnedDialogPanel {
     /// Vsyncs per game tick (`DAT_1F800393`) the host runs the panel at. The
     /// box path runs one retail pager call every `frame_step` [`Self::tick`]s
     /// (one tick = one vsync); set it from
-    /// [`crate::world::FrameClock::frame_step`] before ticking (the World's
+    /// `legaia_engine_core::world::FrameClock::frame_step` before ticking (the World's
     /// dialog paths do, through [`Self::tick_at`]). `0` is treated as `1`.
     pub frame_step: u8,
     /// Vsync phase within the current game tick (`0` = a pager call runs).
@@ -398,7 +398,7 @@ pub fn script_counter_digits(value: i16) -> Vec<u8> {
 
 impl OwnedDialogPanel {
     /// Build a panel over `bytes` starting at `pc` (the offset returned by
-    /// [`crate::scene_assets::SceneMes::message_offset`]).
+    /// `legaia_engine_core::scene_assets::SceneMes::message_offset`).
     pub fn new(bytes: Arc<Vec<u8>>, pc: usize) -> Self {
         Self {
             bytes,
@@ -429,16 +429,16 @@ impl OwnedDialogPanel {
         }
     }
 
-    /// Convenience: build a panel from a [`crate::scene_assets::SceneMes`]
+    /// Convenience: build a panel from a [`SceneMes`]
     /// resolution. Returns `None` if `text_id` is past the offset table.
-    pub fn from_scene_mes(mes: &crate::scene_assets::SceneMes, text_id: u16) -> Option<Self> {
+    pub fn from_scene_mes(mes: &SceneMes, text_id: u16) -> Option<Self> {
         let pc = mes.message_offset(text_id)?;
         Some(Self::new(Arc::new(mes.bytes.clone()), pc))
     }
 
     /// Build a panel over the **inline** dialog bytes a placement's
     /// interaction record carries (stored on
-    /// [`crate::world::DialogRequest::inline`]).
+    /// `legaia_engine_core::world::DialogRequest::inline`).
     ///
     /// Placement-NPC and event dialogue does not live in the scene MES (its
     /// `text_id` is a box-config id, not a message index - it never resolves
@@ -477,7 +477,7 @@ impl OwnedDialogPanel {
 
     /// Open a picker the moment its prompt's page waits instead of on the
     /// press retail waits for. A port-only mode for the simplified dialogue
-    /// panel ([`crate::scene::SceneHost::open_pending_dialog`]), whose host
+    /// panel (`legaia_engine_core::scene::SceneHost::open_pending_dialog`), whose host
     /// has a choice commit but no page-turn press to open the menu with.
     pub fn opening_menu_at_wait(mut self) -> Self {
         self.menu_opens_at_wait = true;
@@ -487,7 +487,7 @@ impl OwnedDialogPanel {
     /// Build a panel that types the `0x1F` text segment whose **lead byte** is
     /// at `seg_lead` (i.e. `bytes[seg_lead] == 0x1F`), attaching any picker that
     /// immediately follows it. Used by the inline-script field-VM runner
-    /// ([`crate::inline_dialogue`]), which lands the VM on each text segment and
+    /// (`legaia_engine_core::inline_dialogue`), which lands the VM on each text segment and
     /// opens a box there. Unlike [`Self::from_inline_dialog`] it does not search
     /// for the first segment - the caller already knows the exact lead.
     pub fn at_segment(bytes: Arc<Vec<u8>>, seg_lead: usize) -> Self {
@@ -1260,6 +1260,68 @@ impl OwnedDialogPanel {
 
     pub fn is_waiting_for_input(&self) -> bool {
         self.waiting_for_input
+    }
+}
+
+/// MES dialog container resolved out of one of the scene's PROT entries.
+/// Holds an owned copy of the entry bytes plus the parsed offset table /
+/// record markers so `SceneAssets::mes_message_bytes` can resolve a
+/// `text_id` to a bytecode slice without re-parsing.
+///
+/// Two formats coexist (see [`docs/formats/mes.md`]):
+/// - [`MesFormat::Compact`] - 0x404 magic + 16-byte runtime header at
+///   `0x28` + offset table from `0x62..0xC8` (3-byte little-endian
+///   offsets). Bytecode lives past the table at `0xC8`.
+/// - [`MesFormat::Records`] - variable-stride records marked by
+///   `0x44 0x78` (per-record byte counts inferred from neighbouring
+///   markers).
+#[derive(Debug, Clone)]
+pub struct SceneMes {
+    pub entry_idx: u32,
+    /// Byte offset where the MES blob starts within `bytes`. Always 0 for
+    /// entries whose entire body is the MES container.
+    pub offset: usize,
+    /// Owned blob bytes (the slice the offset table indexes into).
+    pub bytes: Vec<u8>,
+    pub format: MesFormat,
+    /// `Compact` only - 3-byte LE offset table from `0x62..0xC8`,
+    /// rebuilt as 32-bit values. `None` for `Records`.
+    pub offset_table: Option<Vec<u32>>,
+    /// `Records` only - record-start offsets (where each `0x44 0x78`
+    /// marker lives). Empty for `Compact`.
+    pub record_offsets: Vec<usize>,
+}
+
+impl SceneMes {
+    /// Resolve `text_id` to the bytecode start within [`SceneMes::bytes`].
+    /// Returns `None` if the id is past the offset table or out of range
+    /// for the records vector.
+    pub fn message_offset(&self, text_id: u16) -> Option<usize> {
+        match self.format {
+            MesFormat::Compact => {
+                let table = self.offset_table.as_ref()?;
+                let raw = *table.get(text_id as usize)?;
+                Some(raw as usize)
+            }
+            MesFormat::Records => self.record_offsets.get(text_id as usize).copied(),
+        }
+    }
+
+    /// Borrow the bytecode slice starting at `text_id`'s offset. Slice runs
+    /// to the buffer end - the iterator stops at the first
+    /// [`legaia_mes::Token::EndOfMessage`].
+    pub fn message_bytes(&self, text_id: u16) -> Option<&[u8]> {
+        let off = self.message_offset(text_id)?;
+        self.bytes.get(off..)
+    }
+
+    /// Number of messages - table length for `Compact`, marker count for
+    /// `Records`.
+    pub fn message_count(&self) -> usize {
+        match self.format {
+            MesFormat::Compact => self.offset_table.as_ref().map_or(0, Vec::len),
+            MesFormat::Records => self.record_offsets.len(),
+        }
     }
 }
 

@@ -8,7 +8,8 @@ choreography and tables, the title and boot screens, the card write flow and
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `MenuRuntime`, the pause-menu
-dispatch, `World::use_item` and the dialog state - and re-exports every
+dispatch, `World::use_item` and the stepping of the dialog and cutscene
+contexts - and re-exports every
 module here at its old path, so `legaia_engine_core::items` and
 `legaia_engine_menus::items` name the same module. Two are re-exported by
 glob from a thin engine-core module of the same name instead (`shop`,
@@ -69,9 +70,16 @@ link into a dependent crate.
   (the menu overlay's sub-screen dispatcher and its routed-id table), and the
   two pages it reaches without `World`: `status_screen` and `list_order`; see
   [`docs/subsystems/save-screen.md`](../../docs/subsystems/save-screen.md).
-- **Dialog presentation** - `dialog_window` (the pager's row window and
+- **Dialog presentation** - `dialog` (the pager panel `OwnedDialogPanel`
+  over a scene MES message or an inline segment, and `SceneMes`, the scene's
+  resolved MES container), `dialog_window` (the pager's row window and
   scroll), `dialog_pacing` (typewriter reveal), `dialog_picker_slide` (how a
   picker enters) and `text_balloon` (the `4C E1` one-line balloon).
+- **Spawned script contexts** - `inline_dialogue` (the resumable state of an
+  actor's inline interaction script run through the field VM) and
+  `cutscene_timeline` (the spawned partition-2 record context, the modal
+  cutscene timeline). The stepping of both stays on engine-core's `World`,
+  which holds the field host borrow; these modules hold the state.
 - **Inn** - `inn` (the rest confirmation and HP / MP restore session; see
   [`docs/subsystems/inn.md`](../../docs/subsystems/inn.md)).
 

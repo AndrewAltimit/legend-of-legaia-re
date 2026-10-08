@@ -17,7 +17,7 @@
 //! (`FUN_80038050`, applied by the host on confirm), scene changes - run
 //! through the World host exactly as the scene script's do.
 //!
-//! The stepping itself lives on [`crate::world::World`] (it needs the
+//! The stepping itself lives on `legaia_engine_core::world::World` (it needs the
 //! `FieldHostImpl` borrow); this module holds the resumable state.
 
 use std::sync::Arc;
@@ -34,7 +34,7 @@ pub const INLINE_DIALOGUE_STEP_BUDGET: u32 = 256;
 /// may hold an NPC conversation before the runner gives up and ends it.
 ///
 /// A **net, not a mechanism.** The bit a spin waits on is written by the poked
-/// actor's clip cursor in [`crate::field_env::PropAnim::tick`], so a spin whose
+/// actor's clip cursor in `legaia_engine_core::field_env::PropAnim::tick`, so a spin whose
 /// target the port resolves to a cursor drains in that clip's own frame count -
 /// tens of frames, never this. What the timeout still covers is a spin the
 /// port cannot pair with a cursor at all - a record's **own-context** `2D`
@@ -74,7 +74,7 @@ pub struct InlineDialogue {
     /// walk the right actor. `None` for hand-started scripts.
     pub npc_slot: Option<u8>,
     /// When this runner executes a placed **prop's** bind record (a door
-    /// touch, a cupboard interact), the prop's [`crate::field_env::PropAnimBank`]
+    /// touch, a cupboard interact), the prop's `legaia_engine_core::field_env::PropAnimBank`
     /// anchor key. The stepping loop then bridges the executing context to the
     /// prop's live actor state - `ctx.local_flags` is the actor's `+0x62`
     /// anim-control word, `ctx.flags` its `+0x10` class word - exactly as
