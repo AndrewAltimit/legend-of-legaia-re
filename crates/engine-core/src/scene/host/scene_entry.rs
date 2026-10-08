@@ -1003,6 +1003,28 @@ impl SceneHost {
         // The installed ladder is the baseline a scripted floor wave moves
         // from (`FieldLocomotion::ladder_seen`).
         self.world.locomotion.ladder_seen = self.world.terrain.floor_height_lut;
+        // The seat lands at `y = 0`, and retail's every-frame glide then
+        // carries the player onto the floor tier under it. Under the port's
+        // snap the standing-still re-read fires only when that ladder moves,
+        // so a player seated on a raised tier (a card load at a save point, a
+        // door onto a ledge) stayed buried at `0` until its first step: the
+        // browser page drew it inside the rock with the camera focus under
+        // the ground, while the native window hid it behind a host-side snap
+        // at mesh upload. The entry settles the seat itself, for every host.
+        if self.world.locomotion.follow_terrain_height
+            && let Some(player) = self.world.actors.first()
+            && player.move_state.world_y == 0
+        {
+            let (x, z) = (
+                i32::from(player.move_state.world_x),
+                i32::from(player.move_state.world_z),
+            );
+            let floor = self.world.sample_field_floor_height(x, z);
+            if let Some(player) = self.world.actors.first_mut() {
+                player.move_state.world_y =
+                    floor.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            }
+        }
         // The field initialiser's camera-window install, `FUN_80017DD4(seat >>
         // 7, ...)` at `0x801D6ECC` - after the grid marks (`0x801D6BF8`) and
         // the MAN decode that installs the floor ladder (`0x801D6DA8`), which
