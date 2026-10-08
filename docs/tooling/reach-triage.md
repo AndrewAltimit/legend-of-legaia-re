@@ -2118,7 +2118,7 @@ word: `"cutscene"` is the branch that calls the bank, so the rung cannot pass
 by entering a scene that never leaves the follow arm.
 
 **The ocean fallback is a content gap, and no ladder closes it.**
-`FieldSceneAnim::ocean_only` installs only when a kingdom bundle's slot-5
+The ocean-head fallback (`clut_walk_anim::ClutWalkAnim::Ocean`) installs only when a kingdom bundle's slot-5
 CLUT-walk table fails to parse, and all three retail kingdoms ship one - the
 rung beside it enters each and reads the walker every time. So the arm is
 reachable only from a modified disc, and the rung's value is that negative:
