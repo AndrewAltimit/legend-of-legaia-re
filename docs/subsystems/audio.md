@@ -2304,11 +2304,19 @@ of them on the same frame give or take one. No drops: the allocator never
 returns its out-of-range sentinel across the census, so every note-on the
 score issues reaches the KON register. Across field scenes cold-booted from a
 memory card (`retona`, `chitei2`, `vozz`, `conc`, `doman`, `kor5`, `vell`,
-`cave01`, `teien`) the totals agree exactly. The census is what found two
-sequencer defects: every tone layered over a key keys a voice
-([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)), and a
+`cave01`, `teien`, `tunnelb`, `korb2`, `uru`) the totals agree exactly, and
+`rugi` and `dolk2` within one key-on in about 200 and 360. The census is what
+found three sequencer defects: every tone layered over a key keys a voice
+([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)), a
 note on an unused program slot keys none
-([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)).
+([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)), and a
+note released inside its own flush period never keys (the same section).
+
+Two states do not compare, and neither for an audio reason. In
+`rikuroa_pre_caruban` the music is not the field track: its notes come from
+sequence slot `3` on VAB slot `5` (owner `0x0003`) while `_DAT_8007BAC8`
+still names `2006`. In `retock_field_card_boot` the state's story flags select
+`2015` where the port's free-roam staging starts `2005`.
 
 The `1.148` the edge statistic reported on the same scenario is therefore not
 a key-on surplus. Two instrument effects made it. The edge count is
