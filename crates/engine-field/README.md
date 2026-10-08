@@ -4,8 +4,9 @@ The field runtime's kernels that never touch `World`: the field overlay's
 actor programs and per-actor kernels, the follow camera's per-scene
 parameters and eases, player clip playback, the scene-transition and in-field
 save-screen actors, the op-`0x49` submode, the field VM's event queue, CLUT
-effects, the overworld draw-order and ground-cue policies, and the battle
-animation / SFX cue routers. Free of wgpu, winit and cpal, so it builds for
+effects, the overworld draw-order and ground-cue policies, the overworld
+controller and its panel screen, and the battle animation / SFX cue
+routers. Free of wgpu, winit and cpal, so it builds for
 native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `World`'s field frame, the
@@ -58,6 +59,15 @@ a dependent crate.
   arts-voice XA requests and SPU ring cues) and `sfx_cue` (cue id to the
   4-slot pending ring / XA clip, `FUN_8004FE5C`); the battle actor tick in
   `engine-core` drains them.
+- **Overworld** - `world_map` (`WorldMapController`, which drives
+  `SceneMode::WorldMap`, and the entry fade) and `world_map_panel_host` (the
+  world-map band's panel screen: the `0x801F2B98` window system, the six
+  `ctx[+0x54]` panel actors and the travel arts, hosted on
+  `WorldMapController::panels`, plus the field party HUD's state machine).
+  Engine-core's `world_map_panel_host` re-exports it by glob and adds the
+  HUD queries that read the world (the suppress gate, the view mode, the
+  rearm term, the present-party rows); see
+  [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
 
 ## The larger modules
 

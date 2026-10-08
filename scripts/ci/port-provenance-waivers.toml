@@ -1097,7 +1097,7 @@ per-scene script data rather than a resident global.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world_map.rs:801e76d4"
+key = "module-orphan:crates/engine-field/src/world_map.rs:801e76d4"
 reason = """
 A two-sibling module, so the corroboration denominator is a single pair.
 FUN_801E76D4 is the world-map controller (its camera globals are the

@@ -172,7 +172,7 @@ pub use legaia_engine_field::walk_regen;
 pub use legaia_engine_menus::title;
 pub use legaia_engine_menus::title_screen_atlas;
 pub mod world;
-pub mod world_map;
+pub use legaia_engine_field::world_map;
 pub mod world_map_markers;
 pub mod world_map_sky;
 

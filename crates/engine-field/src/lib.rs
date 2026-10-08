@@ -5,7 +5,7 @@
 //! kernels, actor clone, look rotation and screen tween, the scene
 //! transition and in-field save-screen actors, the op-`0x49` submode,
 //! the field event queue, CLUT effects, the overworld draw order and
-//! ground cue, walk regen, light-source row shading, the slot-6 audio
+//! ground cue, the overworld controller and its panel screen, walk regen, light-source row shading, the slot-6 audio
 //! release, packet colours and the animation / SFX cue routers: the
 //! `World`-free half of the field runtime.
 //!
@@ -23,6 +23,10 @@
 use legaia_engine_minigames::baka_fighter_chrome;
 use legaia_engine_system::fade;
 use legaia_engine_vm::field_regions;
+
+#[cfg(test)]
+use legaia_engine_system::input;
+use legaia_engine_system::sound_state;
 
 pub mod actor_handler;
 pub mod actor_look;
@@ -52,3 +56,5 @@ pub mod scene_transition_actor;
 pub mod sfx_cue;
 pub mod vdf_pulse;
 pub mod walk_regen;
+pub mod world_map;
+pub mod world_map_panel_host;

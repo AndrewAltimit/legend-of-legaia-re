@@ -330,7 +330,7 @@ was written - find the symbol by name, not by line.
 | `801d4040` | `symbol_pad_bit` | `crates/engine-minigames/src/dance/types.rs:84` | DELETE |
 | `801d6f90` | `is_available` | `crates/engine-minigames/src/fishing/prize.rs:124` | FALSE INERT |
 | `801d712c` | `select_owned_rod` | `crates/engine-minigames/src/fishing/rod_menu.rs:42` | FALSE INERT |
-| `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
+| `801d8258` | `arm` | `crates/engine-field/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-menus/src/menu_item_category.rs` | WIRED |
 | `801e1208` | `classify_card_directory` | `crates/engine-menus/src/save_select/card_directory.rs` | WIRE |
@@ -827,7 +827,7 @@ dispatch that was the actual blocker is ~30 lines.
 Both are the accepted over-approximation direction, and both are named here
 because a reader looking for the row will otherwise not find it.
 
-**`arm`** (`801d8258`, `crates/engine-core/src/world_map.rs:78`) keeps the
+**`arm`** (`801d8258`, `crates/engine-field/src/world_map.rs:78`) keeps the
 `DISCLOSE` verdict above but no longer appears in the audit at all. Making the
 winit tree reachable made `route_camera_events` in `engine-core/src/camera.rs`
 reachable, and its `.arm(` call on a `CameraMover` resolves by name to
@@ -1429,7 +1429,7 @@ already parses from the disc.
 
 `save_screen_spawn` (`801d841c`), whose call site is `PanelActorHost`'s handler
 for the fade/flash actor's phase-1 arm in
-`crates/engine-core/src/world_map_panel_host.rs`. The handler saved and cleared
+`crates/engine-field/src/world_map_panel_host.rs`. The handler saved and cleared
 the tint triple and stopped, dropping the spawn.
 
 Reading the callee before wiring it changed what the wire *is*. `FUN_801D841C`

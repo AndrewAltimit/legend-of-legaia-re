@@ -549,10 +549,13 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   live here, so a host never spells an angle, a depth or a focal length out
   again; the projection itself is `legaia_engine_vm::psx_camera`. See
   [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
-- `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
+- `world_map::WorldMapController` - drives `SceneMode::WorldMap`
+  (re-exported from `legaia-engine-field`).
 - `world_map_panel_host` - the world-map band's panel screen: the
   `0x801F2B98` window system plus the six `ctx[+0x54]` panel actors and the
-  travel arts, hosted on `WorldMapController::panels`. See
+  travel arts, hosted on `WorldMapController::panels`. The screen lives in
+  `legaia-engine-field`; this module re-exports it and adds the field HUD
+  queries that read `World`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
 - `scene::DefaultMapIdResolver` - scene-name → map-id resolution. (Effect lookup,
   `EffectCatalog`, is `legaia_engine_vm::effect_vm`'s; the scene host loads

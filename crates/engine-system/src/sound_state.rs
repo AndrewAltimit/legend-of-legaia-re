@@ -231,6 +231,46 @@ pub const DRAW_ENV_INIT: DrawEnvInit = DrawEnvInit {
 /// (`FUN_8001D424`, `sh s2,-0x459a(at)` with `s2 = 1`).
 pub const DITHER_BOOT_VALUE: bool = true;
 
+/// One call into the retail SFX cue ring's producer trio.
+///
+/// The ring itself is `legaia_engine_audio::sfx_ring::SfxCueRing` - two
+/// parallel four-slot arrays, `DAT_8007B6D8` (cue ids) and `DAT_8007C338`
+/// (countdowns in vsyncs), with the round-robin cursor at `gp+0x158` and the
+/// last-written slot at `gp+0x15A`. The three producers are read off
+/// `0x80035B50..0x80035BFC` and each maps one-to-one onto a scheduler call:
+///
+/// | Variant | Retail | Scheduler |
+/// |---|---|---|
+/// | [`Self::Push`] | `FUN_80035B50(id)` | `push_ring_cue` |
+/// | [`Self::SetLastDelay`] | `FUN_80035BAC(delay)` | `set_ring_cue_delay` |
+/// | [`Self::ReplaceLast`] | `FUN_80035BD0(id)` | `replace_ring_cue` |
+///
+/// The id is the **resolved** ring id the drainer `FUN_80016B6C` consumes:
+/// below `0x200` a row of the static `DAT_8006F198` table, at or above it a
+/// row of the runtime bank (`legaia_engine_core::world::World::runtime_sfx_descriptor`).
+///
+/// REF: FUN_80035B50, FUN_80035BAC, FUN_80035BD0
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SfxRingOp {
+    /// `FUN_80035B50(id)` - write `id` into the cursor's slot with a zero
+    /// countdown and advance the cursor.
+    Push(i16),
+    /// `FUN_80035BAC(delay)` - set the last-written slot's countdown.
+    SetLastDelay(i16),
+    /// `FUN_80035BD0(id)` - overwrite the last-written slot's id, zero its
+    /// countdown, leave the cursor.
+    ReplaceLast(i16),
+    /// A producer that stores straight into one slot (`sh id,
+    /// DAT_8007B6D8[slot]`) without the cursor pair or the slot's countdown -
+    /// the slot machine overlay's every cue.
+    WriteSlot(u8, i16),
+    /// A producer that stores both cells of one slot - `sh id,
+    /// DAT_8007B6D8[slot]` and `sw delay, DAT_8007C338[slot]` - without the
+    /// cursor pair: the Muscle Dome hub's INTERVAL arm, which fills all four
+    /// slots at once (`0x801CFCAC..0x801CFCEC`).
+    ArmSlot(u8, i16, i16),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
