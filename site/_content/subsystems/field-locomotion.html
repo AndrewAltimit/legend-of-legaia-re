@@ -150,6 +150,7 @@
       <tr><td><code>3</code></td><td><code>[x0][z0][x1][z1][type]</code>, 8 bytes</td><td>Region boxes: camera zones, encounter regions</td></tr>
     </tbody>
   </table>
+  <p>A crossing made while a script holds the player - a cutscene, a conversation, a helper record - is <strong>spent, not deferred</strong>: the tile is stored and nothing is looked up. Deferring it instead fired the landing pad of <code>rugi</code>'s warp pair on the first free frame and bounced the player between the two pads forever.</p>
   <p>A beat that should play once <strong>self-latches</strong>: its script sets the very flag its gate lists, so it runs on the crossing that finds the flag clear and blocks itself afterwards. The gate bitmap is the field VM's own <a href="script-vm.html#default-route">story-flag bank</a>, so a set is visible to the next record immediately.</p>
   <h3 id="doorways">Walking into a house</h3>
   <p>A town house is <strong>not</strong> a scene change: the interior is a sub-area of the same 128&times;128 grid parked in an unused corner, and the door repositions the player. Two door mechanisms exist, and one house can use one of each.</p>
@@ -161,6 +162,8 @@
     </tbody>
   </table>
   <p>Map doors are the larger class, and a MAN-only census cannot see them. Vahn's house is the mixed case: script door in, map door out.</p>
+  <h3 id="talk-proxies">Talking through a stand-in</h3>
+  <p>Pressing the action button probes a point ahead of the player against every actor's box, and the hit is a conversation when the actor carries the talk flag. An undrawn placement can stand in for a speaker the probe cannot reach: its record only marks another actor as touched, and the context runner then plays that actor's conversation. Conkram's gate guards (<code>concnow</code>) are spoken to this way. The port reads such stand-ins at scene entry and answers a hit on one with its target.</p>
 </section>
 
 <section class="doc-section" id="npc-motion">
