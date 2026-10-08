@@ -1170,6 +1170,11 @@ victim's render word `+0x04` to fade to zero, or a living one to return to
 idle (`0x801F765C..0x801F768C`). Arm 11 stamps the victim's burn
 presentation (`+0x04 = 0x3FF`, `+0x0C = 0x1000`, `+0x21C = 0`, `+0x21F = 1`)
 inside its targetable branch whether or not the host folds the damage there.
+PROT 0909, 0911, 0912 and 0913 close the same way: each hit arm re-arms its
+module countdown (`scalar << 7`, `scalar << 8` for Orb, plus a `scalar << 5`
+second hold in Freed's arm `0x12`) and the settle arm drains it before its
+row or victim poll, so the Done band opens 128 to 256 vsyncs after the hit.
+PROT 0910 paces its slashes and settle on its own two timers.
 
 PROT 0905 (Vera) reports its calls the same way. Its anchors are points the
 arm builds on its stack rather than seats - the framed point, or a step along
