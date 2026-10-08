@@ -3286,8 +3286,16 @@ impl RetailBattle {
         ORBIT_FLOWS.contains(&self.flow) || self.span_gate == SpanGate::Landed
     }
 
+    ///
+    /// A party cast replayed from its dispatch ([`SeedPlan::Cast`]) has the
+    /// same victims: a capture past the spell's kill (the Done band's hold,
+    /// `shiny_refactor_gimard_levelup`) reads the target already at `0` and
+    /// faded, and a replay onto that corpse lands no damage, so the frame
+    /// lacks the `DAMAGE` readout and the death retail's frame follows.
     pub fn action_victims(&self) -> Vec<usize> {
-        if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3) {
+        if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3)
+            && self.seed_plan() != SeedPlan::Cast
+        {
             return Vec::new();
         }
         self.monsters

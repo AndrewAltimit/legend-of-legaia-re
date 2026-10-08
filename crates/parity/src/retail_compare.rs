@@ -2490,8 +2490,13 @@ fn run_battle(
     // streams are tried (`RetailBattle::win_pose`).
     let mut off_pose = None;
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
+    // A replayed cast tries its victims revived first: unlike a pad-driven
+    // swing, a cast onto a corpse still reaches its phase, so the HP-as-read
+    // run would always win and the kill would never be replayed.
     let revive: &[bool] = if battle.action_victims().is_empty() {
         &[false]
+    } else if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Cast {
+        &[true, false]
     } else {
         &[false, true]
     };
