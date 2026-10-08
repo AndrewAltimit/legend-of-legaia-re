@@ -85,6 +85,7 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     }
     if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
         claim_field_probe_tables(buf, sink);
+        claim_follow_ease_list(buf, sink);
     }
     if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
         claim_other3_roster(buf, sink);
@@ -180,10 +181,68 @@ pub(super) fn claim_arena_course_ladder(buf: &[u8], sink: &mut Sink) {
             labels += 1;
         }
     }
+    // The descriptor table itself: the three `{ count, first_round }` records
+    // the loop above read, which nothing had claimed beyond the pointees.
+    sink.claim(
+        table,
+        table + ARENA_COURSES * 8,
+        OWNER_RECORD,
+        "arena course descriptors, 3 x { round_count, first_round }",
+    );
     sink.note(format!(
         "arena course ladder: {} round record(s), {labels} label(s)",
         runs.iter().map(|&(_, n)| n).sum::<usize>()
     ));
+    claim_arena_leg_tables(buf, sink);
+}
+
+/// The between-leg HP lane's outcome table (`0x801D1A5C`): `FUN_801D1184`
+/// clamps the leg outcome to `3` (`slti v0,a2,0x4` / `li a2,0x3` at
+/// `0x801D120C..0x801D1218`) and reads `table[outcome * 4]`, so four words.
+/// Around it sit nine words from `0x801D1A38` and one at `0x801D1A6C` that no
+/// instruction reaches in any form either address scan covers - a descending
+/// percentage run (`100` down to `5`) the shipped turns lane does not use
+/// (it scales `min(turns, 8)` directly). Those are claimed shape-checked as
+/// dead data.
+const ARENA_LEG_OUTCOME_VA: u32 = 0x801D_1A5C;
+const ARENA_LEG_OUTCOME_ROWS: usize = 4;
+const ARENA_DEAD_PCT_VA: u32 = 0x801D_1A38;
+const ARENA_DEAD_PCT_WORDS: usize = 9;
+const ARENA_DEAD_TAIL_VA: u32 = 0x801D_1A6C;
+
+fn claim_arena_leg_tables(buf: &[u8], sink: &mut Sink) {
+    const SLOT_A: u32 = 0x801C_E818;
+    let at = |va: u32| (va - SLOT_A) as usize;
+    let small = |o: usize, n: usize| {
+        (0..n).all(|i| legaia_bytes::u32_le(buf, o + i * 4).is_some_and(|w| (1..=100).contains(&w)))
+    };
+    if lui_pair_address(buf, at(0x801D_1214)) != Some(ARENA_LEG_OUTCOME_VA)
+        || !small(at(ARENA_LEG_OUTCOME_VA), ARENA_LEG_OUTCOME_ROWS)
+    {
+        sink.note("arena leg-outcome table not at its pinned consumer");
+        return;
+    }
+    let o = at(ARENA_LEG_OUTCOME_VA);
+    sink.claim(
+        o,
+        o + ARENA_LEG_OUTCOME_ROWS * 4,
+        OWNER_RECORD,
+        "arena leg-outcome HP table, 4 i32 (FUN_801D1184, outcome clamped to 3)",
+    );
+    for (va, words) in [
+        (ARENA_DEAD_PCT_VA, ARENA_DEAD_PCT_WORDS),
+        (ARENA_DEAD_TAIL_VA, 1),
+    ] {
+        let o = at(va);
+        if small(o, words) {
+            sink.claim(
+                o,
+                o + words * 4,
+                OWNER_RECORD,
+                "arena percentage words no instruction reaches, dead data",
+            );
+        }
+    }
 }
 
 /// The species names the fishing species table's `+0x00` pointers name - the
@@ -631,6 +690,60 @@ pub(super) fn claim_field_probe_tables(buf: &[u8], sink: &mut Sink) {
             ),
         );
     }
+}
+
+/// The follow camera's ease list in the field overlay (`0x801F2798`).
+///
+/// `FUN_801DB510` (from `0x801DB5EC`) and `FUN_801DB8EC` (from `0x801DB914`)
+/// form the base, then walk 12-byte records `[u32 live global][u32 target]
+/// [u16][u16 width]` - easing each live word toward its target at the width
+/// `+0x0A` names (`2` or `4`, `0x801DB60C` / `0x801DB690`) - advancing by
+/// `0xC` until the record's first word is zero (`0x801DB710..0x801DB71C`).
+/// The terminator is the extent, so the walk here stops where the loop does
+/// and claims the zero word with it.
+const FOLLOW_EASE_LIST_VA: u32 = 0x801F_2798;
+const FOLLOW_EASE_RECORD_BYTES: usize = 12;
+const FOLLOW_EASE_MAX_RECORDS: usize = 32;
+
+pub(super) fn claim_follow_ease_list(buf: &[u8], sink: &mut Sink) {
+    use crate::field_probe_tables as fpt;
+    let start = (FOLLOW_EASE_LIST_VA - fpt::OVERLAY_BASE_VA) as usize;
+    let word = |at: usize| {
+        buf.get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let mut at = start;
+    for _ in 0..FOLLOW_EASE_MAX_RECORDS {
+        let Some(live) = word(at) else { return };
+        if live == 0 {
+            if at == start {
+                sink.note("follow-camera ease list is empty at the pinned offset");
+                return;
+            }
+            sink.claim(
+                start,
+                at + 4,
+                OWNER_RECORD,
+                format!(
+                    "follow-camera ease list, {} x 12-byte records + zero terminator (FUN_801DB510)",
+                    (at - start) / FOLLOW_EASE_RECORD_BYTES
+                ),
+            );
+            return;
+        }
+        let target = word(at + 4).unwrap_or(0);
+        let width = buf
+            .get(at + 10..at + 12)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .unwrap_or(0);
+        let ram = |p: u32| (0x8000_0000..0x8020_0000).contains(&p);
+        if !ram(live) || !ram(target) || !matches!(width, 2 | 4) {
+            sink.note("follow-camera ease list record out of shape; not claimed");
+            return;
+        }
+        at += FOLLOW_EASE_RECORD_BYTES;
+    }
+    sink.note("follow-camera ease list has no terminator within the cap");
 }
 
 /// The `OTHER3` dev module's 81-record selection roster (PROT `0974`).
