@@ -20,7 +20,7 @@
   <h2>From victory to banner</h2>
   <ol class="steps">
     <li><b>Victory</b><span>the end-of-action gate sees no living monster</span></li>
-    <li><b>Spoils</b><span>the EXP pool is scaled by 3/4 and split evenly among the living; gold is halved twice; drops roll</span></li>
+    <li><b>Spoils</b><span>the EXP pool is scaled by 3/4 and ceiling-divided among the living (the dead take nothing and leave the divisor); gold is halved twice; drops roll</span></li>
     <li><b>Threshold</b><span>each survivor&rsquo;s cumulative XP is compared against the scaled curve, looping while it is crossed</span></li>
     <li><b>Growth</b><span>per level crossed: HP max, MP max and six stats grow along the character&rsquo;s curve, with jitter</span></li>
     <li><b>Record</b><span>XP, next threshold and the level byte are written - the three fields the Status screen draws</span></li>
@@ -99,7 +99,7 @@
 
 <section class="doc-section" id="engine-wiring">
   <h2>In the port</h2>
-  <p><code>legaia_asset::level_up_tables</code> reads the three tables from the player&rsquo;s own executable at boot, and <code>engine-core::levelup::LevelUpTracker</code> applies them: the XP share is split among survivors, a multi-level jump collapses into one result, and the record&rsquo;s maxima grow while current HP and MP stay where they were. The jitter is a faithful model of the BIOS <code>rand</code>, held off by default so replays stay bit-identical. The spoils and level-up windows are retail&rsquo;s two framed windows, drawn from geometry measured off a capture (<code>engine-ui</code>); the out-of-battle level-up banner is composed in <code>engine-screens</code> for both hosts.</p>
+  <p><code>legaia_asset::level_up_tables</code> reads the three tables from the player&rsquo;s own executable at boot, and <code>engine-battle::levelup::LevelUpTracker</code> (re-exported under <code>engine-core::levelup</code>) applies them: the XP share is the 3/4-scaled pool ceiling-divided among survivors (<code>battle_formulas::victory_exp_per_member</code>), a multi-level jump collapses into one result, the first character to level takes the banner and any others queue behind it, and the record&rsquo;s maxima grow while current HP and MP stay where they were. The jitter is a faithful model of the BIOS <code>rand</code>, held off by default so replays stay bit-identical. The spoils and level-up windows are retail&rsquo;s two framed windows, drawn from geometry measured off a capture (<code>engine-ui</code>); the out-of-battle level-up banner is composed in <code>engine-screens</code> for both hosts.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
