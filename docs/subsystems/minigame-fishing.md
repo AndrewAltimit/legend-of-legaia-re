@@ -1060,7 +1060,13 @@ binding: retail casts on Cross / Square (see [the reeling
 mechanic](#tension--reeling-mechanic)) - Cross reels
 (reel A, `0x40`), Square reels harder (reel B, `0x80`); each frame's session
 events (`World::minigames.fishing_events`) seed both hosts' banner one-shots
-and queue the hook / celebration cues. The [point exchange](#point-exchange-prize-shop) opens from the hub's row 3
+and queue the hook / celebration cues. The overlay's own runtime-bank cues are
+direct ring stores, resolved through the venue scene's bundle (the fishing
+init loads no `efect.dat`): the lure landing stores `0x204` into slot 2 on
+the arm that bumps the cast counter (`0x801D2950`), and a purchase stores
+`0x206` into slot 0 (the confirm screen's Yes arm, `0x801D089C`); the port
+raises both. The hooked rod's random creak `0x201` (slot 1, `0x801D2BD0`) is
+not modelled. The [point exchange](#point-exchange-prize-shop) opens from the hub's row 3
 (or the native window's `P`) and owns the pad while open: the engine steps it
 off the pad edge itself (`World::tick_fishing_hub`), as retail's state `0x78`
 does - Up / Down move, Cross or L1 trades one, Circle or L2 closes back to

@@ -834,3 +834,34 @@ fn dance_award_sounds_reach_the_ring_and_the_voice_queue() {
         assert!((0x3C..0x3F).contains(&k.note_and_fine.0));
     }
 }
+
+/// The lure landing stores cue `0x204` into ring slot 2, once per cast, on
+/// the frame the persistent cast counter moves (`FUN_801d26cc` `0x801D2950`).
+#[test]
+fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
+    let mut world = World::new();
+    world.enter_fishing_session(&fishing_test_tables(64), 0, None);
+    for _ in 0..3 {
+        fishing_frame(&mut world, 0);
+    }
+    let _ = world.take_sfx_ring_ops();
+    let mut ops = Vec::new();
+    let circle = input::PadButton::Circle.mask();
+    fishing_frame(&mut world, 0);
+    fishing_frame(&mut world, circle);
+    ops.extend(world.take_sfx_ring_ops());
+    for _ in 0..crate::fishing::WINDUP_FRAMES + 24 {
+        fishing_frame(&mut world, 0);
+        ops.extend(world.take_sfx_ring_ops());
+    }
+    fishing_frame(&mut world, circle);
+    ops.extend(world.take_sfx_ring_ops());
+    let landing = crate::world::SfxRingOp::WriteSlot(2, 0x204);
+    assert!(!ops.contains(&landing), "nothing before the lure flies");
+    for _ in 0..crate::fishing::FLIGHT_FRAMES {
+        fishing_frame(&mut world, 0);
+        ops.extend(world.take_sfx_ring_ops());
+    }
+    assert_eq!(fishing_phase(&world), crate::fishing::PondPhase::Waiting);
+    assert_eq!(ops.iter().filter(|o| **o == landing).count(), 1);
+}

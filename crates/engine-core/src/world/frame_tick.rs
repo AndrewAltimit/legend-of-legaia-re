@@ -2992,6 +2992,9 @@ impl World {
         use crate::fishing::{PondEvent, PondInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
+        /// The lure-landing cue and the ring slot it is stored into.
+        const LURE_DOWN_CUE: i16 = 0x204;
+        const LURE_DOWN_CUE_SLOT: u8 = 2;
         /// Packed spread argument the strike splash fans its three parts by.
         /// Direct form (bit [`crate::fishing_chrome::SPLASH_SUB_BLOCK_BIT`]
         /// clear); the value is the play window's, carried over unchanged.
@@ -3014,13 +3017,27 @@ impl World {
             return;
         }
         let pond_input = PondInput::from_engine_pad(self.input.pad(), self.input.pad_prev());
-        let events = match self.minigames.fishing.as_mut() {
+        let (events, lure_down) = match self.minigames.fishing.as_mut() {
             Some(s) => {
+                let casts = s.persist().casts;
                 s.tick(pond_input, 1, FISHING_CAST_STEP);
-                s.take_events()
+                (s.take_events(), s.persist().casts != casts)
             }
-            None => Vec::new(),
+            None => (Vec::new(), false),
         };
+        // The lure landing: the arm of the lure tick that bumps the
+        // persistent cast counter stores cue `0x204` straight into ring
+        // slot 2 (`sh v0,-0x4924(v1)` at `0x801D2950`, `FUN_801d26cc`). A
+        // runtime-bank id, resolved through the venue scene's own bundle -
+        // the fishing init loads no `efect.dat` of its own.
+        if lure_down {
+            self.audio
+                .sfx_ring_ops
+                .push(crate::world::SfxRingOp::WriteSlot(
+                    LURE_DOWN_CUE_SLOT,
+                    LURE_DOWN_CUE,
+                ));
+        }
         for e in &events {
             // The cadence-match strike splash spawns its three parts into
             // the shared effect pool. The producer is the session's own

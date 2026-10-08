@@ -113,7 +113,14 @@ impl crate::world::World {
         }
         if edge & CONFIRM != 0 {
             match self.fishing_exchange_input(&venues, ExchangeInput::Buy) {
-                ExchangeOutcome::Bought(_) => sfx.push(0x20),
+                // The purchase itself: retail's confirm screen `FUN_801d06c8`
+                // stores runtime cue `0x206` straight into ring slot 0 on its
+                // Yes arm (`0x801D089C`), after the list's and the quantity
+                // screen's `0x20` selects this one press stands in for.
+                ExchangeOutcome::Bought(_) => self
+                    .audio
+                    .sfx_ring_ops
+                    .push(crate::world::SfxRingOp::WriteSlot(0, 0x206)),
                 _ => sfx.push(0x22),
             }
         }
