@@ -96,7 +96,7 @@ pub enum SaveSubScreen {
     /// The pair's direction is fixed by the root picker's row labels: row
     /// `5` is `@Load` and routes here, row `6` is `@Save` and routes to
     /// [`Self::CardSave`] - see
-    /// [`crate::pause_screens::ROOT_MENU_ROUTES`]. Retail's own op selector
+    /// `legaia_engine_core::pause_screens::ROOT_MENU_ROUTES`. Retail's own op selector
     /// agrees: this driver calls `FUN_801DD35C(1, 2)`, the arm that skips
     /// the card-file erase.
     CardLoad,
@@ -426,7 +426,7 @@ pub enum SaveEntryContext {
     CasinoPrizeCounter,
     /// Context byte `0x0D` - returning after a save completed. The same
     /// kind byte hides the root picker's Load row and arms its
-    /// leave-confirm ([`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`]).
+    /// leave-confirm (`legaia_engine_core::pause_screens::ROOT_MENU_CONTEXT_LOCKED`).
     PostSave,
     /// Context byte `0x00` - a **town shop**. The byte is the op-`0x49`
     /// record's own kind, and it opens the shop's mode select
@@ -712,7 +712,7 @@ impl SaveScreenMachine {
             // per-frame body belongs to another module - the slot grid and
             // the info panel to `crate::save_select`, the character-parameter
             // editor and the generic picker to no host at all, the casino
-            // confirm to `crate::prize_exchange`. A host drives them through
+            // confirm to `legaia_engine_core::prize_exchange`. A host drives them through
             // `goto`, as it always has.
             SaveSubScreen::SlotSelect
             | SaveSubScreen::CharParamEditor
@@ -1031,7 +1031,7 @@ impl SaveScreenMachine {
 mod sub15_record {
     /// `0x6BC` printed - the 64-slot accessory-passive ("Goods") ability
     /// bitfield, the same field
-    /// [`crate::accessory_passives`](crate::accessory_passives) indexes.
+    /// `legaia_engine_core::accessory_passives` indexes.
     pub const ABILITY_BITS: usize = 0x0F4;
     /// `0x5D0` printed - a word array the row swap exchanges, 4-byte stride.
     pub const ROW_WORDS: usize = 0x008;
@@ -1113,7 +1113,7 @@ pub fn sub15_list_source(step: u8) -> Sub15ListSource {
 ///
 /// PORT: FUN_801DA2A0 (`0x801DA550..0x801DA64C`)
 ///
-/// Wired through [`crate::field_menu_dispatch::apply_list_order_outcome`],
+/// Wired through `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome`,
 /// which re-derives the live length from the record before it replays the
 /// page's exchanges - the record is the authority on how long the list is,
 /// and the Ra-Seru gate is why a caster with spells can still report none.
@@ -1199,7 +1199,7 @@ pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
 ///
 /// Wired: the page ([`crate::list_order::ListOrderSession`]) records each
 /// exchange it makes and
-/// [`crate::field_menu_dispatch::apply_list_order_outcome`] replays them
+/// `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome` replays them
 /// here against the character's own bytes when the page closes. The page
 /// permutes a copy so a cancelled visit changes nothing; this is the only
 /// thing that touches the record.
@@ -1478,34 +1478,6 @@ mod tests {
             m.tick(idle(), 0);
             assert_eq!(m.screen(), SaveSubScreen::SlotSelect);
         }
-    }
-
-    /// Which table id is which direction. `0x18` is the **load** driver and
-    /// `0x19` the save one - the root picker's row `5` is `@Load` and routes
-    /// to `0x18`, row `6` is `@Save` and routes to `0x19`, and retail's own
-    /// op selector agrees (`0x19` takes the arm that erases the card file
-    /// before writing). Asserted so the pair cannot silently swap back.
-    #[test]
-    fn card_driver_ids_follow_the_root_picker_row_labels() {
-        use crate::pause_screens::{ROOT_MENU_ROUTES, RootMenuRoute, root_menu_confirm_route};
-
-        assert_eq!(SaveSubScreen::CardLoad.id(), 0x18);
-        assert_eq!(SaveSubScreen::CardSave.id(), 0x19);
-        assert_eq!(SaveSubScreen::from_id(0x18), SaveSubScreen::CardLoad);
-        assert_eq!(SaveSubScreen::from_id(0x19), SaveSubScreen::CardSave);
-
-        // Row 5 (Load) and row 6 (Save) of the pause root reach exactly
-        // those two screens.
-        assert_eq!(
-            root_menu_confirm_route(5, None, true),
-            RootMenuRoute::Sub(SaveSubScreen::CardLoad.id())
-        );
-        assert_eq!(
-            root_menu_confirm_route(6, None, true),
-            RootMenuRoute::Sub(SaveSubScreen::CardSave.id())
-        );
-        assert_eq!(ROOT_MENU_ROUTES[5], SaveSubScreen::CardLoad.id());
-        assert_eq!(ROOT_MENU_ROUTES[6], SaveSubScreen::CardSave.id());
     }
 
     /// The shop mode select's three rows do not share an exit: only row 1

@@ -8,7 +8,7 @@ choreography and tables, the title and boot screens, the card write flow and
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `MenuRuntime`, the pause screens,
-`World::use_item`, the save-slot select and the dialog state - and re-exports
+`World::use_item` and the dialog state - and re-exports
 every module here at its old path, so `legaia_engine_core::items` and
 `legaia_engine_menus::items` name the same module.
 
@@ -51,8 +51,12 @@ link into a dependent crate.
 - **Title + boot** - `publisher_logos`, `title` (title state machine),
   `title_screen_atlas`, `name_entry` (the `town01` naming screen) and
   `game_over` (party wipe to the title).
-- **Memory card** - `card_flow` (the write / format flow over the card I/O
-  machine) and `card_bu_io` (the `bu` device wrappers); see
+- **Memory card + save screen** - `card_flow` (the write / format flow over
+  the card I/O machine), `card_bu_io` (the `bu` device wrappers),
+  `save_select` (the slot-select session, card directory and card I/O
+  machine), `save_screen` (the save screen's host half), `save_subscreen`
+  (the menu overlay's sub-screen dispatcher and its routed-id table), and the
+  two pages it reaches without `World`: `status_screen` and `list_order`; see
   [`docs/subsystems/save-screen.md`](../../docs/subsystems/save-screen.md).
 - **Dialog presentation** - `dialog_window` (the pager's row window and
   scroll), `dialog_pacing` (typewriter reveal), `dialog_picker_slide` (how a

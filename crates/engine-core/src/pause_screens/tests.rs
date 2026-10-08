@@ -1118,3 +1118,31 @@ fn the_entry_decode_routes_the_four_context_kinds() {
     // Save row routes to.
     assert_eq!(CONTEXT_SAVE_ENTRY_SUBSCREEN, ROOT_MENU_ROUTES[6]);
 }
+
+/// Which table id is which direction. `0x18` is the **load** driver and
+/// `0x19` the save one - the root picker's row `5` is `@Load` and routes
+/// to `0x18`, row `6` is `@Save` and routes to `0x19`, and retail's own
+/// op selector agrees (`0x19` takes the arm that erases the card file
+/// before writing). Asserted so the pair cannot silently swap back.
+#[test]
+fn card_driver_ids_follow_the_root_picker_row_labels() {
+    use crate::save_subscreen::SaveSubScreen;
+
+    assert_eq!(SaveSubScreen::CardLoad.id(), 0x18);
+    assert_eq!(SaveSubScreen::CardSave.id(), 0x19);
+    assert_eq!(SaveSubScreen::from_id(0x18), SaveSubScreen::CardLoad);
+    assert_eq!(SaveSubScreen::from_id(0x19), SaveSubScreen::CardSave);
+
+    // Row 5 (Load) and row 6 (Save) of the pause root reach exactly
+    // those two screens.
+    assert_eq!(
+        root_menu_confirm_route(5, None, true),
+        RootMenuRoute::Sub(SaveSubScreen::CardLoad.id())
+    );
+    assert_eq!(
+        root_menu_confirm_route(6, None, true),
+        RootMenuRoute::Sub(SaveSubScreen::CardSave.id())
+    );
+    assert_eq!(ROOT_MENU_ROUTES[5], SaveSubScreen::CardLoad.id());
+    assert_eq!(ROOT_MENU_ROUTES[6], SaveSubScreen::CardSave.id());
+}

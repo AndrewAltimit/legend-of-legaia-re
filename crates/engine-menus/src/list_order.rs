@@ -14,7 +14,7 @@
 //! This module is the session the two hosts drive. It owns the page window
 //! and the latch; the record arithmetic stays in `save_subscreen`, where it
 //! was ported, and runs against the live record in
-//! [`crate::field_menu_dispatch::apply_list_order_outcome`].
+//! `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome`.
 
 use crate::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 use crate::save_subscreen::{Sub15Frame, Sub15ListSource, sub15_frame, sub15_list_source};

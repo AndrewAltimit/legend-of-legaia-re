@@ -572,7 +572,8 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   validator leaves.
 - `title` / `save_select` / `save_subscreen` / `card_flow` / `card_write` /
   `card_bu_io` - title state machine, save-slot select, and the memory-card
-  I/O and write flow.
+  I/O and write flow (all but `card_write` re-exported from
+  `legaia-engine-menus`).
 - `dialog_window` - the field dialog pager's row window, scroll and typing
   reveal.
 - `fishing` / `fishing_actors` / `fishing_hub` / `fishing_venue` - the
@@ -616,7 +617,6 @@ docs carry the retail provenance.
 - **Overworld** - `overworld_curvature`, `world_map_markers` (not retail:
   marker quads), `world_map_sky` (which frames draw the sky band).
 - **Menus + screens** - `menu_input` (`FUN_801d688c`), `menu_validator`,
-  `status_screen`, `list_order`, `save_screen` (the save screen's host half),
   `dev_menu_host`,
   `prize_exchange` (casino sub-screen `0x20`; rules in `engine-minigames`).
 - **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
