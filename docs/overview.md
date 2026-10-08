@@ -66,7 +66,9 @@ Choose by what you're trying to do:
 
 The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
 
-**Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset`; the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `patcher`, over `disc-patch` (the sector write-back
+**Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset` (over
+`game-tables`, the static data tables, and `battle-models`, the battle model
+formats); the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `patcher`, over `disc-patch` (the sector write-back
 foundation) with `translate` (language packs) and `party-swap` (the
 battle-model swap kernels) split out of it.
 
