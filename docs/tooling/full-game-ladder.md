@@ -719,7 +719,7 @@ Songi) in place of the Power Elixir, each win on some streams and lose
 others. So a wipe after the guard retry, or a wipe with no boss element to
 guard, is reloaded again with a fresh hand - the rand stream advanced by an
 amount keyed on the attempt, standing in for the time a player spends on the
-game-over and card screens - up to `PAD_WIPE_ATTEMPTS` attempts in all. The
+game-over and card screens - up to `PAD_WIPE_ATTEMPTS` (six) attempts in all. The
 anchor itself points the same way: the playthrough's play-time counter
 advances about five hours between `PRO-04` (`noaru`) and `PRO-10`
 (`jouind`), over which the party's HP nearly doubles.

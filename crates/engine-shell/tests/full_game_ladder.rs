@@ -9802,7 +9802,7 @@ fn run_segment(
 /// anchor's party wins about half the time (`noaru`'s Songi at the `PRO-04`
 /// party's level, whose armed party-wide cast lands every round below half
 /// HP) should not decide the segment on one hand of the rand stream.
-const PAD_WIPE_ATTEMPTS: u32 = 4;
+const PAD_WIPE_ATTEMPTS: u32 = 6;
 
 fn baseline_path() -> PathBuf {
     repo_root().join("scripts/replays/full_game_baseline.toml")
