@@ -801,8 +801,13 @@ row (`scripts/pcsx-redux/autorun_equip_item_panel_capture.lua`). All seven
 rows open a populated list, the three Goods rows included.
 
 The candidate step opens both windows through one script,
-`0x801E4DC8` = `[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`, so the
-frame carries three stacked panels down the left column:
+`0x801E4DC8` = `[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`. Its
+leading close-all takes the browse step's party (21) and main (22) windows
+down - only the tab (2), the item list (23, snapped in place, now drawn to
+its full height) and windows 24 / 25 come back - so the frame carries three
+stacked panels down the left column, on the rects 21 and 22 vacated (both
+hosts once drew 21 and 22 on under them, printing the party names through
+window 25's stat rows):
 
 - **window 25** (top) - the character's display name, then one stat row set.
 - **window 24** (middle) - the hovered item's name with its owned count, its
