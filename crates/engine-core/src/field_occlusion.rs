@@ -228,22 +228,10 @@ impl FieldOccluders {
     /// them to the occluder set. Public so tests (and future hosts holding
     /// raw geometry) can compose a set without a [`SceneResources`].
     pub fn add_instanced_mesh(&mut self, positions: &[[f32; 3]], indices: &[u32], d: &EnvDraw) {
-        // Retail pure-Y rotation (FUN_80026988): local +Z -> (sin, 0, cos).
-        // Known gap: this rotates by yaw only, while the draw itself now composes
-        // all three authored angles (`battle_intro::placement_rotation`). The
-        // handful of disc placements carrying a real X/Z tilt therefore get a
-        // plane whose normal is off by that tilt. Harmless for the pure-yaw
-        // majority; fixing it means sharing the same composition here.
-        let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
-        let (s, c) = ang.sin_cos();
-        let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
-        let xf = |v: [f32; 3]| -> [f32; 3] {
-            [
-                c * v[0] + s * v[2] + t[0],
-                v[1] + t[1],
-                -s * v[0] + c * v[2] + t[2],
-            ]
-        };
+        // The draw's own placement (`Rx * Ry * Rz` then the world position,
+        // `EnvDraw::place_point`), so a tilted placement occludes where it is
+        // drawn rather than where a yaw-only bake would stand it.
+        let xf = |v: [f32; 3]| -> [f32; 3] { d.place_point(v, [0.0; 3]) };
         let start = self.tris.len();
         let mut lo = [f32::INFINITY; 3];
         let mut hi = [f32::NEG_INFINITY; 3];

@@ -91,11 +91,14 @@ impl DanceEnv {
     /// Append one env-pack mesh instanced at an [`field_env::EnvDraw`],
     /// re-based to `origin` (the human dancer's spawn). The transform is the
     /// retail placement composition in the Y-down world frame: rotate the
-    /// object-local vertices about Y by the authored yaw, then translate to
-    /// the draw's world position (the browser twin of the play page's
-    /// `placementModelScaledY`, without the view-time Y flip - the dance
-    /// page's orbit camera applies that flip globally, exactly as it already
-    /// does for the dancer bodies).
+    /// object-local vertices by the record's three authored angles
+    /// (`Rx * Ry * Rz`, [`field_env::EnvDraw::place_point`] - the
+    /// composition the native window bakes its venue with), then translate
+    /// to the draw's world position plus its coplanar lift. Yaw alone is not
+    /// enough here: the hall's three video walls are tilted placements, and
+    /// a yaw-only bake stood them upright inside the back wall, where the
+    /// wall's own faces hid every texel - the page drew bare brick where the
+    /// native window draws the dancer screens.
     fn append_draw(
         &mut self,
         mesh: &VramMesh,
@@ -104,17 +107,11 @@ impl DanceEnv {
         origin: (f32, f32, f32),
         lift: [f32; 3],
     ) {
-        let theta = (draw.rot_y & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
-        let (sin, cos) = theta.sin_cos();
         let base = (self.positions.len() / 3) as u32;
         for p in &mesh.positions {
-            let (vx, vy, vz) = (p[0], p[1], p[2]);
+            let [x, y, z] = draw.place_point(*p, lift);
             self.positions
-                .push(vx * cos + vz * sin + draw.world_x as f32 + lift[0] - origin.0);
-            self.positions
-                .push(vy + draw.world_y as f32 + lift[1] - origin.1);
-            self.positions
-                .push(-vx * sin + vz * cos + draw.world_z as f32 + lift[2] - origin.2);
+                .extend_from_slice(&[x - origin.0, y - origin.1, z - origin.2]);
         }
         for uv in &mesh.uvs {
             self.uvs.push(uv[0] as i32);

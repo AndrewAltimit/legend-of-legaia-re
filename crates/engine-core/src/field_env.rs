@@ -134,6 +134,48 @@ pub struct EnvDraw {
     pub view_skip: u16,
 }
 
+impl EnvDraw {
+    /// Place one object-local vertex in the Y-down world frame: the record's
+    /// three authored angles composed `Rx * Ry * Rz` (retail's
+    /// `FUN_80026988`, the order [`Self::rot_x`] documents), then the draw's
+    /// world position plus a coplanar `lift`.
+    ///
+    /// This is the composition the native window's placement passes build
+    /// with `legaia_engine_ui::battle_intro::placement_rotation`, as one
+    /// kernel for the bakes that write world-space vertices themselves (the
+    /// dance hall and the fishing venue, on every host). A bake that reads
+    /// [`Self::rot_y`] alone stands every tilted placement upright - the
+    /// dance hall's 21 tilted draws include its three video walls, which a
+    /// yaw-only bake buried inside the back wall.
+    ///
+    // REF: FUN_80026988
+    pub fn place_point(&self, p: [f32; 3], lift: [f32; 3]) -> [f32; 3] {
+        let [x, y, z] = self.rotate(p);
+        [
+            x + self.world_x as f32 + lift[0],
+            y + self.world_y as f32 + lift[1],
+            z + self.world_z as f32 + lift[2],
+        ]
+    }
+
+    /// The rotation half of [`Self::place_point`]: `Rx * Ry * Rz` applied to
+    /// a direction (a normal, an extent corner), no translation.
+    ///
+    // REF: FUN_80026988
+    pub fn rotate(&self, v: [f32; 3]) -> [f32; 3] {
+        let a = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
+        let (sx, cx) = a(self.rot_x).sin_cos();
+        let (sy, cy) = a(self.rot_y).sin_cos();
+        let (sz, cz) = a(self.rot_z).sin_cos();
+        let [x, y, z] = v;
+        // Rz, then Ry, then Rx: the product `Rx * Ry * Rz` applied to `v`.
+        let (x, y) = (x * cz - y * sz, x * sz + y * cz);
+        let (x, z) = (x * cy + z * sy, -x * sy + z * cy);
+        let (y, z) = (y * cx - z * sx, y * sx + z * cx);
+        [x, y, z]
+    }
+}
+
 /// The rung(s) of the scene floor-height ladder one [`EnvDraw`]'s world Y was
 /// resolved from.
 ///
@@ -2201,6 +2243,69 @@ mod anim_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tilted_draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {
+        EnvDraw {
+            env_slot: 0,
+            res_tmd: 0,
+            world_x: 100,
+            world_y: -50,
+            world_z: 7,
+            rot_y,
+            rot_x,
+            rot_z,
+            anim_id: 0,
+            anchor: (0, 0),
+            floor: FloorAnchor {
+                corners: None,
+                nibble: None,
+            },
+            cell: (0, 0),
+            cull_radius: 0,
+            view_skip: 0,
+        }
+    }
+
+    /// `place_point` is `Rx * Ry * Rz` (the right-handed per-axis matrices
+    /// the native window's `placement_rotation` builds with glam) applied to
+    /// the vertex, then the translation - checked against the explicit
+    /// matrix product, with all three axes non-zero so a reversed order or
+    /// a negated angle cannot pass.
+    #[test]
+    fn place_point_composes_rx_ry_rz_then_translates() {
+        type M = [[f32; 3]; 3];
+        let mul = |a: M, b: M| -> M {
+            std::array::from_fn(|r| {
+                std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum())
+            })
+        };
+        let ang = |v: u16| f32::from(v) * std::f32::consts::TAU / 4096.0;
+        let (rx, ry, rz) = (0x0123u16, 0x0456u16, 0x0789u16);
+        let (sx, cx) = ang(rx).sin_cos();
+        let (sy, cy) = ang(ry).sin_cos();
+        let (sz, cz) = ang(rz).sin_cos();
+        let mx: M = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]];
+        let my: M = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]];
+        let mz: M = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]];
+        let m = mul(mul(mx, my), mz);
+        let v = [13.0f32, -29.0, 41.0];
+        let lift = [0.5, -0.25, 1.0];
+        let want: [f32; 3] = std::array::from_fn(|r| {
+            (0..3).map(|k| m[r][k] * v[k]).sum::<f32>() + [100.0, -50.0, 7.0][r] + lift[r]
+        });
+        let got = tilted_draw(rx, ry, rz).place_point(v, lift);
+        for i in 0..3 {
+            assert!(
+                (got[i] - want[i]).abs() < 1e-3,
+                "axis {i}: {got:?} vs {want:?}"
+            );
+        }
+        // Pure yaw reduces to the yaw-only bake the venues used to run.
+        let (s, c) = ang(0x400).sin_cos();
+        let y = tilted_draw(0, 0x400, 0).place_point(v, [0.0; 3]);
+        assert!((y[0] - (v[0] * c + v[2] * s + 100.0)).abs() < 1e-3);
+        assert!((y[2] - (-v[0] * s + v[2] * c + 7.0)).abs() < 1e-3);
+    }
 
     /// `slti v0,v0,0xa0` at `0x8001B1C0`: a view depth of `0xA0` draws, one
     /// below it does not, and an origin behind the eye never does.

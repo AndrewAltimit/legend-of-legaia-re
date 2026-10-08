@@ -82,6 +82,15 @@ fn the_entry_record_loads_and_stamps_the_venue() {
     );
     assert_eq!(e.stream_ids.0, u32::from(e.scene_block_base));
     assert!(!venue.draws.is_empty(), "the hall resolves placed geometry");
+    // The hall carries tilted placements (its video walls): a host that bakes
+    // the draw list with yaw alone stands them inside the back wall.
+    let tilted = venue
+        .draws
+        .iter()
+        .filter(|d| d.draw.rot_x & 0x0FFF != 0 || d.draw.rot_z & 0x0FFF != 0)
+        .count();
+    eprintln!("[ran] venue draws: {} ({tilted} tilted)", venue.draws.len());
+    assert!(tilted > 0, "the venue's video walls are tilted placements");
     assert!(venue.hud_staged, "the HUD page reaches the venue VRAM");
     assert_eq!(venue.faces_stamped, 5, "all five entry blits land");
     assert_eq!(venue.camera, venue_camera(&e));
@@ -114,6 +123,17 @@ fn the_entry_record_loads_and_stamps_the_venue() {
     let stub_venue = DanceVenue::build(&stub, Some(&overlay)).expect("stub venue");
     assert_eq!(stub_venue.scene.name, venue.scene.name);
     assert_eq!(stub_venue.draws.len(), venue.draws.len());
+    let (a, b) = (
+        venue.resources.vram.as_bytes(),
+        stub_venue.resources.vram.as_bytes(),
+    );
+    let differ = a.iter().zip(b).filter(|(x, y)| x != y).count();
+    let first = a.iter().zip(b).position(|(x, y)| x != y);
+    eprintln!(
+        "[ran] venue vram: {differ} byte(s) differ, first at {:?}",
+        first.map(|o| ((o / 2) % 1024, o / 2048))
+    );
+    assert_eq!(differ, 0, "the stub-framed venue uploads the same VRAM");
     assert!(
         stub.entry_bytes(venue_sfx_vab_index(&e)).is_ok(),
         "the audio bank the record names is readable"

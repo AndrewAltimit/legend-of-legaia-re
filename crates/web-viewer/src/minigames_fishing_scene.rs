@@ -61,8 +61,9 @@ pub(crate) struct FishingEnv {
 
 impl FishingEnv {
     /// Append one env-pack mesh instanced at an [`field_env::EnvDraw`] - the
-    /// authored yaw about Y, then the world translation (the same placement
-    /// composition as the dance-hall bake, in world space).
+    /// record's three authored angles then the world translation
+    /// ([`field_env::EnvDraw::place_point`], the same placement composition
+    /// as the dance-hall bake, in world space).
     fn append_draw(
         &mut self,
         mesh: &VramMesh,
@@ -70,16 +71,10 @@ impl FishingEnv {
         draw: &field_env::EnvDraw,
         lift: [f32; 3],
     ) {
-        let theta = (draw.rot_y & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
-        let (sin, cos) = theta.sin_cos();
         let base = (self.positions.len() / 3) as u32;
         for p in &mesh.positions {
-            let (vx, vy, vz) = (p[0], p[1], p[2]);
             self.positions
-                .push(vx * cos + vz * sin + draw.world_x as f32 + lift[0]);
-            self.positions.push(vy + draw.world_y as f32 + lift[1]);
-            self.positions
-                .push(-vx * sin + vz * cos + draw.world_z as f32 + lift[2]);
+                .extend_from_slice(&draw.place_point(*p, lift));
         }
         for uv in &mesh.uvs {
             self.uvs.push(uv[0] as i32);

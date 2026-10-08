@@ -284,16 +284,9 @@ fn bake_env(
                 }
             });
         let lift = lifts.get(draw).copied().unwrap_or([0.0; 3]);
-        let theta = (draw.rot_y & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
-        let (sin, cos) = theta.sin_cos();
         let mut placed = mesh.clone();
         for p in &mut placed.positions {
-            let [vx, vy, vz] = *p;
-            *p = [
-                vx * cos + vz * sin + draw.world_x as f32 + lift[0],
-                vy + draw.world_y as f32 + lift[1],
-                -vx * sin + vz * cos + draw.world_z as f32 + lift[2],
-            ];
+            *p = draw.place_point(*p, lift);
         }
         append(&mut out, &mut flat_out, &placed, flat);
     }
