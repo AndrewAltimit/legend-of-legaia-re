@@ -87,14 +87,17 @@ const SUMMON_IDLE_FRAMES: u16 = 30;
 /// Walk speed, world units per frame.
 const SUMMON_WALK_STEP: i16 = 12;
 /// A directed walk arm's creature speed, world units per display frame,
-/// along its heading onto the victim. Measured off `gimard_burning_attack`
-/// (PROT 0903 arm 11): the yaw base has swung `0x5D9 - 0x200 = 985` at
-/// `6 * scalar` (`48`) a display frame - 20.5 frames into the walk - and the
-/// creature stands 670 units on from its arm-3 seat (`z -2276 -> -1606`),
-/// `32.7` a frame. The walk is the clip's root motion, which the anim tick's
-/// root-motion term integrates for the creature like any body; this measured
-/// constant only walks a creature whose playing clip carries no speed.
-const SUMMON_DIRECTED_WALK_STEP: i32 = 32;
+/// along its heading onto the victim: Gimard's walk clip (archive creature
+/// `10`, clip 1, tag `1`) carries root speed `28`, which the anim tick's
+/// root-motion term integrates for a creature seated with its clips. A
+/// per-vsync log from `shiny_refactor_gimard_plus35` measures the same rate:
+/// each game frame at step `4` moves the creature `111` units (`(-16, 110)`)
+/// and swings the yaw base `6 * step * scalar + drift = 197`, and the arm's
+/// first pass moves the creature before the swing has run - which is what an
+/// earlier reading off `gimard_burning_attack`'s yaw (`985`, read as 20.5
+/// frames and `32.7` a frame) left out. This constant only walks a creature
+/// whose playing clip carries no speed (a headless seat).
+const SUMMON_DIRECTED_WALK_STEP: i32 = 28;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
 /// A host with no creature to seat (a headless driver) still owes the
