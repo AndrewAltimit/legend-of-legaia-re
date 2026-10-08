@@ -10,6 +10,8 @@ const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_milli
 mod keyboard;
 #[path = "event_handler/redraw.rs"]
 mod redraw;
+#[path = "event_handler/redraw_draws.rs"]
+mod redraw_draws;
 #[path = "event_handler/redraw_passes.rs"]
 mod redraw_passes;
 #[path = "event_handler/redraw_prep.rs"]

@@ -1573,10 +1573,13 @@ def signature_end(text: str, start: int) -> int:
 # check that reads "what the native frame does" reads the whole frame, so a
 # step helper defined in one of these files is spliced back in at its call
 # site (recursively) - which reproduces the text the steps were split out of.
+# The scene draw lists are built by `DrawCtx` methods (`draw_cx.` / `self.`
+# inside them) rather than window methods; the splice follows those too.
 # A helper in any other window file (`tick_field_party_hud`, the draw-pass
 # builders) stays a call: those are kernels in their own right.
 NATIVE_REDRAW_STEP_FILES = (
     "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_draws.rs",
     "crates/engine-shell/src/window/event_handler/redraw_prep.rs",
     "crates/engine-shell/src/window/event_handler/redraw_stage.rs",
 )
@@ -1606,7 +1609,11 @@ def splice_native_steps(body: str, steps: dict[str, str] | None = None, depth: i
         steps = native_step_bodies()
     if depth > NATIVE_STEP_SPLICE_DEPTH or not steps:
         return body
-    call_re = re.compile(r"self\.(" + "|".join(map(re.escape, steps)) + r")\s*\(")
+    # `self.` for the window's own step methods; `draw_cx.` for the draw-list
+    # builder (`DrawCtx`), whose context the redraw constructs and calls.
+    call_re = re.compile(
+        r"\b(?:self|draw_cx)\.(" + "|".join(map(re.escape, steps)) + r")\s*\("
+    )
     out: list[str] = []
     pos = 0
     for m in call_re.finditer(body):
@@ -1650,6 +1657,19 @@ def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
     body = strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace)))
     if rel == NATIVE_REDRAW or rel in NATIVE_REDRAW_STEP_FILES:
         body = splice_native_steps(body)
+    if rel == NATIVE_REDRAW and fn_name == "handle_redraw":
+        # The draw builder's leaf helpers (the per-draw cue / clip / key
+        # fns, reached as `cues.<fn>(` or as a fn value) were closures and a
+        # nested fn of this body before the split; their bodies belong to it.
+        sources = "\n".join(
+            strip_comments((REPO / r).read_text(encoding="utf-8"))
+            for r in (NATIVE_REDRAW, *NATIVE_REDRAW_STEP_FILES)
+            if (REPO / r).is_file()
+        )
+        spliced = set(re.findall(r"\b(?:self|draw_cx)\.([a-z_][a-z_0-9]*)\s*\(", sources))
+        for name, step in native_step_bodies().items():
+            if name not in spliced:
+                body += "\n" + step
     return body, ""
 
 
