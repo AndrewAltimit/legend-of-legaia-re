@@ -71,7 +71,9 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags.
+gated off by the save's flags. Both are listed in the harness's `SAVE_ENTRY_ARTIFACTS`: when every
+hit of such a signature comes from an `@<save>` run, the report names it on a
+"known entry artifact" line instead of the findings table.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one

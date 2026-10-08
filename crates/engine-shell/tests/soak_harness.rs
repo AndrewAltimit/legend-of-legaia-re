@@ -2197,6 +2197,22 @@ fn confirm(
 /// `(rank, signature, [(outcome index, finding index)])`.
 type SigRow = (u8, String, Vec<(usize, usize)>);
 
+/// Findings an `@<save>` run raises only because it enters a scene by name
+/// that the save's story reaches through a door it never opens (see
+/// `docs/tooling/soak-harness.md`). A signature here whose every hit comes
+/// from an `@<save>` run is listed apart from the findings, with its reason;
+/// the same signature from a plain run is still a finding.
+const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
+    (
+        "softlock|map01|free-roam:immobile@tile(96,25)",
+        "map01 P1[0] walls in Rim Elm's footprint from PRO-04 on; the town0b / town0c / op* exits land inside it",
+    ),
+    (
+        "softlock|korb3|free-roam:immobile@tile(36,26)",
+        "korb3's default entry seat is walled once the save's flags gate off the arrival cutscene that moves the party off it",
+    ),
+];
+
 fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &SoakResult) {
     let out = out_dir(&cfg.tag);
     let _ = std::fs::create_dir_all(out.join("replays"));
@@ -2217,6 +2233,14 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
     rows.sort_by(|a, b| {
         (a.0, std::cmp::Reverse(a.2.len())).cmp(&(b.0, std::cmp::Reverse(b.2.len())))
     });
+    // Known `@<save>` entry artifacts come out of the table.
+    let (artifacts, rows): (Vec<SigRow>, Vec<SigRow>) =
+        rows.into_iter().partition(|(_, sig, hits)| {
+            SAVE_ENTRY_ARTIFACTS.iter().any(|(s, _)| s == sig)
+                && hits
+                    .iter()
+                    .all(|&(oi, _)| r.outcomes[oi].spec.scene.contains('@'))
+        });
 
     let frames_total: u64 = r.outcomes.iter().map(|o| o.stats.frames_run).sum();
     let battles: u32 = r.outcomes.iter().map(|o| o.stats.battles).sum();
@@ -2278,7 +2302,20 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
         "- runs that changed scene {moved}; distinct scenes entered by transition {}",
         reached.len()
     );
-    let _ = writeln!(md, "- distinct finding signatures: {}\n", rows.len());
+    let _ = writeln!(md, "- distinct finding signatures: {}", rows.len());
+    for (_, sig, hits) in &artifacts {
+        let why = SAVE_ENTRY_ARTIFACTS
+            .iter()
+            .find(|(s, _)| s == sig)
+            .map_or("", |(_, w)| w);
+        let _ = writeln!(
+            md,
+            "- known `@<save>` entry artifact (not a finding): `{}` x{} - {why}",
+            sig.replace('|', "/"),
+            hits.len()
+        );
+    }
+    md.push('\n');
     let _ = writeln!(
         md,
         "| rank | detector | scene | location | hits | repro | first (start scene / seed / frame) | detail |"
