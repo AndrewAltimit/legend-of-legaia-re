@@ -19,8 +19,8 @@
  *      movie sits behind the same master trim and volume slider as BGM and
  *      SFX - a second, untrimmed AudioContext is what made movies shout
  *      over the rest of the game. Draw `play_fmv_frame_rgba(idx)` onto an
- *      overlay canvas over the GL view, clocking the frame index off
- *      `play_fmv_audio_cursor_secs()` - the native `due_video_frame` rule
+ *      overlay canvas over the GL view, asking `play_fmv_due_frame` for the frame index - the
+ *      engine's `MovieClock`, the pacing rule the native window runs
  *      (the picture follows the soundtrack, never a free-running timer). A
  *      page with no engine audio up falls back to `play_fmv_audio_pcm_i16`
  *      through its own context, trimmed by `LEGAIA_MASTER_TRIM`; a silent
@@ -113,10 +113,6 @@
     if (!ok) console.warn('fmv: engine rejected the movie', wanted.path);
   }
 
-  /* Wall-clock seconds the engine's XA cursor may sit at zero before the
-   * picture stops waiting for it (a suspended context never advances it). */
-  const CURSOR_STALL_SECS = 1.0;
-
   function startAudio(rt) {
     st.audioStart = null;
     st.engineAudio = false;
@@ -187,23 +183,19 @@
     draw(rt, 0);
   }
 
-  /* Audio-cursor clock while a track is playing, wall clock otherwise
-   * (the native `due_video_frame(audio_secs, wall_elapsed, period)` rule). */
-  function clock(rt) {
+  /* The frame due now. The pacing rule is the engine's
+   * (`MovieClock`, which the native window's movie runs on too): the
+   * mixer's XA cursor while the track is on it, else the page's own
+   * fallback output's position, else the wall clock - and a cursor stuck at
+   * zero past the stall window hands over to the wall clock for good. The
+   * page only supplies the two clocks the engine cannot read. */
+  function dueFrame(rt) {
     const wall = performance.now() / 1000 - st.wallStart;
-    if (st.engineAudio) {
-      let secs = -1;
-      try { secs = rt.play_fmv_audio_cursor_secs(); } catch (e) { secs = -1; }
-      if (secs > 0) return secs;
-      /* The mixer has not consumed a sample yet: hold frame 0 briefly for
-       * the callback to come round, then stop waiting on it. */
-      if (secs === 0 && wall < CURSOR_STALL_SECS) return 0;
-      return wall;
-    }
+    let pageAudio = -1;
     if (st.audioStart !== null && st.audioCtx && st.audioCtx.state === 'running') {
-      return st.audioCtx.currentTime - st.audioStart;
+      pageAudio = st.audioCtx.currentTime - st.audioStart;
     }
-    return wall;
+    return rt.play_fmv_due_frame(wall, pageAudio);
   }
 
   function draw(rt, idx) {
@@ -252,7 +244,8 @@
       return false;
     }
     if (!st.active) start(rt, host || st.host || document.body);
-    const idx = Math.floor(clock(rt) * st.fps);
+    let idx = 0;
+    try { idx = dueFrame(rt); } catch (e) { idx = 0; }
     if (idx >= st.frameCount) {
       draw(rt, st.frameCount - 1);
       if (!st.finished) {

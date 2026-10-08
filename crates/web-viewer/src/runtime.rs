@@ -711,15 +711,12 @@ impl LegaiaRuntime {
         if world_map {
             host.enter_world_map_scene(name)
                 .map_err(|e| format!("enter_field({name}): {e:#}"))?;
-            // Start in walk mode with the retail top-view debug camera
-            // reachable through its own chord (`_DAT_8007B98C`), exactly as
-            // the native window arms it on world-map entry
-            // (`window/run.rs`). The controller, the chord and the camera are
-            // all engine-side, so arming the same flag is the whole of what
-            // this host needed to gain the top-view vantage.
-            if let Some(ctrl) = host.world.world_map.ctrl.as_mut() {
-                ctrl.debug_enabled = true;
-                ctrl.view_mode = 0;
+            // A picked overworld starts in walk mode with the retail top-view
+            // debug camera reachable through its own chord
+            // (`_DAT_8007B98C`); a Load or a New Game does not arm it. The
+            // engine's one rule, which the native `--scene` entry asks too.
+            if !resume {
+                host.world.arm_picker_world_map_debug();
             }
         } else {
             host.enter_field_scene(name, 0)

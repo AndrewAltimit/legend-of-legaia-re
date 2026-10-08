@@ -547,6 +547,35 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "movie pacing, native in-window FMV vs play page - the page "
+        "re-implemented the audio-cursor rule in play-fmv.js with a stall "
+        "fallback the native window lacked (a stalled cursor held frame 0 "
+        "there for the whole movie). Both pace through "
+        "`cutscene::MovieClock::due_frame`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/boot_cutscene.rs",
+                "render_windowed_cutscene",
+            ),
+            "web": ("crates/web-viewer/src/play_fmv.rs", "play_fmv_due_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["due_frame"],
+    },
+    {
+        "what": "overworld developer band on entry, native vs play page - the "
+        "page armed the top-view debug chord (`_DAT_8007B98C`) on every "
+        "world-map entry, a card Load included, while the native window armed "
+        "it on its CLI picker entry only; arming it shadows retail's L1 map "
+        "display. Both entries ask `World::arm_picker_world_map_debug`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/run.rs", "cmd_play_window_with_record"),
+            "web": ("crates/web-viewer/src/runtime.rs", "enter_field_core"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["arm_picker_world_map_debug"],
+    },
+    {
         "what": "CD-XA shout staging, native boot vs play page - which channels "
         "of XA2 / XA4 / XA6 become shouts, how a shout is trimmed and which "
         "SCUS cue pools ride with it were written out once per host (the "

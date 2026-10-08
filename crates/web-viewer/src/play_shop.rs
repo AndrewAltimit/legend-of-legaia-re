@@ -268,6 +268,16 @@ impl LegaiaRuntime {
         self.menu.is_open()
     }
 
+    /// `true` while the open screen also **freezes** the field tick
+    /// ([`legaia_engine_core::menu_runtime::MenuRuntime::suspends_field`]):
+    /// a shop or the prize exchange, whose menu overlay swaps the field code
+    /// out, but not the inn prompt, which retail runs as a field-VM dialogue.
+    /// Under an inn the page ticks the field with a neutral pad, as the
+    /// native window does; it used to freeze on [`Self::play_shop_is_open`].
+    pub fn play_shop_suspends_field(&self) -> bool {
+        self.menu.suspends_field()
+    }
+
     /// Drive the open shop **one sim tick** from an edge-triggered PSX pad
     /// word (same bit layout as [`Self::set_pad`]). The page calls it once per
     /// sim step it drains, with the frame's edges on the first step and `0`

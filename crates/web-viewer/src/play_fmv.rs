@@ -135,6 +135,9 @@ pub(crate) struct OpenFmv {
     /// (`play_fmv_audio_start`) or to the page (`play_fmv_audio_pcm_i16`);
     /// the descriptor (rate / channels) stays readable.
     audio_handed: bool,
+    /// The pacing rule the native window's movie runs on
+    /// ([`legaia_engine_core::cutscene::MovieClock`]), fresh per install.
+    clock: legaia_engine_core::cutscene::MovieClock,
 }
 
 /// Unity XA gain (Q1.14), what the native movie players pass.
@@ -319,6 +322,7 @@ impl FmvState {
             video,
             audio,
             audio_handed: false,
+            clock: Default::default(),
         });
         true
     }
@@ -683,6 +687,33 @@ impl LegaiaRuntime {
         -1.0
     }
 
+    /// The video frame due now, through the shared pacing rule
+    /// ([`legaia_engine_core::cutscene::MovieClock`]) the native window's
+    /// movie runs on: the engine mixer's XA cursor while the track is there,
+    /// else `page_audio_secs` (the page's own fallback output; negative for
+    /// none), else `wall_secs` - with the cursor-stall latch. Not clamped to
+    /// the frame count; `0` with no movie open.
+    pub fn play_fmv_due_frame(&mut self, wall_secs: f64, page_audio_secs: f64) -> u32 {
+        let cursor = self.play_fmv_audio_cursor_secs();
+        let audio = if cursor >= 0.0 {
+            Some(cursor)
+        } else if page_audio_secs >= 0.0 {
+            Some(page_audio_secs)
+        } else {
+            None
+        };
+        let Some(open) = self.fmv.slot.as_mut().and_then(|s| s.open.as_mut()) else {
+            return 0;
+        };
+        let fps = open.video.fps;
+        let period = if fps > 0.5 && fps.is_finite() {
+            1.0 / fps
+        } else {
+            1.0 / 15.0
+        };
+        open.clock.due_frame(audio, wall_secs, period) as u32
+    }
+
     /// Sample rate of the movie's audio track (0 when none).
     pub fn play_fmv_audio_rate(&self) -> u32 {
         self.fmv
@@ -858,6 +889,7 @@ pub(crate) mod tests {
                     pcm: vec![1, -1, 2, -2],
                 }),
                 audio_handed: false,
+                clock: Default::default(),
             });
         }
         assert!(rt.play_fmv_active());
@@ -975,6 +1007,7 @@ pub(crate) mod tests {
                 },
                 audio: None,
                 audio_handed: false,
+                clock: Default::default(),
             });
         }
         rt.set_pad(0);

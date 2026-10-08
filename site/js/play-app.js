@@ -1633,14 +1633,29 @@ void main() {
      * keeps them for the next one rather than dropping the press.
      *
      * Returns `true` while the shop is up, so `_frame` freezes the field. */
+    /* Steps the open menu-runtime screen and answers whether it FREEZES the
+     * field this frame. A shop or the prize exchange does
+     * (`play_shop_suspends_field`, the engine's `MenuRuntime::suspends_field`);
+     * the inn prompt does not - retail runs it as a field-VM dialogue - so
+     * under it the field ticks on a neutral pad (`_shopHoldsPad`), as the
+     * native window feeds it one while `MenuRuntime::is_open` holds. */
     _updateFieldShop(simSteps) {
       const rt = this.rt;
+      this._shopHoldsPad = false;
       if (typeof rt.play_shop_is_open !== 'function') return false;
       let open;
       try { open = rt.play_shop_is_open(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
-      if (!(simSteps > 0)) return true;
+      const freezes = () => {
+        let open2 = false;
+        try { open2 = rt.play_shop_is_open(); } catch (e) { return false; }
+        if (!open2) return false;
+        this._shopHoldsPad = true;
+        if (typeof rt.play_shop_suspends_field !== 'function') return true;
+        try { return rt.play_shop_suspends_field(); } catch (e) { return true; }
+      };
+      if (!(simSteps > 0)) return freezes();
       let edge = 0;
       edge |= padMaskOf(this.pulse);
       for (let s = 0; s < simSteps; s++) {
@@ -1650,17 +1665,20 @@ void main() {
        * the frozen field on the next tick. */
       this.pulse.clear();
       this._repack();
-      try { return rt.play_shop_is_open(); } catch (e) { return false; }
+      return freezes();
     }
 
     /* Did the tick just run open a screen that suspends the field? The
      * shop / prize counter (`play_shop_is_open`, the engine's
      * `MenuRuntime::is_open`) or a pending scripted menu press
-     * (`play_menu_scripted_open_pending`). Both are engine answers. */
+     * (`play_menu_scripted_open_pending`). Both are engine answers. A
+     * screen already up when the frame began (the inn prompt, which the
+     * field ticks under) is not a new one. */
     _modalOpenedThisTick() {
       const rt = this.rt;
       try {
-        if (typeof rt.play_shop_is_open === 'function' && rt.play_shop_is_open()) return true;
+        if (!this._shopHoldsPad && typeof rt.play_shop_is_open === 'function'
+            && rt.play_shop_is_open()) return true;
       } catch (e) { /* fall through */ }
       try {
         if (typeof rt.play_menu_scripted_open_pending === 'function'
@@ -2609,8 +2627,14 @@ void main() {
             const edge = padMaskOf(this.pulse);
             this.pulse.clear();
             this._repack();
+            /* One panel step per sim tick, the frame's remaining ticks
+             * included (the native window steps `GameOverSession` once per
+             * tick too); the hold is tick-counted, so a single step per
+             * display frame ran it slow on a frame that carried two ticks. */
             let picked = '';
-            try { picked = rt.game_over_input(edge); } catch (e) {}
+            for (let g = s; g < steps && !picked; g++) {
+              try { picked = rt.game_over_input(g === s ? edge : 0); } catch (e) { break; }
+            }
             /* Continue opened the retail save-select on the card rack (the
              * shared pause-menu Load row); the menu loop below drives it from
              * the next frame. Quit hands back to the page, which re-runs the
@@ -2642,12 +2666,12 @@ void main() {
           const lockedPad = this._cut && this._cut.locked;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
-            rt.set_pad(lockedPad ? 0 : (this.pad | this._vrDrive.pad));
+            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : (this.pad | this._vrDrive.pad));
           } else {
             if (this.debugCamera || !this.cam.vp) {
               rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
             }
-            rt.set_pad(lockedPad ? 0 : this.pad);
+            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
            * only; later catch-up ticks see the held set, so a one-frame tap

@@ -282,6 +282,83 @@ pub fn fmv_skip_edge_hit(fmv_id: i16, edge: u16) -> bool {
     fmv_is_skippable(fmv_id) && FMV_SKIP_BUTTONS.iter().any(|b| edge & (*b as u16) != 0)
 }
 
+/// Wall-clock seconds a movie's audio cursor may sit at zero before the
+/// picture stops waiting for it and runs on the wall clock instead.
+///
+/// The cursor reads zero until the output device has consumed a sample, so a
+/// short hold keeps the first frames in step with the track; a device that
+/// never runs (a suspended browser audio context, a stalled output stream)
+/// would otherwise hold frame 0 for the whole movie.
+pub const MOVIE_CURSOR_STALL_SECS: f64 = 1.0;
+
+/// The video frame index due at `pos_secs` into a movie whose frames last
+/// `frame_period_secs`. Not clamped to the frame count: a caller detects the
+/// end of the stream by comparing against it.
+pub fn movie_frame_at(pos_secs: f64, frame_period_secs: f64) -> usize {
+    if frame_period_secs.is_nan() || frame_period_secs <= 0.0 {
+        return 0;
+    }
+    (pos_secs.max(0.0) / frame_period_secs) as usize
+}
+
+/// A movie's playback clock: the audio cursor while a track plays, the wall
+/// clock otherwise - the one pacing rule both play hosts run an FMV on.
+///
+/// The audio cursor is the device-paced master clock, so the picture advances
+/// exactly as far as the soundtrack has played. A cursor still at zero after
+/// [`MOVIE_CURSOR_STALL_SECS`] of wall time is a device that is not running;
+/// the clock then **latches** onto the wall clock for the rest of the movie,
+/// so a cursor that starts late cannot snap the picture back to its own
+/// position.
+///
+/// The native window used to hold frame 0 for as long as the cursor sat at
+/// zero, while the page carried the stall fallback in its own JavaScript -
+/// without the latch, so a late cursor rewound the picture there.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MovieClock {
+    on_wall: bool,
+}
+
+impl MovieClock {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Playback position in seconds. `audio_secs` is the track's cursor, or
+    /// `None` when the movie has no track on an output; `wall_secs` is the
+    /// wall time since the picture started.
+    pub fn position(&mut self, audio_secs: Option<f64>, wall_secs: f64) -> f64 {
+        let wall = wall_secs.max(0.0);
+        if self.on_wall {
+            return wall;
+        }
+        match audio_secs {
+            Some(s) if s > 0.0 => s,
+            Some(_) if wall < MOVIE_CURSOR_STALL_SECS => 0.0,
+            Some(_) => {
+                self.on_wall = true;
+                wall
+            }
+            None => wall,
+        }
+    }
+
+    /// The frame due now ([`Self::position`] through [`movie_frame_at`]).
+    pub fn due_frame(
+        &mut self,
+        audio_secs: Option<f64>,
+        wall_secs: f64,
+        frame_period_secs: f64,
+    ) -> usize {
+        movie_frame_at(self.position(audio_secs, wall_secs), frame_period_secs)
+    }
+
+    /// Whether the clock gave up on the audio cursor.
+    pub fn on_wall_clock(&self) -> bool {
+        self.on_wall
+    }
+}
+
 /// One `ClearImage` rect the master dispatch blanks before playback, in VRAM
 /// coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -412,6 +489,30 @@ pub fn sprite_stack_push(count: &mut i16, table: &mut [i16], value: i16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_movie_clock_follows_the_cursor_and_latches_onto_the_wall_on_a_stall() {
+        let period = 1.0 / 15.0;
+        let mut c = MovieClock::new();
+        // No track: wall clock.
+        assert_eq!(c.due_frame(None, 1.01, period), 15);
+        // A running cursor rules over the wall.
+        assert_eq!(c.due_frame(Some(0.5), 3.0, period), 7);
+        // A cursor at zero holds frame 0 inside the stall window...
+        let mut c = MovieClock::new();
+        assert_eq!(c.due_frame(Some(0.0), 0.5, period), 0);
+        assert!(!c.on_wall_clock());
+        // ...and past it the wall takes over, for good.
+        assert_eq!(c.due_frame(Some(0.0), 1.21, period), 18);
+        assert!(c.on_wall_clock());
+        assert_eq!(
+            c.due_frame(Some(0.1), 1.41, period),
+            21,
+            "a late cursor must not rewind"
+        );
+        // Degenerate period.
+        assert_eq!(movie_frame_at(5.0, 0.0), 0);
+    }
 
     #[test]
     fn fmv_index_round_trip_for_first_slots() {

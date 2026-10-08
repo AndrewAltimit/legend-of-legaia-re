@@ -676,6 +676,10 @@ struct WindowedCutscene {
     /// `true` once an audio track has been staged - the render loop then reads
     /// the audio cursor as the master clock instead of wall-clock.
     has_audio: bool,
+    /// The shared pacing rule (`legaia_engine_core::cutscene::MovieClock`),
+    /// which the page's movie lane runs too: the audio cursor, or the wall
+    /// clock once the cursor has sat at zero past the stall window.
+    movie_clock: legaia_engine_core::cutscene::MovieClock,
 }
 
 /// Pre-decoded publisher-logos atlas + GPU upload. Created once at boot

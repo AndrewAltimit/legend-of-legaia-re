@@ -4164,28 +4164,45 @@ banner and the cheats panel. Closed rows:
   run; a dance song ending on its own queued the hall's track there, so the
   chart loop played on over the hall. Both hosts' drains open with a late
   routing pass, which tier 12 pairs by content.
+- **The overworld developer band on a Load.** The page armed the top-view
+  debug chord (`_DAT_8007B98C`) on every world-map entry, a card Load
+  included; the native window armed it on its CLI entries, a `--resume-save`
+  included, and never on an in-game Load. Arming it is not free: the band
+  shadows retail's L1 map-display arm. One rule now, asked by both entries:
+  `World::arm_picker_world_map_debug`, on a picked scene only.
+- **Paced per display frame on the page.** The game-over panel stepped once
+  per display frame that carried a tick, and the boot chain (publisher logos,
+  title card, its Continue / Options hand-off) kept a clock of its own that
+  ran at least one tick every display frame - twice retail speed at 120 Hz -
+  and caught up to thirty. The panel now steps once per tick of the frame,
+  and the boot chain drains the engine's `SimStepper`
+  (`play_drain_sim_steps`), holding a press until a tick takes it, as the
+  native window's redraw loop does.
+- **The movie clock was written twice.** The native window paced a movie
+  off the XA cursor and held frame 0 for as long as the cursor sat at zero;
+  the page re-implemented the rule in `play-fmv.js` with a one-second stall
+  fallback to the wall clock, and no latch, so a cursor that started late
+  rewound the picture. Both run `cutscene::MovieClock` now (the page through
+  `play_fmv_due_frame`, handing in only the two clocks the engine cannot
+  read): the cursor, the wall clock past the stall window, latched.
+- **The movie skip.** The page tests the skip edge on every movie and the
+  native window only on the title attract, but both ask
+  `cutscene::fmv_skip_edge_hit`, which only `fmv_id 0` passes, and no scene
+  script names `fmv_id 0` ([`str-fmv-table.md`](../formats/str-fmv-table.md)).
+  The two call sites cannot disagree on any movie the disc plays.
+- **The inn prompt froze the field on the page.** The page froze on
+  `MenuRuntime::is_open`, the native window on `suspends_field`, which
+  excludes an inn (retail's inn is a field-VM dialogue). The page asks
+  `play_shop_suspends_field` now and, under an inn, ticks the field on a
+  neutral pad as the native window does. `InnSession` has no production
+  caller ([`inn.md`](../subsystems/inn.md)), so no player reached either
+  answer.
 
 ### Open from the same pass
 
-- **The movie clock is written twice.** The native window paces a movie
-  with audio off the XA cursor (`cutscene_av::due_video_frame`); the page
-  re-implements that rule in `play-fmv.js` and adds a one-second stall
-  fallback to the wall clock, which the native window lacks, so a stalled
-  cursor holds frame 0 natively. The two STR decoders also differ: the page
-  counts assembled frames and assumes 4-bit XA, the native one counts
-  decoded frames and reads the bit depth.
-- **A scene-script movie skips on the page only.** The page tests the skip
-  button on every movie; the native window only on the title attract.
-- **Paced per display frame on the page.** The game-over panel steps once
-  per display frame on the page and once per sim tick natively, and the boot
-  title catches up to thirty ticks a frame where the shared stepper allows
-  four.
-- **An overworld Load arms the top-view debug chord on the page only**
-  (`enter_field_core`); the native in-game Load does not.
-- **The inn prompt freezes the field on the page.** The page freezes on
-  `MenuRuntime::is_open`, the native window on `suspends_field`, which
-  excludes an inn. `InnSession` has no production caller
-  ([`inn.md`](../subsystems/inn.md)), so no player reaches it.
+- **The two STR decoders differ.** The page counts assembled frames and
+  assumes 4-bit XA; the native one counts decoded frames and reads the bit
+  depth.
 - **The shop panels' rows** (`title`, rows, gold footer per state) and the
   inn prompt's text are written once per host over shared leaves; they agree
   today.

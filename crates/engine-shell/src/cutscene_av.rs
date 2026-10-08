@@ -253,11 +253,10 @@ pub fn due_video_frame(
     wall_elapsed_secs: f64,
     frame_period_secs: f64,
 ) -> usize {
-    if frame_period_secs <= 0.0 {
-        return 0;
-    }
-    let pos = audio_secs.unwrap_or(wall_elapsed_secs).max(0.0);
-    (pos / frame_period_secs) as usize
+    legaia_engine_core::cutscene::movie_frame_at(
+        audio_secs.unwrap_or(wall_elapsed_secs),
+        frame_period_secs,
+    )
 }
 
 /// Narrow a whole-`MVn.STR`-file sector span to the segment one `fmv_id`

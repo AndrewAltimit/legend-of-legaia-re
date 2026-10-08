@@ -639,12 +639,9 @@ pub(super) fn cmd_play_window_with_record(
         Some(mode) => mode == legaia_engine_core::world::SceneMode::WorldMap,
         None => world_map,
     };
-    if world_map && resumed.is_some() {
-        if let Some(ctrl) = session.host.world.world_map.ctrl.as_mut() {
-            ctrl.debug_enabled = true;
-            ctrl.view_mode = 0;
-        }
-    } else if world_map {
+    // A resumed overworld leaves the developer band off: a Load is not a
+    // picker entry (`World::arm_picker_world_map_debug`).
+    if world_map && resumed.is_none() {
         // Load the scene's resources, route its region-keyed encounter table
         // onto the overworld, install the player, and enter world-map mode
         // (camera controller included). World::tick drives locomotion + the
@@ -657,11 +654,9 @@ pub(super) fn cmd_play_window_with_record(
         }
         // Start in walk mode so the d-pad walks the overworld player (and the
         // per-tile encounter roll fires). The top-view debug camera (orbit /
-        // zoom / pan) stays reachable via the toggle combo (debug_enabled).
-        if let Some(ctrl) = session.host.world.world_map.ctrl.as_mut() {
-            ctrl.debug_enabled = true;
-            ctrl.view_mode = 0;
-        }
+        // zoom / pan) stays reachable via the toggle combo - the engine's
+        // picker rule, which the page's scene picker asks too.
+        session.host.world.arm_picker_world_map_debug();
     }
     if !world_map && resumed.is_none() {
         // Free-roam story staging: the `--scene` direct entry is the native

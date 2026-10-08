@@ -442,6 +442,28 @@ impl World {
         true
     }
 
+    /// Arm the overworld's developer band for a **picker** entry: walk mode,
+    /// with the top-view debug camera and the panel chords reachable through
+    /// retail's `_DAT_8007B98C` gate (`ControllerState::debug_enabled`).
+    ///
+    /// The one rule both play hosts ask: a scene picked by name (the native
+    /// `--scene`, the page's scene picker) arms it, and nothing else does -
+    /// not a card Load, not a New Game, not a door. Retail ships the byte at
+    /// zero, and arming it shadows the retail L1 map-display arm, so a
+    /// player-reachable entry must leave it off. The page used to arm it on
+    /// every entry it ran (a Load included) while the native window armed it
+    /// on its CLI entries only, so the same save behaved differently per host.
+    ///
+    /// Returns whether a world-map controller was there to arm.
+    pub fn arm_picker_world_map_debug(&mut self) -> bool {
+        let Some(ctrl) = self.world_map.ctrl.as_mut() else {
+            return false;
+        };
+        ctrl.debug_enabled = true;
+        ctrl.view_mode = 0;
+        true
+    }
+
     /// Route the scene's region-keyed encounter table onto the overworld so
     /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).

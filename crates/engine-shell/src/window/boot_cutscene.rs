@@ -1272,6 +1272,7 @@ impl PlayWindowApp {
             clock: None,
             pending_audio: audio,
             has_audio: false,
+            movie_clock: legaia_engine_core::cutscene::MovieClock::new(),
         });
     }
 
@@ -1382,11 +1383,9 @@ impl PlayWindowApp {
             } else {
                 None
             };
-            let due = crate::cutscene_av::due_video_frame(
-                audio_secs,
-                elapsed,
-                c.frame_period.as_secs_f64(),
-            );
+            let due = c
+                .movie_clock
+                .due_frame(audio_secs, elapsed, c.frame_period.as_secs_f64());
             c.idx = due;
             let show = due.min(c.frames.len().saturating_sub(1));
             if let Some(f) = c.frames.get(show) {

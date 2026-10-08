@@ -1132,22 +1132,34 @@
     let handoff = '';
     let loaded = false;
     const titleHeld = new Set();
+    /* Ticks this display frame runs, from the engine's one frame stepper
+     * (`play_drain_sim_steps`, the `SimStepper` the in-game loop and the
+     * native window drain): at most four, and none on a frame that carried
+     * less than a tick. The card used to keep its own clock that ran at
+     * least one tick every frame (twice retail speed at 120 Hz) and caught
+     * up to thirty. A press is held until a tick runs to take it. */
+    let titleLast = 0;
+    let titleEdge = 0;
+    const titleTicks = () => {
+      const now = performance.now();
+      const dt = titleLast ? now - titleLast : 0;
+      titleLast = now;
+      try { return runtime.play_drain_sim_steps(dt); } catch (e) { return 1; }
+    };
     const frame = () => {
       bootTitleRAF = requestAnimationFrame(frame);
       /* A gamepad's press edges reach the title card the way a key's do. */
       if (window.legaiaPollGamepad) window.legaiaPollGamepad(titleHeld, pulse);
-      const edge = padMaskOf(pulse);
+      titleEdge |= padMaskOf(pulse);
       pulse.clear();
+      const ticks = titleTicks();
+      const edge = ticks > 0 ? titleEdge : 0;
+      if (ticks > 0) titleEdge = 0;
       /* Publisher-logo stage: owns the frame until the sequencer finishes or
-       * a Start / Cross edge skips it, then the title card opens. Same fixed
-       * 60 Hz catch-up as the branches below - the fade ramps are counted in
+       * a Start / Cross edge skips it, then the title card opens. It runs the frame's ticks
+       * (the stepper above) - the fade ramps are counted in
        * retail frames, so a throttled tab must not stretch them. */
       if (logos) {
-        let ticks = 1;
-        const now = performance.now();
-        if (!frame._logoClock) frame._logoClock = now;
-        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._logoClock) / 16.667)));
-        frame._logoClock += ticks * 16.667;
         let done = false;
         try {
           for (let i = 0; i < ticks && !done; i++) done = runtime.boot_logos_step(i === 0 ? edge : 0);
@@ -1161,7 +1173,6 @@
         if (ld && ld.sprites && logoBlit) logoBlit.blit(ctx, ld.sprites);
         if (done) {
           logos = false;
-          frame._titleClock = 0;
           startTitleBgm();
           statusEl.textContent = TITLE_PROMPT;
         }
@@ -1178,13 +1189,8 @@
       if (handoff) {
         /* Continue / Options: the retail save-select and options screens,
          * reached through the shared pause-menu rows rather than a second
-         * copy on this page. Same 60 Hz catch-up rule as play-app.js: the
+         * copy on this page. One step per tick, as play-app.js: the
          * save screen's card-read dialog counts down a frame timer. */
-        let ticks = 1;
-        const now = performance.now();
-        if (!frame._clock) frame._clock = now;
-        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._clock) / 16.667)));
-        frame._clock += ticks * 16.667;
         for (let i = 0; i < ticks; i++) {
           try { runtime.play_menu_input(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
         }
@@ -1221,26 +1227,19 @@
           /* Options closed, or Continue backed out without loading: retail
            * returns to the title card. */
           handoff = '';
-          frame._clock = 0;
-          frame._titleClock = 0;
           try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
           statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
         }
         return;
       }
       /* The title session counts retail frames - the attract countdown is
-       * 0x5DC of them, 25 s at 60 Hz - so it gets the same fixed-step
-       * catch-up as the menu branch above rather than one step per
+       * 0x5DC of them, 25 s at 60 Hz - so it steps once per tick from the
+       * shared stepper rather than once per
        * animation frame: a throttled or slow tab used to stretch the
        * countdown to minutes and the attract movie never came. The pad
        * edge lands on the first tick of the frame only. */
       let outcome = '';
       {
-        let ticks = 1;
-        const now = performance.now();
-        if (!frame._titleClock) frame._titleClock = now;
-        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._titleClock) / 16.667)));
-        frame._titleClock += ticks * 16.667;
         try {
           for (let i = 0; i < ticks && !outcome; i++) outcome = runtime.boot_title_step(i === 0 ? edge : 0);
         } catch (e) { return finish('new_game'); }
@@ -1260,8 +1259,6 @@
       }
       if (outcome === 'continue' || outcome === 'options') {
         handoff = outcome;
-        frame._clock = 0;
-        frame._titleClock = 0;
         statusEl.textContent = outcome === 'continue'
           ? 'Pick a memory-card port, then a save block. Z confirms, X backs out.'
           : 'Options. Up/Down picks a row, Z opens it, X returns to the title.';
