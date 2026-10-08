@@ -260,6 +260,7 @@ is reached at runtime.
 | CD-XA staging | `symbols_all` on `xa_banks::install_shout_file` / `install_clip_file` across the native boot's two bank readers and the play page's `play_xa_install`. |
 | visible-tile crop | `symbols_all` on `field_view_window::field_view_cells` + `framing_is_retail` (whether a frame crops), `terrain_draw_visible` (the terrain list) and `field_ground::crop_indices` (the ground) across the native redraw / ground re-upload and the play page's crop exports. |
 | dance-hall placement composition | `symbols_all` on `EnvDraw::place_point` across the native venue upload (`build_dance_venue_gpu`) and the browser bake (`DanceEnv::append_draw`). |
+| Muscle Dome surface cadence | `symbols_all` on `MuscleDomeSurface::frame_at` + `sim_ticks` across the native `refresh_muscle_dome_gpu` and the play page's `play_mg_muscle_scene_frame`. |
 
 The last three exist because each named a divergence the reachability tier
 could not see, and each divergence was a *model* one rather than a missing
@@ -1103,6 +1104,15 @@ triangle count were identical, only the vertices moved. The composition is now
 one kernel, `field_env::EnvDraw::place_point`, which the dance hall, the
 fishing venue and the occlusion-fade occluder set all place through, and the
 dance pairing is a tier-3 row.
+
+**A per-call stepper behind a per-frame draw.** The Muscle Dome's 3D
+surface advanced its choreography and battle camera script once per call, and
+both hosts called it from their draw. The browser page draws idle and paused
+frames too, so over the same ticks its dome took more camera steps than the
+window's and the round intro framed the other fighter. The surface now steps
+through `frame_at`, gated on the world's sim tick; the shape to look for is
+any surface whose own counter advances inside a call a host makes per display
+frame.
 
 **A typed channel narrowed at one host.** The web strike-SFX scheduler was
 `u8` end to end, so every cast cue the engine emits above `0xFF` was dropped

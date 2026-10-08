@@ -544,6 +544,7 @@ WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 NATIVE_MINIGAMES = "crates/engine-shell/src/window/minigames.rs"
 WEB_MINIGAMES_DANCE = "crates/web-viewer/src/minigames_dance.rs"
+WEB_PLAY_ARENA_SURFACE = "crates/web-viewer/src/play_minigame_arena.rs"
 NATIVE_TITLE_SAVE = (
     "crates/engine-shell/src/window/title_save_draws.rs"
 )
@@ -1214,6 +1215,20 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["place_point"],
+    },
+    {
+        "what": "Muscle Dome 3D surface cadence, native vs play page - the "
+        "surface steps its choreography and battle camera script once per "
+        "call, so a world host must reach it through `frame_at`, which gates "
+        "the step on the world's sim tick. The page once called the per-call "
+        "`frame` from a draw that also runs on idle frames, and its round "
+        "intro framed a different fighter than the window's",
+        "sites": {
+            "native": (NATIVE_MINIGAMES, "refresh_muscle_dome_gpu"),
+            "web": (WEB_PLAY_ARENA_SURFACE, "play_mg_muscle_scene_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["frame_at", "sim_ticks"],
     },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "
