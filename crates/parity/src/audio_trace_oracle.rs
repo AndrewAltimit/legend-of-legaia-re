@@ -211,6 +211,11 @@ pub struct AudioTraceBuildOptions {
     pub us_per_frame: f64,
     /// Number of frames to tick. Output has `frames + 1` records.
     pub frames: u64,
+    /// Keep [`Self::bgm_id`] playing: the scene's own op-`0x35` BGM events
+    /// are drained and dropped instead of switching the track. For pairing
+    /// with a retail capture whose story state selected a different track
+    /// than the port's free-roam staging does.
+    pub pin_bgm: bool,
 }
 
 impl Default for AudioTraceBuildOptions {
@@ -220,6 +225,7 @@ impl Default for AudioTraceBuildOptions {
             bgm_id: None,
             us_per_frame: 1_000_000.0 / 60.0,
             frames: 60,
+            pin_bgm: false,
         }
     }
 }
@@ -500,12 +506,18 @@ pub fn build_engine_audio_trace(
     ));
     let samples_per_frame = (44_100_f64 * (opts.us_per_frame / 1_000_000.0)) as usize;
     let mut sink = vec![0i16; samples_per_frame * 2];
+    // Sink for the scene's own BGM events under `pin_bgm`.
+    let mut discard = TraceBgmDirector::new();
     for _ in 0..opts.frames {
         let _ = session.tick()?;
         // Drain field-VM BGM events into the private director; resolved
         // SEQ bytes flow through `SceneHost::bgm_seq_bytes`, whole
         // global-pool entries through `SceneHost::music_bank_entry_bytes`.
-        let _ = session.host.route_bgm_events(&mut director)?;
+        if opts.pin_bgm {
+            let _ = session.host.route_bgm_events(&mut discard)?;
+        } else {
+            let _ = session.host.route_bgm_events(&mut director)?;
+        }
         director.advance_frame(opts.us_per_frame, &mut sink);
         let mut frame = sample_engine_frame(&session, director.spu(), director.sequencer());
         // Drain the SFX ring the hosts drain every tick; left alone, a long
@@ -890,6 +902,7 @@ pub fn engine_trace_from_paths(
         bgm_id,
         us_per_frame: 1_000_000.0 / 60.0,
         frames,
+        pin_bgm: false,
     };
     build_engine_audio_trace(extracted_root, disc, &opts)
 }

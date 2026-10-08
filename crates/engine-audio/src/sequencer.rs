@@ -51,6 +51,15 @@ fn retail_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
         .max(1)
 }
 
+/// [`retail_play_tempo`] for the header tempo, which the SEQ open rounds to
+/// the nearest BPM where the tempo meta handler truncates
+/// ([`crate::seq_calc::header_bpm`]).
+fn retail_header_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
+    crate::seq_calc::retail_effective_header_us_per_qn(us_per_qn, ppqn)
+        .unwrap_or(us_per_qn)
+        .max(1)
+}
+
 /// NRPN-style controller that carries SEQ loop markers (controller 99).
 const CC_LOOP_MARKER: u8 = 0x63;
 /// `CC_LOOP_MARKER` value marking a Loop Start point.
@@ -232,6 +241,9 @@ pub struct Sequencer {
     play_us_per_qn: u32,
     /// Play the score's exact tempo instead of retail's quantised one.
     exact_tempo: bool,
+    /// The tempo is still the header's (no tempo meta has fired), which the
+    /// SEQ open rounds to the nearest BPM rather than truncating.
+    header_tempo: bool,
     /// Absolute tick offset of the playhead (sum of fired event deltas).
     abs_tick: u64,
     /// Has end-of-track been reached.
@@ -301,8 +313,9 @@ impl Sequencer {
             accum_per_sample: ppqn as u64 * 1_000_000,
             sample_carry: 0.0,
             tempo_us_per_qn: tempo,
-            play_us_per_qn: retail_play_tempo(tempo, ppqn),
+            play_us_per_qn: retail_header_play_tempo(tempo, ppqn),
             exact_tempo: false,
+            header_tempo: true,
             abs_tick: 0,
             finished: false,
             loop_to: usize::MAX,
@@ -360,10 +373,13 @@ impl Sequencer {
     }
 
     fn reprice_tempo(&mut self) {
+        let ppqn = self.seq.header.ppqn.max(1);
         self.play_us_per_qn = if self.exact_tempo {
             self.tempo_us_per_qn
+        } else if self.header_tempo {
+            retail_header_play_tempo(self.tempo_us_per_qn, ppqn)
         } else {
-            retail_play_tempo(self.tempo_us_per_qn, self.seq.header.ppqn.max(1))
+            retail_play_tempo(self.tempo_us_per_qn, ppqn)
         };
     }
 
@@ -591,6 +607,7 @@ impl Sequencer {
                 // accumulator is in tempo-independent units (sample × ppqn ×
                 // 1e6), so no rescaling of the carried remainder is needed.
                 self.tempo_us_per_qn = (*us_per_qn).max(1);
+                self.header_tempo = false;
                 self.reprice_tempo();
             }
             EventBody::Meta(_) => {

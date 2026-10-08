@@ -151,6 +151,7 @@ fn pcm_oracle_all_scenarios_engine_not_silent_when_retail_audible() {
             bgm_id: None,
             us_per_frame: 1_000_000.0 / 60.0,
             frames: FRAMES,
+            pin_bgm: false,
         };
         let engine_trace = build_engine_pcm_trace(&extracted, None, &opts)
             .unwrap_or_else(|e| panic!("scenario {label:?}: build engine PCM trace: {e:#}"));

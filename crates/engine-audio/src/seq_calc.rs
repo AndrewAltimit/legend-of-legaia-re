@@ -387,10 +387,37 @@ pub fn tempo_set_budget(resolution: i16, bpm: u32, divisor: u32) -> (i16, i16) {
 /// slow mode (no shipped track reaches it) or for a degenerate tempo, where
 /// a caller keeps the exact tempo.
 pub fn retail_effective_us_per_qn(us_per_qn: u32, ppqn: u16) -> Option<u32> {
-    if us_per_qn == 0 || ppqn == 0 {
+    if us_per_qn == 0 {
         return None;
     }
-    let bpm = 60_000_000 / us_per_qn;
+    effective_us_per_qn_at_bpm(60_000_000 / us_per_qn, ppqn)
+}
+
+/// The integer BPM the SEQ open derives from the **header** tempo: unlike the
+/// tempo meta handler's truncating `div`, `FUN_80062410` rounds to nearest -
+/// `60000000 / tempo`, incremented when the remainder exceeds `tempo / 2`
+/// (`srl v0,v0,1` / `slt` / `addiu v0,a2,0x1` at `0x800625CC..0x800625E4`).
+/// A header-only track (no tempo meta, e.g. the battle theme `2026` at
+/// 142.5 BPM) therefore plays at 143, not 142.
+pub fn header_bpm(us_per_qn: u32) -> Option<u32> {
+    if us_per_qn == 0 {
+        return None;
+    }
+    let q = 60_000_000 / us_per_qn;
+    let r = 60_000_000 % us_per_qn;
+    Some(if us_per_qn / 2 < r { q + 1 } else { q })
+}
+
+/// [`retail_effective_us_per_qn`] for a track still on its **header** tempo
+/// ([`header_bpm`]'s rounding).
+pub fn retail_effective_header_us_per_qn(us_per_qn: u32, ppqn: u16) -> Option<u32> {
+    effective_us_per_qn_at_bpm(header_bpm(us_per_qn)?, ppqn)
+}
+
+fn effective_us_per_qn_at_bpm(bpm: u32, ppqn: u16) -> Option<u32> {
+    if bpm == 0 || ppqn == 0 {
+        return None;
+    }
     let (sub_frame, budget) = tempo_set_budget(ppqn as i16, bpm, RETAIL_TICK_DIVISOR);
     if sub_frame != -1 || budget <= 0 {
         return None;
@@ -720,6 +747,25 @@ mod tests {
         assert_eq!(retail_effective_us_per_qn(750_000, 480), Some(747_664));
         assert_eq!(retail_effective_us_per_qn(2_534_941, 480), Some(2_580_645));
         assert_eq!(retail_effective_us_per_qn(0, 480), None);
+    }
+
+    /// The header tempo rounds to the nearest BPM where the meta handler
+    /// truncates: the battle theme's 421052 us/qn (142.5 BPM) opens at 143,
+    /// a budget of 191 tenths of a tick per vsync, not the meta path's 142
+    /// and 189 - the 1% the key-on census of a battle state measured.
+    #[test]
+    fn the_header_tempo_rounds_to_the_nearest_bpm() {
+        assert_eq!(header_bpm(421_052), Some(143));
+        assert_eq!(60_000_000 / 421_052, 142, "the meta path's truncation");
+        assert_eq!(header_bpm(500_000), Some(120));
+        assert_eq!(header_bpm(250_000), Some(240));
+        assert_eq!(header_bpm(0), None);
+        assert_eq!(tempo_set_budget(480, 143, RETAIL_TICK_DIVISOR), (-1, 191));
+        assert_eq!(tempo_set_budget(480, 142, RETAIL_TICK_DIVISOR), (-1, 189));
+        assert_eq!(
+            retail_effective_header_us_per_qn(500_000, 480),
+            retail_effective_us_per_qn(500_000, 480)
+        );
     }
 
     use super::*;

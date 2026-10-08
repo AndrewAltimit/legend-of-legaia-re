@@ -1264,8 +1264,8 @@ tempo at the event's absolute tick (matching libsnd's mid-stream
 
 Retail does not clock a track in samples. A tempo set - the SEQ open
 `FUN_80062410` (`0x8006265C..0x80062738`) and the tempo meta `FUN_80061954`
-(`0x800619D4..0x80061AF4`), which share one tail - stores the integer
-`60000000 / us_per_qn` as the BPM and installs a budget of tenths of a tick
+(`0x800619D4..0x80061AF4`), which share one tail - stores an integer BPM and
+installs a budget of tenths of a tick
 per call, `resolution * bpm * 10 / (divisor * 60)` **rounded to nearest**
 (the remainder is compared against `(divisor * 15) << 1`; a half rounds down).
 The pump spends that budget once per `SsSeqCalc` and carries the overshoot,
@@ -1274,6 +1274,18 @@ divisor `0x801CD2BC` reads `60` in every catalogued save state - the libsnd
 per-vsync tick mode. (The tempo *slide* `FUN_800649B0` recomputes the same
 budget with a floor rather than a rounding; no shipped track reaches it
 through the engine.)
+
+The two paths derive that BPM differently. The tempo meta truncates
+`60000000 / us_per_qn` (`div` / `mflo` at `0x800619D4`). The SEQ open rounds the
+**header** tempo to nearest: it increments the quotient when the remainder
+exceeds `tempo / 2` (`0x800625CC..0x800625E4`). A track whose header tempo is
+its only tempo plays at the rounded BPM - the battle theme `2026` (PROT
+`1014`, 421052 us/qn, 142.5 BPM) opens at `143` and a budget of `191`, not the
+truncated `142` and `189`. Played at the truncated rate it drifts a frame late
+every hundred vsyncs against a key-on census of a battle state; at the
+rounded rate `166` of its `167` notes land within a frame. `Sequencer` keeps
+the header's rounding until a tempo meta fires
+(`seq_calc::retail_effective_header_us_per_qn`).
 
 So a track runs at `budget * 6` ticks a second, not at its written tempo.
 Over the disc's `music_01` scores the two differ by `0.44 %` on average
@@ -1284,10 +1296,11 @@ end on drift furthest - `24.83` BPM truncates to `24` and plays `3.4 %` slow.
 (`seq_calc::retail_effective_us_per_qn`); `Sequencer::set_exact_tempo(true)`
 plays the score as written. The port's frame is a flat 60 Hz, which is the
 rate the budget is spent at here; the console's own vsync is a little under
-that. One difference is kept on purpose: retail fires an event at the first
-`SsSeqCalc` after it falls due, so every onset lands on a vsync (up to a frame
-late, and unevenly so wherever the budget is not a whole number of ticks); the
-`Sequencer` fires it on its own sample. The rate matches, the jitter does not.
+that. Retail fires an event at the first `SsSeqCalc` after it falls due and
+writes its key-on at that call's flush, so every onset lands on a vsync. The
+`Sequencer` fires the event on its own sample but stages the key-on for the
+next flush boundary ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)),
+so its onsets land on the vsync grid too.
 
 **Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
 sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands

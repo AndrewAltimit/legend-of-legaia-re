@@ -229,6 +229,7 @@ fn main() -> Result<()> {
             strict,
             per_voice,
             retail_keyon_csv,
+            pin_bgm,
         } => cmd_audio_trace(AudioTraceArgs {
             scene: scene.as_deref(),
             extracted_root: &extracted_root,
@@ -242,6 +243,7 @@ fn main() -> Result<()> {
             strict,
             per_voice,
             retail_keyon_csv: retail_keyon_csv.as_deref(),
+            pin_bgm,
         }),
         Cmd::PcmTrace {
             scene,
@@ -545,6 +547,7 @@ struct AudioTraceArgs<'a> {
     strict: bool,
     per_voice: bool,
     retail_keyon_csv: Option<&'a Path>,
+    pin_bgm: bool,
 }
 
 struct PcmTraceArgs<'a> {

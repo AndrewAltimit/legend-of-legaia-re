@@ -673,13 +673,28 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
         );
     }
     let resolved = resolve_audio_trace_inputs(&args)?;
-    let trace = engine_trace_from_paths(
-        &resolved.scene_name,
-        args.extracted_root,
-        args.disc,
-        args.frames,
-        args.bgm_id,
-    )?;
+    let trace = if args.pin_bgm {
+        let opts = legaia_parity::audio_trace_oracle::AudioTraceBuildOptions {
+            scene: resolved.scene_name.clone(),
+            bgm_id: args.bgm_id,
+            frames: args.frames,
+            pin_bgm: true,
+            ..Default::default()
+        };
+        legaia_parity::audio_trace_oracle::build_engine_audio_trace(
+            args.extracted_root,
+            args.disc,
+            &opts,
+        )?
+    } else {
+        engine_trace_from_paths(
+            &resolved.scene_name,
+            args.extracted_root,
+            args.disc,
+            args.frames,
+            args.bgm_id,
+        )?
+    };
     let jsonl = audio_trace_to_jsonl(&trace);
 
     let out_label = if args.out.as_os_str() == "-" {
@@ -897,6 +912,7 @@ pub(crate) fn cmd_pcm_trace(args: PcmTraceArgs<'_>) -> Result<()> {
         bgm_id: args.bgm_id,
         us_per_frame: 1_000_000.0 / 60.0,
         frames: args.frames,
+        pin_bgm: false,
     };
     let engine: EnginePcmTrace = build_engine_pcm_trace(args.extracted_root, args.disc, &opts)?;
     let engine_stats = pcm_stats(&engine.pcm);

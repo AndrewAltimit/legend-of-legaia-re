@@ -510,6 +510,12 @@ pub(crate) enum Cmd {
         /// state, so neither side's envelope clock can bias it.
         #[arg(long)]
         retail_keyon_csv: Option<PathBuf>,
+        /// Keep `--bgm-id` playing for the whole trace: the scene's own
+        /// op-`0x35` BGM events are dropped instead of switching the track.
+        /// For a retail state whose story flags select a different track
+        /// than the port's free-roam staging, or whose music is a battle's.
+        #[arg(long, default_value_t = false)]
+        pin_bgm: bool,
     },
     /// PCM-window parity oracle - the I2 sibling of `audio-trace`.
     ///
