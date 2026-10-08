@@ -3,7 +3,9 @@
 
 use super::super::*;
 use super::redraw_draws::{DrawCtx, DrawLists, MeshStore};
+use super::redraw_overlay::OverlayDraws;
 use super::redraw_prep::FramePrep;
+use super::redraw_present;
 use super::redraw_stage::FrameView;
 
 /// What the frame presents: the scene alone, or the scene with the
@@ -12,7 +14,7 @@ use super::redraw_stage::FrameView;
 /// A function rather than an inline expression because the screenshot
 /// harness has to capture the *same* target it presents - capturing a bare
 /// `Scene` there drops every transition style from the PNGs.
-fn present_target<'a>(
+pub(super) fn present_target<'a>(
     scene: &'a RenderScene<'a>,
     prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
     under_overlay: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
@@ -165,125 +167,22 @@ impl PlayWindowApp {
                 nclip_marks,
                 color_clip_marks,
             } = draw_cx.build_scene_draws();
-            // Retail's field party-status readout - name / LV / HP / MP per
-            // present member over a translucent plate, top-left of every
-            // walkable frame. Two halves: the plate + label / numeral cells
-            // sample the system-UI atlas and ride the sprite slot below, the
-            // names ride the glyph layer here.
-            let field_hud_draws = self.field_party_hud_draws(w, h);
-            // The shop-family overlay (shop / prize / inn / banners), built
-            // once and read by both the text pass and the chrome sprite pass.
-            let screens = self.shop_overlay_frame(w, h);
-            let mut hud = self.build_hud(w, h, &screens);
-            hud.extend(field_hud_draws.text.iter().copied());
-            // Post-battle spoils panel. The XP / gold / drops a victory
-            // credits used to land with no on-screen acknowledgement at all
-            // (`World::battle.last_rewards` had no reader outside its own
-            // declaration); this is the shared `engine-ui` builder both hosts
-            // draw. Suppressed while a boot-UI panel owns the frame.
-            if !self.boot_ui.is_active() {
-                hud.extend(self.battle_spoils_draws(w, h));
-                hud.extend(self.encounter_hint_draws(w, h));
-                // The field overlay's passive-ability badge column, floated
-                // over the player's head (`FUN_801d095c`). Shares the scene
-                // camera with everything else this frame; the browser play
-                // page draws the same list off the same World seat.
-                hud.extend(self.passive_hud_draws(cam, w, h));
-                // The battle value readout's **font fallback**, for the
-                // frames before the battle VRAM makes retail's numeral sheet
-                // resident. The browser play page has had one since its own
-                // prim pass landed; this host drew nothing at all in that
-                // window, so the same fight opened with numbers in the tab
-                // and none in the window. Mutually exclusive with
-                // `battle_value_readout_prims` by construction - each checks
-                // the same `battle_vram` residency, opposite ways.
-                hud.extend(self.battle_value_readout_draws(cam, w, h));
-            }
+            let OverlayDraws {
+                hud,
+                logo_draw_vec,
+                title_draw_vec,
+                menu_glyph_draw_vec,
+                muscle_hub_draw_vec,
+                muscle_hub_blend,
+                save_chrome_draw_vec,
+                save_chrome_blend,
+                caption_draw_vec,
+            } = self.build_overlay_draws(w, h, cam);
             let overlay = TextOverlay {
                 atlas,
                 draws: &hud,
                 blend: &[],
             };
-
-            // Boot-phase sprite overlay: alternates between the
-            // publisher-logos atlas (during PublisherLogos) and
-            // the title-screen atlas (during Title). PROKION/SCEA
-            // are vertically-packed sprite atlases -
-            // `publisher_logo_sprite_draws` unfolds them into N
-            // side-by-side strips; Contrail/WARNING + the title
-            // TIM produce a single quad each.
-            let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
-            let title_draw_vec = self.title_screen_sprite_draws(w, h);
-            let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
-            // Muscle Dome hub screens (intro card / ROUND banner / INTERVAL +
-            // score tally), placed by the shared `other_game_hud` emitters.
-            // Rides sprite slot 1: the boot-UI overlays that own it are all
-            // inactive while a dome leg or its between-legs beat is up.
-            let (muscle_hub_draw_vec, muscle_hub_blend) = self.muscle_hub_sprite_draws(w, h);
-            // Slot-2 chrome samples the resident system-UI atlas.
-            // Save-select pills/panel and the field-menu window
-            // frame are mutually-exclusive boot states, so both
-            // share this one vec (the field-menu frame draws
-            // behind its text, which is emitted in the text layer).
-            // The field party HUD leads this vec so its translucent plate
-            // lands under its own label / numeral cells - within one overlay
-            // the draw order is the vec order. It is suppressed whenever any
-            // other surface that samples this atlas is up, so there is no
-            // contention with the chrome appended after it.
-            let mut save_chrome_draw_vec = field_hud_draws.sprites;
-            // The save screen's subtractive darkening under its active panel
-            // (`SaveScreenDarken`): one `B - F` draw inside this overlay, so
-            // everything before it in the vec is darkened and the panel after
-            // it is not - the same split the browser play page makes.
-            let mut save_chrome_blend = Vec::new();
-            {
-                let base = save_chrome_draw_vec.len() as u32;
-                let (save_sprites, darken) = self.save_select_chrome_sprite_draws(w, h);
-                if let Some(i) = darken {
-                    save_chrome_blend.push(legaia_engine_render::OverlayBlendSpan {
-                        start: base + i as u32,
-                        count: 1,
-                        abr: 2,
-                    });
-                }
-                save_chrome_draw_vec.extend(save_sprites);
-            }
-            // The post-battle report's two framed windows (level-up above,
-            // spoils below). Same atlas, and mutually exclusive with the
-            // boot/menu chrome.
-            if !self.boot_ui.is_active() {
-                save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
-            }
-            save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
-            // The shop-family overlay's sprites: the gold shop / prize
-            // exchange window frames and atlas markers, and the fallback
-            // panel's gold frame - the same frame `build_hud` drew the texts
-            // of.
-            save_chrome_draw_vec.extend(screens.sprites);
-            // Dialog-window chrome (gradient fill + gold frame + hand
-            // cursors) shares the system-UI atlas slot; a dialog box
-            // and the boot/menu chrome are mutually exclusive states.
-            save_chrome_draw_vec.extend(self.dialog_chrome_sprite_draws(w, h));
-            // Name-entry window chrome (grid + name-field filigree
-            // windows + hand cursor) shares the same atlas slot.
-            save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));
-            // Battle HUD chrome (party-strip + plaque lozenges and the
-            // gold HP / green MP label cells) comes out of the same
-            // atlas; battle and the boot/menu chrome never coexist. Drawn
-            // first of the three battle surfaces so the prompt box and the
-            // command chips below layer over the readout, not under it.
-            save_chrome_draw_vec.extend(self.battle_chrome_sprite_draws(w, h));
-            // Sparring-tutorial prompt box: the same window skin, framed at
-            // the rect the retail emitter registers the prompt with. In
-            // battle, so it cannot coexist with the boot/menu chrome above.
-            save_chrome_draw_vec.extend(self.battle_tutorial_chrome_sprite_draws(w, h));
-            // Arts command-input chrome (direction chips + D-pad, the
-            // pennant input bar, the AP plate). Also system-UI-atlas
-            // sampled, and mutually exclusive with every state above -
-            // it only draws inside a battle. Coexists with the prompt box
-            // above: retail shows the drill's instruction window over the
-            // chips it is describing.
-            save_chrome_draw_vec.extend(self.arts_input_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
@@ -309,36 +208,6 @@ impl PlayWindowApp {
                 draws: &muscle_hub_draw_vec,
                 blend: &muscle_hub_blend,
             });
-            // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
-            // (`World::cutscene.caption`) blitted centered and faded
-            // (`cutscene_caption_alpha`) over the gap between the two narration
-            // crawls. One textured quad sampling the caption atlas - the
-            // background palette entry is transparent, so only the white text
-            // draws over the scene; alpha 0 emits nothing. Placed through the
-            // stage transform the rest of the stage-space overlay uses (retail
-            // centers it horizontally, mid-screen ~y110 over the villager
-            // tableau): scaling by `h / 240` in window pixels drew it larger
-            // than the stage and off its centre whenever the window is not a
-            // stage multiple, where the page's overlay canvas is the stage.
-            let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
-                let alpha = self.session.host.world.cutscene.caption_alpha;
-                match self.caption_atlas.as_ref() {
-                    Some((_, cw, ch)) if alpha > 0.001 => {
-                        let (origin, s) = self.save_select_stage(w, h);
-                        let s = s.max(1);
-                        let dw = *cw * s;
-                        let dh = *ch * s;
-                        let dx = origin.0 + (320 * s as i32 - dw as i32) / 2;
-                        let dy = origin.1 + 110 * s as i32 - dh as i32 / 2;
-                        vec![legaia_engine_render::SpriteDraw {
-                            dst: (dx, dy, dw, dh),
-                            src: (0, 0, *cw, *ch),
-                            color: [1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0)],
-                        }]
-                    }
-                    _ => Vec::new(),
-                }
-            };
             let caption_overlay = self
                 .caption_atlas
                 .as_ref()
@@ -347,23 +216,7 @@ impl PlayWindowApp {
                     draws: &caption_draw_vec,
                     blend: &[],
                 });
-
-            // The clear colour is the shared engine-ui selector on every
-            // frame, the one the browser play page reads too: retail black for
-            // the boot UI, field / cutscene frames and stage battles alike
-            // (a roofless stage shell shows black above it, as retail's
-            // does). Passing it only for the boot UI and a
-            // stage battle left every other frame on the renderer's own
-            // fallback navy, a colour neither retail nor the page draws.
-            let boot_ui_clear =
-                (self.boot_ui.is_active() && !game_over_hold) || self.menu_runtime.covers_field();
-            let stage_battle = self.session.host.world.mode == SceneMode::Battle
-                && self.battle_stage_mesh.is_some();
-            let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
-                boot_ui_clear,
-                stage_battle,
-                self.session.host.world.frame_clear_rgb(),
-            ));
+            let scene_clear = self.frame_clear_color(game_over_hold);
 
             // Slot 1: logos OR title-art bands (title still
             // emits during SaveSelect, dimmed). Slot 2: either
@@ -391,145 +244,9 @@ impl PlayWindowApp {
             } else {
                 None
             };
-            // FX model matrices pair with the active render frame:
-            // battle cameras carry no world negation (keep the
-            // per-model Y-flip); the field cameras compose
-            // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
-            let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
-            let fx_model_flip = if fx_in_battle {
-                Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
-            } else {
-                Mat4::IDENTITY
-            };
-            // Battle FX ride the actor camera composition (the retail
-            // 4x world-scale base under the shared rotation) so
-            // effects land on the scaled actor stage; field FX use
-            // the field camera as-is.
-            // The uniform scale `fx_cam` composes on top of `cam`. Effect
-            // billboards need it separately from the matrix: retail forms a
-            // sprite quad's corners in VIEW space, after the camera matrix has
-            // scaled the centre (`FUN_800195a8` - the `MVMVA` transforms the
-            // centre, the corner adds follow it, and the matrix is reset to
-            // identity before the projection), so the half-extents must not go
-            // through the 4x a second time. See
-            // `legaia_engine_render::effect_billboard`.
-            let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
-                BATTLE_WORLD_SCALE
-            } else {
-                1.0
-            };
-            let fx_cam = if fx_scale != 1.0 {
-                cam * Mat4::from_scale(Vec3::splat(fx_scale))
-            } else {
-                cam
-            };
-            // Effect-pool billboards: bridge live effect child sprites
-            // into the renderer as faithful camera-facing quads sized
-            // and UV-addressed from the effect bundle's inline atlas
-            // (`World::active_effect_sprites`). Each draws two ways: a
-            // textured quad sampling the scene VRAM at the sprite's
-            // atlas page/clut/uv (the retail FUN_801E0088 pass-2 path -
-            // in battle the flame atlas + CLUT rows are resident via the
-            // battle-entry blit, see `effect_billboard_mesh`), plus a
-            // tinted outline through the Lines pipeline so the spawn
-            // reads even where a sprite samples unloaded texels. See
-            // docs/subsystems/effect-vm.md. The billboards ride `fx_cam`
-            // like every other battle FX layer: in a stage-dome battle
-            // the pool positions are actor-stage coordinates, so drawing
-            // them under the unscaled `cam` landed each quad 4x too
-            // small at the wrong stage position. The camera-facing basis
-            // derives from the same matrix, so the quads face the camera
-            // that actually draws them.
-            let (effect_billboard, effect_lines) =
-                self.build_effect_billboards(r, fx_cam, fx_scale);
-            self.diag_effect_billboards(fx_cam);
-            let effect_billboard = if std::env::var_os("LEGAIA_DIAG_NOFX").is_some() {
-                None
-            } else {
-                effect_billboard
-            };
-            if let Some(mesh) = effect_billboard.as_ref() {
-                draws.push(SceneDraw {
-                    mesh,
-                    mvp: fx_cam,
-                    cue: None,
-                });
-            }
-            // World-map overlay lines: only the env-gated slot-4 inspection
-            // wireframe now. The entity and player markers draw as screen
-            // primitives through the kernel the browser play page shares
-            // (`world_map_marker_prims`, appended to `screen_prims` below).
-            let world_map_slot4_lines = self.build_world_map_overlay_lines(r, in_world_map);
-            // Effect 3D models (`etmd.dat`): spell effects like Tail
-            // Fire are small Gouraud-shaded `etmd` meshes textured by
-            // the resident `etim` texels, not billboards. Build a
-            // per-frame VRAM mesh + transform for each live effect that
-            // has a model assigned (same per-frame model-matrix
-            // convention as `actor_model`). Held in a local Vec so the
-            // meshes outlive the render borrow.
-            let effect_model_draws = self.build_effect_model_draws(r, fx_model_flip, in_world_map);
-            for (mesh, model) in &effect_model_draws {
-                draws.push(SceneDraw {
-                    mesh,
-                    mvp: fx_cam * *model,
-                    cue: None,
-                });
-            }
-
-            // Active Seru-magic summon scene-graph (debug-spawned via
-            // `G`): one textured mesh per move-VM-driven part, posed by
-            // the part's interpreted transform (world pos + rotation
-            // banks). The animation computation is faithful (move VM);
-            // the transform composition is the open PROT 0900 piece.
-            // The retail camera the parts' `+0x52` camera-relative bits
-            // resolve against (`FUN_8001CF50`); `None` under a host vantage.
-            let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
-            let summon_part_draws = self.build_summon_and_move_fx_part_draws(
-                r,
-                fx_model_flip,
-                in_world_map,
-                part_cam.as_ref(),
-            );
-            for (mesh, model) in &summon_part_draws {
-                draws.push(SceneDraw {
-                    mesh,
-                    mvp: fx_cam * *model,
-                    cue: None,
-                });
-            }
-            // Field move-VM effect parts (op 0x34 sub-3 stagers): resolve
-            // each mesh part against the SCENE's TMD pack - `env_tmds` =
-            // `res.tmds` filtered to the scene_asset_table bundle entry,
-            // the same source the field-placement renderer + the
-            // asset-viewer use - NOT the battle `global_tmd_pool`. Retail
-            // resolves a field stager's mesh as `DAT_8007C018[model_sel +
-            // DAT_8007B6F8]`, where `DAT_8007B6F8 = 5` is the character-mesh
-            // prefix and `DAT_8007C018[5..]` is exactly this scene pack; so
-            // the part's relative `model_sel` (spawn base 0, surfaced as
-            // `model_index`) indexes `env_tmds` directly, mirroring how a
-            // placement's `pack_index` does.
-            let field_fx_draws =
-                self.build_field_fx_part_draws(r, fx_model_flip, in_world_map, part_cam.as_ref());
-            for (mesh, model) in &field_fx_draws {
-                draws.push(SceneDraw {
-                    mesh,
-                    mvp: fx_cam * *model,
-                    cue: None,
-                });
-            }
-            // The move-FX afterimage streak, under an orthographic
-            // screen-space MVP (PSX 320x240 frame). The PROT-0900
-            // screen-effect widgets (mask / sprite / panel / letterbox) are
-            // screen primitives instead - see `screen_fx_screen_prims` below.
-            let screen_fx_tex = self.build_screen_fx_meshes(r);
-            let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
-            if let Some(m) = &screen_fx_tex {
-                draws.push(SceneDraw {
-                    mesh: m,
-                    mvp: screen_fx_mvp,
-                    cue: None,
-                });
-            }
+            let fx = self.build_fx_frame(r, cam, in_world_map, cutscene_cam);
+            let fx_cam = fx.fx_cam;
+            fx.push_draws(&mut draws);
             // The floating value readout is a screen-space primitive run, not
             // a scene mesh: see `screen_prims` below, where both hosts build
             // it from `legaia_engine_ui::battle_numerals`.
@@ -539,99 +256,15 @@ impl PlayWindowApp {
             // the retail mechanism - the 3D scene darkens while the narration
             // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
-            // `LEGAIA_DIAG_DRAWS=<path>`: this frame's textured draws as
-            // texture families (`draw_census`), rewritten every frame so the
-            // file holds the captured one.
-            if let Some(d) = self.draw_census.as_ref()
-                && let Some(path) = std::env::var_os("LEGAIA_DIAG_DRAWS")
-            {
-                type Census = legaia_engine_core::draw_census::MeshCensus;
-                let mut by_ptr: std::collections::HashMap<
-                    *const legaia_engine_render::UploadedVramMesh,
-                    &Census,
-                > = std::collections::HashMap::new();
-                for (m, c) in self.meshes.iter().zip(&d.meshes) {
-                    if let Some(c) = c {
-                        by_ptr.insert(m as *const _, c);
-                    }
-                }
-                for (m, c) in self.field_lit.meshes.iter().zip(&d.lit) {
-                    by_ptr.insert(m as *const _, c);
-                }
-                for (idx, m) in &self.field_morph_live {
-                    if let Some(c) = d.morph.get(idx) {
-                        by_ptr.insert(m as *const _, c);
-                    }
-                }
-                if let (Some((_, Some(m))), Some(c)) = (&self.ground_crop, &d.ground_crop) {
-                    by_ptr.insert(m as *const _, c);
-                }
-                if let (Some(m), Some(c)) = (&self.ground_heightfield, &d.ground) {
-                    by_ptr.insert(m as *const _, c);
-                }
-                let census_draws = || {
-                    draws.iter().filter_map(|dr| {
-                        by_ptr
-                            .get(&(dr.mesh as *const _))
-                            .map(|c| (*c, dr.mvp.to_cols_array()))
-                    })
-                };
-                let rows =
-                    legaia_engine_core::draw_census::family_rows(census_draws(), 320.0, 240.0);
-                // `LEGAIA_DIAG_DRAW_TRIS=<clut hex>`: that family's triangles,
-                // one per line, at `<path>.tris`.
-                if let Some(cba) = std::env::var("LEGAIA_DIAG_DRAW_TRIS")
-                    .ok()
-                    .and_then(|s| u16::from_str_radix(s.trim_start_matches("0x"), 16).ok())
-                {
-                    let mut tp = path.clone();
-                    tp.push(".tris");
-                    let _ = std::fs::write(
-                        tp,
-                        legaia_engine_core::draw_census::family_tris_jsonl(
-                            census_draws(),
-                            320.0,
-                            240.0,
-                            cba,
-                        ),
-                    );
-                }
-                // The CPU VRAM the field pass samples, beside it
-                // (`<path>.vram`, 1 MiB little-endian), so a family whose
-                // count and colour agree but whose pixels part can be read
-                // against the state's own VRAM.
-                if let Some(v) = self.cpu_vram_base.as_ref() {
-                    let mut vp = path.clone();
-                    vp.push(".vram");
-                    let _ = std::fs::write(vp, v.as_bytes());
-                }
-                let _ = std::fs::write(
-                    path,
-                    legaia_engine_core::draw_census::family_rows_jsonl(&rows),
-                );
-            }
-            {
-                let mut tex = vec![None; draws.len()];
-                for (i, c) in clip_marks {
-                    if let Some(slot) = tex.get_mut(i) {
-                        *slot = Some(c);
-                    }
-                }
-                let mut col = vec![None; color_draws.len()];
-                for (i, c) in color_clip_marks {
-                    if let Some(slot) = col.get_mut(i) {
-                        *slot = Some(c);
-                    }
-                }
-                r.set_draw_clips(tex, col);
-                let mut nclip = vec![None; draws.len()];
-                for (i, m) in nclip_marks {
-                    if let Some(slot) = nclip.get_mut(i) {
-                        *slot = Some(m);
-                    }
-                }
-                r.set_draw_nclip(nclip);
-            }
+            self.write_draw_census(&draws);
+            redraw_present::stage_draw_marks(
+                r,
+                draws.len(),
+                color_draws.len(),
+                clip_marks,
+                color_clip_marks,
+                nclip_marks,
+            );
             let scene = RenderScene {
                 vram,
                 draws: &draws,
@@ -639,9 +272,10 @@ impl PlayWindowApp {
                 // Effect outlines share the billboards' `fx_cam` (the two
                 // sources are mutually exclusive, and off the battle stage
                 // `fx_cam == cam`, so the slot-4 inspection lines are unaffected).
-                overlay_lines: world_map_slot4_lines
+                overlay_lines: fx
+                    .world_map_slot4_lines
                     .as_ref()
-                    .or(effect_lines.as_ref())
+                    .or(fx.effect_lines.as_ref())
                     .map(|m| (m, fx_cam)),
                 overlay_sprites: sprites_slot_1,
                 overlay_sprites_2: sprites_slot_2,
@@ -689,311 +323,23 @@ impl PlayWindowApp {
                     Err(e) => log::error!("play-window: framebuffer grab: {e:#}"),
                 }
             }
-            // The intro's primitives composite *over* the scene in one frame.
-            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
-            // mode which clears and draws nothing but quads, so it could never
-            // carry a transition strip over a field scene.
-            //
-            // The target is built *before* the screenshot harness so a capture
-            // sees the frame that is presented. Capturing `Scene(&scene)` here
-            // instead would silently drop every transition style from the PNGs
-            // - the harness's own blind spot, not the emitter's.
-            // Screen-space primitives composited over the scene this
-            // frame: the field-to-battle intro's styles, plus the in-battle
-            // weapon-trail bands (mutually exclusive in practice - the
-            // trail only draws once a swing clip plays inside the battle).
-            let mut screen_prims = battle_intro_prims;
-            // The field scene's own ordering-table effects, drawn UNDER the
-            // 2D overlays and sorted as one list: the fog sheets
-            // (`fog_particles`, `fog_puff_prim`), the move strips, and the
-            // field VM's attached lights (op `0x34` sub-1,
-            // `light_pool_prims`). Retail's darkness mask leaves the party
-            // HUD bright (the `dolk` capture); the browser play page draws
-            // the same three through one sorted pass with its HUD a layer
-            // above the canvas.
-            let mut light_prims = field_fog_prims;
-            // The actor drop shadows (`FUN_8001C394`), depth-tested against
-            // the scene just drawn - the play page's `tick_field_drop_shadow_prims`
-            // twin, through the same `World::field_drop_shadows` kernel.
-            light_prims.extend(self.field_drop_shadow_prims());
-            light_prims.extend(move_strip_prims);
-            light_prims.extend(self.field_light_screen_prims());
-            // The PROT-0900 screen-effect widgets sort in the same pass, by
-            // their retail OT slots - the play page's single-list order.
-            light_prims.extend(self.screen_fx_screen_prims());
-            // Under a shop the field is not drawn at all (the 3D pass above
-            // is skipped), so none of its screen-space effects may survive
-            // onto the black backdrop either.
-            if self.menu_runtime.covers_field() {
-                light_prims.clear();
-            }
-            screen_prims.extend(self.weapon_trail_screen_prims());
-            // PROT 0948's Cross Beam, while its arm 3 runs. Its two OT
-            // entries (`2`, `0x400`) are both behind the text's bucket, so it
-            // draws under the HUD - the browser play page's GL pass sits
-            // under its text canvas the same way.
-            light_prims.extend(self.cross_beam_screen_prims());
-            // PROT 0904's (Theeder) beam: prongs, charge, sweep and trail.
-            light_prims.extend(self.theeder_screen_prims());
-            // The world's one live full-screen fade (the summon band's two
-            // flashes, the escape white-out), drawn through the same kernel
-            // the intro fades use so the ABR mode is honoured, and split at
-            // the text layer by its ordering-table id exactly as the
-            // screen-effect pushes below are: the summon band's flashes
-            // (id `1`, the text's own bucket) draw under the battle HUD, a
-            // field warp's fade (id `0`) over it. The browser play page
-            // makes the same split (`play_text_layer_washes_json`).
-            for p in self.screen_fade_screen_prims() {
-                let ot = i16::try_from(p.ot_index()).unwrap_or(i16::MAX);
-                if legaia_engine_render::screen_prim::push_covers_text(ot) {
-                    screen_prims.push(p);
-                } else {
-                    light_prims.push(p);
-                }
-            }
-            // A shop opening: the field fades to black under the menu's
-            // subtractive full-screen quad before its windows slide in
-            // (`MenuRuntime::shop_fade_level`; the browser page draws the
-            // same quad).
-            if let Some(level) = self.menu_runtime.shop_fade_level() {
-                screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
-                    u32::from(level) * 0x01_01_01,
-                    2,
-                    0,
-                ));
-            }
-            // The pause menu's wipe: the field darkening before the menu
-            // spawns and brightening after it closes (`FUN_801ED308`'s
-            // `_DAT_8007B440` through the wipe emitter) - the same
-            // subtractive quad as the shop's opening fade.
-            if let Some(level) = self.session.pause_wipe().fade_level() {
-                screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
-                    u32::from(level) * 0x01_01_01,
-                    2,
-                    0,
-                ));
-            }
-            // The field overlay's **screen-effect** washes: the colour-tween
-            // actors the field VM's op `0x34` sub-0 arm spawns, each emitting
-            // one `FUN_80024EE4(layer, blend, packed)` push per frame. This is
-            // the scene-entry fade-from-black and the door prologue's
-            // fade-to-black - simulated on both hosts for as long as neither
-            // drew it. Through the same shared emitter the browser play page
-            // composites them with, so the ordering-table bucket, the ABR
-            // equation and the GP0 channel order are decided once.
-            //
-            // Split at the text layer: retail links every glyph at OT bucket
-            // `1` (`TEXT_OT_BUCKET`), so a push at bucket `0` washes the
-            // text with the scene and a deeper one draws under it. The
-            // overlay text sits between this host's two lists, so the
-            // under-text pushes join `light_prims`. The browser play page
-            // makes the same split through the same kernel.
-            let (pushes_under, pushes_over) =
-                legaia_engine_render::screen_overlay::screen_effect_push_prims_split(
-                    &self.session.host.world.screen_tint_push_args(),
-                );
-            light_prims.extend(pushes_under);
-            screen_prims.extend(pushes_over);
-            // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`),
-            // through the same shared emitter the browser play page uses so
-            // the two bars cannot drift between hosts.
-            screen_prims.extend(legaia_engine_render::screen_overlay::cinematic_bar_prims(
-                self.session.host.world.presentation.cinematic_bar,
-                legaia_engine_render::screen_overlay::PSX_DISPLAY_H,
-            ));
-            // Floating value readout: the numeral a landed hit throws, plus
-            // the `N HIT` / `TOTAL` counter cluster. Retail's own art and
-            // geometry - 24x24 cells off the battle effect atlas (texture page
-            // `0x27`, CLUT `0x7703`), thrown over the STRUCK actor, growing
-            // about a fixed horizontal centre and rising to screen row 32.
-            // The quads come out of `legaia_engine_ui::battle_numerals`, which
-            // the browser play page emits through too, so the two hosts draw
-            // the same pixels off the same VRAM page instead of one sampling
-            // the sheet and the other restyling the number in the dialog font.
-            // Only the seat is per-host: it needs the struck actor's projected
-            // screen position, which only a host holding the camera has.
-            screen_prims.extend(self.battle_value_readout_prims(fx_cam));
-            // The Arts announcement banner (`<word> ARTS!!`), off the same
-            // page through the same shared builder the browser play page
-            // emits it with. The whole banner - stage machine, slide clock,
-            // ghost-trail layers, quad geometry - is engine state stepped in
-            // `World::tick`, so this host contributes nothing but the append.
-            screen_prims.extend(legaia_engine_render::battle_numerals::arts_banner_prims(
-                &self.session.host.world.battle_arts_banner_quads(),
-                legaia_engine_render::battle_numerals::VALUE_READOUT_OT,
-            ));
-            // The dance count-in banner, as retail's own 160x32 sprite off the
-            // hall's HUD page rather than placeholder text. Same shared
-            // builder the browser play page emits through
-            // (`legaia_engine_ui::ui_dance::dance_countin_prims`), and the
-            // same residency predicate decides for both hosts whether the
-            // sprite or the letterforms draw.
-            screen_prims.extend(self.dance_countin_prims());
-            // The dance HUD frame (score boxes, digits, `Lv.` gauges) as
-            // retail's own quads on the same page, through the shared
-            // `ui_dance::dance_hud_prims` the browser play page emits with.
-            screen_prims.extend(self.dance_hud_prims());
-            // The Baka cabinet's and round chrome's widgets on the duel
-            // VRAM's PROT 1203 pages (`baka_hud_prims`), the browser play
-            // page's twin.
-            screen_prims.extend(self.baka_hud_prims());
-            // The slot machine's paylines, off the machine's own ported pass
-            // and projection - the segments both browser pages stroke.
-            // The machine itself - cabinet, reels, furniture, dot matrix and
-            // coin HUD - under the paylines (`ui_slot_cabinet`).
-            // A rules page is a full-screen panel its text prints on, so it
-            // rides the under-overlay slot: the composited tail draws over
-            // the glyph layer, which would bury the page's text.
-            let rules_page = self
-                .session
-                .host
-                .world
-                .minigames
-                .slot_machine
-                .as_ref()
-                .is_some_and(|m| {
-                    matches!(
-                        m.screen(),
-                        legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
-                    )
-                });
-            if rules_page {
-                light_prims.extend(slot_prims);
-            } else {
-                screen_prims.extend(slot_prims);
-            }
-            screen_prims.extend(self.slot_payline_screen_prims());
-            // The fishing line, latched above: the same kernel and builder
-            // the browser play page uses.
-            screen_prims.extend(fishing_line_prims);
-            // The overworld's entity + player markers: the shared
-            // `world_map_markers` kernel's quads, the browser play page's
-            // twin (`crate::play_world_map_markers` there).
-            screen_prims.extend(self.world_map_marker_prims());
-            // The overworld sky band (`FUN_801F73E4`): the shared gate and
-            // wrapper the browser play page draws it with.
-            screen_prims.extend(self.world_map_sky_prims());
+            let (screen_prims, light_prims) = self.build_screen_prims(
+                battle_intro_prims,
+                field_fog_prims,
+                move_strip_prims,
+                slot_prims,
+                fishing_line_prims,
+                fx_cam,
+            );
             let target = |scene| present_target(scene, &screen_prims, &light_prims);
-            // Periodic sweep (`--screenshot-every`): capture a frame every N
-            // ticks into the sweep dir (named for the tick), keep running,
-            // and exit after the capture at/past `--screenshot-last-tick`.
-            // Redraws can drain up to 4 ticks, so the cadence is tracked via
-            // `sweep_next_tick` rather than a modulo on the tick counter.
-            if let Some(sw) = self.screenshot.as_ref().and_then(|sc| sc.sweep.as_ref())
-                && self.tick_no >= self.sweep_next_tick
-            {
-                let path = sw.dir.join(format!("tick_{:05}.png", self.tick_no));
-                let last_tick = sw.last_tick;
-                self.sweep_next_tick = self.tick_no + sw.every;
-                match r.capture_rgba(target(&scene)) {
-                    Ok(img) => match write_capture_png(&path, &img) {
-                        Ok(()) => {
-                            println!(
-                                "[ok] screenshot {} ({}x{}) at tick {}",
-                                path.display(),
-                                img.width,
-                                img.height,
-                                self.tick_no
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("screenshot write failed: {e:#}");
-                            std::process::exit(1);
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("screenshot capture failed: {e:#}");
-                        std::process::exit(1);
-                    }
-                }
-                if last_tick.is_some_and(|lt| self.tick_no >= lt) {
-                    std::process::exit(0);
-                }
-            }
-            // Screenshot harness: at the target tick, read the frame back
-            // offscreen and exit instead of presenting to the window.
-            let gated = self.screenshot.as_ref().is_some_and(|sc| {
-                sc.path.is_some()
-                    && (sc.phase_gate.is_some()
-                        || sc.script_gate.is_some()
-                        || sc.battle_drive.is_some())
-            });
-            if gated
-                && !self.capture_phase_met()
-                && self
-                    .screenshot
-                    .as_ref()
-                    .is_some_and(|sc| self.tick_no >= sc.capture_tick)
-            {
-                eprintln!(
-                    "phase gate not met by tick {} (action state 0x{:02X})",
-                    self.tick_no, self.session.host.world.battle_ctx.action_state
-                );
-                std::process::exit(3);
-            }
-            let capture_due = self.screenshot.as_ref().is_some_and(|sc| {
-                sc.path.is_some()
-                    && if gated {
-                        self.capture_phase_met()
-                    } else {
-                        self.tick_no >= sc.capture_tick
-                    }
-            });
-            if capture_due {
-                let path = self
-                    .screenshot
-                    .as_ref()
-                    .and_then(|sc| sc.path.clone())
-                    .unwrap();
-                // Read the frame back until two consecutive readbacks of
-                // this same frame agree. Re-rendering an unchanged target is
-                // deterministic, yet under heavy machine load a readback
-                // has come back with its top rows still zero - a black band
-                // of up to 15 rows whose lower edge steps every 32 columns
-                // (GPU tiles), the rest of the frame byte-identical - on a
-                // few runs in ten of the retail-compare corpus (never with
-                // the child run alone; see `Renderer::capture_rgba`).
-                // A band is not a frame the scene drew, so the capture is
-                // the first one a second readback reproduces.
-                let mut capture = r.capture_rgba(target(&scene));
-                for retry in 1..=4 {
-                    let Ok(prev) = &capture else { break };
-                    match r.capture_rgba(target(&scene)) {
-                        Ok(next) if next.rgba == prev.rgba => break,
-                        next => {
-                            eprintln!(
-                                "screenshot readback {retry} disagreed with the previous one; reading again"
-                            );
-                            capture = next;
-                        }
-                    }
-                }
-                match capture {
-                    Ok(img) => match write_capture_png(&path, &img) {
-                        Ok(()) => {
-                            println!(
-                                "[ok] screenshot {} ({}x{}) at tick {}",
-                                path.display(),
-                                img.width,
-                                img.height,
-                                self.tick_no
-                            );
-                            std::process::exit(0);
-                        }
-                        Err(e) => {
-                            eprintln!("screenshot write failed: {e:#}");
-                            std::process::exit(1);
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("screenshot capture failed: {e:#}");
-                        std::process::exit(1);
-                    }
-                }
-            }
-            if let Err(e) = r.render(target(&scene)) {
-                log::error!("render: {e:#}");
-            }
+            redraw_present::capture_sweep_frame(
+                r,
+                target(&scene),
+                self.screenshot.as_ref(),
+                self.tick_no,
+                &mut self.sweep_next_tick,
+            );
+            self.present_frame(r, &scene, &screen_prims, &light_prims);
         }
         // The transition emitter was taken out of `self` for the render
         // borrow; put it back so its working set survives to the next frame.
@@ -1059,7 +405,7 @@ impl PlayWindowApp {
     /// or an in-frame NDC with texel coordinates that name a page nothing
     /// uploaded (the quad draws, but every texel discards). Off by default -
     /// the log is per-frame per-sprite.
-    fn diag_effect_billboards(&self, cam: Mat4) {
+    pub(super) fn diag_effect_billboards(&self, cam: Mat4) {
         if std::env::var_os("LEGAIA_DIAG_FX").is_none() {
             return;
         }

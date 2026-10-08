@@ -12,10 +12,14 @@ mod keyboard;
 mod redraw;
 #[path = "event_handler/redraw_draws.rs"]
 mod redraw_draws;
+#[path = "event_handler/redraw_overlay.rs"]
+mod redraw_overlay;
 #[path = "event_handler/redraw_passes.rs"]
 mod redraw_passes;
 #[path = "event_handler/redraw_prep.rs"]
 mod redraw_prep;
+#[path = "event_handler/redraw_present.rs"]
+mod redraw_present;
 #[path = "event_handler/redraw_stage.rs"]
 mod redraw_stage;
 #[path = "event_handler/redraw_tick.rs"]
