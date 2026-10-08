@@ -565,7 +565,8 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   placement's model byte and the scripted-motion VM's op `0x0E` share.
 - `levelup` / `inn` / `equip_session` / `spells` - the post-battle
   `LevelUpTracker`, the inn rest session, the equipment session, and the
-  spell catalog + cast resolver.
+  spell catalog + cast resolver (all re-exported from the `World`-free
+  crates below).
 - `field_menu` / `field_menu_dispatch` / `menu_runtime` and the `menu_*`
   family - pause-menu sessions, sub-session dispatch, and list / input /
   validator leaves.

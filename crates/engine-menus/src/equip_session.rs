@@ -166,7 +166,7 @@ fn slot_bits_of_category(cat: legaia_asset::equip_stats::EquipSlot) -> u8 {
 /// the index. That is injective over the id space and can never collide
 /// with the miss sentinel, which is `0x100` and therefore out of `u8` range.
 struct SessionEquipHost<'a> {
-    inventory: &'a mut crate::world::ItemBag,
+    inventory: &'a mut crate::item_bag::ItemBag,
     /// The cue the applier played, if it reached its tail.
     sfx: Option<u8>,
 }
@@ -336,7 +336,7 @@ pub struct EquipSession {
     record: StatRecord,
     /// Catalog of items the player owns (one entry per id). Used to
     /// build the per-slot picker list.
-    inventory: crate::world::ItemBag,
+    inventory: crate::item_bag::ItemBag,
     /// Equipment-stat table (resolves modifiers on commit).
     equipment: EquipmentTable,
     /// Status modifiers pulled from the world for the recompute pass.
@@ -371,7 +371,7 @@ impl EquipSession {
     /// Construct a session for an actor.
     pub fn new(
         record: StatRecord,
-        inventory: crate::world::ItemBag,
+        inventory: crate::item_bag::ItemBag,
         equipment: EquipmentTable,
         modifiers: StatusModifiers,
         active_status: Vec<StatusKind>,
@@ -467,7 +467,7 @@ impl EquipSession {
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_restrictions(
         record: StatRecord,
-        inventory: crate::world::ItemBag,
+        inventory: crate::item_bag::ItemBag,
         equipment: EquipmentTable,
         modifiers: StatusModifiers,
         active_status: Vec<StatusKind>,
@@ -492,7 +492,7 @@ impl EquipSession {
 
     /// Read access to the in-progress inventory map. Engines render the
     /// per-candidate count from this.
-    pub fn inventory(&self) -> &crate::world::ItemBag {
+    pub fn inventory(&self) -> &crate::item_bag::ItemBag {
         &self.inventory
     }
 
@@ -1368,7 +1368,7 @@ pub fn apply_best_equipment(
     equips: &mut [u8; 8],
     candidates: [u8; 4],
     armament_slots: [usize; 4],
-    inventory: &mut crate::world::ItemBag,
+    inventory: &mut crate::item_bag::ItemBag,
 ) -> u32 {
     let mut changed = 0;
     for (armament, &candidate) in candidates.iter().enumerate() {
@@ -1446,7 +1446,7 @@ mod tests {
     }
 
     fn fresh_session() -> EquipSession {
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         // Item 0x05 - slot (5 >> 5) = 0; helmet-class.
         inv.insert(0x05, 1);
         // Item 0x25 - slot 1 (0x25 >> 5 = 1)
@@ -1596,7 +1596,7 @@ mod tests {
         use legaia_asset::equip_stats::EquipSlot as Disc;
 
         // Two weapons: one Vahn-only (mask 1), one anyone (mask 7).
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         inv.insert(0x20, 1); // Vahn sword
         inv.insert(0x30, 1); // universal weapon
 
@@ -1657,7 +1657,7 @@ mod tests {
         use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
         use legaia_asset::equip_stats::EquipSlot as Disc;
 
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         inv.insert(0x20, 1); // weapon
         inv.insert(0x40, 1); // body armor
 
@@ -1730,7 +1730,7 @@ mod tests {
     fn preview_reflects_equipment_spd_and_int() {
         // A footwear/head item that carries SPD + INT bonuses (the equipment
         // table's +4 / +0 bytes). The preview must move SPD/INT, not acc/eva.
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         inv.insert(0x05, 1);
         let mut eq = EquipmentTable::new();
         eq.set(
@@ -1980,7 +1980,7 @@ mod tests {
         let mut equips = [0u8; 8];
         equips[0] = 0x05; // already the best - must not move
         equips[1] = 0x25; // will be replaced by 0x26
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         inv.insert(0x26, 1);
         // Slot 2's candidate 0x45 is NOT in the bag - skipped, no count.
         let changed = apply_best_equipment(
@@ -2056,7 +2056,7 @@ mod tests {
     #[test]
     fn best_equipment_writes_footwear_to_the_boot_slot_not_the_hand_guard() {
         let mut equips = [0u8; 8];
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         inv.insert(0x60, 1);
         let changed = apply_best_equipment(
             &mut equips,

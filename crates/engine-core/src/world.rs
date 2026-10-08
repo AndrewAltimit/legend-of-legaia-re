@@ -89,7 +89,6 @@ mod field_terrain;
 mod field_vm_state;
 mod frame_clock;
 mod frame_step_floor;
-mod item_bag;
 mod menu_state;
 mod minigame_state;
 mod move_vm_globals;
@@ -132,7 +131,7 @@ pub use field_script_actor_state::{
 pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
-pub use item_bag::{BagEntry, ItemBag};
+pub use legaia_engine_menus::item_bag::{BagEntry, ItemBag};
 pub use menu_state::MenuState;
 pub use minigame_state::{FishingCaptionText, MinigameState, pond_event_cues};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};

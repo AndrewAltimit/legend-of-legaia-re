@@ -23,7 +23,7 @@
 //! `FUN_8004313C` window select) is ported once. This type is the engine's
 //! seat at that model.
 //!
-//! [`docs/subsystems/inventory.md`]: ../../../../docs/subsystems/inventory.md
+//! [`docs/subsystems/inventory.md`]: ../../../docs/subsystems/inventory.md
 
 use legaia_save::retail_inventory::{
     AddOutcome, ITEM_SLOTS_TOTAL, ItemWindow, RetailInventory, STACK_CAP,

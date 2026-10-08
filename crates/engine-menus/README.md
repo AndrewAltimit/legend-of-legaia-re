@@ -31,7 +31,11 @@ link into a dependent crate.
   (the SCUS list-node allocator and row builders), `menu_item_category` (the
   item category / weapon-favor table) and `menu_arrange` (the Arrange rank
   table at menu-overlay `0x801E4A88` and the bag-sort kernel
-  `FUN_801D64A8`).
+  `FUN_801D64A8`), `item_bag` (`ItemBag`, retail's 256-slot bag array and
+  its active window, with a map-shaped adapter; `World` holds one and
+  engine-core re-exports it as `world::ItemBag`) and `equip_session` (the
+  pause-menu Equip screen's session, which borrows the bag rather than the
+  world).
 - **Spells** - `spell_menu` (the out-of-battle cast flow) and
   `spell_party_broadcast` (`FUN_8003053C`).
 - **Menu overlay** - `menu_widget` (the window-widget choreography:

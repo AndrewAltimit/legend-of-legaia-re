@@ -1439,6 +1439,7 @@ dependencies = [
  "anyhow",
  "legaia-asset",
  "legaia-engine-battle",
+ "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
