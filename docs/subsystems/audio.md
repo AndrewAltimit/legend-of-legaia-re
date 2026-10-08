@@ -2302,43 +2302,56 @@ The exact count needs no SPU state on either side:
   frames.
 
 `audio-trace --retail-keyon-csv <census.csv>` aligns the census on timing
-(`compare_key_on_census`) and prints both totals. Three rules keep that
-alignment honest:
+(`compare_key_on_census`) and prints both totals. Four rules keep that
+comparison honest:
 
-- **Align on the notes.** The census logs every `FUN_80066308` call (a
-  `note` row: owner, VAB, program, key, velocity) as well as the KON masks.
-  The engine keys a note the moment it fires, while retail stages the key-on
-  for the next flush, and `FUN_8006B854` parks the mask further while an SPU
-  transfer is busy (`_DAT_8007AF38 & 1`): on `rugi` a KON trails its note by
-  up to three vsyncs, which on a sparse score is enough to land a key-on
-  alignment on the wrong bar.
+- **Match key-on for key-on, with retail's lag.** Each retail KON takes the
+  nearest unclaimed engine key-on up to three vsyncs earlier or one later.
+  The engine writes a key-on at the flush of the vsync its note fires in;
+  retail's can trail that, because `FUN_8006B854` parks the mask while an SPU
+  transfer is busy (`_DAT_8007AF38 & 1`) - by up to three vsyncs on `rugi`,
+  enough on a sparse score to put a strict alignment on the wrong bar.
+  Matching key-ons rather than the census's `note` rows keeps a layered
+  program, one note keying two voices on both sides, from penalising the
+  right offset.
 - **Score each offset symmetrically.** The offset maximises the Jaccard of
-  retail events matched within one frame against both sides' totals, so a
-  dense engine window that merely contains every retail note does not
-  outscore the one that plays those notes and no others.
-- **Count the score only.** A field's ambient cues key voices next to the
-  music, and the engine trace plays the music alone; a keyed voice whose
-  libsnd note owner is `0x21` (the cue slot) is left out of the retail total.
+  matched key-ons against both sides' totals, so a dense engine window that
+  merely contains every retail key-on does not outscore the one that plays
+  those notes and no others.
+- **Compare the span the score sounds in.** The window runs from the
+  census's first score activity to its last: a state captured in a
+  minigame's countdown or a cutscene's silence has nothing the engine trace,
+  which starts its track at once, could pair with.
+- **Count one score.** A field's ambient cues key voices next to the music
+  and are left out (libsnd note owner `0x21`, the cue slot). A state can also
+  hold two sequences - the Baka Fighter cabinet's duel track while the casino
+  floor's is still open - so `--retail-keyon-owner` keeps one (`1` the field
+  slot, `3` a battle or minigame track), and `--pin-bgm` keeps `--bgm-id`
+  playing over the scene's own op-`0x35` starts.
 
-On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census aligns at engine
-frame `2936` and reads **`292` engine key-ons against `292` retail**, `286`
-of them on the same frame give or take one. No drops: the allocator never
-returns its out-of-range sentinel across the census, so every note-on the
-score issues reaches the KON register. Across field scenes cold-booted from a
-memory card (`retona`, `chitei2`, `vozz`, `conc`, `doman`, `kor5`, `vell`,
-`cave01`, `teien`, `tunnelb`, `korb2`, `uru`) the totals agree exactly, and
-`rugi` and `dolk2` within one key-on in about 200 and 360. The census is what
-found three sequencer defects: every tone layered over a key keys a voice
-([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)), a
-note on an unused program slot keys none
-([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)), and a
-note released inside its own flush period never keys (the same section); a repeated note-on of a key already sounding on its channel keys fresh voices without releasing the first (`FUN_80061B24` calls `FUN_80066308` straight), which is what brings the battle theme of `party_basic_attack_vs_gobu_gobu` to `205` against `205`.
+On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census reads **`292`
+engine key-ons against `292` retail**, every one matched. No drops: the
+allocator never returns its out-of-range sentinel, so every note-on the
+score issues reaches the KON register. The same holds across the field
+states cold-booted from a memory card, the Gobu Gobu battle (`2026`), the
+title menu (`2065`) and the minigames - the casino floor (`2018`), the Baka
+Fighter duel (`2055`), the dance (`2060`), the fishing pond (`2017`) - with
+one exception: `dolk2_market_noa` reads `358` against `357`. Its odd key-on
+is a note whose note-off lands while retail's KON is still parked behind the
+busy transfer; the key-off path of `FUN_8006B854` clears the parked bit, and
+the port models no SPU transfer.
 
-Two states do not compare, and neither for an audio reason. In
-`rikuroa_pre_caruban` the music is not the field track: its notes come from
-sequence slot `3` on VAB slot `5` (owner `0x0003`) while `_DAT_8007BAC8`
-still names `2006`. In `retock_field_card_boot` the state's story flags select
-`2015` where the port's free-roam staging starts `2005`.
+The census found four sequencer defects: every tone layered over a key keys
+a voice ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)),
+a note on an unused program slot keys none
+([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)), a note
+released inside its own flush period never keys, and a repeated note-on of a
+key already sounding on its channel keys fresh voices without releasing the
+first (`FUN_80061B24` calls `FUN_80066308` straight). Two states needed a
+different track than their scene's: `rikuroa_pre_caruban` plays `2028` from
+sequence slot `3` while `_DAT_8007BAC8` still names `2006`, and
+`retock_field_card_boot`'s story flags select `2015` where the port's
+free-roam staging starts `2005`.
 
 The `1.148` the edge statistic reported on the same scenario is therefore not
 a key-on surplus. Two instrument effects made it. The edge count is

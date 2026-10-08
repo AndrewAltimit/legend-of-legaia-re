@@ -516,6 +516,11 @@ pub(crate) enum Cmd {
         /// than the port's free-roam staging, or whose music is a battle's.
         #[arg(long, default_value_t = false)]
         pin_bgm: bool,
+        /// Restrict `--retail-keyon-csv` to one sequence: the libsnd note
+        /// owner key in hex (`1` for the field BGM slot, `3` for a battle or
+        /// minigame track).
+        #[arg(long, value_parser = parse_hex_u16)]
+        retail_keyon_owner: Option<u16>,
     },
     /// PCM-window parity oracle - the I2 sibling of `audio-trace`.
     ///
@@ -1482,4 +1487,9 @@ mod locomotion_flag_tests {
             );
         }
     }
+}
+
+/// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
+fn parse_hex_u16(v: &str) -> Result<u16, String> {
+    u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }

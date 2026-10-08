@@ -1245,6 +1245,18 @@ pub struct KeyOnCensus {
 /// census is compared with plays the music alone. A KON row without records
 /// counts its whole mask; a `note` row with owner `0021` is dropped.
 pub fn parse_keyon_census_csv(s: &str) -> Result<KeyOnCensus> {
+    parse_keyon_census_csv_owned(s, None)
+}
+
+/// [`parse_keyon_census_csv`] restricted to one sequence's notes and voices:
+/// `owner` is the libsnd note owner key (`seq | track << 8`, e.g. `0x0001`
+/// for the field BGM slot, `0x0003` for a battle or minigame track). A state
+/// can hold two scores at once - the Baka Fighter cabinet plays its duel
+/// track while the casino floor's is still open - and the engine trace
+/// plays one.
+pub fn parse_keyon_census_csv_owned(s: &str, owner: Option<u16>) -> Result<KeyOnCensus> {
+    let owner_tag = owner.map(|o| format!("{o:04X}"));
+    let counts = |own: &str| own != "0021" && owner_tag.as_deref().is_none_or(|t| t == own);
     let mut out = KeyOnCensus::default();
     let bump = |v: &mut Vec<u32>, at: usize, n: u32| {
         if v.len() <= at {
@@ -1270,7 +1282,7 @@ pub fn parse_keyon_census_csv(s: &str) -> Result<KeyOnCensus> {
         };
         if mode == "note" {
             // `mask` carries the note's owner key on a note row.
-            if mask.trim() != "0021" {
+            if counts(mask.trim()) {
                 bump(&mut out.notes, v, 1);
             }
             continue;
@@ -1282,7 +1294,7 @@ pub fn parse_keyon_census_csv(s: &str) -> Result<KeyOnCensus> {
         } else {
             records
                 .split_whitespace()
-                .filter(|r| !r.ends_with("/0021"))
+                .filter(|r| r.rsplit('/').next().is_some_and(counts))
                 .count() as u32
         };
         bump(&mut out.key_ons, v, n);
@@ -1300,16 +1312,28 @@ pub fn parse_keyon_census_csv(s: &str) -> Result<KeyOnCensus> {
 /// [`parse_keyon_census_csv`] census).
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyOnCensusComparison {
-    /// Engine frame the census's vsync 0 lines up with.
+    /// Engine frame the window's first vsync lines up with.
     pub offset: usize,
-    /// Retail events (notes when the census has them, else key-ons) the
-    /// engine matched with a key-on within one frame either side.
+    /// The census vsyncs compared, `first..end`: the span from the first to
+    /// the last vsync with score activity. A state captured before its track
+    /// starts (a minigame's countdown) or after it stops carries silence the
+    /// engine trace, which starts the track at once, has no counterpart for.
+    pub window: std::ops::Range<usize>,
+    /// Retail key-ons matched one to one with an engine key-on within
+    /// [`RETAIL_LAG`].
     pub matched: u32,
     pub engine_total: u32,
     pub retail_total: u32,
     /// `engine_total / retail_total`.
     pub ratio: f64,
 }
+
+/// Vsyncs a retail KON may trail (positive) or lead (negative) the engine
+/// key-on it is matched with, nearest first. See [`compare_key_on_census`].
+const RETAIL_LAG: [isize; 5] = [1, 0, 2, 3, -1];
+/// The largest trail in [`RETAIL_LAG`]: how far before the window an engine
+/// key-on can be claimed.
+const RETAIL_LAG_MAX: usize = 3;
 
 /// Align a retail key-on census against an engine trace's exact key-on
 /// counts and compare key-on totals over the aligned window.
@@ -1321,12 +1345,13 @@ pub struct KeyOnCensusComparison {
 /// a capture of the SPU, and a capture's sounding state is on the host's
 /// audio clock.
 ///
-/// The events aligned on are the census's **notes** when it carries them.
-/// The engine keys a note the moment it fires; retail stages the key-on and
-/// writes it at the next flush, which a busy SPU transfer defers further
-/// (`FUN_8006B854` parks the mask while `_DAT_8007AF38 & 1`), so a retail
-/// KON can trail its note by several vsyncs - enough, on a sparse score, to
-/// pull a key-on alignment onto the wrong bar.
+/// Both sides are matched key-on for key-on, one to one, each retail KON
+/// taking the nearest unclaimed engine key-on within [`RETAIL_LAG`]. The
+/// engine writes a key-on at the flush of the vsync its note fires in;
+/// retail's can trail that, as `FUN_8006B854` parks the mask while an SPU
+/// transfer is busy (`_DAT_8007AF38 & 1`) - by up to three vsyncs on `rugi`.
+/// Matching key-ons (not notes) keeps layered tones, where one note keys two
+/// voices on both sides, from penalising the right offset.
 ///
 /// Returns `None` when the engine trace carries no key-on counters or is
 /// shorter than the census.
@@ -1335,35 +1360,62 @@ pub fn compare_key_on_census(
     census: &KeyOnCensus,
 ) -> Option<KeyOnCensusComparison> {
     let ek = engine_key_on_counts(engine)?;
-    let series: &[u32] = if census.notes.iter().any(|&n| n > 0) {
-        &census.notes
-    } else {
-        &census.key_ons
+    let active = |i: usize| {
+        census.key_ons.get(i).copied().unwrap_or(0) > 0
+            || census.notes.get(i).copied().unwrap_or(0) > 0
     };
+    let len = census.key_ons.len().max(census.notes.len());
+    let first = (0..len).find(|&i| active(i))?;
+    let end = (0..len).rev().find(|&i| active(i))? + 1;
+    let crop = |v: &[u32]| -> Vec<u32> {
+        (first..end)
+            .map(|i| v.get(i).copied().unwrap_or(0))
+            .collect()
+    };
+    let key_ons = crop(&census.key_ons);
+    let notes = crop(&census.notes);
+    let series: &[u32] = &key_ons;
     let n = series.len();
     if n == 0 || ek.len() < n {
         return None;
     }
-    // (matched within one frame, matched on the exact frame): the second
-    // term breaks the tie a one-frame tolerance leaves between neighbouring
-    // offsets.
-    let matched_at = |off: usize| -> (u32, u32) {
-        let mut near_sum = 0u32;
-        let mut exact_sum = 0u32;
-        for (i, r) in series.iter().enumerate().filter(|(_, r)| **r > 0) {
-            let t = off + i;
-            let near = [t.checked_sub(1), Some(t), Some(t + 1)]
-                .into_iter()
-                .flatten()
-                .filter_map(|j| ek.get(j).copied())
-                .max()
-                .unwrap_or(0);
-            near_sum += (*r).min(near);
-            exact_sum += (*r).min(ek[t]);
+    // One-to-one matching of retail key-ons to engine key-ons, each retail
+    // KON taking the nearest unclaimed engine key-on from `RETAIL_LAG`: the
+    // engine writes a key-on at the flush of the vsync its note fires in,
+    // while retail's KON can trail that by up to three vsyncs when
+    // `FUN_8006B854` parks it behind a busy SPU transfer, and either side
+    // can land a beat one vsync off the other. Returns (matched, matched
+    // with no deferral) - the second breaks score ties.
+    let mut claim = vec![0u32; ek.len()];
+    let mut matched_at = |off: usize| -> (u32, u32) {
+        let lo = off.saturating_sub(RETAIL_LAG_MAX);
+        let hi = (off + n + 1).min(ek.len());
+        claim[lo..hi].copy_from_slice(&ek[lo..hi]);
+        let (mut all, mut prompt) = (0u32, 0u32);
+        for (i, &r) in series.iter().enumerate().filter(|(_, r)| **r > 0) {
+            let mut want = r;
+            for lag in RETAIL_LAG {
+                let Some(e) = (off + i).checked_add_signed(-lag) else {
+                    continue;
+                };
+                let Some(have) = claim.get_mut(e) else {
+                    continue;
+                };
+                let take = want.min(*have);
+                *have -= take;
+                want -= take;
+                all += take;
+                if (0..=1).contains(&lag) {
+                    prompt += take;
+                }
+                if want == 0 {
+                    break;
+                }
+            }
         }
-        (near_sum, exact_sum)
+        (all, prompt)
     };
-    // Score each offset by the Jaccard of matched events against both
+    // Score each offset by the Jaccard of matched key-ons against both
     // sides' totals, so a dense engine window that merely *contains* every
     // retail event does not outscore the window that plays the same notes
     // and no others.
@@ -1375,8 +1427,8 @@ pub fn compare_key_on_census(
     }
     let jaccard = |off: usize, near: u32| -> f64 {
         let window = prefix[off + n] - prefix[off];
-        // `near` can count an engine key-on just past the window's edge, so
-        // the union is floored at the larger side.
+        // A matched engine key-on can sit just outside the window, so the
+        // union is floored at the larger side.
         let union = (u64::from(series_total) + window)
             .saturating_sub(u64::from(near))
             .max(u64::from(series_total).max(window));
@@ -1386,20 +1438,24 @@ pub fn compare_key_on_census(
             f64::from(near) / union as f64
         }
     };
-    let (offset, (matched, _), _) = (0..=ek.len() - n)
-        .map(|off| {
-            let m = matched_at(off);
-            (off, m, jaccard(off, m.0))
-        })
-        // Exact-frame matches break a score tie; the earliest offset wins a
-        // full tie, so a repeating phrase resolves to its first occurrence.
-        .max_by(|a, b| {
-            a.2.total_cmp(&b.2)
-                .then(a.1.1.cmp(&b.1.1))
-                .then(b.0.cmp(&a.0))
-        })?;
+    let mut best: Option<(usize, (u32, u32), f64)> = None;
+    for off in 0..=ek.len() - n {
+        let m = matched_at(off);
+        let score = jaccard(off, m.0);
+        // A higher score wins, then more undeferred matches; the earliest
+        // offset wins a full tie, so a repeating phrase resolves to its first
+        // occurrence.
+        let better = match best {
+            None => true,
+            Some((_, bm, bs)) => score > bs || (score == bs && m.1 > bm.1),
+        };
+        if better {
+            best = Some((off, m, score));
+        }
+    }
+    let (offset, (matched, _), _) = best?;
     let engine_total: u32 = ek[offset..offset + n].iter().sum();
-    let retail_total: u32 = census.key_ons.iter().sum();
+    let retail_total: u32 = key_ons.iter().sum();
     let ratio = if retail_total > 0 {
         engine_total as f64 / retail_total as f64
     } else {
@@ -1407,6 +1463,7 @@ pub fn compare_key_on_census(
     };
     Some(KeyOnCensusComparison {
         offset,
+        window: first..end,
         matched,
         engine_total,
         retail_total,
@@ -1894,11 +1951,11 @@ mod tests {
         assert!((c.ratio - 1.0).abs() < 1e-9);
     }
 
-    /// With note rows, the alignment follows the notes: a retail KON that
-    /// trails its note by three vsyncs (a deferred flush) does not drag the
-    /// offset, and the totals still compare key-ons.
+    /// A retail KON that trails its note by up to three vsyncs (a flush
+    /// deferred behind a busy SPU transfer) still matches the engine key-on
+    /// written at the note's own vsync.
     #[test]
-    fn keyon_census_aligns_on_notes_when_the_kon_trails_them() {
+    fn keyon_census_matches_a_deferred_retail_kon() {
         let per_frame = [
             0u32, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
         ];
@@ -1920,8 +1977,36 @@ mod tests {
             key_ons[v] = 1;
         }
         let c = compare_key_on_census(&engine, &KeyOnCensus { key_ons, notes }).expect("alignable");
-        assert_eq!(c.offset, 2);
         assert_eq!(c.matched, 3);
+        assert_eq!((c.engine_total, c.retail_total), (3, 3));
+    }
+
+    /// A census captured before its track starts is compared from its first
+    /// score activity, not from vsync 0.
+    #[test]
+    fn keyon_census_crops_leading_silence() {
+        let per_frame = [0u32, 2, 0, 0, 1, 0, 0, 0];
+        let mut cum = 0u32;
+        let engine: Vec<_> = per_frame
+            .iter()
+            .map(|k| {
+                cum += k;
+                keyed_frame(&[cum])
+            })
+            .collect();
+        let mut key_ons = vec![0u32; 12];
+        key_ons[8] = 2;
+        key_ons[11] = 1;
+        let c = compare_key_on_census(
+            &engine,
+            &KeyOnCensus {
+                key_ons,
+                notes: Vec::new(),
+            },
+        )
+        .expect("alignable");
+        assert_eq!(c.window, 8..12);
+        assert_eq!(c.offset, 1);
         assert_eq!((c.engine_total, c.retail_total), (3, 3));
     }
 }
