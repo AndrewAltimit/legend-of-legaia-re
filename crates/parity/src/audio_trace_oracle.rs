@@ -1373,7 +1373,6 @@ pub fn compare_key_on_census(
             .collect()
     };
     let key_ons = crop(&census.key_ons);
-    let notes = crop(&census.notes);
     let series: &[u32] = &key_ons;
     let n = series.len();
     if n == 0 || ek.len() < n {

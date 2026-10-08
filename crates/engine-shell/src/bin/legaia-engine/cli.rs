@@ -1440,6 +1440,11 @@ pub(crate) enum ConfigCmd {
     },
 }
 
+/// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
+fn parse_hex_u16(v: &str) -> Result<u16, String> {
+    u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod locomotion_flag_tests {
     use super::{Cli, Cmd};
@@ -1487,9 +1492,4 @@ mod locomotion_flag_tests {
             );
         }
     }
-}
-
-/// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
-fn parse_hex_u16(v: &str) -> Result<u16, String> {
-    u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }
