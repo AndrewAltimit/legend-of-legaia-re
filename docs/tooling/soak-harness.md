@@ -57,6 +57,21 @@ reached with. `LEGAIA_SOAK_SAVE=<save>` applies it to the whole scene set.
 Whatever value check the seeded state already fails (the playthrough card
 holds a 255-count stack) belongs to the save and is not reported.
 
+An `@<save>` run still enters its scene by name, not through a door the
+save's story opens, so a finding only such a run raises needs that door
+before it is an engine defect. Two of the shape are known. From `PRO-04` on,
+`map01`'s entry script (`P1[0]`, behind system flag `0x3BA`) walls in Rim
+Elm's footprint (tiles `95..97 x 24..27` and row 25 from 94 to 98, leaving
+`(96, 27)`); the `town0b` and `town0c` exits land on `(96, 25)`, inside
+those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That Rim Elm is
+the chapter-1 town: in this stretch of the story the party's Rim Elm is
+`town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
+on all four sides once the arrival cutscene that moves the party off it is
+gated off by the save's flags. A third is not a scene question at all:
+`opurud+rt` fails its save / load round trip on the party records (records
+1 and 2 read zero at their first byte after the resume). The prologue scene
+has no save point in retail; the finding is not triaged further.
+
 A shop run is a pseudo-scene `<scene>+shop`, one per scene whose MAN carries
 a priced gold shop. Every `SHOP_VISIT_EVERY` free field frames it hands one of
 the scene's shops (`World::scene_shop_session`) to the menu runtime, as the
@@ -280,11 +295,11 @@ The field-side fixes are described with their retail evidence in
 - **Anything past the first finding in a run.** A run stops at its first
   fatal finding (panic, tick error, softlock, stuck menu, endless battle,
   drop to title), and at a game over.
-- **Deep progression.** Every run starts from a New Game party in the scene
-  it names, and a New Game party loses most late-game encounters; the harness
-  does not cheat past that (the HP-bar pair makes a bare HP top-up a false
-  softlock of its own), so late-game battles are reached only in their first
-  rounds.
+- **Deep progression.** A plain run starts from a New Game party in the
+  scene it names, and a New Game party loses most late-game encounters; the
+  harness does not cheat past that (the HP-bar pair makes a bare HP top-up a
+  false softlock of its own). An `@<save>` run brings the save's party and
+  flags instead, but only the states the library card holds.
 - **Host drift.** The harness mirrors the host duties listed above; a duty a
   real host performs that the list does not name is invisible here, and one
   the harness performs that a host has dropped is masked.
