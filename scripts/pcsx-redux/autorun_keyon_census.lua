@@ -123,8 +123,11 @@ probe.run({
         -- envelope on the host's audio clock, so a run far below real time
         -- allocates (and drops) differently from the hardware.
         if elapsed % 60 == 0 and csv then
+            -- `_DAT_8007BAC8` is the BGM id the state has loaded - the
+            -- track the engine side must play for the census to compare.
             pcall(function()
-                csv:row("%d,clock,0,0,ms=%.1f", elapsed, now_ms())
+                csv:row("%d,clock,0,0,ms=%.1f bgm=%d", elapsed, now_ms(),
+                    probe.read_u16(0x8007BAC8))
             end)
         end
         if elapsed >= FRAMES then ctx.request_quit = true end

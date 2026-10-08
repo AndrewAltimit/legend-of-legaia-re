@@ -327,6 +327,110 @@ fn every_retail_fmv_id_plays_from_its_dispatch_slot() {
     assert_eq!(played, 9);
 }
 
+/// Rung 1b: every retail `fmv_id`'s whole segment demuxes through
+/// [`legaia_mdec::str_av`] - the kernel both play hosts open a movie through -
+/// with a soundtrack that is present, audible, and as long as the picture.
+///
+/// The window is the one `legaia_asset::fmv_segment_window` hands each host:
+/// `(start_frame - 1) * 10` sectors in, `(end - start + 1) * 10` sectors long.
+/// Rung 1 stops after a dozen frames; this one reads every sector of every
+/// segment, so a movie whose XA interleave runs short, goes silent or decodes
+/// at a rate the picture does not keep would fail here rather than as an A/V
+/// drift a viewer hears at the end of a cutscene.
+#[test]
+fn every_retail_fmv_id_demuxes_with_a_soundtrack_as_long_as_its_picture() {
+    use legaia_mdec::str_av::StrAvDemuxer;
+    if !disc_set() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(overlay) = str_overlay() else {
+        eprintln!("[skip] extracted/PROT.DAT missing - run `legaia-extract` first");
+        return;
+    };
+    let Some((mut disc, extents)) = movie_extents() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN does not resolve to a readable disc image");
+        return;
+    };
+    let segments = retail_segments(&overlay);
+    assert_eq!(segments.len(), 9);
+    let spf = SECTORS_PER_FRAME as u32;
+    for seg in &segments {
+        let (_, lba, size) = extents
+            .iter()
+            .find(|(b, _, _)| *b == seg.movie)
+            .unwrap_or_else(|| panic!("fmv {}: {} not on this disc", seg.fmv_id, seg.movie));
+        let file_sectors = size.div_ceil(2048);
+        let start = seg.slot.start_frame.saturating_sub(1) * spf;
+        let frames = seg
+            .slot
+            .end_frame
+            .saturating_sub(seg.slot.start_frame)
+            .saturating_add(1);
+        let count = (frames * spf).min(file_sectors.saturating_sub(start));
+        let (first, count) = if count == 0 {
+            (0, file_sectors)
+        } else {
+            (start, count)
+        };
+        let mut demux = StrAvDemuxer::new();
+        for i in first..first + count {
+            let raw = disc
+                .read_raw_sector(lba + i)
+                .unwrap_or_else(|e| panic!("fmv {}: sector {i}: {e}", seg.fmv_id));
+            demux.push_raw_sector(&raw);
+        }
+        let av = demux.finish();
+        let video_secs = av.frames.len() as f64 * av.frame_period_secs();
+        let audio = av
+            .audio
+            .as_ref()
+            .unwrap_or_else(|| panic!("fmv {}: {} carries no soundtrack", seg.fmv_id, seg.movie));
+        let audio_secs = audio.duration_secs();
+        let peak = audio
+            .pcm
+            .iter()
+            .map(|s| s.unsigned_abs())
+            .max()
+            .unwrap_or(0);
+        eprintln!(
+            "[fmv {}] {} {} frames ({:.2} s at {:.2} fps) / XA file {} ch {} {} Hz {} : {:.2} s, peak {}",
+            seg.fmv_id,
+            seg.movie,
+            av.frames.len(),
+            video_secs,
+            av.timing.fps,
+            audio.file_no,
+            audio.ch_no,
+            audio.sample_rate,
+            if audio.stereo() { "stereo" } else { "mono" },
+            audio_secs,
+            peak
+        );
+        assert!(
+            matches!(audio.sample_rate, 18_900 | 37_800),
+            "fmv {}: XA rate {} is not a CD-XA rate",
+            seg.fmv_id,
+            audio.sample_rate
+        );
+        assert!(peak > 256, "fmv {}: soundtrack is silent", seg.fmv_id);
+        assert!(
+            !av.frames.is_empty() && (av.timing.fps - 15.0).abs() < 0.5,
+            "fmv {}: {} frames at {:.2} fps",
+            seg.fmv_id,
+            av.frames.len(),
+            av.timing.fps
+        );
+        // A host paces the picture off the audio cursor, so the two tracks
+        // must cover the same span: within a quarter-second either way.
+        assert!(
+            (audio_secs - video_secs).abs() < 0.25,
+            "fmv {}: soundtrack {audio_secs:.2} s against picture {video_secs:.2} s",
+            seg.fmv_id
+        );
+    }
+}
+
 /// Rung 2: a segment played to its own `end_frame` latches end-of-stream.
 ///
 /// `FUN_801CF740` raises the latch on the frame whose number *reaches* the
