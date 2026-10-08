@@ -741,12 +741,17 @@ class Tag:
     a block only the fifth ever claimed.
     """
 
-    __slots__ = ("addr", "file", "module", "line", "tail", "seg", "raw")
+    __slots__ = ("addr", "file", "module", "line", "tail", "seg", "raw", "image")
 
     def __init__(
-        self, addr: str, file: str, line: int, tail: str, seg: str, raw: str
+        self, addr: str, file: str, line: int, tail: str, seg: str, raw: str,
+        image: str | None = None,
     ):
         self.addr = addr
+        # `overlay_<label>_<NNNN>` when the claim is written image-qualified
+        # (`overlay_cast_curse_0943_801f7624`) - the stem of the extracted
+        # image file - and None for a bare `FUN_` claim.
+        self.image = image
         self.file = file
         self.module = module_of(file)
         self.line = line
@@ -781,6 +786,12 @@ def collect_tags() -> list[Tag]:
             raw = lines[lineno - 1]
             for i, am in enumerate(hits):
                 stop = hits[i + 1].start() if i + 1 < len(hits) else len(tail)
+                whole = am.group(0)
+                image = (
+                    whole[: -(len(am.group(1)) + 1)].lower()
+                    if whole.lower().startswith("overlay_")
+                    else None
+                )
                 out.append(
                     Tag(
                         am.group(1).lower(),
@@ -789,6 +800,7 @@ def collect_tags() -> list[Tag]:
                         tail,
                         tail[am.end():stop],
                         raw,
+                        image,
                     )
                 )
     return out
@@ -1617,6 +1629,35 @@ NOT_A_FUNCTION_SECTIONS = frozenset({
 })
 SLOT_A_FLOOR = 0x801CE818
 
+# Tags the `non-entry` test let through because they name an image whose own
+# bytes open a routine at the VA - reported by count, for the same reason
+# SITE_ACCEPTED is: a silent acceptance reads like a signal that stopped.
+IMAGE_ENTRY_ACCEPTED: list[tuple[str, str, str]] = []
+
+
+def _is_prologue(w: int | None) -> bool:
+    """`addiu sp, sp, -N` - the frame allocation that opens a non-leaf routine."""
+    return w is not None and w >> 16 == 0x27BD and w & 0x8000 != 0
+
+
+def image_names_entry(image: str | None, va: int) -> bool:
+    """The tag's own image opens a routine at `va`.
+
+    Every verdict the `non-entry` test reads is about a **bare** VA, and several
+    slot-B images (and the slot-A siblings) hold different code at one VA. A
+    claim written `overlay_<label>_<NNNN>_<addr>` names which of them it ports,
+    so the bare-VA verdict is not a contradiction of it when that image, read
+    at the base the static-overlay map records, has a frame-allocating prologue
+    at the address. A leaf routine (no frame) is not accepted this way; it
+    stays a finding for a reader to settle.
+    """
+    if not image:
+        return False
+    for img in images():
+        if img.label.lower() == image:
+            return _is_prologue(img.word(va))
+    return False
+
 
 def find_non_entry_tags(tags: list[Tag]) -> list[Finding]:
     """PORT-tagged addresses the rest of the repo says are not function entries.
@@ -1672,6 +1713,24 @@ def find_non_entry_tags(tags: list[Tag]) -> list[Finding]:
                 "`misbased` - no image holds these bytes here"
             )
         if not why:
+            continue
+        # Per tag line: accepted when a claim on that line names an image whose
+        # bytes open a routine here. A file is clear when all its lines are.
+        accepted_lines = {
+            (t.file, t.line) for t in ts if image_names_entry(t.image, va)
+        }
+        for t in ts:
+            if (t.file, t.line) in accepted_lines:
+                img = next(
+                    u.image for u in ts
+                    if (u.file, u.line) == (t.file, t.line)
+                    and image_names_entry(u.image, va)
+                )
+                IMAGE_ENTRY_ACCEPTED.append(
+                    (addr, f"{t.file}:{t.line}", str(img))
+                )
+        ts = [t for t in ts if (t.file, t.line) not in accepted_lines]
+        if not ts:
             continue
         where = ", ".join(sorted({f"{t.file}:{t.line}" for t in ts}))
         for t in ts:
@@ -1917,6 +1976,13 @@ def main() -> int:
         )
         for subj, cited, why in SITE_ACCEPTED:
             print(f"    FUN_{subj} <- 0x{cited}: {why}")
+        accepted = sorted(set(IMAGE_ENTRY_ACCEPTED))
+        print(
+            f"  {len(accepted)} image-qualified tag site(s) accepted over a "
+            "bare-VA not-an-entry verdict: the named image opens a routine there."
+        )
+        for subj, site, img in accepted:
+            print(f"    FUN_{subj} @ {site}: prologue in {img}")
     for f in shown:
         mark = " [LIVE]" if f.addr and f.addr in live else ""
         waived = " [waived]" if f.key in waivers else ""

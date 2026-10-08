@@ -1097,17 +1097,6 @@ per-scene script data rather than a resident global.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/handler_actors.rs:8003aeb0"
-reason = """
-Same address and same cause as the actor_handler.rs row: the module's siblings
-8003cf04 / 8003cf40 are the handler helpers that FUN_8003AEB0 INLINES, so there
-is no call edge and no shared rare datum to find. This tag is scoped to a
-different window of the same routine (0x8003BAF0..0x8003BB3C, the scripted-scene
-resume pair) and cites the program spawner FUN_801D5A24 it drives, which is the
-module's other tag.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/world_map.rs:801e76d4"
 reason = """
 A two-sibling module, so the corroboration denominator is a single pair.
@@ -1278,25 +1267,6 @@ dump of this address; the address has a based dump for the first time
 """
 
 [[waiver]]
-key = "non-entry:crates/engine-battle-vm/src/cast_module_ticks.rs:801f69f8"
-reason = """
-VA-aliased, and the tag names the image it ports: the worklist_va_aliased row
-says three slot-B images hold distinct code at 0x801F69F8 (glare_divide 940,
-water_column 945, summon_aluru 916), and the tag's own text scopes it to the
-cast-module tick of one of them. Not a contradiction - an alias the ignore row
-records for the catalog's per-VA count.
-"""
-
-[[waiver]]
-key = "non-entry:crates/engine-battle-vm/src/cast_module_ticks.rs:801f7644"
-reason = """
-VA-aliased: the worklist_shared_tail row is about world_map_render (0901),
-where 0x801F7644 is a shared tail exiting `j 0x80043580`; the tag is PROT 0949
-(cast_water_crystals), where the attribution CSV has a unique 5-instruction
-entry at this VA as one of the stager's eight entry points.
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/battle.md:801f138c:801dac54+801dac5c"
 reason = """
 The row corrects a falsified reading and names the real site: the refund lives in FUN_801DABA4's dead-slot sweep (0x801DAC54..0x801DAC5C), not in the 0x801F138C phantom-VA print. The cited addresses are the other routine's, by design.
@@ -1384,24 +1354,3 @@ distinctive data is the per-frame pose scratch, which none of the module's
 range / root-motion siblings form - they read the pair it writes.
 """
 
-[[waiver]]
-key = "non-entry:crates/engine-battle-vm/src/cast_module_camera/creature.rs:801f6a30"
-reason = """
-Correct tag; the tag names its image. The ignore-list row is about the bare
-VA (PROT 917 and 933 hold different code there). Disassembling PROT 0917 at
-its slot-B base 0x801F69D8 shows four jump-table words ending at 0x801F6A2C
-and a function prologue `addiu sp,sp,-0x68` at 0x801F6A30 - an entry in
-the image the tag cites (`PROT 0917`), which is the Barra camera routine
-`barra_direct` ports.
-"""
-
-[[waiver]]
-key = "non-entry:crates/engine-battle-vm/src/cast_module_camera/creature.rs:801f6a74"
-reason = """
-Correct tag; the tag names its image. The ignore-list row is about the bare
-VA (PROT 930 and 966 hold different code there). Disassembling PROT 0930 at
-its slot-B base 0x801F69D8 shows four jump-table words ending at 0x801F6A70
-and a function prologue `addiu sp,sp,-0x68` at 0x801F6A74 - an entry in
-the image the tag cites (`PROT 0930`), the Horn camera routine `horn_direct`
-ports.
-"""

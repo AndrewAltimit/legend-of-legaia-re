@@ -309,7 +309,7 @@ findings raised in one full pass:
 | `dual-label` | 4 / 35 | **Yes.** Every one of the four was a byte-settleable contradiction between two pages, and the residue is the documented shapes - a coarse directory row beside a fine write-up, two topic pages of the same directory, a section about one arm of a dispatcher. |
 | `doc-citation` | 1 / 12 | **Yes.** The remaining shapes are enumerable - a callee's global, a field reached by `addu` off a formed base, a contrastive "not this pool", a caller's store site - and each new row is genuinely worth one read. |
 | `module-orphan` | 0 / 24 | **No, and the reason is structural.** |
-| `non-entry` | 7 / 9 | **Yes.** Every row is a contradiction between two committed files, and the two benign shapes (a `worklist_va_aliased` or other-image row beside a tag on the image it ports) are waived by name. |
+| `non-entry` | 7 / 9 | **Yes.** Every row is a contradiction between two committed files; the benign shape (a bare-VA row beside a tag on the image it ports) is settled off the bytes - see [below](#an-image-qualified-tag-is-checkable-from-the-bytes). |
 
 The four `dual-label` defects are the argument for that row: `FUN_8003E8A8`
 returning a sector count rather than an LBA, `FUN_8003E800`'s `a1` being that
@@ -388,6 +388,26 @@ bytes at the same VA, or before the slot-B entries they file as data were
 ported - and two were the benign alias shape, now waived by name. It does not
 see the other shapes: a prologue word Ghidra promoted to a function, a label
 with no ignore row, a module tag, a composite. Those still need a reader.
+
+### An image-qualified tag is checkable from the bytes
+
+Every verdict the three questions read is about a **bare** VA, and the
+slot-B band (and the slot-A siblings) puts different code at one VA in
+different images. A claim written `overlay_<label>_<NNNN>_<addr>` names which
+image it ports, so the bare-VA verdict is no contradiction of it when that
+image, read at the base [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)
+records, opens a frame-allocating prologue (`addiu sp,sp,-N`) at the address.
+The checker reads that word (`image_names_entry`) and accepts the tag line; a
+bare `FUN_` on the same line rides along, since the line names one routine.
+The run prints every acceptance with the image that carried it.
+
+This retired a class of waivers that could not survive a file move: each was
+keyed on a path, each said "the tag names its image", and a crate split
+re-keyed every such tag site at once, and each read as a fresh finding the
+next run. A leaf routine (no frame) is not accepted this way and stays a
+finding for a reader. Two ignore rows this surfaced were filed as phantoms off
+an unbased dump at `0x801F7624` / `0x801F76F4` while the capture trampolines
+of PROT `0943` and `0945` open there; both are VA-aliased rows now.
 
 ### A waiver can check the operands and miss the owner
 
