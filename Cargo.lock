@@ -1581,6 +1581,7 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-font",
  "legaia-mednafen",
+ "legaia-render-kernels",
  "legaia-tim",
  "legaia-tmd",
  "serde",
@@ -1819,6 +1820,19 @@ dependencies = [
  "clap",
  "libc",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "legaia-render-kernels"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "legaia-asset",
+ "legaia-engine-vm",
+ "legaia-tim",
+ "legaia-tmd",
  "serde_json",
 ]
 

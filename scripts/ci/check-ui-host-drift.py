@@ -251,6 +251,8 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 UI_SRC = REPO / "crates" / "engine-ui" / "src"
+# engine-ui plus the render kernels split out of it (which it re-exports).
+UI_SRCS = [UI_SRC, REPO / "crates" / "render-kernels" / "src"]
 WAIVERS = Path(__file__).resolve().parent / "ui-host-drift-waivers.toml"
 
 # Source roots per host. `engine-render` counts as native: it re-exports
@@ -383,7 +385,7 @@ NATIVE_RENDER_STATE = "crates/engine-render/src/renderer/state.rs"
 # The enhanced-lighting model's constants live in the shared kernel; the
 # moods themselves reach the page from the engine (`play_lighting_frame`),
 # so only the shading-law constants have a hand-written JS twin.
-NATIVE_DYN_LIGHT = "crates/engine-ui/src/scene_lighting.rs"
+NATIVE_DYN_LIGHT = "crates/render-kernels/src/scene_lighting.rs"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
@@ -1760,7 +1762,7 @@ def is_screen_signature(signature: str) -> bool:
 def collect_builders() -> dict[str, str]:
     """Map builder name -> `path:line` where it is defined."""
     out: dict[str, str] = {}
-    for path in sorted(UI_SRC.rglob("*.rs")):
+    for path in sorted(p for r in UI_SRCS for p in r.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         for m in BUILDER_RE.finditer(text):
             # The signature runs from the fn keyword to the body's opening
@@ -1830,7 +1832,7 @@ def fn_body(text: str, brace: int) -> str:
 def collect_fn_names() -> set[str]:
     """Every `fn` name engine-ui defines, at any indentation."""
     out: set[str] = set()
-    for path in sorted(UI_SRC.rglob("*.rs")):
+    for path in sorted(p for r in UI_SRCS for p in r.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         for m in ANY_FN_RE.finditer(text):
             out.add(m.group("name"))
@@ -1876,7 +1878,7 @@ def collect_call_graph(names: set[str]) -> dict[str, set[str]]:
     waiver asserting a gap that does not exist.
     """
     refs: dict[str, set[str]] = {n: set() for n in names}
-    for path in sorted(UI_SRC.rglob("*.rs")):
+    for path in sorted(p for r in UI_SRCS for p in r.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         for m in ANY_FN_RE.finditer(text):
             name = m.group("name")
@@ -2547,6 +2549,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-menus",
     REPO / "crates" / "engine-system",
     REPO / "crates" / "engine-ui",
+    REPO / "crates" / "render-kernels",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "engine-battle-vm",
     REPO / "crates" / "web-viewer",
@@ -3397,6 +3400,7 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-battle-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
+    REPO / "crates" / "render-kernels" / "src",
     REPO / "crates" / "web-viewer" / "src",
 ]
 
@@ -4158,6 +4162,7 @@ ENGINE_API_CRATES = (
     "engine-vm",
     "engine-battle-vm",
     "engine-ui",
+    "render-kernels",
     "engine-audio",
     "engine-session",
     "engine-screens",

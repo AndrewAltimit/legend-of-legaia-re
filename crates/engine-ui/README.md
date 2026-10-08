@@ -6,6 +6,11 @@ browser play page (`legaia-web-viewer`) share.
 
 ## Scope
 
+The shared render kernels (GTE math, screen primitives, the VRAM capture,
+the effect emitters, the battle numerals and the enhanced scene lighting)
+live in [`legaia-render-kernels`](../render-kernels/README.md), which this
+crate re-exports at their old paths.
+
 Every function projects a renderer-agnostic *view* struct - built by the host
 from the live `World` - into a `Vec` of `TextDraw` / `SpriteDraw` primitives.
 Each primitive is a screen rectangle plus a source rect into either the
@@ -85,16 +90,6 @@ navigation logic depends on the GPU backend.
   `FUN_801DC1CC`), drawn while a `PrizeExchangeSession` owns the pad.
 - `other_game_hud` - the PROT 0977 arena overlay's HUD primitive layer: a
   table-driven textured-Gouraud-quad emitter plus the decimal readout on it.
-- `effect_billboard` - the one step a *world-space* effect billboard builder
-  gets wrong: retail's quad projector `FUN_800195A8` adds the half-extents
-  in view space, after the camera matrix, so the battle camera's 4x base
-  matrix scales the centre and not the size; `world_half_extents` divides it
-  back out. Both hosts' effect billboards build through it.
-- `afterimage` / `streak_pass` / `battle_trail` / `billboard` - the move-FX
-  draw kernels: one jittered semi-transparent quad, the per-frame pass that
-  turns a battle context's projection block into those quads, the swept
-  weapon trail's projected `POLY_G4` band, and the shared screen-space
-  corner projector (`FUN_800195a8`) all four ride on.
 - `dialog_reading_box` - the field dialog reading box's text rows: the draw
   half of `engine-core::dialog_window`'s row window, scroll and typing reveal.
 - `incense_notice_box` / `tile_board_prompt` - the Incense wear-off notice
@@ -134,51 +129,15 @@ Several modules are not UI at all but live here for the same structural reason -
 they are wgpu-free draw kernels both hosts must share, and this crate is the
 shared leaf:
 
-- `scene_lighting` - enhanced lighting's source of truth, shared by the
-  native renderer and the browser play page: emissive tagging (TSB / blend
-  bit 13; the blend rule + the curated `EMISSIVE_MESHES` table), emitter
-  samples and light clustering, the nearest-to-player pick and prop light
-  sets that follow the actor, `LightingMood` / `TimeOfDay`, the glow
-  sprites, and `shade` - the CPU mirror of both shader twins. Not retail; see
-  [renderer.md](../../docs/subsystems/renderer.md#enhanced-lighting-enhancement-default-on).
-- `screen_prim` - screen-space PSX primitives (`ScreenPrim` / `ScreenQuad` /
-  `FlatQuad`), the four ABR blend classes, and `build_geometry`, the one
-  ordering-table walk either host consumes.
-- `screen_prim_raster` - a CPU rasteriser for a `ScreenPrim` list, running
-  the screen-prim shaders' per-pixel rules for a surface with no GPU pass
-  (a 2D canvas). A presentation path, not a parity oracle.
-- `prim_near_reject` - retail's per-primitive `OTZ` near cut, the test every
-  TMD prim handler behind `FUN_80043390` runs before it links a packet.
-- `cast_beam` - PROT 0948's Cross Beam packets (`FUN_801F726C`): the two
-  sine-swept screen-space beams the cast module's tick draws.
 - `minigame_fx` - the draw builder for `engine-core`'s effect-part pool and
   for the dance run's own sprite-part emits: one placeholder-cell
   materialisation, so a part looks the same on the native HUD, the play
   page's overlay and the minigames page's canvas.
-- `gte` - fixed-point GTE arithmetic (`q3.12` rotation, `q19.12`
-  translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
-  the from-scratch `psx_sin` / `psx_cos` trig LUT).
-- `vram_capture` - quantising an RGBA8 frame readback to BGR555 and blitting
-  it into a `legaia_tim::Vram` rect, plus the transition's capture-rect
-  constants.
-- `battle_intro` - the field-to-battle transition emitter: per-style working
-  sets, the five retail packet builders, the curtain's CPU two-pass
-  composition, and the `land_capture_rgba` / `refresh_captured_page` seam a
-  host feeds its own frame readback through (native: `capture_rgba`; browser:
-  `gl.readPixels`).
-- `battle_numerals` - the battle value readout's quads: retail's 24x24 numeral
-  cells and the `N HIT` / `TOTAL` / `DAMAGE` word cells as `ScreenPrim`s on
-  the effect atlas's glyph page. The layout is `engine-vm`'s; this is the draw
-  both hosts had written separately, one sampling VRAM and one restyling the
-  digits in the dialog font.
 - `ui_boot_logos` - the publisher-logo boot pass's stage-into-surface fit, so
   the native `--boot-ui` chain and the play page's own logo stage letterbox
   retail's 640x480 quads identically.
 - `battle_stage_clear` - the colour a battle frame clears to (black, per the
   `FUN_80016B6C` draw-environment pair), answered once for both hosts.
-- `move_strip` - the draw half of the move-VM extension's scanline strip
-  emitter (sub-op `0x2C`, `FUN_801D31B0`): project, run
-  `legaia_engine_vm::move_ext_strip::emit_strip`, return screen prims.
 - `ui_dance` - the dance count-in banner and the how-to tutorial's captions,
   projected from the phase `World::tick_dance` publishes.
 

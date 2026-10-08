@@ -233,7 +233,7 @@ faithfully.
 
 Toggle is global - apply once per frame before submitting draws.
 
-The [`afterimage`](../engine-ui/src/afterimage.rs) (wgpu-free in `engine-ui`, re-exported here) module ports the battle move-FX
+The [`afterimage`](../render-kernels/src/afterimage.rs) (wgpu-free in `engine-ui`, re-exported here) module ports the battle move-FX
 streak draw (`FUN_801e1ab0`): `build_afterimage_quad` assembles one
 jittered, semi-transparent textured quad (`POLY_FT4`) from four projected
 screen corners + the move's trail-texture id, reproducing the per-corner
@@ -260,7 +260,7 @@ the renderer uploads once per frame and draws one indexed run at a time
 prim is treated as fully blended (no per-texel STP split yet - faithful for
 the additive afterimage trail and flat quads; documented in the module).
 
-The corner projection itself is ported in [`billboard`](../engine-ui/src/billboard.rs)
+The corner projection itself is ported in [`billboard`](../render-kernels/src/billboard.rs)
 (`FUN_800195a8`): `project_billboard` transforms a center point to view
 space under the ambient camera (MVMVA, low-halfword wrap), fans out the
 four ±half-size corners, optionally spins them in-plane (`Rz` from the
@@ -298,7 +298,7 @@ hands `build_geometry` that space and the overlay stretches over the whole
 surface.
 
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
-live in [`gte`](../engine-ui/src/gte.rs) - hosted wgpu-free in
+live in [`gte`](../render-kernels/src/gte.rs) - hosted wgpu-free in
 `legaia-engine-ui` so the browser play page links the same arithmetic, and
 re-exported here at its historical path; production rendering still uses f32
 wgpu math, but the module is the single citation point for retail-correct
@@ -309,7 +309,7 @@ fixed-point arithmetic when re-targeting captured GTE traces.
 On the console the framebuffer *is* VRAM - the display area is a rect inside
 the same 1024x512 halfword page textures are read from - so a primitive can
 sample pixels the GPU drew moments earlier. The renderer only ever pushed
-the software page *to* the GPU; [`vram_capture`](../engine-ui/src/vram_capture.rs)
+the software page *to* the GPU; [`vram_capture`](../render-kernels/src/vram_capture.rs)
 (wgpu-free in `legaia-engine-ui`, re-exported here) is the
 missing direction. `blit_rgba_into_vram` quantises an RGBA8 readback to
 BGR555 and writes it into a `legaia_tim::Vram` rect, and
@@ -335,7 +335,7 @@ owner that stands between the (already live) transition state machine in
 `engine-core` and the ordering table above. It seeds the selected style's
 working set, advances it off the transition entity's own clock, and emits
 `ScreenPrim`s plus the per-style fade. The emitter itself is wgpu-free and
-lives in [`engine-ui`](../engine-ui/src/battle_intro.rs) - both hosts arm it -
+lives in [`engine-ui`](../render-kernels/src/battle_intro.rs) - both hosts arm it -
 and [`src/battle_intro.rs`](src/battle_intro.rs) here re-exports it plus the
 one renderer-bound wrapper, `update_field_capture`, which turns
 `Renderer::capture_rgba` output into the emitter's `land_capture_rgba` /
@@ -368,7 +368,7 @@ fading trails where the port's leave black.
 
 ## GTE register-transfer + memory ops
 
-Beyond the cop2 instruction set the [`gte`](../engine-ui/src/gte.rs) module ships
+Beyond the cop2 instruction set the [`gte`](../render-kernels/src/gte.rs) module ships
 the four MIPS register-transfer ops (`MFC2` / `MTC2` / `CFC2` / `CTC2`)
 and the two memory ops (`LWC2` / `SWC2`) so engines can replay a captured
 GTE trace without re-deriving the cop2 register layout. `read_data` /

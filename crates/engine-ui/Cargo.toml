@@ -11,6 +11,7 @@ name = "legaia_engine_ui"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-render-kernels.workspace = true
 bytemuck.workspace = true
 glam.workspace = true
 legaia-asset.workspace = true

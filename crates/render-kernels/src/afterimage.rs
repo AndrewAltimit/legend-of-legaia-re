@@ -65,14 +65,14 @@
 //! ordering.
 //!
 //! **What the draw path is.** The screen-space `POLY_FT4` / ordering-table
-//! primitive path the retail streak needs exists as [`crate::screen_overlay`]:
-//! an [`AfterimageQuad`] converts to a [`crate::screen_overlay::ScreenQuad`]
-//! via [`crate::screen_overlay::afterimage_screen_quad`], is ordered
+//! primitive path the retail streak needs exists as `legaia_engine_ui::screen_overlay`:
+//! an [`AfterimageQuad`] converts to a `legaia_engine_ui::screen_overlay::ScreenQuad`
+//! via `legaia_engine_ui::screen_overlay::afterimage_screen_quad`, is ordered
 //! back-to-front with the rest of the frame's screen primitives, and draws
 //! against the shared PSX VRAM through
-//! [`crate::RenderTarget::SceneWithScreenPrims`] - the compositing form, which
+//! `legaia_engine_ui::RenderTarget::SceneWithScreenPrims` - the compositing form, which
 //! puts the quads over the battle scene in the same frame. (The older
-//! [`crate::RenderTarget::ScreenOverlay`] is a whole-frame mode and could
+//! `legaia_engine_ui::RenderTarget::ScreenOverlay` is a whole-frame mode and could
 //! never have carried a streak over a live scene; a note here once said the
 //! machinery was complete and only an emitter was missing, which was true of
 //! the geometry and false of the pass.)

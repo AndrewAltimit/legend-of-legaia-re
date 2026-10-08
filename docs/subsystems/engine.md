@@ -106,7 +106,8 @@ engine-system → engine-vm, bytes, cheats, gamedata  (World-free runtime system
 engine-menus  → engine-system, engine-battle, engine-vm, asset, font, mes, save, tim  (World-free menu / title / card front end)
 engine-field  → engine-system, engine-minigames, engine-vm, asset, anm, tmd  (World-free field kernels: actor programs, camera params, cue routers)
 engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-vm + the parser crates
-engine-ui     → engine-vm, asset, tim, tmd, font (draw-list builders; no wgpu)
+render-kernels → engine-vm, asset, tim, tmd (GTE math, screen prims, VRAM capture, effect emitters; no wgpu)
+engine-ui     → render-kernels, engine-vm, asset, tim, tmd, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
 engine-session → engine-core, engine-audio, engine-vm (+ parser crates)  (BootSession + BGM director; no wgpu / winit / cpal)

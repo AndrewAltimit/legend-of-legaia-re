@@ -122,7 +122,7 @@ pub fn digit_run_prims(cells: &[vr::ValueCell], ot_index: u32) -> Vec<ScreenPrim
 ///
 /// The word cells are the labels' inclusive texel rects drawn 1:1, which is
 /// what makes this the retail-art path rather than the font fallback in
-/// [`crate::battle_combo_cluster_draws_for`].
+/// `legaia_engine_ui::battle_combo_cluster_draws_for`.
 pub fn combo_cluster_prims(cluster: &vr::ComboCluster, ot_index: u32) -> Vec<ScreenPrim> {
     let mut out = Vec::with_capacity(cluster.labels.len() + cluster.cells.len());
     for l in &cluster.labels {
