@@ -308,7 +308,7 @@ was written - find the symbol by name, not by line.
 |---|---|---|---|
 | `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
 | `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
-| `80021b04` | `from_model_sel` | `crates/engine-core/src/summon.rs:236` | FALSE INERT |
+| `80021b04` | `from_model_sel` | `crates/engine-effects/src/summon.rs:236` | FALSE INERT |
 | `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |

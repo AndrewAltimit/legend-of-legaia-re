@@ -323,7 +323,7 @@ impl World {
                 // spreadsheet's cue words), so this loop only fires for
                 // host-installed records.
                 // REF: FUN_801DEA50 (the cue dispatch; see
-                // crates/engine-core/src/action_effect_script.rs)
+                // crates/engine-effects/src/action_effect_script.rs)
                 for cue in &outcome.cues {
                     if cue.is_sound() {
                         self.audio.battle_sfx_cues.push(BattleSfxCue {

@@ -1349,6 +1349,7 @@ dependencies = [
  "legaia-bytes",
  "legaia-cheats",
  "legaia-engine-battle",
+ "legaia-engine-effects",
  "legaia-engine-minigames",
  "legaia-engine-vm",
  "legaia-font",
@@ -1371,6 +1372,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "legaia-engine-effects"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-battle",
+ "legaia-engine-minigames",
+ "legaia-engine-vm",
+ "legaia-tmd",
 ]
 
 [[package]]

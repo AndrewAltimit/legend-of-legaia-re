@@ -544,17 +544,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   buffer sizing, and the cold/warp player seat `SceneHost::enter_field_scene`
   applies) plus the duel-arena overlay seeds (`FUN_801CF00C`). See
   [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224---the-slotasset-mapping).
-- `effect_ribbon` - the battle effect-**ribbon** geometry generator
-  (`FUN_801CFA48`): a seeded random walk emitting six vertices per step with a
-  tapering radius, plus the packet-chain layout its render half consumes.
-  Geometry only; the GPU emit is render-track.
-- `action_effect_script` - the battle action's 8-byte **effect-script** record
-  walk (`FUN_801DEA50`): frame gates, facing rotation via `RetailRotationLut`
-  (the `0x80070A2C` trunc-sine pair), the move-power record index, and the
-  target band the terminator's homing seed sweeps. Driven per battle frame by
-  `World::tick_battle_animations` over each actor's committed clip
-  (`MonsterAnimation::effect_script`); spawns drain via
-  `World::drain_battle_effect_spawns`.
 - `field_regions::window_rebuild_spawns_resident` - the sub-area **window
   rebuild** placed-object sweep (`FUN_801D7B50`), complement of the
   scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
@@ -631,8 +620,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   I/O and write flow.
 - `dialog_window` - the field dialog pager's row window, scroll and typing
   reveal.
-- `screen_fx` - the PROT-0900 screen-effect widget family (iris mask,
-  sprites, panels, letterbox) the field VM drives.
 - `fishing` / `fishing_actors` / `fishing_hub` / `fishing_venue` - the
   fishing minigame's `PondSession`, its actors, the venue hub screen and
   venue-actor step.
@@ -656,9 +643,10 @@ docs carry the retail provenance.
 - **Actor model + hosts** - `actor_handler` (the actor's `+0x0C` per-frame
   handler identity), `actor_alloc_host` / `move_buffer_host` (the `World`
   impls of `engine-vm`'s allocator and MOVE-buffer host traits),
-  `part_motion` (a move-VM part's motion block between steps),
   `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
-  `camera_rel_glide`, `object_effect` (the `0x80083FF8` object-effect table).
+  `camera_rel_glide`. The effect kernels (`part_motion`, `object_effect`,
+  `summon`, the effect arms and ribbon, `screen_fx`) are re-exported from
+  [`legaia-engine-effects`](../engine-effects/README.md).
 - **Battle** - `battle_open` (the formation open banner), `battle_party_form`
   (a member's assembled battle form, once for both hosts),
   `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages),
@@ -697,8 +685,7 @@ docs carry the retail provenance.
   `dance_cast_scene`, `dance_tutorial`, `fishing_scene`, `fishing_chrome`,
   `fishing_exchange_input`, `baka_fighter_chrome`, `baka_impact_fx`,
   `muscle_ringside`, `other_game_overlay` (PROT 0977 kernels),
-  `casino_coin_bank` (op `4C E5`), `effect_default_arm` /
-  `effect_sprite_arm` (render-mode-4 emitters as per-frame meshes).
+  `casino_coin_bank` (op `4C E5`).
 - **Scene loading + session** - `scene_assets`, `scene_bundle`,
   `scene_live` (a headless live scene preview for viewers), `scene_name_sync`,
   `resume` (where a load resumes and a New Game starts), `chunk_install`

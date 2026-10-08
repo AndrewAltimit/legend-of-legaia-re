@@ -2511,6 +2511,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-render",
     REPO / "crates" / "engine-core",
     REPO / "crates" / "engine-minigames",
+    REPO / "crates" / "engine-effects",
     REPO / "crates" / "engine-ui",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "engine-battle-vm",
@@ -3355,6 +3356,7 @@ HOTKEY_SOURCES = [
 SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
     REPO / "crates" / "engine-minigames" / "src",
+    REPO / "crates" / "engine-effects" / "src",
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-battle-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
@@ -4106,10 +4108,12 @@ def _selftest_frame_case(
 # `BootSession` and tick it, so a call into it is a call both can make.
 # `engine-screens` likewise: the shop-family composition both hosts call.
 # `engine-battle` holds the battle kernels engine-core re-exports, and
-# `engine-battle-vm` the battle VM kernels engine-vm re-exports.
+# `engine-battle-vm` the battle VM kernels engine-vm re-exports, and
+# `engine-effects` the effect kernels engine-core re-exports.
 ENGINE_API_CRATES = (
     "engine-core",
     "engine-battle",
+    "engine-effects",
     "engine-minigames",
     "engine-vm",
     "engine-battle-vm",

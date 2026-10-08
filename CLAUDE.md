@@ -244,9 +244,10 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | - | The renderer-free simulation half: world state, scene host, dialog, mode seat, BGM director, camera resolver, item bag, menu runtime, LGSF saves, shop / inn / level-up sessions. Re-exports `engine-battle` / `engine-minigames` at their old paths. |
+| [`crates/engine-core`](crates/engine-core/README.md) | - | The renderer-free simulation half: world state, scene host, dialog, mode seat, BGM director, camera resolver, item bag, menu runtime, LGSF saves, shop / inn / level-up sessions. Re-exports `engine-battle` / `engine-minigames` / `engine-effects` at their old paths. |
 | [`crates/engine-battle`](crates/engine-battle/README.md) | - | The battle kernels that never touch `World`: monster AI, spoils, AP gauge, stats, catalogs, encounters, level-up, Seru learning, arts tracking, per-frame animation passes. |
 | [`crates/engine-minigames`](crates/engine-minigames/README.md) | - | The minigame rules engines (slot machine, Baka Fighter, dance, fishing, prize exchange, Muscle Dome ladder), with no world, scene or renderer. |
+| [`crates/engine-effects`](crates/engine-effects/README.md) | - | The `World`-free effect kernels: action effect scripts, ribbon and render-mode-4 emitters, summon scene-graph driver, PROT-0900 screen effects, object effects. |
 | [`crates/engine-ui`](crates/engine-ui/README.md) | - | Renderer-agnostic UI draw-list builders plus the shared wgpu-free render kernels (`screen_prim`, `gte`, `vram_capture`, `battle_numerals`, …) - the leaf both the native renderer and the browser play page use. |
 | [`crates/engine-render`](crates/engine-render/README.md) | - | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the `legaia-font` atlas. |
 | [`crates/engine-audio`](crates/engine-audio/README.md) | `note-trace` | cpal-backed audio mixer + from-scratch SPU + SsAPI-shape SEQ sequencer; BGM cross-fade + volume ramp; `audio-webaudio` feature adds `WebAudioOut` (`ScriptProcessorNode`-based) for WASM targets. |
