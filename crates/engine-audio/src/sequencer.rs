@@ -43,6 +43,14 @@ pub const CHANNELS: usize = 16;
 /// libsnd default initial tempo when the SEQ header is broken: 120 BPM.
 pub const DEFAULT_TEMPO_US_PER_QN: u32 = 500_000;
 
+/// [`crate::seq_calc::retail_effective_us_per_qn`], falling back to the
+/// exact tempo where retail's slow mode would apply.
+fn retail_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
+    crate::seq_calc::retail_effective_us_per_qn(us_per_qn, ppqn)
+        .unwrap_or(us_per_qn)
+        .max(1)
+}
+
 /// NRPN-style controller that carries SEQ loop markers (controller 99).
 const CC_LOOP_MARKER: u8 = 0x63;
 /// `CC_LOOP_MARKER` value marking a Loop Start point.
@@ -195,6 +203,13 @@ pub struct Sequencer {
     sample_carry: f64,
     /// Current tempo (us/qn).
     tempo_us_per_qn: u32,
+    /// The quarter-note length events are actually spaced at: the retail
+    /// driver's integer per-vsync tick budget
+    /// ([`crate::seq_calc::retail_effective_us_per_qn`]) unless
+    /// [`Self::set_exact_tempo`] asked for the score's exact tempo.
+    play_us_per_qn: u32,
+    /// Play the score's exact tempo instead of retail's quantised one.
+    exact_tempo: bool,
     /// Absolute tick offset of the playhead (sum of fired event deltas).
     abs_tick: u64,
     /// Has end-of-track been reached.
@@ -258,6 +273,8 @@ impl Sequencer {
             accum_per_sample: ppqn as u64 * 1_000_000,
             sample_carry: 0.0,
             tempo_us_per_qn: tempo,
+            play_us_per_qn: retail_play_tempo(tempo, ppqn),
+            exact_tempo: false,
             abs_tick: 0,
             finished: false,
             loop_to: usize::MAX,
@@ -298,6 +315,25 @@ impl Sequencer {
             return Some(self.loop_to);
         }
         None
+    }
+
+    /// Play the score's exact tempo (`true`) or the tempo retail's driver
+    /// actually plays (`false`, the default). Retail does not clock a track
+    /// in samples: each tempo set installs an integer budget of tenths of a
+    /// tick per vsync (`FUN_80061954`, rounded to nearest), so a track runs
+    /// up to a few percent off its written tempo - 80 BPM plays at 80.25,
+    /// 23.67 BPM at 23.71. The exact mode is the score as written.
+    pub fn set_exact_tempo(&mut self, exact: bool) {
+        self.exact_tempo = exact;
+        self.reprice_tempo();
+    }
+
+    fn reprice_tempo(&mut self) {
+        self.play_us_per_qn = if self.exact_tempo {
+            self.tempo_us_per_qn
+        } else {
+            retail_play_tempo(self.tempo_us_per_qn, self.seq.header.ppqn.max(1))
+        };
     }
 
     /// Has the sequence completed (no looping)?
@@ -389,7 +425,7 @@ impl Sequencer {
             // 44100`. Recomputed every event so a mid-stream SetTempo affects
             // the gap to the *next* event, not the one that fired it.
             let threshold = (event.delta as u64)
-                .saturating_mul(self.tempo_us_per_qn as u64)
+                .saturating_mul(self.play_us_per_qn as u64)
                 .saturating_mul(SPU_INTERNAL_RATE as u64);
             if self.accum < threshold {
                 return;
@@ -499,6 +535,7 @@ impl Sequencer {
                 // accumulator is in tempo-independent units (sample × ppqn ×
                 // 1e6), so no rescaling of the carried remainder is needed.
                 self.tempo_us_per_qn = (*us_per_qn).max(1);
+                self.reprice_tempo();
             }
             EventBody::Meta(_) => {
                 // Non-tempo meta events are inert for playback.
