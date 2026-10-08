@@ -1660,6 +1660,17 @@ The headless seed does not take it, so the `camera` channel's focus part
 keeps reporting the miss - it is history the seat cannot replay, not a
 compose the engine got wrong.
 
+The same gate leaves the **rest** of the pose half-eased.
+`town01_npc16_dialogue_first_page` was poked to `(3456, 3072)` and stepped
+154 units down to Z `2918` before the talk locked the player, so its follow ease ran
+for only those frames: the state holds eye `(-87, 1117, 11202)` where the
+engine's snap composes `(-87, 1444, 11224)` at the same seat, pitch, yaw and
+`H`. A PCSX-Redux run from the state confirms the engine's target: with the
+talk open the globals never move (the lock), and once it closes a three-frame
+step eases eye Y `1117 -> 1158 -> 1194 -> 1226`, each step about an eighth of
+a gap that closes near `1450`. The eye is ease history like the focus, not a
+compose the engine got wrong.
+
 ### Arrival states are captured before the town runs
 
 `s2_rimelm_town01`, `doman_arrival_from_korb2` and `son_arrival_from_doman`
