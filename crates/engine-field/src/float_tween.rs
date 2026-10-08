@@ -19,7 +19,7 @@
 //! The missing thing is the **node pool**, and naming the neighbouring
 //! functions as the blockers would be wrong - both are already in the tree.
 //! Retail's producer `FUN_80032434` is ported, as
-//! `crate::menu_list_rows`'s glyph-count scan and live-window upsert (itself
+//! `legaia_engine_core::menu_list_rows`'s glyph-count scan and live-window upsert (itself
 //! inert); the sibling draw pass `FUN_80031D00` that consumes the tweened
 //! positions is ported **and live**, in `legaia_engine_render`. What neither
 //! of them carries across is the `0x34`-byte node with a descriptor hanging

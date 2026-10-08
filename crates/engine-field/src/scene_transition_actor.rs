@@ -86,7 +86,7 @@
 //! departing scene keeps running, and commits the switch on the tick the
 //! actor writes the mode-2 hand-off. The streaming half (the `.LZS` stream
 //! into `_DAT_8007B85C`, the name-buffer rotation) is done by the
-//! [`crate::scene::Scene`] load the commit runs, so those effects are read
+//! `legaia_engine_core::scene::Scene` load the commit runs, so those effects are read
 //! and dropped.
 //!
 //! The hold is what makes a door look like retail. Retail keeps the
@@ -272,7 +272,7 @@ pub const HOLD_TICKS: usize = 72;
 pub enum HeldTransition {
     /// A named scene change (field-VM op `0x3F`, or a travel art):
     /// `(scene, entry_x, entry_z, dir)`, the
-    /// [`crate::world::World::pending_named_scene_transition`] shape.
+    /// `legaia_engine_core::world::World::pending_named_scene_transition` shape.
     Named(String, u8, u8, u8),
     /// An overworld portal crossing: `(dest_index, entity slot)`, the
     /// `FieldEvent::WorldMapTransition` shape. Retail runs the entrance's
@@ -297,7 +297,7 @@ impl HeldTransition {
 /// Retail's scene-change packet spawns the actor and returns; the departing
 /// scene keeps running under it while state 0 seeds the [`TRANSITION_COUNTDOWN`]
 /// and state 4 waits for it to go negative, and only then does MAIN INIT
-/// load the destination. `crate::scene::SceneHost::tick` parks every
+/// load the destination. `legaia_engine_core::scene::SceneHost::tick` parks every
 /// transition here, ticks the actor once per world tick with the frame step,
 /// and commits the switch on the tick the actor writes the mode-2 hand-off.
 /// While a hold is parked the departing scene's player is engaged
@@ -571,15 +571,5 @@ mod tests {
             assert_eq!(released_at, Some(want), "dt {dt}");
             assert_eq!(h.ticks, want);
         }
-    }
-
-    /// A parked transition engages the player the way the parked door record
-    /// does, so the pad cannot walk the player out of a held door.
-    #[test]
-    fn a_parked_transition_engages_the_player() {
-        let mut w = crate::world::World::new();
-        assert!(!w.script_context_engages_player());
-        w.scene_transition_hold = Some(SceneTransitionHold::new(HeldTransition::Portal(3, 1)));
-        assert!(w.script_context_engages_player());
     }
 }

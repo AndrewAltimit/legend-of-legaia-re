@@ -124,16 +124,6 @@ pub fn scene_minigame_door_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoic
     Vec::new()
 }
 
-impl From<crate::baka_fighter_chrome::XaCue> for crate::sfx_cue::XaVoiceClip {
-    fn from(c: crate::baka_fighter_chrome::XaCue) -> Self {
-        Self {
-            clip: u32::from(c.clip),
-            channel: u32::from(c.chan),
-            duration_sectors: u32::from(c.dur),
-        }
-    }
-}
-
 impl From<crate::muscle_ringside::HubXaCue> for crate::sfx_cue::XaVoiceClip {
     fn from(c: crate::muscle_ringside::HubXaCue) -> Self {
         Self {

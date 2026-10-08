@@ -2275,7 +2275,7 @@ the GLSL twin is compiled but not run by any test, so an edit to one shader
 has to be carried to the other by hand.
 
 The ground's depth cue joins the same pair (`overworld_ground_cue` /
-`overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-core/src/overworld_ground_cue.rs)):
+`overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-field/src/overworld_ground_cue.rs)):
 each re-projects the cell's `(x1, z0)` corner from the flat-depth references
 and runs retail's `DPCS` arithmetic toward the literal far colour on the packet
 colour. The WGSL cue is GPU-tested in the same file. The GLSL twin has a

@@ -6,9 +6,9 @@
 //! / party manipulation update game state. The retail engine called into
 //! its loader / audio / UI layers directly; in the port we route
 //! every such call through a [`FieldEvent`] pushed onto
-//! [`crate::world::World::pending_field_events`].
+//! `legaia_engine_core::world::World::pending_field_events`.
 //!
-//! Engines drain the queue once per frame after [`crate::world::World::tick`]
+//! Engines drain the queue once per frame after `legaia_engine_core::world::World::tick`
 //! returns and apply the events to their own subsystems. Tests inspect it to
 //! verify the VM emitted what they expected.
 //!
@@ -34,7 +34,7 @@ pub enum FieldEvent {
         world_z: u16,
         depth_id: u8,
     },
-    /// Emitted when [`crate::world::World`]'s field-VM dialog-advance host
+    /// Emitted when `legaia_engine_core::world::World`'s field-VM dialog-advance host
     /// hook (`op 0x4C n5 sub-4`) clears `current_dialog` in response to a
     /// just-pressed Cross/Circle. Engines that mirror dialog state in
     /// their own HUD drain this to fade the dialog box out.
@@ -122,12 +122,12 @@ pub enum FieldEvent {
     /// the FMV should pop this event, resolve the index to a STR file
     /// (via `legaia_asset::fmv_dispatch::FmvTable` when disc bytes are
     /// available, else the static
-    /// [`crate::cutscene::fmv_index_to_str_filename`] map), and kick
+    /// `legaia_engine_core::cutscene::fmv_index_to_str_filename` map), and kick
     /// whatever STR/MDEC playback path they have. Engines without an
     /// FMV path can drop the event - the field VM doesn't require any
     /// host-side response.
     FmvTrigger { fmv_id: i16 },
-    /// Emitted by [`crate::world::World::install_scripted_encounter`] when the
+    /// Emitted by `legaia_engine_core::world::World::install_scripted_encounter` when the
     /// field VM forwards a `+0x94` record pointer (op 0x34 sub-2 capture) and
     /// the scripted-encounter consumer is armed. `record` is the bounded
     /// bytecode window the VM captured ( `[flag][_][_][count][ids..]`, at most
@@ -147,14 +147,14 @@ pub enum FieldEvent {
     /// spawned actors' own bytecode (retail stores the pointer at
     /// `actor[+0x90]`).
     ActorAllocate { records: Vec<Vec<u8>> },
-    /// Emitted by [`crate::world::World::materialize_actor_spawns`] - the
+    /// Emitted by `legaia_engine_core::world::World::materialize_actor_spawns` - the
     /// engine-side consumer that drains queued [`Self::ActorAllocate`]
     /// records and instantiates each as an actor slot.
     ///
     /// `slot` is the index into `World::actors` that received the
     /// allocation. `record` is the bytecode the spawned actor's
     /// `actor[+0x4C]` record-pointer references (cloned onto the slot's
-    /// [`crate::world::Actor::spawn_record`]). `kind` / `variant` mirror
+    /// `legaia_engine_core::world::Actor::spawn_record`). `kind` / `variant` mirror
     /// the FUN_801D77F4 `actor[+0x3C]` / `actor[+0x3E]` writes - both zero
     /// until a record encoding is pinned.
     ///
@@ -167,7 +167,7 @@ pub enum FieldEvent {
         variant: u16,
         record: Vec<u8>,
     },
-    /// Emitted by [`crate::world::World::materialize_actor_spawns`] when an
+    /// Emitted by `legaia_engine_core::world::World::materialize_actor_spawns` when an
     /// actor-allocate request cannot be served because every slot from
     /// `spawn_start_slot..MAX_ACTORS` is already active. Mirrors the retail
     /// "pool exhausted: bail silently" branch of `FUN_801D77F4` (the
@@ -175,7 +175,7 @@ pub enum FieldEvent {
     /// dropped record is included so engines can log / diagnose.
     ActorSpawnFailed { record: Vec<u8> },
     /// An overworld town / dungeon entrance
-    /// ([`crate::world::WorldMapEntityConfig::OverworldPortal`]) reached its
+    /// (`legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal`) reached its
     /// scene-transition state. `slot` is the overworld entity index, whose
     /// config row carries the CDNAME destination + arrival tile; `dest_index`
     /// echoes that entrance's `0x3F` named-scene-change index so a host
@@ -183,7 +183,7 @@ pub enum FieldEvent {
     ///
     /// **Not a map id.** The `0x3E` door-warp id space is a mode-24 minigame
     /// sub-id and never reaches this event - a
-    /// [`crate::world::WorldMapEntityConfig::MinigameDoor`] arms
+    /// `legaia_engine_core::world::WorldMapEntityConfig::MinigameDoor` arms
     /// `World::minigames.pending_warp` instead.
     WorldMapTransition { dest_index: u16, slot: u8 },
 }

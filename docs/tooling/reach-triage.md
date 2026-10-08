@@ -523,7 +523,7 @@ a long doc block or a value item silently became file-scoped while looking
 like a function tag. The walk is unbounded now and a `const` / `static` /
 `type` alias is an anchorable item ([`port-catalog.md`](port-catalog.md)), so
 a tag anchors to whatever it documents.
-`crates/engine-core/src/cutscene_narration.rs` was the worked case for
+`crates/engine-field/src/cutscene_narration.rs` was the worked case for
 `80037174` (tag at the foot of the module doc, first following line a
 `pub const`); it sits on `pub struct CutsceneNarration`, which has an `impl`,
 so the anchor is the type the port actually is.

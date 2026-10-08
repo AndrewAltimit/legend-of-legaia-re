@@ -16,7 +16,7 @@
 //! floor-ladder oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and
 //! the shutter bars (`0x801F2858`) also use - and its one spawn site is
 //! `0x801D6FD8`, inside the field overlay's MAIN INIT `FUN_801D6704`, behind a
-//! `bnez` on `_DAT_8007B8B8`. [`crate::world::cutscene_elements`] is its seat:
+//! `bnez` on `_DAT_8007B8B8`. `legaia_engine_core::world::cutscene_elements` is its seat:
 //! `World::install_field_scene_elements` spawns it on every cold field entry
 //! and `World::tick_cutscene_elements` runs it each frame on both hosts.
 //!
@@ -44,7 +44,7 @@
 //!
 //! REF: FUN_801D629C - the particle spawn primitive the emitter calls.
 //! REF: FUN_80020DE0 - the descriptor spawner, hosted in
-//! [`crate::actor_alloc_host`].
+//! `legaia_engine_core::actor_alloc_host`.
 //!
 //! Read off `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d6058.txt` and
 //! `..._801d841c.txt` - disassembly, not the C.
@@ -263,13 +263,13 @@ impl AmbientEmitter {
     ///
     /// The collecting wrapper; the port tag sits on [`Self::step_with`].
     ///
-    /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
+    /// WIRED: `legaia_engine_core::world::World::tick_cutscene_elements` runs this every
     /// frame on both hosts, off the same master-driver gate the other
     /// plain-template families ride, and
-    /// [`crate::world::World::install_field_scene_elements`] installs the one
+    /// `legaia_engine_core::world::World::install_field_scene_elements` installs the one
     /// element it runs on at every cold field entry (descriptor `0x801F271C`,
     /// spawn site `0x801D6FD8`). Each particle it names goes to the fog
-    /// spawner [`crate::fog_particles::FogPool::spawn`] (`FUN_801D629C`),
+    /// spawner `legaia_engine_core::fog_particles::FogPool::spawn` (`FUN_801D629C`),
     /// which is what retail's `jal 0x801d629c` at `0x801D6148` /
     /// `0x801D6248` reach.
     pub fn step(

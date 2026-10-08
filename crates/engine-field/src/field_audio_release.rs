@@ -50,7 +50,7 @@
 //! init loads PROT 0876 into slot 6 only while it is clear
 //! (`0x801D6FF4..0x801D7028`), so this routine is what makes the next field
 //! init reload the field bank. `_DAT_8007BA88` is the cue drainer's
-//! forced-channel latch. See `crate::world::SfxBankResidency`.
+//! forced-channel latch. See `legaia_engine_core::world::SfxBankResidency`.
 
 /// The number of SPU voices the field's streamed cue holds.
 pub const FIELD_VOICE_COUNT: u16 = 2;

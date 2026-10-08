@@ -165,7 +165,7 @@ pub struct DecorationCue {
 
 /// The cue for one decoration draw whose model origin projects at
 /// `origin_clip_w` under a frame whose `clip.w`-to-`SZ` factor is `sz_scale`
-/// ([`crate::overworld_curvature::frame_curve_scale`], the factor the ground
+/// (`legaia_engine_core::overworld_curvature::frame_curve_scale`, the factor the ground
 /// cue reads). `None` off the overworld (`sz_scale == 0`) and for a near
 /// object (`IR0 == 0`), both of which draw uncued.
 pub fn decoration_draw_cue(origin_clip_w: f32, sz_scale: f32) -> Option<DecorationCue> {

@@ -24,11 +24,11 @@
 //! | `DAT_8007B618` | GTE `H`, the projection register (`_DAT_8007B6F4`) | `0x300` |
 //!
 //! All four are read by the field-overlay camera composer into the same
-//! descriptor whose ten fields are [`crate::camera::RetailCamGlobals`] - see
+//! descriptor whose ten fields are `legaia_engine_core::camera::RetailCamGlobals` - see
 //! [`RampSlot::camera_axis`] for the per-register store sites. The pitch
 //! default is the same `0x1B8` that `FUN_80025C24` seeds into
 //! `RetailCamGlobals::FIELD_RESET`, which is what identifies the register.
-//! The whole block's seed is [`crate::camera::CAMERA_ZONE_DEFAULTS`].
+//! The whole block's seed is `legaia_engine_core::camera::CAMERA_ZONE_DEFAULTS`.
 //!
 //! ## The retail spawn
 //!
@@ -130,7 +130,7 @@ impl RampSlot {
         }
     }
 
-    /// Which of the ten [`crate::camera::RetailCamGlobals`] axes this
+    /// Which of the ten `legaia_engine_core::camera::RetailCamGlobals` axes this
     /// register drives.
     ///
     /// Every one of the four is read by the field-overlay camera composer
@@ -163,7 +163,7 @@ impl RampSlot {
 /// register-address order (`0x8007B60C`, `B610`, `B614`, `B618`).
 ///
 /// Seeded to the same values `FUN_801DBE9C`'s zone-miss arm installs
-/// ([`crate::camera::CAMERA_ZONE_DEFAULTS`]), so a scene with no ramp reads
+/// (`legaia_engine_core::camera::CAMERA_ZONE_DEFAULTS`), so a scene with no ramp reads
 /// exactly what retail's default zone config carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CameraRegisterFile {

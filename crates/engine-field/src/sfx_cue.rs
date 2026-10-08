@@ -190,6 +190,16 @@ pub fn route_sfx_cue(
     out
 }
 
+impl From<crate::baka_fighter_chrome::XaCue> for crate::sfx_cue::XaVoiceClip {
+    fn from(c: crate::baka_fighter_chrome::XaCue) -> Self {
+        Self {
+            clip: u32::from(c.clip),
+            channel: u32::from(c.chan),
+            duration_sectors: u32::from(c.dur),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

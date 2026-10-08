@@ -4,7 +4,7 @@
 //! PORT: FUN_801D9C3C, FUN_801DE478, FUN_801E6984, FUN_801D84B4
 //!
 //! A field script reaches a sub-screen through actor `+0x50` handler slots (see
-//! [`crate::field_menu_dispatch`] and `docs/subsystems/script-vm.md`). The four
+//! `legaia_engine_core::field_menu_dispatch` and `docs/subsystems/script-vm.md`). The four
 //! routines here are the entry side of that:
 //!
 //! - [`open_submode`] - `FUN_801D9C3C`: reset the submode's context block and
@@ -33,7 +33,7 @@
 //! for a live [`SUBMODE_DRIVER_HANDLER`] through the port of `FUN_8003CF04`,
 //! and the spawn installs a handler on the slot it takes.
 //!
-//! [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
+//! [`World::man_load_actor_reset`]: legaia_engine_core::world::World::man_load_actor_reset
 //!
 //! [`submode_panel_rows`] stays disclosed and its note says why: the op-`0x49`
 //! sub-op-4 handler that installs its panel is ported only on the world-map
@@ -116,8 +116,8 @@ pub enum SubmodeOpen {
 /// installed. Host roots: `SceneHost::enter_field_scene` → `BootSession` /
 /// `legaia-engine run` / `play-window`.
 ///
-/// [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
-/// [`World::find_actor_by_handler`]: crate::world::World::find_actor_by_handler
+/// [`World::man_load_actor_reset`]: legaia_engine_core::world::World::man_load_actor_reset
+/// [`World::find_actor_by_handler`]: legaia_engine_core::world::World::find_actor_by_handler
 pub fn open_submode(handler_present: bool) -> (&'static [(u16, u32); 10], SubmodeOpen) {
     (
         &SUBMODE_CONTEXT_SEEDS,
@@ -157,7 +157,7 @@ pub const SCENE_ACTOR_REQUESTED_STATE: u16 = 0x0F;
 /// [`SCENE_ACTOR_REQUESTED_STATE`], seating the state word this returns on the
 /// spawned slot.
 ///
-/// [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
+/// [`World::man_load_actor_reset`]: legaia_engine_core::world::World::man_load_actor_reset
 pub fn scene_actor_initial_state(requested: u16, field_mode_flags: u32) -> u16 {
     if field_mode_flags != 0 { 1 } else { requested }
 }
@@ -227,9 +227,9 @@ pub struct PanelRow {
 /// `FUN_801EF014` installs at `0x801EF17C` - handler slot `0x23`, the
 /// op-`0x49` sub-op-4 screen (`OP49_SUBOP_SLOTS[4] = 0x23`), which the disc
 /// issues only at the Uru Mais warp pads (`kor` / `kor3` / `kor4`). The field path's slot
-/// `0x23` runs through [`crate::field_submode_flag_window::flag_window_slot`]
-/// (from [`crate::world::World::tick_submode_screen`]), and
-/// [`crate::field_submode_flag_window::flag_window_lines`] calls this for the
+/// `0x23` runs through `legaia_engine_core::field_submode_flag_window::flag_window_slot`
+/// (from `legaia_engine_core::world::World::tick_submode_screen`), and
+/// `legaia_engine_core::field_submode_flag_window::flag_window_lines` calls this for the
 /// row pass; the native window's stage pass and the browser play page's shop
 /// window pass draw it off `SceneHost::flag_window_lines`. The glyph runs are
 /// floor plates in the system-UI sheet (record `0x4F` the basement, `0x50..`
@@ -275,7 +275,7 @@ pub fn submode_panel_rows(
 }
 
 /// Master game mode the CARD request leaf installs (`0x16` = 22, the
-/// memory-card / menu overlay pair's init half - [`crate::mode::GameMode::CardInit`]).
+/// memory-card / menu overlay pair's init half - `legaia_engine_core::mode::GameMode::CardInit`).
 pub const CARD_REQUEST_MODE: i16 = 0x16;
 
 /// What the CARD request leaf writes.
@@ -294,7 +294,7 @@ pub const CARD_REQUEST_MODE: i16 = 0x16;
 /// It is worth knowing that this leaf is the other half of a gate already
 /// ported: the field initialiser's BGM wait barrier spins until the audio
 /// driver acknowledges the track **unless** the master mode is `0x16`
-/// ([`crate::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE`]). So a CARD request
+/// (`legaia_engine_core::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE`). So a CARD request
 /// raised while a scene is loading is what lets that barrier give up.
 ///
 /// This function was previously in the port catalog's **ignore list** under a
@@ -313,14 +313,14 @@ pub struct CardRequest {
 ///
 /// PORT: FUN_801D84B4.
 ///
-/// WIRED: [`crate::mode::ModeSeat::request_card_mode`] applies both stores,
+/// WIRED: `legaia_engine_core::mode::ModeSeat::request_card_mode` applies both stores,
 /// and `engine-shell`'s `BootSession` opens the pause menu through it - the
 /// seat is the production owner of the mode word this leaf writes.
 ///
 /// The second store had "no engine counterpart at all, its consumer is not in
 /// the ported set" written on it. That was wrong on both halves: `0x8007BB00`
 /// is the front-end entry word, its two retail readers are `init.pak`'s
-/// hand-off arm (`0x801CF4B0`, ported at [`crate::mode::ModeSeat::boot_handoff`])
+/// hand-off arm (`0x801CF4B0`, ported at `legaia_engine_core::mode::ModeSeat::boot_handoff`)
 /// and the title dispatcher's `Init` routing (`0x801DD97C`, already ported as
 /// `legaia_engine_vm::title_overlay::ENTRY_WORD_ADDR`), and the seat now holds
 /// the word both of them read.
@@ -412,23 +412,5 @@ mod tests {
         let rows = submode_panel_rows((0, 0), 2, 0, 9, 9);
         assert!(!rows[0].second_run, "entry 0 draws one run");
         assert!(rows[1].second_run);
-    }
-
-    #[test]
-    fn the_card_request_matches_the_bgm_barrier_abort_mode() {
-        let r = request_card_mode();
-        assert_eq!(r.game_mode, CARD_REQUEST_MODE);
-        assert_eq!(r.flag, 1);
-        // The leaf writes exactly the mode the field initialiser's BGM wait
-        // barrier bails out on - the two are the same gate seen from each end.
-        assert_eq!(
-            r.game_mode,
-            crate::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE
-        );
-        // And it is mode 22, the CARD init half.
-        assert_eq!(
-            crate::mode::GameMode::from_index(r.game_mode as usize),
-            Some(crate::mode::GameMode::CardInit)
-        );
     }
 }

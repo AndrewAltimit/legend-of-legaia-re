@@ -53,7 +53,7 @@
 //!    clear or `0x1F800394 & 0x400` set, the routine takes its pin leg
 //!    (`0x801DB820`) instead: focus = `-player`, no compose, no ease. The
 //!    three gates are applied by `Camera::zone_follow_tick`
-//!    (`crate::world::CAMERA_HOLD_FLAG`, `crate::world::CAMERA_FORCE_EASE_FLAG`,
+//!    (`legaia_engine_core::world::CAMERA_HOLD_FLAG`, `legaia_engine_core::world::CAMERA_FORCE_EASE_FLAG`,
 //!    `ZoneFollow::follow_enabled`).
 //! 4. **Snap** - `FUN_801DB8EC(player)` ([`snap`]) is the same compose + list
 //!    walk with a plain copy instead of the ease, then `FUN_8003D254(H)`;
@@ -661,7 +661,7 @@ pub fn snap(target: &CameraTarget) -> (i32, i32, [i32; 3], i32) {
 /// `box` is the scratchpad attribute box `0x1F800384..87` in the retail
 /// store order (`[rec[0], rec[3], rec[2], rec[1]]`, unsigned bytes);
 /// `window` is `0x1F8003E8..EB` read as **signed** bytes, whose field
-/// default is [`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`] and
+/// default is `legaia_engine_core::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` and
 /// whose per-record override is the mask-kind side-write
 /// [`CameraZoneConfig::load_record`] returns.
 // PORT: FUN_801DAA50

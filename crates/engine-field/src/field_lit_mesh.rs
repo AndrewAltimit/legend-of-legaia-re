@@ -68,7 +68,7 @@ pub fn shade_lit_rows(
 }
 
 /// [`shade_lit_rows`] for a hybrid mesh's `[r, g, b, flag]` side stream
-/// ([`crate::scene_assembly::build_hybrid_env_mesh`]): the textured half
+/// (`legaia_engine_core::scene_assembly::build_hybrid_env_mesh`): the textured half
 /// leads it, one entry per lit-mask vertex, and its RGB is the same packet
 /// colour.
 pub fn shade_lit_rows_rgba(

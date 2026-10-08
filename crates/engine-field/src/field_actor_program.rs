@@ -378,7 +378,7 @@ enum Flow {
 /// The request/acknowledge pair this reads is **not** a BGM track. It is the
 /// side-band sound-bank pair `_DAT_8007BABC` / `_DAT_8007BAA0` that
 /// `FUN_800243F0` settles - the guard state `0x02` runs is the one
-/// `crate::scus_leaf_kernels::SoundStreamRequest` documents as inlined at
+/// `legaia_engine_core::scus_leaf_kernels::SoundStreamRequest` documents as inlined at
 /// `0x801D4B58..0x801D4B90` - and the engine models it live, as
 /// `World::audio.sound_stream`. An earlier disclosure here named that pair as
 /// the blocker on the reading that the engine had only a synchronous BGM

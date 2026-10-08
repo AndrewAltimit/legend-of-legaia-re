@@ -16,7 +16,7 @@
 //! (`FUN_8001BE80`). This module owns the playhead: it pre-decodes every
 //! frame of a clip and emits one [`PoseFrame`] per engine tick, which the
 //! host's posed-mesh rebuild consumes exactly like the battle
-//! [`crate::battle_anim::MonsterAnimPlayer`] output. A clip whose record
+//! `legaia_engine_core::battle_anim::MonsterAnimPlayer` output. A clip whose record
 //! carries the blend gate is posed between two keyframes on the ticks that
 //! fall inside a frame, through the same blender
 //! ([`legaia_asset::player_anm::blend_bone_transform`]) the prop path samples
@@ -160,8 +160,8 @@ impl FieldClipPlayer {
     }
 
     /// Pose from an externally ticked cursor - the world-owned
-    /// [`crate::field_env::PropAnim`] an NPC actor's `+0x62` word drives
-    /// ([`crate::world::World::sync_npc_clip`]) - instead of this player's own
+    /// `legaia_engine_core::field_env::PropAnim` an NPC actor's `+0x62` word drives
+    /// (`legaia_engine_core::world::World::sync_npc_clip`) - instead of this player's own
     /// free-running loop. `clamp` is the cursor's clamp bit (`+0x62 & 8`).
     pub fn set_cursor(&mut self, cursor: u32, clamp: bool) {
         let span = (self.frames.len() as u32 * 16).max(1);
@@ -259,13 +259,13 @@ fn row_bone(r: &([i16; 3], [i16; 3])) -> BoneTransform {
 
 /// The player's live idle/walk clip pair plus the per-tick movement signal
 /// locomotion feeds it. Hosts install one via
-/// [`crate::world::World::set_field_player_anim`]; [`crate::world::World`]
+/// `legaia_engine_core::world::World::set_field_player_anim`; `legaia_engine_core::world::World`
 /// ticks it after the locomotion step each field frame and folds the output
 /// into the player actor's `pose_frame`.
 ///
 /// Built by [`Self::from_locomotion_bank`] it also carries the leader's whole
 /// seven-record bank, and the settle tail
-/// ([`crate::world::World::step_field_vertical`], retail `FUN_801D1BA0`)
+/// (`legaia_engine_core::world::World::step_field_vertical`, retail `FUN_801D1BA0`)
 /// selects the slot retail's clip base names each frame through
 /// [`Self::select_retail_slot`] - the run clip, the hop's two clips, and the
 /// walk-in-place a warp holds, none of which the idle/walk pair can express.
@@ -524,8 +524,8 @@ impl FieldPlayerAnim {
 /// Test fixture: a synthetic ANM bundle whose record `r` has `bones[r]`
 /// bones and `frames[r]` frames, each frame's bone `b` tagging `t_x` with
 /// `r * 100 + f * 10 + b` (low byte).
-#[cfg(test)]
-pub(crate) fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
+#[doc(hidden)]
+pub fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
     use legaia_asset::player_anm::{ANM_MARKER_1, parse};
     let mut buf = Vec::new();
     buf.extend_from_slice(&(records.len() as u32).to_le_bytes());
@@ -743,40 +743,6 @@ mod tests {
         // Keyframes 0 / 10 / 20 on every fourth tick; frame 2 blends toward
         // frame 0 (the loop wrap) before the cursor returns to 0.
         assert_eq!(seen, vec![0, 2, 5, 7, 10, 12, 15, 17, 20, 15, 10, 5, 0]);
-    }
-
-    #[test]
-    fn world_tick_drives_walk_idle_switch_into_pose_frame() {
-        use crate::world::{SceneMode, World};
-        let mut w = World {
-            mode: SceneMode::Field,
-            ..World::default()
-        };
-        w.install_field_player(0);
-        let bundle = synth_bundle();
-        let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
-        let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        idle.set_step(16);
-        walk.set_step(16);
-        w.set_field_player_anim(Some(FieldPlayerAnim::new(idle, walk)));
-        // Standing frame: idle clip pose lands in the player's pose_frame.
-        w.set_pad(0);
-        let _ = w.tick();
-        let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
-        assert_eq!(pose.bone_outputs[0].0[0], 100, "idle record tag");
-        assert!(!w.locomotion.player_anim.as_ref().unwrap().walking);
-        // Held direction: locomotion flags the move, the walk clip plays.
-        w.set_pad(crate::input::PadButton::Up.mask());
-        let _ = w.tick();
-        let pose = w.actors[0].pose_frame.clone().expect("walk pose set");
-        assert_eq!(pose.bone_outputs[0].0[0], 0, "walk record restarts");
-        assert!(w.locomotion.player_anim.as_ref().unwrap().walking);
-        // Release: back to idle, restarted at frame 0.
-        w.set_pad(0);
-        let _ = w.tick();
-        let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
-        assert_eq!(pose.bone_outputs[0].0[0], 100);
-        assert!(!w.locomotion.player_anim.as_ref().unwrap().walking);
     }
 
     /// A scripted one-shot (ExecMove) overrides idle/walk for exactly one

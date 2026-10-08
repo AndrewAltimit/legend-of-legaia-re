@@ -2066,7 +2066,7 @@ So the input lock and the `+0x16` scroll are the *rise-up animation of a debug w
 
 ## The scripted-scene actor - `FUN_801d4a60`
 
-A 38-state jump-table dispatcher on the actor's `+0x54`: bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, `jr v0`, out-of-range falls to the epilogue. Port: [`engine-core::field_actor_program`](../../crates/engine-core/src/field_actor_program.rs).
+A 38-state jump-table dispatcher on the actor's `+0x54`: bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, `jr v0`, out-of-range falls to the epilogue. Port: [`engine-core::field_actor_program`](../../crates/engine-field/src/field_actor_program.rs).
 
 ### `+0x50` is a program selector, and that is what makes the table readable
 
@@ -2370,7 +2370,7 @@ second prim emitter, and one hit from the VRAM DMA loop at `0x80059DE4`. Probe:
 
 So the parked word is write-only state: the return is carried by the driver's
 own `+0x50` handler slot, not read back out of `scene[+0x40]`. The port
-(`crates/engine-core/src/field_submode.rs`) collapsing enter and return into one
+(`crates/engine-field/src/field_submode.rs`) collapsing enter and return into one
 step and keeping no `scene[+0x40]` therefore drops a store retail also never
 consumes.
 

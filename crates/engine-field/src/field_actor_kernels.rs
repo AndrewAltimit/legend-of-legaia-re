@@ -26,7 +26,7 @@
 //!   actor, and nothing spawns one yet. Its own note says exactly what is
 //!   missing.
 //!
-//! [`Actor::handler`]: crate::world::Actor::handler
+//! [`Actor::handler`]: legaia_engine_core::world::Actor::handler
 //!
 //! REF: FUN_801D6704 (calls the sweep once per actor list on a warp entry),
 //! FUN_80017888 (buffer alloc), FUN_80024D78, FUN_80024EE4 (the tween's draw)
@@ -110,7 +110,7 @@ pub struct SweepDecision {
 /// Retail runs this over a whole actor list, and the field initialiser calls it
 /// **once per list** - seven times - on a warp entry (`_DAT_8007B8B8 == 2`),
 /// which is what makes a warp structurally different from a cold entry (see
-/// [`crate::mode_entry_init::FieldEntryMode`]).
+/// `legaia_engine_core::mode_entry_init::FieldEntryMode`).
 ///
 /// The order the flags land in matters: the three handler tests OR
 /// [`ACTOR_FLAG_YIELD`] in, then [`ACTOR_FLAG_TRANSITION`] is stamped
@@ -132,7 +132,7 @@ pub struct SweepDecision {
 /// `SceneHost::enter_field_scene` (→ `BootSession`, `legaia-engine` `run` /
 /// `play-window`) and the door-warp path in `SceneHost::tick`.
 ///
-/// [`World::scene_transition_actor_sweep`]: crate::world::World::scene_transition_actor_sweep
+/// [`World::scene_transition_actor_sweep`]: legaia_engine_core::world::World::scene_transition_actor_sweep
 pub fn sweep_actor(actor: SweepActor) -> SweepDecision {
     let retired = RETIRED_HANDLERS.contains(&actor.handler);
     let mut flags = actor.flags;
@@ -199,7 +199,7 @@ pub struct ColourTween {
 ///   `0x2B` command byte at `0x80024F54`.
 ///
 /// Hosts draw the frame's pushes through
-/// [`crate::world::World::screen_tint_push_args`] and the shared emitter
+/// `legaia_engine_core::world::World::screen_tint_push_args` and the shared emitter
 /// `legaia_engine_ui::screen_prim::screen_effect_push_prims`, which is where
 /// the clamp, the mask and the channel swap live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,7 +275,7 @@ pub struct ColourTweenStep {
 /// `op0 & 2`, else `0` when `op0 & 4`, else `2`.
 ///
 /// [`ActorHandler::ColourTween`]: crate::actor_handler::ActorHandler::ColourTween
-/// [`World::screen_tint_pushes`]: crate::world::World::screen_tint_pushes
+/// [`World::screen_tint_pushes`]: legaia_engine_core::world::World::screen_tint_pushes
 pub fn tween_from_fade_template(t: &crate::fade::FadeTemplate, kind: i16) -> ColourTween {
     let c = |v: [i16; 3]| (v[0] as u16, v[1] as u16, v[2] as u16);
     ColourTween {
@@ -331,8 +331,8 @@ pub fn tween_from_fade_template(t: &crate::fade::FadeTemplate, kind: i16) -> Col
 /// `World::op34_sub0_color_intensity_setup` on both hosts and seats its
 /// tweens through `World::spawn_colour_tween`.
 ///
-/// [`World::tick_handler_actors`]: crate::world::World::tick_handler_actors
-/// [`World::screen_tint_pushes`]: crate::world::World::screen_tint_pushes
+/// [`World::tick_handler_actors`]: legaia_engine_core::world::World::tick_handler_actors
+/// [`World::screen_tint_pushes`]: legaia_engine_core::world::World::screen_tint_pushes
 pub fn step_colour_tween(t: ColourTween, delta: u8) -> ColourTweenStep {
     let clock = i32::from(t.clock as i16);
     let delay = i32::from(t.delay);

@@ -84,7 +84,7 @@
 //! ### The two buffers, and what fills them
 //!
 //! `FUN_801D77F4`'s tail (`0x801D7848..0x801D79BC`) is the part the port used
-//! to stop short of; it is now [`crate::world::World::spawn_morph_weight_actor`]
+//! to stop short of; it is now `legaia_engine_core::world::World::spawn_morph_weight_actor`
 //! and [`rest_pose_snapshot`]. The writes themselves are in the function
 //! directory
 //! ([`functions/renderer.md` § 801D77F4](../../../docs/reference/functions/renderer.md#801d77f4));
@@ -127,18 +127,18 @@
 //!
 //! ## Where the engine runs it
 //!
-//! The seat is [`crate::world::World::spawn_morph_weight_actor`], which the
+//! The seat is `legaia_engine_core::world::World::spawn_morph_weight_actor`, which the
 //! `4C D8` host arm calls in place of the plain allocator: it builds the
 //! snapshot, stamps
 //! [`crate::actor_handler::ActorHandler::MorphWeights`] and seats a
-//! [`MorphWeightActor`] on the slot. [`crate::world::World::tick_handler_actors`]
+//! [`MorphWeightActor`] on the slot. `legaia_engine_core::world::World::tick_handler_actors`
 //! steps the envelope once per game tick, and both hosts read the blended
-//! mesh back through [`crate::world::World::morph_weight_posed_tmd`] - the
+//! mesh back through `legaia_engine_core::world::World::morph_weight_posed_tmd` - the
 //! one place [`apply_morph_weights`] runs, so neither renderer owns any part
 //! of the blend.
 //!
 //! This is a different path from the engine's *other* morph route - per-group
-//! VDF staging through [`crate::world::World::stage_actor_group_morph`],
+//! VDF staging through `legaia_engine_core::world::World::stage_actor_group_morph`,
 //! which resolves records from the scene VDF table and ramps its weights in
 //! the move-VM envelope (`FUN_80020740`). One buffer shape, two producers:
 //! that one takes a slot list, this one a block.
@@ -219,7 +219,7 @@ pub fn parse_apply_records<'a>(
 ///
 /// PORT: FUN_8002174C
 ///
-/// Reached on both hosts through [`crate::world::World::morph_weight_posed_tmd`],
+/// Reached on both hosts through `legaia_engine_core::world::World::morph_weight_posed_tmd`,
 /// the render-time read each one poses a `4C D8` actor's mesh with.
 pub fn apply_morph_weights(
     block: &[u8],
@@ -276,7 +276,7 @@ impl MorphWeightEnvelope {
     /// PORT: FUN_8002174C
     ///
     /// Stepped once per game tick by
-    /// [`crate::world::World::tick_handler_actors`] over every actor the
+    /// `legaia_engine_core::world::World::tick_handler_actors` over every actor the
     /// `4C D8` allocator seated.
     pub fn tick(&mut self, dt: u8) {
         let dt = i32::from(dt);
@@ -310,10 +310,10 @@ impl MorphWeightEnvelope {
 /// the `+0x3C` / `+0x3E` / `+0x40` / `+0x6E` envelope quad.
 ///
 /// The engine seats one of these from
-/// [`crate::world::World::spawn_morph_weight_actor`] and steps it from
-/// [`crate::world::World::tick_handler_actors`]; hosts read the blended
+/// `legaia_engine_core::world::World::spawn_morph_weight_actor` and steps it from
+/// `legaia_engine_core::world::World::tick_handler_actors`; hosts read the blended
 /// vertex set back through
-/// [`crate::world::World::morph_weight_actor_groups`].
+/// `legaia_engine_core::world::World::morph_weight_actor_groups`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MorphWeightActor {
     /// `actor+0x4C` - the VDF morph block the instruction's first operand

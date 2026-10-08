@@ -942,7 +942,7 @@ back by FUN_80068B98) is a claim about that walk, not about a global.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/actor_handler.rs:8003aeb0"
+key = "module-orphan:crates/engine-field/src/actor_handler.rs:8003aeb0"
 reason = """
 The sibling relation here is INLINING, which by construction produces no call
 edge and no shared distinctive datum. The tag says so itself: both retired-handler
@@ -966,7 +966,7 @@ halves address memory differently, not a foreign member.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/field_actor_program.rs:801d4a60"
+key = "module-orphan:crates/engine-field/src/field_actor_program.rs:801d4a60"
 reason = """
 Cross-image module, and the tag pins the routine from its own bytes: FUN_801D4A60
 opens `lh v1,0x54(s1)` / `sltiu v1,0x26` / `jr v0` against the 38-word table at
@@ -977,7 +977,7 @@ an overlay member however tightly the two are coupled at runtime.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/field_submode.rs:801d84b4"
+key = "module-orphan:crates/engine-field/src/field_submode.rs:801d84b4"
 reason = """
 VA aliasing, which the checker documents as unresolved. 0x801D84B4 in the FIELD
 overlay (0897) is this module's panel-row layout; 0x801D84C0 twelve bytes away is
@@ -988,7 +988,7 @@ so nothing distinctive is common. Nothing here contradicts either reading.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/field_submode.rs:801e6984"
+key = "module-orphan:crates/engine-field/src/field_submode.rs:801e6984"
 reason = """
 Same module, same cause as the 801d84b4 row: the four op-0x49 submode entry
 routines are coupled through the submode CONTEXT BLOCK, which each reaches off a

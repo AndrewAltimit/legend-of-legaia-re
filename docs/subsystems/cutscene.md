@@ -991,7 +991,7 @@ The spawner and the crawl-geometry config are two distinct sub-ops of field-VM o
 | `+0x50` | scroll **divisor**. A per-actor accumulator gains the frame step `DAT_1F800393` each frame (not while paused); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps. | `0x04` (4) |
 | `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 |= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it. Written only by the `word3 == 1` sub-mode. | `0` |
 
-The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to `0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`. The block ends when the retired count reaches the page count: the roller clears its parent's `+0x10` bit `0x400` and kills itself. The port is [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs); its [`RollerSeed`](../../crates/engine-core/src/cutscene_narration.rs) is read off the seed op before each block, and because neither host scissors the text, `visible_lines` returns only the rows wholly inside the clip window.
+The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to `0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`. The block ends when the retired count reaches the page count: the roller clears its parent's `+0x10` bit `0x400` and kills itself. The port is [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs); its [`RollerSeed`](../../crates/engine-field/src/cutscene_narration.rs) is read off the seed op before each block, and because neither host scissors the text, `visible_lines` returns only the rows wholly inside the clip window.
 
 A prior model - "one caption per page, 120 frames each, killing its predecessor, drawn at `Y = 180` / mid-screen" - described the separate **`4C E1` single-balloon op** (spawner `FUN_8003C764`, handler `FUN_801DA7F0`, dispatcher case at `0x801E30B8`/`C8`). That op is real but it is **not the crawl**.
 The *"It was the Seru."* caption appears between `opdeene`'s two crawls, as a centered line over the villager-tableau shot (between the creation crawl's last page and the Seru-history crawl's first). It is **not a text balloon at all** and **not any live-rendered font string**: it is a **pre-rendered image**. The caption is a baked **112×32 4bpp TIM** (two CLUT palettes - the fade steps) in the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30`, VRAM `fb=(384,0)`, sitting among that pack's scene textures (the cloth grades, the Genesis-tree flame, the foliage; `tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space textured quad; there is no font string to source.
@@ -1205,7 +1205,7 @@ Only **cutscene-class** records (the opening chain, and gated walk-on beat recor
 
 A helper still holds the pad while it runs (`World::script_context_engages_player`): retail's script runner `FUN_80039B7C` raises the player's engaged bit for every context it steps, modal or not ([`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go)). Pending spawns queue (FIFO) rather than dropping while another record executes.
 
-[`World::step_cutscene_timeline`](../../crates/engine-core/src/world/narration.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-core/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-core/src/camera.rs) folds in; the `GFLAG_SET 26` near the record's top arms the **intro skip** through the same host path the main field VM uses; and the record's terminal `0x3F` SceneChange chains the next opening leg - all **by execution**, not by a static MAN-walk derivation.
+[`World::step_cutscene_timeline`](../../crates/engine-core/src/world/narration.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-field/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-core/src/camera.rs) folds in; the `GFLAG_SET 26` near the record's top arms the **intro skip** through the same host path the main field VM uses; and the record's terminal `0x3F` SceneChange chains the next opening leg - all **by execution**, not by a static MAN-walk derivation.
 The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-core/src/world/narration.rs)) remains as a fallback for a scene whose timeline record can't be resolved, and a safety net arms it if execution can't reach the arming op within the frame cap, so the prologue can never stall.
 
 Two overlay-variant pins from the live opening run:
@@ -1324,7 +1324,7 @@ pokes.
 playing its clip: retail's per-actor animation tick (`FUN_8003BC08 → FUN_80021DF4`) advances each
 actor's keyframe interpolation every frame *independent of the parked script PC*, so a vignette actor
 cued with its placement anim byte animates through the whole narration crawl. The play-window render
-mirrors this - it builds a looping [`FieldClipPlayer`](../../crates/engine-core/src/field_anim.rs)
+mirrors this - it builds a looping [`FieldClipPlayer`](../../crates/engine-field/src/field_anim.rs)
 from each on-screen placement's default anim id (`record = anim id - 1`) and ticks it every frame,
 gated only on Field mode, not on the channel's halt state or the timeline park. The clip source is
 the **per-scene ANM bundle** (`player_anm::find_in_entry`, the type-`0x05` section of the scene's
@@ -1471,7 +1471,7 @@ Breakpoints on the spawner, the per-frame step and the draw
   `0x4C 0x12` fade at all.
 
 The port used to carry the beat twice - a float `effect_tint` ramp beside the
-[`ScreenTintPush`](../../crates/engine-core/src/field_actor_kernels.rs) triples
+[`ScreenTintPush`](../../crates/engine-field/src/field_actor_kernels.rs) triples
 [`step_colour_tween`] emits - with nothing reading either. The measured beat is
 a `(a0, a1, packed)` triple per frame, which is the push's shape exactly, so
 the push is the surviving model: the op seats its tween through
@@ -1551,7 +1551,7 @@ loses an eighth (`sra v0,s1,3` / `subu s1,s1,v0` at `0x801DFE60`), which is
 why the captured template reads `57` where the instruction's own word is
 `0x41`.
 
-[`step_colour_tween`]: ../../crates/engine-core/src/field_actor_kernels.rs
+[`step_colour_tween`]: ../../crates/engine-field/src/field_actor_kernels.rs
 
 ### Full-scene sepia grade (the gold prologue look)
 

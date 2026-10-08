@@ -1704,7 +1704,7 @@ the mover-follows-the-remap agreement, and the frame's handedness
 The walk camera is the **field zone camera**. The overworld is a mode-`0x03`
 field-run scene and runs the field overlay's per-frame chain, and its camera
 is the follow camera every field scene has
-([`camera_zone`](../../crates/engine-core/src/camera_zone.rs)): the kingdom
+([`camera_zone`](../../crates/engine-field/src/camera_zone.rs)): the kingdom
 MAN's section-3 camera-region record loaded into the parameter block at
 `0x8007B606`, composed by `FUN_801DAB90` into the staging descriptor at
 `0x801F3580`, and eased into the live globals. On all three resident

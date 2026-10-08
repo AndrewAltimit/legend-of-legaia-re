@@ -1350,6 +1350,7 @@ dependencies = [
  "legaia-cheats",
  "legaia-engine-battle",
  "legaia-engine-effects",
+ "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-system",
@@ -1383,6 +1384,18 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-minigames",
+ "legaia-engine-vm",
+ "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-field"
+version = "0.1.0"
+dependencies = [
+ "legaia-anm",
+ "legaia-asset",
+ "legaia-engine-minigames",
+ "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-tmd",
 ]

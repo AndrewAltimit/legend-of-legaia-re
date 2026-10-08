@@ -33,7 +33,7 @@
 //! The settle test compares `+0x16`/`+0x18` against the parallel slots eight
 //! bytes on (`+0x1E`/`+0x20`) - Y and Z only, never X - so what it asks is
 //! whether the actor's height and depth have both stopped moving. The engine
-//! has no `+0x1E`/`+0x20` pair; [`crate::world::World`] answers the same
+//! has no `+0x1E`/`+0x20` pair; `legaia_engine_core::world::World` answers the same
 //! question from the previous tick's Y and Z, which reproduces the outcome the
 //! comparison encodes without asserting what retail keeps in those two slots.
 //!
@@ -46,10 +46,10 @@
 //! writes `_DAT_8007BCAC` in the same breath. `World` now implements all three
 //! of that opcode's host hooks
 //! (`FieldHost::op4c_n4_sub9_default_write` / `_default_ramp` /
-//! `_delta_write_or_ramp`) onto [`crate::world::CameraRig::scene_offset`] /
-//! [`crate::world::CameraRig::offset_ease`], and `World::tick` steps the
+//! `_delta_write_or_ramp`) onto `legaia_engine_core::world::CameraRig::scene_offset` /
+//! `legaia_engine_core::world::CameraRig::offset_ease`, and `World::tick` steps the
 //! accumulator once a frame through [`ease_camera_offset`]. The accumulator is
-//! observable state, not yet a camera input: [`crate::camera`] still drives the
+//! observable state, not yet a camera input: `legaia_engine_core::camera` still drives the
 //! rendered camera from its own float controller, and which of the two owns the
 //! view is a fidelity-mode decision, not a wiring one - the two disagree frame
 //! by frame and swapping silently changes camera feel.
@@ -170,9 +170,9 @@ pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
 ///
 /// WIRED: `World::tick_camera_offset_ease` calls this once a frame, over the
 /// two globals the field VM's op `0x4C` n4 sub-9 hooks now write
-/// ([`crate::world::CameraRig::scene_offset`] and
-/// [`crate::world::CameraRig::offset_ease`]). What the accumulator does
-/// *not* yet do is drive the rendered camera - [`crate::camera`] keeps its own
+/// (`legaia_engine_core::world::CameraRig::scene_offset` and
+/// `legaia_engine_core::world::CameraRig::offset_ease`). What the accumulator does
+/// *not* yet do is drive the rendered camera - `legaia_engine_core::camera` keeps its own
 /// float controller, and choosing between them is a fidelity-mode decision.
 pub fn ease_camera_offset(input: CameraEaseInput) -> i32 {
     if input.pad & PAD_INPUT_LOCKED != 0 {

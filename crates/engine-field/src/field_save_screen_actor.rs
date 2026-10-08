@@ -17,7 +17,7 @@
 //! State 0 does two things that together form the call chain: it writes its
 //! own actor pointer to `_DAT_8007B8E0` and sets the game mode to `0x16`
 //! (mode 22, CARD INIT). Mode 23's frame body `FUN_80017978` is
-//! `(*_DAT_8007B8E0)[+0x0C]()` - see [`crate::mode::CARD_FRAME_BODY`] - so
+//! `(*_DAT_8007B8E0)[+0x0C]()` - see `legaia_engine_core::mode::CARD_FRAME_BODY` - so
 //! from the next frame the CARD mode pair ticks *this* actor and nothing
 //! else. That is why mode 23 runs no actor passes and no display flip: this
 //! handler is the entire frame.
@@ -75,16 +75,16 @@
 //! `legaia_engine_shell::BootSession::open_field_menu` writes
 //! `SceneMode::Menu` and enters `GameMode::CardInit` through the mode seat -
 //! which stages no overlay request in the port's model - then
-//! [`crate::field_menu_dispatch::FieldMenuSubsession::build`] opens the Save /
-//! Load row as a [`crate::save_select::SaveSelectSession`] on the same running
-//! field session, and [`crate::save_screen::SaveScreenFlow`] runs the card
+//! `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the Save /
+//! Load row as a `legaia_engine_core::save_select::SaveSelectSession` on the same running
+//! field session, and `legaia_engine_core::save_screen::SaveScreenFlow` runs the card
 //! half around it. Both shipped hosts own that flow, and `field_menu_resume`
 //! hands the mode back when the session ends.
 //!
 //! That is the whole of what the eleven states order. States 2 and 6 call
-//! `FUN_8003EBE4`, which [`crate::overlay_loader`] already carries as a
+//! `FUN_8003EBE4`, which `legaia_engine_core::overlay_loader` already carries as a
 //! replacement (on-demand PROT resolution through
-//! [`crate::scene::ProtIndex`]); states 1, 3, 5, 7 and 9 only wait on those
+//! `legaia_engine_core::scene::ProtIndex`); states 1, 3, 5, 7 and 9 only wait on those
 //! loads; state 8 picks which MIPS image to DMA into slot B. The engine
 //! resolves a PROT entry when it needs the bytes and has no RAM window to page
 //! into, so there is no swap to sequence and no mid-swap frame for the cover
@@ -214,9 +214,9 @@ impl FieldSaveScreenActor {
     /// `legaia_engine_shell::BootSession::open_field_menu` performs the mode
     /// bounce (`SceneMode::Menu` plus `ModeSeat::enter(GameMode::CardInit)`,
     /// which stages no overlay request),
-    /// [`crate::field_menu_dispatch::FieldMenuSubsession::build`] opens the
+    /// `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the
     /// Save / Load row onto the running field session, and
-    /// [`crate::save_screen::SaveScreenFlow`] runs the card half. No code
+    /// `legaia_engine_core::save_screen::SaveScreenFlow` runs the card half. No code
     /// overlay is paged, so there is nothing for the eleven states to
     /// sequence. See the module docs.
     pub fn tick(&mut self, input: SaveScreenInput) -> Vec<SaveScreenEffect> {

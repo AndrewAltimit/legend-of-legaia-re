@@ -538,14 +538,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   target-menu row dedup / labelling and the overlap-relaxation layout
   (`FUN_801D9D3C`), reached each battle frame through
   `battle_hud::battle_intro_names` on both hosts.
-- `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
-  context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
-  fixed-template spawn (`FUN_801DE478`), the list-panel row layout
-  (`FUN_801E6984`), and the CARD mode-request leaf (`FUN_801D84B4`).
-- `field_actor_kernels` - the scene-transition **teardown sweep**
-  (`FUN_801D7518`, which the field initialiser runs once per actor list on a
-  warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
-  the sweep retires by handler address.
 - `camera_view` - the layer above `camera`: which camera owns this frame
   (`resolve_field_camera` - retail follow / op-`0x45` cutscene shot /
   overworld walk / world-map top-view debug) and what its retail GTE inputs
@@ -554,31 +546,11 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   live here, so a host never spells an angle, a depth or a focal length out
   again; the projection itself is `legaia_engine_vm::psx_camera`. See
   [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
-- `camera_zone` - the **zone-driven follow camera**: the camera parameter
-  block retail keeps at `0x8007B606..` (`CameraZoneConfig`, loaded from a MAN
-  section-3 camera-region record by the port of `FUN_801DBC20`), the composer
-  that turns it plus the player's position into a target pose (`FUN_801DAB90`:
-  position-proportional sweeps, look-at anchors, fixed shots, the floor-height
-  pitch coupling) and the per-frame ease / snap that walk the ten camera
-  globals toward it (`FUN_801DB510` / `FUN_801DB8EC`), with the bearing and
-  square-root LUT helpers they lean on. `Camera::zone` runs it; the pinned
-  constants in `camera_view` are only the terrain-less fallback. Format +
-  arithmetic: [`docs/formats/encounter.md`](../../docs/formats/encounter.md#man-section-3-the-camera-region-table).
-- `camera_ease` - the field camera's smoothed **vertical-offset** step
-  (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
-  position triple, and the eased result lands in the Y halfword of a vector):
-  settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
 - `world_map_panel_host` - the world-map band's panel screen: the
   `0x801F2B98` window system plus the six `ctx[+0x54]` panel actors and the
   travel arts, hosted on `WorldMapController::panels`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
-- `anim_cue` - `walk_anim_cues` / `AnimCueState`, the per-frame walker
-  over a playing battle action's 8-slot `(frame, cue)` track
-  (`FUN_800508DC`): swing, hit, footstep and knockdown SFX, the party
-  `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
-  CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; the battle
-  actor tick in `world::actors` drains them into the SFX ring.
 - `scene::DefaultMapIdResolver` - scene-name → map-id resolution. (Effect lookup,
   `EffectCatalog`, is `legaia_engine_vm::effect_vm`'s; the scene host loads
   it from `efect.dat`.)
@@ -625,35 +597,23 @@ docs carry the retail provenance.
 - **Actor model + hosts** - `actor_handler` (the actor's `+0x0C` per-frame
   handler identity), `actor_alloc_host` / `move_buffer_host` (the `World`
   impls of `engine-vm`'s allocator and MOVE-buffer host traits),
-  `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
   `camera_rel_glide`. The effect kernels (`part_motion`, `object_effect`,
   `summon`, the effect arms and ribbon, `screen_fx`) are re-exported from
   [`legaia-engine-effects`](../engine-effects/README.md).
 - **Battle** - `battle_open` (the formation open banner), `battle_party_form`
   (a member's assembled battle form, once for both hosts),
-  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages),
-  `sfx_cue` (cue id → ring / XA clip), `spell_party_broadcast`
-  (`FUN_8003053C`). The kernel modules re-exported from `engine-battle` are
+  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages). The kernel modules re-exported from `engine-battle` are
   mapped in [its README](../engine-battle/README.md).
-- **Field** - `field_events` (the field VM's event queue), `field_ground`
-  (walk-ground heightfield as a render surface), `field_lit_mesh` (the
-  light-source TMD rows' shading), `field_view_window` (the visible-tile
-  crop), `field_occlusion` (the occlusion fade's visibility gate),
-  `coplanar_draws`, `drop_shadow`, `fog_particles` (retail `fog_set`),
-  `fog_volume` (volumetric fog, an enhancement), `clut_fx` /
-  `clut_walk_anim` (scripted CLUT cells, the CLUT-walk shimmer), `vdf_pulse`
-  (enhancement), `register_ramp` (op `0x43` camera zone ramp), `walk_regen`,
-  `text_balloon` (`4C E1`), `place_name_banner`, `field_audio_release`,
-  `field_actor_clone` (`4C 14`), `field_actor_program` (the voice-over
-  scene actor), `field_submode_screen` / `field_submode_code_lock` /
-  `field_submode_flag_window` (op-`0x49` submode host and two handlers),
-  `field_save_screen_actor`, `scene_transition_actor` (the transition
-  streaming actor), `cutscene_script_elements`.
-- **Cutscene + movie** - `cutscene_narration` (subtitle roller),
-  `cutscene_caption`.
-- **Overworld** - `overworld_curvature`, `overworld_draw_order`,
-  `overworld_ground_cue`, `world_map_markers` (not retail: marker quads),
-  `world_map_sky` (which frames draw the sky band).
+- **Field** - `field_ground` (walk-ground heightfield as a render surface),
+  `field_view_window` (the visible-tile crop), `field_occlusion` (the
+  occlusion fade's visibility gate), `coplanar_draws`, `drop_shadow`,
+  `fog_particles` (retail `fog_set`), `fog_volume` (volumetric fog, an
+  enhancement), `clut_walk_anim` (the CLUT-walk shimmer),
+  `place_name_banner`, `field_submode_screen` / `field_submode_code_lock` /
+  `field_submode_flag_window` (op-`0x49` submode host and two handlers).
+- **Cutscene** - `cutscene_caption`.
+- **Overworld** - `overworld_curvature`, `world_map_markers` (not retail:
+  marker quads), `world_map_sky` (which frames draw the sky band).
 - **Menus + screens** - `menu_input` (`FUN_801d688c`), `menu_validator`,
   `status_screen`, `list_order`, `save_screen` (the save screen's host half),
   `dev_menu_host`,
@@ -684,6 +644,15 @@ docs carry the retail provenance.
   `card_flow`, `card_bu_io`, `dialog_window`, `dialog_pacing`,
   `dialog_picker_slide`, `text_balloon` and `inn` are re-exported from
   [`legaia-engine-menus`](../engine-menus/README.md).
+- **Field kernels** - `actor_handler`, `field_actor_kernels`,
+  `field_actor_clone`, `field_actor_program`, `cutscene_script_elements`,
+  `morph_weight_apply`, `actor_look`, `float_tween`, `camera_zone`,
+  `camera_ease`, `register_ramp`, `field_anim`, `walk_regen`,
+  `scene_transition_actor`, `field_save_screen_actor`, `field_submode`,
+  `field_events`, `cutscene_narration`, `field_audio_release`, `clut_fx`,
+  `clut_cell_fx`, `vdf_pulse`, `field_lit_mesh`, `packet_color`,
+  `overworld_draw_order`, `overworld_ground_cue`, `anim_cue` and `sfx_cue`
+  are re-exported from [`legaia-engine-field`](../engine-field/README.md).
 
 ## See also
 

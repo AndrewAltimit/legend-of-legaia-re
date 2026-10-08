@@ -50,7 +50,7 @@
 //! `battle_gimard_tail_fire` save reads it straight out of a running part
 //! actor's `+0x0C` (`crates/mednafen/tests/firetail_movefx_liveness.rs`) - and
 //! the four `0x801F****` widget handlers are the PROT 0900 descriptor words at
-//! `0x801F8FE4/8FFC/9014/902C` ([`crate::screen_fx`]).
+//! `0x801F8FE4/8FFC/9014/902C` (`legaia_engine_core::screen_fx`).
 //!
 //! REF: FUN_80020DE0 (installs the handler), FUN_8002519C (dispatches it)
 
@@ -192,7 +192,7 @@ pub enum ActorHandler {
     Retail(u32),
 }
 
-/// What [`crate::world::World`] runs for an actor carrying a given handler.
+/// What `legaia_engine_core::world::World` runs for an actor carrying a given handler.
 ///
 /// This is the half that makes [`ActorHandler`] a dispatch rather than a
 /// label. A handler with no ported body reports [`HandlerKernel::Unported`]
@@ -201,41 +201,41 @@ pub enum ActorHandler {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandlerKernel {
     /// `engine-vm::actor_tick::tick_actor`, run inline by
-    /// [`crate::world::World::tick_actor_physics`] - the same special case
+    /// `legaia_engine_core::world::World::tick_actor_physics` - the same special case
     /// `FUN_8002519C` makes for this one handler.
     ActorTick,
     /// [`crate::field_actor_kernels::step_colour_tween`], run by
-    /// [`crate::world::World::tick_handler_actors`].
+    /// `legaia_engine_core::world::World::tick_handler_actors`.
     ColourTween,
     /// [`crate::cutscene_narration::CutsceneNarration`] - driven by the
     /// world's narration channel rather than by the actor loop, because the
     /// engine spawns the roller as host state (`World::cutscene.narration`)
     /// and not as a pool node.
     NarrationRoller,
-    /// [`crate::text_balloon::TextBalloon`] - same shape as
+    /// `legaia_engine_core::text_balloon::TextBalloon` - same shape as
     /// [`Self::NarrationRoller`]: ported, but hosted off the actor pool.
     TextBalloon,
     /// `engine-vm::camera_mover::CameraMover`, driven by
-    /// [`crate::camera`].
+    /// `legaia_engine_core::camera`.
     CameraMover,
-    /// One of the four [`crate::screen_fx`] widget handlers.
+    /// One of the four `legaia_engine_core::screen_fx` widget handlers.
     ScreenWidget,
     /// [`crate::field_actor_program::step_scene_program`], run by
-    /// [`crate::world::World::tick_handler_actors`] over the programs the MAN
+    /// `legaia_engine_core::world::World::tick_handler_actors` over the programs the MAN
     /// loader resumes.
     ScriptedScene,
     /// [`legaia_engine_vm::actor_tick::clip_fraction_step`], run by
-    /// [`crate::world::World::tick_handler_actors`] over the clones the field
+    /// `legaia_engine_core::world::World::tick_handler_actors` over the clones the field
     /// VM's op `0x4C` sub-1 sub-op `0x14` spawns.
     ClipFade,
     /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`], run by
-    /// [`crate::world::World::tick_handler_actors`] over the mirror pairs the
+    /// `legaia_engine_core::world::World::tick_handler_actors` over the mirror pairs the
     /// field VM's `4C 86` arm installs.
     Reflection,
     /// [`crate::morph_weight_apply::MorphWeightEnvelope::tick`], run by
-    /// [`crate::world::World::tick_handler_actors`] over the actors the
+    /// `legaia_engine_core::world::World::tick_handler_actors` over the actors the
     /// field VM's `4C D8` allocator
-    /// ([`crate::world::World::spawn_morph_weight_actor`]) seated.
+    /// (`legaia_engine_core::world::World::spawn_morph_weight_actor`) seated.
     MorphWeights,
     /// No ported body. The handler still participates in every identity
     /// test; it just has nothing to run.
@@ -243,7 +243,7 @@ pub enum HandlerKernel {
 }
 
 impl HandlerKernel {
-    /// `true` when [`crate::world::World::tick_handler_actors`] itself runs
+    /// `true` when `legaia_engine_core::world::World::tick_handler_actors` itself runs
     /// this kernel over the actor pool each frame. The other ported kernels
     /// are reached from their own host channels instead, which is why this
     /// is narrower than "is ported".
@@ -356,7 +356,7 @@ impl ActorHandler {
 /// `+0x00` next pointer, and `OR 8` into `+0x10` on every node whose `+0x0C`
 /// equals the target. They run on **every** MAN load, which is what makes
 /// them the load-bearing consumers of the handler field rather than a
-/// curiosity - see [`crate::world::World::man_load_actor_reset`].
+/// curiosity - see `legaia_engine_core::world::World::man_load_actor_reset`.
 pub const MAN_LOAD_RETIRED_HANDLERS: [ActorHandler; 2] = [
     ActorHandler::FloorLadder,
     ActorHandler::Retail(VA_MAN_LOAD_RETIRE_B),
