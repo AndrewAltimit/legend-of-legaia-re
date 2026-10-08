@@ -257,7 +257,11 @@ engine verdict:
   child as `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
   captures, motion channel included (`World::seed_ambient_walker`). The
   displayed frame is two game frames older, so a walker caught mid-step can
-  still sit a few units off its drawn place.
+  still sit a few units off its drawn place. The headless seed stands the
+  same walkers - engaged ones too - at the resume tick, before a talk is
+  engaged, because the talk snap turns a placement to the bearing from its
+  own seat: `town01_npc16_dialogue_first_page`'s `P1[16]` had wandered off
+  its `4C 51` tile before the press.
 
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
