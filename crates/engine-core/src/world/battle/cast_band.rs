@@ -1769,6 +1769,7 @@ const CAST_STEAL_RUN_CLIP: u8 = 1;
 // --- end W1-D ---
 
 mod code_run;
+mod seat_map;
 
 #[cfg(test)]
 mod capture_hold_tests {
