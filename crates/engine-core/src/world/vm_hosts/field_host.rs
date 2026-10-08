@@ -1035,6 +1035,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `0x801E0254`). The other sub-ops are control words - pause (2, 3),
         // re-attach (4, `0x801E0180`), volume, commit - that leave the id
         // alone, so none of them clears `current_bgm` either.
+        // Pause bit 1 of `_DAT_8007B750`: raised by 2 / 3, ended by every
+        // start, the re-attach and the commit.
+        match sub_op {
+            2 | 3 => self.world.audio.bgm_script_paused = true,
+            1 | 9 | 4 | 0xA => self.world.audio.bgm_script_paused = false,
+            _ => {}
+        }
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
             // Sub-op 9 also raises the script-owned start bit 0 of

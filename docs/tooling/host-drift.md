@@ -3607,12 +3607,16 @@ kernel both hosts call, so the two cannot drift on it again.
   script started music again. `audio_init` now starts the world's current
   track.
 
-Two rows stay open on purpose:
+- **A late output restarts a paused track.** The engine kept no copy of the
+  script's pause bit, so a page whose audio came up after the scene's script
+  paused its track started that track anyway. The world now mirrors sound-flags
+  bit 1 (`AudioState::bgm_script_paused`: raised by sub-ops `2` / `3`, ended by
+  `1`, `9`, `4`, `0xA` and the scene loader), and the page's late start brings
+  the track up paused when it is set, so the script's own sub-op `4` resumes
+  it. The native window has its output from the first frame and never meets
+  the case.
 
-- **A late output restarts a paused track.** The engine keeps no copy of the
-  script's pause bit, so a page whose audio comes up after the scene's script
-  paused its track starts that track anyway. The native window has its
-  output from the first frame and never meets the case.
+One row stays open on purpose:
 
 - **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
   record at `0x8007057C` through `FUN_80026478`. In every captured state that

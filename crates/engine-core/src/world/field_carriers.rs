@@ -72,6 +72,8 @@ impl World {
         // ... and clears the sound flags' script-owned start bit 0, so a
         // start a cutscene left uncommitted does not outlive its scene.
         self.audio.start_pending_commit = false;
+        // ... and the pause bit 1 with it.
+        self.audio.bgm_script_paused = false;
         let derived = crate::man_field_scripts::derive_field_carriers(man_file, man);
         let sparring_idx = derived
             .iter()

@@ -98,6 +98,17 @@ impl LegaiaRuntime {
         if self.audio_director().is_none_or(|d| d.is_attached()) {
             return;
         }
-        self.start_world_bgm();
+        let paused = self
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.audio.bgm_script_paused());
+        if self.start_world_bgm() && paused {
+            // The script paused the track before the output existed: bring
+            // it up the way the pause left it (op-`0x35` sub-op 2 / 3), so
+            // its own sub-op 4 resumes it.
+            if let Some(d) = self.audio_director() {
+                d.pause();
+            }
+        }
     }
 }

@@ -742,3 +742,29 @@ fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
     world.drain_field_events();
     assert_eq!(release_pauses(&mut world, 40), 1);
 }
+
+/// Sound-flags pause bit 1: sub-ops 2 and 3 raise it; every start, the
+/// re-attach (4) and the commit (0xA) end it; a sound-set word leaves it
+/// alone.
+#[test]
+fn the_script_pause_bit_follows_the_bgm_sub_ops() {
+    use legaia_engine_vm::field::FieldHost;
+
+    fn step(world: &mut World, id: u16, sub: u8) -> bool {
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut *world };
+        host.bgm(id, sub);
+        world.audio.bgm_script_paused()
+    }
+    let mut world = World::new();
+    assert!(!world.audio.bgm_script_paused());
+    for sub in [2u8, 3] {
+        assert!(!step(&mut world, 2016, 1), "a start ends the pause");
+        assert!(step(&mut world, 0, sub), "sub-op {sub} raises it");
+    }
+    assert!(step(&mut world, 0x1FF, 7), "a sound-set word leaves it");
+    assert!(!step(&mut world, 0, 4), "the re-attach ends it");
+    step(&mut world, 0, 2);
+    assert!(!step(&mut world, 0, 0xA), "the commit ends it");
+    step(&mut world, 0, 3);
+    assert!(!step(&mut world, 2017, 9), "a barrier start ends it");
+}
