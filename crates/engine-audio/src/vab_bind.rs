@@ -425,10 +425,79 @@ impl VabBank {
         let Some(tone) = prog.tones.iter().find(|t| note >= t.min && note <= t.max) else {
             return false;
         };
-        if tone.vag <= 0 {
+        self.tone_resident(tone)
+    }
+
+    /// Every tone of `program` whose key range covers `note`, as tone
+    /// indices in program order - the **layer set** one sequencer note-on
+    /// keys. A program may stack several tones over one key (a two-sample
+    /// instrument); retail keys one voice per covering tone, not just the
+    /// first.
+    ///
+    /// REF: FUN_80068568 - walks the program's tones on its page and, for
+    /// each with `min (+6) <= note <= max (+7)`, records the tone index and
+    /// its VAG id; `FUN_80066308` then runs the allocation scan and the key-on
+    /// once per recorded tone (`0x800664F0..0x8006684C`), a failed scan
+    /// skipping only that layer.
+    pub fn layer_tones(&self, program: usize, note: u8) -> Vec<usize> {
+        self.programs
+            .get(program)
+            .map(|p| {
+                p.tones
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| note >= t.min && note <= t.max)
+                    .map(|(i, _)| i)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// [`Self::tone_prior`] for an explicit tone index.
+    pub fn tone_prior_at(&self, program: usize, tone_index: usize) -> Option<u8> {
+        self.tone_at(program, tone_index).map(|t| t.prior)
+    }
+
+    /// [`Self::can_play`] for an explicit tone index.
+    pub fn can_play_tone(&self, program: usize, tone_index: usize) -> bool {
+        self.tone_at(program, tone_index)
+            .is_some_and(|t| self.tone_resident(t))
+    }
+
+    /// [`Self::pitch_bend_range`] for an explicit tone index.
+    pub fn pitch_bend_range_at(&self, program: usize, tone_index: usize) -> (u8, u8) {
+        self.tone_at(program, tone_index)
+            .map(|t| (t.pbmin, t.pbmax))
+            .unwrap_or((0, 0))
+    }
+
+    /// Key one **layer** of a sequencer note: the tone at `tone_index` of
+    /// `program`, pitched on the sequencer arm. [`Self::play_note`] is the
+    /// first-layer special case.
+    pub fn play_note_layer(
+        &self,
+        spu: &mut Spu,
+        voice: usize,
+        program: usize,
+        tone_index: usize,
+        note: u8,
+        velocity: u8,
+    ) -> bool {
+        let Some(prog) = self.programs.get(program) else {
             return false;
-        }
-        matches!(self.samples.get((tone.vag - 1) as usize), Some(Some(_)))
+        };
+        let Some(tone) = prog.tones.get(tone_index) else {
+            return false;
+        };
+        self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Sequencer)
+    }
+
+    fn tone_at(&self, program: usize, tone_index: usize) -> Option<&VagAtr> {
+        self.programs.get(program)?.tones.get(tone_index)
+    }
+
+    fn tone_resident(&self, tone: &VagAtr) -> bool {
+        tone.vag > 0 && matches!(self.samples.get((tone.vag - 1) as usize), Some(Some(_)))
     }
 }
 

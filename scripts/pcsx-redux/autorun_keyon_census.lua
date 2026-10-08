@@ -124,10 +124,13 @@ probe.run({
         -- allocates (and drops) differently from the hardware.
         if elapsed % 60 == 0 and csv then
             -- `_DAT_8007BAC8` is the BGM id the state has loaded - the
-            -- track the engine side must play for the census to compare.
+            -- track the engine side must play for the census to compare;
+            -- `0x8007BA9C` the PROT index it resolved to, `0x8007BC64` the
+            -- global pool's base.
             pcall(function()
-                csv:row("%d,clock,0,0,ms=%.1f bgm=%d", elapsed, now_ms(),
-                    probe.read_u16(0x8007BAC8))
+                csv:row("%d,clock,0,0,ms=%.1f prot=%d pool=%d bgm=%d",
+                    elapsed, now_ms(), probe.read_u32(0x8007BA9C),
+                    probe.read_u32(0x8007BC64), probe.read_u16(0x8007BAC8))
             end)
         end
         if elapsed >= FRAMES then ctx.request_quit = true end

@@ -603,23 +603,46 @@ impl Sequencer {
         // Drop the prior instance of this (channel, key) if it exists -
         // libsnd silently restarts the voice.
         self.note_off(spu, channel, key);
-        // Resolve the note's allocation priority (the VAB tone `prior` byte)
-        // before scanning: retail stages the tone attrs first (FUN_80066308)
-        // and only then runs the allocation scan against that priority. A
-        // note whose program/tone doesn't resolve never reaches the scan.
+        // One voice per covering tone. A program may stack several tones over
+        // one key (a layered instrument), and retail keys every one of them:
+        // FUN_80068568 collects the tones whose `min..=max` covers the key,
+        // and FUN_80066308 runs the allocation scan + key-on once per tone
+        // (`0x800664F0..0x8006684C`), a failed scan dropping only that layer.
         let program = self.channels[channel as usize].program as usize;
-        let Some(prio) = self.bank.tone_prior(program, key) else {
+        let layers = self.bank.layer_tones(program, key);
+        if layers.is_empty() {
             log::trace!("sequencer: no tone for ch{channel} prog{program} key{key}");
             return;
+        }
+        for tone in layers {
+            self.key_layer(spu, channel, key, velocity, program, tone);
+        }
+    }
+
+    /// Allocate and key one layer (tone) of a note-on.
+    fn key_layer(
+        &mut self,
+        spu: &mut Spu,
+        channel: u8,
+        key: u8,
+        velocity: u8,
+        program: usize,
+        tone: usize,
+    ) {
+        // Resolve the layer's allocation priority (the VAB tone `prior` byte)
+        // before scanning: retail stages the tone attrs first (FUN_80066308)
+        // and only then runs the allocation scan against that priority.
+        let Some(prio) = self.bank.tone_prior_at(program, tone) else {
+            return;
         };
-        // The tone resolves by key range, but it can still fail to sound if
-        // its slot is empty (`vag <= 0`) or its sample never uploaded (SPU RAM
-        // exhausted). Verify it can actually fire BEFORE `alloc_voice`, which
-        // may key-off a sounding voice: stealing a live note for one that then
-        // fails to play is a net dropped note.
-        if !self.bank.can_play(program, key) {
+        // The tone can still fail to sound if its slot is empty (`vag <= 0`)
+        // or its sample never uploaded (SPU RAM exhausted). Verify it can
+        // actually fire BEFORE `alloc_voice`, which may key-off a sounding
+        // voice: stealing a live note for one that then fails to play is a
+        // net dropped note.
+        if !self.bank.can_play_tone(program, tone) {
             log::trace!(
-                "sequencer: tone not playable for ch{channel} prog{program} key{key}; not stealing"
+                "sequencer: tone {tone} not playable for ch{channel} prog{program} key{key}; not stealing"
             );
             return;
         }
@@ -633,60 +656,60 @@ impl Sequencer {
             return;
         };
         let cs = self.channels[channel as usize];
-        // Give play_note the master × velocity effective velocity only -
-        // NOT the channel volume. The channel volume (CC7) and pan (CC10) are
+        // Give the layer the master × velocity effective velocity only - NOT
+        // the channel volume. The channel volume (CC7) and pan (CC10) are
         // applied afterward as dynamic channel-expression (`channel_mix`) so a
         // mid-note CC7/CC10 can re-derive the voice volume from the same base.
         let combined = ((self.master_vol as u32 * velocity as u32) / 127).min(127) as u8;
-        let ok = self
+        if !self
             .bank
-            .play_note(spu, voice as usize, cs.program as usize, key, combined);
-        if ok {
-            // play_note set the voice's base pitch; remember it (and the
-            // tone's disc-sourced bend range) so later bends re-scale the
-            // unbent value, then fold in any bend already held on this channel.
-            let base_pitch = spu
-                .voices
-                .get(voice as usize)
-                .map(|v| v.pitch)
-                .unwrap_or(0x1000);
-            let bend_range = self.bank.pitch_bend_range(cs.program as usize, key);
-            if cs.pitch_bend != PITCH_BEND_CENTER
-                && let Some(v) = spu.voices.get_mut(voice as usize)
-            {
-                let (down, up) = bend_range;
-                v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
-            }
-            // play_note left the voice at master × velocity × bank/program/
-            // tone vol, tone- and program-panned, with NO channel volume/pan
-            // and NO square taper; capture that as the channel-free base,
-            // then fold in the channel's current CC7 volume + CC10 pan (and
-            // the taper) via channel_mix. A later CC7/CC10 re-derives from
-            // this same base.
-            let base_vol = spu
-                .voices
-                .get(voice as usize)
-                .map(|v| (v.vol_left, v.vol_right))
-                .unwrap_or((0x3FFF, 0x3FFF));
-            if let Some(v) = spu.voices.get_mut(voice as usize) {
-                let (l, r) = channel_mix(base_vol, cs.volume, cs.pan);
-                v.vol_left = l;
-                v.vol_right = r;
-            }
-            let key_on_stamp = spu
-                .voices
-                .get(voice as usize)
-                .map_or(0, |v| v.key_on_count());
-            self.active.push(ActiveNote {
-                channel,
-                key,
-                voice,
-                base_pitch,
-                bend_range,
-                base_vol,
-                key_on_stamp,
-            });
+            .play_note_layer(spu, voice as usize, program, tone, key, combined)
+        {
+            return;
         }
+        // The layer set the voice's base pitch; remember it (and the tone's
+        // disc-sourced bend range) so later bends re-scale the unbent value,
+        // then fold in any bend already held on this channel.
+        let base_pitch = spu
+            .voices
+            .get(voice as usize)
+            .map(|v| v.pitch)
+            .unwrap_or(0x1000);
+        let bend_range = self.bank.pitch_bend_range_at(program, tone);
+        if cs.pitch_bend != PITCH_BEND_CENTER
+            && let Some(v) = spu.voices.get_mut(voice as usize)
+        {
+            let (down, up) = bend_range;
+            v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
+        }
+        // The layer left the voice at master × velocity × bank/program/tone
+        // vol, tone- and program-panned, with NO channel volume/pan and NO
+        // square taper; capture that as the channel-free base, then fold in
+        // the channel's current CC7 volume + CC10 pan (and the taper) via
+        // channel_mix. A later CC7/CC10 re-derives from this same base.
+        let base_vol = spu
+            .voices
+            .get(voice as usize)
+            .map(|v| (v.vol_left, v.vol_right))
+            .unwrap_or((0x3FFF, 0x3FFF));
+        if let Some(v) = spu.voices.get_mut(voice as usize) {
+            let (l, r) = channel_mix(base_vol, cs.volume, cs.pan);
+            v.vol_left = l;
+            v.vol_right = r;
+        }
+        let key_on_stamp = spu
+            .voices
+            .get(voice as usize)
+            .map_or(0, |v| v.key_on_count());
+        self.active.push(ActiveNote {
+            channel,
+            key,
+            voice,
+            base_pitch,
+            bend_range,
+            base_vol,
+            key_on_stamp,
+        });
     }
 
     /// Re-derive the live voice volume for every note sounding on `ch` from
@@ -1500,5 +1523,86 @@ mod tests {
             (spu.voices[0].vol_left, spu.voices[0].vol_right),
             (sq(base.0 as i32), sq(base.1 as i32))
         );
+    }
+
+    fn layer_tone(vag: i16, min: u8, max: u8, center: u8) -> legaia_vab::VagAtr {
+        legaia_vab::VagAtr {
+            prior: 0,
+            mode: 0,
+            vol: 127,
+            pan: 64,
+            center,
+            shift: 0,
+            min,
+            max,
+            vibw: 0,
+            vibt: 0,
+            porw: 0,
+            port: 0,
+            pbmin: 0,
+            pbmax: 0,
+            reserved1: 0,
+            reserved2: 0,
+            adsr1: 0x80FF,
+            adsr2: 0x5FC0,
+            prog: 0,
+            vag,
+            reserved3: [0; 4],
+        }
+    }
+
+    /// Program 0 stacks two tones over key 60 (and a third tone that does
+    /// not cover it): one note-on keys both layers on two voices, and its
+    /// note-off releases both - FUN_80068568 + the per-tone loop of
+    /// FUN_80066308.
+    #[test]
+    fn a_note_on_keys_every_tone_layered_over_its_key() {
+        let upload = Some(crate::vab_bind::UploadedVag {
+            addr: 0x1010,
+            size: 0x20,
+        });
+        let bank = VabBank {
+            master_vol: 127,
+            samples: vec![upload, upload, upload],
+            programs: vec![crate::vab_bind::VabProgram {
+                mvol: 127,
+                mpan: 64,
+                tones: vec![
+                    layer_tone(1, 0, 127, 60),
+                    layer_tone(2, 72, 127, 60),
+                    layer_tone(3, 48, 72, 72),
+                ],
+            }],
+        };
+        assert_eq!(bank.layer_tones(0, 60), vec![0, 2]);
+        let mut seq = Sequencer::new(synthetic_seq(), bank);
+        let mut spu = Spu::new();
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOn {
+                key: 60,
+                velocity: 100,
+            },
+        );
+        let keyed: Vec<u32> = spu.voices.iter().map(|v| v.key_on_count()).collect();
+        assert_eq!(keyed.iter().sum::<u32>(), 2, "one key-on per layer");
+        assert_eq!(seq.active.len(), 2);
+        let pitches: Vec<u16> = seq
+            .active
+            .iter()
+            .map(|n| spu.voices[n.voice as usize].pitch)
+            .collect();
+        // Tone 0 is centred on the key, tone 2 an octave above it.
+        assert_eq!(pitches, vec![0x1000, 0x800]);
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOff {
+                key: 60,
+                velocity: 0,
+            },
+        );
+        assert!(seq.active.is_empty(), "the note-off releases both layers");
     }
 }
