@@ -200,15 +200,9 @@ impl World {
     /// `0x80021D8C..`). The scene-entry census passes zeroes for both because
     /// its installs run before any actor has moved.
     pub fn spawn_ambient_record_at(&mut self, id: usize, origin: [i16; 3], rot: [i16; 3]) -> bool {
-        let Some(idx) = self.push_ambient_part(id, origin) else {
+        let Some(idx) = self.push_ambient_part(id, origin, rot) else {
             return false;
         };
-        {
-            let st = &mut self.ambient.fx[idx].state;
-            st.render_24 = rot[0];
-            st.render_26 = rot[1];
-            st.render_28 = rot[2];
-        }
         self.tick_ambient_part(idx, 0);
         true
     }
@@ -223,7 +217,7 @@ impl World {
 
     /// Seat record `id` as a new ambient part (no first run). Returns the
     /// part index.
-    fn push_ambient_part(&mut self, id: usize, origin: [i16; 3]) -> Option<usize> {
+    fn push_ambient_part(&mut self, id: usize, origin: [i16; 3], rot: [i16; 3]) -> Option<usize> {
         if self.ambient.fx.len() >= MAX_AMBIENT_PARTS {
             // Not a silent truncation: an ambient tree that reaches the pool
             // ceiling has stopped animating whatever it could not seat. No
@@ -265,6 +259,21 @@ impl World {
         // from it (`effect_sprite_arm`) collapses to a point: `map01`'s mist
         // puff column drew nothing.
         state.field_72 = 0x1000;
+        // The rotation banks take the spawner's `+0x24 / +0x26 / +0x28`
+        // (`0x80021D8C..0x80021DB8`), and every part but the two `0x4000` /
+        // `0x4001` render modes also takes the yaw as its **motion heading**
+        // `+0x96` (`andi v0,v0,0xfff` / `sh v0,0x16(a3)`, `a3 = actor + 0x80`,
+        // `0x80021D54..0x80021D7C`) - the heading the motion block's `+0x98`
+        // speed runs along. garmel's mist emitter turns itself to a random
+        // yaw (`2F 05` into its `06` operand) before each `25 0F`, and every
+        // sheet drifts off along it; seated at heading `0`, all forty slid up
+        // the one Z line through the spawn point.
+        state.render_24 = rot[0];
+        state.render_26 = rot[1];
+        state.render_28 = rot[2];
+        if !(0x4000..=0x4001).contains(&(rec.model_sel as u16)) {
+            state.tween_scale_x = rot[1] & 0x0FFF;
+        }
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
@@ -399,7 +408,7 @@ impl World {
         // Spawn-time first run for each op-0x25 child, in spawn order (the
         // retail chain runs the child's VM inside the parent's spawn op,
         // which is what sequences the self-modifying fan-outs).
-        for (slot, origin) in spawns {
+        for (slot, origin, rot) in spawns {
             // Table entry 0 is not a stager record - it is the per-scene SFX
             // descriptor bank (`docs/formats/sfx-table.md`'s `>= 0x200` half;
             // `FUN_800250D4` and `FUN_80016B6C` both read it as 8-byte rows
@@ -428,7 +437,7 @@ impl World {
             if slot <= 0 {
                 continue;
             }
-            if let Some(child) = self.push_ambient_part(slot as usize, origin) {
+            if let Some(child) = self.push_ambient_part(slot as usize, origin, rot) {
                 self.tick_ambient_part(child, depth + 1);
             }
         }

@@ -226,3 +226,48 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
         "and exhaustion is queryable rather than silent"
     );
 }
+
+/// An op-`0x25` child takes its spawner's rotation banks, and its yaw is the
+/// child's motion heading `+0x96` (`FUN_80021B04`, `0x80021D54..0x80021DB8`):
+/// garmel's mist emitter turns itself before each spawn, and a sheet then
+/// drifts along that heading at its `+0x98` speed rather than straight up Z.
+#[test]
+fn a_spawned_child_inherits_the_spawners_heading() {
+    let mut world = World {
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    install_records(
+        &mut world,
+        &[
+            (-1, vec![0x08]),
+            // The spawner: yaw 0x400, spawn record 2, halt.
+            (-1, vec![0x06, 0x0400, 0x25, 0x0002, 0x08]),
+            // The child: speed 0x10 << 3 along its heading, then wait.
+            (-1, vec![0x02, 0x0010, 0x09, 0x0FFF, 0x08]),
+        ],
+    );
+    assert!(world.spawn_ambient_record(1, [1000, 0, 1000]));
+    let child = world
+        .ambient
+        .fx
+        .iter()
+        .find(|p| p.state.render_26 == 0x400 && !p.finished)
+        .expect("the child is seated with the spawner's yaw");
+    assert_eq!(child.state.tween_scale_x, 0x400, "motion heading = yaw");
+    for _ in 0..30 {
+        world.tick_ambient_fx();
+    }
+    let child = world
+        .ambient
+        .fx
+        .iter()
+        .find(|p| p.state.render_26 == 0x400 && !p.finished)
+        .expect("the child is still live");
+    // Heading 0x400 (a quarter turn) runs along X, not Z.
+    assert!(child.state.world_x != 1000, "moved along its heading");
+    assert_eq!(child.state.world_z, 1000, "not along Z");
+}

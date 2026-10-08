@@ -143,8 +143,10 @@ pub(super) struct MoveVmHostImpl<'a> {
     pub(super) field_record_words: Option<usize>,
     /// Child spawns collected from op `0x25` while ticking an ambient part
     /// (`FUN_80021B04(actor+0x14, ..., _DAT_8007B8D0 + offsets[v1], ...)`):
-    /// the prescript record id + the spawning part's world position.
-    pub(super) child_spawns: Vec<(i16, [i16; 3])>,
+    /// the prescript record id + the spawning part's world position and
+    /// its rotation banks `+0x24 / +0x26 / +0x28` (`actor+0x24`, the
+    /// stager's second argument).
+    pub(super) child_spawns: Vec<(i16, [i16; 3], [i16; 3])>,
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
@@ -282,11 +284,15 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     fn spawn_child(&mut self, state: &mut MoveActorState, slot: i16) {
         // Only the ambient field-fx path spawns children in the engine (the
         // summon stand-in keeps its scenes single-record). Retail seats the
-        // child at the parent's world position (`FUN_80021B04(actor+0x14,
-        // actor+0x24, _DAT_8007B8D0 + offsets[v1], 0x1000)`).
+        // child at the parent's world position and rotation banks
+        // (`FUN_80021B04(actor+0x14, actor+0x24, _DAT_8007B8D0 + offsets[v1],
+        // 0x1000)`).
         if self.field_record_words.is_some() {
-            self.child_spawns
-                .push((slot, [state.world_x, state.world_y, state.world_z]));
+            self.child_spawns.push((
+                slot,
+                [state.world_x, state.world_y, state.world_z],
+                [state.render_24, state.render_26, state.render_28],
+            ));
         }
     }
 

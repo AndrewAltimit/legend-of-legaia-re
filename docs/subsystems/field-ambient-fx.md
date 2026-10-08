@@ -552,6 +552,23 @@ to `0x7F7F7F`. Additive sheets of that texture stacked eight to a node
 saturate to white where they overlap, so a player walked up to the bank sees a
 white screen on retail's rules too.
 
+### A spawned sheet drifts along its spawner's yaw
+
+`garmel`'s cave mist is the same family on a different tree: stager record
+`14` re-seats itself at `(3008, y, 8128)` with a random `y` and a random yaw
+(`2F 05` writes `rand` into the `07` and `06` operands that follow it) and
+spawns record `15`, a sheet that sets a `+0x98` speed and nothing else. Forty
+of them drift out from the one spawn point in every direction because the
+stager seeds a child's **motion heading** `+0x96` from the yaw it inherits:
+`FUN_80021B04` copies its second argument (`actor+0x24`) into the child's
+`+0x24 / +0x26 / +0x28` (`0x80021D8C..0x80021DB8`), and for every render mode
+but `0x4000` / `0x4001` it also stores that yaw `& 0xFFF` at `+0x96`
+(`0x80021D54..0x80021D7C`, `a3 = actor + 0x80`). The motion block then runs
+the speed along that heading. Port: the ambient pool's child spawn carries the
+spawner's banks (`World::push_ambient_part`). A retail frame holds whichever
+sheets the `rand()` stream has put where, which no seed replays, so a frame
+comparison of the mist scores its placement, not its presence.
+
 ## Mechanism 4 - the ambient particle emitter
 
 The fourth carrier is neither a bundle slot nor a move-VM record:
