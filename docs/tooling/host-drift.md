@@ -963,7 +963,7 @@ never turned that pass off, so town01's terrain drew through the battle camera,
 sampling the battle VRAM. The bisect that pins it: with the whole battle draw
 list filtered out of `renderAssembled`, the strips and the patch still draw.
 The native window draws its heightfield only in the non-battle branch of
-`window/event_handler/redraw.rs`, and a retail command-phase frame of the same
+its scene draw lists (`window/event_handler/redraw_draws.rs`), and a retail command-phase frame of the same
 stage (`v0_1_battle_command_menu`, `mednafen-state vram-dump --display-crop`)
 shows bare gravel. The page now turns the pass off while a battle draws and
 back on for every non-battle frame; the billboard-outline candidate the first
@@ -2222,7 +2222,7 @@ Both hosts now composite it through one emitter:
 
 | host | call site | source |
 |---|---|---|
-| native window | `handle_redraw`'s `screen_prims` assembly, `window/event_handler/redraw.rs` | `World::screen_tint_push_args` |
+| native window | the redraw's `build_screen_prims`, `window/event_handler/redraw_overlay.rs` | `World::screen_tint_push_args` |
 | play page | `tick_battle_intro`'s prim assembly, `play_battle.rs` | the same |
 
 The emitter is `screen_prim::screen_effect_push_prims`, and it exists as a

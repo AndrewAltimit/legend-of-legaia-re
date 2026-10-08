@@ -230,7 +230,7 @@ guard over a fill the port does not perform.
 # whose other half left its host's frame path, a `host_only` kernel both hosts
 # now run - each is a stale row and CI fails on it.
 
-# --- native: the window's redraw tick loop ---------------------------------
+# --- native: the window's per-tick body (`sim_tick`) -----------------------
 #
 # All five arms skip the same kernels, and for one reason: the arm
 # exists to keep the world frozen while something else owns the frame. What
@@ -621,7 +621,7 @@ reason = "The page's title -> load score hand-off is armed by the card-Load poll
 host = "web"
 kernel = "service_cutscene_fmv"
 host_only = true
-reason = "The page's FMV beat service. The native window runs the same beat above its tick loop, in `handle_redraw` itself (`try_start_windowed_cutscene` + `apply_pending_fmv_handoff`), where it can hold the whole frame for the video."
+reason = "The page's FMV beat service. The native window runs the same beat outside its per-tick body, in a step of `handle_redraw` (`service_windowed_cutscene`: `try_start_windowed_cutscene` + `apply_pending_fmv_handoff`), where it can hold the whole frame for the video."
 
 [[frame_kernel]]
 host = "web"
