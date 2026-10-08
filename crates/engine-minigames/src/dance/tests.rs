@@ -1209,3 +1209,45 @@ fn hud_digits_are_emitted_before_their_score_boxes() {
         "every digit run precedes every box frame: digits {digit_at:?}, boxes {box_at:?}"
     );
 }
+
+/// The human's award sounds are `FUN_801d1af4`'s dancer-0 arm: a miss stores
+/// `0x210`, a closed chain keys a random sting, a landed groovy move keys
+/// the fixed sting and stores its lane's tier cue, and an unlanded one is
+/// silent.
+#[test]
+fn award_sounds_follow_the_dancer_zero_arm() {
+    assert_eq!(
+        award_sounds(DanceEvent::Miss, 0),
+        vec![DanceAwardSound::Cue(AWARD_MISS_CUE)]
+    );
+    assert_eq!(
+        award_sounds(
+            DanceEvent::Sequence {
+                weight: 0,
+                points: 0
+            },
+            2
+        ),
+        vec![DanceAwardSound::Sting { r: 0, random: true }]
+    );
+    let groovy = |landed| DanceEvent::Groovy {
+        landed,
+        points: 0,
+        lock: 0,
+        left: 0,
+    };
+    for (lane, cue) in [(0u32, 0x202u16), (1, 0x203), (2, 0x205)] {
+        assert_eq!(
+            award_sounds(groovy(true), lane),
+            vec![
+                DanceAwardSound::Sting {
+                    r: STING_TIER_VARIANT,
+                    random: false
+                },
+                DanceAwardSound::Cue(cue)
+            ]
+        );
+    }
+    assert!(award_sounds(groovy(false), 1).is_empty());
+    assert!(award_sounds(DanceEvent::Hit { weight: 9 }, 0).is_empty());
+}

@@ -426,7 +426,9 @@ impl World {
     /// `efect.dat` (extraction PROT 1199), which the scene host stages on the
     /// warp ([`crate::world::MinigameState::slot_sfx_bundle`]); the Muscle
     /// Dome's arena init points it at the arena's own bundle
-    /// ([`crate::world::MinigameState::muscle_sfx_bundle`]).
+    /// ([`crate::world::MinigameState::muscle_sfx_bundle`]); the dance
+    /// overlay's init at its own `efect.dat`
+    /// ([`crate::world::MinigameState::dance_sfx_bundle`]).
     // REF: FUN_8001FA88, FUN_8001F7C0
     pub fn runtime_sfx_bundle(&self) -> &[u8] {
         match (&self.mode, self.audio.battle_sfx_bank.as_deref()) {
@@ -436,6 +438,9 @@ impl World {
             }
             (SceneMode::MuscleDome, _) if !self.minigames.muscle_sfx_bundle.is_empty() => {
                 &self.minigames.muscle_sfx_bundle
+            }
+            (SceneMode::Dance, _) if !self.minigames.dance_sfx_bundle.is_empty() => {
+                &self.minigames.dance_sfx_bundle
             }
             _ => &self.props.stager_bytes,
         }

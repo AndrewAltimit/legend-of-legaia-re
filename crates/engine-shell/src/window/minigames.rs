@@ -250,6 +250,7 @@ impl PlayWindowApp {
                 {
                     game.attach_clip_bank(&bank);
                 }
+                self.session.host.stage_dance_sfx_bundle();
                 // `World::enter_dance` arms the count-in, the how-to tutorial
                 // actor and the pending song id; the world's dance tick holds
                 // the beat clock off until the banner clears. This window used
@@ -266,14 +267,10 @@ impl PlayWindowApp {
         }
     }
 
-    /// Fire the minigame sessions' queued SFX cues (the dance count-in's
-    /// intro cue, the how-to tutorial's cursor / confirm cues) into the BGM
-    /// director's scheduler.
-    ///
-    /// The count-in itself is no longer driven here: `World::tick_dance`
-    /// plays the banner envelope out and starts the song, so the browser play
-    /// page gets the same phase from the same kernel. This host only sounds
-    /// what that phase queued.
+    /// Fire the minigame sessions' queued SFX cues (the fishing hub's and
+    /// point exchange's blips) into the BGM director's scheduler. The dance's
+    /// cues do not come this way: `World::tick_dance` stores them into the
+    /// SFX ring, which the session's `route_world_sfx` drains on both hosts.
     pub(super) fn drain_minigame_sfx_cues(&mut self) {
         let cues = self.session.host.world.drain_minigame_sfx_cues();
         if cues.is_empty() {

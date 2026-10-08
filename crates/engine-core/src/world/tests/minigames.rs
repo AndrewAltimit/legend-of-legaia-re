@@ -53,17 +53,21 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     // The banner and the status readout are mutually exclusive, and one
     // predicate says so for every host.
     assert!(!world.minigames.dance_status_visible());
-    // The intro cue fires once, on the hold-segment entry.
-    let mut cues = world.drain_minigame_sfx_cues();
+    // The intro cue fires once, on the hold-segment entry, stored straight
+    // into ring slot 0 as `FUN_801d2d98` does - not through the cue
+    // dispatcher, which would classify `0x200` as a CD-XA voice.
+    let intro = crate::world::SfxRingOp::WriteSlot(
+        crate::dance::STAGE_CUE_RING_SLOT,
+        crate::dance::COUNTIN_INTRO_CUE as i16,
+    );
+    let mut ops = world.take_sfx_ring_ops();
     for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
-        cues.extend(world.drain_minigame_sfx_cues());
+        ops.extend(world.take_sfx_ring_ops());
     }
     assert_eq!(
-        cues.iter()
-            .filter(|c| **c == crate::dance::COUNTIN_INTRO_CUE)
-            .count(),
+        ops.iter().filter(|o| **o == intro).count(),
         1,
         "the count-in intro cue is once-only"
     );
@@ -801,4 +805,32 @@ fn minigame_frames_clear_to_black_over_the_suspended_field_colour() {
     }
     world.mode = SceneMode::Fishing;
     assert_eq!(world.frame_clear_rgb(), [0x3C, 0x28, 0x14]);
+}
+
+/// A dance miss is a direct store of `0x210` into ring slot 3, and a closed
+/// chain keys the two sting voices on the queue both hosts drain - in the
+/// dance's VAB (`a1 = 2`), program 1, at a note in the random band.
+#[test]
+fn dance_award_sounds_reach_the_ring_and_the_voice_queue() {
+    use crate::dance::{AWARD_CUE_RING_SLOT, AWARD_MISS_CUE, DanceAwardSound};
+    let mut world = World::new();
+    world.route_dance_award_sounds(&[DanceAwardSound::Cue(AWARD_MISS_CUE)]);
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![crate::world::SfxRingOp::WriteSlot(
+            AWARD_CUE_RING_SLOT,
+            AWARD_MISS_CUE as i16
+        )]
+    );
+    world.route_dance_award_sounds(&[DanceAwardSound::Sting { r: 0, random: true }]);
+    let keys = world.take_sfx_voice_keys();
+    assert_eq!(keys.len(), 2);
+    assert_eq!(
+        keys.iter().map(|k| k.voice).collect::<Vec<_>>(),
+        vec![0x12, 0x13]
+    );
+    for k in &keys {
+        assert_eq!((k.vab_program_tone.0, k.vab_program_tone.1), (2, 1));
+        assert!((0x3C..0x3F).contains(&k.note_and_fine.0));
+    }
 }

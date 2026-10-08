@@ -2536,8 +2536,9 @@ impl World {
         }
     }
 
-    /// Drain the minigame SFX cue ids queued this frame (the dance count-in's
-    /// intro cue, the how-to tutorial's cursor / confirm cues). Cosmetic - a
+    /// Drain the minigame SFX cue ids queued this frame (the fishing hub's
+    /// and point exchange's blips; the dance stores its cues straight into
+    /// the SFX ring instead, as retail does). Cosmetic - a
     /// host with no audio drops them, exactly as an unheard retail cue would
     /// be. Both hosts drain this queue, which is what keeps the two from
     /// growing separate cue paths.
@@ -2619,7 +2620,7 @@ impl World {
             self.minigames.dance_countin_banner = step.banner;
             self.minigames.dance_countin_go = step.go;
             if let Some(cue) = step.cue {
-                self.minigames.pending_sfx.push(cue);
+                self.write_dance_ring_cue(crate::dance::STAGE_CUE_RING_SLOT, cue);
             }
             if step.done {
                 self.minigames.dance_countin_banner = None;
@@ -2655,18 +2656,76 @@ impl World {
             self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
         let finish_cues = game.take_finish_cues();
-        self.minigames.pending_sfx.extend(finish_cues);
-        if game.finished() {
+        let award_sounds = game.take_award_sounds();
+        let finished = game.finished();
+        let clear_win = finished && game.results_clear_win_flag();
+        // The countdown parts' move-VM op `0x1D` stores straight into ring
+        // slot 3 (`DAT_8007B6DE`), as the award does.
+        for cue in finish_cues {
+            self.write_dance_ring_cue(crate::dance::AWARD_CUE_RING_SLOT, cue);
+        }
+        self.route_dance_award_sounds(&award_sounds);
+        if finished {
             // Song finished: the results state grades the run into the pass
             // flag, then the interrupted mode is restored, leaving `dance` in
             // place so the host can read the final score before clearing.
-            let clear_win = game.results_clear_win_flag();
             self.mode = self.minigames.dance_return_mode;
             if clear_win {
                 self.system_flag_clear(crate::dance::WIN_FLAG);
             }
         }
         self.step_dance_tutorial();
+    }
+
+    /// Store one dance cue straight into a ring slot, the way every dance
+    /// cue site does (`sh id, DAT_8007B6D8[slot]`, no cursor pair). Ids
+    /// `>= 0x200` resolve through the dance's own descriptor bank
+    /// ([`Self::runtime_sfx_bundle`]); the tutorial's `0x20` / `0x21` through
+    /// the static table.
+    fn write_dance_ring_cue(&mut self, slot: u8, cue: u16) {
+        self.audio
+            .sfx_ring_ops
+            .push(crate::world::SfxRingOp::WriteSlot(slot, cue as i16));
+    }
+
+    /// Hand the human's award sounds to the audio side: cues into ring slot
+    /// 3, stings as two directly keyed voices (`FUN_801d3d78` ->
+    /// `FUN_80065034`) on the queue both hosts drain. The tier-2 sting's
+    /// variant is `rand() % 3` off the one world stream, as retail's
+    /// `jal 0x80056798` at `0x801D2138`.
+    pub(crate) fn route_dance_award_sounds(&mut self, sounds: &[crate::dance::DanceAwardSound]) {
+        use crate::dance::DanceAwardSound;
+        for &s in sounds {
+            match s {
+                DanceAwardSound::Cue(cue) => {
+                    self.write_dance_ring_cue(crate::dance::AWARD_CUE_RING_SLOT, cue)
+                }
+                DanceAwardSound::Sting { r, random } => {
+                    let r = if random {
+                        (self.next_rand() % u32::from(crate::dance::STING_RANDOM_VARIANTS)) as u16
+                    } else {
+                        r
+                    };
+                    let vol = crate::other_game_overlay::cue_volume(
+                        self.audio.levels.voice_volume as u32,
+                    );
+                    for v in crate::dance::dance_hit_sting_voices(r) {
+                        self.audio
+                            .sfx_voice_keys
+                            .push(crate::other_game_overlay::VoiceAttrCue {
+                                voice: u32::from(v.voice),
+                                vab_program_tone: (
+                                    i32::from(v.level),
+                                    i32::from(v.program),
+                                    i32::from(v.tone),
+                                ),
+                                note_and_fine: (i32::from(v.note), 0x40),
+                                volume: (vol, vol),
+                            });
+                    }
+                }
+            }
+        }
     }
 
     /// Run the Disco King how-to tutorial actor for one frame beside the live
@@ -2702,7 +2761,9 @@ impl World {
         };
         let frame = tut.step(pressed, score, feedback_frames, combo_hit, 1);
         if let Some(cue) = frame.cue {
-            self.minigames.pending_sfx.push(cue);
+            // `FUN_801d0750` stores its cursor / confirm blips straight into
+            // ring slot 0 (`sh id, 0x8007B6D8`).
+            self.write_dance_ring_cue(crate::dance::STAGE_CUE_RING_SLOT, cue);
         }
         if frame.done {
             self.minigames.dance_tutorial = None;

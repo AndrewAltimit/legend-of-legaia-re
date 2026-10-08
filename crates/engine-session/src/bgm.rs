@@ -136,6 +136,10 @@ pub struct AudioBgmDirector<S: AudioSink> {
     /// [`legaia_engine_core::world::World::sync_sfx_residency`]. `None` while
     /// neither slot is open.
     shared_region: Option<SharedRegionBank>,
+    /// The BGM-tail generation the last failed shared-region stage met, so a
+    /// bank that did not fit is retried only once the free tail has moved
+    /// ([`Self::sync_shared_region`]).
+    shared_retry_gen: Option<u64>,
     /// SPU address the shared region starts at: one past the slot-0 system
     /// bank's samples, inside the reserved SFX region.
     shared_region_base: u32,
@@ -289,6 +293,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
             runtime_sfx_bundle: Vec::new(),
             tail: BgmTail::default(),
             shared_region: None,
+            shared_retry_gen: None,
             shared_region_base: legaia_engine_audio::spu_layout::SFX_REGION_BASE,
             resident_slot0: None,
             sfx_evicted: false,
@@ -874,15 +879,38 @@ impl<S: AudioSink> AudioBgmDirector<S> {
             return false;
         }
         if self.shared_region == want {
-            return want.is_none_or(|b| self.sfx_vabs.contains_key(&b.slot));
+            let resident = want.is_none_or(|b| self.sfx_vabs.contains_key(&b.slot));
+            // A bank that did not fit is retried once the tail has moved -
+            // the dance's track replacing the field's, or a spill the new
+            // track overran.
+            if resident || self.shared_retry_gen == Some(self.tail.generation()) {
+                return resident;
+            }
         }
         self.shared_region = want;
+        self.shared_retry_gen = None;
         let (a, b) = legaia_engine_core::world::SHARED_REGION_SLOTS;
         self.sfx_vabs.remove(&a);
         self.sfx_vabs.remove(&b);
+        self.tail.drop_shared_spill();
         let Some(want) = want else {
             return true;
         };
+        let staged = self.stage_shared_region(want, read_entry);
+        if !staged {
+            self.shared_retry_gen = Some(self.tail.generation());
+        }
+        staged
+    }
+
+    /// Read and upload `want` into the shared region - spilling into the BGM
+    /// tail when its bodies do not fit above slot 0
+    /// ([`legaia_engine_audio::spu_layout::upload_shared_region_spilled`]).
+    fn stage_shared_region(
+        &mut self,
+        want: SharedRegionBank,
+        read_entry: impl FnOnce(u32) -> Option<Vec<u8>>,
+    ) -> bool {
         let Some(bytes) = read_entry(want.prot_entry) else {
             log::debug!("shared-region bank PROT {} unreadable", want.prot_entry);
             return false;
@@ -897,11 +925,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         let room = legaia_engine_audio::spu_layout::SPU_RAM_BYTES.saturating_sub(base);
         let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
         if body_total > room {
-            log::debug!(
-                "shared-region bank PROT {} ({body_total} B) does not fit in {room} B",
-                want.prot_entry
-            );
-            return false;
+            return self.stage_shared_spilled(want, &report, &bytes[vab_off..]);
         }
         let body = &bytes[vab_off..];
         let bank = match self.sfx_vabs.get(&0) {
@@ -919,6 +943,46 @@ impl<S: AudioSink> AudioBgmDirector<S> {
             return false;
         };
         self.sfx_vabs.insert(want.slot, bank);
+        true
+    }
+
+    /// Stage an oversize shared-region bank across the region and the BGM
+    /// tail, parking the tail half as a [`BgmTail`] borrower so a track that
+    /// overruns it drops the bank (and the next sync re-stages it).
+    fn stage_shared_spilled(
+        &mut self,
+        want: SharedRegionBank,
+        report: &legaia_vab::VabReport,
+        body: &[u8],
+    ) -> bool {
+        self.observe_track();
+        let Some(tail_base) = self.tail.spill_base() else {
+            return false;
+        };
+        let Some(slot0) = self.sfx_vabs.get(&0) else {
+            return false;
+        };
+        let up = self.audio.with_spu(|spu| {
+            legaia_engine_audio::spu_layout::upload_shared_region_spilled(
+                spu, slot0, tail_base, report, body,
+            )
+        });
+        let Some(up) = up else {
+            log::debug!(
+                "shared-region bank PROT {} does not fit above slot 0 and behind the BGM",
+                want.prot_entry
+            );
+            return false;
+        };
+        if let Some((base, end)) = up.spill {
+            self.tail
+                .commit_shared_spill(legaia_engine_audio::bgm_tail::TailBorrow {
+                    slot: want.slot,
+                    base,
+                    end,
+                });
+        }
+        self.sfx_vabs.insert(want.slot, up.bank);
         true
     }
 

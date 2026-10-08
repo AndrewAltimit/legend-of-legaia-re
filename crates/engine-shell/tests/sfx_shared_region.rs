@@ -120,7 +120,8 @@ fn the_shared_region_follows_the_mode_and_field_cues_key_prot_0876() {
         );
     }
     // The dance's bank is the one that does not: retail overruns slot 3's
-    // base with it, the port leaves the region closed.
+    // base with it, the port spills it into the BGM tail
+    // (`spu_layout::upload_shared_region_spilled`).
     let (dance, _) = read_vab(&host, 1231);
     assert!(body_bytes(&dance) > room, "PROT 1231 overruns the region");
 

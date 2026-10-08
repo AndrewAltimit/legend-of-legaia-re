@@ -12,7 +12,11 @@
 //! - the battle's two **monster** banks (`monster.snd`, VAB slots `7` / `8`),
 //!   staged while a battle is on screen - retail's battle scene loader
 //!   `FUN_800520F0` streams them per battle (`FUN_8003E104`) at slot 7's and
-//!   slot 8's own bases (`0x65010` / `0x6C810`).
+//!   slot 8's own bases (`0x65010` / `0x6C810`);
+//! - the **spill** of a shared slot-2 / slot-6 bank too large for its region
+//!   (the dance's PROT 1231), whose overflow samples land here
+//!   ([`crate::spu_layout::upload_shared_region_spilled`]) the way retail's
+//!   load overruns slot 3's closed base.
 //!
 //! # The residency rule
 //!
@@ -84,6 +88,7 @@ pub struct BgmTail<K> {
     side_band_attempt: Option<(K, u64)>,
     monsters: Option<(MonsterBankKey, Vec<TailBorrow>)>,
     monster_attempt: Option<(MonsterBankKey, u64)>,
+    shared_spill: Option<TailBorrow>,
 }
 
 impl<K> Default for BgmTail<K> {
@@ -96,6 +101,7 @@ impl<K> Default for BgmTail<K> {
             side_band_attempt: None,
             monsters: None,
             monster_attempt: None,
+            shared_spill: None,
         }
     }
 }
@@ -160,6 +166,11 @@ impl<K: Copy + PartialEq> BgmTail<K> {
         {
             dropped.extend(self.drop_monsters());
         }
+        if let Some(b) = self.shared_spill
+            && bgm_end > b.base
+        {
+            dropped.extend(self.drop_shared_spill());
+        }
         dropped
     }
 
@@ -212,6 +223,7 @@ impl<K: Copy + PartialEq> BgmTail<K> {
             .iter()
             .chain(self.side_band.iter().map(|(_, b)| b))
             .chain(self.monsters.iter().flat_map(|(_, bs)| bs.iter()))
+            .chain(self.shared_spill.iter())
             .filter(|b| b.slot != slot)
             .map(|b| b.end);
         let base = others.fold(self.bgm_end, u32::max).div_ceil(16) * 16;
@@ -247,6 +259,39 @@ impl<K: Copy + PartialEq> BgmTail<K> {
         Some(b.slot)
     }
 
+    /// The shared-region bank's spill span, while one is parked.
+    pub fn shared_spill(&self) -> Option<TailBorrow> {
+        self.shared_spill
+    }
+
+    /// Where a shared-region spill may start: above the track and every
+    /// other borrower, 16-byte aligned. `None` when no tail is left.
+    pub fn spill_base(&self) -> Option<u32> {
+        let base = self
+            .reward
+            .iter()
+            .chain(self.side_band.iter().map(|(_, b)| b))
+            .chain(self.monsters.iter().flat_map(|(_, bs)| bs.iter()))
+            .map(|b| b.end)
+            .fold(self.bgm_end, u32::max)
+            .div_ceil(16)
+            * 16;
+        (base < SFX_REGION_BASE).then_some(base)
+    }
+
+    /// Record a shared-region bank's overflow as parked in `borrow`.
+    pub fn commit_shared_spill(&mut self, borrow: TailBorrow) {
+        self.shared_spill = Some(borrow);
+    }
+
+    /// Forget the shared-region spill; its slot when one was parked. The
+    /// bank is only whole with its spill, so the host forgets the bank too.
+    pub fn drop_shared_spill(&mut self) -> Option<u8> {
+        let b = self.shared_spill.take()?;
+        self.generation = self.generation.wrapping_add(1);
+        Some(b.slot)
+    }
+
     /// Forget every borrower (a track laid across the SFX region overwrote
     /// them all); their slots.
     pub fn clear(&mut self) -> Vec<u8> {
@@ -254,6 +299,7 @@ impl<K: Copy + PartialEq> BgmTail<K> {
             .into_iter()
             .chain(self.drop_side_band())
             .chain(self.drop_monsters())
+            .chain(self.drop_shared_spill())
             .collect()
     }
 
@@ -317,6 +363,25 @@ mod tests {
 
     fn b(slot: u8, base: u32, end: u32) -> TailBorrow {
         TailBorrow { slot, base, end }
+    }
+
+    /// A shared-region spill is a tail borrower like any other: others stack
+    /// above it, a track that reaches it drops it (and moves the generation
+    /// the director's shared-region retry keys on), and one that stops short
+    /// keeps it.
+    #[test]
+    fn a_shared_spill_drops_with_the_track_that_reaches_it() {
+        let mut t = BgmTail::<i32>::default();
+        t.observe_bgm_end(0x20000);
+        assert_eq!(t.spill_base(), Some(0x20000));
+        t.commit_shared_spill(b(2, 0x38000, 0x3C000));
+        assert_eq!(t.place(REWARD_SLOT, 0x10), Some(0x3C000));
+        assert!(t.observe_bgm_end(0x30000).is_empty());
+        let g = t.generation();
+        assert_eq!(t.observe_bgm_end(0x38010), vec![2]);
+        assert!(t.shared_spill().is_none());
+        assert_ne!(t.generation(), g);
+        assert!(t.spill_base().is_some());
     }
 
     #[test]

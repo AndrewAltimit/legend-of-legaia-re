@@ -68,6 +68,8 @@ pub struct DanceGame {
     pub(super) finished: bool,
     /// Cues the countdown wrote, for the host to drain.
     pub(super) finish_cues: Vec<u16>,
+    /// The human's award sounds since the last drain ([`Self::take_award_sounds`]).
+    pub(super) award_sounds: Vec<super::DanceAwardSound>,
 }
 
 impl DanceGame {
@@ -117,6 +119,7 @@ impl DanceGame {
             finish: None,
             finished: false,
             finish_cues: Vec::new(),
+            award_sounds: Vec::new(),
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -786,6 +789,12 @@ impl DanceGame {
         self.dancers.get(i).is_some_and(|d| d.finale_landed)
     }
 
+    /// The human's award sounds since the last call - the ring cues and
+    /// stings `FUN_801d1af4` raises for dancer 0 ([`super::DanceAwardSound`]).
+    pub fn take_award_sounds(&mut self) -> Vec<super::DanceAwardSound> {
+        std::mem::take(&mut self.award_sounds)
+    }
+
     /// The countdown's cues since the last call (`0x206..=0x209`).
     pub fn take_finish_cues(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.finish_cues)
@@ -1262,6 +1271,10 @@ impl DanceGame {
                 self.bind_move_clip(i, dc::move_beat_pair(lane));
             }
             DanceEvent::Hit { .. } | DanceEvent::Ignored | DanceEvent::NoCharge => {}
+        }
+        if i == 0 {
+            self.award_sounds
+                .extend(super::award_sounds(ev, lane as u32));
         }
         self.sync_dancer_actors();
         ev

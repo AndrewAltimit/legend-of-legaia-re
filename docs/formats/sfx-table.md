@@ -407,8 +407,13 @@ wrong samples. Both play hosts restage the region from it every
 tick through the one director they share (`AudioBgmDirector::sync_shared_region`), above the slot-0
 system bank inside the reserved SFX window, and resolve a routed cue to its own
 slot or to silence. A slot-6 side-band bank is staged there too rather than in
-the BGM tail. The dance's bank does not fit the port's window, so the dance
-mode leaves the region closed.
+the BGM tail. The dance's bank does not fit the port's window; where retail
+overruns slot 3's closed base, the port has slot 0 below the region and the
+top of SPU RAM above it, so it lays the overflow in the BGM region's free tail
+instead (`spu_layout::upload_shared_region_spilled` - a voice addresses each
+sample on its own, so a bank need not be contiguous). The tail half is a
+`BgmTail` borrower like the reward bank: a track that reaches it drops the
+bank, and the director re-stages it once the free tail has moved.
 
 ### What a single-bank port gets wrong, and why it is silent
 
@@ -595,7 +600,8 @@ The slot-0 bank and the shared region's largest occupant are resident together,
 so the engine's reserved SFX region has to hold both and the BGM region is
 whatever is left of the 512 KiB. The largest occupant a host stages is PROT
 0869; PROT 0876 (174 192), 1197 (52 928) and 1198 (101 504) fit under it, and
-the dance's 1231 (234 400) does not.
+the dance's 1231 (234 400) does not - it spills into the BGM tail, as the
+residency port note above records.
 
 | | Bytes |
 |---|---|

@@ -1298,12 +1298,31 @@ that enumerates "the stings" over `0..3` is short one. **Confirmed** from the
 disassembly of all four call sites.
 
 Both calls fill the primitive's full eight-argument shape
-`(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - the order the SCUS
-cue drainer `FUN_80016B6C` pins - at **level `2`** (`li a1,0x2`), and both
-volume slots are the same `(_DAT_80084580 << 0xf) >> 0x10` halving every
-ordinary cue uses. The level and the program are the two arguments the engine
-port used to drop; the program is what makes the browser page's `tones[1]` bank
-lookup the right one rather than a guess.
+`(voice, vab_id, program, tone, note, 0x40, vol_l, vol_r)` - the order the SCUS
+cue drainer `FUN_80016B6C` pins - with **`a1 = 2`** (`li a1,0x2`), which the
+primitive reads as a VAB id (the program-attr lookup at `0x80065034..`), so the
+stings sound out of the dance's own slot-2 bank; both volume slots are the same
+`(_DAT_80084580 << 0xf) >> 0x10` halving every ordinary cue uses. The VAB id
+and the program are the two arguments the engine port used to drop; the
+program is what makes the browser page's `tones[1]` bank lookup the right one
+rather than a guess.
+
+Every cue in the table is a **direct store** into the SFX ring, not a call to
+the cue dispatcher `FUN_8004FCC8`: the count-in, run start and tutorial blips
+write slot 0 (`sh id, 0x8007B6D8`), the award's miss and tier cues and the
+finish countdown's parts (move-VM op `0x1D`) slot 3 (`0x8007B6DE`). That
+matters for the `>= 0x200` ids - through the dispatcher they would classify as
+CD-XA voices. The award's sounds are the human's only: the whole block sits
+behind `bne s3,zero` at `0x801D20F0`, and its tier cues behind the
+triangle-landed flag `DAT_801d570c`; a groovy move's tier is `lane + 3` with
+the lane read off the gauge before the move's `+1000` step.
+
+Port: `World::tick_dance` stores each cue as a ring `WriteSlot`
+(`dance::award_sounds` is the award's arm) and queues the stings on the direct
+voice-key queue, both drained by the session's `route_world_sfx` on both play
+hosts; the scene host stages PROT 1228 as the current bundle on every dance
+entry (`SceneHost::stage_dance_sfx_bundle`), and PROT 1231 spills into the BGM
+tail ([`sfx-table.md`](../formats/sfx-table.md#spu-budget---both-banks-in-one-region)).
 
 ### Two descriptor / atlas questions that are closed as negatives
 
