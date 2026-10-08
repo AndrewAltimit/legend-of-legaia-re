@@ -605,8 +605,8 @@ mod tests {
                 "(Voices[3].Sweep[1]).Current",
                 0x3FFFi16.to_le_bytes().to_vec(),
             ),
-            ("(GlobalSweep[0]).Current", 0x3F00i16.to_le_bytes().to_vec()),
-            ("(GlobalSweep[1]).Current", 0x3F00i16.to_le_bytes().to_vec()),
+            ("(GlobalSweep[0]).Current", 0x7E00i16.to_le_bytes().to_vec()),
+            ("(GlobalSweep[1]).Current", 0x7E00i16.to_le_bytes().to_vec()),
             ("SPUControl", 0xC080u16.to_le_bytes().to_vec()), // SPU + reverb on
             ("Regs", regs),
         ];
@@ -630,6 +630,7 @@ mod tests {
         let psx_spu = PsxSpu::new(&state);
         let spu = engine_spu_from_retail(&psx_spu).expect("SPURAM is present");
 
+        // Mednafen keeps the sweep `Current` at twice the register (`0x3F00`).
         assert_eq!(spu.master_left, 0x3F00);
         assert_eq!(spu.master_right, 0x3F00);
         // Reverb mode is identified from the captured coefficient registers
