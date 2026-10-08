@@ -114,19 +114,16 @@ impl MenuTextTables {
     }
 
     /// The accessory passive lines for item `id`: `(green name line,
-    /// white description line)` - what `FUN_801D0F1C` draws in the extra
-    /// widget box from the `0x8007625C` record's `+4` / `+8` strings.
-    pub fn item_passive_lines(&self, id: u8) -> Option<(String, String)> {
+    /// white description)` from the `0x8007625C` record's `+4` / `+8`
+    /// strings. The description is whole, its `'|'` breaks kept: every
+    /// window that prints it (`FUN_801D0F1C`'s extra box, the shop's info and
+    /// detail windows) goes through the line-breaking printer
+    /// (`FUN_80036888`), which puts the rest one row pitch down. This used to
+    /// keep the first line only, on the reading that the box shows one line.
+    pub fn item_passive_text(&self, id: u8) -> Option<(String, String)> {
         let (_, record) = self.passives.as_ref()?.passive(id)?;
         let name = record.name.clone()?;
-        // The white line is the description's first line (the retail `|`
-        // break maps below the box; the box shows one line per row).
-        let desc = record
-            .description
-            .clone()
-            .map(|d| d.split('|').next().unwrap_or_default().trim().to_string())
-            .unwrap_or_default();
-        Some((name, desc))
+        Some((name, record.description.clone().unwrap_or_default()))
     }
 }
 

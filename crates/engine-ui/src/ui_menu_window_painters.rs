@@ -866,10 +866,38 @@ pub fn item_description_draws_for(
         PAINTER_INK_ACCENT,
     ));
     if !description.is_empty() {
-        out.extend(text_draws_for(
-            &font.layout_ascii(description),
+        out.extend(broken_text_draws_for(
+            font,
+            description,
             (rect.x + 8, rect.y + PAINTER_ROW_PITCH),
             MENU_TEXT_WHITE,
+        ));
+    }
+    out
+}
+
+/// A string through the menu text printer's `'|'` line break: each segment
+/// drawn [`PAINTER_ROW_PITCH`] below the last, back at `pen.0`.
+///
+/// Retail's printer `FUN_80036888` resets x to the line start and adds `0xE`
+/// to y on a `0x7C` byte (`0x80036924..0x80036938`), so the description words
+/// the shop's info and detail windows hand it (through `FUN_800337B0` /
+/// `FUN_8003CD00`) print on two rows. The port used to keep the first segment
+/// only, on both hosts.
+///
+/// REF: FUN_80036888
+pub fn broken_text_draws_for(
+    font: &legaia_font::Font,
+    text: &str,
+    pen: (i32, i32),
+    ink: [f32; 4],
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for (i, line) in text.split(['|', '\n']).enumerate() {
+        out.extend(text_draws_for(
+            &font.layout_ascii(line),
+            (pen.0, pen.1 + PAINTER_ROW_PITCH * i as i32),
+            ink,
         ));
     }
     out
@@ -1464,6 +1492,19 @@ mod tests {
         let rect = PainterRect::new(138, 166, 168, 38);
         assert!(item_description_draws_for(&font, rect, false, "n", 1, "d").is_empty());
         assert!(!item_description_draws_for(&font, rect, true, "n", 1, "d").is_empty());
+    }
+
+    #[test]
+    fn a_pipe_breaks_the_description_onto_the_next_row() {
+        let font = legaia_font::Font::placeholder();
+        let one = broken_text_draws_for(&font, "a", (0, 0), MENU_TEXT_WHITE);
+        let two = broken_text_draws_for(&font, "a|a", (0, 0), MENU_TEXT_WHITE);
+        // Two rows of one glyph each - no pipe glyph drawn.
+        assert_eq!(two.len(), 2 * one.len());
+        let y0 = two.first().unwrap().dst.1;
+        let y1 = two.last().unwrap().dst.1;
+        assert_eq!(y1 - y0, PAINTER_ROW_PITCH);
+        assert_eq!(two.first().unwrap().dst.0, two.last().unwrap().dst.0);
     }
 
     // -- FUN_801D56FC --------------------------------------------------

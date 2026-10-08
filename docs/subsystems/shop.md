@@ -431,7 +431,10 @@ widens, keeping the number's right edge on the box.
 **Window 39** of the same table, rect `(14, 95, 144, 53)`.
 
 Rows off the window content origin: item name (record `+4`, ink `6`) at
-`(WX, WY)`, description (record `+8`) at `WY + 0xE`, then the price row at
+`(WX, WY)`, description (record `+8`) at `WY + 0xE` - through the
+line-breaking printer `FUN_80036888`, which drops a `0x7C` (`|`) break to
+the next row `0xE` down, so a two-line description fills both rows above the
+price, as it does in the buy-side info window 34 - then the price row at
 `WY + 0x2B` - the "Price" label at `WX + 0x24` (ink `5`), the currency glyph
 at `WX + 0x54`, and the value at `WX + 0x64` as a **5-digit** field. The sell
 price is `buy_price >> 1`, exactly half; a `0` price replaces the whole row

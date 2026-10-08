@@ -410,10 +410,14 @@ pub fn item_info_panel_draws_for(
         2,
         MENU_TEXT_GOLD,
     ));
-    str_at(&mut out, info.desc, ix, iy + 0x10, MENU_TEXT_WHITE);
+    // Both description words go through the line-breaking printer
+    // (`FUN_800337B0` / `FUN_8003CD00` -> `FUN_80036888`): a break puts the
+    // rest one row pitch down.
+    let broken = crate::ui_menu_window_painters::broken_text_draws_for;
+    out.extend(broken(font, info.desc, (ix, iy + 0x10), MENU_TEXT_WHITE));
     if let Some((line1, line2)) = info.passive {
         str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);
-        str_at(&mut out, line2, ix, iy + 0x48, MENU_TEXT_WHITE);
+        out.extend(broken(font, line2, (ix, iy + 0x48), MENU_TEXT_WHITE));
     }
     out
 }

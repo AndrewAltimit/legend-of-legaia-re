@@ -1317,7 +1317,7 @@ pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
             .and_then(|t| t.item_desc(id))
             .unwrap_or_default()
             .to_string(),
-        passive: text.and_then(|t| t.item_passive_lines(id)),
+        passive: text.and_then(|t| t.item_passive_text(id)),
     }
 }
 

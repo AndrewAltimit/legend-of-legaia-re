@@ -4123,10 +4123,9 @@ canvas's pixels (`play_text_layer_washes_json`).
   What still differs from retail there is the pose itself - the engine strikes
   the win pose once and hands back to the idle loop, so the camera films the
   character's back where retail's held pose has turned to face it.
-- **The overworld leader** draws at roughly half the native window's size
-  on the page, and the native size matches the retail frame of
-  `keikoku_chest_preload`. The page poses the leader from the world-map
-  clip bank; that path belongs to the world-map walk animation work.
+- **The overworld leader** used to draw at roughly half the native window's
+  size on the page. A tick-locked `map01` pair now shows the same size, pose
+  and shadow on both hosts.
 
 ## Shops, save points, movies and audio switching
 
