@@ -17,7 +17,8 @@
 //!    `card_write::write_save_into_card` (both hosts' card Save), read back
 //!    through `save_at`, and resumed again. The second `save_full` must equal
 //!    the first field for field - the soak harness's `+rt` check, here over
-//!    every library save rather than the scenes a random walk reaches.
+//!    every library save rather than the scenes a random walk reaches - and
+//!    the resume must land in the same scene playing the same BGM.
 //!
 //! The same round trip also runs with each card's latest save entered into a
 //! spread of scenes it was not written in (towns, overworld, dungeons), the
@@ -325,6 +326,8 @@ fn card_round_trip(session: &mut BootSession) -> Vec<String> {
     let mut problems = Vec::new();
     let before = session.host.world.save_full();
     let resume = session.current_resume();
+    let before_scene = session.host.world.active_scene_label.clone();
+    let before_bgm = session.host.world.audio.current_bgm;
     let mut card = blank_card();
     if let Err(e) = write_save_into_card(&mut card, 1, &before, &resume, None) {
         return vec![format!("card write: {e}")];
@@ -354,6 +357,23 @@ fn card_round_trip(session: &mut BootSession) -> Vec<String> {
     let after = session.host.world.save_full();
     for d in save_diffs(&card_view(&before), &card_view(&after)) {
         problems.push(format!("resume {d}"));
+    }
+    if session.host.world.active_scene_label != before_scene {
+        problems.push(format!(
+            "resume scene {before_scene:?} -> {:?}",
+            session.host.world.active_scene_label
+        ));
+    }
+    for _ in 0..120 {
+        step(session, 0);
+    }
+    // The track is not in the block: the landing scene's own entry restarts
+    // it, so two seconds after the resume the scene plays what it played.
+    if session.host.world.audio.current_bgm != before_bgm {
+        problems.push(format!(
+            "resume BGM {before_bgm:?} -> {:?}",
+            session.host.world.audio.current_bgm
+        ));
     }
     problems
 }
