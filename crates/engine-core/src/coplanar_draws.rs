@@ -209,22 +209,13 @@ struct WorldPlane {
     hi: [f32; 3],
 }
 
-fn rot_y(v: [f32; 3], sin: f32, cos: f32) -> [f32; 3] {
-    // Retail pure-Y rotation (FUN_80026988): local +Z -> (sin, 0, cos).
-    [cos * v[0] + sin * v[2], v[1], -sin * v[0] + cos * v[2]]
-}
-
 fn instance_plane(p: &Plane, d: &EnvDraw) -> WorldPlane {
-    // Known gap: this rotates by yaw only, while the draw itself now composes
-    // all three authored angles (`battle_intro::placement_rotation`). The
-    // handful of disc placements carrying a real X/Z tilt therefore get a
-    // plane whose normal is off by that tilt. Harmless for the pure-yaw
-    // majority; fixing it means sharing the same composition here.
-    let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
-    let (s, c) = ang.sin_cos();
+    // The draw's own rotation (`Rx * Ry * Rz`, `EnvDraw::rotate` - the
+    // composition every host draws the placement with), so a tilted
+    // placement's plane is the plane it is drawn on.
     let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
-    let mut n = rot_y(p.n, s, c);
-    let vis = rot_y(p.vis, s, c);
+    let mut n = d.rotate(p.n);
+    let vis = d.rotate(p.vis);
     // Re-canonicalise after rotation so matching planes hash together.
     let ax = dominant_axis(n);
     if n[ax] < 0.0 {
@@ -236,7 +227,7 @@ fn instance_plane(p: &Plane, d: &EnvDraw) -> WorldPlane {
     for cx in [p.lo[0], p.hi[0]] {
         for cy in [p.lo[1], p.hi[1]] {
             for cz in [p.lo[2], p.hi[2]] {
-                let w = rot_y([cx, cy, cz], s, c);
+                let w = d.rotate([cx, cy, cz]);
                 for ax in 0..3 {
                     let v = w[ax] + t[ax];
                     if v < lo[ax] {
@@ -249,7 +240,7 @@ fn instance_plane(p: &Plane, d: &EnvDraw) -> WorldPlane {
             }
         }
     }
-    let wp = rot_y(p.point, s, c);
+    let wp = d.rotate(p.point);
     WorldPlane {
         draw: 0,
         n,
