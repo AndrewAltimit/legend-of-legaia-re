@@ -2130,7 +2130,15 @@ a sky dome the camera looks at from outside paints its outer shell over the
 scene - korout's and retona's did, and so did the flag-seeded frames of
 several other scenes. The world map keeps both-sided draws (its continent
 terrain's winding parity is the world-map pass's, not the field pass's), as
-do battle and the minigame venues other than the dance hall. The dance hall is
+do the battle pass and the minigame venues other than the dance hall. The
+battle **bodies** are the exception inside the battle pass: each one goes
+through the same dispatcher with its render node's colour word, which never
+carries the double-sided bit, so both hosts cull a body's back faces per draw
+(`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the
+placement `nclip` on the play page) under the field's parity, word `2`. On an
+opaque body the depth test hides the far shell anyway; on a semi-transparent
+one - the near-camera ghost, a defeat fade - both shells add, and the body
+draws about twice retail's brightness. The dance hall is
 a field-shaped pass - game mode `0x19` is one of the three `FUN_80026CE4` runs
 the decoration pass `FUN_801F7088` for, and a live dance capture has its placed
 actors' colour words at `0x40808080` - so it is armed too; see
@@ -2218,25 +2226,22 @@ dropped only when both of its halves exceed the limit. The dance hall applies
 the same rule to its baked hall on the CPU
 ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
 
-`theeder_summon_mid_cast` is the case this does not close, and the reading
-that retail drops the near monster's gouraud prims is wrong. Monster `0xA1`
-(Gilium) has no flat prims at all - every group is `GT3` (`0x25`) or `GT4`
-(`0x27`) - and the near body (pool slot 5, ghosted `B + F/4` by
-`FUN_8004DC68`, Venom in its status word) is the `POLY_FT4` run with tpage
-`0x75` (ABR `3`) in the packet stream, beside the unghosted Giliums' `GT4`
-run on tpage `0x15` through the same CLUTs. Its render node's colour word reads
-`0x87FF2020` - Venom's `0xFF2020`, the ghost's `0x83` and bit 26 - where the
-far Giliums' read `0x00FF2020`, so `FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4` leaves
-(`0x800457C4`, `0x80045988`) emit a flat-textured packet: code forced to
-`0x2C` (`lui s0,0x2c00`), one colour - the first corner's, depth-cued
-toward the tint colour by `DPCS` - and `0x20` / `0x28`-byte packets. So
-retail draws the whole near body, flat and faint, mostly above the frame
-(its packets reach `y = -684`), and what the engine draws as long leg shards across the caster is a different leg
-geometry on screen, not a missing prim class. The engine has no bank-2 flat
-path (both hosts shade a bit-26 body gouraud), and a vertex-stage emulation
-of the GTE's saturated projection (`SZ < H/2` at twice the eye offset)
-changes no catalogued battle frame, so the leg geometry itself is what
-remains open.
+`theeder_summon_mid_cast` puts monster `0xA1` (Gilium) between the eye and
+the caster. Its render node's colour word reads `0x87FF2020` - Venom's
+`0xFF2020`, the ghost's `0x83` and bit 26 - where the far Giliums' read
+`0x00FF2020`, so `FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4`
+leaves (`0x800457C4`, `0x80045988`) emit flat-textured `POLY_FT3` /
+`POLY_FT4` packets (codes `0x24` / `0x2C`, one colour - the first corner's,
+depth-cued toward the tint by `DPCS`) on tpage `0x75`, ABR `3`. The near body
+is drawn whole: its packets' screen corners match the engine's projection of
+the same pose prim for prim, the triangles' claw tips across the caster
+included. What parts the two frames is brightness. The body's texels are
+dark (the leg CLUT tops out at `(128, 88, 0)`), so `B + F/4` under
+`(67, 67, 179)` adds under twenty a channel, and the engine, drawing both
+shells of every limb, added twice that until the bodies were culled single-
+sided ([above](#the-field-pass-culls-back-faces)). An earlier reading here -
+that retail draws no bank-2 triangles and the claw tips are engine-only
+geometry - came from a display-list decoder that dropped every `POLY_FT3`.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 

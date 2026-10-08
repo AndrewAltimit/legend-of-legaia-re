@@ -101,7 +101,40 @@ impl BattleActorDrawPlan {
     pub fn cue_ir0(&self) -> f32 {
         f32::from(self.tint.weight) / 4096.0
     }
+
+    /// The body's NCLIP word for the hosts' per-draw backface rule
+    /// (`Renderer::set_draw_nclip`, the page's placement `nclip`):
+    /// [`BATTLE_BODY_NCLIP`] - back faces culled - unless the colour word
+    /// carries the double-sided bit, which draws both sides (`0`).
+    ///
+    /// The prim dispatcher `FUN_80043390` stages the winding mask
+    /// `0x1F80003C` as `0xFFFFFFFF` and lowers it to `0x7FFFFFFF` only for a
+    /// word with bit `0x08000000` (`0x80043520..0x80043540`); every textured
+    /// leaf then skips a primitive whose masked `NCLIP` is negative (the
+    /// bank-2 triangle leaf at `0x8004586C`, the quad leaves' two-half test
+    /// at `0x80045A38..0x80045A6C`). So a battle body is single-sided. Both
+    /// sides drawn is invisible on an opaque body, whose depth test hides
+    /// the far side, but a semi-transparent one adds both shells: the
+    /// near-camera ghost (`B + F/4`, `theeder_summon_mid_cast`'s Gilium)
+    /// drew about twice retail's brightness.
+    pub fn nclip_mode(&self) -> u32 {
+        if self.draw_colour & DOUBLE_SIDED_BIT != 0 {
+            0
+        } else {
+            BATTLE_BODY_NCLIP
+        }
+    }
 }
+
+/// The colour-word bit that makes `FUN_80043390` draw a body double-sided
+/// (`lui s1,0x800` / `and` at `0x80043520..0x80043524`).
+pub const DOUBLE_SIDED_BIT: u32 = 0x0800_0000;
+
+/// The NCLIP word (`Renderer::set_backface_cull` encoding) that keeps a
+/// battle body's retail front faces: both hosts draw the battle bodies under
+/// the same reflection parity as the field pass, so it is the field's `2`
+/// ([`crate::camera_view::nclip_cull_mode`]).
+pub const BATTLE_BODY_NCLIP: u32 = 2;
 
 impl World {
     /// The Rot limb dimming battle actor `actor_idx` draws with this frame,
@@ -422,6 +455,29 @@ mod tests {
             tr: [0.0, 0.0, tr_z],
             focus: [0.0; 3],
         }
+    }
+
+    /// A battle body is single-sided - the ghosted near body too - unless
+    /// its colour word carries `FUN_80043390`'s double-sided bit.
+    #[test]
+    fn a_battle_body_culls_back_faces_unless_its_word_is_double_sided() {
+        let mut world = battle_world();
+        world.actors[0].move_state.world_z = 0;
+        let plan = world
+            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
+            .expect("party seat");
+        assert_eq!(plan.nclip_mode(), BATTLE_BODY_NCLIP);
+        let ghost = BattleActorDrawPlan {
+            draw_colour: 0x87FF_2020,
+            ..plan
+        };
+        assert_eq!(ghost.semi_mode(), Some(3));
+        assert_eq!(ghost.nclip_mode(), BATTLE_BODY_NCLIP);
+        let both = BattleActorDrawPlan {
+            draw_colour: plan.draw_colour | DOUBLE_SIDED_BIT,
+            ..plan
+        };
+        assert_eq!(both.nclip_mode(), 0);
     }
 
     /// A drawn party body casts the 24-column subtractive disc of radius

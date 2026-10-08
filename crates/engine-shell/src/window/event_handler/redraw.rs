@@ -1711,6 +1711,9 @@ impl PlayWindowApp {
             // Shared kernel `World::object_effect_mesh_clip`; the browser
             // page asks the same one (`field_placement_effect_clips`).
             let mut clip_marks: Vec<(usize, legaia_engine_render::DrawClip)> = Vec::new();
+            // Per-draw NCLIP words (`Renderer::set_draw_nclip`): the battle
+            // bodies' single-sided rule over the battle pass's both-sided one.
+            let mut nclip_marks: Vec<(usize, u32)> = Vec::new();
             let mut color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)> = Vec::new();
             let effect_clips = self.session.host.world.object_effect_clips();
             let effect_clip = |key: legaia_engine_core::world::ActorTintKey,
@@ -3038,6 +3041,14 @@ impl PlayWindowApp {
                         {
                             clip_marks.push((draws.len(), c));
                         }
+                        // Retail draws a battle body single-sided unless its
+                        // colour word carries the double-sided bit
+                        // (`BattleActorDrawPlan::nclip_mode`, the page's
+                        // placement `nclip` too); the battle pass itself
+                        // stays both-sided.
+                        if let Some(p) = battle_plan {
+                            nclip_marks.push((draws.len(), p.nclip_mode()));
+                        }
                         draws.push(SceneDraw {
                             mesh,
                             mvp: actor_cam * model,
@@ -3546,6 +3557,13 @@ impl PlayWindowApp {
                     }
                 }
                 r.set_draw_clips(tex, col);
+                let mut nclip = vec![None; draws.len()];
+                for (i, m) in nclip_marks {
+                    if let Some(slot) = nclip.get_mut(i) {
+                        *slot = Some(m);
+                    }
+                }
+                r.set_draw_nclip(nclip);
             }
             let scene = RenderScene {
                 vram,

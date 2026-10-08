@@ -3422,6 +3422,16 @@ void main() {
           cursor = rt.play_battle_actor_cursor();
         }
       } catch (e) { /* no cursor tint this frame */ }
+      /* Retail draws a battle body single-sided unless its colour word
+       * carries the double-sided bit (BattleActorDrawPlan::nclip_mode): one
+       * NCLIP word per actor, riding the placement over the battle pass's
+       * both-sided word. Guarded against a cached WASM without the export. */
+      let nclip = null;
+      try {
+        if (typeof rt.play_battle_actor_nclip === 'function') {
+          nclip = rt.play_battle_actor_nclip();
+        }
+      } catch (e) { /* frame word only */ }
       for (let i = 0; i < b.actors.length; i++) {
         const a = b.actors[i];
         const o = i * 5;
@@ -3469,6 +3479,7 @@ void main() {
            * negated (see placementModelScaledY). */
           rotY: -tf[o + 3],
           scale: (c >= 0) ? S * cursor[c + 5] : S,
+          nclip: (nclip && i < nclip.length) ? nclip[i] : undefined,
           cue: (c >= 0 && cursor[c] > 0.5)
             ? {
               far: [cursor[c + 1], cursor[c + 2], cursor[c + 3]],

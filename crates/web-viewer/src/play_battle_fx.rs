@@ -1205,6 +1205,27 @@ impl LegaiaRuntime {
         }
         out
     }
+
+    /// Per-battle-actor NCLIP word **in mesh order** (index-parallel with
+    /// `play_battle_actor_transforms`), in `TmdRenderer.setNclipCull`'s
+    /// encoding: the page's placement `nclip`, which overrides the frame's
+    /// both-sided battle word for that body. Retail draws a battle body
+    /// single-sided unless its colour word carries the double-sided bit
+    /// (`BattleActorDrawPlan::nclip_mode`); the native window stages the
+    /// same word per draw (`Renderer::set_draw_nclip`). `0` for a slot with
+    /// no draw plan.
+    pub fn play_battle_actor_nclip(&self) -> Vec<u32> {
+        let Some(br) = self.battle_render.as_ref() else {
+            return Vec::new();
+        };
+        br.actor_slots()
+            .into_iter()
+            .map(|actor_idx| {
+                self.battle_draw_plan(actor_idx)
+                    .map_or(0, |p| p.nclip_mode())
+            })
+            .collect()
+    }
 }
 
 impl LegaiaRuntime {

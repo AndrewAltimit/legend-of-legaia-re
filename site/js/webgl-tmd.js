@@ -36,6 +36,10 @@
  *              browser cannot drift from the native `fx_cam * model`.
  *     decoCue - overworld decoration: stage retail's per-object cue
  *              (overworldDecorationCue) from the draw origin's depth.
+ *     nclip  - per-draw NCLIP word (setNclipCull's encoding) overriding the
+ *              frame's for this draw only - the battle bodies' single-sided
+ *              rule (BattleActorDrawPlan::nclip_mode) over the both-sided
+ *              battle pass.
  *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
  *              overriding the frame-global `setDepthCue` for this draw only.
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage
@@ -588,6 +592,17 @@ class TmdRenderer {
    * 2 = reject the retail back faces). The play page stages it from the
    * shared `camera_view::nclip_cull_mode` kernel; every other page leaves
    * it at 0. */
+  /* Stage one renderAssembled placement's NCLIP word (`p.nclip`, the frame's
+   * `nclipCull` when absent); `cur` is the word staged now, returned updated
+   * so an unchanged placement costs no uniform write. */
+  _setPlacementNclip(want, cur) {
+    const mode = (want === undefined || want === null) ? this.nclipCull : (want | 0);
+    if (mode !== cur && this.locNclipCull) {
+      this.gl.uniform1i(this.locNclipCull, mode);
+    }
+    return mode;
+  }
+
   setNclipCull(mode) {
     this.nclipCull = (mode | 0);
   }
@@ -1901,6 +1916,9 @@ class TmdRenderer {
     let cueOn;
     /* Whether an object-effect clip is staged (`_setEffectClip`). */
     let eclipOn = this._setEffectClip(null, true);
+    /* The NCLIP word staged for the current placement (`_setPlacementNclip`);
+     * the frame's `nclipCull` until a placement carries its own. */
+    let nclipOn = this.nclipCull;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (m.indexCount === 0) continue;
@@ -1923,6 +1941,7 @@ class TmdRenderer {
         /* Actor draws (the player, NPCs - `noOccl` on the placement) must
          * never dissolve; environment placements may. */
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+        nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
@@ -1974,6 +1993,7 @@ class TmdRenderer {
         }
         gl.uniformMatrix4fv(this.locModel, false, model);
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+        nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
@@ -1993,6 +2013,7 @@ class TmdRenderer {
     }
     if (strictOn) gl.depthFunc(gl.LEQUAL);
     if (eclipOn) this._setEffectClip(null, true);
+    this._setPlacementNclip(undefined, nclipOn);
     gl.bindVertexArray(null);
     /* Enhanced lighting's halos + light shafts over the finished scene. */
     this._drawGlow(vp);

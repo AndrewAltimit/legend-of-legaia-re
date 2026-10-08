@@ -1518,6 +1518,7 @@ impl Renderer {
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
             draw_clips: std::cell::RefCell::new((Vec::new(), Vec::new())),
+            draw_nclip: std::cell::RefCell::new(Vec::new()),
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
             depth_cue: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             cue_ramp: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
