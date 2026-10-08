@@ -293,6 +293,11 @@ pub struct Sequencer {
     pending: Vec<PendingKey>,
     /// Id source for [`PendingKey::id`].
     next_pending_id: u32,
+    /// The retail pump's `+0x90`: tenths of a tick still to wait before
+    /// `events[next]` fires. `None` until the pump first runs, or after an
+    /// outside [`Self::rewind_to`] - then it is seeded from that event's own
+    /// delta, as the stream read after a seek does.
+    pump_wait: Option<i64>,
 }
 
 impl Sequencer {
@@ -330,6 +335,7 @@ impl Sequencer {
             flush_pos: 0,
             pending: Vec::new(),
             next_pending_id: 0,
+            pump_wait: None,
         }
     }
 
@@ -459,20 +465,114 @@ impl Sequencer {
     /// key-ons are written ([`Self::flush_key_ons`]).
     fn advance_samples(&mut self, spu: &mut Spu, samples: u64) {
         if samples == 0 {
-            self.advance_events(spu, 0);
+            // A zero-length advance drains a leading run of zero-delta events
+            // on the sample clock; the retail pump only runs at a vsync.
+            if self.exact_tempo {
+                self.advance_events(spu, 0);
+            }
             return;
         }
         let mut remaining = samples;
         while remaining > 0 {
             let step = remaining.min(FLUSH_SAMPLES - self.flush_pos);
-            self.advance_events(spu, step);
+            if self.exact_tempo {
+                self.advance_events(spu, step);
+            }
             self.flush_pos += step;
             remaining -= step;
             if self.flush_pos >= FLUSH_SAMPLES {
                 self.flush_pos = 0;
+                if !self.exact_tempo {
+                    self.pump_vsync(spu);
+                }
                 self.flush_key_ons(spu);
             }
         }
+    }
+
+    /// The tick budget the current tempo installs, in tenths of a tick per
+    /// vsync (`+0x54`): the header's rounded BPM until a tempo meta fires,
+    /// the meta's truncated one after. Floored at `1`; the slow mode
+    /// (`+0x52 >= 0`, under one tick a vsync) is not reached by a shipped
+    /// track and runs at that floor.
+    fn retail_budget(&self) -> i64 {
+        let bpm = if self.header_tempo {
+            crate::seq_calc::header_bpm(self.tempo_us_per_qn)
+        } else {
+            (self.tempo_us_per_qn != 0).then(|| 60_000_000 / self.tempo_us_per_qn)
+        }
+        .unwrap_or(0);
+        let (_, budget) = crate::seq_calc::tempo_set_budget(
+            self.seq.header.ppqn.max(1) as i16,
+            bpm,
+            crate::seq_calc::RETAIL_TICK_DIVISOR,
+        );
+        i64::from(budget.max(1))
+    }
+
+    /// One `SsSeqCalc` of the delta-time pump (`FUN_800639A0`, ported
+    /// standalone as [`crate::seq_events::pump_delta_time`]), driven over the
+    /// parsed event list: a wait that outlives the vsync's budget is reduced
+    /// by it and nothing fires; otherwise events fire until the waits
+    /// accumulated since the vsync began reach the budget - which is re-read
+    /// after every event, so a tempo meta retunes the vsync it lands in - and
+    /// the overshoot carries into the next wait. Events therefore land on the
+    /// vsync grid retail lands them on, including after a tempo change.
+    fn pump_vsync(&mut self, spu: &mut Spu) {
+        if self.finished {
+            return;
+        }
+        let delta_of =
+            |seq: &Seq, i: usize| seq.events.get(i).map_or(0, |e| i64::from(e.delta) * 10);
+        let wait = self
+            .pump_wait
+            .unwrap_or_else(|| delta_of(&self.seq, self.next));
+        let short = wait - self.retail_budget();
+        if short > 0 {
+            self.pump_wait = Some(short);
+            return;
+        }
+        let mut accum = wait;
+        // A port bound on one vsync's events; retail spins.
+        for _ in 0..100_000 {
+            let Some(event) = self.seq.events.get(self.next) else {
+                self.finished = true;
+                if let Some(target) = self.loop_target() {
+                    self.rewind_to(target, spu);
+                    self.pump_wait = Some(delta_of(&self.seq, self.next));
+                }
+                return;
+            };
+            self.abs_tick += u64::from(event.delta);
+            let is_eot = matches!(event.body, EventBody::Meta(MetaMessage::EndOfTrack));
+            self.fire(spu, self.next);
+            self.next += 1;
+            if self.pending_loop_forever {
+                self.pending_loop_forever = false;
+                let target = self.loop_start.unwrap_or(0).min(self.seq.events.len());
+                self.rewind_to(target, spu);
+            } else if is_eot {
+                match self.loop_target() {
+                    Some(target) => self.rewind_to(target, spu),
+                    None => {
+                        self.finished = true;
+                        return;
+                    }
+                }
+            }
+            let d = delta_of(&self.seq, self.next);
+            if d == 0 {
+                continue;
+            }
+            accum += d;
+            let budget = self.retail_budget();
+            if accum < budget {
+                continue;
+            }
+            self.pump_wait = Some(accum - budget);
+            return;
+        }
+        self.pump_wait = Some(0);
     }
 
     /// Fire every event that has come due after `samples` more samples.
@@ -540,6 +640,7 @@ impl Sequencer {
     pub fn rewind_to(&mut self, to: usize, spu: &mut Spu) {
         self.silence_all(spu);
         self.next = to;
+        self.pump_wait = None;
         self.accum = 0;
         self.sample_carry = 0.0;
         self.finished = false;
@@ -1229,11 +1330,13 @@ mod tests {
     fn fires_program_change_immediately() {
         let mut spu = Spu::new();
         let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        // The retail pump runs once per vsync: nothing fires before the first.
         seq.tick_us(&mut spu, 0.0);
-        // First two events have delta 0 and fire on the first tick (even
-        // with dt=0, the loop drains zero-delta events). Channel 0 program
-        // should be 0 and there should be no active note (bank is empty so
-        // play_note returns false).
+        assert_eq!(seq.next, 0);
+        // First two events have delta 0 and fire at the first vsync. Channel
+        // 0 program should be 0 and there should be no active note (bank is
+        // empty so play_note returns false).
+        seq.tick_us(&mut spu, 1_000_000.0 / 60.0);
         assert_eq!(seq.channels[0].program, 0);
         assert_eq!(seq.active_notes(), 0);
         // Third event has delta 480 - not yet fired.
@@ -1298,6 +1401,9 @@ mod tests {
         buf.push(0x2F); // EOT
         let seq = Seq::parse(&buf).unwrap();
         let mut s = Sequencer::new(seq, empty_bank());
+        // The sample clock is the exact-tempo mode's; the retail pump fires
+        // on the vsync grid instead.
+        s.set_exact_tempo(true);
         let mut spu = Spu::new();
 
         // Drain the leading zero-delta ProgramChange.
@@ -1839,5 +1945,34 @@ mod tests {
             },
         );
         assert!(seq.active.is_empty());
+    }
+
+    /// The retail pump fires events on the vsync grid and retunes the vsync
+    /// a tempo meta lands in: at 120 BPM / ppqn 480 a quarter (480 ticks) is
+    /// 30 vsyncs at the 160-tenths budget, so a note 480 ticks in fires at
+    /// the end of vsync 30, not on its exact sample.
+    #[test]
+    fn the_retail_pump_fires_on_the_vsync_grid() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]);
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.extend_from_slice(&[0x00, 0xC0, 0x00]); // delta 0 ProgramChange
+        buf.extend_from_slice(&[0x83, 0x60, 0x90, 60, 100]); // delta 480 NoteOn
+        buf.extend_from_slice(&[0x00, 0xFF, 0x2F]); // EOT
+        let seq = Seq::parse(&buf).unwrap();
+        let mut s = Sequencer::new(seq, empty_bank());
+        let mut spu = Spu::new();
+        for _ in 0..FLUSH_SAMPLES * 29 {
+            s.tick_sample(&mut spu);
+        }
+        assert_eq!(s.next, 1, "29 vsyncs spend 464 of the 480 ticks");
+        for _ in 0..FLUSH_SAMPLES {
+            s.tick_sample(&mut spu);
+        }
+        assert_eq!(s.next, 3, "the 30th vsync reaches the note (and the EOT)");
     }
 }

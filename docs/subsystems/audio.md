@@ -1298,9 +1298,18 @@ plays the score as written. The port's frame is a flat 60 Hz, which is the
 rate the budget is spent at here; the console's own vsync is a little under
 that. Retail fires an event at the first `SsSeqCalc` after it falls due and
 writes its key-on at that call's flush, so every onset lands on a vsync. The
-`Sequencer` fires the event on its own sample but stages the key-on for the
-next flush boundary ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)),
-so its onsets land on the vsync grid too.
+`Sequencer` runs the same pump: once per `FLUSH_SAMPLES` it spends one vsync's
+budget the way `FUN_800639A0` does (`seq_events::pump_delta_time` is the
+standalone port) - a wait that outlives the budget shrinks by it; otherwise
+events fire until the accumulated waits reach the budget, re-read after every
+event so a tempo meta retunes the vsync it lands in, and the overshoot carries
+- then writes the period's key-ons
+([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)).
+Firing events on their own samples instead put notes near a vsync boundary in
+the neighbouring flush after any tempo change: `rugi` read `200` key-ons
+against `201`, and `s3_rimelm_freeroam` matched `286` of `292` within a frame
+where the pump matches all `292`. `set_exact_tempo(true)` keeps the
+sample clock at the written tempo.
 
 **Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
 sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
