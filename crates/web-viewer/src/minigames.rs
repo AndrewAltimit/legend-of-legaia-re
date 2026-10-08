@@ -2402,6 +2402,8 @@ fn stage_music01_seq(
     let bank =
         legaia_engine_audio::VabBank::upload(&mut spu, &mut alloc, &vab_report, &buf[vab_off..]);
     let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+    // The sequence volume every live BGM director gives a track.
+    sequencer.set_master_vol(legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL);
     // In-stream loop markers take precedence; this is the fallback for the
     // (few) tracks with no markers so every jukebox track loops.
     sequencer.set_loop_to(0);

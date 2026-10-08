@@ -227,6 +227,8 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
         &vab_carrier[vab_off..],
     );
     let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+    // The sequence volume every live BGM director gives a track.
+    sequencer.set_master_vol(legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL);
     // End-of-track fallback loop, as the site's pre-render path sets - an
     // in-stream loop marker still wins.
     sequencer.set_loop_to(0);
