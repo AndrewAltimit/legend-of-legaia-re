@@ -508,8 +508,9 @@ summons**: the game derives summon magnitude from caster/summon battle stats
 (`FUN_801dd0ac`) or, for recovery summons, from a per-character magic-power byte. The
 genuine per-move power scalar that *does* exist - the `0x801F4F5C` table - feeds the
 arts/physical branch and is now located + parsed off the disc (`legaia_asset::move_power`,
-above). The `base_power` figures in `legaia_engine_core::retail_magic` stay MP-scaled
-placeholders until the `FUN_801dd0ac` summon roll is wired into a live battle context.
+above). The `FUN_801dd0ac` summon roll is wired into the live battle
+(`World::player_summon_predamage`), so the `base_power` figures in
+`legaia_engine_core::retail_magic` are not what a cast deals.
 (Method: capstone disassembly of the extracted PROT 0900 / 0903..0915 overlays +
 byte-matching the resident table against the in-RAM battle save states; `FUN_801dd0ac`
 itself is dumped at `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`.)

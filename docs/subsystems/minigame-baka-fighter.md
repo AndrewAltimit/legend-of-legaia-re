@@ -1316,9 +1316,10 @@ stores the select cursor `DAT_801DBF70` as slot 0's roster id
 (`sw a0,0x94(v1)` into `DAT_801DC050` at `0x801D0058`) and reads that same
 record's `+0x44` stand-off (`0x801D0040..0x801D005C`), so the picked party
 fighter brings its own stats, action table, strike clips and special camera.
-The minigames page seats it that way (`baka_start_as`). **Confirmed**
-(disassembly). The two play hosts seat it through the cabinet's own pose state;
-the minigames page hands the pick to its ladder run.
+**Confirmed** (disassembly). Every host seats it through the cabinet's own
+pose state: the play hosts, and the minigames page, which starts the cabinet
+run with `baka_start_cabinet` and steps it with `baka_frame` - it keeps no
+ladder of its own.
 
 The run opens on the cabinet's attract card and then its **PLAYER SELECT**
 screen - the three party fighters idling in the arena under the "PLAYER

@@ -2693,7 +2693,7 @@ raw record / the Japanese release) was first surfaced by **Zetopheonix**. The sa
 gates which Seru-magic side-effect debuffs can ever land on the enemy - see
 [battle-formulas.md](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
 
-The **engine port applies profile B in every fight**: `engine_core::monster_catalog::monster_def_from_record` seeds ATK / UDF / LDF / INT from `battle_stats()` (the random-encounter profile is not yet selected at battle entry - ready work in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)) and AGL / SPD / HP / MP from the plain record fields, matching which stores the boost block does and does not touch. The accuracy / evasion bytes clamp the *boosted* INT, because the actor halfword the interrupt roll reads (`+0x168`) is the one the boost block's last store writes. Seeding from the raw accessors instead - which the port did - makes every enemy in the game materially weaker than retail.
+The **engine port installs the profile the fight's class selects**: battle entry seeds ATK / UDF / LDF / INT through `MonsterDef::installed_stats(scripted)` (`engine-battle::monster_catalog`) - the boss profile for a scripted fight, the random-encounter profile (`x7/4` defence, unboosted ATK) for every rollable one - and AGL / SPD / HP / MP from the plain record fields, matching which stores the boost block does and does not touch. The accuracy / evasion bytes clamp the *boosted* INT, because the actor halfword the interrupt roll reads (`+0x168`) is the one the boost block's last store writes. Seeding from the raw accessors instead - which the port did - makes every enemy in the game materially weaker than retail.
 
 Battle entry also seeds **both defence facets** into `World::battle.defense_split`, not one collapsed `max(UDF, LDF)` scalar. The melee kernel picks UDF or LDF by the swing's command parity (`FUN_801EC3E4` at `0x801ECE14`), so a single scalar leaves that branch dead for the whole monster band and makes every enemy defend with its better half against every swing. A Defense buff moves both halves together, as retail's "Defense Up" does.
 
@@ -3748,7 +3748,7 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 
 The **stat debuffs** a player's Seru magic inflicts (DEF / AGL / ATK / SPD / INT / MP down, 5-20% per hit by magic level) are a separate mechanism with no `+0x16E` bit - the element-keyed [side-effect](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch), whose "immunities" are the scripted-fight boost profile, not a monster field.
 
-Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines. Both battle drivers tick it once per round: the runner path at `BattleRound::end`, and the live loop at the initiative round boundary (when no living actor still holds an initiative key, just before the keys reseed).
+Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines. The live battle loop - the only battle driver - ticks it once per round, at the initiative round boundary (when no living actor still holds an initiative key, just before the keys reseed).
 
 The tick folds the Venom / Toxic DoT into `BattleActor::hp` with the retail never-kill clamp - a tick that would reach 0 leaves the actor at 1 HP instead (`FUN_801E752C` subtracts `current − 1` before applying the per-status cap), so poison alone never downs an actor. It draws no RNG, so it never perturbs the reseed RNG stream.
 
@@ -3917,7 +3917,7 @@ Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items
 
 ## Battle round lifecycle
 
-`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle.attack` / `battle.defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Toxic / Venom tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
+The live round step is `BattleRound::boundary(&mut world)`, the port of `FUN_801D88CC`, which the live loop runs at each round boundary (`world/battle/loop_driver.rs`): it re-arms the once-per-pass monster flee checkpoint, restores every slot's gauge and clears its action stream, and re-picks each target through `FUN_801DB8B4`'s first-living-monster scan. `BattleRound::begin` (reset the AP gauges, recompute per-slot `BattleStats`, write attack / UDF / LDF back into `World::battle`) and `BattleRound::end` (tick statuses, fold Toxic / Venom damage, count the deaths) survive from the removed battle runner and are called only from tests.
 
 The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Numb / Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
 
@@ -3931,7 +3931,7 @@ The HUD is fed by `World` events:
 
 - `BattleEvent::ApplyArtStrike` → `push_damage` / `push_heal` (per-strike popup with a fade timer).
 - `StatusEvent::TickDamage` / `Cleared` → `sync_status` (replaces the slot's icon list from the `StatusEffectTracker`).
-- `BattleRound::begin` / `end` → `sync_slot` (refreshes HP / MP / AP per round).
+- the round boundary → `sync_slot` (refreshes HP / MP / AP per round).
 
 Damage popups carry a 60-frame default lifetime and an `alpha()` helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column).
 
@@ -5209,7 +5209,7 @@ byte-validated against the captured Noa L2->L3 single-level deltas
 Engines populate one captured observation at a time via:
 
 ```rust
-let obs = legaia_engine_core::levelup::observations::vahn_mc8_to_mc9();
+let obs = legaia_engine_core::levelup::LevelUpObservation::vahn_4_level_jump();
 let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 ```
 
@@ -5597,7 +5597,7 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
 - **A wipe raises `World::game_over`**, which both hosts read and route to the **title screen** - retail's destination, pinned to the `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair (see [§ party wipe](#party-wipe--the-game-over-overlay)). Native pushes `BootUiState::GameOver`, the browser arms the same `GameOverSession`; neither draws anything and neither reads a button, because retail asks the player nothing here.
-- **A victory raises the result screen in battle** (`World::battle_spoils_banner`, up from the results frame of the sequence below through the exit) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A direct `finish_battle` (the runner path) still arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
+- **A victory raises the result screen in battle** (`World::battle_spoils_banner`, up from the results frame of the sequence below through the exit) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A `finish_battle` that applies the loot itself (no victory sequence ran) still arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
 - **A wipe raises the loss window** (`World::battle_defeat_banner`, same span) - the win window's twin, drawn on the report frame by `engine-ui::battle_defeat_windows` on both hosts; see [below](#the-loss-window-is-the-result-windows-twin). The spoils panel answers only a win: `last_rewards` outlives its battle, and a wipe after a win used to re-show that win's spoils.
 - **The exit's party loop runs on every exit** (`battle_formulas::battle_exit_party_reset`): statuses clear unless the special-battle word carries the arena bit, and a member at 0 HP stands up at 1 - see [battle-formulas.md](battle-formulas.md#the-flow-readers).
 

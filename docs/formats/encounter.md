@@ -115,7 +115,7 @@ What the raised bit then changes is tabulated under [the per-battle flags byte](
 
 - The bare arm-encounter op (`0x37`/`0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded record window overlaying the opcode (`[opcode][op1][op2][count][≤4 ids]`).
 - The engine consumer (`World`) parses that window as an `EncounterRecord`, registers the formation, and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`); a successful install disarms (fire-once, matching the retail `entity[+0x94]` clear).
-- `scripted_encounter_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
+- `World::encounters.scripted_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
 
 ## Writer (record-pointer install)
 
@@ -1177,6 +1177,6 @@ rather than in a pack.
 ## Files referencing this format
 
 - [`crates/engine-vm`](../../crates/engine-vm/) - the field VM dispatcher port reads the operand and writes the actor pointer slot.
-- [`crates/engine-battle::encounter`](../../crates/engine-core/) - the runtime engine's `EncounterRecord` parser exposes `monster_count` / `monster_ids` from a candidate byte slice.
+- [`crates/engine-battle::encounter_record`](../../crates/engine-battle/src/encounter_record.rs) - the runtime engine's `EncounterRecord` parser exposes `count` / `monster_ids` from a candidate byte slice.
 - [`subsystems/world-map.md`](../subsystems/world-map.md) - world-map controller integration.
 - [`subsystems/script-vm.md`](../subsystems/script-vm.md) - the dispatcher op-handler family that installs the pointer.

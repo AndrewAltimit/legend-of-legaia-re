@@ -1867,9 +1867,12 @@ divisible by five. An acting element below `7` then dispatches through the
 seven-entry per-element jump table at `0x801CFA2C` instead of reaching the
 installer tail.
 
-Ported as `legaia_engine_vm::move_no_effect_guard`; inert, because
-`BattleActionHost` exposes no path from a battle slot to a character record's
-spell list and the `0x801F6960` / `0x801F6964` latch pair is not modelled.
+Ported as `legaia_engine_vm::move_no_effect_guard` and live: state `0x36`'s
+settle body calls it (`battle_action::summon`, the `jal 0x801f3c34` site at
+`0x801E4CB8`) with the caster's spell list from
+`BattleActionHost::caster_spell_list`, which `World` answers from the
+character record, and every player Seru cast writes the `0x801F6960` /
+`0x801F6964` latch pair it reads.
 
 ### AI-delegated (`0x380`) party members - what is and isn't pinned
 
@@ -2273,9 +2276,11 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
   an earlier revision quoted does not reproduce. So the **player** summon is
   drawn as an ordinary battle actor (per-object TRS keyframes), the faithful
   path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The
-  move-VM stager records still exist (and the engine drives them in
-  `summon::SummonScene` as a stand-in), but they aren't the player summon's
-  per-frame render path. SCOPE: the trace covers the **player** "Burning Attack"
+  move-VM stager records still exist, but they aren't the player summon's
+  per-frame render path: the engine seats every player summon's own body as a
+  battle creature with its keyframe clips (`engine-core::summon::summon_spawn_asset`,
+  on both hosts), and `summon::SummonScene` remains only for the move-FX and
+  cast-module effect paths. SCOPE: the trace covers the **player** "Burning Attack"
   only;
   the **enemy** Gimard *Fire Tail* boss move is a distinct path - see the Fire-Tail note below.
 
@@ -2284,7 +2289,7 @@ The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the
 - In a live Tail-Fire capture the summon library occupies `DAT_8007C018[3..32]`; ten of those (`[23..32]`) are fire-textured meshes (cba row 478 `0x778B` baked), and the **active Gimard flame is `DAT_8007C018[26]`** - the only rendered model baking etim, with both rendering actors carrying `actor[+0x64]=26` and `actor[+0x56]=5` (full-TMD mode → `FUN_8002735C`).
 - Each individual flame mesh is **static geometry**; the visible fire motion is the **spawned part-actors** moving (the 8 RNG-seeded parts above), **not** CLUT cycling - the entire CLUT band is byte-identical across two animation-distinct `battle_gimard_tail_fire_a/_b` frames while the framebuffer differs ~21% (this falsifies the earlier "fire flicker = CLUT/palette animation" reading).
 - The PROT 905 `LoadImage` (`FUN_800583C8`) CLUT uploads target VRAM row `481+` (the character/party-CLUT region), conditionally, not the flame's row 478.
-- **Residual:** the part records are now recovered (`legaia_asset::summon_overlay`) and driven as a stand-in; what's open is the faithful **player** render - the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`, ported) needs the summon's per-object keyframe source wired in place of the move-VM stand-in. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+- The part records are recovered (`legaia_asset::summon_overlay`). The **player** summon renders through the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`), with each summon's own body and clips seated by `summon_spawn_asset` on both hosts.
 
 ##### Enemy "Fire Tail" - move-VM part, not the widget path
 

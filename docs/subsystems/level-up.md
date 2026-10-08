@@ -319,7 +319,7 @@ save triplets at battle scene `map01`.
 | Noa | 1 | 102 → 336 (+234) | +32 | +6 | **+40** |
 | Gala | 2 | 140 → 394 (+254) | +44 | +8 | **0** |
 
-Codified in [`engine_core::levelup::observations`](../../crates/engine-battle/src/levelup.rs):
+Codified as `LevelUpObservation` associated functions ([`engine-battle::levelup`](../../crates/engine-battle/src/levelup/observation.rs), re-exported as `engine_core::levelup`):
 - `vahn_4_level_jump` (legacy historical fact - the source saves were rotated
   out of the active corpus when the Noa / Gala triplets shipped).
 - `noa_4_level_jump` (settled delta across Noa's 3-phase split).
@@ -408,9 +408,10 @@ After a battle win with `BattleEndCause::MonsterWipe`:
 
 1. The engine calls `World::apply_battle_xp(xp_reward)`.
 2. `apply_battle_xp` enumerates the surviving party members (slots whose
-   `BattleActor::hp > 0`) and divides `xp_reward` equally among them
-   (integer divide, remainder dropped on the floor). Dead members
-   receive zero XP.
+   `BattleActor::hp > 0`), scales the summed `xp_reward` by 3/4
+   (`v - (v >> 2)`) and **ceiling**-divides it among them
+   (`battle_formulas::victory_exp_per_member`, `FUN_8004E568`). Dead members
+   receive zero XP and leave the divisor.
 3. `apply_battle_xp` calls `LevelUpTracker::grant_xp(char_id, share)`
    for each surviving party member.
 4. `grant_xp` accumulates XP and checks the retail XP table for threshold
@@ -426,7 +427,7 @@ After a battle win with `BattleEndCause::MonsterWipe`:
    three fields the retail applier maintains and the Status menu draws.
 6. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed
    to `World::pending_battle_events`.
-7. `World::party.current_level_up_banner` is set to the last character who levelled up.
+7. The first character to level takes `World::party.current_level_up_banner`; any others queue behind it in `World::party.pending_level_up_banners`.
 
 ### Hydration on load
 

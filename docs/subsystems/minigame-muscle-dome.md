@@ -1812,7 +1812,7 @@ that cell, so the draw is the one Koru's fight makes.
 In the port a leg resolves its turn in one tick, so the round driver's
 action band has a stand-in: after `Resolve` the leg holds at `TurnOver`
 for the dome surface's replay of the turn's plays
-(`muscle_dome_scene::playback_ticks`, one play every `PLAY_CADENCE_TICKS`;
+(`muscle_dome_scene::turn_playback_ticks`, one play every `PLAY_CADENCE_TICKS`;
 `World::muscle_playback_frames`), and the turn top that follows stays
 automatic. The shared HUD kernels read that hold as an action frame
 (`battle_hud::battle_hud_phase`): the acting side's plaque holds the

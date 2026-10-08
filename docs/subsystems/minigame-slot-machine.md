@@ -528,7 +528,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 [`legaia_engine_minigames::slot_machine`](../../crates/engine-minigames/src/slot_machine.rs) is the from-scratch rules engine over this page. The **Confirmed** kernels are ported directly:
 
 - the slot LCG (`SlotRng`, `x*5+1` + 16-bit fold; `FUN_801d30cc`);
-- **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel` / `build_strip`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);
+- **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);
 - the **display strip** and its one-row-per-frame refill from the active source, `DISPLAY_REFRESH_LEAD` = 9 rows ahead of the payline (`SlotMachine::tick`; the `FUN_801cf0d8` render tail) - so the bonus round's numerals rotate in and out exactly as they do on the machine, with `BONUS_SPIN_UP_FRAMES` = `0x18` buying the travel on both edges;
 - the net-take-bracketed feature roll (`feature_roll`; `FUN_801d258c`, exact draw order + bracket edges);
 - the flat spin charge + net-take accrual (3/+6 normal, 1/+1 feature);

@@ -1080,8 +1080,9 @@ picks between them exactly as retail does, on the record's `+0` class byte:
 capture class `'c'` goes to the `+1` row, anything else to the action-id row.
 
 **The stage.** `World::spawn_cast_module_fx` seats the resolved module's
-records as a move-VM scene (`SummonScene`), which is the same stand-in the
-summon and move-FX paths run, so both hosts tick and draw them with no host
+records as a move-VM scene (`SummonScene`), the same stand-in the move-FX
+path runs (a player summon's body no longer goes through it - see
+[battle-action.md](battle-action.md)), so both hosts tick and draw them with no host
 change. It fires at the two seams retail uses: the capture band's pager
 (`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
 and the summon stager's first tick (`0x801E4B1C`).
@@ -1223,7 +1224,8 @@ state-touching stagers - are `legaia_engine_vm::cast_module_ticks`, one
 function per VA, and three sibling modules carry the rest of the band's code:
 `cast_arm_ticks` (the fourteen trampoline arms of PROT 0940..0962),
 `cast_seru_ticks_a` (PROT 0903..0908) and `cast_seru_ticks_b` (PROT
-0909..0913, plus PROT 0910's applier `swordie_slash`). Each function carries
+0909..0913, plus PROT 0910's applier `swordie_slash` and PROT 0919's Spoon
+kernels `spoon_cure_sweep` / `spoon_heal_amount`). Each function carries
 its routine's dispatch bound, its simulation-state writes, its damage step
 (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction
 stage, anim-rate write) and the phase advance.
