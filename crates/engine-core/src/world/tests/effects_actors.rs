@@ -417,3 +417,20 @@ fn op_4c_d4_d5_set_and_clear_the_mask_bit() {
     let got: Vec<u16> = (0..4).map(|i| vram.pixel(176 + i, 507)).collect();
     assert_eq!(got, [0, 0x0DA6, 0x8000, 0x1524]);
 }
+
+/// The move VM's pool top (`_DAT_8007C348`) is `0x8E` less the live actors,
+/// so an empty world answers "empty pool" - not the "all 142 allocated" the
+/// port used to return for every scene, which halted every ext `0x37` guard.
+#[test]
+fn actor_pool_top_counts_live_actors() {
+    let mut world = World::new();
+    assert_eq!(world.actor_pool_top(), 0x8E);
+    for _ in 0..3 {
+        world.actors.push(Actor {
+            active: true,
+            ..Default::default()
+        });
+    }
+    world.actors.push(Actor::default());
+    assert_eq!(world.actor_pool_top(), 0x8E - 3);
+}

@@ -305,7 +305,10 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.terrain.map_origin_xz
     }
     fn move_axis_threshold(&self) -> i16 {
-        self.world.move_vm.axis_threshold
+        self.world
+            .move_vm
+            .pool_top_override
+            .unwrap_or_else(|| self.world.actor_pool_top())
     }
     fn move_dat_1f800393(&self) -> u8 {
         self.world.move_vm.ramp_ratio

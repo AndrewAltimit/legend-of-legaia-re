@@ -13,6 +13,26 @@ const ACTION_FX_ART_SLOT: u8 = 0x11;
 const ACTION_FX_ART_CODE: u8 = 9;
 
 impl World {
+    /// The actor allocator's free-stack top `_DAT_8007C348` as the move VM's
+    /// ext sub-ops `0x36` / `0x37` read it: `0x8E` less the live actors.
+    ///
+    /// Retail allocates every field actor - placements, script actors, effect
+    /// parts - from one 143-entry pool, and the library states hold its top
+    /// between 14 and 135 (7 to 128 live). The port has no single pool, so the
+    /// count is the populations that stand for one: the active world actors,
+    /// the ambient effect parts and the script arcs / attached lights. What the
+    /// predicates need is the scale, not the exact figure - every shipped
+    /// `0x37` is a headroom guard at `0x80..=0x87` live, every `0x36` a
+    /// spin-wait until the count drops below `0x76..=0x78` - and before this
+    /// the port answered "pool full" for every scene, so all of them halted.
+    pub fn actor_pool_top(&self) -> i16 {
+        let live = self.actors.iter().filter(|a| a.active).count()
+            + self.ambient.fx.len()
+            + self.script_actors.arcs.len()
+            + self.script_actors.lights.len();
+        (0x8E - live.min(0x8E) as i32) as i16
+    }
+
     /// Per-actor move-VM tick - clean port of `FUN_80021DF4` (lines
     /// `80022B94..80022BBC`).
     ///
