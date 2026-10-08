@@ -73,14 +73,20 @@ pub const ELEMENT_COUNT: usize = 8;
 /// [`SUMMON_POWER_PCT_VA`] exactly, and it has the matrix's shape - one row per
 /// element, a neutral row and column - but far stronger values (a 50% same-
 /// element cut, 125% opposed pairs, a 40% cell) than the shipped `96 / 104`
-/// nudge. No instruction in any image forms an address in it: no word, `lui`
-/// pair or `jal` names one (`find-address-word-refs.py --range`), and every
-/// access to the matrix base (`FUN_801DD864` at `0x801DD938`, `FUN_801EC3E4`
-/// at `0x801ED144` / `0x801ED180` / `0x801ED46C` / `0x801ED4A8`) indexes
-/// `atk * 8 + def` with both elements read from the per-character table or a
-/// record's `+0x1D` byte, which on the disc never exceed `7` - so rows `8..16`
-/// of that index, which is what this block would be, are never formed. Dead
-/// data the link carried, most likely an earlier tuning of the matrix.
+/// nudge. No instruction in any image forms an address in it: over every
+/// PROT entry and `SCUS_942.54`, no word, `jal`, `j`, branch or `lui` pair
+/// names any of its sixteen words (`find-address-word-refs.py --range --prot`),
+/// and no `gp`-relative access, `lui` + load pair or materialised base plus
+/// displacement reaches any of its 64 bytes (`find-gp-relative-refs.py --va
+/// --prot`). Every access to the matrix base - the eight `lui` sites the scan
+/// finds, closing at `FUN_801DD864` `0x801DD938`, `FUN_801EC3E4` `0x801ED144` /
+/// `0x801ED180` / `0x801ED46C` / `0x801ED4A8`, and the Seru side-effect stager
+/// `FUN_801F3D3C` `0x801F3E50` - indexes `atk * 8 + def` with both elements
+/// read from the per-character table or a record's `+0x1D` byte, which on the
+/// disc never exceed `7` (monster records and summon cast records are both
+/// pinned by disc-gated tests) - so rows `8..16` of that index, which is what
+/// this block would be, are never formed. Dead data the link carried, most
+/// likely an earlier tuning of the matrix.
 ///
 /// It is not a regional variant either. The PAL (`SCES_019.45`) and Japanese
 /// (`SCPS_100.59`) battle overlays carry the same 64 bytes directly after the

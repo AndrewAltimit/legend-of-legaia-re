@@ -1055,6 +1055,40 @@ pub fn write_retail_present_party(sc_block: &mut [u8], members: &[u8]) -> Result
     Ok(())
 }
 
+/// Byte offset of the **play-time counter** (u32 LE), live RAM `0x80084570`
+/// (`0x200 + (0x80084570 - 0x80084340) = 0x430`).
+///
+/// The counter ticks [`RETAIL_PLAY_COUNTER_HZ`] times a second: the save
+/// screen's time line divides it by `216000` for hours (`(c >> 6) *
+/// 0x026D60DD`, high word `>> 5`) and by `3600` for total minutes (`c *
+/// 0x91A2B3C5`, high word `>> 11`), then clamps the display at `99:59`
+/// (menu overlay, `0x801DD5C8..0x801DD618`). The New Game slate zeroes it
+/// (`FUN_8001DCF8`, `sw zero` at `0x8001DD58`).
+pub const RETAIL_PLAY_COUNTER_OFFSET: usize = 0x430;
+
+/// Ticks per second of the play-time counter at [`RETAIL_PLAY_COUNTER_OFFSET`].
+pub const RETAIL_PLAY_COUNTER_HZ: u32 = 60;
+
+/// Read the play-time counter (u32 LE at [`RETAIL_PLAY_COUNTER_OFFSET`], in
+/// `1/60` s ticks) from a retail SC save block. `None` if the block is too
+/// small.
+pub fn read_retail_play_counter(sc_block: &[u8]) -> Option<u32> {
+    let b = sc_block.get(RETAIL_PLAY_COUNTER_OFFSET..RETAIL_PLAY_COUNTER_OFFSET + 4)?;
+    Some(u32::from_le_bytes(b.try_into().unwrap()))
+}
+
+/// Write the play-time counter in place, restamping the block checksum.
+/// `Err` if the block is too small.
+pub fn write_retail_play_counter(sc_block: &mut [u8], ticks: u32) -> Result<()> {
+    let end = RETAIL_PLAY_COUNTER_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the retail play counter (need >= {end})");
+    }
+    sc_block[RETAIL_PLAY_COUNTER_OFFSET..end].copy_from_slice(&ticks.to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
 /// Read the casino coin bank (u32 LE at [`RETAIL_COINS_OFFSET`]) from a
 /// retail SC save block. `None` if the block is too small.
 pub fn read_retail_coins(sc_block: &[u8]) -> Option<u32> {

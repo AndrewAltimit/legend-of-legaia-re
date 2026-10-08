@@ -27,6 +27,7 @@ cli = ["dep:clap", "dep:libc"]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 png.workspace = true
+legaia-xa.workspace = true
 
 [dev-dependencies]
 legaia-iso.workspace = true

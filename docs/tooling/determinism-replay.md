@@ -172,9 +172,11 @@ the scenario's field scene (run record 0, install the encounter table,
 arm the live loop) instead of sitting in `Title`. Phase 1 asserts the
 engine reaches `Field`, the replay `[[expected]]` Field rows hold, the
 retail mode-trace converges, and an SC round-trip on the post-Field world
-is byte-identical. The scripted-encounter Battle leg is deferred (see the
+is byte-identical. The Battle leg follows: a New Game cold boot reaches
+`SceneMode::Battle` for the opening Rim Elm training fight and converges on
+the retail anchors that bracket the transition (the derivation is the
 "Scripted Tetsu encounter → Battle" row in
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+[`re-settled-threads.md`](../reference/re-settled-threads.md#scripted-tetsu-encounter--battle-v01-oracle-battle-leg)).
 
 ## Critical-path replay: the game-denominated sibling
 

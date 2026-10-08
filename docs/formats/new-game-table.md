@@ -37,6 +37,14 @@ At a true New Game only Vahn has joined; the other rows are the templates the
 game uses as each character is introduced. Tetsu's tutorial-fight dialogue
 string (`"I will show you how to fight…"`) sits immediately after the table.
 
+The seed loop fills all four live records, so a member who joins later (field
+op `0x3C`, party add) already has a level-1 record. The engine's New Game
+roster is Vahn alone and keeps the template (`DiscTables::starting_party`);
+`World::set_active_party` seeds every slot up to the highest one a party list
+names from it when the roster lacks that record. Without it a joined member
+fought at 0 / 0 HP while counted alive, so the battle never saw the party
+wiped.
+
 ### Decoded values
 
 | Slot | Name | HP | MP | AGL | ATK | uDEF | lDEF | SPD | INT |

@@ -51,11 +51,15 @@ The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
 
 | `_DAT_8007B450` | Sub-screen ID (`DAT_801E46A4`) | Meaning |
 |---|---|---|
-| `(char*)1` sentinel | `0x2` | Save (from menu entry) |
+| `(char*)1` sentinel | `0x2` | The developer parameter editor |
+| pointer null | `0x1` | The root command picker |
 | `*ptr == '\x01'` | `0x19` | Save from a field script's save point |
-| `*ptr == '\x07'` | `0x20` | Auto-save path |
-| `*ptr == '\r'` | `0x4` | Post-save return |
-| `*ptr == '\x00'` | `0x1a` | Cancel / back |
+| `*ptr == '\x07'` | `0x20` | The casino prize-exchange confirm |
+| `*ptr == '\r'` | `0x4` | The notice panel |
+| `*ptr == '\x00'` | `0x1a` | The shop's mode select |
+
+`*ptr` is the record's kind byte, so this picks a screen family, not a save
+mode - see [the full decode](#the-entry-context-decode-picks-the-screen-family) below.
 
 Input is suppressed while `_DAT_8007B440 > 0x79` (mid-fade), and state 1 hands
 over to dispatch one level lower, at `< 0x79` - two distinct constants, not one.
@@ -348,9 +352,10 @@ Two shapes recur across the sub-screens and the port keeps them explicit:
   on the default row, so the exit is the fallthrough rather than the
   choice.
 
-`SaveSubScreen` covers the whole id space, with `Unpinned(id)` for slots this
-module carries no step machine for, so a transition into one is expressible
-and round-trips. Ticking an unpinned screen parks rather than guessing. The
+`SaveSubScreen` covers the whole id space - named screens, `FrameFlushTick`,
+and `Routed(id)` for screens another module ports ([below](#how-the-port-splits-the-same-33-ids)) -
+so a transition into any slot is expressible and round-trips; `Unpinned(id)`
+is left only for a byte past the end of the table. The
 card drivers `0x18` / `0x19` share one implementation parameterised by
 `CardOp`, which is what the decompile shows: identical four-step machines
 differing only in the op selector. Every slot's **handler** is pinned
@@ -381,13 +386,14 @@ place: the **card op**.
   finishing; the flow answers the first with "the I/O machine has published
   nothing yet" and the second with "it published success", so the graph's move
   to the root command picker `0x01` is caused by the backend, not by a frame counter.
-- The outer fade runs, and the flow deliberately does **not** gate the pad on
-  it. Retail suppresses input while the fade is above `FADE_INPUT_THRESHOLD`,
-  and by the time a player is choosing a card port that fade is long finished -
-  the save UI faded in when the menu row opened it. The port's session starts
-  *at* the pill row and the flow is constructed with it, so applying the gate
-  there swallows the port confirm rather than the press that opened the screen.
-  The level is exposed (`SaveScreenFlow::retail_fade`) for a host that wants to
+- The outer fade runs, and the flow gates **one** edge on it: the block-grid
+  confirm into the write (`fade_gates_write`). Retail suppresses the whole pad
+  while the fade is above `FADE_INPUT_THRESHOLD`, and by the time a player is
+  choosing a card port that fade is long finished - the save UI faded in when
+  the menu row opened it. The port's session starts *at* the pill row and the
+  flow is constructed with it, so a blanket gate would swallow the port
+  confirm rather than the press that opened the screen; the grid-to-write edge
+  is the one where the port's fade and retail's agree. The level is exposed (`SaveScreenFlow::retail_fade`) for a host that wants to
   draw or gate on it; the rate is the port's, since retail's machine takes it
   from its caller too.
 - A confirm of either direction is refused until the I/O machine publishes
@@ -423,18 +429,18 @@ the developer parameter editor. Port
 `SaveEntryContext::{DebugParamEditor, ScriptSave, CasinoPrizeCounter, PostSave,
 ShopEntry}`.
 
-### Which ids the port still leaves `Unpinned`
+### The ids without a step machine here
 
-The port names fourteen of the 33 ids and leaves nineteen as `Unpinned`
+The port steps fourteen of the 33 ids in this module. Of the other nineteen
 (`0x05`, `0x06`, `0x07`, `0x09`, `0x0A`, `0x0C`, `0x0D`, `0x0E`, `0x0F`,
 `0x10`, `0x11`, `0x13`, `0x14`, `0x15`, `0x16`, `0x1B`, `0x1C`, `0x1D`,
-`0x1F`). That is a statement about the **step machine**, not about the
-screen: [the pointer table above](#sub-screen-function-pointer-table)
-describes every one of them, and most already have a port of their own
-elsewhere (`pause_screens`, `spell_menu`, `equip_session`, `shop`) reached
-from a host rather than from `SaveScreenMachine`. What `Unpinned` means here
-is only that this module carries no step machine for the id, so ticking it
-parks.
+`0x1F`), `0x16` is the bare `FrameFlushTick` and the other eighteen are
+`Routed(id)`: [the pointer table above](#sub-screen-function-pointer-table)
+describes every one, and each has a live port elsewhere (`pause_screens`,
+`spell_menu`, `equip_session`, `shop`) reached from a host. Dispatching a
+routed id emits `SubScreenEffect::Route`, so the host is handed the module
+rather than the flow parking - see
+[How the port splits the same 33 ids](#how-the-port-splits-the-same-33-ids).
 
 The table's extent is exact: 33 word entries, ids `0x00..=0x20`. Slot `0x21`
 reads `0` and Shift-JIS string data starts immediately after it, so nothing
@@ -1012,8 +1018,9 @@ and `-00` in block 2. That number is what
 class array by, and what the block's own title digits spell.
 
 Retail never has to reconcile the two spaces, because it writes the number
-it is already standing on. A host that addresses a **block** does, and the
-browser card rack is one: `LegaiaRuntime::card_save_index` takes the
+it is already standing on. A host that addresses a **block** does, and both
+hosts' card racks are (the browser's own cards, and the native window's
+`--card` image): `engine-core::card_write::card_save_index` takes the
 block's existing number when the block is claimed - an overwrite does not
 re-claim the directory frame, so a derived number would leave the title
 digits and the filename disagreeing - and otherwise picks a number no file
@@ -1078,8 +1085,8 @@ party wipe - reaches on either host.
 Continue's enablement is a port guard with no retail counterpart (retail
 always lets the row be picked and lets the save screen say "No data"). Both
 hosts open every title - cold boot, a return from Options or a backed-out
-Continue, the post-wipe title - through `TitleSession::for_front_end` with a
-fresh scan of their rack, so the row is live exactly when some port holds a
+Continue, the post-wipe title - through `TitleSession::for_front_end_at` with a
+fresh scan of their rack (and the row the last title held), so the row is live exactly when some port holds a
 save.
 
 ### What a card load restores
@@ -1119,6 +1126,12 @@ a lift that reads only the records, the flags page and the bag loses them:
   (`SceneHost::arm_resume_seat`, from both hosts' resume closures) and never
   for a fallback landing. A `(0, 0)` snapshot - a window no mode change has
   written - reads as no position and the entry takes the scene's own seat.
+  Nothing moves the party off the armed seat afterwards: the browser page's
+  free-roam seat heuristic (it relocates a picker entry whose spawn it judges
+  off the map) sits out a resume entry, as retail and the native window have
+  none. The `cross_host` test in `web-viewer/src/cards.rs` pins it over the
+  library cards, together with byte-identical blocks from both hosts' Save
+  and each host loading the other's block to the same world.
 - **The audio levels.** The configured level `0x8008457C` (SC `+0x43C`, cold
   reset `0xD7`) and the voice / SFX volume `0x80084580` (`+0x440`, cold reset
   `200`). The copy restores both; the next MAN load then rests the live level
@@ -1245,7 +1258,22 @@ composer's write order - records, then flags, then inventory - is what
 reclaims it. `engine-core/tests/save_block_checksum.rs` pins the composer's
 region list, so extending *it* fails there rather than in a garbled info
 panel; the resume and engine-ext writers are siblings precisely so that list
-stays the list of regions retail reads.
+stays the list of regions retail reads. The play clock below is one of those
+regions: retail reads it back with the rest of the window.
+
+### The play clock
+
+The play-time counter is the live-state word `0x80084570` (SC `0x430`), a u32
+that ticks 60 times a second. The save screen's time line reads it there and
+divides it by `216000` for hours and `3600` for total minutes, clamping the
+display at `99:59` (`0x801DD5C8..0x801DD618` in the menu overlay); the New
+Game slate zeroes it (`FUN_8001DCF8`, `0x8001DD58`). The engine keeps the clock
+in whole seconds (`SaveExtV2::play_time_seconds`):
+`SaveFile::from_retail_sc_block` lifts `counter / 60` from a retail block and
+`write_into_retail_sc_block` writes `seconds * 60` back, so a retail save
+loads with its own play time and a block an engine host writes prints its
+time on retail's save screen. An engine-authored block's `LGXE` tail carries
+the same seconds and wins on the lift.
 
 ### The engine-ext blob in the unread tail
 
@@ -1287,13 +1315,14 @@ Retail composes it in `FUN_801E1934`: `SAVE_HEADER_MAGIC` is the four bytes
 `SAVE_TITLE_DIGIT_BASE` so the BIOS browser renders full-width numerals (slot
 `0` shows as `01`). Both are ported, in `engine-core::card_flow`.
 
-The engine's composer stamps only the two-byte `SC`. A save it writes into a
-previously-free card block therefore has a correct payload and checksum behind
-a header the BIOS reads as junk - visible on a real console, invisible to this
-engine, which reads the payload directly. That is a gap in the composer, not
-in the ported rule; `card_flow`'s own note keeps the two apart, because "no
-host owns a `CardIoMachine`" is a fact about the state machines' entry point
-and says nothing about whether the composition rule is live.
+The engine's card writer applies the whole rule:
+`engine-core::card_write::write_save_into_card` writes the payload, the
+engine extension and the resume point, then `card::write_retail_block_identity`
+stamps the full header - magic, the biased title digits and the slot's
+portrait icon - and re-stamps the checksum, so a block the engine writes into
+a previously-free slot reads correctly in the BIOS browser too. (`card_flow`'s
+own source note that "no host owns a `CardIoMachine`" predates the save
+screen: `SaveScreenFlow` ticks one every frame.)
 
 ## Story-flag persistence vs. scratchpad word
 

@@ -268,11 +268,15 @@ pub trait MoveHost {
         0
     }
 
-    /// Read `_DAT_8007C348` - the axis offset used by ext sub-ops 0x36 / 0x37
-    /// for the `0x8E - axis` threshold predicate. Default returns 0 (so the
-    /// threshold collapses to `op[2] < 0x8E` / `op[2] > 0x8E`).
+    /// Read `_DAT_8007C348` - the actor allocator's free-stack **top index**
+    /// (`0x8E` with no actor allocated), so `0x8E - top` is the number of live
+    /// actors. Ext sub-ops 0x36 / 0x37 compare `op[2]` against that count
+    /// (`0x801D4744` / `0x801D4764`): every shipped `0x37` is a pool-headroom
+    /// guard that skips its program's `HALT` while fewer than `op[2]`
+    /// (`0x80..=0x87`) actors are live. Default returns `0x8E`, an empty pool;
+    /// a host that models its actor population overrides.
     fn move_axis_threshold(&self) -> i16 {
-        0
+        0x8E
     }
 
     /// Read a u16 from the actor's move-bytecode buffer at the given absolute

@@ -793,17 +793,17 @@ frames the tempo itself moved.
 
 The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` reads as tenths
 of a tick per frame with `divisor` the frame rate, which would make `+0x54` a
-fixed-point ×10 quantity. `0x801CD2BC` itself has still not been read from a
-live capture, so the port takes the divisor as a parameter and bakes no `60` in.
-The **×10 half of that reading is no longer an inference**, though: the varint
+fixed-point ×10 quantity. `0x801CD2BC` reads `60` in every catalogued save
+state (`capture`), so the reading holds: the budget is tenths of a tick per
+vsync (`seq_calc::RETAIL_TICK_DIVISOR`). The **×10 half of that reading is no longer an inference**, though: the varint
 delta-time reader `FUN_80061C68` multiplies every decoded delta by `10` before
 returning it and before accumulating it into `+0x88`, so the pump's
 `+0x90 >= +0x54` comparison is tenths against tenths on both sides. Two
 independent routines agreeing on a scale is a measurement; one formula's shape
-was not. The remaining risk is the divisor alone - and it matters, because the
-engine `Sequencer` clocks in exact integer SPU samples, so a wrong constant here
-is an audible tempo error that stays perfectly self-consistent under any test
-written against the same wrong constant.
+was not. The divisor matters because the engine `Sequencer` clocks in integer
+SPU samples: it spaces events at the rate this budget implies, not at the
+written tempo - see
+[the tempo a track actually plays at](#the-tempo-a-track-actually-plays-at).
 
 ### The decoder does not consume a whole event
 
@@ -990,7 +990,7 @@ the disassembly of each dump named below.
 | `FUN_80061540` | `+0x19`, `+0x1E` | Same shape for the sibling state byte `+0x19`. |
 | `FUN_800615B0` | `+0x18`, `+0x19` | Clears both of the above, then `FUN_8006558C` / `FUN_80065B88`. |
 | `FUN_8006166C` | `+0x00` | Cursor-only skip; forwards to `FUN_80067C1C`. |
-| `FUN_80061954` | `+0x00`, `+0x52`, `+0x54`, `+0x94` | The widest leaf: writes the channel volume pair `+0x52/+0x54` and the secondary cursor `+0x94`. |
+| `FUN_80061954` | `+0x00`, `+0x52`, `+0x54`, `+0x94` | The tempo meta: `+0x94` = the integer BPM, `+0x54` = the per-vsync tick budget and `+0x52` = the sub-frame divider ([below](#the-tempo-a-track-actually-plays-at)) - not a volume pair or a cursor. |
 | `FUN_80061B24` | - | The one member that does **not** end in `FUN_80061C68`: it calls `FUN_80066308` (note-trigger dispatch) and `FUN_8006688C` directly. |
 | `FUN_80061BF8` | - | Minimal leaf - decode the varint, store the cursor, return. |
 
@@ -1254,6 +1254,35 @@ sequencer tracks `(channel, key) → voice` so the matching key-off can
 shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
 `0xFF 0x51`).
+
+### The tempo a track actually plays at
+
+Retail does not clock a track in samples. A tempo set - the SEQ open
+`FUN_80062410` (`0x8006265C..0x80062738`) and the tempo meta `FUN_80061954`
+(`0x800619D4..0x80061AF4`), which share one tail - stores the integer
+`60000000 / us_per_qn` as the BPM and installs a budget of tenths of a tick
+per call, `resolution * bpm * 10 / (divisor * 60)` **rounded to nearest**
+(the remainder is compared against `(divisor * 15) << 1`; a half rounds down).
+The pump spends that budget once per `SsSeqCalc` and carries the overshoot,
+so the rate is exact in the budget and only the rounding is lost. The
+divisor `0x801CD2BC` reads `60` in every catalogued save state - the libsnd
+per-vsync tick mode. (The tempo *slide* `FUN_800649B0` recomputes the same
+budget with a floor rather than a rounding; no shipped track reaches it
+through the engine.)
+
+So a track runs at `budget * 6` ticks a second, not at its written tempo.
+Over the disc's `music_01` scores the two differ by `0.44 %` on average
+(tempos weighted by occurrence); `120` BPM and every tempo whose budget divides
+evenly are exact, `80` BPM plays at `80.25`, and the slow tempos the scores
+end on drift furthest - `24.83` BPM truncates to `24` and plays `3.4 %` slow.
+`Sequencer` plays the retail rate by default
+(`seq_calc::retail_effective_us_per_qn`); `Sequencer::set_exact_tempo(true)`
+plays the score as written. The port's frame is a flat 60 Hz, which is the
+rate the budget is spent at here; the console's own vsync is a little under
+that. One difference is kept on purpose: retail fires an event at the first
+`SsSeqCalc` after it falls due, so every onset lands on a vsync (up to a frame
+late, and unevenly so wherever the budget is not a whole number of ticks); the
+`Sequencer` fires it on its own sample. The rate matches, the jitter does not.
 
 **Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
 sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
@@ -2165,7 +2194,8 @@ is `compare_voice_allocation` over the window that scores highest, and
 
 On the track-`2016` pairing the alignment is unambiguous and it is nowhere
 near frame 0: the retail window from `s3_rimelm_freeroam` lands at engine
-frame `3111` of a 3601-frame trace, and both scores - symmetric and
+frame `3103` of a 3601-frame trace (with the sequencer on retail's
+quantised tempo; `3111` at the written one), and both scores - symmetric and
 intersection-only - peak there. What the aligned windows then show is
 agreement in every channel that is a property of the score:
 
@@ -2229,8 +2259,8 @@ aligned window the two sides' rates agree.
 
 The alignment is not optional for this statistic either. Against the
 250-frame `s3_rimelm_freeroam` window, an engine trace of `3601` frames aligns
-at engine frame `3111` and reads `0.560` key-ons per frame against retail's
-`0.488` (ratio `1.148`); the 120-frame window aligns at `3112` and reads
+at engine frame `3103` and reads `0.560` key-ons per frame against retail's
+`0.488` (ratio `1.148`); the 120-frame window aligns there too and reads
 `0.592` against `0.558` (ratio `1.060`). An engine trace only as long as the
 retail window has nowhere to slide - the best offset is frame `1`, the track's
 opening bars - and the same pairing then reads `0.244` against `0.488`, a

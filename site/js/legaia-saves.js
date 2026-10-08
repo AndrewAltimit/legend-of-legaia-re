@@ -369,14 +369,8 @@
     return base + '.' + ext;
   }
 
-  function triggerDownload(bytes, filename) {
-    var url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
-  }
+  /* shared helper: site/js/site-util.js */
+  var triggerDownload = window.LegaiaUtil.downloadFile;
 
   function sessionRow(meta, opts, containerEl) {
     var row = el('div', 'lg-saves-row');
@@ -498,14 +492,8 @@
   var RICH_CHIP_COLORS = ['#7798d4', '#df74a6', '#2dcca7', '#d8b34b'];
   var portraitCanvasCache = null;   /* [canvas x3] | null (in-memory) */
 
-  function rgbaCanvas(bytes, w, h) {
-    if (!bytes || bytes.length !== w * h * 4) return null;
-    var c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    c.getContext('2d').putImageData(
-      new ImageData(new Uint8ClampedArray(bytes), w, h), 0, 0);
-    return c;
-  }
+  /* shared helper: site/js/site-util.js */
+  var rgbaCanvas = window.LegaiaUtil.rgbaCanvas;
 
   /* The three party portraits as 16x16 canvases, from the in-memory cache or
    * localStorage; null until a disc has been harvested at least once. */

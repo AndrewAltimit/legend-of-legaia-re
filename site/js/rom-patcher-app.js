@@ -136,18 +136,8 @@ async function resolveLangPack(langSel, customFile) {
   return fetchShippedPack(v);
 }
 
-function triggerDownload(bytes, filename) {
-  const blob = new Blob([bytes], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoke a tick later so the download has started.
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
+/* shared helper: site/js/site-util.js */
+const triggerDownload = window.LegaiaUtil.downloadFile;
 
 function patchedName(original, seed) {
   const base = (original || 'disc.bin').replace(/\.bin$/i, '');

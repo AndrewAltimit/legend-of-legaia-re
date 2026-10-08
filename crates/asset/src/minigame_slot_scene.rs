@@ -131,6 +131,64 @@ pub const PAYLINE_ROW_OFFSETS: [[i32; 3]; PAYLINE_COUNT] =
 pub const PAYLINE_CENTRE_ROW_BIAS: i32 = 0x10;
 
 // ---------------------------------------------------------------------------
+// Landing-line table (FUN_801d2440)
+// ---------------------------------------------------------------------------
+
+/// `DAT_801d3630` - which payline a forced stop lands its target on: five rows
+/// of four `u32` (three reels plus an unread fourth word), selected by the
+/// per-spin `rand % 5` at `DAT_801d4134` (`FUN_801d258c`, `0x801D25A0..
+/// 0x801D25D0`). `FUN_801d2440` reads `table[jitter * 16 + reel * 4]`
+/// (`0x801D2444..0x801D2464`) and, on a hit at raw strip row `R`, returns the
+/// stop position `(R + 3 + word) % 20` (`0x801D24F4..0x801D2520`). The display
+/// reads the payline centre at `stop + 0x10`, so the target lands at centre
+/// offset `-(19 + word) mod 20` - word `0` puts it on the top row, `21` on the
+/// middle, `22` on the bottom ([`landing_offset_for_word`]).
+pub const LANDING_LINE_TABLE_OFFSET: usize = 0x4E18;
+/// Rows of the landing-line table: the `rand % 5` domain.
+pub const LANDING_LINE_ROWS: usize = 5;
+/// Byte stride of one landing-line row (`sll v0,v0,0x4` at `0x801D2458`).
+pub const LANDING_LINE_STRIDE: usize = 16;
+
+/// The payline ([`PAYLINE_ROW_OFFSETS`] index) each landing-line row puts a
+/// forced target on, decoded from the retail table: rows 0..2 are the three
+/// horizontal lines and rows 3 / 4 the two diagonals (line 4, then line 3).
+/// Pinned against the disc by `slot_landing_lines_match_the_retail_table`.
+pub const LANDING_LINE_BY_JITTER: [usize; LANDING_LINE_ROWS] = [0, 1, 2, 4, 3];
+
+/// The centre-row offset a landing-line word places the target at.
+pub fn landing_offset_for_word(word: u32) -> i32 {
+    let off = (-(19 + word as i64)).rem_euclid(20) as i32;
+    if off > 10 { off - 20 } else { off }
+}
+
+/// Decode the landing-line table into payline indices, one per jitter value,
+/// or `None` when a row's three offsets are not one of the five paylines.
+pub fn parse_landing_lines(overlay: &[u8]) -> Option<[usize; LANDING_LINE_ROWS]> {
+    let mut out = [0usize; LANDING_LINE_ROWS];
+    for (row, slot) in out.iter_mut().enumerate() {
+        let base = LANDING_LINE_TABLE_OFFSET + row * LANDING_LINE_STRIDE;
+        let mut offs = [0i32; 3];
+        for (reel, o) in offs.iter_mut().enumerate() {
+            let at = base + reel * 4;
+            let w = u32::from_le_bytes(overlay.get(at..at + 4)?.try_into().ok()?);
+            *o = landing_offset_for_word(w);
+        }
+        *slot = PAYLINE_ROW_OFFSETS.iter().position(|l| *l == offs)?;
+    }
+    Some(out)
+}
+
+/// `0x801d35a8` - seven sixteen-byte NUL-padded developer labels for the
+/// machine's feature states (flag and big-game names) between the payout table
+/// and the landing-line table. No instruction in any image forms an address in
+/// them, in any of the forms the two address scans cover; they are dead data.
+pub const DEV_LABELS_OFFSET: usize = 0x4D90;
+/// Labels in the dead developer-label run.
+pub const DEV_LABEL_COUNT: usize = 7;
+/// Byte stride of one developer label.
+pub const DEV_LABEL_STRIDE: usize = 16;
+
+// ---------------------------------------------------------------------------
 // Reel cylinder (FUN_801d0fa8)
 // ---------------------------------------------------------------------------
 

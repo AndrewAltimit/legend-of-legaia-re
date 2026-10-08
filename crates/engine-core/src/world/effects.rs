@@ -1762,8 +1762,18 @@ impl World {
     /// in order. Both hosts call it once per battle frame; returns `true`
     /// when any texel moved (the host re-uploads).
     pub fn apply_battle_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let loads = std::mem::take(&mut self.battle.vram_loads);
+        let loaded = !loads.is_empty();
+        loads.replay(vram);
         let moves = std::mem::take(&mut self.battle.vram_moves);
-        apply_vram_moves(moves, vram)
+        apply_vram_moves(moves, vram) || loaded
+    }
+
+    /// Drop this frame's queued battle VRAM edits unapplied - the hosts'
+    /// path when no battle VRAM is resident to apply them to.
+    pub fn discard_battle_vram_edits(&mut self) {
+        self.battle.vram_moves.clear();
+        self.battle.vram_loads = Default::default();
     }
 }
 

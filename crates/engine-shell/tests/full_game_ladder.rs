@@ -1727,6 +1727,24 @@ fn wants_evil_magic_guard(w: &legaia_engine_core::world::World, actor: u8) -> bo
 
 /// Whether the foes' last round took half or more of the HP the party
 /// still holds: healing cannot keep pace with that, and fleeing can.
+/// Whether the hand has fled this fight twice and is still in it, against
+/// foes whose combined max HP the party's own outweighs by no more than four
+/// to one - a fight it can win by fighting. Every finished round of a fled
+/// fight is a failed run, since a run that lands ends the battle.
+fn runs_failing(w: &legaia_engine_core::world::World) -> bool {
+    let rounds = ROUND_HISTORY.with(|h| h.borrow().len());
+    if rounds < 3 {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let ours: u32 = (0..n).map(|i| u32::from(w.actors[i].battle.max_hp)).sum();
+    let theirs: u32 = (n..w.actors.len())
+        .filter(|&i| w.actors[i].battle.hp > 0)
+        .map(|i| u32::from(w.actors[i].battle.max_hp))
+        .sum();
+    theirs <= ours * 4
+}
+
 fn losing_race(w: &legaia_engine_core::world::World) -> bool {
     let last = ROUND_HISTORY.with(|h| h.borrow().last().copied().unwrap_or(0));
     last > 0 && last * 2 >= party_hp_key(w)
@@ -2692,10 +2710,16 @@ fn fight_pad(session: &BootSession) -> u16 {
             // healing is a turn under another such round, and the run is
             // the better draw (`vozz`'s three-monster F4 after a caught Run:
             // a Healing Leaf a round into ~250 a round, two members down).
+            // Two runs that failed (two finished rounds of a fight the hand
+            // only ever fled) and nothing to heal with make running a third
+            // time the worse draw against foes the party can beat: a lone
+            // chapter-1 Vahn on `map01` fled a pair of 99 HP monsters six
+            // rounds running and fell at the last.
             CommandPhase::RoundPrompt { .. }
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
                     && !w.battle.no_escape
-                    && (!heal() || losing_race(w)) =>
+                    && (!heal() || losing_race(w))
+                    && !runs_failing(w) =>
             {
                 PadButton::Right.mask()
             }
@@ -6975,6 +6999,10 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
     }
     let items_row = FieldMenuRow::Items.index();
     let mut used = 0usize;
+    // The use count when the Items screen was last entered: a use's result
+    // closes the screen back to the root menu, so a party still below the
+    // threshold re-enters it - but only after a visit that used something.
+    let mut used_at_entry: Option<usize> = None;
     for _ in 0..200 {
         let Some(menu) = session.field_menu.as_ref() else {
             break;
@@ -6984,14 +7012,14 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
                 legaia_engine_core::field_menu::FieldMenuPhase::Browsing { cursor } => {
                     if party_hp_permille(session) >= threshold
                         || used >= 4
+                        || used_at_entry.is_some_and(|u| u == used)
                         || used > 0 && cursor != items_row
                     {
                         PadButton::Circle.mask()
                     } else if cursor != items_row {
                         PadButton::Down.mask()
-                    } else if used > 0 {
-                        PadButton::Circle.mask()
                     } else {
+                        used_at_entry = Some(used);
                         PadButton::Cross.mask()
                     }
                 }
@@ -9674,10 +9702,14 @@ fn run_segment(
     // is played again from the same seed with that guard equipped: the
     // player's reload after a game over, preparing for the fight that ended
     // the last attempt (see "A boss the anchor's party cannot outlast" in
-    // the ladder docs).
+    // the ladder docs). A wipe after that - a boss with the guard on, or a
+    // fight with no element to guard - is reloaded again with a fresh hand of
+    // the rand stream, up to `PAD_WIPE_ATTEMPTS` attempts in all.
     if with_pad && rep.tier >= Tier::Progresses {
         let mut prepare: Option<u8> = None;
+        let mut attempt = 0u32;
         loop {
+            attempt += 1;
             LOST_TO_ELEMENT.with(|l| l.set(None));
             let padded = catch_unwind(AssertUnwindSafe(|| {
                 let mut session = open_session(&inp.extracted);
@@ -9696,6 +9728,15 @@ fn run_segment(
                         .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
                 }) {
                     session.host.world.rng_state = s;
+                }
+                // A reload other than the guard retry plays another hand:
+                // the rand stream advances with the time a player spends on
+                // the game-over screen and the card menu, which the reseat
+                // does not replay. (The guard retry keeps the stream, so it
+                // measures the guard alone.)
+                if attempt > 1 && !(attempt == 2 && prepare.is_some()) {
+                    let w = &mut session.host.world;
+                    w.rng_state = w.rng_state.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
                 }
                 if let Some(element) = prepare {
                     let n = pad_equip_guard(&mut session, element);
@@ -9724,8 +9765,8 @@ fn run_segment(
                 }
                 r
             }));
-            let retry =
-                prepare.is_none() && matches!(&padded, Ok(Err(e)) if e.contains("party wiped"));
+            let wiped = matches!(&padded, Ok(Err(e)) if e.contains("party wiped"));
+            let retry = prepare.is_none() && wiped;
             match padded {
                 Ok(Ok(())) => {
                     rep.tier = Tier::Pad;
@@ -9733,7 +9774,10 @@ fn run_segment(
                 }
                 Ok(Err(e)) => {
                     rep.stall = Some(match prepare {
-                        Some(el) => format!("pad (retried with element-{el} guards): {e}"),
+                        Some(el) => {
+                            format!("pad (attempt {attempt}, element-{el} guards): {e}")
+                        }
+                        None if attempt > 1 => format!("pad (attempt {attempt}): {e}"),
                         None => format!("pad: {e}"),
                     })
                 }
@@ -9741,6 +9785,7 @@ fn run_segment(
             }
             match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
                 Some(el) if retry => prepare = Some(el),
+                _ if wiped && attempt < PAD_WIPE_ATTEMPTS => {}
                 _ => break,
             }
         }
@@ -9751,6 +9796,13 @@ fn run_segment(
 // ---------------------------------------------------------------------------
 // Baseline
 // ---------------------------------------------------------------------------
+
+/// Attempts a pad segment gets at a fight that wipes the party, the guard
+/// retry included: a player reloads after a game over, and a fight the
+/// anchor's party wins about half the time (`noaru`'s Songi at the `PRO-04`
+/// party's level, whose armed party-wide cast lands every round below half
+/// HP) should not decide the segment on one hand of the rand stream.
+const PAD_WIPE_ATTEMPTS: u32 = 6;
 
 fn baseline_path() -> PathBuf {
     repo_root().join("scripts/replays/full_game_baseline.toml")

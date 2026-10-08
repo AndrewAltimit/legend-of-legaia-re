@@ -19,10 +19,12 @@
 //! * every slot-B cast / summon image's spawn records, `0903..=0966`.
 //!
 //! The test prints the operand histogram, asserts that the walk decoded op
-//! `0x15` at all (so a zero is a real zero), and asserts that no word keeps
-//! the yaw factor: `docs/tooling/reach-triage.md`'s verdict on `8004629c`
-//! rests on that zero, and a carrier appearing would turn the row from
-//! content-gated into a ladder that is owed.
+//! `0x15` at all (so a zero is a real zero), and pins the one word that keeps
+//! the yaw factor: `urudre1` stager record 14 writes `0x0080` on the taken
+//! side of an ext `0x37` pool-headroom branch, which jumps the `HALT` the
+//! fall-through ends on. A static walk that stopped at the first `HALT` never
+//! saw it, which is how `docs/tooling/reach-triage.md` came to call
+//! `8004629c` content-gated; any further carrier fails here.
 //!
 //! Not walked: the effect bundle's scripts and the scene bundles' type-`0x05`
 //! MOVE payloads, whose program starts this census has no parser for.
@@ -154,9 +156,10 @@ fn census_move_op_15_control_words() {
         !hist.is_empty(),
         "the walk decoded no op 0x15 at all - the census would be vacuous"
     );
-    assert!(
-        keep_yaw.is_empty(),
-        "a shipped program keeps the camera yaw factor on a camera-relative node: \
-         FUN_8004629C has a carrier and reach-triage's 8004629c row is owed a ladder"
+    assert_eq!(
+        keep_yaw,
+        vec!["urudre1 stager record 14: 0x0080".to_string()],
+        "the yaw-keeping carriers changed: reach-triage's 8004629c row names exactly \
+         urudre1 stager record 14"
     );
 }

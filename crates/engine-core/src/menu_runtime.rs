@@ -1791,32 +1791,20 @@ impl MenuRuntimeHost<'_> {
             if can {
                 let cost = self.inn_session.as_ref().unwrap().cost as i32;
                 self.world.party.money -= cost;
-                // Restore HP/MP for all active party members.
+                // Restore HP/MP for every present-party member: on the
+                // record, which is the pool outside a fight, then projected
+                // onto the member's actor mirror as every field heal does.
                 let party_count = self.world.party.party_count as usize;
-                for i in 0..party_count {
-                    let max_hp = self
-                        .world
-                        .actors
-                        .get(i)
-                        .map(|a| a.battle.max_hp)
-                        .unwrap_or(0);
-                    let mp_max = self
-                        .world
-                        .party
-                        .roster
-                        .members
-                        .get(i)
-                        .map(|r| r.hp_mp_sp().mp_max)
-                        .unwrap_or(0);
-                    if let Some(actor) = self.world.actors.get_mut(i)
-                        && actor.active
-                    {
-                        actor.battle.hp = max_hp;
-                        actor.battle.mp = mp_max;
+                for member in 0..party_count {
+                    let rslot = self.world.party_roster_slot(member);
+                    if let Some(rec) = self.world.party.roster.members.get_mut(rslot) {
+                        let mut hms = rec.hp_mp_sp();
+                        hms.hp_cur = hms.hp_max;
+                        hms.mp_cur = hms.mp_max;
+                        rec.set_hp_mp_sp(hms);
                     }
+                    self.world.mirror_roster_hp_mp(rslot);
                 }
-                // Sync restored values back to roster records.
-                self.world.save_party();
             }
         }
         // Clear session regardless of yes/no.
@@ -2945,8 +2933,11 @@ mod tests {
         world.party.money = 50;
         world.party.party_count = 1;
         world.actors[0].active = true;
-        world.actors[0].battle.max_hp = 100;
-        world.actors[0].battle.hp = 10;
+        let mut hms = world.party.roster.members[0].hp_mp_sp();
+        hms.hp_max = 100;
+        hms.hp_cur = 10;
+        world.party.roster.members[0].set_hp_mp_sp(hms);
+        world.mirror_roster_hp_mp(0);
 
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_inn(10);
@@ -2957,6 +2948,11 @@ mod tests {
         assert_eq!(runtime.ctx.state, MenuState::InnSleep.as_byte());
         assert_eq!(world.party.money, 40, "10 gold charged");
         assert_eq!(world.actors[0].battle.hp, 100, "HP restored to max");
+        assert_eq!(
+            world.party.roster.members[0].hp_mp_sp().hp_cur,
+            100,
+            "the record holds the restored pool"
+        );
         assert!(runtime.inn_session.is_none(), "inn session cleared");
 
         // Sleep fade holds, then closes.

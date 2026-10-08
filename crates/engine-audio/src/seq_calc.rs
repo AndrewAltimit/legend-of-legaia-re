@@ -318,11 +318,9 @@ pub struct TempoTick {
 /// (`divu`), so a negative tempo produces a huge quotient rather than a
 /// negative one - the `i16` truncation is what the floor then catches.
 ///
-/// `divisor` is the runtime word at `0x801CD2BC` and is deliberately a
-/// parameter: the shape `(ticks/quarter * beats/minute * 10) / (divisor * 60)`
-/// reads as "tenths of a tick per frame, with `divisor` the frame rate", but
-/// that unit reading is an **inference** from the arithmetic, not a runtime
-/// observation, so nothing here bakes a `60` in.
+/// `divisor` is the runtime word at `0x801CD2BC`, which reads `60` in every
+/// catalogued save state ([`RETAIL_TICK_DIVISOR`]): tenths of a tick per
+/// vsync. It stays a parameter so the kernel is the routine's own shape.
 pub fn tick_budget(resolution: i16, tempo: u32, divisor: u32) -> i16 {
     let denom = divisor.wrapping_mul(60);
     if denom == 0 {
@@ -334,6 +332,73 @@ pub fn tick_budget(resolution: i16, tempo: u32, divisor: u32) -> i16 {
         .wrapping_mul(10);
     let q = (num / denom) as i16;
     if q <= 0 { 1 } else { q }
+}
+
+/// The runtime tick divisor `0x801CD2BC`: `60` in every catalogued retail
+/// save state (the libsnd per-vsync tick mode), so the budgets below are
+/// tenths of a tick per vsync.
+pub const RETAIL_TICK_DIVISOR: u32 = 60;
+
+/// The tick budget a tempo **set** installs - the SEQ open
+/// (`FUN_80062410`, `0x8006265C..0x80062738`) and the tempo meta handler
+/// (`FUN_80061954`, `0x800619D4..0x80061AF4`) share this tail. Returns
+/// `(sub_frame, budget)` for `+0x52` / `+0x54`.
+///
+/// `bpm` is the integer `60000000 / us_per_qn` the meta handler stores at
+/// `+0x94` (a truncating `div`). With `n = resolution * bpm * 10` and
+/// `d = divisor * 60`:
+///
+/// * `n < d` (slower than one tick per frame): the slow mode, `+0x52` =
+///   `+0x54` = `(divisor * 600) / (resolution * bpm)`;
+/// * otherwise `+0x52 = -1` and the budget is `n / d` **rounded to nearest**
+///   (incremented when the remainder exceeds `d / 2`, the `sltu` against
+///   `(divisor * 15) << 1` at `0x80061AE4`), a half rounding down.
+///
+/// Unlike the slide's [`tick_budget`], which floors, this rounds; it is the
+/// one a track's tempo events reach.
+// PORT: FUN_80061954 (the budget tail), FUN_80062410 (the same tail at open)
+pub fn tempo_set_budget(resolution: i16, bpm: u32, divisor: u32) -> (i16, i16) {
+    let d = divisor.wrapping_mul(60);
+    let t1 = (i32::from(resolution) as u32).wrapping_mul(bpm);
+    let n = t1.wrapping_mul(10);
+    if d == 0 {
+        return (-1, 1);
+    }
+    if n < d {
+        if t1 == 0 {
+            return (-1, 1);
+        }
+        let v = (divisor.wrapping_mul(600) / t1) as i16;
+        return (v, v);
+    }
+    let q = n / d;
+    let r = n % d;
+    let budget = if divisor.wrapping_mul(30) < r {
+        q + 1
+    } else {
+        q
+    };
+    (-1, budget as i16)
+}
+
+/// The quarter-note length retail actually plays a `us_per_qn` tempo at, in
+/// microseconds of 60 Hz frames: the [`tempo_set_budget`] integer budget
+/// spent once per vsync, so `budget / 10` ticks per frame. `None` in the
+/// slow mode (no shipped track reaches it) or for a degenerate tempo, where
+/// a caller keeps the exact tempo.
+pub fn retail_effective_us_per_qn(us_per_qn: u32, ppqn: u16) -> Option<u32> {
+    if us_per_qn == 0 || ppqn == 0 {
+        return None;
+    }
+    let bpm = 60_000_000 / us_per_qn;
+    let (sub_frame, budget) = tempo_set_budget(ppqn as i16, bpm, RETAIL_TICK_DIVISOR);
+    if sub_frame != -1 || budget <= 0 {
+        return None;
+    }
+    // ticks/s = budget / 10 * 60; us per quarter = ppqn * 1e6 / that.
+    let ticks_per_s_x10 = u64::from(budget as u16) * u64::from(RETAIL_TICK_DIVISOR);
+    let num = u64::from(ppqn) * 10_000_000;
+    Some(((num + ticks_per_s_x10 / 2) / ticks_per_s_x10) as u32)
 }
 
 /// One tempo-slide tick (`FUN_800649B0`).
@@ -629,6 +694,34 @@ pub fn track_end(ch: &mut SeqChannel) -> TrackEnd {
 
 #[cfg(test)]
 mod tests {
+    /// The tempo-set budget rounds to nearest (the slide's floors), with a
+    /// half rounding down, and a tempo that divides evenly is exact.
+    #[test]
+    fn a_tempo_set_rounds_the_budget_to_nearest() {
+        // 120 BPM: 480 * 120 * 10 / 3600 = 160 exactly.
+        assert_eq!(tempo_set_budget(480, 120, 60), (-1, 160));
+        // 80 BPM: 106.67 -> 107, where the slide's floor gives 106.
+        assert_eq!(tempo_set_budget(480, 80, 60), (-1, 107));
+        assert_eq!(tick_budget(480, 80, 60), 106);
+        // 15 BPM at ppqn 450: 67500 / 3600 = 18.75 -> 19; a remainder of
+        // exactly half (ppqn 15, 60 BPM: 9000 / 3600 = 2.5) stays at 2.
+        assert_eq!(tempo_set_budget(450, 15, 60), (-1, 19));
+        assert_eq!(tempo_set_budget(15, 60, 60), (-1, 2));
+        // Slower than a tick a frame: the sub-frame mode.
+        assert_eq!(tempo_set_budget(1, 100, 60), (360, 360));
+    }
+
+    /// What a track plays at: 120 BPM is untouched, 80 BPM runs a little
+    /// fast (budget 107 against 106.67), the slowest shipped tempo
+    /// (2534941 us, 23.67 BPM, truncated to 23) runs slow.
+    #[test]
+    fn retail_plays_the_quantised_tempo() {
+        assert_eq!(retail_effective_us_per_qn(500_000, 480), Some(500_000));
+        assert_eq!(retail_effective_us_per_qn(750_000, 480), Some(747_664));
+        assert_eq!(retail_effective_us_per_qn(2_534_941, 480), Some(2_580_645));
+        assert_eq!(retail_effective_us_per_qn(0, 480), None);
+    }
+
     use super::*;
 
     fn ch(flags: u32) -> SeqChannel {

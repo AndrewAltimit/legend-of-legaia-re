@@ -299,6 +299,7 @@ pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<D
     struct Stream {
         sample_rate: u32,
         stereo: bool,
+        bits: u8,
         audio: Vec<u8>,
     }
     let mut by_key: std::collections::BTreeMap<(u8, u8), Stream> = Default::default();
@@ -317,6 +318,7 @@ pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<D
         let stream = by_key.entry(key).or_insert_with(|| Stream {
             sample_rate: sub.sample_rate(),
             stereo: sub.is_stereo(),
+            bits: sub.bits_per_sample(),
             audio: Vec::new(),
         });
         let audio_off = USER_DATA_OFFSET;
@@ -333,7 +335,13 @@ pub fn decode_xa_in_memory(disc: &[u8], start_lba: u32, byte_size: u32) -> Vec<D
                 Channels::Mono
             },
             sample_rate: stream.sample_rate,
-            bits: legaia_xa::BitsPerSample::Four,
+            // The subheader's own sample width, as the movie demux
+            // (`legaia_mdec::str_av`) reads it.
+            bits: if stream.bits == 8 {
+                legaia_xa::BitsPerSample::Eight
+            } else {
+                legaia_xa::BitsPerSample::Four
+            },
         };
         let Ok((pcm, _)) = decode(&stream.audio, opts) else {
             continue;

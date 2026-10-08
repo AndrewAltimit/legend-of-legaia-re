@@ -1958,7 +1958,7 @@ impl World {
             // grunt compares the committed pose against `+0x1F3`.
             self.fire_melee_impact_cue(attacker, target, kill_check.then_some(block_entry));
             // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
-            self.commit_battle_reaction_entry(target_i, block_entry);
+            self.commit_melee_reaction(target_i, attacker_i, block_entry);
             return 0;
         }
         let defense = self.physical_defense_of(target, power_byte);
@@ -2069,9 +2069,46 @@ impl World {
         // The flinch is staged for a target still standing on the accumulated
         // total (`target[+0x0] < hp`, `0x801EEC18..0x801EEC30`).
         if let Some(entry) = committed_reaction {
-            self.commit_battle_reaction_entry(target_i, entry);
+            self.commit_melee_reaction(target_i, attacker_i, entry);
         }
         dmg
+    }
+
+    /// The melee kernel's reaction commit on the defender
+    /// (`0x801EEC34..0x801EECBC`): a non-zero `s7` on a defender that is not
+    /// Stoned (`+0x16E` bit `0x4`, `0x801EEC58..0x801EEC64`) is staged into
+    /// `+0x1DA`, and the defender is **turned to face the attacker** -
+    /// `FUN_80019B28(defender[+0x40], defender[+0x3C], attacker[+0x38],
+    /// attacker[+0x34]) & 0xFFF` stored to the defender's `+0x46`
+    /// (`0x801EEC94..0x801EECBC`). The bearing runs from the defender's body
+    /// pair to the attacker's live pair with no half turn, the opposite end
+    /// of the attacker's own `+ 0x800` facing recompute, so the two stand
+    /// face to face. Nothing turns the defender back: a struck monster keeps
+    /// the heading for the rest of the fight, and case 8's dead-target yaw
+    /// (`-target[+0x46]`) frames the killed one from it
+    /// (`player_steal_skeleton_banner` reads its skeleton turned onto Vahn).
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EEC34..0x801EECBC`, the defender's reaction
+    /// commit and turn)
+    fn commit_melee_reaction(&mut self, target_i: usize, attacker_i: usize, entry: u8) {
+        if entry == 0 || self.actor_is_petrified(target_i as u8) {
+            return;
+        }
+        self.commit_battle_reaction_entry(target_i, entry);
+        let (Some(t), Some(a)) = (self.actors.get(target_i), self.actors.get(attacker_i)) else {
+            return;
+        };
+        let (bx, bz) = t
+            .battle
+            .seat
+            .unwrap_or((t.move_state.world_x, t.move_state.world_z));
+        let facing = vm::battle_action::bearing_12bit_approx(
+            bz,
+            bx,
+            a.move_state.world_z,
+            a.move_state.world_x,
+        ) & 0xFFF;
+        self.actors[target_i].battle.facing_angle = facing;
     }
 
     /// The reaction one connecting melee hit commits on its defender -

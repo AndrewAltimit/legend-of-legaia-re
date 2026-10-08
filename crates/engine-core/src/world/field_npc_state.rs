@@ -117,6 +117,10 @@ pub struct FieldNpcState {
     ///
     /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
     pub facing_save: Option<(u8, i16)>,
+    /// Heading tweens a script scheduled with `4C 48 <value> <ticks>` (the
+    /// field VM's nibble-4 sub-8 ramp on `+0x26`, `FUN_8003C5F0`), owner =
+    /// placement slot. Ticked by `World::tick_npc_heading_ramps`.
+    pub heading_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
     /// Per-NPC glide speed, keyed by the same placement `slot` as
     /// [`crate::world::FieldNpcState::dialog`]: the per-frame world-unit step
     /// `Self::start_field_npc_motion` writes into a leg's motion-VM
@@ -294,6 +298,7 @@ impl FieldNpcState {
             headings: std::collections::HashMap::new(),
             tilts: std::collections::HashMap::new(),
             facing_save: None,
+            heading_ramps: legaia_engine_vm::ambient_motion::RampScheduler::new(),
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),

@@ -733,7 +733,7 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   exactly as retail's one probe both refuses the step and posts the touch.
   Only `PlayerMoveTo` and `SpawnRecord` also apply their decoded effect. A `Warp` payload applies
   none: see [Contact resumes the script, it does not run the script's last instruction](#contact-resumes-the-script-it-does-not-run-the-scripts-last-instruction).
-  Not modelled: the facing save/restore and touch counters of the post kernel. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 casino cabinets; cave01 guard throw-backs) and `engine-shell/tests/casino_floor_softlock.rs`.
+  Not modelled: the post kernel's touch counters (its facing save/restore is - see [Open](#open)). Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 casino cabinets; cave01 guard throw-backs) and `engine-shell/tests/casino_floor_softlock.rs`.
 - **A door placement's own record is installed, and the action probe reaches it.** Retail runs the
   touched placement's record through the dialog SM whatever it contains
   (see [`script-vm.md`](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), so
@@ -1163,12 +1163,13 @@ is still up moves the last-tile pair to `(32, 41)` and never reaches
 spawning". From a checkpoint taken after the lock clears (`+0x10` =
 `0x09820880`), a poke onto `(32, 40)` and then `(32, 41)` dispatches P2[4]
 (`FUN_8003BDE0(32, 41, 4, 1)`, `ra 0x801D218C`) on the first crossing, with no
-scene re-entry. The port's `SceneHost::dispatch_walk_on_trigger` differs here:
-it returns before updating its last-tile mirror while a cutscene timeline is
-active, so a crossing made during the cutscene is deferred to the first free
-tick rather than spent. A crossing made while a concurrent **helper** record
-holds the player (`World::script_context_engages_player`) is spent as retail
-spends it: the tile is stored and nothing is looked up. That is what keeps
+scene re-entry. The port's `SceneHost::dispatch_walk_on_trigger` spends a
+crossing the same way whenever a script owns the player - a cutscene
+timeline, a dialogue, or a concurrent **helper** record
+(`World::script_context_engages_player`): the tile is stored and nothing is
+looked up, as retail's dispatcher does under the `+0x10 & 0x80000` lock
+(`0x801D214C..0x801D2158` -> `0x801D2270`). Deferring the crossing instead
+bounced the player between `rugi`'s two warp pads for good. That is what keeps
 `taiku` P2[16], Zora Castle's post-boss cutscene, from re-arming itself - it
 walks the player onto P2[15]'s tile `(16, 28)`, and P2[15] only raises the
 `0x393` that P1[0] answers by spawning P2[16]
@@ -2375,7 +2376,7 @@ consumes.
 ## Open
 
 - The `FUN_801d5b5c` post kernel's touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`), which are what let overlapping touches keep the engaged flag raised until every one is dismissed. The engaged flag, the parked-script resume (`world/prop_interact.rs`) and the facing save/restore (`+0x26` -> `+0x5A` -> `+0x26`, `World::npcs.facing_save` / `World::release_talk_facing`; see [`motion-vm.md`](motion-vm.md#talk-time-facing-is-not-this-vm)) are modelled.
-- Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected). The **door** path does evaluate its branches live (see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family)); the general actor path does not yet.
+- The NPC initial-facing decode. Positions come from the live entry pre-run (`World::pre_run_field_channel_prologues`, the port of `FUN_8003A1E4`), which runs each placement's spawn prologue - story-flag branches included - against live flags, and no decoded waypoint list is driven. The initial **facing** is still decoded statically, taking the fall-through branch (see [NPC initial facing](#npc-initial-facing)), so a later-chapter branch's facing is not selected.
 
 ## NPC initial facing
 
@@ -2390,7 +2391,16 @@ The heading space itself is pinned from the locomotion's pad→facing writes (`F
 
 Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
 
-The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`.
+
+That static leg is only the guess for a record the load slice does not run.
+`World::pre_run_field_channel_prologues` executes every `0x24`/`0x25`
+prologue with retail's stop tests (an executed `0x21`, an unmoved PC, a
+sub-`0x20` byte - not a yield that hands back the next PC), drops the guess
+for those slots first, and takes the heading from the `4C 51` / `38` /
+`4C 48` ops on the arm the flags select. `dolk2`'s King Drake turns to index
+4 only while `0x178` is clear, and `dolk` `P1[22]` turns on a `38` that
+follows a `41` glide. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
 
 Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 toggles the special-model flag, the low nibble is the facing-LUT index - and the raw case-5-sub-1 asm reads the byte **nowhere else**, so the op carries no speed operand (byte +4 is the move-anim id written to `+0x5C`; the trailing `FUN_801D81E0` is an active-list relink via `FUN_800204A4`/`FUN_80020454`, not a bytecode builder). The old glide-speed reading of the same byte is a misattribution of the walk-kernel op `0x47`'s own operand encoding - see the reconcile note under [NPC glide speed](#npc-glide-speed).
 

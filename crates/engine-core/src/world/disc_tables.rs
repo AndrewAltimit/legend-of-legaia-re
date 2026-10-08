@@ -7,11 +7,22 @@ use super::*;
 
 /// Disc-parsed static tables installed at boot / scene load (items, spells, arts, monsters, formations, move power, equipment, thresholds, CDNAME map).
 pub struct DiscTables {
+    /// The `SCUS_942.54` New Game starting-party template (`0x80078C4C`),
+    /// kept from [`crate::world::World::begin_new_game_seeded`]. Retail's
+    /// New Game seeds all four live records from it, so a member who joins
+    /// later (`0x3C` party add) arrives with its own row; the engine seeds
+    /// the record from here when the join names a slot the roster lacks.
+    pub starting_party: Option<legaia_asset::new_game::StartingParty>,
     /// The static `SCUS_942.54` win-pose table (`0x800788A0`) the results
     /// frame picks the leader's victory pose from. Installed at boot by the
     /// shell (`legaia_asset::victory_pose`); `None` on a disc-free build,
     /// where the pose actor simply keeps its idle.
     pub victory_pose_table: Option<legaia_asset::victory_pose::VictoryPoseTable>,
+    /// The inline 8-byte names the dialog's `0xC7 XX` escape splices
+    /// (`0x80073F24 + XX * 8`, `FUN_80036044`): the Ra-Seru names Meta /
+    /// Terra / Ozma. Indexed by `XX`; read from the disc's executable at
+    /// boot ([`crate::world::World::install_retail_progression_tables`]).
+    pub inline_names: Vec<Vec<u8>>,
     /// Item catalog used by item-action resolution. Populated at battle
     /// init from [`crate::items::ItemCatalog::vanilla`] (or a custom
     /// catalog set by [`crate::world::World::set_item_catalog`]); empty by default so
@@ -72,6 +83,11 @@ pub struct DiscTables {
     /// caption arm prints. Installed by [`crate::scene::SceneHost`] with the
     /// cast-effect pool; empty disc-free.
     pub(crate) summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
+    /// `summon.dat` (PROT 0893) itself, for the texture slots a player
+    /// summon's cast streams into the battle VRAM
+    /// ([`crate::battle_sideband_textures::record_cast_sideband_textures`]).
+    /// Installed with [`Self::summon_attack_names`]; `None` disc-free.
+    pub(crate) summon_dat: Option<Arc<[u8]>>,
     /// The battle **VDF** morph pack `vdf.dat` (PROT 0872, the
     /// `[u32 count][u32 offsets[count]][bodies]` layout of a scene's VDF).
     /// Battle init loads it through the asset dispatcher's VDF case and
@@ -206,6 +222,7 @@ pub struct DiscTables {
 impl DiscTables {
     pub fn new() -> Self {
         Self {
+            starting_party: None,
             item_catalog: crate::items::ItemCatalog::default(),
             item_effects: None,
             spell_catalog: crate::spells::SpellCatalog::default(),
@@ -218,6 +235,7 @@ impl DiscTables {
             move_power: None,
             move_power_overlay: None,
             summon_attack_names: Default::default(),
+            summon_dat: None,
             battle_vdf: None,
             element_affinity: None,
             battle_camera_heights: None,
@@ -232,6 +250,7 @@ impl DiscTables {
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),
             victory_pose_table: None,
+            inline_names: Vec::new(),
             rot_limb_table: None,
         }
     }

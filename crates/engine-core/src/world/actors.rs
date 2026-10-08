@@ -13,6 +13,26 @@ const ACTION_FX_ART_SLOT: u8 = 0x11;
 const ACTION_FX_ART_CODE: u8 = 9;
 
 impl World {
+    /// The actor allocator's free-stack top `_DAT_8007C348` as the move VM's
+    /// ext sub-ops `0x36` / `0x37` read it: `0x8E` less the live actors.
+    ///
+    /// Retail allocates every field actor - placements, script actors, effect
+    /// parts - from one 143-entry pool, and the library states hold its top
+    /// between 14 and 135 (7 to 128 live). The port has no single pool, so the
+    /// count is the populations that stand for one: the active world actors,
+    /// the ambient effect parts and the script arcs / attached lights. What the
+    /// predicates need is the scale, not the exact figure - every shipped
+    /// `0x37` is a headroom guard at `0x80..=0x87` live, every `0x36` a
+    /// spin-wait until the count drops below `0x76..=0x78` - and before this
+    /// the port answered "pool full" for every scene, so all of them halted.
+    pub fn actor_pool_top(&self) -> i16 {
+        let live = self.actors.iter().filter(|a| a.active).count()
+            + self.ambient.fx.len()
+            + self.script_actors.arcs.len()
+            + self.script_actors.lights.len();
+        (0x8E - live.min(0x8E) as i32) as i16
+    }
+
     /// Per-actor move-VM tick - clean port of `FUN_80021DF4` (lines
     /// `80022B94..80022BBC`).
     ///
@@ -2076,6 +2096,23 @@ impl World {
     /// over 100 frames this way.
     ///
     /// REF: FUN_80036D80
+    /// One frame of the `4C 48` heading tweens: each lands the scheduler's
+    /// retail-space value in the placement's heading (engine space,
+    /// `+ 0x800`), raw, as the scheduler's `sh` does.
+    pub(crate) fn tick_npc_heading_ramps(&mut self) {
+        if self.npcs.heading_ramps.active() == 0 {
+            return;
+        }
+        let speed = self.move_vm.ramp_ratio.max(1);
+        for w in self.npcs.heading_ramps.tick(speed) {
+            if let Ok(slot) = u8::try_from(w.owner) {
+                self.npcs
+                    .headings
+                    .insert(slot, (w.value as i16).wrapping_add(0x800));
+            }
+        }
+    }
+
     pub(crate) fn tick_player_scale_ramp(&mut self) {
         if self.locomotion.player_scale_ramps.active() == 0 {
             return;
@@ -2327,6 +2364,29 @@ impl World {
     pub fn set_active_party(&mut self, slots: Vec<u8>) {
         let mut active = slots;
         active.truncate(3);
+        // Retail's New Game seeds all four live records from the SCUS
+        // template (`0x80084708 + n*0x414`, the seed routine's four-iteration
+        // loop), so a member who joins later already has a level-1 record.
+        // The engine's New Game roster is Vahn alone; a join naming a slot it
+        // lacks takes that slot's template row here, or the member would
+        // fight with 0 / 0 HP and the battle could never see the party wiped.
+        // Every slot up to the highest named one is filled, as retail's are:
+        // a roster grown to reach slot 2 must not leave a zeroed slot 1.
+        if let Some(tpl) = self.tables.starting_party.clone() {
+            let top = active.iter().copied().max().unwrap_or(0);
+            let missing: Vec<u8> = (0..=top)
+                .filter(|&r| {
+                    self.party
+                        .roster
+                        .members
+                        .get(usize::from(r))
+                        .is_none_or(|m| m.hp_mp_sp().hp_max == 0)
+                })
+                .collect();
+            if !missing.is_empty() {
+                self.seed_party_members(&tpl, &missing);
+            }
+        }
         for (member, &rslot) in active.iter().enumerate() {
             let Some(rec) = self.party.roster.members.get(rslot as usize) else {
                 continue;
@@ -2477,6 +2537,7 @@ impl World {
         // Battle init registers a fresh backdrop pair; any rebind is gone.
         self.battle.backdrop_rebound = false;
         self.battle.vram_moves.clear();
+        self.battle.vram_loads = Default::default();
         self.battle.stage_camera = None;
         self.battle.stage_banner = None;
         // The entity SM's battle-entry tail writes the stage id: `0` in the

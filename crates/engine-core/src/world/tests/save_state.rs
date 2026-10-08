@@ -65,6 +65,41 @@ fn save_party_picks_up_in_battle_hp_changes() {
     assert_eq!(saved.members[0].hp_mp_sp().hp_max, 100);
 }
 
+/// A field save reads the records, not the scene's actor slots. `opurud`'s
+/// scripts re-stamp slots 1 and 2 from zeroed nodes; folding those mirrors
+/// into the second and third records zeroed their pools, and the next load
+/// took the zeroed records for unjoined members and re-seeded them from the
+/// New Game template.
+#[test]
+fn a_field_save_keeps_the_records_over_the_scenes_actor_slots() {
+    let mut party = legaia_save::Party::zeroed(3);
+    for (i, rec) in party.members.iter_mut().enumerate() {
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 300 + i as u16;
+        hms.hp_cur = 200 + i as u16;
+        hms.mp_max = 50;
+        hms.mp_cur = 40;
+        rec.set_hp_mp_sp(hms);
+    }
+    let original = party.write();
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.load_party(party);
+    // A scene placement takes slots 1 and 2 over from a zeroed node.
+    for slot in 1..3 {
+        world.actors[slot] = Default::default();
+        world.actors[slot].active = true;
+    }
+    assert_eq!(world.save_party().write(), original);
+    assert_eq!(world.save_full().party.write(), original);
+
+    // In a battle the same slots are the party's seats and do fold back.
+    world.mode = SceneMode::Battle;
+    world.actors[1].battle.hp = 7;
+    world.actors[1].battle.max_hp = 301;
+    assert_eq!(world.save_party().members[1].hp_mp_sp().hp_cur, 7);
+}
+
 #[test]
 fn load_party_caps_at_max_actors() {
     let many = legaia_save::Party::zeroed(MAX_ACTORS + 10);

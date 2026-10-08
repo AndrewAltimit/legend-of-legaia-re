@@ -672,6 +672,13 @@ impl World {
                             .or_insert_with(|| entry.name.as_bytes().to_vec());
                     }
                 }
+                // `0xC7 xx` - an inline 8-byte SCUS name (the Ra-Seru
+                // names), `FUN_80036044`'s `0x80073F24 + xx * 8`.
+                0xC7 => {
+                    if let Some(name) = self.tables.inline_names.get(usize::from(arg)) {
+                        map.entry((7, arg)).or_insert_with(|| name.clone());
+                    }
+                }
                 // `0xCE 0x0B..=0x0E` - the number escapes. Retail's renderer
                 // reads the field VM's script-counter table `0x801C6460`
                 // (`lh` at `0x80036A8C`) - the same table `4C CA/CB/CC`

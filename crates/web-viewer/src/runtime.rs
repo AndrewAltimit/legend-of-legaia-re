@@ -711,15 +711,12 @@ impl LegaiaRuntime {
         if world_map {
             host.enter_world_map_scene(name)
                 .map_err(|e| format!("enter_field({name}): {e:#}"))?;
-            // Start in walk mode with the retail top-view debug camera
-            // reachable through its own chord (`_DAT_8007B98C`), exactly as
-            // the native window arms it on world-map entry
-            // (`window/run.rs`). The controller, the chord and the camera are
-            // all engine-side, so arming the same flag is the whole of what
-            // this host needed to gain the top-view vantage.
-            if let Some(ctrl) = host.world.world_map.ctrl.as_mut() {
-                ctrl.debug_enabled = true;
-                ctrl.view_mode = 0;
+            // A picked overworld starts in walk mode with the retail top-view
+            // debug camera reachable through its own chord
+            // (`_DAT_8007B98C`); a Load or a New Game does not arm it. The
+            // engine's one rule, which the native `--scene` entry asks too.
+            if !resume {
+                host.world.arm_picker_world_map_debug();
             }
         } else {
             host.enter_field_scene(name, 0)
@@ -759,10 +756,14 @@ impl LegaiaRuntime {
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
+        // A card Load's resume is not free-roam entry either: the party
+        // stands where the save says (`SceneHost::arm_resume_seat`), as on
+        // the native window, which has no relocation at all. Relocating it
+        // moved five of the library saves' parties across their maps.
         let in_opening = self.scene_host.host().is_some_and(|h| {
             h.world.cutscene.opening_chain_active || h.world.cutscene_timeline_active()
         });
-        if !in_opening {
+        if !in_opening && !resume {
             self.seat_player();
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
@@ -1523,7 +1524,7 @@ impl LegaiaRuntime {
             .menu_active()
             .then(|| id.picker())
             .flatten()
-            .map(|p| p.options.iter().map(|o| ascii(&o.label)).collect())
+            .map(|_| id.picker_labels().iter().map(|l| ascii(l)).collect())
             .unwrap_or_default();
         serde_json::json!({
             "text": text,

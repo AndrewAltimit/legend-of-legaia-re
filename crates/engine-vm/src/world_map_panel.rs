@@ -113,11 +113,12 @@ impl PanelCommand {
 /// PORT: FUN_801e9b3c (the 13-entry jump table at `0x801CF25C`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelEffect {
-    /// `op 1` - ensure the panel exists, then place it at its **descriptor**
-    /// position (`desc.x`, `desc.y`).
+    /// `op 1` - ensure the panel exists, then **slide** it
+    /// (`FUN_800357FC`, `jal` at `0x801E9BF8`) to its descriptor position
+    /// (`desc.x`, `desc.y`).
     OpenAtDescriptor { panel: i16, x: i16, y: i16 },
-    /// `op 2` - ensure the panel exists, then place it at the operand's
-    /// explicit position.
+    /// `op 2` - ensure the panel exists, then **slide** it (`FUN_800357FC`,
+    /// `0x801E9C38`) to the operand's explicit position.
     OpenAt { panel: i16, x: i16, y: i16 },
     /// `op 3` - store the operand's low byte into the window object's
     /// `+0x1D` field. No-op when the panel is not open.
@@ -131,12 +132,14 @@ pub enum PanelEffect {
     /// `op 6` - zero the window object's `+0x20` halfword. No-op when the
     /// panel is not open.
     ClearCounter { panel: i16 },
-    /// `op 9` - ensure the panel exists, then slide it (`FUN_800358C0`) to
-    /// the operand position, or to the descriptor position when the operand
-    /// is zero.
-    SlideTo { panel: i16, x: i16, y: i16 },
-    /// `op 10` - retire and respawn the panel, sliding it back to the
-    /// position the live object was already at (`obj[+0x0A]`, `obj[+0x0C]`).
+    /// `op 9` - ensure the panel exists, then **snap** it (`FUN_800358C0`,
+    /// `0x801E9C80`) to the operand position, or to the descriptor position
+    /// when the operand is zero. (This variant was `SlideTo`, the reverse of
+    /// the helper's tail at `0x80035938`.)
+    SnapTo { panel: i16, x: i16, y: i16 },
+    /// `op 10` - retire and respawn the panel, snapping it (`FUN_800358C0`,
+    /// `0x801E9D24`) back to the position the live object was already at
+    /// (`obj[+0x0A]`, `obj[+0x0C]`).
     /// No-op when the panel is not open.
     Respawn { panel: i16 },
     /// `op 12` - resize the party panel from the live party size and run the
@@ -224,13 +227,13 @@ pub fn decode_panel_command(
         // descriptor-position call, not a separate arm.
         8 => {
             if cmd.operand == 0 {
-                PanelEffect::SlideTo {
+                PanelEffect::SnapTo {
                     panel,
                     x: descriptor.x,
                     y: descriptor.y,
                 }
             } else {
-                PanelEffect::SlideTo {
+                PanelEffect::SnapTo {
                     panel,
                     x: ox,
                     y: oy,
@@ -508,7 +511,7 @@ mod tests {
         };
         assert_eq!(
             decode_panel_command(zero, desc(7, 9), 3),
-            Some(PanelEffect::SlideTo {
+            Some(PanelEffect::SnapTo {
                 panel: 1,
                 x: 7,
                 y: 9
@@ -520,7 +523,7 @@ mod tests {
         };
         assert_eq!(
             decode_panel_command(explicit, desc(7, 9), 3),
-            Some(PanelEffect::SlideTo {
+            Some(PanelEffect::SnapTo {
                 panel: 1,
                 x: 6,
                 y: 5

@@ -615,7 +615,7 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
     let want: [(u32, usize, usize); 5] = [
         (898, 17, 2340),
         (899, 7, 1284),
-        (975, 7, 446),
+        (975, 8, 526),
         (976, 5, 3124),
         (980, 8, 1928),
     ];

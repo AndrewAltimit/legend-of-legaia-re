@@ -298,13 +298,19 @@ blocker is a table is the same error this page records for the panel painters.
 
 ## `engine-core` anchors
 
+Rows here predate the `engine-battle` / `engine-minigames` split; the modules
+those moved (slot machine, fishing prize and rod menu, dance types, the battle
+kernels) keep their verdicts but now live in those crates, re-exported by
+`engine-core`. A `file:line` site is where the anchor stood when the verdict
+was written - find the symbol by name, not by line.
+
 | addr | symbol | site | verdict |
 |---|---|---|---|
 | `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
 | `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
-| `80021b04` | `from_model_sel` | `crates/engine-core/src/summon.rs:236` | FALSE INERT |
+| `80021b04` | `from_model_sel` | `crates/engine-effects/src/summon.rs:236` | FALSE INERT |
 | `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
-| `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick.rs:910` | WIRE |
+| `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs:270` | FALSE INERT |
 | `8003ebe4` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
@@ -346,17 +352,17 @@ blocker is a table is the same error this page records for the panel painters.
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs:1226` | FALSE INERT |
 | `8003c9ac` | `(module)` | `crates/engine-vm/src/motion_pause.rs:3` | WIRE (wired) |
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:120` | WIRE (wired) |
-| `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
-| `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | WIRE |
-| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
+| `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs:178` | WIRE |
+| `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs:160` | WIRE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-battle-vm/src/battle_camera.rs` | WIRE |
+| `801d9d30` | `apply_shake` | `crates/engine-battle-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-vm/src/title_prim.rs:407` | DISCLOSE |
 | `801e373c` | `init_card_state` | `crates/engine-vm/src/title_prim.rs:307` | DISCLOSE |
 | `801e373c` | `exec_card_init` | `crates/engine-vm/src/title_prim.rs:470` | DISCLOSE |
 | `801e3ee0` | `exec_centered_text` | `crates/engine-vm/src/title_prim.rs:437` | DISCLOSE |
-| `801f0348` | `camera_height_from_size_class` | `crates/engine-vm/src/battle_formulas/round.rs:481` | DELETE |
+| `801f0348` | `camera_height_from_size_class` | `crates/engine-battle-vm/src/battle_formulas/round.rs:481` | DELETE |
 
 The four battle-camera rows were unsettleable while that lane held the files;
 see [the battle-camera rows](#the-battle-camera-rows) for how they resolved.
@@ -466,7 +472,7 @@ records the analysis that shaped its wire - what the call site had to be and
 why the obvious placement was wrong. Where each one lives now:
 
 - `minigame_return_warp` - both halves of the two-part wire exist in
-  `crates/engine-core/src/world/frame_tick.rs`: the Baka tally drains into
+  `crates/engine-core/src/world/frame_tick/minigame_sessions.rs`: the Baka tally drains into
   `World::minigames.winnings` and the warp pair (`arm_minigame_warp` /
   `minigame_return_warp`) banks it into the casino coin bank on the
   `enter_baka_fighter` / `exit_baka_fighter` path.
@@ -509,7 +515,7 @@ into `World::party.money` instead, which is why the accumulator never fills.
 
 So this is a real `WIRE`, but a **two-part** one that no single lane can land: the Baka
 tally must be redirected from party money to a coin accumulator (in
-`world/frame_tick.rs`), *and* the warp call sites added. Either half alone is wrong - the
+`world/frame_tick/minigame_sessions.rs`), *and* the warp call sites added. Either half alone is wrong - the
 call sites alone credit zero, the redirect alone loses the prize.
 
 **`fmv_post_play_handoff`** (`801cea3c`). Nothing consumes `FmvHandoff`
@@ -550,18 +556,19 @@ Largest of the `WIRE` rows: it replaces existing gates, so it needs the retail
 arm semantics preserved case by case. `item_count_gate` follows for free as its
 arm-`0x82` callee.
 
-## `DELETE` row
+## `DELETE` row (acted)
 
-**`symbol_pad_bit`** (`801d4040`, `crates/engine-minigames/src/dance/types.rs:84`).
+**`symbol_pad_bit`** (`801d4040`, in `crates/engine-minigames/src/dance/types.rs`).
 `DanceDir::pad_bit` in the same file has identical arms (`0x80` / `0x20` /
 `0x10`), cites the same `FUN_801d4040`, and is the copy the live path uses -
-`World`'s dance tick references it from `world/frame_tick.rs`. The free function
+`World`'s dance tick references it from `world/frame_tick/minigame_sessions.rs`. The free function
 adds only the "any other symbol scores 0" fallback for raw chart bytes, which
 the chart decoder never produces because it converts symbols to `DanceDir`
 first.
 
-Delete the free function and move the `// PORT: FUN_801d4040` tag onto
-`DanceDir::pad_bit`, so the address keeps its anchor.
+The verdict is acted: the free function is gone and the
+`// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit`, so the address keeps
+its anchor.
 
 ## `DISCLOSE` texts
 
@@ -637,8 +644,8 @@ anchor. Wrap to the file's comment width.
 ## The battle-camera rows
 
 These carried a `VERIFY` verdict while the battle-camera lane held
-`crates/engine-vm/src/battle_camera.rs` and
-`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All are
+`crates/engine-battle-vm/src/battle_camera.rs` and
+`crates/engine-battle-vm/src/battle_formulas/round.rs`. That lane has landed. All are
 still inert against the corrected audit - every caller is `#[cfg(test)]` in
 the same file or in `battle_formulas/tests.rs`, and the host-crate sweep returns
 zero, the same sweep that finds `battle_render_mesh`'s two real host call sites.

@@ -258,6 +258,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 // ctx[+0x26] (`field_26`) write or ramp.
                 if ticks == 0 {
                     ctx.field_26 = target as u16;
+                    host.op4c_n4_heading_write(ctx, target as u16);
                 } else {
                     host.op4c_nibble4_ctx_ramp(ctx, sub, target, ticks);
                 }

@@ -81,6 +81,17 @@ cheapest place to look for a claim that is still wrong.
   disc's save points had saved nothing in the port
   ([settled](re-settled-threads.md#field--locomotion),
   [falsified](re-do-not-re-walk.md#menus--ui)).
+- **A shipped move program does keep the camera yaw factor.** The census
+  that said none does walked each program to its first `HALT`, and every
+  ext `0x37` is a pool-headroom guard that jumps that `HALT`; `urudre1`
+  stager record 14 writes `0x0080` behind one. The port had also read the
+  guard's operand against a constant "pool full", so every guarded field
+  effect halted ([settled](re-settled-threads.md#measurement--corpus),
+  [falsified](re-do-not-re-walk.md#rendering--camera)).
+- **The slot machine's `rand % 5` picks a payline, not a sub-row nudge.**
+  The `* 0x10` is the row stride of a landing-line table; forced stops land
+  on any of the five lines ([settled](re-settled-threads.md#battle--arts--level-up),
+  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
 - **BGM sub-op 3 pauses and sub-op 4 re-attaches.** The field VM's op-`0x35`
   arm table at `0x801CEE00` gives 3 = set pause bit 1 + `FUN_80026740` and
   4 = clear it + `FUN_80026478`, which replays the sequence from its start;
@@ -882,8 +893,9 @@ was a third of one - retail's sub-0 is a walk-out / walk-in **pair** whose blend
 and push kind come out of the sub-op byte, and whose all-zero operand clears the
 live actor rather than ramping to black
 ([settled](re-settled-threads.md#field--locomotion),
-[falsified](re-do-not-re-walk.md#field--locomotion)). What the closure does not
-settle is whether anything **draws** the surviving model - the first row above.
+[falsified](re-do-not-re-walk.md#field--locomotion)). Whether anything **draws** the
+surviving model is the screen-effect fade row above: both hosts composite it
+through `screen_prim::screen_effect_push_prims`.
 
 Four rows closed here before them, three of them the Equip screen's.
 

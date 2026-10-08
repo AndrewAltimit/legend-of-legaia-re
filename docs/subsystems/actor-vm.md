@@ -57,7 +57,13 @@ The 13 jump-table slots (`0x801CED70`) decode to: open and slide home
 home (`0x09`), and a destroy / re-create / snap-back-in-place composite
 (`0x0A`); slots `0x07` and `0x0B..=0x0D` fall through as no-ops (helper
 names as in the overview above, read off the arms at `0x801D66A8..0x801D6850`). Full opcode table + Rust port:
-`crates/engine-vm/src/lib.rs`.
+`crates/engine-vm/src/lib.rs`, whose `Host` methods carry the helpers'
+meaning (`slide_to`, `snap_to`, `begin_close`, `close_all`, `destroy`); the
+menu window list (`engine-core::menu_widget::MenuWidgetState`) keeps each
+window's live position, slide source and target, and the `+0x20` motion word
+those helpers write. The world-map panel interpreter `FUN_801E9B3C` calls the
+same helpers from the same arm layout (ops `1` / `2` slide, `9` / `10`
+snap; [`world-map.md`](world-map.md)).
 
 ## Where the programs live
 

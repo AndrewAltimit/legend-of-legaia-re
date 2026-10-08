@@ -243,6 +243,24 @@ impl BattleCamera {
         }
     }
 
+    /// The per-action track coin `ctx[+0x26D]`
+    /// ([`crate::battle_attack_camera::AttackCamCtx::phase_cursor`]).
+    pub fn phase_cursor(&self) -> u8 {
+        self.attack.ctx.phase_cursor
+    }
+
+    /// Put the track coin `ctx[+0x26D]` on `coin`. Retail's one writer is
+    /// `FUN_8004E13C` (`sb v0,0x26d(a0)` at `0x8004E2DC`), storing `rand() %
+    /// 2` on every clip commit whose header byte `+0x87` is non-zero; the
+    /// port rolls it on entry into the Action phase. Like the yaw counter's
+    /// half-turn ([`Self::align_action_yaw_half`]) it is a draw on the shared
+    /// `rand()` stream, so an instrument replaying a capture on another
+    /// stream aligns it with this. It picks the per-art track column and the
+    /// case-8 dead-target yaw's `0x200` offset ([`dead_target_yaw`]).
+    pub fn align_phase_cursor(&mut self, coin: u8) {
+        self.attack.ctx.phase_cursor = coin & 1;
+    }
+
     /// Install `_DAT_8007B630`, the screen-shake amplitude.
     ///
     /// The **only** retail writer of that global is the field-VM opcode

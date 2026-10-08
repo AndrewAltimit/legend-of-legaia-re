@@ -577,6 +577,11 @@ pub fn move_program_visit(
     let mut loop_a = 0u16;
     let mut loop_b = 0u16;
     let mut last_forever_wait: Option<usize> = None;
+    // Where forward conditional branches land ([`ext_branch_target`]). A `HALT`
+    // or idle loop below one is the fall-through side of a branch, not the end
+    // of the program: the taken side jumps over it into code the walk must
+    // still cover.
+    let mut targets: Vec<usize> = Vec::new();
     let stalled = |pc: usize, wait: Option<usize>| match wait {
         Some(w) => ProgramEnd::WaitForever(align4(w + 4)),
         None => ProgramEnd::Unterminated(pc),
@@ -590,6 +595,18 @@ pub fn move_program_visit(
         }
         visit(pc, op);
         let arg = |i: usize| rd_u16(bytes, pc + i * 2).unwrap_or(0);
+        if op == 0x2F
+            && let Some(t) = ext_branch_target(pc, arg(1), &arg)
+        {
+            targets.push(t);
+        }
+        // A `HALT` some branch above jumps past is the fall-through side, not
+        // the end: resume at the nearest pending target beyond it.
+        let next_target = targets.iter().copied().filter(|&t| t > pc).min();
+        if let (MOVE_OP_HALT, Some(t)) = (op, next_target) {
+            pc = t;
+            continue;
+        }
         match op {
             MOVE_OP_HALT => return ProgramEnd::Halt(align4(pc + 2)),
             MOVE_OP_LOOP_SET_A => loop_a = arg(1),
@@ -600,7 +617,8 @@ pub fn move_program_visit(
             // before it; taking the loop instead lands 4 bytes short.
             MOVE_OP_LOOP_BACK_A | MOVE_OP_LOOP_BACK_B
                 if armed_idle_loop(op, loop_a, loop_b)
-                    && rd_u16(bytes, pc + 2) != Some(MOVE_OP_HALT) =>
+                    && rd_u16(bytes, pc + 2) != Some(MOVE_OP_HALT)
+                    && next_target.is_none() =>
             {
                 return ProgramEnd::IdleLoop(align4(pc + 2));
             }
@@ -636,6 +654,26 @@ pub fn move_program_visit(
         pc += halfwords * 2;
     }
     stalled(pc, last_forever_wait)
+}
+
+/// Byte offset a `0x2F` conditional-branch sub-op at `pc` lands on when taken,
+/// for a forward displacement; `None` for any other sub-op or a backward
+/// (spin-wait) displacement.
+///
+/// The ten branch arms share the tail at `0x801D4830`: the taken side returns
+/// the fall-through width plus a signed displacement from an operand word
+/// (`move-vm-overlay-ext.md`, the ten conditional-branch arms) - `op[6]` on
+/// `0x06` / `0x07` (base 7), `op[2]` on `0x0A` / `0x0B` (base 3), `op[3]` on
+/// `0x13` / `0x14` and `0x36..=0x39` (base 4).
+fn ext_branch_target(pc: usize, sub: u16, arg: &dyn Fn(usize) -> u16) -> Option<usize> {
+    let (base, delta) = match sub {
+        0x06 | 0x07 => (7, arg(6)),
+        0x0A | 0x0B => (3, arg(2)),
+        0x13 | 0x14 | 0x36..=0x39 => (4, arg(3)),
+        _ => return None,
+    };
+    let delta = delta as i16;
+    (delta > 0).then(|| pc + (base + delta as usize) * 2)
 }
 
 fn align4(x: usize) -> usize {
@@ -844,6 +882,22 @@ pub fn parse_with_tail(bytes: &[u8], link_base: u32, tail_start: Option<usize>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hw(words: &[u16]) -> Vec<u8> {
+        words.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+
+    /// A `HALT` on the fall-through side of a forward ext branch is not the
+    /// end: `urudre1`'s record 14 shape - `2F 37 0086 0001` skips one halfword
+    /// (the `HALT`) on the taken side, and the program runs on to its own.
+    #[test]
+    fn a_halt_a_branch_jumps_is_not_the_program_end() {
+        let b = hw(&[0x2F, 0x37, 0x86, 0x01, 0x08, 0x15, 0x80, 0x08]);
+        assert_eq!(move_program_end(&b, 0), ProgramEnd::Halt(16));
+        // A backward displacement (the spin-wait idiom) extends nothing.
+        let b = hw(&[0x2F, 0x36, 0x76, 0xFFFA, 0x08, 0x15, 0x80, 0x08]);
+        assert_eq!(move_program_end(&b, 0), ProgramEnd::Halt(12));
+    }
 
     fn w(out: &mut Vec<u8>, word: u32) {
         out.extend_from_slice(&word.to_le_bytes());

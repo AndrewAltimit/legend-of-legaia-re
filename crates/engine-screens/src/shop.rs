@@ -345,9 +345,20 @@ pub fn sell_detail_window_draws(
         panel.name_pen,
         ui::MENU_TEXT_GOLD,
     );
+    // Retail hands the description words to the line-breaking printer
+    // (`FUN_800337B0` / `FUN_8003CD00` -> `FUN_80036888`), so a `|` puts the
+    // rest on the next row.
+    let broken = |out: &mut Vec<TextDraw>, s: &str, pen: (i16, i16), ink: [f32; 4]| {
+        out.extend(ui::ui_menu_window_painters::broken_text_draws_for(
+            font,
+            s,
+            (i32::from(pen.0), i32::from(pen.1)),
+            ink,
+        ));
+    };
     let desc = shop_item_description(world, id);
     if !desc.is_empty() {
-        text(&mut out, &desc, panel.desc_pen, ui::MENU_TEXT_WHITE);
+        broken(&mut out, &desc, panel.desc_pen, ui::MENU_TEXT_WHITE);
     }
     match panel.sell {
         Some(row) => {
@@ -376,10 +387,10 @@ pub fn sell_detail_window_draws(
     if let Some((name, line)) = panel
         .passive
         .and(world.menu.text.as_ref())
-        .and_then(|t| t.item_passive_lines(id))
+        .and_then(|t| t.item_passive_text(id))
     {
         text(&mut out, &name, panel.passive_name_pen, ui::MENU_TEXT_GREEN);
-        text(&mut out, &line, panel.passive_desc_pen, ui::MENU_TEXT_WHITE);
+        broken(&mut out, &line, panel.passive_desc_pen, ui::MENU_TEXT_WHITE);
     }
     let pic = panel.sell.map(|row| PainterPictogram {
         id: ui::COUNTER_PICTOGRAM_GOLD,

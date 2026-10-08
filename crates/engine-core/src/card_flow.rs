@@ -58,9 +58,10 @@
 //! earlier version of this heading ran them together. Both now land on the
 //! same class, and one of them used to describe a defect that is fixed.
 //!
-//! **The state machines.** No host owns a [`CardIoMachine`] to produce the
-//! poll results [`CardWriteMachine`] and [`CardHealth::fold_poll`] sequence,
-//! and none is owed. Both card-image backends are synchronous. The browser
+//! **The state machines.** A [`CardIoMachine`] does run - the shared save
+//! screen owns one (`save_screen`'s `io`, both hosts) for the "Now checking"
+//! read beat - but nothing feeds its poll results into the write side's
+//! [`CardWriteMachine`] and [`CardHealth::fold_poll`], and nothing is owed. Both card-image backends are synchronous. The browser
 //! card rack (`web-viewer::cards`) does write real `0x2000`-byte blocks, and
 //! it patches the container bytes synchronously through `legaia_save`; the
 //! native window mounts a real `.mcr` in save-select port 2 (`MountedCard`,

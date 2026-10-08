@@ -1145,6 +1145,10 @@ pub(crate) enum Cmd {
         /// entry. At runtime, `F6` does the same (mid-battle too).
         #[arg(long)]
         cheat_max_ap: bool,
+        /// Cheat: refill every party member's HP / MP and revive the fallen
+        /// at scene entry (the play page's Cheats -> Restore HP/MP).
+        #[arg(long)]
+        cheat_restore: bool,
         /// Cheat: teach every party member all its Seru magic (the 21 Seru
         /// and its own Ra-Seru; Vahn also the Sim-Seru and Evil Seru
         /// summons) with every spell at this level (1..=9).

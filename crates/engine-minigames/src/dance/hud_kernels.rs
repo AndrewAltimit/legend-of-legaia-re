@@ -147,7 +147,9 @@ pub fn dance_beat_track_note_x(base_x: i32, i: u32, frac: u32) -> i32 {
 }
 
 // REF: FUN_80065034 (the voice-attr primitive both key-ons go through)
-/// Channel mixer level both sting voices are keyed at (`li a1,0x2`).
+/// The `a1` both sting voices are keyed with (`li a1,0x2`): the voice-attr
+/// primitive's **VAB id** (`legaia_engine_audio::VoiceAttr::vab_id`), i.e.
+/// the dance's own bank in slot 2. The name predates that reading.
 pub const STING_LEVEL: i8 = 2;
 
 /// VAB **program** both sting voices come from (`li a2,0x1`) - the argument
@@ -172,7 +174,7 @@ pub const STING_TIER_VARIANT: u16 = 5;
 pub struct DanceStingVoice {
     /// Voice id handed to the SPU key-on primitive (`0x12` / `0x13`).
     pub voice: u16,
-    /// Channel mixer level ([`STING_LEVEL`]).
+    /// The primitive's `a1`, the VAB id ([`STING_LEVEL`]).
     pub level: i8,
     /// VAB program ([`STING_PROGRAM`]).
     pub program: u8,
@@ -186,14 +188,15 @@ pub struct DanceStingVoice {
 // (`web-viewer::minigames_dance`) takes its `(program, tone, note)` triple
 // from here rather than recomputing it, and decodes the named tone out of the
 // overlay's own VAB - which is what makes the bank index a read of
-// [`STING_PROGRAM`] instead of a literal `1` that happened to agree. The
-// native window is a separate case and does still lack a key-on API:
-// `AudioBgmDirector::enqueue_sfx` only schedules cue ids.
+// [`STING_PROGRAM`] instead of a literal `1` that happened to agree. In the
+// world, `World::tick_dance` queues both voices (via [`award_sounds`]) on the
+// direct voice-key queue the session's `route_world_sfx` keys on both play
+// hosts.
 /// PORT: FUN_801d3d78 - the on-beat "good step" sting. A judged direction fires
 /// **no** ring cue; it keys two voices together through the SPU voice-attr
-/// primitive (`FUN_80065034`, whose eight arguments are `(voice, level,
+/// primitive (`FUN_80065034`, whose eight arguments are `(voice, vab_id,
 /// program, tone, note, 0x40, vol_l, vol_r)`): voice `0x12` at tone `2r` and
-/// voice `0x13` at tone `2r + 1`, both in program [`STING_PROGRAM`] at level
+/// voice `0x13` at tone `2r + 1`, both in program [`STING_PROGRAM`] of VAB
 /// [`STING_LEVEL`] and note `0x3c + r`. Both volume slots are the voice-volume
 /// config `_DAT_80084580` halved, the same value
 /// [`crate::other_game_overlay::cue_volume`] decodes. Returns the two voice
@@ -214,6 +217,65 @@ pub fn dance_hit_sting_voices(r: u16) -> [DanceStingVoice; 2] {
         note,
     };
     [voice(0x12, (2 * r) as i16), voice(0x13, (2 * r + 1) as i16)]
+}
+
+/// Ring slot the award's cues are stored into: `sh id, 0x8007B6DE` - slot 3
+/// of the cue ring `DAT_8007B6D8`, written straight, without the cursor pair.
+pub const AWARD_CUE_RING_SLOT: u8 = 3;
+
+/// Ring slot the count-in's and the how-to tutorial's cues are stored into:
+/// `sh id, 0x8007B6D8` (`FUN_801d2d98`, `FUN_801cf470`, `FUN_801d0750`).
+pub const STAGE_CUE_RING_SLOT: u8 = 0;
+
+/// The tier cues a **landed** groovy move raises, by the lane the dancer
+/// was on when it pressed (`FUN_801d1af4`: `s1 = lane + 3`, then `0x202` /
+/// `0x203` / `0x205` for `s1 = 3 / 4 / 5`).
+pub const GROOVY_TIER_CUES: [u16; 3] = [0x202, 0x203, 0x205];
+
+/// The miss cue (`FUN_801d1af4` `0x801D2118`).
+pub const AWARD_MISS_CUE: u16 = 0x210;
+
+/// One sound the human's award raises.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DanceAwardSound {
+    /// A cue id stored into ring slot [`AWARD_CUE_RING_SLOT`] (runtime-bank
+    /// ids, resolved through the dance's own `efect.dat`).
+    Cue(u16),
+    /// A good-step sting ([`dance_hit_sting_voices`]) at variant `r`;
+    /// `random` = the tier-2 site's `rand() % 3`, which the host draws
+    /// ([`STING_RANDOM_VARIANTS`]) - `r` is then ignored.
+    Sting { r: u16, random: bool },
+}
+
+/// The sounds `FUN_801d1af4` raises for the **human** (dancer 0 - the whole
+/// block sits behind `bne s3,zero` at `0x801D20F0`) after one award:
+///
+/// * a miss (`s1 == 1`) stores cue [`AWARD_MISS_CUE`];
+/// * a closed chain (`s1 == 2`) keys a sting at `rand() % 3`;
+/// * a groovy move (`s1 = lane + 3`) that **landed** (`DAT_801d570c == 1`)
+///   keys the sting at [`STING_TIER_VARIANT`] and stores its tier cue
+///   ([`GROOVY_TIER_CUES`]); one that did not land raises nothing.
+///
+/// `lane` is the dancer's lane at the press - the gauge `/ 1000` read before
+/// the groovy move's `+1000` step.
+///
+/// PORT: FUN_801d1af4 (the dancer-0 sound arm, `0x801D20F0..0x801D2240`)
+pub fn award_sounds(ev: DanceEvent, lane: u32) -> Vec<DanceAwardSound> {
+    match ev {
+        DanceEvent::Miss => vec![DanceAwardSound::Cue(AWARD_MISS_CUE)],
+        DanceEvent::Sequence { .. } => vec![DanceAwardSound::Sting { r: 0, random: true }],
+        DanceEvent::Groovy { landed: true, .. } => {
+            let mut out = vec![DanceAwardSound::Sting {
+                r: STING_TIER_VARIANT,
+                random: false,
+            }];
+            if let Some(&cue) = GROOVY_TIER_CUES.get(lane as usize) {
+                out.push(DanceAwardSound::Cue(cue));
+            }
+            out
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The sequence-clear ("Good!") banner and its two flanking star sparkles

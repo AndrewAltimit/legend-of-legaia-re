@@ -140,9 +140,13 @@ The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fil
 
 `FUN_801e93c8` (battle overlay, PROT 0898;
 `see ghidra/scripts/funcs/overlay_battle_action_801e93c8.txt`) resets the
-per-actor animation rates when a committed action **finishes** - its only
-call site is the Done/cleanup arm (`0x50`) at `0x801E5F64`, right after the
-`0x50 -> 0x51` advance. It was once read as re-arming the arts gauge; the byte
+per-actor animation rates. Its one `jal` is at `0x801E5F64`, the tail of the
+Done/cleanup arm (`0x50`) right after the `0x50 -> 0x51` advance - but the
+attack band jumps to that same instruction on every frame of the strike loop
+(`0x1E`: `0x801E39AC`, `0x801E3A68`, `0x801E3A80`), the recovery (`0x1F`:
+`0x801E3AF8`, `0x801E3B18`) and the return (`0x20`: through `0x801E5660` and
+`0x801E55A0..0x801E56C8`), so the rate comes back the frame the gate below
+opens, not when the action finishes. It was once read as re-arming the arts gauge; the byte
 it seeds is the anim-rate scalar, not a gauge field. It reads the active actor
 (`_DAT_8007bd24 + 0x13` indexes the actor-pointer table `DAT_801C9370`), then
 gates on **what** was staged: the actor's last-staged action id `+0x1D9`. For a
@@ -793,7 +797,7 @@ The cheat-database labels "weapon = `+0x198`" are Vahn's and Gala's layout.
 | `FUN_801EC3E4` | battle overlay (0898) | Arms execution resolver; called from SCUS `0x800478A0`; folds equipment ATK into `actor+0x158` per command via jump table `PTR_801CF4B4` |
 | `FUN_801EED1C` | battle overlay (0898) | Party arts queue builder; computes a named art's Spirit cost (`li t4` at `0x801EF328 / 0x801EF32C / 0x801EF33C`, halving at `0x801EF378`) |
 | `FUN_801E9FD4` | battle overlay (0898) | Enemy action-queue filler; spends move `+0x74` costs from the monster's AGL |
-| `FUN_801E93C8` | battle overlay (0898) | Animation-rate restore (`+0x21D = 8` on all seven slots) after an action completes (called from `0x801E5F64`) - not a gauge re-arm |
+| `FUN_801E93C8` | battle overlay (0898) | Animation-rate restore (`+0x21D = 8` on all seven slots), run every frame of the attack band `0x1E..=0x20` and at the Done arm (one `jal`, `0x801E5F64`) - not a gauge re-arm |
 | `FUN_801D33D8` | menu overlay (0899) | Status-panel renderer; the one reader of the menu's per-art AP byte (`lbu a0,0x2(s2)` at `0x801D4524`) |
 
 ### Static tables in `SCUS_942.54`

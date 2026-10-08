@@ -58,6 +58,16 @@ resolve a link into a dependent crate.
 - `tactical_arts` / `tactical_arts_editor` - learn-on-use tracking and the
   Arts chain editor.
 
+**Battle input state**
+
+- `target_picker` - the target cursor over the live formation, plus the
+  enemy target-menu row dedup / labelling and its overlap-relaxation
+  layout (`FUN_801D9D3C`).
+- `arts_command_input` - the retail Arts command entry: directional buffer,
+  per-command AP debit from the turn pool, the auto-command-string preseed
+  and the Begin | Reselect review.
+- `battle_arts` / `battle_magic` - the Arts and Magic submenus.
+
 **Per-frame passes**
 
 - `battle_anim` - per-actor battle clip playback.

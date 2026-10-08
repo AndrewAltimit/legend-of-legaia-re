@@ -454,7 +454,7 @@ holds **no** channel selector):
   are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
   control / `CdlSetfilter` state machines around them stay hardware-side - scope
   row `[cd_transport_shims]`, with the callback ring `FUN_8003D764` decoded in
-  `legaia_engine_audio::battle_voice::xa_transport_step`.
+  `legaia_engine_audio::xa_transport::xa_transport_step`.
   `legaia-engine xa-cue <ids> [--xa-dir extracted/XA]` runs that mapping for a set of cue ids and
   reports the `XA<n>.XA` bank, the filter channel and the duration / end-LBA arithmetic, checking
   each resolved bank against the extracted files - the census entry point for this path.
@@ -1134,7 +1134,7 @@ whichever build's matrix was live when they were emitted
 
   **Falsified**: the earlier reading that mode 1 runs the eye trio linear while pitch / yaw ease out. There is no per-axis curve split - the mover re-reads the same `actor[+0x50]` once per axis. Mode 4 is the two-half integer curve above, not smoothstep, and mode 3 (ease-in) was missing from the model entirely. The earlier attribution of the mover to `FUN_801DB510` was also wrong: that is the **follow / scroll** camera (its `srav` lerp toward `_DAT_801F2798`-table targets), a different mode of the same globals.
 
-  The port is [`legaia_engine_vm::camera_mover`](../../crates/engine-vm/src/camera_mover.rs) (the integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer's [`CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) evaluates). It was validated against a live headless capture of the retail mover: 2471 of 2480 sampled `(axis, start, end, t, d, curve) -> global` tuples reproduce exactly, and every remaining sample resolves under a 1-6 display-frame read skew (the probe's own round-trip lag) except the two frames on which a new beat re-armed the block mid-read.
+  The port is [`legaia_engine_vm::camera_mover`](../../crates/engine-battle-vm/src/camera_mover.rs) (the integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer's [`CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) evaluates). It was validated against a live headless capture of the retail mover: 2471 of 2480 sampled `(axis, start, end, t, d, curve) -> global` tuples reproduce exactly, and every remaining sample resolves under a 1-6 display-frame read skew (the probe's own round-trip lag) except the two frames on which a new beat re-armed the block mid-read.
 
   A second, frame-exact validation replays whole staged beats against per-display-frame recomp captures of the opening chain (the [recomp differential harness](../tooling/recomp-differential.md)): the env-gated oracle [`camera_mover_recomp_oracle`](../../crates/engine-vm/tests/camera_mover_recomp_oracle.rs) (`LEGAIA_RECOMP_TRACE_DIR`) reproduces the snap, mode-1, mode-2 and mode-4 beats **bit-exact** per frame within the mover's own 2-3-frame tick quantisation.
   Mode 1 measures linear on pitch/yaw across three independent beats (the per-axis "eased angles" split fails those captures by an order of magnitude), and the `town01` arrival H glide (`P2[3] +0x00C4`, `op0 0x13`, `apply` 600, H 412 → 512) decodes and measures as **mode 4** ease-in-out - the H slot participates in the glide like every other slot. The disc-gated pin `town01_arrival_camera` holds the three arrival beats' decoded `(apply, mode)` staging.

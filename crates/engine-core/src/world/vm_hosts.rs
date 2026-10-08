@@ -48,37 +48,46 @@ impl<'a> ActorVmHost for ActorVmHostImpl<'a> {
         a.move_state.world_x = default_position.x;
         a.move_state.world_y = default_position.y;
     }
-    fn set_position(&mut self, actor_id: u8, p: ActorVmPosition) {
-        let a = &mut self.world.actors[actor_id as usize];
-        a.move_state.world_x = p.x;
-        a.move_state.world_y = p.y;
-    }
-    fn start_motion(&mut self, actor_id: u8, target: ActorVmPosition) {
-        // Retail `FUN_800358c0`: write the glide target onto the actor (and
-        // its subobj mirrors) and clear the glide cursor; the per-frame
-        // pursue step is the motion VM. The world installs a motion-VM leg
-        // gliding the actor's sprite position toward the target
+    fn slide_to(&mut self, actor_id: u8, target: ActorVmPosition) {
+        // Retail `FUN_800357fc`: copy the live position into the motion
+        // source, write the target and raise the motion word; the per-frame
+        // walker animates it. The world installs a motion-VM leg gliding the
+        // actor's sprite position toward the target
         // ([`World::start_actor_motion`], stepped by `tick_actor_motions`),
         // and - when the actor id is also an installed field-NPC placement
         // slot - walks that NPC in the field frame (y → z).
-        // PORT: FUN_800358c0
+        // PORT: FUN_800357fc
         self.world.start_actor_motion(actor_id, target);
         if self.world.npcs.positions.contains_key(&actor_id) {
             self.world
                 .start_field_npc_motion(actor_id, target.x, target.y);
         }
     }
-    fn delete_sprite(&mut self, actor_id: u8) {
+    fn snap_to(&mut self, actor_id: u8, p: ActorVmPosition) {
+        // Retail `FUN_800358c0`: position, source and target written alike,
+        // motion word cleared.
+        // PORT: FUN_800358c0
+        let a = &mut self.world.actors[actor_id as usize];
+        a.move_state.world_x = p.x;
+        a.move_state.world_y = p.y;
+        a.field_20 = 0;
+    }
+    fn begin_close(&mut self, actor_id: u8) {
+        // `FUN_80035978` starts a close animation this host has no frames
+        // for, so the close completes at once.
         if let Some(a) = self.world.actors.get_mut(actor_id as usize) {
             a.active = false;
         }
     }
-    fn global_update(&mut self) {
-        // Tick whatever per-frame sprite-system state advances. The default
-        // world has no global sprite ticker, but engines override this.
+    fn close_all(&mut self) {
+        // `FUN_80035A4C`: every window on the list begins its close. This
+        // demo host's windows are the field actors, which it does not own
+        // as a window list, so it closes none.
     }
-    fn actor_effect(&mut self, actor_id: u8) {
+    fn destroy(&mut self, actor_id: u8) {
+        // `FUN_800319A8`: free and unlink at once.
         if let Some(a) = self.world.actors.get_mut(actor_id as usize) {
+            a.active = false;
             a.last_effect = a.last_effect.wrapping_add(1);
         }
     }
@@ -296,7 +305,10 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.terrain.map_origin_xz
     }
     fn move_axis_threshold(&self) -> i16 {
-        self.world.move_vm.axis_threshold
+        self.world
+            .move_vm
+            .pool_top_override
+            .unwrap_or_else(|| self.world.actor_pool_top())
     }
     fn move_dat_1f800393(&self) -> u8 {
         self.world.move_vm.ramp_ratio

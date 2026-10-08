@@ -769,6 +769,20 @@ impl PlayWindowApp {
                         .world
                         .seed_object_live_model(record, model);
                 }
+                for w in &sc.seat_walkers {
+                    self.session
+                        .host
+                        .world
+                        .seed_ambient_walker(w.flat, w.x, w.z, w.heading);
+                }
+                for m in &sc.seat_morphs {
+                    self.session.host.world.seed_field_morph(
+                        m.flat,
+                        &m.weights,
+                        m.done_mask,
+                        m.env,
+                    );
+                }
             }
         }
         // Capture harness: phase-align the battle idle orbit to the retail

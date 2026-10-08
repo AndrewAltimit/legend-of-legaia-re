@@ -49,6 +49,46 @@ on the card, so the pause menu's Load row - open in every scene, where Save
 is per-scene - has a file to resume, and random menu browsing reaches the
 card flow end to end.
 
+Any run label can end in `@<save>` (`town01+rt@PRO-14`): the run lifts that
+save from the library card (`LEGAIA_SOAK_CARD`, default the playthrough card)
+and plays the scene with its party, bag and story flags instead of the New
+Game party's, so late-game scenes are soaked with the party and flags they are
+reached with. `LEGAIA_SOAK_SAVE=<save>` applies it to the whole scene set.
+Whatever value check the seeded state already fails (the playthrough card
+holds a 255-count stack) belongs to the save and is not reported.
+
+An `@<save>` run still enters its scene by name, not through a door the
+save's story opens, so a finding only such a run raises needs that door
+before it is an engine defect. Two of the shape are known. From `PRO-04` on,
+`map01`'s entry script (`P1[0]`, behind system flag `0x3BA`) walls in Rim
+Elm's footprint (tiles `95..97 x 24..27` and row 25 from 94 to 98, leaving
+`(96, 27)`); the `town0b` and `town0c` exits land on `(96, 25)`, inside
+those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That Rim Elm is
+the chapter-1 town: in this stretch of the story the party's Rim Elm is
+`town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
+on all four sides once the arrival cutscene that moves the party off it is
+gated off by the save's flags.
+
+`opurud+rt` once failed its save / load round trip on the party records
+(records 1 and 2 read zero at their first byte after the resume). That one
+was an engine defect, not an entry artifact: a field save folded actor slots
+1 and 2 back into the records, and in a field those slots are the scene's -
+`opurud`'s scripts re-stamp them from zeroed nodes - so the save zeroed both
+pools and the load re-seeded the "unjoined" members from the New Game
+template. `World::save_party` now folds actor mirrors back only in a battle.
+Its repro is `fixed/opurud_field_save_zeroes_party_records`; it needs the
+library card the `@PRO-00` label names.
+
+The soak reaches the round trip only where a random walk takes it. Its
+library-wide sibling is `engine-shell/tests/save_roundtrip_library.rs`: every
+Legaia save on the library cards is loaded through the card path both hosts
+take (`MountedCard::save_at`, then `BootSession::resume_save`), checked field
+for field against the block it came from, played on, and saved through a
+blank card (`card_write::write_save_into_card`), the LGSF codec and a second
+resume; each card's latest save repeats the round trip in a spread of
+scenes. The field VM's scratchpad word (`ext.story_flags`) is outside that
+comparison for the card path - no retail block carries it.
+
 A shop run is a pseudo-scene `<scene>+shop`, one per scene whose MAN carries
 a priced gold shop. Every `SHOP_VISIT_EVERY` free field frames it hands one of
 the scene's shops (`World::scene_shop_session`) to the menu runtime, as the
@@ -174,6 +214,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_BATTLE_FRAMES` | endless-battle threshold |
 | `LEGAIA_SOAK_HANG_SECS` | single-tick watchdog |
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
+| `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a
@@ -253,6 +294,7 @@ regression.
 | `koin2_fatal_decision_stone_party` | a fight sat in Fatal Decision's capture band for 18000 frames | the `0x5A` wipe scan reads the packed `+0x16E` (`status_word`), so a petrified party wipes - the caster had been re-seeded forever |
 | `map01_overworld_beat_walk_never_steps` | `urudre2`'s hand-off beat on `map01` walked two placements with `C7` and parked on `B3 12 0A` for good | the world-map arm steps cross-context walk legs, as the field arm does |
 | `jouine_camera_glide_pan` | `jouine` `P2[16]` parked on `4C CD` for longer than the softlock window | harness: the camera glide countdown is in both digests - the pan is about 2200 frames and is the shot moving |
+| `opurud_field_save_zeroes_party_records` | `opurud+rt@PRO-00` lost records 1 and 2 on its save / load round trip | a field save keeps the records; actor mirrors fold back only in a battle |
 | `conc3_ambient_walker_seat_snapback` | a cutscene walk ran from the walker's off-stage wander box across the whole map | an ambient walker adopts the live seat a script's `0x23` writes; it had re-published its own stale coordinates on its next step |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 
@@ -271,11 +313,11 @@ The field-side fixes are described with their retail evidence in
 - **Anything past the first finding in a run.** A run stops at its first
   fatal finding (panic, tick error, softlock, stuck menu, endless battle,
   drop to title), and at a game over.
-- **Deep progression.** Every run starts from a New Game party in the scene
-  it names, and a New Game party loses most late-game encounters; the harness
-  does not cheat past that (the HP-bar pair makes a bare HP top-up a false
-  softlock of its own), so late-game battles are reached only in their first
-  rounds.
+- **Deep progression.** A plain run starts from a New Game party in the
+  scene it names, and a New Game party loses most late-game encounters; the
+  harness does not cheat past that (the HP-bar pair makes a bare HP top-up a
+  false softlock of its own). An `@<save>` run brings the save's party and
+  flags instead, but only the states the library card holds.
 - **Host drift.** The harness mirrors the host duties listed above; a duty a
   real host performs that the list does not name is invisible here, and one
   the harness performs that a host has dropped is masked.

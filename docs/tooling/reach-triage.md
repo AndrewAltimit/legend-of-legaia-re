@@ -46,8 +46,8 @@ dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 5 are
 the reach worklist, every one of which carries a verdict below: `8004629c`
 (b), and `801d31b0`, `801d553c`, `801dd4c4`, `801f1a00` (d). The three rows
 an earlier figure listed as awaiting a newer union member - `801f2134`,
-`800485bc` and `801dba90` - read entered, and `8004629c` is pinned
-content-gated by a disc census rather than by the captures alone. The
+`800485bc` and `801dba90` - read entered, and `8004629c`'s gate is
+a single disc carrier (`urudre1` stager record 14) rather than absent content. The
 battle-tutorial countdown arm `801f7628`, a port site the ignore list had
 hidden as interior until the static images took the inherited-tail cut
 ([`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code)),
@@ -178,8 +178,9 @@ over one set of profiles: the scoped export carries 42 files, every one under
 `crates/engine-shell/`, and reporting the same profiles with no `-p` carries
 652 across fifteen crates. The ladder's whole yield is in the second number -
 the dance HUD, the fishing chrome and actors, the Baka number drawers and the
-casino counter are `engine-core`, and the draw builders under them are
-`engine-ui`.
+casino counter live in `engine-minigames` (re-exported by `engine-core`), and
+the draw builders under them are `engine-ui` - so a ladder under
+`engine-core`'s tests runs code in two other crates.
 
 The failure mode is quiet in exactly the wrong direction: a scoped export shows
 the ladder joining the union and changing nothing, which reads identically to a
@@ -1021,7 +1022,7 @@ all of it executes under one ladder now.
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
 | `fishing/prize.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
-| `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+| `crates/engine-shell/src/window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
 
 **`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
 
@@ -1617,7 +1618,7 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 |---|---|---|---|---|
 | `battle_trail.rs` | 1 | (b), **converted** | the weapon-trail gate is the committed clip's `+0x77` identity byte, not the move-power record: `FUN_8005112C` fires only on four swing clips (Vahn `0x29`, Noa `0x1E` / `0x2A`, Gala `0x64`), and the earlier reading here borrowed `801e1ab0`'s `+0x0b` gate. On the disc, Vahn's `0x29` is his art-bank clip `0x2B`. `w1c_battle_render_ladder`'s rung 6 seats that clip in a forced fight through the page's `debug_stage_battle_anim` and requires the page to plan and compose the sweep, against the same fight before seating, which plans none. `weapon_trail_prims` is called on both hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`) | `800485bc` |
 | `ui_menu_window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`legaia_engine_screens::prize_window_draws`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
-| `gte/math.rs` | 1 | (b) | wired, not disclosed: `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, but only for a part whose `+0x52` skips pitch or roll and **keeps** yaw. No captured node carries such a word, and neither does the disc: `move_ctrl52_census_disc` walks every op-`0x15` site in the scenes' stager records and the slot-B spawn records, finds none, and asserts that zero ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50) lists both word sets). Content, not a host gap | `8004629c` |
+| `gte/math.rs` | 1 | (b) | `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, only for a part whose `+0x52` keeps yaw. One disc word does: `urudre1` stager record 14's `0x0080`, past an ext `0x37` guard a first-`HALT` walk never crossed (`move_ctrl52_census_disc` pins it; [`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)). The gate is the scene: Vahn's dream at Uru Mais installs record 6 from `P2[1]` / `P2[3]` (`34 30 05`), which spawns record 14 through op `0x25`. No ladder visits the dream | `8004629c` |
 
 The crate used to be the largest one-reason cluster on this page: with no
 rendering host in the union, every anchored builder read never-entered at
@@ -1955,7 +1956,7 @@ row.
 
 ## The cast-module band, the largest cluster on this page and the one with no rows
 
-`crates/engine-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
+`crates/engine-battle-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
 submodules) is still the largest single-module
 cluster in the never-entered set, and it is still the only cluster of any size
 not cited anywhere else on this page - the file arrived whole and never went

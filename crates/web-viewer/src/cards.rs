@@ -752,3 +752,219 @@ mod tests {
         assert_eq!(arr[1]["inserted"], false);
     }
 }
+
+/// A card save crosses between the two play hosts unchanged: the browser
+/// page and the native window load the same block to the same world, write
+/// the same block from it, and each loads the block the other wrote to that
+/// same world again. Both hosts' halves are the shared kernels
+/// (`MountedCard::save_at`, `resume_card_load`, `card_write::write_save_into_card`)
+/// behind each host's own scene entry, so this pins the entries too.
+///
+/// Runs every Legaia save on the library cards (`LEGAIA_SAVES_LIBRARY`).
+/// Disc-gated; also skips without the library.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod cross_host {
+    use super::*;
+    use legaia_engine_session::{BootConfig, BootSession};
+    use legaia_save::{SaveFile, SaveResume};
+    use std::path::PathBuf;
+
+    type NativeSession = BootSession<legaia_engine_audio::AudioOut>;
+
+    fn library_cards() -> Vec<(String, Vec<u8>)> {
+        let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../saves/library")
+            });
+        let Ok(rd) = std::fs::read_dir(lib.join("cards")) else {
+            return Vec::new();
+        };
+        let mut out: Vec<(String, Vec<u8>)> = rd
+            .flatten()
+            .filter_map(|e| {
+                let bytes = std::fs::read(e.path()).ok()?;
+                Some((e.file_name().to_string_lossy().into_owned(), bytes))
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Blocks on `card` that open a Legaia save.
+    fn legaia_blocks(card: &MountedCard) -> Vec<u8> {
+        (1..=CARD_BLOCKS)
+            .filter(|&b| {
+                card.sc_block(b).is_some()
+                    && card
+                        .dir_frame(b)
+                        .and_then(|f| f.get(0x0A..0x16))
+                        .is_some_and(|n| n == b"BASCUS-94254")
+            })
+            .collect()
+    }
+
+    fn native_session(disc: &std::path::Path) -> NativeSession {
+        let cfg = BootConfig {
+            scene: "town01".into(),
+            enable_audio: false,
+        };
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../extracted");
+        if root.join("PROT.DAT").exists() && root.join("CDNAME.TXT").exists() {
+            BootSession::open(&root, &cfg).expect("native session (extracted)")
+        } else {
+            BootSession::open_disc(disc, &cfg).expect("native session (disc)")
+        }
+    }
+
+    fn native_opts() -> legaia_engine_session::boot::FieldLiveOpts {
+        legaia_engine_session::boot::FieldLiveOpts {
+            live_loop: false,
+            player_battle: true,
+            battle_bgm: None,
+        }
+    }
+
+    /// Native Load of `card`'s `block`: the window's `--card` port path.
+    fn native_load(s: &mut NativeSession, card: &MountedCard, block: u8) -> (SaveFile, SaveResume) {
+        let (sf, resume) = card.save_at(block - 1).expect("native: a save");
+        s.begin_new_game();
+        let _ = s.resume_save(sf, &resume.scene, &native_opts());
+        (s.host.world.save_full(), s.current_resume())
+    }
+
+    /// Browser Load of `card`'s `block` into rack port 0.
+    fn web_load(rt: &mut LegaiaRuntime, bytes: Vec<u8>, block: u8) -> (SaveFile, SaveResume) {
+        rt.insert_card_core(0, bytes, "card".into())
+            .expect("web: card mounts");
+        rt.begin_new_game();
+        rt.load_session_from_card(0, block).expect("web: load");
+        rt.resume_parked_save().expect("web: a parked save");
+        (rt.world_mut().save_full(), rt.current_resume())
+    }
+
+    fn blank() -> MountedCard {
+        MountedCard::from_bytes(formatted_memory_card(), "blank").expect("blank card")
+    }
+
+    fn diff(a: &SaveFile, b: &SaveFile) -> Option<String> {
+        if a == b {
+            return None;
+        }
+        for (i, (x, y)) in a.party.members.iter().zip(&b.party.members).enumerate() {
+            if let Some(o) = (0..x.raw.len()).find(|&o| x.raw[o] != y.raw[o]) {
+                return Some(format!(
+                    "party[{i}]+{o:#05x} {:#04x} vs {:#04x}",
+                    x.raw[o], y.raw[o]
+                ));
+            }
+        }
+        if a.ext != b.ext {
+            let (da, db) = (format!("{:?}", a.ext), format!("{:?}", b.ext));
+            let at = da
+                .chars()
+                .zip(db.chars())
+                .position(|(p, q)| p != q)
+                .unwrap_or(0);
+            let cut = |s: &str| {
+                s.chars()
+                    .skip(at.saturating_sub(40))
+                    .take(120)
+                    .collect::<String>()
+            };
+            return Some(format!("ext: ...{}... vs ...{}...", cut(&da), cut(&db)));
+        }
+        if a.ext_v2.field_position != b.ext_v2.field_position {
+            return Some(format!(
+                "field_position {:?} vs {:?}",
+                a.ext_v2.field_position, b.ext_v2.field_position
+            ));
+        }
+        Some(format!("ext_v2: {:?} vs {:?}", a.ext_v2, b.ext_v2))
+    }
+
+    #[test]
+    fn a_card_save_crosses_between_the_hosts_unchanged() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(disc_bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable (disc-gated)");
+            return;
+        };
+        let cards = library_cards();
+        if cards.is_empty() {
+            eprintln!("[skip] no library cards (LEGAIA_SAVES_LIBRARY)");
+            return;
+        }
+        let mut native = native_session(&disc);
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(disc_bytes, String::new()).expect("load_disc");
+        let index = native.host.index.clone();
+
+        let mut failures = Vec::new();
+        let mut checked = 0usize;
+        for (file, bytes) in &cards {
+            let Ok(card) = MountedCard::from_bytes(bytes.clone(), file.clone()) else {
+                continue;
+            };
+            for block in legaia_blocks(&card) {
+                let tag = format!("{file} block {block}");
+                // 1. Both hosts load the library block to the same world.
+                let (n_sf, n_res) = native_load(&mut native, &card, block);
+                let (w_sf, w_res) = web_load(&mut rt, bytes.clone(), block);
+                if let Some(d) = diff(&n_sf, &w_sf) {
+                    failures.push(format!("{tag}: native vs web load: {d}"));
+                }
+                if n_res != w_res {
+                    failures.push(format!("{tag}: resume {n_res:?} vs {w_res:?}"));
+                }
+
+                // 2. Both hosts write the same block from it.
+                let mut n_card = blank();
+                write_save_into_card_native(&mut n_card, &mut native, &index);
+                rt.insert_card_core(0, formatted_memory_card(), "blank".into())
+                    .unwrap();
+                rt.write_session_into_card(0, 1).expect("web: save");
+                let w_card = MountedCard::from_bytes(rt.card_bytes(0), "web").unwrap();
+                let (nb, wb) = (n_card.sc_block(1).unwrap(), w_card.sc_block(1).unwrap());
+                if let Some(o) = (0..nb.len()).find(|&o| nb[o] != wb[o]) {
+                    failures.push(format!(
+                        "{tag}: native vs web block differ first at {o:#06x} ({:#04x} vs {:#04x})",
+                        nb[o], wb[o]
+                    ));
+                }
+
+                // 3. Each host loads the other's block to the same world.
+                let (n_from_w, _) = native_load(&mut native, &w_card, 1);
+                if let Some(d) = diff(&n_sf, &n_from_w) {
+                    failures.push(format!("{tag}: native load of the web block: {d}"));
+                }
+                let (w_from_n, _) = web_load(&mut rt, n_card.bytes.clone(), 1);
+                if let Some(d) = diff(&w_sf, &w_from_n) {
+                    failures.push(format!("{tag}: web load of the native block: {d}"));
+                }
+                checked += 1;
+            }
+        }
+        eprintln!(
+            "[ran] {checked} library saves crossed native <-> web, {} problem(s)",
+            failures.len()
+        );
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// The native window's card Save (`boot_cutscene.rs`'s commit): the live
+    /// session through the shared writer, portrait from the disc.
+    fn write_save_into_card_native(
+        card: &mut MountedCard,
+        s: &mut NativeSession,
+        index: &legaia_engine_core::scene::ProtIndex,
+    ) {
+        let sf = s.host.world.save_full();
+        let resume = s.current_resume();
+        legaia_engine_core::card_write::write_save_into_card(card, 1, &sf, &resume, Some(index))
+            .expect("native: save");
+    }
+}

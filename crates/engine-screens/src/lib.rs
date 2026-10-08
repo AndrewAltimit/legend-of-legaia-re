@@ -177,14 +177,14 @@ pub fn shop_item_label(world: &World, id: u8) -> String {
 /// `FUN_801D4A80` routes an **accessory** (item record kind byte `2`) through
 /// the passive table instead of the item's own description word, and draws
 /// nothing at all when that passive index is the `>= 0x40` sentinel.
-/// `MenuTextTables::item_passive_lines` resolves the same chain
+/// `MenuTextTables::item_passive_text` resolves the same chain
 /// (`legaia_asset::accessory_passive`, which applies the sentinel bound), so a
 /// `Some` there is the accessory arm and a `None` is the item arm.
 pub fn shop_item_description(world: &World, id: u8) -> String {
     let Some(text) = world.menu.text.as_ref() else {
         return String::new();
     };
-    if let Some((_, desc)) = text.item_passive_lines(id) {
+    if let Some((_, desc)) = text.item_passive_text(id) {
         return desc;
     }
     text.item_desc(id).unwrap_or_default().to_string()

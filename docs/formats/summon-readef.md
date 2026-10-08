@@ -292,6 +292,15 @@ VRAM targets are positional (`FUN_801F12D0` cases 2 / 4): the group's first
 texture slot → CLUT at `(0, 488)` + page at `(512, 0)`; the second → CLUT at
 `(0, 490)` + page at `(640, 0)`.
 
+A summon module's parts sample those pages. PROT 0903's fire tunnel draws one
+of its two additive layers from a single texel of the `(512, 0)` page through
+row 488 (`gimard_burning_attack`'s packets: tpage `0xA8`, CLUT `0x7A00`, every
+UV `(0, 255)`), so the tunnel's orange cast is the cast's own `summon.dat`
+page; with the last monster turn's `readef.DAT` page left there instead, the
+tunnel draws grey. The port streams a player cast's two texture slots when its
+stager arms (`battle_sideband_textures::record_cast_sideband_textures`), and
+the formation's monster groups at battle entry.
+
 ### Big-summon raw slot (3rd slot, `base >= 0xCB` only)
 
 Consumed headerless by case 6 - the three regions tile the slot exactly

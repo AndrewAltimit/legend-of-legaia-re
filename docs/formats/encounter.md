@@ -115,7 +115,7 @@ What the raised bit then changes is tabulated under [the per-battle flags byte](
 
 - The bare arm-encounter op (`0x37`/`0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded record window overlaying the opcode (`[opcode][op1][op2][count][≤4 ids]`).
 - The engine consumer (`World`) parses that window as an `EncounterRecord`, registers the formation, and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`); a successful install disarms (fire-once, matching the retail `entity[+0x94]` clear).
-- `scripted_encounter_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
+- `World::encounters.scripted_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
 
 ## Writer (record-pointer install)
 
@@ -566,6 +566,27 @@ boot value is set from outside that corpus, and the runtime captures are what
 pin it. The engine mirrors the numbering in
 `region_encounter::EncounterRateSetting`, whose `Default` is the `1`
 pass-through.
+
+#### Steps that do not roll
+
+Between the region's battle-setup half and the rate scale, the reader
+returns without touching the counter on any of these conditions, and on a
+zero second argument (`0x801DA130..0x801DA180`):
+
+| Test | What it is |
+|---|---|
+| `*(_DAT_8007C364)+0x10 & 0x80000` | The player's engaged bit. A talk or touch raises it, and so does the script runner `FUN_80039B7C` on every frame it steps a context (`0x80039DB8..0x80039DD4`): a door record carrying the party out, a scripted walk and an open box all hold the roll. |
+| `_DAT_8007B6B4 != 0` | The dialogue-pacing countdown the runner arms as a context closes. |
+| `_DAT_8007B6B0 > 0` | The kind-0 warp timer between a teleport tile and its landing. |
+| `_DAT_8007B600 != 0` | The Incense window (`0x801DA174`). |
+
+A step onto a door therefore never also starts a fight. The trigger itself
+raises the same engaged bit (below), so a step that does roll stops the
+player where it stands for the battle intro and cannot carry on onto a door.
+The engine reads the first three as `World::encounter_roll_held` (gating
+both roll sites) and the trigger's lock as `World::encounter_owns_player`
+(gating overworld locomotion and portal contact); the disc-gated
+`world_map_door_encounter_disc` test pins both on `map01`'s door to `dolk2`.
 
 The scaled rate is subtracted from the step counter at `_DAT_8007B5FC`.
 Engine port: `region_encounter::EncounterRateModifiers` (applied on both
@@ -1177,6 +1198,6 @@ rather than in a pack.
 ## Files referencing this format
 
 - [`crates/engine-vm`](../../crates/engine-vm/) - the field VM dispatcher port reads the operand and writes the actor pointer slot.
-- [`crates/engine-battle::encounter`](../../crates/engine-core/) - the runtime engine's `EncounterRecord` parser exposes `monster_count` / `monster_ids` from a candidate byte slice.
+- [`crates/engine-battle::encounter_record`](../../crates/engine-battle/src/encounter_record.rs) - the runtime engine's `EncounterRecord` parser exposes `count` / `monster_ids` from a candidate byte slice.
 - [`subsystems/world-map.md`](../subsystems/world-map.md) - world-map controller integration.
 - [`subsystems/script-vm.md`](../subsystems/script-vm.md) - the dispatcher op-handler family that installs the pointer.

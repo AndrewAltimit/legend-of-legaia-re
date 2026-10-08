@@ -53,17 +53,21 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     // The banner and the status readout are mutually exclusive, and one
     // predicate says so for every host.
     assert!(!world.minigames.dance_status_visible());
-    // The intro cue fires once, on the hold-segment entry.
-    let mut cues = world.drain_minigame_sfx_cues();
+    // The intro cue fires once, on the hold-segment entry, stored straight
+    // into ring slot 0 as `FUN_801d2d98` does - not through the cue
+    // dispatcher, which would classify `0x200` as a CD-XA voice.
+    let intro = crate::world::SfxRingOp::WriteSlot(
+        crate::dance::STAGE_CUE_RING_SLOT,
+        crate::dance::COUNTIN_INTRO_CUE as i16,
+    );
+    let mut ops = world.take_sfx_ring_ops();
     for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
-        cues.extend(world.drain_minigame_sfx_cues());
+        ops.extend(world.take_sfx_ring_ops());
     }
     assert_eq!(
-        cues.iter()
-            .filter(|c| **c == crate::dance::COUNTIN_INTRO_CUE)
-            .count(),
+        ops.iter().filter(|o| **o == intro).count(),
         1,
         "the count-in intro cue is once-only"
     );
@@ -801,4 +805,97 @@ fn minigame_frames_clear_to_black_over_the_suspended_field_colour() {
     }
     world.mode = SceneMode::Fishing;
     assert_eq!(world.frame_clear_rgb(), [0x3C, 0x28, 0x14]);
+}
+
+/// A dance miss is a direct store of `0x210` into ring slot 3, and a closed
+/// chain keys the two sting voices on the queue both hosts drain - in the
+/// dance's VAB (`a1 = 2`), program 1, at a note in the random band.
+#[test]
+fn dance_award_sounds_reach_the_ring_and_the_voice_queue() {
+    use crate::dance::{AWARD_CUE_RING_SLOT, AWARD_MISS_CUE, DanceAwardSound};
+    let mut world = World::new();
+    world.route_dance_award_sounds(&[DanceAwardSound::Cue(AWARD_MISS_CUE)]);
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![crate::world::SfxRingOp::WriteSlot(
+            AWARD_CUE_RING_SLOT,
+            AWARD_MISS_CUE as i16
+        )]
+    );
+    world.route_dance_award_sounds(&[DanceAwardSound::Sting { r: 0, random: true }]);
+    let keys = world.take_sfx_voice_keys();
+    assert_eq!(keys.len(), 2);
+    assert_eq!(
+        keys.iter().map(|k| k.voice).collect::<Vec<_>>(),
+        vec![0x12, 0x13]
+    );
+    for k in &keys {
+        assert_eq!((k.vab_program_tone.0, k.vab_program_tone.1), (2, 1));
+        assert!((0x3C..0x3F).contains(&k.note_and_fine.0));
+    }
+}
+
+/// The lure landing stores cue `0x204` into ring slot 2, once per cast, on
+/// the frame the persistent cast counter moves (`FUN_801d26cc` `0x801D2950`).
+#[test]
+fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
+    let mut world = World::new();
+    world.enter_fishing_session(&fishing_test_tables(64), 0, None);
+    for _ in 0..3 {
+        fishing_frame(&mut world, 0);
+    }
+    let _ = world.take_sfx_ring_ops();
+    let mut ops = Vec::new();
+    let circle = input::PadButton::Circle.mask();
+    fishing_frame(&mut world, 0);
+    fishing_frame(&mut world, circle);
+    ops.extend(world.take_sfx_ring_ops());
+    for _ in 0..crate::fishing::WINDUP_FRAMES + 24 {
+        fishing_frame(&mut world, 0);
+        ops.extend(world.take_sfx_ring_ops());
+    }
+    fishing_frame(&mut world, circle);
+    ops.extend(world.take_sfx_ring_ops());
+    let landing = crate::world::SfxRingOp::WriteSlot(2, 0x204);
+    assert!(!ops.contains(&landing), "nothing before the lure flies");
+    for _ in 0..crate::fishing::FLIGHT_FRAMES {
+        fishing_frame(&mut world, 0);
+        ops.extend(world.take_sfx_ring_ops());
+    }
+    assert_eq!(fishing_phase(&world), crate::fishing::PondPhase::Waiting);
+    assert_eq!(ops.iter().filter(|o| **o == landing).count(), 1);
+}
+
+/// A hooked rod held past its bend cap creaks: cue `0x201` into ring slot 1,
+/// first on the frame the cap is crossed, then at most once per re-armed
+/// countdown (`rand() % 200 + 60` vsyncs).
+#[test]
+fn a_hooked_rod_bent_past_its_cap_creaks() {
+    let mut world = World::new();
+    world.enter_fishing_session(&fishing_test_tables(64), 0, None);
+    for _ in 0..3 {
+        fishing_frame(&mut world, 0);
+    }
+    fishing_cast(&mut world);
+    let _ = fishing_hold_until_hooked(&mut world);
+    let _ = world.take_sfx_ring_ops();
+    let creak = crate::world::SfxRingOp::WriteSlot(1, 0x201);
+    let cross = input::PadButton::Cross.mask();
+    let mut frames_with_creak = Vec::new();
+    for f in 0..120 {
+        if fishing_phase(&world) != crate::fishing::PondPhase::Hooked {
+            break;
+        }
+        fishing_frame(&mut world, cross);
+        if world.take_sfx_ring_ops().contains(&creak) {
+            frames_with_creak.push(f);
+        }
+    }
+    assert!(!frames_with_creak.is_empty(), "the rod creaks under load");
+    for w in frames_with_creak.windows(2) {
+        assert!(
+            w[1] - w[0] >= 60,
+            "re-armed at least 60 vsyncs out: {frames_with_creak:?}"
+        );
+    }
 }

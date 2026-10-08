@@ -52,7 +52,6 @@ window.MgDance = (function () {
   'use strict';
 
   const SCALE = 2;                 /* retail 320x240 -> 640x480 canvas */
-  const A2R = (Math.PI * 2) / 4096; /* PSX angle units -> radians */
 
   /* Widget ids, as named in legaia_asset::dance_art (traced draw sites). */
   const W = {
@@ -88,14 +87,8 @@ window.MgDance = (function () {
     let intro = null;        /* pre-run count-in: {t} or null */
     let finished = false;
 
-    function rgbaCanvas(bytes, w, h) {
-      if (!bytes || bytes.length !== w * h * 4) return null;
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      c.getContext('2d').putImageData(
-        new ImageData(new Uint8ClampedArray(bytes), w, h), 0, 0);
-      return c;
-    }
+    /* shared helper: site/js/site-util.js */
+    const rgbaCanvas = window.LegaiaUtil.rgbaCanvas;
 
     function page(pal) {
       if (!(pal in pages)) pages[pal] = rgbaCanvas(api.dance_hud_page_rgba(pal), 256, 256);
@@ -655,9 +648,11 @@ window.MgDance = (function () {
           for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
           buffers[name] = buf;
         }
-        /* The good-step stings: 3 random picks x 2 layers keyed together. */
+        /* The good-step stings: the 3 random picks plus the groovy tiers'
+         * fixed r = 5 (index 5), 2 layers keyed together. */
         const stings = [];
-        for (let r = 0; r < 3; r++) {
+        for (let r = 0; r < 6; r++) {
+          if (r > 2 && r !== 5) { stings.push([]); continue; }
           const pair = [];
           for (let l = 0; l < 2; l++) {
             const pcm = api.dance_sting_pcm(r, l);
@@ -701,10 +696,10 @@ window.MgDance = (function () {
       }
     }
 
-    function playSting() {
+    function playSting(fixed) {
       const a = audioReady();
       if (!a || !a.stings.length) return;
-      const r = (Math.random() * 3) | 0;
+      const r = fixed == null ? (Math.random() * 3) | 0 : fixed;
       for (const buf of a.stings[r] || []) {
         const src = a.ctx.createBufferSource();
         src.buffer = buf;
@@ -952,8 +947,23 @@ window.MgDance = (function () {
 
     /* ---- events from the rules engine ---- */
 
+    /* What the press just judged sounds like - the engine's port of
+     * FUN_801d1af4's dancer-0 arm: a miss cue, a closed chain's random
+     * sting, a landed groovy move's fixed sting plus its tier cue. */
+    function playAwardSounds() {
+      if (typeof api.dance_take_award_sounds !== 'function') return;
+      let sounds;
+      try { sounds = JSON.parse(api.dance_take_award_sounds()); }
+      catch (e) { return; }
+      for (const s of sounds) {
+        if (s.cue != null) playId(s.cue);
+        else if ('sting' in s) playSting(s.sting);
+      }
+    }
+
     function onPress(result, st, sym) {
       const B = layout.banners;
+      playAwardSounds();
       /* Noa's body plays the judge-triggered move clip the kind descriptor
        * names for the event (see bodyRender's doc for the pair semantics). */
       if (body && !body.engine && body.moves && st) {
@@ -971,10 +981,7 @@ window.MgDance = (function () {
         }
       }
       if (result === 'ignored' || result === 'none') return;   /* mid-groovy-move */
-      if (result === 'no_charge') {
-        play('miss', 0.35);
-        return;
-      }
+      if (result === 'no_charge') return;
       if (result === 'groovy' || result === 'groovy_off') {
         /* Landed on the 4-beat combo slot = the big multiplier (and the gauge
          * step that promotes the lane): the combo banner tier by lane. Off the
@@ -986,18 +993,14 @@ window.MgDance = (function () {
           flashT = 12;
           const tier = Math.min(st.lane | 0, 2);        /* Cool! / Great!! / Fever!!! */
           const id = tier === 0 ? W.COOL : tier === 1 ? W.GREAT : W.FEVER;
-          play(tier === 0 ? 'cool' : tier === 1 ? 'great' : 'fever', 0.55);
           spawnBanner(id, B.rating[0], B.rating[1]);
           const so = tier === 0 ? B.star_off.cool : B.star_off.great;
           spawnBanner(W.STAR, B.rating[0] - so, B.rating[1]);
           spawnBanner(W.STAR, B.rating[0] + so, B.rating[1]);
-        } else {
-          playSting();
         }
         return;
       }
       if (result === 'miss') {
-        play('miss', 0.5);
         poses[0] = 1; poseT[0] = 24;
         spawnBanner(W.MISS, B.miss[0], B.miss[1]);
       } else if (result === 'hit' || result === 'sequence') {
@@ -1006,14 +1009,15 @@ window.MgDance = (function () {
           (faces && faces.meta[0] && faces.meta[0].poses - 1) || 2);
         poseT[0] = 24;
         if (result === 'sequence') {
-          play('cool', 0.5);
-          /* No JS spawn here: the rules engine spawned the banner + two stars
-           * into its own sprite-part pool on this same judge, and
-           * drawEngineParts() draws them from the ported emit dispatch. */
-        } else {
-          playSting();
-          spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
+          /* No JS spawn here: the rules engine spawned the Good! banner + two
+           * stars into its own sprite-part pool on this same judge, and
+           * drawEngineParts() draws them from the ported emit dispatch; the
+           * tier-2 sting arrives through dance_take_award_sounds. */
         }
+        /* A plain matched note that does not close the chain is tier 0:
+         * retail spawns no banner and keys no sting for it. This page used
+         * to put a Good! banner and a sting on every hit, so the banner the
+         * native window shows only for a closed chain fired on each step. */
       }
     }
 
@@ -1217,49 +1221,8 @@ window.MgDance = (function () {
     };
   }
 
-  /* Pose `base` (object-local verts) through `clip` at `frame` into `out`,
-   * then spin the whole figure `yaw` about Y and shift it `dx` along X - the
-   * retail per-object composition Rz.Ry.Rx . v + T with a world transform on
-   * top. Identical to minigame-baka.js's poser (the pose stream shape matches
-   * `baka_anim_pose_frames`). `vertBase` selects the dancer's slice of the
-   * combined buffers. */
-  function poseInto(out, base, oids, clip, frame, vertBase, dx, yaw) {
-    const pc = clip.parts, f = clip.frames;
-    const ff = ((frame % clip.frameCount) + clip.frameCount) % clip.frameCount;
-    const sin = new Float32Array(pc * 3), cos = new Float32Array(pc * 3);
-    const tr = new Float32Array(pc * 3);
-    for (let p = 0; p < pc; p++) {
-      const o = (ff * pc + p) * 6;
-      for (let k = 0; k < 3; k++) {
-        const a = f[o + 3 + k] * A2R;
-        sin[p * 3 + k] = Math.sin(a);
-        cos[p * 3 + k] = Math.cos(a);
-        tr[p * 3 + k] = f[o + k];
-      }
-    }
-    const wy = yaw || 0;
-    const wsin = Math.sin(wy), wcos = Math.cos(wy);
-    const n = oids.length;
-    for (let v = 0; v < n; v++) {
-      const vi = (vertBase + v) * 3;
-      const o = oids[v];
-      let x = base[vi], y = base[vi + 1], z = base[vi + 2];
-      if (o < pc) {
-        const sx = sin[o * 3], cxx = cos[o * 3];
-        const sy = sin[o * 3 + 1], cyy = cos[o * 3 + 1];
-        const sz = sin[o * 3 + 2], czz = cos[o * 3 + 2];
-        let ny = y * cxx - z * sx, nz = y * sx + z * cxx; y = ny; z = nz;
-        let nx = x * cyy + z * sy; nz = -x * sy + z * cyy; x = nx; z = nz;
-        nx = x * czz - y * sz; ny = x * sz + y * czz; x = nx; y = ny;
-        x += tr[o * 3]; y += tr[o * 3 + 1]; z += tr[o * 3 + 2];
-      }
-      const wx = x * wcos + z * wsin;
-      const wz = -x * wsin + z * wcos;
-      out[vi] = wx + (dx || 0);
-      out[vi + 1] = y;
-      out[vi + 2] = wz;
-    }
-  }
+  /* shared helper: site/js/site-util.js */
+  const poseInto = window.LegaiaUtil.poseClipInto;
 
   return { create };
 })();

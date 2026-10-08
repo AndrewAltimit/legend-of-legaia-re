@@ -72,15 +72,6 @@
   const padTable = () => window.legaiaPadTable();
 
 
-  /* The retail menu's own clock. Its timers (the save screen's "Now checking"
-   * beat, every slide-in) are counted in 60 Hz frames, so the menu ticks on
-   * this fixed step rather than once per animation frame - the page's own
-   * frame rate is well below 60 on a heavy scene. */
-  const MENU_TICK_MS = 1000 / 60;
-  /* Most catch-up ticks one frame may replay (a backgrounded tab can hand us
-   * an arbitrarily large gap). */
-  const MENU_TICK_MAX_CATCHUP = 8;
-
   /* Blits sub-rects of a source atlas (font glyphs or the menu-chrome sheet)
    * with a per-quad RGBA multiply tint, over a 2D canvas. The retail pause menu
    * emits its geometry as `{ dst, src, color }` quads (the shipped
@@ -1435,7 +1426,7 @@ void main() {
      * Start, closes it on Start, and forwards the remaining edges. Returns `true`
      * while the menu is up, so `_frame` freezes the field - retail holds the
      * world in SceneMode::Menu. */
-    _updateFieldMenu() {
+    _updateFieldMenu(simSteps) {
       const rt = this.rt;
       const p = this.pulse;
       /* Test the Start *bit*, not a key name: Start answers to Enter and
@@ -1462,9 +1453,6 @@ void main() {
           if (!opened) return false;
           if (!scripted) this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
-          /* Start the menu clock now: whatever wall-clock gap preceded the
-           * open is not menu time. */
-          this._menuClock = performance.now();
           p.clear();
           this._repack();
           return rt.play_menu_is_open();
@@ -1487,6 +1475,9 @@ void main() {
         inSubScreen = typeof rt.play_menu_sub_is_open === 'function'
           && rt.play_menu_sub_is_open();
       } catch (e) {}
+      /* A frame that carries no sim tick steps nothing and keeps its edges
+       * for the next one that does (the shop's rule, `_updateFieldShop`). */
+      if (!(simSteps > 0)) return true;
       {
         let edge = 0;
         edge |= padMaskOf(p);
@@ -1506,33 +1497,15 @@ void main() {
         let inlineBlip = false;
         try { inlineBlip = typeof rt.play_menu_blips_inline === 'function' && rt.play_menu_blips_inline(); } catch (e) {}
         if (edge && !inlineBlip) this.menuBlip(edge, !inSubScreen);
-        /* Tick EVERY frame, edge or not, and tick at 60 Hz.
-         *
-         * The menu is not purely input-driven: the save screen's "Now
-         * checking" dialog counts down a retail frame timer and its slide-ins
-         * ramp per tick. Gating the tick on a keypress freezes the card read
-         * forever; ticking once per rAF stretches a ~2 s beat to ~12 s when
-         * the page is running at 10 fps. So run the menu on its own 60 Hz
-         * clock and catch up whole ticks - the same reason retail scales its
-         * slide increments by the frame-skip factor `DAT_1f800393` (see
-         * docs/subsystems/save-screen.md), keeping the animation's real-time
-         * speed constant however slow the frame is.
-         *
-         * The edge is delivered on the first tick only; the catch-up ticks
-         * pass 0 so one keypress can never register twice. */
-        const now = performance.now();
-        if (!this._menuClock) this._menuClock = now;
-        let ticks = Math.floor((now - this._menuClock) / MENU_TICK_MS);
-        /* Cap the catch-up so a backgrounded tab can't spend a whole second
-         * of wall clock replaying menu frames on return. */
-        if (ticks > MENU_TICK_MAX_CATCHUP) {
-          ticks = MENU_TICK_MAX_CATCHUP;
-          this._menuClock = now;
-        } else {
-          this._menuClock += ticks * MENU_TICK_MS;
-        }
-        /* Always at least one tick, so an edge is never dropped. */
-        for (let i = 0, n = Math.max(1, ticks); i < n; i++) {
+        /* One menu step per sim tick, from the engine's frame stepper
+         * (`play_drain_sim_steps`, the `SimStepper` the native window's
+         * redraw drains): the save screen's "Now checking" beat and every
+         * slide-in are counted in retail frames. The page used to keep a
+         * menu clock of its own that ran at least one step every display
+         * frame - twice retail speed at 120 Hz - and caught up to eight. The
+         * edge is delivered on the first tick only, so one keypress can
+         * never register twice. */
+        for (let i = 0; i < simSteps; i++) {
           try { rt.play_menu_input(i === 0 ? edge : 0); } catch (e) {}
         }
         /* A rebind committed inside Options > Key Config. The page folded the
@@ -1633,14 +1606,29 @@ void main() {
      * keeps them for the next one rather than dropping the press.
      *
      * Returns `true` while the shop is up, so `_frame` freezes the field. */
+    /* Steps the open menu-runtime screen and answers whether it FREEZES the
+     * field this frame. A shop or the prize exchange does
+     * (`play_shop_suspends_field`, the engine's `MenuRuntime::suspends_field`);
+     * the inn prompt does not - retail runs it as a field-VM dialogue - so
+     * under it the field ticks on a neutral pad (`_shopHoldsPad`), as the
+     * native window feeds it one while `MenuRuntime::is_open` holds. */
     _updateFieldShop(simSteps) {
       const rt = this.rt;
+      this._shopHoldsPad = false;
       if (typeof rt.play_shop_is_open !== 'function') return false;
       let open;
       try { open = rt.play_shop_is_open(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
-      if (!(simSteps > 0)) return true;
+      const freezes = () => {
+        let open2 = false;
+        try { open2 = rt.play_shop_is_open(); } catch (e) { return false; }
+        if (!open2) return false;
+        this._shopHoldsPad = true;
+        if (typeof rt.play_shop_suspends_field !== 'function') return true;
+        try { return rt.play_shop_suspends_field(); } catch (e) { return true; }
+      };
+      if (!(simSteps > 0)) return freezes();
       let edge = 0;
       edge |= padMaskOf(this.pulse);
       for (let s = 0; s < simSteps; s++) {
@@ -1650,17 +1638,20 @@ void main() {
        * the frozen field on the next tick. */
       this.pulse.clear();
       this._repack();
-      try { return rt.play_shop_is_open(); } catch (e) { return false; }
+      return freezes();
     }
 
     /* Did the tick just run open a screen that suspends the field? The
      * shop / prize counter (`play_shop_is_open`, the engine's
      * `MenuRuntime::is_open`) or a pending scripted menu press
-     * (`play_menu_scripted_open_pending`). Both are engine answers. */
+     * (`play_menu_scripted_open_pending`). Both are engine answers. A
+     * screen already up when the frame began (the inn prompt, which the
+     * field ticks under) is not a new one. */
     _modalOpenedThisTick() {
       const rt = this.rt;
       try {
-        if (typeof rt.play_shop_is_open === 'function' && rt.play_shop_is_open()) return true;
+        if (!this._shopHoldsPad && typeof rt.play_shop_is_open === 'function'
+            && rt.play_shop_is_open()) return true;
       } catch (e) { /* fall through */ }
       try {
         if (typeof rt.play_menu_scripted_open_pending === 'function'
@@ -2550,7 +2541,7 @@ void main() {
 
       /* Field pause menu (Start): consumes this frame's edges and, while up,
        * freezes the field. Must run before the tick reads the pad. */
-      const menuOpen = this._updateFieldMenu();
+      const menuOpen = this._updateFieldMenu(simSteps);
       /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
        * on the engine side, so the field must not advance under it either. */
       const shopOpen = menuOpen ? false : this._updateFieldShop(simSteps);
@@ -2609,8 +2600,14 @@ void main() {
             const edge = padMaskOf(this.pulse);
             this.pulse.clear();
             this._repack();
+            /* One panel step per sim tick, the frame's remaining ticks
+             * included (the native window steps `GameOverSession` once per
+             * tick too); the hold is tick-counted, so a single step per
+             * display frame ran it slow on a frame that carried two ticks. */
             let picked = '';
-            try { picked = rt.game_over_input(edge); } catch (e) {}
+            for (let g = s; g < steps && !picked; g++) {
+              try { picked = rt.game_over_input(g === s ? edge : 0); } catch (e) { break; }
+            }
             /* Continue opened the retail save-select on the card rack (the
              * shared pause-menu Load row); the menu loop below drives it from
              * the next frame. Quit hands back to the page, which re-runs the
@@ -2642,12 +2639,12 @@ void main() {
           const lockedPad = this._cut && this._cut.locked;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
-            rt.set_pad(lockedPad ? 0 : (this.pad | this._vrDrive.pad));
+            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : (this.pad | this._vrDrive.pad));
           } else {
             if (this.debugCamera || !this.cam.vp) {
               rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
             }
-            rt.set_pad(lockedPad ? 0 : this.pad);
+            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
            * only; later catch-up ticks see the held set, so a one-frame tap

@@ -76,7 +76,13 @@ pub struct PickerOption {
     pub rel_jump: i16,
     /// Decoded glyph bytes of the on-screen label (no `0x1F` lead, no `0x00`
     /// terminator). Render through [`legaia_font`](../legaia_font/index.html).
+    ///
+    /// A `0xC1..=0xC7` substitution escape contributes nothing here - this
+    /// crate has no name tables. A host that does re-decodes the label from
+    /// [`Self::lead`] and splices the names in.
     pub label: Vec<u8>,
+    /// Index of the label's `0x1F` lead byte in the source buffer.
+    pub lead: usize,
 }
 
 /// A decoded option-picker control region.
@@ -244,7 +250,11 @@ pub fn parse_picker_at(buf: &[u8], open: usize) -> Option<Picker> {
         let hi = *buf.get(entry + 1)?;
         let rel_jump = i16::from_le_bytes([lo, hi]);
         let (end, label) = decode_label(buf, cur)?;
-        options.push(PickerOption { rel_jump, label });
+        options.push(PickerOption {
+            rel_jump,
+            label,
+            lead: cur,
+        });
         cur = end;
     }
 

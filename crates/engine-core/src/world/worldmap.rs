@@ -216,7 +216,9 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return;
         }
-        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
+        // A committed fight holds the player from the rolling step on, as
+        // retail's trigger raises the engaged bit (`0x801DA2C0..0x801DA2D8`).
+        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 || self.encounter_owns_player() {
             return;
         }
         // Held d-pad → camera-relative direction bits. `sx`/`sy` are the raw
@@ -398,6 +400,11 @@ impl World {
         if self.locomotion.walk_regen_window != 0 {
             return;
         }
+        // The engaged / dialogue-pacing / warp gates (`0x801DA130..`): the
+        // step onto a door, a scripted walk or an open box rolls nothing.
+        if self.encounter_roll_held() {
+            return;
+        }
         if let Some(mut tracker) = self.world_map.region_tracker.take() {
             tracker.set_modifiers(self.encounter_rate_modifiers());
             // Same per-step condition walk the field path runs: the kingdom
@@ -439,6 +446,28 @@ impl World {
         if self.mode == SceneMode::Field {
             self.recentre_field_window_on_player();
         }
+        true
+    }
+
+    /// Arm the overworld's developer band for a **picker** entry: walk mode,
+    /// with the top-view debug camera and the panel chords reachable through
+    /// retail's `_DAT_8007B98C` gate (`ControllerState::debug_enabled`).
+    ///
+    /// The one rule both play hosts ask: a scene picked by name (the native
+    /// `--scene`, the page's scene picker) arms it, and nothing else does -
+    /// not a card Load, not a New Game, not a door. Retail ships the byte at
+    /// zero, and arming it shadows the retail L1 map-display arm, so a
+    /// player-reachable entry must leave it off. The page used to arm it on
+    /// every entry it ran (a Load included) while the native window armed it
+    /// on its CLI entries only, so the same save behaved differently per host.
+    ///
+    /// Returns whether a world-map controller was there to arm.
+    pub fn arm_picker_world_map_debug(&mut self) -> bool {
+        let Some(ctrl) = self.world_map.ctrl.as_mut() else {
+            return false;
+        };
+        ctrl.debug_enabled = true;
+        ctrl.view_mode = 0;
         true
     }
 
@@ -592,6 +621,7 @@ impl World {
     /// the first tick and the fly-in never runs.
     fn auto_engage_world_map_portals(&mut self) {
         if self.dialogue_owns_input()
+            || self.encounter_owns_player()
             || self.cutscene_timeline_active()
             || self.world_map.entity_positions.is_empty()
         {

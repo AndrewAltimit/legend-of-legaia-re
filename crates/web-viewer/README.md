@@ -170,11 +170,14 @@ shared with the native `cutscene_av` - `MV3.STR` carries several ids), the
 page slices those raw sectors out of the disc bytes it still holds
 (`window.__playDiscBytes` + `disc_file_extent_json`, so the runtime never
 keeps a second copy of the image), `play_fmv_install` demuxes the video and
-decodes the XA track through the media page's existing decoders, and
+decodes the XA track through `legaia_mdec::str_av` - the native window's
+kernel, so both hosts agree on the frame list, frame rate and soundtrack -
+and
 `site/js/play-fmv.js` puts the XA track on the engine mixer's XA lane
 (`play_fmv_audio_start` - the native window's `play_xa`, so the movie sits
 behind the same master trim and volume slider as every other sound), draws
-the frames over the GL view clocked off `play_fmv_audio_cursor_secs`, then
+the frames over the GL view paced by `play_fmv_due_frame` (the shared
+`engine-core::cutscene::MovieClock`), then
 `play_fmv_finish` applies the same post-movie scene hand-off.
 The retail skip rule is engine-side (`fmv_id 0` only, on the packed
 face-button mask). A page that never declares support still auto-finishes the

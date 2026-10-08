@@ -225,8 +225,16 @@ directly from a page or script.
 
 Helpers every page shares sit in one classic head script the same way:
 [`site/js/site-util.js`](../../site/js/site-util.js) defines `window.escapeHtml`
-(the five HTML entities; `null` renders empty), which inline page scripts,
-classic scripts and modules call instead of carrying a copy each.
+(the five HTML entities; `null` renders empty) and `window.LegaiaUtil`:
+`rgbaCanvas` (an RGBA8 export wrapped in an offscreen canvas, `null` on a
+missing or mis-sized buffer), `downloadFile` (a Blob or byte array handed to
+the viewer as a file) and `poseClipInto` (the minigame posers' per-object
+`Rz.Ry.Rx . v + T` plus world yaw and floor offset). Inline page scripts,
+classic scripts and modules call these instead of carrying a copy each, and
+`scripts/ci/check-site-shared-helpers.py` (pre-commit and CI) fails on a new
+definition under one of those names - or the local names the old copies wore
+(`triggerDownload`, `escHtml`) - anywhere else in the site sources; a
+`// shared-helper-ok: <reason>` comment on the line waives one.
 
 ## A case fold binds to one operand, not to the concatenation
 

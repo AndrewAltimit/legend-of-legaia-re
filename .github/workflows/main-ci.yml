@@ -119,6 +119,11 @@ jobs:
       - name: JS module syntax in classic scripts
         run: python3 scripts/ci/check-js-classic-module-syntax.py
 
+      # A private copy of a helper site/js/site-util.js already shares
+      # (escaper, RGBA canvas, download, minigame poser) - copies drift.
+      - name: Site shared helpers
+        run: python3 scripts/ci/check-site-shared-helpers.py
+
       # The play page's renderer keeps a set value until the next call, and
       # the page draws field, battle and minigame frames through one renderer,
       # so frame state staged inside one draw branch leaks into the others.

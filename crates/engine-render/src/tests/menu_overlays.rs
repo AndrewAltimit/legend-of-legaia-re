@@ -374,6 +374,56 @@ fn options_draws_popup_lists_choices() {
     );
 }
 
+/// The popup is a window over the settings window: no settings glyph is
+/// left inside its frame (the hosts lay all chrome before all text, so an
+/// unculled row printed through the popup body).
+#[test]
+fn options_popup_hides_the_settings_text_under_it() {
+    let font = legaia_font::synthetic_for_tests();
+    let rows = [
+        OptionsRowView {
+            label: "Battle Camera",
+            value: Some("Close"),
+            teal: false,
+            advance: 14,
+        },
+        OptionsRowView {
+            label: "Battle Command",
+            value: Some("Directional Buttons"),
+            teal: false,
+            advance: 14,
+        },
+    ];
+    let popup = OptionsPopupDraw {
+        rect: (170, 52, 128, 35),
+        choices: &["Close", "Normal", "Far"],
+        cursor: 1,
+    };
+    let bare = options_draws_for(&font, &rows, 0, None, (24, 40));
+    let with = options_draws_for(&font, &rows, 0, Some(&popup), (24, 40));
+    let (fx, fy, fw, fh) = legaia_engine_ui::options_popup_frame(popup.rect);
+    let inside = |d: &TextDraw| {
+        let (x, y, w, h) = d.dst;
+        x < fx + fw && x + w as i32 > fx && y < fy + fh && y + h as i32 > fy
+    };
+    assert!(
+        bare.iter().any(inside),
+        "the control: a value sits under the popup"
+    );
+    // Every glyph inside the frame now belongs to the popup (its text inset
+    // and cursor column start at the popup's own x).
+    assert!(
+        with.iter()
+            .filter(|d| inside(d))
+            .all(|d| d.dst.0 >= popup.rect.0)
+    );
+    assert!(
+        !with
+            .iter()
+            .any(|d| inside(d) && (40..54).contains(&d.dst.1) && d.dst.0 < popup.rect.0 + 0x14)
+    );
+}
+
 #[test]
 fn key_rebind_awaiting_renders_dots() {
     let font = legaia_font::synthetic_for_tests();
@@ -541,8 +591,9 @@ fn equip_screen_draws_slot_rows_at_retail_offsets() {
 }
 
 /// Item-picker phase: candidates fill the id-23 list window at the 0xD
-/// list pitch and the stat-compare block lands at the traced main-window
-/// offsets (label +0xA0, current +0xC8, preview +0xF0 only on change).
+/// list pitch and the main window is closed; the browse step's stat-compare
+/// block lands at the traced main-window offsets (label +0xA0, current
+/// +0xC8, preview +0xF0 only on change).
 #[test]
 fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
     let font = legaia_font::synthetic_for_tests();
@@ -594,6 +645,27 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
             .any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly + 0x0d)
     );
     let (mx, my) = EQUIP_MAIN_PEN;
+    // The candidate step closes the main window (22): its open script leads
+    // with close-all, so no stat-compare row lands on it here...
+    assert!(
+        !draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0xa0 && d.dst.1 == my + 0x48)
+    );
+    // ...and the Best-Equipment block draws on the browse step instead.
+    let browse = equip_view(
+        &slots,
+        &candidates,
+        &stat_compare,
+        EquipDrawPhase::SlotPicker,
+    );
+    let draws = equip_screen_draws_for(
+        &font,
+        &browse,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
     // Stat labels at mx+0xA0 on rows my+0x48 / my+0x55.
     assert!(
         draws

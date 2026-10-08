@@ -20,7 +20,7 @@ Two deviations bite anyone reading this format against the PsyQ docs:
 - The **version field is `u32` big-endian**, not PsyQ's `u16`.
 - Meta events carry **no MIDI variable-length `length` field**: tempo is
   `0xFF 0x51` followed by 3 tempo bytes (no `0x03`), and end-of-track is
-  `0xFF 0x2F` with no trailing `0x00`. Meta events preserve running status.
+  `0xFF 0x2F` with no trailing `0x00`. A meta latches `0xFF` as the running status, as the retail decoder does: a data byte after a meta is the next meta's kind.
 
 Reading a phantom length byte swallows the first tempo override in the body,
 which leaves playback pinned to the 240 BPM placeholder in the header - roughly

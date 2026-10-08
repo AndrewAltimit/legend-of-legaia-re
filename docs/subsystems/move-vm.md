@@ -466,7 +466,7 @@ A part seated by a list-0 callback - the battle action SM `FUN_80046A20` driving
 > per-part translation glide (documented as such in `summon.rs`); the faithful
 > port of the retail function is `engine-core::screen_fx::MaskWidget`.
 
-The summon scene-graph driver (`crates/engine-core/src/summon.rs`) ticks each
+The summon scene-graph driver (`crates/engine-effects/src/summon.rs`) ticks each
 part through this move VM, then applies an interpreted render-side translation
 glide shaped like the `FUN_801F811C` tween: snap to `origin + anim banks` when
 no tween is active (`+0x9E == 0`); otherwise advance `+0x9C += frame_delta`
@@ -480,7 +480,7 @@ banks as summon-local offsets, so `summon::SummonScene` adds the cast-target
 The resident slot-B overlay PROT 0900 (link base `0x801F69D8`) hosts a
 four-kind family of 2D screen widgets - the cutscene-style presentation layer
 (iris mask, scripted sprites, image panel, letterbox bands). Engine port:
-`crates/engine-core/src/screen_fx.rs`; layout pinned on disc bytes by the
+`crates/engine-effects/src/screen_fx.rs`; layout pinned on disc bytes by the
 disc-gated `screen_fx_disc` test.
 
 The family is **live in the engine**: the field-VM op-0x43 sub-op handlers

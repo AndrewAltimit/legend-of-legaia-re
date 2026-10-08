@@ -288,6 +288,38 @@ impl World {
         }
     }
 
+    /// The battle loader's HP / MP seat for the first `party_count` members
+    /// ([`Self::enter_battle_from_formation`], `FUN_80053CB8`): each member's
+    /// live HP, max HP and MP from its roster record, the HP-bar cursor
+    /// settled on it. A member without a record, or one whose record was
+    /// never filled (max HP `0` - a synthetic world with no roster), keeps
+    /// the values already on its actor.
+    ///
+    /// PORT: FUN_80053CB8 (`0x80053D8C..0x80053E10`, the HP / MP stores)
+    pub(crate) fn seed_party_battle_hp_from_records(&mut self, party_count: u8) {
+        for slot in 0..usize::from(party_count).min(self.actors.len()) {
+            let Some(hms) = self
+                .party
+                .roster
+                .members
+                .get(self.party_roster_slot(slot))
+                .map(|r| r.hp_mp_sp())
+            else {
+                continue;
+            };
+            if hms.hp_max == 0 {
+                continue;
+            }
+            let a = &mut self.actors[slot].battle;
+            a.hp = hms.hp_cur;
+            a.max_hp = hms.hp_max;
+            a.mp = hms.mp_cur;
+            if a.hp_display.is_some() {
+                a.hp_display = Some(hms.hp_cur);
+            }
+        }
+    }
+
     pub(crate) fn enter_battle_from_formation(
         &mut self,
         formation: &crate::monster_catalog::FormationDef,
@@ -368,6 +400,16 @@ impl World {
         let map_arm =
             matches!(self.battle.map_id, 0x0C | 0x15) && (0x3D..=0x3F).contains(&first_id);
         self.seat_monster_family(monster_count, u8::from(scripted) + u8::from(map_arm));
+        // Retail's party loader (`FUN_80053CB8`) seats every member's HP and
+        // MP from the **character record**, not from any field actor: per
+        // present-party id `n = DAT_8007BD10[slot]`, record
+        // `0x80084140 + (n - 1) * 0x414` gives `+0x6CE` -> `+0x14C` (also
+        // the bar cursor `+0x172`), `+0x6CC` -> `+0x14E`, `+0x6D2` -> `+0x150`
+        // (`0x80053D8C..0x80053E10`). The engine's party band is the field
+        // actor table, which a scene's script can reset (`opurud` blanks
+        // slots 1 / 2), so a fight entered there would seat Noa and Gala at
+        // whatever the blank actors held.
+        self.seed_party_battle_hp_from_records(party_count);
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             // The Spirit (AP) gauge `+0x170` opens at the character record's

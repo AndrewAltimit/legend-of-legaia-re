@@ -145,6 +145,13 @@ pub struct AudioState {
     /// The port starts the incoming track at sub-op `9` already, so such an
     /// expiry has nothing of the port's to release ([`crate::world::World::tick`]).
     pub(crate) start_pending_commit: bool,
+    /// Bit 1 of the sound flags `_DAT_8007B750`: the script has paused the
+    /// BGM slot. Op-`0x35` sub-ops `2` / `3` raise it (`0x801E0150`,
+    /// `0x801E0174`); sub-ops `1`, `9`, `4` and `0xA` and the scene loader
+    /// end it. The engine keeps the bit so a host whose audio output arrives
+    /// after the pause (the browser page's gesture-gated one) can bring the
+    /// track up paused rather than sounding ([`Self::bgm_script_paused`]).
+    pub(crate) bgm_script_paused: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
@@ -210,6 +217,12 @@ pub struct AudioState {
 }
 
 impl AudioState {
+    /// Whether the field script holds the BGM slot paused (sound-flags bit
+    /// 1; see the field's doc).
+    pub fn bgm_script_paused(&self) -> bool {
+        self.bgm_script_paused
+    }
+
     pub fn new() -> Self {
         Self {
             sound_bank_ready: true,
@@ -233,6 +246,7 @@ impl AudioState {
             sound_release: crate::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
             start_pending_commit: false,
+            bgm_script_paused: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
             sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays::new(
@@ -426,7 +440,9 @@ impl World {
     /// `efect.dat` (extraction PROT 1199), which the scene host stages on the
     /// warp ([`crate::world::MinigameState::slot_sfx_bundle`]); the Muscle
     /// Dome's arena init points it at the arena's own bundle
-    /// ([`crate::world::MinigameState::muscle_sfx_bundle`]).
+    /// ([`crate::world::MinigameState::muscle_sfx_bundle`]); the dance
+    /// overlay's init at its own `efect.dat`
+    /// ([`crate::world::MinigameState::dance_sfx_bundle`]).
     // REF: FUN_8001FA88, FUN_8001F7C0
     pub fn runtime_sfx_bundle(&self) -> &[u8] {
         match (&self.mode, self.audio.battle_sfx_bank.as_deref()) {
@@ -436,6 +452,9 @@ impl World {
             }
             (SceneMode::MuscleDome, _) if !self.minigames.muscle_sfx_bundle.is_empty() => {
                 &self.minigames.muscle_sfx_bundle
+            }
+            (SceneMode::Dance, _) if !self.minigames.dance_sfx_bundle.is_empty() => {
+                &self.minigames.dance_sfx_bundle
             }
             _ => &self.props.stager_bytes,
         }

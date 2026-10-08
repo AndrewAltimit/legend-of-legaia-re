@@ -446,6 +446,12 @@
             </label>
             <button id="play-cheat-item-apply" type="button">Add item</button>
           </div>
+          <div class="play-btn-row">
+            <label title="GameShark lines (AAAAAAAA VVVV) or a Mednafen .cht file's text. Codes write through the engine's map of retail RAM cells, the same applier as the native window's --cheat-file; codes with no engine cell are counted as unmapped.">
+              Codes <textarea id="play-cheat-codes" rows="2" cols="24" spellcheck="false" placeholder="80084E28 FFFF"></textarea>
+            </label>
+            <button id="play-cheat-codes-apply" type="button">Apply codes</button>
+          </div>
           <div class="play-cheat-party" id="play-cheat-party" aria-live="polite"></div>
         </details>
       </div>
@@ -1132,22 +1138,34 @@
     let handoff = '';
     let loaded = false;
     const titleHeld = new Set();
+    /* Ticks this display frame runs, from the engine's one frame stepper
+     * (`play_drain_sim_steps`, the `SimStepper` the in-game loop and the
+     * native window drain): at most four, and none on a frame that carried
+     * less than a tick. The card used to keep its own clock that ran at
+     * least one tick every frame (twice retail speed at 120 Hz) and caught
+     * up to thirty. A press is held until a tick runs to take it. */
+    let titleLast = 0;
+    let titleEdge = 0;
+    const titleTicks = () => {
+      const now = performance.now();
+      const dt = titleLast ? now - titleLast : 0;
+      titleLast = now;
+      try { return runtime.play_drain_sim_steps(dt); } catch (e) { return 1; }
+    };
     const frame = () => {
       bootTitleRAF = requestAnimationFrame(frame);
       /* A gamepad's press edges reach the title card the way a key's do. */
       if (window.legaiaPollGamepad) window.legaiaPollGamepad(titleHeld, pulse);
-      const edge = padMaskOf(pulse);
+      titleEdge |= padMaskOf(pulse);
       pulse.clear();
+      const ticks = titleTicks();
+      const edge = ticks > 0 ? titleEdge : 0;
+      if (ticks > 0) titleEdge = 0;
       /* Publisher-logo stage: owns the frame until the sequencer finishes or
-       * a Start / Cross edge skips it, then the title card opens. Same fixed
-       * 60 Hz catch-up as the branches below - the fade ramps are counted in
+       * a Start / Cross edge skips it, then the title card opens. It runs the frame's ticks
+       * (the stepper above) - the fade ramps are counted in
        * retail frames, so a throttled tab must not stretch them. */
       if (logos) {
-        let ticks = 1;
-        const now = performance.now();
-        if (!frame._logoClock) frame._logoClock = now;
-        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._logoClock) / 16.667)));
-        frame._logoClock += ticks * 16.667;
         let done = false;
         try {
           for (let i = 0; i < ticks && !done; i++) done = runtime.boot_logos_step(i === 0 ? edge : 0);
@@ -1161,7 +1179,6 @@
         if (ld && ld.sprites && logoBlit) logoBlit.blit(ctx, ld.sprites);
         if (done) {
           logos = false;
-          frame._titleClock = 0;
           startTitleBgm();
           statusEl.textContent = TITLE_PROMPT;
         }
@@ -1178,13 +1195,8 @@
       if (handoff) {
         /* Continue / Options: the retail save-select and options screens,
          * reached through the shared pause-menu rows rather than a second
-         * copy on this page. Same 60 Hz catch-up rule as play-app.js: the
+         * copy on this page. One step per tick, as play-app.js: the
          * save screen's card-read dialog counts down a frame timer. */
-        let ticks = 1;
-        const now = performance.now();
-        if (!frame._clock) frame._clock = now;
-        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._clock) / 16.667)));
-        frame._clock += ticks * 16.667;
         for (let i = 0; i < ticks; i++) {
           try { runtime.play_menu_input(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
         }
@@ -1221,26 +1233,19 @@
           /* Options closed, or Continue backed out without loading: retail
            * returns to the title card. */
           handoff = '';
-          frame._clock = 0;
-          frame._titleClock = 0;
           try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
           statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
         }
         return;
       }
       /* The title session counts retail frames - the attract countdown is
-       * 0x5DC of them, 25 s at 60 Hz - so it gets the same fixed-step
-       * catch-up as the menu branch above rather than one step per
+       * 0x5DC of them, 25 s at 60 Hz - so it steps once per tick from the
+       * shared stepper rather than once per
        * animation frame: a throttled or slow tab used to stretch the
        * countdown to minutes and the attract movie never came. The pad
        * edge lands on the first tick of the frame only. */
       let outcome = '';
       {
-        let ticks = 1;
-        const now = performance.now();
-        if (!frame._titleClock) frame._titleClock = now;
-        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._titleClock) / 16.667)));
-        frame._titleClock += ticks * 16.667;
         try {
           for (let i = 0; i < ticks && !outcome; i++) outcome = runtime.boot_title_step(i === 0 ? edge : 0);
         } catch (e) { return finish('new_game'); }
@@ -1260,8 +1265,6 @@
       }
       if (outcome === 'continue' || outcome === 'options') {
         handoff = outcome;
-        frame._clock = 0;
-        frame._titleClock = 0;
         statusEl.textContent = outcome === 'continue'
           ? 'Pick a memory-card port, then a save block. Z confirms, X backs out.'
           : 'Options. Up/Down picks a row, Z opens it, X returns to the title.';
@@ -2122,10 +2125,12 @@
   });
   window.__playApplyBattleTools = applyBattleTools;
 
-  /* Cheats - every write is the engine's (legaia_engine_core::cheats, the
-   * same mutations the native play-window's --cheat-* flags make): levels
+  /* Cheats - every control is a row of the engine's one cheat list
+   * (legaia_engine_core::cheats::PlayerCheat, applied by rt.cheat_apply -
+   * the native play-window's --cheat-* flags build the same values): levels
    * go through the retail growth tables, items through the bag's add
-   * helper. Session-only, nothing persisted. */
+   * helper. Pasted codes go through the native --cheat-file applier.
+   * Session-only, nothing persisted. */
   const cheatsEl = document.getElementById('play-cheats');
   const cheatPartyEl = document.getElementById('play-cheat-party');
   const cheatItemList = document.getElementById('play-cheat-item-names');
@@ -2175,43 +2180,49 @@
     saveMsg(noEncEl.checked ? 'Random encounters off.' : 'Random encounters on.', false);
   });
   noEncEl.addEventListener('change', () => { cheatNoEncEl.checked = noEncEl.checked; });
+  const cheat = (rt, key, n, text) => rt.cheat_apply(key, n || 0, text || '');
   document.getElementById('play-cheat-max-ap').addEventListener('click', () => {
-    runCheat((rt) => rt.cheat_max_ap());
+    runCheat((rt) => cheat(rt, 'max-ap'));
   });
   document.getElementById('play-cheat-seru').addEventListener('click', () => {
     const lv = parseInt(document.getElementById('play-cheat-seru-level').value, 10);
     if (!(lv >= 1 && lv <= 9)) { saveMsg('Seru level must be 1-9.', true); return; }
-    runCheat((rt) => `Seru: ${rt.cheat_grant_seru(lv)}`);
+    runCheat((rt) => cheat(rt, 'seru', lv));
   });
   document.getElementById('play-cheat-arts').addEventListener('click', () => {
-    runCheat((rt) => `Arts: ${rt.cheat_learn_all_arts()}`);
+    runCheat((rt) => cheat(rt, 'arts'));
   });
   document.getElementById('play-cheat-max-items').addEventListener('click', () => {
-    runCheat((rt) => rt.cheat_max_items());
+    runCheat((rt) => cheat(rt, 'max-items'));
   });
   document.getElementById('play-cheat-level-apply').addEventListener('click', () => {
     const lv = parseInt(document.getElementById('play-cheat-level').value, 10);
     if (!(lv >= 1 && lv <= 99)) { saveMsg('Level must be 1-99.', true); return; }
-    runCheat((rt) => `Level: ${rt.cheat_set_party_level(lv)}`);
+    runCheat((rt) => cheat(rt, 'level', lv));
   });
   document.getElementById('play-cheat-restore').addEventListener('click', () => {
-    runCheat((rt) => { rt.cheat_restore_party(); return 'Party restored.'; });
+    runCheat((rt) => cheat(rt, 'restore'));
   });
   document.getElementById('play-cheat-gold-apply').addEventListener('click', () => {
     const v = parseInt(document.getElementById('play-cheat-gold').value, 10);
     if (!(v >= 0)) return;
-    runCheat((rt) => `Gold set to ${rt.cheat_set_gold(v)}.`);
+    runCheat((rt) => cheat(rt, 'gold', v));
   });
   document.getElementById('play-cheat-coins-apply').addEventListener('click', () => {
     const v = parseInt(document.getElementById('play-cheat-coins').value, 10);
     if (!(v >= 0)) return;
-    runCheat((rt) => `Coins set to ${rt.cheat_set_coins(v)}.`);
+    runCheat((rt) => cheat(rt, 'coins', v));
   });
   document.getElementById('play-cheat-item-apply').addEventListener('click', () => {
     const q = document.getElementById('play-cheat-item').value.trim();
     const n = Math.min(99, Math.max(1, parseInt(document.getElementById('play-cheat-item-qty').value, 10) || 1));
     if (!q) return;
-    runCheat((rt) => rt.cheat_give_item(q, n));
+    runCheat((rt) => cheat(rt, 'item', n, q));
+  });
+  document.getElementById('play-cheat-codes-apply').addEventListener('click', () => {
+    const text = document.getElementById('play-cheat-codes').value;
+    if (!text.trim()) return;
+    runCheat((rt) => rt.cheat_apply_codes(text, false));
   });
   window.__playSyncCheats = syncCheats;
 

@@ -9,6 +9,14 @@
   .hub-map a:hover .dg-node, .hub-map a:hover .dg-node-accent, .hub-map a:hover .dg-node-ok,
   .hub-map a:focus .dg-node, .hub-map a:focus .dg-node-accent, .hub-map a:focus .dg-node-ok { stroke: var(--accent); stroke-width: 2.5; }
   .hub-map a:hover .dg-label, .hub-map a:focus .dg-label { text-decoration: underline; }
+  /* The map is 880 units wide and renders at roughly 0.85x in the desktop
+   * content column, so the shared 12px / 11px diagram type lands near 10px.
+   * Labels here set in the body face, which is narrower than the mono one,
+   * at sizes that read at that scale and still fit their boxes. */
+  figure.diagram.hub-map svg { font-family: var(--font-body); }
+  figure.diagram.hub-map .dg-label { font-size: 16px; font-weight: 600; }
+  figure.diagram.hub-map .dg-sub { font-size: 13px; }
+  figure.diagram.hub-map .dg-edge-label { font-size: 13px; }
   /* page-local until a shared wide-diagram component exists: scroll inside the figure on phones */
   @media (max-width: 720px) { .hub-map { overflow-x: auto; } .hub-map svg { min-width: 640px; } }
 </style>
@@ -23,15 +31,15 @@
       </defs>
 
       <!-- menu overlay group -->
-      <rect class="dg-group" x="250" y="306" width="390" height="166" rx="8"/>
-      <text class="dg-edge-label" x="262" y="324">menu overlay (PROT 0899)</text>
+      <rect class="dg-group" x="250" y="306" width="390" height="184" rx="8"/>
+      <text class="dg-edge-label" x="262" y="482">menu overlay (PROT 0899)</text>
 
       <!-- row 1 -->
-      <a href="boot.html"><rect class="dg-node" x="20" y="36" width="140" height="56" rx="5"/>
+      <a href="boot.html"><rect class="dg-node" x="12" y="36" width="156" height="56" rx="5"/>
         <text class="dg-label" x="90" y="60">Boot</text><text class="dg-sub" x="90" y="78">disc to mode machine</text></a>
-      <a href="boot.html#title-overlay-state"><rect class="dg-node" x="190" y="36" width="140" height="56" rx="5"/>
+      <a href="boot.html#title-overlay-state"><rect class="dg-node" x="180" y="36" width="160" height="56" rx="5"/>
         <text class="dg-label" x="260" y="60">Title screen</text><text class="dg-sub" x="260" y="78">New Game / Continue</text></a>
-      <a href="../minigames.html"><rect class="dg-node" x="370" y="36" width="140" height="56" rx="5"/>
+      <a href="../minigames.html"><rect class="dg-node" x="360" y="36" width="160" height="56" rx="5"/>
         <text class="dg-label" x="440" y="60">Minigames</text><text class="dg-sub" x="440" y="78">fishing, casino, dance</text></a>
       <a href="cutscene.html"><rect class="dg-node" x="660" y="36" width="170" height="56" rx="5"/>
         <text class="dg-label" x="745" y="60">Cutscenes</text><text class="dg-sub" x="745" y="78">STR movies + XA audio</text></a>
@@ -71,7 +79,7 @@
         <text class="dg-label" x="750" y="546">Audio</text><text class="dg-sub" x="750" y="563">music, effects, voices</text></a>
 
       <!-- edges -->
-      <path class="dg-edge" d="M160 64 L188 64" marker-end="url(#hub-arrow)"/>
+      <path class="dg-edge" d="M168 64 L178 64" marker-end="url(#hub-arrow)"/>
       <path class="dg-edge" d="M260 92 L260 140 L390 140 L390 180" marker-end="url(#hub-arrow)"/>
       <text class="dg-edge-label" x="270" y="134">New Game</text>
       <path class="dg-edge" d="M440 94 L440 180" marker-start="url(#hub-arrow)" marker-end="url(#hub-arrow)"/>

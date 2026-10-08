@@ -698,7 +698,7 @@ before normalizing). It branches on the party-member count at SC`+0x454`
 The length also lands in `gp[+0x2D6]`, so `gp[+0x2D4]` is only ever `128` or
 `256`. Live cross-check on a mid-game battle state with a three-member party:
 `3` at `0x80084594`, `(start, end, len) = (0, 256, 256)`, 160 contiguous
-occupied slots. A sweep of the item-menu overlay (`overlay_menu.bin`, all 129 functions via `dump_menu_inventory_refs.py`) finds **zero** direct array writes: every one of its 17 inventory ops calls these SCUS helpers (passing item ids / helper-returned slots), so the menu has no raw-index sort/swap primitive.
+occupied slots. A sweep of the item-menu overlay (`overlay_menu.bin`, all 129 functions via `dump_menu_inventory_refs.py`) finds one direct array write: the Throw Out confirm `FUN_801D8734` zeroes the selected slot's id and count itself (`sb zero` at `0x801D88FC` / `0x801D8910`, see [`inventory.md`](../subsystems/inventory.md)); every other inventory op calls these SCUS helpers (passing item ids / helper-returned slots), so the menu has no raw-index sort/swap primitive.
 
 The **add** helper `FUN_800421D4` is the one exception worth noting: its id store precedes the bound check, so a full-window add writes the item id **one slot past** the window (`0x80085958 + gp[+0x2D4]*2`); only its count store is guarded (see [`functions.md`](functions.md)).
 

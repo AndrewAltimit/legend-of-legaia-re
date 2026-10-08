@@ -774,6 +774,45 @@ impl OwnedDialogPanel {
         self.picker.as_ref()
     }
 
+    /// The open picker's option labels as drawn: each label re-decoded from
+    /// its `0x1F` lead with the `0xC1..=0xC7` name escapes resolved through
+    /// [`Self::substitutions`], as the box text is. Empty without a picker.
+    ///
+    /// [`legaia_mes::PickerOption::label`] carries no names (that crate has
+    /// no tables), and both hosts printed it, so a choice such as dolk2's
+    /// "Be careful, `C1 01`!" read "Be careful, !" on either.
+    pub fn picker_labels(&self) -> Vec<Vec<u8>> {
+        let Some(p) = self.picker.as_ref() else {
+            return Vec::new();
+        };
+        p.options
+            .iter()
+            .map(|o| {
+                let mut out = Vec::new();
+                let mut interp = Interpreter::new_at(&self.bytes, o.lead + 1);
+                loop {
+                    match interp.next_event() {
+                        Some(MesEvent::Glyph(g))
+                        | Some(MesEvent::SkipTwo(g))
+                        | Some(MesEvent::WideGlyph(_, g)) => out.push(g),
+                        Some(MesEvent::Substitute { kind, arg }) => {
+                            if let Some(name) = self
+                                .substitutions
+                                .as_ref()
+                                .and_then(|s| s.get(&(substitute_kind_key(kind), arg)))
+                            {
+                                out.extend_from_slice(name);
+                            }
+                        }
+                        Some(MesEvent::EndOfMessage(_)) | None => break,
+                        Some(_) => {}
+                    }
+                }
+                out
+            })
+            .collect()
+    }
+
     /// `true` once the prompt has finished typing and a menu is awaiting a
     /// choice (the host should draw the options + cursor and route Up/Down).
     pub fn menu_active(&self) -> bool {
@@ -1353,6 +1392,35 @@ mod tests {
     #[test]
     fn from_inline_dialog_without_lead_marker_is_none() {
         assert!(OwnedDialogPanel::from_inline_dialog(&[0x00, 0x10, 0x00]).is_none());
+    }
+
+    /// A picker label's name escape resolves through the panel's table, as
+    /// the box text does (dolk2's "Be careful, `C1 01`!" choice).
+    #[test]
+    fn picker_labels_splice_names_in() {
+        let mut inline = vec![0x1F, b'O', b'K', b'?', 0x00];
+        inline.push(0x27);
+        inline.extend_from_slice(&0x10i16.to_le_bytes());
+        inline.extend_from_slice(&0x20i16.to_le_bytes());
+        inline.push(0x24);
+        inline.extend_from_slice(&[0x1F, b'H', b'i', b',', b' ', 0xC1, 0x01, b'!', 0x00]);
+        inline.extend_from_slice(&[0x1F, b'N', b'o', 0x00]);
+        inline.resize(48, 0x21);
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
+        let raw = panel.picker().unwrap().options[0].label.clone();
+        assert_eq!(raw, b"Hi, !", "the mes crate has no names");
+        assert_eq!(
+            panel.picker_labels()[0],
+            b"Hi, !".to_vec(),
+            "no table, no name"
+        );
+        let mut map = std::collections::HashMap::new();
+        map.insert((1u8, 1u8), b"Noa".to_vec());
+        panel.substitutions = Some(Arc::new(map));
+        assert_eq!(
+            panel.picker_labels(),
+            vec![b"Hi, Noa!".to_vec(), b"No".to_vec()]
+        );
     }
 
     /// A prompt followed by a `0x27` Yes/No picker: the panel types the prompt,

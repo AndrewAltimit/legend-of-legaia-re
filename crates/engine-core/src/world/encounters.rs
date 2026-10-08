@@ -1292,7 +1292,7 @@ impl World {
             // while it is non-zero - `lw v0,-0x4a00(v0)` / `bne v0,zero` at
             // `0x801DA174`, after the setup half and before the rate scale,
             // so the step counter does not move either.
-            if self.locomotion.walk_regen_window != 0 {
+            if self.locomotion.walk_regen_window != 0 || self.encounter_roll_held() {
                 self.terrain.region_tracker = Some(tracker);
                 return false;
             }
@@ -1334,8 +1334,9 @@ impl World {
                 None => false,
             };
         }
-        // Same Incense gate on the mean-rate stand-in (see the region arm).
-        if self.locomotion.walk_regen_window != 0 {
+        // Same Incense and engaged gates on the mean-rate stand-in (see the
+        // region arm).
+        if self.locomotion.walk_regen_window != 0 || self.encounter_roll_held() {
             return false;
         }
         let rng = self.next_rng();
@@ -1563,6 +1564,52 @@ impl World {
             || matches!(
                 self.encounters.session.as_ref().map(|s| s.phase()),
                 Some(crate::encounter::EncounterPhase::Transition { .. })
+            )
+    }
+
+    /// `true` while a step must not roll a random encounter: retail's region
+    /// reader `FUN_801D9E1C` returns without scaling the rate or draining the
+    /// counter when the player carries the engaged bit
+    /// (`*(_DAT_8007C364)+0x10 & 0x80000`), while the dialogue-pacing
+    /// countdown `_DAT_8007B6B4` is running, or while the kind-0 warp timer
+    /// `_DAT_8007B6B0` is up (`0x801DA130..0x801DA164` - after the region's
+    /// battle-setup half, ahead of the Incense test).
+    ///
+    /// The engaged bit is raised by a talk or touch and by the script runner
+    /// `FUN_80039B7C` on every frame it steps a context
+    /// (`0x80039DB8..0x80039DD4`), so a door record carrying the party out,
+    /// a scripted walk and an open box all hold the roll; the engine's
+    /// readings of the three are [`Self::dialogue_owns_input`],
+    /// [`Self::script_context_engages_player`] and
+    /// [`Self::field_warp_in_flight`]. A step onto an overworld door
+    /// therefore never also starts a fight.
+    ///
+    /// REF: FUN_801D9E1C (`0x801DA130..0x801DA164`), FUN_80039B7C
+    pub fn encounter_roll_held(&self) -> bool {
+        self.dialogue_owns_input()
+            || self.script_context_engages_player()
+            || self.field_warp_in_flight()
+            || self
+                .player_actor_slot
+                .and_then(|s| self.actors.get(usize::from(s)))
+                .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0)
+    }
+
+    /// `true` from the step a random or scripted fight is committed until it
+    /// opens. Retail's region reader raises the player's engaged bit on the
+    /// trigger itself (`player+0x10 |= 0x80000`, `0x801DA2C0..0x801DA2D8`),
+    /// so the pad controller stops walking the player for the whole battle
+    /// intro: a step that rolled a fight cannot carry on onto a door.
+    ///
+    /// REF: FUN_801D9E1C (`0x801DA2C0..0x801DA2D8`)
+    pub fn encounter_owns_player(&self) -> bool {
+        self.carriers.pending_battle.is_some()
+            || matches!(
+                self.encounters.session.as_ref().map(|s| s.phase()),
+                Some(
+                    crate::encounter::EncounterPhase::Transition { .. }
+                        | crate::encounter::EncounterPhase::Triggered(_)
+                )
             )
     }
 

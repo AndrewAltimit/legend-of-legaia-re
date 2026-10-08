@@ -125,6 +125,83 @@ pub fn apply(world: &mut World, db: &Database, opts: ApplyOptions) -> ApplyRepor
     report
 }
 
+/// The cheat-code text formats the applier reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheatTextFormat {
+    /// A plain code list: one `AAAAAAAA VVVV` pair per line, the form codes
+    /// are shared and pasted in ([`legaia_cheats::parse_code_lines`]).
+    CodeList,
+    /// The GameShark text-dump format (`R I 2 L 0 ADDR VALUE desc`,
+    /// `.gs.txt`).
+    GameShark,
+    /// Mednafen's `.cht` (`cheatN_code = "..."` triplets).
+    MednafenCht,
+}
+
+impl CheatTextFormat {
+    /// Guess the format from the text itself: a `.cht` names its codes in
+    /// `cheatN_code` keys, a code list is nothing but `AAAAAAAA VVVV` lines,
+    /// anything else reads as the GameShark text dump. Hosts that
+    /// have no file extension to go by (a pasted code list) use this.
+    pub fn sniff(text: &str) -> Self {
+        let cht = text.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with("cheats") && l.contains('=')
+                || (l.starts_with("cheat") && l.contains("_code"))
+        });
+        let lines = || {
+            text.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        };
+        if cht {
+            CheatTextFormat::MednafenCht
+        } else if lines().next().is_some() && lines().all(legaia_cheats::code_lines::is_code_line) {
+            CheatTextFormat::CodeList
+        } else {
+            CheatTextFormat::GameShark
+        }
+    }
+}
+
+/// Parse `text` as cheat codes in `format` and apply every entry - the one
+/// entry point both play hosts take for codes (the native `--cheat-file`,
+/// the play page's pasted code list). `strict` honours conditional codes
+/// (they gate on pad state the engine does not emulate, so the default runs
+/// what follows them unconditionally).
+pub fn apply_text(
+    world: &mut World,
+    text: &str,
+    format: CheatTextFormat,
+    strict: bool,
+) -> anyhow::Result<ApplyReport> {
+    let mut db = match format {
+        CheatTextFormat::MednafenCht => legaia_cheats::parse_mednafen_cht(text)?,
+        CheatTextFormat::CodeList => legaia_cheats::parse_code_lines(text)?,
+        CheatTextFormat::GameShark => legaia_cheats::parse_gs_text(text)?,
+    };
+    db.dedupe_identical();
+    let opts = ApplyOptions {
+        execute_conditionals: !strict,
+        skip_unmapped: false,
+    };
+    Ok(apply(world, &db, opts))
+}
+
+impl ApplyReport {
+    /// One-line outcome both hosts show.
+    pub fn summary(&self) -> String {
+        format!(
+            "Codes: {} entries, {} writes - {} applied, {} unmapped, {} unknown.",
+            self.per_entry.len(),
+            self.total_writes,
+            self.applied,
+            self.unmapped,
+            self.unknown_addresses
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum WriteOutcome {
     Applied,
@@ -233,6 +310,36 @@ fn apply_char_record(world: &mut World, slot: u8, offset: u16, width: u8, code: 
             // Fall through - skip until we wire that.
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod text_format_tests {
+    use super::*;
+
+    #[test]
+    fn sniff_tells_a_cht_from_gameshark_lines() {
+        let cht = "cheats = 1\n\ncheat0_desc = \"x\"\ncheat0_code = \"80084E28 FFFF\"\n";
+        assert_eq!(CheatTextFormat::sniff(cht), CheatTextFormat::MednafenCht);
+        assert_eq!(
+            CheatTextFormat::sniff("80084E28 FFFF\n80084E2A 00FF\n"),
+            CheatTextFormat::CodeList
+        );
+        assert_eq!(
+            CheatTextFormat::sniff("R I 2 L 0 80084816 64 100 AP\n"),
+            CheatTextFormat::GameShark
+        );
+    }
+
+    #[test]
+    fn pasted_and_file_codes_take_one_path() {
+        let mut a = World::new();
+        let mut b = World::new();
+        let text = "80084E28 FFFF\n";
+        let ra = apply_text(&mut a, text, CheatTextFormat::sniff(text), false).unwrap();
+        let rb = apply_text(&mut b, text, CheatTextFormat::CodeList, false).unwrap();
+        assert_eq!(ra.summary(), rb.summary());
+        assert_eq!(ra.total_writes, 1);
     }
 }
 

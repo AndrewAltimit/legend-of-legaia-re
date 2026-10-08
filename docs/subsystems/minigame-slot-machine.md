@@ -206,7 +206,7 @@ Record 0 is the 127x239 **paytable board** on the right of the machine (8bpp - s
 Two independent generators feed the machine:
 
 - **`FUN_801d30cc`** (`overlay_slot_machine_801d30cc.txt`) - the slot's own deterministic LCG over `DAT_801d3c80`: `x = x*5 + 1`, then the 16-bit halves are folded (`x = (x << 16) + (x >> 16)`). **Confirmed.** Used for reel-strip construction, reel-landing selection, and the "feature stays on / turns off" rolls. Because it is a self-contained word, the reel outcomes are reproducible from the seed state.
-- **`func_0x80056798`** - the BIOS `rand` (A0(0x2F) sibling, the same source the tile-board filler uses). **Confirmed** call site. Used for the per-spin *feature*/bonus rolls in `FUN_801d258c` and `FUN_801d2440`'s landing jitter, i.e. the parts that should not be replayable from the visible reel state alone.
+- **`func_0x80056798`** - the BIOS `rand` (A0(0x2F) sibling, the same source the tile-board filler uses). **Confirmed** call site. Used for the per-spin *feature*/bonus rolls in `FUN_801d258c` and the landing-line row `FUN_801d2440` reads, i.e. the parts that should not be replayable from the visible reel state alone.
 
 ### Reel landing - `FUN_801d2114` / `FUN_801d2440`
 
@@ -221,7 +221,11 @@ When a reel is told to stop, `FUN_801d2114(reel)` (`overlay_slot_machine_801d211
 | `5` | hold variant: depth `0x14`, target `rand%10 + 8` |
 | `6` | **the bonus round: depth `0`, target `-1`** - see below |
 
-`FUN_801d2440(reel, depth, target_symbol)` (`overlay_slot_machine_801d2440.txt`) is the actual landing search: starting from the current reel position it walks up to `depth` rows looking for `target_symbol` on the display strip; if found it returns a stop offset that lands the symbol on the payline, otherwise it returns the next natural row (no forced result). The `+ DAT_801d4134 * 0x10` term (a per-spin 0..4 jitter chosen in `FUN_801d258c`) nudges the exact landing so the stop does not look mechanical. **Confirmed.**
+`FUN_801d2440(reel, depth, target_symbol)` (`overlay_slot_machine_801d2440.txt`) is the actual landing search. It walks the raw strip rows `cur + 1 ..= cur + depth` (`0x801D2494..0x801D2528`, `cur` = reel position `>> 8`) - five to `4 + depth` rows past the row the payline shows, since the display reads `cur + 0x10` - and on a hit at row `R` returns the stop position `(R + 3 + word) % 20` (`0x801D24F4..0x801D2520`). With no hit it returns `cur + 1`, the next natural row (no forced result).
+
+**`word` picks the payline.** It is `table[DAT_801d4134 * 0x10 + reel * 4]` from the five-row table at `0x801D3630` (`0x801D2444..0x801D2464`), and `DAT_801d4134` is the per-spin `rand % 5` that `FUN_801d258c` seeds (`0x801D25A0..0x801D25D0`). The stop lands the target at payline offset `-(19 + word) mod 20`: word `0` on the top row, `21` on the middle, `22` on the bottom. The five rows decode to the five paylines - three horizontal, then the two diagonals as `0 / 21 / 22` and `22 / 21 / 0` - so a forced stop lands on a randomly chosen line, and in the guaranteed-hit mode the three reels line the target up along that line.
+
+The `* 0x10` is the table's row stride, not a sub-row nudge. Port: `land_row` with `minigame_slot_scene::LANDING_LINE_BY_JITTER`, pinned against the disc table. **Confirmed** (disassembly).
 
 **The bonus round steers nothing.** Mode 6 passes `depth = 0` with `target = -1`,
 and the search is guarded by `0 < depth`, so it runs zero iterations and returns
@@ -253,7 +257,7 @@ frame, so an edge on exactly that frame does not latch. **Confirmed**
 
 ### Feature roll - `FUN_801d258c`
 
-`FUN_801d258c` (`overlay_slot_machine_801d258c.txt`) runs once at spin start. It seeds `DAT_801d4134` (`rand%5` landing jitter) and `DAT_801d3cb8` (`rand%6 + 2` normal-mode target), rolls the optional widen amount **once** (`rand%100 + 200` when the [spin-up press latch](#the-spin-up-press-latch) `DAT_801d3790` is set - added to every denominator below), then - only when no feature is already active (`DAT_801d3cac == 0`) - rolls `rand % (widen + N) == 0` probabilities to *enter* a feature mode. The denominators are **bracketed on the net-take counter** `DAT_801d3d40` (NOT the balance):
+`FUN_801d258c` (`overlay_slot_machine_801d258c.txt`) runs once at spin start. It seeds `DAT_801d4134` (`rand%5` landing-line row) and `DAT_801d3cb8` (`rand%6 + 2` normal-mode target), rolls the optional widen amount **once** (`rand%100 + 200` when the [spin-up press latch](#the-spin-up-press-latch) `DAT_801d3790` is set - added to every denominator below), then - only when no feature is already active (`DAT_801d3cac == 0`) - rolls `rand % (widen + N) == 0` probabilities to *enter* a feature mode. The denominators are **bracketed on the net-take counter** `DAT_801d3d40` (NOT the balance):
 
 | `DAT_801d3d40` | mode-1 / mode-2 denominators |
 |---|---|
@@ -465,7 +469,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3798` | "bonus just ended" flag - forces the next spin's long spin-up so the symbols rotate back onto the payline |
 | `DAT_801d4110` | cash-out submenu cursor (`% 3`) |
 | `DAT_801d4114` | **player credit balance** (seeded from `_DAT_800845A4` at entry, committed back on exit) |
-| `DAT_801d4134` | per-spin landing jitter (`rand%5`) |
+| `DAT_801d4134` | per-spin landing-line row (`rand%5`): which payline a forced stop lands on, via the table at `0x801D3630` |
 | `_DAT_800845A4` | global casino **coin bank** (written on cash-out; read by the HUD) |
 | `_DAT_8008459C` | party **gold** (read by the field overlay's coin counter, not by this overlay) |
 
@@ -490,7 +494,7 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_801d30cc` | slot LCG RNG (`x*5+1`, 16-bit fold) - `overlay_slot_machine_801d30cc.txt` |
 | `FUN_801d258c` | per-spin feature roll (BIOS-rand, net-take-bracketed odds) - `overlay_slot_machine_801d258c.txt` |
 | `FUN_801d2114` | per-reel stop: choose target symbol + depth by feature mode (mode 6 = depth 0 / target -1, the free stop) - `overlay_slot_machine_801d2114.txt` |
-| `FUN_801d2440` | reel landing search (find target symbol within depth, else next row; a zero depth searches nothing) - `overlay_slot_machine_801d2440.txt` |
+| `FUN_801d2440` | reel landing search (find target symbol within depth and land it on the spin's payline, else next row; a zero depth searches nothing) - `overlay_slot_machine_801d2440.txt` |
 | `FUN_801d13e8` | win evaluation + payout-table lookup + bonus trigger - `overlay_slot_machine_801d13e8.txt` |
 | `FUN_801d1af4` | bonus-symbol "reach" scanner (presentation only) - `overlay_slot_machine_801d1af4.txt` |
 | `FUN_801d2cc0` | HUD widget sprite-quad rasteriser (3-record descriptor table `DAT_801d347c`) - `overlay_slot_machine_801d2cc0.txt` |
@@ -528,7 +532,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 [`legaia_engine_minigames::slot_machine`](../../crates/engine-minigames/src/slot_machine.rs) is the from-scratch rules engine over this page. The **Confirmed** kernels are ported directly:
 
 - the slot LCG (`SlotRng`, `x*5+1` + 16-bit fold; `FUN_801d30cc`);
-- **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel` / `build_strip`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);
+- **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);
 - the **display strip** and its one-row-per-frame refill from the active source, `DISPLAY_REFRESH_LEAD` = 9 rows ahead of the payline (`SlotMachine::tick`; the `FUN_801cf0d8` render tail) - so the bonus round's numerals rotate in and out exactly as they do on the machine, with `BONUS_SPIN_UP_FRAMES` = `0x18` buying the travel on both edges;
 - the net-take-bracketed feature roll (`feature_roll`; `FUN_801d258c`, exact draw order + bracket edges);
 - the flat spin charge + net-take accrual (3/+6 normal, 1/+1 feature);

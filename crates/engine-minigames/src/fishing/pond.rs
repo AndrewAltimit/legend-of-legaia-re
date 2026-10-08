@@ -53,6 +53,8 @@ impl PondSession {
             line: None,
             line_latched: false,
             line_fish_prev: None,
+            creak_timer: 0,
+            rod_creaks: 0,
         }
     }
 
@@ -171,15 +173,32 @@ impl PondSession {
 
     /// The lure tick's rod writes for one in-water frame, off the held pad.
     pub(super) fn drive_rod(&mut self, input: PondInput, hooked: bool, fs: i32) {
-        if let Some(rod) = self.rod_actor.as_mut() {
-            rod.drive(
-                crate::fishing_actors::RodDrive {
-                    hooked,
-                    held: input.reel_mask,
-                },
-                fs,
-            );
+        let Some(rod) = self.rod_actor.as_mut() else {
+            return;
+        };
+        let over_cap = rod.drive(
+            crate::fishing_actors::RodDrive {
+                hooked,
+                held: input.reel_mask,
+            },
+            fs,
+        );
+        // The creak: the countdown `_DAT_801D90C4` drops by the frame step
+        // every in-water frame (`0x801D2B78`); on a hooked rod bent past its
+        // cap with the countdown spent, cue `0x201` goes into ring slot 1
+        // (`0x801D2BD0`) and the countdown re-arms at `rand() % 200 + 60`
+        // (`0x801D2BB4..0x801D2C04`).
+        // PORT: FUN_801d26cc (state 2: the rod creak)
+        self.creak_timer -= fs;
+        if over_cap && self.creak_timer <= 0 {
+            self.rod_creaks += 1;
+            self.creak_timer = i32::from(self.rng.next_u15()) % 200 + 60;
         }
+    }
+
+    /// Rod-creak cues (`0x201`, ring slot 1) raised since the last call.
+    pub fn take_rod_creaks(&mut self) -> u32 {
+        std::mem::take(&mut self.rod_creaks)
     }
 
     /// This frame's fishing line - the tail of retail's lure tick

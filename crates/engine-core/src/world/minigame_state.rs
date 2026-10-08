@@ -103,6 +103,13 @@ pub struct MinigameState {
     /// the scene host on the warp - see
     /// [`crate::world::World::runtime_sfx_bundle`].
     pub muscle_sfx_bundle: Vec<u8>,
+    /// The dance hall's runtime SFX descriptor bank (`efect.dat`, extraction
+    /// PROT 1228): the dance overlay's init reads it into the buffer
+    /// `_DAT_8007B8D0` points at (`0x801CF164..0x801CF16C`, PROT 0980), so
+    /// every `>= 0x200` cue the dance writes to the ring resolves here.
+    /// Staged by the scene host on entry - see
+    /// [`crate::world::World::runtime_sfx_bundle`].
+    pub dance_sfx_bundle: Vec<u8>,
     /// Baka Fighter duel state. `Some` while `mode ==
     /// SceneMode::BakaFighter`; the exchange / round / match state machine
     /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
@@ -214,8 +221,8 @@ pub struct MinigameState {
     /// The tutorial frame the last dance tick produced (captions / options /
     /// cursor seats), for a host's draw list.
     pub dance_tutorial_frame: Option<crate::dance_tutorial::TutorialFrame>,
-    /// SFX cue ids the minigame sessions queued this frame (the count-in
-    /// intro cue, the tutorial's cursor / confirm cues). Drained by
+    /// SFX cue ids the minigame sessions queued this frame (the fishing hub's
+    /// and point exchange's blips). Drained by
     /// [`crate::world::World::drain_minigame_sfx_cues`]; cosmetic.
     pub pending_sfx: Vec<u16>,
     /// Is the dance HUD's own texture page resident in the VRAM this host is
@@ -316,6 +323,7 @@ impl MinigameState {
             slot_return_mode: SceneMode::Field,
             slot_sfx_bundle: Vec::new(),
             muscle_sfx_bundle: Vec::new(),
+            dance_sfx_bundle: Vec::new(),
             baka_fighter: None,
             baka_return_mode: SceneMode::Field,
             muscle_dome: None,

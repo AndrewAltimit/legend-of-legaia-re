@@ -1163,6 +1163,31 @@ fn run_one(
 ) -> RunOutcome {
     let mut session = open_session(src);
     session.begin_new_game();
+    // `<label>@<save>`: the run plays the scene with a library card save's
+    // party, bag and story flags instead of the New Game party's.
+    let (label, save) = split_save(&spec.scene);
+    if let Some(save) = save {
+        match card_save(save) {
+            Ok(sf) => session.host.world.load_full(sf),
+            Err(e) => {
+                return RunOutcome {
+                    spec: spec.clone(),
+                    findings: vec![Finding {
+                        detector: "tick_error",
+                        start_scene: spec.scene.clone(),
+                        scene: String::new(),
+                        mode: String::new(),
+                        frame: 0,
+                        location: "card save".into(),
+                        detail: e,
+                    }],
+                    pads: Vec::new(),
+                    stats: RunStats::default(),
+                    enter_ok: false,
+                };
+            }
+        }
+    }
     session.set_save_rack(
         SaveRack::CardPorts(vec![
             card_port_snapshot(0, Some("MEMORY CARD")),
@@ -1200,7 +1225,7 @@ fn run_one(
     // `<venue>+mg<sub_id>`: enter the venue, then request the mode-24 door
     // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
     // host's next tick loads the minigame overlay through the retail path.
-    let (label, shop_visits) = split_shop(&spec.scene);
+    let (label, shop_visits) = split_shop(label);
     let (label, round_trip) = split_round_trip(label);
     let (scene, minigame) = split_minigame(label);
     let entered = catch_unwind(AssertUnwindSafe(|| {
@@ -1271,6 +1296,14 @@ fn run_one(
     let mut prev_mode = session.host.world.mode;
     let mut prev_scene = session.host.world.active_scene_label.clone();
     let mut reported: BTreeSet<String> = BTreeSet::new();
+    // A card save can carry values no play produces (the playthrough card's
+    // bag holds a 255-count stack): whatever the seeded state already
+    // violates is the save's, not the engine's, and is not reported.
+    if save.is_some() {
+        let mut v = Vec::new();
+        value_checks(&session, t, &mut v);
+        reported.extend(v.into_iter().map(|(det, loc, _)| format!("{det}|{loc}")));
+    }
     let mut traced_scripts: BTreeSet<u64> = BTreeSet::new();
     let mut battle_sites: BTreeMap<String, u32> = BTreeMap::new();
     let mut prev_pad = 0u16;
@@ -2459,6 +2492,52 @@ fn refresh_rack(session: &mut BootSession, card: &SoakCard) {
 /// The harness's memory card: `(port, cell)` -> the file a Save wrote.
 type SoakCard = BTreeMap<(u8, u8), (legaia_save::SaveFile, legaia_save::SaveResume)>;
 
+/// `"town01+rt@PRO-14"` -> `("town01+rt", Some("PRO-14"))`: the run seeds
+/// the party, bag and story flags from that save on the library card
+/// (`LEGAIA_SOAK_CARD`, default the playthrough card) - late-game state in
+/// every scene, where the New Game party reaches none of it.
+fn split_save(label: &str) -> (&str, Option<&str>) {
+    match label.split_once('@') {
+        Some((scene, save)) => (scene, Some(save)),
+        None => (label, None),
+    }
+}
+
+/// The library card the `@<save>` runs read.
+const SOAK_CARD: &str = "playthrough-endgame-7saves.mcr";
+
+/// The save named `save` on the soak card, lifted into a [`legaia_save::SaveFile`].
+fn card_save(save: &str) -> Result<legaia_save::SaveFile, String> {
+    let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root().join("saves/library"));
+    let card = std::env::var("LEGAIA_SOAK_CARD").unwrap_or_else(|_| SOAK_CARD.to_string());
+    let path = lib.join("cards").join(&card);
+    let mounted = legaia_save::emu::MountedCard::open(&path).map_err(|e| format!("{e:#}"))?;
+    for block in 1..=15u8 {
+        let Some(frame) = mounted.dir_frame(block) else {
+            continue;
+        };
+        let name: String = frame[0x0A..0x0A + 20]
+            .iter()
+            .take_while(|&&b| b != 0)
+            .map(|&b| b as char)
+            .collect();
+        if !name.ends_with(save) {
+            continue;
+        }
+        let Some(sc) = mounted.sc_block(block) else {
+            continue;
+        };
+        return legaia_save::SaveFile::from_retail_sc_block(
+            sc,
+            legaia_save::RETAIL_SC_PARTY_RECORDS,
+        )
+        .map_err(|e| format!("{e:#}"));
+    }
+    Err(format!("{card}: no save named {save}"))
+}
+
 /// `"koin1+mg3"` -> `("koin1", Some(3))`; a plain label passes through.
 fn split_minigame(label: &str) -> (&str, Option<u8>) {
     match label.split_once("+mg") {
@@ -2483,6 +2562,16 @@ fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
             .chain(extra.iter().cloned())
             .collect(),
     };
+    // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save.
+    if let Ok(save) = std::env::var("LEGAIA_SOAK_SAVE")
+        && !save.trim().is_empty()
+    {
+        for s in &mut scenes {
+            if !s.contains('@') {
+                *s = format!("{s}@{}", save.trim());
+            }
+        }
+    }
     // `LEGAIA_SOAK_SHARD=i/n` splits the scene set so a long soak can be
     // chunked across invocations.
     if let Ok(sh) = std::env::var("LEGAIA_SOAK_SHARD")

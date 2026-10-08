@@ -5,6 +5,10 @@
 
 use super::*;
 
+/// The purse cap the battle spoils routine saturates at (`0x5F5E0FF`,
+/// `FUN_8004E568` at `0x8004F0C4..0x8004F0FC`).
+pub const BATTLE_GOLD_CAP: i32 = 99_999_999;
+
 impl World {
     /// Set the item catalog the battle / field menu consults for item
     /// actions. Replaces any prior catalog. Engines populate this at
@@ -1297,8 +1301,12 @@ impl World {
         } else {
             Vec::new()
         };
+        // The spoils routine adds the gold to the purse and saturates it at
+        // 99,999,999 (`lui a3,0x5f5` / `ori a3,a3,0xe0ff` at `0x8004F0C4`,
+        // `slt` + store at `0x8004F0EC..0x8004F0FC`) - a cap ten times the
+        // shop sale's ([`crate::shop::GOLD_CAP`]).
         let new_money = (self.party.money as i64).saturating_add(gold_credited as i64);
-        self.party.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        self.party.money = new_money.clamp(i32::MIN as i64, BATTLE_GOLD_CAP as i64) as i32;
         // NB: no scripted-boss "victory latch" here. The first-visit gate
         // flag (rikuroa Caruban = `0x142`) lands by EXECUTING the scene's
         // post-victory partition-2 record: the post-battle field return

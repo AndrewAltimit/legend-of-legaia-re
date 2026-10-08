@@ -27,8 +27,10 @@ strict-PS1 rasterisation: vertex snap and 15-bit dither sit behind
 **simulation is faithful with no opt-out; shading defaults to retail;
 rasterisation defaults to clean.** See [Lighting](#lighting).
 
-A second surprise, deliberate: the port draws **every** mesh a scene loads,
-every frame - no frustum cull, no draw distance, no LOD. See
+A second surprise, deliberate: the port adds no culling of its own - no
+frustum cull, no draw distance, no LOD. What it removes is what retail
+removes: the visible-tile crop at retail's framing, the actor cull and the
+per-primitive rejects. See
 [No distance culling](#no-distance-culling-every-loaded-body-is-drawn).
 
 ## Per-mode descriptor table
@@ -388,12 +390,12 @@ Engine port: `legaia_engine_vm::prim_dispatch` models this table - `slot_to_kind
 (topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11), and
 `RenderMode::applies_depth_cue` (the SCUS fog banks). The `NCCS`/`NCCT` kernels
 live in `legaia_engine_ui::gte::lighting` and are exercised by the `gte_trace`
-parity oracle, but no wgpu path yet draws the world-map slot-4 meshes, so the lit
-handlers are a faithful data model rather than a wired render path. This is a low
-priority: retail itself is not observed dispatching to these handlers at runtime
-(the world map renders unlit), so leaving them unwired matches observed retail
-output; the `NccMode` metadata is kept for fidelity if a light-using scene is ever
-found.
+parity oracle. The rows that reach them in retail are the field light-source
+groups (TMD flags `0x10..=0x17`, [The light-source rows](#the-light-source-rows)),
+which both hosts shade through `engine-core::field_lit_mesh`. The world map
+never dispatches to them - it renders unlit, and kingdom slot 4 is an
+animation bank with no geometry
+([world-map-overlay.md](../formats/world-map-overlay.md)).
 
 ## 2D gradient-tile primitive - `FUN_8002BDC4`
 
@@ -621,7 +623,7 @@ which runs both through the same `gte_divide` / `saturate_sxy` kernels the
 Retail has two GTE-backed "is this thing visible" probes. They read alike from
 the outside - project a box about an actor and return a boolean - and they are
 **not** interchangeable. Both are worth keeping straight because the engine port
-does no culling of its own (see
+adds no culling of its own (see
 [No distance culling](#no-distance-culling-every-loaded-body-is-drawn)), so
 anything that consults one of these is deciding to remove geometry the port
 otherwise draws.
@@ -1142,12 +1144,15 @@ nodes on the actor lists carry one, nearly all of them move-VM parts
 billboard - on battle-effect parts, `0x100` / `0x180` on field and overworld
 parts, and the `0x400` arm on summon casts. On the overworld walk the camera
 yaw is `0`, so map01's `0x100` kind-4 column draws the same either way.
-The disc carries no word that keeps the yaw factor: over every op-`0x15`
+The disc carries one word that keeps the yaw factor. Over every op-`0x15`
 site in the scenes' stager records and the slot-B spawn records the words
-are `0x20`, `0x100`, `0x180`, `0x300`, `0x380`, `0x400`, `0x500`, `0x580`
-and `0x780` (`crates/engine-core/tests/move_ctrl52_census_disc.rs`), so a
-skip-bit node always drops yaw, and `0x300` is the one shape that keeps a
-factor (pitch).
+are `0x20`, `0x80`, `0x100`, `0x180`, `0x300`, `0x380`, `0x400`, `0x500`,
+`0x580` and `0x780` (`crates/engine-core/tests/move_ctrl52_census_disc.rs`),
+and the lone `0x80` - pitch skipped, yaw and roll kept - is `urudre1` stager
+record 14's, past an ext `0x37` branch that jumps the record's first `HALT`.
+A walk that ends at the first `HALT` misses it, which is how this page once
+said no such word ships. Otherwise a skip-bit node drops yaw, and `0x300`
+keeps pitch.
 
 The field decoration pass `FUN_801F7088` has its own copy of the skip arm,
 keyed on the cell record's flags rather than a node word: `+0x12 & 0x380`
@@ -1270,6 +1275,21 @@ the curvature table bends their `SY` after projection. Test
   `flags 0x10..=0x17` group, so no overworld draw ever reaches lit rows
   `8..11`. See
   `ghidra/scripts/funcs/800271a8.txt`.
+
+  **The table carries the `OFY` of the frame that built it.** The builder sets
+  `H` and the matrix but not the screen offset, and stores `SY - 0x78`, so
+  every entry - entries `0` and `1` included - is offset by whatever `OFY`
+  the GTE held when the installer ran, less `120`. The frame-begin pass
+  `FUN_8001698C` sets `OFY` to half the draw height (`0x1F80038E >> 1`,
+  `0x80016A3C..0x80016A50`), which is `114` on the field's `228`-row area.
+  Every overworld state in the retail comparison corpus holds an unbiased table
+  (entry `0` is `0`: built at `OFY = 120`) except `sebucus_overworld_resident`,
+  whose entry `0` is `-6`: built at `OFY = 114`, it lifts every overworld
+  vertex six rows over the port's closed form, and that state's engine frame
+  lands about seven rows low with a camera identical to retail's word for
+  word. Which transition installs the overworld under the field's draw area
+  is not pinned (that state's party is level 99, so a debug warp is a
+  candidate); the port builds the common, unbiased table.
 - **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
   advances. It is the CD load-kick / completion driver the asset queue drains
   through - the four routines it calls are the **libcd** family, not libgpu:
@@ -1990,18 +2010,33 @@ checked against an sRGB target too, which lifts it out of tolerance.
 
 ## No distance culling: every loaded body is drawn
 
-The engine draws **every** mesh a scene loads, every frame. There is no
-frustum cull, no draw-distance heuristic, no per-object radius test, and no
-LOD: the field draw lists (`field_placement_draws`, `field_terrain_draws`, the
-ground heightfield, the posed props, the NPCs) are resolved once at scene load
-and submitted whole on every frame. A town is a few hundred draws of a few
-thousand triangles - the budget the port is not on is the PSX's.
+The engine adds no culling of its own: no frustum cull, no draw-distance
+heuristic, no LOD. The field draw lists (`field_placement_draws`,
+`field_terrain_draws`, the ground heightfield, the posed props, the NPCs) are
+resolved once at scene load. A town is a few hundred draws of a few thousand
+triangles - the budget the port is not on is the PSX's.
 
-Three things can still remove geometry: retail's own near reject on placed
-objects ([below](#the-placed-object-near-reject)), its per-primitive near
-reject ([below](#the-per-primitive-near-reject)), and the projection's clip
-volume, whose planes are sized to hold an entire scene from any vantage
-rather than to frame the current view:
+What removes geometry is retail's own rules, plus the projection's clip volume:
+
+- **The visible-tile crop**, at retail's framing only. Retail's render library
+  walks just the `.MAP` cells inside the camera's visible tile window
+  ([encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
+  clipped to the walk region; `engine-core::field_view_window` ports that
+  prologue (`FUN_801F7088`), and both hosts gate the terrain draws
+  (`terrain_draw_visible`) and the ground index list on it. It holds only
+  while the camera is retail's own framing - under the play-window's default
+  `CameraDistance::Far`, the drag / tilt / zoom knobs or `F3` the map is drawn
+  whole, because the window was sized for retail's frustum
+  ([engine.md](engine.md#the-visible-tile-crop-follows-the-framing)).
+- **The actor cull** on placed objects and NPCs (`placed_actor_visible` over
+  `World::field_actor_culled_at`), applied under the same crop and off with
+  it, and retail's near reject on placed objects
+  ([below](#the-placed-object-near-reject)).
+- **The per-primitive rejects**: the near reject
+  ([below](#the-per-primitive-near-reject)) and, in battle, the GPU
+  polygon-size limit ([below](#the-gpu-polygon-size-limit-in-battle)).
+- **The projection's clip volume**, whose planes are sized to hold an entire
+  scene from any vantage rather than to frame the current view:
 
 - [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
   every camera. A field map is `128 x 128` tiles of 128 units (~23 k units on
@@ -2035,9 +2070,9 @@ sky and cliff geometry wraps the origin, and the frame filled with stretched
 texture while the camera matched retail exactly. Pinned by
 `crates/engine-core/tests/field_unspawned_actor_draw_disc.rs`.
 
-The **site play page** (`site/js/play-app.js`) draws the whole scene every
-frame, unconditionally, matching this renderer - `OCCLUDER_CULL = false`. It
-once ran a per-frame occlusion cull (drop a body the eye-to-player segment
+The **site play page** (`site/js/play-app.js`) applies the same crop and
+actor cull and adds nothing of its own - `OCCLUDER_CULL = false`. It once
+ran a per-frame occlusion cull (drop a body the eye-to-player segment
 pierces, since the page has a single follow camera where retail authors one per
 scene), but even the exact segment-vs-world-AABB form culled legitimate bodies:
 the placement boxes are axis-aligned over whole terrain tiles, walls, and
@@ -2157,13 +2192,25 @@ dropped only when both of its halves exceed the limit. The dance hall applies
 the same rule to its baked hall on the CPU
 ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
 
-`theeder_summon_mid_cast` is the case this does not close. Retail's near
-monster there (pool slot 5, ghosted `B + F/4` by `FUN_8004DC68`) reaches the
-ordering table with only its flat-textured `POLY_FT4` body prims - every one of
-its gouraud prims is missing from both packet buffers - while the engine draws
-its legs, around the caster, as see-through shards. Neither the near reject
-nor the span limit removes those legs, so what drops them in retail is still
-open.
+`theeder_summon_mid_cast` is the case this does not close, and the reading
+that retail drops the near monster's gouraud prims is wrong. Monster `0xA1`
+(Gilium) has no flat prims at all - every group is `GT3` (`0x25`) or `GT4`
+(`0x27`) - and the near body (pool slot 5, ghosted `B + F/4` by
+`FUN_8004DC68`, Venom in its status word) is the `POLY_FT4` run with tpage
+`0x75` (ABR `3`) in the packet stream, beside the unghosted Giliums' `GT4`
+run on tpage `0x15` through the same CLUTs. Its render node's colour word reads
+`0x87FF2020` - Venom's `0xFF2020`, the ghost's `0x83` and bit 26 - where the
+far Giliums' read `0x00FF2020`, so `FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4` leaves
+(`0x800457C4`, `0x80045988`) emit a flat-textured packet: code forced to
+`0x2C` (`lui s0,0x2c00`), one colour - the first corner's, depth-cued
+toward the tint colour by `DPCS` - and `0x20` / `0x28`-byte packets. So
+retail draws the whole near body, flat and faint, mostly above the frame
+(its packets reach `y = -684`), and what the engine draws as long leg shards across the caster is a different leg
+geometry on screen, not a missing prim class. The engine has no bank-2 flat
+path (both hosts shade a bit-26 body gouraud), and a vertex-stage emulation
+of the GTE's saturated projection (`SZ < H/2` at twice the eye offset)
+changes no catalogued battle frame, so the leg geometry itself is what
+remains open.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -2936,7 +2983,11 @@ With one fixed blend state per pipeline, that per-texel split needs two passes:
 the opaque pass draws every triangle and discards STP texels of semi-transparent
 prims; a blend pass then re-draws only the semi-transparent triangles (a
 per-ABR-mode index tail appended at upload time), discarding everything except
-STP texels.
+STP texels. The blend pass applies the same `NCLIP` winding rejection as the
+opaque pass (`blend_pass_color` in `engine-render`'s shaders): retail's prim
+leaves cull a semi-transparent prim's back face exactly as an opaque one's, and
+without it an open translucent strand blends twice wherever its far side faces
+the camera.
 
 **Untextured (`F*`/`G*`) prims have no per-texel STP gate** - an ABE prim blends
 **all** its pixels. The colour-mesh vertex format carries a per-vertex blend word

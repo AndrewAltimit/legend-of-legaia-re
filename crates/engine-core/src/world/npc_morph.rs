@@ -31,6 +31,12 @@ use legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE;
 use legaia_engine_vm::move_vm::ActorState;
 use legaia_engine_vm::vdf_morph;
 
+/// The `+0x62` bits the ramp envelope `FUN_80020740` reads and writes:
+/// HOLD `0x400`, ADVANCE `0x800`, LANE0 snap-down `0x1000`, INIT `0x2000`,
+/// reset-on-complete `0x4000`, FROZEN `0x8000`
+/// (`legaia_engine_vm::move_buffer`).
+const MORPH_ENV_BITS: u16 = 0xFC00;
+
 /// Which field actor a morph belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MorphOwner {
@@ -74,6 +80,51 @@ impl World {
     pub fn arm_field_morph(&mut self, owner: MorphOwner, count: u8, base_id: u8, frames: &[u8]) {
         let st = self.npcs.morphs.entry(owner).or_default();
         arm_lanes(st, count, base_id, frames);
+        self.mark_morph_dirty(owner);
+    }
+
+    /// Capture alignment for the retail comparison's `play-window` child
+    /// (`LEGAIA_SEAT_MORPHS`): write a retail state's live envelope over the
+    /// morph of the field actor whose flat MAN index (`+0x50`) is `flat` -
+    /// the lane weights `+0xA0 + i*2`, the lane-done mask `+0x7C` and the
+    /// envelope control word `+0x62`. Where an envelope stands is time since
+    /// the op-`0x4B` arm (`town01`'s shoreline objects run a tide that
+    /// carries the sea up the beach and back), which no seed replays. Only a
+    /// morph the engine armed itself is written; the lanes' sub-entries and
+    /// ramp rates stay the engine's.
+    pub fn seed_field_morph(&mut self, flat: u16, weights: &[u16], done_mask: u32, env: u16) {
+        let Some(ci) = self
+            .field_vm
+            .channels
+            .iter()
+            .position(|c| c.ctx.script_id == flat)
+        else {
+            return;
+        };
+        let c = &self.field_vm.channels[ci];
+        let owner = if c.object_bind {
+            MorphOwner::Object(flat)
+        } else {
+            match u8::try_from(c.placement_index) {
+                Ok(s) => MorphOwner::Placement(s),
+                Err(_) => return,
+            }
+        };
+        let Some(st) = self.npcs.morphs.get_mut(&owner) else {
+            return;
+        };
+        let lanes = usize::from(st.keyframe_count).min(weights.len());
+        for (i, &w) in weights.iter().take(lanes).enumerate() {
+            vdf_morph::set_keyframe_weight(st, i, w);
+        }
+        st.field_7c = done_mask;
+        // Only the envelope's own control bits: the low byte of `+0x62` is
+        // the clip cursor's, which the engine keeps on the prop's own
+        // animation state.
+        let word =
+            (self.field_vm.channels[ci].ctx.local_flags & !MORPH_ENV_BITS) | (env & MORPH_ENV_BITS);
+        st.local_flags = word;
+        self.field_vm.channels[ci].ctx.local_flags = word;
         self.mark_morph_dirty(owner);
     }
 

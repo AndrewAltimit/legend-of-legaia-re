@@ -181,6 +181,85 @@ pub fn upload_shared_region(
     Some(VabBank::upload(spu, &mut alloc, report, bank_buf))
 }
 
+/// A shared-region bank staged across its region and the BGM tail
+/// ([`upload_shared_region_spilled`]).
+#[derive(Debug, Clone)]
+pub struct SpilledUpload {
+    pub bank: VabBank,
+    /// The tail span the overflow samples occupy, `[start, end)`; `None` when
+    /// every sample fit the region after all.
+    pub spill: Option<(u32, u32)>,
+}
+
+/// Upload a shared slot-2 / slot-6 bank whose bodies do not fit above
+/// `slot0` ([`upload_shared_region`] declines it) across that region **and**
+/// the BGM region's free tail `[tail_base, SFX_REGION_BASE)`.
+///
+/// Retail's dance init loads its 234 400-byte bank at the shared region's
+/// base and overruns slot 3's base, which is legal while slot 3 is closed
+/// (`docs/formats/sfx-table.md`). The port's region sits at the top of SPU
+/// RAM with slot 0 below it, so there is no room above to overrun into; the
+/// free space the port has instead is the BGM tail, and a voice addresses
+/// each sample separately, so a bank need not be contiguous. `None` when the
+/// two spans together cannot hold every sample.
+pub fn upload_shared_region_spilled(
+    spu: &mut Spu,
+    slot0: &VabBank,
+    tail_base: u32,
+    report: &VabReport,
+    bank_buf: &[u8],
+) -> Option<SpilledUpload> {
+    let base = shared_region_base(slot0);
+    let room = SPU_RAM_BYTES.saturating_sub(base);
+    let tail_base = tail_base.div_ceil(16) * 16;
+    let tail_len = SFX_REGION_BASE.saturating_sub(tail_base);
+    let sizes: Vec<u32> = report
+        .vag_samples
+        .iter()
+        .filter(|v| v.size > 0)
+        .map(|v| v.size as u32)
+        .collect();
+    // The overflow a region-first fill leaves, taken from the **top** of the
+    // tail so the spill sits as far from the track as it can.
+    let mut region_only = SpuAllocator::new(base, room);
+    let mut need: u32 = sizes
+        .iter()
+        .filter(|&&n| region_only.alloc(n).is_none())
+        .map(|n| n.div_ceil(16) * 16)
+        .sum();
+    if need > tail_len {
+        return None;
+    }
+    // First-fit runs in address order, so the tail span fills first and can
+    // fragment differently from the estimate: grow the span until a dry run
+    // places every sample, then upload for real.
+    let mut alloc = loop {
+        let mut a = SpuAllocator::new(base, room);
+        if need > 0 {
+            a.free(SFX_REGION_BASE - need, need);
+        }
+        let mut dry = a.clone();
+        if sizes.iter().all(|&n| dry.alloc(n).is_some()) {
+            break a;
+        }
+        if need >= tail_len {
+            return None;
+        }
+        need = (need.max(16) * 2).min(tail_len);
+    };
+    let bank = VabBank::upload(spu, &mut alloc, report, bank_buf);
+    let spill = bank
+        .samples
+        .iter()
+        .flatten()
+        .filter(|s| s.addr < SFX_REGION_BASE)
+        .fold(None, |acc: Option<(u32, u32)>, s| {
+            let (lo, hi) = (s.addr, s.addr + s.size);
+            Some(acc.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))))
+        });
+    Some(SpilledUpload { bank, spill })
+}
+
 /// Stage the resident SFX region: the slot-0 system bank at the region's
 /// bottom, then (when given) the shared-region bank above it. Every host's
 /// boot staging and every re-stage after an [`OwnedBankUpload::evicts_sfx`]

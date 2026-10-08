@@ -589,13 +589,21 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 }
             }
             texts.extend(ctx.tab_title(window_ids::TAB_OPTIONS, "Options"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::OPTIONS_SCREEN_WINDOWS));
+            sprites.extend(ctx.window_chrome(&[window_ids::TAB_OPTIONS]));
             if let Some(rects) = ctx.chrome {
+                // The settings window, grown by the engine-only rows below
+                // the retail ten (Key Config) so they stay inside its frame.
+                let (fx, fy, fw, fh) = ctx.rects.frame_rect(window_ids::OPTIONS_MAIN);
+                sprites.extend(crate::menu_window_chrome_draws_for(
+                    rects,
+                    (fx, fy, fw, fh + crate::options_window_extra_height(v.rows)),
+                    ctx.origin,
+                    ctx.scale,
+                ));
                 if let Some(p) = v.popup.as_ref() {
-                    let (x, y, w, h) = p.rect;
                     sprites.extend(crate::menu_window_chrome_draws_for(
                         rects,
-                        (x - 6, y - 2, w + 12, h + 12),
+                        crate::options_popup_frame(p.rect),
                         ctx.origin,
                         ctx.scale,
                     ));
@@ -740,7 +748,17 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ctx.rects.pen(window_ids::EQUIP_MAIN),
             ));
             texts.extend(ctx.tab_title(window_ids::TAB_EQUIP, "Equip"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS));
+            // The candidate step closes the party (21) and main (22) windows:
+            // its open script `0x801E4DC8` begins with close-all and reopens
+            // only the tab, the list and windows 24 / 25 (see
+            // `equip_screen_draws_for`).
+            let browse = v.view.phase == crate::EquipDrawPhase::SlotPicker;
+            if browse {
+                sprites
+                    .extend(ctx.window_chrome(&legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS));
+            } else {
+                sprites.extend(ctx.window_chrome(&[window_ids::TAB_EQUIP, window_ids::EQUIP_LIST]));
+            }
             // Window 24 - the candidate step's item-info panel. It is not a
             // fifth window of the *screen*: retail's sub-screen `0x14` opens
             // it (with window 25) on top of the browse step's four, through
@@ -748,7 +766,11 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // the same shared panel `FUN_801D0F1C` that window 17 draws on
             // the Items screen. So it appears with the candidate list and
             // goes with it.
-            if let Some(info) = v.info.as_ref()
+            // The window is open for the whole candidate step, so its frame
+            // (and the reserved sub-rect's) stands on a row with nothing
+            // staged too - the Remove row - and only the content waits for a
+            // staged item.
+            if !browse
                 && let Some((d, _)) = ctx
                     .rects
                     .table()
@@ -756,14 +778,16 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             {
                 let r = painter_rect(d);
                 sprites.extend(ctx.frame_around(d.rect()));
-                texts.extend(crate::item_info_panel_draws_for(ctx.font, (r.x, r.y), info));
+                if let Some(info) = v.info.as_ref() {
+                    texts.extend(crate::item_info_panel_draws_for(ctx.font, (r.x, r.y), info));
+                }
                 // ...and window 24's own delta over that panel: the
                 // two-digit count in the accent pen, plus the reserved
                 // sub-rect the renderer frames either way.
                 let (count_draws, reserved) = crate::ui_menu_window_painters::count_panel_draws_for(
                     ctx.font,
                     r,
-                    Some(u64::from(info.count)),
+                    v.info.as_ref().map(|info| u64::from(info.count)),
                 );
                 sprites.extend(ctx.frame_around(reserved));
                 texts.extend(count_draws);
@@ -804,7 +828,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 let fields = crate::equip_compare_panel_fields(&panel, (r.x, r.y));
                 texts.extend(crate::compare_panel_draws_for(ctx.font, &fields));
             }
-            if let Some(rects) = ctx.chrome {
+            if browse && let Some(rects) = ctx.chrome {
                 sprites.extend(crate::equip_screen_sprites_for(
                     rects,
                     v.pictogram_rows,

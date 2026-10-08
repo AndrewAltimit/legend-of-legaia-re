@@ -530,8 +530,9 @@ tiers themselves are [below](#health-tier-ink-fun_800349ec--fun_80035ea8).
 Engine port: `engine-ui::field_menu_draws_for` +
 `field_menu_info_draws_for` (text) and `field_menu_icon_sprites_for`
 (hand cursor, money/time pictograms, LV/HP/MP labels, per-member AP
-gauges via the shared `ap_gauge_sprites` widget). The engine shows the
-coin row only when the casino bank is nonzero.
+gauges via the shared `ap_gauge_sprites` widget). The engine draws no coin
+row: the time tag sits at retail's no-coin-row position whatever the casino
+bank holds.
 
 #### Health-tier ink (`FUN_800349EC` / `FUN_80035EA8`)
 
@@ -800,8 +801,13 @@ row (`scripts/pcsx-redux/autorun_equip_item_panel_capture.lua`). All seven
 rows open a populated list, the three Goods rows included.
 
 The candidate step opens both windows through one script,
-`0x801E4DC8` = `[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`, so the
-frame carries three stacked panels down the left column:
+`0x801E4DC8` = `[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`. Its
+leading close-all takes the browse step's party (21) and main (22) windows
+down - only the tab (2), the item list (23, snapped in place, now drawn to
+its full height) and windows 24 / 25 come back - so the frame carries three
+stacked panels down the left column, on the rects 21 and 22 vacated (both
+hosts once drew 21 and 22 on under them, printing the party names through
+window 25's stat rows):
 
 - **window 25** (top) - the character's display name, then one stat row set.
 - **window 24** (middle) - the hovered item's name with its owned count, its
@@ -1048,6 +1054,14 @@ Display sets the field party HUD's idle delay on both hosts
 `world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
 no HUD - see [`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)),
 and the other settings persist in the engine's options config file.
+
+The port's one engine-only row, **Key Config**, hangs below the retail ten on
+hosts with a keyboard binding table. Window 48 is sized for the ten, so the
+settings frame grows by the extra rows' advances
+(`engine-ui::options_window_extra_height`; zero on the retail set). Its
+rebind sub-screen reuses the window and lays its sixteen buttons out in two
+columns of eight at the popup's 13-px pitch so the header, rows and hint fit
+the frame.
 
 ### Dev-menu EVENT FLAG editor (debug build only)
 
@@ -2584,10 +2598,10 @@ different things - worth keeping apart, because one of them is not a
 Meanwhile `list_page_header_draws` holds the measured columns with
 dialog-font glyphs (label at `x + 0x4D`, fraction cells at
 `x + 0x68 / 0x74 / 0x78`), so the header lands where retail's does even
-though the glyphs are the wrong ones. Hosts still frame these screens
-generically pending the play-window / web wiring; the HP / MP
-health-tier inks on the status page remain the other open fidelity
-item.
+though the glyphs are the wrong ones. Both hosts compose these screens
+through `engine-ui::pause_menu::pause_screen_draws`, and the status page
+already inks HP / MP by health tier (`menu_hp_ink_with_status`), so the
+header glyphs are the open fidelity item here.
 
 
 ### Tactical Arts chain editor (engine extension)

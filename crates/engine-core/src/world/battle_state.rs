@@ -415,8 +415,9 @@ pub struct BattleState {
     /// consumed (taken) by the monster pick.
     pub forced_monster_cast: Option<(u8, u8)>,
     /// The same seed's target: the party seat the capture's caster had
-    /// aimed its cast at (`+0x1DD`). A single-target cast replayed off
-    /// [`Self::forced_monster_cast`] lands on it when it is standing,
+    /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
+    /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
+    /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
@@ -489,6 +490,14 @@ pub struct BattleState {
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
     pub vram_moves: Vec<crate::world::ScriptVramMove>,
+    /// Battle VRAM uploads a cast's side-band stream made this frame - the
+    /// `summon.dat` texture slots a player summon's case `0x32` streams to
+    /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
+    /// ([`crate::battle_sideband_textures::record_cast_sideband_textures`]).
+    /// Applied with [`Self::vram_moves`] by
+    /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
+    /// entry.
+    pub vram_loads: crate::battle_party_form::VramWriteLog,
     /// PROT 0969's own data words while it runs.
     pub(crate) form_transition: crate::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
@@ -772,6 +781,7 @@ impl BattleState {
             arrival: Default::default(),
             backdrop_rebound: false,
             vram_moves: Vec::new(),
+            vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,
             stage_banner: None,

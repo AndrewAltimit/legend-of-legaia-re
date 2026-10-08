@@ -16,7 +16,7 @@ folklore "72-slot" bound.
   slot. The producers and consumers (pause menu, field VM `GIVE_ITEM`, battle
   rewards, shops, equip swap-back) mutate through the `SCUS_942.54` helpers
   that scan and bound-check only inside the active window - five of them carry
-  the add / consume / capacity / reserve / normalize contract - but the helpers
+  the add / consume-by-id / find / consume-by-slot / normalize contract - but the helpers
   are not the only road in: thirteen SCUS functions touch the array in all
   (see [the reference census](#every-reference-to-the-array)), the field /
   battle / menu overlays read slots directly, the pause menu's Throw Out
@@ -83,8 +83,8 @@ in retail.
 |---|---|
 | `FUN_800421D4` | add - find a matching id, else the first free slot |
 | `FUN_80042310` | consume by id - zeroes the emptied id in place and returns; never compacts on its own |
-| `FUN_80042EE0` | capacity check - paired with reserve before adds in the equip swap-back path |
-| `FUN_80043048` | reserve - second half of the capacity / reserve pair |
+| `FUN_80042EE0` | find-slot-by-id - linear scan of the active window, returns the slot index or none |
+| `FUN_80043048` | consume-by-slot - the consume decrement addressed by index; zeroes the id in place when the count reaches 0 |
 | `FUN_800423E0` | normalize - calls window setup first, merges duplicate stacks (cap 99), pulls occupied slots down into holes |
 | `FUN_8004313C` | window setup - the sole SCUS writer of `gp[+0x2D2 / +0x2D4 / +0x2D6]` |
 
@@ -109,7 +109,7 @@ excluded). It picks the window from the party roster: member count at
 
 The span also lands in `gp[+0x2D6]`, so `gp[+0x2D4]` is only ever `128` or
 `256`. Slots outside the window exist in RAM but are out of bounds to add,
-consume, capacity and normalize alike.
+find, consume and normalize alike.
 
 **Live cross-check** on a mid-game battle state: party count 3, window
 `(0, 256, 256)`, 160 contiguous occupied slots - a bag any 72-slot model
@@ -148,17 +148,17 @@ store precedes the bound check: on a completely full window the scan exits at
 `0x80085958 + gp[+0x2D4]*2` - `0x80085A58` (`end = 128`) or `0x80085B58`
 (`end = 256`). Only the count store is guarded.
 
-This off-by-one is the core of the still-open arbitrary-code-execution
-reachability thread. Two cautions the earlier work established:
+This off-by-one is the core of the arbitrary-code-execution reachability
+thread, which is settled: the write primitive is real and normal play cannot
+reach it. Two cautions the work established:
 
 - An exec probe at `pc = 0x800422BC` fires on **every** successful add, before
   the guard - a hit there is not out-of-bounds evidence by itself.
 - The earlier reading "`0x800859E8` = SC `+0x18A8`, the first key-item slot"
   rested on the 72-slot page being the window; it is not.
 
-Closing the question needs a bag genuinely filled to `end` (256 with a
-multi-member party) with the hit shown to land past the guard. The thread's
-state is tracked in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+The reasoning and grades are in
+[`re-settled-threads.md`](../reference/re-settled-threads.md#full-window-item-add-oob-reachability).
 
 ### Every reference to the array
 
@@ -225,8 +225,8 @@ one nobody has measured.
 | `FUN_8004313C` | window setup | sole SCUS writer of `gp[+0x2D2 / +0x2D4 / +0x2D6]`; 11 callers; branches on party count, story flag 20, first roster byte |
 | `FUN_800421D4` | add (find-or-insert) | id store precedes the bound check (the off-by-one); count store is guarded |
 | `FUN_80042310` | consume by id | zeroes the emptied id in place; never compacts on its own |
-| `FUN_80042EE0` | capacity check | paired with reserve before adds in the equip swap-back path |
-| `FUN_80043048` | reserve | second half of the capacity / reserve pair |
+| `FUN_80042EE0` | find-slot-by-id | linear scan `[start, end)`; bounded |
+| `FUN_80043048` | consume-by-slot | `count = max(count - qty, 0)` at a slot index, id zeroed in place at 0; bounded, no-op on an out-of-range or empty slot |
 | `FUN_800423E0` | normalize (merge + squeeze) | calls window setup first; merges duplicate stacks (cap 99); pulls occupied slots down into holes; occupancy = `id != 0` alone |
 | `FUN_80034A6C` | new-game seed | writes exactly slot 0 = `(0x77 Healing Leaf, x5)`; both callers pre-zero the whole range first |
 | `FUN_801D8734` (PROT 0899) | Throw Out confirm | the one non-SCUS writer: zeroes slot `_DAT_8007BB88`'s id and count in place (`0x801D88FC` / `0x801D8910`), then scans the active window for a surviving occupied slot |

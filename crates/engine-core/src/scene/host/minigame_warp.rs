@@ -443,8 +443,22 @@ impl SceneHost {
         if let Some(bank) = crate::dance_venue::dance_clip_bank(&self.index) {
             game.attach_clip_bank(&bank);
         }
+        self.stage_dance_sfx_bundle();
         self.world.enter_dance(game);
         true
+    }
+
+    /// The dance overlay init's `efect.dat` load (extraction PROT 1228) into
+    /// the current-bundle slot `_DAT_8007B8D0` (`0x801CF164..0x801CF16C`,
+    /// PROT 0980): the runtime SFX descriptor rows every `>= 0x200` cue the
+    /// dance writes to the ring resolves through. Every dance entry calls
+    /// this - the door warp here, and the native window's launcher.
+    pub fn stage_dance_sfx_bundle(&mut self) {
+        self.world.minigames.dance_sfx_bundle = self
+            .index
+            .entry_bytes_extended(legaia_asset::dance_art::DANCE_SFX_BANK_PROT_INDEX as u32)
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
     }
 }
 

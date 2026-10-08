@@ -770,6 +770,18 @@ spawned as an ordinary actor by the slot init and drawn by the shared TMD
 renderer - which is exactly why no slot function emits a large untextured quad.
 See [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md).
 
+### The slot's `DAT_801d4134 * 0x10` is a sub-row landing nudge
+
+*Falsified by disassembly.*
+
+Plausible: `rand % 5` scaled by `0x10` reads like a fraction of a reel row
+(rows are `0x100` apart), added so a stop does not look mechanical. It is a
+row index into the 16-byte-stride table at `0x801D3630`, whose words choose
+which of the five paylines a forced stop lands its target on. The port had
+kept every forced target on the middle row and the VRChat translation drew
+the "nudge" as a visual offset; both follow the table now. See
+[`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md#reel-landing---fun_801d2114--fun_801d2440).
+
 ### A phase-gated effect draw is the candidate for the arena's object-1 dust decal
 
 *Falsified by disassembly.*
@@ -2059,6 +2071,7 @@ target-side forks at `0x801D18E0` (items) and `0x801D1C50` (spells) in PROT
 | `FUN_801E0080` is a battle-arena sprite scatter over unparsed disc pools | falsified (it is the effect-VM walker) | Plausible: two script-driven pools and a quad emit read as a self-contained emitter. The disc's one call (`jal` at `0x80048128`) names `0x801E0080`, two words ahead of the walker's prologue at `0x801E0088`, the pools are a zeroed battle-heap slice, and the scripts are `efect.dat` (PROT 0873), already parsed; the duplicate port is deleted ([`effect-vm.md`](../subsystems/effect-vm.md)). |
 | `FUN_801CF754` is a render cull | falsified (it is the field contact broad phase) | Plausible: a `±0x180` window over the actor list reads like visibility. The window is centred on the player, and the table it fills is read only by the contact probe `FUN_801CFC40`; nothing that draws reads it ([`renderer.md`](functions/renderer.md)). |
 | `ctx+0x272` is a battle scene-teardown byte, and `gp+0x9F5` a debug byte | falsified | `FUN_80046A20` raises `ctx+0x272` every frame (`0x80047104`), so the first body drawn runs the frame's global passes; `gp+0x9F5` is `0x8007BD0D`, the formation's second monster id, measured over 25 states ([`battle.md`](../subsystems/battle.md)). |
+| No shipped move program keeps the camera yaw factor | falsified (`urudre1` stager record 14 writes `0x0080`) | Plausible: a disc-wide census over every op-`0x15` site found none. The census walked each program to its first `HALT`, and the carrier sits on the taken side of an ext `0x37` branch that exists to jump that `HALT` - so the instrument was blind to exactly the code the guard protects. See [`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50). |
 | No store writes the render-mode-4 selector bits `+0x9E & 0x6000` | falsified | The census missed the move VM's own stores: op `0x42` ORs `0x2000` (`0x80023FBC`, through `actor + 0x80`) and op `0x23` `0x4000`. Five shipped op-`0x42` programs sit in slot-B images; 60 of 188 live mode-4 nodes over 97 states use `0x4000` ([`effect-vm.md`](../subsystems/effect-vm.md)). |
 | `FUN_801D6910` / `693C` / `6968` / `6994` build a vertex packet | falsified (they fill a camera-glide record) | Plausible: four small setters writing consecutive halfwords. The record is `0x80070764`, and `FUN_80021248` consumes it (`0x801D044C`, `0x801D4738`). |
 | Baka roster record `+0x44` is a spawn Y | falsified (it is the stand-off) | Plausible: it sits among position-shaped fields. The duel init places each fighter at X = -/+(`+0x44` + 200) (`0x801D005C..0x801D00F4`). |

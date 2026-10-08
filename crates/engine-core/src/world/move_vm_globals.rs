@@ -46,9 +46,11 @@ pub struct MoveVmGlobals {
     /// by ext sub-ops 0x11 / 0x12 / 0x25 / 0x27 / 0x28 / 0x31 / 0x32 / 0x34
     /// / 0x35 to checkpoint world coords + tween state per actor / animation.
     pub slot_table: [[u8; 8]; 16],
-    /// Move-VM axis offset at `_DAT_8007C348` - used by ext sub-ops 0x36 / 0x37
-    /// for the `0x8E - axis` threshold predicate. Engines write per-scene.
-    pub axis_threshold: i16,
+    /// Override for the actor free-stack top `_DAT_8007C348` that ext sub-ops
+    /// 0x36 / 0x37 read (`0x8E - top` = live actors). `None` - the default -
+    /// derives it from the world's live actor population
+    /// ([`crate::world::World::actor_pool_top`]); a test pins it with `Some`.
+    pub pool_top_override: Option<i16>,
     /// Move-VM scratchpad ramp ratio numerator at `_DAT_1F800393` - used by
     /// ext sub-op 0x23 (anim-bank lerp) as the numerator of a 12.0 fixed-point
     /// ratio against the operand-supplied denominator.
@@ -93,7 +95,7 @@ impl MoveVmGlobals {
             predicate: 0,
             counter: 0,
             slot_table: [[0u8; 8]; 16],
-            axis_threshold: 0,
+            pool_top_override: None,
             ramp_ratio: 0,
             dat_8007b9d8: 0,
             scratchpad_targets: [0; 16],

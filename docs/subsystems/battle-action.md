@@ -1059,7 +1059,7 @@ thing waiting.
 `engine-core`'s `World::use_item` is exactly that split: it is shared with the
 field menu, where there is no readout to move. The battle call sites therefore
 carry the seed themselves, through
-[`BattleActor::assign_hp_bar`](../../crates/engine-vm/src/battle_action/types.rs)
+[`BattleActor::assign_hp_bar`](../../crates/engine-battle-vm/src/battle_action/types.rs)
 (the `-delta` assign, `battle_hp_bar::assign_pending`):
 
 | Port site | Retail counterpart |
@@ -1867,9 +1867,12 @@ divisible by five. An acting element below `7` then dispatches through the
 seven-entry per-element jump table at `0x801CFA2C` instead of reaching the
 installer tail.
 
-Ported as `legaia_engine_vm::move_no_effect_guard`; inert, because
-`BattleActionHost` exposes no path from a battle slot to a character record's
-spell list and the `0x801F6960` / `0x801F6964` latch pair is not modelled.
+Ported as `legaia_engine_vm::move_no_effect_guard` and live: state `0x36`'s
+settle body calls it (`battle_action::summon`, the `jal 0x801f3c34` site at
+`0x801E4CB8`) with the caster's spell list from
+`BattleActionHost::caster_spell_list`, which `World` answers from the
+character record, and every player Seru cast writes the `0x801F6960` /
+`0x801F6964` latch pair it reads.
 
 ### AI-delegated (`0x380`) party members - what is and isn't pinned
 
@@ -2273,9 +2276,11 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
   an earlier revision quoted does not reproduce. So the **player** summon is
   drawn as an ordinary battle actor (per-object TRS keyframes), the faithful
   path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The
-  move-VM stager records still exist (and the engine drives them in
-  `summon::SummonScene` as a stand-in), but they aren't the player summon's
-  per-frame render path. SCOPE: the trace covers the **player** "Burning Attack"
+  move-VM stager records still exist, but they aren't the player summon's
+  per-frame render path: the engine seats every player summon's own body as a
+  battle creature with its keyframe clips (`engine-core::summon::summon_spawn_asset`,
+  on both hosts), and `summon::SummonScene` remains only for the move-FX and
+  cast-module effect paths. SCOPE: the trace covers the **player** "Burning Attack"
   only;
   the **enemy** Gimard *Fire Tail* boss move is a distinct path - see the Fire-Tail note below.
 
@@ -2284,7 +2289,7 @@ The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the
 - In a live Tail-Fire capture the summon library occupies `DAT_8007C018[3..32]`; ten of those (`[23..32]`) are fire-textured meshes (cba row 478 `0x778B` baked), and the **active Gimard flame is `DAT_8007C018[26]`** - the only rendered model baking etim, with both rendering actors carrying `actor[+0x64]=26` and `actor[+0x56]=5` (full-TMD mode → `FUN_8002735C`).
 - Each individual flame mesh is **static geometry**; the visible fire motion is the **spawned part-actors** moving (the 8 RNG-seeded parts above), **not** CLUT cycling - the entire CLUT band is byte-identical across two animation-distinct `battle_gimard_tail_fire_a/_b` frames while the framebuffer differs ~21% (this falsifies the earlier "fire flicker = CLUT/palette animation" reading).
 - The PROT 905 `LoadImage` (`FUN_800583C8`) CLUT uploads target VRAM row `481+` (the character/party-CLUT region), conditionally, not the flame's row 478.
-- **Residual:** the part records are now recovered (`legaia_asset::summon_overlay`) and driven as a stand-in; what's open is the faithful **player** render - the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`, ported) needs the summon's per-object keyframe source wired in place of the move-VM stand-in. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+- The part records are recovered (`legaia_asset::summon_overlay`). The **player** summon renders through the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`), with each summon's own body and clips seated by `summon_spawn_asset` on both hosts.
 
 ##### Enemy "Fire Tail" - move-VM part, not the widget path
 
@@ -3605,7 +3610,7 @@ Still divergent after this, each with its prerequisite:
 
 ## Engine port
 
-`crates/engine-vm/src/battle_action.rs` ports the state graph as a per-frame edge-triggered state machine. Surface:
+`crates/engine-battle-vm/src/battle_action.rs` ports the state graph as a per-frame edge-triggered state machine. Surface:
 
 - `ActionState` - symbolic enum for every named state byte; `from_byte` returns `None` for unmapped values (so the dispatcher can surface them as `StepOutcome::UnknownState` for engine logging).
 - `ActionCategory` - symbolic enum for the action-category byte at `actor[+0x1DE]`.
@@ -3775,6 +3780,21 @@ written by `World::tick_battle_animations` from `World::juggle_window_open`
 after each cursor advance. The damage roll still reads the two terms as zero,
 and the blocked branch's own apply-mode walk (`0x801EE720..0x801EE918`) is the
 port's ordinary apply mode.
+
+**The commit turns the defender.** The commit itself (`0x801EEC34..0x801EECBC`)
+skips a zero `s7` and a Stoned defender (`+0x16E & 0x4`), stores `s7` into the
+defender's `+0x1DA`, ORs `5` into its `+0x1DC`, and then stores
+`FUN_80019B28(defender[+0x40], defender[+0x3C], attacker[+0x38],
+attacker[+0x34]) & 0xFFF` into the defender's heading `+0x46`: the bearing from
+the defender's body pair to the attacker's live pair with no half turn, the far
+end of the attacker's own `+ 0x800` recompute, so the two stand face to face.
+Every reaction a melee strike commits turns its defender that way, a block
+included, and nothing turns it back - a struck monster keeps the heading until
+its own action recomputes it, its knockback root motion steps along it, and the
+post-strike framings that read the target's `+0x46` (case 8's dead-target yaw)
+frame the body from it: `player_steal_skeleton_banner` reads its killed skeleton
+turned onto Vahn, `rim_elm_gimard_seru_capture_after` its Gimard. Port:
+`World::commit_melee_reaction`.
 
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
@@ -4371,10 +4391,15 @@ side-array mark at `0x801F6990` / the Miracle marker; default `2`), zeroes
 the banner clock `+0x28C`, and queues the per-character arts shout
 (`FUN_8004FCC8` ids `0x101/0x111/0x121` + per-follow-up variants) - which
 pins the `+0x28B` writer [`flash_ramp`](#arts-announcement-banner-fun_801e2524--fun_801e2650)
-was still missing. The restore is `FUN_801E93C8` (called from the Done arm at
-`0x801E5F64`): once the acting actor's materialised art clip has ended
-(party: `+0x1D9 < 0x10`; monster: committed record flag `+0x87 == 0`) every
-slot returns to `8` and `ctx[+0x243]` clears.
+was still missing. The restore is `FUN_801E93C8`, `jal`ed from the shared
+tail at `0x801E5F64` that the Done arm falls into and that `0x1E`, `0x1F` and
+`0x20` jump to on nearly every pass (`0x801E39AC`, `0x801E3A68`, `0x801E3A80`,
+`0x801E3AF8`, `0x801E3B18`, `0x801E56C8`, `0x801E55A0..0x801E5658`): once the
+acting actor's materialised art clip has ended (party: `+0x1D9 < 0x10`;
+monster: committed record flag `+0x87 == 0`) every slot returns to `8` and
+`ctx[+0x243]` clears. So the battle is back at full speed the pass the last
+art clip ends, and a monster that art killed plays the rest of its
+knockdown at normal speed rather than waiting for the Done band.
 
 **Port.** Kernel `legaia_engine_vm::battle_anim_rate`
 (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s
@@ -4896,7 +4921,7 @@ see [Arts presentation](#arts-presentation-slow-motion-and-after-image-ghosts)).
 - The inert indices are the inter-band gaps (`0x07`, `0x21`–`0x27`, `0x39`–`0x3B`, `0x41`–`0x45`, `0x49`–`0x4F`, `0x53`–`0x59`, `0x5B`–`0x63`, `0x6C`–`0x6D`, `0x72`–`0xFC`) plus the low-band ones. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]` (corpus-scoped: a value injected by an un-dumped overlay would still dispatch safely). **One exception:** state `0x67` **is** written (case `0x66` sets `ctx[7] = 0x67`) yet has no case body — a genuine written-but-inert state that also lands on the epilogue.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
 - **The `0x51` HP-bar settle gate is decoded and its softlock is reproducible; its retail trigger is not.** Mechanism and measurements: [the section above](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant). Both first-stated generators are measured out on the Gaza 2 fight (clamp asymmetry = amplifier; the revive race starved by phased crediting - twelve retail revives, every assign on a drained accumulator); the residuals are recorded with the settled thread in [re-settled-threads.md](../reference/re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park). Every `0x51` park captured so far needed an external HP write to set up; the live-caught retail park is the `0x19` class (root cause + fix in the sections above).
-- `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
+- `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-battle-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also
 

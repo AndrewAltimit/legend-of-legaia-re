@@ -1331,6 +1331,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-battle-vm"
+version = "0.1.0"
+dependencies = [
+ "legaia-art",
+ "legaia-asset",
+]
+
+[[package]]
 name = "legaia-engine-core"
 version = "0.1.0"
 dependencies = [
@@ -1341,6 +1349,7 @@ dependencies = [
  "legaia-bytes",
  "legaia-cheats",
  "legaia-engine-battle",
+ "legaia-engine-effects",
  "legaia-engine-minigames",
  "legaia-engine-vm",
  "legaia-font",
@@ -1363,6 +1372,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "legaia-engine-effects"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-battle",
+ "legaia-engine-minigames",
+ "legaia-engine-vm",
+ "legaia-tmd",
 ]
 
 [[package]]
@@ -1496,6 +1516,7 @@ dependencies = [
  "legaia-anm",
  "legaia-art",
  "legaia-asset",
+ "legaia-engine-battle-vm",
  "legaia-lzs",
  "legaia-prot",
  "serde_json",
@@ -1575,6 +1596,7 @@ dependencies = [
  "clap",
  "legaia-iso",
  "legaia-prot",
+ "legaia-xa",
  "libc",
  "png",
 ]

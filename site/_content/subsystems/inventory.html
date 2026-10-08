@@ -10,7 +10,7 @@
     <dt>Where</dt><dd>Main RAM <code>0x80085958</code>; save block offset <code>+0x1818</code> (rides verbatim into every memory-card save)</dd>
     <dt>Size</dt><dd>256 slots &times; 2 bytes: <code>[item id][count]</code>; id <code>0</code> = free; stacks cap at 99</dd>
     <dt>Window</dt><dd>Three halfwords <code>gp[+0x2D2]</code> start, <code>gp[+0x2D4]</code> end, <code>gp[+0x2D6]</code> span - one writer</dd>
-    <dt>Accessors</dt><dd>Five <code>SCUS_942.54</code> helpers (add / consume / capacity / reserve / normalize); 125 references disc-wide across six images, and only two of them - both cast modules - skip the window</dd>
+    <dt>Accessors</dt><dd>Five <code>SCUS_942.54</code> helpers (add / consume by id / find a slot / consume by slot / normalize); 125 references disc-wide across six images, and only two of them - both cast modules - skip the window</dd>
     <dt>In the port</dt><dd><code>ItemBag</code> over retail's own 256-slot array, window included; the accessor family is ported once in <code>legaia_save::retail_inventory</code></dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly of every helper plus a live three-member window read</dd>
     <dt>Used by</dt><dd><a href="field-menu.html">Field menu</a>, <a href="shop.html">Shop</a>, <a href="script-vm.html">Field script VM</a>, <a href="battle.html#inventory">Battle item use</a></dd>
@@ -106,7 +106,7 @@
     <tbody>
       <tr><td>add</td><td>find a matching id, else the first free slot in the window</td></tr>
       <tr><td>consume</td><td>decrement by id; zeroes an emptied id in place, never compacts</td></tr>
-      <tr><td>capacity / reserve</td><td>paired before adds in the equip swap-back path</td></tr>
+      <tr><td>find / consume by slot</td><td>find a stack's slot by item id; decrement a stack addressed by slot index, freeing the slot at zero</td></tr>
       <tr><td>normalize</td><td>re-installs the window, merges duplicate stacks (cap 99), pulls occupied slots down into holes</td></tr>
       <tr><td>window setup</td><td>the sole writer of the three window halfwords</td></tr>
     </tbody>
@@ -178,7 +178,7 @@
       <tr><td>window setup</td><td><code>FUN_8004313C</code></td><td>sole SCUS writer of <code>gp[+0x2D2 / +0x2D4 / +0x2D6]</code>; 11 callers; branches on party count (<code>0x80084594</code>), story flag 20 (<code>FUN_8003CE64(0x14)</code>), first roster byte (<code>0x80084598</code>)</td></tr>
       <tr><td>add</td><td><code>FUN_800421D4</code></td><td>id store precedes the bound check; count store guarded</td></tr>
       <tr><td>consume</td><td><code>FUN_80042310</code></td><td>zeroes the emptied id in place</td></tr>
-      <tr><td>capacity / reserve</td><td><code>FUN_80042EE0</code> / <code>FUN_80043048</code></td><td>the pair the equip swap-back calls before adding</td></tr>
+      <tr><td>find / consume by slot</td><td><code>FUN_80042EE0</code> / <code>FUN_80043048</code></td><td>find-slot-by-id, and the by-index consume the port's Use, Throw Out and sell list take</td></tr>
       <tr><td>normalize</td><td><code>FUN_800423E0</code></td><td>calls window setup first; occupancy = <code>id &ne; 0</code></td></tr>
       <tr><td>new-game seed</td><td><code>FUN_80034A6C</code></td><td>writes slot 0 = (<code>0x77</code> Healing Leaf, &times;5)</td></tr>
       <tr><td>battle rewards</td><td><code>FUN_8004E568</code></td><td>loot grants go through the add helper</td></tr>

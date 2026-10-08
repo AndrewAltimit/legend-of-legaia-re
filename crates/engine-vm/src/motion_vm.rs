@@ -167,6 +167,15 @@ pub struct MotionState {
     /// The walk snap writes `yaw` only when this changes - once per leg for
     /// a straight leg, plus once at the dominant-axis → diagonal cut.
     pub walk_facing: Option<u8>,
+    /// The `0x47` leg's **approach mode**, the walk op's mode byte `>> 4`
+    /// (`srl a1,a1,0x4` at `0x80037BEC`). `0` is the default law - the
+    /// dominant axis alone until the two deltas are equal, then the
+    /// diagonal. Any other value is a mask over the axis set while both are
+    /// still open (`and a3,v1,a1` at `0x80037C48`): `3` walks the diagonal
+    /// from the first frame and finishes on the longer axis alone, `1` closes
+    /// X first, `2` closes Z first. Cutscene walks carry it in their mode byte
+    /// (`C7 <id> <tx> <tz> 33`).
+    pub approach: u8,
     /// `true` when the step that just ran wrote `yaw` (a walk-snap write, a
     /// rotate-ramp tick, or a terminal snap). Engines that mirror the VM yaw
     /// into a render-heading store gate the copy on this, so a heading some
@@ -502,7 +511,13 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
                 return StepResult::Done;
             }
             let mut step = speed;
-            if mask == 3 {
+            if mask == 3 && state.approach != 0 {
+                // A non-zero approach mode masks the open axes at the full
+                // step (`0x80037C34..0x80037C48`): mode `3` cuts the diagonal
+                // from the first frame, so a leg longer on one axis ends on
+                // that axis alone - and faces along it.
+                mask &= state.approach;
+            } else if mask == 3 {
                 // Retail's default approach mode (`0x80037C4C..0x80037C98`):
                 // an actor with both axes open walks the **dominant axis
                 // alone**, clamped to the difference, until the two remaining
@@ -1517,6 +1532,32 @@ mod tests {
             "both axes advance together"
         );
         assert_eq!(s.yaw, 0x200, "facing the +X +Z diagonal");
+    }
+
+    /// A non-zero approach mode masks the open axes at the full step
+    /// (`and a3,v1,a1` at `0x80037C48`): mode `3` walks the diagonal from the
+    /// first frame and ends the leg on the longer axis alone, facing along
+    /// it - `kor5` P2[5]'s `C7 15 12 29 33` return walk lands its cast facing
+    /// `-X`, not the `-X +Z` diagonal the default law would leave.
+    #[test]
+    fn move_toward_target_approach_mode_masks_the_axes() {
+        let mut s = st(0, 0, 4);
+        s.approach = 3;
+        let t = tgt(100, 0, 20);
+        let bc = [0x47];
+        for _ in 0..5 {
+            assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        }
+        assert_eq!((s.world_x, s.world_z), (20, 20), "diagonal from frame one");
+        assert_eq!(s.yaw, 0x200, "facing the +X +Z diagonal");
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        assert_eq!((s.world_x, s.world_z), (24, 20), "Z closed, X alone");
+        assert_eq!(s.yaw, 0x400, "facing +X for the rest of the leg");
+        // Mode 2 closes Z first.
+        let mut s = st(0, 0, 4);
+        s.approach = 2;
+        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+        assert_eq!((s.world_x, s.world_z), (0, 4));
     }
 
     /// Validate that RotateToAngle reaches its target yaw monotonically and

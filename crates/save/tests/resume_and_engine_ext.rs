@@ -281,6 +281,8 @@ fn retail_only_ext(block: &[u8]) -> SaveExtV2 {
         active_party: legaia_save::card::read_retail_present_party(block).unwrap_or_default(),
         field_position: retail_field_position(block),
         audio_levels: legaia_save::card::read_retail_audio_levels(block),
+        play_time_seconds: legaia_save::card::read_retail_play_counter(block).unwrap_or(0)
+            / legaia_save::card::RETAIL_PLAY_COUNTER_HZ,
         ..SaveExtV2::default()
     }
 }

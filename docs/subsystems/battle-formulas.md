@@ -6,7 +6,7 @@ them (turn order, fleeing, poison ticks, MP costs, the RNG). Everything here is
 traced from the game's own code - `FUN_801EC3E4` in the battle overlay (PROT
 `0898`) for a physical hit, `FUN_800402F4` in `SCUS_942.54` for the generic
 applicator - and mirrored in the from-scratch engine at
-`crates/engine-vm/src/battle_formulas.rs`.
+`crates/engine-battle-vm/src/battle_formulas.rs`.
 
 The page is written for two readers at once. A **player or modder** wants the
 formula in plain terms and a worked example: that is the [Summary](#summary),
@@ -750,6 +750,20 @@ row + column, and the thunder row (id 4) is special (attacks every element at 10
 takes 98 from dark). The element ids 2/3/4 (fire/wind/thunder) and 7 (neutral) are
 byte-pinned; 0/1/5/6 (earth/water/light/dark) are inferred from the reciprocal
 pairs + the spell-table element vocabulary.
+
+The 64 bytes directly after the matrix (`0x801F5428`, file `0x26C10`) are a
+second 8x8 block of the same shape with much stronger values, and nothing reads
+them. Over `SCUS_942.54` and every PROT entry, no word, `jal`, `j`, branch or
+`lui` pair names any of its words (`find-address-word-refs.py --range --prot`)
+and no `gp`-relative access, `lui` + load pair or base-plus-displacement reaches
+any of its bytes (`find-gp-relative-refs.py --va --prot`). The matrix base is
+formed at eight `lui` sites - `FUN_801DD864`, four in `FUN_801EC3E4`, and the
+Seru side-effect stager `FUN_801F3D3C` at `0x801F3E4C` - and each indexes
+`atk * 8 + def` unchecked, so only an element byte of `8` or more could land in
+the block. None exists: the character table, every monster record `+0x1D` and
+every summon cast record `+0x1D` stay in `0..=7` (disc-gated tests in
+`crates/asset/tests/`). The PAL and Japanese battle overlays carry the same
+block after the same matrix.
 
 `FUN_801dd864` resolves each side's element id **by the actor's battle slot, not
 the spell**: a **party member** (slot `< 3`) looks its element up in the
@@ -2122,7 +2136,7 @@ A camera or dome session driven with no world behind it, such as a preview or th
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 
-The from-scratch Rust module `crates/engine-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch - that lives in `engine-vm::battle_action` next to the state machine.
+The from-scratch Rust module `crates/engine-battle-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch - that lives in `engine-vm::battle_action` next to the state machine.
 
 | Function | Provenance |
 |---|---|

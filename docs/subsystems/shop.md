@@ -22,12 +22,14 @@ same table used by the save screen). The shop sub-screens handle:
 | Buy list | `ShopBuy` | Shows available items + prices. Cursor selects an item. |
 | Sell list | `ShopSell` | Shows player inventory. Cursor selects an item to sell. |
 | Quantity | `ShopQuantity` | Retail's in-place **stepper**, on both hosts: one number under the pad, bounded, committing with no confirm screen after it - see [the pickers below](#retail-quantity-pickers-menu-overlay-sub-screens). |
-| Confirm | `ShopConfirm` | Yes / No prompt. Yes commits the transaction. |
+| Confirm | `ShopConfirm` | Yes / No prompt in the engine's menu graph; the live buy / sell path never enters it (the quantity stepper commits on its own). |
 | Exit | `ShopExit` | Clears session, returns to field. |
 
-Gold and inventory deltas are applied to the world on `ShopConfirm` slot 0
-(Yes): `try_buy` deducts gold and credits inventory; `try_sell` credits gold
-and decrements inventory.
+Gold and inventory deltas are applied when the quantity stepper confirms -
+retail has no Yes / No screen between the number and the transaction:
+`MenuRuntime::tick_quantity` takes the stepper's `Bought` / `Sold` event to
+`apply_quantity_buy` / `apply_quantity_sell`. `ShopInventory::try_buy` /
+`try_sell` remain as kernels the live path does not call.
 
 ## Point Card
 
@@ -63,8 +65,8 @@ the card.
 Port: `World::minigames.point_card` is the bank, with `World::point_card_held` /
 `World::credit_point_card` beside it (the accrual + clamp);
 `engine-core::shop::{point_card_credit, apply_point_card}` are the
-arithmetic kernels. `MenuRuntime` runs the accrual on its `ShopConfirm` buy
-commit and on both recipient-picker arms, and holds
+arithmetic kernels. `MenuRuntime` runs the accrual on the stepper's `Bought`
+event (`arm_point_card_toast`) and on both recipient-picker arms, and holds
 `MenuRuntime::point_card_toast` - the window-31 beat - until a press, with
 the menu VM frozen behind it.
 
@@ -156,8 +158,8 @@ commit runs the retail state-2 dispatch
 (`engine-core::shop::buy_list_confirm_route`, `FUN_801DB21C` - the
 affordability refusal beat plus the item-record `+0` kind switch), and
 an equipment row opens `BuyRecipientSession` behind the
-`MenuRuntime::retail_equipment_buy` opt-in - the browser play page
-enables it and draws windows 36 / 25 / 41 over the parked buy list.
+`MenuRuntime::retail_equipment_buy` opt-in - both play hosts enable it and
+draw windows 36 / 25 / 41 over the parked buy list.
 The two quantity **sessions** are the hosts' quantity screen.
 `MenuRuntime::quantity_session` installs one the moment a list stages a
 stack (`shop::QuantityPicker`) and takes the pad for the whole screen, the
@@ -184,14 +186,15 @@ hooks only apply side effects. The shop walks:
 
 ```
 ShopBuy/ShopSell --Cross--> ShopQuantity --Cross--> ShopConfirm --Cross--> ShopBuy
-       ^                          |                       |
-       | Triangle (teardown)      | Triangle              | Triangle
-   ShopExit  <----------- ShopBuy <--------------- ShopQuantity
+       |                          |                       |
+       | Triangle                 | Triangle              | Triangle
+   ShopMenu --Triangle--> ShopExit   ShopBuy          ShopQuantity
 ```
 
 Confirm (either Yes or No) routes back to the buy list so the player can shop
-again; the only way out is Triangle from the list, which routes through the
-transient `ShopExit` screen. `ShopExit` is auto-advancing: on entry it fires its
+again. Triangle from the buy or sell list returns to the top shop menu
+(`ShopMenu`), and only Triangle there leaves, through the transient
+`ShopExit` screen. `ShopExit` is auto-advancing: on entry it fires its
 one-shot commit (clears the session via `MenuRuntimeHost::commit` / `cancel`),
 holds for the render layer's fade (`transient_hold_frames`), then routes to the
 menu's `Closing` state. The same routing drives the inn (`InnConfirm` Yes →
@@ -208,8 +211,11 @@ One item the shop offers:
 | `item_id` | `u8` | Item identifier (matches inventory slot IDs) |
 | `price` | `u32` | Buy price in gold |
 
-Sell price: `max(buy_price / 2, 1)`. Items not in the shop's buy list can still
-be sold; their sell price is 1 gold.
+The live sale credits `sell_credit(price, qty) = (price * qty) >> 1`, the item
+table's price halfword (not a per-shop price), floored, and capped at
+`GOLD_CAP`; an item whose table price is `0` prints the cannot-sell line
+instead. (`ShopInventory::sell_price`'s `max(buy / 2, 1)` belongs to the
+unreached `try_sell`.)
 
 ### `ShopInventory` (`engine-core::shop`)
 
@@ -393,8 +399,10 @@ verdict, so the ink is not a priority list:
 4. `_DAT_800845A4 < price` -> `0`, grey - **even when the marker set `6`**.
 
 Ported with the geometry constants as
-`engine-core::shop::{shop_stock_row_ink, shop_cursor_mode}`; both hosts feed
-the resulting ink into `engine-ui::shop_draws_for` through `ShopRow::ink`.
+`engine-core::shop::{shop_stock_row_ink, shop_cursor_mode}`. The prize
+screen's `PrizeRow` is the caller of `shop_stock_row_ink`; the gold shop's buy
+list inks its rows through `shop_buy_row_ink` (the `0x3000` / `0xA000` row-ink
+arm of `FUN_80032A44`) inside `legaia_engine_screens::gold_shop_screen`.
 
 The quantity-selector sub-screen (`FUN_801d5510`) is **window 35** of the
 menu-overlay descriptor table (rect `(138, 100, 168, 50)`; the table is the
@@ -423,7 +431,10 @@ widens, keeping the number's right edge on the box.
 **Window 39** of the same table, rect `(14, 95, 144, 53)`.
 
 Rows off the window content origin: item name (record `+4`, ink `6`) at
-`(WX, WY)`, description (record `+8`) at `WY + 0xE`, then the price row at
+`(WX, WY)`, description (record `+8`) at `WY + 0xE` - through the
+line-breaking printer `FUN_80036888`, which drops a `0x7C` (`|`) break to
+the next row `0xE` down, so a two-line description fills both rows above the
+price, as it does in the buy-side info window 34 - then the price row at
 `WY + 0x2B` - the "Price" label at `WX + 0x24` (ink `5`), the currency glyph
 at `WX + 0x54`, and the value at `WX + 0x64` as a **5-digit** field. The sell
 price is `buy_price >> 1`, exactly half; a `0` price replaces the whole row
@@ -454,9 +465,10 @@ passive line this window prints in practice comes from the item-effect arm. See
 [equipment-table.md](../formats/equipment-table.md) for the measurement and for
 why the port's mirror of the column is row-keyed.
 
-`engine-ui::ui_overlay::shop_draws_for` implements the above layout using these
-confirmed constants. The cost prompt and Yes/No cursor are rendered in
-`legaia-engine play-window` whenever `MenuState::ShopConfirm` is active.
+Both hosts compose the gold shop through
+`legaia_engine_screens::gold_shop_screen` using these confirmed constants;
+`engine-ui::ui_overlay::shop_draws_for` now draws only the inn and Seru-trade
+fallback panels.
 
 ## Screen composition
 
@@ -772,8 +784,9 @@ cues are not modelled.
 ## Relationship to `legaia_save`
 
 Gold is stored at `_DAT_8008459C` in retail RAM and in `World::party.money` in the
-engine. Inventory is a `HashMap<u8, u8>` (`item_id → count`) in `World::party.inventory`.
-`SaveFile` / `SaveExt` round-trips both through the `LGSF v2` format.
+engine. Inventory is the `ItemBag` over retail's 256 slots in `World::party.inventory`
+([inventory.md](inventory.md)). `SaveFile` / `SaveExt` round-trip both through
+LGSF (format version 4, with the optional `LGX6` slot-level block).
 
 ## See also
 

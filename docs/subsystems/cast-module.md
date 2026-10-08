@@ -1080,8 +1080,9 @@ picks between them exactly as retail does, on the record's `+0` class byte:
 capture class `'c'` goes to the `+1` row, anything else to the action-id row.
 
 **The stage.** `World::spawn_cast_module_fx` seats the resolved module's
-records as a move-VM scene (`SummonScene`), which is the same stand-in the
-summon and move-FX paths run, so both hosts tick and draw them with no host
+records as a move-VM scene (`SummonScene`), the same stand-in the move-FX
+path runs (a player summon's body no longer goes through it - see
+[battle-action.md](battle-action.md)), so both hosts tick and draw them with no host
 change. It fires at the two seams retail uses: the capture band's pager
 (`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
 and the summon stager's first tick (`0x801E4B1C`).
@@ -1223,7 +1224,8 @@ state-touching stagers - are `legaia_engine_vm::cast_module_ticks`, one
 function per VA, and three sibling modules carry the rest of the band's code:
 `cast_arm_ticks` (the fourteen trampoline arms of PROT 0940..0962),
 `cast_seru_ticks_a` (PROT 0903..0908) and `cast_seru_ticks_b` (PROT
-0909..0913, plus PROT 0910's applier `swordie_slash`). Each function carries
+0909..0913, plus PROT 0910's applier `swordie_slash` and PROT 0919's Spoon
+kernels `spoon_cure_sweep` / `spoon_heal_amount`). Each function carries
 its routine's dispatch bound, its simulation-state writes, its damage step
 (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction
 stage, anim-rate write) and the phase advance.
@@ -2422,6 +2424,27 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   (seeded `scalar * 0x180`) runs. The body's phase chain has no other port, so
   this director also owns it (`0 -> 1 -> 0xFF`), the way a camera-only player
   director does.
+
+- **PROT 0961 `0xA1` / `0xB4` (Dead End Crisis / Final Crisis, body
+  `0x801F69D8`)** - four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`:
+  arm 0 behind it (TR y `0x800` when the formation's first monster is `0xB5`,
+  `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in
+  `0xB5`) and arm 5's return (TR y `0x800`), with the drifts stored before each
+  gate tests the countdown `0x801F82E4` - arm 1 TR z `+s`, TR y `-s/4`, pitch
+  `+s/8` (`s = scalar * delta`), arm 2 in `0xB5` TR y and pitch `+delta`, TR z
+  `+s`, arm 3 TR z `+3s`, TR y `-s`, pitch `+s/8`, arm 6 TR z `+s` - and the
+  terminal arm's `ctx[+0x6DA] = 0x780`. The phase chain is ported
+  (`DEAD_END_CRISIS_CHAIN`), so the director runs the body's countdown table
+  for its gates and leaves the phase alone.
+
+Most capture bodies also end on the same three stores in their finishing arm:
+the busy result cleared, `sb zero,0xd` (the framing style) and `0x780` into the
+yaw counter `ctx[+0x6DA]` - Zora's Glare at `0x801F7208` in PROT 0940, for one.
+The Done band's case 6 then frames from `0x780` plus its own drift, whatever the
+module did to the counter. The port applies it as the module finishes
+(`cast_module_camera::capture_exit_yaw_base`, which lists the bodies and their
+store sites); 0935..0937, 0939, 0946..0948, 0953, 0959, 0960 and 0962 clear the
+style without it.
 
 - **PROT 0938 `0xB7` (Cort's Mystic Circle, body `0x801F69EC`)** - arm 0's
   cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut

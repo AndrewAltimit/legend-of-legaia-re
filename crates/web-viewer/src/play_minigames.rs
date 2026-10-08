@@ -262,8 +262,8 @@ impl LegaiaRuntime {
         self.enqueue_sfx(id, 0);
     }
 
-    /// Fire the minigame sessions' queued SFX cue ids (the dance count-in's
-    /// intro cue, the how-to tutorial's cursor / confirm cues) through the
+    /// Fire the minigame sessions' queued SFX cue ids (the fishing hub's and
+    /// point exchange's blips) through the
     /// page's scheduler - the browser twin of the native window's
     /// `drain_minigame_sfx_cues`. Drained every frame, audio up or not, so
     /// the queue cannot grow on a muted page.

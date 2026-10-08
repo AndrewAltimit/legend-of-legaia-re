@@ -138,105 +138,114 @@ pub fn equip_screen_draws_for(
         out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
     };
 
-    // Party window (PORT: FUN_801d2094): names at X+6, 0xE pitch, CLUT 7
-    // (white) - retail marks the active row with the hand cursor at
-    // X-0xC (sprite; text fallback below), not a tint.
-    let (px, py) = party_pen;
-    for (i, name) in view.party_names.iter().enumerate() {
-        let y = py + i as i32 * EQUIP_ROW_PITCH;
-        if view.text_cursor && i == view.party_cursor {
-            str_at(&mut out, ">", px - 8, y, gold);
+    // The party (21) and main (22) windows are the **browse** step's. The
+    // candidate step's open script `0x801E4DC8` begins with `[05 00]`
+    // (close-all, `FUN_80035A4C`) and reopens only the tab (2), the list (23,
+    // snapped in place) and windows 24 / 25 - which sit on the rects 21 and
+    // 22 vacate, so drawing those two on would overprint window 25.
+    if view.phase == EquipDrawPhase::SlotPicker {
+        // Party window (PORT: FUN_801d2094): names at X+6, 0xE pitch, CLUT 7
+        // (white) - retail marks the active row with the hand cursor at
+        // X-0xC (sprite; text fallback below), not a tint.
+        let (px, py) = party_pen;
+        for (i, name) in view.party_names.iter().enumerate() {
+            let y = py + i as i32 * EQUIP_ROW_PITCH;
+            if view.text_cursor && i == view.party_cursor {
+                str_at(&mut out, ">", px - 8, y, gold);
+            }
+            str_at(&mut out, name, px + 6, y, white);
         }
-        str_at(&mut out, name, px + 6, y, white);
-    }
 
-    // Main window (PORT: FUN_801d21c0): header + slot rows. "Best
-    // Equipment" is cursor row 0 of the window's own cursor space
-    // (`DAT_801E46C0`), so it takes the hand cursor like any slot row.
-    let (mx, my) = main_pen;
-    let best_row_active = view.phase == EquipDrawPhase::SlotPicker && view.cursor == 0;
-    if view.text_cursor && best_row_active {
-        str_at(&mut out, ">", mx + 4, my, gold);
-    }
-    str_at(
-        &mut out,
-        "Best Equipment",
-        mx + 0x10,
-        my,
-        // CLUT 7 like the slot rows: the hand marks the row, the tint only
-        // backs the text-cursor fallback.
+        // Main window (PORT: FUN_801d21c0): header + slot rows. "Best
+        // Equipment" is cursor row 0 of the window's own cursor space
+        // (`DAT_801E46C0`), so it takes the hand cursor like any slot row.
+        let (mx, my) = main_pen;
+        let best_row_active = view.phase == EquipDrawPhase::SlotPicker && view.cursor == 0;
         if view.text_cursor && best_row_active {
-            gold
-        } else {
-            white
-        },
-    );
-    for (i, slot) in view.slots.iter().enumerate() {
-        let y = my + (i as i32 + 1) * EQUIP_ROW_PITCH;
-        let cursor_here = view.phase == EquipDrawPhase::SlotPicker && i as u16 + 1 == view.cursor;
-        let row_active = view.phase != EquipDrawPhase::SlotPicker && view.active_slot as usize == i;
-        // Retail keeps row text CLUT 7 (white); the hand cursor marks the
-        // hovered row. The gold tint only backs the text-cursor fallback
-        // and the active-slot reminder in the picker phases.
-        let color = if row_active || (view.text_cursor && cursor_here) {
-            gold
-        } else {
-            white
-        };
-        if view.text_cursor && cursor_here {
-            str_at(&mut out, ">", mx + 4, y, color);
+            str_at(&mut out, ">", mx + 4, my, gold);
         }
-        // Retail draws the equipped item's name-table string at X+0x20;
-        // an empty slot stays icon-only.
-        if !slot.current_name.is_empty() && slot.current_name != "(empty)" {
-            str_at(&mut out, slot.current_name, mx + 0x20, y, color);
-        }
-    }
-
-    // Best-Equipment change list (PORT: FUN_801d21c0, `0x801D2404..0x801D2578`):
-    // on armament row `i`'s slot line, the change arrow `FUN_8003C310(2)` at
-    // X+0x8E in CLUT 0, then (a sprite - [`equip_best_change_sprites_for`])
-    // the armament pictogram at X+0xA8, then the pick's name at X+0xB8 in
-    // CLUT 7. ASCII stand-in for the arrow glyph, like the rise/fall arrows.
-    let grey: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
-    for &(row, name) in view.best_changes.iter().take(4) {
-        let y = my + (i32::from(row) + 1) * EQUIP_ROW_PITCH;
-        str_at(&mut out, "->", mx + 0x8e, y, grey);
-        str_at(&mut out, name, mx + 0xb8, y, white);
-    }
-
-    // Stat-compare block (PORT: FUN_801d21c0, Best-Equipment pass):
-    // rows Y+0x48/+0x55/+0x62.
-    for (i, sr) in view.stat_compare.iter().take(3).enumerate() {
-        let y = my + 0x48 + i as i32 * LIST_PITCH;
-        str_at(&mut out, sr.label, mx + 0xa0, y, white);
-        out.extend(num_field_draws(
-            font,
-            sr.current.min(999) as u64,
-            mx + 0xc8,
-            y,
-            3,
-            white,
-        ));
-        if sr.preview != sr.current {
-            // Retail: up/down arrow glyph FUN_8003C1F8(4|5), CLUT 6
-            // (raised) / 1 (lowered). ASCII stand-in until the arrow
-            // glyphs are ported from the UI-icon atlas.
-            let (glyph, c) = if sr.preview > sr.current {
-                ("+", green)
+        str_at(
+            &mut out,
+            "Best Equipment",
+            mx + 0x10,
+            my,
+            // CLUT 7 like the slot rows: the hand marks the row, the tint only
+            // backs the text-cursor fallback.
+            if view.text_cursor && best_row_active {
+                gold
             } else {
-                ("-", red)
+                white
+            },
+        );
+        for (i, slot) in view.slots.iter().enumerate() {
+            let y = my + (i as i32 + 1) * EQUIP_ROW_PITCH;
+            let cursor_here =
+                view.phase == EquipDrawPhase::SlotPicker && i as u16 + 1 == view.cursor;
+            let row_active =
+                view.phase != EquipDrawPhase::SlotPicker && view.active_slot as usize == i;
+            // Retail keeps row text CLUT 7 (white); the hand cursor marks the
+            // hovered row. The gold tint only backs the text-cursor fallback
+            // and the active-slot reminder in the picker phases.
+            let color = if row_active || (view.text_cursor && cursor_here) {
+                gold
+            } else {
+                white
             };
-            str_at(&mut out, glyph, mx + 0xe4, y, c);
+            if view.text_cursor && cursor_here {
+                str_at(&mut out, ">", mx + 4, y, color);
+            }
+            // Retail draws the equipped item's name-table string at X+0x20;
+            // an empty slot stays icon-only.
+            if !slot.current_name.is_empty() && slot.current_name != "(empty)" {
+                str_at(&mut out, slot.current_name, mx + 0x20, y, color);
+            }
+        }
+
+        // Best-Equipment change list (PORT: FUN_801d21c0, `0x801D2404..0x801D2578`):
+        // on armament row `i`'s slot line, the change arrow `FUN_8003C310(2)` at
+        // X+0x8E in CLUT 0, then (a sprite - [`equip_best_change_sprites_for`])
+        // the armament pictogram at X+0xA8, then the pick's name at X+0xB8 in
+        // CLUT 7. ASCII stand-in for the arrow glyph, like the rise/fall arrows.
+        let grey: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+        for &(row, name) in view.best_changes.iter().take(4) {
+            let y = my + (i32::from(row) + 1) * EQUIP_ROW_PITCH;
+            str_at(&mut out, "->", mx + 0x8e, y, grey);
+            str_at(&mut out, name, mx + 0xb8, y, white);
+        }
+
+        // Stat-compare block (PORT: FUN_801d21c0, Best-Equipment pass):
+        // rows Y+0x48/+0x55/+0x62.
+        for (i, sr) in view.stat_compare.iter().take(3).enumerate() {
+            let y = my + 0x48 + i as i32 * LIST_PITCH;
+            str_at(&mut out, sr.label, mx + 0xa0, y, white);
             out.extend(num_field_draws(
                 font,
-                sr.preview.min(999) as u64,
-                mx + 0xf0,
+                sr.current.min(999) as u64,
+                mx + 0xc8,
                 y,
                 3,
-                // Retail re-stages ink 7 before the value (`0x801D262C`).
                 white,
             ));
+            if sr.preview != sr.current {
+                // Retail: up/down arrow glyph FUN_8003C1F8(4|5), CLUT 6
+                // (raised) / 1 (lowered). ASCII stand-in until the arrow
+                // glyphs are ported from the UI-icon atlas.
+                let (glyph, c) = if sr.preview > sr.current {
+                    ("+", green)
+                } else {
+                    ("-", red)
+                };
+                str_at(&mut out, glyph, mx + 0xe4, y, c);
+                out.extend(num_field_draws(
+                    font,
+                    sr.preview.min(999) as u64,
+                    mx + 0xf0,
+                    y,
+                    3,
+                    // Retail re-stages ink 7 before the value (`0x801D262C`).
+                    white,
+                ));
+            }
         }
     }
 
@@ -500,6 +509,46 @@ mod tests {
             cursor_rows(&row2, mx + 4),
             vec![my + EQUIP_ROW_PITCH * 2],
             "browse row 2 marks the second slot row"
+        );
+    }
+
+    /// The candidate step closes the party (21) and main (22) windows - its
+    /// open script `0x801E4DC8` leads with close-all - so neither draws a
+    /// glyph there; only the list (23) does.
+    #[test]
+    fn the_candidate_step_draws_no_party_or_main_rows() {
+        let font = legaia_font::synthetic_for_tests();
+        let slots = [EquipSlotRow {
+            label: "Weapon",
+            current_name: "Iron Sword",
+        }];
+        let cands = [EquipCandidateRow {
+            name: "Iron Sword",
+            count: 1,
+        }];
+        let browse = equip_screen_draws_for(
+            &font,
+            &view(&slots, &cands, EquipDrawPhase::SlotPicker, 0, 0),
+            PARTY,
+            LIST,
+            MAIN,
+        );
+        assert!(
+            browse
+                .iter()
+                .any(|d| d.dst.1 < LIST.1 + 200 && d.dst.0 < LIST.0)
+        );
+        let pick = equip_screen_draws_for(
+            &font,
+            &view(&slots, &cands, EquipDrawPhase::ItemPicker, 0, 0),
+            PARTY,
+            LIST,
+            MAIN,
+        );
+        assert!(!pick.is_empty(), "the list window still draws");
+        assert!(
+            pick.iter().all(|d| d.dst.0 >= LIST.0),
+            "nothing left of the list window (the party / main columns)"
         );
     }
 

@@ -238,6 +238,37 @@ engine verdict:
   undone (`scroll_fires_within`, `unrotate_rect`). `jouine`'s two flesh
   columns, period `2` on a step-`3` frame, fire every tick.
 
+  So are the VDF vertex-morph envelopes field actors run off op `0x4B`
+  ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain)).
+  Where an envelope stands is time since the arm: `town01`'s shoreline
+  objects (`P0[7]` and its siblings, `4B 03 ..`) run a tide whose lanes carry
+  the sea up the beach and back, and `town01_tetsu_topic_prompt` caught it
+  out, with sand where the engine's settle window had the surf in. Every
+  field-actor-ticked node with its envelope up (`+0x10 & 0x1000`) and armed
+  lanes (`+0x6C`) goes to the child as `LEGAIA_SEAT_MORPHS` - lane weights
+  `+0xA0 + i*2`, done mask `+0x7C`, control word `+0x62` (`retail_morphs`) -
+  and is written over the matching morph the engine armed itself on the frame
+  it captures (`World::seed_field_morph`, matched by flat index). The weights
+  are the displayed frame's, not the RAM's: each lane runs its own ramp back
+  over the two-frame lag (`rewind_morph_weights` - the `+0xB8` up-velocity
+  while it has not peaked, the `+0xC8` down-velocity while it drains, times
+  the frame step). `jouine`'s flesh wall (`cort_evolved_pre_battle`) rises
+  `51` / `81` per vsync, and seeded on the RAM's weights it was drawn six
+  vsyncs more swollen than the frame on the TV.
+
+  So are the ambient walkers - every placement the facing channel counts as
+  `ambient` ([below](#the-facing-channel)). Where a wanderer stands and which
+  way it faces is its `rand()` picks since the entry, so the state's live
+  seat (`+0x14` / `+0x18`, heading `+0x26`, `retail_walkers`) goes to the
+  child as `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
+  captures, motion channel included (`World::seed_ambient_walker`). The
+  displayed frame is two game frames older, so a walker caught mid-step can
+  still sit a few units off its drawn place. The headless seed stands the
+  same walkers - engaged ones too - at the resume tick, before a talk is
+  engaged, because the talk snap turns a placement to the bearing from its
+  own seat: `town01_npc16_dialogue_first_page`'s `P1[16]` had wandered off
+  its `4C 51` tile before the press.
+
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
   panel (`43 13`, shrunk to a corner by `43 14`), and a capture is usually
@@ -875,8 +906,9 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   Held so, the engine lands where every such capture is framed - pitch `0`,
   `TR y = 0x500`, focus on the caster's seat. What a `0x70` capture still
   reads is the cast module's own shot (Cort's Ultra Charge pulls out to
-  `TR (0, 3072, 7315)`), which the capture-class modules arm and the port
-  does not model.
+  `TR (0, 3072, 7315)`), which the body's camera director arms
+  ([cast-module](../subsystems/cast-module.md)); a body with no director
+  holds the case-6 pose `0x6F` left.
 - **How far into the state.** Every other action-SM state spans frames too,
   and the drive reaches each on its first tick while a retail capture sits
   wherever the save was made - a monster's approach `0x19` or a Spirit band
@@ -910,6 +942,11 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   from the side that coin picks. From the seat's seed pass to the capture's
   state the drive keeps the engine's counter on retail's half-turn
   (`BattleCamera::align_action_yaw_half`), leaving the drift to the engine.
+  The track coin `ctx[+0x26D]` is the third draw: `FUN_8004E13C` stores
+  `rand() % 2` on every clip commit whose header byte `+0x87` is non-zero,
+  and it picks the per-art track column and the `0x200` offset in case 8's
+  dead-target yaw. Over the same span the drive puts the engine's coin on
+  the capture's (`BattleCamera::align_phase_cursor`).
 - **Ahead of the seed pass.** `0x00`, `0x0A` and `0x0B` run before the seed
   pass copies the next actor into `ctx[+0x13]` from `ctx[+0x274]`
   (`0x801E2C50..0x801E2C5C`), so a capture there reads the previous actor -
@@ -1196,9 +1233,22 @@ The detail lists every heading more than a sixteenth turn off with both
 values, and tags the party-bank placements (`+0x10 & 0x01000000`). Set
 `LEGAIA_RC_FACING_DUMP` to print every matched pair.
 
+A placement the ambient motion VM is turning is not scored either
+(`retail_ambient_heading`): its node runs `FUN_80038158` (`+0x10 & 0x80`, no
+script or pursue context holding it under `+0x500`), and the stream variant
+its PC sits in (`*(+0x80) + *(+0x84)`) carries a heading op - a directional
+or home-relative step, a ramp `0x04` / `0x0D`, or the wander `0x18` - before
+its loop-back. Its `+0x26` is where the stream stood at the capture instant:
+a `0x04` ramp loop's phase is ticks since the entry (`cave01`'s Piura sway
+between `0` and `0x800` on a 66-tick cycle, caught `24` ticks into a leg),
+and a wanderer's compass point is the `rand()` stream's pick, held through
+the next wait. Neither is replayed by the seed, so the heading is walk
+history exactly as the player's is. The detail counts them as `ambient`; a
+state whose only placements are ambient walkers measures no facing.
+
 The channel measures whichever leg wrote the heading - an entry pose, a
-cutscene face-at or rotate, an ambient look-around - so a miss on a wandering
-villager is usually ambient phase rather than a defect. The phase gate
+cutscene face-at or rotate, a talk snap - so a remaining miss is a leg the
+engine wrote differently or not at all. The phase gate
 samples on the first frame the engine's record reaches retail's PC, which is
 not always the frame retail is on: a record that sits on an op waiting for a
 turn to land compares the engine's turn mid-ramp against retail's landed one

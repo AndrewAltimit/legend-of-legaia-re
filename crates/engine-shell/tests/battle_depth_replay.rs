@@ -448,6 +448,18 @@ fn stock_player(session: &mut BootSession) {
         w.actors[i].battle.hp = 30000;
         w.actors[i].battle.mp = 999;
     }
+    // Battle entry seats the party's HP / MP from the character records
+    // (`FUN_80053CB8`), not the field actors, so the records carry it too.
+    for r in w.party.roster.members.iter_mut() {
+        let mut hms = r.hp_mp_sp();
+        if hms.hp_max > 0 {
+            hms.hp_max = 60000;
+            hms.hp_cur = 30000;
+            hms.mp_cur = 999;
+            hms.mp_max = hms.mp_max.max(999);
+            r.set_hp_mp_sp(hms);
+        }
+    }
 }
 
 /// Boot the scene, stock the player, and drive into the sparring battle.

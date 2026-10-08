@@ -1443,6 +1443,33 @@ impl LegaiaMinigames {
             .unwrap_or_default()
     }
 
+    /// The human's award sounds since the last call - what `FUN_801d1af4`'s
+    /// dancer-0 arm raises for the press just judged
+    /// (`legaia_engine_core::dance::award_sounds`), as JSON:
+    /// `[{"cue":528}, {"sting":5}, {"sting":null}]`. A cue plays by id; a
+    /// sting keys both [`Self::dance_sting_pcm`] layers at `r`, and `null`
+    /// is the tier-2 site's `rand() % 3`, the page's to draw. A plain matched
+    /// note, an unlanded groovy move and an empty triangle stock raise
+    /// nothing.
+    pub fn dance_take_award_sounds(&mut self) -> String {
+        use legaia_engine_core::dance::DanceAwardSound;
+        let sounds = self
+            .dance
+            .as_mut()
+            .map(|g| g.take_award_sounds())
+            .unwrap_or_default();
+        let rows = sounds
+            .iter()
+            .map(|s| match *s {
+                DanceAwardSound::Cue(id) => format!(r#"{{"cue":{id}}}"#),
+                DanceAwardSound::Sting { random: true, .. } => r#"{"sting":null}"#.to_string(),
+                DanceAwardSound::Sting { r, .. } => format!(r#"{{"sting":{r}}}"#),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{rows}]")
+    }
+
     /// One layer of a good-step **hit sting**. Retail keys these directly
     /// (`FUN_801d3d78`, bypassing the cue ring): two voices together, at the
     /// tones and note [`dance_hit_sting_voices`] resolves `r` to. Mono i16 PCM;

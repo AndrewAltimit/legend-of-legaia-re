@@ -72,6 +72,8 @@ impl World {
         // ... and clears the sound flags' script-owned start bit 0, so a
         // start a cutscene left uncommitted does not outlive its scene.
         self.audio.start_pending_commit = false;
+        // ... and the pause bit 1 with it.
+        self.audio.bgm_script_paused = false;
         let derived = crate::man_field_scripts::derive_field_carriers(man_file, man);
         let sparring_idx = derived
             .iter()
@@ -134,6 +136,7 @@ impl World {
         self.npcs.glide_y.clear();
         self.npcs.entry_positions.clear();
         self.npcs.headings.clear();
+        self.npcs.heading_ramps = legaia_engine_vm::ambient_motion::RampScheduler::new();
         // Motion state is per-scene: a snapshot carried across a scene change
         // would diff the warp itself as one enormous step and start every
         // actor - the player included - walking on the landing frame.
@@ -352,6 +355,15 @@ impl World {
         // move as the interaction engages, whatever the interaction is.
         // REF: FUN_8003C9AC
         self.kick_field_npc_motion_pause();
+        // Turn the addressed NPC to face the player, saving the heading it
+        // stood with (retail's touch post + dialog SM; see
+        // [`Self::face_field_npc_at_player`]). Ahead of the dialogue open so
+        // the very first drawn frame of the box already shows the NPC turned,
+        // and ahead of the boss-stager arm: that record is the same dialog-SM
+        // context resumed by the same touch, so it takes the same state-1
+        // snap (`town0c` `P1[21]`, Nene's "Bees!" beat, turns to the player
+        // before the Queen Bee ambush).
+        self.face_field_npc_at_player(slot);
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
         // approach / interact runs the placement's own partition-1 record
         // through the field VM - the engine mirror of retail's touch
@@ -363,11 +375,6 @@ impl World {
                 .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
             return;
         }
-        // Turn the addressed NPC to face the player, saving the heading it
-        // stood with (retail's touch post + dialog SM; see
-        // [`Self::face_field_npc_at_player`]). Ahead of the dialogue open so
-        // the very first drawn frame of the box already shows the NPC turned.
-        self.face_field_npc_at_player(slot);
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.

@@ -289,6 +289,7 @@ impl SceneHost {
                     })
                     .collect();
             self.world.tables.summon_attack_names = std::sync::Arc::new(names);
+            self.world.tables.summon_dat = Some(std::sync::Arc::from(summon_dat.as_slice()));
         }
     }
 

@@ -17,22 +17,14 @@ fn apply_cheat_file(
 ) -> Result<()> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut db = if path
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.eq_ignore_ascii_case("cht"))
-        .unwrap_or(false)
-    {
-        legaia_cheats::parse_mednafen_cht(&text)?
-    } else {
-        legaia_cheats::parse_gs_text(&text)?
+    // The extension decides; a file with neither says which by its text -
+    // the same sniff the play page's pasted code list goes through.
+    use legaia_engine_core::cheat_applier::{CheatTextFormat, apply_text};
+    let format = match path.extension().and_then(|s| s.to_str()) {
+        Some(e) if e.eq_ignore_ascii_case("cht") => CheatTextFormat::MednafenCht,
+        _ => CheatTextFormat::sniff(&text),
     };
-    db.dedupe_identical();
-    let opts = legaia_engine_core::cheat_applier::ApplyOptions {
-        execute_conditionals: !strict,
-        skip_unmapped: false,
-    };
-    let report = legaia_engine_core::cheat_applier::apply(world, &db, opts);
+    let report = apply_text(world, &text, format, strict)?;
     eprintln!(
         "Cheat report ({} entries, {} writes; {} applied, {} unmapped, {} unknown):",
         report.per_entry.len(),
@@ -639,12 +631,9 @@ pub(super) fn cmd_play_window_with_record(
         Some(mode) => mode == legaia_engine_core::world::SceneMode::WorldMap,
         None => world_map,
     };
-    if world_map && resumed.is_some() {
-        if let Some(ctrl) = session.host.world.world_map.ctrl.as_mut() {
-            ctrl.debug_enabled = true;
-            ctrl.view_mode = 0;
-        }
-    } else if world_map {
+    // A resumed overworld leaves the developer band off: a Load is not a
+    // picker entry (`World::arm_picker_world_map_debug`).
+    if world_map && resumed.is_none() {
         // Load the scene's resources, route its region-keyed encounter table
         // onto the overworld, install the player, and enter world-map mode
         // (camera controller included). World::tick drives locomotion + the
@@ -657,11 +646,9 @@ pub(super) fn cmd_play_window_with_record(
         }
         // Start in walk mode so the d-pad walks the overworld player (and the
         // per-tile encounter roll fires). The top-view debug camera (orbit /
-        // zoom / pan) stays reachable via the toggle combo (debug_enabled).
-        if let Some(ctrl) = session.host.world.world_map.ctrl.as_mut() {
-            ctrl.debug_enabled = true;
-            ctrl.view_mode = 0;
-        }
+        // zoom / pan) stays reachable via the toggle combo - the engine's
+        // picker rule, which the page's scene picker asks too.
+        session.host.world.arm_picker_world_map_debug();
     }
     if !world_map && resumed.is_none() {
         // Free-roam story staging: the `--scene` direct entry is the native

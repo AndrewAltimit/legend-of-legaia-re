@@ -19,7 +19,7 @@
 <section class="doc-section" id="flow">
   <h2>The flow, screen by screen</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 860 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Save and load flow. Four entries - the pause menu's Save row (overworld only), a field save point, the pause menu's Load row and the title's Continue - all lead to the memory-card port pick, the Now checking card read and the fifteen-block grid. Saving then asks to overwrite, composes the block from live RAM with a checksum and writes it. Loading reads the block and re-sums the checksum: a mismatch shows Damaged data, a match copies the block back over live RAM and resumes the saved scene.">
+    <svg viewBox="0 0 860 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Save and load flow. Four entries - the pause menu's Save row (overworld only), a field save point, the pause menu's Load row and the title's Continue - all lead to the memory-card port pick, the Now checking card read and the fifteen-block grid. Saving then asks to confirm (save to a free block, or overwrite), composes the block from live RAM with a checksum and writes it. Loading reads the block and re-sums the checksum: a mismatch shows Damaged data, a match copies the block back over live RAM and resumes the saved scene.">
       <defs><marker id="ss-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="20" y="14" width="150" height="56" rx="5"/>
       <text class="dg-label" x="95" y="38">Pause: Save</text><text class="dg-sub" x="95" y="56">overworld only</text>
@@ -36,7 +36,7 @@
       <rect class="dg-node-accent" x="560" y="120" width="150" height="56" rx="5"/>
       <text class="dg-label" x="635" y="144">Block grid</text><text class="dg-sub" x="635" y="162">15 blocks, 5 x 3</text>
       <rect class="dg-node" x="20" y="230" width="170" height="56" rx="5"/>
-      <text class="dg-label" x="105" y="254">Overwrite?</text><text class="dg-sub" x="105" y="272">Yes / No, default No</text>
+      <text class="dg-label" x="105" y="254">Confirm</text><text class="dg-sub" x="105" y="272">Yes / No, default No</text>
       <rect class="dg-node" x="210" y="230" width="190" height="56" rx="5"/>
       <text class="dg-label" x="305" y="254">Compose block</text><text class="dg-sub" x="305" y="272">copy live RAM + checksum</text>
       <rect class="dg-node-ok" x="420" y="230" width="150" height="56" rx="5"/>
@@ -119,6 +119,9 @@
     <li><strong>"Now checking" ends when the card answers - or after 120 frames.</strong> The per-frame poll tests four card event handles in order (last one wins) and forces a timeout status on the 121st poll; timeout and a stray complete event both tear the read down.</li>
     <li><strong>A foreign save is never offered as free.</strong> The directory walk clears every slot to "unreadable", stamps "Legaia save" on each filename matching <code>BASCUS-94254PRO-</code> (JP: <code>BISCPS-10059PRO-</code>), and only then spends the card's reported free-block count marking the rest free. A slot the walk cannot afford to call free stays unreadable.</li>
     <li><strong>The block is checksummed.</strong> The compose path zeroes a <code>0x2000</code> buffer, copies <code>0x1A18</code> bytes of live state over the front, sums the first <code>0x7FF</code> words and stores the sum at <code>+0x1FFC</code>; the load path re-sums and routes a mismatch to "Damaged data."</li>
+    <li><strong>A damaged save is refused after the read, not on the grid.</strong> The grid classifies a block by its directory filename, so a save with a bad sum still shows its cell and preview; only the checksum verify behind a Load turns it away, with a box that waits for a button.</li>
+    <li><strong>Both directions ask first.</strong> Confirming a block raises a Yes / No box opening on No: a Load asks to load, a Save asks to save on a free block and to overwrite on anything else. A Yes then holds the screen through the write or read under its own panel - a sliding box with the block number and a progress tube - and a result line, and the panel parks on black. A load holds its panel for at least 128 sixtieth-second units even when the card answers sooner; a save waits on the card alone.</li>
+    <li><strong>A blank card takes the first save.</strong> A formatted card with nothing on it answers the directory read like any other card. The pause menu reaches the screen through a short wipe: the field darkens before any window exists and comes back after the menu closes.</li>
   </ul>
 </section>
 
@@ -175,7 +178,7 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p><code>engine-core::save_select</code> models the screen and the card machine; the host decides what a &ldquo;port&rdquo; is - the browser mounts the player's own card images, the native window mounts its save directory. The directory walk, the status poll and the checksum are line-for-line ports of the routines above, and <code>legaia_save</code> patches a real retail block in place and restamps its checksum, so an edited card save still loads on a PlayStation. The engine's own richer save container (LGSF) is described on the <a href="engine.html">engine page</a>.</p>
+  <p><code>engine-core::save_select</code> models the screen and the card machine; the host decides what a &ldquo;port&rdquo; is - the browser mounts the player's own card images, the native window mounts its save directory. Every save on both play hosts goes through this screen - a gate checks that no host writes save bytes around it - and the load confirm, the overwrite question, the write and read panels and the damaged-block refusal all follow retail. The directory walk, the status poll and the checksum are line-for-line ports of the routines above, and <code>legaia_save</code> patches a real retail block in place and restamps its checksum, so an edited card save still loads on a PlayStation. The engine's own richer save container (LGSF) is described on the <a href="engine.html">engine page</a>.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

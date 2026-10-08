@@ -304,6 +304,12 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
+    /// the image child as `LEGAIA_SEAT_MORPHS`.
+    pub morphs: Vec<MorphSeed>,
+    /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
+    /// child as `LEGAIA_SEAT_WALKERS`.
+    pub walkers: Vec<WalkerSeed>,
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
@@ -339,6 +345,80 @@ pub struct ActorFacing {
     pub model: i16,
     /// `+0x10`.
     pub flags: u32,
+    /// The heading is ambient history: the actor runs the ambient motion VM
+    /// (`FUN_80038158`, [`retail_ambient_heading`]) on a stream that turns
+    /// it, so `+0x26` is where the stream's ramps and `rand()`-picked
+    /// wanders stood at the capture instant - time and stream history since
+    /// the entry, which no seed replays.
+    pub ambient: bool,
+}
+
+/// Motion-VM ops that write `+0x26`: the directional steps `0x03` / `0x19`
+/// / `0x20`, the ramps `0x04` / `0x0D`, the home-relative step `0x06` and
+/// the AABB wander `0x18` (`docs/subsystems/motion-vm.md`).
+const AMBIENT_HEADING_OPS: [u8; 7] = [0x03, 0x04, 0x06, 0x0D, 0x18, 0x19, 0x20];
+
+/// Whether actor node `n`'s heading is the ambient motion VM's: the VM is
+/// dispatched on it (`+0x10 & 0x80`), no script or pursue context holds it
+/// (`+0x10 & 0x500`, the busy test the interpreter defers to), and the
+/// variant its PC sits in (`*(+0x80) + *(+0x84)`, the variant table
+/// `[u16 selector][s16 delta]` the preamble walks) carries a heading op
+/// before its loop-back `0x01`.
+pub fn retail_ambient_heading(ram: &[u8], n: u32) -> bool {
+    game_anchors::u32_at(ram, n + 0x10) & 0x500 == 0 && retail_stream_turns(ram, n)
+}
+
+/// Whether node `n` runs an ambient motion stream that walks or turns it
+/// (`+0x10 & 0x80`, a heading op in the variant its PC sits in), whatever
+/// holds it now: an engaged wanderer stopped where its walks left it.
+pub fn retail_stream_turns(ram: &[u8], n: u32) -> bool {
+    use legaia_asset::man_motion::op_width;
+    let flags = game_anchors::u32_at(ram, n + 0x10);
+    if flags & 0x80 == 0 {
+        return false;
+    }
+    let stream = game_anchors::u32_at(ram, n + 0x80);
+    if !(0x8000_0000..0x8020_0000).contains(&stream) {
+        return false;
+    }
+    let pc = stream + u32::from(game_anchors::u16_at(ram, n + 0x84));
+    // The variant whose code holds the PC.
+    let mut header = stream;
+    let mut code = None;
+    for _ in 0..64 {
+        let selector = game_anchors::u16_at(ram, header);
+        let delta = game_anchors::i16_at(ram, header + 2);
+        let end = if selector == 0xFFFF || delta <= 0 {
+            u32::MAX
+        } else {
+            header + delta as u32
+        };
+        if (header + 4..end).contains(&pc) {
+            code = Some(header + 4);
+            break;
+        }
+        if end == u32::MAX {
+            break;
+        }
+        header = end;
+    }
+    let Some(mut at) = code else {
+        return false;
+    };
+    for _ in 0..256 {
+        if at >= 0x8020_0000 {
+            break;
+        }
+        let op = game_anchors::u8_at(ram, at);
+        if AMBIENT_HEADING_OPS.contains(&op) {
+            return true;
+        }
+        match (op, op_width(op)) {
+            (0x01, _) | (_, None) => break,
+            (_, Some(w)) => at += w as u32,
+        }
+    }
+    false
 }
 
 /// The heading `+0x26` of every actor the field actor tick (`FUN_8003BC08`)
@@ -358,6 +438,7 @@ pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
                 z: game_anchors::i16_at(ram, n + 0x18),
                 model: game_anchors::i16_at(ram, n + 0x64),
                 flags: game_anchors::u32_at(ram, n + 0x10),
+                ambient: retail_ambient_heading(ram, n),
             })
         })
         .collect()
@@ -660,6 +741,214 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
             }
             let id = i32::from(game_anchors::i16_at(ram, n + 0x64)) - base;
             (0..0xF0).contains(&id).then_some((record, id as i16))
+        })
+        .collect()
+}
+
+/// One ambient walker's live seat: flat MAN index `+0x50`, `+0x14` /
+/// `+0x18`, and the retail-space heading `+0x26`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WalkerSeed {
+    pub flat: u16,
+    pub x: i16,
+    pub z: i16,
+    pub heading: u16,
+}
+
+/// Every placement the ambient motion VM is walking or turning
+/// ([`retail_ambient_heading`]), at its live seat - the `rand()` history
+/// the facing channel does not score, which the image child stands where
+/// retail's frame shows it (`World::seed_ambient_walker`).
+pub fn retail_walkers(ram: &[u8]) -> Vec<WalkerSeed> {
+    let player = game_anchors::player_ptr(ram);
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter(|&n| retail_stream_turns(ram, n))
+        .filter_map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            seen.insert(flat).then(|| WalkerSeed {
+                flat,
+                x: game_anchors::i16_at(ram, n + 0x14),
+                z: game_anchors::i16_at(ram, n + 0x18),
+                heading: game_anchors::u16_at(ram, n + 0x26) & 0x0FFF,
+            })
+        })
+        .collect()
+}
+
+/// [`retail_walkers`] as `LEGAIA_SEAT_WALKERS`: `flat:x:z:heading` per
+/// walker, `;`-joined, decimal.
+pub fn walkers_env(w: &[WalkerSeed]) -> String {
+    w.iter()
+        .map(|s| format!("{}:{}:{}:{}", s.flat, s.x, s.z, s.heading))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`walkers_env`].
+pub fn walkers_from_env(v: &str) -> Vec<WalkerSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            Some(WalkerSeed {
+                flat: f.next()?.parse().ok()?,
+                x: f.next()?.parse().ok()?,
+                z: f.next()?.parse().ok()?,
+                heading: f.next()?.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
+/// One field actor's live VDF morph envelope (op `0x4B`,
+/// `legaia_engine_core::world::npc_morph`): its flat MAN index `+0x50`, the
+/// lane weights `+0xA0 + i*2` over its `+0x6C` lanes, the lane-done mask
+/// `+0x7C` and the envelope control word `+0x62`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MorphSeed {
+    pub flat: u16,
+    pub weights: Vec<u16>,
+    pub done_mask: u32,
+    pub env: u16,
+}
+
+/// Every field-actor-ticked node whose envelope is up (`+0x10 & 0x1000`)
+/// with armed lanes - where its morph stands is time since the arm
+/// (`town01`'s shoreline tide), so the image child writes it over the
+/// engine's on the frame it captures (`World::seed_field_morph`). The
+/// weights are the **displayed** frame's: the RAM's taken back by the
+/// display lag ([`rewind_morph_weights`]).
+pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
+    let step = crate::retail_compare_battle::frame_step(ram).max(1);
+    let lag_frames = crate::retail_compare_battle::display_lag_vsyncs(ram) / u16::from(step);
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x10) & 0x1000 != 0)
+        .filter_map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            let lanes = u32::from(game_anchors::u8_at(ram, n + 0x6C)).min(8);
+            (lanes > 0 && seen.insert(flat)).then(|| {
+                let mut weights: Vec<u16> = (0..lanes)
+                    .map(|i| game_anchors::u16_at(ram, n + 0xA0 + i * 2))
+                    .collect();
+                let up: Vec<i16> = (0..lanes)
+                    .map(|i| game_anchors::i16_at(ram, n + 0xB8 + i * 2))
+                    .collect();
+                let down: Vec<i16> = (0..lanes)
+                    .map(|i| game_anchors::i16_at(ram, n + 0xC8 + i * 2))
+                    .collect();
+                let done_mask = game_anchors::u32_at(ram, n + 0x7C);
+                let env = game_anchors::u16_at(ram, n + 0x62);
+                rewind_morph_weights(&mut weights, &up, &down, done_mask, env, step, lag_frames);
+                MorphSeed {
+                    flat,
+                    weights,
+                    done_mask,
+                    env,
+                }
+            })
+        })
+        .collect()
+}
+
+/// Take a morph envelope's lane weights back `frames` game frames of
+/// `step` vsyncs each - the displayed frame's weights, not the RAM's.
+///
+/// The envelope (`FUN_80020740`, `legaia_engine_vm::move_buffer::envelope_tick`)
+/// moves a lane that has not peaked up by its `+0xB8` velocity times the
+/// frame step while the finishing bit (`done_mask` bit 31) is clear, and a
+/// peaked lane down by its `+0xC8` velocity once it is set (unless HOLD
+/// `0x0400` or FROZEN `0x8000` stops it). Run backwards over the lag, each
+/// lane retraces its own ramp, clamped to `0 ..= 0x1000`; a phase change
+/// inside the lag is not undone. Gated `jouine` (`cort_evolved_pre_battle`)
+/// is parked six vsyncs ahead of its displayed frame with its flesh-wall
+/// lanes rising `51` / `81` a vsync: seeded on the RAM's weights the wall
+/// was drawn further swollen than the frame on the TV.
+pub fn rewind_morph_weights(
+    weights: &mut [u16],
+    up: &[i16],
+    down: &[i16],
+    done_mask: u32,
+    env: u16,
+    step: u8,
+    frames: u16,
+) {
+    const HOLD: u16 = 0x0400;
+    const FROZEN: u16 = 0x8000;
+    const PEAK: i32 = 0x1000;
+    if env & FROZEN != 0 || frames == 0 {
+        return;
+    }
+    let finishing = done_mask & 0x8000_0000 != 0;
+    let n = weights.len();
+    let per = i32::from(step) * i32::from(frames);
+    for (lane, slot) in weights.iter_mut().enumerate() {
+        let bit = 1u32 << (lane & 0x1F);
+        let peaked = done_mask & bit != 0;
+        let w = i32::from(*slot as i16);
+        let rewound = if !peaked && !finishing {
+            let ramping = lane == 0 || done_mask & (1u32 << ((lane - 1) & 0x1F)) != 0;
+            if !ramping {
+                continue;
+            }
+            w - i32::from(up.get(lane).copied().unwrap_or(0)) * per
+        } else if finishing && peaked && env & HOLD == 0 {
+            let next_drained = lane + 1 == n || done_mask & (1u32 << ((lane + 1) & 0x1F)) == 0;
+            if !next_drained {
+                continue;
+            }
+            w + i32::from(down.get(lane).copied().unwrap_or(0)) * per
+        } else {
+            continue;
+        };
+        *slot = rewound.clamp(0, PEAK) as u16;
+    }
+}
+
+/// [`retail_morphs`] as `LEGAIA_SEAT_MORPHS`:
+/// `flat:w0/w1/..:done:env` per actor, `;`-joined, numbers in hex.
+pub fn morphs_env(m: &[MorphSeed]) -> String {
+    m.iter()
+        .map(|s| {
+            format!(
+                "{:x}:{}:{:x}:{:x}",
+                s.flat,
+                s.weights
+                    .iter()
+                    .map(|w| format!("{w:x}"))
+                    .collect::<Vec<_>>()
+                    .join("/"),
+                s.done_mask,
+                s.env
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`morphs_env`].
+pub fn morphs_from_env(v: &str) -> Vec<MorphSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            let flat = u16::from_str_radix(f.next()?, 16).ok()?;
+            let weights = f
+                .next()?
+                .split('/')
+                .map(|w| u16::from_str_radix(w, 16).ok())
+                .collect::<Option<Vec<u16>>>()?;
+            let done_mask = u32::from_str_radix(f.next()?, 16).ok()?;
+            let env = u16::from_str_radix(f.next()?, 16).ok()?;
+            Some(MorphSeed {
+                flat,
+                weights,
+                done_mask,
+                env,
+            })
         })
         .collect()
 }
@@ -991,6 +1280,16 @@ impl RetailObs {
             },
             scroll_rects: Vec::new(),
             panel: None,
+            walkers: if matches!(class, StateClass::Field) {
+                retail_walkers(ram)
+            } else {
+                Vec::new()
+            },
+            morphs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_morphs(ram)
+            } else {
+                Vec::new()
+            },
             object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_models(ram)
             } else {
@@ -1115,6 +1414,12 @@ impl RetailObs {
                     .collect::<Vec<_>>()
                     .join(","),
             ));
+        }
+        if !self.morphs.is_empty() {
+            env.push(("LEGAIA_SEAT_MORPHS", morphs_env(&self.morphs)));
+        }
+        if !self.walkers.is_empty() {
+            env.push(("LEGAIA_SEAT_WALKERS", walkers_env(&self.walkers)));
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
@@ -1429,6 +1734,19 @@ pub fn run_engine_with(
             }
             if t == SETTLE_TICKS {
                 at_settle = Some(sample_engine(&mut session, retail, &director, None));
+            }
+            // The walkers stand where retail's left them before a talk is
+            // engaged: the talk snap turns a placement to the bearing from
+            // its seat, and a wanderer's seat is `rand()` history
+            // (`town01_npc16_dialogue_first_page`'s `P1[16]` wandered off
+            // its `4C 51` tile before the press).
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+                for w in &retail.walkers {
+                    session
+                        .host
+                        .world
+                        .seed_ambient_walker(w.flat, w.x, w.z, w.heading);
+                }
             }
             if t == crate::retail_compare_script::SCRIPT_RESUME_TICK
                 && crate::retail_compare_script::resume_record(&mut session.host, g)
@@ -1871,6 +2189,7 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         }
     }
     let mut skipped = 0;
+    let mut ambient = 0;
     let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
     let dump = std::env::var_os("LEGAIA_RC_FACING_DUMP").is_some();
     for a in &retail.actor_facings {
@@ -1879,9 +2198,10 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         };
         if dump {
             eprintln!(
-                "facing {}: flat {} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                "facing {}: flat {}{} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
                 retail.scene,
                 a.flat,
+                if a.ambient { " (ambient)" } else { "" },
                 a.flags,
                 a.model,
                 a.x,
@@ -1901,6 +2221,13 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
         let dz = f64::from(i32::from(ez) - i32::from(a.z));
         if (dx * dx + dz * dz).sqrt() > FACING_SEAT_RADIUS {
             skipped += 1;
+            continue;
+        }
+        // An ambient motion stream's heading is time and `rand()` history
+        // since the entry - the actor's walk history, as the player's is
+        // once the pad has turned it.
+        if a.ambient {
+            ambient += 1;
             continue;
         }
         parts.push(part(a.facing, e));
@@ -1929,7 +2256,7 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
     Some((
         score,
         format!(
-            "{n} actors scored, {skipped} off their retail seat; misses: [{}]",
+            "{n} actors scored, {skipped} off their retail seat, {ambient} ambient; misses: [{}]",
             miss.join("; ")
         ),
     ))
@@ -2490,8 +2817,13 @@ fn run_battle(
     // streams are tried (`RetailBattle::win_pose`).
     let mut off_pose = None;
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
+    // A replayed cast tries its victims revived first: unlike a pad-driven
+    // swing, a cast onto a corpse still reaches its phase, so the HP-as-read
+    // run would always win and the kill would never be replayed.
     let revive: &[bool] = if battle.action_victims().is_empty() {
         &[false]
+    } else if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Cast {
+        &[true, false]
     } else {
         &[false, true]
     };
@@ -2973,7 +3305,74 @@ mod tests {
         ram
     }
 
+    /// The walker seed survives its env form.
+    #[test]
+    fn walker_seeds_round_trip_through_their_env_form() {
+        let w = vec![
+            WalkerSeed {
+                flat: 41,
+                x: 3456,
+                z: -12,
+                heading: 0xC00,
+            },
+            WalkerSeed {
+                flat: 7,
+                x: 0,
+                z: 16320,
+                heading: 0,
+            },
+        ];
+        assert_eq!(walkers_from_env(&walkers_env(&w)), w);
+    }
+
+    /// The morph-envelope seed survives its env form.
+    #[test]
+    fn morph_seeds_round_trip_through_their_env_form() {
+        let m = vec![
+            MorphSeed {
+                flat: 7,
+                weights: vec![0x1000, 0x0C5A, 0],
+                done_mask: 0x8000_0003,
+                env: 0x5015,
+            },
+            MorphSeed {
+                flat: 0x45,
+                weights: vec![0x10],
+                done_mask: 0,
+                env: 0x1000,
+            },
+        ];
+        assert_eq!(morphs_from_env(&morphs_env(&m)), m);
+    }
+
     /// The capture-alignment seeds survive their env forms.
+    #[test]
+    fn morph_weights_rewind_their_own_ramp_by_the_display_lag() {
+        // Rising lane (not peaked, not finishing): back by up * step * frames.
+        let mut w = [0x0D26u16];
+        rewind_morph_weights(&mut w, &[51], &[51], 0, 0x4415, 3, 2);
+        assert_eq!(w, [0x0D26 - 51 * 6]);
+        // Clamped at zero.
+        let mut w = [100u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0, 0x1015, 3, 2);
+        assert_eq!(w, [0]);
+        // Draining lane (peaked + finishing): back *up* by down * step * frames.
+        let mut w = [0x0800u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0x8000_0001, 0x1000, 3, 2);
+        assert_eq!(w, [0x0800 + 58 * 6]);
+        // HOLD keeps a peaked lane; FROZEN keeps everything.
+        let mut w = [0x1000u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0x8000_0001, 0x0400, 3, 2);
+        assert_eq!(w, [0x1000]);
+        let mut w = [0x0400u16];
+        rewind_morph_weights(&mut w, &[81], &[58], 0, 0x8000, 3, 2);
+        assert_eq!(w, [0x0400]);
+        // A later lane waits for the one before it to peak.
+        let mut w = [0x0400u16, 0x0200];
+        rewind_morph_weights(&mut w, &[10, 10], &[0, 0], 0, 0, 1, 2);
+        assert_eq!(w, [0x0400 - 20, 0x0200]);
+    }
+
     #[test]
     fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
         let fx = vec![legaia_engine_core::clut_cell_fx::ClutCellFx {

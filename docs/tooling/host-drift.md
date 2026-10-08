@@ -250,8 +250,8 @@ is reached at runtime.
 | Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
 | save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
-| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu`. |
-| menu-open precondition | `symbols_all` on `field_menu_open_allowed`, across all three open sites. |
+| pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
+| pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
@@ -1297,11 +1297,10 @@ all three surfaces off the overlay's own part programs
 one-dancer run, stepped per frame as `World::step_dance_tutorial` does and
 drawn through the shared `ui_dance::dance_tutorial_draws_for`.
 
-Still open from that pass:
-
-- **The page refuses the pause menu while any dialog box is up**
-  (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
-  the native window asks alone. No retail evidence decides it yet.
+The pause-menu gate that pass left open - the page refusing the menu while
+any dialog box was up (`_hudState.dialog`), on top of the engine's
+`field_menu_open_allowed` - is gone: the page's `play_menu_open` goes through
+`BootSession::press_field_menu` like every other host.
 
 ## A rule spelled beside the shared predicate
 
@@ -1785,6 +1784,17 @@ latter driven from the INTERVAL screen's own tick because the page replays
 `ScoreTallyRamp` from that tick rather than stepping it per frame. The page
 side is `MgSpu` in `site/js/minigame-bgm.js`, gated on the same site sound
 toggle the offline path checks.
+
+The dance's judge sounds come from the engine on every host. The page used
+to choose them in its own script from the press's result name, and four of
+its six arms disagreed with the award routine `FUN_801d1af4`: it played the
+`Cool!` cue on a closed chain (retail keys a random sting and no cue), a
+sting on a plain matched note and on an unlanded groovy move (retail is
+silent on both), the miss cue on an empty triangle stock (silent), and no
+sting on a landed groovy move (retail keys the fixed `r = 5` sting beside its
+tier cue). It now plays what `dance_take_award_sounds` drains - the same
+`dance::award_sounds` list `World::tick_dance` routes into the ring and the
+voice-key queue on both play hosts.
 
 Two things the port keeps deliberately unshared, and they are not drift:
 
@@ -2638,10 +2648,12 @@ Retail's GTE **NCLIP** winding rejection is the worked case:
 in-engine cutscene camera, off the overworld), the native window hands the
 word to `Renderer::set_backface_cull` and the page hands the same word to
 `TmdRenderer.setNclipCull`. Before that the page's assembled pass called
-`disable(CULL_FACE)` unconditionally. The battle clear colour - the sky on one
-host, a hard-coded near-black in
-[`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js) on the other - is the
-same shape and is still open.
+`disable(CULL_FACE)` unconditionally. The battle clear colour was the same
+shape - the sky on one host, a hard-coded near-black in
+[`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js) on the other - and is
+closed the same way: the page sets it from `play_scene_clear_color` (over
+the native window's `battle_stage_clear` selector) on both draw paths, the
+near-black kept only as the fallback for a bundle without the export.
 
 The page's prologue grade was a third instance and the subtlest, because
 nothing was missing that a reader would look for: the grade's *multiply* half
@@ -3210,7 +3222,7 @@ recipe rules came out of it, on top of the ones [above](#a-second-pass-frames-ma
 | `0x6E` Begin / Reselect, commit log, target plaque | labels, log rows, plaque at `x = 0xE8 - w / 2` | same | same |
 | Koru strip | not shot (no formation-0xB6 entry on either host short of the dome) | - | not paired |
 | scripted battle (op `0x3E`), talk entry at the interaction cursor | not shot (no positioned walk-to-NPC input on either host) | - | not paired |
-| fishing (`PondSession`) | status rows, digits, venue camera | status rows, digits, gauge fills, field camera | gauge fills were page-only; fixed. The venue pass is disclosed native-only ([fishing](#one-minigame-one-session-type)) |
+| fishing (`PondSession`) | status rows, digits, venue camera | status rows, digits, gauge fills, venue camera | gauge fills were page-only; fixed. Both hosts now run the venue pass (`fishing_venue::tick_fishing_venue_on_host`) and draw under `fishing_venue::venue_view` ([fishing](#one-minigame-one-session-type)) |
 | slot / Baka face buttons | prompts named the old buttons | same prompts | both hosts' prompt text was stale against the kernel; fixed |
 | title menu | two rows | two rows | same (the lit row follows each host's card state) |
 | battle letterbox, spoils ink | black letterbox, spoils text all `(206, 206, 206)` | canvas is the stage; the banner fell between two shots | native matches retail; page not shot |
@@ -3595,12 +3607,16 @@ kernel both hosts call, so the two cannot drift on it again.
   script started music again. `audio_init` now starts the world's current
   track.
 
-Two rows stay open on purpose:
+- **A late output restarts a paused track.** The engine kept no copy of the
+  script's pause bit, so a page whose audio came up after the scene's script
+  paused its track started that track anyway. The world now mirrors sound-flags
+  bit 1 (`AudioState::bgm_script_paused`: raised by sub-ops `2` / `3`, ended by
+  `1`, `9`, `4`, `0xA` and the scene loader), and the page's late start brings
+  the track up paused when it is set, so the script's own sub-op `4` resumes
+  it. The native window has its output from the first frame and never meets
+  the case.
 
-- **A late output restarts a paused track.** The engine keeps no copy of the
-  script's pause bit, so a page whose audio comes up after the scene's script
-  paused its track starts that track anyway. The native window has its
-  output from the first frame and never meets the case.
+One row stays open on purpose:
 
 - **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
   record at `0x8007057C` through `FUN_80026478`. In every captured state that
@@ -4107,10 +4123,9 @@ canvas's pixels (`play_text_layer_washes_json`).
   What still differs from retail there is the pose itself - the engine strikes
   the win pose once and hands back to the idle loop, so the camera films the
   character's back where retail's held pose has turned to face it.
-- **The overworld leader** draws at roughly half the native window's size
-  on the page, and the native size matches the retail frame of
-  `keikoku_chest_preload`. The page poses the leader from the world-map
-  clip bank; that path belongs to the world-map walk animation work.
+- **The overworld leader** used to draw at roughly half the native window's
+  size on the page. A tick-locked `map01` pair now shows the same size, pose
+  and shadow on both hosts.
 
 ## Shops, save points, movies and audio switching
 
@@ -4124,8 +4139,8 @@ banner and the cheats panel. Closed rows:
   and recipient screens' own purchase, sale and equip cues
   ([`shop.md`](../subsystems/shop.md#sound)). Neither host raised any, and
   the engine's quantity and recipient events named the cues in comments
-  only. `MenuRuntime::take_ui_cue` is the decision now, and a `SIM_PAIRS`
-  row holds both hosts' shop steps to it.
+  only. The decision is the engine's now: `MenuRuntime::step_field_session`
+  returns the cue, and a `SIM_PAIRS` row holds both hosts' shop steps to it.
 - **Start closed the pause menu outside the kernel on the page.** A
   root-level Start called `play_menu_close` directly, so it dismissed the
   save-point notice (which retail holds for Cross or Circle) and, under an
@@ -4148,28 +4163,69 @@ banner and the cheats panel. Closed rows:
   run; a dance song ending on its own queued the hall's track there, so the
   chart loop played on over the hall. Both hosts' drains open with a late
   routing pass, which tier 12 pairs by content.
+- **The overworld developer band on a Load.** The page armed the top-view
+  debug chord (`_DAT_8007B98C`) on every world-map entry, a card Load
+  included; the native window armed it on its CLI entries, a `--resume-save`
+  included, and never on an in-game Load. Arming it is not free: the band
+  shadows retail's L1 map-display arm. One rule now, asked by both entries:
+  `World::arm_picker_world_map_debug`, on a picked scene only.
+- **Paced per display frame on the page.** The game-over panel stepped once
+  per display frame that carried a tick, and the boot chain (publisher logos,
+  title card, its Continue / Options hand-off) kept a clock of its own that
+  ran at least one tick every display frame - twice retail speed at 120 Hz -
+  and caught up to thirty. The panel now steps once per tick of the frame,
+  and the boot chain drains the engine's `SimStepper`
+  (`play_drain_sim_steps`), holding a press until a tick takes it, as the
+  native window's redraw loop does.
+- **The movie clock was written twice.** The native window paced a movie
+  off the XA cursor and held frame 0 for as long as the cursor sat at zero;
+  the page re-implemented the rule in `play-fmv.js` with a one-second stall
+  fallback to the wall clock, and no latch, so a cursor that started late
+  rewound the picture. Both run `cutscene::MovieClock` now (the page through
+  `play_fmv_due_frame`, handing in only the two clocks the engine cannot
+  read): the cursor, the wall clock past the stall window, latched.
+- **A Good! banner on every dance step.** The dance page spawned the
+  `Good!` banner (widget 11) and keyed a sting on every matched note. In
+  retail's award routine `FUN_801d1af4` a plain matched note is tier 0 - no
+  banner, no sting; `Good!` + two stars is tier 2, a closed chain, which the
+  engine already spawns into its part pool on both hosts
+  ([`minigame-dance.md`](../subsystems/minigame-dance.md#rating-banners-per-tier-fun_801d1af4-body)).
+  The page's own spawn is gone, and a closed chain keys the tier-2 sting
+  rather than the `Cool!` cue.
+- **The pause menu on its own clock.** The page stepped the pause menu
+  and its sub-screens off a menu clock of its own - at least one step every
+  display frame, catching up to eight - so the save screen's "Now checking"
+  beat cleared in a quarter of the native window's time on a tick-locked
+  pair. It steps once per sim tick of the frame now (the shop's rule),
+  holding a press until a tick takes it.
+- **Four defects the pair showed on both hosts at once.** A side-by-side
+  only finds drift, but reading the two frames against the disassembly
+  found four shared-kernel defects identical on both: dialog choices
+  dropped party names (`PickerOption::label` carries no substitutions; both
+  now read `OwnedDialogPanel::picker_labels`, a `SIM_PAIRS` row), menu
+  descriptions lost their second line (`FUN_80036888` breaks on `0x7C`;
+  `broken_text_draws_for`), the Equip candidate step drew the closed party
+  and main windows through window 25 (its open script leads with
+  close-all), and the options popup let the rows under it print through
+  (`options_popup_frame` occludes them).
+- **The movie skip.** The page tests the skip edge on every movie and the
+  native window only on the title attract, but both ask
+  `cutscene::fmv_skip_edge_hit`, which only `fmv_id 0` passes, and no scene
+  script names `fmv_id 0` ([`str-fmv-table.md`](../formats/str-fmv-table.md)).
+  The two call sites cannot disagree on any movie the disc plays.
+- **The inn prompt froze the field on the page.** The page froze on
+  `MenuRuntime::is_open`, the native window on `suspends_field`, which
+  excludes an inn (retail's inn is a field-VM dialogue). The page asks
+  `play_shop_suspends_field` now and, under an inn, ticks the field on a
+  neutral pad as the native window does. `InnSession` has no production
+  caller ([`inn.md`](../subsystems/inn.md)), so no player reached either
+  answer.
 
 ### Open from the same pass
 
-- **The movie clock is written twice.** The native window paces a movie
-  with audio off the XA cursor (`cutscene_av::due_video_frame`); the page
-  re-implements that rule in `play-fmv.js` and adds a one-second stall
-  fallback to the wall clock, which the native window lacks, so a stalled
-  cursor holds frame 0 natively. The two STR decoders also differ: the page
-  counts assembled frames and assumes 4-bit XA, the native one counts
-  decoded frames and reads the bit depth.
-- **A scene-script movie skips on the page only.** The page tests the skip
-  button on every movie; the native window only on the title attract.
-- **Paced per display frame on the page.** The game-over panel steps once
-  per display frame on the page and once per sim tick natively, and the boot
-  title catches up to thirty ticks a frame where the shared stepper allows
-  four.
-- **An overworld Load arms the top-view debug chord on the page only**
-  (`enter_field_core`); the native in-game Load does not.
-- **The inn prompt freezes the field on the page.** The page freezes on
-  `MenuRuntime::is_open`, the native window on `suspends_field`, which
-  excludes an inn. `InnSession` has no production caller
-  ([`inn.md`](../subsystems/inn.md)), so no player reaches it.
+- **The two STR decoders differ.** The page counts assembled frames and
+  assumes 4-bit XA; the native one counts decoded frames and reads the bit
+  depth.
 - **The shop panels' rows** (`title`, rows, gold footer per state) and the
   inn prompt's text are written once per host over shared leaves; they agree
   today.

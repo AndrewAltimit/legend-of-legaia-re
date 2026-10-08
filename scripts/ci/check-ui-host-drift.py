@@ -522,7 +522,8 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 NATIVE_BOOT = "crates/engine-session/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_select_helpers.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
-NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
+# The minigame session enter / exit / tick methods of the frame tick.
+NATIVE_MINIGAME_SESSIONS = "crates/engine-core/src/world/frame_tick/minigame_sessions.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/window/boot_cutscene.rs"
 NATIVE_REDRAW = "crates/engine-shell/src/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/window/field_render.rs"
@@ -546,6 +547,49 @@ NATIVE_TITLE_SAVE = (
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "dialog picker option labels, native vs play page - both "
+        "printed `legaia_mes::PickerOption::label`, which carries no name "
+        "escapes, so a choice naming a party member drew a blank where the "
+        "name belongs on either host. Both read "
+        "`OwnedDialogPanel::picker_labels`, resolved through the panel's "
+        "substitution table",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/hud.rs", "dialog_snapshot"),
+            "web": ("crates/web-viewer/src/play_dialog.rs", "from_panel"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["picker_labels"],
+    },
+    {
+        "what": "movie pacing, native in-window FMV vs play page - the page "
+        "re-implemented the audio-cursor rule in play-fmv.js with a stall "
+        "fallback the native window lacked (a stalled cursor held frame 0 "
+        "there for the whole movie). Both pace through "
+        "`cutscene::MovieClock::due_frame`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/boot_cutscene.rs",
+                "render_windowed_cutscene",
+            ),
+            "web": ("crates/web-viewer/src/play_fmv.rs", "play_fmv_due_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["due_frame"],
+    },
+    {
+        "what": "overworld developer band on entry, native vs play page - the "
+        "page armed the top-view debug chord (`_DAT_8007B98C`) on every "
+        "world-map entry, a card Load included, while the native window armed "
+        "it on its CLI picker entry only; arming it shadows retail's L1 map "
+        "display. Both entries ask `World::arm_picker_world_map_debug`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/run.rs", "cmd_play_window_with_record"),
+            "web": ("crates/web-viewer/src/runtime.rs", "enter_field_core"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["arm_picker_world_map_debug"],
+    },
     {
         "what": "CD-XA shout staging, native boot vs play page - which channels "
         "of XA2 / XA4 / XA6 become shouts, how a shout is trimmed and which "
@@ -1168,7 +1212,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "gate green. Naming the same resolvers is the property that matters, "
         "and it does not need the right set stated up front",
         "sites": {
-            "native": (NATIVE_FRAME_TICK, "tick_muscle_dome"),
+            "native": (NATIVE_MINIGAME_SESSIONS, "tick_muscle_dome"),
             "web": (WEB_MINIGAMES_MUSCLE, "muscle_resolve"),
         },
         "mode": "pattern_same",
@@ -2467,8 +2511,10 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-render",
     REPO / "crates" / "engine-core",
     REPO / "crates" / "engine-minigames",
+    REPO / "crates" / "engine-effects",
     REPO / "crates" / "engine-ui",
     REPO / "crates" / "engine-vm",
+    REPO / "crates" / "engine-battle-vm",
     REPO / "crates" / "web-viewer",
 ]
 
@@ -3310,7 +3356,9 @@ HOTKEY_SOURCES = [
 SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
     REPO / "crates" / "engine-minigames" / "src",
+    REPO / "crates" / "engine-effects" / "src",
     REPO / "crates" / "engine-vm" / "src",
+    REPO / "crates" / "engine-battle-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
     REPO / "crates" / "web-viewer" / "src",
 ]
@@ -4059,12 +4107,16 @@ def _selftest_frame_case(
 # `engine-session` is engine surface too: both play hosts hold its
 # `BootSession` and tick it, so a call into it is a call both can make.
 # `engine-screens` likewise: the shop-family composition both hosts call.
-# `engine-battle` holds the battle kernels engine-core re-exports.
+# `engine-battle` holds the battle kernels engine-core re-exports, and
+# `engine-battle-vm` the battle VM kernels engine-vm re-exports, and
+# `engine-effects` the effect kernels engine-core re-exports.
 ENGINE_API_CRATES = (
     "engine-core",
     "engine-battle",
+    "engine-effects",
     "engine-minigames",
     "engine-vm",
+    "engine-battle-vm",
     "engine-ui",
     "engine-audio",
     "engine-session",
@@ -4481,7 +4533,13 @@ SAVE_IO_ROUTES = [
 
 SAVE_IO_FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]")
 SAVE_IO_TEST_FN_RE = re.compile(r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]")
-SAVE_IO_TEST_MOD_RE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
+# `#[cfg(test)]` and any conjunction that requires it
+# (`#[cfg(all(test, not(target_arch = "wasm32")))]`) - never `any(test, ..)`,
+# which also builds outside tests.
+SAVE_IO_TEST_MOD_RE = re.compile(
+    r"#\[cfg\((?:test|all\((?:[^()]|\([^()]*\))*?\btest\b(?:[^()]|\([^()]*\))*\))\)\]\s*"
+    r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{"
+)
 
 
 def save_io_calls(text: str, primitives: set[str]) -> list[tuple[str, str]]:
@@ -4543,6 +4601,16 @@ SELFTEST_SAVE_IO = [
         "a test module is not shipped code",
         "#[cfg(test)]\nmod tests {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
         [],
+    ),
+    (
+        "a test-only conjunction module is not shipped code",
+        "#[cfg(all(test, not(target_arch = \"wasm32\")))]\nmod cross {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
+        [],
+    ),
+    (
+        "an any(test, ..) module still ships",
+        "#[cfg(any(test, feature = \"x\"))]\nmod m {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
+        [("write_session_into_card", "t")],
     ),
     (
         "a #[test] fn is not shipped code",

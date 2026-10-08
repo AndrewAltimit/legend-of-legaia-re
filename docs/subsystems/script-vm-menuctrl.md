@@ -928,7 +928,7 @@ scheduled actor; **the script never waits on it**.
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction - [below](#4c-45-the-11-byte-form). |
 | 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
-| 8 | `ctx[+0x26]` | Plain s16 write or ramp. |
+| 8 | `ctx[+0x26]` | Plain s16 write or ramp. The actor's drawn heading: nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300` from their spawn prologue's `4C 48 00 03 00 00`. Port: `FieldHost::op4c_n4_heading_write` and the sub-8 ramp into `World::npcs.heading_ramps`. |
 | 9 | `_DAT_801C6EA4 + 0x4A` *or* player-relative *or* delta-bank | Branched on two bits of `_DAT_1F800394` - see below. |
 | A | `_DAT_8007BCD0` | Plain global write or ramp. |
 | B | `_DAT_8007BCD4` | Sister of A. |

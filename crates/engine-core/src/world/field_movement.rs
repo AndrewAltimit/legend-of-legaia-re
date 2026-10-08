@@ -1443,6 +1443,34 @@ mod face_target_tests {
         assert_eq!(w.npcs.heading(3), crate::world::SPAWN_HEADING);
     }
 
+    /// A placement whose own context runs as the interaction timeline (a boss
+    /// stager) holds its talk pose until that timeline ends: the restore is
+    /// the dialog SM's teardown, and the SM is still engaged while the record
+    /// plays.
+    #[test]
+    fn interaction_timeline_holds_the_talk_pose_until_it_ends() {
+        let mut w = World::new();
+        w.player_actor_slot = Some(0);
+        w.actors[0].active = true;
+        w.actors[0].move_state.world_x = 100;
+        w.actors[0].move_state.world_z = 0;
+        w.npcs.positions.insert(3, (0, 0));
+        w.npcs.headings.insert(3, 0x800);
+        w.face_field_npc_at_player(3);
+        let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(vec![0x21], 0);
+        tl.interaction_slot = Some(3);
+        w.cutscene.timeline = Some(tl);
+        assert!(w.interaction_timeline_holds_talk_facing());
+        // Another placement's timeline does not hold slot 3's pose.
+        w.cutscene.timeline.as_mut().unwrap().interaction_slot = Some(4);
+        assert!(!w.interaction_timeline_holds_talk_facing());
+        w.cutscene.timeline.as_mut().unwrap().interaction_slot = Some(3);
+        w.cutscene.timeline.as_mut().unwrap().done = true;
+        assert!(!w.interaction_timeline_holds_talk_facing());
+        w.release_talk_facing();
+        assert_eq!(w.npcs.headings.get(&3), Some(&0x800));
+    }
+
     /// The face driver rotates toward the bearing from an arbitrary start and
     /// is a no-op for a slot with no surfaced position (the retail actor-list
     /// miss never poses an actor).

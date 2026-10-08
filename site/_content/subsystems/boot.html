@@ -97,6 +97,7 @@
     <li><strong>Attract.</strong> A countdown starting at <code>0x8000</code> drains each frame; when it underflows the game switches to movie mode and plays <code>MV1.STR</code> (<a href="cutscene.html">cutscene</a>), then comes back to the title.</li>
     <li><strong>NEW GAME</strong> fades out, writes mode 2 and the scene id <code>opdeene</code>. <strong>CONTINUE</strong> detours through the card-load path first and then writes the same mode 2.</li>
     <li><strong>No arrow cursor.</strong> The two menu rows are a band of the title sheet; the selection is shown bright vs dim.</li>
+    <li><strong>The menu opens on NEW GAME on the US build, saves or no saves.</strong> Startup raises the row to CONTINUE only when its card scan finds a save, and that scan compares every filename against a <code>BISCUS-94254PRO-</code> prefix no US save carries (they are <code>BASCUS-</code>), so the count stays zero. The row is never reset afterwards: a later title - after a party wipe, or a backed-out Continue - opens on whichever row it last held. The port does the same on both hosts.</li>
   </ul>
   <p>State struct, countdown instruction and the packed pad-mask layout the tick reads: <a href="boot-internals.html#title-tick">internals</a>.</p>
 </section>

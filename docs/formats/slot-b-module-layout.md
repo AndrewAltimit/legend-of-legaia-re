@@ -284,6 +284,13 @@ them, and all four were needed:
 4. **Fall back to the last maximal WAIT.** The section above: where the walk
    dies with no terminator, the last `0x09 0x0FFF` it stepped over bounds the
    record.
+5. **A `HALT` a forward branch jumps is not the end.** Ten `0x2F` sub-ops are
+   conditional branches whose taken side adds a displacement
+   ([`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md#the-ten-conditional-branch-arms)),
+   and the pool-headroom guard `2F 37 <n> 0001` exists to skip the `HALT`
+   right behind it. The walk records each forward target and, at a `HALT`
+   below one, resumes there. Without it the walk ended field effect records
+   at their guard and called the rest of the program residue.
 
 Under those four, chaining `[header][program]` from every record start
 reproduces 1231 of the band's 1238 bounded record extents exactly (the band's
