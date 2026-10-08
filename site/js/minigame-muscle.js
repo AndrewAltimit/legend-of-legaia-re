@@ -335,11 +335,14 @@ window.MgMuscle = (function () {
     }
 
     /* Blit sheet rect (u,v,w,h) to retail-space (dx,dy), optional dest size. */
-    function blit(src, pal, u, v, w, h, dx, dy, dw, dh, abr) {
+    function blit(src, pal, u, v, w, h, dx, dy, dw, dh, abr, rgb) {
       const s = sheet(src, pal);
       if (!s) return false;
-      withAbr(g, abr, (sub) =>
-        g.drawImage(sub ? hubSilhouette(s) : s, u, v, w, h,
+      /* A hub quad's Gouraud colour (`texel * c / 128`) - its fade level. */
+      const mod = rgb ? window.LegaiaUtil.modulatedSprite(s, u, v, w, h, rgb[0], rgb[1]) : null;
+      withAbr(g, abr, (sub) => (mod && !sub)
+        ? g.drawImage(mod, 0, 0, w, h, dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2)
+        : g.drawImage(sub ? hubSilhouette(s) : s, u, v, w, h,
           dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2));
       return true;
     }
@@ -501,7 +504,7 @@ window.MgMuscle = (function () {
       if (!m.ok || !m.quads || !m.quads.length) return 0;
       let n = 0;
       for (const q of m.quads) {
-        if (blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh, q.abr)) n++;
+        if (blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh, q.abr, q.rgb)) n++;
       }
       return n;
     }

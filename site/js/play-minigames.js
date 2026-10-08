@@ -378,8 +378,14 @@
       }
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
-      withAbr(g, q.abr, (sub) =>
-        g.drawImage(sub ? hubSilhouette(s) : s, q.u, q.v, q.w, q.h,
+      /* The quad's Gouraud colour (`texel * c / 128`): the hub screens'
+       * fade in / out is this colour, not an alpha - the native window's
+       * sprite pass modulates by it, and leaving it out drew every banner at
+       * full strength through its whole fade. */
+      const mod = q.rgb ? window.LegaiaUtil.modulatedSprite(s, q.u, q.v, q.w, q.h, q.rgb[0], q.rgb[1]) : null;
+      withAbr(g, q.abr, (sub) => (mod && !sub)
+        ? g.drawImage(mod, 0, 0, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy)
+        : g.drawImage(sub ? hubSilhouette(s) : s, q.u, q.v, q.w, q.h,
           q.x * sx, q.y * sy, q.dw * sx, q.dh * sy));
       /* The ringside still is an opaque packet modulated by its fade level
        * (`texel * c / 128`): below neutral that is the image darkened

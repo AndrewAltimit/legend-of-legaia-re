@@ -93,11 +93,43 @@
     }
   }
 
+  /* A textured PSX quad's colour modulation, `texel * c / 128` per channel,
+   * with `c` the Gouraud colour shaded top -> bottom (the hub-screen quads'
+   * brightness fade rides it). Returns a w x h canvas of the modulated texels
+   * (alpha kept), or null when both colours are the neutral 128 - the caller
+   * then blits the sheet as is. `top` / `bottom` are [r, g, b]. */
+  function modulatedSprite(src, u, v, w, h, top, bottom) {
+    if (!src || !top || !bottom || w <= 0 || h <= 0) return null;
+    var neutral = true;
+    for (var k = 0; k < 3; k++) if (top[k] !== 128 || bottom[k] !== 128) neutral = false;
+    if (neutral) return null;
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(src, u, v, w, h, 0, 0, w, h);
+    var img = g.getImageData(0, 0, w, h), d = img.data;
+    for (var y = 0; y < h; y++) {
+      var t = h > 1 ? y / (h - 1) : 0;
+      var m0 = (top[0] + (bottom[0] - top[0]) * t) / 128;
+      var m1 = (top[1] + (bottom[1] - top[1]) * t) / 128;
+      var m2 = (top[2] + (bottom[2] - top[2]) * t) / 128;
+      for (var x = 0; x < w; x++) {
+        var i = (y * w + x) * 4;
+        d[i] = Math.min(255, d[i] * m0);
+        d[i + 1] = Math.min(255, d[i + 1] * m1);
+        d[i + 2] = Math.min(255, d[i + 2] * m2);
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+
   window.escapeHtml = escapeHtml;
   window.LegaiaUtil = {
     escapeHtml: escapeHtml,
     rgbaCanvas: rgbaCanvas,
     downloadFile: downloadFile,
     poseClipInto: poseClipInto,
+    modulatedSprite: modulatedSprite,
   };
 })();

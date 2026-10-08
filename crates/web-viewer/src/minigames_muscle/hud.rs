@@ -673,6 +673,9 @@ impl LegaiaMinigames {
                     "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
                     "semi": q.semi_transparent,
                     "abr": stp.quad_abr(q),
+                    // The Gouraud colour, top then bottom (`texel * c / 128`)
+                    // - the brightness the screen fades by.
+                    "rgb": [q.rgb[0], q.rgb[2]],
                 })
             })
             .collect();

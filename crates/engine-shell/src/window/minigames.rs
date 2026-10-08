@@ -1302,7 +1302,13 @@ impl PlayWindowApp {
         let generation_before = self.muscle_surface.generation();
         if self
             .muscle_surface
-            .frame(read, session, contest, MUSCLE_DOME_CHAR_SLOT)
+            .frame_at(
+                read,
+                session,
+                contest,
+                MUSCLE_DOME_CHAR_SLOT,
+                world.clock.sim_ticks,
+            )
             .is_none()
         {
             self.muscle_gpu = None;

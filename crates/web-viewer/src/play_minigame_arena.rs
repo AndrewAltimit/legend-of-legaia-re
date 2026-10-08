@@ -602,6 +602,9 @@ fn hub_quad_json(
         "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
         "semi": q.semi_transparent,
         "abr": stp.quad_abr(q),
+        // The Gouraud colour, top then bottom (`texel * c / 128`) - the
+        // brightness the hub screens fade by.
+        "rgb": [q.rgb[0], q.rgb[2]],
     })
 }
 
@@ -760,7 +763,8 @@ impl LegaiaRuntime {
         if let Some(w) = world {
             surface.set_camera_option(w.toggles.battle_camera as u8);
         }
-        match surface.frame(read, session, contest, char_slot) {
+        let sim_tick = world.map_or(0, |w| w.clock.sim_ticks);
+        match surface.frame_at(read, session, contest, char_slot, sim_tick) {
             Some(_) => surface.generation() as i32,
             None => -1,
         }
