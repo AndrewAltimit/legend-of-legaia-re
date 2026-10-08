@@ -210,6 +210,15 @@ impl Rng {
 /// Per-(scene, seed) policy seed, so one scene's run does not depend on the
 /// order the scene list happens to be in.
 fn run_seed(scene: &str, seed: u64) -> u64 {
+    // The card a `@<card>:<save>` label names is where the save is read
+    // from, not part of the run: the stream is the `@<save>` label's.
+    let scene = match scene.split_once('@') {
+        Some((label, save)) => match save.split_once(':') {
+            Some((_, save)) => format!("{label}@{save}"),
+            None => scene.to_string(),
+        },
+        None => scene.to_string(),
+    };
     let mut h: u64 = 0xCBF2_9CE4_8422_2325;
     for b in scene.bytes() {
         h ^= u64::from(b);
@@ -2550,7 +2559,15 @@ fn card_save(save: &str) -> Result<legaia_save::SaveFile, String> {
     let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| repo_root().join("saves/library"));
-    let card = std::env::var("LEGAIA_SOAK_CARD").unwrap_or_else(|_| SOAK_CARD.to_string());
+    // `<card>:<save>` names its own card; a bare save reads
+    // `LEGAIA_SOAK_CARD`, else the default.
+    let (card, save) = match save.split_once(':') {
+        Some((card, save)) => (card.to_string(), save),
+        None => (
+            std::env::var("LEGAIA_SOAK_CARD").unwrap_or_else(|_| SOAK_CARD.to_string()),
+            save,
+        ),
+    };
     let path = lib.join("cards").join(&card);
     let mounted = legaia_save::emu::MountedCard::open(&path).map_err(|e| format!("{e:#}"))?;
     for block in 1..=15u8 {
@@ -2601,13 +2618,21 @@ fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
             .chain(extra.iter().cloned())
             .collect(),
     };
-    // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save.
+    // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save. A
+    // `LEGAIA_SOAK_CARD` other than the default rides in the label
+    // (`@<card>:<save>`), so a replay written from the run names its card.
     if let Ok(save) = std::env::var("LEGAIA_SOAK_SAVE")
         && !save.trim().is_empty()
     {
+        let save = match std::env::var("LEGAIA_SOAK_CARD") {
+            Ok(card) if !card.trim().is_empty() && card.trim() != SOAK_CARD => {
+                format!("{}:{}", card.trim(), save.trim())
+            }
+            _ => save.trim().to_string(),
+        };
         for s in &mut scenes {
             if !s.contains('@') {
-                *s = format!("{s}@{}", save.trim());
+                *s = format!("{s}@{save}");
             }
         }
     }

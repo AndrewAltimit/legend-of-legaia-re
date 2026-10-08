@@ -343,7 +343,7 @@ pub fn apply_equip_outcome(
                 }
             }
             if removed != 0 {
-                *world.party.inventory.entry(removed).or_insert(0) += 1;
+                let _ = world.party.inventory.add(removed, 1);
             }
         }
         // An equipment change can add / remove an accessory passive; rebuild

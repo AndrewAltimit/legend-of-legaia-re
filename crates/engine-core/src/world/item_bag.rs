@@ -295,8 +295,7 @@ impl legaia_engine_minigames::prize_exchange::RedeemBag for ItemBag {
         *self.get(&item_id).unwrap_or(&0)
     }
     fn grant_one(&mut self, item_id: u8) {
-        let slot = self.entry(item_id).or_insert(0);
-        *slot = slot.saturating_add(1);
+        let _ = self.add(item_id, 1);
     }
 }
 

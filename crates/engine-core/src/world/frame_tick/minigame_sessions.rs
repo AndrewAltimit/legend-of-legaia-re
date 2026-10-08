@@ -466,8 +466,10 @@ impl World {
         if let Some(bit) = purchase.latched_bit {
             self.minigames.fishing_prizes_purchased |= 1 << bit;
         }
-        let count = self.party.inventory.entry(purchase.item_id).or_insert(0);
-        *count = count.saturating_add(purchase.qty.min(255) as u8);
+        let _ = self
+            .party
+            .inventory
+            .add(purchase.item_id, purchase.qty.min(255) as u8);
         if let Some(s) = &mut self.minigames.fishing {
             s.record.points = self.minigames.fishing_points;
             s.purchased_mask = self.minigames.fishing_prizes_purchased;

@@ -1722,7 +1722,7 @@ impl World {
         // the voided accessory is cleared out of the character record and
         // handed back (retail's record write plus `FUN_80042558`).
         if let Some(item) = run.item_refund {
-            *self.party.inventory.entry(item).or_insert(0) += 1;
+            let _ = self.party.inventory.add(item, 1);
         }
         if let Some(out) = run.voided_accessory
             && let Some(id) = out.voided
@@ -1735,7 +1735,7 @@ impl World {
                 }
                 rec.set_equipment(eq);
             }
-            *self.party.inventory.entry(id).or_insert(0) += 1;
+            let _ = self.party.inventory.add(id, 1);
             self.refresh_party_ability_bits();
         }
         Some(run)

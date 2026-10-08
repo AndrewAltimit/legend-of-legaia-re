@@ -223,6 +223,34 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
     assert_eq!(World::default().apply_steal(999, &table), None);
 }
 
+/// A grant onto a held stack of 99 leaves it at 99: every bag credit goes
+/// through the retail add (`FUN_800421D4`, `slti 0x64` / `li 0x63` at
+/// `0x800422F0..0x800422FC`), which caps the merged count.
+#[test]
+fn a_grant_onto_a_full_stack_stays_at_99() {
+    use legaia_asset::steal_table::{StealEntry, StealTable};
+    use legaia_engine_minigames::prize_exchange::RedeemBag;
+    let table = StealTable::from_entries(vec![
+        StealEntry {
+            chance_pct: 0,
+            item_id: 0xff,
+        },
+        StealEntry {
+            chance_pct: 100,
+            item_id: 0x8a,
+        },
+    ]);
+    let mut world = World {
+        rng_state: 324,
+        ..World::default()
+    };
+    world.party.inventory.insert(0x8a, 99);
+    assert_eq!(world.apply_steal(1, &table), Some(0x8a));
+    assert_eq!(world.party.inventory.get(&0x8a).copied(), Some(99));
+    world.party.inventory.grant_one(0x8a);
+    assert_eq!(world.party.inventory.get(&0x8a).copied(), Some(99));
+}
+
 // --- Live gold-shop trigger via field-VM op-0x49 (shop_catalog + try_arm_field_shop) ---
 
 /// Build a field script that opens a 2-item shop: op `0x49` sub-0, length 0,

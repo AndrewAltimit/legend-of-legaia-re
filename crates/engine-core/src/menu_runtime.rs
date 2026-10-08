@@ -1185,7 +1185,7 @@ impl MenuRuntime {
             return false;
         }
         world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
-        *world.party.inventory.entry(item_id).or_insert(0) += 1;
+        let _ = world.party.inventory.add(item_id, 1);
         true
     }
 
@@ -1226,7 +1226,7 @@ impl MenuRuntime {
         equip.slots[idx] = item_id;
         record.set_equipment(equip);
         if displaced != 0 {
-            *world.party.inventory.entry(displaced).or_insert(0) += 1;
+            let _ = world.party.inventory.add(displaced, 1);
         }
         world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
         world.refresh_party_ability_bits();
@@ -1656,7 +1656,7 @@ impl MenuRuntimeHost<'_> {
         // Return the unequipped item to the bag (retail puts it back);
         // zeroing the slot without crediting it destroyed the item.
         if removed != 0 {
-            *self.world.party.inventory.entry(removed).or_insert(0) += 1;
+            let _ = self.world.party.inventory.add(removed, 1);
         }
         // Unequipping can remove an accessory passive; rebuild the
         // ability bitfields so the bit (and any party-wide grant)

@@ -186,7 +186,7 @@ impl legaia_engine_vm::dev_equip_commit::EquipCommitHost for SessionEquipHost<'_
     }
 
     fn give_to_bag(&mut self, item_id: u8, qty: u8) {
-        *self.inventory.entry(item_id).or_insert(0) += qty;
+        let _ = self.inventory.add(item_id, qty);
     }
 
     fn play_sfx(&mut self, cue: u8) {
@@ -984,7 +984,7 @@ impl EquipSession {
         *self.inventory.entry(item_id).or_insert(0) -= 1;
         let removed = self.record.equip[slot as usize];
         if removed != 0 {
-            *self.inventory.entry(removed).or_insert(0) += 1;
+            let _ = self.inventory.add(removed, 1);
         }
         self.record.equip[slot as usize] = item_id;
         self.finish_commit(
@@ -1027,7 +1027,7 @@ impl EquipSession {
 
     /// Direct mutation of the inventory map (for tests / synthetic flows).
     pub fn give_item(&mut self, id: u8, qty: u8) {
-        *self.inventory.entry(id).or_insert(0) += qty;
+        let _ = self.inventory.add(id, qty);
     }
 
     /// Refresh [`Self::preview_stats`] for a hovered candidate by
@@ -1072,7 +1072,7 @@ impl EquipSession {
         if removed == 0 {
             return None;
         }
-        *self.inventory.entry(removed).or_insert(0) += 1;
+        let _ = self.inventory.add(removed, 1);
         self.record.equip[slot as usize] = 0;
         self.preview_stats = compute_battle_stats(
             &self.record,
@@ -1388,7 +1388,7 @@ pub fn apply_best_equipment(
         }
         *qty -= 1;
         if equipped != 0 {
-            *inventory.entry(equipped).or_insert(0) += 1;
+            let _ = inventory.add(equipped, 1);
         }
         equips[slot] = candidate;
         changed += 1;
