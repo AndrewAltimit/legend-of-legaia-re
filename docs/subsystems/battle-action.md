@@ -3781,6 +3781,21 @@ after each cursor advance. The damage roll still reads the two terms as zero,
 and the blocked branch's own apply-mode walk (`0x801EE720..0x801EE918`) is the
 port's ordinary apply mode.
 
+**The commit turns the defender.** The commit itself (`0x801EEC34..0x801EECBC`)
+skips a zero `s7` and a Stoned defender (`+0x16E & 0x4`), stores `s7` into the
+defender's `+0x1DA`, ORs `5` into its `+0x1DC`, and then stores
+`FUN_80019B28(defender[+0x40], defender[+0x3C], attacker[+0x38],
+attacker[+0x34]) & 0xFFF` into the defender's heading `+0x46`: the bearing from
+the defender's body pair to the attacker's live pair with no half turn, the far
+end of the attacker's own `+ 0x800` recompute, so the two stand face to face.
+Every reaction a melee strike commits turns its defender that way, a block
+included, and nothing turns it back - a struck monster keeps the heading until
+its own action recomputes it, its knockback root motion steps along it, and the
+post-strike framings that read the target's `+0x46` (case 8's dead-target yaw)
+frame the body from it: `player_steal_skeleton_banner` reads its killed skeleton
+turned onto Vahn, `rim_elm_gimard_seru_capture_after` its Gimard. Port:
+`World::commit_melee_reaction`.
+
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
 counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the
