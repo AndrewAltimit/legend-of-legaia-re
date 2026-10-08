@@ -744,8 +744,12 @@ impl PlayWindowApp {
                     &v.indices,
                 ) {
                     Ok(m) => {
-                        let model =
-                            Mat4::from_translation(Vec3::from(rb.world_pos)) * fx_model_flip;
+                        // Placed like a part - `T(F world_pos)`, the frame
+                        // flip on the translation too - as the page does
+                        // (`play_battle_fx.rs`). A bare `T(world_pos)` put
+                        // the disc's lift on the wrong side of the floor in
+                        // this Y-up frame, and the stage hid every shadow.
+                        let model = place(rb.flags_52, rb.world_pos) * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
                     Err(e) => log::warn!("battle ground shadow upload: {e:#}"),
