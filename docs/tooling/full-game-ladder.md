@@ -620,7 +620,7 @@ one level down from the tier that failed:
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
 | `reach flag(s) 0x.. never set` | The target scene was reached but the beat that separates the milestones did not play. |
 | `battle unresolved ...: action SM ctx[7]=0x.. <state> actor N` | The battle action state machine (retail `FUN_801E295C`) sat in that state for the whole budget. |
-| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round. Equipment changes only on a boss retry (`pad (retried with element-N guards)`, see [the boss section](#a-boss-the-anchors-party-cannot-outlast)). |
+| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round. Equipment changes only on a boss retry (`pad (attempt N, element-E guards)`, see [the boss section](#a-boss-the-anchors-party-cannot-outlast)). |
 | `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands, through the scene's teleports and object doors; a pad hop then tries a crossing scene. |
 | `pad walk stalled at tile ..` | A path existed and the follower stopped making progress on it. |
 | `PANIC: ...` | An engine panic, caught per segment. |
@@ -705,18 +705,29 @@ biggest-hit-seen larger than a member's whole HP when it sizes "in danger":
 holding everyone near full against a hit no heal outlasts had the guarded
 hand spending most turns on items.
 
-The segment stays fragile. Guarded, the hand beats Songi on the default
-stream and on 5 of seeds 1..10, and clears the segment at the pad tier on
-the default stream and 3 of them. The losses are the cannon phase: Songi
-(SPD 196) usually acts ahead of the party (about 161), so a heal committed
-in a round lands after that round's cannon. Raising the heal line to four
-fifths of max HP, or handing out the Wonder Elixir (whose SPD share moves a
-member ahead of Songi) in place of the Power Elixir, each win on some seeds
-and lose the default stream. One more stall on a re-dealt stream sits in
-the overworld: a `map01` random battle that ends after a few ticks while the
-walk steps onto the `dolk2` portal leaves the party at (54, 72), outside the
-walk component that reaches `jou`.
-The retry is reported as `pad (retried with element-N guards)`. The Jette
+Guarded, the hand still beats Songi only about half the time. The losses
+are the cannon phase: below half HP Songi arms its party-wide cast
+(`monster_ai`'s `0xB3` arm, on a physical-strike turn) and every turn after
+is that cast, about 1300 a member unguarded; Songi (SPD 196) usually acts
+ahead of the party (about 161), so a heal committed in a round lands after
+that round's cannon. Raising the heal line to four fifths of max HP, or
+handing out the Wonder Elixir (whose SPD share moves a member ahead of
+Songi) in place of the Power Elixir, each win on some streams and lose
+others. So a wipe after the guard retry, or a wipe with no boss element to
+guard, is reloaded again with a fresh hand - the rand stream advanced by an
+amount keyed on the attempt, standing in for the time a player spends on the
+game-over and card screens - up to `PAD_WIPE_ATTEMPTS` attempts in all. The
+anchor itself points the same way: the playthrough's play-time counter
+advances about five hours between `PRO-04` (`noaru`) and `PRO-10`
+(`jouind`), over which the party's HP nearly doubles.
+
+The pad heal outside battle re-enters the Items screen while the party is
+still below its line: a use's result closes the screen back to the root
+menu, and a hand that stopped there walked on with one member healed and
+another at 1% of its HP into the `jouina` encounter that wiped it.
+
+A retry is reported as `pad (attempt N, element-E guards)`, or `pad (attempt N)`
+when there was no element to guard. The Jette
 fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
 50000 HP boss the unguarded hand loses at about half its HP, and wins once
 guarded.
