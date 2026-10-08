@@ -293,6 +293,7 @@ mod battle_items_magic;
 mod battle_loot_use_item;
 mod battle_loss_window;
 mod battle_outcome_flag;
+mod battle_party_hp_seed;
 mod battle_queue_gates;
 mod battle_rot_gate;
 mod battle_special_ai;

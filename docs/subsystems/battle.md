@@ -4446,6 +4446,16 @@ equipment byte - `+0x199`, through the `0x80084140` display alias as
 byte for byte, and a fourth character (Terra is `char_id` 4) lands on the
 `-` entry.
 
+The same init seats every member's HP and MP from its **character record**,
+never from a field actor: per present-party id `n = DAT_8007BD10[slot]` it
+reads record `0x80084140 + (n - 1) * 0x414` and stores `+0x6CE` into the
+live HP `+0x14C` and the bar cursor `+0x172`, `+0x6CC` into the max HP
+`+0x14E`, `+0x6D2` into the MP `+0x150` and `+0x174`, and `+0x6D0` into the
+max MP `+0x152` (`0x80053D8C..0x80053E58`). The port's party band is the
+field actor table, which a scene script can blank (`opurud` resets slots
+1 / 2), so its battle entry re-seats the three values off the roster
+(`World::seed_party_battle_hp_from_records`).
+
 Port: `engine-core::battle_hud` carries the rule as predicates
 (`battle_panels_visible`, `battle_readout_bar_slot`,
 `battle_begin_tab_visible`, `battle_ring_ap_plate_value`,
