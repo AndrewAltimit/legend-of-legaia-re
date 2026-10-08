@@ -53,8 +53,8 @@ sha2.workspace = true
 # dir for the remembered disc path, and a native file picker. rfd's Linux
 # backend here is the xdg-desktop-portal (D-Bus, no GTK link), which keeps the
 # zig-cross x86_64 Linux release build free of a GTK sysroot.
-dirs = "6"
-rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+dirs.workspace = true
+rfd.workspace = true
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.

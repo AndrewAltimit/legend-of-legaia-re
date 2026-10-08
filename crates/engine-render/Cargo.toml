@@ -18,10 +18,10 @@ legaia-engine-vm.workspace = true
 legaia-font.workspace = true
 legaia-tim.workspace = true
 log.workspace = true
-pollster = "0.4"
+pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-wgpu = "26"
+wgpu.workspace = true
 winit.workspace = true
 
 [dev-dependencies]
