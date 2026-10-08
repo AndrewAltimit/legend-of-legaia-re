@@ -7,7 +7,9 @@ as a portable PPF 3.0 patch and/or a patched `.bin` copy for local play.
 
 That machinery lives in [`legaia-disc-patch`](../disc-patch/README.md)
 (`disc`, `ppf`, `space_ledger`), which this crate re-exports at the old
-paths. Four patching families share that machinery:
+paths. Four patching families share that machinery (the translation
+pipeline itself is [`legaia-translate`](../translate/README.md), re-exported
+as `translation`):
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,

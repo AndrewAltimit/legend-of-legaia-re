@@ -22,7 +22,7 @@ reference:
 | [`ui-strings.md`](ui-strings.md) | The overlay `ui_menu` pools, strict pools, `system_text`, and the battle command chips. |
 | [`textures-and-fonts.md`](textures-and-fonts.md) | Text baked into textures, and the scope of a font patch. |
 
-Implementation: [`crates/patcher/src/translation/`](../../../crates/patcher/src/translation/)
+Implementation: [`crates/translate/src/translation/`](../../../crates/translate/src/translation/)
 (the module docs cover the internals). Writes go through
 [`legaia_patcher::disc::DiscPatcher`](../randomizer.md): every touched sector's
 EDC/ECC is re-encoded. No LBA moves unless you opt into the whole-sector

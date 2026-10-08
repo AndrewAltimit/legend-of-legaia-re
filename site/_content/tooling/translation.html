@@ -12,7 +12,7 @@
     <dt>Not covered</dt><dd>Text baked into textures; non-Latin scripts. Accented Latin draws with the accent font (<code>accents: font</code>).</dd>
     <dt>The one rule</dt><dd>Every edit is same-size in place unless you opt into the relayout. Each line has a byte <em>budget</em>; a line over budget is reported and left English - except a name, which moves (or, for a monster, grows its record) when there is room.</dd>
     <dt>Sharing</dt><dd>A pack is safe to publish once its <code>source:</code> text is stripped - what remains is your text keyed by disc coordinates.</dd>
-    <dt>Code</dt><dd><code>crates/patcher/src/translation/</code>; writes go through <code>DiscPatcher</code> (EDC/ECC re-encoded, no LBA moves).</dd>
+    <dt>Code</dt><dd><code>crates/translate/src/translation/</code>; writes go through <code>DiscPatcher</code> (EDC/ECC re-encoded, no LBA moves).</dd>
     <dt>Own another disc?</dt><dd>An official European disc's text, or a fan-translated disc's, can be <a href="#official-pal">lifted onto the USA disc</a> from your own two discs.</dd>
   </dl>
 </section>
@@ -253,7 +253,7 @@ sections:
   <table>
     <thead><tr><th>Component</th><th>Where</th><th>What it proves</th></tr></thead>
     <tbody>
-      <tr><td>Exporter / importer</td><td><code>crates/patcher/src/translation/{export,import}.rs</code></td><td>Same-size writes, source check, per-scene rollback, two-phase ordering.</td></tr>
+      <tr><td>Exporter / importer</td><td><code>crates/translate/src/translation/{export,import}.rs</code></td><td>Same-size writes, source check, per-scene rollback, two-phase ordering.</td></tr>
       <tr><td>Markup codec</td><td><code>translation/markup.rs</code></td><td>Byte-exact decode&harr;encode; per-character encodability errors.</td></tr>
       <tr><td>Carrier gate</td><td><code>translation/segments.rs</code> (<code>is_dialog_carrier</code>), test <code>translation_carrier_gate_real.rs</code></td><td>Binary banks and real carriers separate on the retail disc.</td></tr>
       <tr><td>Overlay UI pools</td><td><code>translation/ui.rs</code>, test <code>translation_ui_menu_real.rs</code></td><td>Menu / battle label windows at their disc coordinates.</td></tr>

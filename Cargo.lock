@@ -1748,6 +1748,7 @@ dependencies = [
  "legaia-prot",
  "legaia-tim",
  "legaia-tmd",
+ "legaia-translate",
  "legaia-vab",
  "legaia-xa",
  "libc",
@@ -1823,6 +1824,23 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-translate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "encoding_rs",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-disc-patch",
+ "legaia-font",
+ "legaia-lzs",
+ "legaia-prot",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]
