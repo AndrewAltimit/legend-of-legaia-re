@@ -1357,6 +1357,14 @@ body is reached by a **range** test rather than a compare - `slti v1, 0xaf`
 then `slti v1, 0xb3` at `0x801F8E88`/`0x801F8E90` - so ids `0xB0`, `0xB1` and
 `0xB2` share it.
 
+The `0x50` / `0xAE` split seats its clone at `3 + ctx[+1]`, a retail pool
+slot: retail seats monster `k` at `3 + k` whatever the party size. The engine
+compacts the monster row to `party_count + k`, so `World::apply_glare_divide_split`
+seats the clone right after the engine's seated monsters, bounded by the same
+five monster seats (`ctx[+1] < 5`). At the retail index a lone member's clones
+landed past the five-seat enemy row the target picker walks, and a fight
+against an untargetable clone never ended.
+
 #### PROT 0955 is a six-spell cell
 
 `0x801F92A4` is the one trampoline in the band that dispatches through a jump

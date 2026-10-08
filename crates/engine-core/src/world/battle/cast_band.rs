@@ -1928,3 +1928,43 @@ mod sweep_code_tests {
         assert_eq!(staged_target(1, SpellTarget::SelfOnly, vec![1]), 1);
     }
 }
+
+#[cfg(test)]
+mod divide_split_tests {
+    use super::*;
+
+    fn split() -> vm::cast_arm_ticks::GlareDivideSplit {
+        vm::cast_arm_ticks::GlareDivideSplit {
+            // Retail pool space: the second monster of any party.
+            clone_seat: vm::cast_module_ticks::FIRST_MONSTER_SEAT + 1,
+            clone_hp: 69,
+            saved_caster_target: 0,
+            weakened: None,
+        }
+    }
+
+    /// A lone party member's monster row starts at engine slot 1, so a
+    /// Divide clone takes slot 2 - inside the five-seat row the target picker
+    /// walks - and each later clone the next seat, up to retail's five.
+    #[test]
+    fn a_small_partys_divide_clone_lands_in_the_engine_row() {
+        let mut world = World::default();
+        world.enter_battle(1, 1);
+        world.actors[1].battle_monster_id = Some(7);
+        world.actors[1].battle.max_hp = 69;
+        world.actors[1].battle.hp = 69;
+        assert!(world.apply_glare_divide_split(1, &split()));
+        assert_eq!(world.actors[2].battle_monster_id, Some(7));
+        assert_eq!(world.actors[2].battle.hp, 69);
+        let (_, monsters) = world.battle_target_rows();
+        assert!(monsters[1].alive, "the clone is a targetable enemy seat");
+        for seat in 3..6 {
+            assert!(world.apply_glare_divide_split(1, &split()));
+            assert_eq!(world.actors[seat].battle_monster_id, Some(7));
+        }
+        assert!(
+            !world.apply_glare_divide_split(1, &split()),
+            "a sixth monster has no seat"
+        );
+    }
+}

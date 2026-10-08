@@ -2398,8 +2398,24 @@ impl World {
         use vm::cast_arm_ticks::{
             SPLIT_CLONE_ACTION, SPLIT_CLONE_CATEGORY, SPLIT_WEAK_AGL, SplitWeakened,
         };
-        let seat = split.clone_seat as usize;
-        if seat >= self.actors.len() || seat >= BATTLE_TABLE_SLOTS {
+        // `clone_seat` is a retail pool slot (`3 + ctx[+1]`): retail seats
+        // monster `k` at `3 + k` whatever the party size, and the engine
+        // compacts the monster row down to `party_count + k`
+        // (`formation_span`'s module docs). So the clone takes the seat right
+        // after the engine's seated monsters. Placing it at the retail index
+        // left a small party's clones past the five-seat enemy row the
+        // target picker walks (`World::battle_target_rows`): a lone Vahn on
+        // `map01` faced a Divide clone in slot 6 that no command could
+        // target, and the fight never ended. The bound is retail's own -
+        // `ctx[+1] < 5` on both sides.
+        let _ = split.clone_seat;
+        let pc = usize::from(self.party.party_count.clamp(1, 3));
+        let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
+        let seated = (pc..table)
+            .filter(|&s| self.actors[s].battle_monster_id.is_some())
+            .count();
+        let seat = pc + seated;
+        if seat >= table || seated >= 5 {
             return false;
         }
         let Some(src) = self.actors.get(caster_slot as usize).cloned() else {
