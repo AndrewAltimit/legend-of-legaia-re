@@ -126,7 +126,7 @@ impl InputState {
     /// query keeps working unchanged.
     ///
     /// `vsync_delta` is `DAT_1F800393` - the adaptive frame step
-    /// ([`crate::world::FrameClock::frame_step`]), not a constant `1`. That is what
+    /// (`legaia_engine_core::world::FrameClock::frame_step`), not a constant `1`. That is what
     /// keeps the auto-repeat rate wall-clock-constant across a cadence change.
     ///
     /// REPLACED-BY: [`Self::set_pad`], which runs the same pump's packed half
@@ -209,7 +209,7 @@ impl InputState {
     /// query reads false until the next [`Self::set_pad`]. This is the retail
     /// pad-latch clear (`_DAT_8007B880 = 0`) that mode transitions perform so
     /// the button that opened a mode is not also consumed as that mode's first
-    /// input - see [`crate::dance::dance_scene_stage`].
+    /// input - see `legaia_engine_core::dance::dance_scene_stage`.
     ///
     /// It deliberately leaves the retail pump and the held-duration timestamps
     /// alone: a held button stays held, it just stops looking newly pressed.

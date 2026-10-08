@@ -180,7 +180,7 @@ count word included.
 base**, the buffer holding `<scene>.MAP` at `+0` and `<scene>.PCH` at `+0x12000` - it is
 not a field-pack base, and nothing at `base + 0x60` is a schema slot. The constants and a
 `recover_base()` helper live in
-[`crates/engine-core/src/capture_observations.rs`](../../crates/engine-core/src/capture_observations.rs)
+[`crates/engine-system/src/capture_observations.rs`](../../crates/engine-system/src/capture_observations.rs)
 under `field_pack_load` (the module name predates this correction).
 
 | Save | CDNAME | scene `0x80084540` | `_DAT_8007B8D0` | Field-file scratch base |

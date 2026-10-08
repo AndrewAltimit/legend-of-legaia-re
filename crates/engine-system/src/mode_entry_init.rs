@@ -63,7 +63,7 @@ const TILE_CENTRE: i32 = 0x40;
 /// can enter a scene with no door operand, which retail never does - see
 /// `World::resolve_cold_field_spawn` and
 /// `docs/subsystems/field-locomotion.md#spawn-position-on-scene-entry`.
-/// [`crate::world::FIELD_COLD_SPAWN_XZ`] is the X/Z component.
+/// `legaia_engine_core::world::FIELD_COLD_SPAWN_XZ` is the X/Z component.
 pub const FIELD_COLD_SPAWN: (i16, i16, i16) = (0xA40, 0, 0xA40);
 
 /// How the field initialiser was entered - the field-entry mode global
@@ -169,7 +169,7 @@ fn tile_of(v: i32) -> i32 {
 /// WIRED, and the chain is: the `legaia-engine` binary
 /// (`commands/run.rs`, and the `play-window` redraw path) and
 /// `engine_shell::BootSession::…` (`boot.rs`) both call
-/// [`crate::scene::SceneHost::enter_field_scene`], which calls this to seat the
+/// `legaia_engine_core::scene::SceneHost::enter_field_scene`, which calls this to seat the
 /// player on a cold field entry. Every other kernel in this module is inert and
 /// says so individually - being in a live module is not itself evidence.
 pub fn field_spawn(
@@ -545,12 +545,12 @@ pub struct FieldDrawContext {
 /// PORT: FUN_801DE37C (`0x801de37c..0x801de3dc`)
 ///
 /// WIRED: through the camera's scene-entry reset
-/// ([`crate::camera::Camera::reset_globals_for_scene_entry`]), which both
+/// (`legaia_engine_core::camera::Camera::reset_globals_for_scene_entry`), which both
 /// hosts run on every field entry - the native window on the `SceneEntered`
 /// tick, the browser play page from `reset_for_scene_entry` after
 /// `enter_field_scene`. The consumer is [`Self::view_window`]: it seeds the
 /// camera's visible-tile window, which the focus edge clamp
-/// (`crate::camera_zone::clamp_focus`) widens the latched walk region by, and
+/// (`legaia_engine_core::camera_zone::clamp_focus`) widens the latched walk region by, and
 /// which field-VM op `0x46` and a camera-region record's mask-kind side-write
 /// then replace. Re-stamping it per entry is what stops one scene's scripted
 /// window leaking into the next.
@@ -625,7 +625,7 @@ pub struct DuelOverlayInit {
 ///
 /// PORT: FUN_801CF00C (`0x801cf00c..0x801cf384`).
 ///
-/// Read by the duel's 3D surface: `crate::baka_duel_scene::BakaDuelScene`
+/// Read by the duel's 3D surface: `legaia_engine_core::baka_duel_scene::BakaDuelScene`
 /// sizes the arena floor from `window_tiles` - the `0x1F8003F8` /
 /// `0x1F8003FA` pair the floor emitter `FUN_801CEB84` loops over - so the
 /// seed is live on both play hosts through `BakaDuelSurface::frame`. The

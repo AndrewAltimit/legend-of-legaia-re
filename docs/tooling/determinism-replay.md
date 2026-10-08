@@ -53,7 +53,7 @@ active_scene = "town01"
 ```
 
 Pad bits match
-[`legaia_engine_core::input::PadButton::mask`](../../crates/engine-core/src/input.rs):
+[`legaia_engine_core::input::PadButton::mask`](../../crates/engine-system/src/input.rs):
 Cross = `0x4000`, Circle = `0x2000`, Up = `0x0010`, Down = `0x0040`,
 Left = `0x0080`, Right = `0x0020`, etc. Stored as a plain `u16` so the
 on-disk wire form stays byte-readable.

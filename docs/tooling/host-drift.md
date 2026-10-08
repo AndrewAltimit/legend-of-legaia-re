@@ -329,7 +329,7 @@ and reachability of it is the [port catalog's](port-catalog.md) question.
 
 The three hosts share one keyboard layout, served out of the engine by
 `pad_bindings_json`
-([`legaia_engine_core::input::Mapping::web_default`](../../crates/engine-core/src/input.rs)),
+([`legaia_engine_core::input::Mapping::web_default`](../../crates/engine-system/src/input.rs)),
 and the whole point of serving it is that a page cannot write a second one
 down. A page that does write one down never looks like a table: it looks like
 a `switch` on `e.key`, or an object literal indexed by `e.key.toLowerCase()`.

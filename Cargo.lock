@@ -1351,6 +1351,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-effects",
  "legaia-engine-minigames",
+ "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
  "legaia-gamedata",
@@ -1490,6 +1491,22 @@ dependencies = [
  "tempfile",
  "toml",
  "winit",
+]
+
+[[package]]
+name = "legaia-engine-system"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-bytes",
+ "legaia-cheats",
+ "legaia-engine-battle",
+ "legaia-engine-vm",
+ "legaia-gamedata",
+ "legaia-save",
+ "serde",
+ "toml",
 ]
 
 [[package]]

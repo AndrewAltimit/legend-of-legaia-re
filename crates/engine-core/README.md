@@ -492,9 +492,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
 
 ## Smaller modules worth knowing
 
-- `music_labels` - resolves a global BGM id / `music_01` bank slot to its
-  curated sound-test track label. See
-  [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md).
 - `world::ambient` - the scene-entry ambient move-VM effect tree
   (`spawn_ambient_record` fan-out, `step_ambient_fx` drain) and its two
   render-tail arms: the CLUT-cell HSV cycler (`clut_cell_fx`, mode 3) and
@@ -539,11 +536,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   slide-away programs run against (`MenuRuntime::tick` drives the edges,
   mirroring `FUN_801DAFD4`). See
   [`docs/formats/window-script.md`](../../docs/formats/window-script.md).
-- `mode_entry_init` - the one-time **mode-entry initialisers**: the field /
-  town scene init (`FUN_801D6704` - step order, BGM slot resolve, primitive
-  buffer sizing, and the cold/warp player seat `SceneHost::enter_field_scene`
-  applies) plus the duel-arena overlay seeds (`FUN_801CF00C`). See
-  [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224---the-slotasset-mapping).
 - `field_regions::window_rebuild_spawns_resident` - the sub-area **window
   rebuild** placed-object sweep (`FUN_801D7B50`), complement of the
   scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
@@ -596,8 +588,7 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
   CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; the battle
   actor tick in `world::actors` drains them into the SFX ring.
-- `input::Mapping`, `scene::DefaultMapIdResolver` - host-agnostic input
-  binding and scene-name → map-id resolution. (Effect lookup,
+- `scene::DefaultMapIdResolver` - scene-name → map-id resolution. (Effect lookup,
   `EffectCatalog`, is `legaia_engine_vm::effect_vm`'s; the scene host loads
   it from `efect.dat`.)
 
@@ -668,8 +659,7 @@ docs carry the retail provenance.
   `field_save_screen_actor`, `scene_transition_actor` (the transition
   streaming actor), `cutscene_script_elements`.
 - **Cutscene + movie** - `cutscene_narration` (subtitle roller),
-  `cutscene_caption`, `movie_audio` (what a movie does to the score),
-  `mdec_dma_sync`.
+  `cutscene_caption`.
 - **Overworld** - `overworld_curvature`, `overworld_draw_order`,
   `overworld_ground_cue`, `world_map_markers` (not retail: marker quads),
   `world_map_sky` (which frames draw the sky band).
@@ -688,13 +678,17 @@ docs carry the retail provenance.
   `muscle_ringside`, `other_game_overlay` (PROT 0977 kernels),
   `casino_coin_bank` (op `4C E5`).
 - **Scene loading + session** - `scene_assets`, `scene_bundle`,
-  `scene_live` (a headless live scene preview for viewers), `scene_name_sync`,
-  `resume` (where a load resumes and a New Game starts), `chunk_install`
-  (sound-stream chunk routing), `encounter_registry`, `sound_state`,
-  `fade_ramp`, `retail_pad` (`FUN_8001822c`), `scus_leaf_kernels`.
-- **Cheats + capture pins** - `cheats` (the play hosts' cheat mutations),
-  `cheat_applier` + `ram_map` (parsed GameShark codes → engine cells),
-  `capture_observations` (codified save-state findings).
+  `scene_live` (a headless live scene preview for viewers),
+  `resume` (where a load resumes and a New Game starts),
+  `encounter_registry`, `scus_leaf_kernels`.
+- **Cheats** - `cheats` (the play hosts' cheat mutations) and
+  `cheat_applier` (parsed GameShark codes → engine cells, over
+  `engine-system`'s `ram_map`).
+- **Runtime system** - `input`, `retail_pad`, `chunk_install`,
+  `mdec_dma_sync`, `cutscene`, `movie_audio`, `sound_state`, `music_labels`,
+  `fade` / `fade_ramp` / `pause_wipe`, `mode_entry_init`, `scene_name_sync`,
+  `ram_map`, `capture_observations` and `draw_census` are re-exported from
+  [`legaia-engine-system`](../engine-system/README.md).
 
 ## See also
 

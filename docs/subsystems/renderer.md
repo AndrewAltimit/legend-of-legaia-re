@@ -1989,7 +1989,7 @@ the shaders blend toward the far term in retail's order - DPCS runs on the packe
 the GPU texel multiply, so a textured prim's far term is `texel * far / 128` and an untextured
 prim pulls to the far colour directly. Driven by
 [`World::scene_depth_cue`](../../crates/engine-core/src/world/narration.rs) on the same prologue
-gate ([`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) has the calibration); cleared
+gate ([`fade::DepthCueRamp`](../../crates/engine-system/src/fade.rs) has the calibration); cleared
 (`clear_depth_cue_ramp`) on every other scene, where the ramp-off path is pixel-identical to the
 pre-ramp render. See
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the calibration

@@ -43,7 +43,7 @@
 --                    +0x13D ids + +0x161 levels) - a count bump = a Seru
 --                    capture grant; a level byte bump = a spell level-up.
 --                    Offsets are the capture-pinned ones in
---                    crates/engine-core/src/capture_observations/seru_capture.rs
+--                    crates/engine-system/src/capture_observations/seru_capture.rs
 --   xp               per-roster-slot cumulative XP (record +0x0, u32) - the
 --                    per-battle grant that the level byte only shows at a
 --                    threshold; validates the loot/flee-EXP formulas live

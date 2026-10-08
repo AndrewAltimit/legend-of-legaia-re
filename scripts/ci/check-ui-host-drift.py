@@ -2382,11 +2382,11 @@ KEY_SET_LITERAL_RE = re.compile(r"\.(?:has|includes)\(\s*['\"]([^'\"]+)['\"]\s*\
 def bindable_dom_codes() -> set[str]:
     """The `KeyboardEvent.code`s the engine's own vocabulary binds.
 
-    Parsed from `KEY_NAME_DOM_CODES` in `crates/engine-core/src/input.rs` rather
+    Parsed from `KEY_NAME_DOM_CODES` in `crates/engine-system/src/input.rs` rather
     than restated here, so this gate cannot drift from the table it polices.
     An unreadable table yields an empty set, which disables only this detector.
     """
-    src = REPO / "crates" / "engine-core" / "src" / "input.rs"
+    src = REPO / "crates" / "engine-system" / "src" / "input.rs"
     if not src.is_file():
         return set()
     text = src.read_text(encoding="utf-8", errors="replace")
@@ -2543,6 +2543,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-core",
     REPO / "crates" / "engine-minigames",
     REPO / "crates" / "engine-effects",
+    REPO / "crates" / "engine-system",
     REPO / "crates" / "engine-ui",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "engine-battle-vm",
@@ -3388,6 +3389,7 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
     REPO / "crates" / "engine-minigames" / "src",
     REPO / "crates" / "engine-effects" / "src",
+    REPO / "crates" / "engine-system" / "src",
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-battle-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
@@ -4145,6 +4147,7 @@ ENGINE_API_CRATES = (
     "engine-core",
     "engine-battle",
     "engine-effects",
+    "engine-system",
     "engine-minigames",
     "engine-vm",
     "engine-battle-vm",

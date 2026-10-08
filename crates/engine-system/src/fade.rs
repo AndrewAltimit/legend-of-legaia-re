@@ -340,7 +340,7 @@ pub fn summon_template(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) 
 ///
 /// The hosts reproduce both in the renderer's palette mode
 /// (`engine-render` `palette_law_word` / `prologue_sepia_word`, and the
-/// page's twins), keyed on [`crate::World::scene_color_grade`]. The ratio
+/// page's twins), keyed on `legaia_engine_core::World::scene_color_grade`. The ratio
 /// the older GP0 measurement read off the draw list (`255:240:110`) is the
 /// same curve's `G/R` and `B/R`; the multiply below is what a host without
 /// palette mode draws.
@@ -463,7 +463,7 @@ impl DepthCueRamp {
 ///   `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - but the word
 ///   is **not** a frame fade: its one reader disc-wide is the fog particle
 ///   update `FUN_8003F3FC`, so it fades the fog sheets in and nothing else
-///   ([`crate::World::scene_screen_tint`]).
+///   (`legaia_engine_core::World::scene_screen_tint`).
 /// - **Op `0x34` sub-0** (7-byte `[34, op0, r, g, b, ramp_lo, ramp_hi]`,
 ///   `FUN_801E1FB0`): the effect-layer global colour, neutral `0xFF`. The
 ///   opening timeline ramps it in the crawl gaps (`34 05 00 00 00 D2 00` =
@@ -548,7 +548,7 @@ pub const PROLOGUE_LIT_AMBIENT: u8 = 0x20;
 /// [`PROLOGUE_LIT_AMBIENT`]. The baked rows keep their own words (the
 /// `4C E6` rewrite grades them in the renderer's palette mode). `lit` is the
 /// per-vertex mask from
-/// [`crate::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`],
+/// `legaia_engine_core::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`,
 /// parallel to `colors`.
 ///
 /// The mask is the point: a lit row and a baked word authored at exactly

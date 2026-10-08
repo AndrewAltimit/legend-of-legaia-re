@@ -317,9 +317,9 @@ pub mod str_fmv_overlay;
 /// so the pool currents land in the live-copy step alongside the maxima
 /// and live stats.
 ///
-/// The pinned byte deltas live in [`crate::levelup::observations`]:
-/// - [`crate::levelup::observations::noa_4_level_jump`]
-/// - [`crate::levelup::observations::gala_4_level_jump`]
+/// The pinned byte deltas live in `legaia_engine_core::levelup::observations`:
+/// - `legaia_engine_core::levelup::observations::noa_4_level_jump`
+/// - `legaia_engine_core::levelup::observations::gala_4_level_jump`
 ///
 /// **Per-character record bases** (verified across the captured corpus,
 /// stride `0x414`):
@@ -548,7 +548,7 @@ pub mod cutscene_trigger_corpus;
 /// Seru (Gimard) is an **immediate** grant - the spell appears at level 1
 /// in one step, with **no** capture-points accumulation visible in the
 /// record (contrast the optional points-threshold model the engine's
-/// [`crate::seru_learning`] approximates for Genocide-Crystal captures).
+/// `legaia_engine_core::seru_learning` approximates for Genocide-Crystal captures).
 ///
 /// **Real spell ids run high.** Gimard's spell id `0x81` sits far above the
 /// port-side [`crate::spells::SpellCatalog::vanilla`] id range

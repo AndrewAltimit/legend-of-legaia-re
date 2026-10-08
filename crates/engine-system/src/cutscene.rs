@@ -77,7 +77,7 @@
 /// (`MV1A.STR` / `MOV15.STR` / `MOV.STR`) absent from the retail
 /// disc.
 ///
-/// Engines that drain a [`crate::field_events::FieldEvent::FmvTrigger`]
+/// Engines that drain a `legaia_engine_core::field_events::FieldEvent::FmvTrigger`
 /// event use this helper to resolve the operand to a path that their
 /// disc handle can open; ids `2..=5` all resolve to `MV3.STR` (the
 /// four frame-range segments - the segment window itself comes from
@@ -436,7 +436,7 @@ pub const FMV_STATE_SLOT_STRIDE: u32 = 0x20;
 /// REF: FUN_801D629C
 ///
 /// The free-slot stack of the field fog-particle pool
-/// ([`crate::fog_particles::FogPool`]): the fog spawner `FUN_801D629C` pops
+/// (`legaia_engine_core::fog_particles::FogPool`): the fog spawner `FUN_801D629C` pops
 /// a record index off it (`0x801D648C`), and the per-frame particle update
 /// `FUN_8003F3FC` pushes a dead record's index back (`0x8003F800`). `count`
 /// is the signed halfword at the pool's `+0` - the index of the top entry -
@@ -456,7 +456,7 @@ pub const FMV_STATE_SLOT_STRIDE: u32 = 0x20;
 ///
 /// Returns `None` for the retail `-1`.
 ///
-/// WIRED: [`crate::fog_particles::FogPool::spawn`] on both hosts, through
+/// WIRED: `legaia_engine_core::fog_particles::FogPool::spawn` on both hosts, through
 /// `World::tick_cutscene_elements`.
 pub fn sprite_stack_pop(count: &mut i16, table: &[i16]) -> Option<i16> {
     if *count < 0 {
@@ -475,7 +475,7 @@ pub fn sprite_stack_pop(count: &mut i16, table: &[i16]) -> Option<i16> {
 /// `0x8001FA84`). No bound check in retail; the port drops a push past the
 /// table's end.
 ///
-/// WIRED: [`crate::fog_particles::FogPool::render_step`] returns a dead
+/// WIRED: `legaia_engine_core::fog_particles::FogPool::render_step` returns a dead
 /// record's slot through this, on both hosts.
 pub fn sprite_stack_push(count: &mut i16, table: &mut [i16], value: i16) {
     *count = count.wrapping_add(1);

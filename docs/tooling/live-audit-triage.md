@@ -306,10 +306,10 @@ was written - find the symbol by name, not by line.
 
 | addr | symbol | site | verdict |
 |---|---|---|---|
-| `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
-| `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
+| `8001d7f8` | `sync_scene_name` | `crates/engine-system/src/scene_name_sync.rs:73` | DISCLOSE |
+| `8001e54c` | `install_chunks` | `crates/engine-system/src/chunk_install.rs` | WIRED |
 | `80021b04` | `from_model_sel` | `crates/engine-effects/src/summon.rs:236` | FALSE INERT |
-| `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
+| `80024e80` | `spawn_fade` | `crates/engine-system/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs:270` | FALSE INERT |
@@ -318,7 +318,7 @@ was written - find the symbol by name, not by line.
 | `8003ec70` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
 | `8003ec70` | `load_overlay_b` | `crates/engine-core/src/overlay_loader.rs:212` | DISCLOSE |
 | `800520f0` | `battle_stage_overlay_entry` | `crates/engine-core/src/overlay_loader.rs:135` | DISCLOSE |
-| `801cea3c` | `fmv_post_play_handoff` | `crates/engine-core/src/cutscene.rs:205` | WIRE |
+| `801cea3c` | `fmv_post_play_handoff` | `crates/engine-system/src/cutscene.rs:205` | WIRE |
 | `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs:172` | WIRE |
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
@@ -1997,7 +1997,7 @@ the new-press word's bit `0x800`: R1 held plus Start pressed. A second arm
 (`_DAT_8007B83C == 3` and held mask exactly `0x900`) calls
 `FUN_80026740(0x8007056C)` and clears both the mode word and this flag.
 
-So the channel is a **debug pause**, and `crates/engine-core/src/retail_pad.rs`
+So the channel is a **debug pause**, and `crates/engine-system/src/retail_pad.rs`
 already says so about the same tail. The verdict stays `DISCLOSE`, but the
 prerequisite it names changes from "a frame-time sampler" to "the port's own
 debug surface" - the tag on `World::clock.frame_begin_skip` now carries the three

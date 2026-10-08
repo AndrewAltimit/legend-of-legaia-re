@@ -5179,7 +5179,7 @@ A pre/post encounter save pair (one frame walking the `map01` field scene; the n
 
 The active scene-name table at `0x80084540` (CDNAME label + scene index) is **identical** between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out. Engines that drive the field-to-battle transition therefore preserve the active-scene state and only resolve the formation + battle overlay.
 
-Codified as constants in [`crates/engine-core::capture_observations::encounter_trigger`](../../crates/engine-core/src/capture_observations.rs); a disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`encounter_trigger_diff_loads_battle_overlay`) exercises the real save bytes.
+Codified as constants in [`crates/engine-core::capture_observations::encounter_trigger`](../../crates/engine-system/src/capture_observations.rs); a disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`encounter_trigger_diff_loads_battle_overlay`) exercises the real save bytes.
 
 ## Battle scene-init residency window
 
@@ -5208,7 +5208,7 @@ generate without manual frame-stepping (mednafen 1.29 has no headless
 mode).
 
 Codified as constants in
-[`engine_core::capture_observations::battle_init_overlay`](../../crates/engine-core/src/capture_observations.rs);
+[`engine_core::capture_observations::battle_init_overlay`](../../crates/engine-system/src/capture_observations.rs);
 disc-gated test
 `battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring`
 in `crates/mednafen/tests/real_saves.rs`.
@@ -5232,7 +5232,7 @@ the Fire Book-specific writer to the displayed-skills array at
 is required to lift that writer.
 
 Codified as constants in
-[`engine_core::capture_observations::item_use_battle_event`](../../crates/engine-core/src/capture_observations.rs);
+[`engine_core::capture_observations::item_use_battle_event`](../../crates/engine-system/src/capture_observations.rs);
 disc-gated test
 `item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift`
 in `crates/mednafen/tests/real_saves.rs`.

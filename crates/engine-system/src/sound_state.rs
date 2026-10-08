@@ -1,7 +1,7 @@
 //! Global sound-system state the frame-begin driver services.
 //!
 //! `FUN_8001698C` (the frame-begin driver - see
-//! [`crate::world::World::take_frame_begin_skip`] and
+//! `legaia_engine_core::world::World::take_frame_begin_skip` and
 //! `legaia_engine_audio::sfx_ring`) calls two small SCUS kernels every frame
 //! before anything else in the frame runs. Both are ported here.
 //!

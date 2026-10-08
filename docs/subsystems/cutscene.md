@@ -1412,7 +1412,7 @@ which folds it into each sheet's colour. Every other site is the op's own store 
 `retona_field_card_boot` state agrees: caught mid-arrival with the word at `27`, its frame shows
 the cave at full brightness and only the fog sheets dim. So the arrival arm fades the fog in, and
 neither host multiplies the frame by it. Engine model:
-[`fade::SceneTintRamp`](../../crates/engine-core/src/fade.rs) (normalized, `1.0` = neutral) in
+[`fade::SceneTintRamp`](../../crates/engine-system/src/fade.rs) (normalized, `1.0` = neutral) in
 `World::presentation.tint`, stepped per `World::tick`, read by `World::fog_render_step` (and by
 the non-retail volumetric fog, so the two fade together). It persists across scene changes. New
 Game arms the handshake (`World::begin_new_game` sets sysflag `0x52F`), and the engine runs the
@@ -1639,7 +1639,7 @@ beat: the ground lands **identically** at `G/R 0.890` / `B/R 0.46..0.48` on both
 `scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the gate.
 
 The superseded engine approximations are retained as dormant plumbing: `apply_grade`'s pixel
-multiply and the [`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) view-depth ramp
+multiply and the [`fade::DepthCueRamp`](../../crates/engine-system/src/fade.rs) view-depth ramp
 (`Renderer::set_depth_cue_ramp`) still exist and are staged by the host, but the palette mode
 bypasses both while active.
 

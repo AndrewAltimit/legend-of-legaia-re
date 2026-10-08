@@ -30,7 +30,7 @@
 //!
 //! Every countdown decrements by `DAT_1F800393`, the scratchpad vsync delta, so
 //! the ramp is cadence-invariant. Unlike the overlay sibling `FUN_801DDC20`
-//! (ported as `crate::field_actor_kernels::step_colour_tween`), which lerps off
+//! (ported as `legaia_engine_core::field_actor_kernels::step_colour_tween`), which lerps off
 //! the install-time endpoints each frame, this one **accumulates** and clamps:
 //!
 //! * while the start delay is still positive nothing is drawn;
@@ -79,7 +79,7 @@
 // engine draws the overlay from its own draw list, so the port stops at the
 // descriptor.
 // REF: FUN_801DDC20 - the overlay-resident sibling ramp (a lerp, not an
-// accumulator), ported as `crate::field_actor_kernels::step_colour_tween`.
+// accumulator), ported as `legaia_engine_core::field_actor_kernels::step_colour_tween`.
 
 /// The two latched outcomes the step raises on the owning actor.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
