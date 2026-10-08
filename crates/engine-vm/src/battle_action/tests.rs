@@ -2388,6 +2388,27 @@ fn cast_census_latches_the_sole_survivor_targets() {
     assert_eq!(ctx.item_target_b, 5, "monster slot 5, stored 0-based");
 }
 
+/// The census walks retail numbering (party `0..3`, monsters from `3`), so
+/// a solo party's monsters - seated by the engine right behind it at slot
+/// `1` - are not counted as party members. Read in engine order, Vahn alone
+/// against a Gobu Gobu read two living "party" seats, the sole-party latch
+/// never held, an all-allies cast kept its group code `8` and the cast-begin
+/// arm turned him onto his own centroid (`evolved_0x91_midcast`).
+#[test]
+fn cast_census_maps_a_solo_party_into_retail_numbering() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    host.party_count = 1;
+    for (i, a) in host.actors.iter_mut().enumerate() {
+        a.liveness = u16::from(i <= 1);
+    }
+    crate::battle_action::tick_cast_census(&host, &mut ctx);
+    assert_eq!(ctx.item_target_a, 1, "Vahn, the sole party seat, 1-based");
+    assert_eq!(
+        ctx.item_target_b, 1,
+        "the sole monster, retail slot 3, is engine seat 1"
+    );
+}
+
 #[test]
 fn hp_bar_drain_monster_target_never_pends() {
     // FUN_801E7250's `2 < bVar1` early-out: monster targets (3..=7)

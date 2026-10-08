@@ -1769,10 +1769,16 @@ pub fn run_engine_battle(
                 if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
                     let w = &session.host.world;
                     eprintln!(
-                        "[cast] t={t} st=0x{:02X} act={} yb={:?} cam={:?}",
+                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} cam={:?}",
                         w.battle_ctx.action_state,
                         w.battle_ctx.active_actor,
                         w.battle.camera.as_ref().map(|c| c.action_yaw_base()),
+                        w.battle.camera.as_ref().map(|c| c.close_up_accum()),
+                        w.actors
+                            .iter()
+                            .take(8)
+                            .map(|a| a.battle.facing_angle & 0xFFF)
+                            .collect::<Vec<_>>(),
                         w.battle
                             .camera
                             .as_ref()

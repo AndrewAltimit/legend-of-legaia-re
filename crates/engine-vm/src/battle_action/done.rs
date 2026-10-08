@@ -221,9 +221,25 @@ pub fn tick_hp_bars<H: BattleActionHost + ?Sized>(host: &mut H) {
 pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut BattleActionCtx) {
     use crate::battle_cast_census::{CENSUS_SLOTS, CensusSlot, cast_census};
 
+    // Retail walks the actor table in its own numbering - party `0..3`,
+    // monsters from `3` - and the census's `i < 3` tests mean "a party
+    // seat". The engine seats monsters right behind the party, so the walk
+    // is assembled in retail numbering the way the cast-begin group aim is
+    // (`magic::face_cast_target`); read in engine order, a solo party's
+    // first monster counted as a second party member and the sole-party
+    // latch never held.
+    let party_count = host.party_count();
+    let engine_slot = |retail: u8| -> Option<u8> {
+        use crate::battle_cue_group::MONSTER_SLOT_FIRST;
+        if retail < MONSTER_SLOT_FIRST {
+            (retail < party_count).then_some(retail)
+        } else {
+            Some(party_count + (retail - MONSTER_SLOT_FIRST))
+        }
+    };
     let mut slots = [CensusSlot::default(); CENSUS_SLOTS];
     for (i, s) in slots.iter_mut().enumerate() {
-        if let Some(a) = host.actor(i as u8) {
+        if let Some(a) = engine_slot(i as u8).and_then(|e| host.actor(e)) {
             *s = CensusSlot {
                 render_word: a.render_color,
                 current_anim: a.current_anim,
@@ -236,7 +252,12 @@ pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut Battle
     ctx.magic_exit_gate = census.anim_outstanding;
     ctx.magic_recovery_gate = census.effect_children;
     ctx.item_target_a = census.sole_party_target;
-    ctx.item_target_b = census.sole_monster_target;
+    // The monster latch is an actor-table index the retarget stores into
+    // `+0x1DD`, which the engine reads in its own seating.
+    ctx.item_target_b = match census.sole_monster_target {
+        0 => 0,
+        r => engine_slot(r).unwrap_or(0),
+    };
 }
 
 /// The timer floor retail holds the Done band at while the menu flag
