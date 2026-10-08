@@ -111,26 +111,23 @@ fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
     }
 }
 
-/// Combine a note's channel-expression - channel volume (CC7) then channel
-/// pan (CC10) - over its channel-free base `(left, right)` (master × velocity
-/// × bank/program/tone vol, tone- and program-panned), then apply the
-/// sequencer path's final square taper. Both controllers are dynamic: a
-/// mid-note CC7 or CC10 recomputes the live voice volume from this same
-/// base, so successive changes don't compound.
-///
-/// PORT: FUN_80067550 (tail) - after every volume factor and pan stage,
-/// retail squares each side (`v * v / 0x3FFF`) on the sequencer path only
-/// (the SFX direct path, retail slot `0x21`, skips both the channel fold
-/// and the square). The taper maps the 14-bit domain onto itself - full
-/// scale stays 0x3FFF, half scale lands at a quarter - so it must sit
-/// after the channel fold, not in the key-on base.
-fn channel_mix(base: (i16, i16), volume: u8, pan: u8) -> (i16, i16) {
-    let v = volume.min(127) as i32;
-    let left = (base.0 as i32 * v / 127) as i16;
-    let right = (base.1 as i32 * v / 127) as i16;
-    let (l, r) = apply_channel_pan(left, right, pan);
+/// The sequencer-path tail of `FUN_80067550` over a head
+/// [`VabBank::seq_note_volume`] already carried through the sequence volume
+/// and the tone and program pans: the channel pan (the staged `0x801CE34D`),
+/// then the square taper `v * v / 0x3FFF` per side. Retail's SFX path (owner
+/// `0x21`) skips the taper; this is the sequencer's.
+fn channel_tail(head: (i16, i16), pan: u8) -> (i16, i16) {
+    let (l, r) = apply_channel_pan(head.0, head.1, pan);
     let sq = |v: i16| ((v as i32 * v as i32) / 0x3FFF) as i16;
     (sq(l), sq(r))
+}
+
+/// Channel volume (CC7) folded into a note's velocity the way libsnd does
+/// it at note-on: `FUN_80066308` stages `vel * chvol / 127` (the channel
+/// record's `+0x60 + ch * 2` halfword, signed `/0x7F` magic at
+/// `0x800663E4..0x80066428`) as the velocity the volume chain then reads.
+fn effective_velocity(velocity: u8, channel_volume: u8) -> u8 {
+    (velocity as i32 * channel_volume.min(127) as i32 / 127) as u8
 }
 
 /// Per-channel state carried across events.
@@ -178,12 +175,13 @@ struct ActiveNote {
     /// captured at NoteOn so a later `0xEn` event scales by the note's own
     /// range (a `(0, 0)` tone never bends).
     bend_range: (u8, u8),
-    /// The voice's channel-free `(left, right)` volume: master × velocity ×
-    /// tone vol, tone-panned, with NO channel volume (CC7) or channel pan
-    /// (CC10) applied. A later CC7/CC10 re-derives the live voice volume from
-    /// this base via [`channel_mix`] so successive changes don't compound,
-    /// mirroring `base_pitch` for bend.
-    base_vol: (i16, i16),
+    /// The note's raw velocity, program and layer tone: a CC7 or CC10
+    /// re-derives the voice volume from these through the whole retail chain
+    /// ([`Sequencer::note_volume`]), as libsnd's re-key does, rather than
+    /// rescaling an already-rounded value.
+    velocity: u8,
+    program: usize,
+    tone: usize,
     /// The voice's [`crate::spu::voice::Voice::key_on_count`] right after
     /// this note keyed it. A different count means an SFX cue re-keyed the
     /// voice under the note; the note then no longer owns it. For a note
@@ -206,6 +204,14 @@ struct PendingKey {
     program: usize,
     tone: usize,
 }
+
+/// The sequence volume the game gives every BGM sequence: `FUN_8002614C`
+/// passes its argument to `FUN_80064890` (`SsSeqSetVol`, both sides) for each
+/// sound-source record, and its callers pass `(DAT_8007B6EC << 15) >> 16` -
+/// `215` in 90 of the 98 catalogued states, so `107`. The mednafen library's
+/// field and battle states read `107` in the playing sequence's `+0x58` /
+/// `+0x5A`.
+pub const RETAIL_BGM_SEQ_VOL: u8 = 107;
 
 /// SPU samples between two retail key-on flushes: libsnd's `SsSeqCalc` runs
 /// once per vsync, processes every event due, then flushes the staged
@@ -339,7 +345,10 @@ impl Sequencer {
         }
     }
 
-    /// Set the master sequencer volume (libsnd `SsSeqSetVol`). 0..=127.
+    /// Set the sequence volume (libsnd `SsSeqSetVol`, the channel record's
+    /// `+0x58`/`+0x5A`), 0..=127: folded in per side after the key-on head
+    /// chain ([`channel_mix`]). The game's BGM records run at
+    /// [`RETAIL_BGM_SEQ_VOL`].
     pub fn set_master_vol(&mut self, v: u8) {
         self.master_vol = v.min(127);
     }
@@ -862,7 +871,9 @@ impl Sequencer {
             voice,
             base_pitch: 0x1000,
             bend_range: self.bank.pitch_bend_range_at(program, tone),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity,
+            program,
+            tone,
             key_on_stamp,
             pending: Some(id),
         });
@@ -898,7 +909,7 @@ impl Sequencer {
             // are applied afterward as dynamic channel-expression
             // (`channel_mix`) so a mid-note CC7/CC10 can re-derive the voice
             // volume from the same base.
-            let combined = ((self.master_vol as u32 * p.velocity as u32) / 127).min(127) as u8;
+            let combined = p.velocity;
             if !self
                 .bank
                 .play_note_layer(spu, voice, p.program, p.tone, p.key, combined)
@@ -917,25 +928,17 @@ impl Sequencer {
                 let (down, up) = bend_range;
                 v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
             }
-            // The layer left the voice at master × velocity × bank/program/
-            // tone vol, tone- and program-panned, with NO channel volume/pan
-            // and NO square taper; capture that as the channel-free base,
-            // then fold in the channel's current CC7 volume + CC10 pan (and
-            // the taper) via channel_mix. A later CC7/CC10 re-derives from
-            // this same base.
-            let base_vol = spu
-                .voices
-                .get(voice)
-                .map(|v| (v.vol_left, v.vol_right))
-                .unwrap_or((0x3FFF, 0x3FFF));
-            if let Some(v) = spu.voices.get_mut(voice) {
-                let (l, r) = channel_mix(base_vol, cs.volume, cs.pan);
+            // The voice volume through the full retail chain: CC7 folded into
+            // the velocity, head, sequence volume, tone / program / channel
+            // pans, square taper.
+            if let Some((l, r)) = self.note_volume(&self.active[idx])
+                && let Some(v) = spu.voices.get_mut(voice)
+            {
                 v.vol_left = l;
                 v.vol_right = r;
             }
             let note = &mut self.active[idx];
             note.base_pitch = base_pitch;
-            note.base_vol = base_vol;
             note.key_on_stamp = spu.voices.get(voice).map_or(0, |v| v.key_on_count());
             note.pending = None;
         }
@@ -945,18 +948,33 @@ impl Sequencer {
     /// its channel-free base, using the channel's current CC7 volume + CC10
     /// pan. Called whenever either controller changes mid-note.
     fn remix_channel(&mut self, spu: &mut Spu, ch: usize) {
-        let cs = self.channels[ch];
         for note in self
             .active
             .iter()
             .filter(|n| n.channel as usize == ch && n.pending.is_none())
         {
-            if let Some(v) = spu.voices.get_mut(note.voice as usize) {
-                let (l, r) = channel_mix(note.base_vol, cs.volume, cs.pan);
+            if let Some((l, r)) = self.note_volume(note)
+                && let Some(v) = spu.voices.get_mut(note.voice as usize)
+            {
                 v.vol_left = l;
                 v.vol_right = r;
             }
         }
+    }
+
+    /// A sounding note's voice volume, the sequencer path of `FUN_80067550`
+    /// end to end: the channel's CC7 folded into the velocity
+    /// ([`effective_velocity`]), the head chain, the sequence volume
+    /// ([`Self::set_master_vol`]) and the tone / program pans
+    /// ([`VabBank::seq_note_volume`]), then the channel pan and the square
+    /// taper ([`channel_tail`]). `None` when the tone does not resolve.
+    fn note_volume(&self, note: &ActiveNote) -> Option<(i16, i16)> {
+        let cs = self.channels[note.channel as usize];
+        let vel = effective_velocity(note.velocity, cs.volume);
+        let head = self
+            .bank
+            .seq_note_volume(note.program, note.tone, vel, self.master_vol)?;
+        Some(channel_tail(head, cs.pan))
     }
 
     fn note_off(&mut self, spu: &mut Spu, channel: u8, key: u8) {
@@ -1151,7 +1169,9 @@ mod tests {
                 voice: v,
                 base_pitch: 0x1000,
                 bend_range: (2, 2),
-                base_vol: (0x3FFF, 0x3FFF),
+                velocity: 127,
+                program: 0,
+                tone: 0,
                 key_on_stamp: 0,
                 pending: None,
             });
@@ -1188,7 +1208,9 @@ mod tests {
             voice: 23,
             base_pitch: 0x1000,
             bend_range: (0, 0),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity: 127,
+            program: 0,
+            tone: 0,
             key_on_stamp: stamp,
             pending: None,
         });
@@ -1216,7 +1238,9 @@ mod tests {
             voice,
             base_pitch: 0x1000,
             bend_range: (2, 2),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity: 127,
+            program: 0,
+            tone: 0,
             key_on_stamp: 0,
             pending: None,
         });
@@ -1630,7 +1654,9 @@ mod tests {
             voice: 0,
             base_pitch: base,
             bend_range: (2, 2),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity: 127,
+            program: 0,
+            tone: 0,
             key_on_stamp: 0,
             pending: None,
         });
@@ -1672,26 +1698,37 @@ mod tests {
     }
 
     #[test]
-    fn cc7_volume_rescales_sounding_voice_from_base() {
+    fn cc7_volume_rederives_the_sounding_voice_through_the_velocity() {
         let mut spu = Spu::new();
-        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
-        let base = (0x3000i16, 0x2000i16);
-        spu.voices[0].vol_left = base.0;
-        spu.voices[0].vol_right = base.1;
-        seq.active.push(ActiveNote {
-            channel: 0,
-            key: 60,
-            voice: 0,
-            base_pitch: 0x1000,
-            bend_range: (0, 0),
-            base_vol: base,
-            key_on_stamp: 0,
-            pending: None,
-        });
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        seq.set_master_vol(RETAIL_BGM_SEQ_VOL);
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOn {
+                key: 60,
+                velocity: 100,
+            },
+        );
+        seq.flush_key_ons(&mut spu);
+        let v = seq.active[0].voice as usize;
+        let full = (spu.voices[v].vol_left, spu.voices[v].vol_right);
+        // Retail's chain by hand: CC7 127 leaves velocity 100; head
+        // 100 * 127 * 0x3FFF / 0x3F01 = 12_700, * 127 * 127 / 0x3F01 =
+        // 12_700, * 107 / 127 = 10_700 per side; centre pans (64) cost the
+        // left `(0x7F - 64) / 63` three times over (tone, program,
+        // channel): 10_700 -> 10_700 -> 10_700; taper 10_700^2 / 0x3FFF.
+        let expect = |vel: i32| {
+            let head = vel * (127 * 0x3FFF) / 0x3F01;
+            let head = head * 127 * 127 / 0x3F01;
+            let side = head * 107 / 127;
+            let l = side * 63 / 63 * 63 / 63 * 63 / 63;
+            ((l * l / 0x3FFF) as i16, (side * side / 0x3FFF) as i16)
+        };
+        assert_eq!(full, expect(100));
 
-        // Halve the channel volume: both sides scale by ~63/127, pan
-        // centered, then pass through the retail square taper.
-        let sq = |v: i32| ((v * v) / 0x3FFF) as i16;
+        // CC7 63: the velocity becomes 100 * 63 / 127 = 49 (truncated), and
+        // the whole chain re-runs from it.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1701,11 +1738,11 @@ mod tests {
             },
         );
         assert_eq!(seq.channels[0].volume, 63);
-        assert_eq!(spu.voices[0].vol_left, sq(0x3000 * 63 / 127));
-        assert_eq!(spu.voices[0].vol_right, sq(0x2000 * 63 / 127));
-
-        // Back to full re-derives from the base (no compounding): the result
-        // is the squared base, not the halved value rescaled.
+        assert_eq!(
+            (spu.voices[v].vol_left, spu.voices[v].vol_right),
+            expect(49)
+        );
+        // Back to full re-derives the original, no compounding.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1714,33 +1751,25 @@ mod tests {
                 value: 127,
             },
         );
-        assert_eq!(
-            (spu.voices[0].vol_left, spu.voices[0].vol_right),
-            (sq(base.0 as i32), sq(base.1 as i32))
-        );
+        assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), full);
     }
 
     #[test]
-    fn cc10_pan_repans_sounding_voice_from_base() {
+    fn cc10_pan_repans_the_sounding_voice() {
         let mut spu = Spu::new();
-        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
-        let base = (0x3000i16, 0x3000i16);
-        spu.voices[0].vol_left = base.0;
-        spu.voices[0].vol_right = base.1;
-        seq.active.push(ActiveNote {
-            channel: 0,
-            key: 60,
-            voice: 0,
-            base_pitch: 0x1000,
-            bend_range: (0, 0),
-            base_vol: base,
-            key_on_stamp: 0,
-            pending: None,
-        });
-
-        // Pan hard left: the right side is silenced, the left passes through
-        // the square taper untouched by pan, channel state updated.
-        let sq = |v: i32| ((v * v) / 0x3FFF) as i16;
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOn {
+                key: 60,
+                velocity: 127,
+            },
+        );
+        seq.flush_key_ons(&mut spu);
+        let v = seq.active[0].voice as usize;
+        let centre = (spu.voices[v].vol_left, spu.voices[v].vol_right);
+        // Pan hard left: the right side is silenced, the left keeps its level.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1750,11 +1779,9 @@ mod tests {
             },
         );
         assert_eq!(seq.channels[0].pan, 0);
-        assert_eq!(spu.voices[0].vol_left, sq(base.0 as i32));
-        assert_eq!(spu.voices[0].vol_right, 0);
-
-        // Returning to center re-pans the base, not the already-panned value:
-        // both sides come back as the squared base.
+        assert_eq!(spu.voices[v].vol_right, 0);
+        assert_eq!(spu.voices[v].vol_left, centre.0);
+        // Back to centre re-pans from scratch.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1763,12 +1790,8 @@ mod tests {
                 value: PAN_CENTER,
             },
         );
-        assert_eq!(
-            (spu.voices[0].vol_left, spu.voices[0].vol_right),
-            (sq(base.0 as i32), sq(base.1 as i32))
-        );
+        assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), centre);
     }
-
     fn layer_tone(vag: i16, min: u8, max: u8, center: u8) -> legaia_vab::VagAtr {
         legaia_vab::VagAtr {
             prior: 0,

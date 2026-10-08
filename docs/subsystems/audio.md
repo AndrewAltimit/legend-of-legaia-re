@@ -1378,22 +1378,34 @@ routed by default), not a per-cue or per-channel parameter the score drives.
 **Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
 the two most-used controllers, and both are **dynamic** - the score swells
 volume and pans voices around mid-note, not just at note-on (a corpus sweep
-finds the majority of CC7 events fire while a note is already sounding). The
-sequencer treats them as channel-expression layered over a per-note base:
-`play_note` leaves the voice at `master × velocity × tone-vol` (scaled into
-the register's `0..=0x3FFF` domain, not the `0..=127` input domain), tone-panned
-by the same law described below - libsnd applies this attenuation once per pan
-source, so the tone and channel sources share it -
-with **no** channel volume or pan; each `ActiveNote` stores that channel-free
-base L/R (mirroring `base_pitch` for bend). `channel_mix` then folds in the
-channel's CC7 volume (scale both sides by `volume/127`) and CC10 pan, where
-pan uses libsnd's voice-volume law (`FUN_80067550`): a pan left of center
-(`< 0x40`) attenuates the **right** by `pan/0x3f`, a pan right of center
-attenuates the **left** by `(0x7f - pan)/0x3f`. A mid-note CC7 or CC10 event
-re-derives every sounding voice on the channel from its base (`remix_channel`),
-so successive changes don't compound, and a fresh NoteOn picks up the
-channel's current volume + pan. A full-volume, centered channel is the
-identity, so this is faithful over the prior note-on-only behavior.
+finds the majority of CC7 events fire while a note is already sounding). A
+voice's volume is the sequencer path of `FUN_80067550` end to end, in retail's
+order and integer steps (`Sequencer::note_volume`):
+
+1. CC7 folded into the **velocity**: `FUN_80066308` stages `vel * chvol / 127`
+   (the channel record's `+0x60 + ch * 2`) as the velocity the chain reads;
+2. the head, `vel * bank_mvol * 0x3FFF / 0x3F01`, then
+   `* prog_mvol * tone_vol / 0x3F01`;
+3. the **sequence volume** (`SsSeqSetVol`, the record's `+0x58` / `+0x5A`)
+   per side, `/ 0x7F`. The game gives every BGM sequence `107`:
+   `FUN_8002614C` passes `(DAT_8007B6EC << 15) >> 16` = `(215 << 15) >> 16`
+   to `FUN_80064890` for each sound-source record
+   (`sequencer::RETAIL_BGM_SEQ_VOL`);
+4. the tone, program and channel pans, each attenuating its far side by
+   `pan / 63` or `(0x7F - pan) / 63`;
+5. the square taper `v * v / 0x3FFF`.
+
+A mid-note CC7 or CC10 re-runs the whole chain for every sounding voice on the
+channel (`remix_channel`), as libsnd's re-key does. Against the mednafen states
+`title_screen_new_game`, `sebucus_overworld_resident` and
+`karisto_overworld_resident`, every sounding BGM voice's pitch, ADSR words,
+left and right volume and reverb send is one the engine programs for the same
+track (`engine-shell/tests/mednafen_voice_parity.rs`).
+
+**Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
+"Sound: Monaural") sounds each voice at the larger of its two volumes on both
+sides (`0x800677F4..0x80067818`) - every voice of a mono-mode state reads
+`L == R == max` - not at their average. `Spu::mono` applies it at mix time.
 
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.

@@ -45,6 +45,7 @@ mod free_roam_camera_reset;
 mod full_game_ladder;
 mod gte_sin_lut_real;
 mod live_npc_resume_idle;
+mod mednafen_voice_parity;
 mod menu_replay;
 mod menu_window_dispatch_real;
 mod minigame_replay;

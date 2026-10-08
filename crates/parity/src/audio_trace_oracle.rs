@@ -280,7 +280,7 @@ impl TraceBgmDirector {
             spu,
             bank: None,
             sequencer: None,
-            master_vol: 100,
+            master_vol: legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL,
             loop_to: Some(0),
             paused: false,
             last_started: None,

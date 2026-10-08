@@ -526,6 +526,35 @@ impl VabBank {
         self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Sequencer)
     }
 
+    /// The head of `FUN_80067550` for a sequencer note on layer `tone_index`
+    /// of `program`, carried through the sequence volume and the tone and
+    /// program pans, in retail's order and integer steps:
+    ///
+    /// 1. `vel * (bank_mvol * 0x3FFF) / 0x3F01` (signed, `0x80067550..9C`);
+    /// 2. `* prog_mvol * tone_vol / 0x3F01` (`..0x800675F4`);
+    /// 3. `* seq_vol / 0x7F` per side (`0x8006763C..0x80067698`);
+    /// 4. the tone pan, then the program pan - each attenuating its far side
+    ///    by `pan / 63` or `(0x7F - pan) / 63` (`0x8006769C..0x80067780`).
+    ///
+    /// `velocity` is the effective one (CC7 already folded in). The channel
+    /// pan and square taper follow in the sequencer. `None` when the tone
+    /// does not resolve.
+    pub fn seq_note_volume(
+        &self,
+        program: usize,
+        tone_index: usize,
+        velocity: u8,
+        seq_vol: u8,
+    ) -> Option<(i16, i16)> {
+        let prog = self.programs.get(program)?;
+        let tone = prog.tones.get(tone_index)?;
+        let head = (velocity as i32 * (self.master_vol as i32 * 0x3FFF)) / 0x3F01;
+        let head = (head as u32 * prog.mvol as u32 * tone.vol as u32) / 0x3F01;
+        let side = (head * seq_vol.min(127) as u32 / 0x7F) as i16;
+        let (l, r) = pan_attenuate(side, side, tone.pan as i32);
+        Some(pan_attenuate(l, r, prog.mpan as i32))
+    }
+
     fn tone_at(&self, program: usize, tone_index: usize) -> Option<&VagAtr> {
         self.programs.get(program)?.tones.get(tone_index)
     }
