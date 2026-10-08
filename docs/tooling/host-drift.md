@@ -4300,6 +4300,15 @@ name so a host that re-spells the decision locally fails the gate.
 | prologue grade staging | `World::frame_grade` | each host mapped the grade onto its colour-grade, palette-grade and depth-cue arms itself |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |
 
+The per-tick screen owners are not one kernel yet. Both hosts hand a frame
+with more than one screen up to the same owner - the pause menu, then the
+name-entry prompt, then a menu-overlay screen (shop, prize counter) - but
+each spells that order itself: the native window as the arm order of its
+per-tick body, the page as the order of its `_updateFieldMenu` /
+`_updateNameEntry` / `_updateFieldShop` calls, which asked the shop before the
+name entry until it was put in the native order. No gate reads the JavaScript
+side.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;

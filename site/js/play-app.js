@@ -2588,12 +2588,15 @@ void main() {
       /* Field pause menu (Start): consumes this frame's edges and, while up,
        * freezes the field. Must run before the tick reads the pad. */
       const menuOpen = this._updateFieldMenu(simSteps);
+      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Modal:
+       * it suspends the script and takes every edge. Asked before the shop,
+       * in the native window's per-tick order (pause menu, then name entry,
+       * then a menu-overlay screen), so the two hosts hand a frame with more
+       * than one of them up to the same owner. */
+      const namingOpen = menuOpen ? false : this._updateNameEntry(simSteps);
       /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
        * on the engine side, so the field must not advance under it either. */
-      const shopOpen = menuOpen ? false : this._updateFieldShop(simSteps);
-      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
-       * the script the same way, and is modal over everything else. */
-      const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);
+      const shopOpen = (menuOpen || namingOpen) ? false : this._updateFieldShop(simSteps);
 
       /* Under the pause menu or a shop the field does not tick, but the SFX
        * scheduler does: retail's mode-0x17 frame handler still runs the cue
