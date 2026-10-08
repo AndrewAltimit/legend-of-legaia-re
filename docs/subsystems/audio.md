@@ -1279,7 +1279,10 @@ end on drift furthest - `24.83` BPM truncates to `24` and plays `3.4 %` slow.
 (`seq_calc::retail_effective_us_per_qn`); `Sequencer::set_exact_tempo(true)`
 plays the score as written. The port's frame is a flat 60 Hz, which is the
 rate the budget is spent at here; the console's own vsync is a little under
-that.
+that. One difference is kept on purpose: retail fires an event at the first
+`SsSeqCalc` after it falls due, so every onset lands on a vsync (up to a frame
+late, and unevenly so wherever the budget is not a whole number of ticks); the
+`Sequencer` fires it on its own sample. The rate matches, the jitter does not.
 
 **Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
 sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
