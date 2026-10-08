@@ -733,7 +733,11 @@ A retry is reported as `pad (attempt N, element-E guards)`, or `pad (attempt N)`
 when there was no element to guard. The Jette
 fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
 50000 HP boss the unguarded hand loses at about half its HP, and wins once
-guarded.
+guarded. It is met in the **seated** pass too, so the seated pass takes the
+same guard retry - once, from the same seed - and reports it as `seated
+(element-E guards)`; unguarded, that one hand decided the segment's
+`progresses` and `pad` tiers together, and any change to how long a battle
+action runs moved it.
 
 ## Seeding
 

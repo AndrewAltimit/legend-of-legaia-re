@@ -9605,72 +9605,101 @@ fn run_segment(
 
     NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = to_anchor.map(|a| a.flags.clone()));
     // -- seated pass: loads, enters, progresses -----------------------------
-    let seated = catch_unwind(AssertUnwindSafe(|| {
-        let mut session = open_session(&inp.extracted);
-        let opts = live_opts(false);
-        let mut tier = Tier::None;
-        let landed = match seed(&mut session, from, from_anchor, &opts) {
-            Ok(s) => s,
-            Err(e) => return (tier, Some(format!("seed: {e}")), None),
-        };
-        if landed != from.scene || !walking(&session) {
-            return (
-                tier,
-                Some(format!(
-                    "seed landed {landed} in {:?}, milestone scene is {}",
-                    session.host.world.mode, from.scene
-                )),
-                None,
-            );
-        }
-        tier = Tier::Loads;
-        // `LEGAIA_FGL_SEATED_RNG_SEED=<u32>`: deal the seated pass another
-        // hand, as `LEGAIA_FGL_RNG_SEED` does the pad pass - a seated boss
-        // fight (`chitei2` P2[13], Jette) is checked across streams with it.
-        if let Some(s) = std::env::var("LEGAIA_FGL_SEATED_RNG_SEED")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-        {
-            session.host.world.rng_state = s;
-        }
-        let mut trail = vec![landed];
-        match run_while_moving(&mut session, SCRIPT_CEILING) {
-            Run::Released => tier = Tier::Enters,
-            Run::Entered(s) => {
-                trail.push(format!("{s}(scripted)"));
-                tier = Tier::Enters;
-            }
-            Run::Parked(p) => {
-                // A parked entry script can still be the segment's success
-                // (a milestone reached mid-cutscene), but the tier stops here.
-                let flags = session.host.world.flags.system_flags.clone();
+    // A seated pass that a boss wipes is played once more from the same seed
+    // with the bag's guard against that boss's element equipped, the pad
+    // pass's guard retry: the player's reload after a game over. Without it
+    // a seated boss the unguarded hand wins about half the time (`chitei2`
+    // P2[13], Jette) decided both the `progresses` and the `pad` tier on one
+    // hand of the rand stream, so any change to how long a battle action
+    // runs moved the segment.
+    let mut seated_prepare: Option<u8> = None;
+    let seated = loop {
+        LOST_TO_ELEMENT.with(|l| l.set(None));
+        let prepare = seated_prepare;
+        let seated = catch_unwind(AssertUnwindSafe(|| {
+            let mut session = open_session(&inp.extracted);
+            let opts = live_opts(false);
+            let mut tier = Tier::None;
+            let landed = match seed(&mut session, from, from_anchor, &opts) {
+                Ok(s) => s,
+                Err(e) => return (tier, Some(format!("seed: {e}")), None),
+            };
+            if landed != from.scene || !walking(&session) {
                 return (
                     tier,
-                    Some(format!("entry script never released: {p}")),
-                    Some(flags),
+                    Some(format!(
+                        "seed landed {landed} in {:?}, milestone scene is {}",
+                        session.host.world.mode, from.scene
+                    )),
+                    None,
                 );
             }
-            other => {
-                let flags = session.host.world.flags.system_flags.clone();
-                return (tier, Some(format!("entry: {other:?}")), Some(flags));
+            tier = Tier::Loads;
+            // `LEGAIA_FGL_SEATED_RNG_SEED=<u32>`: deal the seated pass another
+            // hand, as `LEGAIA_FGL_RNG_SEED` does the pad pass - a seated boss
+            // fight (`chitei2` P2[13], Jette) is checked across streams with it.
+            if let Some(s) = std::env::var("LEGAIA_FGL_SEATED_RNG_SEED")
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+            {
+                session.host.world.rng_state = s;
             }
-        }
-        let res = traverse(&mut session, graph, to, false, &mut trail);
-        let flags = session.host.world.flags.system_flags.clone();
-        match res {
-            Ok(()) => {
-                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                    eprintln!("    [seated] trail {}", trail.join(">"));
+            let mut trail = vec![landed];
+            match run_while_moving(&mut session, SCRIPT_CEILING) {
+                Run::Released => tier = Tier::Enters,
+                Run::Entered(s) => {
+                    trail.push(format!("{s}(scripted)"));
+                    tier = Tier::Enters;
                 }
-                (Tier::Progresses, None, Some(flags))
+                Run::Parked(p) => {
+                    // A parked entry script can still be the segment's success
+                    // (a milestone reached mid-cutscene), but the tier stops here.
+                    let flags = session.host.world.flags.system_flags.clone();
+                    return (
+                        tier,
+                        Some(format!("entry script never released: {p}")),
+                        Some(flags),
+                    );
+                }
+                other => {
+                    let flags = session.host.world.flags.system_flags.clone();
+                    return (tier, Some(format!("entry: {other:?}")), Some(flags));
+                }
             }
-            Err(e) => (
-                tier,
-                Some(format!("{e} [trail {}]", trail.join(">"))),
-                Some(flags),
-            ),
+            if let Some(element) = prepare {
+                let n = pad_equip_guard(&mut session, element);
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [seated] retry: equipped {n} element-{element} guard(s)");
+                }
+            }
+            let res = traverse(&mut session, graph, to, false, &mut trail);
+            let flags = session.host.world.flags.system_flags.clone();
+            match res {
+                Ok(()) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [seated] trail {}", trail.join(">"));
+                    }
+                    (Tier::Progresses, None, Some(flags))
+                }
+                Err(e) => (
+                    tier,
+                    Some(match prepare {
+                        Some(el) => format!(
+                            "seated (element-{el} guards): {e} [trail {}]",
+                            trail.join(">")
+                        ),
+                        None => format!("{e} [trail {}]", trail.join(">")),
+                    }),
+                    Some(flags),
+                ),
+            }
+        }));
+        let wiped = matches!(&seated, Ok((_, Some(e), _)) if e.contains("party wiped"));
+        match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
+            Some(el) if wiped && seated_prepare.is_none() => seated_prepare = Some(el),
+            _ => break seated,
         }
-    }));
+    };
     let (tier, stall, flags_after) = match seated {
         Ok(r) => r,
         Err(p) => (
