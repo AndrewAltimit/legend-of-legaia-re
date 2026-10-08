@@ -469,8 +469,10 @@ pub fn popup_cells(value: u16, rect: (i32, i32, i32, i32), timer: i32) -> Vec<Va
 //   with every packet 40 px to the right - the cluster is mid-glide.
 //
 // So the value row is one law for both styles: 16x16 cells, 16-px pitch,
-// ending at x = 304 (two captures, both two digits - a longer value's
-// alignment is inferred from the label's fixed seat). The hit count is a
+// ending at x = 304, and the label is not fixed: it sits a constant gap left
+// of the value's first cell (`shiny_refactor_gimard_levelup`'s three-digit
+// `DAMAGE 233` puts its label at 192, sixteen left of the two-digit seat; the
+// `TOTAL` label is assumed to follow the same law). The hit count is a
 // separate 24x24 run ending at x = 264 on row 142. The physical attack band
 // gets `HIT` + `TOTAL`; a cast gets `DAMAGE` alone.
 //
@@ -601,6 +603,11 @@ fn right_aligned_cells(value: u16, right_x: i32, y: i32, size: u32, pitch: i32) 
 /// saturate rather than wrap.
 pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> ComboCluster {
     let total = total.min(u32::from(u16::MAX)) as u16;
+    // The value row's label hugs the value: it moves one cell left per digit
+    // past two (`shiny_refactor_gimard_levelup`'s `DAMAGE 233` sits its label
+    // at `x = 192`, sixteen left of the two-digit seat), so the label's seat
+    // constants name the two-digit layout.
+    let label_shift = -(decimal_digits(total).len() as i32 - 2) * COMBO_VALUE_CELL as i32;
     let mut out = ComboCluster::default();
     match style {
         ComboStyle::HitTotal => {
@@ -612,7 +619,7 @@ pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> Co
             });
             out.labels.push(ComboLabel {
                 uv: LABEL_TOTAL,
-                x: COMBO_TOTAL_LABEL_SEAT.0 + slide,
+                x: COMBO_TOTAL_LABEL_SEAT.0 + label_shift + slide,
                 y: COMBO_TOTAL_LABEL_SEAT.1,
                 word: "TOTAL",
             });
@@ -629,7 +636,7 @@ pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> Co
         ComboStyle::Damage => {
             out.labels.push(ComboLabel {
                 uv: LABEL_DAMAGE,
-                x: COMBO_DAMAGE_LABEL_SEAT.0 + slide,
+                x: COMBO_DAMAGE_LABEL_SEAT.0 + label_shift + slide,
                 y: COMBO_DAMAGE_LABEL_SEAT.1,
                 word: "DAMAGE",
             });
@@ -772,6 +779,24 @@ mod tests {
         for age in 0..COMBO_SLIDE_FRAMES {
             let expect = 160 - 160 * i32::from(age) / 16;
             assert_eq!(combo_slide(age), expect, "age {age}");
+        }
+    }
+
+    #[test]
+    fn combo_label_moves_left_with_a_longer_value() {
+        // `shiny_refactor_gimard_levelup`: `DAMAGE 233`, label quad at
+        // `x = 192..247` in the retail packet stream, value at 256.
+        let c = combo_cluster(ComboStyle::Damage, 0, 233, 0);
+        assert_eq!(c.labels[0].x, 192);
+        assert_eq!(c.cells[0].x, 256);
+        // The label keeps the same gap to the value whatever its length.
+        for total in [16, 233, 4096] {
+            let c = combo_cluster(ComboStyle::Damage, 0, total, 0);
+            assert_eq!(c.cells[0].x - c.labels[0].x, 64, "{total}");
+            let c = combo_cluster(ComboStyle::HitTotal, 1, total, 0);
+            let t = c.labels.iter().find(|l| l.word == "TOTAL").unwrap();
+            let first = c.cells.iter().find(|k| k.y == COMBO_VALUE_Y).unwrap();
+            assert_eq!(first.x - t.x, 56, "{total}");
         }
     }
 
