@@ -525,3 +525,58 @@ fn terio_punch_charges_then_punches_on_its_latch() {
     assert_eq!(shots.last().unwrap().tr, [0, 0x550, 0x2800]);
     assert!(capture_camera_director(953, SINGLE_BODY).is_some());
 }
+
+/// Final Crisis in formation `0xB5`: arm 0 cuts behind Cort at `TR.y 0x800`,
+/// arm 1 drifts out and up a vsync at a time and holds on the countdown
+/// (`scalar * 0xC0`, 192 vsyncs), then cuts low. Sixteen vsyncs of arm 1 is
+/// the `cort_evolved_final_crisis_mid_cast` capture's pitch `16`, TR y
+/// `0x800 - 32` and TR z `+128`.
+#[test]
+fn final_crisis_cuts_behind_cort_and_drifts_out() {
+    let mut st = ModuleCamState::default();
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 0,
+            y: 0,
+            z: 1024,
+            facing: 0x800,
+        },
+        first_monster: 0xB5,
+        depth_raw: 0x9F0,
+        ..Default::default()
+    };
+    assert_eq!(
+        capture_camera_director(961, DEAD_END_CRISIS_BODY).map(|f| f as usize),
+        Some(dead_end_crisis_camera as CaptureCamDirector as usize)
+    );
+    assert_eq!(capture_countdown_va(0xB4), Some(DEAD_END_CRISIS_COUNTDOWN));
+    let a0 = dead_end_crisis_camera(&mut st, 0, seats);
+    let cut = a0.shot.expect("arm 0 cuts");
+    assert_eq!(
+        (cut.angles, cut.tr, cut.focus),
+        ([0, 0, 0], [0, 0x800, 0x9F0], [0, 0, -1024])
+    );
+    assert!(!a0.hold);
+    let (mut pitch, mut tr_y, mut tr_z) = (0i32, 0i32, 0i32);
+    for _ in 0..16 {
+        let a = dead_end_crisis_camera(&mut st, 1, seats);
+        assert!(a.hold && a.shot.is_none());
+        let d = a.drift.unwrap();
+        pitch += i32::from(d.pitch);
+        tr_y += i32::from(d.tr_y);
+        tr_z += i32::from(d.tr_z);
+    }
+    assert_eq!((pitch, tr_y, tr_z), (16, -32, 128));
+    let mut passed = None;
+    for _ in 0..400 {
+        let a = dead_end_crisis_camera(&mut st, 1, seats);
+        if !a.hold {
+            passed = a.shot;
+            break;
+        }
+    }
+    let low = passed.expect("arm 1 passes");
+    assert_eq!((low.angles[0], low.tr), (-0x70, [0, 0xA20, 0x9F0 - 0x280]));
+    dead_end_crisis_camera(&mut st, 0xFF, seats);
+    assert_eq!(st.yaw_base, 0x780);
+}

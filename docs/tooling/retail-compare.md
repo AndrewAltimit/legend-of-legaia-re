@@ -875,8 +875,9 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   Held so, the engine lands where every such capture is framed - pitch `0`,
   `TR y = 0x500`, focus on the caster's seat. What a `0x70` capture still
   reads is the cast module's own shot (Cort's Ultra Charge pulls out to
-  `TR (0, 3072, 7315)`), which the capture-class modules arm and the port
-  does not model.
+  `TR (0, 3072, 7315)`), which the body's camera director arms
+  ([cast-module](../subsystems/cast-module.md)); a body with no director
+  holds the case-6 pose `0x6F` left.
 - **How far into the state.** Every other action-SM state spans frames too,
   and the drive reaches each on its first tick while a retail capture sits
   wherever the save was made - a monster's approach `0x19` or a Spirit band

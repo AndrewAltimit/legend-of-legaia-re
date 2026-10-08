@@ -2425,6 +2425,18 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   this director also owns it (`0 -> 1 -> 0xFF`), the way a camera-only player
   director does.
 
+- **PROT 0961 `0xA1` / `0xB4` (Dead End Crisis / Final Crisis, body
+  `0x801F69D8`)** - four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`:
+  arm 0 behind it (TR y `0x800` when the formation's first monster is `0xB5`,
+  `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in
+  `0xB5`) and arm 5's return (TR y `0x800`), with the drifts stored before each
+  gate tests the countdown `0x801F82E4` - arm 1 TR z `+s`, TR y `-s/4`, pitch
+  `+s/8` (`s = scalar * delta`), arm 2 in `0xB5` TR y and pitch `+delta`, TR z
+  `+s`, arm 3 TR z `+3s`, TR y `-s`, pitch `+s/8`, arm 6 TR z `+s` - and the
+  terminal arm's `ctx[+0x6DA] = 0x780`. The phase chain is ported
+  (`DEAD_END_CRISIS_CHAIN`), so the director runs the body's countdown table
+  for its gates and leaves the phase alone.
+
 - **PROT 0938 `0xB7` (Cort's Mystic Circle, body `0x801F69EC`)** - arm 0's
   cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut
   to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`), the drifts of arms

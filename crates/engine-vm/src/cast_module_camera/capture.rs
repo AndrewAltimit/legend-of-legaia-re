@@ -70,6 +70,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (953, SINGLE_BODY) => Some(terio_punch_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
+        (961, DEAD_END_CRISIS_BODY) => Some(dead_end_crisis_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
@@ -85,6 +86,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
+        0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),
         0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
         0x55 | 0x56 => Some(WAVE_COUNTDOWN),
         0xAD => Some(super::EVIL_SERU_MAGIC_COUNTDOWN),
@@ -331,6 +333,112 @@ pub fn ultra_charge_camera(
         _ => CaptureCamArm::default(),
     }
 }
+
+/// PROT 0961's body (Dead End Crisis `0xA1` / Final Crisis `0xB4`).
+pub const DEAD_END_CRISIS_BODY: u32 = 0x801F_69D8;
+/// PROT 0961's countdown word (`lui 0x8020` / `-0x7D1C`).
+pub const DEAD_END_CRISIS_COUNTDOWN: u32 = 0x801F_82E4;
+
+/// **Dead End Crisis / Final Crisis** (PROT 0961, body `0x801F69D8`, a
+/// `beq` / `slti` chain over `0..=6` and `0xFF`). Every shot is a
+/// `FUN_801D829C` cut (`a3 = 1`) focused on the caster, whose arm 0 has just
+/// stood it at `(0, 0x400)` facing `0x800`; the depth is `ctx[+0x6D0]`. The
+/// formation fork is the first monster id `0x8007BD0C == 0xB5`:
+///
+/// | arm | camera |
+/// |---|---|
+/// | 0 (`0x801F6AC0`) | cut: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, h, depth)`, `h` `0x800` in `0xB5`, else `0x200` |
+/// | 1 (`0x801F6C8C`) | drift: TR z `+s`, TR y `-s/4`, pitch `+s/8` (`s = scalar * delta`); passing, `0xB5`: pitch `-0x70`, yaw `0x800 - facing`, TR `(0, 0xA20, depth - 0x280)`; else pitch `-0x80`, yaw `0x980 - facing`, TR `(0x200, 0x300, depth)` |
+/// | 2 (`0x801F6E78`) | drift in `0xB5` only: TR y `+delta`, pitch `+delta`, TR z `+s`; passing: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0xA00, depth + 0x400)` in `0xB5`, else `(0, 0x600, depth)` |
+/// | 3 (`0x801F7098`) | drift: TR z `+3s`, TR y `-s`, pitch `+s/8` |
+/// | 5 (`0x801F7520`) | passing with a party seat standing: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x800, depth)` |
+/// | 6 (`0x801F7780`) | drift: TR z `+s` |
+/// | `0xFF` (`0x801F77D4`) | `ctx[+0x6DA] = 0x780`, `ctx[+0x0D] = 0` |
+///
+/// The drifts are stored before each gate tests the countdown, so they run
+/// on every pass, held or not; `s / 4` and `s / 8` are `sra` of the product
+/// with the round-toward-zero bias. The `cort_evolved_final_crisis_mid_cast`
+/// capture sits in arm 1 of the `0xB5` path: pitch `16`, TR y `0x800 - 32`,
+/// TR z `prescale(0x9F0) + 128` - sixteen vsyncs of drift past arm 0's cut.
+///
+/// The countdown gates are the body's table
+/// ([`super::capture_countdown::DEAD_END_CRISIS`]), run here because a
+/// director owns its body's gate; the phase chain is ported
+/// ([`crate::cast_module_ticks::DEAD_END_CRISIS_CHAIN`]), so `next` stays
+/// `None`. Arm 5's no-one-standing branch frames nothing and ends the
+/// battle; the director cuts on every pass of it, which the battle end
+/// overrides.
+///
+/// PORT: FUN_801F69D8 (PROT 0961; the camera arms)
+pub fn dead_end_crisis_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let c = seats.caster;
+    let b5 = seats.first_monster == 0xB5;
+    let depth = seats.depth_raw;
+    // `scalar * delta` a battle frame; one vsync a tick here.
+    let s = super::MODULE_DRAIN_PER_TICK as i16;
+    let hold =
+        super::capture_countdown::arm_countdown(super::capture_countdown::DEAD_END_CRISIS, phase)
+            .is_some_and(|a| {
+                let held = a.holds(&mut st.countdown);
+                if !held {
+                    a.pass(&mut st.countdown);
+                }
+                held
+            });
+    let cut = |pitch: i16, yaw: i32, tr: [i32; 3]| {
+        Some(ModuleShot {
+            angles: [pitch, yaw_from(yaw, c.facing), 0],
+            tr: tr.map(|v| v as i16),
+            focus: focus_on(c),
+            frames: 1,
+        })
+    };
+    let (drift, shot) = match phase {
+        0 => (
+            None,
+            cut(0, 0x800, [0, if b5 { 0x800 } else { 0x200 }, depth]),
+        ),
+        1 => (
+            Some(drift(s / 8, 0, -(s / 4), s)),
+            if b5 {
+                cut(-0x70, 0x800, [0, 0xA20, depth - 0x280])
+            } else {
+                cut(-0x80, 0x980, [0x200, 0x300, depth])
+            },
+        ),
+        2 => (
+            // `delta` alone on TR y and pitch (`move v1,v0` keeps the step).
+            b5.then(|| drift(1, 0, 1, s)),
+            if b5 {
+                cut(-0x80, 0x800, [0, 0xA00, depth + 0x400])
+            } else {
+                cut(-0x80, 0x800, [0, 0x600, depth])
+            },
+        ),
+        3 => (Some(drift(s / 8, 0, -s, 3 * s)), None),
+        5 => (None, cut(0, 0x800, [0, 0x800, depth])),
+        6 => (Some(drift(0, 0, 0, s)), None),
+        DEAD_END_CRISIS_DONE => {
+            st.yaw_base = 0x780;
+            (None, None)
+        }
+        _ => (None, None),
+    };
+    CaptureCamArm {
+        shot: if hold { None } else { shot },
+        drift,
+        hold,
+        next: None,
+        ..Default::default()
+    }
+}
+
+/// PROT 0961's terminal arm.
+const DEAD_END_CRISIS_DONE: u8 = 0xFF;
 
 /// PROT 0938's `0xB7` body (Cort's Mystic Circle).
 pub const MYSTIC_CIRCLE_BODY: u32 = 0x801F_69EC;
