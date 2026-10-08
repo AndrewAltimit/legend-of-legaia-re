@@ -69,6 +69,19 @@ impl World {
         std::mem::take(&mut self.minigames.pending_sfx)
     }
 
+    /// The dance's **auto-end**: once the song-over arm of
+    /// [`tick_dance`](Self::tick_dance) has restored the interrupted mode, tear
+    /// the run down ([`Self::exit_dance`]) and hand back its final game for the
+    /// host to log. `None` while the hall still owns the frame, or with no run.
+    /// The per-frame poll both play hosts make; each used to spell the
+    /// `mode != Dance` test beside its own `exit_dance` call.
+    pub fn finish_dance_if_over(&mut self) -> Option<crate::dance::DanceGame> {
+        if self.mode == SceneMode::Dance {
+            return None;
+        }
+        self.exit_dance()
+    }
+
     /// Clear the dance minigame and return the final [`DanceGame`] so the host
     /// can read the score / pass result. Restores the interrupted mode if it is
     /// still `Dance` (a mid-song abort); when the song already auto-ended

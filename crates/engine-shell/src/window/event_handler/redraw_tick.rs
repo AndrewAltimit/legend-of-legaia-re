@@ -473,11 +473,10 @@ impl PlayWindowApp {
         // frame (the menu overlay swaps in), and the browser page hands a
         // shop only the edges of the frames after it opened. An inn
         // session runs here every tick on the tick's own edge.
-        let menu_edge = if shop_opened_this_tick {
-            0
-        } else {
-            pressed_edge
-        };
+        let menu_edge = legaia_engine_core::menu_runtime::MenuRuntime::session_edge(
+            shop_opened_this_tick,
+            pressed_edge,
+        );
         if let Some(cue) = tick_menu_runtime_session(
             &mut self.menu_runtime,
             &mut self.session.host.world,
@@ -591,9 +590,7 @@ impl PlayWindowApp {
         // itself (`restore_minigame_bgm` queues the start this host's
         // BGM routing plays), as on the browser page; a second start
         // here restarted the field track on top of it.
-        if self.session.host.world.mode != SceneMode::Dance
-            && let Some(g) = self.session.host.world.exit_dance()
-        {
+        if let Some(g) = self.session.host.world.finish_dance_if_over() {
             log::info!(
                 "dance: song finished - score {} (pass={})",
                 g.score(),
@@ -605,30 +602,19 @@ impl PlayWindowApp {
     /// A field-VM shop or casino prize counter opened this tick: hand the
     /// player into it. Returns whether one opened.
     fn take_menu_overlay_requests(&mut self) -> bool {
-        // A field-VM shop op (`0x49` sub-0 inline shop record) opened
-        // a priced gold shop this tick: hand the player into its buy
-        // list. The field VM is suspended (op-0x49 Armed) until the
-        // player leaves, at which point `finish_field_shop` (below)
-        // lets it resume past the merchant op.
-        let mut shop_opened_this_tick = false;
-        if let Some(shop) = self.session.host.world.take_pending_field_shop() {
-            shop_opened_this_tick = true;
-            // Open the top-level Buy / Sell / Trade picker (Trade row
-            // present only when the disc enabled seru trading). Names
-            // for the trade rows come from the boot SCUS.
-            if self.session.host.world.seru_trade_enabled() {
-                self.ensure_seru_names();
-            }
-            self.menu_runtime.open_shop_menu(shop);
+        // A field-VM shop (op `0x49` sub-0) or casino prize counter
+        // (sub-7) opened this tick: hand the player into it through the
+        // shared drain (`MenuRuntime::open_field_overlay_requests`, the
+        // browser page's too). The field VM stays suspended (op-0x49
+        // Armed) until the player leaves.
+        let opened = self
+            .menu_runtime
+            .open_field_overlay_requests(&mut self.session.host.world);
+        // The Trade row's names come from the boot SCUS - a host read.
+        if opened && self.session.host.world.seru_trade_enabled() {
+            self.ensure_seru_names();
         }
-        // A field-VM casino prize counter (`0x49` sub-7) opened its
-        // exchange this tick: hand the player into the prize list. The
-        // field VM stays suspended until the browse cancel closes it.
-        if let Some(exchange) = self.session.host.world.take_pending_prize_exchange() {
-            shop_opened_this_tick = true;
-            self.menu_runtime.open_prize_exchange(exchange);
-        }
-        shop_opened_this_tick
+        opened
     }
 
     /// The battle's summon-creature and move-FX spawn requests (with the

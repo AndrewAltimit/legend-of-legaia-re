@@ -4294,6 +4294,8 @@ name so a host that re-spells the decision locally fails the gate.
 | placed-object / landmark model swap and live model | `field_env::placed_model_swaps`, `field_env::live_placed_model` | the first-placement swap rule was spelled three ways (the page alone filtered the `0xF0` sentinel) and the native turn-then-move twice; the page still applies the move and turn tables in `play-app.js`, in its own Y-up frame |
 | battle body cue precedence | `BattleActorDrawPlan::body_cue` | the tint word beat the cursor pulse on both hosts, by two routes (stage-then-overwrite natively, test-then-fall-through on the page) |
 | scene-hidden lead | `World::actor_hidden_by_scene` | the native actor pass skipped the opening prologue's cold-spawned lead; the page drew him as a stray mesh |
+| shop / prize-counter opening | `MenuRuntime::open_field_overlay_requests`, `MenuRuntime::session_edge` | each host drained the op-`0x49` requests and spelled the opening tick's no-edge rule itself |
+| dance auto-end | `World::finish_dance_if_over` | each host spelled the `mode != Dance` poll beside its own `exit_dance` call |
 | frame clear colour | `engine-screens::field_frame::frame_clear_color` | the page passed `false` for the screen term, so a shop in a scene with a scripted clear colour (`teien`) sat on that colour instead of black |
 | prologue grade staging | `World::frame_grade` | each host mapped the grade onto its colour-grade, palette-grade and depth-cue arms itself |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |

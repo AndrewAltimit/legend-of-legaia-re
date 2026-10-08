@@ -315,6 +315,39 @@ impl MenuRuntime {
         self.ui_cue.take()
     }
 
+    /// Open whichever menu-overlay screen the field VM requested this tick -
+    /// an op-`0x49` sub-0 gold shop (`World::take_pending_field_shop`) or the
+    /// sub-7 casino prize counter (`World::take_pending_prize_exchange`) -
+    /// and answer whether one opened.
+    ///
+    /// The tick that opens a screen steps it on **no** edge
+    /// ([`Self::session_edge`]): the press that tick carried already went to
+    /// the field - typically the Cross that closed the merchant's line and
+    /// ran the script into op `0x49` - and handing it to the screen too
+    /// commits the picker's first row on the same press. Retail's screen
+    /// comes up on a later frame, once the menu overlay has swapped in. Both
+    /// play hosts drain the requests through this and step the opening tick
+    /// through [`Self::session_edge`]; each used to spell the drain itself.
+    pub fn open_field_overlay_requests(&mut self, world: &mut World) -> bool {
+        let mut opened = false;
+        if let Some(shop) = world.take_pending_field_shop() {
+            self.open_shop_menu(shop);
+            opened = true;
+        }
+        if let Some(exchange) = world.take_pending_prize_exchange() {
+            self.open_prize_exchange(exchange);
+            opened = true;
+        }
+        opened
+    }
+
+    /// The pad edge a session step takes this tick: none on the tick a
+    /// screen opened ([`Self::open_field_overlay_requests`]), else the
+    /// tick's own.
+    pub const fn session_edge(opened_this_tick: bool, pressed_edge: u16) -> u16 {
+        if opened_this_tick { 0 } else { pressed_edge }
+    }
+
     /// One sim tick of an open field session (shop, prize exchange, inn
     /// prompt) on that tick's pad **edges**, then the unpark of whatever
     /// field script a closed session left suspended - the whole per-tick

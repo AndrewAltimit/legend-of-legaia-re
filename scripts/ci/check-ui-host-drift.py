@@ -553,6 +553,32 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "shop / prize-counter opening, native vs play page - each host "
+        "drained the field VM's op-`0x49` shop and prize-counter requests "
+        "itself and spelled the opening tick's no-edge rule (the Cross that "
+        "closed the merchant's line must not also commit the picker's first "
+        "row). Both open through `MenuRuntime::open_field_overlay_requests` "
+        "and pick the opening tick's edge with `MenuRuntime::session_edge`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_shop.rs", "poll_field_shop"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["open_field_overlay_requests", "session_edge"],
+    },
+    {
+        "what": "dance auto-end, native vs play page - once the song-over arm "
+        "restores the interrupted mode, the run is torn down and its final "
+        "game handed back; each host spelled the `mode != Dance` poll beside "
+        "its own `exit_dance` call. Both poll `World::finish_dance_if_over`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_minigames.rs", "tick_minigame_ui"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["finish_dance_if_over"],
+    },
+    {
         "what": "scene-hidden lead, native vs play page - the opening "
         "prologue (`opdeene`) installs a free-roam lead at the cold spawn "
         "though its vignette shots have none; the native actor pass skipped "
