@@ -927,6 +927,13 @@ impl SaveFile {
         // the next scene load re-applies (`FUN_8003AEB0` copies the level
         // into the live `_DAT_8007B910`).
         ext_v2.audio_levels = crate::card::read_retail_audio_levels(sc_block);
+        // The play clock: retail's `1/60` s counter, which the engine keeps in
+        // whole seconds. An engine-authored block's `LGXE` blob carries the
+        // exact seconds it wrote and keeps them.
+        if !authored_by_engine && let Some(ticks) = crate::card::read_retail_play_counter(sc_block)
+        {
+            ext_v2.play_time_seconds = ticks / crate::card::RETAIL_PLAY_COUNTER_HZ;
+        }
         Ok(Self {
             party,
             ext: SaveExt {
@@ -1057,6 +1064,14 @@ impl SaveFile {
         if let Some(levels) = self.ext_v2.audio_levels {
             crate::card::write_retail_audio_levels(sc_block, levels)?;
         }
+        // The play clock, so retail's save screen prints the time this save
+        // was played for and retail's own clock carries on from it.
+        crate::card::write_retail_play_counter(
+            sc_block,
+            self.ext_v2
+                .play_time_seconds
+                .saturating_mul(crate::card::RETAIL_PLAY_COUNTER_HZ),
+        )?;
         Ok(())
     }
 }

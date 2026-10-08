@@ -282,8 +282,10 @@ fn retail_sc_round_trips_only_representable_fields() {
             active_party: save.ext_v2.active_party.clone(),
             field_position: save.ext_v2.field_position,
             audio_levels: save.ext_v2.audio_levels,
+            play_time_seconds: save.ext_v2.play_time_seconds,
             ..SaveExtV2::default()
         },
-        "only the present party and the field position have SC slots"
+        "only the present party, the field position, the audio levels and \
+         the play clock have SC slots"
     );
 }

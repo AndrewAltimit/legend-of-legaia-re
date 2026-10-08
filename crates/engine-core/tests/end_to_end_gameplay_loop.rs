@@ -603,10 +603,11 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
     );
 
     // Gold round-trips through the pinned retail slot (`game_data+0x25C`,
-    // RAM 0x8008459C). Engine-only fields drop to defaults: play_time,
-    // per_char, saved_chains. The present party and the field position have
-    // retail slots (`0x80084594` / `0x80084598`, `0x80084568` / `0x8008456C`)
-    // and survive. See the K2 schema fixture for the documented field map.
+    // RAM 0x8008459C). Engine-only fields drop to defaults: per_char,
+    // saved_chains. The present party, the field position and the play
+    // clock have retail slots (`0x80084594` / `0x80084598`, `0x80084568` /
+    // `0x8008456C`, `0x80084570`) and survive. See the K2 schema fixture for
+    // the documented field map.
     assert_eq!(
         parsed.ext.money, post_loop.ext.money,
         "gold round-trips through the retail SC slot"
@@ -617,6 +618,7 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
             active_party: post_loop.ext_v2.active_party.clone(),
             field_position: post_loop.ext_v2.field_position,
             audio_levels: post_loop.ext_v2.audio_levels,
+            play_time_seconds: post_loop.ext_v2.play_time_seconds,
             ..SaveExtV2::default()
         },
         "only the retail-carried v2 fields survive the SC round-trip"
@@ -637,14 +639,15 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
         reloaded.actors.push(Actor::default());
     }
     let expected_money = parsed.ext.money;
+    let expected_time = post_loop.ext_v2.play_time_seconds;
     reloaded.load_full(parsed);
     assert_eq!(
         reloaded.party.money, expected_money,
         "World::load_full carries the SC-slot gold"
     );
     assert_eq!(
-        reloaded.clock.play_time_seconds, 0,
-        "World::load_full sees play_time as engine-only"
+        reloaded.clock.play_time_seconds, expected_time,
+        "the play clock rides retail's own counter (`0x80084570`)"
     );
 }
 

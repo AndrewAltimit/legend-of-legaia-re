@@ -1252,7 +1252,22 @@ composer's write order - records, then flags, then inventory - is what
 reclaims it. `engine-core/tests/save_block_checksum.rs` pins the composer's
 region list, so extending *it* fails there rather than in a garbled info
 panel; the resume and engine-ext writers are siblings precisely so that list
-stays the list of regions retail reads.
+stays the list of regions retail reads. The play clock below is one of those
+regions: retail reads it back with the rest of the window.
+
+### The play clock
+
+The play-time counter is the live-state word `0x80084570` (SC `0x430`), a u32
+that ticks 60 times a second. The save screen's time line reads it there and
+divides it by `216000` for hours and `3600` for total minutes, clamping the
+display at `99:59` (`0x801DD5C8..0x801DD618` in the menu overlay); the New
+Game slate zeroes it (`FUN_8001DCF8`, `0x8001DD58`). The engine keeps the clock
+in whole seconds (`SaveExtV2::play_time_seconds`):
+`SaveFile::from_retail_sc_block` lifts `counter / 60` from a retail block and
+`write_into_retail_sc_block` writes `seconds * 60` back, so a retail save
+loads with its own play time and a block an engine host writes prints its
+time on retail's save screen. An engine-authored block's `LGXE` tail carries
+the same seconds and wins on the lift.
 
 ### The engine-ext blob in the unread tail
 

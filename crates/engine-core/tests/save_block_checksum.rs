@@ -175,6 +175,10 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || (legaia_save::card::RETAIL_AUDIO_LEVEL_OFFSET
                 ..legaia_save::card::RETAIL_VOICE_VOLUME_OFFSET + 4)
                 .contains(&i)
+            // The play-time counter (`0x80084570`, 60 ticks a second).
+            || (legaia_save::card::RETAIL_PLAY_COUNTER_OFFSET
+                ..legaia_save::card::RETAIL_PLAY_COUNTER_OFFSET + 4)
+                .contains(&i)
             // The nine minigame words (coins, Point Card, fishing record) -
             // live-state window words retail saves like the gold.
             || {
