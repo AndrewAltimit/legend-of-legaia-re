@@ -910,6 +910,11 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   from the side that coin picks. From the seat's seed pass to the capture's
   state the drive keeps the engine's counter on retail's half-turn
   (`BattleCamera::align_action_yaw_half`), leaving the drift to the engine.
+  The track coin `ctx[+0x26D]` is the third draw: `FUN_8004E13C` stores
+  `rand() % 2` on every clip commit whose header byte `+0x87` is non-zero,
+  and it picks the per-art track column and the `0x200` offset in case 8's
+  dead-target yaw. Over the same span the drive puts the engine's coin on
+  the capture's (`BattleCamera::align_phase_cursor`).
 - **Ahead of the seed pass.** `0x00`, `0x0A` and `0x0B` run before the seed
   pass copies the next actor into `ctx[+0x13]` from `ctx[+0x274]`
   (`0x801E2C50..0x801E2C5C`), so a capture there reads the previous actor -

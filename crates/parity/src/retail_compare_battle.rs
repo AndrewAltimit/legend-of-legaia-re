@@ -195,6 +195,9 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// `ctx[+0x26D]` - the per-action track coin `FUN_8004E13C` rolls on a
+    /// clip commit (`rand() % 2`).
+    pub track_coin: u8,
     /// PROT 0903's countdown word
     /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
     /// meaningful while that module is resident.
@@ -1211,6 +1214,7 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            track_coin: game_anchors::u8_at(ram, ctx + 0x26D) & 1,
             gimard_countdown: game_anchors::u32_at(
                 ram,
                 legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
@@ -2157,6 +2161,10 @@ pub enum BattleDrive {
 pub struct ActionSteer {
     pub target: Option<u8>,
     pub yaw: Option<u16>,
+    /// The track coin `ctx[+0x26D]` the capture holds - a `rand() % 2`
+    /// draw like the yaw counter's half-turn, aligned the same way
+    /// (`BattleCamera::align_phase_cursor`).
+    pub coin: Option<u8>,
     pub message: Option<(u32, i16)>,
     pub plate_cleared: bool,
     pub arts: bool,
@@ -2457,6 +2465,9 @@ impl BattleDrive {
                 if let Some(y) = steer.yaw {
                     s.push_str(&format!(",y{y}"));
                 }
+                if let Some(o) = steer.coin {
+                    s.push_str(&format!(",o{o}"));
+                }
                 if let Some((va, hold)) = steer.message {
                     s.push_str(&format!(",m{va:x}/{hold}"));
                 }
@@ -2520,6 +2531,8 @@ impl BattleDrive {
                 steer.target = Some(t.parse().ok()?);
             } else if let Some(y) = last.strip_prefix('y') {
                 steer.yaw = Some(y.parse().ok()?);
+            } else if let Some(o) = last.strip_prefix('o') {
+                steer.coin = Some(o.parse().ok()?);
             } else if let Some(m) = last.strip_prefix('m') {
                 let (va, hold) = m.split_once('/')?;
                 steer.message = Some((u32::from_str_radix(va, 16).ok()?, hold.parse().ok()?));
@@ -2846,6 +2859,9 @@ impl BattleDrive {
                 && let Some(cam) = world.battle.camera.as_mut()
             {
                 cam.align_action_yaw_half(i32::from(yaw));
+                if let Some(coin) = steer.coin {
+                    cam.align_phase_cursor(coin);
+                }
             }
         }
         let pc = world.party.party_count.clamp(1, 3);
@@ -3295,6 +3311,7 @@ impl RetailBattle {
                             && self.target_code < 3))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
+                    coin: Some(self.track_coin),
                     message: self.timed_message,
                     plate_cleared: self.target_plate_cleared && seat < 3,
                     arts: seat < 3 && self.queued_category == 3 && self.arts_queue,
@@ -3451,6 +3468,17 @@ fn run_drive(
                     .iter()
                     .take(8)
                     .map(|a| (a.move_state.world_x, a.move_state.world_z))
+                    .collect::<Vec<_>>()
+            );
+            eprintln!(
+                "[rc] t={t} yaw_base={:?} style={} y/facing={:?}",
+                world.battle.camera.as_ref().map(|c| c.action_yaw_base()),
+                world.battle_ctx.camera_variant,
+                world
+                    .actors
+                    .iter()
+                    .take(8)
+                    .map(|a| (a.move_state.world_y, a.battle.facing_angle & 0xFFF))
                     .collect::<Vec<_>>()
             );
         }
