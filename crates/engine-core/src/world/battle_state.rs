@@ -415,8 +415,9 @@ pub struct BattleState {
     /// consumed (taken) by the monster pick.
     pub forced_monster_cast: Option<(u8, u8)>,
     /// The same seed's target: the party seat the capture's caster had
-    /// aimed its cast at (`+0x1DD`). A single-target cast replayed off
-    /// [`Self::forced_monster_cast`] lands on it when it is standing,
+    /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
+    /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
+    /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the

@@ -2691,8 +2691,16 @@ impl BattleDrive {
             let seat = engine_seat(seat, pc);
             if seat >= pc {
                 world.battle.forced_monster_cast = Some((seat, queued));
-                world.battle.forced_monster_target =
-                    self.steering().and_then(|s| s.target).filter(|&t| t < 3);
+                // A party seat keeps its number; the caster's own retail
+                // seat is re-keyed to its engine seat.
+                world.battle.forced_monster_target = self
+                    .steering()
+                    .and_then(|s| s.target)
+                    .and_then(|t| match t {
+                        0..3 => Some(t),
+                        t if engine_seat(t, pc) == seat => Some(seat),
+                        _ => None,
+                    });
             }
         }
     }
@@ -3314,7 +3322,13 @@ impl RetailBattle {
                             .contains(&usize::from(self.target_code - 3)))
                         || (seat >= 3
                             && matches!(self.queued_category, 2 | 3)
-                            && self.target_code < 3))
+                            && self.target_code < 3)
+                        // A monster cast on itself (Cort's Ultra Charge,
+                        // `+0x1DD == ctx[+0x13]`): retail's cast-begin skips
+                        // the facing store for a self target (`beq v0,t2` at
+                        // `0x801E4350`), and the module frames from the
+                        // heading the caster keeps.
+                        || (seat >= 3 && self.queued_category == 2 && self.target_code == seat))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
                     coin: Some(self.track_coin),
