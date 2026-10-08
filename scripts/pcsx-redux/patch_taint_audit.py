@@ -78,7 +78,7 @@ SITES = [
     # randomizer's display half (crates/patcher/src/arts.rs, glyph_patches;
     # the pool runs from the first record's +8 pointer to the last string);
     # arena 2 and the victory mouth-table padding are shiny-seru's current and
-    # earlier layouts (crates/patcher/src/space_ledger.rs, shiny_seru.rs); the
+    # earlier layouts (crates/disc-patch/src/space_ledger.rs, shiny_seru.rs); the
     # new-game template rows and the table below them are the party swap's.
     (0x80013620, 0xC80, "arts-name glyph strings (arts randomizer)"),
     (0x8007AFF8, 0x48, "shiny-seru arena 2"),

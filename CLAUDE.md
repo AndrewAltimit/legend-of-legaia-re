@@ -239,6 +239,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/gamedata`](crates/gamedata/README.md) | `gamedata-tool` | Curated game-data tables (arts, magic, items, weapons, armor, accessories, enemies, shops, casino, fishing, music tracks, scene names) mined from public walkthroughs; the music and scene-name tables contributed by Stann0x. These are **ground-truth labels** for the binary records under RE, not disc data. See [`docs/reference/gamedata.md`](docs/reference/gamedata.md). |
 | [`crates/cheats`](crates/cheats/README.md) | `cheat-tool` | Parser + classifier for third-party GameShark / Pro-Action-Replay cheat databases. Classifies codes by the RAM region they target; the pinned offsets (character record, inventory, battle actor, story flags) ground-truth the binary records. See [`docs/reference/cheats.md`](docs/reference/cheats.md). |
 | [`crates/patcher`](crates/patcher/README.md) | `legaia-patcher` | Disc-patching toolkit for a user-supplied `.bin` (in-place PROT edits, MAN relocation, PPF output): randomizer, translation packs, manual edits, MIPS code hooks. Reference: [`randomizer.md`](docs/tooling/randomizer.md). No Sony bytes. |
+| [`crates/disc-patch`](crates/disc-patch/README.md) | - | The patcher's foundation: `DiscPatcher` same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN re-pack budgets. Re-exported by `legaia-patcher`. |
 
 **Track 2 - engine reimplementation (from-scratch Rust)**
 

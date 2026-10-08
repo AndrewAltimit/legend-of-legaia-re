@@ -1,0 +1,18 @@
+[package]
+name = "legaia-disc-patch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_disc_patch"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-asset.workspace = true
+legaia-iso.workspace = true
+legaia-lzs.workspace = true
+legaia-prot.workspace = true
+legaia-xa.workspace = true
+serde.workspace = true

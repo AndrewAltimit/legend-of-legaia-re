@@ -1,6 +1,6 @@
 //! Disc bridge: apply same-size asset edits to a real disc image.
 //!
-//! Ties the editing primitives (e.g. [`crate::monster::set_drop`]) to the
+//! Ties the editing primitives (e.g. `legaia_patcher::monster::set_drop`) to the
 //! sector-level write-back in [`legaia_iso::write`]. The chain a PROT-entry edit
 //! travels:
 //!
@@ -635,7 +635,7 @@ impl DiscPatcher {
 
     /// Replace monster `id`'s `0x14000`-byte slot in the `battle_data` archive
     /// with `new_slot` (which must be exactly one slot). Use with a slot built
-    /// by [`crate::monster::set_drop`] / [`crate::monster::repack_slot`].
+    /// by `legaia_patcher::monster::set_drop` / `legaia_patcher::monster::repack_slot`.
     pub fn patch_monster_slot(&mut self, id: u16, new_slot: &[u8]) -> Result<()> {
         if id == 0 {
             bail!("monster id is 1-based; 0 is invalid");
@@ -709,7 +709,7 @@ impl DiscPatcher {
 
     /// Parse the disc's `CDNAME.TXT` scene-name map. Returns `None` if the file
     /// is absent or unreadable. Used by the scoped encounter randomizer to bucket
-    /// scenes into kingdoms (see [`crate::kingdom`]).
+    /// scenes into kingdoms (see `legaia_patcher::kingdom`).
     pub fn cdname(&self) -> Option<legaia_prot::cdname::IndexMap> {
         let bytes = self.read_named_file("CDNAME.TXT")?;
         let text = String::from_utf8_lossy(&bytes);
@@ -949,20 +949,20 @@ impl DiscPatcher {
 
 /// Synthetic-disc builders shared by this module's tests and the texture
 /// module's disc-free replacement tests.
-#[cfg(test)]
-pub(crate) mod synth {
+#[doc(hidden)]
+pub mod synth {
     use super::*;
 
     /// Build a tiny but real Mode 2 Form 1 disc whose ISO 9660 root holds a
     /// single file, "PROT.DAT", with the given logical payload. Enough structure
     /// for find_file_in_image + the read/write paths.
-    pub(crate) fn synth_disc(prot_payload: &[u8]) -> Vec<u8> {
+    pub fn synth_disc(prot_payload: &[u8]) -> Vec<u8> {
         synth_disc_with_dmy(prot_payload, 0)
     }
 
     /// [`synth_disc`] plus a `DMY.DAT` of `dmy_sectors` zeroed sectors right
     /// after `PROT.DAT` - the annex's room.
-    pub(crate) fn synth_disc_with_dmy(prot_payload: &[u8], dmy_sectors: usize) -> Vec<u8> {
+    pub fn synth_disc_with_dmy(prot_payload: &[u8], dmy_sectors: usize) -> Vec<u8> {
         const PVD_LBA: u32 = 16;
         const ROOT_LBA: u32 = 17;
         const PROT_LBA: u32 = 18;
@@ -1054,7 +1054,7 @@ pub(crate) mod synth {
     ///   rather than 0..3;
     /// - an entry whose `start*2048 + size` runs past the file is dropped, so
     ///   the payload is 8 sectors, comfortably past the highest LBA used.
-    pub(crate) fn synth_prot(entry1_data: &[u8]) -> Vec<u8> {
+    pub fn synth_prot(entry1_data: &[u8]) -> Vec<u8> {
         let sec = USER_DATA_SIZE;
         let mut prot = vec![0u8; 8 * sec];
         let put = |p: &mut [u8], off: usize, v: u32| {

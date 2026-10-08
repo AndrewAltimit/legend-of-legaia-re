@@ -75,7 +75,8 @@ pub mod delilas_signature_attack;
 pub mod delilas_voice;
 pub mod delilas_voice_fx;
 pub mod delilas_xa_voice;
-pub mod disc;
+pub use legaia_disc_patch::disc;
+pub(crate) use legaia_disc_patch::{compress_within, man_compressed_budget};
 pub mod door;
 pub mod drops;
 pub mod earth_egg;
@@ -110,7 +111,7 @@ pub mod move_power;
 pub mod nivora_field;
 pub mod oscillating_ap;
 pub mod party_swap;
-pub mod ppf;
+pub use legaia_disc_patch::ppf;
 pub mod rewards;
 pub mod rng;
 pub mod save_icon;
@@ -118,7 +119,9 @@ pub mod seru_overlay;
 pub mod seru_trade;
 pub mod shiny_seru;
 pub mod shop;
-pub mod space_ledger;
+pub use legaia_disc_patch::space_ledger;
+#[cfg(test)]
+mod space_ledger_rows_tests;
 pub mod spell_cost;
 pub mod spirit_ap;
 pub mod starting_bag;
@@ -134,52 +137,3 @@ pub mod texture_palettes;
 pub mod translation;
 pub mod unused;
 pub mod weapon_specialty;
-
-/// Compressed-stream budget for a scene bundle's MAN: the space its LZS stream
-/// may occupy without overflowing into the next asset, i.e. the distance from
-/// the MAN's `data_offset` to the **next descriptor's** `data_offset` (or the
-/// entry end if the MAN is last).
-///
-/// This is the *original, stable* footprint - it does not depend on the current
-/// stream length. That matters when several passes (encounter / chest / shop)
-/// each decompress → edit → recompress the **same** MAN: our LZS re-packer is
-/// often a touch tighter than Sony's, so reading the budget back from the
-/// just-written (shorter) stream would shrink it on every pass and make a later
-/// pass overflow + skip a scene it should have edited (the bug where Biron
-/// Monastery's shop stayed vanilla after encounters/chests ran first). Reading
-/// the budget from the descriptor boundary keeps every pass on the same, full
-/// budget. The descriptors' `data_offset`s never move (all edits are same-size
-/// in place), so the boundary is constant across passes.
-pub(crate) fn man_compressed_budget(
-    table: &legaia_asset::scene_asset_table::SceneAssetTable,
-    man_data_offset: usize,
-    entry_len: usize,
-) -> usize {
-    table
-        .used()
-        .iter()
-        .map(|d| d.data_offset as usize)
-        .filter(|&o| o > man_data_offset)
-        .min()
-        .unwrap_or(entry_len)
-        .saturating_sub(man_data_offset)
-}
-
-/// Recompress a decoded MAN into `budget` bytes: greedy first, then the
-/// optimal packer when greedy misses. `None` if even optimal overflows.
-///
-/// Every MAN re-pack site must use this rather than bare
-/// [`legaia_lzs::compress`]: a growing pass (the Delilas Challenge, a grown
-/// translation) can leave a MAN that only the optimal packer fits back into
-/// its zero-slack footprint, and a later same-size pass (Earth Egg price,
-/// chests, shops, doors) re-packs the whole stream - with greedy alone that
-/// later pass would overflow and skip (or fail) a scene the first pass proved
-/// fits.
-pub(crate) fn compress_within(decoded: &[u8], budget: usize) -> Option<Vec<u8>> {
-    let stream = legaia_lzs::compress(decoded);
-    if stream.len() <= budget {
-        return Some(stream);
-    }
-    let stream = legaia_lzs::compress_optimal(decoded);
-    (stream.len() <= budget).then_some(stream)
-}

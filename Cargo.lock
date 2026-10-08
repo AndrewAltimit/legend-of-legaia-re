@@ -1298,6 +1298,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-disc-patch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-iso",
+ "legaia-lzs",
+ "legaia-prot",
+ "legaia-xa",
+ "serde",
+]
+
+[[package]]
 name = "legaia-engine-audio"
 version = "0.1.0"
 dependencies = [
@@ -1726,6 +1739,7 @@ dependencies = [
  "legaia-art",
  "legaia-asset",
  "legaia-bytes",
+ "legaia-disc-patch",
  "legaia-font",
  "legaia-gamedata",
  "legaia-iso",

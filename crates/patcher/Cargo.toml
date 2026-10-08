@@ -24,6 +24,7 @@ default = ["cli"]
 cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
+legaia-disc-patch.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 legaia-lzs.workspace = true
