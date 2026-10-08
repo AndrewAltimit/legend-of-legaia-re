@@ -96,6 +96,16 @@ Three things decide whether a `display-list` report means anything:
   N-1 at near-identical counts, so merging a pair makes every surface look
   stacked with itself. One table is walked by default; `--all-ots` opts into the
   merged view and `--ot-addr` selects one explicitly.
+- **Absence is only as good as the acceptance table.** A packet whose
+  `(command, length)` the decoder does not accept is walked past, not reported
+  as a primitive - which is how every `POLY_FT3` went missing from every list
+  while the table expected six payload words instead of seven. The report now
+  lists every such link (`walked but not decoded`, from
+  `prim_pool::chain_undecoded`) and says how many carry a polygon command.
+  Across the save-state library that count is zero; what remains undecoded is
+  one screen-clear `TILE` (`0x60`, three words) per table, GP0 attribute
+  packets and rare `LINE_F2` (`0x40..0x43`) / transfer links. A "retail draws no
+  X" reading should quote that line alongside the census.
 
 `vram-dump --display-crop` writes only the **on-screen framebuffer** (the
 display-area sub-rect: `display_fb` origin sized by the resolution decoded from

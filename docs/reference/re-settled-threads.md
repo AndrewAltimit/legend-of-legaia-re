@@ -5323,8 +5323,13 @@ has three references on the disc, all in PROT 0899, whose single writer
 
 Field-run display-list reads inside `jouine` and `jouind` report zero
 screen-coincident surface groups above a 16 px² floor; every surface in the
-live ordering table is submitted exactly once (1218 packets walked in
-`jouind`, 972 in `jouine`). The coplanar kernel's same-position curved-shell
+live ordering table is submitted exactly once (1263 packets walked in
+`jouind`, 1016 in `jouine`). Those counts are the re-measurement after the
+decoder learned `POLY_FT3`'s seven payload words: the first read walked past
+every textured flat triangle (46 and 45 of them in these two chains), so it
+was blind to exactly the strand meshes `jouine` is built from. With them
+decoded, and with the walk reporting no undecoded polygon link in either
+state, the answer is unchanged. The coplanar kernel's same-position curved-shell
 residual is therefore a property of how the *port* assembles a scene's env
 TMDs, not something retail resolves by ordering - there is nothing for retail
 to order. The only coincidence in either image is one mesh drawn three times

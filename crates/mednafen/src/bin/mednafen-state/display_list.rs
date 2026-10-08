@@ -362,6 +362,32 @@ pub fn cmd_display_list(
             chained.len()
         );
     }
+    // The decoder's blind spot, stated: links the walk passed without decoding.
+    // A polygon command here (0x20..=0x3F) means a family is being dropped by
+    // the acceptance table, and any "retail draws none of it" reading is the
+    // instrument's until it is accepted.
+    let mut undecoded: BTreeMap<(u8, usize), usize> = BTreeMap::new();
+    for ot in &mine {
+        for (k, n) in
+            prim_pool::chain_undecoded(&ram, PSX_RAM_KSEG0, (ot.head - PSX_RAM_KSEG0) as usize)
+        {
+            *undecoded.entry(k).or_insert(0) += n;
+        }
+    }
+    if !undecoded.is_empty() {
+        let polys: usize = undecoded
+            .iter()
+            .filter(|((c, _), _)| (0x20..=0x3F).contains(c))
+            .map(|(_, n)| n)
+            .sum();
+        println!(
+            "[chain] {} link(s) walked but not decoded ({polys} carry a polygon command):",
+            undecoded.values().sum::<usize>()
+        );
+        for ((cmd, len), n) in &undecoded {
+            println!("    cmd 0x{cmd:02X} len {len:>2}  x{n}");
+        }
+    }
 
     if coincident {
         report_coincident(&chained, top, min_area);

@@ -745,6 +745,57 @@ pub fn chain_walk(pool: &[u8], pool_base: u32, head_offset: usize) -> Vec<Chaine
     out
 }
 
+/// Census of the chain links [`chain_walk`] walks past **without** decoding,
+/// keyed by `(GP0 command byte, tag payload length)`.
+///
+/// This is the instrument's own blind spot, reported rather than hidden. A
+/// "retail draws none of family X" reading off a decoded list is only as good
+/// as the decoder's acceptance table: until `POLY_FT3` was accepted at its
+/// real seven payload words, every textured flat triangle walked into this
+/// bucket and every list read as "no triangles". Empty links (length `0`, the
+/// OT bucket heads) are not counted; everything else that fails to decode is,
+/// including GP0 attribute packets (`0xE1..=0xE6`), which are expected here.
+pub fn chain_undecoded(
+    pool: &[u8],
+    pool_base: u32,
+    head_offset: usize,
+) -> std::collections::BTreeMap<(u8, usize), usize> {
+    let pool_lo = pool_base & 0x00FF_FFFF;
+    let mut seen = vec![false; pool.len() / 4 + 1];
+    let mut out = std::collections::BTreeMap::new();
+    let mut cursor = head_offset;
+    loop {
+        if cursor + 8 > pool.len() {
+            break;
+        }
+        let wi = cursor / 4;
+        if wi >= seen.len() || seen[wi] {
+            break;
+        }
+        seen[wi] = true;
+        let tag = read_u32(pool, cursor);
+        let length = ((tag >> 24) & 0xFF) as usize;
+        let next_addr = tag & 0x00FF_FFFF;
+        if length > 0 && cursor + 4 + length * 4 <= pool.len() {
+            let cmd = ((read_u32(pool, cursor + 4) >> 24) & 0xFF) as u8;
+            let decoded = (1..=12).contains(&length)
+                && matches!(decode_packet(pool, cursor, cmd, length), (_, Some(_)));
+            if !decoded {
+                *out.entry((cmd, length)).or_insert(0) += 1;
+            }
+        }
+        if next_addr == 0x00FF_FFFF {
+            break;
+        }
+        let next_off = next_addr.wrapping_sub(pool_lo) as usize;
+        if next_off >= pool.len() {
+            break;
+        }
+        cursor = next_off;
+    }
+    out
+}
+
 fn decode_in(pool: &[u8], pool_base: u32, _scratch: &mut Vec<u8>) -> Vec<Prim> {
     let pool_lo = pool_base & 0x00FF_FFFF;
     let pool_hi = pool_lo + pool.len() as u32;
@@ -1325,6 +1376,35 @@ mod tests {
         ));
         let walked = chain_walk(&pool, base, 0);
         assert_eq!(walked.len(), 2, "cycle must stop after revisiting a packet");
+    }
+
+    /// The walk's blind spot is reported, not hidden: a link the decoder does
+    /// not accept (here a `TILE` and an F3 tagged at the wrong length) lands in
+    /// the undecoded census keyed by `(cmd, length)`, and a decoded one does
+    /// not.
+    #[test]
+    fn chain_undecoded_reports_the_links_the_walk_drops() {
+        let base = 0x8000_0000u32;
+        let mut pool = Vec::new();
+        // 0: F3, decoded -> 20.
+        pool.extend_from_slice(&packet(
+            4,
+            base + 20,
+            &[0x2000_0000, xy(0, 0), xy(9, 0), xy(0, 9)],
+        ));
+        // 20: TILE (cmd 0x60, 3 words), not decoded -> 36.
+        pool.extend_from_slice(&packet(3, base + 36, &[0x6000_0000, xy(0, 0), xy(8, 8)]));
+        // 36: F3 tagged at 5 words, not decoded -> end.
+        pool.extend_from_slice(&packet(
+            5,
+            0xFFFFFF,
+            &[0x2000_0000, xy(1, 1), xy(9, 1), xy(1, 9), 0],
+        ));
+        assert_eq!(chain_walk(&pool, base, 0).len(), 1);
+        let und = chain_undecoded(&pool, base, 0);
+        assert_eq!(und.get(&(0x60, 3)), Some(&1));
+        assert_eq!(und.get(&(0x20, 5)), Some(&1));
+        assert_eq!(und.len(), 2, "the decoded F3 is not counted");
     }
 
     /// `ClearOTagR` leaves every empty bucket pointing at its own predecessor;
