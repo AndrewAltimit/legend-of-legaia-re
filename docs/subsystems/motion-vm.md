@@ -371,7 +371,7 @@ Two deliberate departures: LUT indices `8..=15` are treated as no-ops rather tha
 
 ## Engine consumers
 
-The runtime [`Camera`](../../crates/engine-core/src/camera.rs) in `engine-core` consumes:
+The runtime [`Camera`](../../crates/engine-field/src/camera.rs) in `engine-core` consumes:
 
 - The field-VM op-`0x45` event stream (`CameraConfigure` / `CameraSave` / `CameraLoad` / `CameraApply`) for the high-level camera state.
 - The motion VM (optional) for cinematic pre-baked camera paths via `Camera::tick_script`.

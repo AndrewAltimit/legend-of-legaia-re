@@ -29,18 +29,7 @@
 
 use super::World;
 
-/// The camera state the cull reads, as the camera last left it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FieldCullView {
-    /// `_DAT_80089118` / `_DAT_80089120`: the focus X / Z, **negated** as
-    /// retail stores them.
-    pub focus_stored: [i32; 2],
-    /// The walk-region attribute box `0x1F800384..87`, `[x_lo, z_lo, x_hi,
-    /// z_hi]` in world tiles.
-    pub attr_box: [u8; 4],
-    /// The visible tile window `0x1F8003E8..EB`, signed, focus-relative.
-    pub window: [i8; 4],
-}
+pub use crate::camera::FieldCullView;
 
 /// `FUN_801D79E8`'s decision: `true` = bit `1` set (the actor is outside the
 /// region box or the widened window), `false` = cleared.

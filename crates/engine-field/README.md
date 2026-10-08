@@ -60,6 +60,13 @@ a dependent crate.
   arts-voice XA requests and SPU ring cues) and `sfx_cue` (cue id to the
   4-slot pending ring / XA clip, `FUN_8004FE5C`); the battle actor tick in
   `engine-core` drains them.
+- **Field camera** - `camera` (`Camera`, the follow / zone / scripted
+  camera both hosts tick, with `CameraDistance` and the camera-zone request
+  and cull-view types). Generic over `CameraWorld`, the slice of the world it
+  reads and publishes; engine-core implements it for `World`. See
+  [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md) and
+  [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md) for the
+  retail globals it mirrors.
 - **Mode seat** - `mode` (the retail mode table at SCUS `0x8007078C`,
   `ModeDriver`, `ModeSeat`, `SceneMode` and the boot chain) and
   `minigame_entry` (the mode-24 door-warp sub-id space). The seat drives a

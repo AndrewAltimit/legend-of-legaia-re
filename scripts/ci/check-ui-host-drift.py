@@ -3167,7 +3167,7 @@ def _selftest_render_case(rule: dict, src: str) -> bool:
 OWNED_TYPES: list[dict[str, object]] = [
     {
         "type": "Camera",
-        "defined_in": "crates/engine-core/src/camera.rs",
+        "defined_in": "crates/engine-field/src/camera.rs",
         "why": "which camera owns a frame and what its retail GTE inputs are "
         "is one engine question; a host that renders a field without holding "
         "the type re-implements the mover, the compass azimuth and the "

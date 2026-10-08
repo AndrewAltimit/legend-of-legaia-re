@@ -555,6 +555,14 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   target-menu row dedup / labelling and the overlap-relaxation layout
   (`FUN_801D9D3C`), reached each battle frame through
   `battle_hud::battle_intro_names` on both hosts.
+- `camera` - the field camera (`Camera`: presets, the zone follow composer
+  and ease, the script mover, the field-event router, the follow knobs).
+  It lives in `legaia-engine-field` and reaches the world only through the
+  `CameraWorld` trait - scene mode, player position and footing, the
+  region / zone / collision blocks, the story word, the register file and
+  shake, the field event and zone-request queues, the cull view and fog
+  window it publishes, the `rand()` stream; this module implements it for
+  `World`.
 - `camera_view` - the layer above `camera`: which camera owns this frame
   (`resolve_field_camera` - retail follow / op-`0x45` cutscene shot /
   overworld walk / world-map top-view debug) and what its retail GTE inputs

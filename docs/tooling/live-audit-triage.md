@@ -829,7 +829,7 @@ because a reader looking for the row will otherwise not find it.
 
 **`arm`** (`801d8258`, `crates/engine-field/src/world_map.rs:78`) keeps the
 `DISCLOSE` verdict above but no longer appears in the audit at all. Making the
-winit tree reachable made `route_camera_events` in `engine-core/src/camera.rs`
+winit tree reachable made `route_camera_events` in `engine-field/src/camera.rs`
 reachable, and its `.arm(` call on a `CameraMover` resolves by name to
 `EmitterGate::arm` as well, because receiver types are not inferred. That is
 audit cause 2 - a method-name collision - and it hides a genuine gap. The

@@ -1433,6 +1433,7 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-mes",
  "legaia-tmd",
+ "serde",
 ]
 
 [[package]]

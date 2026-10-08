@@ -1,5 +1,6 @@
 //! Field-scene kernels: the scripted-scene actor program and plain-template
-//! cutscene elements, the follow camera's per-scene parameters, vertical
+//! cutscene elements, the field camera (over the `CameraWorld` slice of the
+//! world), the follow camera's per-scene parameters, vertical
 //! ease and register ramp, player clip playback, the morph-weight apply
 //! pass, the opening narration roller, the per-actor handler and its
 //! kernels, actor clone, look rotation and screen tween, the scene
@@ -29,9 +30,12 @@ use legaia_engine_system::music_labels;
 use legaia_engine_system::sound_state;
 use legaia_engine_vm::field_regions;
 
+use legaia_engine_system::mode_entry_init;
+
 pub mod actor_handler;
 pub mod actor_look;
 pub mod anim_cue;
+pub mod camera;
 pub mod camera_ease;
 pub mod camera_zone;
 pub mod clut_cell_fx;

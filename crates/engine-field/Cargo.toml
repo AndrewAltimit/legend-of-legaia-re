@@ -18,3 +18,4 @@ legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
 legaia-mes.workspace = true
 legaia-tmd.workspace = true
+serde.workspace = true
