@@ -37,6 +37,34 @@ use super::*;
 /// struct's `+0x9A = 0xFFFF` write.
 ///
 /// Returns `false` (ctx untouched) when the record cannot be resolved.
+/// Whose drawn heading a field context's `+0x26` is.
+pub(in crate::world) enum HeadingOwner {
+    Player,
+    Placement(u8),
+}
+
+impl World {
+    /// Resolve the actor whose heading `ctx` carries: the player for the
+    /// `0xF8` context outside a placement step, else the placement channel
+    /// whose context id it is (an own-context write or a cross-context poke
+    /// alike), else the stepping placement or talk.
+    pub(in crate::world) fn heading_owner(&self, ctx: &FieldCtx) -> Option<HeadingOwner> {
+        let channel = self.field_vm.executing_channel;
+        if channel.is_none() && ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
+            return Some(HeadingOwner::Player);
+        }
+        let by_id = self
+            .channel_view()
+            .iter()
+            .find(|c| !c.object_bind && c.ctx.script_id == ctx.script_id)
+            .and_then(|c| u8::try_from(c.placement_index).ok());
+        by_id
+            .or(channel)
+            .or(self.dialog.stepping_inline_npc)
+            .map(HeadingOwner::Placement)
+    }
+}
+
 pub(in crate::world) fn apply_script_table_teleport(
     man_file: &legaia_asset::man_section::ManFile,
     man: &[u8],
@@ -518,7 +546,53 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
     }
 
+    // `4C 48`'s immediate arm: the context's `+0x26` is the actor's drawn
+    // heading. nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300`
+    // from their spawn prologue's `4C 48 00 03 00 00`.
+    // REF: FUN_801DE840 (nibble-4 sub-8)
+    fn op4c_n4_heading_write(&mut self, ctx: &mut FieldCtx, value: u16) {
+        match self.world.heading_owner(ctx) {
+            Some(HeadingOwner::Player) => {
+                if let Some(a) = self
+                    .world
+                    .player_actor_slot
+                    .and_then(|s| self.world.actors.get_mut(usize::from(s)))
+                {
+                    a.move_state.render_26 = (value as i16).wrapping_add(0x800);
+                }
+            }
+            Some(HeadingOwner::Placement(slot)) => {
+                self.world.npcs.heading_ramps.free_owner(u32::from(slot));
+                self.world
+                    .npcs
+                    .headings
+                    .insert(slot, (value as i16).wrapping_add(0x800));
+            }
+            None => {}
+        }
+    }
+
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+        // Sub-8: a heading tween on a placement, from its live heading
+        // (retail space) - the `FUN_8003C5F0` ramp the scheduler lerps.
+        if sub == 8 {
+            if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
+                use vm::ambient_motion::{RAMP_DEST_HEADING, Ramp, RampKind};
+                let start = i32::from(self.world.npcs.heading(slot).wrapping_sub(0x800));
+                let total = i32::from(ticks);
+                self.world.npcs.heading_ramps.free_owner(u32::from(slot));
+                self.world.npcs.heading_ramps.install(Ramp {
+                    dest: RAMP_DEST_HEADING,
+                    owner: u32::from(slot),
+                    start,
+                    end: i32::from(target),
+                    total,
+                    remaining: total,
+                    kind: RampKind::U16,
+                });
+            }
+            return;
+        }
         // Sub-2 on a placed object's actor: the `+0x8E` tween the actor
         // tick's `0x20000000` height law turns into its Y (`chitei2`'s
         // falling boulder). See `world::object_actor_height`.

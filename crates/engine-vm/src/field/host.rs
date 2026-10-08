@@ -106,6 +106,8 @@ pub trait FieldHost {
     /// [`Self::cam_cfg_lookup`]'s context write.
     ///
     /// REF: FUN_801DE840 (case 0x38), FUN_8003C83C
+    ///
+    /// See also [`Self::op4c_n4_heading_write`], the `4C 48` sibling.
     fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
         let _ = (ctx, index, player);
     }
@@ -1065,6 +1067,17 @@ pub trait FieldHost {
         false
     }
 
+    /// `4C 48` with `ticks == 0`: the VM has written `value` into the
+    /// context's `+0x26`, the heading the resolved actor draws at. The actor
+    /// is host state (a placement's heading table, the player's render
+    /// heading), so the host mirrors the write. The ramp form arrives through
+    /// [`Self::op4c_nibble4_ctx_ramp`] with `sub == 8`.
+    ///
+    /// REF: FUN_801DE840 (nibble-4 sub-8)
+    fn op4c_n4_heading_write(&mut self, ctx: &mut FieldCtx, value: u16) {
+        let _ = (ctx, value);
+    }
+
     /// Op 0x4C outer-nibble-4 ctx-slot ramp.
     ///
     /// The 0x4C nibble-4 family is a 6-byte "write or ramp a slot" cluster.
@@ -1086,6 +1099,10 @@ pub trait FieldHost {
     /// drives the per-frame interpolation, so this hook fires.
     ///
     /// PC always advances by 6.
+    ///
+    /// Sub-8 aims at the actor's heading, which the renderer draws from host
+    /// state: its ramp arrives here, and its immediate write additionally
+    /// through [`Self::op4c_n4_heading_write`].
     fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
         let _ = (ctx, sub, target, ticks);
     }

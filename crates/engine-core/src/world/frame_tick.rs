@@ -1736,6 +1736,7 @@ impl World {
                 // by which subsystem moved it - the script paths commit a
                 // position and raise no flag of their own.
                 self.tick_player_scale_ramp();
+                self.tick_npc_heading_ramps();
                 self.npcs.looks.tick(self.move_vm.ramp_ratio.max(1));
                 self.detect_field_actor_motion();
                 // Locomotion animation: idle vs walk off the movement flag

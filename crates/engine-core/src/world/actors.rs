@@ -2096,6 +2096,23 @@ impl World {
     /// over 100 frames this way.
     ///
     /// REF: FUN_80036D80
+    /// One frame of the `4C 48` heading tweens: each lands the scheduler's
+    /// retail-space value in the placement's heading (engine space,
+    /// `+ 0x800`), raw, as the scheduler's `sh` does.
+    pub(crate) fn tick_npc_heading_ramps(&mut self) {
+        if self.npcs.heading_ramps.active() == 0 {
+            return;
+        }
+        let speed = self.move_vm.ramp_ratio.max(1);
+        for w in self.npcs.heading_ramps.tick(speed) {
+            if let Ok(slot) = u8::try_from(w.owner) {
+                self.npcs
+                    .headings
+                    .insert(slot, (w.value as i16).wrapping_add(0x800));
+            }
+        }
+    }
+
     pub(crate) fn tick_player_scale_ramp(&mut self) {
         if self.locomotion.player_scale_ramps.active() == 0 {
             return;
