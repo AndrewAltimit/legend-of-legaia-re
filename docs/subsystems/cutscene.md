@@ -454,7 +454,7 @@ holds **no** channel selector):
   are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
   control / `CdlSetfilter` state machines around them stay hardware-side - scope
   row `[cd_transport_shims]`, with the callback ring `FUN_8003D764` decoded in
-  `legaia_engine_audio::battle_voice::xa_transport_step`.
+  `legaia_engine_audio::xa_transport::xa_transport_step`.
   `legaia-engine xa-cue <ids> [--xa-dir extracted/XA]` runs that mapping for a set of cue ids and
   reports the `XA<n>.XA` bank, the filter channel and the duration / end-LBA arithmetic, checking
   each resolved bank against the extracted files - the census entry point for this path.

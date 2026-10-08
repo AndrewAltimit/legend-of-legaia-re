@@ -115,7 +115,7 @@ How the runtime engine works.
 | [`engine.md`](docs/subsystems/engine.md) | From-scratch Rust port architecture and boundaries. |
 | [`boot.md`](docs/subsystems/boot.md) | Boot sequence; PROT TOC into `0x801C70F0`. |
 | [`asset-loader.md`](docs/subsystems/asset-loader.md) | LBA resolver + sub-asset chain. |
-| [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). Scene clip volume: every camera draws the whole scene (`SCENE_FAR`), no distance/frustum culling in the port. |
+| [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). No culling of the port's own: what drops geometry is retail's (visible-tile crop at retail framing, actor cull, per-prim rejects); the clip volume holds the whole scene (`SCENE_FAR`). |
 | [`shading.md`](docs/subsystems/shading.md) | How a pixel gets its colour: texel index -> CLUT read from **VRAM** (not the file) -> `texel * colour / 128` -> depth cue -> blend -> dither. No light source. Why exported palettes look wrong. |
 | [`vr-mode.md`](docs/subsystems/vr-mode.md) | WebXR `immersive-vr` on the site's 3D pages: the flat renderer stays the geometry source, only the framebuffer and view-projection fork per eye. |
 | [`audio.md`](docs/subsystems/audio.md) | PsyQ libsnd / libspu stack, SsAPI sequencer, SPU DMA engine; the cold scene-entry sequence every host owes, and how BGM parity is measured against a save state. |

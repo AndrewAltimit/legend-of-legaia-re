@@ -882,8 +882,9 @@ was a third of one - retail's sub-0 is a walk-out / walk-in **pair** whose blend
 and push kind come out of the sub-op byte, and whose all-zero operand clears the
 live actor rather than ramping to black
 ([settled](re-settled-threads.md#field--locomotion),
-[falsified](re-do-not-re-walk.md#field--locomotion)). What the closure does not
-settle is whether anything **draws** the surviving model - the first row above.
+[falsified](re-do-not-re-walk.md#field--locomotion)). Whether anything **draws** the
+surviving model is the screen-effect fade row above: both hosts composite it
+through `screen_prim::screen_effect_push_prims`.
 
 Four rows closed here before them, three of them the Equip screen's.
 

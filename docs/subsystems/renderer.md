@@ -27,8 +27,10 @@ strict-PS1 rasterisation: vertex snap and 15-bit dither sit behind
 **simulation is faithful with no opt-out; shading defaults to retail;
 rasterisation defaults to clean.** See [Lighting](#lighting).
 
-A second surprise, deliberate: the port draws **every** mesh a scene loads,
-every frame - no frustum cull, no draw distance, no LOD. See
+A second surprise, deliberate: the port adds no culling of its own - no
+frustum cull, no draw distance, no LOD. What it removes is what retail
+removes: the visible-tile crop at retail's framing, the actor cull and the
+per-primitive rejects. See
 [No distance culling](#no-distance-culling-every-loaded-body-is-drawn).
 
 ## Per-mode descriptor table
@@ -388,12 +390,12 @@ Engine port: `legaia_engine_vm::prim_dispatch` models this table - `slot_to_kind
 (topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11), and
 `RenderMode::applies_depth_cue` (the SCUS fog banks). The `NCCS`/`NCCT` kernels
 live in `legaia_engine_ui::gte::lighting` and are exercised by the `gte_trace`
-parity oracle, but no wgpu path yet draws the world-map slot-4 meshes, so the lit
-handlers are a faithful data model rather than a wired render path. This is a low
-priority: retail itself is not observed dispatching to these handlers at runtime
-(the world map renders unlit), so leaving them unwired matches observed retail
-output; the `NccMode` metadata is kept for fidelity if a light-using scene is ever
-found.
+parity oracle. The rows that reach them in retail are the field light-source
+groups (TMD flags `0x10..=0x17`, [The light-source rows](#the-light-source-rows)),
+which both hosts shade through `engine-core::field_lit_mesh`. The world map
+never dispatches to them - it renders unlit, and kingdom slot 4 is an
+animation bank with no geometry
+([world-map-overlay.md](../formats/world-map-overlay.md)).
 
 ## 2D gradient-tile primitive - `FUN_8002BDC4`
 
@@ -621,7 +623,7 @@ which runs both through the same `gte_divide` / `saturate_sxy` kernels the
 Retail has two GTE-backed "is this thing visible" probes. They read alike from
 the outside - project a box about an actor and return a boolean - and they are
 **not** interchangeable. Both are worth keeping straight because the engine port
-does no culling of its own (see
+adds no culling of its own (see
 [No distance culling](#no-distance-culling-every-loaded-body-is-drawn)), so
 anything that consults one of these is deciding to remove geometry the port
 otherwise draws.
@@ -1990,18 +1992,33 @@ checked against an sRGB target too, which lifts it out of tolerance.
 
 ## No distance culling: every loaded body is drawn
 
-The engine draws **every** mesh a scene loads, every frame. There is no
-frustum cull, no draw-distance heuristic, no per-object radius test, and no
-LOD: the field draw lists (`field_placement_draws`, `field_terrain_draws`, the
-ground heightfield, the posed props, the NPCs) are resolved once at scene load
-and submitted whole on every frame. A town is a few hundred draws of a few
-thousand triangles - the budget the port is not on is the PSX's.
+The engine adds no culling of its own: no frustum cull, no draw-distance
+heuristic, no LOD. The field draw lists (`field_placement_draws`,
+`field_terrain_draws`, the ground heightfield, the posed props, the NPCs) are
+resolved once at scene load. A town is a few hundred draws of a few thousand
+triangles - the budget the port is not on is the PSX's.
 
-Three things can still remove geometry: retail's own near reject on placed
-objects ([below](#the-placed-object-near-reject)), its per-primitive near
-reject ([below](#the-per-primitive-near-reject)), and the projection's clip
-volume, whose planes are sized to hold an entire scene from any vantage
-rather than to frame the current view:
+What removes geometry is retail's own rules, plus the projection's clip volume:
+
+- **The visible-tile crop**, at retail's framing only. Retail's render library
+  walks just the `.MAP` cells inside the camera's visible tile window
+  ([encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
+  clipped to the walk region; `engine-core::field_view_window` ports that
+  prologue (`FUN_801F7088`), and both hosts gate the terrain draws
+  (`terrain_draw_visible`) and the ground index list on it. It holds only
+  while the camera is retail's own framing - under the play-window's default
+  `CameraDistance::Far`, the drag / tilt / zoom knobs or `F3` the map is drawn
+  whole, because the window was sized for retail's frustum
+  ([engine.md](engine.md#the-visible-tile-crop-follows-the-framing)).
+- **The actor cull** on placed objects and NPCs (`placed_actor_visible` over
+  `World::field_actor_culled_at`), applied under the same crop and off with
+  it, and retail's near reject on placed objects
+  ([below](#the-placed-object-near-reject)).
+- **The per-primitive rejects**: the near reject
+  ([below](#the-per-primitive-near-reject)) and, in battle, the GPU
+  polygon-size limit ([below](#the-gpu-polygon-size-limit-in-battle)).
+- **The projection's clip volume**, whose planes are sized to hold an entire
+  scene from any vantage rather than to frame the current view:
 
 - [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
   every camera. A field map is `128 x 128` tiles of 128 units (~23 k units on
@@ -2035,9 +2052,9 @@ sky and cliff geometry wraps the origin, and the frame filled with stretched
 texture while the camera matched retail exactly. Pinned by
 `crates/engine-core/tests/field_unspawned_actor_draw_disc.rs`.
 
-The **site play page** (`site/js/play-app.js`) draws the whole scene every
-frame, unconditionally, matching this renderer - `OCCLUDER_CULL = false`. It
-once ran a per-frame occlusion cull (drop a body the eye-to-player segment
+The **site play page** (`site/js/play-app.js`) applies the same crop and
+actor cull and adds nothing of its own - `OCCLUDER_CULL = false`. It once
+ran a per-frame occlusion cull (drop a body the eye-to-player segment
 pierces, since the page has a single follow camera where retail authors one per
 scene), but even the exact segment-vs-world-AABB form culled legitimate bodies:
 the placement boxes are axis-aligned over whole terrain tiles, walls, and
@@ -2936,7 +2953,11 @@ With one fixed blend state per pipeline, that per-texel split needs two passes:
 the opaque pass draws every triangle and discards STP texels of semi-transparent
 prims; a blend pass then re-draws only the semi-transparent triangles (a
 per-ABR-mode index tail appended at upload time), discarding everything except
-STP texels.
+STP texels. The blend pass applies the same `NCLIP` winding rejection as the
+opaque pass (`blend_pass_color` in `engine-render`'s shaders): retail's prim
+leaves cull a semi-transparent prim's back face exactly as an opaque one's, and
+without it an open translucent strand blends twice wherever its far side faces
+the camera.
 
 **Untextured (`F*`/`G*`) prims have no per-texel STP gate** - an ABE prim blends
 **all** its pixels. The colour-mesh vertex format carries a per-vertex blend word

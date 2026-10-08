@@ -431,7 +431,7 @@ The high bit (0x80) of an opcode means "this instruction targets a different scr
 - `id == 0xFB` → walks the linked list at `_DAT_8007C34C`, looking for the entry whose `+0xC` slot holds `0x801DA51C` (the system-channel handler in the 0897 town overlay). So `0xFB` is the "system" channel.
 - otherwise → ID is a regular script-table index.
 
-A from-scratch port exposes this trio as `FieldHost::resolve_ctx(id: u8) -> Option<ScriptCtx>` with the special-case branches preserved.
+The port lifts this lookup into the host layer: the caller reads the target id with `legaia_engine_vm::field::peek_extended` and resolves it, with the special-case branches preserved, before calling `step` on the target's context - which keeps the VM borrow-free.
 
 ## Context struct
 
@@ -843,8 +843,10 @@ walk the player to the beat's camera-focus tile `(18,26)`. The paired
 cross-context `A2 <id> <move_id>` ExecMove (`FUN_80024E08`) selects the clip
 the anim clock (`FUN_800204F8`) plays while the kernel moves the actor - the
 walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
-`CutsceneTimeline::walk_wait` + the motion-VM glide (`engine-core`), with the
-NPC anim cue surfaced from `exec_move`. Dropping the walk playout is what left
+`CutsceneTimeline::npc_walks` for an NPC (the record runs on) and
+`CutsceneTimeline::walk_wait` for the player (the record parks), over the
+motion-VM glide (`engine-core`), with the NPC anim cue surfaced from
+`exec_move`. Dropping the walk playout is what left
 Mei out of the conversation frame for the whole beat.
 
 A walk is exclusive. The park leaves the target's halt bit `0x400` set until
@@ -1437,8 +1439,7 @@ land the player's `+0x4C` anim pointer on the scene ANM bundle's records
 cues) for one playthrough each before the walk-out moves resume the
 locomotion clips. Engine port: `engine-core::name_entry` (SM),
 `engine-ui::ui_menu::name_entry` (draw builders + traced constants), and
-the `field_player_move_cues` scripted-clip queue on
-`engine-core::field_anim::FieldPlayerAnim`.
+the scripted-clip queue `World::locomotion.player_move_cues`.
 
 #### `0x4E` INVENTORY_CMP
 
