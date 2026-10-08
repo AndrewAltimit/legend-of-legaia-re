@@ -825,6 +825,17 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
             w.game_over,
             w.game_over_hold
         );
+        // The acting actor's command: category `+0x1DE` and its first
+        // parameter (the spell / move id a cast-module park keys on).
+        if let Some(a) = w.actors.get(usize::from(w.battle_ctx.active_actor)) {
+            let _ = write!(
+                out,
+                " act(cat {} p0 {:#04x} monster {:?})",
+                a.battle.action_category,
+                a.battle.params.first().copied().unwrap_or(0),
+                a.battle_monster_id
+            );
+        }
         for (i, a) in w.actors.iter().take(8).enumerate() {
             if a.battle.max_hp > 0 || a.battle.liveness != 0 {
                 let _ = write!(

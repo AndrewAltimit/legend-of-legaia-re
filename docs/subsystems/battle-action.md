@@ -469,7 +469,13 @@ non-capture id below the player block as the SCUS table names it (Gimard's
 `+0x21` is `0x27` = Tail Fire, 16 MP, one enemy), with the disc as the single
 source: a vanilla placeholder on a real id under another name is replaced, a
 vanilla record on its real id under the same name keeps its effect class and
-takes the disc's cost. The magnitude and impact status of the fold are the
+takes the disc's cost. The fill skips capture-class ids, so a placeholder sitting on one stays:
+`0x40` is the disc's Curse and the demo "Reseal" capture. A monster's Curse
+therefore folds as a capture roll on a party seat; the roll is drawn but downs
+only a monster seat (`World::resolve_capture`), since downing a member wrote
+live HP with no readout seed and parked the `0x51` gate. Dropping the
+placeholder instead changes which bosses act on their first turn (Koru's
+opening Curse would degrade to a strike), so the catalog keeps it. The magnitude and impact status of the fold are the
 move-power record's (`World::enemy_move_power`, installed at scene entry).
 Disc-gated oracle: `spell_model_single_source_disc::the_boot_catalog_resolves_every_monster_special_the_archive_casts`.
 

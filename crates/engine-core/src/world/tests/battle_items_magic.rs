@@ -754,3 +754,32 @@ fn battle_magic_escape_returns_to_field() {
     );
     assert!(world.battle.last_rewards.is_none(), "escape grants no loot");
 }
+
+/// A capture roll aimed at a party seat (a monster cast the boot catalog
+/// resolves to the demo "Reseal") never downs it: only a monster is captured.
+/// The roll is still drawn, so the rand stream matches the monster case.
+#[test]
+fn a_capture_roll_never_downs_a_party_member() {
+    use crate::spells::SpellOutcome;
+
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.rng_state = 6; // roll 23
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 10;
+    world.actors[0].battle.liveness = 1;
+    world.fold_spell_outcome(SpellOutcome::CaptureRoll {
+        target: 0,
+        hit_pct: 60,
+    });
+    assert_eq!(world.actors[0].battle.hp, 10);
+    assert_eq!(world.actors[0].battle.liveness, 1);
+    assert!(world.drain_battle_captures().is_empty());
+    assert_ne!(world.rng_state, 6, "the roll is drawn");
+}
