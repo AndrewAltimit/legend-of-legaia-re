@@ -1451,6 +1451,7 @@ dependencies = [
  "legaia-prot",
  "legaia-save",
  "legaia-tim",
+ "serde",
 ]
 
 [[package]]

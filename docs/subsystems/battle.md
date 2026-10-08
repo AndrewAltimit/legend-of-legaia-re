@@ -922,7 +922,7 @@ inferred from the ring's arm order, not read off a commit arm.
 ### How the engine raises the flow state
 
 The engine splits what `FUN_801D0748` does in one machine across a
-[`battle_input::BattleCommandSession`](../../crates/engine-core/src/battle_input.rs)
+[`battle_input::BattleCommandSession`](../../crates/engine-menus/src/battle_input.rs)
 plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
 each frame by `battle_flow::flow_state_for` (an open submenu wins over the
 command phase). The round around them is retail's own two bands - every
@@ -5580,7 +5580,7 @@ popup is surfaced (`World::drain_battle_hit_fx`), and the action SM is **parked 
 `EndOfAction`** so the re-arm block cycles to the next combatant - a cast / art
 / item use is the actor's whole turn, no Attack-SM strike fires. Backing out
 reopens the command menu for the same actor. Implementation:
-[`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs)
+[`crates/engine-core::battle_input`](../../crates/engine-menus/src/battle_input.rs)
 + [`arts_command_input`](../../crates/engine-battle/src/arts_command_input.rs) /
 [`battle_arts`](../../crates/engine-battle/src/battle_arts.rs) /
 [`battle_magic`](../../crates/engine-battle/src/battle_magic.rs).

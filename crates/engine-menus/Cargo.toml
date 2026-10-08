@@ -20,6 +20,7 @@ legaia-font.workspace = true
 legaia-mes.workspace = true
 legaia-save.workspace = true
 legaia-tim.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 legaia-prot.workspace = true

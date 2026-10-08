@@ -48,6 +48,11 @@ link into a dependent crate.
   `shop_catalog` (the buy / sell / quantity / recipient sessions, the shop
   window set and the disc gold-shop catalog); see
   [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
+- **Battle command input** - `battle_input` (`BattleCommandSession`, the
+  player-driven command picker the live battle loop opens per party turn)
+  and `option_values` (the options screen's value enums - Select Attack,
+  battle camera, field HP display, ... - which engine-core's `options`
+  session re-exports).
 - **Spells** - `spell_menu` (the out-of-battle cast flow) and
   `spell_party_broadcast` (`FUN_8003053C`).
 - **Menu overlay** - `menu_widget` (the window-widget choreography:

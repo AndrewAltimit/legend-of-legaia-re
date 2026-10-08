@@ -109,7 +109,7 @@ engine-battle → engine-vm, asset, art, anm, save, tim, tmd, bytes  (World-free
 engine-minigames → engine-vm, asset, save, tmd    (minigame rules engines; no World)
 engine-effects → engine-battle, engine-minigames, engine-vm, asset, tmd  (World-free effect kernels)
 engine-system → engine-vm, bytes, cheats, gamedata  (World-free runtime system: input, fades, streaming, sound state)
-engine-menus  → engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, mes, save, tim  (World-free menu / title / card front end)
+engine-menus  → engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, mes, save, tim, serde  (World-free menu / title / card front end)
 engine-field  → engine-system, engine-minigames, engine-battle, engine-vm, asset, anm, bytes, mes, tmd  (World-free field kernels: actor programs, camera params, cue routers)
 engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-vm + the parser crates
 render-kernels → engine-vm, asset, tim, tmd (GTE math, screen prims, VRAM capture, effect emitters; no wgpu)

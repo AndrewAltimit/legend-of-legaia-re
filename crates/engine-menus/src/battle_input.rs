@@ -1,9 +1,9 @@
 //! Player-driven battle command input for the live gameplay loop.
 //!
-//! The live battle loop (`crate::world::World::live_battle_tick`) can run a
+//! The live battle loop (`legaia_engine_core::world::World::live_battle_tick`) can run a
 //! battle two ways. By default it auto-resolves: every party turn commits a
 //! physical Attack with no player choice. When
-//! [`crate::world::BattleState::player_driven`] is set, each party turn pauses
+//! `legaia_engine_core::world::BattleState::player_driven` is set, each party turn pauses
 //! the action state machine and runs a [`BattleCommandSession`] that reads the
 //! pad.
 //!
@@ -85,8 +85,8 @@
 //! [`Resolution::OpenSpellMenu`] / [`Resolution::OpenArtsMenu`] hand-offs: the
 //! command session can't run those pickers itself (they need the caster's saved
 //! chains / learned spells / live MP / inventory + party stats), so the live
-//! loop opens a host-owned [`crate::battle_arts::BattleArtsSession`] /
-//! [`crate::battle_magic::BattleSpellSession`] /
+//! loop opens a host-owned `legaia_engine_core::battle_arts::BattleArtsSession` /
+//! `legaia_engine_core::battle_magic::BattleSpellSession` /
 //! [`crate::inventory_use::InventoryUseSession`] instead. `Spirit` and `Run`
 //! resolve immediately (no target). Target selection reuses
 //! [`crate::target_picker`].
@@ -113,16 +113,16 @@ pub enum BattleCommand {
     /// Physical attack - opens a target cursor and commits a strike.
     Attack,
     /// Tactical Arts - hands off to the host saved-chain submenu (see
-    /// [`crate::battle_arts`]).
+    /// `legaia_engine_core::battle_arts`).
     Arts,
     /// Magic spell - hands off to the host battle spell submenu (see
-    /// [`crate::battle_magic`]).
+    /// `legaia_engine_core::battle_magic`).
     Magic,
     /// Use an item - hands off to the host inventory submenu (see
     /// [`crate::inventory_use`]).
     Item,
     /// Spirit: guard for the turn (+5 AP via
-    /// [`crate::ap_gauge::ApGauge::charge_spirit`], guard-halved damage until
+    /// `legaia_engine_core::ap_gauge::ApGauge::charge_spirit`, guard-halved damage until
     /// the next turn). Resolves immediately - no target.
     Spirit,
     /// Run: attempt to flee through the action SM's run band
@@ -166,7 +166,7 @@ impl BattleCommand {
     ///
     /// [`Self::enabled`] answers "is the command wired at all"; this adds
     /// the per-battle outcome the retail flow has: in a scripted no-escape
-    /// battle ([`crate::world::BattleState::no_escape`], `ctx[+0x287]`) a
+    /// battle (`legaia_engine_core::world::BattleState::no_escape`, `ctx[+0x287]`) a
     /// **Run** cannot get away. It is not a gate on choosing it: the round
     /// prompt takes Run in every battle and the escape roll
     /// (`FUN_801E791C`, `ctx[+0x287]` read at `0x801E7B14`) is what refuses
@@ -222,7 +222,7 @@ pub struct BattleCommandInput {
     /// (1) goes straight to the target cursor (`0x5A`), `Command` (2)
     /// straight to the directional arts entry (`0x50`). The host fills it
     /// from the world's mirror of the pause-menu row each frame.
-    pub select_attack: crate::options::SelectAttackOpt,
+    pub select_attack: crate::option_values::SelectAttackOpt,
 }
 
 /// The round-open prompt's two chips - retail flow state `0x1E`, the pair
@@ -326,13 +326,13 @@ pub enum CommandPhase {
         target_slot: u8,
     },
     /// The player picked Arts. Hands off (like Magic / Item): the live loop
-    /// opens a [`crate::battle_arts::BattleArtsSession`] over the caster's saved
+    /// opens a `legaia_engine_core::battle_arts::BattleArtsSession` over the caster's saved
     /// chains, executes the chosen art, then cycles the turn.
     OpenArtsMenu,
     /// The player picked Magic. Like Item, the command session can't run the
     /// spell picker itself (it needs the caster's learned spells + live MP), so
     /// it hands off: the live loop opens a
-    /// [`crate::battle_magic::BattleSpellSession`], casts the chosen spell, then
+    /// `legaia_engine_core::battle_magic::BattleSpellSession`, casts the chosen spell, then
     /// cycles the turn.
     OpenSpellMenu,
     /// The player picked Item. The command session can't run the inventory
@@ -375,7 +375,7 @@ pub struct BattleCommandSession {
     /// Party-row index (0..=2) of the acting member - the target picker uses
     /// it to skip-self on ally-targeting commands.
     pub party_slot: u8,
-    /// Scripted no-escape battle ([`crate::world::BattleState::no_escape`]),
+    /// Scripted no-escape battle (`legaia_engine_core::world::BattleState::no_escape`),
     /// carried for the session's readers. The prompt itself never reads it:
     /// retail's flow SM `FUN_801D0748` takes Run in state `0x1E` and
     /// confirms it in `0x32` without touching `ctx[+0x287]`, and the escape
@@ -856,7 +856,7 @@ fn step_menu(
         // stores `0x50` in the branch delay slot (the arts entry, a
         // `Command` pick made for the player).
         if command == BattleCommand::Attack {
-            use crate::options::SelectAttackOpt;
+            use crate::option_values::SelectAttackOpt;
             return match ev.select_attack {
                 SelectAttackOpt::Select => CommandPhase::AttackMode { cursor: 0 },
                 SelectAttackOpt::Automatic => {

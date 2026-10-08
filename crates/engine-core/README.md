@@ -278,6 +278,8 @@ composes them.
   one per party turn and parks the action SM until the player confirms;
   otherwise the loop auto-resolves with a physical Attack. The menu carries
   Attack, Arts, Magic, Item, Spirit and Run (`BattleCommand`). See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
+  The session is `World`-free and lives in `legaia-engine-menus`, as do the
+  options screen's value enums (`option_values`) it keys Select Attack on.
 - `battle_flow` - the retail command-flow byte `ctx[+0x06]`, the cursor of
   the battle's *menu* SM `FUN_801D0748` (not the action SM's `ctx[+0x07]`,
   whose value space it overlaps). `flow_state_for` recomposes it each frame
