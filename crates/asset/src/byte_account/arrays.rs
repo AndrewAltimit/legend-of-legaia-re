@@ -14,7 +14,8 @@
 //!   form;
 //! * the **stride** off the index arithmetic: the other `addu` operand is
 //!   evaluated backwards as `k * leaf + c` through `sll` / `addu` / `subu` /
-//!   `addiu` / copies, and `k` is the element size;
+//!   `addiu` / copies, and `k` is the element size (`k = 1` is a byte
+//!   table, which only a byte access can read);
 //! * the **field** each access reads, `c + displacement` reduced modulo `k`,
 //!   which must fit inside one element at the access's width;
 //! * the **count**, from a bound check on the same leaf register (`sltiu t,
@@ -272,7 +273,11 @@ pub fn indexed_arrays(
                 continue;
             };
             let Some(leaf) = a.leaf else { continue };
-            if !(2..=MAX_STRIDE).contains(&a.k) {
+            // A stride of 1 is a byte table (PROT 0897's op-`0x49` sub-op
+            // map at `0x801F33A4`, read `lb` at `base + sub_op`). Only a byte
+            // access fits inside a 1-byte element, so the field test below
+            // drops every wider access through such an `addu`.
+            if !(1..=MAX_STRIDE).contains(&a.k) {
                 continue;
             }
             let k = a.k;
@@ -356,8 +361,11 @@ pub fn indexed_arrays(
             for (f, w) in &a.fields {
                 merged.fields.entry(*f).or_default().extend(w);
             }
+            // The reason line names the site of the bound the claim uses.
+            if a.bound > merged.bound {
+                merged.bound_site = a.bound_site;
+            }
             merged.bound = merged.bound.max(a.bound);
-            merged.bound_site = merged.bound_site.or(a.bound_site);
         }
         if let Some(prev) = out.last_mut()
             && prev.stride == stride
@@ -367,8 +375,10 @@ pub fn indexed_arrays(
             for (f, w) in &merged.fields {
                 prev.fields.entry(f + shift).or_default().extend(w);
             }
+            if merged.bound > prev.bound {
+                prev.bound_site = merged.bound_site;
+            }
             prev.bound = prev.bound.max(merged.bound);
-            prev.bound_site = prev.bound_site.or(merged.bound_site);
             continue;
         }
         out.push(merged);
@@ -861,6 +871,38 @@ mod tests {
             vec![8, 0xA]
         );
         assert_eq!(a[0].bound, None);
+    }
+
+    #[test]
+    fn a_byte_table_indexed_by_a_loaded_byte_is_an_array() {
+        // PROT 0897 at 0x801F145C: lbu v0,0(a1); addiu a2,v1,lo;
+        // addu v0,v0,a2; lb v0,0(v0).
+        let w = [
+            lui(3, 0x8000),
+            mem(0x24, 2, 5, 0), // lbu v0,0(a1)
+            addiu(6, 3, 0x40),  // a2 = base
+            r3(2, 2, 6, 0x21),  // v0 = v0 + a2
+            mem(0x20, 2, 2, 0), // lb v0,0(v0)
+        ];
+        let b = img(&w, 0x100);
+        let a = indexed_arrays(&b, 0x8000_0000, &|o| o < 0x14);
+        assert_eq!(a.len(), 1);
+        assert_eq!((a[0].base, a[0].stride), (0x8000_0040, 1));
+    }
+
+    #[test]
+    fn a_word_access_through_a_byte_index_is_no_array() {
+        // The same `addu`, but the access is `lw`: four bytes cannot sit in
+        // a 1-byte element, so nothing is claimed.
+        let w = [
+            lui(3, 0x8000),
+            mem(0x24, 2, 5, 0),
+            addiu(6, 3, 0x40),
+            r3(2, 2, 6, 0x21),
+            mem(0x23, 2, 2, 0), // lw v0,0(v0)
+        ];
+        let b = img(&w, 0x100);
+        assert!(indexed_arrays(&b, 0x8000_0000, &|o| o < 0x14).is_empty());
     }
 
     #[test]
