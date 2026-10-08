@@ -571,7 +571,10 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
 ## Other major modules
 
 - `mode` - the game-mode driver and retail mode table (`ModeSeat`, which both
-  hosts enter INIT modes through).
+  hosts enter INIT modes through). The table, driver, seat and `SceneMode`
+  live in `legaia-engine-field` and reach the world only through the
+  `ModeWorld` trait; this module implements it for `World` and keeps the
+  field-entry demo handler.
 - `scene` - the scene-loading shell: PROT asset indexing, per-CDNAME-block
   bundle resolution, BGM lookup, and `SceneHost` (`enter_field_scene`).
 - `model_bank` - the retail model pool `DAT_8007C018` and the id space a

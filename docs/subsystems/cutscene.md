@@ -2286,7 +2286,7 @@ Every burst that passes the one-in-sixteen gate spawns at least one particle.
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
 | Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs` |
 | Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
-| Game modes 26 / 27 | `crates/engine-core/src/mode.rs` |
+| Game modes 26 / 27 | `crates/engine-field/src/mode.rs` |
 | `play-str` frame loop | `crates/engine-shell/src/bin/legaia-engine.rs` (`cmd_play_str` / `StrPlayerApp`) |
 
 ## See also

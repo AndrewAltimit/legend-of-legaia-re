@@ -4,7 +4,8 @@
 //! pass, the opening narration roller, the per-actor handler and its
 //! kernels, actor clone, look rotation and screen tween, the scene
 //! transition and in-field save-screen actors, the op-`0x49` submode,
-//! the field event queue, the scene MAN field-script decoders, CLUT effects, the overworld draw order and
+//! the field event queue, the scene MAN field-script decoders, the mode
+//! table and seat (over the `ModeWorld` slice of the world), CLUT effects, the overworld draw order and
 //! ground cue, the overworld controller and its panel screen, walk regen, light-source row shading, the slot-6 audio
 //! release, packet colours and the animation / SFX cue routers: the
 //! `World`-free half of the field runtime.
@@ -20,15 +21,13 @@
 
 // Modules these files name as `crate::...`, which engine-core re-exports at
 // its root; binding them here keeps the moved files' paths unchanged.
+use legaia_engine_battle::encounter_record;
 use legaia_engine_minigames::baka_fighter_chrome;
 use legaia_engine_system::fade;
-use legaia_engine_vm::field_regions;
-
-#[cfg(test)]
 use legaia_engine_system::input;
+use legaia_engine_system::music_labels;
 use legaia_engine_system::sound_state;
-
-use legaia_engine_battle::encounter_record;
+use legaia_engine_vm::field_regions;
 
 pub mod actor_handler;
 pub mod actor_look;
@@ -50,6 +49,8 @@ pub mod field_save_screen_actor;
 pub mod field_submode;
 pub mod float_tween;
 pub mod man_field_scripts;
+pub mod minigame_entry;
+pub mod mode;
 pub mod morph_weight_apply;
 pub mod overworld_draw_order;
 pub mod overworld_ground_cue;

@@ -110,7 +110,7 @@ engine-minigames → engine-vm, asset, save, tmd    (minigame rules engines; no 
 engine-effects → engine-battle, engine-minigames, engine-vm, asset, tmd  (World-free effect kernels)
 engine-system → engine-vm, bytes, cheats, gamedata  (World-free runtime system: input, fades, streaming, sound state)
 engine-menus  → engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, mes, save, tim  (World-free menu / title / card front end)
-engine-field  → engine-system, engine-minigames, engine-battle, engine-vm, asset, anm, mes, tmd  (World-free field kernels: actor programs, camera params, cue routers)
+engine-field  → engine-system, engine-minigames, engine-battle, engine-vm, asset, anm, bytes, mes, tmd  (World-free field kernels: actor programs, camera params, cue routers)
 engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-vm + the parser crates
 render-kernels → engine-vm, asset, tim, tmd (GTE math, screen prims, VRAM capture, effect emitters; no wgpu)
 engine-ui     → render-kernels, engine-vm, asset, tim, tmd, font (draw-list builders; no wgpu)
@@ -245,7 +245,7 @@ Every VM is a handler-by-handler translation: the opcode handler is dumped from 
 
 The shell loop closes: title → save-select → field / encounter → battle → save.
 
-- **Game-mode driver** - `crates/engine-core/src/mode.rs`. Port of the 28-entry table at SCUS `0x8007078C` as a `GameMode` enum + `ModeEntry` table + `ModeDriver`. Each game mode maps to a [`SceneMode`](#the-ported-vms) for the `World`'s tick path; hosts plug per-mode behaviour through the `ModeHandler` trait (default: no-op). Boot starts in `MainInit`, mirroring the retail boot path.
+- **Game-mode driver** - `crates/engine-field/src/mode.rs`. Port of the 28-entry table at SCUS `0x8007078C` as a `GameMode` enum + `ModeEntry` table + `ModeDriver`. Each game mode maps to a [`SceneMode`](#the-ported-vms) for the `World`'s tick path; hosts plug per-mode behaviour through the `ModeHandler` trait (default: no-op). The seat reaches the world only through the `ModeWorld` trait, which `World` implements in `crates/engine-core/src/mode.rs`. Boot starts in `MainInit`, mirroring the retail boot path.
 - **Title screen** (`engine-core::title::TitleSession`) - `FadeIn → PressStart → MainMenu → Done` with a no-save fallback. The real title TIM (PROT 0890 at `0x14228`, 256×256 8bpp) is decoded by `engine-core::title_screen_atlas::build_atlas_from_prot_888` and uploaded as a sprite atlas by `play-window`; the title-tick body's on-screen layout is documented under [boot - title overlay](boot.md#title-screen-overlay-state).
 - **Save-select** (`engine-core::save_select::SaveSelectSession`) - slot-list browse with Load / Save / Delete confirms.
 - **Encounter system** (`engine-battle::encounter`, re-exported as `engine-core::encounter`) - per-scene table + step-driven random battle trigger + 5-phase transition SM.

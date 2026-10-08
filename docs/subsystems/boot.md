@@ -357,7 +357,7 @@ which runs for a single frame - keying a live minigame on `0x18` never observes
 one. The engine's `GameMode::scene_mode_with_warp` takes the pair;
 `GameMode::for_scene_mode` is its (deliberately lossy) inverse.
 
-**The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen - the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the dev debug-menu mode (PROT 0971). The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
+**The dev mode-names mislead.** `MAIN INIT`/`MAIN MODE` (modes 2/3) are the **field/town gameplay** init/run pair (`game_mode 0x03` is the on-field / in-town loop), *not* a standalone options screen - the per-scene initializer `FUN_801D6704` they reach is unmistakably the map loader (debug strings `map_name`, `map_read`, `man_set`, `camera_set`, `fog_set`, `tmds: %d`, `game_mode`, `program_mode`; calls the field asset loader `FUN_8001F7C0` and MAN decoder `FUN_8003AEB0`). `CONFIG INIT` doesn't initialise game config; it initialises the dev debug-menu mode (PROT 0971). The engine-core `GameMode` enum in `crates/engine-field/src/mode.rs` shares these dev names; its docstrings now reflect the field-mode semantics.
 
 #### New Game boot chain (title → field)
 

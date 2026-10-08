@@ -60,6 +60,13 @@ a dependent crate.
   arts-voice XA requests and SPU ring cues) and `sfx_cue` (cue id to the
   4-slot pending ring / XA clip, `FUN_8004FE5C`); the battle actor tick in
   `engine-core` drains them.
+- **Mode seat** - `mode` (the retail mode table at SCUS `0x8007078C`,
+  `ModeDriver`, `ModeSeat`, `SceneMode` and the boot chain) and
+  `minigame_entry` (the mode-24 door-warp sub-id space). The seat drives a
+  world through `ModeWorld` - the scene mode, the frame-begin skip latch,
+  the CONFIG INIT sound detach, the battle-intro hold, the pad-edge swallow
+  and the master tick - and `ModeHandler<W>` is generic over that world;
+  engine-core implements `ModeWorld` for `World`.
 - **MAN field scripts** - `man_field_scripts`: the opcode-aware walk of a
   scene MAN's partition scripts (record spans, the scratchpad / system
   flag sites, inline encounter records, BGM starts, stager installs),

@@ -33,14 +33,14 @@
 //! overlay*, loaded by the mode-24 init `FUN_80025980` through
 //! `FUN_8003EBE4(sub_id + 0x4D)`; that init also backs the *current* scene name
 //! up (`memcpy(0x8007BAE8, 0x80084548, 8)`) so the minigame can warp back
-//! through `FUN_80026018`. Those two halves are [`crate::world::World::arm_minigame_warp`]
-//! and [`crate::world::World::minigame_return_warp`].
+//! through `FUN_80026018`. Those two halves are `legaia_engine_core::world::World::arm_minigame_warp`
+//! and `legaia_engine_core::world::World::minigame_return_warp`.
 //!
 //! ## The trap this replaces
 //!
 //! `sub_id` reads exactly like a map id - a small dense integer arriving on a
 //! warp opcode - and the engine used to route it as one, through
-//! [`crate::scene::DefaultMapIdResolver`] into a CDNAME-ordinal scene name.
+//! `legaia_engine_core::scene::DefaultMapIdResolver` into a CDNAME-ordinal scene name.
 //! That resolver's own note conceded the id "maps to a code overlay at PROT
 //! `0x4d + map_id`" while still resolving it to a scene, calling the ordering
 //! "an approximation" for a retail table "in an uncaptured overlay". There is
@@ -59,7 +59,7 @@
 // REF: FUN_801DE840 case 0x3e (the arm), FUN_80025980 (mode-24 init +
 //      overlay load), FUN_80026018 (return warp)
 
-use crate::world::SceneMode;
+use crate::mode::SceneMode;
 
 /// Re-key from the loader's in-RAM TOC index space to the extraction PROT
 /// index space (see `docs/subsystems/boot.md` - overlay loaders).
@@ -226,7 +226,7 @@ impl MinigameSubId {
     /// The dance is `None` here even though it has two tracks of its own
     /// ([`DANCE_SHORT_SONG_BGM_ID`] / [`DANCE_LONG_SONG_BGM_ID`]): its song
     /// starts when the pre-song count-in clears, not at entry, so
-    /// [`crate::world::World::enter_dance`] holds the id and the world's
+    /// `legaia_engine_core::world::World::enter_dance` holds the id and the world's
     /// dance tick starts it. Which of the two plays is the overlay's own
     /// mode arm, which is unpinned - the engine picks by song length.
     pub fn bgm_id(self) -> Option<u16> {
