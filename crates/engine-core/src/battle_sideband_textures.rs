@@ -68,6 +68,50 @@ pub fn write_readef_group_textures(readef: &[u8], group: u8, sink: &mut impl Vra
     written
 }
 
+/// The texture uploads a player summon's cast streams: `FUN_801E295C` case
+/// `0x32` seeds the applier's base byte from the action id
+/// ([`legaia_asset::summon_readef::base_byte_for_action`] - bit 7 set for
+/// the whole `0x81..=0xA0` band, so the file is `summon.dat`), and
+/// `FUN_801F12D0` uploads the group's first slot to CLUT `(0, 488)` / page
+/// `(512, 0)` and its second to `(0, 490)` / `(640, 0)` (every summon base
+/// passes the second upload's gate). The tunnel and glow parts a summon
+/// module spawns sample those pages; left alone they hold whatever the last
+/// monster turn streamed. Returns the pages written; `0` for an id outside
+/// the band.
+///
+/// REF: FUN_801E295C (case `0x32`, the base byte), FUN_801F12D0 (the two
+/// texture uploads)
+pub fn record_cast_sideband_textures(
+    summon_dat: &[u8],
+    spell_id: u8,
+    sink: &mut impl VramSink,
+) -> usize {
+    let Some((first, _)) = legaia_asset::summon_readef::group_slots(spell_id) else {
+        return 0;
+    };
+    let mut written = 0;
+    for (target, slot) in [first, first + 1].into_iter().enumerate() {
+        let Some(bytes) = summon_dat.get(slot * SLOT_BYTES..(slot + 1) * SLOT_BYTES) else {
+            continue;
+        };
+        let Some(t) = texture_slot_of(bytes) else {
+            continue;
+        };
+        let ((clut_x, clut_y), (tex_x, tex_y)) = TEXTURE_SLOT_VRAM_TARGETS[target];
+        sink.write_block(
+            clut_x,
+            clut_y,
+            256,
+            t.clut_rows as u16,
+            &bytes[4..4 + t.clut_bytes()],
+        );
+        let page = &bytes[t.texture_offset..t.texture_offset + t.texture_bytes()];
+        sink.write_block(tex_x, tex_y, t.texture_width_halfwords as u16, 256, page);
+        written += 1;
+    }
+    written
+}
+
 fn texture_slot_of(slot: &[u8]) -> Option<legaia_asset::summon_readef::TextureSlot> {
     let parsed = legaia_asset::summon_readef::parse(slot).ok()?;
     match parsed.slots.first()?.kind {
@@ -166,5 +210,28 @@ mod tests {
         assert_eq!(write_readef_group_textures(&readef, 2, &mut sink), 1);
         assert_eq!(sink.0[0], (0, 488, 256, 2, 0x400));
         assert_eq!(sink.0[1], (512, 0, 128, 256, 0x10000));
+    }
+
+    #[test]
+    fn a_player_summon_streams_its_summon_dat_pages() {
+        // Spell 0x82 (Theeder) -> base 0x83: summon.dat slots 3 and 4.
+        let mut summon = vec![0u8; SLOT_BYTES * 6];
+        summon[3 * SLOT_BYTES..4 * SLOT_BYTES].copy_from_slice(&texture_slot(2));
+        summon[4 * SLOT_BYTES..5 * SLOT_BYTES].copy_from_slice(&texture_slot(0));
+        let mut sink = Blocks::default();
+        assert_eq!(record_cast_sideband_textures(&summon, 0x82, &mut sink), 2);
+        assert_eq!(
+            sink.0,
+            vec![
+                (0, 488, 256, 1, 0x200),
+                (512, 0, 128, 256, 0x10000),
+                (0, 490, 256, 1, 0x200),
+                (640, 0, 64, 256, 0x8000),
+            ]
+        );
+        // A non-summon action id streams nothing from summon.dat.
+        let mut none = Blocks::default();
+        assert_eq!(record_cast_sideband_textures(&summon, 0x05, &mut none), 0);
+        assert!(none.0.is_empty());
     }
 }

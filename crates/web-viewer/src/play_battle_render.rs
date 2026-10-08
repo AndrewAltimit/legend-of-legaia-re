@@ -650,7 +650,7 @@ impl LegaiaRuntime {
             return;
         };
         let Some(br) = self.battle_render.as_mut() else {
-            host.world.battle.vram_moves.clear();
+            host.world.discard_battle_vram_edits();
             return;
         };
         if host.world.apply_battle_vram_moves(&mut br.vram) {

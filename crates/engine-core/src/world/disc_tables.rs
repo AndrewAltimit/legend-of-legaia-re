@@ -72,6 +72,11 @@ pub struct DiscTables {
     /// caption arm prints. Installed by [`crate::scene::SceneHost`] with the
     /// cast-effect pool; empty disc-free.
     pub(crate) summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
+    /// `summon.dat` (PROT 0893) itself, for the texture slots a player
+    /// summon's cast streams into the battle VRAM
+    /// ([`crate::battle_sideband_textures::record_cast_sideband_textures`]).
+    /// Installed with [`Self::summon_attack_names`]; `None` disc-free.
+    pub(crate) summon_dat: Option<Arc<[u8]>>,
     /// The battle **VDF** morph pack `vdf.dat` (PROT 0872, the
     /// `[u32 count][u32 offsets[count]][bodies]` layout of a scene's VDF).
     /// Battle init loads it through the asset dispatcher's VDF case and
@@ -218,6 +223,7 @@ impl DiscTables {
             move_power: None,
             move_power_overlay: None,
             summon_attack_names: Default::default(),
+            summon_dat: None,
             battle_vdf: None,
             element_affinity: None,
             battle_camera_heights: None,

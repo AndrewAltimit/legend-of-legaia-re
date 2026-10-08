@@ -610,6 +610,15 @@ impl World {
             })
             .unwrap_or((0, 0, -542));
         self.casting.summon_seat_owed = None;
+        // The cast's side-band stream: its `summon.dat` texture slots land in
+        // the battle VRAM before the module's parts sample them.
+        if let Some(summon_dat) = self.tables.summon_dat.clone() {
+            crate::battle_sideband_textures::record_cast_sideband_textures(
+                &summon_dat,
+                spell_id,
+                &mut self.battle.vram_loads,
+            );
+        }
         // Retail's cast-start site `0x801E4B1C` zeroes `ctx+0x278` and the
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;

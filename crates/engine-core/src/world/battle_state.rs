@@ -490,6 +490,14 @@ pub struct BattleState {
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
     pub vram_moves: Vec<crate::world::ScriptVramMove>,
+    /// Battle VRAM uploads a cast's side-band stream made this frame - the
+    /// `summon.dat` texture slots a player summon's case `0x32` streams to
+    /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
+    /// ([`crate::battle_sideband_textures::record_cast_sideband_textures`]).
+    /// Applied with [`Self::vram_moves`] by
+    /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
+    /// entry.
+    pub vram_loads: crate::battle_party_form::VramWriteLog,
     /// PROT 0969's own data words while it runs.
     pub(crate) form_transition: crate::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
@@ -773,6 +781,7 @@ impl BattleState {
             arrival: Default::default(),
             backdrop_rebound: false,
             vram_moves: Vec::new(),
+            vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,
             stage_banner: None,

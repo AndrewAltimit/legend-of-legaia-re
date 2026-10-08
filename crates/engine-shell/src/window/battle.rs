@@ -1438,7 +1438,7 @@ impl PlayWindowApp {
         let moved = match self.battle_vram.as_mut() {
             Some(vram) => self.session.host.world.apply_battle_vram_moves(vram),
             None => {
-                self.session.host.world.battle.vram_moves.clear();
+                self.session.host.world.discard_battle_vram_edits();
                 false
             }
         };

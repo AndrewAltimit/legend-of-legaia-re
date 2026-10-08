@@ -2477,6 +2477,7 @@ impl World {
         // Battle init registers a fresh backdrop pair; any rebind is gone.
         self.battle.backdrop_rebound = false;
         self.battle.vram_moves.clear();
+        self.battle.vram_loads = Default::default();
         self.battle.stage_camera = None;
         self.battle.stage_banner = None;
         // The entity SM's battle-entry tail writes the stage id: `0` in the
