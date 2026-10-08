@@ -1785,6 +1785,17 @@ latter driven from the INTERVAL screen's own tick because the page replays
 side is `MgSpu` in `site/js/minigame-bgm.js`, gated on the same site sound
 toggle the offline path checks.
 
+The dance's judge sounds come from the engine on every host. The page used
+to choose them in its own script from the press's result name, and four of
+its six arms disagreed with the award routine `FUN_801d1af4`: it played the
+`Cool!` cue on a closed chain (retail keys a random sting and no cue), a
+sting on a plain matched note and on an unlanded groovy move (retail is
+silent on both), the miss cue on an empty triangle stock (silent), and no
+sting on a landed groovy move (retail keys the fixed `r = 5` sting beside its
+tier cue). It now plays what `dance_take_award_sounds` drains - the same
+`dance::award_sounds` list `World::tick_dance` routes into the ring and the
+voice-key queue on both play hosts.
+
 Two things the port keeps deliberately unshared, and they are not drift:
 
 - **The music stays offline.** A rendered track on an `AudioBufferSourceNode`

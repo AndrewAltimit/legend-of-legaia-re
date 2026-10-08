@@ -648,9 +648,11 @@ window.MgDance = (function () {
           for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
           buffers[name] = buf;
         }
-        /* The good-step stings: 3 random picks x 2 layers keyed together. */
+        /* The good-step stings: the 3 random picks plus the groovy tiers'
+         * fixed r = 5 (index 5), 2 layers keyed together. */
         const stings = [];
-        for (let r = 0; r < 3; r++) {
+        for (let r = 0; r < 6; r++) {
+          if (r > 2 && r !== 5) { stings.push([]); continue; }
           const pair = [];
           for (let l = 0; l < 2; l++) {
             const pcm = api.dance_sting_pcm(r, l);
@@ -694,10 +696,10 @@ window.MgDance = (function () {
       }
     }
 
-    function playSting() {
+    function playSting(fixed) {
       const a = audioReady();
       if (!a || !a.stings.length) return;
-      const r = (Math.random() * 3) | 0;
+      const r = fixed == null ? (Math.random() * 3) | 0 : fixed;
       for (const buf of a.stings[r] || []) {
         const src = a.ctx.createBufferSource();
         src.buffer = buf;
@@ -945,8 +947,23 @@ window.MgDance = (function () {
 
     /* ---- events from the rules engine ---- */
 
+    /* What the press just judged sounds like - the engine's port of
+     * FUN_801d1af4's dancer-0 arm: a miss cue, a closed chain's random
+     * sting, a landed groovy move's fixed sting plus its tier cue. */
+    function playAwardSounds() {
+      if (typeof api.dance_take_award_sounds !== 'function') return;
+      let sounds;
+      try { sounds = JSON.parse(api.dance_take_award_sounds()); }
+      catch (e) { return; }
+      for (const s of sounds) {
+        if (s.cue != null) playId(s.cue);
+        else if ('sting' in s) playSting(s.sting);
+      }
+    }
+
     function onPress(result, st, sym) {
       const B = layout.banners;
+      playAwardSounds();
       /* Noa's body plays the judge-triggered move clip the kind descriptor
        * names for the event (see bodyRender's doc for the pair semantics). */
       if (body && !body.engine && body.moves && st) {
@@ -964,10 +981,7 @@ window.MgDance = (function () {
         }
       }
       if (result === 'ignored' || result === 'none') return;   /* mid-groovy-move */
-      if (result === 'no_charge') {
-        play('miss', 0.35);
-        return;
-      }
+      if (result === 'no_charge') return;
       if (result === 'groovy' || result === 'groovy_off') {
         /* Landed on the 4-beat combo slot = the big multiplier (and the gauge
          * step that promotes the lane): the combo banner tier by lane. Off the
@@ -979,18 +993,14 @@ window.MgDance = (function () {
           flashT = 12;
           const tier = Math.min(st.lane | 0, 2);        /* Cool! / Great!! / Fever!!! */
           const id = tier === 0 ? W.COOL : tier === 1 ? W.GREAT : W.FEVER;
-          play(tier === 0 ? 'cool' : tier === 1 ? 'great' : 'fever', 0.55);
           spawnBanner(id, B.rating[0], B.rating[1]);
           const so = tier === 0 ? B.star_off.cool : B.star_off.great;
           spawnBanner(W.STAR, B.rating[0] - so, B.rating[1]);
           spawnBanner(W.STAR, B.rating[0] + so, B.rating[1]);
-        } else {
-          playSting();
         }
         return;
       }
       if (result === 'miss') {
-        play('miss', 0.5);
         poses[0] = 1; poseT[0] = 24;
         spawnBanner(W.MISS, B.miss[0], B.miss[1]);
       } else if (result === 'hit' || result === 'sequence') {
@@ -999,12 +1009,10 @@ window.MgDance = (function () {
           (faces && faces.meta[0] && faces.meta[0].poses - 1) || 2);
         poseT[0] = 24;
         if (result === 'sequence') {
-          play('cool', 0.5);
           /* No JS spawn here: the rules engine spawned the banner + two stars
            * into its own sprite-part pool on this same judge, and
            * drawEngineParts() draws them from the ported emit dispatch. */
         } else {
-          playSting();
           spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
         }
       }
