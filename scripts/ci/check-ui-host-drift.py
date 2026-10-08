@@ -553,6 +553,19 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "scene-hidden lead, native vs play page - the opening "
+        "prologue (`opdeene`) installs a free-roam lead at the cold spawn "
+        "though its vignette shots have none; the native actor pass skipped "
+        "slot 0 there and the page drew him as a stray mesh. Both ask "
+        "`World::actor_hidden_by_scene`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play.rs", "play_player_drawn"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["actor_hidden_by_scene"],
+    },
+    {
         "what": "placed-object / overworld-landmark live model, native vs "
         "play page - a scripted model swap (op `0x0E`) re-skins only the "
         "record's first placement, and the rule was spelled three times: the "
@@ -816,14 +829,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "what": "battle target-cursor cue, native vs play page - the pulse "
         "toward white on the pointed-at monster and the dim on the rest are "
         "the port's readout of the stamped render flag, and their numbers "
-        "were hand-copied into each host's draw pass. Both sites must read "
-        "`battle_action::cursor_cue`",
+        "were hand-copied into each host's draw pass. The read now sits "
+        "inside the one precedence both draw passes take "
+        "(`BattleActorDrawPlan::body_cue`), which this row pins",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
         },
         "mode": "symbols_all",
-        "symbols": ["cursor_cue"],
+        "symbols": ["body_cue"],
     },
     {
         "what": "battle body whole-mesh blend, native vs play page - the "
@@ -846,14 +860,14 @@ SIM_PAIRS: list[dict[str, object]] = [
         "what": "battle body tint-cue gate, native vs play page - which "
         "render flags take the tint pass's cue (not the cursor's two; the "
         "fade only while its word raises ABE). The native gate also asked "
-        "whether the body was posed. Both draw passes must ask "
-        "`BattleActorDrawPlan::tint_cue_applies`",
+        "whether the body was posed. The gate is asked inside "
+        "`BattleActorDrawPlan::body_cue`, which both draw passes take",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
         },
         "mode": "symbols_all",
-        "symbols": ["tint_cue_applies"],
+        "symbols": ["body_cue"],
     },
     {
         "what": "Muscle Dome 3D arena, native vs play page - the page posed "

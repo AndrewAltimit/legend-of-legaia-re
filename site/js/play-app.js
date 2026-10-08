@@ -2891,7 +2891,11 @@ void main() {
        * world frame is retail's (+Y down), so the draw negates Y the way every
        * placement does. The mesh's rest pose faces -Z while the engine's heading
        * has 0 = travelling +Z, hence the half-turn. */
-      if (this.player) {
+      /* The scene may hide the lead outright (`play_player_drawn`: the
+       * opening prologue's vignette shots have none), the native actor
+       * pass's skip. */
+      const leadDrawn = typeof rt.play_player_drawn !== 'function' || rt.play_player_drawn();
+      if (this.player && leadDrawn) {
         const posed = rt.player_mesh_positions();
         if (posed.length) this.renderer.updateSceneMeshPositions(PLAYER_MESH_ID, posed);
         const playerDraw = {

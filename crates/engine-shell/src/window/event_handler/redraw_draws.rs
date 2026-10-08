@@ -1388,10 +1388,7 @@ impl<'m> DrawCtx<'_, 'm> {
             // Scene-gated on `opdeene` so `town01`'s opening cutscene -
             // where the timeline scripts the lead actor (Vahn walking
             // out of his house) - keeps drawing him.
-            if i == 0
-                && app.session.host.world.active_scene_label
-                    == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
-            {
+            if app.session.host.world.actor_hidden_by_scene(i) {
                 continue;
             }
             let mesh = posed_overrides
@@ -1431,25 +1428,11 @@ impl<'m> DrawCtx<'_, 'm> {
                         None
                     };
                 if in_battle {
-                    use legaia_engine_vm::battle_action as ba;
                     let b = &actor.battle;
                     // The cursor's cue is the engine's
                     // (`battle_action::cursor_cue`), shared with the
                     // page's `play_battle_actor_cursor`.
-                    if let Some((far, max_ir0)) =
-                        ba::cursor_cue(b.render_flag, app.session.host.world.clock.display_frames)
-                    {
-                        log::trace!(
-                            "target cursor: actor {i} flag {} ir0 {max_ir0:.2}",
-                            b.render_flag
-                        );
-                        cue = Some(legaia_engine_render::DrawCue {
-                            far,
-                            near_z: -1.0,
-                            far_z: 0.0,
-                            max_ir0,
-                        });
-                    }
+
                     // Retail's one tint seam: `FUN_8004A908` packs
                     // the actor's `+0x04` lanes (`>> 2`) into the
                     // render node's `+0x74` and copies the `+0x0C`
@@ -1502,14 +1485,22 @@ impl<'m> DrawCtx<'_, 'm> {
                     // - a darker copy of its colour, or a brighter
                     // one on the outdoor stages - plus the status
                     // colours. `World::battle_actor_draw_plan`.
-                    if let Some(p) = battle_plan
-                        && p.tint_cue_applies(b.render_flag)
+                    //
+                    // Tint word first, else the cursor pulse: the one
+                    // precedence `BattleActorDrawPlan::body_cue` the
+                    // page's `play_battle_actor_cursor` stages too.
+                    if let Some((far, max_ir0)) =
+                        legaia_engine_core::world::BattleActorDrawPlan::body_cue(
+                            battle_plan.as_ref(),
+                            b.render_flag,
+                            app.session.host.world.clock.display_frames,
+                        )
                     {
                         cue = Some(legaia_engine_render::DrawCue {
-                            far: p.cue_far(),
+                            far,
                             near_z: -1.0,
                             far_z: 0.0,
-                            max_ir0: p.cue_ir0(),
+                            max_ir0,
                         });
                     }
                 }

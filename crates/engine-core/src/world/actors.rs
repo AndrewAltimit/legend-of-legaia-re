@@ -225,6 +225,18 @@ impl World {
             .is_some_and(|a| a.tmd_binding.is_some() && (a.active || synthetic_battle_camera))
     }
 
+    /// Whether the scene hides actor `slot` outright: the opening prologue
+    /// (`new_game::OPENING_CUTSCENE_SCENE`, `opdeene`) is an abstract
+    /// vignette sequence driven by the per-actor field channels with no
+    /// controllable lead, but `enter_field_scene` still installs the
+    /// free-roam player (slot 0) at the generic cold spawn, where it would
+    /// stand in the shot as a stray mesh. `town01`'s opening cutscene, whose
+    /// timeline walks the lead out of his house, keeps him. Both play hosts
+    /// ask this before drawing the lead; the page used to draw him.
+    pub fn actor_hidden_by_scene(&self, slot: usize) -> bool {
+        slot == 0 && self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
+    }
+
     /// Bind actor `slot` to TMD index `tmd_idx` in `SceneResources::tmds`.
     /// Renderers use this binding to look up the right mesh when applying
     /// the actor's `pose_frame`. No-ops for out-of-range slots.

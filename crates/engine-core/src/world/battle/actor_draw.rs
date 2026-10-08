@@ -102,6 +102,26 @@ impl BattleActorDrawPlan {
         f32::from(self.tint.weight) / 4096.0
     }
 
+    /// The constant per-draw cue a battle body takes this frame, as
+    /// `(far colour, max IR0)`, `None` for no cue - the one precedence both
+    /// hosts stage: the tint pass's word when it applies
+    /// ([`Self::tint_cue_applies`]), else the target cursor's pulse
+    /// (`battle_action::cursor_cue`) on the cursor's two flags. `plan` is the
+    /// body's [`World::battle_actor_draw_plan`], `None` with no plan (the
+    /// cursor still pulses). The native window used to stage the cursor and
+    /// then overwrite it, the page to test the tint first and fall through:
+    /// the same answer by two routes.
+    pub fn body_cue(
+        plan: Option<&Self>,
+        render_flag: u8,
+        display_frames: u64,
+    ) -> Option<([f32; 3], f32)> {
+        match plan {
+            Some(p) if p.tint_cue_applies(render_flag) => Some((p.cue_far(), p.cue_ir0())),
+            _ => legaia_engine_vm::battle_action::cursor_cue(render_flag, display_frames),
+        }
+    }
+
     /// The body's NCLIP word for the hosts' per-draw backface rule
     /// (`Renderer::set_draw_nclip`, the page's placement `nclip`):
     /// [`BATTLE_BODY_NCLIP`] - back faces culled - unless the colour word

@@ -3886,8 +3886,9 @@ or the deviating host adopting the other's behaviour.
   its rest mesh stayed opaque and un-cued there. Both hosts now go through
   `BattleActorDrawPlan::apply_body_blend` (the native window keeps each battle
   body's rest mesh CPU-side and re-uploads it blended while the word raises
-  ABE) and `BattleActorDrawPlan::tint_cue_applies`, under two `SIM_PAIRS`
-  rows.
+  ABE) and `BattleActorDrawPlan::tint_cue_applies` - asked inside
+  `BattleActorDrawPlan::body_cue`, the one tint-over-cursor precedence both
+  draw passes take - under two `SIM_PAIRS` rows.
 - **The Muscle Dome arena in 3D.** The page posed the arena, the fighter
   and the monster in its script (swing clips picked off the turn edge, an
   orbit framing) and the native window drew no 3D dome at all. Both play
@@ -4291,6 +4292,8 @@ name so a host that re-spells the decision locally fails the gate.
 | NPC draw transform | `World::field_npc_draw_pose` | the hide, heading composition and tilt were spelled natively and again in `field-actors.js` over two yaw encodings, and neither host applied retail's non-unit `actor+0x72` render scale |
 | NPC pose-cache look key | `ActorLook::pose_key_bits` | the page folded a script's head-look angles into its re-pose generation with overlapping XORs, so two different looks could alias and the head stayed put |
 | placed-object / landmark model swap and live model | `field_env::placed_model_swaps`, `field_env::live_placed_model` | the first-placement swap rule was spelled three ways (the page alone filtered the `0xF0` sentinel) and the native turn-then-move twice; the page still applies the move and turn tables in `play-app.js`, in its own Y-up frame |
+| battle body cue precedence | `BattleActorDrawPlan::body_cue` | the tint word beat the cursor pulse on both hosts, by two routes (stage-then-overwrite natively, test-then-fall-through on the page) |
+| scene-hidden lead | `World::actor_hidden_by_scene` | the native actor pass skipped the opening prologue's cold-spawned lead; the page drew him as a stray mesh |
 | frame clear colour | `engine-screens::field_frame::frame_clear_color` | the page passed `false` for the screen term, so a shop in a scene with a scripted clear colour (`teien`) sat on that colour instead of black |
 | prologue grade staging | `World::frame_grade` | each host mapped the grade onto its colour-grade, palette-grade and depth-cue arms itself |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |

@@ -1480,6 +1480,17 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Whether the page draws the lead's field body this frame: `false`
+    /// where the scene hides it outright (`World::actor_hidden_by_scene` -
+    /// the opening prologue's vignette shots have no lead), the native
+    /// window's actor-pass skip.
+    pub fn play_player_drawn(&self) -> bool {
+        self.scene_host.host().is_none_or(|h| {
+            let slot = h.world.player_actor_slot.map_or(0, usize::from);
+            !h.world.actor_hidden_by_scene(slot)
+        })
+    }
+
     /// `[world_x, world_y, world_z, facing_units]` for the player actor.
     /// `facing_units` is the engine heading (`render_26`, PSX 12-bit; `0` =
     /// travelling `+Z`); the world coords are the raw retail frame (`+Y` down).
