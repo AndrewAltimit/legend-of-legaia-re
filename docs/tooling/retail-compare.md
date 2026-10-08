@@ -248,7 +248,13 @@ engine verdict:
   lanes (`+0x6C`) goes to the child as `LEGAIA_SEAT_MORPHS` - lane weights
   `+0xA0 + i*2`, done mask `+0x7C`, control word `+0x62` (`retail_morphs`) -
   and is written over the matching morph the engine armed itself on the frame
-  it captures (`World::seed_field_morph`, matched by flat index).
+  it captures (`World::seed_field_morph`, matched by flat index). The weights
+  are the displayed frame's, not the RAM's: each lane runs its own ramp back
+  over the two-frame lag (`rewind_morph_weights` - the `+0xB8` up-velocity
+  while it has not peaked, the `+0xC8` down-velocity while it drains, times
+  the frame step). `jouine`'s flesh wall (`cort_evolved_pre_battle`) rises
+  `51` / `81` per vsync, and seeded on the RAM's weights it was drawn six
+  vsyncs more swollen than the frame on the TV.
 
   So are the ambient walkers - every placement the facing channel counts as
   `ambient` ([below](#the-facing-channel)). Where a wanderer stands and which
