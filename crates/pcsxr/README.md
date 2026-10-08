@@ -45,7 +45,9 @@ corpora into one scene index), and `extract` mirrors `mednafen-state extract`
 (same `--start`/`--end`/`--out` flags, same KSEG0 VA semantics) so a
 state-reading script can dispatch on file extension and accept either
 emulator's states - `scripts/mednafen/check-0968-residency.py` does exactly
-that. `vram` writes the raw 1 MiB VRAM (or, with `--display-crop`, the
+that. A window inside `0x1F800000..0x1F800400` reads the scratchpad instead
+(the camera's visible tile window at `0x1F8003E8`, the walk-region box at
+`0x1F800384`). `vram` writes the raw 1 MiB VRAM (or, with `--display-crop`, the
 on-screen rectangle sized by the `GP1(0x08)` resolution) - the raw-blob sibling
 of `mednafen-state vram-dump`.
 

@@ -75,7 +75,8 @@ use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 /// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost::retire`
 /// applies all four stores through [`ActorExit::apply`] and records the pair
 /// in `PanelFrame::exits` - see the module wiring status for why the new
-/// handler id is recorded and not dispatched.
+/// handler id is recorded and not dispatched, except id `0` (the close tick
+/// `FUN_801F2134`), which the host follows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActorExit {
     /// `scene[+0x40]` takes the actor's *old* `ctx[+0x50]`.

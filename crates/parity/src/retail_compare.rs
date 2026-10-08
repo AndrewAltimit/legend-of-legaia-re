@@ -64,6 +64,9 @@ const CAM_EYE: u32 = 0x8008_40B8;
 /// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// The arrival facing `_DAT_80073EFC` (op `0x3F`'s compass write, zeroed by
+/// the card load), which the entry script's `4C 3A` copies onto the player.
+const ARRIVAL_FACING: u32 = 0x8007_3EFC;
 /// The field BGM sound-source slot (`docs/subsystems/audio.md`).
 const BGM_SLOT: u32 = 0x8007_052C;
 /// `0x8007B708`: `1` after the slot's replay, `0` after a stop / pause.
@@ -301,6 +304,79 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// The live image-panel widget ([`retail_panel`]), handed to the image
+    /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
+    /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
+    pub panel: Option<legaia_engine_core::screen_fx::PanelWidget>,
+    /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
+    /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
+    /// ([`retail_clear_rgb`]).
+    pub clear_rgb: Option<[u8; 3]>,
+    /// The player's heading `+0x26` (retail space, `0` = -Z), when it still
+    /// equals the arrival facing `_DAT_80073EFC` the entry script's `4C 3A`
+    /// gave it; `None` once the pad has turned the player.
+    pub player_facing: Option<i16>,
+    /// The player's heading `+0x26` (retail space), whatever turned it: the
+    /// seed stands the player in it, as it seats the position.
+    pub player_heading: Option<i16>,
+    /// `_DAT_80073EFC`, the arrival facing.
+    pub arrival_facing: i16,
+    /// Every field-actor-ticked placement's heading ([`retail_actor_facings`]).
+    pub actor_facings: Vec<ActorFacing>,
+}
+
+/// One field actor's heading as a retail state holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActorFacing {
+    /// `+0x50`, the record's flat MAN index.
+    pub flat: u16,
+    /// `+0x26`, the yaw (retail space: `0` = -Z, 12-bit).
+    pub facing: i16,
+    /// `+0x14` / `+0x18`.
+    pub x: i16,
+    pub z: i16,
+    /// `+0x64`, the live model id (bank-relative ids are not resolved).
+    pub model: i16,
+    /// `+0x10`.
+    pub flags: u32,
+}
+
+/// The heading `+0x26` of every actor the field actor tick (`FUN_8003BC08`)
+/// runs, keyed by its flat MAN index `+0x50` (first node per index).
+pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
+    let player = game_anchors::player_ptr(ram);
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            seen.insert(flat).then(|| ActorFacing {
+                flat,
+                facing: game_anchors::i16_at(ram, n + 0x26),
+                x: game_anchors::i16_at(ram, n + 0x14),
+                z: game_anchors::i16_at(ram, n + 0x18),
+                model: game_anchors::i16_at(ram, n + 0x64),
+                flags: game_anchors::u32_at(ram, n + 0x10),
+            })
+        })
+        .collect()
+}
+
+/// The draw environment's clear colour bytes (`r0 / g0 / b0`).
+const DRAW_ENV_CLEAR: u32 = 0x8007_BF5D;
+
+/// The clear colour a field state's frame is filled with wherever no
+/// primitive lands: the draw environment's `r0 / g0 / b0` (`0x8007BF5D..5F`),
+/// which op `4C 13` writes and the MAN loader zeroes. It is the system
+/// script's history - `town01`'s entry loop sets cave brown inside its cliff
+/// box only on a pass the player is free for, and the opening holds the
+/// player from the install pass on (the `rim_elm_zoom_intro` capture's system
+/// context is still parked on its install-pass PC, the colour black) - which
+/// a seed that runs the loop before the resume cannot reproduce. The image
+/// child writes it over the engine's on the frame it captures.
+pub fn retail_clear_rgb(ram: &[u8]) -> [u8; 3] {
+    [0, 1, 2].map(|i| game_anchors::u8_at(ram, DRAW_ENV_CLEAR + i))
 }
 
 use legaia_engine_core::world::SeededVramRect;
@@ -404,6 +480,127 @@ fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: usize) -> Ve
         .flat_map(|row| (0..w).map(move |col| (row, col)))
         .map(|(row, col)| texels[((row + h - dy % h) % h) * w + (col + w - dx % w) % w])
         .collect()
+}
+
+/// The image-panel widget's handler (`FUN_801F849C`, PROT 0900).
+const PANEL_TICK: u32 = 0x801F_849C;
+
+/// The first live image-panel widget on a retail state's actor lists
+/// ([`legaia_engine_core::screen_fx::PanelWidget`]'s field map: current
+/// `+0x14..+0x1A` / `+0x24`, targets `+0x3C..+0x42` / `+0x26`, base sizes
+/// `+0xB8..+0xBC`, tween `+0x9C` / `+0x9E`, spawn size `+0xAA` / `+0xAC`,
+/// texel origin `+0xA4` / `+0xA8`, pages `+0xA0` / `+0xA2`).
+///
+/// The ending vignettes spawn the panel from the vignette's own record
+/// (`43 12` grabs the drawn frame into `(512, 0)`, `43 13` shows it), and a
+/// capture is usually parked in the credits record that runs after it -
+/// `ending_panel_corner` holds record 13, the panel already shrunk to the
+/// corner - so a seed that resumes the running record never spawns it.
+pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_core::screen_fx::PanelWidget> {
+    let n = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PANEL_TICK)?;
+    let h = |o: u32| game_anchors::i16_at(ram, n + o);
+    Some(legaia_engine_core::screen_fx::PanelWidget {
+        cur: [h(0x14), h(0x16), h(0x18), h(0x1A), h(0x24)],
+        target: [h(0x3C), h(0x3E), h(0x40), h(0x42), h(0x26)],
+        base: [h(0xB8), h(0xBA), h(0xBC)],
+        t: h(0x9C),
+        dur: h(0x9E),
+        w0: h(0xAA),
+        h0: h(0xAC),
+        u: game_anchors::u8_at(ram, n + 0xA4),
+        v: game_anchors::u8_at(ram, n + 0xA8),
+        texpage: game_anchors::u16_at(ram, n + 0xA0),
+        texpage2: game_anchors::u16_at(ram, n + 0xA2),
+    })
+}
+
+/// The VRAM the panel samples, with the state's texels there: page 0 from
+/// the texel origin over the spawn size (one page at most), and - for a
+/// panel wider than a page - page 1 out to the far edge its quad's `u`
+/// reaches. That edge is not the image's: `FUN_801F849C` starts the second
+/// quad at `u + 0x100 + 0xE` and ends it at `u + w0 + 0x10`
+/// (`0x801F8838..0x801F88B0`, byte-wrapped), past the `320`-wide grab, and
+/// the `43 12` split copies `0x60` columns from source `+0xF0` to match
+/// (`legaia_engine_vm::vram_rect_copy::op43_sub12_calls`) - so a seed cut at
+/// the image's own width left the strip's last texels unseeded.
+fn panel_source_rects(
+    p: &legaia_engine_core::screen_fx::PanelWidget,
+    vram: &[u8],
+) -> Vec<SeededVramRect> {
+    let (w0, h) = (p.w0.clamp(0, 1024) as u16, p.h0.clamp(0, 512) as u16);
+    if w0 == 0 || h == 0 || vram.len() != 1024 * 512 * 2 {
+        return Vec::new();
+    }
+    let page = |tp: u16| ((tp & 0xF) * 64, ((tp >> 4) & 1) * 256 + u16::from(p.v));
+    let grab = |x: u16, y: u16, w: u16| -> SeededVramRect {
+        let texels = (0..h)
+            .flat_map(|row| (0..w).map(move |col| (row, col)))
+            .map(|(row, col)| {
+                let o =
+                    (((usize::from(y + row) & 0x1FF) * 1024) + (usize::from(x + col) & 0x3FF)) * 2;
+                u16::from_le_bytes([vram[o], vram[o + 1]])
+            })
+            .collect();
+        ((x, y, w, h), texels)
+    };
+    let (x0, y0) = page(p.texpage);
+    let mut out = vec![grab(x0 + u16::from(p.u), y0, w0.min(0x100))];
+    if p.texpage2 != 0 {
+        let (x1, y1) = page(p.texpage2);
+        let far = u16::from(p.u.wrapping_add(p.w0 as u8).wrapping_add(0x10)) + 1;
+        out.push(grab(x1, y1, far));
+    }
+    out
+}
+
+/// [`retail_panel`] as `LEGAIA_SEAT_PANEL`: the widget's fields as
+/// comma-separated integers in [`panel_from_env`]'s order.
+pub fn panel_env(p: &legaia_engine_core::screen_fx::PanelWidget) -> String {
+    let mut v: Vec<i32> = Vec::new();
+    v.extend(p.cur.iter().map(|&x| i32::from(x)));
+    v.extend(p.target.iter().map(|&x| i32::from(x)));
+    v.extend(p.base.iter().map(|&x| i32::from(x)));
+    v.extend([
+        i32::from(p.t),
+        i32::from(p.dur),
+        i32::from(p.w0),
+        i32::from(p.h0),
+        i32::from(p.u),
+        i32::from(p.v),
+        i32::from(p.texpage),
+        i32::from(p.texpage2),
+    ]);
+    v.iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Inverse of [`panel_env`].
+pub fn panel_from_env(s: &str) -> Option<legaia_engine_core::screen_fx::PanelWidget> {
+    let v: Vec<i32> = s
+        .split(',')
+        .map(|t| t.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    if v.len() != 21 {
+        return None;
+    }
+    let h = |i: usize| v[i] as i16;
+    Some(legaia_engine_core::screen_fx::PanelWidget {
+        cur: [h(0), h(1), h(2), h(3), h(4)],
+        target: [h(5), h(6), h(7), h(8), h(9)],
+        base: [h(10), h(11), h(12)],
+        t: h(13),
+        dur: h(14),
+        w0: h(15),
+        h0: h(16),
+        u: v[17] as u8,
+        v: v[18] as u8,
+        texpage: v[19] as u16,
+        texpage2: v[20] as u16,
+    })
 }
 
 /// [`retail_scroll_rects`] as the bytes of a `LEGAIA_SEAT_VRAM_RECTS` file:
@@ -793,8 +990,23 @@ impl RetailObs {
                 Vec::new()
             },
             scroll_rects: Vec::new(),
+            panel: None,
             object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_models(ram)
+            } else {
+                Vec::new()
+            },
+            clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
+            // Only while the player still faces the way the entry stood it:
+            // after a pad turn the heading is walk history the seat does
+            // not replay.
+            player_facing: game_anchors::player_ptr(ram)
+                .map(|p| rd16(ram, p + 0x26))
+                .filter(|&h| h == rd16(ram, ARRIVAL_FACING)),
+            player_heading: game_anchors::player_ptr(ram).map(|p| rd16(ram, p + 0x26)),
+            arrival_facing: rd16(ram, ARRIVAL_FACING),
+            actor_facings: if matches!(class, StateClass::Field) {
+                retail_actor_facings(ram)
             } else {
                 Vec::new()
             },
@@ -864,6 +1076,10 @@ impl RetailObs {
             && matches!(self.class, StateClass::Field | StateClass::WorldMap)
         {
             self.scroll_rects = retail_scroll_rects(ram, v);
+            self.panel = retail_panel(ram);
+            if let Some(p) = self.panel {
+                self.scroll_rects.extend(panel_source_rects(&p, v));
+            }
         }
     }
 
@@ -900,6 +1116,17 @@ impl RetailObs {
                     .join(","),
             ));
         }
+        if let Some([r, g, b]) = self.clear_rgb {
+            env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
+        }
+        if let Some(p) = self.panel {
+            env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));
+        }
+        // The frame child always stands in retail's heading: it seats no
+        // arrival facing of its own, and the image channel scores no heading.
+        if let Some(h) = self.player_heading {
+            env.push(("LEGAIA_SEAT_HEADING", (h & 0x0FFF).to_string()));
+        }
         if !self.scroll_rects.is_empty() {
             let dir = crate::retail_compare_image::work_dir(out_dir);
             let path = dir.join(format!("{label}.vrect.bin"));
@@ -910,6 +1137,13 @@ impl RetailObs {
             }
         }
         env
+    }
+
+    /// The player heading the seed stands the player in: retail's `+0x26`
+    /// when the pad has turned it off the arrival facing, `None` while it
+    /// still holds the arrival facing (the engine's own entry gives that).
+    pub fn seat_heading(&self) -> Option<i16> {
+        self.player_heading.filter(|&h| h != self.arrival_facing)
     }
 
     /// [`Self::seed_latches`] as `LEGAIA_SEAT_LATCHES` for `play-window`
@@ -1015,6 +1249,11 @@ pub struct EngineObs {
     pub menu_subscreen: Option<u8>,
     /// On a capture inside a running script: the phase gate's outcome.
     pub script: Option<ScriptPhase>,
+    /// The player's heading in retail space (`render_26 - 0x800`).
+    pub player_facing: Option<i16>,
+    /// Each partition-1 placement's heading (retail space) and position,
+    /// keyed by its retail flat MAN index (`N0 + slot`).
+    pub npc_facings: BTreeMap<u16, (i16, i16, i16)>,
 }
 
 /// Records which track the field VM starts.
@@ -1107,9 +1346,25 @@ pub fn run_engine_with(
     let mut director = RecordingDirector::default();
     // The entry itself may already have queued a start.
     session.host.route_bgm_events(&mut director)?;
+    // A non-zero arrival facing is a door's (the card load the seed takes
+    // zeroes it): history the seed cannot replay, so it is seated like the
+    // position, and the player stands as the state's entry stood it.
+    if retail.arrival_facing != 0 {
+        session.host.world.locomotion.arrival_facing = retail.arrival_facing;
+        session.host.world.apply_arrival_facing();
+    }
     if let Some([x, _, z]) = retail.player
         && session.host.debug_seat_standing(x, z)
     {
+        // A heading the pad turned is walk history exactly as the position
+        // is: stand the player in retail's, as the arrival facing so an
+        // entry script's `4C 3A` in the settle window hands over the same
+        // heading. One still on retail's arrival facing is left to the
+        // engine's own entry, which the facing channel scores.
+        if let Some(h) = retail.seat_heading() {
+            session.host.world.locomotion.arrival_facing = h;
+            session.host.world.apply_arrival_facing();
+        }
         match retail.camera_block {
             Some(block) => session.camera.zone.arm_arrival_over(block),
             None => session.camera.zone.arm_arrival(),
@@ -1249,6 +1504,33 @@ fn sample_engine(
     // The engine's `_DAT_8007BAC8`: a park-sentinel start (`0x1000`, the
     // ending scenes') reaches no director, but it is the word retail holds.
     let bgm_id = session.host.bgm_track_word.or(director.last);
+    let player_facing = world.player_actor_slot.and_then(|s| {
+        world
+            .actors
+            .get(s as usize)
+            .map(|a| a.move_state.render_26.wrapping_sub(0x800))
+    });
+    let n0 = session
+        .host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+        .and_then(|man| legaia_asset::man_section::parse(&man).ok())
+        .map(|mf| mf.header.partition_counts[0].max(0) as u16);
+    let world = &session.host.world;
+    let npc_facings = n0
+        .map(|n0| {
+            world
+                .npcs
+                .positions
+                .iter()
+                .map(|(&slot, &(x, z))| {
+                    let h = world.npcs.heading(slot);
+                    (n0 + u16::from(slot), (h.wrapping_sub(0x800), x, z))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     EngineObs {
         scene,
         mode,
@@ -1261,12 +1543,20 @@ fn sample_engine(
         save,
         menu_subscreen,
         script: None,
+        player_facing,
+        npc_facings,
     }
 }
 
 /// Ticks between two scripted pad edges of a menu drive: long enough for
 /// the menu's open / hand-off beats, which swallow the edge that caused them.
 pub const MENU_PRESS_GAP: u64 = 12;
+
+/// Extra ticks the first press after `Start` waits: the field darkens for up
+/// to fourteen ticks (`0x83 / 10` at a frame step of `1`) before the menu
+/// exists and takes a press (`BootSession::pause_wipe`, retail
+/// `FUN_801ED308` phase 1), longer than one [`MENU_PRESS_GAP`].
+pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
 
 /// The pad edges that reach `menu` from a settled field, as `(tick offset,
 /// button)` pairs from the first press: `Start`, `Down` until the root
@@ -1277,7 +1567,7 @@ pub const MENU_PRESS_GAP: u64 = 12;
 pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::input::PadButton)> {
     use legaia_engine_core::input::PadButton;
     let mut out = vec![(0, PadButton::Start)];
-    let mut t = 0;
+    let mut t = MENU_OPEN_WIPE_TICKS;
     let mut press = |b: PadButton| {
         t += MENU_PRESS_GAP;
         out.push((t, b));
@@ -1381,6 +1671,7 @@ pub const CHANNELS: &[&str] = &[
     "position",
     "footing",
     "camera",
+    "facing",
     "bgm",
     "fog_gate",
     "party",
@@ -1561,6 +1852,89 @@ pub(crate) fn inventory_score(
     )
 }
 
+/// A placement standing farther than this from its retail position is a
+/// position miss, not a facing one: its heading is not scored.
+const FACING_SEAT_RADIUS: f64 = 96.0;
+
+/// The facing channel: the player's heading and every placement the engine
+/// holds near its retail position, each wrapped-angle delta on its own
+/// falloff (an eighth turn and more scores zero). Mismatches beyond a
+/// sixteenth turn are listed by flat index with both headings.
+pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f64, String)> {
+    let part = |r: i16, e: i16| falloff(angle_delta(r, e), 32.0, 512.0);
+    let mut parts = Vec::new();
+    let mut miss = Vec::new();
+    if let (Some(r), Some(e)) = (retail.player_facing, engine.player_facing) {
+        parts.push(part(r, e));
+        if angle_delta(r, e) > 256.0 {
+            miss.push(format!("player r={:#05x} e={:#05x}", r & 0xFFF, e & 0xFFF));
+        }
+    }
+    let mut skipped = 0;
+    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+    let dump = std::env::var_os("LEGAIA_RC_FACING_DUMP").is_some();
+    for a in &retail.actor_facings {
+        let Some(&(e, ex, ez)) = engine.npc_facings.get(&a.flat) else {
+            continue;
+        };
+        if dump {
+            eprintln!(
+                "facing {}: flat {} flags {:#010x} model {} r=({}, {}) {:#05x} e=({}, {}) {:#05x}",
+                retail.scene,
+                a.flat,
+                a.flags,
+                a.model,
+                a.x,
+                a.z,
+                a.facing & 0xFFF,
+                ex,
+                ez,
+                e & 0xFFF
+            );
+        }
+        // A parked actor (the off-map seat) is not drawn: its heading is
+        // not on screen.
+        if (a.x, a.z) == (hide, hide) {
+            continue;
+        }
+        let dx = f64::from(i32::from(ex) - i32::from(a.x));
+        let dz = f64::from(i32::from(ez) - i32::from(a.z));
+        if (dx * dx + dz * dz).sqrt() > FACING_SEAT_RADIUS {
+            skipped += 1;
+            continue;
+        }
+        parts.push(part(a.facing, e));
+        if angle_delta(a.facing, e) > 256.0 {
+            miss.push(format!(
+                "flat {}{} at ({}, {}) model {} r={:#05x} e={:#05x}",
+                a.flat,
+                if a.flags & 0x0100_0000 != 0 {
+                    " (party)"
+                } else {
+                    ""
+                },
+                a.x,
+                a.z,
+                a.model,
+                a.facing & 0xFFF,
+                e & 0xFFF
+            ));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let n = parts.len();
+    let score = parts.iter().sum::<f64>() / n as f64;
+    Some((
+        score,
+        format!(
+            "{n} actors scored, {skipped} off their retail seat; misses: [{}]",
+            miss.join("; ")
+        ),
+    ))
+}
+
 /// The camera channel: mean of pitch, yaw (wrapped), `H` and the three eye
 /// words, each on its own falloff.
 pub(crate) fn camera_score(r: &CameraObs, e: &CameraObs) -> (f64, String) {
@@ -1608,6 +1982,11 @@ pub fn compare(
         det.insert(name.to_string(), detail);
     };
 
+    if retail.class == StateClass::Field
+        && let Some((score, detail)) = facing_score(retail, engine)
+    {
+        put("facing", score, detail);
+    }
     let scene_ok = engine.scene.as_deref() == Some(retail.scene.as_str());
     put(
         "scene",
@@ -2105,6 +2484,7 @@ fn run_battle(
     // first run.
     let mut first = None;
     let mut reached = None;
+    let mut reached_victims = false;
     // A battle-end capture also wants retail's win pose: a run that reaches
     // the phase on another one is kept as the fallback while the remaining
     // streams are tried (`RetailBattle::win_pose`).
@@ -2156,6 +2536,7 @@ fn run_battle(
                         continue;
                     }
                     reached = Some(e);
+                    reached_victims = victims;
                     break 'search;
                 }
                 Ok(e) => {
@@ -2168,6 +2549,41 @@ fn run_battle(
             }
         }
     }
+    // A driven action replays the pushes its capture already holds; run the
+    // same stream once more from the ground the replay says retail started
+    // on (`RetailBattle::undrift`), and keep it when it still reaches the
+    // phase.
+    let undrifted;
+    let (battle, reached) = match reached
+        .as_ref()
+        .and_then(|e| battle.undrift(&e.ground_drift).map(|b| (b, e.rng_seed)))
+    {
+        Some((b, seed)) => match crate::retail_compare_battle::run_engine_battle(
+            opts.extracted,
+            retail,
+            &b,
+            seed,
+            reached_victims,
+        ) {
+            // Kept only when it stands the combatants nearer retail's pairs
+            // than the first run did - a replay whose push depends on where
+            // it starts can land further off.
+            Ok(e)
+                if e.mode == legaia_engine_core::world::SceneMode::Battle
+                    && e.driven.is_some_and(|d| d.is_some())
+                    && e.age_short.is_none()
+                    && crate::retail_compare_battle::ground_residual(battle, &b, &e)
+                        < reached.as_ref().and_then(|r| {
+                            crate::retail_compare_battle::ground_residual(battle, battle, r)
+                        }) =>
+            {
+                undrifted = b;
+                (&undrifted, Some(e))
+            }
+            _ => (battle, reached),
+        },
+        None => (battle, reached),
+    };
     let engine = match reached.or(off_pose).map(Ok).or(first) {
         Some(Ok(e)) => e,
         Some(Err(e)) => {
@@ -2277,6 +2693,21 @@ fn battle_image(
         "LEGAIA_BATTLE_CAMERA_OPTION",
         battle.camera_option.to_string(),
     ));
+    // Retail's HUD glides had all landed: the frame shows every plate at its
+    // rest seat whatever the replay's own seed-to-phase time was (a seat
+    // seeded on its captured ground skips the approach retail spent the
+    // sixteen-frame raise on).
+    if battle.hud_glides_landed {
+        env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
+    }
+    // Glides still in flight: each seated on the elapsed the displayed
+    // frame shows (`HudGlideSeat`).
+    if !battle.hud_glides.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_HUD_GLIDES",
+            crate::retail_compare_battle::HudGlideSeat::to_env(&battle.hud_glides),
+        ));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
@@ -2668,8 +3099,11 @@ mod tests {
         want.extend(std::iter::repeat_n(PadButton::Down, 4));
         want.push(PadButton::Cross);
         assert_eq!(buttons, want);
+        // The first press waits out the pause wipe; the rest are one gap
+        // apart.
+        assert_eq!(presses[1].0, MENU_OPEN_WIPE_TICKS + MENU_PRESS_GAP);
         assert!(
-            presses
+            presses[1..]
                 .windows(2)
                 .all(|w| w[1].0 - w[0].0 == MENU_PRESS_GAP)
         );

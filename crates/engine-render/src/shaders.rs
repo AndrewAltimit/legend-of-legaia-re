@@ -666,7 +666,39 @@ fn prim_near_rejected(
         zsf = 0x400 >> shift;
     }
     let otz = (zsf * sum) >> 12u;
-    return otz < i32(p.w);
+    if (otz < i32(p.w)) {
+        return true;
+    }
+    // The GPU polygon-size limit (`prim_near_reject::gpu_span_rejected`),
+    // armed when the enable lane carries the projection's `H`. A quad is
+    // split `[0,1,2]` / `[1,3,2]`; it drops only when both halves would.
+    if (p.x < 1.5) {
+        return false;
+    }
+    let s0 = prim_sxy(m, c0.xyz, p.y, p.x);
+    let s1 = prim_sxy(m, c1, p.y, p.x);
+    let s2 = prim_sxy(m, c2, p.y, p.x);
+    if (!span_too_big(s0, s1, s2)) {
+        return false;
+    }
+    if (c0.w > 3.5) {
+        return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2);
+    }
+    return true;
+}
+
+fn prim_sxy(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32, h: f32) -> vec2<f32> {
+    let cl = m * vec4<f32>(c, 1.0);
+    let d = max(max(cl.w * sz_per_w, 0.0), h * 0.5);
+    let half = vec2<f32>(160.0, 120.0);
+    let off = cl.xy * half * sz_per_w / d;
+    return clamp(off + half, vec2<f32>(-1024.0), vec2<f32>(1023.0)) - half;
+}
+
+fn span_too_big(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> bool {
+    let lo = min(min(a, b), c);
+    let hi = max(max(a, b), c);
+    return hi.x - lo.x > 1023.0 || hi.y - lo.y > 511.0;
 }
 
 // Where a rejected primitive's corners go: one point outside the clip
@@ -1370,6 +1402,14 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if effect_clipped(in.world_pos) {
         discard;
     }
+    // Retail GTE NCLIP winding rejection, the same test as the opaque entry:
+    // retail's prim leaves cull a semi prim's back face exactly as they cull
+    // an opaque one, so without it an open translucent strand blends twice
+    // wherever its far side faces the camera.
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
+        discard;
+    }
     // Double-sided pair copies: blend only the camera-facing one (see
     // fs_main - same rule so a flagged semi prim can't double-blend).
     if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
@@ -1610,6 +1650,14 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // pre-scale (retail folds that scale into the blend itself).
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if effect_clipped(in.world_pos) {
+        discard;
+    }
+    // Retail GTE NCLIP winding rejection, the same test as the opaque entry:
+    // retail's prim leaves cull a semi prim's back face exactly as they cull
+    // an opaque one, so without it an open translucent strand blends twice
+    // wherever its far side faces the camera.
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
         discard;
     }
     // Double-sided pair copies: same facing discard as the opaque entry

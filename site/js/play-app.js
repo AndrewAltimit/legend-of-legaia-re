@@ -133,6 +133,31 @@
       }
       ctx.globalAlpha = 1;
     }
+    /* A draw list carrying the save screen's subtractive darkening
+     * (`darken: {at, level}`, the engine's `SaveScreenDarken`): retail pushes
+     * one `B - F` quad under its active panel. A 2D canvas has no subtract
+     * composite, so blit the sprites under the quad, subtract `level` from
+     * every channel of what the canvas holds, then blit the rest past the quad
+     * itself. The native window draws the same quad through its ABR-2
+     * pipeline. */
+    blitDarkened(ctx, draws, darken) {
+      if (!draws) return;
+      if (!darken || !(darken.level > 0)) { this.blit(ctx, draws); return; }
+      const at = Math.max(0, Math.min(draws.length, darken.at | 0));
+      this.blit(ctx, draws.slice(0, at));
+      const w = ctx.canvas.width, h = ctx.canvas.height, g = darken.level;
+      if (w > 0 && h > 0) {
+        const img = ctx.getImageData(0, 0, w, h);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i] > g ? d[i] - g : 0;
+          d[i + 1] = d[i + 1] > g ? d[i + 1] - g : 0;
+          d[i + 2] = d[i + 2] > g ? d[i + 2] - g : 0;
+        }
+        ctx.putImageData(img, 0, 0);
+      }
+      this.blit(ctx, draws.slice(at + 1));
+    }
   }
 
   /* The engine takes the camera's azimuth and quantises it to a quarter turn to
@@ -549,6 +574,8 @@ void main() {
       this.pulse = new Set();
       this.scene = null;
       this.staticDraws = [];
+      this._terrainByIdx = null;
+      this._terrainFacingLive = null;
       this.player = null;    /* { basePositions } */
       this.npcs = [];        /* [{ meshId, base, objectIds, frames, partCount, frameCount, out }] */
       this.tileMeshSlots = [];
@@ -899,6 +926,8 @@ void main() {
       const rt = this.rt;
       this.renderer.clearScene();
       this.staticDraws = [];
+      this._terrainByIdx = null;
+      this._terrainFacingLive = null;
       this._staticWindowStamp = undefined;
       this._viewWindowStamp = undefined;
       this._placementCullStamp = undefined;
@@ -1095,8 +1124,11 @@ void main() {
         }
       };
       const terrainSlots = rt.field_terrain_slots();
+      /* Terrain cells carry the record's authored pitch / roll too (vell's
+       * trees, bubu1's tilted slabs); the native window composes all three. */
       push(terrainSlots, rt.field_terrain_positions(), rt.field_terrain_rot_y(), null,
-        null, null, 0);
+        rt.field_terrain_rot_x ? rt.field_terrain_rot_x() : null,
+        rt.field_terrain_rot_z ? rt.field_terrain_rot_z() : null, 0);
       push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
@@ -1593,21 +1625,27 @@ void main() {
      * it, at which point the engine resumes the suspended script. So there is
      * nothing to toggle here - just forward edges while it is up.
      *
-     * Also unlike the pause menu, one tick per frame is right: the shop has no
-     * frame-counted animation to keep on a wall clock, so it needs no catch-up
-     * clock of its own.
+     * The shop steps on the SIM clock, one `play_shop_input` per drained sim
+     * step - the native window's cadence. Its open fade and window slides are
+     * tick-counted (`MenuRuntime::shop_fade_level`), so one call per display
+     * frame ran them at the monitor's rate: twice as fast on a 120 Hz panel.
+     * The frame's edges ride the first step; a frame that drains no step
+     * keeps them for the next one rather than dropping the press.
      *
      * Returns `true` while the shop is up, so `_frame` freezes the field. */
-    _updateFieldShop() {
+    _updateFieldShop(simSteps) {
       const rt = this.rt;
       if (typeof rt.play_shop_is_open !== 'function') return false;
       let open;
       try { open = rt.play_shop_is_open(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
+      if (!(simSteps > 0)) return true;
       let edge = 0;
       edge |= padMaskOf(this.pulse);
-      try { rt.play_shop_input(edge); } catch (e) {}
+      for (let s = 0; s < simSteps; s++) {
+        try { rt.play_shop_input(s === 0 ? edge : 0); } catch (e) { break; }
+      }
       /* The shop owns every edge while it is up - clear them so none leak into
        * the frozen field on the next tick. */
       this.pulse.clear();
@@ -1841,7 +1879,7 @@ void main() {
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, ov.width, ov.height);
-        if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
+        if (this._menuChrome) this._menuChrome.blitDarkened(ctx, draws.sprites, draws.darken);
         if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
         return;
       }
@@ -2137,7 +2175,7 @@ void main() {
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
         d.winHidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
-        d.hidden = d.winHidden || !!d.cullHidden;
+        d.hidden = d.winHidden || !!d.cullHidden || !!d.parkHidden;
       }
     }
 
@@ -2157,7 +2195,7 @@ void main() {
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
         d.cullHidden = d.placeIdx < culled.length && culled[d.placeIdx] === 1;
-        d.hidden = !!d.winHidden || d.cullHidden;
+        d.hidden = !!d.winHidden || d.cullHidden || !!d.parkHidden;
       }
     }
 
@@ -2279,6 +2317,70 @@ void main() {
         }
       }
       this._objectMovesLive = mv.length > 0;
+    }
+
+    /* A camera-facing terrain / decoration cell (record flags +0x12 & 0x380:
+     * rugi's candle glows, the vell forest trees) is rebuilt against this
+     * frame's engine camera: retail's decoration pass FUN_801F7088 drops the
+     * flagged axes from the camera rotation before the cell's own. The engine
+     * hands back [terrain index, 9 column-major floats] per cell - the linear
+     * part in the page frame - or an EMPTY array (no such cell, or the page
+     * drew through its own orbit, when every cell returns to its baked
+     * model). The native window rebuilds the same draws
+     * (`gte::decoration_cell_basis`). Runs after the camera is staged. */
+    _applyTerrainFacing(rt) {
+      if (!rt || typeof rt.field_terrain_facing !== 'function') return;
+      const vp = this.cam && this.cam.vp;
+      const m = vp ? rt.field_terrain_facing(vp) : [];
+      if (!m.length && !this._terrainFacingLive) return;
+      if (!this._terrainByIdx) {
+        this._terrainByIdx = new Map();
+        for (const d of this.staticDraws) {
+          if (d.terrainIdx !== undefined) this._terrainByIdx.set(d.terrainIdx, d);
+        }
+      }
+      const seen = new Set();
+      for (let k = 0; k + 9 < m.length; k += 10) {
+        const d = this._terrainByIdx.get(m[k]);
+        if (!d) continue;
+        if (d.facingBase === undefined) d.facingBase = d.model || null;
+        d.model = new Float32Array([
+          m[k + 1], m[k + 2], m[k + 3], 0,
+          m[k + 4], m[k + 5], m[k + 6], 0,
+          m[k + 7], m[k + 8], m[k + 9], 0,
+          d.x, d.y, d.z, 1,
+        ]);
+        seen.add(d);
+      }
+      if (this._terrainFacingLive) {
+        for (const d of this._terrainFacingLive) {
+          if (seen.has(d)) continue;
+          if (d.facingBase) d.model = d.facingBase; else delete d.model;
+          delete d.facingBase;
+        }
+      }
+      this._terrainFacingLive = seen.size ? seen : null;
+    }
+
+    /* A placed object a script parks at the hide box after the scene built
+     * its draws (rugi's entry script runs `A3 06 7F 7F` on the stone block the
+     * opened wall leaves behind) stops drawing: retail's case-5 draw reads the
+     * actor, which now stands off the map. The engine hands back a
+     * per-placement mask (1 = parked) or an EMPTY array while none is;
+     * `_objectParkedLive` clears the flags on the falling edge. The native
+     * window skips the same set (`World::hidden_object_records`). */
+    _applyObjectParked(rt) {
+      if (!rt.field_placement_parked) return;
+      const m = rt.field_placement_parked();
+      if (!m.length && !this._objectParkedLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const parked = d.placeIdx < m.length && m[d.placeIdx] === 1;
+        if (parked === !!d.parkHidden) continue;
+        d.parkHidden = parked;
+        d.hidden = !!d.winHidden || !!d.cullHidden || parked;
+      }
+      this._objectParkedLive = m.length > 0;
     }
 
     /* A placed object whose actor carries a draw tint (op `4C 81`: the
@@ -2451,7 +2553,7 @@ void main() {
       const menuOpen = this._updateFieldMenu();
       /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
        * on the engine side, so the field must not advance under it either. */
-      const shopOpen = menuOpen ? false : this._updateFieldShop();
+      const shopOpen = menuOpen ? false : this._updateFieldShop(simSteps);
       /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
        * the script the same way, and is modal over everything else. */
       const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);
@@ -2623,6 +2725,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectParked(rt);
       this._applyObjectModels(rt);
       this._applyObjectTints(rt);
       this._applyGroundWave(rt);
@@ -2882,6 +2985,7 @@ void main() {
        * used to run its own orbit projection here and re-map the cutscene
        * params onto it, which is a second camera model beside the engine's. */
       this._stageEngineCamera(pt);
+      this._applyTerrainFacing(this.rt);
 
       /* This frame's field view-projection, built exactly as the renderer
        * will build it (`buildWorldOrbitVp`, or the VR/battle override). Two
@@ -3015,6 +3119,29 @@ void main() {
           rt.play_intro_land_capture(buf, cw, ch);
           this.renderer.uploadVram(rt.field_vram_bytes());
         } catch (e) { /* presentation-only; keep playing without the capture */ }
+      }
+      /* A field-VM `43 12` copy that reads the display framebuffer (the
+       * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
+       * frame: read it back and land it; the next field-VRAM pass runs the
+       * copy and the ordinary dirty re-upload carries it. The native
+       * window's twin is its redraw's `framebuffer_grab_pending` block. */
+      if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
+          rt.play_frame_grab_pending()) {
+        try {
+          /* Read the PSX display rect, not the canvas: the largest centred
+           * 4:3 rect of the drawing buffer, which is the 320 x 240 screen the
+           * engine projects onto. A canvas that is not 4:3 (fullscreen, a
+           * resized window) would otherwise squash or widen the photo; read
+           * this way both hosts land the same texels. */
+          const gl = this.renderer.gl;
+          const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+          const cw = Math.min(bw, Math.floor(bh * 4 / 3));
+          const ch = Math.min(bh, Math.floor(cw * 3 / 4));
+          const x0 = Math.floor((bw - cw) / 2), y0 = Math.floor((bh - ch) / 2);
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(x0, y0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_land_frame_grab(buf, cw, ch);
+        } catch (e) { /* presentation-only */ }
       }
 
       /* Screen-space PSX primitives over the finished 3D frame: the

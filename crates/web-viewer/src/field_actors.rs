@@ -18,6 +18,17 @@ use std::collections::HashMap;
 
 use crate::play::{NpcClip, NpcRender};
 
+/// A placed NPC's live look rotation (`World::actor_look`), when the host
+/// is live and the actor turns an object.
+fn look_of(
+    host: Option<&SceneHost>,
+    slot: u8,
+) -> Option<legaia_engine_core::actor_look::ActorLook> {
+    host?
+        .world
+        .actor_look(legaia_engine_core::actor_look::LookKey::Npc(slot))
+}
+
 /// The pose banks an actor's clip ids index: the scene's own ANM bundle and
 /// the PROT 0874 locomotion bundle (the party / global-pool specials).
 #[derive(Clone, Copy)]
@@ -532,16 +543,24 @@ impl FieldActors {
 
     /// `[pose, generation, ...]` per catalog entry (`[-1, -1]` with no live
     /// clip): the pose key this render should show and the re-target count.
-    pub fn clip_states(&self) -> Vec<i32> {
+    /// A script's look rotation (`4C 45`, [`look_of`]) is part of the pose,
+    /// so its angles fold into the generation: the page re-poses when a head
+    /// turns on a held frame.
+    pub fn clip_states(&self, host: Option<&SceneHost>) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(n.pack.entries.len() * 2);
         for e in &n.pack.entries {
-            match self.clips.get(&(e.placement.index as u8)) {
+            let slot = e.placement.index as u8;
+            match self.clips.get(&slot) {
                 Some(c) => {
+                    let look = look_of(host, slot).map_or(0, |l| {
+                        let a = l.angles.map(|v| i32::from(v as u16 & 0xFFF));
+                        (1 << 30) ^ (i32::from(l.object) << 24) ^ (a[0] << 12) ^ a[1] ^ (a[2] << 6)
+                    });
                     out.push(c.player.pose_key() as i32);
-                    out.push(c.generation as i32);
+                    out.push(c.generation as i32 ^ look);
                 }
                 None => out.extend([-1, -1]),
             }
@@ -551,14 +570,20 @@ impl FieldActors {
 
     /// Current pose of catalog entry `i`'s live clip, 6 `i32` per bone, read
     /// without advancing the playhead. Empty with no live clip.
-    pub fn live_bones(&self, i: u32) -> Vec<i32> {
+    pub fn live_bones(&self, i: u32, host: Option<&SceneHost>) -> Vec<i32> {
         let Some(e) = self.entry(i) else {
             return Vec::new();
         };
-        let Some(c) = self.clips.get(&(e.placement.index as u8)) else {
+        let slot = e.placement.index as u8;
+        let Some(c) = self.clips.get(&slot) else {
             return Vec::new();
         };
-        let pose = c.player.current_pose();
+        let mut pose = c.player.current_pose();
+        // The script's look rotation on one object (`4C 45`), the kernel the
+        // native window folds into the same pose.
+        if let Some(l) = look_of(host, slot) {
+            legaia_engine_core::actor_look::apply_look(&mut pose.bone_outputs, l);
+        }
         let mut out = Vec::with_capacity(pose.bone_outputs.len() * 6);
         for (t, r) in pose.bone_outputs {
             out.extend([
@@ -596,7 +621,7 @@ impl FieldActors {
             if host.world.field_npc_render_scale(e.placement.index) == Some(0) {
                 (x, z) = (hide, hide);
             }
-            let facing = host.world.npcs.headings.get(&slot).copied().unwrap_or(2048) as f32;
+            let facing = host.world.npcs.heading(slot) as f32;
             let y = host.world.field_npc_render_y(slot, x, z) as f32;
             out.extend_from_slice(&[x as f32, y, z as f32, facing]);
         }

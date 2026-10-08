@@ -21,12 +21,12 @@ pub struct CastFxState {
     /// (extraction `PROT 903 + (id - 0x81)`), and calls [`crate::world::World::spawn_summon`]. Kept as a
     /// host-fulfilled request because `World` is index-agnostic (same pattern
     /// as the capture-archive load).
-    pub pending_summon_spawn: Option<(u8, [i16; 3])>,
+    pub(crate) pending_summon_spawn: Option<(u8, [i16; 3])>,
     /// A creature seat the stager owes but has not requested yet: `(seat
     /// arm, spell id, spawn point)`. A module whose tick body seats its
     /// creature in a later arm (`cast_module_camera::module_seat_arm`) has
     /// it requested once its phase passes that arm.
-    pub summon_seat_owed: Option<(u8, u8, [i16; 3])>,
+    pub(crate) summon_seat_owed: Option<(u8, u8, [i16; 3])>,
     /// The **cast-effect pool**: the DATA half of the slot-B cast-module band
     /// (PROT 0903..0966), keyed by PROT entry. Both of PROT 0898's tick
     /// dispatchers resolve a cast into this band
@@ -61,11 +61,11 @@ pub struct CastFxState {
     pub module_skips_fold: bool,
     /// PROT 0954's module-resident words while its body runs
     /// ([`legaia_engine_vm::cast_fatal_decision`]).
-    pub fatal_decision: Option<legaia_engine_vm::cast_fatal_decision::FatalDecisionState>,
+    pub(crate) fatal_decision: Option<legaia_engine_vm::cast_fatal_decision::FatalDecisionState>,
     /// The outcome name PROT 0954's arm 9 put up in the move-name label
     /// (HUD element `0x4C`), until the band leaves. Read by
     /// `battle_hud::battle_move_name`.
-    pub fatal_banner: Option<String>,
+    pub(crate) fatal_banner: Option<String>,
     /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
     ///
     /// Arm 12 grows it by the frame delta times `8` every tick
@@ -73,24 +73,28 @@ pub struct CastFxState {
     /// `+-0x30` cone about it, so it is a **rotating ray**, not a radius: the
     /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
     /// when a cast is armed.
-    pub module_ring_angle: u16,
+    pub(crate) module_ring_angle: u16,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
-    pub module_beam_counter: i32,
+    pub(crate) module_beam_counter: i32,
     /// The beam builder ran on this module tick (arm 3 calls it every tick
     /// it holds), so the frame draws its packets
     /// ([`crate::world::World::cross_beam_draw`]).
-    pub module_beam_live: bool,
+    pub(crate) module_beam_live: bool,
+    /// PROT 0904's draw state: the beam trail ring and the packets its last
+    /// tick drew ([`crate::world::World::theeder_draw`]). Reset when a cast
+    /// is armed.
+    pub module_theeder: legaia_engine_vm::cast_seru_ticks_a::TheederFx,
     /// The phase-chain arm whose damage site has landed this pass through
     /// it: the band folds a chain body's hit on the tick its arm first runs
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
     /// victim react.
-    pub module_hit_arm: Option<u8>,
+    pub(crate) module_hit_arm: Option<u8>,
     /// Ticks the current arm has held on its settle wait
     /// (`cast_module_ticks::ChainSettle`), bounded by
     /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
-    pub module_settle_ticks: u16,
+    pub(crate) module_settle_ticks: u16,
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
     /// cast, decided **once**.
     ///
@@ -101,14 +105,14 @@ pub struct CastFxState {
     /// cast and holds the verdict here for every later frame, instead of
     /// re-rolling per frame (which would make a resist flicker into a kill).
     /// `None` while no Nighto cast is resident.
-    pub module_nighto_outcome: Option<legaia_engine_vm::cast_seru_ticks_a::NightoOutcome>,
+    pub(crate) module_nighto_outcome: Option<legaia_engine_vm::cast_seru_ticks_a::NightoOutcome>,
     // --- W1-D: the fourteen trampoline arms ---
     /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
     /// which the module keeps in its own image word `0x801F8658` until the
     /// `0xFF` arm puts it back
     /// ([`legaia_engine_vm::cast_arm_ticks::glare_divide_split_tick`]).
     /// `None` outside that choreography.
-    pub module_split_saved_target: Option<u8>,
+    pub(crate) module_split_saved_target: Option<u8>,
     // --- end W1-D ---
     /// PROT 0910 (Swordie)'s per-slash progress words, hit counter, settle
     /// countdown and `ctx[+0x6D8]` arm timer
@@ -128,13 +132,13 @@ pub struct CastFxState {
     /// means no capture module is paged in and
     /// [`crate::world::World::capture_stager_tick`] reports "not busy" - which is what a
     /// disc-free host, or any cast that is not capture-class, sees.
-    pub capture_spell: Option<u8>,
+    pub(crate) capture_spell: Option<u8>,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
     /// [`crate::world::World::capture_stager_tick`]. `None` once played out,
     /// or for a body that stages nothing on its caster.
-    pub caster_stages: Option<crate::world::battle::CasterStageRun>,
+    pub(crate) caster_stages: Option<crate::world::battle::CasterStageRun>,
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
     /// sets `(move_id, target world pos)` here (see [`crate::world::World::request_move_fx_spawn`]).
@@ -142,7 +146,7 @@ pub struct CastFxState {
     /// [`crate::world::World::spawn_move_fx`] (which reads the retained PROT 0898 overlay).
     /// The sibling of [`pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn) for
     /// the move-FX (rather than summon-creature) render path.
-    pub pending_move_fx_spawn: Option<(u8, [i16; 3])>,
+    pub(crate) pending_move_fx_spawn: Option<(u8, [i16; 3])>,
     /// Active battle move-power effect-FX scene-graph, while one is playing. A
     /// move's `0x01..=0x63` on-contact / launch effect-list entries spawn the
     /// `0x801f6324` prototype records (summon-format move-VM parts) through the
@@ -174,36 +178,36 @@ pub struct CastFxState {
     /// `+0x1144`; see [`crate::action_effect_script::MoveFxStreak`]). Read by
     /// [`crate::world::CastFxState::move_fx_streak`]; the render layer projects the afterimage
     /// streak's billboard from its launch point + half-width.
-    pub move_fx_streak: crate::action_effect_script::MoveFxStreak,
+    pub(crate) move_fx_streak: crate::action_effect_script::MoveFxStreak,
     /// The four homing slots the same terminator seeds and
     /// `World::tick_homing_slots` flies (`ctx[+0x24E..]` / `+0x252..` /
     /// `+0x1144..`; [`crate::action_effect_script::HomingSlots`]).
-    pub homing: crate::action_effect_script::HomingSlots,
+    pub(crate) homing: crate::action_effect_script::HomingSlots,
     /// Set by a cast's fold when it leaves the move's effect lists to the
     /// homing flight its caster's terminator is about to seed; taken by that
     /// seed (`World::seed_homing_slots`).
-    pub homing_takes_lists: bool,
+    pub(crate) homing_takes_lists: bool,
     /// The text a directed summon module's arm last put up
     /// ([`legaia_engine_vm::cast_module_camera::ModuleCaption`]), cleared at
     /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
-    pub module_caption: Option<legaia_engine_vm::cast_module_camera::ModuleCaption>,
+    pub(crate) module_caption: Option<legaia_engine_vm::cast_module_camera::ModuleCaption>,
     /// Pending move-FX sound cue id (`+0x0d`), set by [`crate::world::World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`crate::world::World::take_pending_move_fx_cue`] and routes it through
     /// `legaia_engine_audio::classify_cue` → the SFX ring / voice trigger
     /// (the retail `FUN_8004fcc8` dispatch). Same host-fulfilled-request shape
     /// as [`pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn).
-    pub pending_move_fx_cue: Option<u8>,
+    pub(crate) pending_move_fx_cue: Option<u8>,
     /// The move-VM actors the effect spawner `FUN_801DFDF0` seats ahead of
     /// effect ids `4` / `0x13` (`0x801DFE60..0x801DFE88`): the trigger record
     /// VA (`0x801F5D90` / `0x801F5CF8`), the spawn position and the angle it
     /// hands `FUN_80050ED4` as `rot[1]`. Queued by the effect host and seated
     /// by [`crate::world::World::flush_battle_bursts`].
-    pub pending_burst_triggers: Vec<(u32, [i16; 3], u16)>,
+    pub(crate) pending_burst_triggers: Vec<(u32, [i16; 3], u16)>,
     /// Move-VM op `0x17` calls a part made this step - the battle-overlay
     /// escape `FUN_801F30C4(actor, mode)`, with the parent's position, rotation
     /// trio and `+0x72` scale - run by [`crate::world::World::flush_battle_bursts`].
-    pub pending_bursts: Vec<PendingBurst>,
+    pub(crate) pending_bursts: Vec<PendingBurst>,
 }
 
 /// One queued move-VM op-`0x17` call ([`CastFxState::pending_bursts`]).
@@ -233,6 +237,7 @@ impl CastFxState {
             module_ring_angle: 0,
             module_beam_counter: 0,
             module_beam_live: false,
+            module_theeder: Default::default(),
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,

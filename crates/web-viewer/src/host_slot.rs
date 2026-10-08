@@ -124,13 +124,11 @@ impl HostSlot {
     }
 
     /// The session, once a disc is loaded.
-    #[allow(dead_code)]
     pub(crate) fn session(&self) -> Option<&PageSession> {
         self.session.as_ref()
     }
 
     /// The session, mutably.
-    #[allow(dead_code)]
     pub(crate) fn session_mut(&mut self) -> Option<&mut PageSession> {
         self.session.as_mut()
     }

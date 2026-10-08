@@ -198,7 +198,7 @@ pub struct EffectSprite {
     /// `atlas w/h * sprite_scale >> 8` (x10 the texel size at the retail
     /// `0xA00` scale), which the projector adds either side of the centre.
     /// Hosts size the quad through
-    /// `legaia_engine_vm::effect_billboard::world_half_extents`.
+    /// `legaia_engine_ui::effect_billboard::world_half_extents`.
     pub size: [f32; 2],
     /// Top-left source texel within the texture page (atlas `u`, `v`).
     pub uv: [u16; 2],

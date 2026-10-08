@@ -80,8 +80,8 @@ pub enum BattleCamPhase {
 /// (`0x801E5E90..0x801E5EF4`) and the `0x51` arm (`0x801E5FC0..0x801E6018`)
 /// both fork on `actor[+0x1DE]`: category `5` (Run) skips the framing call
 /// and runs the yaw orbit instead, category `3` (Attack) takes `li a1,0x8`, a
-/// party slot whose target's live HP `+0x14C` reads zero takes `0x8` too, and
-/// everything else `li a1,0x6` - re-armed every pass for the
+/// target that is itself a party seat (`actor[+0x1DD] < 3`) and whose live HP
+/// `+0x14C` reads zero takes `0x8` too, and everything else `li a1,0x6` - re-armed every pass for the
 /// `ctx[+0x6D8] = 0x3C` display frames the tail lasts. A retail save parked
 /// in `0x51` after a monster's spell (`zora_glare_petrify_post`) reads case
 /// 6's in-fight pose - pitch `0`, `TR (0, 0x500, prescale(ctx[+0x6D0]))`
@@ -167,7 +167,7 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
 /// take mode `7` by **default** and mode `8` when the target's current anim
 /// `+0x1D9` is its knockdown `+0x1F1` or its non-zero get-up `+0x1F2`
 /// (`0x801E3A88..0x801E3AC4` / `0x801E5660..0x801E5684`); `0x20` alone also
-/// takes `8` when a party slot faces a target in a death clip (anim `7` /
+/// takes `8` when the target is a party seat in a death clip (anim `7` /
 /// `8`, `0x801E568C..0x801E56A4`). A retail `ctx[7] == 0x1F` save state
 /// corroborates the default pose: with `ctx[+0xD] == 2` it reads pitch `0x80`
 /// and `TR.y = 0x400` - case 7's style-2 tweak - over `TR.z =
@@ -186,7 +186,7 @@ pub const fn post_strike_phase(action_state: u8, done: DoneBandInputs) -> Option
     let case8 = match action_state {
         0x1E => false,
         0x1F => done.target_knocked,
-        0x20 => done.target_knocked || (done.party_slot && done.target_death_clip),
+        0x20 => done.target_knocked || (done.target_party_seat && done.target_death_clip),
         _ => return None,
     };
     Some(if case8 {
@@ -215,8 +215,17 @@ pub struct DoneBandInputs {
     /// `actor[+0x1DE]` - the committed action category (`1` item, `3`
     /// attack, `4` spirit, `5` run).
     pub category: u8,
-    /// `ctx[+0x13] < 3` - the acting slot is a party seat.
-    pub party_slot: bool,
+    /// `actor[+0x1DD] < 3` - the acting actor's **target** is a party seat.
+    ///
+    /// The arms read the spill `sp+0x20`, which the prologue fills from
+    /// `lbu t2,0x1dd(s3)` (`0x801E29B0..0x801E29C0`, `s3` the acting actor)
+    /// beside `s8`, the target actor itself - the target's index, not the
+    /// acting seat `ctx[+0x13]`. A party caster whose spell killed a monster
+    /// therefore keeps case 6 on the caster through the Done band
+    /// (`shiny_refactor_gimard_levelup`: target slot 3 at `0` HP, retail's
+    /// tween endpoints case 6's), and case 8 over a corpse is a monster's
+    /// blow that felled a party member.
+    pub target_party_seat: bool,
     /// The acting actor's target reads zero live HP (`s8[+0x14C] == 0`).
     pub target_dead: bool,
     /// The target's current anim `+0x1D9` is its knockdown `+0x1F1`, or its
@@ -242,12 +251,12 @@ pub const DONE_CATEGORY_ATTACK: u8 = 3;
 /// 801e5ea4  beq  v1,v0,0x801e5f00     ; category 5 (Run): no framing, orbit
 /// 801e5ea8  _li  v0,0x3
 /// 801e5eac  beq  v1,v0,0x801e5ed8     ; category 3 (Attack): case 8
-/// 801e5eb4  lw   t2,0x20(sp)          ; ctx[+0x13]
+/// 801e5eb4  lw   t2,0x20(sp)          ; actor[+0x1DD], the target index
 /// 801e5ebc  sltu v0,t2,v0             ; < 3 ?
-/// 801e5ec0  beq  v0,zero,0x801e5eec   ; monster slot: case 6
+/// 801e5ec0  beq  v0,zero,0x801e5eec   ; monster target: case 6
 /// 801e5ec8  lhu  v0,0x14c(s8)         ; the target's live HP
 /// 801e5ed0  bne  v0,zero,0x801e5eec   ; alive: case 6
-/// 801e5edc  jal  0x801d5854           ; a1 = 8: party slot, dead target
+/// 801e5edc  jal  0x801d5854           ; a1 = 8: dead party target
 /// 801e5ef0  jal  0x801d5854           ; a1 = 6
 /// ```
 ///
@@ -256,7 +265,8 @@ pub const DONE_CATEGORY_ATTACK: u8 = 3;
 pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
     if done.category == DONE_CATEGORY_RUN {
         BattleCamPhase::Menu
-    } else if done.category == DONE_CATEGORY_ATTACK || (done.party_slot && done.target_dead) {
+    } else if done.category == DONE_CATEGORY_ATTACK || (done.target_party_seat && done.target_dead)
+    {
         BattleCamPhase::ActionEnd
     } else {
         BattleCamPhase::Action
@@ -285,7 +295,7 @@ pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
 /// [`RECOVER_STATES`] and [`ACTION_END_STATES`].
 ///
 /// **The Done band frames per category.** `0x50` / `0x51` arm case `8` for
-/// an Attack (or a party slot over a dead target), the orbit for a Run, and
+/// an Attack (or a dead party target), the orbit for a Run, and
 /// case `6` for everything else - [`done_band_phase`] over `done`, which
 /// both hosts fill from the acting actor.
 pub fn phase_for_state(

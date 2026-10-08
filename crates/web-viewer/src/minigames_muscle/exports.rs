@@ -175,6 +175,91 @@ impl LegaiaMinigames {
         true
     }
 
+    /// One frame of the selection on edge-triggered pad bits (`1` Left, `2`
+    /// Right, `4` Up, `8` Down, `16` Cross, `32` Circle, `64` Triangle):
+    /// [`MuscleDomeSession::select_input`], the command flow every dome host
+    /// drives - the round prompt, the command ring, the `Auto | Command`
+    /// prompt, the direction entry and its review, the Ra-Seru list and the
+    /// `Begin | Reselect` confirm, each screen's rules the battle session's
+    /// own. The play hosts' world tick routes the pad through the same call.
+    ///
+    /// Returns the frame's event: `"idle"`, `"cursor"`, `"confirm"`,
+    /// `"refused"`, `"fight"` (Begin was taken: both selections are closed and
+    /// the turn resolves next) or `"run"` (Run on the round prompt).
+    ///
+    /// This page used to drive its own copy of that flow over the low-level
+    /// commit / end-selection calls: no round prompt, Spirit fighting on the
+    /// spot instead of raising the confirm, and its own screen order.
+    pub fn muscle_select(&mut self, bits: u32) -> String {
+        let Some(c) = self.muscle.as_mut() else {
+            return "idle".to_string();
+        };
+        let pad = legaia_engine_core::muscle_dome::DomeSelectPad {
+            left: bits & 1 != 0,
+            right: bits & 2 != 0,
+            up: bits & 4 != 0,
+            down: bits & 8 != 0,
+            confirm: bits & 16 != 0,
+            cancel: bits & 32 != 0,
+            triangle: bits & 64 != 0,
+            select_attack: legaia_engine_core::options::OptionsState::default()
+                .battle_select_attack,
+        };
+        use legaia_engine_core::muscle_dome::DomeMenuEvent as E;
+        match c.session.select_input(pad) {
+            E::Idle => "idle",
+            E::Cursor => "cursor",
+            E::Confirm => "confirm",
+            E::Refused => "refused",
+            E::Fight => "fight",
+            E::Run => "run",
+        }
+        .to_string()
+    }
+
+    /// Which selection screen owns the pad, for the page's draw:
+    ///
+    /// ```json
+    /// { "screen": "prompt"|"menu"|"attackmenu"|"target"|"confirm"|"input"|"review"|"magic",
+    ///   "cursor": 1, "list_page": -1 }
+    /// ```
+    ///
+    /// `cursor` is the command screen's highlight (the prompt's Begin / Run,
+    /// the ring seat, Auto / Command, Begin / Reselect); `list_page` the
+    /// entry screen's open Triangle arts-list page (`-1` closed).
+    pub fn muscle_menu_json(&self) -> String {
+        use legaia_engine_core::arts_command_input::ArtsInputPhase;
+        use legaia_engine_core::battle_input::CommandPhase;
+        use legaia_engine_core::muscle_dome::DomeMenu;
+        let Some(c) = self.muscle.as_ref() else {
+            return r#"{"screen":null}"#.to_string();
+        };
+        let (screen, cursor, list_page) = match c.session.menu() {
+            DomeMenu::Command(cmd) => match cmd.phase {
+                CommandPhase::RoundPrompt { cursor } => ("prompt", cursor, -1),
+                CommandPhase::Menu { cursor } => ("menu", cursor, -1),
+                CommandPhase::AttackMode { cursor } => ("attackmenu", cursor, -1),
+                CommandPhase::CommitConfirm { cursor } => ("confirm", cursor, -1),
+                // Auto under the "Select" attack option opens the battle's
+                // target cursor over the one opponent; Cross takes it.
+                CommandPhase::Targeting { .. } => ("target", 0, -1),
+                _ => ("menu", 0, -1),
+            },
+            DomeMenu::Input(entry) => (
+                if matches!(entry.phase, ArtsInputPhase::Review) {
+                    "review"
+                } else {
+                    "input"
+                },
+                0,
+                entry.list_page.map_or(-1, i32::from),
+            ),
+            DomeMenu::Magic => ("magic", 0, -1),
+        };
+        serde_json::json!({ "screen": screen, "cursor": cursor, "list_page": list_page })
+            .to_string()
+    }
+
     /// Commit one of the player's four hand cards (0..4) into the action queue,
     /// debiting the budget. Returns `false` when it can't be committed
     /// (overspend, queue full, or outside the selection phase).

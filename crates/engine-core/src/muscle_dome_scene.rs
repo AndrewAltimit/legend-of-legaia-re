@@ -1211,7 +1211,7 @@ impl MuscleDomeSurface {
                 BeatKind::Done => (
                     cam::done_band_phase(cam::DoneBandInputs {
                         category: cam::DONE_CATEGORY_ATTACK,
-                        party_slot: acting == 0,
+                        target_party_seat: target == 0,
                         target_dead: session.hp(target) <= 0,
                         ..Default::default()
                     }),

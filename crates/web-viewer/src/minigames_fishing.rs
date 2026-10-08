@@ -526,6 +526,15 @@ impl LegaiaMinigames {
         );
         let events = p.take_events();
         let mut out = hub_events;
+        // The hook and catch cues, through the kernel `World::tick` queues
+        // them with for the two play hosts. This page keyed neither.
+        let cues: Vec<u16> = events
+            .iter()
+            .flat_map(legaia_engine_core::world::pond_event_cues)
+            .collect();
+        for cue in cues {
+            self.minigame_sfx_cue(cue);
+        }
         for e in &events {
             match *e {
                 PondEvent::Splash => {
@@ -1046,7 +1055,7 @@ mod tests {
         let f = 0x80;
         card[f..f + 4].copy_from_slice(&0x51u32.to_le_bytes());
         card[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-        card[f + 10..f + 22].copy_from_slice(b"BASCUS-94254");
+        card[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
         let b = legaia_save::BLOCK_SIZE;
         card[b..b + 2].copy_from_slice(&legaia_save::SAVE_BLOCK_MAGIC);
         let wr = |card: &mut Vec<u8>, off: usize, v: u32| {

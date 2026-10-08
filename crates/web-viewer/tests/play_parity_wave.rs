@@ -186,7 +186,15 @@ fn opening_chain_stages_grade_and_skips_to_town01() {
         if st["locked"] == true {
             saw_lock = true;
         }
-        target = rt.play_take_prologue_handoff(true);
+        // Confirm only once the crawl has been up: `GFLAG_SET 26` sits at
+        // the record's top (`+0x17`), so the skip is armed from its first
+        // frame, and pressing through from tick 1 tests how far one slice
+        // runs rather than the crawl. The first slice stops at `CC 07 45`
+        // (`+0x7C`): the `CC 07 85 00 00 10` acquire before it raised actor
+        // 07's `0x400`, and an extended op on a halted target returns at its
+        // own PC until the actor's walk kernel lands the turn
+        // (`0x801DE90C..0x801DE940`).
+        target = rt.play_take_prologue_handoff(saw_lock);
         if !target.is_empty() {
             break;
         }

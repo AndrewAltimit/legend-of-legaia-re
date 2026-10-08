@@ -14,7 +14,7 @@ pub struct MinigameState {
     /// The scene mode to restore when the dance minigame ends
     /// ([`crate::world::World::enter_dance`] snapshots the mode it interrupted). Mirrors the
     /// pause-menu suspend/restore contract.
-    pub dance_return_mode: SceneMode,
+    pub(crate) dance_return_mode: SceneMode,
     /// The most recent dance-press judgement, kept for the host HUD (the
     /// score/gauge banner). Reset to `None` on [`crate::world::World::enter_dance`]; updated
     /// each frame a directional press is judged.
@@ -31,7 +31,7 @@ pub struct MinigameState {
     pub fishing_events: Vec<crate::fishing::PondEvent>,
     /// The scene mode to restore when the fishing minigame ends
     /// ([`crate::world::World::enter_fishing`] snapshots the interrupted mode).
-    pub fishing_return_mode: SceneMode,
+    pub(crate) fishing_return_mode: SceneMode,
     /// Persistent fishing-point pool, mirroring retail's `_DAT_8008444C`
     /// counter: [`crate::world::World::exit_fishing`] banks the session record's points
     /// here, and the point exchange spends from it
@@ -48,7 +48,7 @@ pub struct MinigameState {
     /// The band-4 gate reads it, and its low bit picks the sign of the cast
     /// lure's walk-grid drift
     /// ([`crate::fishing_actors::LureActor::probe`]).
-    pub fishing_casts: i32,
+    pub(crate) fishing_casts: i32,
     /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
     /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
     /// bought (see [`legaia_asset::fishing_exchange`]).
@@ -57,11 +57,11 @@ pub struct MinigameState {
     /// `_DAT_80084450`: the spawn-table row, the HUD's lure label and the
     /// item whose count the lures-remaining row shows. The bring-up re-points
     /// it at an owned lure ([`crate::world::World::enter_fishing_session`]).
-    pub fishing_lure: u32,
+    pub(crate) fishing_lure: u32,
     /// Persistent best single-catch award, mirroring retail's `_DAT_80084458`.
-    pub fishing_best_points: i32,
+    pub(crate) fishing_best_points: i32,
     /// Species id of the best catch, mirroring retail's `_DAT_8008445C`.
-    pub fishing_best_fish: u32,
+    pub(crate) fishing_best_fish: u32,
     /// Fishing point-exchange (prize shop) session. `Some` while the exchange
     /// list is open on the host's fishing screen; purchases commit through
     /// [`crate::world::World::fishing_exchange_buy`].
@@ -93,11 +93,11 @@ pub struct MinigameState {
     pub slot_machine: Option<crate::slot_machine::SlotMachine>,
     /// The scene mode to restore when the slot-machine minigame ends
     /// ([`crate::world::World::enter_slot_machine`] snapshots the interrupted mode).
-    pub slot_return_mode: SceneMode,
+    pub(crate) slot_return_mode: SceneMode,
     /// The slot machine's runtime SFX descriptor bank (`efect.dat`, the raw
     /// extraction PROT 1199 the overlay init loads), staged by the scene host
     /// on the warp - see [`crate::world::World::runtime_sfx_bundle`].
-    pub slot_sfx_bundle: Vec<u8>,
+    pub(crate) slot_sfx_bundle: Vec<u8>,
     /// The Muscle Dome arena's runtime SFX descriptor bundle (extraction
     /// PROT 542, which the arena init points `_DAT_8007B8D0` at), staged by
     /// the scene host on the warp - see
@@ -110,7 +110,7 @@ pub struct MinigameState {
     pub baka_fighter: Option<crate::baka_fighter::BakaFight>,
     /// The scene mode to restore when the Baka Fighter match ends
     /// ([`crate::world::World::enter_baka_fighter`] snapshots the interrupted mode).
-    pub baka_return_mode: SceneMode,
+    pub(crate) baka_return_mode: SceneMode,
     /// Muscle Dome contest state. `Some` while `mode ==
     /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
     /// each tick. See [`crate::muscle_dome::MuscleDomeSession`] and
@@ -118,7 +118,7 @@ pub struct MinigameState {
     pub muscle_dome: Option<crate::muscle_dome::MuscleDomeSession>,
     /// The scene mode to restore when the Muscle Dome contest ends
     /// ([`crate::world::World::enter_muscle_dome`] snapshots the interrupted mode).
-    pub muscle_return_mode: SceneMode,
+    pub(crate) muscle_return_mode: SceneMode,
     /// The Muscle Dome **contest** - the ladder run above the individual
     /// legs: which `(course, round)` is staged, the running coin tally, and
     /// whether the run continues. `Some` for as long as a contest is open,
@@ -139,13 +139,13 @@ pub struct MinigameState {
     /// with the course not exhausted keeps the mode on the arena, and the
     /// hub's INTERVAL / ROUND screens play before the next fight opens
     /// ([`crate::world::World::begin_next_muscle_leg`]).
-    pub muscle_hub_between_legs: bool,
+    pub(crate) muscle_hub_between_legs: bool,
     /// Ticks left of the resolved turn's **playback** - retail's action
     /// phases `0xFE` / `0xFF`, during which the queued plays animate before
     /// the round driver returns to its command cluster. The leg holds at
     /// [`crate::muscle_dome::MusclePhase::TurnOver`] until it drains
     /// ([`crate::world::World::muscle_playback_frames`]).
-    pub muscle_playback_frames: u32,
+    pub(crate) muscle_playback_frames: u32,
     /// The arena hub's screen timers - the first visit, the leg-open ROUND
     /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
     /// [`crate::world::World::tick_muscle_hub`]; both play hosts draw from
@@ -153,7 +153,7 @@ pub struct MinigameState {
     pub muscle_hub: crate::muscle_ringside::HubTimers,
     /// Sounds the hub fired that the host has not drained yet
     /// ([`crate::world::World::take_muscle_hub_sounds`]).
-    pub muscle_hub_sounds: crate::muscle_ringside::HubTimersFrame,
+    pub(crate) muscle_hub_sounds: crate::muscle_ringside::HubTimersFrame,
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
@@ -196,7 +196,7 @@ pub struct MinigameState {
     /// armed by [`crate::world::World::enter_dance`] and played out by the
     /// world's dance tick, which holds the beat clock off until it finishes.
     /// `None` once the song is running.
-    pub dance_countin: Option<crate::dance::CountIn>,
+    pub(crate) dance_countin: Option<crate::dance::CountIn>,
     /// The count-in banner envelope the last dance tick produced, for a
     /// host's draw list. `None` outside the count-in.
     pub dance_countin_banner: Option<crate::dance::CountInBanner>,
@@ -206,11 +206,11 @@ pub struct MinigameState {
     /// The global `music_01` track the dance's own overlay loads, held until
     /// the count-in ends (retail starts the song when the banner clears).
     /// Chosen by song length in [`crate::world::World::enter_dance`].
-    pub dance_pending_bgm: Option<u16>,
+    pub(crate) dance_pending_bgm: Option<u16>,
     /// The Disco King **how-to** tutorial actor, installed by
     /// [`crate::world::World::enter_dance`] when the parsed game is a
     /// [`crate::dance::DanceMode::HowTo`] run and stepped beside the session.
-    pub dance_tutorial: Option<crate::dance_tutorial::DanceTutorial>,
+    pub(crate) dance_tutorial: Option<crate::dance_tutorial::DanceTutorial>,
     /// The tutorial frame the last dance tick produced (captions / options /
     /// cursor seats), for a host's draw list.
     pub dance_tutorial_frame: Option<crate::dance_tutorial::TutorialFrame>,
@@ -238,7 +238,7 @@ pub struct MinigameState {
     /// exactly while a dance runs - see [`crate::dance_venue::sync_dance_venue`].
     pub dance_venue: Option<crate::dance_venue::DanceVenueStage>,
     /// Staging counter behind [`crate::dance_venue::DanceVenueStage::generation`].
-    pub dance_venue_generation: u32,
+    pub(crate) dance_venue_generation: u32,
     /// The **effect-part pool** every minigame overlay's one-shot
     /// presentation spawns land in (the fishing venue's splash, ripples and
     /// catch bursts). Aged once per world tick, so every host that ticks the
@@ -408,5 +408,31 @@ impl FishingCaptionText {
             .map(|sp| sp.name(overlay).unwrap_or_default().to_string())
             .collect();
         self
+    }
+}
+
+/// The SFX cues one pond event raises, in order: the hook cue on a strike
+/// (`_DAT_8007B6DA`), and on a catch the celebration cue plus whichever of
+/// the four score-gated burst cues it unlocked (`FUN_801d4948`). Splash,
+/// snap and recast raise none here (the splash is a spawn into the effect
+/// pool, not a cue).
+///
+/// One answer for every host that runs a pond: [`World::tick`] queues these
+/// for both play hosts, and the standalone minigames page keys them off its
+/// own session's events - which played no hook or catch sound at all before.
+pub fn pond_event_cues(e: &crate::fishing::PondEvent) -> Vec<u16> {
+    use crate::fishing::PondEvent;
+    match *e {
+        PondEvent::Hooked(_) => vec![u16::from(crate::fishing_actors::HOOK_CUE)],
+        PondEvent::Landed(points) => {
+            let mut cues = vec![u16::from(crate::fishing_actors::CELEBRATE_CUE)];
+            cues.extend(
+                crate::fishing_actors::celebration_bursts(points)
+                    .filter_map(|b| b.cue)
+                    .map(u16::from),
+            );
+            cues
+        }
+        PondEvent::Splash | PondEvent::Snapped | PondEvent::Recast => Vec::new(),
     }
 }

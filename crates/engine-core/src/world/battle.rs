@@ -49,6 +49,7 @@ pub use cast_band::{
     CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun, PendingCast, SUMMON_SPAWN_BEHIND,
     SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
 };
+pub(in crate::world) use commit_log_launch::BATTLE_PASS_STEP_PER_TICK;
 pub use effect_route::RoutedEffectSpawn;
 pub use message_banner::{
     ABSORB_BANNER_ELEMENT, BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,

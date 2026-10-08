@@ -552,7 +552,7 @@ world height under it and maintains the actor's off-floor flag. It is shared
 library code in the overlay band above `0x801D0018` - the fishing,
 slot-machine and debug-menu dumps of it are byte-identical - and the dance
 overlay's floor pass `FUN_801d3a2c` indexes the same tables. Port:
-[`legaia_engine_core::minigame_floor`](../../crates/engine-core/src/minigame_floor.rs).
+[`legaia_engine_minigames::minigame_floor`](../../crates/engine-minigames/src/minigame_floor.rs).
 
 Three regions of the buffer at `_DAT_1f8003ec` matter. Tile **records** are
 `0x20` bytes at the buffer base, indexed by tile id. The `u16` **cell grid**
@@ -965,7 +965,7 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 
 Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
 
-Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the from-scratch rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`,
+Engine port: [`legaia_engine_minigames::fishing`](../../crates/engine-minigames/src/fishing.rs) is the from-scratch rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`,
 `value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`),
 and the reel-button decoder (`ReelInput::from_pad_mask`, `0x40 -> ReelA` /
 `0x80 -> ReelB` / else `Idle`; `FUN_801d7450`). The reel-cadence recogniser is

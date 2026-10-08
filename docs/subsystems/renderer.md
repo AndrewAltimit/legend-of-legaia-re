@@ -799,10 +799,31 @@ player (`CC F8 C2`, five of the 50 sites, in `uru2`, `rugi` and `noaru`) runs
 on the same player stand-in context the `CC F8 40` scale op uses
 (`field_step_routed`) and lands in `FieldVmState::player_field_42`, so the
 player's draws clip on both hosts too - `rugi` and `noaru` raise it in the
-same beat as their two NPCs. One difference remains: an animated actor is
-clipped on its posed mesh, where `FUN_8001B964` runs the effect `MVMVA` on
-unposed object-local vertices. Disc-gated test:
+same beat as their two NPCs. Disc-gated test:
 `crates/engine-core/tests/object_effect_row_disc.rs`.
+
+**Posed or unposed: the clip reads the posed vertex.** `FUN_8002735C`
+copies each prim's object-local vertices to the stack and `MVMVA`s them
+through `0x1F800314` (`0x800275A8..0x800275D0`), and what that transform
+holds depends on the bracket. `FUN_8001ADA4` (a static actor - placed
+objects, unanimated props) zeroes the keyframe triples at `0x1F8002C0` /
+`0x1F8002C8` (`0x8001B570..0x8001B588`), so its effect point is
+`s * Rrow * (Ractor * v + pos)`. `FUN_8001B964` (an animated actor - NPCs, the
+player) calls `FUN_8001C204` per object after `FUN_8001BE80` has left that
+object's interpolated keyframe translation at `0x1F8002C0` and its angles at
+`0x1F8002C8..0x1F8002CC`: `FUN_8001C204` transforms the translation through
+`Rrow * Ractor` (`FUN_8003D344` at `0x8001C2B8`), adds the transformed actor
+position (`0x8001C2C8..0x8001C300`), and turns the matrix by the keyframe's
+`RotZ` / `RotY` / `RotX` (`0x8001C2FC..0x8001C328`) before storing it - so
+the effect point is `s * Rrow * (Ractor * (Rkey * v + Tkey) + pos)`, the
+**posed** vertex. The engine clips each draw in its own mesh space, and an
+animated actor's draw is its posed mesh, so both brackets agree with retail.
+The one rotation the effect transform leaves out is the side buffer's look
+turn (`4C 45`, [`script-vm-menuctrl.md`](script-vm-menuctrl.md#4c-45-the-11-byte-form)):
+`FUN_8001B964` applies it to the drawn object (`0x8001BB40..0x8001BB88`) but
+`FUN_8001C204` never reads `+0x94..+0x9A`, so on a turned head retail clips
+the unturned head. The port clips the turned one - a difference only on an
+actor that carries both at once.
 
 ## The battle per-actor draw
 
@@ -1121,6 +1142,27 @@ nodes on the actor lists carry one, nearly all of them move-VM parts
 billboard - on battle-effect parts, `0x100` / `0x180` on field and overworld
 parts, and the `0x400` arm on summon casts. On the overworld walk the camera
 yaw is `0`, so map01's `0x100` kind-4 column draws the same either way.
+The disc carries no word that keeps the yaw factor: over every op-`0x15`
+site in the scenes' stager records and the slot-B spawn records the words
+are `0x20`, `0x100`, `0x180`, `0x300`, `0x380`, `0x400`, `0x500`, `0x580`
+and `0x780` (`crates/engine-core/tests/move_ctrl52_census_disc.rs`), so a
+skip-bit node always drops yaw, and `0x300` is the one shape that keeps a
+factor (pitch).
+
+The field decoration pass `FUN_801F7088` has its own copy of the skip arm,
+keyed on the cell record's flags rather than a node word: `+0x12 & 0x380`
+(`0x801F770C..0x801F7718`) loads the base matrix and post-multiplies
+`RotMatrixX(pitch)` unless `0x80`, `RotMatrixY(yaw)` unless `0x100`,
+`RotMatrixZ(roll)` unless `0x200` (the angles `_DAT_8007B790..94`), then the
+record's own `+0x08 / +0x0A / +0x0C` rotations; the clear arm puts those on the
+full camera matrix. There is no `0x400` arm and no `6 / S_b` factor. About a
+third of the field maps carry such cells: `rugi`'s candle glows (`0x80`, a
+vertical quad that stays square to the lens), the `vell` / `vozz` forest
+trees (`0x180`), the `0x380` billboards of `deene` and `retona`. Drawn under
+the full camera, the glows lay flat as ellipses. Both play hosts rebuild a
+flagged cell per frame as `T(pos) * K * R_record` with `K = R^T * P`
+(`gte::decoration_cell_basis`; the native terrain draws, the play page's
+`field_terrain_facing`).
 
 What each arm leaves in the node's matrix slot (`0x1F8002D4`), read off the
 two routines' disassembly (`FUN_8005B3A8` is `MulMatrix2`, writing `a0 * a1`
@@ -2096,6 +2138,33 @@ field and battle only, and never under the debug orbit; the native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
 
+### The GPU polygon-size limit in battle
+
+The prim leaves hand the GPU the GTE's `SXY` with no clip of their own, and
+the GPU skips any polygon whose corners lie more than `1023` pixels apart
+horizontally or `511` vertically. A corner just in front of the eye, or behind
+it, projects far off screen: `RTPS` divides by `SZ` saturated at `0` with its
+quotient capped at `0x1FFFF` (`H / SZ` at most `2`), and `SX` / `SY` saturate
+to `-0x400..=0x3FF`. In battle that removes the primitives of a body whose
+limbs reach past the camera - a summon close-up that seats a monster between
+the eye and the caster - where a per-pixel clip paints them as long shards.
+
+Both hosts run the span test in the same vertex stage as the near reject
+(`prim_near_reject::gpu_span_rejected`, the WGSL `prim_sxy` and the GLSL
+`primSxy`), armed in battle only (`camera_view::prim_gpu_span_h`, the battle
+camera's `H = 256` riding the parameters' enable lane). A split quad is
+dropped only when both of its halves exceed the limit. The dance hall applies
+the same rule to its baked hall on the CPU
+([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
+
+`theeder_summon_mid_cast` is the case this does not close. Retail's near
+monster there (pool slot 5, ghosted `B + F/4` by `FUN_8004DC68`) reaches the
+ordering table with only its flat-textured `POLY_FT4` body prims - every one of
+its gouraud prims is missing from both packet buffers - while the engine draws
+its legs, around the caster, as see-through shards. Neither the near reject
+nor the span limit removes those legs, so what drops them in retail is still
+open.
+
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
 Retail has **no depth buffer**. Every primitive is inserted into the ordering
@@ -2754,6 +2823,33 @@ A battle keeps the style of the field scene it was
 entered from and runs its own grid in raw battle-stage units, centred on the
 arena. A new scene label starts a new bank; a style eases in and out over about
 a second and a half.
+
+**Where in a scene: outdoors only.** A town's house rooms and a castle's halls
+are walk areas of the same scene map, islands of floor at their own tiles, and a
+door is an intra-scene warp to one
+([encounter.md](../formats/encounter.md#the-window-is-not-cleared-with-the-scene)),
+so a scene-level choice cannot keep the bank out of them. Two rules do:
+
+- **The fog-region table**, retail's own spawn gate for the puff pool. Each
+  sheet-mesh vertex carries bank only where the first region whose open box
+  holds its tile is enabled (`fog_volume::region_weight`; the spawner's test at
+  `0x801D6320..0x801D63B8`), folded into the vertex's floor weight both hosts
+  already multiply by. `town0b`'s one region covers the Rim Elm streets and
+  none of the rooms beside them, and several scenes put boxes keyed on flag
+  `0x007` ahead of an area-wide region, which carve holes once that flag is
+  set. A script that rewrites the enables re-samples the sheet.
+- **Door-reached areas** (`fog_volume::InteriorTracker`), for scenes whose table
+  keeps one region over the whole map (`dolk`'s halls and rooms). The bank
+  labels the 4-connected open-floor areas the collision grid leaves: the area
+  the player is first seen in after entering the scene is open ground; walking
+  into another area carries its class over (a stair without floor bits splits
+  one street in two); a warp into an unclassified area makes it an interior
+  when it is room-sized (at most 800 sub-cells), open ground otherwise. In an
+  interior the scene raises no bank, the door's cut drops it at once, and a
+  fight opened there inherits none; walking back out eases it in again.
+
+Retail's pool is not held to the second rule: in `dolk` it spawns in the halls
+and rooms as freely as on the plaza.
 
 **Drawing.** The frame (`World::fog_volume_frame`) carries the density grid as
 bytes, the sheet mesh's floor heights (a 48 x 48 quad grid sampled from the

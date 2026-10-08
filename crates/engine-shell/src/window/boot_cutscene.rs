@@ -23,12 +23,17 @@ enum TitleAttractAction {
     Aborted,
 }
 
-/// Build the window's title session: [`legaia_engine_core::title::TitleSession::for_front_end`],
-/// the constructor the browser page's title uses too. Continue follows
-/// `continue_enabled`; the attract hand-off is armed (this host plays
+/// Build the window's title session:
+/// [`legaia_engine_core::title::TitleSession::for_front_end_at`], the
+/// constructor the browser page's title uses too. Continue follows
+/// `continue_enabled`; the menu opens on `row`, the seat's row counter
+/// (`ModeSeat::title_row`); the attract hand-off is armed (this host plays
 /// retail's `fmv_id 0` through its windowed MDEC path).
-pub(super) fn title_session(continue_enabled: bool) -> legaia_engine_core::title::TitleSession {
-    legaia_engine_core::title::TitleSession::for_front_end(continue_enabled)
+pub(super) fn title_session(
+    continue_enabled: bool,
+    row: u8,
+) -> legaia_engine_core::title::TitleSession {
+    legaia_engine_core::title::TitleSession::for_front_end_at(continue_enabled, row)
 }
 
 /// Does any port of this host's save rack hold a save? Port 1 is the save
@@ -72,7 +77,7 @@ impl PlayWindowApp {
             .map(|port| disk_port_blocks_with_card(&self.save_dir, self.card.as_ref(), port));
         // Re-borrow: `disk_port_blocks` needed `&self.save_dir` while the
         // session above borrowed `self.boot_ui`.
-        let session = match &self.boot_ui {
+        let session = match &mut self.boot_ui {
             BootUiState::SaveSelect(s) => s,
             BootUiState::FieldMenu {
                 sub: Some(FieldMenuSubsession::Save(s)),
@@ -84,8 +89,90 @@ impl PlayWindowApp {
             flow.install_blocks(port, blocks);
         }
         let edge = flow.before_tick(session, edge);
+        let request = flow.save_request(session);
         self.save_flow = flow;
+        // A card Save writes while "Saving to MEMORY CARD" is up, and the
+        // beat's result line reports what the write did - retail's order.
+        if let Some(request) = request {
+            let ok = self.write_save_commit(request);
+            let mut flow = std::mem::take(&mut self.save_flow);
+            if let BootUiState::SaveSelect(s)
+            | BootUiState::FieldMenu {
+                sub: Some(FieldMenuSubsession::Save(s)),
+            } = &mut self.boot_ui
+            {
+                flow.finish_save_request(s, ok);
+            }
+            self.save_flow = flow;
+        }
         edge
+    }
+
+    /// Write the live session into the rack cell a Save's commit beat asked
+    /// for: port 1 is the save directory (`slot_NN`), port 2 the `--card`
+    /// image (block `cell + 1`, written back to its file). `true` when the
+    /// bytes are down.
+    fn write_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
+        let resume = self.session.current_resume();
+        let sf = self.session.host.world.save_full();
+        match commit.port {
+            0 => match write_slot_save(&self.save_dir, commit.cell, &sf, &resume) {
+                Ok(p) => {
+                    log::info!(
+                        "save screen: saved slot {} to {} (scene '{}', '{}')",
+                        commit.cell,
+                        p.display(),
+                        resume.scene,
+                        resume.location
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::warn!("save screen: save slot {} failed: {e:#}", commit.cell);
+                    false
+                }
+            },
+            1 => {
+                let index = self.session.host.index.clone();
+                let Some(card) = self.card.as_mut() else {
+                    log::warn!("save screen: port 2 holds no card; nothing written");
+                    return false;
+                };
+                let block = commit.cell + 1;
+                let wrote = legaia_engine_core::card_write::write_save_into_card(
+                    card,
+                    block,
+                    &sf,
+                    &resume,
+                    Some(&index),
+                )
+                .map_err(anyhow::Error::msg)
+                .and_then(|w| card.persist().map(|_| w));
+                match wrote {
+                    Ok(w) => {
+                        log::info!(
+                            "save screen: saved card block {block} as save {} (scene '{}'{})",
+                            w.save_slot,
+                            resume.scene,
+                            if w.ext_written {
+                                ""
+                            } else {
+                                ", engine ext withheld"
+                            }
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        log::warn!("save screen: card save into block {block} failed: {e:#}");
+                        false
+                    }
+                }
+            }
+            p => {
+                log::warn!("save screen: port {} holds no card; nothing written", p + 1);
+                false
+            }
+        }
     }
 
     /// Move the bytes a finished save screen asked for.
@@ -152,20 +239,9 @@ impl PlayWindowApp {
                 }
             },
             SaveCommitKind::Save => {
-                let resume = self.session.current_resume();
-                let sf = self.session.host.world.save_full();
-                match write_slot_save(&self.save_dir, slot, &sf, &resume) {
-                    Ok(p) => log::info!(
-                        "save screen: saved slot {slot} to {} (scene '{}', '{}')",
-                        p.display(),
-                        resume.scene,
-                        resume.location
-                    ),
-                    Err(e) => {
-                        log::warn!("save screen: save slot {slot} failed: {e:#}");
-                        self.save_flow
-                            .refuse(legaia_engine_core::save_screen::SaveRefusal::CardWriteFailed);
-                    }
+                if !self.write_save_commit(commit) {
+                    self.save_flow
+                        .refuse(legaia_engine_core::save_screen::SaveRefusal::CardWriteFailed);
                 }
             }
         }
@@ -195,37 +271,8 @@ impl PlayWindowApp {
             return false;
         }
         if matches!(commit.kind, SaveCommitKind::Save) {
-            let sf = self.session.host.world.save_full();
-            let resume = self.session.current_resume();
-            let index = self.session.host.index.clone();
-            let Some(card) = self.card.as_mut() else {
-                return false;
-            };
-            let block = cell + 1;
-            let wrote = legaia_engine_core::card_write::write_save_into_card(
-                card,
-                block,
-                &sf,
-                &resume,
-                Some(&index),
-            )
-            .map_err(anyhow::Error::msg)
-            .and_then(|w| card.persist().map(|_| w));
-            match wrote {
-                Ok(w) => log::info!(
-                    "save screen: saved card block {block} as save {} (scene '{}'{})",
-                    w.save_slot,
-                    resume.scene,
-                    if w.ext_written {
-                        ""
-                    } else {
-                        ", engine ext withheld"
-                    }
-                ),
-                Err(e) => {
-                    log::warn!("save screen: card save into block {block} failed: {e:#}");
-                    self.save_flow.refuse(SaveRefusal::CardWriteFailed);
-                }
+            if !self.write_save_commit(commit) {
+                self.save_flow.refuse(SaveRefusal::CardWriteFailed);
             }
             return false;
         }
@@ -374,7 +421,10 @@ impl PlayWindowApp {
                     match next {
                         GameMode::CardInit => {
                             let any_present = rack_has_save(&self.save_dir, self.card.as_ref());
-                            self.boot_ui = BootUiState::Title(title_session(any_present));
+                            self.boot_ui = BootUiState::Title(title_session(
+                                any_present,
+                                self.session.mode_seat.title_row(),
+                            ));
                             self.start_title_bgm();
                         }
                         // The dev route. The port has no debug-menu screen, so
@@ -382,7 +432,10 @@ impl PlayWindowApp {
                         // silently folded, because the two are different modes.
                         other => {
                             log::info!("boot hand-off went to {other:?}; no engine screen owns it");
-                            self.boot_ui = BootUiState::Title(title_session(false));
+                            self.boot_ui = BootUiState::Title(title_session(
+                                false,
+                                self.session.mode_seat.title_row(),
+                            ));
                             self.start_title_bgm();
                         }
                     }
@@ -421,6 +474,8 @@ impl PlayWindowApp {
                     circle,
                 };
                 let events = session.tick(input);
+                // Retail's row counter outlives this title.
+                self.session.mode_seat.set_title_row(session.row_counter());
                 for ev in &events {
                     match ev {
                         TitleEvent::NewGameSelected => {
@@ -516,10 +571,10 @@ impl PlayWindowApp {
                             if !self.open_menu_row_from_title(
                                 legaia_engine_core::field_menu::FieldMenuRow::Options,
                             ) {
-                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                                    &self.save_dir,
-                                    self.card.as_ref(),
-                                )));
+                                self.boot_ui = BootUiState::Title(title_session(
+                                    rack_has_save(&self.save_dir, self.card.as_ref()),
+                                    self.session.mode_seat.title_row(),
+                                ));
                                 self.start_title_bgm();
                             }
                         }
@@ -548,10 +603,10 @@ impl PlayWindowApp {
                         SelectOutcome::Cancelled => {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
-                            self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                                &self.save_dir,
-                                self.card.as_ref(),
-                            )));
+                            self.boot_ui = BootUiState::Title(title_session(
+                                rack_has_save(&self.save_dir, self.card.as_ref()),
+                                self.session.mode_seat.title_row(),
+                            ));
                             self.start_title_bgm();
                         }
                         _ => {
@@ -720,10 +775,10 @@ impl PlayWindowApp {
                             self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
                             if std::mem::take(&mut self.menu_from_title) {
-                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                                    &self.save_dir,
-                                    self.card.as_ref(),
-                                )));
+                                self.boot_ui = BootUiState::Title(title_session(
+                                    rack_has_save(&self.save_dir, self.card.as_ref()),
+                                    self.session.mode_seat.title_row(),
+                                ));
                                 self.start_title_bgm();
                             }
                         }
@@ -753,10 +808,10 @@ impl PlayWindowApp {
                     if let Some(bgm) = self.session.bgm.as_mut() {
                         bgm.stop();
                     }
-                    self.boot_ui = BootUiState::Title(title_session(rack_has_save(
-                        &self.save_dir,
-                        self.card.as_ref(),
-                    )));
+                    self.boot_ui = BootUiState::Title(title_session(
+                        rack_has_save(&self.save_dir, self.card.as_ref()),
+                        self.session.mode_seat.title_row(),
+                    ));
                     self.start_title_bgm();
                 }
                 true

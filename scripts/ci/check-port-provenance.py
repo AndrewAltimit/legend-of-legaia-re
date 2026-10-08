@@ -702,13 +702,17 @@ SPLIT_MODULES = frozenset({
     "crates/asset/src/byte_account",
     "crates/engine-vm/src/battle_cam_script",
     "crates/engine-core/src/muscle_dome",
-    "crates/engine-core/src/dance",
+    "crates/engine-minigames/src/muscle_dome",
+    "crates/engine-minigames/src/dance",
     "crates/engine-core/src/save_select",
     "crates/patcher/src/delilas_party",
     "crates/engine-vm/src/cast_module_ticks",
-    "crates/engine-core/src/fishing",
+    "crates/engine-minigames/src/fishing",
     "crates/engine-vm/src/title_overlay",
     "crates/web-viewer/src/minigames_muscle",
+    "crates/engine-core/src/world/vm_hosts",
+    "crates/engine-core/src/world/narration",
+    "crates/engine-core/src/world/field_movement",
 })
 
 

@@ -114,6 +114,24 @@ pub fn cmd_info(save: &Path, all: bool) -> Result<()> {
 }
 
 pub fn cmd_extract(save: &Path, start: u32, end: u32, out: Option<&Path>) -> Result<()> {
+    // The 1 KiB scratchpad window (`0x1F800000..0x1F800400`): the field-VM
+    // transient flag word `0x1F800394`, the camera's tile window, the walk
+    // region box - the `pcsxr-state extract` twin.
+    if (0x1F80_0000..0x1F80_0400).contains(&start) && end <= 0x1F80_0400 && start < end {
+        let s = SaveState::from_path(save)?;
+        let sp = s.scratch_ram()?;
+        let slice = &sp[(start - 0x1F80_0000) as usize..(end - 0x1F80_0000) as usize];
+        let path = out
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(format!("/tmp/legaia_sp_{start:08X}_{end:08X}.bin")));
+        std::fs::write(&path, slice).with_context(|| format!("writing {}", path.display()))?;
+        println!(
+            "[ok] wrote {}: {} bytes (scratchpad 0x{start:08X}..0x{end:08X})",
+            path.display(),
+            slice.len()
+        );
+        return Ok(());
+    }
     if start < PSX_RAM_KSEG0 || end > PSX_RAM_KSEG0 + PSX_RAM_SIZE as u32 {
         bail!(
             "slice outside main RAM [0x{:08X}..0x{:08X})",

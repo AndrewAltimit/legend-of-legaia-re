@@ -834,8 +834,13 @@ fn decode_packet(pool: &[u8], i: usize, cmd: u8, length: usize) -> (bool, Option
                 }),
             )
         }
-        // POLY_FT3: 6 payload words.
-        0x24..=0x27 if length == 6 => {
+        // POLY_FT3: 7 payload words - colour+cmd, then three `xy` / `uv`
+        // pairs (`uv0 | clut`, `uv1 | tpage`, `uv2`), which is what
+        // `decode_ft3` reads and what the retail emitters tag (`lui t8,0x700`
+        // in `FUN_80044C14`, the field FT3 leaf). A `6` here dropped every
+        // FT3 from every decoded display list, so a family with triangles
+        // read as "retail draws none of them".
+        0x24..=0x27 if length == 7 => {
             let (color, verts, uvs, clut, tpage) = decode_ft3(pool, i);
             (
                 true,

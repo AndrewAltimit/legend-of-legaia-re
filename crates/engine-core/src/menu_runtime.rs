@@ -315,6 +315,45 @@ impl MenuRuntime {
         self.ui_cue.take()
     }
 
+    /// One sim tick of an open field session (shop, prize exchange, inn
+    /// prompt) on that tick's pad **edges**, then the unpark of whatever
+    /// field script a closed session left suspended - the whole per-tick
+    /// step both play hosts run, so neither can tick the screen on a
+    /// different clock or release the merchant op on a different test.
+    ///
+    /// Returns the screen's blip for the host to key.
+    ///
+    /// Call once per sim tick while [`Self::is_open`] holds, and on the tick
+    /// a session closes: the shop's fade ([`Self::shop_fade_level`]) and
+    /// window slides are tick-counted, so a host that stepped this once per
+    /// display frame ran them at its monitor's rate rather than retail's.
+    /// The edge goes to the first tick of a frame only; catch-up ticks pass
+    /// `0`.
+    pub fn step_field_session(&mut self, world: &mut World, edge: u16) -> Option<u8> {
+        let mut cue = None;
+        if self.is_open() {
+            self.tick(world, menu_input_from_pad_edges(edge));
+            cue = self.take_ui_cue();
+        }
+        // A field-VM-armed shop the player has now closed: the suspended
+        // op-`0x49` resumes (Armed -> Done) and the field VM advances past
+        // the merchant op next tick. Keyed on the whole runtime being
+        // closed, not on the shop session alone: the buy list's sub-screens
+        // (quantity, recipient picker, Point Card toast) outlive a cleared
+        // `shop_session` for a beat, and the merchant must not resume under
+        // them.
+        if world.shops.shop_open && !self.is_open() {
+            world.finish_field_shop();
+        }
+        // Safety net for the prize exchange (its own Exit already calls
+        // `finish_prize_exchange` through the tick): if the screen closed by
+        // any other path, unpark the counter script rather than wedge it.
+        if world.shops.prize_exchange_open && !self.is_open() {
+            world.finish_prize_exchange();
+        }
+        cue
+    }
+
     /// The live Point Card toast's credit, or `None` when window 31 is not
     /// up. A host paints the window while this is `Some`; the number it
     /// prints is the **bank** (`World::minigames.point_card`), not this delta - retail

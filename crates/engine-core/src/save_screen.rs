@@ -48,8 +48,8 @@
 
 use crate::input::PadButton;
 use crate::save_select::{
-    CardIoMachine, CardStatus, SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase,
-    SlotSnapshot, card_frame_tick,
+    CardIoMachine, CardStatus, CommitReport, SaveSelectMode, SaveSelectSession, SelectOutcome,
+    SelectPhase, SlotSnapshot, card_frame_tick,
 };
 use crate::save_subscreen::{
     FADE_OPAQUE, SaveEntryContext, SaveScreenMachine, SaveSubScreen, SubScreenEffect,
@@ -127,9 +127,9 @@ pub struct SaveScreenFlow {
     ///
     /// The **card is the host's block backend**: the native shell's save
     /// directory, the browser's imported `.mcr`. So the machine's poll status
-    /// is what the backend answered - blocks installed for the port on screen
-    /// is `Ready`, a mount with nothing readable is `NoCard`, and a read the
-    /// host has not answered yet is `Pending`. That is the same substitution
+    /// is what the backend answered - blocks installed for a mounted port on
+    /// screen is `Ready` (empty or not), a port with nothing in it is
+    /// `NoCard`, and a read the host has not answered yet is `Pending`. That is the same substitution
     /// the rest of this module makes (the flow asks for snapshots and never
     /// touches a device), applied to the beat instead of to the bytes.
     io: CardIoMachine,
@@ -158,6 +158,8 @@ pub struct SaveScreenFlow {
     /// A commit the host could not honour, and how many frames its notice
     /// still owns the screen. See [`SaveScreenFlow::refuse`].
     refusal: Option<(SaveRefusal, u16)>,
+    /// The card Save written inside the commit beat ([`Self::written_save`]).
+    written: Option<SaveCommit>,
 }
 
 /// Why a finished save-screen commit did not happen.
@@ -347,14 +349,21 @@ impl SaveScreenFlow {
     }
 
     /// This frame's poll status for the card behind `port`, derived from what
-    /// the host has answered [`Self::pending_read`] with.
-    fn card_status(&self, port: u8) -> CardStatus {
+    /// the host has answered [`Self::pending_read`] with and whether the
+    /// rack has a card in that port (`mounted`, the pill's `present`).
+    ///
+    /// A mounted card is `Ready` once its blocks are in, **whether or not any
+    /// block holds a save**: a formatted card with nothing on it answers the
+    /// directory read like any other, and it is the card a first save is
+    /// written into. Keying `Ready` on "some block is present" instead made a
+    /// blank card read as no card, so the write confirm was refused forever
+    /// and no host could make the first save on a fresh card or an empty save
+    /// directory. Only a port with nothing in it reads `NoCard`.
+    fn card_status(&self, port: u8, mounted: bool) -> CardStatus {
         match self.blocks.as_ref() {
-            Some((p, blocks)) if *p == port && blocks.iter().any(|b| b.present) => {
-                CardStatus::Ready
-            }
-            // The host answered and the port holds nothing readable: an empty
-            // mount reads as no card, which is what spends the retry budget.
+            Some((p, _)) if *p == port && mounted => CardStatus::Ready,
+            // The host answered for an empty port: no card, which is what
+            // spends the retry budget.
             Some((p, _)) if *p == port => CardStatus::NoCard,
             _ => CardStatus::Pending,
         }
@@ -375,6 +384,7 @@ impl SaveScreenFlow {
                 | SelectPhase::SlotPreview { .. }
                 | SelectPhase::ConfirmOverwrite { .. }
                 | SelectPhase::ConfirmDelete { .. }
+                | SelectPhase::Committing { .. }
         ) {
             return None;
         }
@@ -404,7 +414,7 @@ impl SaveScreenFlow {
     ///
     /// A flat-rack session gets its edge back untouched: there is no second
     /// stage to walk.
-    pub fn before_tick(&mut self, session: &SaveSelectSession, edge: u16) -> u16 {
+    pub fn before_tick(&mut self, session: &mut SaveSelectSession, edge: u16) -> u16 {
         if !session.card_slots_mode() {
             return edge;
         }
@@ -413,7 +423,12 @@ impl SaveScreenFlow {
         // word allows and latches the first non-zero result; the commit phase
         // it also watches is the one the *save* direction raises, which the
         // port performs in one call, so the rebuild arm never fires here.
-        let status = self.card_status(session.current_slot());
+        let port = session.current_slot();
+        let mounted = session
+            .slots()
+            .get(usize::from(port))
+            .is_some_and(|pill| pill.present);
+        let status = self.card_status(port, mounted);
         let (result, _effect, rebuilt) = card_frame_tick(
             &mut self.io,
             status,
@@ -488,6 +503,32 @@ impl SaveScreenFlow {
             SelectPhase::NowChecking { .. } => self.grid_cursor = 0,
             _ => {}
         }
+        // The commit beat: the write panel takes no input; on the result
+        // line any face button cuts the hold short, and retail sounds the
+        // confirm cue `0x20` for it (`sh 0x20` to `0x8007B6D8` at
+        // `0x801DF91C`) - so the edge is narrowed to one Cross, which the
+        // shared menu-cue rule turns into exactly that cue.
+        if let SelectPhase::Committing { .. } = session.phase() {
+            // The read's checksum verify (sub-mode `0x05`, `0x801DF880`):
+            // a block whose stored sum disagrees routes to the damaged-data
+            // box instead of "Load successful.".
+            let damaged = {
+                let (blocks, cell) = self.preview(session);
+                blocks.get(usize::from(cell)).is_some_and(|b| b.damaged)
+            };
+            if session.mode() == SaveSelectMode::Load
+                && session.commit_report() == Some(CommitReport::Ok)
+                && damaged
+            {
+                session.report_load_damaged();
+            }
+            const FACE: u16 = 0xF000;
+            return if session.committing_work() == Some(false) && edge & FACE != 0 {
+                PadButton::Cross.mask()
+            } else {
+                0
+            };
+        }
         if !matches!(session.phase(), SelectPhase::SlotPreview { .. })
             || edge & PadButton::Cross.mask() == 0
         {
@@ -509,10 +550,20 @@ impl SaveScreenFlow {
         if self.io_result <= 0 {
             return edge & !PadButton::Cross.mask();
         }
-        if session.mode() != SaveSelectMode::Load {
-            return edge;
-        }
-        if self.focused_block().is_some() {
+        // Retail's grid confirm (sub-mode `0x0B`, `0x801DEAB8..0x801DEB00`)
+        // takes the cell's `FUN_801E3F74` mode and accepts only mode `1` (a
+        // readable Legaia save) on a Load, and mode `1` or `3` (a free block)
+        // on a Save. Anything else - a block another game owns, a cell the
+        // card's free budget could not pay for - is refused without a prompt,
+        // so a full card of foreign files takes no save.
+        let accepted = match session.mode() {
+            SaveSelectMode::Load => self.focused_block().is_some(),
+            SaveSelectMode::Save => self
+                .blocks()
+                .get(self.grid_cursor as usize)
+                .is_some_and(|b| b.present || b.content == crate::save_select::SlotContent::Free),
+        };
+        if accepted {
             edge
         } else {
             edge & !PadButton::Cross.mask()
@@ -525,6 +576,9 @@ impl SaveScreenFlow {
     pub fn commit(&self, session: &SaveSelectSession) -> Option<SaveCommit> {
         let (port, kind) = match session.outcome()? {
             SelectOutcome::Loaded(p) => (p, SaveCommitKind::Load),
+            // A card Save moved its bytes inside the commit beat
+            // ([`Self::save_request`]); the outcome only reports it.
+            SelectOutcome::Saved(_) if session.card_slots_mode() => return None,
             SelectOutcome::Saved(p) => (p, SaveCommitKind::Save),
             SelectOutcome::Deleted(_) | SelectOutcome::Cancelled => return None,
         };
@@ -537,6 +591,91 @@ impl SaveScreenFlow {
         };
         Some(SaveCommit { port, cell, kind })
     }
+
+    /// The write a card Save's commit beat is waiting on, in rack
+    /// coordinates - `Some` on every frame until the host answers through
+    /// [`Self::finish_save_request`]. Retail writes while "Saving to MEMORY
+    /// CARD" is up and only then shows the result, so the host moves the
+    /// bytes here, not on the outcome.
+    pub fn save_request(&self, session: &SaveSelectSession) -> Option<SaveCommit> {
+        (session.card_slots_mode() && session.awaiting_commit_report()).then(|| SaveCommit {
+            port: session.current_slot(),
+            cell: self.grid_cursor,
+            kind: SaveCommitKind::Save,
+        })
+    }
+
+    /// Answer [`Self::save_request`]: report the write's result to the beat
+    /// (the result line reads "Save successful." or "Unable to save.") and,
+    /// on success, drop the port's block cache so the grid re-reads the card
+    /// and shows the new save in its cell - retail rebuilds its directory
+    /// after a write (`FUN_801E1114`'s rebuild arm).
+    pub fn finish_save_request(&mut self, session: &mut SaveSelectSession, ok: bool) {
+        let req = self.save_request(session);
+        session.report_commit(ok);
+        if ok {
+            self.blocks = None;
+            self.written = req;
+        }
+    }
+
+    /// The card Save this screen wrote through [`Self::save_request`], if
+    /// any - what [`Self::commit`] no longer reports for a card Save.
+    pub fn written_save(&self) -> Option<SaveCommit> {
+        self.written
+    }
+}
+
+/// The two lines of [`SelectPhase::Committing`]'s messagebox: the write /
+/// read beat while `working`, the result line after it. Retail's strings,
+/// out of PROT 0899's pool - "Saving to MEMORY CARD" / "Now Loading" over
+/// "Do not remove MEMORY CARD" (`0x801E2B50..0x801E2BA8`, op flag
+/// `0x801F0200`) and "Save successful." / "Load successful."
+/// (`0x801DF920..0x801DF9B0`).
+/// A failed op reads retail's own failure lines out of the same pool,
+/// "Unable to save." (`0x801CF1E0`) and "Unable to load data." The write
+/// panel's two-space lead is retail's (`0x801CF54C` is copied ahead of the
+/// message before it is centred at `x + 0x1A`).
+pub fn commit_banner(
+    mode: SaveSelectMode,
+    working: bool,
+    report: CommitReport,
+) -> (&'static str, &'static str, &'static str) {
+    let failed = report == CommitReport::Failed;
+    if !working && report == CommitReport::Damaged {
+        // Sub-mode `0x13`'s checksum arm (`0x801DF4EC..0x801DF548`).
+        return (
+            "Unable to load data.",
+            "Damaged data.",
+            "Delete at the PlayStation MEMORY CARD Screen.",
+        );
+    }
+    let (a, b) = match (mode, working, failed) {
+        (SaveSelectMode::Save, true, _) => ("  Saving to MEMORY CARD", "Do not remove MEMORY CARD"),
+        (SaveSelectMode::Load, true, _) => ("  Now Loading", "Do not remove MEMORY CARD"),
+        (SaveSelectMode::Save, false, false) => ("Save successful.", ""),
+        (SaveSelectMode::Save, false, true) => ("Unable to save.", ""),
+        (SaveSelectMode::Load, false, false) => ("Load successful.", ""),
+        (SaveSelectMode::Load, false, true) => ("Unable to load data.", ""),
+    };
+    (a, b, "")
+}
+
+/// The commit beat's messagebox, as the overlay draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveBanner {
+    pub lines: (&'static str, &'static str),
+    /// A third line - only the damaged-data box has one.
+    pub note: &'static str,
+    /// The write / read panel (`FUN_801E1C1C` mode 4) rather than the
+    /// result line.
+    pub work: bool,
+    /// The write panel's slide timer (`0..=0x1000`, `+0x100` a frame,
+    /// retail's `_DAT_801F01CC`).
+    pub slide_t: u16,
+    /// The write panel's progress timer (`0..=0x1000`, `+0x20` a frame,
+    /// retail's `_DAT_801F01D0`): the fill bar under the panel.
+    pub progress_t: u16,
 }
 
 /// Whether the outer fade suppresses the slot-select confirm this frame.
@@ -585,6 +724,7 @@ pub fn card_port_snapshot(port: u8, mounted: Option<&str>) -> SlotSnapshot {
         Some(label) => SlotSnapshot {
             slot: port,
             present: true,
+            damaged: false,
             label: label.to_string(),
             ..SlotSnapshot::empty(port)
         },
@@ -633,6 +773,9 @@ pub struct SaveOverlayModel<'a> {
     pub slide_t: u16,
     pub info_t: u16,
     pub now_checking: bool,
+    /// The card-operation messagebox of [`SelectPhase::Committing`]: the
+    /// write / read beat, then the result line (second line empty).
+    pub banner: Option<SaveBanner>,
     pub preview: Option<SaveOverlayPreview<'a>>,
     pub confirm: Option<(&'static str, u8)>,
 }
@@ -652,7 +795,8 @@ impl SaveScreenFlow {
             SelectPhase::NowChecking { slot, .. }
             | SelectPhase::SlotPreview { slot }
             | SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
+            | SelectPhase::ConfirmDelete { slot, .. }
+            | SelectPhase::Committing { slot, .. } => slot as usize,
             SelectPhase::Done(_) => return None,
         };
         let layout = crate::save_select::phase_layout(phase);
@@ -700,9 +844,24 @@ impl SaveScreenFlow {
             }
         });
         let confirm = layout.confirm.then_some(match phase {
-            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
+            SelectPhase::ConfirmOverwrite { cursor, .. } => (self.confirm_prompt(session), cursor),
             SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
             _ => ("", 0),
+        });
+        let banner = layout.banner.then(|| {
+            let work = session.committing_work() == Some(true);
+            let (a, b, note) = commit_banner(
+                session.mode(),
+                work,
+                session.commit_report().unwrap_or(CommitReport::Ok),
+            );
+            SaveBanner {
+                lines: (a, b),
+                note,
+                work,
+                slide_t: (session.committing_elapsed().saturating_mul(0x100)).min(0x1000),
+                progress_t: crate::save_select::commit_progress_t(session.committing_elapsed()),
+            }
         });
         Some(SaveOverlayModel {
             title: match session.mode() {
@@ -716,9 +875,38 @@ impl SaveScreenFlow {
             slide_t: session.slide_anim_t(),
             info_t: session.info_panel_slide_anim_t(),
             now_checking: layout.now_checking,
+            banner,
             preview,
             confirm,
         })
+    }
+
+    /// The confirm messagebox's question, picked the way retail's confirm
+    /// arm picks it (PROT 0899 `0x801E2540..0x801E2600`): a Load asks "Do
+    /// you wish to load?"; a Save asks "Do you wish to save?" only when the
+    /// focused block is free (the slot mode `FUN_801E3F74` calls `3`), and
+    /// "Do you wish to overwrite?" over anything else - a Legend of Legaia
+    /// save or a block it cannot read.
+    pub fn confirm_prompt(&self, session: &SaveSelectSession) -> &'static str {
+        if session.mode() == SaveSelectMode::Load {
+            return "Do you wish to load?";
+        }
+        let free = if session.card_slots_mode() {
+            self.focused_block().is_none_or(|b| {
+                crate::save_select::SlotInfoMode::for_grid_cell(self.grid_cursor, b)
+                    == crate::save_select::SlotInfoMode::FreeBlock
+            })
+        } else {
+            session
+                .slots()
+                .get(usize::from(session.current_slot()))
+                .is_none_or(|b| !b.present)
+        };
+        if free {
+            "Do you wish to save?"
+        } else {
+            "Do you wish to overwrite?"
+        }
     }
 }
 
@@ -741,6 +929,11 @@ mod tests {
         SlotSnapshot {
             slot: cell,
             present,
+            content: if present {
+                crate::save_select::SlotContent::LegaiaSave
+            } else {
+                crate::save_select::SlotContent::Free
+            },
             label: if present {
                 "Vahn".into()
             } else {
@@ -902,12 +1095,67 @@ mod tests {
             assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
             assert_eq!(flow.card_io_result(), 1, "the card op published success");
             // Cell 0 is empty.
-            let gated = flow.before_tick(&s, cross()) & PadButton::Cross.mask() == 0;
+            let gated = flow.before_tick(&mut s, cross()) & PadButton::Cross.mask() == 0;
             assert_eq!(gated, expect_gated, "{mode:?} on an empty cell");
             // Cell 2 holds a save - never gated.
             flow.grid_cursor = 2;
-            assert_ne!(flow.before_tick(&s, cross()) & PadButton::Cross.mask(), 0);
+            assert_ne!(
+                flow.before_tick(&mut s, cross()) & PadButton::Cross.mask(),
+                0
+            );
         }
+    }
+
+    /// A mounted card with **no saves on it** - a freshly formatted card, an
+    /// empty save directory - is a card: the op publishes success and the
+    /// first save commits into the cell under the cursor. Every other test
+    /// here installs a card holding a save, which is how a blank card's
+    /// first save stayed refused on both hosts.
+    #[test]
+    fn a_blank_mounted_card_takes_the_first_save() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        for _ in 0..beat {
+            if let Some(port) = flow.pending_read(&s) {
+                flow.install_blocks(port, (0..15).map(|i| block(i, false)).collect());
+            }
+            let edge = flow.before_tick(&mut s, 0);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        assert_eq!(flow.card_io_result(), 1, "a blank card still answers");
+        assert!(!flow.card_absent());
+        let edge = flow.before_tick(&mut s, cross());
+        assert_ne!(edge & cross(), 0, "the save confirm reaches the session");
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert!(matches!(s.phase(), SelectPhase::ConfirmOverwrite { .. }));
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to save?");
+        confirm_yes_and_run_out(&mut flow, &mut s);
+        assert_eq!(flow.commit(&s), None, "a card Save writes inside the beat");
+        assert_eq!(
+            flow.written_save(),
+            Some(SaveCommit {
+                port: 0,
+                cell: 0,
+                kind: SaveCommitKind::Save,
+            })
+        );
+    }
+
+    /// An **empty port** still reads as no card: the pill is not present, so
+    /// whatever the host answered for it never publishes success.
+    #[test]
+    fn an_unmounted_port_reads_as_no_card() {
+        let mut flow = SaveScreenFlow::new();
+        flow.install_blocks(1, (0..15).map(|i| block(i, false)).collect());
+        assert_eq!(flow.card_status(1, false), CardStatus::NoCard);
+        assert_eq!(flow.card_status(1, true), CardStatus::Ready);
+        assert_eq!(flow.card_status(0, true), CardStatus::Pending);
     }
 
     /// The commit names the port off the outcome and the block off the grid.
@@ -927,11 +1175,14 @@ mod tests {
         let beat = s.now_checking_frames() + 1;
         run_beat(&mut flow, &mut s, beat);
         flow.install_blocks(1, (0..15).map(|i| block(i, true)).collect());
-        let edge = flow.before_tick(&s, PadButton::Right.mask());
+        let edge = flow.before_tick(&mut s, PadButton::Right.mask());
         s.tick(SelectInput::from_pad_edge(edge));
         assert_eq!(flow.grid_cursor(), 1);
-        let edge = flow.before_tick(&s, cross());
+        let edge = flow.before_tick(&mut s, cross());
         s.tick(SelectInput::from_pad_edge(edge));
+        assert_eq!(flow.commit(&s), None, "a Load asks first");
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to load?");
+        confirm_yes_and_run_out(&mut flow, &mut s);
         assert_eq!(
             flow.commit(&s),
             Some(SaveCommit {
@@ -940,6 +1191,192 @@ mod tests {
                 kind: SaveCommitKind::Load,
             })
         );
+    }
+
+    /// Step a raised confirm to Yes, confirm it, and run the write / read
+    /// beat and the result line out to the outcome - one `before_tick` per
+    /// frame, the way a host drives it.
+    fn confirm_yes_and_run_out(flow: &mut SaveScreenFlow, s: &mut SaveSelectSession) {
+        for e in [PadButton::Left.mask(), cross()] {
+            let edge = flow.before_tick(s, e);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        let (a, b, _) = commit_banner(s.mode(), true, CommitReport::Pending);
+        assert_eq!(
+            flow.overlay_model(s).unwrap().banner.map(|b| b.lines),
+            Some((a, b))
+        );
+        let mut frames = 0;
+        while !s.is_done() {
+            let edge = flow.before_tick(s, 0);
+            if flow.save_request(s).is_some() {
+                flow.finish_save_request(s, true);
+            }
+            s.tick(SelectInput::from_pad_edge(edge));
+            frames += 1;
+            assert!(frames < 1000, "the commit beat never ended");
+        }
+    }
+
+    /// Retail writes while "Saving to MEMORY CARD" is up and only then says
+    /// how it went: the beat holds at its last write frame until the host
+    /// answers, a failed write reads "Unable to save." and returns to the
+    /// grid with nothing committed, and a good one reads "Save successful."
+    /// and drops the block cache so the grid re-reads the card.
+    #[test]
+    fn the_save_writes_before_its_result_and_a_failure_says_so() {
+        for ok in [false, true] {
+            let mut s =
+                SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+            let mut flow = SaveScreenFlow::new();
+            s.tick(SelectInput {
+                cross: true,
+                ..Default::default()
+            });
+            let beat = s.now_checking_frames() + 1;
+            run_beat(&mut flow, &mut s, beat);
+            for e in [cross(), PadButton::Left.mask(), cross()] {
+                let edge = flow.before_tick(&mut s, e);
+                s.tick(SelectInput::from_pad_edge(edge));
+            }
+            // No answer: the beat parks on the write panel indefinitely.
+            for _ in 0..400 {
+                let edge = flow.before_tick(&mut s, 0);
+                s.tick(SelectInput::from_pad_edge(edge));
+            }
+            assert_eq!(s.committing_work(), Some(true), "parked on the write");
+            let req = flow.save_request(&s).expect("a write is asked for");
+            assert_eq!((req.port, req.cell, req.kind), (0, 0, SaveCommitKind::Save));
+            flow.finish_save_request(&mut s, ok);
+            assert!(flow.save_request(&s).is_none(), "asked once");
+            assert_eq!(flow.read_port(), if ok { None } else { Some(0) });
+            s.tick(SelectInput::default());
+            assert_eq!(s.committing_work(), Some(false));
+            let line = flow.overlay_model(&s).unwrap().banner.unwrap().lines.0;
+            assert_eq!(
+                line,
+                if ok {
+                    "Save successful."
+                } else {
+                    "Unable to save."
+                }
+            );
+            // A press on the result line cuts it short - as a Cross, which is
+            // the confirm cue retail sounds.
+            assert_eq!(flow.before_tick(&mut s, PadButton::Circle.mask()), cross());
+            s.tick(SelectInput::from_pad_edge(cross()));
+            if ok {
+                assert_eq!(s.outcome(), Some(SelectOutcome::Saved(0)));
+                assert_eq!(flow.commit(&s), None, "the write already happened");
+                assert_eq!(flow.written_save(), Some(req));
+            } else {
+                assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+                assert_eq!(flow.written_save(), None);
+            }
+        }
+    }
+
+    /// A block whose checksum fails the read's verify is refused the way
+    /// retail's sub-mode `0x13` refuses it: the read panel runs, then the
+    /// three-line damaged-data box, held without a timer until a face
+    /// button, then the grid again - nothing is loaded.
+    #[test]
+    fn a_damaged_block_is_refused_after_the_read() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
+        flow.install_blocks(
+            0,
+            (0..15)
+                .map(|i| SlotSnapshot {
+                    damaged: i == 0,
+                    ..block(i, true)
+                })
+                .collect(),
+        );
+        for e in [cross(), PadButton::Left.mask(), cross()] {
+            let edge = flow.before_tick(&mut s, e);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        assert_eq!(s.committing_work(), Some(true), "the read panel runs first");
+        use crate::save_select::{COMMIT_LOAD_WORK_FRAMES, COMMIT_RESULT_FRAMES};
+        for _ in 0..(COMMIT_LOAD_WORK_FRAMES + COMMIT_RESULT_FRAMES + 60) {
+            let edge = flow.before_tick(&mut s, 0);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+        let banner = flow.overlay_model(&s).unwrap().banner.unwrap();
+        assert_eq!(
+            (banner.lines, banner.note),
+            (
+                ("Unable to load data.", "Damaged data."),
+                "Delete at the PlayStation MEMORY CARD Screen."
+            ),
+            "the box holds past the result line's 0x5A"
+        );
+        let edge = flow.before_tick(&mut s, PadButton::Circle.mask());
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        assert_eq!(flow.commit(&s), None, "nothing loads");
+    }
+
+    /// Retail's grid confirm accepts a Save only over a Legaia save or a free
+    /// block (`FUN_801E3F74` mode 1 / 3, `0x801DEAB8..0x801DEB00`): a block
+    /// another game owns - the whole grid on a full card of foreign files -
+    /// takes the Cross without raising a prompt.
+    #[test]
+    fn a_save_is_refused_over_a_foreign_block() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
+        flow.install_blocks(
+            0,
+            (0..15)
+                .map(|i| match i {
+                    0 => SlotSnapshot::foreign(i),
+                    1 => block(i, true),
+                    _ => block(i, false),
+                })
+                .collect(),
+        );
+        // Cell 0: foreign - no prompt.
+        let edge = flow.before_tick(&mut s, cross());
+        assert_eq!(edge & cross(), 0, "a foreign block takes no save");
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
+        // Cell 1: a Legaia save - the overwrite question.
+        let edge = flow.before_tick(&mut s, PadButton::Right.mask());
+        s.tick(SelectInput::from_pad_edge(edge));
+        let edge = flow.before_tick(&mut s, cross());
+        s.tick(SelectInput::from_pad_edge(edge));
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to overwrite?");
+    }
+
+    /// Over a block that already holds something, a Save asks to
+    /// overwrite; over a free block it asks to save.
+    #[test]
+    fn the_save_prompt_names_an_overwrite_over_an_occupied_block() {
+        let mut s = SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+        let mut flow = SaveScreenFlow::new();
+        s.tick(SelectInput {
+            cross: true,
+            ..Default::default()
+        });
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
+        // run_beat's card holds a save in cell 2 only.
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to save?");
+        flow.grid_cursor = 2;
+        assert_eq!(flow.confirm_prompt(&s), "Do you wish to overwrite?");
     }
 
     /// A flat rack commits the pill slot as both port and cell, so a host
@@ -996,7 +1433,7 @@ mod tests {
             ..Default::default()
         });
         assert!(matches!(s.phase(), SelectPhase::Browsing { .. }));
-        flow.before_tick(&s, 0);
+        flow.before_tick(&mut s, 0);
         assert!(flow.blocks().is_empty(), "the card read went with the grid");
         assert_eq!(flow.grid_cursor(), 0);
     }

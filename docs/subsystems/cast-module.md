@@ -1598,6 +1598,56 @@ from a row is one the walk never entered.
 | 0910 Swordie | 1, 1, 4, 8, 17, 46, 1, 65, 1, 25, 53, then `0xFF` |
 | 0911 Orb | 1, 1, 4, 32, 25, 54, **jump to 9**, 76, 66, then `0xFF` |
 
+These are dwells in retail **passes** at the measured frame step of `4`; the
+engine runs a body once a vsync, so a ported countdown advances by the speed
+scalar alone a tick and lasts four times as many ticks (PROT 0910's arm 7 is
+`256` engine ticks, `65` passes here). PROT 0904's arms 10 to 12 are ramps on
+`ctx[+0x6D8]`: arm 10 zeroes it (`0x801F7768`), arm 11 adds
+`(step * scalar) >> 1` a pass and holds below `0x100`
+(`0x801F778C..0x801F77BC`) before it retargets and zeroes the word, and arm
+12 adds `(step * scalar) << 3` until `0x1000` (`0x801F7AE4` / `0x801F7EF0`) -
+the 20 / 16 above. That word is a sweep **phase**, not a bearing: the ray
+runs from a root `0x5C` ahead of the summon (height `-0x11D`) to a tip `2/3`
+of a unit away at the summon's facing plus `sin[phase & 0xFFF] / 16`
+(`0x801F7B90..0x801F7C4C`), so it swings `+-0x100` (22.5 degrees) about the
+facing, and the cone (`+-0x30`, both bearings measured from the root) only
+ever reaches the monsters in that arc. The port runs both ramps at 64 ticks
+(`cast_seru_ticks_a::theeder_ramp_per_tick`), builds the ray with
+`theeder_ray_tip`, tests the cone against it, and gives PROT 0904 a module
+profile whose outcome arm is the sweep, so the band holds `0x36` until the
+phase has run its turn.
+Its camera arms are not ported: the director only passes, and case 6 keeps
+the caster.
+
+PROT 0904 seats its creature once, in arm 4 (`0x801F6EEC..0x801F6F8C`, right
+after `FUN_801F19EC`): facing `atan2(victim -> caster) + 0x800`, from the caster
+toward the victim, standing half a unit (`sin / 2`, `cos / 2`) short of the
+victim on that line. No later arm stores to the seat's `+0x34` / `+0x38`, so it
+stands there for the rest of the cast and the beam reaches the row. The port
+pins that placement (`cast_seru_ticks_a::theeder_seat_placement`) from arm 4
+on, which also stops the walk the engine's generic summon drive had been
+giving the creature.
+
+PROT 0904's packet arms are drawn. Arm 8 seeds `ctx[+0x6D8] = scalar *
+0x78` and arm 9 drains it, drawing two lightning prongs a pass
+(`FUN_801F815C`, a textured `POLY_FT4` on texture page `0x27` / CLUT
+`0x7700`, one of four 32-texel cells by `rand() & 3`) from the beam root to
+points `0xA0` ahead and `0x5C` to either side (the 31-pass dwell). Arm 10
+empties the trail ring at `0x801F90FC` (count `0x801F91FC`). Arm 11 draws
+the charge beam (`FUN_801F83A4`, two `POLY_G4` glowing four pixels out from
+the line in `(L >> 5, L >> 5, L)` with `L` its ramp) while the ramp holds,
+and the full beam once on exit. Arm 12 draws `FUN_801F8634` every pass: it
+shifts the ray tip into the ring, fans a blue quad from each consecutive
+pair of past tips back to the root (`(16 - i) * 15`), edges it with a
+one-pixel line, caps the count at `0xF`, and draws the core from root to tip
+in `(0x40, 0x40, 0xC0)`. Arm 13 calls `FUN_801F8B84`, the same fan without
+the core, dropping the count by one a pass and holding until it is empty
+(the 15-pass dwell). The port runs these as `cast_seru_ticks_a::theeder_tick`
+with `TheederFx`, samples and retracts the ring once per retail pass, and
+both hosts build the primitives with `engine-ui::cast_theeder` from
+`World::theeder_draw`; the prong cells come from a per-cast counter rather
+than the battle RNG.
+
 Three of the seven walks skip arms outright. PROT 0911's arm `5` jumps to `9`
 (the `sb s7,0x279` at `0x801F7780`), which this page already records; PROT 0905's
 arm `5` jumps to `8` the same way, and PROT 0907's fork arm `13` jumps to `15`.
@@ -2145,7 +2195,13 @@ Three ticks in the band switch on a **cure tier** `1..=4` and `and` a keep-mask
 into the target's `+0x16E`: PROT 0905 (Vera) at `0x801F7D68`, PROT 0911 (Orb)
 at `0x801F7BE4` and PROT 0919 (Spoon) at `0x801F8168`. The masks are
 `0xFFFC` / `0xFF84` / `0xFB84` / `0xFB84`, and tier `4` additionally doubles
-`+0x170` under a `0x64` clamp (`0x801F7F24..0x801F7F48`).
+the battle AP gauge `+0x170` under a `0x64` clamp (Vera
+`0x801F7F24..0x801F7F48`, Orb `0x801F7E10..0x801F7E3C`, Spoon
+`0x801F8394..0x801F83C0`) - the level-9 heal doubling first reported by
+the_rabidsquirel from retail save-state testing
+([battle-formulas.md](battle-formulas.md#the-battle-ap-gauge---every-writer)).
+Orb and Spoon skip a dead seat whole, but `+0x16E & 4` skips only their HP
+store: the cure ladder still runs on that seat.
 
 The tier is **not** module data. All three read the same battle-overlay word
 `0x801F6960`, which sits below the slot-B base and is the Seru side-effect
@@ -2233,6 +2289,12 @@ A walk arm hands the camera back to the action SM's framing instead: PROT
 with the depth `ctx[+0x6D0] = 0x800` and yaw base `ctx[+0x6DA] = 0x200` its
 arm 10 stored and `6 * scalar * delta` added to the yaw base per pass, and
 holds on the range poll `FUN_8004E2F0(7, victim)` while the creature walks in.
+That yaw base is the action SM's own counter, not a module copy: the prologue
+keeps drifting it every pass, and once the module returns the Done band's
+case 6 frames the caster from whatever the walk and the drift left there. The
+port loads the director's `yaw_base` from the battle camera's counter before
+each director pass and stores it back after (as it does for PROT 0966's
+`0x780`), so the two stay one word.
 Because the counted arms hold, the module - not a fixed stager script - sets
 how long `0x36` lasts: PROT 0903's run from arm 1 to the hit is about 500
 display frames.

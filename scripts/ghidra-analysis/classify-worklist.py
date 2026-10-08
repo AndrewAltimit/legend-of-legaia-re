@@ -466,6 +466,11 @@ class StaticArbiter:
                         ("%s(%d)" % (o["label"], o["prot_index"]), o["base_va"], 0, fh.read())
                     )
         self._trim_over_read()
+        self._cut_inherited_tails(
+            {"%s(%d)" % (o["label"], o["prot_index"]): o["prot_index"]
+             for o in spec_map["overlays"]},
+            os.path.join(repo, "extracted", "PROT"),
+        )
         scus = os.path.join(repo, "extracted", "SCUS_942.54")
         if os.path.exists(scus):
             with open(scus, "rb") as fh:
@@ -508,6 +513,42 @@ class StaticArbiter:
                     cut = at
             trimmed.append((label, base, hdr, data[:cut]))
         self.images = trimmed
+
+    def _cut_inherited_tails(self, index_of, prot_dir):
+        """Cut each image again where its bytes become another entry's.
+
+        The over-read trim stops an image at a neighbour's HEAD. An overlay's
+        extracted extent can also end in an earlier entry's bytes at the same
+        file offset - the packer's buffer, not this overlay's content
+        (`inherited_tail.py`, the rule `disc-coverage.py` and the byte account
+        both apply). Left in, the entry-boundary test reads the donor's
+        routine boundaries as this image's: PROT 0900 from file `0x252A` is
+        the menu overlay's code, so `0x801F90DC` - the menu's `FUN_801D0F1C`
+        at the slot-B base - read as a summon_render entry and re-raised a
+        mis-based-print row that is right.
+        """
+        try:
+            import inherited_tail
+            import slot_b_band
+        except ImportError:
+            return
+        triples = [
+            (index_of[label], base, data)
+            for label, base, _, data in self.images
+            if label in index_of
+        ]
+        if not triples:
+            return
+        cuts = inherited_tail.tail_cuts(
+            triples,
+            lambda _key, base, data: slot_b_band.content_end(data, base),
+            prot_dir=prot_dir,
+        )
+        out = []
+        for label, base, hdr, data in self.images:
+            cut = cuts.get(index_of.get(label))
+            out.append((label, base, hdr, data[: cut[0]] if cut else data))
+        self.images = out
 
     def available(self):
         return bool(self.images)

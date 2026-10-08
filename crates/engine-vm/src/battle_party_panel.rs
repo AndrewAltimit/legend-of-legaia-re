@@ -67,7 +67,7 @@
 //! kernel's values. A packet walk of retail's own display list confirms
 //! the anchors and says what they anchor - they are the panel's
 //! **name pen**, five pixels inside a 102x48 panel plate, not the plate's
-//! own edge ([`crate::battle_chrome::panel_seats`]).
+//! own edge (`legaia_engine_ui::battle_chrome::panel_seats`).
 //!
 //! **Wired, and re-read.** [`result_subject`] is the port of
 //! `FUN_801D84C0`'s two build arms, and the four buffers they fill are the
@@ -82,7 +82,7 @@
 //! geometry. Resolving its two texture constants shows it samples the `etim`
 //! effect page's red cross-out X instead, so the plate under a battle name
 //! has no retail source at that rect at all - the real name plates are the
-//! system-UI sheet's 3-slice runs in [`crate::battle_chrome`].
+//! system-UI sheet's 3-slice runs in `legaia_engine_ui::battle_chrome`.
 //!
 //! **No engine analogue: the text-actor handle.** `FUN_801DBB8C` opens a SCUS
 //! *text actor* (`FUN_8003541C` register-and-draw) and stashes its handle at
@@ -273,7 +273,7 @@ pub const fn strip_draws(ctx_6ce: i16) -> bool {
 /// [`minigame-muscle-dome.md`](../../../docs/subsystems/minigame-muscle-dome.md)
 /// names for the mark retail lays over a forbidden command chip, confirmed by
 /// decoding those texels out of a battle VRAM dump. The battle name plates
-/// come off a different sheet entirely; see [`crate::battle_chrome`].
+/// come off a different sheet entirely; see `legaia_engine_ui::battle_chrome`.
 ///
 /// The one surface that wants this mark is the Muscle Dome's command ring,
 /// whose phase-`0x28` arm calls it on a forbidden chip's anchor

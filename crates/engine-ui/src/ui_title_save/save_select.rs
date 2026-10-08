@@ -426,7 +426,7 @@ pub struct SaveMenuAtlasRects {
 /// The battle HUD's source rects inside the baked atlas - the disc's own
 /// cells for the surface, not stand-ins for them.
 ///
-/// Every one is packet-pinned in `legaia_engine_vm::battle_chrome` and
+/// Every one is packet-pinned in `crate::battle_chrome` and
 /// copied out of the resident system-UI sheet by
 /// `legaia_engine_core::save_menu_atlas`, except [`Self::digits`], which
 /// comes off the neighbouring menu-glyph atlas and is therefore the one

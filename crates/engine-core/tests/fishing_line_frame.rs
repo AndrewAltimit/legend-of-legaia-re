@@ -14,7 +14,7 @@ use legaia_engine_core::fishing::{
 };
 use legaia_engine_core::fishing_actors::{
     LINE_CLIP_RECT, LINE_FISH_RGB, LINE_ROD_RGB, ROD_BEND_VDF_ENTRY, ROD_MODEL_BASE,
-    ROD_TIP_VERTEX, RodMesh, RodSwing, VENUE_ANCHOR, clip_segment_2d,
+    ROD_TIP_VERTEX, RodMesh, RodSwing, VENUE_ANCHOR, clip_segment_2d, rod_mesh_from_scene,
 };
 
 const REEL_A: u32 = 0x40;
@@ -255,7 +255,7 @@ fn the_venue_rods_are_scene_models_0x19_to_0x1b_with_a_tip_the_bend_moves() {
         }
     };
     let scene = legaia_engine_core::scene::Scene::load(&host.index, "other1").expect("other1");
-    let mesh = RodMesh::from_scene(&scene).expect("the venue carries its rods");
+    let mesh = rod_mesh_from_scene(&scene).expect("the venue carries its rods");
     assert_eq!(ROD_MODEL_BASE, 0x19);
     assert_eq!(ROD_BEND_VDF_ENTRY, 0);
     for r in 0..3 {
@@ -308,7 +308,7 @@ fn the_venue_rods_draw_in_the_cast_pose_around_the_line_tip() {
         }
     };
     let scene = legaia_engine_core::scene::Scene::load(&host.index, "other1").expect("other1");
-    let mesh = RodMesh::from_scene(&scene).expect("the venue carries its rods");
+    let mesh = rod_mesh_from_scene(&scene).expect("the venue carries its rods");
     for r in 0..3 {
         let prims = &mesh.prims[r];
         let n_verts = mesh.rods[r].as_ref().unwrap().len() / 8;

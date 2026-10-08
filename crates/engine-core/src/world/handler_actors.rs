@@ -380,7 +380,7 @@ impl World {
                 Some(ReflectActor {
                     x,
                     z,
-                    facing: self.npcs.headings.get(&p).copied().unwrap_or(0),
+                    facing: self.npcs.heading(p),
                     anim_set: self.npcs.models.get(&p).copied().unwrap_or(0),
                     ..ReflectActor::default()
                 })

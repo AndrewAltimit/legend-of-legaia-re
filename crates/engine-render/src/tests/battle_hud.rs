@@ -1076,14 +1076,14 @@ fn font_solid_src_finds_a_white_texel_in_the_placeholder_font() {
 /// roster panel's 102-px plate and into its neighbour.
 ///
 /// Font-independent by construction, so it runs on CI too. Reads the seats
-/// out of the packet-pinned `engine-vm::battle_chrome` rather than out of
+/// out of the packet-pinned `engine-ui::battle_chrome` rather than out of
 /// literals, so a re-seated pin fails here rather than passing against a
 /// stale copy. The companion
 /// [`bar_panel_and_diag_columns_clear_the_retail_font_or_skips`] covers the
 /// fields that really are proportional - the names and the diagnostic rows.
 #[test]
 fn numeral_fields_fit_their_widest_value_in_retail_cells() {
-    use legaia_engine_vm::battle_chrome as bc;
+    use crate::battle_chrome as bc;
     let left_of = |right: i16, digits: u16| bc::digits_left_of(right, digits);
     // The label cells are 16 wide, the `/` separator 8.
     let label_w = 16;

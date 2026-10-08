@@ -37,7 +37,9 @@
 //!    the sub-list / text-box / flag-window exits hand back to, and not the
 //!    `0x29` / `0x2B` the fade/flash exits pick. So [`ActorExit::apply`] makes
 //!    all four stores here and [`PanelActorHost::retire`] drops the actor,
-//!    recording the pair in [`PanelFrame::exits`] rather than following it.
+//!    recording the pair in [`PanelFrame::exits`] rather than following it -
+//!    except for id `0`, the close tick, which it does follow
+//!    ([`PanelActorKind::CloseTick`]).
 //! 3. **Which pad chord installs which actor.** Retail reaches these from
 //!    debug branches in the world-map controller. The engine's bindings live
 //!    on `World::tick_world_map_panels` and are tabulated there.
@@ -409,6 +411,13 @@ pub enum PanelActorKind {
     FlagWindow,
     /// `FUN_801EE094` / `FUN_801EE328` - a travel art.
     TravelArt(TravelArt),
+    /// `FUN_801F2134` - the close tick, slot `0` of `PTR_FUN_801F33B4`.
+    ///
+    /// Never installed by a chord: it is what an exit that hands back to
+    /// handler id `0` runs next (the fill fade's case 4 at `0x801EE8EC`), so
+    /// [`PanelActorHost::retire`] follows that one id instead of dropping
+    /// the actor.
+    CloseTick,
 }
 
 impl PanelActorKind {
@@ -741,19 +750,75 @@ impl PanelActorHost {
     /// only what happens *after*: retail leaves the actor installed for the
     /// handler dispatcher to pick back up off the new id, and this host drops
     /// it instead, recording the pair in [`PanelFrame::exits`].
+    ///
+    /// The one id this host *does* follow is `0`, the close tick
+    /// ([`PanelActorKind::CloseTick`]): its body is ported
+    /// ([`legaia_engine_vm::baka_hub_actors::close_tick`]) and it is the
+    /// handler every such exit names, so the actor stays installed for it and
+    /// retires when the tick clears the completion gate.
     fn retire(&mut self, frame: &mut PanelFrame, exit: ActorExit) {
         frame.exits.push(exit);
-        frame.retired = true;
         exit.apply(
             &mut self.scene_field_2e,
             &mut self.scene_field_40,
             &mut self.handler_id,
             &mut self.phase,
         );
-        self.kind = None;
         self.travel = None;
         self.save_screen = None;
         self.timer = 0;
+        if exit.next_handler == legaia_engine_vm::baka_hub_actors::slot::CLOSE_TICK {
+            self.kind = Some(PanelActorKind::CloseTick);
+            return;
+        }
+        frame.retired = true;
+        self.kind = None;
+    }
+
+    /// One frame of the close tick (`FUN_801F2134`) under the dispatcher's
+    /// retire test (`FUN_801F159C`, which re-reads `scene[+0x3E]` after the
+    /// handler returns).
+    ///
+    /// The port does not model the completion gate being raised - nothing
+    /// in this host sets `scene[+0x3E]` - so the gate is taken as up while
+    /// the actor is installed, which is the only state in which retail's
+    /// dispatcher would still be running it. The tick's own state `0` closes
+    /// every panel (`jal 0x80035A4C`, the window-script `CloseAll`), every
+    /// state ticks the text actors (`jal 0x80031D00`), and the gate is cleared
+    /// only while the input lock `_DAT_8007BB80` is down
+    /// (`0x801F2184..0x801F21A0`) - so a locked frame keeps the actor up.
+    fn tick_close_tick(&mut self, frame: &mut PanelFrame) {
+        use legaia_engine_vm::baka_hub_actors::{
+            self as hub, HubAction, HubActor, HubEnv, HubGrid,
+        };
+        let mut actor = HubActor {
+            state: self.handler_id,
+            sub: self.phase,
+            ..HubActor::default()
+        };
+        let env = HubEnv {
+            input_blocked: i32::from(self.input_locked),
+            ..HubEnv::default()
+        };
+        let mut grid = HubGrid {
+            done_gate: 1,
+            ..HubGrid::default()
+        };
+        let out = hub::close_tick(&mut actor, &env, &mut grid);
+        self.phase = actor.sub;
+        for action in &out.actions {
+            match action {
+                HubAction::CloseAllPanels => self.windows.apply(PanelEffect::CloseAll),
+                HubAction::DrawPump => self.text_actor_ticks += 1,
+                _ => {}
+            }
+        }
+        if grid.done_gate == 0 {
+            self.scene_field_3e = 0;
+            frame.retired = true;
+            self.kind = None;
+            self.phase = 0;
+        }
     }
 
     fn cursor_pad(pad_held: u16, pad_edge: u16) -> CursorPad {
@@ -793,6 +858,7 @@ impl PanelActorHost {
             PanelActorKind::TextBox => self.tick_text_box(pad, pad_edge, frame_delta, &mut frame),
             PanelActorKind::FlagWindow => self.tick_flag_window(pad, flags, &mut frame),
             PanelActorKind::TravelArt(_) => self.tick_travel_art(frame_delta, &mut frame),
+            PanelActorKind::CloseTick => self.tick_close_tick(&mut frame),
         }
         frame
     }
@@ -1779,6 +1845,41 @@ mod tests {
         }
         assert!(saw_scene_bit, "phase 3 sets the scene object's flag bit");
         assert!(retired, "phase 4 exits");
+    }
+
+    #[test]
+    fn the_fill_fade_exit_runs_the_close_tick_before_retiring() {
+        let mut h = PanelActorHost::new();
+        h.install(PanelActorKind::FillFade, 0x11);
+        let mut f = Flags::default();
+        let mut exited = false;
+        for _ in 0..256 {
+            let fr = h.tick(0, 0, 1, &mut f);
+            if !fr.exits.is_empty() {
+                exited = true;
+                assert!(!fr.retired, "handler 0 is followed, not dropped");
+                break;
+            }
+        }
+        assert!(exited, "phase 4 exits");
+        assert_eq!(h.kind, Some(PanelActorKind::CloseTick));
+        assert_eq!(h.scene_field_40, 0x11, "the old id is parked");
+        // A locked input keeps the completion gate up, so the actor stays.
+        h.windows
+            .run_script(legaia_engine_vm::world_map_panel_actors::SUBLIST_OPEN_SCRIPT);
+        h.input_locked = true;
+        let ticks = h.text_actor_ticks;
+        assert!(!h.tick(0, 0, 1, &mut f).retired);
+        assert_eq!(h.windows.open_count(), 0, "state 0 closes every panel");
+        assert_eq!(
+            h.text_actor_ticks,
+            ticks + 1,
+            "every state ticks the text actors"
+        );
+        assert!(h.is_active());
+        h.input_locked = false;
+        assert!(h.tick(0, 0, 1, &mut f).retired);
+        assert!(!h.is_active());
     }
 
     #[test]

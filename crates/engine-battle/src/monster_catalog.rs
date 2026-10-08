@@ -1,0 +1,820 @@
+//! Monster catalog + formation tables for engine-driven encounters.
+//!
+//! The retail engine resolves a battle scene's monster set in two stages:
+//! the encounter table picks a `formation_id`; the battle scene loader
+//! reads the `battle_data` PROT entries to populate per-formation slot
+//! lists with monster definitions. The retail definitions live in
+//! still-uncaptured battle overlays - until they're traced, this module
+//! ships a vanilla in-engine catalog so the encounter → battle path can
+//! be exercised end-to-end without disc data.
+//!
+//! Vanilla coverage targets the early-game roster the player encounters
+//! between Drake Castle and Vidna's outskirts: Goblin, Bandit, Wolf,
+//! Sluggers, Skeleton, etc. Stats are scaled to give the level-1
+//! starting party a 5-10 turn fight.
+//!
+//! ## Components
+//!
+//! - [`MonsterDef`] - one monster row (HP, MP, ATK, UDF, LDF, accuracy,
+//!   evasion, EXP yield, gold drop, optional drop-item id).
+//! - [`MonsterCatalog`] - id → [`MonsterDef`] table.
+//! - [`FormationSlot`] - one occupied slot in a formation: monster id +
+//!   optional level offset.
+//! - [`FormationDef`] - a formation row: 1..=4 slots (battles support up
+//!   to 5 enemy slots; we cap at 4 so the player slot stays distinct).
+//! - [`FormationTable`] - formation_id → [`FormationDef`] map plus
+//!   reverse lookup helpers.
+//!
+//! Pure data - no Vfs / disc / world coupling. Engines call
+//! [`FormationTable::formation`] with the `formation_id` from
+//! [`crate::encounter::EncounterRoll`] and feed the resulting
+//! [`FormationDef`] into their battle scene loader.
+
+use std::collections::HashMap;
+
+/// One monster's definition (port-side, vanilla values).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonsterDef {
+    pub id: u16,
+    /// Display name shown in the battle HUD.
+    pub name: String,
+    pub hp: u16,
+    pub mp: u16,
+    pub attack: u16,
+    /// Upper-defense stat (used against high-power-target strikes).
+    pub udf: u16,
+    /// Lower-defense stat (used against low-power-target strikes).
+    pub ldf: u16,
+    /// SPD - turn-order initiative seed (record `stats[5]`, actor
+    /// `+0x164/+0x166`). Feeds the per-turn initiative key the battle's
+    /// next-actor selector reads (`+0x16c = speed + rand()%(speed/2+1) + 1`;
+    /// see `legaia_engine_core::world::World` initiative selection and
+    /// `docs/subsystems/battle-formulas.md`). `0` leaves the battle on the
+    /// round-robin turn-order fallback.
+    pub speed: u16,
+    /// **AGL** - the per-round action gauge (record `stats[0]` / `+0x0E`, actor
+    /// `+0x154` current / `+0x156` base). Reset to base each round; every swing
+    /// spends [`MonsterDef::action_costs`] from it. This is the enemy analogue
+    /// of the party-side Arts AP gauge: how many physical swings a monster lands
+    /// on its turn is `agl / swing_cost` (capped at 15), computed by
+    /// [`legaia_engine_vm::battle_action::enemy_action_budget`]. `0` (the
+    /// disc-free / synthetic catalog default) leaves the monster on a single
+    /// swing per turn, drawing no budget RNG.
+    pub agl: u16,
+    /// Per-action **AGL costs** of this monster's candidate physical swing
+    /// actions (the swing-record `+0x74` bytes for records whose tag `+0x0` is
+    /// in `0x0C..=0x1F` and whose cost is not the `0xFF` "not-an-attack"
+    /// sentinel). Populated from the monster archive in
+    /// [`monster_def_from_record`]; the multi-action budget loop
+    /// ([`legaia_engine_vm::battle_action::enemy_action_budget`]) rolls a random
+    /// candidate each pass and spends its cost from the [`MonsterDef::agl`]
+    /// gauge. Empty (the synthetic default) means the monster falls back to one
+    /// swing per turn.
+    pub action_costs: Vec<u8>,
+    /// Sibling of [`Self::action_costs`], index-aligned: the archive
+    /// **entry index** of each candidate swing action - the raw anim id the
+    /// picker queues into the monster's action stream (`actor[+0x1DF..]`)
+    /// and the attack band stages into `+0x1DA`
+    /// ([`legaia_asset::monster_archive::MonsterSpell::entry_index`]).
+    /// Empty on the synthetic catalog, which then keeps the budget-only
+    /// immediate swings.
+    pub action_entries: Vec<u8>,
+    /// Intelligence (record `stats[4]` / `+0x18`, actor `+0x168`), unclamped -
+    /// the bestiary **INT** stat. Seeds the summon-damage roll when this
+    /// creature is the spell's summon body (`FUN_801dd0ac` summon branch reads
+    /// the slot-7 actor's `+0x168`); [`MonsterDef::accuracy`] /
+    /// [`MonsterDef::evasion`] carry the same stat clamped to a byte for the
+    /// hit/evade paths.
+    pub intel: u16,
+    pub accuracy: u8,
+    pub evasion: u8,
+    /// Experience awarded to the party on defeat.
+    pub exp: u16,
+    /// Gold dropped on defeat.
+    pub gold: u16,
+    /// Optional drop item id (`None` = no drop).
+    pub drop_item: Option<u8>,
+    /// Drop chance in percent (record `+0x49`), as the victory drop roll
+    /// reads it: `rand() % 100 < chance (+ the Items Up bonus)`, see
+    /// [`legaia_engine_vm::battle_formulas::victory_drop_roll`].
+    pub drop_chance_pct: u8,
+    /// Seru id attached to this monster, if it carries one. A successful
+    /// capture (capture spell / Genocide Crystal) feeds this id into the
+    /// [`crate::seru_learning::SeruRegistry`]. `None` = no Seru to capture.
+    pub seru_id: Option<u16>,
+    /// Global spell ids this monster can cast in battle (from the monster
+    /// record's 3-slot magic-attack array at `+0x21..=+0x23`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::magic_attacks`]). The
+    /// battle monster-AI chooses among the entries it can afford to fold a
+    /// real spell cast onto the party. Empty = physical attacker only.
+    pub magic_attacks: Vec<u8>,
+    /// Element id (`0..=7`, monster record `+0x1D`): the attacker element the
+    /// affinity scale (`FUN_801dd864`) reads to look up
+    /// `matrix[attacker][defender]`. Defaults to `7` (neutral) for synthetic
+    /// monsters; [`monster_def_from_record`] sets it from the record.
+    pub element: u8,
+    /// Limb-vs-height **swing class** (monster record `+0x1E`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::swing_class`]). Two
+    /// consumers, both in `crates/engine-vm`'s battle-action layer: the
+    /// no-input attack queue (`basic_attack_queue` - a class-`2` target takes
+    /// one low swing) and the damage kernel's apply-mode look-ahead
+    /// (`apply_mode` - a class-`2` / `3` target only connects with power bytes
+    /// of its own class).
+    ///
+    /// Defaults to `0` for synthetic monsters: the class that connects with
+    /// everything and takes the ordinary two-swing attack, so a disc-free
+    /// catalog behaves exactly as it did before the byte was carried.
+    ///
+    /// REF: FUN_801EED1C, FUN_801EC3E4
+    pub swing_class: u8,
+    /// Body-size / bulk class (monster record `+0x1F`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::size_class`]). The
+    /// battle camera frames on it - `FUN_801F0348` writes
+    /// `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` every time an actor is
+    /// seeded, so a bulkier enemy pulls the camera back.
+    ///
+    /// Defaults to `0` for synthetic monsters, which clamps to the retail
+    /// floor `0x0C00` - i.e. the disc-free catalog frames every fight at the
+    /// default distance and changes no existing behaviour.
+    ///
+    /// REF: FUN_801F0348
+    pub size_class: u8,
+    /// Double-width **texture-page** flag (monster record `+0x20`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::wide_texture_page`]).
+    ///
+    /// Carried here for its **second** reader, not its first: three summon
+    /// ticks (PROT 0907 Nighto, 0908, 0916) read the byte record-direct
+    /// through `0x801C9348[seat - 3]` as a "big model" resist proxy, and
+    /// Nighto's kill / confuse roll
+    /// ([`legaia_engine_vm::cast_seru_ticks_a::NightoRoll::target_immune`])
+    /// forces the resist when it is non-zero **and** the fight is a scripted
+    /// one (`ctx[+0x287]`). Its first reader is the model upload's VRAM rect
+    /// widen, which the port's texture path does not consult.
+    ///
+    /// `0` for synthetic monsters, which is the "not immune" side.
+    pub wide_texture_page: u8,
+    /// Element-badge strip index the battle name plaque wears, or `None`
+    /// for a monster that wears no badge.
+    ///
+    /// Carried verbatim from
+    /// [`legaia_asset::monster_archive::MonsterRecord::plaque_badge`]: the
+    /// badge is the caret escape the archive name itself begins with, not a
+    /// function of [`Self::element`]. Most populated records carry no
+    /// escape, and the letter order is a different permutation from the
+    /// element id order, so this must never be filled from `element`.
+    /// `None` for synthetic monsters, which is also what a record with no
+    /// escape yields - the disc-free catalog draws no badge, exactly as
+    /// retail does for the same records.
+    pub plaque_badge: Option<u8>,
+    /// The **raw** record stat block `[AGL, ATK, UDF, LDF, INT, SPD]`
+    /// (record `+0x0E`, `+0x12`, `+0x14`, `+0x16`, `+0x18`, `+0x1A`) before
+    /// either battle-load boost profile.
+    ///
+    /// The fields above carry the *installed* stats, and which profile
+    /// installed them is a property of the **fight**, not of the record:
+    /// `FUN_80054CB0` picks by `ctx[+0x287]`. The catalog is built at scene
+    /// entry, before any formation is chosen, so it bakes the scripted
+    /// profile and keeps the raw block here for the battle seed to re-derive
+    /// the random-encounter one ([`Self::installed_stats`]).
+    ///
+    /// `[0; 6]` on a synthetic [`MonsterDef::new`] monster, which is the
+    /// signal [`Self::installed_stats`] uses to answer with the built fields
+    /// unchanged - so a disc-free battle keeps exactly the stats it had.
+    pub raw_stats: [u16; 6],
+    /// Record `+0x3E` - the Seru a killing blow can **absorb**, as the
+    /// player-magic index (`spell id - 0x80`, Gimard's `1` -> spell `0x81`);
+    /// `0` for a monster carrying no Seru. Read by the arts resolver's
+    /// killing-blow arm (`legaia_engine_core::world::World`'s Seru absorb roll).
+    /// Distinct from [`Self::seru_id`], which keys the engine's capture-spell
+    /// registry.
+    pub absorb_seru: u8,
+    /// Record `+0x3F` - that absorb's chance in percent, before the Ivory
+    /// Book's `+30`.
+    pub absorb_chance_pct: u8,
+}
+
+impl MonsterDef {
+    pub fn new(id: u16, name: impl Into<String>, hp: u16, attack: u16) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            hp,
+            mp: 0,
+            attack,
+            udf: attack / 2,
+            ldf: attack / 2,
+            speed: 0,
+            agl: 0,
+            action_costs: Vec::new(),
+            action_entries: Vec::new(),
+            intel: 70,
+            accuracy: 70,
+            evasion: 10,
+            exp: hp / 2,
+            gold: hp / 4,
+            drop_item: None,
+            drop_chance_pct: 0,
+            seru_id: None,
+            magic_attacks: Vec::new(),
+            element: 7,
+            swing_class: 0,
+            size_class: 0,
+            wide_texture_page: 0,
+            plaque_badge: None,
+            raw_stats: [0; 6],
+            absorb_seru: 0,
+            absorb_chance_pct: 0,
+        }
+    }
+
+    /// The six stats the battle loader installs for a fight of this class:
+    /// [`legaia_asset::monster_archive::boost_profile`] of
+    /// [`Self::raw_stats`], in `[AGL, ATK, UDF, LDF, INT, SPD]` order.
+    ///
+    /// `scripted` is the fight's `ctx[+0x287]`: set for a boss / story
+    /// formation (the row whose `record[+0]` header byte is non-zero), clear
+    /// for a random encounter. **Every random encounter in the game takes the
+    /// clear branch**, which is a materially different enemy - `x7/4` defence
+    /// and an unboosted ATK rather than `x2` defence and `x5/4` ATK.
+    ///
+    /// Falls back to the built fields when [`Self::raw_stats`] is all-zero (a
+    /// synthetic catalog), so a disc-free battle is bit-identical to before.
+    pub fn installed_stats(&self, scripted: bool) -> [u16; 6] {
+        if self.raw_stats == [0u16; 6] {
+            return [
+                self.agl,
+                self.attack,
+                self.udf,
+                self.ldf,
+                self.intel,
+                self.speed,
+            ];
+        }
+        legaia_asset::monster_archive::boost_profile(self.raw_stats, scripted)
+    }
+
+    /// Builder: attach a Seru id so a successful capture feeds the
+    /// [`crate::seru_learning::SeruRegistry`].
+    pub fn with_seru(mut self, seru_id: u16) -> Self {
+        self.seru_id = Some(seru_id);
+        self
+    }
+
+    /// Builder: attach the global spell ids this monster can cast in battle.
+    pub fn with_magic(mut self, magic_attacks: impl Into<Vec<u8>>) -> Self {
+        self.magic_attacks = magic_attacks.into();
+        self
+    }
+}
+
+/// Monster id → definition map.
+#[derive(Debug, Default, Clone)]
+pub struct MonsterCatalog {
+    pub by_id: HashMap<u16, MonsterDef>,
+}
+
+impl MonsterCatalog {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, def: MonsterDef) {
+        self.by_id.insert(def.id, def);
+    }
+
+    pub fn get(&self, id: u16) -> Option<&MonsterDef> {
+        self.by_id.get(&id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_id.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_id.is_empty()
+    }
+}
+
+/// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
+/// entry 867; see [`legaia_asset::monster_archive`]).
+///
+/// # The stats are the **battle-load boosted** ones, not the raw record
+///
+/// The six combat stats come from [`MonsterRecord::battle_stats`], not from the
+/// raw record accessors. The raw record is not what the player fights: retail's
+/// record→actor copy `FUN_80054CB0` boosts four of the six *while copying*, and
+/// the actor fields the damage / initiative / interrupt kernels read are the
+/// post-boost ones. Seeding a catalog entry from the raw record therefore ships
+/// a materially weaker enemy than retail in every fight in the game.
+///
+/// The copy is a plain unrolled `lhu` / `sh` pair per stat (record `+0x0E`
+/// `+0x12` `+0x14` `+0x16` `+0x18` `+0x1A` into actor `+0x154`/`+0x156`,
+/// `+0x158`/`+0x15A`, `+0x15C`/`+0x15E`, `+0x160`/`+0x162`, `+0x168`/`+0x16A`,
+/// `+0x164`/`+0x166` - the second of each pair is the "base" mirror). It then
+/// tests the per-battle flag byte `_DAT_8007bd24 + 0x287` and runs one of two
+/// boost profiles, re-reading the *record* value and adding it to the
+/// already-stored actor value. Both profiles boost; the flag only picks which,
+/// and the port takes the gate-set one (`battle_stats`), which is what a live
+/// international-retail capture and the curated bestiary both reproduce.
+///
+/// Mapping (the six stats plus the reward / behaviour fields):
+/// - `attack` <- `battle_stats()[1]` = `ATK + (ATK >> 2)` (`x5/4`) - the value
+///   the physical-damage routine reads as the attacker's offense (actor
+///   `+0x158`).
+/// - `udf` / `ldf` <- `battle_stats()[2]` / `[3]` = `UDF * 2` / `LDF * 2` - the
+///   two defense facets the routine selects by move index.
+/// - `intel` / `accuracy` / `evasion` <- `battle_stats()[4]` =
+///   `INT + (INT >> 3)` (`x9/8`; the bestiary INT stat) - `accuracy`/`evasion`
+///   clamp it to a byte; the actor seeds both the accuracy and evasion roll
+///   from this stat.
+///
+/// - `speed` <- `battle_stats()[5]` = SPD, **copied unchanged** - the turn-order
+///   initiative seed (actor `+0x164`). The battle's next-actor selector seeds
+///   each living actor's per-turn key from it.
+///
+/// - `agl` <- `battle_stats()[0]` = AGL, **copied unchanged** - the per-round
+///   action gauge (actor `+0x154`). Together with `action_costs` it drives the
+///   enemy multi-action budget (how many swings the monster lands per turn; see
+///   [`legaia_engine_vm::battle_action::enemy_action_budget`]).
+///
+/// HP and MP are copied unchanged too, so they stay on the plain record fields.
+///
+/// PORT: FUN_80054CB0 (record→actor stat copy + the gate-set boost profile;
+/// the arithmetic itself is `MonsterRecord::battle_stats`)
+/// - `action_costs` <- the `+0x74` AGL cost of each of the monster's candidate
+///   physical swing actions. The archive parses **every** action record into
+///   [`legaia_asset::monster_archive::MonsterRecord::spells`]
+///   (`MonsterSpell { id = tag `+0x0`, agl_cost = `+0x74`, .. }`); the retail
+///   picker's physical branch selects records whose tag is in `0x0C..=0x1F`
+///   (the swing / short-approach family) with a non-`0xFF` cost, which is what
+///   we collect here.
+///
+/// `exp` / `gold` /
+/// `drop_item` /
+/// `drop_chance_pct` come from the
+/// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
+/// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
+/// the party; gold `(Σ base>>1) * 0.5`). The drop chance stays the record's
+/// `u8` percent, which is what the retail roll compares against.
+pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
+    // The battle-load boosted profile (`FUN_80054CB0`), in record-stat order:
+    // `[AGL, ATK, UDF, LDF, INT, SPD]`. Every stat below that the live actor
+    // carries is taken from here, never from the raw record accessors.
+    let bs = rec.battle_stats();
+    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, bs[1]);
+    // The raw block rides along so the battle seed can re-derive the
+    // random-encounter profile - the catalog is built before the fight class
+    // is known. See `MonsterDef::installed_stats`.
+    def.raw_stats = rec.stats;
+    def.mp = rec.mp;
+    def.plaque_badge = rec.plaque_badge;
+    def.udf = bs[2];
+    def.ldf = bs[3];
+    def.speed = bs[5];
+    def.agl = bs[0];
+    // The picker's physical branch counts a record as a candidate swing when its
+    // tag byte (`+0x0`, parsed as `MonsterSpell::id`) is in `0x0C..=0x1F` and
+    // its `+0x74` AGL cost is not the `0xFF` "not-an-attack" sentinel.
+    let candidates: Vec<_> = rec
+        .spells
+        .iter()
+        .filter(|s| (0x0C..=0x1F).contains(&s.id) && s.agl_cost != 0xFF)
+        .collect();
+    def.action_costs = candidates.iter().map(|s| s.agl_cost).collect();
+    def.action_entries = candidates.iter().map(|s| s.entry_index).collect();
+    def.intel = bs[4];
+    let int_byte = bs[4].min(u8::MAX as u16) as u8;
+    def.accuracy = int_byte;
+    def.evasion = int_byte;
+    def.exp = rec.exp;
+    def.gold = rec.gold;
+    def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
+    def.drop_chance_pct = rec.drop_chance_pct;
+    // Castable spells: the record's 3-slot global-id array (`+0x21..=+0x23`);
+    // the parser already filters out the empty `<= 1` slots.
+    def.magic_attacks = rec.magic_attacks.clone();
+    def.element = rec.element;
+    // Record `+0x1E` - the limb-vs-height class the queue builder and the
+    // damage kernel's apply-mode look-ahead both read record-direct.
+    def.swing_class = rec.swing_class;
+    // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
+    def.size_class = rec.size_class;
+    def.wide_texture_page = rec.wide_texture_page;
+    // Record `+0x3E` / `+0x3F` - the killing-blow Seru absorb the arts
+    // resolver rolls (`FUN_801EC3E4`, `0x801EE250..0x801EE2E8`).
+    def.absorb_seru = rec.seru_id;
+    def.absorb_chance_pct = rec.catch_rate_pct;
+    def
+}
+
+/// Build a [`MonsterCatalog`] from the monster archive (PROT entry 867) for
+/// the given monster ids. Ids that don't resolve to a record (out of range,
+/// filler slot, or a decode error) are skipped. Pass the ids a scene's MAN
+/// encounter formations reference so triggered battles resolve real stats.
+pub fn catalog_from_monster_archive(entry867: &[u8], ids: &[u16]) -> MonsterCatalog {
+    let mut cat = MonsterCatalog::new();
+    for &id in ids {
+        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(entry867, id) {
+            cat.insert(monster_def_from_record(&rec));
+        }
+    }
+    cat
+}
+
+/// One slot in a formation row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormationSlot {
+    pub monster_id: u16,
+    /// Level offset applied to the monster's base stats. `0` keeps them
+    /// at catalog values; positive ramps stats for late-game variants.
+    pub level_offset: i8,
+}
+
+impl FormationSlot {
+    pub const fn new(monster_id: u16) -> Self {
+        Self {
+            monster_id,
+            level_offset: 0,
+        }
+    }
+
+    pub const fn with_offset(monster_id: u16, level_offset: i8) -> Self {
+        Self {
+            monster_id,
+            level_offset,
+        }
+    }
+}
+
+/// One formation row.
+#[derive(Debug, Clone, Default)]
+pub struct FormationDef {
+    pub formation_id: u16,
+    /// Up to 4 occupied slots. Fewer means the trailing battle slots are
+    /// empty for this formation. The retail max is 5 monsters but we cap
+    /// at 4 to leave one slot for a guest character or boss summon.
+    pub slots: Vec<FormationSlot>,
+    /// Display label for the formation (used by the encounter banner).
+    /// Engines fall back to `"Encounter #N"` when this is empty.
+    pub label: String,
+    /// The formation record's own first header byte, `record[+0]`.
+    ///
+    /// The MAN encounter section's per-formation records carry three bytes
+    /// ahead of the monster count. Only the first is read by the battle
+    /// path, and it is read as a *predicate*: the entity SM's confirm state
+    /// tests `record[+0] != 0` and, when so, ORs bit `0x80` into the
+    /// per-battle flags byte `DAT_8007BD60`
+    /// (`0x801DA5F8..0x801DA61C` in `FUN_801DA51C`). Retail's scripted /
+    /// boss rows are exactly the rows that carry a non-zero byte here, and
+    /// the raised bit is what routes the fight to a different battle intro
+    /// and audio cue - see [`Self::per_battle_flags`].
+    ///
+    /// REF: FUN_801DA51C
+    pub header_flags: u8,
+}
+
+impl FormationDef {
+    pub fn new(formation_id: u16, slots: Vec<FormationSlot>) -> Self {
+        Self {
+            formation_id,
+            slots,
+            label: String::new(),
+            header_flags: 0,
+        }
+    }
+
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
+
+    /// Attach the formation record's first header byte
+    /// ([`Self::header_flags`]).
+    pub fn with_header_flags(mut self, header_flags: u8) -> Self {
+        self.header_flags = header_flags;
+        self
+    }
+
+    /// The per-battle flags byte (`DAT_8007BD60`) contribution this
+    /// formation makes: bit `0x80` when [`Self::header_flags`] is non-zero,
+    /// otherwise `0`.
+    ///
+    /// The byte's other live bits are the *stage* id the random-encounter
+    /// reader writes from its region record (`region[+8] & 0x1F`,
+    /// `FUN_801D9E1C`), which the backdrop picker consumes; only bit `0x80`
+    /// is a property of the formation, and only bit `0x80` is read by the
+    /// battle-intro style selector and the transition's audio-cue arm.
+    ///
+    /// REF: FUN_801DA51C, FUN_801D9E1C
+    pub fn per_battle_flags(&self) -> u8 {
+        if self.header_flags != 0 { 0x80 } else { 0 }
+    }
+
+    pub fn slot_count(&self) -> usize {
+        self.slots.len()
+    }
+}
+
+/// Formation id → definition map.
+#[derive(Debug, Default, Clone)]
+pub struct FormationTable {
+    pub by_id: HashMap<u16, FormationDef>,
+}
+
+impl FormationTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, def: FormationDef) {
+        self.by_id.insert(def.formation_id, def);
+    }
+
+    pub fn formation(&self, formation_id: u16) -> Option<&FormationDef> {
+        self.by_id.get(&formation_id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_id.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_id.is_empty()
+    }
+}
+
+/// Vanilla monster catalog. ~20 early-game entries scaled for level-1 to
+/// level-10 parties. Stats follow a "small / medium / large" tier pattern
+/// so engines can quickly verify the encounter → battle pipeline.
+/// Tuple shape used by [`vanilla_monster_catalog`] for compactness.
+/// `(id, name, hp, mp, attack, defense, accuracy, evasion, exp, gold)`.
+type VanillaMonsterRow = (u16, &'static str, u16, u16, u16, u16, u8, u8, u16, u16);
+
+pub fn vanilla_monster_catalog() -> MonsterCatalog {
+    let mut cat = MonsterCatalog::new();
+    let entries: &[VanillaMonsterRow] = &[
+        // (id, name, hp, mp, attack, defense, accuracy, evasion, exp, gold)
+        (1, "Goblin", 30, 0, 10, 5, 70, 10, 8, 6),
+        (2, "Big Goblin", 50, 0, 14, 8, 70, 8, 14, 12),
+        (3, "Wolf", 35, 0, 12, 6, 80, 18, 10, 4),
+        (4, "Bandit", 60, 5, 16, 10, 75, 15, 18, 24),
+        (5, "Bandit Boss", 120, 10, 24, 18, 78, 12, 60, 80),
+        (6, "Skeleton", 45, 0, 13, 8, 65, 8, 12, 5),
+        (7, "Killer Bee", 25, 0, 9, 4, 88, 25, 7, 3),
+        (8, "Slime", 40, 5, 8, 12, 60, 5, 8, 4),
+        (9, "Big Slime", 80, 10, 14, 18, 65, 5, 22, 12),
+        (10, "Frog", 28, 0, 8, 5, 72, 14, 6, 4),
+        (11, "Lizard Man", 55, 5, 17, 11, 76, 12, 18, 14),
+        (12, "Mole", 70, 0, 19, 14, 60, 8, 22, 18),
+        (13, "Spike Mole", 100, 0, 24, 20, 65, 9, 38, 30),
+        (14, "Dark Crab", 90, 0, 18, 22, 64, 6, 28, 25),
+        (15, "Crystal Bat", 38, 8, 11, 6, 90, 28, 12, 8),
+        (16, "Berserker", 140, 0, 28, 16, 78, 14, 70, 60),
+        (17, "Stone Golem", 200, 0, 22, 30, 60, 4, 100, 90),
+        (18, "Sea Slug", 50, 5, 12, 14, 65, 8, 14, 9),
+        (19, "Drake Wyrm", 250, 30, 32, 25, 85, 14, 180, 200),
+        (20, "Goblin King", 180, 0, 26, 18, 80, 10, 90, 120),
+    ];
+    for &(id, name, hp, mp, atk, def, acc, eva, exp, gold) in entries {
+        let def_struct = MonsterDef {
+            id,
+            name: name.into(),
+            hp,
+            mp,
+            attack: atk,
+            udf: def,
+            ldf: def,
+            // The vanilla catalog leaves SPD at 0 so disc-free battles stay on
+            // the round-robin turn-order fallback (deterministic for tests).
+            // Real per-monster SPD comes from the disc archive via
+            // `monster_def_from_record`.
+            speed: 0,
+            // Synthetic catalog keeps AGL at 0 / no swing costs so disc-free
+            // battles stay on a single swing per turn (no budget RNG drawn),
+            // deterministic for tests. Real per-monster AGL + swing costs come
+            // from the disc archive via `monster_def_from_record`.
+            agl: 0,
+            action_costs: Vec::new(),
+            action_entries: Vec::new(),
+            intel: acc as u16,
+            accuracy: acc,
+            evasion: eva,
+            exp,
+            gold,
+            drop_item: None,
+            drop_chance_pct: 0,
+            seru_id: None,
+            magic_attacks: Vec::new(),
+            element: 7,
+            swing_class: 0,
+            size_class: 0,
+            wide_texture_page: 0,
+            plaque_badge: None,
+            // No record behind a synthetic monster: `installed_stats` answers
+            // with the fields above whatever the fight class is.
+            raw_stats: [0; 6],
+            absorb_seru: 0,
+            absorb_chance_pct: 0,
+        };
+        cat.insert(def_struct);
+    }
+    // Attach castable spells to a few roster entries so the monster-AI cast
+    // path is exercisable disc-free. The ids index the vanilla spell catalog
+    // ([`crate::spells::SpellCatalog::vanilla`]); MP budgets above let the
+    // monster afford at least one cast.
+    for &(monster_id, ref spells) in &[
+        (4u16, vec![0x20u8]),   // Bandit      -> Flame
+        (9, vec![0x22]),        // Big Slime   -> Aqua
+        (5, vec![0x20, 0x23]),  // Bandit Boss -> Flame, Thunder Bolt
+        (19, vec![0x20, 0x26]), // Drake Wyrm  -> Flame, Crash
+    ] {
+        if let Some(def) = cat.by_id.get_mut(&monster_id) {
+            def.magic_attacks = spells.clone();
+        }
+    }
+    // Attach a few Seru so the capture → learn path is exercisable against
+    // the vanilla SeruRegistry (ids align with `SeruRegistry::vanilla`).
+    for &(monster_id, seru_id) in &[
+        (7u16, 0x0001u16), // Killer Bee  -> Spark
+        (11, 0x0002),      // Lizard Man  -> Flame
+        (8, 0x0003),       // Slime       -> Aqua
+        (15, 0x0004),      // Crystal Bat -> Storm
+        (6, 0x0006),       // Skeleton    -> Frost
+        (10, 0x0010),      // Frog        -> Heal
+    ] {
+        if let Some(def) = cat.by_id.get_mut(&monster_id) {
+            def.seru_id = Some(seru_id);
+        }
+    }
+    cat
+}
+
+/// Vanilla formation table. Maps the encounter-system `formation_id` rows
+/// to monster groups, providing a default playable set for the early-game
+/// scenes (`town01` outskirts, `cave01`, `road01`, `wood01`, etc.).
+pub fn vanilla_formation_table() -> FormationTable {
+    let mut t = FormationTable::new();
+    // Single-monster encounters (early game).
+    t.insert(
+        FormationDef::new(1, vec![FormationSlot::new(1)]) // Goblin
+            .with_label("Goblin"),
+    );
+    t.insert(
+        FormationDef::new(2, vec![FormationSlot::new(3)]) // Wolf
+            .with_label("Wolf"),
+    );
+    t.insert(
+        FormationDef::new(3, vec![FormationSlot::new(8)]) // Slime
+            .with_label("Slime"),
+    );
+    // Pair encounters.
+    t.insert(
+        FormationDef::new(
+            10,
+            vec![FormationSlot::new(1), FormationSlot::new(1)], // 2x Goblin
+        )
+        .with_label("Goblin x2"),
+    );
+    t.insert(
+        FormationDef::new(
+            11,
+            vec![FormationSlot::new(7), FormationSlot::new(7)], // 2x Killer Bee
+        )
+        .with_label("Killer Bee x2"),
+    );
+    t.insert(
+        FormationDef::new(
+            12,
+            vec![FormationSlot::new(3), FormationSlot::new(6)], // Wolf + Skeleton
+        )
+        .with_label("Wolf + Skeleton"),
+    );
+    // Triple encounters (mid-route).
+    t.insert(
+        FormationDef::new(
+            20,
+            vec![
+                FormationSlot::new(1),
+                FormationSlot::new(2),
+                FormationSlot::new(1),
+            ],
+        )
+        .with_label("Goblin pack"),
+    );
+    t.insert(
+        FormationDef::new(
+            21,
+            vec![
+                FormationSlot::new(4),
+                FormationSlot::new(4),
+                FormationSlot::new(11),
+            ],
+        )
+        .with_label("Bandit ambush"),
+    );
+    // Cave / dungeon encounters.
+    t.insert(FormationDef::new(30, vec![FormationSlot::new(12)]).with_label("Mole"));
+    t.insert(
+        FormationDef::new(31, vec![FormationSlot::new(13), FormationSlot::new(12)])
+            .with_label("Spike Mole + Mole"),
+    );
+    t.insert(FormationDef::new(32, vec![FormationSlot::new(14)]).with_label("Dark Crab"));
+    // Boss encounters.
+    t.insert(FormationDef::new(100, vec![FormationSlot::new(5)]).with_label("Bandit Boss"));
+    t.insert(FormationDef::new(101, vec![FormationSlot::new(20)]).with_label("Goblin King"));
+    t.insert(FormationDef::new(102, vec![FormationSlot::new(19)]).with_label("Drake Wyrm"));
+    t.insert(FormationDef::new(103, vec![FormationSlot::new(17)]).with_label("Stone Golem"));
+    t
+}
+
+/// Convenience constructor: a default early-game encounter table the
+/// engine can install at boot to make `town01`-area scenes triggerable
+/// without disc data. Mirrors retail's "outskirts of Rim Elm" mix.
+pub fn default_early_encounter_table(
+    scene_label: impl Into<String>,
+) -> crate::encounter::EncounterTable {
+    use crate::encounter::{EncounterEntry, EncounterTable};
+    let mut t = EncounterTable::new(scene_label);
+    // Retail "outskirts of Rim Elm" is approximately 1 in 50-60 steps;
+    // 5/256 ≈ 1 in 51, which matches without being annoying.
+    t.set_trigger_rate(5);
+    t.push(EncounterEntry::new(1, 50)); // Goblin (common)
+    t.push(EncounterEntry::new(3, 30)); // Slime
+    t.push(EncounterEntry::new(2, 15)); // Wolf
+    t.push(EncounterEntry::new(10, 10)); // Goblin x2
+    t.push(EncounterEntry::new(11, 5)); // Killer Bee x2
+    t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vanilla_catalog_has_expected_entries() {
+        let cat = vanilla_monster_catalog();
+        assert!(cat.len() >= 20);
+        let g = cat.get(1).expect("Goblin");
+        assert_eq!(g.name, "Goblin");
+        assert!(g.hp > 0 && g.attack > 0);
+        let king = cat.get(20).expect("Goblin King");
+        assert!(king.hp >= 100); // boss tier
+    }
+
+    #[test]
+    fn vanilla_formation_table_covers_basics() {
+        let t = vanilla_formation_table();
+        let f1 = t.formation(1).expect("formation 1");
+        assert_eq!(f1.slots.len(), 1);
+        assert_eq!(f1.slots[0].monster_id, 1);
+        let f10 = t.formation(10).expect("formation 10");
+        assert_eq!(f10.slots.len(), 2);
+        let boss = t.formation(100).expect("boss");
+        assert_eq!(boss.slots.len(), 1);
+        assert_eq!(boss.slots[0].monster_id, 5); // Bandit Boss
+    }
+
+    #[test]
+    fn formation_label_fallback() {
+        let f = FormationDef::new(99, vec![FormationSlot::new(1)]);
+        assert!(f.label.is_empty());
+        let f = f.with_label("Test");
+        assert_eq!(f.label, "Test");
+    }
+
+    #[test]
+    fn formation_slot_with_offset() {
+        let s = FormationSlot::with_offset(5, 3);
+        assert_eq!(s.monster_id, 5);
+        assert_eq!(s.level_offset, 3);
+        let s2 = FormationSlot::new(5);
+        assert_eq!(s2.level_offset, 0);
+    }
+
+    #[test]
+    fn empty_catalog_lookups() {
+        let cat = MonsterCatalog::new();
+        assert!(cat.is_empty());
+        assert!(cat.get(1).is_none());
+    }
+
+    #[test]
+    fn default_early_table_has_goblin_majority() {
+        let t = default_early_encounter_table("test");
+        // Goblin (formation 1) should be the heaviest weighted row.
+        let goblin_w = t
+            .entries
+            .iter()
+            .find(|e| e.formation_id == 1)
+            .unwrap()
+            .weight;
+        let max_other = t
+            .entries
+            .iter()
+            .filter(|e| e.formation_id != 1)
+            .map(|e| e.weight)
+            .max()
+            .unwrap_or(0);
+        assert!(goblin_w >= max_other);
+    }
+}

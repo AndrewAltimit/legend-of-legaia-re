@@ -1128,6 +1128,10 @@ pub fn draw_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubF
 ///
 /// [`draw_tick`]'s twin: identical but for state `0`, which closes every
 /// panel (`FUN_80035A4C`) instead of installing one.
+///
+/// Two hosts run it: `legaia_engine_core::field_submode_screen` (slot `0`
+/// and `0x14..=0x18`) and `legaia_engine_core::world_map_panel_host`, which
+/// follows the fill fade's case-4 hand-back to handler id `0` into it.
 pub fn close_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
     let mut out = HubFrame::default();
     match actor.sub {

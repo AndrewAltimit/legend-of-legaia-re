@@ -59,7 +59,7 @@ pub struct FieldScriptActorState {
     /// the NPC position map carries X / Z only. The Y stays authoritative for
     /// as long as the NPC stands on the `(x, z)` it was written at - a walk
     /// leg that moves it hands the height back to the floor sampler.
-    pub npc_heights: std::collections::BTreeMap<u8, (i16, i16, i16)>,
+    pub(crate) npc_heights: std::collections::BTreeMap<u8, (i16, i16, i16)>,
     /// Live attached lights, in spawn order.
     pub lights: Vec<FieldAttachedLight>,
 }

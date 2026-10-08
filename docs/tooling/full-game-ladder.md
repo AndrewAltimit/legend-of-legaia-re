@@ -100,7 +100,9 @@ carries a comment naming the flags that put it there - the Fire Path goes
 through `geremi`, Vidna and `stone` (the Star Pearl that opens the `tunnela`
 door; the cheapest route rides `ropeway2`'s elevator, whose door opens only
 after Xain), Rogue Tower through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
-waits on), Zora Castle through `son`, Noaru Valley back through its own start
+waits on), Zora Castle back through its own start scene `nilboa` (Koru's
+fight thaws the overworld's way south, see below), then `deene` and `son`,
+Noaru Valley back through its own start
 scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
 to `concend`), then `concend`, `jou` and `retockin` (the way back from Drake
 was by land and cart, not the Uru Mais warp), and Sol Tower back through its own
@@ -200,10 +202,28 @@ a **latch** - a flag some partition-2 C1 gate of the scene reads - that the
 next anchor does not carry: retail had not played it, and its latch shuts the
 record the story takes (`conc2` P2[12] latches `0x3E1`, the C1 gate of the
 `juui1` hand-off P2[20], and the walk-on P2[11] spawns P2[12] as its
-epilogue). A boss stager is skipped on the same evidence: its own record
+epilogue). Three shapes are not overreach. A record that raises a
+still-clear flag the next anchor carries - itself, through what it spawns,
+or through the sequel the entry script spawns on a flag one of them raises
+before a fight - is the beat retail played, its latch a hold or another
+branch's: `nilboa` P2[20] holds `0x00F` (the C1 gate of the stepping-stone
+hops) for its jump down to Koru, and its chain (P2[21], then P1[0]'s P2[25]
+on `0x47A`) raises `0x56D`; `concnow` P2[15] raises `0x3EF` and jumps past
+the `0x3D2` arm. A chain of arcs (two or more on the `0xF8` channel, the
+stepping stones) that lowers its own hold again is a crossing, not a beat
+retail skipped; a stair band (`dohaty` P2[3..8]) or a single-arc ledge
+(`jouind` P2[0], P2[6..9]) with the same hold stays skipped, since walking
+one strands the hand on the far side. And a flag the record hands to the
+scene it changes to, whose entry script clears it, is no latch (`concnow`
+P2[18] raises `0x423` for `conc2`). A
+boss stager is skipped on the same evidence: its own record
 sets a flag the next anchor lacks and no record of the scene clears, so
 retail never fought there (`town0b` P1[36], a loss-allowed fight, raises
-`0x5C0` before its `3E FF 03`).
+`0x5C0` before its `3E FF 03`). A walk-on band that stages a fight is held
+to it too, counting the sequel the entry script spawns on the band's
+pending flag after the fight: `deene` P2[18] raises `0x6B5` before a
+64800 HP fight, and P2[19], which P1[0] spawns on it, raises the `0x6B6`
+no later anchor carries.
 
 A talk or walk-on beat whose record ends on `3E FF` has committed a fight
 that starts only after the record is gone, so the beat is fought before the
@@ -236,7 +256,11 @@ map as its street:
   centre short of the margin. A touch-class door whose touch reaches `31 00`
   opens itself wherever it stands, so it counts open too: `jiji` P0[0], the
   door across the corridor to the `map02` mouth at (66, 96), stands over no
-  teleport. The touch is read from the record's resume point (past its first
+  teleport. An interact-class prop (`31 1E` in its spawn prologue, the
+  button-gated contact) whose resumed record reaches `31 00` opens the same
+  way on the action button, which the follower taps when held against it:
+  `chitei2` P0[2], the gate at (41, 122) in front of the kind-0 teleport at
+  (41, 124) into the Jette pocket. The touch is read from the record's resume point (past its first
   `21`) with story-flag tests followed against the live flags; a door whose
   opening sits behind a box test of the player opens only from a cell inside
   that box (`ropeway` P0[2], the Octam station door, opens for a player on
@@ -273,7 +297,9 @@ map as its street:
   carry the walker across the walls between its rooms. A record whose only
   forks are story-flag tests is followed under the live flags: the hub
   P2[11] sends its platform to one of three rooms by the `chitei2` Rapid
-  Transport switches' `0x4EF` / `0x4F0`.
+  Transport switches' `0x4EF` / `0x4F0`. A leg's encoded point can sit in the
+  pillar beside where the platform parks the player (the hub's west leg,
+  `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
 
 The follower leaves a cross-axis offset of a few units alone while the
 other axis still has ground to cover: chasing its own overshoot flips the
@@ -282,7 +308,15 @@ drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to
 (89, 80), a one-way hop it cannot climb back). A script that fires on the walk and changes no flag, more than a couple of
 dozen times on one walk, makes that walk a stall: `retock` P2[26], the Mt.
 Letona checkpoint, turns the party back every time it is crossed without
-Lord Saryu's key, and re-crossing it ate the segment's budget. The follower presses a teleport waypoint until the jump lands, backs out of a
+Lord Saryu's key, and re-crossing it ate the segment's budget. The count is
+per record as well as per park site: `jouinc`'s camera bands P2[3..57], one
+every three tiles of the way to `jouind`, all park at the same `pc` and op,
+and walking past twenty-five of them read as one script firing 25 times. A script that
+carries the walker to a landing it has carried it to before, leaving the same
+flags, is a loop after the third time even when the flags it toggles keep the
+first count from building: `chitei2`'s transport rides between (98, 102) and
+(94, 22), each ride flipping the car's flags, and a walk to P2[9] rode it back
+and forth for a third of the segment's budget. The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
 against something for a second, tries the action button. In a field the tap
 waits for a frame the player did not move: the stall counter also counts a run
@@ -319,9 +353,12 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;
-- before a boss, and whenever the weakest member is below half HP, the hand
-  heals through the pause menu: Start, Items, Use, the first HP restorative,
-  the weakest member, Circle back out;
+- before a boss, and whenever a walk sets out with the weakest member below
+  four fifths of its HP (a travel leg's encounter can open on a back attack,
+  a round before the party acts, and a three-monster group can catch Run
+  several rounds running), the hand heals through the pause menu:
+  Start, Items, Use, the first HP restorative, the weakest member, Circle
+  back out;
 - still below half HP after that, in a scene that rolls encounters, with an
   Incense (`0x8A`) in the bag and its window `_DAT_8007B600` run out, the
   hand burns one: Start, Items, Use, the Incense row, Yes. The region roll
@@ -423,7 +460,9 @@ on the frame the walk-on band was due), the naming prompt's Yes/No confirm
 gets Up first (it opens on No), and a
 battle is fought through the command ring, one pad edge at a time, by a
 fighter shaped like a player: a member who is down gets a revive, and a
-member in danger - standing, and under 45% of its HP, or unable to take another loss the
+member in danger - standing, and under 45% of its HP (three fifths against a
+boss of eight times the party's largest HP or more, whose party-wide hit is
+unseen until it lands), or unable to take another loss the
 size of the biggest it took this battle between two of the party's command
 windows (a round, not a hit: a fast foe acts twice in one, and a cast lands
 its flurry and its burst as separate HP writes) - gets a heal: a party heal when two
@@ -437,7 +476,13 @@ spending the rest on plain directions (whether a matched art fires is the
 queue builder's call, out of the Spirit gauge). The plan runs up to nine
 commands, the length of each character's Miracle Art. A random encounter that
 interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
-the fight forbids running.
+the fight forbids running, and so is one the region roll raises while a script
+carries the party across a rolling region - the tick's step moved the region
+counter with no scripted formation armed (`jouinb` P2[6], the rapids, rolls
+several on one ride, and fighting them at the end of a dungeon's MP cost a
+third of the segment's budget). A member in danger is healed before the run, unless
+the foes' last round took half or more of what the party still holds: a heal
+does not win that race, and the run is the better draw.
 
 A foe that winds up is guarded against the turn its blow lands: a
 capture-class charge body (Xain's Bull Charge, PROT 0953) sets its caster's
@@ -458,6 +503,23 @@ Earthquake), a member that hit would drop and the guard would not takes
 Spirit, ahead of healing itself when no ally is worse off; not on the round
 after a heavy one from a foe that has never hit hard twice running, and never
 against a foe that telegraphs its hit with a charge latch.
+
+One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
+opens behind a Mystic Shield that halves every hit on it, and its pick arm
+(`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time
+in three only once the shield is down (at half HP), on the odd values of the
+per-round battle-mode counter, and while it holds the 255 MP the cast spends.
+The cast lands a flurry and a burst that together take about 1900 from each
+member of the anchor's lv30 party - more than any member holds - and about
+half that in the Spirit stance. So once the shield has dropped, on the rounds
+the cast can come, every member above 55% of its HP takes Spirit; the others
+are the heal arm's, and the even rounds are the party's to act on.
+
+A lone member against a foe of several times its HP (the `nilboa` Delilas
+duels) alternates a Spirit round with an Arts round, and holds the stance
+while it sits below five eighths of its HP or within three twentieths again
+of the foe's worst unguarded round so far: a Delilas round's size follows its
+swing count, and Che's went from 716 to 903 two rounds apart.
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
@@ -498,7 +560,8 @@ clips and matches the same arts a windowed one does. Beyond that:
   flipped, so Up raises the selection.
 - A sparring tutorial validates each commit against its lesson, so the
   fighter takes the ring's up arm (Item, using the first item) for the Items
-  lesson and its down arm for Spirit.
+  lesson, its down arm for Spirit, and `Command` with the Somersault
+  (`Up Down Up`) for the hyper-arts drill, where an Auto attack is refused.
 
 `LEGAIA_FGL_TRACE=1` prints one line per played beat: what ran, how it ended
 and the flags it set - and, as `[hop]`, the hop failure that sent the pass to
@@ -555,7 +618,7 @@ one level down from the tier that failed:
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
 | `reach flag(s) 0x.. never set` | The target scene was reached but the beat that separates the milestones did not play. |
 | `battle unresolved ...: action SM ctx[7]=0x.. <state> actor N` | The battle action state machine (retail `FUN_801E295C`) sat in that state for the whole budget. |
-| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round, but it never changes equipment. |
+| `party wiped: ...` | The fighter lost. It heals, casts, enters arts and guards a two-round cadence's heavy round. Equipment changes only on a boss retry (`pad (retried with element-N guards)`, see [the boss section](#a-boss-the-anchors-party-cannot-outlast)). |
 | `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands, through the scene's teleports and object doors; a pad hop then tries a crossing scene. |
 | `pad walk stalled at tile ..` | A path existed and the follower stopped making progress on it. |
 | `PANIC: ...` | An engine panic, caught per segment. |
@@ -601,23 +664,60 @@ reach, `dolk` P2[9] (the bed behind the inn's stair door), wipes on 14 of
 before it sets out, no region rolls between `dolk` and Rim Elm, and the
 pad tier clears on the default stream and on seeds 1..40 alike.
 
-### A boss the pad hand cannot out-damage
+### A boss the anchor's party cannot outlast
 
 `noaru_valley -> bio_castle` meets the third Songi fight (48000 HP, UDF
-`402`) on the walk out of `noaru`, and the pad tier loses it on every seed
-with Songi still holding a large share of its HP. The pad hand commits
-plain Attack and nothing else - no arts, no Seru magic, no Spirit - so its
-damage is the swing kernel's against one of the game's highest
-defences, a hand a retail player does not play. That makes the wipe a
-property of the driver before it is a property of the damage path.
+`402`, INT `324`) on the walk out of `noaru`. The hand's damage is not the
+gap: Gala casts Gilium for about 3000 and drinks a Magic Fruit when it
+cannot afford the next, and Vahn and Noa, Fury-boosted, type their Miracle
+Arts for about 2400 a round. Every term of those rolls, and of Songi's, reads
+off the disassembly (the summon branch of `FUN_801DD0AC`, the INT wrapper
+`FUN_801DD4B0`, the melee kernel `FUN_801EC3E4`).
 
-What would make it the damage path is a per-hit figure that disagrees with
-retail, and the library cannot supply one: its battle states are almost all
-early fights, and the popup ring `ctx[+0x83C]` holds a live party hit in
-only a handful of them. Until a capture of a late-game party hit exists,
-read this stall as the hand's, and check a change to it against the
-formula pages ([`battle-formulas.md`](../subsystems/battle-formulas.md)),
-not against the ladder.
+The `PRO-04` party is level 31 with 1683..1956 HP. Songi's turn is a
+3..6-strike combo of about 700 a strike (ATK 477 with `x5/4` boss boost,
+power-28 swings, plus `HP/256` = 187 off its own pool) or a single
+928-power special of about 1300..1550, so most of its turns drop one member,
+and a Phoenix brings that member back at a quarter of its HP for the next
+turn to drop again. Below half HP, on a turn its core picked a strike, it
+arms Genocidal Cannon half the time, and from then on every turn is the
+cannon - about 1800 to each member, more than Vahn or Noa holds - for as
+long as its 3000 MP lasts. The next anchor's save (`PRO-10`) holds the same
+party at 3090..3583 HP. Unequipped, the hand beats Songi on 2 of 10 dealt
+streams.
+
+What a player does after that game over is equip for the fight. Songi's
+element is Dark, the cannon goes through the resist-respecting wrapper, and
+the anchor's bag holds 99 Ebony Jewels (Dark Guard, passive `0x23`: the
+finisher halves a Dark hit on its wearer). So a pad segment that ends in a
+party wiped by a boss (a fight that forbids running) is played once more
+from the same seed, and before it sets out the hand equips the bag's guard
+against that boss's element (passive `0x1D + element`, record `+0x1D`) on
+every present member without one: Start, Equip, the member, the third Goods
+row, the guard, Yes. The third row is the slot a player keeps the least for:
+against Songi the Defender Chain's evasion, which Vahn and Noa carry second,
+is worth more than their third-slot Wonder Amulet and Spirit Talisman, and
+equipping the jewel there instead of over the chain wins on more streams.
+The strike combo still drops a full member, so the heal arm ignores a
+biggest-hit-seen larger than a member's whole HP when it sizes "in danger":
+holding everyone near full against a hit no heal outlasts had the guarded
+hand spending most turns on items.
+
+The segment stays fragile. Guarded, the hand beats Songi on the default
+stream and on 5 of seeds 1..10, and clears the segment at the pad tier on
+the default stream and 3 of them. The losses are the cannon phase: Songi
+(SPD 196) usually acts ahead of the party (about 161), so a heal committed
+in a round lands after that round's cannon. Raising the heal line to four
+fifths of max HP, or handing out the Wonder Elixir (whose SPD share moves a
+member ahead of Songi) in place of the Power Elixir, each win on some seeds
+and lose the default stream. One more stall on a re-dealt stream sits in
+the overworld: a `map01` random battle that ends after a few ticks while the
+walk steps onto the `dolk2` portal leaves the party at (54, 72), outside the
+walk component that reaches `jou`.
+The retry is reported as `pad (retried with element-N guards)`. The Jette
+fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
+50000 HP boss the unguarded hand loses at about half its HP, and wins once
+guarded.
 
 ## Seeding
 
@@ -651,12 +751,14 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   scene graph, not locomotion; the pad tier is the locomotion claim.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
-  options by rotation, not by reading them. Neither tier buys or equips, and
-  only the pad tier opens the pause menu (to heal); a beat that waits on a
-  purchase or an equip reads as a stall at that beat.
+  options by rotation, not by reading them. Neither tier buys, and only the
+  pad tier opens the pause menu (to heal, or to equip a boss's elemental
+  guard on a retry); a beat that waits on a purchase or an equip reads as a
+  stall at that beat.
 - The fighter guards only a foe that hits hard every other round, never
-  targets a weakness or changes equipment, and it flees a travel leg's random
-  encounter. A fight that needs any of those reads as a wipe.
+  targets a weakness, changes equipment only to guard a boss's element after
+  losing to it, and flees a random encounter. A fight that needs anything
+  else reads as a wipe.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
   (`suimon`'s water gate `0x27B`) needs that beat played first. The talk
@@ -698,8 +800,20 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   Delilas family's challenge P2[21] only on "I'm ready!", and a band is
   walked once per visit.
 - A route that crosses a band whose record stages a fight is a walk into a
-  boss: a party under two thirds of its HP is healed first (`taiku` P2[27],
-  the F9 boss on the way out, met after a fled encounter).
+  boss: a party under nine tenths of its HP is healed first (`taiku` P2[27],
+  Zora's F9 fight on the way out: met at three quarters after a fled
+  encounter the party falls, met full it wins). The fight opens after the
+  walk that crossed the band has returned, so the band's formation rows are
+  recorded as staged and the next walk fights the battle instead of fleeing
+  it.
+- A solid touch-class prop whose record walks the player (`C7 F8 <tx> <tz>`)
+  is a ride: the planner takes it as an edge from its contact box to the
+  last leg's tile under the live flags, unless the record then changes scene
+  or teleports the player (`retockin` P0[0] walks the player into the
+  doorway and leaves for `jagaroom`: a door). `taiku` P0[6] is the lift at
+  (109, 78) that joins Zora Castle's east corridor to its south half (the
+  way to the west wing's exit band P2[15] after the fight); it runs only
+  while `0x38C` is set, and `0x38B` picks the direction.
 - A pad hop whose walk stalls against the door's own frame (two tiles or
   less short) treats the door as refused and tries the scene's other door
   to the same place, as for a door that turns the walk back.
@@ -751,20 +865,51 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   west lane is held by P2[7] at `(42, 89)` until `0x142`, the Caruban beat.
   That is why `west_voz_forest` sits after `drake_castle_revisited`, where
   the pad hand drains `suimon` and crosses `bylon` to the `vell` door.
-- From `nivora_late`, `map03`'s door out of `nilboa` (P2[34], `(10..14, 9)`)
-  lands on the overworld's north half, and `son`'s portal `(45, 84)` lies on
-  the south half with no walkable join. The retail run did not walk it: the
-  `zora_castle` anchor carries `nilboa` P2[25]'s `0x56D` (the scene's
-  exit after the Delilas duels, a `0x3F` to `map03` with a parked entry) and flags from
-  `bubu1`, `deene` (P2[14], `0x60B` / `0x60C`, the same pair `son`'s
-  P1[4] and `map03`'s P2[13] / P2[14] set on their crossings) and
-  `dream`, none of them a waypoint. The spine names only `son`, so the pad
-  hand leaves by the walk-on door and stalls on the north half.
-- `chitei2` joins its parts through machinery as well as walls. The
-  transporter at `(100, 102)` is a kind-0 teleport to `(94, 24)` and the
-  planner rides it. The cages along row 102 (partition-0 records 6..11, each a
-  bare `31 00` with no clip) are doors the touch opens; the lift platform
-  reaches the `deroa` door through them. The Rapid Transport System, with its
-  three switches (P0[32..34]) and the walk-on pairs (P2[0] / P2[1]) that issue
-  `4C D6` to actors 5..11, is not modelled, and the `jette_fortress_late` pad
-  stall (`0x3C8` / `0x470` unset) sits on it.
+- From `nivora_late`, the overworld's north half (where `nilboa`'s door
+  P2[34] lands) and its south half (`deene`, `son`) join only once `0x378`
+  is up: `map03`'s entry script P1[0] tests it and clears the walls at
+  `(84..89, 70..74)` (`4C 70`). `0x378` is set by `map03` P2[15], the Koru
+  cutscene the entry script spawns on `nilboa` P2[25]'s `0x592`, and P2[25]
+  is the entry script's own post-battle hand-off on `0x47A` - the flag the
+  Delilas family's challenge `nilboa` P2[21] raises before staging Koru
+  (`3E FF 20`), which the ledge band P2[20] spawns on its "I'm ready"
+  branch. So `zora_castle` names `nilboa` itself as its first waypoint.
+  The `son` portal `(45, 84)` is walled in: it is the landing of the boat
+  ride `map03` P2[13], spawned on `0x575`, which `deene` P2[14] raises
+  (the anchor carries that record's `0x37E`), hence the `deene` waypoint.
+- Koru (monster `0xB6`, 20000 HP) is a timed fight: its AI casts the
+  all-party finisher on round counter `4` (`timed_fight.rs`), so the party
+  has five rounds. Spells and short Arts strings fall a few hundred HP
+  short. The fighter spends a member's first turn on a Fury Boost when that
+  buys a Miracle Art (the `+0x1F9` byte makes every later round boundary
+  restore the pool to `base * 7 / 5 + 8`), prefers the Miracle over any
+  summon once the live pool pays for it, and has a member with no Miracle
+  hand Power Elixirs to the Miracle typists.
+- From `zora_castle`, `concnow`'s way into Conkram's past is the walk-on
+  P2[17], which spawns P2[18] (`0x3F` to `conc2`) once the visions P2[13]
+  .. P2[16] have run; its other `conc2` bands lie behind walls. The gate
+  guards P1[12] / P1[13] stand at `(11520, 15232)`, inside the gate's wall
+  line (collision rows 118..121, cols 88..91), which their talk paints
+  open (`4C 70`, cols 89..90) once `0x3EF` is up, raising `0x5F8`. The
+  facing probe cannot reach them from either side (the wall stops the
+  player at `z = 15038` north and `z = 15424` south; the probe reaches 64
+  ahead plus a 72-unit box). What it reaches is P1[26], an undrawn
+  placement one tile in front of them at `(11520, 15104)` whose
+  interaction is `B1 3D 08`, the touched mark on guard P1[13]: a talk
+  proxy (see [`field-locomotion.md`](../subsystems/field-locomotion.md)).
+  Through it the pad hand opens the gate and reaches `conc2`.
+- `chitei2`'s parts join only through `deroa`. The Rapid Transport System is
+  `deroa`'s platform hub (P2[11]); `chitei2`'s three switches (P0[32..34]) only
+  pick where it goes (`0x4EF` / `0x4F0`), and each parks the player on the
+  car's track to watch it and puts it back. The entry room and the hub
+  (P2[11], `0x470`) are one side; the junction's north-south band (P2[3],
+  `0x3C8`) is reached by re-entering at (93, 108) from `deroa` P2[3], whose
+  room the hub's west leg serves while `0x4F0` is up. So when a milestone's
+  reach beat lies outside the player's walk component, the pad hand takes a
+  round trip toward its band the way a hop takes one toward a door (the
+  crossing lattice above), and a round trip that comes back to the side it
+  left refuses the door it went out by, so the next leaves by another
+  (`chitei2` P2[4] lands north of the hub, P2[5] south of it, where the ride
+  starts). A reach beat that clears a flag the live state holds waits while
+  another missing reach flag's band is out of reach: P2[11] clears the switch
+  flags the `deroa` route needs, so the junction comes first.

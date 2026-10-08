@@ -12,6 +12,7 @@ fn with_ambient(w: &mut World, slot: u8, code: Vec<u8>) {
     w.npcs.ambient.insert(
         slot,
         FieldNpcAmbient {
+            defers: false,
             walks: false,
             variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
             live: None,
@@ -69,6 +70,7 @@ fn an_object_stream_swaps_its_records_model() {
     w.npcs.object_ambient.insert(
         5,
         FieldNpcAmbient {
+            defers: false,
             walks: false,
             // 0E 16 00 (model 22), wait 12, 0E 1B 00 (model 27), loop.
             variants: vec![(

@@ -690,6 +690,7 @@ impl LegaiaRuntime {
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 plaque_dy: world.map(bh::battle_action_plaque_dy).unwrap_or(0),
                 target_plaque_dy: world.map(bh::battle_target_plaque_dy).unwrap_or(0),
+                bar_dy: world.map(bh::battle_readout_bar_dy).unwrap_or(0),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
@@ -2073,7 +2074,7 @@ mod live_hud_tests {
         // 960x720 -> stage scale 3, origin (0,0); the target-select plaque
         // (placement record 0x29) pens its name at stage Y 162 - 2 = 160 ->
         // surface y 480, content box centred on stage x 0xE8.
-        let pen_y = 3 * (i64::from(legaia_engine_vm::battle_chrome::TARGET_SELECT_Y) - 2);
+        let pen_y = 3 * (i64::from(legaia_engine_ui::battle_chrome::TARGET_SELECT_Y) - 2);
         let strip_glyphs = v["texts"]
             .as_array()
             .expect("texts array")
@@ -2180,6 +2181,9 @@ impl LegaiaRuntime {
         {
             prims.extend(legaia_engine_ui::cast_beam::cross_beam_prims(c));
         }
+        // PROT 0904's (Theeder) beam packets, through the `cast_theeder`
+        // kernel the native window draws them with.
+        prims.extend(self.theeder_prims());
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.
@@ -2191,15 +2195,10 @@ impl LegaiaRuntime {
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
-        // A shop opening: the field fades to black before its windows slide
-        // in (`MenuRuntime::shop_fade_level`, the native window's quad too).
-        if let Some(level) = self.menu.shop_fade_level() {
-            prims.push(legaia_engine_ui::screen_prim::fade_prim(
-                u32::from(level) * 0x01_01_01,
-                2,
-                0,
-            ));
-        }
+        // A shop opening's fade to black sits here in the list; it is
+        // inserted by `rebuild_screen_geom`, because it steps with the shop
+        // and not with this tick (the page freezes `tick_frame` under a shop).
+        let shop_fade_at = prims.len();
         // The field overlay's screen-effect washes (op `0x34` sub-0 ->
         // `FUN_80024EE4`): the scene-entry fade-from-black and the door
         // prologue's fade-to-black, through the same shared emitter the
@@ -2228,6 +2227,42 @@ impl LegaiaRuntime {
             // draws and this page did not. Geometry, culling and ordering come
             // out of the shared `screen_fx` kernel; this only re-wraps.
             prims.extend(screen_fx_prims(&host.world.presentation.fx_frame));
+        }
+        self.screen_prims_base = (prims, shop_fade_at);
+        self.rebuild_screen_geom();
+    }
+
+    /// Order this frame's screen primitives into the cached geometry: the
+    /// tick's list ([`Self::tick_battle_intro`]) plus the shop's opening fade
+    /// (`MenuRuntime::shop_fade_level`, the native window's quad too) at its
+    /// place in the list.
+    ///
+    /// Split out because the fade steps with the shop session, not with the
+    /// field: the page skips `tick_frame` while a shop is up, so a fade built
+    /// only on the tick was never drawn at all - the shop's first frames sat
+    /// on the frozen field and then cut to black. The shop step calls this
+    /// after every tick it runs ([`Self::play_shop_input`]).
+    pub(crate) fn rebuild_screen_geom(&mut self) {
+        let (base, at) = &self.screen_prims_base;
+        let mut prims = base.clone();
+        if let Some(level) = self.menu.shop_fade_level() {
+            prims.insert(
+                (*at).min(prims.len()),
+                legaia_engine_ui::screen_prim::fade_prim(u32::from(level) * 0x01_01_01, 2, 0),
+            );
+        }
+        // The pause menu's wipe, at the same place in the list as the shop's
+        // fade (the native window's quad too): the field darkening before the
+        // menu spawns and brightening after it closes.
+        if let Some(level) = self
+            .scene_host
+            .session()
+            .and_then(|s| s.pause_wipe().fade_level())
+        {
+            prims.insert(
+                (*at).min(prims.len()),
+                legaia_engine_ui::screen_prim::fade_prim(u32::from(level) * 0x01_01_01, 2, 0),
+            );
         }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (
@@ -2305,6 +2340,31 @@ impl LegaiaRuntime {
     ///   layer this page previously did not draw at all.
     // REF: FUN_800485BC / FUN_801E1AB0 - per-host projection seat; the
     // packets and schedules live in engine-ui.
+    fn theeder_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let Some(packet) = world.theeder_draw() else {
+            return Vec::new();
+        };
+        // The page's placement law (as for the weapon trail): retail points
+        // scaled by BATTLE_WORLD_SCALE with Y as-is - the battle VP's
+        // trailing flip carries the Y-down axis.
+        let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
+        let pose = self.battle_cam_pose();
+        let vp = legaia_engine_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+            legaia_engine_ui::battle_trail::project_stage_point_cols(
+                &vp,
+                [
+                    f32::from(p[0]) * scale,
+                    f32::from(p[1]) * scale,
+                    f32::from(p[2]) * scale,
+                ],
+            )
+        })
+    }
+
     fn battle_fx_screen_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         use legaia_engine_ui::battle_trail as bt;
         use legaia_engine_ui::streak_pass::{
@@ -2441,6 +2501,42 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|i| i.needs_capture())
             .unwrap_or(false)
+    }
+
+    /// Whether a field-VM `43 12` copy is waiting on the drawn frame
+    /// (`World::framebuffer_grab_pending` - the ending vignettes' photo
+    /// grab). The page answers like the transition capture: read back the
+    /// field 3D pass and hand it to [`Self::play_land_frame_grab`].
+    pub fn play_frame_grab_pending(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| h.world.framebuffer_grab_pending())
+    }
+
+    /// Land the drawn frame (RGBA readback, bottom-up rows, WebGL order) in
+    /// the scene VRAM's display page and release the held copy, which the
+    /// next field-VRAM pass runs - the native window's twin of the same
+    /// handshake (`legaia_engine_ui::vram_capture::land_display_frame`).
+    pub fn play_land_frame_grab(&mut self, rgba: &[u8], width: u32, height: u32) {
+        let row = width as usize * 4;
+        if row == 0 || rgba.len() < row * height as usize {
+            return;
+        }
+        let flipped: Vec<u8> = rgba[..row * height as usize]
+            .chunks_exact(row)
+            .rev()
+            .flatten()
+            .copied()
+            .collect();
+        let Some(host) = self.scene_host.host_mut() else {
+            return;
+        };
+        let Some(res) = host.resources.as_mut() else {
+            return;
+        };
+        legaia_engine_ui::vram_capture::land_display_frame(&flipped, width, height, &mut res.vram);
+        host.world.land_framebuffer();
+        self.field_vram_dirty = true;
     }
 
     /// Land the field-frame capture: blit the RGBA readback (bottom-up rows,
@@ -2618,6 +2714,35 @@ impl LegaiaRuntime {
         self.scene_host
             .host()
             .is_some_and(|h| h.world.mode == SceneMode::Battle)
+    }
+
+    /// The battle actor slots of the party - an actor with a battle clip
+    /// player and no monster id, the same party test
+    /// `World::battle_weapon_trail_draws` makes. Empty outside battle.
+    pub fn debug_battle_party_slots(&self) -> Vec<usize> {
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        if host.world.mode != SceneMode::Battle {
+            return Vec::new();
+        }
+        host.world
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.battle_monster_id.is_none() && a.battle_animation.is_some())
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// How many weapon-trail draws (`World::battle_weapon_trail_draws`) the
+    /// live battle plans this frame - the count the page's screen-FX pass
+    /// hands to `legaia_engine_ui::battle_trail::weapon_trail_prims`.
+    pub fn debug_battle_weapon_trail_draw_count(&self) -> usize {
+        self.scene_host
+            .host()
+            .map(|h| h.world.battle_weapon_trail_draws().len())
+            .unwrap_or(0)
     }
 
     /// Raise a system-flag-bank bit on the live world, the way a field-VM

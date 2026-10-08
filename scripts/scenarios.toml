@@ -40,7 +40,7 @@
 #                                     boot disc's executable forever). Absent =
 #                                     retail SCUS at every patcher site. Measured
 #                                     by scripts/pcsx-redux/patch_taint_audit.py
-#                                     states; see docs/tooling/
+#                                     states (and scan, the whole-executable form); see docs/tooling/
 #                                     pcsx-redux-automation.md#patched-disc-taint
 #   [scenarios.overlay_slice]  block  mednafen overlay-slice range
 #   [[scenarios.watchpoints]]  block  mednafen diff watchpoint regions
@@ -959,7 +959,7 @@ end = 0x80200000
 slot = 2
 label = "overworld_battle_bg_angle_a"
 backup_fingerprint = "7269ae2b694a6a276037ad437eee9c331479c20d1eefb4f9c9a57ca982d46019"
-resident_patch = "starting bag + warp preset (new-game seed code)"
+resident_patch = "starting bag + warp preset (new-game seed code) + arts randomizer (SCUS arts-name glyph strings)"
 phase = "battle"
 expected_game_mode = 0x15
 diff_against = [3, 4, 5]
@@ -970,7 +970,7 @@ topics = ["battle", "battle background", "world map", "terrain", "camera orbit",
 slot = 3
 label = "overworld_battle_bg_angle_b"
 backup_fingerprint = "32257e93ca63ebea0907c504b3d3e864fd13b97a430faa16010ff339ebadcde9"
-resident_patch = "starting bag + warp preset (new-game seed code)"
+resident_patch = "starting bag + warp preset (new-game seed code) + arts randomizer (SCUS arts-name glyph strings)"
 phase = "battle"
 expected_game_mode = 0x15
 diff_against = [2, 4, 5]
@@ -981,7 +981,7 @@ topics = ["battle", "battle background", "world map", "terrain", "camera orbit",
 slot = 4
 label = "overworld_battle_bg_angle_c"
 backup_fingerprint = "d0e4abc503bc0a914ae7989d8bb4c7ca28abbd95c95fe5114dc75bc732c74bf7"
-resident_patch = "starting bag + warp preset (new-game seed code)"
+resident_patch = "starting bag + warp preset (new-game seed code) + arts randomizer (SCUS arts-name glyph strings)"
 phase = "battle"
 expected_game_mode = 0x15
 diff_against = [2, 3, 5]
@@ -992,7 +992,7 @@ topics = ["battle", "battle background", "world map", "terrain", "camera orbit",
 slot = 5
 label = "overworld_battle_bg_angle_d"
 backup_fingerprint = "af7a80a0d203fe57d904fdb1de559714b418100a08a38def0c5d09644357ebb9"
-resident_patch = "starting bag + warp preset (new-game seed code)"
+resident_patch = "starting bag + warp preset (new-game seed code) + arts randomizer (SCUS arts-name glyph strings)"
 phase = "battle"
 expected_game_mode = 0x15
 diff_against = [2, 3, 4]

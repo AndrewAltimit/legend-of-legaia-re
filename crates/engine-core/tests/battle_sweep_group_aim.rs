@@ -9,15 +9,13 @@
 //! aims the caster at it. Every writer of `+0x1DD` in the dumped corpus stays
 //! inside `{0..=6, 8, 9}`.
 //!
-//! The session used to write `0xFF` for a sweep. `FUN_801DCEAC`'s "anything
-//! else" arm reads that as the one-element group `[0xFF, 0x100)`, so the port's
+//! A sweep once reached the SM as `0xFF`. `FUN_801DCEAC`'s "anything else"
+//! arm reads that as the one-element group `[0xFF, 0x100)`, so the port's
 //! decode produced an empty range, the aim came back `None`, and the caster was
-//! left facing wherever it already was. These tests drive the picker's sweep
-//! outcome into the action SM and assert the facing actually moved to the
-//! group's bearing.
+//! left facing wherever it already was. These tests stage each group code the
+//! live command flow writes for a sweep (`World::cast_target_code`) and assert
+//! the cast-begin facing actually moves to the group's bearing.
 
-use legaia_engine_core::battle_session::BattleSession;
-use legaia_engine_core::battle_stats::StatRecord;
 use legaia_engine_core::world::World;
 use legaia_engine_vm::battle_action::{ActionState, BattleActor};
 use legaia_engine_vm::battle_target_group::{
@@ -27,25 +25,8 @@ use legaia_engine_vm::battle_target_group::{
 /// The facing an actor that has never been aimed carries.
 const UNAIMED: u16 = 0;
 
-fn slot_info(name: &str, is_party: bool) -> legaia_engine_core::battle_session::SessionSlotInfo {
-    legaia_engine_core::battle_session::SessionSlotInfo {
-        name: name.into(),
-        is_party,
-        record: Some(StatRecord {
-            base_attack: 50,
-            base_udf: 30,
-            base_ldf: 25,
-            base_accuracy: 80,
-            base_evasion: 20,
-            ..Default::default()
-        }),
-        mp_max: 30,
-    }
-}
-
-/// A seated 3v2 battle plus a session whose slots match it.
-fn seated_battle() -> (World, BattleSession) {
-    use legaia_art::Character;
+/// A seated 3v2 battle.
+fn seated_battle() -> World {
     use legaia_engine_core::ap_gauge::ApGauge;
 
     let mut world = World::default();
@@ -63,36 +44,7 @@ fn seated_battle() -> (World, BattleSession) {
     for gauge in world.battle.ap_gauges.iter_mut().take(3) {
         *gauge = ApGauge::with_base(8);
     }
-
-    let mut session = BattleSession::new();
-    session.set_party([Character::Vahn, Character::Noa, Character::Gala]);
-    session.set_slot_info(0, slot_info("Vahn", true));
-    session.set_slot_info(1, slot_info("Noa", true));
-    session.set_slot_info(2, slot_info("Gala", true));
-    session.set_slot_info(3, slot_info("Goblin", false));
-    session.set_slot_info(4, slot_info("Goblin", false));
-    session.set_monster_count(2);
-    (world, session)
-}
-
-/// Open the round and drive the session to `CommandInput` (Cross skips the
-/// round-intro splash).
-fn reach_command_input(world: &mut World, session: &mut BattleSession) {
-    use legaia_engine_core::battle_session::{BattlePhase, SessionInput};
-    session.begin_round(world);
-    for _ in 0..8 {
-        if session.phase() == BattlePhase::CommandInput {
-            return;
-        }
-        session.tick(
-            world,
-            SessionInput {
-                cross: true,
-                ..Default::default()
-            },
-        );
-    }
-    panic!("session never reached CommandInput");
+    world
 }
 
 /// The bearing `face_cast_target` should land on for `code`, computed
@@ -147,17 +99,8 @@ fn run_cast_begin(world: &mut World, caster: u8) -> u16 {
 /// aims the caster at the party centroid.
 #[test]
 fn an_all_allies_sweep_aims_at_the_party_group() {
-    use legaia_art::Command;
-    use legaia_engine_core::target_picker::TargetKind;
-
-    let (mut world, mut session) = seated_battle();
-    reach_command_input(&mut world, &mut session);
-    assert!(session.push_command_with_target(&mut world, Command::Up, TargetKind::AllAllies, 0));
-
-    assert_eq!(
-        world.actors[0].battle.active_target, TARGET_GROUP_PARTY,
-        "an all-allies sweep is retail's group code 8, not a sentinel"
-    );
+    let mut world = seated_battle();
+    world.actors[0].battle.active_target = TARGET_GROUP_PARTY;
     assert_eq!(world.actors[0].battle.facing_angle, UNAIMED);
 
     let facing = run_cast_begin(&mut world, 0);
@@ -174,14 +117,8 @@ fn an_all_allies_sweep_aims_at_the_party_group() {
 /// mean the code was ignored).
 #[test]
 fn an_all_enemies_sweep_aims_at_the_enemy_group() {
-    use legaia_art::Command;
-    use legaia_engine_core::target_picker::TargetKind;
-
-    let (mut world, mut session) = seated_battle();
-    reach_command_input(&mut world, &mut session);
-    assert!(session.push_command_with_target(&mut world, Command::Up, TargetKind::AllEnemies, 0));
-
-    assert_eq!(world.actors[0].battle.active_target, TARGET_GROUP_ENEMIES);
+    let mut world = seated_battle();
+    world.actors[0].battle.active_target = TARGET_GROUP_ENEMIES;
 
     let facing = run_cast_begin(&mut world, 0);
     assert_ne!(facing, UNAIMED, "the cast must have aimed at something");
@@ -194,11 +131,11 @@ fn an_all_enemies_sweep_aims_at_the_enemy_group() {
 }
 
 /// The regression itself, stated as the property that failed: a code outside
-/// retail's space produces no aim at all. `0xFF` is what the session used to
-/// write.
+/// retail's space produces no aim at all. `0xFF` is what a sweep once reached the SM
+/// as.
 #[test]
 fn a_code_outside_the_retail_group_space_produces_no_aim() {
-    let (mut world, _session) = seated_battle();
+    let mut world = seated_battle();
     world.actors[0].battle.active_target = 0xFF;
 
     let facing = run_cast_begin(&mut world, 0);
@@ -209,19 +146,12 @@ fn a_code_outside_the_retail_group_space_produces_no_aim() {
     );
 }
 
-/// `Self_` comes out of the picker through the same immediate path as the two
-/// sweeps, but it is not a group: it writes the caster's own slot, which is the
+/// A self-target is not a group: it is the caster's own slot, which is the
 /// value retail's self-skip (`beq v0,t2` at `0x801E4350`) expects.
 #[test]
 fn a_self_target_writes_the_casters_own_slot_not_a_group_code() {
-    use legaia_art::Command;
-    use legaia_engine_core::target_picker::TargetKind;
-
-    let (mut world, mut session) = seated_battle();
-    reach_command_input(&mut world, &mut session);
-    assert!(session.push_command_with_target(&mut world, Command::Up, TargetKind::Self_, 0));
-
-    assert_eq!(world.actors[0].battle.active_target, 0);
+    let mut world = seated_battle();
+    world.actors[0].battle.active_target = 0;
 
     let facing = run_cast_begin(&mut world, 0);
     assert_eq!(facing, UNAIMED, "retail skips the store for a self-target");

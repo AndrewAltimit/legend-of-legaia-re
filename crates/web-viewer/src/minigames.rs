@@ -56,7 +56,7 @@ use legaia_asset::minigame_art::{self, SlotHudWidget};
 use legaia_asset::minigame_sfx::{self, SfxCueBank};
 use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
-use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
+use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
 use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
@@ -81,13 +81,24 @@ pub struct LegaiaMinigames {
     dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
     /// Live Baka Fighter duel.
     baka: Option<BakaFight>,
-    /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
-    /// each rung's duel itself runs in `baka`).
-    baka_run: Option<LadderRun>,
+    /// The page's winnings accumulator for a cabinet run - retail's mode-24
+    /// `_DAT_80084440`, the coin prize the play hosts keep on
+    /// `World::minigames.winnings`. [`BakaFight::frame`] adds the tally's
+    /// drain into it and clears it on a forfeit; the cabinet reads it back as
+    /// the pot at risk on its NEXT GAME / PAY OUT sheet.
+    baka_winnings: u32,
+    /// Game frames this page has stepped ([`Self::drain_sim_steps`]), the
+    /// frame count a cabinet's RNG seed folds in - the play hosts fold in the
+    /// world frame the same way.
+    sim_frames: u32,
     /// The duel's 3D surface (`engine-core::baka_duel_scene`) - the same
     /// per-host cache the native window and the play page pose the duel
     /// through, here over this page's own fight.
     baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// The dance floor's cast surface (`engine-core::dance_cast_scene`) over
+    /// this page's run - the per-host cache the native window and the play
+    /// page pose the bodies through, off the run's own clip driver.
+    dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
     /// The duel's CD-XA announcer lines (`XA32` / `XA33`), decoded at disc
     /// load while the raw sectors are still in hand.
     baka_xa: legaia_engine_audio::XaClipBank,
@@ -122,12 +133,9 @@ pub struct LegaiaMinigames {
     /// HUD records and the cabinet mesh - what the native window draws from.
     pub(crate) slot_cabinet: Option<legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets>,
     /// The marquee's counters for this page's own machine (the play hosts'
-    /// `SlotMarqueeClock` twin), the dot buffer they composed this frame, and
-    /// the payout caption this page holds after its auto-collect (see
-    /// [`Self::slot_tick`]): `(figure, frames up)`.
+    /// `SlotMarqueeClock` twin) and the dot buffer they composed this frame.
     slot_clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
     slot_dots: Vec<u8>,
-    slot_caption: Option<(i32, i32)>,
     /// The retail dialog font (PROT.DAT font TIM + the SCUS width table), for
     /// the slot machine's rules pages - the play hosts draw the same text
     /// through their own copy.
@@ -267,6 +275,11 @@ pub struct LegaiaMinigames {
     /// How many tally steps this screen has already keyed, so a replay to
     /// `round` keys only the steps it has not.
     muscle_tally_voiced_steps: i32,
+    /// The shared wall-clock to sim-tick rule
+    /// ([`legaia_engine_core::frame_step::SimStepper`]) the native window and
+    /// the play page drain through: the page's animation loop asks it how
+    /// many 60 Hz game frames each display frame runs.
+    sim_stepper: legaia_engine_core::frame_step::SimStepper,
 }
 
 impl Default for LegaiaMinigames {
@@ -308,6 +321,44 @@ fn jstr(s: &str) -> String {
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
+    /// How many 60 Hz game frames this display frame runs, given the wall
+    /// time since the previous call in **milliseconds** - the shared
+    /// [`legaia_engine_core::frame_step::SimStepper`], the play page's
+    /// `play_drain_sim_steps` and the native window's redraw drain. A gap
+    /// longer than the stepper's backlog cap is dropped, not carried.
+    ///
+    /// The page stepped every game once per `requestAnimationFrame`, so on a
+    /// 120 Hz display the dance song, the Baka duel, the reels and the dome
+    /// all ran at twice retail speed (and the fishing loop's own wall clock
+    /// rounded a half frame up to a whole one).
+    pub fn drain_sim_steps(&mut self, elapsed_ms: f64) -> u32 {
+        let n = self.sim_stepper.drain(elapsed_ms / 1000.0);
+        self.sim_frames = self.sim_frames.wrapping_add(n);
+        n
+    }
+
+    /// The RNG seed a session of `game` (`"fishing"`, `"muscle"`) starts on:
+    /// the salt the play hosts fold the world frame into
+    /// ([`legaia_engine_core::minigame_entry::FISHING_SEED_SALT`] /
+    /// [`legaia_engine_core::minigame_entry::DOME_SEED_SALT`]), folded with
+    /// this page's stepped-frame count. The page used to seed off
+    /// `Date.now()` / `Math.random()`, a rule of its own. `0` for an unknown
+    /// game.
+    pub fn minigame_seed(&self, game: &str) -> u32 {
+        use legaia_engine_core::minigame_entry::{DOME_SEED_SALT, FISHING_SEED_SALT};
+        match game {
+            "fishing" => FISHING_SEED_SALT ^ self.sim_frames,
+            "muscle" => DOME_SEED_SALT ^ self.sim_frames,
+            _ => 0,
+        }
+    }
+
+    /// Drop the undrained backlog - a game was (re)started or the tab was
+    /// hidden, and the gap must not come back as catch-up frames.
+    pub fn resync_sim_clock(&mut self) {
+        self.sim_stepper.resync();
+    }
+
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         #[cfg(target_arch = "wasm32")]
@@ -315,13 +366,16 @@ impl LegaiaMinigames {
         Self {
             prot: Vec::new(),
             entries: Vec::new(),
+            sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
             dance: None,
             dance_countin: None,
             dance_tutorial: None,
             dance_tutorial_frame: None,
             baka: None,
-            baka_run: None,
+            baka_winnings: 0,
+            sim_frames: 0,
             baka_surface: Default::default(),
+            dance_surface: Default::default(),
             baka_xa: legaia_engine_audio::XaClipBank::new(),
             muscle_hub: None,
             muscle_hub_xa_fired: 0,
@@ -335,7 +389,6 @@ impl LegaiaMinigames {
             slot_cabinet: None,
             slot_clock: Default::default(),
             slot_dots: Vec::new(),
-            slot_caption: None,
             slot_font: None,
             slot_sfx: None,
             baka_names: None,
@@ -429,7 +482,7 @@ impl LegaiaMinigames {
         self.entries = entries;
         self.dance = None;
         self.baka = None;
-        self.baka_run = None;
+        self.baka_winnings = 0;
         self.baka_surface = Default::default();
         self.slot = None;
         self.fishing_species = None;
@@ -1144,7 +1197,13 @@ impl LegaiaMinigames {
     /// ([`BakaFight::with_attract`]). The pad reaches it through
     /// [`Self::baka_cabinet_pad`]; [`Self::baka_cabinet_json`] reports where
     /// it is and what it draws.
-    pub fn baka_start_cabinet(&mut self, seed: u32) -> bool {
+    ///
+    /// Seeded the way the play hosts seed a cabinet
+    /// ([`legaia_engine_core::baka_fighter::BAKA_RNG_BASE`] folded with the
+    /// frame count), not with a page random.
+    pub fn baka_start_cabinet(&mut self) -> bool {
+        let seed = legaia_engine_core::baka_fighter::BAKA_RNG_BASE ^ self.sim_frames;
+        self.baka_winnings = 0;
         let first = legaia_engine_core::baka_fighter::first_rung_roster();
         match self.baka_fight_for(0, first, seed) {
             Some(f) => {
@@ -1296,111 +1355,60 @@ impl LegaiaMinigames {
         }
     }
 
-    // ------------------------------------------------- baka fighter: ladder run
+    // ------------------------------------------------- baka fighter: cabinet run
 
-    /// Start a cabinet ladder run at `start_rung` (an index into
-    /// [`Self::baka_ladder_json`]'s serve order). Bookkeeping only: the caller
-    /// still starts each rung's duel with [`Self::baka_start`]. Returns the
-    /// first opponent's roster id, or `-1` when the tables didn't decode /
-    /// the rung is out of range.
+    /// One frame of the whole cabinet - attract card, player select, duel,
+    /// result tally, NEXT GAME / PAY OUT sheet, the next rung and the
+    /// game-over / all-clear sequence - on this frame's **packed** pad edge
+    /// and held words: [`BakaFight::frame`], the per-frame step the play hosts'
+    /// world tick runs. The page keeps the winnings accumulator the play hosts
+    /// keep on the world.
     ///
-    /// The run models the retail between-match choice - after every match win
-    /// the tally screen offers "NEXT GAME" (risk the accumulated pot on the
-    /// next rung) or "PAY OUT" (bank it and stop); the two cells live on the
-    /// PROT 1203 tally sheet next to "GET COIN" and its digit strip. A mid-run
-    /// loss forfeits the whole pot; clearing the last rung pays it in full.
-    pub fn baka_run_start(&mut self, start_rung: usize) -> i32 {
-        self.baka_run = None;
-        let Some((opponents, _)) = self.baka_tables.as_ref() else {
-            return -1;
-        };
-        let ladder: Vec<(usize, u32)> = minigame_art::baka_ladder()
-            .into_iter()
-            .filter_map(|(_, roster)| Some((roster, opponents.get(roster)?.gold_reward)))
-            .collect();
-        let Some(run) = LadderRun::new(ladder, start_rung) else {
-            return -1;
-        };
-        let roster = run.current().map(|(r, _)| r as i32).unwrap_or(-1);
-        self.baka_run = Some(run);
-        roster
-    }
-
-    /// Report the current rung's match result into the run: `true` = the
-    /// player won (prize joins the pot; a choice - or the all-clear - is now
-    /// pending), `false` = lost (the pot is forfeited). Returns `false` when
-    /// no run is fighting.
-    pub fn baka_run_match_over(&mut self, player_won: bool) -> bool {
-        let Some(run) = self.baka_run.as_mut() else {
-            return false;
-        };
-        if player_won {
-            run.match_won().is_some()
-        } else {
-            run.match_lost().is_some()
-        }
-    }
-
-    /// Take "NEXT GAME" at the between-match choice: risk the pot on the next
-    /// rung. Returns the next opponent's roster id, or `-1` when no choice is
-    /// pending.
-    pub fn baka_run_fight_on(&mut self) -> i32 {
-        self.baka_run
-            .as_mut()
-            .and_then(|r| r.fight_on())
-            .map(|r| r as i32)
-            .unwrap_or(-1)
-    }
-
-    /// Take "PAY OUT" at the between-match choice: bank the pot and end the
-    /// run. Returns the coins banked (`0` when no choice was pending).
-    pub fn baka_run_pay_out(&mut self) -> u32 {
-        self.baka_run
-            .as_mut()
-            .and_then(|r| r.pay_out())
-            .unwrap_or(0)
-    }
-
-    /// Live ladder-run state:
+    /// The page used to leave the cabinet after its player select and run a
+    /// page-side ladder instead (`LadderRun`, with its own pot, its own HTML
+    /// NEXT GAME / PAY OUT menu and a free choice of starting rung) - a second
+    /// rule set beside the cabinet's own ladder. It is gone.
     ///
     /// ```json
-    /// { "live": true, "phase": "fighting"|"choice"|"paid_out"|"game_over"|"all_clear",
-    ///   "rung": 0, "len": 14, "roster": 5, "prize": 10,
-    ///   "pot": 0, "banked": 0, "forfeited": 0 }
+    /// { "paid": 0, "forfeit": false, "exit": false, "winnings": 30 }
     /// ```
-    pub fn baka_run_state_json(&self) -> String {
-        let Some(run) = self.baka_run.as_ref() else {
-            return r#"{"live":false}"#.to_string();
+    pub fn baka_frame(&mut self, edge: u16, held: u16) -> String {
+        let Some(f) = self.baka.as_mut() else {
+            return r#"{"paid":0,"forfeit":false,"exit":false,"winnings":0}"#.to_string();
         };
-        let phase = match run.phase() {
-            RunPhase::Fighting => "fighting",
-            RunPhase::Choice => "choice",
-            RunPhase::PaidOut => "paid_out",
-            RunPhase::GameOver => "game_over",
-            RunPhase::AllClear => "all_clear",
-        };
-        let (roster, prize) = run.current().unwrap_or((0, 0));
-        format!(
-            concat!(
-                r#"{{"live":true,"phase":{},"rung":{},"len":{},"roster":{},"prize":{},"#,
-                r#""pot":{},"banked":{},"forfeited":{}}}"#
-            ),
-            jstr(phase),
-            run.rung(),
-            run.len(),
-            roster,
-            prize,
-            run.pot(),
-            run.banked(),
-            run.forfeited(),
-        )
+        let out = f.frame(edge, held, self.baka_winnings);
+        let cues = f.take_cues();
+        let xa = f.chrome_frame().xa;
+        if out.paid > 0 {
+            self.baka_winnings = self.baka_winnings.saturating_add(out.paid);
+        }
+        if out.forfeit {
+            self.baka_winnings = 0;
+        }
+        for id in cues {
+            self.minigame_sfx_cue(u16::from(id));
+        }
+        if let Some(xa) = xa {
+            self.play_baka_xa(xa);
+        }
+        serde_json::json!({
+            "paid": out.paid,
+            "forfeit": out.forfeit,
+            "exit": out.exit,
+            "winnings": self.baka_winnings,
+        })
+        .to_string()
     }
 
     // ----------------------------------------------------------------- slots
 
     /// Start a slot session on the disc's payout table with `balance` coins in
-    /// the machine. Returns `false` when the payout table didn't decode.
-    pub fn slot_start(&mut self, seed: u32, balance: i32) -> bool {
+    /// the machine, on the overlay's own literal seed
+    /// ([`legaia_engine_core::slot_machine::SLOT_RNG_SEED`]) - the one the play
+    /// hosts rack every cabinet with. Returns `false` when the payout table
+    /// didn't decode.
+    pub fn slot_start(&mut self, balance: i32) -> bool {
+        let seed = legaia_engine_core::slot_machine::SLOT_RNG_SEED;
         let Some(payouts) = self.slot_payouts.clone() else {
             return false;
         };
@@ -1411,63 +1419,55 @@ impl LegaiaMinigames {
             .unwrap_or_default();
         self.slot = Some(SlotMachine::new(payouts, seed, balance).with_paylines(paylines));
         self.slot_clock = Default::default();
-        self.slot_caption = None;
         true
     }
 
-    /// Charge the bet and start a spin. `false` when the machine isn't idle or
-    /// the balance is under the 3-coin gate.
-    pub fn slot_spin(&mut self) -> bool {
-        self.slot.as_mut().is_some_and(|m| m.spin())
-    }
-
-    /// Advance the reels one frame and **tally a resolved spin automatically**.
+    /// One frame of the machine on this frame's packed retail pad-edge word
+    /// (`0x40` Cross, `0x80` Square, `0x20` Circle, `0x10` Triangle, `0x100`
+    /// Select, `0x1000` / `0x4000` Up / Down, `0x04` / `0x01` L1 / L2): the
+    /// shared [`SlotMachine::frame`] the play hosts' world tick runs. Cross
+    /// spins at idle, Square / Cross / Circle stop reels 0 / 1 / 2, Cross
+    /// finishes a win's timed tally at once, Triangle / Select open the
+    /// cash-out flow.
     ///
-    /// The retail cabinet has three stop buttons and a payout tray; a browser
-    /// page has one key. Collecting is therefore not an input here: the moment
-    /// the third reel lands and the spin evaluates
-    /// ([`SlotPhase::Payout`]), this runs the machine's own state-4 credit
-    /// ([`SlotMachine::collect`] - the payout arithmetic is untouched) and the
-    /// machine drops back to idle. The evaluated spin stays latched in
-    /// `last_result`, so the host can keep the winning line lit until the next
-    /// spin is charged. Returns the coins credited on this frame (`0` on a
-    /// losing spin or any frame that didn't resolve one).
-    pub fn slot_tick(&mut self) -> i32 {
+    /// This page used to run its own path: a resolved spin banked whole on
+    /// the frame it evaluated (retail counts it in over state 4's timed
+    /// tally, `11` or `1` coins every other frame), and one key stopped the
+    /// reels left to right. Both were rules the cabinet does not have; the
+    /// page's one-key convenience is now an input macro in its script that
+    /// picks which cabinet button to press.
+    ///
+    /// Returns the coins credited this frame - one tally transfer, or the
+    /// rest of the count on a Cross press.
+    /// The machine's static-table cues (`< 0x200`) are keyed here; its
+    /// runtime-bank cues are this page's own `slotPlay` path, drained and
+    /// dropped.
+    pub fn slot_step(&mut self, packed: u32) -> i32 {
         let Some(m) = self.slot.as_mut() else {
             return 0;
         };
-        // What the spin owes before this tick's timed tally moves any of it,
-        // so the credit reported is the whole win however it reaches the
-        // balance.
+        let was_payout = m.phase() == SlotPhase::Payout;
         let owed = m.payout_left();
-        m.tick();
-        let credited = if m.phase() == SlotPhase::Payout {
-            m.collect();
-            owed
+        let _ = m.frame(packed);
+        let credited = if was_payout {
+            owed - m.payout_left()
         } else {
             0
         };
-        // The marquee. The auto-collect above drops the machine's own payout
-        // caption the frame it rises, so this page holds it itself - the
-        // figure and its slide-in clock - until it has been up as long as the
-        // play page's (`SLOT_CAPTION_FRAMES`) or the next spin is charged.
-        if credited > 0 {
-            self.slot_caption = Some((credited, 1));
-        } else if let Some((_, f)) = self.slot_caption.as_mut() {
-            *f += 1;
-        }
-        if m.phase() == SlotPhase::Spinning || self.slot_caption.is_some_and(|(_, f)| f > 110) {
-            self.slot_caption = None;
-        }
-        let mut frame = m.marquee();
-        if let Some((payout, f)) = self.slot_caption {
-            frame.payout = payout;
-            frame.payout_frame = f;
-        }
+        let cues: Vec<i16> = m
+            .take_sounds()
+            .ring
+            .into_iter()
+            .map(|(_, id)| id)
+            .filter(|&id| (0..0x200).contains(&id))
+            .collect();
+        let frame = m.marquee();
+        let reach = m.anticipation();
         if let Some(c) = self.slot_cabinet.as_ref() {
-            self.slot_dots = self
-                .slot_clock
-                .frame(&frame, m.anticipation(), &c.scene.messages);
+            self.slot_dots = self.slot_clock.frame(&frame, reach, &c.scene.messages);
+        }
+        for id in cues {
+            self.minigame_sfx_cue(id as u16);
         }
         credited
     }
@@ -1540,116 +1540,6 @@ impl LegaiaMinigames {
         legaia_engine_ui::screen_prim_raster::rasterize_rgba(&prims, c.vram.as_u16(), w, h)
     }
 
-    /// One frame of the machine's cash-out flow on the retail packed pad-edge
-    /// word (`SlotMachine::cash_out_input`): Triangle / Select open the
-    /// submenu, Up / Down move it, Cross / L1 take a row, Circle / L2 back out,
-    /// and under three coins the not-enough-coins prompt comes up instead of
-    /// a refused spin. The page calls it every frame before [`Self::slot_tick`];
-    /// `true` means the flow owns the frame (spin / stop presses do nothing).
-    /// A machine that has committed its cash-out reads `cashed_out` in
-    /// [`Self::slot_state_json`]; the page then banks it and racks a new one.
-    ///
-    /// The submenu's own cues (`0x20` / `0x21` / `0x37`) are static-table
-    /// ids, keyed here through [`Self::minigame_sfx_cue`]; the machine's
-    /// runtime-bank cues are this page's `slotPlay` path, so they are drained
-    /// and dropped.
-    pub fn slot_pad(&mut self, packed: u32) -> bool {
-        let Some(m) = self.slot.as_mut() else {
-            return false;
-        };
-        let owned = m.cash_out_input(packed);
-        let cues: Vec<i16> = m
-            .take_sounds()
-            .ring
-            .into_iter()
-            .map(|(_, id)| id)
-            .filter(|&id| (0..0x200).contains(&id))
-            .collect();
-        for id in cues {
-            self.minigame_sfx_cue(id as u16);
-        }
-        owned
-    }
-
-    /// Stop the leftmost still-spinning reel. `false` when stopping isn't
-    /// allowed yet (the reels are still spinning up).
-    pub fn slot_stop(&mut self) -> bool {
-        self.slot.as_mut().is_some_and(|m| m.stop_next_reel())
-    }
-
-    /// Stop reel `reel` (0..=2) with its own button - the cabinet's three
-    /// stop buttons, Square / Cross / Circle for reels 0 / 1 / 2
-    /// (`FUN_801CF0D8` state 3, `0x801CF70C..0x801CF7E0`), the same map the
-    /// play window's world tick reads. `false` when that reel cannot stop
-    /// (not spinning, still spinning up, or already stopped).
-    pub fn slot_stop_reel(&mut self, reel: u32) -> bool {
-        self.slot
-            .as_mut()
-            .is_some_and(|m| m.stop_reel(reel as usize))
-    }
-
-    /// Tally the latched payout into the balance and return to idle. Returns
-    /// the credited coins. [`Self::slot_tick`] already does this on the frame a
-    /// spin resolves; this stays for hosts that drive the tally themselves.
-    pub fn slot_collect(&mut self) -> i32 {
-        self.slot.as_mut().map(|m| m.collect()).unwrap_or(0)
-    }
-
-    /// The machine's **single input**: one press means whatever the machine's
-    /// phase says it means. Folds the cabinet's three stop buttons onto one
-    /// key by taking them in sequence - press to spin, then press once per
-    /// reel, left to right.
-    ///
-    /// Returns what the press did:
-    /// - `"spin"` - idle, and the bet was charged (the reels are spinning up);
-    /// - `"spinup"` - the reels are still ramping, so retail refuses a stop.
-    ///   The host may hold the press and re-issue it when `can_stop` opens;
-    /// - `"stop"` - the next still-spinning reel took its stop;
-    /// - `"collect"` - a press landed on a resolved spin before the frame
-    ///   tally ran: it was tallied, but the balance can't fund another spin;
-    /// - `"broke"` - idle and under the 3-coin gate. The machine is empty; the
-    ///   host racks a new one;
-    /// - `"none"` - no machine, or it has cashed out.
-    pub fn slot_press(&mut self) -> String {
-        let Some(m) = self.slot.as_mut() else {
-            return "none".to_string();
-        };
-        let what = match m.phase() {
-            // A press can only beat the frame tally by landing in the same
-            // frame the third reel did. Tally it, then treat the press as the
-            // spin it was meant to be.
-            SlotPhase::Payout => {
-                m.collect();
-                if m.spin() { "spin" } else { "collect" }
-            }
-            SlotPhase::Idle => {
-                if m.spin() {
-                    "spin"
-                } else {
-                    "broke"
-                }
-            }
-            // A press during the spin-up is a face-button edge: retail
-            // latches `DAT_801D3790` off it, which widens (rarefies) the next
-            // roll's feature odds.
-            SlotPhase::Spinning => {
-                m.latch_spin_up(true);
-                "spinup"
-            }
-            SlotPhase::Stopping => {
-                if m.stop_next_reel() {
-                    "stop"
-                } else {
-                    "none"
-                }
-            }
-            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving | SlotPhase::CashedOut => {
-                "none"
-            }
-        };
-        what.to_string()
-    }
-
     /// Live machine state. `window` is the 3x3 grid of symbol ids actually on
     /// screen (`window[reel][0..3]` = top / payline / bottom row), read off the
     /// live reel positions so the page can render a spinning machine.
@@ -1714,7 +1604,7 @@ impl LegaiaMinigames {
         format!(
             concat!(
                 r#"{{"live":true,"phase":{},"balance":{},"cost":{},"can_spin":{},"#,
-                r#""can_stop":{},"stopped":{},"feature_mode":{},"bonus_spins":{},"#,
+                r#""can_stop":{},"stop_open":[{},{},{}],"stopped":{},"feature_mode":{},"bonus_spins":{},"#,
                 r#""net_take":{},"window":[{}],"payouts":[{}],"last":{}}}"#
             ),
             jstr(phase),
@@ -1722,6 +1612,9 @@ impl LegaiaMinigames {
             m.spin_cost(),
             m.can_spin(),
             m.can_stop(),
+            m.can_stop() && m.reel_stop_open(0),
+            m.can_stop() && m.reel_stop_open(1),
+            m.can_stop() && m.reel_stop_open(2),
             m.reels_stopped(),
             m.feature_mode(),
             m.bonus_spins(),

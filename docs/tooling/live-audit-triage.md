@@ -306,24 +306,24 @@ blocker is a table is the same error this page records for the panel painters.
 | `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick.rs:910` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
-| `8003a55c` | `MapObject` | `crates/engine-core/src/field_regions.rs:270` | FALSE INERT |
+| `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs:270` | FALSE INERT |
 | `8003ebe4` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
 | `8003ebe4` | `load_overlay_a` | `crates/engine-core/src/overlay_loader.rs:180` | DISCLOSE |
 | `8003ec70` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
 | `8003ec70` | `load_overlay_b` | `crates/engine-core/src/overlay_loader.rs:212` | DISCLOSE |
 | `800520f0` | `battle_stage_overlay_entry` | `crates/engine-core/src/overlay_loader.rs:135` | DISCLOSE |
 | `801cea3c` | `fmv_post_play_handoff` | `crates/engine-core/src/cutscene.rs:205` | WIRE |
-| `801cf0d8` | `build_strip` | `crates/engine-core/src/slot_machine.rs:172` | WIRE |
-| `801cf0d8` | `cash_out` | `crates/engine-core/src/slot_machine.rs:973` | FALSE INERT |
+| `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs:172` | WIRE |
+| `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
-| `801d06c8` | `buy` | `crates/engine-core/src/fishing/prize.rs:159` | FALSE INERT |
+| `801d06c8` | `buy` | `crates/engine-minigames/src/fishing/prize.rs:159` | FALSE INERT |
 | `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome/session.rs` | FALSE INERT |
-| `801d092c` | `max_qty` | `crates/engine-core/src/fishing/prize.rs:137` | FALSE INERT |
+| `801d092c` | `max_qty` | `crates/engine-minigames/src/fishing/prize.rs:137` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-core/src/walk_regen.rs:86` | WIRE |
-| `801d0c3c` | `first_visible` | `crates/engine-core/src/fishing/prize.rs:98` | FALSE INERT |
-| `801d4040` | `symbol_pad_bit` | `crates/engine-core/src/dance/types.rs:84` | DELETE |
-| `801d6f90` | `is_available` | `crates/engine-core/src/fishing/prize.rs:124` | FALSE INERT |
-| `801d712c` | `select_owned_rod` | `crates/engine-core/src/fishing/rod_menu.rs:42` | FALSE INERT |
+| `801d0c3c` | `first_visible` | `crates/engine-minigames/src/fishing/prize.rs:98` | FALSE INERT |
+| `801d4040` | `symbol_pad_bit` | `crates/engine-minigames/src/dance/types.rs:84` | DELETE |
+| `801d6f90` | `is_available` | `crates/engine-minigames/src/fishing/prize.rs:124` | FALSE INERT |
+| `801d712c` | `select_owned_rod` | `crates/engine-minigames/src/fishing/rod_menu.rs:42` | FALSE INERT |
 | `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs` | WIRED |
@@ -473,7 +473,7 @@ why the obvious placement was wrong. Where each one lives now:
 - `fmv_post_play_handoff` - consumed by `apply_fmv_handoff` in
   `crates/engine-shell/src/bin/legaia-engine/commands/run.rs`, with the
   `CardInit` / `ModeZero` arms disclosed as modes the engine does not have.
-- `build_strip` - `build_reel` in `crates/engine-core/src/slot_machine.rs`
+- `build_strip` - `build_reel` in `crates/engine-minigames/src/slot_machine.rs`
   builds both permuted 20-slot strips per reel in retail's interleaved draw
   order; `SlotMachine::new` builds all three reels and seeds the display
   strip from the symbol half.
@@ -552,7 +552,7 @@ arm-`0x82` callee.
 
 ## `DELETE` row
 
-**`symbol_pad_bit`** (`801d4040`, `crates/engine-core/src/dance/types.rs:84`).
+**`symbol_pad_bit`** (`801d4040`, `crates/engine-minigames/src/dance/types.rs:84`).
 `DanceDir::pad_bit` in the same file has identical arms (`0x80` / `0x20` /
 `0x10`), cites the same `FUN_801d4040`, and is the copy the live path uses -
 `World`'s dance tick references it from `world/frame_tick.rs`. The free function
@@ -2073,7 +2073,7 @@ withdrawn claim is only useful with its refutation attached.
 | `801d6e5c` | Said the duel draws no fighter clip. The browser host plays both sides' clips; the native window stages none. That is an undisclosed per-host split, and neither host is the blocker - the action record's per-sub-keyframe `+0x26` column is undecoded, so the `frame_indices` slice cannot be built at all. |
 | `801da59c` | Said no engine-side chain slot exists to write back into. The port holds saved chains (`legaia_save::SavedChainRecord`, `World::party.saved_chains`, persisted and editable). The blocker is a mapping: `legaia_save`'s retail `0x414` record model declares no accessor at record-relative `+0x1A7` / `+0x1B7`. |
 | `801e2524` | Named `resolve_arts_input_entry` in the battle command flow as the raiser's engine-side home. No such function exists. The live chain matchers are in `World::build_battle_arts_rows`. |
-| `801d32bc` / `801d57e8` / `801d5778` / `801d9ae8` | One sentence of the shared module blanket said `engine-vm::battle_chrome`'s own functions have no caller outside test blocks. `engine-ui::ui_overlay::party_panel_stage_x` calls `battle_chrome::panel_seats` and reads `PANEL_TEXT_INSET` in production. The blanket's load-bearing claim - that no live path reads a *parsed* record, so the disc table reaches no pixel - is unaffected. |
+| `801d32bc` / `801d57e8` / `801d5778` / `801d9ae8` | One sentence of the shared module blanket said `battle_chrome`'s own functions (then in `engine-vm`, now `engine-ui`) have no caller outside test blocks. `engine-ui::ui_overlay::party_panel_stage_x` calls `battle_chrome::panel_seats` and reads `PANEL_TEXT_INSET` in production. The blanket's load-bearing claim - that no live path reads a *parsed* record, so the disc table reaches no pixel - is unaffected. |
 
 ### The ones that were replacements wearing the wrong marker
 

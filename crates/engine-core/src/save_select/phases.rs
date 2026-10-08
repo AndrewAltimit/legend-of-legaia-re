@@ -126,7 +126,100 @@ pub enum SelectPhase {
         slot: u8,
         cursor: u8,
     },
+    /// A confirmed card Save or Load, between the confirm's "Yes" and the
+    /// outcome: the write / read beat ("Saving to MEMORY CARD" / "Now
+    /// Loading" over "Do not remove MEMORY CARD") for the first
+    /// [`COMMIT_RESULT_FRAMES`]-exceeding stretch of `frames_remaining`, then
+    /// the result line for the last [`COMMIT_RESULT_FRAMES`].
+    ///
+    /// The **write happens inside the beat**, as on retail: a Save holds the
+    /// beat at its last write frame until the host has moved the bytes and
+    /// answered through [`SaveSelectSession::report_commit`]
+    /// (`SaveScreenFlow::save_request` hands it the request), so the result
+    /// line is the write's real result - "Save successful." or retail's
+    /// "Unable to save." - never a promise. A Load's bytes were already read
+    /// for the grid, so its report is in from the start. A face button skips
+    /// the result line, as retail's result arm adds a whole hold (`+0x5A`) on
+    /// a press. Success ends in `Done(Saved)` / `Done(Loaded)`; a failed write
+    /// returns to the block grid.
+    ///
+    /// Retail strings and the mode test that picks them live in PROT 0899:
+    /// `0x801E2B50..0x801E2B7C` picks "Saving to MEMORY CARD" or "Now
+    /// Loading" off the op flag `0x801F0200`, and `0x801DF920..0x801DF9B0`
+    /// draws "Load successful." / "Save successful." off the result word.
+    Committing {
+        slot: u8,
+        frames_remaining: u16,
+        report: CommitReport,
+    },
     Done(SelectOutcome),
+}
+
+/// The host's answer to a [`SelectPhase::Committing`] beat's card op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitReport {
+    /// The host has not moved the bytes yet; the beat holds at its last
+    /// write frame until it does.
+    Pending,
+    /// The op went through.
+    Ok,
+    /// The op failed: the result line reads retail's failure message.
+    Failed,
+    /// A Load whose block failed the read's checksum verify: retail's
+    /// three-line "Unable to load data." / "Damaged data." / "Delete at the
+    /// PlayStation MEMORY CARD Screen." box (sub-mode `0x13`,
+    /// `0x801DF4EC..0x801DF548`), held until a face button.
+    Damaged,
+}
+
+/// Frames the result line of [`SelectPhase::Committing`] holds when no
+/// button cuts it short. Retail's result arm accumulates the frame scalar
+/// into its hold word and moves on at `0x5A` (`slti v0,v0,0x5B` at
+/// `0x801DF9D8`): 90 sixtieth-second units.
+pub const COMMIT_RESULT_FRAMES: u16 = 90;
+
+impl SelectPhase {
+    /// Whether a save-select opened from the title is composed over the
+    /// title art in this phase. Retail keeps the card up behind the pill
+    /// row and pivots to black once a port is picked: the "Now checking"
+    /// beat, the block grid and everything drawn on top of the grid - the
+    /// confirm messagebox and the write / read beat - sit on black. Both
+    /// hosts ask this rather than listing phases, which is how the confirm
+    /// came to flash the title art back up on both.
+    pub fn shows_title_backdrop(self) -> bool {
+        matches!(self, SelectPhase::Browsing { .. } | SelectPhase::Done(_))
+    }
+}
+
+/// Frames the **write** line of [`SelectPhase::Committing`] holds. The
+/// port's own beat - retail's write arm (sub-mode `0x03`, `0x801DF5BC..`)
+/// leaves the panel on the card driver's result word alone, which the port's
+/// synchronous backends answer at once - set long enough to read the line.
+pub const COMMIT_WORK_FRAMES: u16 = 45;
+
+/// Frames the **read** line holds: retail's read arm (sub-mode `0x04`,
+/// `0x801DF3CC..0x801DF3FC`) leaves the panel for the checksum verify
+/// (`0x05`) only once the card op is done **and** the progress timer
+/// `_DAT_801F01D0` has reached `0x1000`. `FUN_801E1C1C` mode 4 steps that
+/// timer `+0x20` per frame-step unit (`0x801E2D04..`), so the bar takes
+/// `0x1000 / 0x20` sixtieth-second units to fill.
+pub const COMMIT_LOAD_WORK_FRAMES: u16 = 0x1000 / COMMIT_PROGRESS_STEP;
+
+/// The progress timer's per-frame step (`sll v1,v1,0x5` on the frame scalar).
+pub const COMMIT_PROGRESS_STEP: u16 = 0x20;
+
+/// The write / read panel's progress timer after `elapsed` frames of the
+/// beat: `+0x20` a frame, clamped at `0x1000`.
+pub fn commit_progress_t(elapsed: u16) -> u16 {
+    elapsed.saturating_mul(COMMIT_PROGRESS_STEP).min(0x1000)
+}
+
+/// The write / read half's length for a session's direction.
+pub fn commit_work_frames(mode: SaveSelectMode) -> u16 {
+    match mode {
+        SaveSelectMode::Save => COMMIT_WORK_FRAMES,
+        SaveSelectMode::Load => COMMIT_LOAD_WORK_FRAMES,
+    }
 }
 
 /// What a save-select phase puts on screen, for the host that composes the
@@ -156,6 +249,8 @@ pub struct SaveSelectPhaseLayout {
     pub now_checking: bool,
     /// Draw the Yes/No confirm messagebox on top of everything.
     pub confirm: bool,
+    /// Draw the card-operation messagebox ([`SelectPhase::Committing`]).
+    pub banner: bool,
 }
 
 /// The layout [`SelectPhase`] implies - see [`SaveSelectPhaseLayout`].
@@ -166,6 +261,7 @@ pub fn phase_layout(phase: SelectPhase) -> SaveSelectPhaseLayout {
         preview: false,
         now_checking: false,
         confirm: false,
+        banner: false,
     };
     match phase {
         SelectPhase::NowChecking { .. } => SaveSelectPhaseLayout {
@@ -178,6 +274,13 @@ pub fn phase_layout(phase: SelectPhase) -> SaveSelectPhaseLayout {
             single_pill: true,
             pill_cursor: false,
             preview: true,
+            ..base
+        },
+        SelectPhase::Committing { .. } => SaveSelectPhaseLayout {
+            single_pill: true,
+            pill_cursor: false,
+            preview: true,
+            banner: true,
             ..base
         },
         SelectPhase::ConfirmOverwrite { .. } | SelectPhase::ConfirmDelete { .. } => {
@@ -272,6 +375,11 @@ pub enum SelectEvent {
     /// User confirmed the load from the slot-preview screen (X on
     /// SlotPreview).
     LoadConfirmed {
+        slot: u8,
+    },
+    /// A Save's write failed; its failure line has been read and the session
+    /// is back on the block grid.
+    CommitFailed {
         slot: u8,
     },
     /// User cancelled out of the slot-preview screen back to browsing.

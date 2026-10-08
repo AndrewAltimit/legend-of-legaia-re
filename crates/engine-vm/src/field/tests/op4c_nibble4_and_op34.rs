@@ -886,7 +886,7 @@ fn menu_sub_3_sub_a_copies_dialog_depth() {
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x3A], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 2 });
-    assert_eq!(host.depth_copy_calls, 1);
+    assert_eq!(host.arrival_facing_calls, 1);
 }
 
 #[test]

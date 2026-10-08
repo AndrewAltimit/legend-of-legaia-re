@@ -783,6 +783,12 @@ pub fn player_moves_in_region(body: &[u8], pc0: usize) -> Vec<PlayerMove> {
         if insn.extended != Some(PLAYER_CHANNEL) {
             continue; // own-context: the door prop positioning/facing itself
         }
+        if is_player_restore(&insn) {
+            // The moves since the last restore parked the player for a view
+            // and this puts it back: none of them is a destination.
+            out.clear();
+            continue;
+        }
         let mut push = |kind: PlayerMoveKind, xb: u8, zb: u8, facing: Option<i16>, pc: usize| {
             if (xb & 0x7F, zb & 0x7F) == PARKED_SENTINEL_TILE {
                 return; // park/despawn, not a destination
@@ -830,6 +836,28 @@ pub fn player_moves_in_region(body: &[u8], pc0: usize) -> Vec<PlayerMove> {
         }
     }
     out
+}
+
+/// `true` for a cross-context `CC F8 E3 <src>` - the `4C E3` position-copy
+/// run in the **player's** context, which puts the player back on a stand-in
+/// actor's spot (`0x801E3108..0x801E31B0`). A record that parks the player
+/// somewhere for a camera view first copies the player's spot into a
+/// stand-in (`CC 39 37`), moves the player, and ends with this: `chitei2`'s
+/// Rapid Transport switches P0[32..34] move the player to (44, 47) to watch
+/// the car, then return it to the switch.
+// REF: FUN_801DE840 (op 0x4C nibble 14 sub 3)
+fn is_player_restore(insn: &legaia_asset::field_disasm::Insn) -> bool {
+    insn.extended == Some(PLAYER_CHANNEL)
+        && matches!(insn.info, InsnInfo::MenuCtrl { op0: 0xE3, .. })
+}
+
+/// Whether a player-channel position restore ([`is_player_restore`]) follows
+/// `pc` in `body`'s bytecode order - i.e. a move at `pc` is a temporary
+/// parking, not where the record leaves the player.
+fn player_restored_after(body: &[u8], pc: usize) -> bool {
+    LinearWalker::new(body, pc)
+        .map_while(Result::ok)
+        .any(|insn| is_player_restore(&insn))
 }
 
 /// The first player-channel **teleport** in `body` from `pc0` as a walk-touch
@@ -988,6 +1016,42 @@ pub fn object_script_binds(
     out
 }
 
+/// [`object_script_binds`] with each bind's **actor seat** in place of its
+/// contact centre: the object's own world position
+/// ([`crate::field_regions::MapObject::world`], `tile * 128 + 0x40` plus the
+/// descriptor's fine offsets), which `FUN_8003A55C` stores in the actor's
+/// `+0x14 / +0x18`. The contact box sits off it by the key-tile and touch
+/// offsets the touch test adds (`FUN_801CFC40`), so a context seated there
+/// stood up to a few tiles from the object it scripts: `map01`'s Rim Elm
+/// landmark (record 8) is keyed two tiles north of where it stands, and the
+/// credits walk's `A3 08 60 17` - which seats it back on its own tile - read
+/// as a 256-unit move. This is what the object-bind script contexts are
+/// seated on ([`crate::field_channels::spawn_object_channels`]); the portal
+/// and walk-touch layers keep the contact centre.
+// REF: FUN_8003A55C
+pub fn object_script_bind_seats(
+    map: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+) -> Vec<(usize, (i16, i16))> {
+    let mut seen: Vec<(usize, (i16, i16))> = Vec::new();
+    let mut out: Vec<(usize, (i16, i16))> = Vec::new();
+    for obj in crate::field_regions::parse_map_objects(map) {
+        let Some(t) = triggers
+            .iter()
+            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
+        else {
+            continue;
+        };
+        let record = usize::from(t.record);
+        if seen.contains(&(record, obj.contact)) {
+            continue;
+        }
+        seen.push((record, obj.contact));
+        out.push((record, obj.world));
+    }
+    out
+}
+
 /// The walk-touch effect of the MAN record at **flat** index `flat`: its first
 /// player-channel teleport (either op form - see [`PlayerMoveKind`]), or
 /// `None` when the record repositions nobody (a plain scenery / chest / sign
@@ -1090,7 +1154,9 @@ pub fn resolve_walk_touch_arm(
         if bracketed {
             match insn.info {
                 InsnInfo::MoveTo { xb, zb }
-                    if player && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE =>
+                    if player
+                        && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE
+                        && !player_restored_after(body, pc + insn.size) =>
                 {
                     pending = Some(WalkTouchEvent::PlayerMoveTo {
                         world_x: grid_byte_to_world(xb),
@@ -1129,7 +1195,9 @@ pub fn resolve_walk_touch_arm(
                 facing = facing_index_to_engine_heading(op0 & 0xF);
             }
             InsnInfo::MoveTo { xb, zb }
-                if player && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE =>
+                if player
+                    && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE
+                    && !player_restored_after(body, pc + insn.size) =>
             {
                 return Some(Some(WalkTouchEvent::PlayerMoveTo {
                     world_x: grid_byte_to_world(xb),

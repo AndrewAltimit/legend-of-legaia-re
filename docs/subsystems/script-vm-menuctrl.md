@@ -119,6 +119,15 @@ Arm addresses are from the nibble-3 jump table at `0x801CEEB8` in PROT `0897`:
 | `[4C 3D]` | `0x801E10F8` | `FUN_800180EC` at the player's tile - the walk-region **attribute** refresh, not a camera load. | 2 |
 | `[4C 3E]` | `0x801E10BC` | `FUN_801DB8EC(player)` snap + `FUN_801DAA50()` focus clamp. | 2 |
 
+Between them sits `[4C 3A]` (arm `0x801E10DC`): the player's heading
+`+0x26` takes the **arrival facing** `_DAT_80073EFC` (`lhu v0,0x3efc(v1)` /
+`sh v0,0x26(a0)`). Every scene's entry script issues it once. A door's
+op `0x3F` sets the word from its `dir` byte through the compass table at
+`0x80073F04`, and the card load (`FUN_8003AEB0`, `0x8003B778`) and the
+new-game seed zero it, so a card-loaded hero stands at retail heading `0`,
+facing the default camera. The values are retail headings; the engine's
+`render_26` holds each a half-turn round (`World::apply_arrival_facing`).
+
 `[4C 3E]`'s table entry points **inside** `[4C 39]`'s arm, seventeen
 instructions in: the snap arm is the query arm with its head cut off, and
 `[4C 39]` falls through into it rather than branching.
@@ -263,18 +272,29 @@ camera shake. The scene reset `FUN_8003A024` zeroes it on every load
 
 #### `4C 85` / `8E` / `8F`: halt-acquire and the player face-turn
 
-The standard halt-acquire on the resolved cross-context target; on success the
-caller advances past the op (`iVar24 = 5`, `overlay_0897_801de840.txt:6550` /
-`overlay_world_map_801de840.txt:7179`). The cutscene timeline uses it to
-freeze its vignette actors, then pokes them beat by beat.
+The standard halt-acquire on the resolved cross-context target. The arm
+(`0x801E2148..0x801E21DC`) stores the op's own address into the target's
+`+0x94`, zeroes its `+0x54` and raises its `0x400`, then advances the caller
+by five (`li s7,5` at `0x801E21B8`). Those bytes are the walk kernel's `0x4C`
+FaceTarget leg (`FUN_8003774C`, [motion-vm.md](motion-vm.md)), which the
+target's actor tick runs while `0x400` is up: the target turns toward actor
+bind `<id>` (`0xF8` = the player) over the `u16` frame budget, a budget of
+zero snapping at once, and the leg's terminal frame clears the target's halt
+(`0x80038004`). So the op is not a freeze: every actor a cutscene record
+acquires this way turns to face someone.
 
-Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the same bytes are the
-walk kernel's `0x4C` FaceTarget leg (`FUN_8003774C`,
-[motion-vm.md](motion-vm.md)): the player turns toward actor bind `<id>` over
-the `u16` frame budget, and the leg's terminal frame clears the halt on the
-player and on the caller (`0x80038004` / `0x80038028`). A cutscene record
-therefore waits on the turn - `jouine` `P2[5]` turns Vahn toward Cort this way
-before the evolved-Cort fight.
+Aimed at an NPC or a party placement, the caller runs on while the actor
+turns, and the record's next cross-context op on that actor waits for the
+turn (the halted-target refusal). Cutscene records issue over a thousand of
+these on NPCs and as many again on the Noa / Gala placements - "Noa turns to
+Vahn" is `CC <noa> 85 <budget> F8`. The port arms the leg as
+`CutsceneTimeline::npc_faces`.
+
+Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the arm also raises the
+caller's own `0x400` (`0x801E21B4..0x801E21CC`), and the leg's terminal frame
+clears both (`0x80038004` / `0x80038028`). A cutscene record therefore waits
+on the player's turn - `jouine` `P2[5]` turns Vahn toward Cort this way before
+the evolved-Cort fight.
 
 #### `4C 89`: the dialog auto-press
 
@@ -613,6 +633,11 @@ A ctx with the inverted-Y bit `0x20000000` also gets `+0x8E = -src_y`, and
 only a **player** ctx refreshes the camera scroll (`0x801E3178..0x801E31AC`).
 Arm `0x801E3108..0x801E31B0`; PC += 3 (in the `j 0x801E00BC` delay slot on
 the player path, via the `0x801E00B8` entry on the NPC path).
+The port applies it in `FieldHostImpl::op4c_n_e_sub_3_actor_sync_camera`:
+a placement destination takes the source's live position and heading
+(`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
+`CC 0A E3 F8`), a player destination moves the player actor; the player
+arm's camera-scroll refresh is not modelled.
 
 #### `4C E4`: AABB branch
 
@@ -936,6 +961,34 @@ Splits on `ticks == 0` between a direct write and one scheduled
 `FUN_8003C5F0` ramp per changed field. Both advance 11 bytes
 (`addiu s8,s8,0x5` at `0x801E12A4` over the head's 6), leaving through the
 common exit or the scheduler exit `0x801E2054`.
+
+The fields are the actor's **look turn**. `b1` lands in the side buffer's
+`+0x9A` at once on both arms (`sh v0,0x9a(v1)` at `0x801E12C8` /
+`0x801E1304`); the three words are X / Y / Z angles at `+0x94` / `+0x96` /
+`+0x98`, and the ramp arm schedules one only for an angle that differs from
+its live value (`beq s7,a3` at `0x801E1318` / `0x801E134C` / `0x801E1380`).
+The animated renderer `FUN_8001B964` turns the object whose index equals
+`+0x9A` by `RotZ(+0x98) RotY(+0x96) RotX(+0x94)` ahead of that object's
+keyframe rotation (`0x8001BB40..0x8001BB88`; each helper post-multiplies,
+so the object draws with `R_look * R_key` about its own pivot). The
+allocator seeds `+0x9A = -1`, and the static bracket `FUN_8001ADA4` never
+reads it. Every captured state that holds a look names object `0` - the head
+of a field rig - so this is how a cutscene turns a head toward a speaker:
+`cort_evolved_pre_battle`
+holds Vahn's and his party's at `X = -412`, looking up at the wall; the
+casino counter clerk's is turned `Y = -512`. The op is common - the
+[field-op census](../tooling/field-op-census.md) finds it in most town and
+dungeon scenes.
+
+Port: [`engine-core::actor_look`](../../crates/engine-core/src/actor_look.rs)
+holds each actor's look and its ramps (ticked at the frame step, reset on a
+scene entry); `CC F8 45 ..` lands on the player through the same stand-in
+context `CC F8 40` / `CC F8 C2` use. `World::actor_look` answers per actor,
+and both play hosts fold it into the pose with `actor_look::apply_look`
+before they skin the mesh - the native window's player rig and NPC pose
+cache (the look rides the cache key), the browser page's player rig and its
+NPC `live_bones` (the look rides the clip-state generation, so a head turns
+on a held frame).
 
 #### Sub-9's tristate
 

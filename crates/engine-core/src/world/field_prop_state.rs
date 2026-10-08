@@ -27,7 +27,7 @@ pub struct FieldPropState {
     /// teardown can re-seat the player here if a partially-executed spawned
     /// record left them inside a wall (see [`crate::world::World::step_helper_contexts`]).
     /// `None` outside field scenes.
-    pub resolved_cold_spawn: Option<(i16, i16)>,
+    pub(crate) resolved_cold_spawn: Option<(i16, i16)>,
     /// Per-scene bank of placed-prop animation + interaction runtimes (the
     /// door swings, the searchable cupboards), keyed by the placement's
     /// footprint-anchor tile. Built at field-scene entry

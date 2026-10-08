@@ -179,3 +179,35 @@ fn parse_blocks_reads_the_table_at_its_file_offset() {
     // A short (non-extended) read yields no table at all.
     assert!(parse_blocks(&overlay[..0x15D00]).is_none());
 }
+
+/// The engine bag's `RedeemBag` impl: `apply_redeem` against a real
+/// `ItemBag` grants one copy on top of what is held, and the `< 0x63`
+/// held-count gate reads the bag's count.
+#[test]
+fn apply_redeem_grants_into_the_engine_bag() {
+    use legaia_engine_core::prize_exchange::apply_redeem;
+    use legaia_engine_core::world::ItemBag;
+
+    let mut bag = ItemBag::new();
+    bag.insert(0x20, 2);
+    let mut coins = 900u32;
+    let mut set = Vec::new();
+    assert!(apply_redeem(
+        &mut coins,
+        &mut bag,
+        &mut |g| set.push(g),
+        0x20,
+        500,
+        0x36
+    ));
+    assert_eq!(coins, 400);
+    assert_eq!(bag.get(&0x20), Some(&3));
+    assert_eq!(set, vec![0x36]);
+
+    // At the cap the gate refuses and nothing moves.
+    bag.insert(0x30, 0x63);
+    let mut coins = 900u32;
+    assert!(!apply_redeem(&mut coins, &mut bag, &mut |_| {}, 0x30, 1, 0));
+    assert_eq!(coins, 900);
+    assert_eq!(bag.get(&0x30), Some(&0x63));
+}

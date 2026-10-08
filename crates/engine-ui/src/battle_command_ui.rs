@@ -4,7 +4,7 @@
 //! Retail's battle command UI is not a list. It is a cluster of plate
 //! chips seated around a D-pad glyph, and every rect, seat and palette
 //! below is packet-pinned in
-//! [`legaia_engine_vm::battle_chrome`](../../engine-vm) out of a mednafen
+//! [`crate::battle_chrome`](../../engine-vm) out of a mednafen
 //! battle save state's libgpu ordering table - a RAM image *is* the
 //! frame's display list, so the seats are read out of the queued packet
 //! words rather than measured off a screenshot. See
@@ -698,7 +698,7 @@ mod tests {
     }
 
     /// Every seat of the per-actor diamond, against the packet-pinned
-    /// values `legaia_engine_vm::battle_chrome` carries.
+    /// values `crate::battle_chrome` carries.
     #[test]
     fn command_diamond_reproduces_the_submenu_capture() {
         let c = CLUSTER_COMMAND;

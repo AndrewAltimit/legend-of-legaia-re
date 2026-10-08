@@ -17,24 +17,24 @@ pub struct TileBoardState {
     /// `None` when the player is idle and ready to accept a new
     /// direction. Mirrors the walk SM's "interpolate to target" state
     /// (`overlay_0897_801ef2b0` case 2).
-    pub target: Option<(i32, i32)>,
+    pub(crate) target: Option<(i32, i32)>,
     /// `true` while a field-VM op-0x49 sub-5 board install holds the
     /// script suspended (the engine face of retail's `_DAT_8007b450`
     /// arm for the board consumer). The op reads `Armed` while
     /// [`crate::world::TileBoardState::grid`] is installed and `Done` once the board
     /// exits (an event cell landing), then clears this on resume.
-    pub armed: bool,
+    pub(crate) armed: bool,
     /// The parsed op-49 board header (radius / mode flag / actor
     /// template ids) kept for the render + event consumers while the
     /// board is installed.
-    pub header: Option<crate::tile_board::TileBoardHeader>,
+    pub(crate) header: Option<crate::tile_board::TileBoardHeader>,
     /// Per-cell-value tile-actor table (retail `DAT_801f35bc`, 15 entries).
     /// Index = cell value: slot `0` = the player actor, `2..=14` = the
     /// per-value tile actors spawned at board install from
     /// `tile_template_base + (value - 2)`. Each entry is the actor-pool
     /// slot holding that value's instance, or `None` when the value is not
     /// present on the board / the pool was exhausted. Cleared on teardown.
-    pub actor_slots: [Option<u8>; crate::tile_board::TILE_ACTOR_TABLE_LEN],
+    pub(crate) actor_slots: [Option<u8>; crate::tile_board::TILE_ACTOR_TABLE_LEN],
     /// Per-frame tile-board draw list: one entry per drawn cell, naming the
     /// tile actor to draw and the world-centre position to draw it at
     /// (`overlay_0897_801e0f3c`). Refreshed every field tick while a board
@@ -45,16 +45,16 @@ pub struct TileBoardState {
     /// The walk SM's state (the controller's `+0x54`, values in
     /// [`crate::tile_board::sm`]): the fade-in, walking, the quit prompt and
     /// the exit states down to teardown.
-    pub sm: u8,
+    pub(crate) sm: u8,
     /// The fade value (`+0x9C`, 4.12): what the SM copies into every tile
     /// actor's `+0x72` render scale while it fades.
-    pub fade: i16,
+    pub(crate) fade: i16,
     /// The quit prompt's cursor (`_DAT_8007BB88`, row `0` = quit).
-    pub prompt_cursor: u32,
+    pub(crate) prompt_cursor: u32,
     /// The pad-rotation octant as it stood when the board installed
     /// (`DAT_801F35C4`, saved at `0x801EF320` and put back into `gp+0x2D8`
     /// at teardown, `0x801EFE7C`).
-    pub saved_octant: u32,
+    pub(crate) saved_octant: u32,
 }
 
 impl TileBoardState {

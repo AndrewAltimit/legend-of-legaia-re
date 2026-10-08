@@ -453,6 +453,8 @@ fn derive_field_carriers_maps_sparring_carrier_and_npcs() {
     let controller = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x21];
     let mut sparring = vec![0x00, RIM_ELM_SPARRING_CARRIER_MODEL, 0x00, tx, tz];
     sparring.extend_from_slice(&[0x1F, b's', b'p', b'a', b'r', 0x00]);
+    // The record's own fight: retail's town01 Tetsu runs `3E FF <row>`.
+    sparring.extend_from_slice(&[0x3E, 0xFF, RIM_ELM_TRAINING_FORMATION_ID as u8, 0, 0, 0]);
     let mut npc = vec![0x00, 0x10, 0x00, 10, 12];
     npc.extend_from_slice(&[0x1F, b'h', b'i', b'!', 0x00]);
     let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 103, 0, 0, 0, 0];
@@ -523,6 +525,30 @@ fn grid_byte_to_world_decodes_half_tiles() {
     assert_eq!(grid_byte_to_world(0), 0x40);
     assert_eq!(grid_byte_to_world(10), 10 * 0x80 + 0x40);
     assert_eq!(grid_byte_to_world(10 | 0x80), 10 * 0x80 + 0x80);
+}
+
+#[test]
+fn a_player_move_put_back_by_a_position_copy_is_not_a_door() {
+    // `chitei2`'s Rapid Transport switches park the player at (44, 47) to
+    // watch the car (`A3 F8 2C 2F`), then copy the stand-in actor 0x39's
+    // spot back into the player (`CC F8 E3 39`): contact moves nobody.
+    let (mf, man) =
+        man_with_placement_script(&[0xA3, 0xF8, 0x2C, 0x2F, 0xCC, 0xF8, 0xE3, 0x39, 0x21]);
+    let placements = mf.actor_placements(&man);
+    assert_eq!(placement_walk_touch_event(&mf, &man, &placements[0]), None);
+    // A move after the restore is still where the record leaves the player.
+    let (mf, man) = man_with_placement_script(&[
+        0xA3, 0xF8, 0x2C, 0x2F, 0xCC, 0xF8, 0xE3, 0x39, 0xA3, 0xF8, 20, 30, 0x21,
+    ]);
+    let placements = mf.actor_placements(&man);
+    assert_eq!(
+        placement_walk_touch_event(&mf, &man, &placements[0]),
+        Some(WalkTouchEvent::PlayerMoveTo {
+            world_x: grid_byte_to_world(20),
+            world_z: grid_byte_to_world(30),
+            facing: None,
+        })
+    );
 }
 
 #[test]

@@ -40,7 +40,7 @@ fn card_with_save(block: u8) -> Vec<u8> {
     let f = card::DIR_FRAME_SIZE * block as usize;
     buf[f..f + 4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
     buf[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    buf[f + 10..f + 22].copy_from_slice(b"BASCUS-94254");
+    buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
     let b = card::BLOCK_SIZE * block as usize;
     let sc = &mut buf[b..b + card::BLOCK_SIZE];
     sc[..2].copy_from_slice(&card::SAVE_BLOCK_MAGIC);
@@ -81,7 +81,9 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
     for _ in 0..240 {
         rt.boot_title_step(0);
     }
-    rt.boot_title_step(START); // PressStart -> MainMenu, cursor on Continue
+    rt.boot_title_step(START); // PressStart -> MainMenu, cursor on New Game
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
     let mut outcome = String::new();
     for _ in 0..240 {
         rt.boot_title_step(0);
@@ -157,4 +159,46 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
         false,
         "no save-select, no backdrop"
     );
+}
+
+/// Retail's title row counter `_DAT_8007B820` outlives the title: a second
+/// title the page raises opens its menu on the row the first one held, so
+/// one Cross there answers CONTINUE without a Down.
+#[test]
+fn a_reopened_title_keeps_the_row_the_last_one_held() {
+    let Some(disc) = std::env::var("LEGAIA_DISC_BIN").ok() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read disc");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load disc");
+    rt.enter_field("town01").expect("enter town01");
+    rt.insert_card(0, card_with_save(3), "card A".into())
+        .expect("insert card into port 1");
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(START);
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
+    rt.boot_title_step(0);
+    rt.boot_title_close();
+
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(START);
+    let mut outcome = String::new();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+        outcome = rt.boot_title_step(CROSS);
+        if !outcome.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(outcome, "continue", "the reopened title opened on CONTINUE");
+    eprintln!("[ran] title row memory");
 }

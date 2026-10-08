@@ -24,8 +24,8 @@ use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Cmd};
 use commands::{
-    cmd_audio_trace, cmd_battle, cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter,
-    cmd_equip, cmd_export_glb, cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load,
+    cmd_audio_trace, cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter, cmd_equip,
+    cmd_export_glb, cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load,
     cmd_man_scripts, cmd_mode_trace, cmd_pcm_trace, cmd_play, cmd_replay, cmd_save,
     cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_sim_trace, cmd_target_pick, cmd_title,
     cmd_vram_oracle,
@@ -462,12 +462,6 @@ fn main() -> Result<()> {
             height,
         } => cmd_play_str(&str_file, disc.as_deref(), width, height),
         Cmd::Config { cmd } => cmd_config(cmd),
-        Cmd::Battle {
-            monsters,
-            monster_hp,
-            max_ticks,
-            script,
-        } => cmd_battle(monsters, monster_hp, max_ticks, &script),
         Cmd::Inventory {
             item,
             party_size,

@@ -43,6 +43,8 @@
 //! page's `webgl-fog-volume.js`, two transcriptions of one shading recipe
 //! (see [`FOG_SHADER_CONSTANTS`]).
 
+use crate::fog_particles::FogRegion;
+
 /// Disturbance-grid cells per side.
 pub const SIM_DIM: usize = 64;
 /// Sheet-mesh quads per side (the mesh has `MESH_DIM + 1` vertices a side).
@@ -320,6 +322,38 @@ pub struct FogVolume {
     prev: Vec<FogMover>,
     /// Whether [`Self::sim_origin`] / [`Self::mesh_origin`] have been seated.
     seated: bool,
+    /// The field scene's live fog-region table (MAN section 4, the retail
+    /// pool spawner's own gate - [`region_weight`]), folded into
+    /// [`Self::ground_weight`] so the bank lies only where retail's pool can
+    /// spawn. Empty in battle and in scenes with no table.
+    regions: Vec<FogRegion>,
+    /// [`Self::regions`] changed since the sheet mesh was last sampled.
+    regions_dirty: bool,
+    /// The current field scene's interior walk areas ([`InteriorTracker`]).
+    pub interiors: InteriorTracker,
+}
+
+/// How much bank the field tile `(tile_x, tile_z)` may carry under the
+/// scene's fog-region table: retail's spawner rule (`FUN_801D629C`,
+/// `0x801D6320..0x801D63B8`, [`crate::fog_particles::FogPool::spawn`]) - the
+/// **first** region whose open box holds the tile decides, and a disabled
+/// hit ends the search, so an earlier disabled box carves a hole out of a
+/// later enabled one. No containing region means no fog. An empty table
+/// (a tuned scene with no section 4) leaves the whole scene to the bank.
+///
+/// This is what keeps the bank out of the interiors a town lays out beside
+/// its streets: `town0b`'s one region covers the Rim Elm streets and none of
+/// the house rooms, which sit in the same scene at their own tiles (a door
+/// is an intra-scene warp), and the boxes several scenes key on flag `0x007`
+/// sit ahead of their area-wide region and switch off once that flag is set.
+pub fn region_weight(regions: &[FogRegion], tile_x: i32, tile_z: i32) -> f32 {
+    if regions.is_empty() {
+        return 1.0;
+    }
+    match regions.iter().find(|r| r.contains(tile_x, tile_z)) {
+        Some(r) if r.enabled => 1.0,
+        _ => 0.0,
+    }
 }
 
 impl Default for FogVolume {
@@ -349,6 +383,9 @@ impl FogVolume {
             battle_luma: None,
             prev: Vec::new(),
             seated: false,
+            regions: Vec::new(),
+            regions_dirty: false,
+            interiors: InteriorTracker::default(),
         }
     }
 
@@ -367,6 +404,17 @@ impl FogVolume {
             ground_gen: self.ground_gen.wrapping_add(1),
             ..Self::new()
         };
+    }
+
+    /// Install the field scene's live fog-region table ([`region_weight`]).
+    /// A change re-samples the sheet mesh on the next step, so a script that
+    /// rewrites the region enables (op `4C C1`) moves the bank with it.
+    pub fn set_regions(&mut self, regions: &[FogRegion]) {
+        if self.regions != regions {
+            self.regions.clear();
+            self.regions.extend_from_slice(regions);
+            self.regions_dirty = true;
+        }
     }
 
     /// Switch coordinate space (field <-> battle). The disturbances of one
@@ -451,7 +499,7 @@ impl FogVolume {
             (focus[0] / mc).floor() as i32 - mhalf,
             (focus[1] / mc).floor() as i32 - mhalf,
         ];
-        let moved = !self.seated || mwant != self.mesh_origin;
+        let moved = !self.seated || mwant != self.mesh_origin || self.regions_dirty;
         if moved {
             self.mesh_origin = mwant;
             self.resample_ground(floor);
@@ -485,9 +533,21 @@ impl FogVolume {
                     }
                 }
                 let t = ((step - FLOOR_STEP_LO) / (FLOOR_STEP_HI - FLOOR_STEP_LO)).clamp(0.0, 1.0);
-                self.ground_weight[z * n + x] = 1.0 - t * t * (3.0 - 2.0 * t);
+                let region = match self.space {
+                    // One sheet-mesh quad is one 128-unit tile, so vertex
+                    // `(x, z)` sits on the corner of tile `mesh_origin + (x,
+                    // z)` - the point retail seats a particle spawned there.
+                    FogSpace::Field => region_weight(
+                        &self.regions,
+                        self.mesh_origin[0] + x as i32,
+                        self.mesh_origin[1] + z as i32,
+                    ),
+                    FogSpace::Battle => 1.0,
+                };
+                self.ground_weight[z * n + x] = (1.0 - t * t * (3.0 - 2.0 * t)) * region;
             }
         }
+        self.regions_dirty = false;
         self.ground_gen = self.ground_gen.wrapping_add(1);
     }
 
@@ -838,6 +898,146 @@ fn texel_word(vram: &legaia_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -
         _ => px(tx + u, ty + v),
     };
     (w != 0).then_some(w)
+}
+
+/// Walk areas (in 64-unit sub-cells) up to this size can be interiors; a
+/// larger one is always open ground. House rooms, castle halls and the
+/// corridors between them run from a few dozen sub-cells to about 750
+/// across the scenes that raise a bank; the streets, plazas and forest
+/// floors they hang off run past 1,300.
+pub const INTERIOR_MAX_SUBCELLS: u32 = 800;
+
+/// Sub-cells per side of the walk-area lattice (four per 128-unit tile).
+const AREA_STRIDE: usize = 0x100;
+
+/// Which walk areas of the current field scene are interiors, learned from
+/// how the player moves between them.
+///
+/// Legaia lays a town's house rooms (and a castle's halls) out in the same
+/// scene map as its streets, each an island of floor at its own tiles, and
+/// a door is an **intra-scene warp** to it rather than a scene change
+/// (`docs/formats/encounter.md`). The fog-region table bounds some scenes'
+/// fog to their streets ([`region_weight`]), but many keep one region over
+/// the whole map. So the bank also tracks the walk areas - the 4-connected
+/// open floor components the locomotion collision leaves - and classifies
+/// them:
+///
+/// - the area the player is first seen standing in after entering the scene
+///   is **open ground** (an entrance from another scene, a picker seat);
+/// - walking (no warp) into another area carries the current class over -
+///   a stair whose tiles carry no floor bit splits one street into two
+///   areas, and that is still the street;
+/// - a **warp** (a jump past [`TELEPORT_UNITS`] in one tick) into an area
+///   not yet classified makes it an **interior** when it is room-sized
+///   ([`INTERIOR_MAX_SUBCELLS`]), open ground otherwise; a warp into a
+///   classified area takes its class.
+///
+/// The bank fades out while the player is in an interior and snaps off on
+/// the warp in (the door is a cut). Nothing here is retail: retail's pool
+/// spawns wherever its region table lets it, interior or not.
+#[derive(Debug, Clone, Default)]
+pub struct InteriorTracker {
+    /// Area id per sub-cell (`sz * 0x100 + sx`, `0` closed, ids 1-based);
+    /// empty until seeded.
+    labels: Vec<u16>,
+    /// Sub-cell count per area (`sizes[id - 1]`).
+    sizes: Vec<u32>,
+    /// Per area: `0` unknown, `1` open ground, `2` interior.
+    class: Vec<u8>,
+    /// The player's last observed position and area.
+    last: Option<([i32; 2], u16)>,
+    /// Whether the player stands in an interior.
+    pub indoors: bool,
+}
+
+impl InteriorTracker {
+    /// Forget everything - a new scene.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Whether [`Self::seed`] has run for this scene.
+    pub fn seeded(&self) -> bool {
+        !self.labels.is_empty()
+    }
+
+    /// Install the scene's walk areas (`labels` over the `0x100 x 0x100`
+    /// sub-cell lattice, `sizes` per 1-based id).
+    pub fn seed(&mut self, labels: Vec<u16>, sizes: Vec<u32>) {
+        self.class = vec![0; sizes.len()];
+        self.labels = labels;
+        self.sizes = sizes;
+        self.last = None;
+        self.indoors = false;
+    }
+
+    /// The area id at world `(x, z)`, `0` off the open floor.
+    pub fn area_at(&self, x: i32, z: i32) -> u16 {
+        if x < 0 || z < 0 {
+            return 0;
+        }
+        let (sx, sz) = ((x >> 6) as usize, (z >> 6) as usize);
+        if sx >= AREA_STRIDE || sz >= AREA_STRIDE {
+            return 0;
+        }
+        self.labels.get(sz * AREA_STRIDE + sx).copied().unwrap_or(0)
+    }
+
+    /// Observe the player at world `(x, z)` this tick. Returns `true` on the
+    /// tick a warp carries the player into an interior.
+    pub fn observe(&mut self, x: i32, z: i32) -> bool {
+        if !self.seeded() {
+            return false;
+        }
+        let area = self.area_at(x, z);
+        let Some((prev, prev_area)) = self.last else {
+            // First sight in this scene: where the player came in.
+            if area != 0 {
+                self.set_class(area, 1);
+                self.indoors = false;
+                self.last = Some(([x, z], area));
+            }
+            return false;
+        };
+        let (dx, dz) = ((x - prev[0]) as f32, (z - prev[1]) as f32);
+        let warped = (dx * dx + dz * dz).sqrt() > TELEPORT_UNITS;
+        let mut entered = false;
+        if area != 0 && area != prev_area {
+            let known = self.class[usize::from(area) - 1];
+            let class = match known {
+                0 if warped => {
+                    if self.sizes[usize::from(area) - 1] <= INTERIOR_MAX_SUBCELLS {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                0 => {
+                    if self.indoors {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                k => k,
+            };
+            self.set_class(area, class);
+            let indoors = class == 2;
+            entered = warped && indoors && !self.indoors;
+            self.indoors = indoors;
+        }
+        // A closed sub-cell (a doorway, a stair without a floor bit) keeps
+        // the last area, so the next open one is compared against it.
+        let keep = if area == 0 { prev_area } else { area };
+        self.last = Some(([x, z], keep));
+        entered
+    }
+
+    fn set_class(&mut self, area: u16, class: u8) {
+        if let Some(c) = self.class.get_mut(usize::from(area).wrapping_sub(1)) {
+            *c = class;
+        }
+    }
 }
 
 /// What a host draws for one frame: see [`FogVolume::frame`]. Positions are
@@ -1204,5 +1404,159 @@ mod tests {
             assert_eq!(v[3], 1.0);
         }
         assert_eq!(mesh_indices().len(), MESH_DIM * MESH_DIM * 6);
+    }
+
+    fn region(enabled: bool, x0: u8, z0: u8, x1: u8, z1: u8) -> FogRegion {
+        FogRegion {
+            enabled,
+            x0,
+            z0,
+            x1,
+            z1,
+            angle_base: 0,
+            angle_spread: 0,
+            speed: 0,
+            byte_8: 0,
+            flag_index: 0,
+        }
+    }
+
+    /// A lattice with a street (area 1, large), a room (area 2, small) and a
+    /// second street strip (area 3, small) reached on foot.
+    fn town() -> InteriorTracker {
+        let mut labels = vec![0u16; AREA_STRIDE * AREA_STRIDE];
+        let mut fill = |x0: usize, z0: usize, x1: usize, z1: usize, id: u16| {
+            for z in z0..z1 {
+                for x in x0..x1 {
+                    labels[z * AREA_STRIDE + x] = id;
+                }
+            }
+        };
+        fill(0, 0, 60, 40, 1); // street, 2400 sub-cells
+        fill(200, 200, 210, 210, 2); // room, 100
+        fill(61, 0, 70, 10, 3); // strip past a closed stair column, 90
+        let mut t = InteriorTracker::default();
+        t.seed(labels, vec![2400, 100, 90]);
+        t
+    }
+
+    fn at(sx: i32, sz: i32) -> (i32, i32) {
+        (sx * 64 + 32, sz * 64 + 32)
+    }
+
+    #[test]
+    fn a_door_warp_into_a_room_is_indoors_and_back_out_is_not() {
+        let mut t = town();
+        let (x, z) = at(10, 10);
+        assert!(!t.observe(x, z));
+        assert!(!t.indoors);
+        // Door: one tick, far away, into the small area.
+        let (x, z) = at(205, 205);
+        assert!(t.observe(x, z), "the warp in reports the cut");
+        assert!(t.indoors);
+        // Walking about the room stays indoors and reports nothing new.
+        let (x, z) = at(206, 205);
+        assert!(!t.observe(x, z));
+        assert!(t.indoors);
+        // Door back out onto the street.
+        let (x, z) = at(10, 12);
+        assert!(!t.observe(x, z));
+        assert!(!t.indoors);
+        // And in again: the room is remembered.
+        let (x, z) = at(205, 205);
+        assert!(t.observe(x, z));
+        assert!(t.indoors);
+    }
+
+    #[test]
+    fn walking_into_a_small_area_keeps_the_street_class() {
+        let mut t = town();
+        let (x, z) = at(58, 5);
+        t.observe(x, z);
+        // Two sub-cells east, across the closed column, on foot.
+        for sx in [59, 60, 61, 62] {
+            let (x, z) = at(sx, 5);
+            assert!(!t.observe(x, z));
+        }
+        assert!(!t.indoors, "a stair-split strip is still the street");
+        // Even a later warp into it keeps it open ground.
+        let (x, z) = at(10, 30);
+        t.observe(x, z);
+        let (x, z) = at(65, 5);
+        assert!(!t.observe(x, z));
+        assert!(!t.indoors);
+    }
+
+    #[test]
+    fn a_warp_into_a_large_area_is_open_ground() {
+        let mut t = town();
+        // Enter the scene in the room (a card load): that is where the
+        // player came in, so it counts as open ground.
+        let (x, z) = at(205, 205);
+        t.observe(x, z);
+        assert!(!t.indoors);
+        let (x, z) = at(10, 10);
+        assert!(!t.observe(x, z));
+        assert!(!t.indoors);
+    }
+
+    #[test]
+    fn region_weight_is_the_spawner_rule() {
+        // No table: the whole scene.
+        assert_eq!(region_weight(&[], 90, 90), 1.0);
+        // A town box: open bounds, nothing outside it.
+        let town = [region(true, 0, 0, 56, 48)];
+        assert_eq!(region_weight(&town, 20, 20), 1.0);
+        assert_eq!(region_weight(&town, 0, 20), 0.0, "open lower bound");
+        assert_eq!(region_weight(&town, 56, 20), 0.0, "open upper bound");
+        assert_eq!(region_weight(&town, 97, 54), 0.0, "a house room beside it");
+        // A disabled box ahead of an area-wide one is a hole; the same box
+        // enabled is fog like the rest.
+        let holed = [region(false, 24, 0, 45, 22), region(true, 0, 0, 126, 126)];
+        assert_eq!(region_weight(&holed, 30, 10), 0.0);
+        assert_eq!(region_weight(&holed, 60, 60), 1.0);
+        let filled = [region(true, 24, 0, 45, 22), region(true, 0, 0, 126, 126)];
+        assert_eq!(region_weight(&filled, 30, 10), 1.0);
+        // A disabled first hit ends the search even under an enabled box.
+        let off = [region(false, 0, 0, 126, 126)];
+        assert_eq!(region_weight(&off, 60, 60), 0.0);
+    }
+
+    #[test]
+    fn regions_mask_the_sheet_mesh_and_a_change_resamples_it() {
+        let mut f = raised();
+        let focus = [64.0 * 128.0, 64.0 * 128.0];
+        f.recentre(focus, flat);
+        let gen0 = f.ground_gen;
+        let all = |f: &FogVolume| f.ground_weight.iter().all(|w| *w == 1.0);
+        assert!(all(&f), "no table: every floor vertex carries bank");
+
+        // A box over the west half of the mesh only.
+        f.set_regions(&[region(true, 0, 0, 64, 127)]);
+        assert!(f.recentre(focus, flat), "a new table re-samples in place");
+        assert_ne!(f.ground_gen, gen0);
+        let n = MESH_DIM + 1;
+        for z in 0..n {
+            for x in 0..n {
+                let tx = f.mesh_origin[0] + x as i32;
+                let tz = f.mesh_origin[1] + z as i32;
+                let want = if 0 < tx && tx < 64 && 0 < tz && tz < 127 {
+                    1.0
+                } else {
+                    0.0
+                };
+                assert_eq!(f.ground_weight[z * n + x], want, "tile ({tx}, {tz})");
+            }
+        }
+        // The same table again does not re-sample.
+        let gen1 = f.ground_gen;
+        f.set_regions(&[region(true, 0, 0, 64, 127)]);
+        assert!(!f.recentre(focus, flat));
+        assert_eq!(f.ground_gen, gen1);
+
+        // Battle space ignores the field table.
+        f.set_space(FogSpace::Battle);
+        f.recentre([0.0, 0.0], flat);
+        assert!(all(&f));
     }
 }

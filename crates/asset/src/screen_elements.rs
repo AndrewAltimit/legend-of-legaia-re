@@ -23,7 +23,7 @@
 //!
 //! One arithmetic covers the actor-name plaque, the full-width party readout
 //! and every command chip. The engine-side law + the sprite rects it feeds are
-//! in `legaia_engine_vm::battle_chrome`; the surfaces are documented in
+//! in `legaia_engine_ui::battle_chrome`; the surfaces are documented in
 //! [`battle.md`](../../../docs/subsystems/battle.md).
 //!
 //! ## Record layout (`0x18` bytes)

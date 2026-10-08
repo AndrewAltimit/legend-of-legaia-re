@@ -547,6 +547,31 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "CD-XA shout staging, native boot vs play page - which channels "
+        "of XA2 / XA4 / XA6 become shouts, how a shout is trimmed and which "
+        "SCUS cue pools ride with it were written out once per host (the "
+        "page's PlayXa restated the native reader). Both stage each shout "
+        "file through `xa_banks::install_shout_file`",
+        "sites": {
+            "native": ("crates/engine-session/src/boot.rs", "read_arts_shout_bank"),
+            "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["install_shout_file"],
+    },
+    {
+        "what": "CD-XA one-shot clip staging, native boot vs play page - the "
+        "clip-slot file table, the per-channel decode and the interleave "
+        "width the retail read span divides by. Both stage each clip file "
+        "through `xa_banks::install_clip_file`",
+        "sites": {
+            "native": ("crates/engine-session/src/boot.rs", "read_battle_xa_clip_bank"),
+            "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["install_clip_file"],
+    },
+    {
         "what": "fishing session affordance row, native vs play page - each "
         "host names the same three session actions (menu, quit, prizes) "
         "with its own keys; the page once printed only the menu, so a "
@@ -612,13 +637,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "screens' purchase / sale / equip cues are the engine's decision "
         "(`MenuRuntime::take_ui_cue`, retail's list kernel `FUN_80032A44` "
         "and the shop sub-screens' own ring writes). Both hosts dropped "
-        "them; each host's shop step must take and key the cue",
+        "them; each host's shop step must take and key the cue. The take "
+        "now sits inside the one per-tick step both hosts run "
+        "(`MenuRuntime::step_field_session`, which returns the cue), so the "
+        "assertion is that each host's shop step routes through it",
         "sites": {
             "native": (NATIVE_REDRAW, "tick_menu_runtime_session"),
             "web": ("crates/web-viewer/src/play_shop.rs", "play_shop_input"),
         },
         "mode": "symbols_all",
-        "symbols": ["take_ui_cue"],
+        "symbols": ["step_field_session"],
     },
     {
         "what": "CLUT-walk shimmer install, native vs play page - the resolve "
@@ -1147,25 +1175,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         "pattern": r"(resolve_turn\w*)",
     },
     {
-        "what": "pause-menu open through the mode seat - retail opens the menu "
-        "by writing the mode word (`CARD INIT` stages the menu overlay and "
-        "hands the word to `CARD MODE` at `0x80025974`), not by calling the "
-        "menu, and going through `ModeSeat::enter` is what runs the "
-        "mode-change edge with it. A host that only lets `adopt_world_mode` "
-        "follow the world's scene mode reaches the same word by a different "
-        "road: the chain of mode words is identical, the edge count is not, "
-        "so no trace comparison catches it and only the paired call sites do",
-        "sites": {
-            "native": (NATIVE_BOOT, "open_field_menu"),
-            # The browser's open calls the seat through one helper, so the
-            # helper is the site: naming `play_menu_open` would pin the call
-            # to `seat_open_card_menu` and not the seat call underneath it.
-            "web": (WEB_RUNTIME, "seat_open_card_menu"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["request_card_mode"],
-    },
-    {
         "what": "scripted mesh re-bind (motion-VM op `0x0E`) - the world holds "
         "the actor's new model id per placement slot and each host resolves it "
         "to bytes through the scene's model bank. A host that resolves it "
@@ -1234,43 +1243,40 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["arm_live_loop"],
     },
     {
-        "what": "pause-menu open - retail gates the root list's last two rows "
-        "on two scene-scoped values (the op-`0x49` entry context and the MAN "
-        "header's save-allow bit) and suspends the field while the menu owns "
-        "the frame. A host that opens the menu without sampling them into a "
-        "`FieldMenuGate` draws every row white and opens every row, so a "
-        "player can Save in one of the 96 scenes whose header forbids it; a "
-        "host that does not switch the world into `SceneMode::Menu` leaves "
-        "field dispatch running under the menu. Both are invisible in a diff, "
-        "because the two open sites live in different crates",
-        "sites": {
-            "native": (NATIVE_BOOT, "open_field_menu"),
-            "web": (WEB_PLAY_MENU, "play_menu_open"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["FieldMenuGate", "SceneMode::Menu"],
-    },
-    {
-        "what": "menu-open precondition - every host that turns a Start edge "
-        "into an open menu must ask `World::field_menu_open_allowed` rather "
-        "than spell the test out locally. Three hosts each wrote their own "
-        "copy and all three said `mode == Field`, which is how the OVERWORLD "
-        "lost the pause menu: retail runs one locomotion controller "
-        "(`FUN_801D01B0`) across the field and the kingdom overworlds, and "
-        "the port splits that one retail mode into `Field` + `WorldMap`. The "
-        "premise the copies rested on - that `FUN_801E76D4` is the "
-        "overworld's controller with a Start handler of its own - is false; "
-        "it is the top-view debug renderer. The symptom was silent in the "
-        "worst way: the Save row is legal in exactly the three scenes no host "
-        "would open the menu in, so the SAVE direction was unreachable by pad "
-        "anywhere in the port while every oracle stayed green",
+        "what": "pause-menu press - one engine rule answers every menu-button "
+        "press: `BootSession::press_field_menu` (the scripted op-`0x49` press, "
+        "the Start edge through `World::field_menu_open_allowed`, the deny "
+        "buzz) over `BootSession::open_field_menu` (the `FieldMenuGate` "
+        "sample, the switch into `SceneMode::Menu`, the open through the mode "
+        "seat). Each of those used to be paired across two open sites, "
+        "because the page kept a private root picker and re-spelled the open "
+        "beside the session's: three hosts once wrote their own `mode == "
+        "Field` copy of the precondition, which is how the OVERWORLD lost the "
+        "pause menu, and the page once opened without sampling the gate, "
+        "which let a player Save where the scene's header forbids it. The "
+        "page's menu is the session's `field_menu` now, so the property left "
+        "to assert is that every host routes the press through the kernel "
+        "rather than around it",
         "sites": {
             "native_window": (NATIVE_REDRAW, "handle_redraw"),
             "native_boot": (NATIVE_BOOT, "tick"),
             "web": (WEB_PLAY_MENU, "play_menu_open"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_menu_open_allowed"],
+        "symbols": ["press_field_menu"],
+    },
+    {
+        "what": "pause-menu open with no press - the title's Continue / "
+        "Options rows land on a pause-menu sub-screen, so they open the menu "
+        "through the session's own builder (`BootSession::open_field_menu`) "
+        "rather than through a Start press; a host that built its own root "
+        "picker here would be back to two menus",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "open_menu_row_from_title"),
+            "web": (WEB_PLAY_MENU, "open_play_menu_unpressed"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["open_field_menu"],
     },
     {
         "what": "party wipe - both hosts must route it to the title screen "
@@ -2430,6 +2436,8 @@ DIAG_GATES: list[dict[str, object]] = [
         "note": "battle-event log + pose/HP diagnostic text over the frame",
     },
     # --- subtractive / logging only ----------------------------------------
+    {"env": "LEGAIA_DIAG_DRAWS", "additive": False, "note": "write the frame's draw census + CPU VRAM to a file; draws nothing"},
+    {"env": "LEGAIA_DIAG_DRAW_TRIS", "additive": False, "note": "beside LEGAIA_DIAG_DRAWS, write one census family per triangle; draws nothing"},
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NO_PRIM_NEAR", "additive": False, "note": "disarm the per-primitive near reject (A/B attribution; the browser never disarms it)"},
@@ -2458,6 +2466,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-shell",
     REPO / "crates" / "engine-render",
     REPO / "crates" / "engine-core",
+    REPO / "crates" / "engine-minigames",
     REPO / "crates" / "engine-ui",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "web-viewer",
@@ -3160,9 +3169,18 @@ ENUM_COVERAGE: list[dict[str, object]] = [
         "mode-24 door warp for either) and only one can DRAW leaves the other "
         "host's player in a frozen field with no screen - the shape four "
         "minigame modes shipped in",
-        # (variant, host) -> reason. Empty: the play page's fishing line
-        # pass (`play_fishing.rs`) keys on `SceneMode::Fishing`.
-        "waivers": {},
+        # (variant, host) -> reason. The play page's fishing line pass
+        # (`play_fishing.rs`) keys on `SceneMode::Fishing`.
+        "waivers": {
+            ("Menu", "web"): {
+                "reason": "entered on both hosts by one engine call, "
+                "`BootSession::open_field_menu` (engine-session), and drawn on "
+                "the page off the session's own `field_menu` "
+                "(`play_menu_is_open` / `play_menu_draws_json`), so the page "
+                "never spells the variant: the mode and the screen cannot "
+                "come apart, which is the failure this row exists to catch"
+            },
+        },
     },
 ]
 
@@ -3291,6 +3309,7 @@ HOTKEY_SOURCES = [
 # browser hosts share, and the browser hosts themselves.
 SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
+    REPO / "crates" / "engine-minigames" / "src",
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
     REPO / "crates" / "web-viewer" / "src",
@@ -4040,8 +4059,11 @@ def _selftest_frame_case(
 # `engine-session` is engine surface too: both play hosts hold its
 # `BootSession` and tick it, so a call into it is a call both can make.
 # `engine-screens` likewise: the shop-family composition both hosts call.
+# `engine-battle` holds the battle kernels engine-core re-exports.
 ENGINE_API_CRATES = (
     "engine-core",
+    "engine-battle",
+    "engine-minigames",
     "engine-vm",
     "engine-ui",
     "engine-audio",
@@ -4419,6 +4441,180 @@ def check_boot_installs() -> tuple[list[str], list[str], int]:
     return problems, notes, len(native)
 
 
+# ---------------------------------------------------------------------------
+# Tier 14 - save-rack I/O reaches the card only through the save screen.
+#
+# Retail writes and reads a save in exactly one place: the card driver behind
+# the save screen (`FUN_801DAEF4` / `FUN_801DAE24` -> `FUN_801DD35C`), after the
+# pill row, the card read, the block grid and the confirm. The port's hosts
+# each own the bytes behind that screen (the native save directory and
+# `--card` image, the browser's card rack), and each owns a commit applier
+# that turns the screen's `SaveCommit` into I/O. A host that calls a rack
+# primitive from anywhere else - a hotkey, a page button, a "quick save" - has
+# a save path that bypasses the retail screen, and nothing in a diff of either
+# host says so. This tier pins every shipped call of each primitive to its
+# host's applier (or to the primitive that wraps it).
+# ---------------------------------------------------------------------------
+
+SAVE_IO_ROUTES = [
+    {
+        "host": "native",
+        "root": "crates/engine-shell/src/window",
+        "primitives": {
+            "write_slot_save": {"write_save_commit"},
+            "read_slot_save": {"apply_save_commit"},
+            "write_save_into_card": {"write_save_commit"},
+            "save_at": {"apply_card_save_commit"},
+        },
+    },
+    {
+        "host": "web",
+        "root": "crates/web-viewer/src",
+        "primitives": {
+            "write_session_into_card": {"apply_card_outcome", "service_card_save"},
+            "load_session_from_card": {"apply_card_outcome"},
+            "write_save_into_card": {"write_session_into_card"},
+            "save_at": {"load_session_from_card"},
+        },
+    },
+]
+
+SAVE_IO_FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]")
+SAVE_IO_TEST_FN_RE = re.compile(r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]")
+SAVE_IO_TEST_MOD_RE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
+
+
+def save_io_calls(text: str, primitives: set[str]) -> list[tuple[str, str]]:
+    """`(primitive, enclosing fn)` for every shipped call of a primitive.
+
+    A call inside a `#[cfg(test)]` module or a `#[test]` fn is not shipped
+    code and is skipped; a call outside any fn reports the enclosing fn as
+    `<item>`. A primitive's own definition is not a call.
+    """
+    text = strip_all_comments(text)
+    skip: list[tuple[int, int]] = []
+    for m in SAVE_IO_TEST_MOD_RE.finditer(text):
+        brace = m.end() - 1
+        skip.append((brace, brace + len(fn_body(text, brace))))
+    for m in SAVE_IO_TEST_FN_RE.finditer(text):
+        brace = signature_end(text, m.start(1) - 3)
+        if brace >= 0:
+            skip.append((brace, brace + len(fn_body(text, brace))))
+    fns: list[tuple[int, int, str]] = []
+    for m in SAVE_IO_FN_RE.finditer(text):
+        brace = signature_end(text, m.start())
+        if brace < 0:
+            continue
+        fns.append((brace, brace + len(fn_body(text, brace)), m.group(1)))
+    out: list[tuple[str, str]] = []
+    for prim in sorted(primitives):
+        for m in re.finditer(rf"\b{re.escape(prim)}\s*\(", text):
+            pos = m.start()
+            if re.search(r"\bfn\s+$", text[max(0, pos - 8) : pos]):
+                continue
+            if any(a <= pos < b for a, b in skip):
+                continue
+            owner = "<item>"
+            best = -1
+            for a, b, name in fns:
+                if a <= pos < b and a > best:
+                    best, owner = a, name
+            out.append((prim, owner))
+    return out
+
+
+SELFTEST_SAVE_IO = [
+    (
+        "a call inside the applier is allowed",
+        "fn apply_card_outcome(&mut self) { self.write_session_into_card(0, 1); }",
+        [("write_session_into_card", "apply_card_outcome")],
+    ),
+    (
+        "a call from a page button is attributed to it",
+        "pub fn quick_save(&mut self) {\n    let _ = self.write_session_into_card(0, 1);\n}",
+        [("write_session_into_card", "quick_save")],
+    ),
+    (
+        "a definition is not a call",
+        "pub(crate) fn write_session_into_card(&mut self) -> Result<(), String> { Ok(()) }",
+        [],
+    ),
+    (
+        "a test module is not shipped code",
+        "#[cfg(test)]\nmod tests {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
+        [],
+    ),
+    (
+        "a #[test] fn is not shipped code",
+        "#[test]\nfn writes() { rt.write_session_into_card(0, 1); }",
+        [],
+    ),
+]
+
+
+def check_save_io_routes() -> tuple[list[str], int]:
+    """Tier 14. `(problems, calls_checked)`."""
+    problems: list[str] = []
+    checked = 0
+    for route in SAVE_IO_ROUTES:
+        root = REPO / route["root"]
+        prims: dict[str, set[str]] = route["primitives"]
+        seen: set[str] = set()
+        for path in sorted(root.rglob("*.rs")):
+            if is_test_source(path):
+                continue
+            for prim, owner in save_io_calls(path.read_text(encoding="utf-8"), set(prims)):
+                checked += 1
+                seen.add(prim)
+                if owner not in prims[prim]:
+                    problems.append(
+                        f"SAVE BYPASS {route['host']} {path.relative_to(REPO)}: "
+                        f"`{owner}` calls `{prim}`, which only "
+                        f"{', '.join(sorted(prims[prim]))} may call. A save or load "
+                        f"reaches the rack through the retail save screen's commit "
+                        f"(`SaveScreenFlow::commit`) and nowhere else - open the "
+                        f"screen instead of moving the bytes."
+                    )
+        for prim in sorted(set(prims) - seen):
+            problems.append(
+                f"SAVE ROUTE {route['host']}: no shipped call of `{prim}` under "
+                f"{route['root']} - the applier was renamed or the save path moved. "
+                f"Update SAVE_IO_ROUTES, or the tier checks nothing."
+            )
+    # The other half of "the screen always has a card": the native window's
+    # port 1 is its save directory whatever the player does, so the page's
+    # port 1 must start with the browser card in it, and every fresh runtime
+    # (the disc load, a trap recovery) must get the rack put back. Without
+    # that the retail Save screen opens on two empty ports and does nothing.
+    page = REPO / PAGE_CARD_RACK
+    if not page.is_file():
+        problems.append(f"SAVE ROUTE web: {PAGE_CARD_RACK} is missing")
+    else:
+        text = page.read_text(encoding="utf-8")
+        for label, pattern in PAGE_CARD_RACK_RULES:
+            if not re.search(pattern, text):
+                problems.append(f"SAVE ROUTE web {PAGE_CARD_RACK}: {label}")
+    return problems, checked
+
+
+PAGE_CARD_RACK = "site/_content/play.html"
+PAGE_CARD_RACK_RULES = [
+    (
+        "port 1 must start with the browser card (`portSaveIds = [BROWSER_CARD, ...]`)",
+        r"const\s+portSaveIds\s*=\s*\[\s*BROWSER_CARD\s*,",
+    ),
+    (
+        "the browser card must be formatted by the engine (`formatted_memory_card`)",
+        r"\bformatted_memory_card\s*\(",
+    ),
+    (
+        "the disc load and the trap recovery must both remount the rack "
+        "(`remountCards()` at least twice besides its definition)",
+        r"(?s)(?:\bremountCards\(\);.*){2}",
+    ),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -4551,6 +4747,16 @@ def main() -> int:
                 "ERROR: built-in call-form control failed; a scan that counts "
                 "a `pub fn` as its own caller makes the entry-symmetry tier "
                 "vacuous. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+
+    for _label, src, want in SELFTEST_SAVE_IO:
+        if save_io_calls(src, {"write_session_into_card"}) != want:
+            print(
+                "ERROR: built-in save-route control failed; a scan that cannot "
+                "attribute a call to the fn it sits in, or counts a test, cannot "
+                "say whether a host saves around the retail screen. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -4702,6 +4908,12 @@ def main() -> int:
     boot_problems, boot_notes, boot_checked = check_boot_installs()
     problems.extend(boot_problems)
 
+    # The save half: a host that writes or reads its save rack from anywhere
+    # but the save screen's commit applier has a save path around the retail
+    # screen.
+    save_io_problems, save_io_checked = check_save_io_routes()
+    problems.extend(save_io_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -4784,6 +4996,10 @@ def main() -> int:
         )
         for note in boot_notes:
             print(f"[ui-drift] boot install waived: {note}")
+        print(
+            f"[ui-drift] save-rack I/O calls pinned to the save screen's commit "
+            f"appliers: {save_io_checked}"
+        )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
         # Name every native-only builder, waived or not, for the same reason

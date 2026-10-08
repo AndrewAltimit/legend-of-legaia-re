@@ -415,6 +415,7 @@ pub fn snapshot_for_save(
     SlotSnapshot {
         slot,
         present: true,
+        damaged: false,
         content: SlotContent::LegaiaSave,
         label: if leader.name.is_empty() {
             format!("Slot {}", slot + 1)
@@ -466,8 +467,28 @@ pub fn card_block_snapshots(card: &legaia_save::emu::MountedCard) -> Vec<SlotSna
             }
             // Past here the block IS claimed, so every way of failing to read
             // it is someone else's save rather than a free block.
+            //
+            // Retail's directory walk (`FUN_801E1208`) classifies a block a
+            // Legaia save by its **filename** alone - one of the two regional
+            // prefixes - so a file another game wrote is foreign however its
+            // bytes happen to parse.
+            let ours = card
+                .dir_frame(block)
+                .and_then(|f| f.get(0x0A..))
+                .and_then(super::card_dir_slot_of)
+                .is_some();
+            if !ours {
+                return SlotSnapshot::foreign(cell);
+            }
             match card.save_at(cell) {
-                Some((sf, resume)) => snapshot_for_save(cell, &sf, &resume),
+                Some((sf, resume)) => SlotSnapshot {
+                    // The read's verify, ahead of time: retail sums the
+                    // block it read and refuses it on a mismatch.
+                    damaged: !card
+                        .sc_block(block)
+                        .is_some_and(legaia_save::card::sc_block_checksum_valid),
+                    ..snapshot_for_save(cell, &sf, &resume)
+                },
                 None => SlotSnapshot::foreign(cell),
             }
         })

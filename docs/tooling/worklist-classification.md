@@ -723,6 +723,32 @@ overlay begins a six-instruction leaf there that stores master game mode
 the SCUS scripted game-over trigger. The row was deleting that routine with a
 reason true of four other images, and the audit is what surfaced it.
 
+A **base** does the same. Recovering PROT 0896's base put the foreign-build
+options image in the arbiter's corpus, and eight rows that read a VA as
+interior code or a cited instruction in another image re-raised at once: 0896
+begins a routine at each. None of those is port work - the image is never
+loaded on this disc - so they moved to the `jp_options_status_overlay` scope
+section with both facts in the reason, rather than being kept under an
+address claim the image now refutes.
+
+#### An image's inherited tail is not its code
+
+The arbiter's images are trimmed twice. The first cut is the over-read: an
+extracted footprint that runs into a neighbour's sectors stops where that
+neighbour's head appears. The second is the
+[inherited tail](byte-accounting.md#a-residue-run-that-is-another-images-code) -
+the run where an overlay's extent holds an earlier entry's bytes at the same
+file offset, the packer's buffer rather than this overlay's content - cut by
+the same `inherited_tail.tail_cuts` rule `disc-coverage.py` and the byte
+account apply. Without it the entry-boundary test read the donor's routine
+boundaries as the host image's: PROT 0900 is the menu overlay's code from file
+`0x252A`, so `0x801F90DC` - the menu's item-info panel `FUN_801D0F1C` at the
+slot-B base - read as a `summon_render` entry, and contradicted a
+mis-based-print row that is right. The same cut is what let `0x801F7628` read
+as one image's routine instead of two aliased ones: it is the battle tutorial's
+countdown arm `FUN_801F7628`, ported as `BattleTutorial::arm_countdown`, which
+an interior row had kept off the worklist.
+
 ## The sibling worklist: cited but not dumped
 
 `port-catalog.py --missing-dumps` is the mirror image of the worklist this page

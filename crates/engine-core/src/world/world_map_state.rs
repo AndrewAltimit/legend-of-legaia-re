@@ -16,7 +16,7 @@ pub struct WorldMapState {
     /// Empty unless [`crate::world::World::install_world_map_entities`] seeded them, so
     /// world-map mode without gameplay (camera-only) keeps ticking untouched.
     /// Driven each [`crate::world::SceneMode::WorldMap`] tick by `Self::tick_world_map`.
-    pub entities: Vec<vm::world_map::WorldMapEntityCtx>,
+    pub(crate) entities: Vec<vm::world_map::WorldMapEntityCtx>,
     /// Per-entity role config, paired by index with [`crate::world::WorldMapState::entities`].
     /// Empty (or shorter than the entity list) means an entity has no specific
     /// role: its encounters fall back to [`crate::world::WorldMapState::encounter`]'s shared
@@ -35,17 +35,17 @@ pub struct WorldMapState {
     /// Shared overworld encounter-rate state - the retail globals the
     /// world-map entity SM reads (`DAT_8007b604` countdown, `DAT_8007b5f8`
     /// enable flag) plus the formation an overworld encounter spawns.
-    pub encounter: WorldMapEncounterState,
+    pub(crate) encounter: WorldMapEncounterState,
     /// Whether the player is moving on the overworld this tick (the entity
     /// SM's `_DAT_8007c364[+0x10] & 0x80000` player-walking gate). Set from
     /// the pad each world-map tick; a stationary player lets the interaction
     /// check fire.
-    pub player_walking: bool,
+    pub(crate) player_walking: bool,
     /// Overworld encounter pending resolution into a battle: the formation id
     /// an entity SM's encounter handler latched this frame. Drained at the end
     /// of `Self::tick_world_map` to flip into [`crate::world::SceneMode::Battle`]. `None`
     /// between encounters.
-    pub pending_encounter: Option<u16>,
+    pub(crate) pending_encounter: Option<u16>,
     /// Region-keyed random-encounter state for the overworld (the
     /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
     /// `Self::tick_world_map` rolls it once per 128-unit tile the player
@@ -62,13 +62,13 @@ pub struct WorldMapState {
     /// skips it until the player steps off: a capture of a player stood on a
     /// portal tile is one whose portal has already fired, so re-engaging it on
     /// the first tick would cross the door a second time. `None` otherwise.
-    pub seat_hold_tile: Option<(i32, i32)>,
+    pub(crate) seat_hold_tile: Option<(i32, i32)>,
     /// Sub-step carry of the overworld walk, in `1 / WORLD_MAP_FRAME_STEP`
     /// units: each tick adds one retail frame's (2-unit-rounded) step and
     /// commits a 2-unit sub-step per `2 * WORLD_MAP_FRAME_STEP` it holds, so
     /// the per-vsync port lands retail's `dt = 3` displacement over time
     /// (`10` units every `3` vsyncs). Cleared when no direction is held.
-    pub walk_carry: i32,
+    pub(crate) walk_carry: i32,
 }
 
 impl WorldMapState {

@@ -36,11 +36,67 @@ pub use legaia_font;
 pub use legaia_tim;
 pub use wgpu;
 
-// The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`. Re-export
-// every item (`TextDraw`, `SpriteDraw`, `SpriteRequest`, and all the
-// `*_draws_for` / view-struct builders) at its historical crate-root path so
-// native shell code, the asset-viewer, and tests compile unchanged.
-pub use legaia_engine_ui::*;
+// The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`. The items
+// below are the ones this crate and its dependents (the native shell, the
+// asset-viewer, parity, and this crate's tests) name at the crate-root path;
+// the list is explicit so a new `engine-ui` item does not silently join this
+// crate's API. Anything else is reached as `legaia_engine_ui::<item>` (or add
+// it here when a native caller needs the old path).
+pub use legaia_engine_ui::{
+    ArtsChainRow, ArtsEditorDrawArgs, ArtsEditorPhase, BOOT_UI_STAGE_H, BOOT_UI_STAGE_W,
+    BattleChromeRects, BattleHudDraws, BattleHudFrame, BattleSpoilsView, COUNTER_PICTOGRAM_COINS,
+    COUNTER_PICTOGRAM_GOLD, CardBannerView, CatchHudState, ComboLabelView, CounterSource,
+    DevMenuListRow, EquipCandidateRow, EquipDrawPhase, EquipScreenView, EquipSlotRow,
+    EquipStatBlock, EquipStatRow, FieldMenuPartyView, FieldMenuRowView, FishingBanners,
+    FishingCaptions, FishingHudAtlas, HudDraw, HudLogView, HudPopupView, HudSlotMeta, HudSlotView,
+    InventoryItemRow, InventoryTargetRow, InventoryUseDrawArgs, ListOrderDrawArgs,
+    ListOrderRowView, MENU_TEXT_GOLD, MENU_TEXT_TEAL, MENU_TEXT_WHITE, MenuWindowPainter,
+    NOW_CHECKING_PANEL_POS, NOW_CHECKING_PANEL_SIZE, NameEntryView, OPTIONS_INK_GOLD,
+    OPTIONS_INK_TEAL, OptionsPopupDraw, OptionsRowView, PauseItemInfo, PauseItemsPhase,
+    PauseItemsRow, PauseItemsView, PauseMagicCaster, PauseMagicInfo, PauseMagicPhase,
+    PauseMagicRow, PauseMagicView, PauseThrowConfirmView, READOUT_NORMAL, RecordsField,
+    RecordsLabels, RecordsScreenView, SAVE_SELECT_CURSOR_POS, SAVE_SELECT_SLOT_PITCH_Y,
+    SAVE_SELECT_SLOT1_POS, SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE, SAVE_SELECT_TITLE_COLOR,
+    SAVE_SELECT_TITLE_POS, SLOT_GRID_ORIGIN, SLOT_GRID_PITCH_X, SLOT_GRID_PITCH_Y,
+    SLOT_GRID_ROW_STAGGER_X, SLOT_INFO_CAPTION_CENTER_X, SLOT_INFO_PANEL_PARKED_Y,
+    SLOT_INFO_PANEL_SIZE, SaveMenuAtlasRects, SaveSelectOverlayDraws, SaveSelectOverlayView,
+    SaveSelectPreviewView, SaveSelectRow, ShopRow, SlotGridCell, SlotInfoView, SpellMenuDrawArgs,
+    SpellRowView, SpellTargetView, SpriteDraw, SpriteRequest, StatusPanelView, StatusSatelliteView,
+    StatusStatRow, TITLE_BACKDROP_LUM, TargetPanelCursor, TargetPanelMember, TargetPanelMode,
+    TargetPanelView, TextDraw, TileBoardPromptLayout, TimedFightStripView, TitleBandState,
+    VALUE_READOUT_FALLBACK_COLOR, ValueCellView, afterimage, apply_alpha, arts_input,
+    atlas_opaque_texel, battle_chrome, battle_combo_cluster_draws_for, battle_command_ui,
+    battle_defeat_windows, battle_hud_chrome, battle_hud_draws_for, battle_item_ui,
+    battle_numerals, battle_result_line_draws_for, battle_spoils_draws_for, battle_spoils_windows,
+    battle_stage_clear, battle_trail, battle_tutorial_chrome_draws_for,
+    battle_tutorial_text_draws_for, battle_tutorial_text_width, battle_value_readout_draws_for,
+    billboard, capture_banner_draws_for, cast_beam, cast_theeder, catch_hud_draws,
+    catch_result_draws, cutscene_text_stage_draws, dev_menu_cursor_xy, dev_menu_list_draws_for,
+    diag_hud_enabled, dialog_advance_hand_sprite, dialog_option_hand_sprite, dialog_page_string,
+    dialog_reading_box_lines, dialog_reading_box_text_draws_for, dialog_window_chrome_draws_for,
+    effect_billboard, encounter_banner_draws_for, equip_screen_draws_for, equip_screen_sprites_for,
+    field_menu_draws_for, field_party_hud, fishing_hud_draws_for, font_solid_src, gauge_fill_color,
+    gte, hp_bar_color_index, incense_notice_sprites_for, incense_notice_text_draws_for,
+    inventory_use_draws_for, key_rebind_draws_for, level_up_draws_for,
+    menu_window_chrome_draws_for, menu_window_painters, minigame_fx, move_strip,
+    mp_bar_color_index, name_entry_chrome_sprite_draws_for, name_entry_draws_for,
+    now_checking_panel_draws_for, now_checking_text_draws_for, options_draws_for, other_game_hud,
+    painter_at, painter_for, painter_rect, party_panel_stage_x, pause_menu, persistent_hud_draws,
+    record_counters, record_offset, records_screen_draws_for, records_screen_fields,
+    ringside_backdrop, save_refusal_panel_draws_for, save_refusal_text_draws_for,
+    save_select_chrome_draws_for, save_select_cursor_draw_for, save_select_draws_for,
+    save_select_overlay_draws, scale_stage_text_draws, scene_lighting, screen_prim, shop_draws_for,
+    slot_info_caption_draws_for, slot_info_panel_draws_for, slot_info_panel_text_draws_for,
+    slot_preview_grid_draws_for, spell_menu_draws_for, sprite_draws_for, status_icon_sprites_for,
+    status_satellite_draws_for, status_satellite_icon_sprites_for, status_screen_draws_for,
+    streak_pass, tab_banner_draws, tactical_arts_editor_draws_for, text_balloon_chrome_draws_for,
+    text_balloon_text_draws_for, text_balloon_text_width, text_draws_for,
+    tile_board_prompt_sprites_for, tile_board_prompt_text_draws_for,
+    timed_fight_strip_chrome_draws, timed_fight_strip_text_draws, title_band_sprites,
+    title_draws_for, title_menu_draws_for, title_strip_sprites, title_text_phase, ui_baka_strips,
+    ui_boot_logos, ui_dance, ui_fishing_exchange, ui_fishing_hub, ui_fishing_line, ui_fishing_rod,
+    ui_fishing_sprite, ui_slot_cabinet, ui_slot_paylines, ui_text_lines, vram_capture,
+};
 
 pub mod dyn_light;
 pub mod occlusion_fade;

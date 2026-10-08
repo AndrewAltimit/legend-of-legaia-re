@@ -519,7 +519,7 @@ impl World {
                     for (i, &id) in ids.iter().enumerate() {
                         let slot = self.talk_participant_slot(id);
                         if let Some(&pos) = self.npcs.positions.get(&slot) {
-                            let heading = self.npcs.headings.get(&slot).copied().unwrap_or(0);
+                            let heading = self.npcs.heading(slot);
                             talk.saved[i] = Some((pos, heading));
                         }
                     }
@@ -574,7 +574,7 @@ impl World {
                     // (`_DAT_80089118/20` = negated pose).
                     let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
                     if let Some(&(nx, nz)) = self.npcs.positions.get(&npc) {
-                        let heading = self.npcs.headings.get(&npc).copied().unwrap_or(0);
+                        let heading = self.npcs.heading(npc);
                         let ny = self.sample_field_floor_height(i32::from(nx), i32::from(nz));
                         if let Some(a) = self
                             .player_actor_slot
@@ -1736,6 +1736,7 @@ impl World {
                 // by which subsystem moved it - the script paths commit a
                 // position and raise no flag of their own.
                 self.tick_player_scale_ramp();
+                self.npcs.looks.tick(self.move_vm.ramp_ratio.max(1));
                 self.detect_field_actor_motion();
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's
@@ -2775,9 +2776,7 @@ impl World {
         venue: usize,
         venue_map: Option<crate::fishing::PondVenue>,
     ) {
-        /// Salt for the frame-derived seed (engine glue: retail's `rand` is
-        /// the BIOS global, whose state at overlay entry is not pinned).
-        const FISHING_SEED_SALT: u32 = 0xF15B_0972;
+        use crate::minigame_entry::FISHING_SEED_SALT;
         self.resolve_fishing_entry_rod();
         let bag = &self.party.inventory;
         let mut lure = self.minigames.fishing_lure;
@@ -2962,41 +2961,26 @@ impl World {
             None => Vec::new(),
         };
         for e in &events {
-            match *e {
-                // The cadence-match strike splash spawns its three parts into
-                // the shared effect pool. The producer is the session's own
-                // event, not a venue actor, so every host that ticks the world
-                // gets the burst.
-                PondEvent::Splash => {
-                    let parts = crate::fishing_chrome::splash_burst(
-                        crate::fishing_actors::SCREEN_CENTRE.0,
-                        crate::fishing_actors::SCREEN_CENTRE.1,
-                        crate::minigame_fx::SPLASH_SPRITE_ID,
-                        SPLASH_SPREAD,
-                    );
-                    self.minigames.fx.spawn_splash(&parts);
-                }
-                // The hook cue `_DAT_8007B6DA`. It used to live on the native
-                // window's line actor, which made the strike audible on one
-                // surface; the cue queue is drained by every host.
-                PondEvent::Hooked(_) => self
-                    .minigames
-                    .pending_sfx
-                    .push(u16::from(crate::fishing_actors::HOOK_CUE)),
-                // The catch raises the celebration cue plus whichever of the
-                // four score-gated burst cues it unlocked (`FUN_801d4948`).
-                PondEvent::Landed(points) => {
-                    self.minigames
-                        .pending_sfx
-                        .push(u16::from(crate::fishing_actors::CELEBRATE_CUE));
-                    for burst in crate::fishing_actors::celebration_bursts(points) {
-                        if let Some(cue) = burst.cue {
-                            self.minigames.pending_sfx.push(u16::from(cue));
-                        }
-                    }
-                }
-                PondEvent::Snapped | PondEvent::Recast => {}
+            // The cadence-match strike splash spawns its three parts into
+            // the shared effect pool. The producer is the session's own
+            // event, not a venue actor, so every host that ticks the world
+            // gets the burst.
+            if matches!(e, PondEvent::Splash) {
+                let parts = crate::fishing_chrome::splash_burst(
+                    crate::fishing_actors::SCREEN_CENTRE.0,
+                    crate::fishing_actors::SCREEN_CENTRE.1,
+                    crate::minigame_fx::SPLASH_SPRITE_ID,
+                    SPLASH_SPREAD,
+                );
+                self.minigames.fx.spawn_splash(&parts);
             }
+            // The hook and catch cues - one kernel shared with the minigames
+            // page. The hook cue used to live on the native window's line
+            // actor, which made the strike audible on one surface; the cue
+            // queue is drained by every host.
+            self.minigames
+                .pending_sfx
+                .extend(super::minigame_state::pond_event_cues(e));
         }
         self.minigames.fishing_events = events;
     }
@@ -3212,37 +3196,17 @@ impl World {
     /// PORT: the slot overlay's per-frame driver (`FUN_801cf0d8` reel SM;
     /// the confirmed kernels live in [`crate::slot_machine`]).
     fn tick_slot_machine(&mut self) {
-        use crate::slot_machine::SlotPhase;
-        let Some(phase) = self.minigames.slot_machine.as_ref().map(|m| m.phase()) else {
+        use crate::slot_machine::SlotFrameOutcome;
+        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
+        let Some(m) = self.minigames.slot_machine.as_mut() else {
             // Mode is SlotMachine but no session installed - drop back.
             self.mode = self.minigames.slot_return_mode;
             return;
         };
-        let confirm = self.input.just_pressed(input::PadButton::Cross);
-        let stop_buttons = [
-            input::PadButton::Square,
-            input::PadButton::Cross,
-            input::PadButton::Circle,
-        ]
-        .map(|b| self.input.just_pressed(b));
-        let face_edge = [
-            input::PadButton::Triangle,
-            input::PadButton::Circle,
-            input::PadButton::Cross,
-            input::PadButton::Square,
-        ]
-        .iter()
-        .any(|&b| self.input.just_pressed(b));
-        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
-        let Some(m) = self.minigames.slot_machine.as_mut() else {
-            return;
-        };
-        m.tick();
-        // The cash-out submenu, its rules pages, the not-enough-coins prompt
-        // and the leave fade own the pad when they are up; state 1 tests the
-        // submenu edge before any spin input.
-        if m.cash_out_input(packed) {
-            if m.phase() == SlotPhase::CashedOut {
+        // The cabinet's whole frame (`SlotMachine::frame`), shared with the
+        // standalone minigames page.
+        match m.frame(packed) {
+            SlotFrameOutcome::CashedOut => {
                 // State 100's tail: the bank commit and the return warp
                 // (`FUN_80026018`), the same pair the Start escape runs.
                 self.route_slot_sounds();
@@ -3250,36 +3214,10 @@ impl World {
                 self.close_minigame_round_trip();
                 return;
             }
-            self.route_slot_sounds();
-            return;
-        }
-        m.latch_spin_up(face_edge);
-        match phase {
-            SlotPhase::Idle => {
-                if confirm {
-                    m.spin();
-                }
-            }
-            SlotPhase::Spinning => {}
-            SlotPhase::Stopping => {
-                for (reel, button) in stop_buttons.into_iter().enumerate() {
-                    if button {
-                        m.stop_reel(reel);
-                    }
-                }
-            }
-            SlotPhase::Payout => {
-                if confirm {
-                    m.collect();
-                }
-            }
-            SlotPhase::CashedOut => {
-                // Committed: restore the interrupted mode (the host reads the
-                // session out via [`World::exit_slot_machine`]).
-                self.mode = self.minigames.slot_return_mode;
-            }
-            // Owned by `cash_out_input` above.
-            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving => {}
+            // Committed: restore the interrupted mode (the host reads the
+            // session out via [`World::exit_slot_machine`]).
+            SlotFrameOutcome::Committed => self.mode = self.minigames.slot_return_mode,
+            SlotFrameOutcome::Stepped => {}
         }
         self.route_slot_sounds();
     }
@@ -3395,79 +3333,35 @@ impl World {
     /// PORT: the Baka Fighter per-frame drive (`FUN_801d3f44` player input →
     /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
     fn tick_baka_fighter(&mut self) {
-        use crate::baka_fighter::BakaAttack;
-        let Some(fight) = self.minigames.baka_fighter.as_ref() else {
+        if self.minigames.baka_fighter.is_none() {
             // Mode is BakaFighter but no fight installed - drop back.
             self.mode = self.minigames.baka_return_mode;
             return;
-        };
-        if fight.cabinet().front_end() {
-            // The attract card and the player select: the cabinet reads the
-            // packed edge itself (start `0x844`, cursor `0x8000` / `0x2000`,
-            // confirm `0x44`) and no fight runs until the pick is seated.
-            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
-            if let Some(f) = self.minigames.baka_fighter.as_mut() {
-                f.set_cabinet_pad(edge);
-                f.tick(1);
-            }
-            self.queue_baka_xa_prestage();
-            return;
         }
-        if fight.match_over() {
-            // The result screen: run the score tally, banking each drained
-            // step into the mode-24 winnings accumulator exactly as retail's
-            // `FUN_801D239C` adds it into `_DAT_80084440` - the coin prize,
-            // not party gold (`0x8008459C`). The exit warp
-            // ([`Self::minigame_return_warp`]) then pays the accumulator into
-            // the casino coin bank. Any face button latches its fast-forward.
-            let face = [
-                input::PadButton::Triangle,
-                input::PadButton::Circle,
-                input::PadButton::Cross,
-                input::PadButton::Square,
-            ]
-            .iter()
-            .any(|&b| self.input.just_pressed(b));
-            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
-            let pot = self.minigames.winnings;
-            let mut exit = false;
-            if let Some(f) = self.minigames.baka_fighter.as_mut() {
-                f.cabinet_mut().set_pot(pot);
-                f.set_cabinet_pad(edge);
-                f.tick_with_input(1, face);
-                let paid = f.take_tally_gold();
-                if paid > 0 {
-                    self.minigames.winnings = self.minigames.winnings.saturating_add(paid as u32);
-                }
-                if f.cabinet_frame().forfeit.is_some() {
-                    self.minigames.winnings = 0;
-                }
-                exit = f.cabinet().exit_done();
-            }
-            if exit {
-                self.exit_baka_fighter();
-            }
-            return;
-        }
-        // Retail's last-write-wins test order, read back to front.
-        let attack = if self.input.just_pressed(input::PadButton::Cross) {
-            Some(BakaAttack::C)
-        } else if self.input.just_pressed(input::PadButton::Circle) {
-            Some(BakaAttack::B)
-        } else if self.input.just_pressed(input::PadButton::Square) {
-            Some(BakaAttack::A)
-        } else {
-            None
-        };
+        // The cabinet's whole frame (`BakaFight::frame`), shared with the
+        // standalone minigames page: the front end, the duel's throw, and
+        // after a match the tally / NEXT GAME / PAY OUT sheet. Each drained
+        // tally step banks into the mode-24 winnings accumulator exactly as
+        // retail's `FUN_801D239C` adds it into `_DAT_80084440` - the coin
+        // prize, not party gold (`0x8008459C`); the exit warp
+        // ([`Self::minigame_return_warp`]) then pays the accumulator into the
+        // casino coin bank.
+        let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
         let held = crate::dev_menu::retail_packed(self.input.pad());
-        if let Some(fight) = self.minigames.baka_fighter.as_mut() {
-            if let Some(attack) = attack {
-                fight.choose(0, attack);
-            }
-            // The held word the round setup reads for the cameo
-            // (`_DAT_8007B850`).
-            fight.set_held_pad(held);
-            fight.tick(1);
+        let pot = self.minigames.winnings;
+        let out = match self.minigames.baka_fighter.as_mut() {
+            Some(f) => f.frame(edge, held, pot),
+            None => return,
+        };
+        if out.paid > 0 {
+            self.minigames.winnings = self.minigames.winnings.saturating_add(out.paid);
+        }
+        if out.forfeit {
+            self.minigames.winnings = 0;
+        }
+        if out.exit {
+            self.exit_baka_fighter();
+            return;
         }
         self.queue_baka_xa_prestage();
     }
@@ -3847,7 +3741,8 @@ impl World {
         // visit, the leg-open ROUND card) have handed the leg over - retail
         // starts the battle only past the hub's arm `0x16`.
         if !self.minigames.muscle_hub.covers_leg() {
-            let step = u16::from(self.clock.frame_step.max(1));
+            // `ctx[+0x6D6] -= 0x1F800393` per battle pass, one a vsync tick.
+            let step = u16::from(super::battle::BATTLE_PASS_STEP_PER_TICK);
             if let Some(s) = self.minigames.muscle_dome.as_mut() {
                 s.tick_intro(step);
             }

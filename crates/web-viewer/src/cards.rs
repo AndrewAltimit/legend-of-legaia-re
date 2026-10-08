@@ -45,6 +45,20 @@ pub const CARD_SLOTS: usize = 2;
 /// retail load screen lays these out as its 5x3 preview grid.
 pub const CARD_BLOCKS: u8 = 15;
 
+/// A freshly formatted 128 KiB memory-card image with no saves on it
+/// ([`legaia_save::card::formatted_card_image`]).
+///
+/// The page's **browser card**: when the player has no card of their own, the
+/// page formats one, keeps it in the browser's storage and mounts it in port
+/// 1 - the twin of the native window, whose save directory is always the card
+/// in port 1. Without it the retail Save / Load screens had nothing to read or
+/// write until the player imported an emulator card, so a fresh player's save
+/// point did nothing and Continue never lit.
+#[wasm_bindgen]
+pub fn formatted_memory_card() -> Vec<u8> {
+    legaia_save::card::formatted_card_image()
+}
+
 /// The mounted-card type, shared with the native window's card port.
 ///
 /// Both hosts hold the same struct now: it caches the detected [`CardView`]
@@ -72,6 +86,7 @@ impl LegaiaRuntime {
                 Some(c) => SlotSnapshot {
                     slot: i as u8,
                     present: true,
+                    damaged: false,
                     label: c.label.clone(),
                     ..SlotSnapshot::empty(i as u8)
                 },
@@ -328,17 +343,10 @@ mod tests {
     use legaia_engine_core::save_select::SlotContent;
     use legaia_save::card;
 
-    /// A raw 128 KiB card with every block free.
+    /// A raw 128 KiB card with every block free - the same formatted image
+    /// the page mounts as its browser card.
     fn blank_card() -> Vec<u8> {
-        let mut buf = vec![0u8; card::CARD_SIZE];
-        buf[..2].copy_from_slice(&card::CARD_MAGIC);
-        for i in 1..=card::DIR_FRAMES {
-            let off = card::DIR_FRAME_SIZE * i;
-            buf[off..off + 4].copy_from_slice(&card::state::FREE.to_le_bytes());
-            let ck = buf[off..off + 0x7F].iter().fold(0u8, |a, &b| a ^ b);
-            buf[off + 0x7F] = ck;
-        }
-        buf
+        super::formatted_memory_card()
     }
 
     /// A card carrying one Legaia save in `block`, filed under save number
@@ -550,6 +558,33 @@ mod tests {
 
         let rt2 = rt_with_card(0, exported);
         assert!(rt2.card_block_snapshots(0)[4].present, "cell 4 = block 5");
+    }
+
+    /// A save the page writes with the disc loaded must load back. With the
+    /// disc in hand the writer stamps the slot portrait, which sits inside
+    /// the block's summed range; stamping it after the checksum left every
+    /// browser save captioned "Damaged data." on the next Load.
+    #[test]
+    fn a_save_written_with_the_disc_loads_back_undamaged() {
+        let Some(bytes) = std::env::var("LEGAIA_DISC_BIN")
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+        else {
+            eprintln!("LEGAIA_DISC_BIN unset - skipping");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("disc loads");
+        rt.enter_field("town01").expect("enter town01");
+        rt.insert_card_core(0, blank_card(), "browser".into())
+            .expect("blank card mounts");
+        for block in [1u8, 1, 2] {
+            rt.write_session_into_card(0, block).unwrap();
+            let cell = &rt.card_block_snapshots(0)[block as usize - 1];
+            assert!(cell.present, "block {block} holds the save");
+            assert!(!cell.damaged, "block {block} must verify on Load");
+        }
+        eprintln!("[ran] disc-backed save verifies on load");
     }
 
     /// Every filename on a memory card must be unique - the BIOS

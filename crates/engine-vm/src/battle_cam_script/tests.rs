@@ -1693,7 +1693,7 @@ fn the_post_strike_states_arm_the_two_shot() {
     // The Done-cleanup pair: `0x801E5EA0..0x801E5EF4`'s ladder.
     let attack = DoneBandInputs {
         category: DONE_CATEGORY_ATTACK,
-        party_slot: true,
+        target_party_seat: true,
         target_dead: false,
         ..DoneBandInputs::default()
     };
@@ -1703,19 +1703,19 @@ fn the_post_strike_states_arm_the_two_shot() {
     };
     let monster_spell = DoneBandInputs {
         category: 2,
-        party_slot: false,
+        target_party_seat: false,
         target_dead: false,
         ..DoneBandInputs::default()
     };
-    let party_over_corpse = DoneBandInputs {
+    let party_target_corpse = DoneBandInputs {
         category: 1,
-        party_slot: true,
+        target_party_seat: true,
         target_dead: true,
         ..DoneBandInputs::default()
     };
-    let monster_over_corpse = DoneBandInputs {
-        party_slot: false,
-        ..party_over_corpse
+    let monster_target_corpse = DoneBandInputs {
+        target_party_seat: false,
+        ..party_target_corpse
     };
     for s in DONE_STATES {
         assert_eq!(
@@ -1728,13 +1728,13 @@ fn the_post_strike_states_arm_the_two_shot() {
             BattleCamPhase::Action
         );
         assert_eq!(
-            phase_for_state(false, false, s, party_over_corpse),
+            phase_for_state(false, false, s, party_target_corpse),
             BattleCamPhase::ActionEnd
         );
         assert_eq!(
-            phase_for_state(false, false, s, monster_over_corpse),
+            phase_for_state(false, false, s, monster_target_corpse),
             BattleCamPhase::Action,
-            "the dead-target arm is gated on ctx[+0x13] < 3"
+            "the dead-target arm is gated on actor[+0x1DD] < 3"
         );
     }
     // The far framing still owns the end-of-action gate.
@@ -1758,7 +1758,7 @@ fn the_post_strike_states_arm_the_two_shot() {
 fn a_monster_spell_done_tail_reads_the_zora_capture() {
     let done = DoneBandInputs {
         category: 2,
-        party_slot: false,
+        target_party_seat: false,
         target_dead: false,
         ..DoneBandInputs::default()
     };
@@ -2063,7 +2063,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
     ];
     let done = DoneBandInputs {
         category: DONE_CATEGORY_ATTACK,
-        party_slot: true,
+        target_party_seat: true,
         target_dead: false,
         ..DoneBandInputs::default()
     };
@@ -2457,13 +2457,13 @@ fn drive_on_stream_draws_the_shake_off_the_lent_stream() {
 
 /// The strike loop `0x1E` arms case 7 on every pass with no fork
 /// (`0x801E36E4..0x801E36EC`); `0x1F` / `0x20` fork to case 8 when the
-/// target is on its knockdown / get-up, and `0x20` alone also when a party
-/// seat faces a target in a death clip.
+/// target is on its knockdown / get-up, and `0x20` alone also when the
+/// target is a party seat in a death clip.
 #[test]
 fn the_post_strike_band_forks_on_the_target_reaction() {
     let plain = DoneBandInputs {
         category: DONE_CATEGORY_ATTACK,
-        party_slot: true,
+        target_party_seat: true,
         ..DoneBandInputs::default()
     };
     let knocked = DoneBandInputs {
@@ -2484,7 +2484,7 @@ fn the_post_strike_band_forks_on_the_target_reaction() {
     assert_eq!(phase(0x1F, dying), BattleCamPhase::Recover);
     assert_eq!(phase(0x20, dying), BattleCamPhase::ActionEnd);
     let monster_dying = DoneBandInputs {
-        party_slot: false,
+        target_party_seat: false,
         ..dying
     };
     assert_eq!(phase(0x20, monster_dying), BattleCamPhase::Recover);
@@ -2570,7 +2570,7 @@ fn the_live_target_arm_reads_the_melee_hit_spark_capture() {
 fn a_kill_on_the_return_reads_the_steal_banner_capture() {
     let done = DoneBandInputs {
         category: DONE_CATEGORY_ATTACK,
-        party_slot: true,
+        target_party_seat: true,
         target_dead: true,
         target_knocked: true,
         ..DoneBandInputs::default()

@@ -41,7 +41,7 @@ pub struct ShopState {
     /// host drains it with [`crate::world::World::take_pending_prize_exchange`] into its
     /// menu runtime, then calls [`crate::world::World::finish_prize_exchange`] when the
     /// player leaves.
-    pub pending_prize_exchange: Option<crate::prize_exchange::PrizeExchangeSession>,
+    pub(crate) pending_prize_exchange: Option<crate::prize_exchange::PrizeExchangeSession>,
     /// `true` from the frame an op-`0x49` sub-op-7 arm is recognised until
     /// the op's resume runs - gates the op-0x49 tristate like
     /// [`crate::world::ShopState::shop_armed`] does for the gold shop.

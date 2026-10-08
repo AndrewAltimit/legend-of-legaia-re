@@ -38,6 +38,12 @@ pub struct FieldNpcState {
     /// simplified path ignores this and uses `field_npc_dialog` unchanged.
     pub dialog_prologue:
         std::collections::HashMap<u8, crate::man_field_scripts::InlineDialogPrologue>,
+    /// Talk proxies: placement `slot` -> (the placement whose conversation
+    /// its interaction runs, the proxy's own spawn position). A proxy is an
+    /// undrawn actor the facing probe can reach where the real speaker
+    /// cannot be reached ([`crate::man_field_scripts::placement_talk_proxy_target`]).
+    /// The probe admits the proxy's position and answers with the target.
+    pub talk_proxies: std::collections::HashMap<u8, (u8, (i16, i16))>,
     /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
     /// same `slot` as [`crate::world::FieldNpcState::dialog`]. Populated at field-scene entry
     /// from the MAN actor placements. The interaction probe
@@ -68,10 +74,11 @@ pub struct FieldNpcState {
     /// the player: `0` = travel Z+), keyed by placement slot. Written by
     /// `Self::tick_field_npc_motions` from each walk step's direction, and
     /// retained when the walker stops (an NPC keeps facing the way it last
-    /// moved). Absent for NPCs that have never walked - hosts render those
-    /// unrotated (the placement record carries no facing byte; scripted
-    /// initial facings are the per-actor field-VM channels, not yet
-    /// executed).
+    /// moved). Absent for an NPC nothing has turned yet, which stands at the
+    /// spawn default: retail's seater leaves `+0x26 = 0` (Z-), the engine's
+    /// [`SPAWN_HEADING`]. Hosts draw an absent entry as that default (the
+    /// identity yaw); read it through [`Self::heading`], which applies it,
+    /// never as `unwrap_or(0)` - engine `0` is the opposite compass point.
     pub headings: std::collections::HashMap<u8, i16>,
     /// Live per-NPC **pitch / roll** - retail `actor+0x24` and `actor+0x28`,
     /// the X and Z Euler angles the scripted-motion VM's `0x15` / `0x16`
@@ -93,7 +100,7 @@ pub struct FieldNpcState {
     /// `FUN_8001ADA4`), which reads X at `+0`, Y at `+2` and Z at `+4`.
     ///
     /// REF: FUN_8001ADA4, FUN_80026988
-    pub tilts: std::collections::HashMap<u8, (i16, i16)>,
+    pub(crate) tilts: std::collections::HashMap<u8, (i16, i16)>,
     /// The talk-time facing save: `(placement slot, the heading the NPC stood
     /// with before the player addressed it)`.
     ///
@@ -138,6 +145,15 @@ pub struct FieldNpcState {
     /// position. Script-started legs (cutscene walk-to-tile pokes, actor
     /// VM `start_motion`) run regardless of [`crate::world::FieldNpcState::animate`].
     pub motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
+    /// Face-at legs a talk record armed on placements
+    /// (`CC <id> 85|8E|8F <lo> <hi> <bind>` outside a cutscene timeline,
+    /// which keeps its own), keyed by slot and stepped once per field tick
+    /// ([`crate::world::World::tick_field_npc_face_legs`]).
+    pub(crate) face_legs: std::collections::BTreeMap<u8, crate::inline_dialogue::TalkFaceRamp>,
+    /// Budgeted `B8 <id> ..` rotate legs the same contexts armed, keyed and
+    /// stepped alongside [`Self::face_legs`].
+    pub(crate) rotate_legs:
+        std::collections::BTreeMap<u8, crate::cutscene_timeline::TimelineFacing>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
@@ -166,11 +182,14 @@ pub struct FieldNpcState {
     /// actor carries as its bind record). Keyed by that record index. The
     /// koin3 dance hall's video wall is one: records `P0[5..=8]` cycle their
     /// panels' meshes with op `0x0E` every twelve ticks.
-    pub object_ambient: std::collections::BTreeMap<usize, FieldNpcAmbient>,
+    pub(crate) object_ambient: std::collections::BTreeMap<usize, FieldNpcAmbient>,
     /// The live scene-bank model id an object's stream last swapped in
     /// (op `0x0E`), keyed by bind record; both hosts draw the record's
     /// placed objects with that mesh instead of the `.MAP` pack slot.
-    pub object_models: std::collections::BTreeMap<usize, i16>,
+    pub(crate) object_models: std::collections::BTreeMap<usize, i16>,
+    /// Every animated actor's side-buffer look rotation (field-VM `4C 45`)
+    /// and the ramps driving it - [`crate::actor_look`].
+    pub looks: crate::actor_look::ActorLooks,
     /// Publish the ambient tail-section-1 streams' walk steps
     /// ([`crate::world::World::tick_field_npc_ambient`]) - the villagers'
     /// authored wandering. The bare `World` default is off (NPCs rest at their
@@ -200,7 +219,7 @@ pub struct FieldNpcState {
     pub object_pack_slots: std::collections::BTreeMap<u16, Vec<usize>>,
     /// Placement slots whose morph deltas moved since a host last drained
     /// them ([`crate::world::World::take_npc_morph_dirty`]).
-    pub morph_dirty: std::collections::BTreeSet<u8>,
+    pub(crate) morph_dirty: std::collections::BTreeSet<u8>,
     /// The move id each NPC's clip player last took from a single-move cue
     /// (`(1, id, [])` - a `+0x5C` write), keyed by placement slot: retail's
     /// `actor+0x5E`, the "clip now playing" half of the move-table
@@ -212,7 +231,7 @@ pub struct FieldNpcState {
     /// Written when [`crate::world::World::drain_field_anim_cues`] hands a
     /// cue to the hosts; an op-`0x4B` sequence cue removes the entry, since
     /// what then plays is not one move. Cleared with the cue queue.
-    pub clip_current: std::collections::HashMap<u8, u8>,
+    pub(crate) clip_current: std::collections::HashMap<u8, u8>,
     /// Each animated NPC actor's live clip cursor (`actor+0x68`) under its
     /// own `+0x62` control word, keyed by placement slot. The hosts own the
     /// decoded clip frames ([`crate::field_anim::FieldClipPlayer`]) but not
@@ -230,12 +249,12 @@ pub struct FieldNpcState {
     /// record's gate and divisor and takes its rate from the actor's live
     /// `+0x6A` each tick, as retail's clip tick does. A host's bind (whose
     /// step is already folded at the template rate) drops the slot.
-    pub clip_rate_live: std::collections::BTreeSet<u8>,
+    pub(crate) clip_rate_live: std::collections::BTreeSet<u8>,
     /// The bone count each animated NPC's clip was first bound with, keyed
     /// by placement slot - the count the hosts cut its mesh to. A re-target
     /// to a clip of another count is refused
     /// ([`crate::world::World::drain_field_anim_cues`]).
-    pub clip_bones: std::collections::HashMap<u8, usize>,
+    pub(crate) clip_bones: std::collections::HashMap<u8, usize>,
     /// The Y of each field NPC on the **glide** height arm, keyed by
     /// placement slot: retail's `+0x16` while the actor's flag word carries
     /// `0x2000`, which `FUN_8003BC08` steps toward the floor by at most
@@ -243,7 +262,7 @@ pub struct FieldNpcState {
     /// NPC on the snap arm, whose Y is the floor sample itself.
     /// Stepped by [`crate::world::World::tick_field_npc_heights`] and read by
     /// [`crate::world::World::field_npc_render_y`].
-    pub glide_y: std::collections::HashMap<u8, i16>,
+    pub(crate) glide_y: std::collections::HashMap<u8, i16>,
     /// The camera state the visibility cull `FUN_801D79E8` reads (focus,
     /// region box, visible tile window), as the camera last left it.
     /// Published by [`crate::camera::Camera::route_camera_events`], which
@@ -251,12 +270,25 @@ pub struct FieldNpcState {
     pub cull_view: Option<crate::world::field_npc_cull::FieldCullView>,
 }
 
+/// The heading a placement stands in before anything turns it, in the
+/// engine's [`FieldNpcState::headings`] space: retail `+0x26 = 0` (Z-),
+/// which is `engine = retail + 0x800`. The placement record carries no
+/// facing byte; a spawn prologue's `0x4C 0x51` / `0x38` seeds the others.
+pub const SPAWN_HEADING: i16 = 0x800;
+
 impl FieldNpcState {
+    /// The live heading of placement `slot`, the spawn default
+    /// ([`SPAWN_HEADING`]) when nothing has written one.
+    pub fn heading(&self, slot: u8) -> i16 {
+        self.headings.get(&slot).copied().unwrap_or(SPAWN_HEADING)
+    }
+
     pub fn new() -> Self {
         Self {
             solid: false,
             dialog: std::collections::HashMap::new(),
             dialog_prologue: std::collections::HashMap::new(),
+            talk_proxies: std::collections::HashMap::new(),
             positions: std::collections::HashMap::new(),
             entry_positions: std::collections::HashMap::new(),
             headings: std::collections::HashMap::new(),
@@ -265,10 +297,13 @@ impl FieldNpcState {
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),
+            face_legs: std::collections::BTreeMap::new(),
+            rotate_legs: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
             object_ambient: std::collections::BTreeMap::new(),
             object_models: std::collections::BTreeMap::new(),
+            looks: Default::default(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),
             morphs: std::collections::BTreeMap::new(),

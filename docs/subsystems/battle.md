@@ -27,7 +27,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 
 **From-scratch engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
-- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
+- [Battle round lifecycle](#battle-round-lifecycle) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
 - [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
@@ -291,7 +291,7 @@ the current lesson is not teaching.
 | `50` | `0x801F6CAC` | Run selected - always rejected, always rewinds. |
 | `60` | `0x801F6DCC` | Item window opened - the item lesson explains the two windows; every other lesson rewinds. |
 | `80` | `0x801F6E4C` | Arts command-entry screen - combo hint (lesson 0) or the drill instruction (lesson 3). |
-| `90` | `0x801F6EE4` | Target select; for lesson 3 it first validates the entered command buffer. |
+| `90` | `0x801F6EE4` | Target select; for lesson 3 it first validates the entered command buffer. Reads seat 0's Auto flag `ctx[+0x266]`. |
 | `100` | `0x801F7060` | Target confirm - unconditional, lesson-independent. |
 | `110` | `0x801F7088` | Validates the committed `actor[+0x1DE]` category against the lesson (`3` attack, `1` item, `4` spirit; hyper arts expects `3`, since it is reached through Attack). |
 | `120` | `0x801F6D30` | The Auto / Command attack-mode prompt - free choice for lesson 0, forced `[Command]` for lesson 3. |
@@ -300,6 +300,17 @@ The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 (`0x0F, 0x0E, 0x0F`) and accepts it at three alignments of the command buffer
 `actor[+0x1DF..=+0x1E3]`, each a differently-masked load at `0x801F6FD8`. When
 `_DAT_801D46C4 == 1` the buffer is auto-filled for the player at `0x801F6FB0`.
+`[High] [Low] [High]` is the swing bytes `0F 0E 0F` - Vahn's Somersault,
+`Up Down Up` - so a Somersault preceded by up to two other arrows passes too.
+
+The handler reads `ctx[+0x266]` first (`0x801F6F48` / `0x801F6F78`). That byte
+is seat 0's per-fighter **Auto** flag (written on the attack-mode prompt; see
+[`battle-action.md`](battle-action.md)), not a "seen" latch: in lesson 0 it
+moves the follow-up box from the `0xB0` anchor (style `5`) to the `0xCC` one
+(style `3`), and in lesson 3 an Auto attack with no auto-fill is the
+wrong-lesson rewind (`0x801F6F98`) - the drill is only ever checked on a
+`Command` entry, the path a player reaches through the forced `[Command]`
+prompt of state `120`.
 
 The completion tail `0x801F7380` fires once `ctx[0x28A]` reaches `4`: it bumps
 the lesson to `5`, writes `ctx[0x06] = 0xC8` (`0x801F73DC`) and `ctx[0x07] =
@@ -934,11 +945,21 @@ differ from retail and are deliberate:
   no engine hook point yet.
 - **Every commit meets the `110` validator.** The handler reads the category
   off the active actor (`lbu v1,0x1de(v0)` at `0x801F70E0`), so each of the
-  three committing surfaces reaches it with its own byte: the Attack target
-  confirm with `3`, Spirit with `4`, and the item window's use with `1`
-  (`World::tick_battle_item_menu`, checked before the copy is consumed). An
-  item commit that skipped the validator left the Items lesson unaccepted
-  forever, and the spar never ended.
+  four committing surfaces reaches it with its own byte: the Attack target
+  confirm with `3`, the arts entry's target confirm with `3`, Spirit with
+  `4`, and the item window's use with `1` (`World::tick_battle_item_menu`,
+  checked before the copy is consumed). A surface that skipped the validator
+  leaves its lesson unaccepted forever and the spar never ends - the item
+  window once did, and so did the arts entry, which is the only way to
+  perform the hyper-arts lesson's Somersault.
+- **The arts entry raises its own two states.** The entry opens on `80`;
+  leaving it (the confirm, or the press that exhausts the gauge) is retail's
+  `0x50 -> 0x5A`, which `World::tick_battle_arts_input` raises as `90` with
+  the entered arrows written into the hook's command buffer as the gauge's
+  swing bytes; the review's cancel is `0x5A -> 0x50` and re-raises `80`.
+- **Unresolved surfaces can rewind too.** The target cursor (`90`) and the
+  attack-mode prompt (`120`) carry wrong-lesson rewinds; the engine honours
+  them as it does a resolved commit's, by reopening the command menu.
 - **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
   sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
   for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
@@ -1589,9 +1610,14 @@ frames) at `0x801E5F2C..0x801E5F3C`.
 **The Done band's fork is on the action category**, read off the `0x50` arm
 (`0x801E5E90..0x801E5EF4`; the `0x51` arm at `0x801E5FC0..0x801E6018` is the
 same ladder): `actor[+0x1DE] == 5` (Run) skips the framing call and runs the
-yaw orbit instead, `== 3` (Attack) takes `li a1,0x8`, a party slot
-(`ctx[+0x13] < 3`) whose target's live HP `+0x14C` reads zero takes `0x8` too,
-and everything else `li a1,0x6`. Two captures pin the two sides:
+yaw orbit instead, `== 3` (Attack) takes `li a1,0x8`, a target that is itself
+a party seat whose live HP `+0x14C` reads zero takes `0x8` too, and everything
+else `li a1,0x6`. The seat test reads the spill `sp+0x20`, which the prologue
+fills from `lbu t2,0x1dd(s3)` (`0x801E29B0`) - the **target** index, beside
+`s8`, the target actor - not the acting seat `ctx[+0x13]`. A party caster whose
+spell killed a monster therefore keeps case 6 on itself through the tail
+(`shiny_refactor_gimard_levelup`: target slot `3` at `0` HP, step-table
+endpoints case 6's). Two captures pin the two sides:
 `zora_glare_petrify_post` (`ctx[7] == 0x51` after a monster's spell) reads
 pitch `0`, `TR (0, 1275, 4820)` - one tween step short of case 6's
 `(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the caster's own seat
@@ -1798,8 +1824,8 @@ tail, so it overrides cases 7 and 8 as it does case 6 - which matters now
 that the strike loop, where most art swings are filmed, is case 7. Its first
 test is the target's live HP (`0x801D71E8..0x801D7208`), so a death re-frame
 is never overridden. The Done cleanup (`0x50`) forks on the action category at
-`0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "party slot whose
-target's live-HP halfword reached zero" branch to `li a1,0x8`, everything else
+`0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "a party-seat
+target whose live-HP halfword reached zero" branch to `li a1,0x8`, everything else
 to `li a1,0x6` - and `0x52` / `0xFD` arm `8` unconditionally (`0x801E5F74`).
 
 Engine side: `battle_cam_script::recover_framing` / `action_end_framing`, armed
@@ -2569,7 +2595,7 @@ Of the disc's `3E FF` sites whose row the bundle MAN carries, two more rows carr
 
 The map id is `_DAT_80084540`, the loaded scene's **raw CDNAME define** (`town01` = `3`, `town0b` = `0x0C`, `town0c` = `0x15`, `map01` = `0x55`; every catalogued save state reads the define of the scene named at `0x80084548`), carried as `BattleState::map_id` and also read by the formation roll's scripted-ambush arm and the intro style picker. It is two above the extraction index `Scene::start` holds, which the intro picker had been reading - so its `0x3E` / `0x3F` arm on `3` / `0x0C` / `0x15` could never match.
 
-Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
+Engine mirror: [`engine-core::battle_seats`](../../crates/engine-battle/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
 ### The Ra-Seru-forbidden bit of the special-battle word
 
@@ -3850,7 +3876,7 @@ The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 
 | `0x1A` Special Art Starter | 1 | |
 | `0x1B..=0x32` | 1 | per-character art body |
 
-Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
+Implementation: [`crates/engine-battle::ap_gauge`](../../crates/engine-battle/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
 
 ### What a Spirit turn does to the gauge, and what it draws
 
@@ -3866,7 +3892,7 @@ Retail captures of the band agree (`ctx[+0x6D0] = 0x800`, a 188-wide bar under a
 
 From-scratch port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).
 
-Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
+Implementation: [`crates/engine-battle::battle_stats`](../../crates/engine-battle/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
 ## Item catalog
 
@@ -3896,64 +3922,6 @@ Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items
 The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Numb / Sleep / Stone / Faint actors lose action; Curse / Faint actors lose Magic).
 
 Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/src/battle_round.rs).
-
-## Battle command runner
-
-Sits between the player-input layer and the action state machine. One `BattleRunner` per battle session; engines feed it raw player commands per turn; it ticks no SM itself - hosts drive the per-frame action SM through their existing loop.
-
-`begin_round` delegates to `BattleRound::begin` for AP refresh + stat recompute, `push_command` / `push_chained_art` gate input against `ApGauge` and surface a typed `OutOfAp` error, `pop_command` / `pop_chained_art` refund the cost cleanly, `commit_turn` runs the queue through `resolve_action_queue` (Miracle / Super expansion) and stashes the resolved per-slot `ActionQueue`s. `end_round` drives `BattleRound::end` for tick-damage drainage.
-
-Per-slot buffers + chained-art lists let the player switch between party members mid-turn without losing state. The runner is the **input → queue** half of the battle pipeline; the SM tick itself runs through the existing `step_battle` loop.
-
-Implementation: [`crates/engine-core::battle_runner`](../../crates/engine-core/src/battle_runner.rs).
-
-## BattleSession Resolve driver
-
-`BattleSession` owns the action SM during the `Resolve` phase. After
-`commit_turn` succeeds, the session builds a `ResolveDriver` queue
-containing one entry per party slot whose resolved action queue is
-non-empty, in slot order (`0 → 1 → 2`). Slot routing:
-
-| Resolved queue contains | Action category byte |
-|---|---|
-| At least one `ActionConstant::RegularStarter` | `TacticalArts (0)` |
-| Otherwise (directional commands only) | `Attack (3)` |
-
-Each `BattleSession::tick` during `Resolve`:
-
-1. Drains `World::pending_battle_events` into HUD popups + session events.
-2. If the head-of-queue attacker hasn't been armed yet, sets
-   `world.battle_ctx.{active_actor, queued_action, action_state}` and
-   the attacker's `BattleActor::{action_category, active_target}` to
-   point at the first alive monster slot.
-3. Calls `world.tick()` exactly once.
-4. Clears `ActorFlags::ADVANCE_DONE` on `AttackRecovery` (the render-side
-   "recovery anim finished" edge the session simulates inline since it
-   doesn't render).
-5. On `Transition { from: AttackChain, to: AttackRecovery }`, applies a
-   from-scratch formula strike against the attacker's `active_target`:
-   reads `atk` + `udf` + `acc` + `eva` off `BattleRound::stats`, rolls
-   accuracy via `accuracy_roll`, folds variance via `psyq_rand_step`,
-   writes the result back through `BattleActor::hp` and emits
-   `SessionEvent::HpChanged`.
-6. On `EndOfAction`, pops the head of the queue and re-arms next frame.
-
-When the queue drains (no more attackers) or `StepOutcome::BattleComplete`
-fires, the session drops the driver and transitions to `RoundOutro`
-(queue-drained path) or relies on the routed `BattleEnd` event to land
-the terminal phase (`Victory` / `Defeat`). Engines that prefer to drive
-`world.tick()` themselves can skip `commit_turn` from the session and
-fall through the legacy "observe events only" Resolve path.
-
-The deterministic RNG seed used for the accuracy + variance rolls is
-exposed as `BattleSession::rng_seed` (configurable via
-`with_rng_seed(seed)` before `begin_round`).
-
-End-to-end coverage:
-[`crates/engine-core/tests/end_to_end_gameplay_loop.rs::battle_session_drives_action_sm_to_monster_wipe`](../../crates/engine-core/tests/end_to_end_gameplay_loop.rs)
-exercises the full pipeline - encounter trigger → BattleSession setup →
-`push_command` per slot → commit via `SessionInput { start: true, .. }` →
-Resolve → `BattlePhase::Victory`.
 
 ## Battle HUD model
 
@@ -3997,8 +3965,8 @@ the **active-actor bar**: one plate run at `(8, 188)` with a 288-px interior,
 so it spans `x 8..=312`. The bar does not hide the panels by not drawing them;
 retail parks the whole cluster at `y = 230`, under its 228-line display window.
 Seats, sub-palettes and the 3-slice plate law are pinned in
-`engine-vm::battle_chrome`; `engine-ui`'s name-pen anchors read the
-`engine-vm` kernels directly (`battle_party_panel::panel_anchors`, falling
+`engine-ui::battle_chrome`; `engine-ui`'s name-pen anchors read the
+kernels directly (`engine-vm`'s `battle_party_panel::panel_anchors`, falling
 back to `battle_chrome::panel_seats` plus the pinned text inset for the seats
 retail writes no anchor for), the panel *backgrounds* still carry a local
 seat mirror, and `engine-shell`'s HUD tests hold the drawn output to the
@@ -4157,7 +4125,7 @@ the RAM image **is** the frame's packet stream - each `SPRT` carries its own
 `(x, y)`, `(u, v)`, `(w, h)` and CLUT id inline, and the `DR_TPAGE` node
 traversed before it fixes the texture page. Cross-checked against a
 full-VRAM dump of the same frame (`mednafen-state vram-dump`). Port:
-[`engine-vm::battle_chrome`](../../crates/engine-vm/src/battle_chrome.rs).
+[`engine-ui::battle_chrome`](../../crates/engine-ui/src/battle_chrome.rs).
 
 Anchors used: the Tetsu-tutorial progression `v0_1_battle_command_menu` /
 `v0_1_battle_command_submenu`, the three-member `party_battle_gobu_gobu`,
@@ -4378,7 +4346,11 @@ which of the record's two seats the actor spawns at (`+0x02/+0x04` for `0`,
 `+0x0A/+0x0C` for `1`) before `FUN_801DB7B0` glides it to the other; bit 1
 suppresses the glide (`0x801D92E0..0x801D93DC`). The glide stepper
 `FUN_801D9BBC` walks `ctx[+0x11B4 + slot * 0xC]` - `[total][elapsed] ..
-[target x][target y][start x][start y]`, linear, snapping on arrival. Which
+[target x][target y][start x][start y]`, linear, snapping on arrival.
+`elapsed` grows by the frame step `*(0x1F800393)` per battle pass and a pass
+spans that many vsyncs, so `total` counts vsyncs: the sixteen-frame raise
+lasts sixteen vsyncs at any cadence, and the port, which ticks once per
+vsync, steps every tracked glide by one a tick. Which
 seat is on screen is per record, so "mode 0" means *appear* for the bar and
 *unfold* for a chip; the port's `SubdrawStep::shows` reads it as "seat B is
 the on-screen one", which holds for every record the battle HUD draws.
@@ -4400,7 +4372,10 @@ So the roster **card** is the round prompt's and the browsed windows'; the
 full-width **pill** is the ring's and the target steps'; and the ring alone
 carries the AP plate. The action SM's openers are three: the `0x0C` seed
 (`0x801E2F24`) reads the acting actor's target byte `+0x1DD` and raises the
-bar for it when it is a party slot; the Item pre-arm `0x3C` (`0x801E3DA0`)
+bar for it when it is a party slot - mode `0`, so the bar rises from
+`y = 234` to `192` beside the actor plaque's descent
+(`nivora_duel_mid_blazing_slash` holds both at ten of sixteen; port
+`BattleState::readout_bar_glide`); the Item pre-arm `0x3C` (`0x801E3DA0`)
 raises it for the acting member; and the item band's `0x3E` arm
 (`0x801E401C`) raises it for a member target again, or all three panels for
 a party-wide one (`t2 == 8`), as the seed's plate routine does for a monster
@@ -4434,6 +4409,30 @@ the **combo cluster** anchor (80), `(328, 170)` to `(168, 170)` over sixteen
 frames - `battle_melee_hit_spark` carries it mid-glide at elapsed 12 of 16,
 `x = 208`, which is the `+40` every `HIT` / `TOTAL` packet of that frame shows.
 The cluster's own seats are in `engine-vm::battle_value_readout`.
+
+Every landed hit restarts that slide. The melee kernel's HP write raises
+`DAT_8007B64C = 0x78` and stores the hit's damage in `DAT_8007BD14`
+(`FUN_801EC3E4`, `0x801EEA64..0x801EEA78`); the readout pass `FUN_801E805C`,
+which the action SM's prologue calls on every pass (`0x801E2A70`), answers a
+raised flag with a non-zero damage word by calling `FUN_801D8DE8(0x50, 0)` and
+clearing the flag (`0x801E808C..0x801E80B0`). Mode `0` spawns record 80 at
+seat A and registers a fresh glide to seat B (`0x801D92E8..0x801D93D8`), so
+the cluster slides in again from the right edge with its running count.
+`battle_melee_hit_spark` is such a frame: the display list's cluster reads
+`3 HIT` / `TOTAL 29` beside the third hit's `15`, twelve vsyncs into the
+slide that hit opened. Engine: `BattleHud::push_popup` restarts the
+cluster's `age` on each landed damage hit.
+
+The `0x51` fade-down closes it the same way in reverse. The band's teardown -
+countdown under `0xC`, once per action (`0x801E6158..0x801E6214`) - wipes the
+element list (`FUN_801D99BC` at `0x801E6170`) and, when the action landed
+damage (`_DAT_8007BD14 != 0`), re-spawns record 80 with mode `1`
+(`FUN_801D8DE8(0x50, 1)` at `0x801E6360`), which places it at seat B and
+glides it out to seat A. A `0x51` capture taken before the teardown still
+shows the cluster at rest (`noa_levelup_fight_pre`); the continuation band
+`0x52` lies past it and shows none (`rim_elm_gimard_seru_capture_after`).
+Engine: `BattleHud::close_combo_on_fade_down`, keyed on the action SM's own
+teardown latch.
 
 The ring's right arm is record 10, and its string is chosen in `FUN_801D8DE8`'s
 own case (`0x801D8EC8`): `0x801F4B9E + char_id * 10` - the character's
@@ -4960,7 +4959,7 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 
 `EncounterTable` holds the per-scene rows + 1/256 trigger rate + safe-zone rectangles. The accessory / status modifiers scale the effective rate multiplicatively via `EncounterTracker::set_rate_modifiers` - the statically pinned `FUN_801D9E1C` shifts (High Encounter passive `0x3B` = `<<2`, Low Encounter `0x3C` = `>>1`, system flags `0x1D`/`0x1E` = `<<1`/`>>1`; see [encounter.md](../formats/encounter.md#random-encounter-trigger-path)), refreshed from the party ability mask + flag bank each step. (An earlier additive `add_rate_bias` knob modeled accessories that don't exist in retail; it is removed.)
 
-Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
+Implementation: [`crates/engine-battle::encounter`](../../crates/engine-battle/src/encounter.rs).
 
 ### The session is a bracket, not the roll
 
@@ -5103,17 +5102,7 @@ Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates 
 
 The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster. Retail seats at most four monsters, so a fifth engine slot has no ring entry; that slot, an un-seated host (all seats at the origin), and a ring entry that is not a live monster each fall the cursor back to the plain scan. See [`battle-action.md`](battle-action.md#actor-pool-leaf-helpers) for the two kernels.
 
-`BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the
-wiring API engines drive when a command needs a target. The session charges AP
-up-front, opens the picker, and stashes the command in `pending_target_command`.
-When the picker resolves, `maybe_close_picker_with_world` writes the resolved
-slot to `BattleActor::active_target` (the field the action SM reads at strike
-time via `host.actor(actor_slot).active_target`) and admits the buffered command
-into the runner queue without re-charging AP. Sweep targets write a `0xFF`
-sentinel; cancellation drops the command without admitting it. Engines that
-already have a `&World` borrow at picker-open time use [`open_target_picker`];
-engines that need the same active-target write at open-time (sweep / self) call
-[`open_target_picker_mut`].
+A sweep reaches the action SM as retail's target-group code, not a sentinel: the live command flow writes `+0x1DD = 8` for the party and `9` for the enemy row (absolute numbering, mirrored for a monster caster), and a self-target writes the caster's own slot - the values `FUN_801E295C`'s cast-begin split (`sltiu v0,t2,0x8` at `0x801E433C`) and self-skip (`beq v0,t2` at `0x801E4350`) decode.
 
 ## Encounter trigger - runtime memory layout
 
@@ -5224,7 +5213,7 @@ let obs = legaia_engine_core::levelup::observations::vahn_mc8_to_mc9();
 let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 ```
 
-`LevelUpObservation::to_curve` produces a `StatGrowthCurve::PerLevel` vector that emits the per-level *average* inside the observed range and falls back to `StatGain::default` outside it. Implementation: [`crates/engine-core::levelup`](../../crates/engine-core/src/levelup.rs).
+`LevelUpObservation::to_curve` produces a `StatGrowthCurve::PerLevel` vector that emits the per-level *average* inside the observed range and falls back to `StatGain::default` outside it. Implementation: [`crates/engine-battle::levelup`](../../crates/engine-battle/src/levelup.rs).
 
 ## CDNAME → MV STR cutscene routing
 
@@ -5265,7 +5254,7 @@ Per-character per-Seru capture-point accumulator. Each captured Seru contributes
 
 `SeruDef::learnable_mask` is a 3-bit per-character mask (bit 0 = Vahn, bit 1 = Noa, bit 2 = Gala) so single-character Seru can teach only their bearer. `record_capture` is the pure resolver; `SeruCaptureSession` drives the post-capture banner sequence (`Capturing → Announcing[i] → Done`) for engines to render.
 
-Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/src/seru_learning.rs).
+Implementation: [`crates/engine-battle::seru_learning`](../../crates/engine-battle/src/seru_learning.rs).
 
 ### The retail capture roll (`FUN_801ec3e4`)
 
@@ -5348,9 +5337,9 @@ reachable behind `LEGAIA_ARTS_SAVED_LIST=1`.
 
 ## Tactical Arts chain editor
 
-Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks back to `BattleRunner::push_chained_art` at battle start.
+Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks into the battle command queue at battle start.
 
-Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine-core/src/tactical_arts_editor.rs).
+Implementation: [`crates/engine-battle::tactical_arts_editor`](../../crates/engine-battle/src/tactical_arts_editor.rs).
 
 ## Battle rewards composite
 
@@ -5686,7 +5675,7 @@ drops it - until `finish_battle` tears the battle down with its fade actor.
 
 The two hosts say it through different channels, and the difference is load-bearing. The native window draws a bounded HUD line (`World::show_encounter_hint`). The browser prints its notice from the page's status bar off `LegaiaRuntime::scene_rolls_encounters` - **not** through the overlay draw list, because the page treats a non-empty overlay as owning the frame (it clears the canvas and returns before the dialog layer), so a passive hint routed there would suppress every NPC dialogue for the first seconds of a town.
 
-The spine began as physical-attack-only, single-formation; the Arts / Magic / Item submenus (above) and monster AI turns layer on top of it. The damage path for art-driven strikes flows through `apply_art_strike` → `fold_battle_event` in the SM-driven `battle_session` runner, and the player-driven Arts submenu reuses the same `apply_art_strike` kernel directly. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
+The spine began as physical-attack-only, single-formation; the Arts / Magic / Item submenus (above) and monster AI turns layer on top of it. The player-driven Arts submenu routes art-driven strikes through the `apply_art_strike` kernel. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
 
 ## End-to-end gameplay loop integration test
 
@@ -5699,13 +5688,11 @@ The spine began as physical-attack-only, single-formation; the Arts / Magic / It
 5. **Rewards** - call `World::apply_battle_loot` to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.
 6. **Save round-trip** - `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
 
-The crate ships four test variants:
+The crate ships these test variants:
 
 | Test | Purpose |
 |---|---|
 | `synthetic_party_completes_full_gameplay_loop` | The default CI cycle; hand-spins the action SM with `apply_strike`. |
-| `battle_session_phase_transitions_during_loop` | Smoke around the BattleSession side; verifies the session reaches `CommandInput`. |
-| `battle_session_drives_action_sm_to_monster_wipe` | Drives the same loop through `BattleSession::tick` instead of `world.tick` - `push_command` → `SessionInput { start: true }` → Resolve → `BattlePhase::Victory`. The session owns the action SM during `Resolve`. |
 | `real_battle_data_encounter_drives_loop` | Disc-gated: scans an early `PROT.DAT` entry for a valid `EncounterRecord` byte pattern, installs it via `World::install_encounter_from_record`, and runs the battle through to `MonsterWipe`. Closes the synthetic-formation leak in the field → battle handoff. |
 | `real_psx_memory_card_save_drives_full_loop` | Disc-gated: boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card. |
 
@@ -6011,6 +5998,34 @@ tracker column, and take the data side (the phase byte, the timer constant, the
 tracker) plus the image scan as the load-bearing evidence. And the intro is long:
 the park outlasts a 3400-vsync capture window, so a run that ends early reads as
 "stuck forever" - which is what an earlier reading of this state concluded.
+
+**The countdown is in battle-frame units, not vsyncs.** Every phase arm drains
+the module word `0x801F73F8` by the frame step `*(0x1F800393)` and re-arms it with
+an immediate: `0x80` (phase 0's exit, `0x801F6B84`), then `+0x100` three times
+(`0x801F6CC8`, `0x801F6E00`, `0x801F6F30`), `+0x1E0` (`0x801F6FDC`) and `+0xB4`;
+phase 0 itself waits on the camera word `0x800840BC` climbing `4 * step` a pass
+to `0xC00`. That is about 2000 units from residency to hand-back. The same
+probe extended with a phase-change log (pad-free, from `cort_evolved_pre_battle`)
+times each phase in vsyncs:
+
+| Phase | Starts at vsync | Lasts | Countdown units | Step read |
+|---|---|---|---|---|
+| 0 | 291 (mode `0x15`; the module pages in near 631) | 624 | camera `1280 -> 0xC00` | 4 |
+| 1 | 915 | 283 | `0x80` | 3-4 |
+| 2 | 1198 | 944 | `0x100` | 4 |
+| 3 | 2142 | 660 | `0x100` | 4 |
+| 4 | 2802 | 256 | `0x100` | 4 |
+| 5 | 3058 | 479 | `0x1E0` | 4 |
+| 6 | 3537 | 181 | `0xB4` | 2 |
+
+Phases 4 to 6 run at exactly one unit a vsync. Phases 1 to 3 - the drop, the
+descent trail and the landing, which spawn records every eighth frame - run at a
+quarter to a half of that: the step the module reads stays at `4` while a pass
+takes up to fifteen vsyncs, so the countdown spans more vsyncs than it has units.
+That is frame lag in the capture, not a different count. The port runs the same
+arithmetic at one unit a tick (`battle_stage_module::arrival_tick`), so its
+arrival hands back after about 2000 ticks where this capture took about 3400
+vsyncs from mode `0x15`.
 
 ### Each surface is a D-pad map
 

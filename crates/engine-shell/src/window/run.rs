@@ -550,6 +550,9 @@ pub(super) fn cmd_play_window_with_record(
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.
     session.host.world.toggles.use_vm_dialogue = vm_dialogue;
+    // The window lands its drawn frame for a framebuffer-reading `43 12`
+    // copy (the ending vignettes' photo grab) - see the redraw's grab.
+    session.host.world.enable_frame_grab(true);
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
     session.host.world.locomotion.follow_terrain_height = terrain_y;
@@ -741,6 +744,17 @@ pub(super) fn cmd_play_window_with_record(
                 <[i32; 2]>::try_from(v).ok()
             }) {
                 session.camera.zone.seat_focus_after_snap([fx, fz]);
+            }
+            // `LEGAIA_SEAT_HEADING=H` (retail space, `0` = -Z): stand the
+            // seated player in the state's own heading, which is walk
+            // history like the position - as the arrival facing too, so an
+            // entry script's `4C 3A` hands over the same heading.
+            if let Some(h) = std::env::var("LEGAIA_SEAT_HEADING")
+                .ok()
+                .and_then(|h| h.trim().parse::<i16>().ok())
+            {
+                session.host.world.locomotion.arrival_facing = h;
+                session.host.world.apply_arrival_facing();
             }
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
         } else {
@@ -1406,6 +1420,7 @@ pub(super) fn cmd_play_window_with_record(
         } else {
             BootUiState::Title(super::boot_cutscene::title_session(
                 super::boot_cutscene::rack_has_save(save_dir, mounted_card.as_ref()),
+                0,
             ))
         }
     } else {
@@ -1450,6 +1465,7 @@ pub(super) fn cmd_play_window_with_record(
         field_placement_color_cell_keys: Vec::new(),
         field_terrain_draws: Vec::new(),
         field_lit: Default::default(),
+        draw_census: std::env::var_os("LEGAIA_DIAG_DRAWS").map(|_| Default::default()),
         field_floor_wave: Default::default(),
         coplanar_env_offsets: std::collections::HashMap::new(),
         field_terrain_color_draws: Vec::new(),
@@ -1463,6 +1479,8 @@ pub(super) fn cmd_play_window_with_record(
         ground_crop: None,
         field_terrain_cell_keys: Vec::new(),
         field_terrain_color_cell_keys: Vec::new(),
+        field_terrain_facing: Vec::new(),
+        field_terrain_color_facing: Vec::new(),
         // Headless capture harnesses can't press `F3`; let them start on the
         // wide debug vantage via the env switch.
         field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),

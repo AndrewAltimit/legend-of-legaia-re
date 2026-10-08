@@ -314,6 +314,140 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
     assert_eq!(queued(&world), vec![marker(msg::LESSON1_INTRO)]);
 }
 
+/// Press `button` for one arts-entry frame, then release.
+fn arts_press(world: &mut World, button: crate::input::PadButton) {
+    world.set_pad(0);
+    world.set_pad(button.mask());
+    world.tick_battle_arts_input();
+    world.set_pad(0);
+}
+
+/// The hyper-arts lesson's arts entry, opened as the `Command` chip opens it.
+fn drill_world() -> World {
+    let mut world = tutorial_battle_world();
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
+    world.open_battle_command(0);
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::OpenArtsMenu,
+    });
+    world.tick_battle_command();
+    assert!(world.battle.arts_input.is_some(), "the arts entry opens");
+    assert_eq!(world.battle.flow, BattleFlowState::ArtsCommandEntry);
+    assert!(queued(&world).contains(&marker(msg::ENTER_HIGH_LOW_HIGH)));
+    world.battle.tutorial_boxes.clear();
+    world
+}
+
+/// The user-reported spar defect: the Somersault (`Up Down Up`, the
+/// `[High] [Low] [High]` drill) entered through the arts entry never met the
+/// `90` drill check or the `110` validator, so the last lesson was never
+/// accepted and the fight ran on.
+#[test]
+fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
+    use crate::input::PadButton;
+    let mut world = drill_world();
+    for b in [PadButton::Up, PadButton::Down, PadButton::Up] {
+        arts_press(&mut world, b);
+    }
+    // Confirm ends the entry: `0x50 -> 0x5A`, the drill check.
+    arts_press(&mut world, PadButton::Cross);
+    assert_eq!(world.battle.flow, BattleFlowState::TargetSelect);
+    assert_eq!(
+        queued(&world),
+        vec![marker(msg::SELECT_TARGET), marker(msg::TARGET_EXPLAIN)],
+        "the drill is accepted"
+    );
+    assert_eq!(
+        world
+            .battle
+            .tutorial
+            .as_ref()
+            .unwrap()
+            .inputs
+            .command_buffer[..3],
+        [0x0F, 0x0E, 0x0F],
+        "the hook sees the gauge's swing bytes"
+    );
+    world.battle.tutorial_boxes.clear();
+    // Any press on the review picks the lone target and commits.
+    arts_press(&mut world, PadButton::Cross);
+    assert!(world.battle.arts_input.is_none(), "the art commits");
+    assert_eq!(queued(&world), vec![marker(msg::NOW_BEGIN)]);
+    assert!(world.battle.tutorial.as_ref().unwrap().pending_advance);
+}
+
+#[test]
+fn a_wrong_drill_string_is_refused_back_to_the_command_menu() {
+    use crate::input::PadButton;
+    let mut world = drill_world();
+    for b in [PadButton::Down, PadButton::Down, PadButton::Down] {
+        arts_press(&mut world, b);
+    }
+    arts_press(&mut world, PadButton::Cross);
+    assert_eq!(queued(&world), vec![marker(msg::WRONG_COMMANDS)]);
+    assert!(world.battle.arts_input.is_none(), "the entry is discarded");
+    assert!(world.battle.command.is_some(), "command menu reopened");
+    assert!(!world.battle.tutorial.as_ref().unwrap().pending_advance);
+}
+
+#[test]
+fn the_drill_matches_one_leading_arrow() {
+    use crate::input::PadButton;
+    let mut world = drill_world();
+    // Four arrows at the favoured cost need more than the default pool.
+    let entry = world.battle.arts_input.as_mut().unwrap();
+    entry.pool = 200;
+    entry.pool_max = 200;
+    for b in [
+        PadButton::Left,
+        PadButton::Up,
+        PadButton::Down,
+        PadButton::Up,
+    ] {
+        arts_press(&mut world, b);
+    }
+    arts_press(&mut world, PadButton::Cross);
+    assert_eq!(
+        queued(&world),
+        vec![marker(msg::SELECT_TARGET), marker(msg::TARGET_EXPLAIN)]
+    );
+}
+
+/// `ctx[+0x266]` is seat 0's Auto flag: an Auto attack in the drill lesson
+/// is the wrong-lesson rewind at the target cursor (`0x801F6F98`).
+#[test]
+fn an_auto_attack_in_the_drill_lesson_rewinds() {
+    use crate::battle_input::BattleCommand;
+    let mut world = tutorial_battle_world();
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
+    world.open_battle_command(0);
+    world.battle.tutorial_boxes.clear();
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::AttackMode { cursor: 0 },
+    });
+    world.set_pad(0);
+    world.set_pad(crate::input::PadButton::Left.mask());
+    world.tick_battle_command();
+    world.set_pad(0);
+    assert_eq!(queued(&world), vec![marker(msg::WRONG_HYPER_ARTS)]);
+    assert!(
+        !matches!(
+            world.battle.command.as_ref().map(|c| &c.phase),
+            Some(CommandPhase::Targeting {
+                command: BattleCommand::Attack,
+                ..
+            })
+        ),
+        "the target cursor is backed out of"
+    );
+}
+
 #[test]
 fn a_box_on_screen_parks_the_battle_loop() {
     let mut world = tutorial_battle_world();
@@ -411,8 +545,10 @@ fn the_completion_countdown_takes_the_sparring_fight_back_to_the_field() {
     while world.mode == SceneMode::Battle && frames < 2000 {
         world.set_pad(0);
         let _ = world.tick();
-        // Both counters drain by the frame step `DAT_1F800393`.
-        vsyncs += u32::from(world.clock.frame_step.max(1));
+        // Both counters drain by the frame step `DAT_1F800393` per battle
+        // pass, and a pass spans that many vsyncs: the world ticks once a
+        // vsync, so each tick is one.
+        vsyncs += 1;
         saw_phase3 |= world.battle.sideband.phase == 3;
         frames += 1;
     }
@@ -480,7 +616,7 @@ fn a_press_skips_the_completion_countdown_once_the_sign_off_box_is_gone() {
     }
     assert_eq!(world.mode, SceneMode::Field);
     assert!(
-        frames * u32::from(world.clock.frame_step.max(1)) <= 0x43 + 4,
+        frames <= 0x43 + 4,
         "phase 3 exits at ctx[+0x6CE] = 0x43, took {frames} frames"
     );
 }

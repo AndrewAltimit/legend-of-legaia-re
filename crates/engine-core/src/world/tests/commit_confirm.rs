@@ -275,3 +275,93 @@ fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
     assert!(world.battle.commit_log_launch.is_none());
     assert_eq!(battle_commit_log(&world)[0].slide_x, 0);
 }
+
+/// The action seed's record-7 open glides the active-actor bar up from
+/// `y = 234` to its rest row `192` over sixteen vsyncs - one `elapsed` unit
+/// per engine tick whatever the frame step (`FUN_801D9BBC` adds the step per
+/// battle pass, and a pass spans that many vsyncs). A monster's cast on a
+/// party member raises it; a party member's attack on a monster does not.
+#[test]
+fn the_seed_glides_the_readout_bar_in_over_sixteen_ticks() {
+    use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
+    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut world = party_world(1);
+    world.clock.frame_step = 2;
+    world.battle.command = None;
+    world.battle_ctx.active_actor = 1;
+    world.battle_ctx.action_state = 0x6E;
+    world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
+    world.actors[1].battle.active_target = 0;
+    world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    assert_eq!(battle_readout_bar_dy(&world), 42, "spawned at seat A");
+    assert_eq!(battle_action_plaque_dy(&world), -38);
+    for _ in 0..10 {
+        world.step_action_plate_glides();
+    }
+    // Ten of sixteen: `234 - 42 * 10 / 16`, the row
+    // `nivora_duel_mid_blazing_slash` holds its bar on.
+    assert_eq!(battle_readout_bar_dy(&world), 42 - 42 * 10 / 16);
+    for _ in 0..6 {
+        world.step_action_plate_glides();
+    }
+    assert_eq!(battle_readout_bar_dy(&world), 0, "landed");
+
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.action_category = ActionCategory::Attack.as_byte();
+    world.actors[0].battle.active_target = 1;
+    world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    assert!(
+        world.battle.readout_bar_glide.is_none(),
+        "a monster target raises no bar"
+    );
+}
+
+/// The retail-compare seat for a capture whose HUD glides had all landed:
+/// every plate in flight snaps onto its rest seat.
+#[test]
+fn landing_the_hud_glides_puts_every_plate_at_rest() {
+    use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
+    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut world = party_world(1);
+    world.battle.command = None;
+    world.battle_ctx.active_actor = 1;
+    world.battle_ctx.action_state = 0x6E;
+    world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
+    world.actors[1].battle.active_target = 0;
+    world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    world.step_action_plate_glides();
+    assert_ne!(battle_readout_bar_dy(&world), 0);
+    world.land_battle_hud_glides();
+    assert_eq!(battle_readout_bar_dy(&world), 0);
+    assert_eq!(battle_action_plaque_dy(&world), 0);
+}
+
+/// The retail-compare seat for a capture whose HUD glides were in flight:
+/// a record's target seat names the widget, and the engine's glide takes
+/// the record's elapsed.
+#[test]
+fn seating_a_hud_glide_matches_the_widget_by_its_target_seat() {
+    use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
+    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut world = party_world(1);
+    world.battle.command = None;
+    world.battle_ctx.active_actor = 1;
+    world.battle_ctx.action_state = 0x6E;
+    world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
+    world.actors[1].battle.active_target = 0;
+    world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    world.land_battle_hud_glides();
+    assert_eq!(battle_readout_bar_dy(&world), 0);
+    assert!(world.seat_battle_hud_glide([16, 192], 6));
+    assert_eq!(world.battle.readout_bar_glide.unwrap().elapsed, 6);
+    assert_ne!(battle_readout_bar_dy(&world), 0, "the bar is back mid-rise");
+    assert!(world.seat_battle_hud_glide([16, 12], 0));
+    assert_ne!(battle_action_plaque_dy(&world), 0);
+    assert!(
+        !world.seat_battle_hud_glide([123, 148], 4),
+        "a seat no engine glide owns is left alone"
+    );
+}

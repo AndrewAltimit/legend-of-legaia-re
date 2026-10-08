@@ -68,6 +68,18 @@ write as a level assignment inverts the exit fade. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
+Around all of it the field fades to black and back. The pause-menu session
+`FUN_801ED308` (the field overlay's handler `0x30`) raises the same level
+word by `10 * frame_step` a frame from `0` and spawns the menu only once
+`level + 0x70 > 0xF2`, so the field darkens for a few frames before any
+window - a save point's Save screen included - exists; on the close it lowers
+the level the same way with the field running again. Both phases reach the
+screen through the wipe emitter `FUN_8003479C`. Port:
+`engine-core::pause_wipe::PauseWipe`, owned by `BootSession` (opened by
+`press_field_menu`, released by `close_field_menu`); both play hosts keep the
+field drawing until `menu_spawned`, route no input to the menu before it, and
+draw `fade_level` as the subtractive quad the shop's opening fade uses.
+
 ### `FUN_801DAEF4` - save-to-slot driver (224 bytes, sub-screen 0x19)
 
 The save half of the `0x18` / `0x19` card-driver pair - `0x18` reads the card,
@@ -355,10 +367,15 @@ place: the **card op**.
 
 - `SaveScreenFlow` also keeps a `CardIoMachine` and advances it every frame
   through `card_frame_tick`. The "card" is whatever backs the host's blocks -
-  the native shell's save directory, the browser's imported `.mcr` - so the
-  poll status is what that backend answered: blocks installed for the port on
-  screen poll `Ready`, a mount with nothing readable polls `NoCard` and spends
-  the retry budget, an unanswered read polls `Pending`.
+  the native shell's save directory, the browser's own card or an imported
+  `.mcr` - so the poll status is what that backend answered: blocks installed
+  for a **mounted** port poll `Ready` whether or not any of them holds a save,
+  an empty port polls `NoCard` and spends the retry budget, an unanswered read
+  polls `Pending`. A blank card is a card - a formatted card answers the
+  directory read like any other, and it is where a first save goes. Keying
+  `Ready` on "some block holds a save" made a blank card read as no card, so
+  the write confirm stayed refused and neither host could make the first save
+  on a fresh card or an empty save directory.
 - The card driver's own waits read that result. Sub-screen `0x18` / `0x19` step
   1 blocks on the display script going idle and step 2 blocks on the op
   finishing; the flow answers the first with "the I/O machine has published
@@ -450,6 +467,143 @@ saving-overlay state machine; the load branch's bulk memcpy
 post-libcd-read copy - the card read buffer back into the live game-state
 window. The save branch is its mirror with the *other* block buffer as the
 destination; see [Which buffer the sum runs over](#which-buffer-the-sum-runs-over).
+
+#### The confirm question and the commit beat
+
+Confirming a block raises a Yes / No messagebox in **both** directions, and
+the question depends on the direction and on what the block holds. The arm at
+`0x801E2540..0x801E2600` (PROT 0899) asks "Do you wish to load?" when the op
+flag `0x801F0200` is set; on the save path it runs the slot-mode test
+`FUN_801E3F74` inline and asks "Do you wish to save?" only for mode `3` (a
+free block), "Do you wish to overwrite?" for anything else. The box opens on
+**No**.
+
+A "Yes" does not return at once. The write / read runs under a messagebox -
+"Saving to MEMORY CARD" or "Now Loading" over "Do not remove MEMORY CARD"
+(`0x801E2B50..0x801E2BA8`, same op flag) - and the result line follows:
+"Save successful." / "Load successful." (`0x801DF920..0x801DF9B0`), held until
+the frame-scalar accumulator reaches `0x5A` (`slti v0,v0,0x5B` at
+`0x801DF9D8`), a press adding a whole hold to cut it short.
+
+The write panel is `FUN_801E1C1C` **mode 4** (`0x801E28EC`), not a format
+dialog: it slides on `_DAT_801F01CC` from x `576` to `160` at a fixed
+`y = 0x50`, boxes itself with `FUN_801E36C4(x, 0x50, 0x11C, 0x20)` and centres
+the message (behind a two-space lead, `0x801CF54C`) at `x + 0x1A` and "Do not
+remove MEMORY CARD" at `x` on `y = 0x60`. The result line is
+`FUN_801E3EE0(msg, 0xA0, 0x60)` in a box `FUN_801E36C4(0xA0, 0x60, 13 * n, 0xD)`,
+`n` being the text drawer's own `(strlen + 1) / 2` return. A failed op reads
+retail's "Unable to save." / "Unable to load data." from the same pool. The
+result arm's skip stores cue `0x20` (`0x801DF91C`).
+
+The pool is not the whole of the overlay's save text. Six `0x80`-byte text
+slots sit at `0x801EED24`, closed by the region filename prefixes at
+`0x801EF024`. Two are buffers the save path writes into in place: slot 0 is the
+play-time line, whose digits `FUN_801DD35C` pokes from `0x801EED29`, and slot 3
+is a two-digit counter `FUN_801DE234` pokes at `+2` and `+4` of `0x801EEEA4`.
+The other four - a load-failure line, a wrong-game line that refuses a save, a
+not-available line and a not-used line - are referenced by nothing on the disc:
+no instruction, word, `gp` access or base-plus-displacement access names an
+address in them in any image (`find-address-word-refs.py --prot`,
+`find-gp-relative-refs.py --prot`). Retail's failure text comes from the pool
+above, so those four are dead strings a port owes nothing.
+
+The write panel carries three sprites besides its box, all from the 12-byte
+sprite-record table at `0x801E5048` (PROT 0899 file `0x16830`; records are
+`[clut][u][v][w][h]` on texture page `0xF`, where the save-menu TIM at
+`0x16908` uploads, the CLUT word being a sub-palette of that TIM's one CLUT
+row):
+
+| Record | Rect `(u, v, w, h)` | Sub-palette | Drawn at |
+|---|---|---|---|
+| 3 - `No.` | `(0, 144, 22, 16)` | 8 | `(x - 0x55, 0x54)` |
+| 2 - block numeral | `(block * 16, 128, 16, 16)` | 8 | `(x - 0x3F, 0x54)`; `u` is rewritten through `DAT_801E5062 = _DAT_801F0210 << 4` |
+| 4 - progress tube | `(0, 0, 104, 16)` | 0 | `(x - 0x34, 0x90)` |
+
+Under the tube `FUN_801E2DC4(x - 0x2C, 0x95)` draws the fill: one `0x3C`
+quad `t * 0x58 >> 12` wide and 6 tall on the progress timer `_DAT_801F01D0`,
+every vertex `(0xBC, t * 0xFF >> 12, 0)` over a grey-112 texel - red to
+yellow as it grows across the tube's transparent 88-pixel interior. The
+same `No.` + numeral pair labels the confirm prompt (numeral at
+`0xA0 - 0x5A`, or `0xA0 - 0x3A` on the free-block "Do you wish to save?" arm,
+`y + 4`) and the info panel's title row (`(8, local_34 - 8)` /
+`(0x1E, local_34 - 8)`).
+
+The progress timer is not decoration on the load side. The three sub-modes
+behind the panel are, by their own debug strings: `0x03` the write
+(`0x801DF5BC..`, "save_time out err" / "err card write retray"), `0x04` the
+read (`0x801DF33C..0x801DF400`, "err card read retray"), `0x05` the read's
+checksum verify (`0x801DF82C..`). The read arm leaves the panel only once the
+card op is done **and** `_DAT_801F01D0` reads `0x1000` (`0x801DF3D0..
+0x801DF3FC`); mode 4 steps it `+0x20` per frame-step unit, so a load holds
+its panel at least `0x1000 / 0x20 = 128` sixtieth-second units, where the
+write arm waits on the card alone. And once the
+panel has slid in, the dispatcher's shared tail stops drawing the header tab,
+the pill and the block grid (`0x801DFCDC..0x801DFCE4`: only while
+`_DAT_801F01CC != 0x1000`), while the panel's own subtractive push
+`FUN_80024EE4(1, 2, slide >> 4)` has blacked the frame - so the parked panel
+and the result line after it sit alone on black.
+
+A block whose checksum fails is refused **after** the read, not on the grid.
+Retail's grid classifies by filename, so a damaged save still prints its cell
+and its info panel; the verify (`0x05`, `0x801DF880`, see
+[Save-block checksum](#save-block-checksum-fun_801e38d8)) latches
+`0x801F0140 = 2` and routes to `0x13`, whose checksum arm
+(`0x801DF4EC..0x801DF548`) draws three centred lines at `y = 0x50 / 0x60 /
+0x70` - "Unable to load data." / "Damaged data." / "Delete at the
+PlayStation MEMORY CARD Screen." - in `FUN_801E36C4(0xA0, 0x50, 13 * n,
+0x30)`, `n` from the last line. There is no timer: only a face button leaves
+(`0x801DF560..0x801DF570`, cue `0x20`), back to the grid. The port reads the
+block's sum when it builds the grid (`SlotSnapshot::damaged`, from
+`legaia_save::card::sc_block_checksum_valid`), `SaveScreenFlow::before_tick`
+answers a Load's beat with `CommitReport::Damaged` for such a block, and
+engine-ui draws the box (`CARD_DAMAGED_Y`).
+
+Which blocks a confirm may open is the grid's own test. Sub-mode `0x0B`
+(`0x801DEAB8..0x801DEB00`) takes the cell's `FUN_801E3F74` mode and accepts
+mode `1` (a readable Legaia save) on a Load, mode `1` or `3` (a free block) on
+a Save; any other cell takes the press without a prompt. So on a full card of
+Legaia saves every cell asks "Do you wish to overwrite?", and on a full card of
+other games' files no cell takes a save. Whether a claimed block is Legaia's is
+decided by its directory **filename** (one of the two regional prefixes), not
+by whether its bytes parse - the port's grid builder
+(`save_select::card_block_snapshots`) captions a claimed block with any other
+name foreign, and `SaveScreenFlow::before_tick` drops the Cross on it.
+
+The port bakes the three records and the texel into the shared save-menu
+atlas (`legaia_asset::title_pak::SAVE_MENU_ATLAS_*`), draws them in
+engine-ui's `card_banner_draws_for` / `confirm_dialog_badge_draws_for` /
+`slot_info_panel_draws_for`, holds a Load's beat for
+`COMMIT_LOAD_WORK_FRAMES`, and `save_select_overlay_draws` draws a parked
+banner alone.
+
+The darkening is one `FUN_80024EE4(1, 2, grey)` push per panel - a
+full-screen `B - F` quad linked into the panel's own ordering-table bucket
+after the panel's primitives, so it draws under the panel and over everything
+the dispatcher's tail links afterwards (header tab, pill, grid, info panel)
+and every deeper bucket. The grey rides the panel's slide timer: "Now
+checking" (mode `0`, `DAT_801EF160`) and the confirm (mode `3`,
+`DAT_801EF1A4`) take `min(t >> 5, 0x50)` (`0x801E1D14..0x801E1D34`), the
+write / read panel (mode `4`, `_DAT_801F01CC`) `min(t >> 4, 0xFF)`
+(`0x801E2D50..0x801E2D88`), which is black by the time it parks. engine-ui's
+`save_select_overlay_draws` emits the quad (`SaveScreenDarken`, a white atlas
+texel tinted `grey / 255`) at the panel's place in the sprite list and
+subtracts the grey from the ink of the texts already emitted, since both hosts
+draw text after sprites; the native window blends the quad through its ABR-2
+overlay span, the browser page subtracts the level from its canvas pixels at
+the same index (`AtlasBlitter::blitDarkened`).
+
+The port: `SelectPhase::Committing` carries the two halves between the
+confirm and the outcome (`COMMIT_WORK_FRAMES`, then `COMMIT_RESULT_FRAMES` =
+90). A Save's beat holds on its last write frame until the host has written:
+`SaveScreenFlow::save_request` hands each host the rack cell while the write
+panel is up, and `finish_save_request` reports the result (the result line
+is the write's real outcome; a failure returns to the grid) and drops the
+port's block cache, so the grid re-reads the card and shows the new save. A
+Load's block was read for the grid already, so it is landed on the outcome as
+before. On the result line the flow narrows any face button to one Cross,
+which the shared menu-cue rule sounds as `0x20`; the write panel takes no
+input. `SaveScreenFlow::confirm_prompt` picks the question, `commit_banner`
+the lines, and engine-ui's `card_banner_draws_for` the geometry above.
 
 #### Which op is which direction
 
@@ -828,17 +982,22 @@ save".
 A port is whatever the host mounts, and that is the only thing the two hosts
 differ in:
 
-- The browser play page (`legaia_web_viewer::cards` + `play_menu`) mounts the
-  player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`), so cell `i` of
+- The browser play page (`legaia_web_viewer::cards` + `play_menu`) mounts
+  its **browser card** in port 1: a formatted card image
+  (`legaia_save::card::formatted_card_image`, exported as
+  `formatted_memory_card`) kept in the page's storage and written back on
+  every in-game save - the twin of the native save directory, so a save point
+  and Continue work with nothing imported. Either port also takes the
+  player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`). Cell `i` of
   the grid is card block `i + 1` - block 0 is the directory.
 - The native shell mounts its save directory as the card in port 1
   (`disk_save_rack_with_card`), where cell `i` is `slot_{i}` - a plain
   index, no directory block. Port 2 is the memory-card image `--card`
   mounted (cell `i` = block `i + 1`, as on the page), or the empty port.
 
-The browser has no save directory: its engine-format (`.lgsf`) sessions live
-in the page's save bar and reach the world through an import, not through a
-rack port. Both hosts read a card block through one reader,
+The browser has no save directory: the browser card stands in for it, and
+its engine-format (`.lgsf`) sessions live in the page's save bar and reach
+the world through an import, not through a rack port. Both hosts read a card block through one reader,
 `MountedCard::save_at`, which refuses a block that does not open a save
 chain.
 
@@ -1458,7 +1617,7 @@ slide). The five animator timers + their modes:
 | `1` | (constant `0`) | Static header tabs (Load / Save) | held at `(48, 6)` (no animation) |
 | `2` | `DAT_801ef194` | "Load" tab + active-slot pill composite | `(160, 96) → (48, 40)` (slides up-left to upper-left, with `-0x18 = -24` x post-shift) |
 | `3` | `DAT_801ef1a4` | "Do you wish to load? / save? / overwrite?" confirm dialog | `(160, 344) → (160, 88)` (slides up from below stage) |
-| `4` | `_DAT_801f01cc` | Card-init / format dialog (variant of mode 0) | `(576, 112) → (160, 112)` (slides in from further-right) |
+| `4` | `_DAT_801f01cc` | The write / read panel ("Saving to MEMORY CARD" / "Now Loading"; drawn at a fixed `y = 0x50`) | `(576, 112) → (160, 112)` (slides in from further-right) |
 
 The dispatcher increments each timer per frame and clamps:
 

@@ -33,6 +33,16 @@ use super::*;
 /// REF: FUN_801DD6B4, FUN_801DD4B0, FUN_801DDB30
 const CAPTURE_BYPASS_MOVE_IDS: [u8; 7] = [0x37, 0x5C, 0x5D, 0x5E, 0x79, 0x7A, 0x7B];
 
+/// The three player Seru heals: Vera (PROT 0905), Orb (0911), Spoon (0919).
+const VERA_SPELL_ID: u8 = 0x83;
+const ORB_SPELL_ID: u8 = 0x89;
+const SPOON_SPELL_ID: u8 = 0x91;
+
+/// The two high-block summons that strike nothing and credit spell XP in
+/// their own arm: Horn (PROT 0930) and Jedo (PROT 0931).
+const HORN_SPELL_ID: u8 = 0x9C;
+const JEDO_SPELL_ID: u8 = 0x9D;
+
 impl World {
     /// Deduct `def`'s MP cost from `caster` and fold its effect onto each
     /// absolute actor slot in `targets`. The direct-fold entry: MP is spent
@@ -130,12 +140,23 @@ impl World {
         // `battle_formulas::summon_spell_xp_gain`), summed here and banked
         // after the cast with the level-up check (`FUN_801e70bc`,
         // [`Self::accrue_summon_spell_xp`]). Retail keys on "attacker slot 7"
-        // (the summon body); the engine's summon coverage is the
-        // [`crate::summon::SERU_SUMMON_IDS`] block, so those are the ids that
+        // (the summon body, `0x801DE440`) with no spell-id test, and both the
+        // base and the evolved Seru blocks cast through that body
+        // ([`crate::summon::has_summon_body`]); `FUN_801E70BC`'s own
+        // threshold multiplier set names evolved ids (`0x8D`). So both blocks
         // accrue. `group_target` mirrors the summon's target byte (`+0x1DD`
         // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
         let is_party_summon_cast = (caster as usize) < self.party.party_count as usize
-            && crate::summon::SERU_SUMMON_IDS.contains(&def.id);
+            && crate::summon::has_summon_body(def.id);
+        // The high block (`0x99..=0xA0`) trains the spell too: its modules
+        // strike through the same slot-7 body, and the two that strike
+        // nothing (Horn, Jedo outside a scripted fight) credit inline
+        // ([`crate::summon::module_trains_spell_xp`]).
+        let trains_spell_xp = (caster as usize) < self.party.party_count as usize
+            && crate::summon::module_trains_spell_xp(def.id);
+        // Jedo's non-scripted arm strikes nothing, so no finisher tail runs
+        // for it; it credits a flat grant per living monster seat instead.
+        let jedo_banish = def.id == JEDO_SPELL_ID && !self.battle.scripted_fight;
         // Shiny bonus: when the casting character learned this Seru's spell
         // from a shiny capture, every cast deals +35% damage (on top of the
         // normal roll). Mirrors the retail `--shiny-seru` damage hook
@@ -147,6 +168,9 @@ impl World {
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
         let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
         let mut summon_xp_gain: u32 = 0;
+        if trains_spell_xp {
+            summon_xp_gain = self.inline_module_spell_xp(def.id, jedo_banish);
+        }
         // The Seru-magic **side-effect stager** (`FUN_801F3D3C`). Retail's
         // summon module calls it once as the cast commits, before any hit, and
         // the damage finisher then reads the staged percent on every hit - so
@@ -156,11 +180,12 @@ impl World {
         // which is what `is_party_summon_cast` already identifies. `None` -
         // and no `rand()` draw - for every other cast, for a caster below
         // magic level 3, and on a host with no side-effect table installed.
-        let side_effect = if is_party_summon_cast {
-            self.stage_seru_side_effect(caster, def.id, targets)
-        } else {
-            None
-        };
+        let side_effect =
+            if is_party_summon_cast && crate::summon::module_stages_side_effect(def.id) {
+                self.stage_seru_side_effect(caster, def.id, targets)
+            } else {
+                None
+            };
 
         for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
@@ -214,18 +239,26 @@ impl World {
                     }
                 }
             }
-            // The two **ally-side** player Seru casts do not roll a spell
+            // The three **ally-side** player Seru casts do not roll a spell
             // magnitude at all in retail: their module's own tick arm computes
             // the restore from the caster's magic level and stores it. The
             // spell catalog's scalar is a placeholder, so the tick kernel
             // supplies the magnitude here - the same posture
-            // `player_summon_predamage` takes for the damaging ones.
+            // `player_summon_predamage` takes for the damaging ones. The same
+            // arm credits the spell's XP per healed seat, which banks with the
+            // damage path's below.
             if is_party_summon_cast
                 && let crate::spells::SpellOutcome::Heal { amount, .. } = &mut outcome
                 && let Some(a) =
                     self.seru_tick_heal_amount(caster, def.id, snap.target_hp, snap.target_hp_max)
             {
                 *amount = a;
+                summon_xp_gain = summon_xp_gain.saturating_add(self.seru_tick_heal_xp(
+                    caster,
+                    def.id,
+                    snap.target_hp,
+                    snap.target_hp_max,
+                ));
             }
             // Shiny Seru: +35% on the final magnitude (9999-capped), after the
             // affinity / summon roll so it stacks on the spell's normal output.
@@ -237,7 +270,8 @@ impl World {
             // Per-hit spell-XP gain (FUN_801ddb30 tail): the final damage
             // delta against the target's live/max HP at the moment of the hit
             // (the snapshot taken above, before the fold applies the damage).
-            if is_party_summon_cast
+            if trains_spell_xp
+                && !jedo_banish
                 && let crate::spells::SpellOutcome::Damage { amount, .. } = &outcome
             {
                 summon_xp_gain =
@@ -259,7 +293,7 @@ impl World {
         }
         // Bank the accrued XP and run the once-per-cast level-up check
         // (FUN_801e70bc fires at summon return, state 0x36).
-        if is_party_summon_cast {
+        if trains_spell_xp {
             self.accrue_summon_spell_xp(caster, def.id, summon_xp_gain);
         }
         // Cast band (live-loop path): seat the move's battle-FX at the first
@@ -275,8 +309,8 @@ impl World {
                 ]
             })
             .unwrap_or([0, -300, -645]);
-        if crate::summon::SERU_SUMMON_IDS.contains(&def.id) {
-            // A player Seru-magic id resolves to a per-summon overlay: request
+        if crate::summon::PLAYER_SUMMON_IDS.contains(&def.id) {
+            // A player summon id resolves to a per-summon overlay: request
             // the summon-creature spawn (the retail cast band's `FUN_8003EC70`
             // overlay load - see `crate::summon`). A band-owned cast's spawn
             // is the stager's (already out and walking by the strike).
@@ -748,11 +782,14 @@ impl World {
     /// Build the defender-side [`SummonRollActor`] for an actor slot - the
     /// stat bridge shared by the monster special-attack roll
     /// ([`Self::enemy_move_predamage`]) and the player summon roll
-    /// ([`Self::player_summon_predamage`]). AGL = `battle_accuracy` (the
-    /// `+0x168` AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
+    /// ([`Self::player_summon_predamage`]). INT = `battle_accuracy` (the
+    /// `+0x168` halfword); HP = `battle.hp` (`+0x14c`); the two
     /// defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
     /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`];
-    /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
+    /// the guard byte (`+0x1de`) reads `4` for a party member in the Spirit
+    /// stance, which the scale stage `FUN_801dd864` doubles the defender roll
+    /// on (`0x801DD8F4`) ahead of the finisher's own guard halve; status-weaken
+    /// (`+0x16e`) defaults to none.
     pub(in crate::world::battle) fn summon_roll_defender(
         &self,
         slot: u8,
@@ -781,7 +818,17 @@ impl World {
             stat_a,
             stat_b,
             status: 0,
-            guard: 0,
+            guard: if self
+                .battle
+                .guarding
+                .get(slot as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                vm::battle_formulas::GUARD_SPIRIT_STANCE
+            } else {
+                0
+            },
         })
     }
 
@@ -817,8 +864,8 @@ impl World {
     /// module's own tick kernel, or `None` for a cast whose module computes no
     /// restore.
     ///
-    /// Two of the eleven player Seru modules heal, and neither reads a
-    /// spell-table magnitude:
+    /// Three player Seru modules heal - two in the base block, Spoon in the
+    /// evolved one - and none reads a spell-table magnitude:
     ///
     /// * **Vera** (`0x83`, PROT 0905 arm 9): `magic_level * 0x20 + 0xE0`,
     ///   clamped to the target's missing HP with retail's own signed compare
@@ -827,6 +874,9 @@ impl World {
     ///   exactly twice `spell-table.md`'s band-wide `(power << 5) + 0xE0`, so
     ///   the formula is per module
     ///   ([`legaia_engine_vm::cast_seru_ticks_b::orb_heal_amount`]).
+    /// * **Spoon** (`0x91`, PROT 0919 arm 7): `(magic_level << 7) + 0x380`,
+    ///   unsigned clamp
+    ///   ([`legaia_engine_vm::cast_seru_ticks_b::spoon_heal_amount`]).
     ///
     /// The magic level is the caster's per-spell byte
     /// ([`Self::caster_magic_power_byte`]), which is the record field both
@@ -851,8 +901,6 @@ impl World {
         target_hp: u16,
         target_hp_max: u16,
     ) -> Option<u16> {
-        const VERA_SPELL_ID: u8 = 0x83;
-        const ORB_SPELL_ID: u8 = 0x89;
         let level = self.caster_magic_power_byte(caster, spell_id);
         match spell_id {
             VERA_SPELL_ID => Some(vm::cast_seru_ticks_a::vera_heal_amount(
@@ -868,8 +916,70 @@ impl World {
                 let missing = u32::from(target_hp_max.saturating_sub(target_hp));
                 Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
             }
+            // PROT 0919's arm 7: the same unsigned clamp over its own amount
+            // (`sltu v0,a0,a3` at `0x801F8078`).
+            SPOON_SPELL_ID => {
+                let want = vm::cast_seru_ticks_b::spoon_heal_amount(level);
+                let missing = u32::from(target_hp_max.saturating_sub(target_hp));
+                Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
+            }
             _ => None,
         }
+    }
+
+    /// The spell XP a striking-free high-block module credits in its own arm,
+    /// read off the battle before the cast folds.
+    ///
+    /// - **Horn** walks every party seat and credits `+3` for a seat missing
+    ///   HP and `+1` for a seat carrying a status
+    ///   ([`crate::magic_xp::horn_seat_xp_gain`]).
+    /// - **Jedo** outside a scripted fight (`jedo_banish`) credits
+    ///   [`crate::magic_xp::JEDO_XP_PER_LIVING_MONSTER`] per monster seat
+    ///   whose HP is non-zero.
+    ///
+    /// Every other id returns `0` - its XP comes from the per-hit tail.
+    ///
+    /// REF: FUN_801F6A74 (PROT 0930), FUN_801F6A58 (PROT 0931)
+    fn inline_module_spell_xp(&self, spell_id: u8, jedo_banish: bool) -> u32 {
+        let party_count = self.party.party_count as usize;
+        match spell_id {
+            HORN_SPELL_ID => (0..party_count)
+                .filter_map(|seat| self.actors.get(seat).map(|a| (seat, a)))
+                .map(|(seat, a)| {
+                    crate::magic_xp::horn_seat_xp_gain(
+                        a.battle.hp,
+                        a.battle.max_hp,
+                        self.battle.status_effects.display_flags(seat as u8) != 0,
+                    )
+                })
+                .sum(),
+            JEDO_SPELL_ID if jedo_banish => {
+                let living = self
+                    .actors
+                    .iter()
+                    .take(BATTLE_SLOTS)
+                    .skip(party_count)
+                    .filter(|a| a.battle.max_hp != 0 && a.battle.hp != 0)
+                    .count() as u32;
+                living * crate::magic_xp::JEDO_XP_PER_LIVING_MONSTER
+            }
+            _ => 0,
+        }
+    }
+
+    /// The spell XP a heal module's arm credits for one healed seat
+    /// ([`crate::magic_xp::module_heal_xp_gain`]) at the caster's level.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0905 / 0911 / 0919 heal arms)
+    fn seru_tick_heal_xp(
+        &self,
+        caster: u8,
+        spell_id: u8,
+        target_hp: u16,
+        target_hp_max: u16,
+    ) -> u32 {
+        let level = self.caster_magic_power_byte(caster, spell_id);
+        crate::magic_xp::module_heal_xp_gain(spell_id, level, target_hp, target_hp_max)
     }
 
     /// Roll a player Seru-magic summon's damage through the faithful summon

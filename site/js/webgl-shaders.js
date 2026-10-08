@@ -295,6 +295,20 @@ int primSz(mat4 m, vec3 c, float szPerW) {
   return clamp(int(floor(w * szPerW)), 0, 0xFFFF);
 }
 
+vec2 primSxy(mat4 m, vec3 c) {
+  vec4 cl = m * vec4(c, 1.0);
+  float d = max(max(cl.w * u_prim_near.y, 0.0), u_prim_near.x * 0.5);
+  vec2 half_ = vec2(160.0, 120.0);
+  vec2 off = cl.xy * half_ * u_prim_near.y / d;
+  return clamp(off + half_, vec2(-1024.0), vec2(1023.0)) - half_;
+}
+
+bool spanTooBig(vec2 a, vec2 b, vec2 c) {
+  vec2 lo = min(min(a, b), c);
+  vec2 hi = max(max(a, b), c);
+  return hi.x - lo.x > 1023.0 || hi.y - lo.y > 511.0;
+}
+
 bool primNearRejected(mat4 m) {
   if (u_prim_near.x < 0.5 || a_prim_c0.w < 2.5) return false;
   int shift = int(u_prim_near.z);
@@ -305,7 +319,17 @@ bool primNearRejected(mat4 m) {
     sum += primSz(m, a_prim_c3, u_prim_near.y);
     zsf = 0x400 >> shift;
   }
-  return ((zsf * sum) >> 12) < int(u_prim_near.w);
+  if (((zsf * sum) >> 12) < int(u_prim_near.w)) return true;
+  /* The GPU polygon-size limit (prim_near_reject::gpu_span_rejected), armed
+   * when the enable lane carries the projection's H. A quad is split
+   * [0,1,2] / [1,3,2]; it drops only when both halves would. */
+  if (u_prim_near.x < 1.5) return false;
+  vec2 s0 = primSxy(m, a_prim_c0.xyz);
+  vec2 s1 = primSxy(m, a_prim_c1);
+  vec2 s2 = primSxy(m, a_prim_c2);
+  if (!spanTooBig(s0, s1, s2)) return false;
+  if (a_prim_c0.w > 3.5) return spanTooBig(s1, primSxy(m, a_prim_c3), s2);
+  return true;
 }
 
 /* PSX rasterisation (opt-in, NON-default - the GLSL twin of the native

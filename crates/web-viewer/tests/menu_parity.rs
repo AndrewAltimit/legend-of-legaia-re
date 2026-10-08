@@ -85,6 +85,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
     };
 
     rt.play_menu_open();
+    rt.play_menu_settle();
     assert!(rt.play_menu_is_open(), "menu opened");
     // A full disc load resolves the gold chrome atlas; without it the sprite
     // assertions below are vacuous.
@@ -110,6 +111,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
         // Fresh menu each time so the cursor starts at row 0.
         rt.play_menu_close();
         rt.play_menu_open();
+        rt.play_menu_settle();
         open_row(&mut rt, row);
         let (sprites, texts) = draw_counts(&rt);
         eprintln!("{name}: sprites={sprites} texts={texts}");
@@ -127,6 +129,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
     for (row, name) in [(3usize, "Status"), (4, "Options")] {
         rt.play_menu_close();
         rt.play_menu_open();
+        rt.play_menu_settle();
         open_row(&mut rt, row);
         let (sprites, texts) = draw_counts(&rt);
         eprintln!("{name}: sprites={sprites} texts={texts}");
@@ -158,6 +161,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
         };
         host.play_menu_close();
         host.play_menu_open();
+        host.play_menu_settle();
         open_row(host, row);
         let (sprites, texts) = draw_counts(host);
         eprintln!("{name}: sprites={sprites} texts={texts}");
@@ -178,6 +182,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
     if let Some(r) = save_rt.as_mut() {
         r.play_menu_close();
         r.play_menu_open();
+        r.play_menu_settle();
         r.play_menu_input(UP);
         r.play_menu_input(CROSS);
         let (sprites, _) = draw_counts(r);
@@ -208,7 +213,7 @@ fn card_with_save(block: u8, name: &str, gold: i32) -> Vec<u8> {
     let f = card::DIR_FRAME_SIZE * block as usize;
     buf[f..f + 4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
     buf[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    buf[f + 10..f + 22].copy_from_slice(b"BASCUS-94254");
+    buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
     let b = card::BLOCK_SIZE * block as usize;
     let sc = &mut buf[b..b + card::BLOCK_SIZE];
     sc[..2].copy_from_slice(&card::SAVE_BLOCK_MAGIC);
@@ -234,6 +239,9 @@ fn card_with_save(block: u8, name: &str, gold: i32) -> Vec<u8> {
     let loc = b"Rim Elm";
     let at = card::RETAIL_LOCATION_NAME_OFFSET;
     sc[at..at + loc.len()].copy_from_slice(loc);
+    // The raw label writes above come after the record writers' restamp: sum
+    // the block again, or retail's read verify refuses it as damaged data.
+    card::restamp_sc_block_checksum(sc);
     buf
 }
 
@@ -251,6 +259,7 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
         .expect("insert card into port 1");
 
     rt.play_menu_open();
+    rt.play_menu_settle();
     // The atlas is built lazily on the first open; without it every sprite
     // assertion below is vacuous.
     assert!(rt.play_menu_has_chrome(), "chrome atlas must resolve");
@@ -325,9 +334,18 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
          (got {filled_texts} vs {empty_cell_texts} on an empty block)"
     );
 
-    // Confirm cell 2 = block 3: the card's save is parked, and the page's
-    // resume call (`play_resume_save`) lands it in the live world.
+    // Confirm cell 2 = block 3: retail asks "Do you wish to load?"
+    // (defaulting to No), then runs "Now Loading" / "Load successful."
+    // before the save is parked; the page's resume call
+    // (`play_resume_save`) lands it in the live world.
     rt.play_menu_input(CROSS);
+    assert!(
+        rt.play_menu_take_load_scene().is_empty(),
+        "the load confirm must not load on its own"
+    );
+    rt.play_menu_input(LEFT); // -> Yes
+    rt.play_menu_input(CROSS);
+    run_commit_beat(&mut rt);
     assert!(
         !rt.play_menu_take_load_scene().is_empty(),
         "a card load reports the scene the save was written in"
@@ -359,6 +377,7 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
         .expect("insert");
 
     rt.play_menu_open();
+    rt.play_menu_settle();
     open_row(&mut rt, ROW_SAVE);
     rt.play_menu_input(CROSS); // pick SLOT 1
     for _ in 0..200 {
@@ -375,6 +394,8 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
     );
     rt.play_menu_input(LEFT); // -> Yes
     rt.play_menu_input(CROSS);
+    // "Saving to MEMORY CARD", then "Save successful.", then the write.
+    run_commit_beat(&mut rt);
     assert!(rt.card_slot_dirty(0), "confirming Yes writes into the card");
 
     // The exported container is still a card an emulator can walk, with the
@@ -408,6 +429,7 @@ fn load_screen_with_no_card_inserted_renders_and_refuses() {
         return;
     };
     rt.play_menu_open();
+    rt.play_menu_settle();
     open_row(&mut rt, ROW_LOAD);
     let (sprites, _) = draw_counts(&rt);
     assert!(sprites > 14, "the panel + pills draw with no card inserted");
@@ -436,6 +458,7 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
     };
 
     rt.play_menu_open();
+    rt.play_menu_settle();
     open_row(&mut rt, ROW_STATUS);
     let (status_sprites, status_texts) = draw_counts(&rt);
     assert!(
@@ -520,6 +543,7 @@ fn the_options_screen_remembers_an_edit_across_opens() {
         serde_json::to_string(&legaia_engine_core::options::OptionsState::default()).unwrap();
 
     rt.play_menu_open();
+    rt.play_menu_settle();
     open_row(&mut rt, ROW_OPTIONS);
     assert_eq!(
         rt.debug_open_options_json().as_deref(),
@@ -595,6 +619,7 @@ fn the_save_row_is_greyed_and_buzzes_in_a_field_scene() {
     // The confirm: walking the cursor onto Save and pressing Cross buzzes and
     // stays on the picker, so the menu is still showing the root list.
     rt.play_menu_open();
+    rt.play_menu_settle();
     open_row(&mut rt, ROW_SAVE);
     assert!(rt.play_menu_is_open(), "a buzz does not close the menu");
     let json: serde_json::Value =
@@ -604,6 +629,7 @@ fn the_save_row_is_greyed_and_buzzes_in_a_field_scene() {
     let top = draw_counts(&rt);
     rt.play_menu_close();
     rt.play_menu_open();
+    rt.play_menu_settle();
     assert_eq!(
         draw_counts(&rt),
         top,
@@ -632,7 +658,9 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
     for _ in 0..240 {
         rt.boot_title_step(0);
     }
-    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on Continue
+    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on New Game
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
     let mut outcome = String::new();
     for _ in 0..240 {
         rt.boot_title_step(0);
@@ -661,4 +689,67 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
     }
     assert!(!rt.play_menu_is_open(), "the menu closed back to the title");
     assert_eq!(rt.play_menu_take_load_scene(), "", "nothing was loaded");
+}
+
+/// Tick through a confirmed card op's write / read beat and result line
+/// (`SelectPhase::Committing`) with no input, so the outcome lands.
+fn run_commit_beat(rt: &mut LegaiaRuntime) {
+    // The write beat runs until the progress bar fills (128 frames), then
+    // the 90-frame result line.
+    for _ in 0..300 {
+        rt.play_menu_input(0);
+    }
+}
+
+/// A **cold** page - the disc loaded, no scene entered yet, the player's card
+/// in port 1 - is what a returning player sees: the title's Continue must
+/// open the Load screen, walk it to a block, and park the save for the page
+/// to resume. Every other Continue test stands in a scene first.
+#[test]
+fn a_cold_title_continue_loads_a_save_off_the_card() {
+    let Some(disc) = std::env::var("LEGAIA_DISC_BIN").ok() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read disc");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load_disc");
+    rt.insert_card(0, card_with_save(1, "Vahn", 1234), "card A".into())
+        .expect("insert card into port 1");
+    assert!(
+        rt.boot_title_has_save_data(),
+        "the card makes Continue live"
+    );
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on New Game
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040); // Down: onto Continue
+    let mut outcome = String::new();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+        outcome = rt.boot_title_step(CROSS);
+        if !outcome.is_empty() {
+            break;
+        }
+    }
+    eprintln!(
+        "[cold] outcome={outcome:?} title_active={} submode={:#x} menu_open={}",
+        rt.boot_title_is_active(),
+        rt.boot_title_submode(),
+        rt.play_menu_is_open()
+    );
+    assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
+    assert!(rt.play_menu_sub_is_open(), "the Load screen is up");
+    rt.play_menu_input(CROSS); // SLOT 1
+    for _ in 0..200 {
+        rt.play_menu_input(0);
+    }
+    rt.play_menu_input(CROSS); // block 1 -> "Do you wish to load?"
+    rt.play_menu_input(LEFT);
+    rt.play_menu_input(CROSS);
+    run_commit_beat(&mut rt);
+    assert!(rt.play_menu_take_load(), "the Load parked its save");
 }

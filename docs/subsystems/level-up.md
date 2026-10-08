@@ -319,7 +319,7 @@ save triplets at battle scene `map01`.
 | Noa | 1 | 102 → 336 (+234) | +32 | +6 | **+40** |
 | Gala | 2 | 140 → 394 (+254) | +44 | +8 | **0** |
 
-Codified in [`engine_core::levelup::observations`](../../crates/engine-core/src/levelup.rs):
+Codified in [`engine_core::levelup::observations`](../../crates/engine-battle/src/levelup.rs):
 - `vahn_4_level_jump` (legacy historical fact - the source saves were rotated
   out of the active corpus when the Noa / Gala triplets shipped).
 - `noa_4_level_jump` (settled delta across Noa's 3-phase split).
@@ -565,7 +565,7 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   `LevelUpTracker::with_growth_tables` installs them as
   `StatGrowthCurve::PerLevel` for all eight stats, and `BootSession` calls it
   from the user's `SCUS_942.54` at boot. The flat placeholder in
-  [`crates/engine-core/src/seru_stats.rs`] survives only as the legacy
+  [`crates/engine-battle/src/seru_stats.rs`] survives only as the legacy
   Seru-roster convenience path (`with_seru_roster`). Disc-gated coverage:
   `crates/asset/tests/level_up_tables_real.rs` (parser + `start` vs new-game
   seed), `crates/engine-core/tests/growth_curve_disc.rs` (engine install vs seed

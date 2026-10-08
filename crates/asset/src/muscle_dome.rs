@@ -124,6 +124,31 @@ pub fn verify_resident(overlay: &[u8]) -> bool {
     subdraw_ok && victory_ok
 }
 
+/// File offset and byte length of every unique **sub-draw record** the
+/// [`SUBDRAW_PTR_TABLE_VA`] table points at, in offset order.
+///
+/// A record is `[u8 count][u8 anim][u8 panel]` then `count` `(record, mode)`
+/// byte pairs - the consumer `FUN_801D388C` loads the pointer
+/// (`0x801D4BA4..0x801D4BB0`), reads `+1` and `+2`, and walks
+/// `+3 + 2*i` / `+4 + 2*i` for `i < +0` into `FUN_801D8DE8`
+/// (`0x801D4CAC..0x801D4D8C`). So the length is `3 + 2*count`; the pool pads
+/// each record to the next word, and the padding is not the record's.
+/// Pointers outside the image are skipped.
+pub fn subdraw_record_extents(overlay: &[u8]) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = (0..SUBDRAW_PTR_TABLE_LEN as u32)
+        .filter_map(|i| read_va(overlay, SUBDRAW_PTR_TABLE_VA + i * 4))
+        .filter_map(|ptr| {
+            let off = ptr.checked_sub(MUSCLE_OVERLAY_BASE_VA)? as usize;
+            let count = usize::from(*overlay.get(off)?);
+            let len = 3 + 2 * count;
+            (off + len <= overlay.len()).then_some((off, len))
+        })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Decode the four **hand command ids** (`DAT_801f4b8c[0..4]`): per hand
 /// slot, the direction-command id the deal loop assigns to that card and
 /// the commit path (`FUN_801d388c` case `0xb`) appends into the fighter's

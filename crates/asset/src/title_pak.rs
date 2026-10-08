@@ -137,6 +137,68 @@ pub const OVERLAY_SAVE_MENU_BAND_SLOT1: (u32, u32, u32, u32) = (33, 97, 45, 15);
 /// Best rendered with CLUT 7.
 pub const OVERLAY_SAVE_MENU_BAND_SLOT2: (u32, u32, u32, u32) = (33, 113, 45, 15);
 
+/// File offset within PROT 0899 of the save UI's 12-byte sprite-record
+/// table (menu-overlay VA `0x801E5048`, base `0x801CE818`). Each record is
+/// `[+0 clut][+2 u][+4 v][+6 w][+8 h]` (halfwords) on texture page `0xF` -
+/// the VRAM page [`OVERLAY_SAVE_MENU_TIM_OFFSET`]'s TIM uploads to - and the
+/// CLUT word is a sub-palette index into that TIM's single CLUT row.
+pub const OVERLAY_SAVE_UI_RECORD_TABLE_OFFSET: usize = 0x16830;
+/// Byte stride of the [`OVERLAY_SAVE_UI_RECORD_TABLE_OFFSET`] table.
+pub const OVERLAY_SAVE_UI_RECORD_STRIDE: usize = 12;
+
+/// Record 2 of the sprite-record table: the **block-number** numeral, one
+/// 16x16 cell per block. `FUN_801E1C1C` modes 3 and 4 overwrite its `u`
+/// with `block << 4` (`DAT_801E5062 = _DAT_801F0210 << 4`), so cell `n`
+/// reads "n + 1" (`1` .. `15`). Sub-palette 8.
+pub const OVERLAY_SAVE_UI_REC_BLOCK_DIGIT: (u32, u32, u32, u32) = (0, 128, 16, 16);
+/// Record 3: the `No.` label drawn left of the block numeral. Sub-palette 8.
+pub const OVERLAY_SAVE_UI_REC_NO_LABEL: (u32, u32, u32, u32) = (0, 144, 22, 16);
+/// Record 4: the write panel's progress **tube** - a 104x16 frame whose
+/// 88x8 interior (`x 8..96`, `y 4..12`) is transparent, so the fill drawn
+/// under it shows through. Sub-palette 0.
+pub const OVERLAY_SAVE_UI_REC_PROGRESS_TUBE: (u32, u32, u32, u32) = (0, 0, 104, 16);
+/// Sub-palettes of records 2 / 3 / 4 (the records' `+0` words).
+pub const OVERLAY_SAVE_UI_REC_DIGIT_CLUT: usize = 8;
+/// Companion to [`OVERLAY_SAVE_UI_REC_DIGIT_CLUT`]: the tube's sub-palette.
+pub const OVERLAY_SAVE_UI_REC_TUBE_CLUT: usize = 0;
+/// Blocks on a memory card, so cells of [`OVERLAY_SAVE_UI_REC_BLOCK_DIGIT`].
+pub const OVERLAY_SAVE_UI_BLOCK_DIGIT_COUNT: u32 = 15;
+
+/// The texel the progress fill (`FUN_801E2DC4`) samples: texture page
+/// `0x1F`, `uv (0, 240)..(2, 242)`, CLUT `0x7F84` - index `2` of the
+/// row-510 palette, BGR555 `0xB9CE` = grey `112` per channel (read from the
+/// `save_select_idle` VRAM; the opaque `0x3C` packet ignores its STP bit).
+/// The fill's vertex colour modulates it.
+pub const OVERLAY_SAVE_UI_PROGRESS_TEXEL_GREY: u8 = 112;
+
+/// Where the engine's composed 256x256 save-menu atlas keeps the records
+/// above. The atlas packs many sheets into one page, so these are not the
+/// source coordinates; they are named here, beside the source rects, because
+/// both the atlas builder (`legaia-engine-core`) and the draw builders
+/// (`legaia-engine-ui`) read them and neither crate depends on the other.
+pub const SAVE_MENU_ATLAS_PROGRESS_TUBE: (u32, u32, u32, u32) = (48, 160, 104, 16);
+/// Atlas placement of [`OVERLAY_SAVE_UI_REC_NO_LABEL`].
+pub const SAVE_MENU_ATLAS_NO_LABEL: (u32, u32, u32, u32) = (152, 160, 22, 16);
+/// Atlas placement of the progress-fill texel (a 4x4 cell of
+/// [`OVERLAY_SAVE_UI_PROGRESS_TEXEL_GREY`]; draws sample its centre).
+pub const SAVE_MENU_ATLAS_PROGRESS_TEXEL: (u32, u32, u32, u32) = (0, 192, 4, 4);
+/// Atlas placement of a 4x4 pure-white cell: the texel the save screen's
+/// subtractive darkening quad samples, so its tint is the grey level it
+/// subtracts (`FUN_80024EE4`'s packed colour) with no texel scaling.
+pub const SAVE_MENU_ATLAS_WHITE_TEXEL: (u32, u32, u32, u32) = (4, 192, 4, 4);
+
+/// Atlas placement of block numeral cell `block` (`0..15`, reading
+/// "`block + 1`"), or `None` past the card's last block. The fifteen cells
+/// do not fit one free run of the atlas, so they sit in three.
+pub const fn save_menu_atlas_block_digit(block: u32) -> Option<(u32, u32, u32, u32)> {
+    match block {
+        0..=7 => Some((128 + 16 * block, 112, 16, 16)),
+        8..=13 => Some((160 + 16 * (block - 8), 176, 16, 16)),
+        14 => Some((176, 160, 16, 16)),
+        _ => None,
+    }
+}
+
 /// Source sub-rect of a **synthetic solid-blue 4×4 fill tile** the
 /// engine writes into an otherwise-empty region of the decoded save-
 /// menu atlas. **STOPGAP - to be deleted when the engine switches to
@@ -547,7 +609,7 @@ pub const OVERLAY_SYSTEM_UI_ATR_PALETTES: [usize; 3] = [0, 2, 1];
 // The battle HUD's whole skin is four rects of this one TIM, each read out
 // of retail's own display list (`SPRT` packets in a mednafen battle save
 // state); the seats and sub-palettes are pinned in
-// `legaia_engine_vm::battle_chrome`, and these are its source rects.
+// `legaia_engine_ui::battle_chrome`, and these are its source rects.
 // -----------------------------------------------------------------------
 
 /// Battle **roster-panel background** - the 102x48 marbled plate one
@@ -912,6 +974,68 @@ mod tests {
         assert_eq!(tim.mode, 0); // 4bpp
         assert_eq!(tim.pixel_rect.2, 64); // pw halfwords = 64 (= 256 4bpp pixels)
         assert_eq!(tim.pixel_rect.3, 256); // ph
+    }
+
+    /// Disc-gated: the sprite-record table's records 2 / 3 / 4 are the
+    /// rects + sub-palettes the write panel and the confirm badge use.
+    #[test]
+    fn save_ui_record_table_matches_the_named_records_when_disc_extracted() {
+        let path = "../../extracted/PROT/0899_xxx_dat.BIN";
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(_) => {
+                eprintln!("skip: extracted/PROT/0899_xxx_dat.BIN missing");
+                return;
+            }
+        };
+        let rec = |i: usize| {
+            let o = OVERLAY_SAVE_UI_RECORD_TABLE_OFFSET + i * OVERLAY_SAVE_UI_RECORD_STRIDE;
+            let h = |k: usize| u16::from_le_bytes([bytes[o + k], bytes[o + k + 1]]) as u32;
+            (h(0) as usize, (h(2), h(4), h(6), h(8)))
+        };
+        assert_eq!(
+            rec(2),
+            (
+                OVERLAY_SAVE_UI_REC_DIGIT_CLUT,
+                OVERLAY_SAVE_UI_REC_BLOCK_DIGIT
+            )
+        );
+        assert_eq!(
+            rec(3),
+            (OVERLAY_SAVE_UI_REC_DIGIT_CLUT, OVERLAY_SAVE_UI_REC_NO_LABEL)
+        );
+        assert_eq!(
+            rec(4),
+            (
+                OVERLAY_SAVE_UI_REC_TUBE_CLUT,
+                OVERLAY_SAVE_UI_REC_PROGRESS_TUBE
+            )
+        );
+        eprintln!("[ran] save-UI record table matches");
+    }
+
+    /// The block-numeral cells tile without overlap and stay on the page.
+    #[test]
+    fn block_digit_cells_are_disjoint_and_on_the_atlas() {
+        let cells: Vec<_> = (0..OVERLAY_SAVE_UI_BLOCK_DIGIT_COUNT)
+            .map(|b| save_menu_atlas_block_digit(b).expect("cell"))
+            .collect();
+        assert!(save_menu_atlas_block_digit(OVERLAY_SAVE_UI_BLOCK_DIGIT_COUNT).is_none());
+        let mut all = cells.clone();
+        all.extend([
+            SAVE_MENU_ATLAS_PROGRESS_TUBE,
+            SAVE_MENU_ATLAS_NO_LABEL,
+            SAVE_MENU_ATLAS_PROGRESS_TEXEL,
+            SAVE_MENU_ATLAS_WHITE_TEXEL,
+        ]);
+        for (i, a) in all.iter().enumerate() {
+            assert!(a.0 + a.2 <= 256 && a.1 + a.3 <= 256, "{a:?} off the page");
+            for b in &all[i + 1..] {
+                let apart =
+                    a.0 + a.2 <= b.0 || b.0 + b.2 <= a.0 || a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1;
+                assert!(apart, "{a:?} overlaps {b:?}");
+            }
+        }
     }
 
     /// Disc-gated: extract the animated memory-card icon strip.

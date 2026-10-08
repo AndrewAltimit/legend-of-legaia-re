@@ -791,6 +791,30 @@ field.
   the blocked step's touch, and stops blocking via its `31 00`; the cupboard blocks silently, opens
   only on interact, grants once under its `70 xx` searched-flag guard, shows the found/empty
   message, and swings shut when the box is dismissed).
+- **A talk proxy answers for the actor it touches.** The facing probe walks
+  the whole actor list (`FUN_801CF9F4`): a point 64 ahead from
+  `DAT_801F2254`, box-tested at `0x40 + 0x20 - 0x18` = 72 around a
+  moving-class actor's live position (`flags & 0x01020000`), or at `0x50`
+  around a static actor's footprint centre; the hit is a talk when the
+  actor carries `0x40020000`. An undrawn placement can therefore stand in
+  for a speaker the probe cannot reach: its interaction raises the other
+  actor's touched mark (`B1 <id> 08`), and the context runner
+  (`FUN_80039B7C`) then steps that actor's record. The port reads such
+  placements at scene entry (`placement_talk_proxy_target`) and the probe
+  answers a hit on the proxy with its target. `concnow` P1[26] is the
+  gate guards' proxy. Disc-gated: `engine-core/tests/talk_proxy_disc.rs`.
+- **A prop record that walks the player carries them.** A cross-context
+  walk-to-tile on the player (`C7 F8 <tx> <tz> <mode>`) parks the calling
+  record until the walk kernel lands the player (`FUN_801DE840`
+  `0x801DF034..0x801DF044`, `FUN_8003774C` case `0x47`); the prop run arms the
+  same player leg the cutscene timeline does and resumes past the op on
+  arrival. `taiku` P0[6], Zora Castle's lift, walks the player onto its
+  platform and off the far side this way. A door bind whose record also
+  teleports the player (a walk-touch door) keeps its decoded `MoveTo` and
+  plays no walk leg on top of it: `tower`'s floor doors walk the player into
+  the doorway before their `A3 F8`, and replaying the walk after the landing
+  carried the player back. Disc-gated:
+  `engine-core/tests/prop_ride_player_walk_disc.rs`.
 
 Capture note: both wall-press captures park in the **`town0c`** Rim Elm variant. The live grid byte-matches the town01 map's base + paints - which is exactly what a town0c session *should* hold: under the universal `define−2` `.MAP` resolution (see "Engine port" below) town0c's own `.MAP` is PROT 0019, **byte-identical** to town01's (0001/0010 - the Rim Elm variants share one map). The earlier reading that PROT 0028 was "town0c's own different `.MAP`" mis-attributed the next block's map (0028 is `izumi`'s, `define 30 − 2`); the cold-vs-variant question this raised is dissolved.
 
@@ -1039,7 +1063,7 @@ The `.MAP` file's `+0x10000..+0x12000` region is a **per-tile trigger block**: a
 | 2 | `[tile_x][tile_z][coarse: i8][quads: u8]` | **Elevation overrides** - the floor height of every ramp / staircase tile. `FUN_80019278` consults this table via `FUN_801D5630(2, …)` for any tile whose object-grid cell carries bit `0x800`, and uses it **instead of** the bilinear nibble surface: `coarse` is a whole-tile step (`× -0x20`), `quads` packs four 2-bit per-64-unit-sub-cell steps (`× -0x10`). See [Floor height: two models](#floor-height-two-models). Engine `legaia_engine_core::world::field_elevation`. |
 | 3 | `[x0, z0, x1, z1, type, 0, 0, 0]` (8-byte stride) | **Region AABB table** - the resumable point-in-AABB scan `FUN_80017FBC` (body at `+0x1000E`, count at `+0x10010` = the kind-3 header slots). Region types feed the region-type bitmask `_DAT_8007B8F4` + the camera zone query `FUN_801DBA20`. Engine `legaia_engine_core::field_regions::RegionTable`. |
 
-The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first and **falls back to the `+0x12000` window** - the first sectors of the *next* PROT entry (the dev-build `DATA_FIELD<scene>` sibling), which the contiguous `0x28`-sector read from the `.MAP` LBA (`FUN_8001F7C0`) pulls in with the same header shape. Engine: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-core/src/field_regions.rs) + [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
+The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first and **falls back to the `+0x12000` window** - the first sectors of the *next* PROT entry (the dev-build `DATA_FIELD<scene>` sibling), which the contiguous `0x28`-sector read from the `.MAP` LBA (`FUN_8001F7C0`) pulls in with the same header shape. Engine: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-vm/src/field_regions.rs) + [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
 
 **Engine runtime dispatch.** All three trigger classes run live in the port. The per-frame tile compare is `SceneHost::dispatch_walk_on_trigger` (the `FUN_801D1EC4` port); it quantises `tile = world >> 7` (retail's raw shift at `0x801d2068`, **not** the `(world - 0x40) >> 7` form the region refresh uses - the two agree at tile centres and differ by a half-tile band, and a door tile is only one tile deep), compares against the host's last-tile mirror, and on a crossing runs the kind-1 arm and then the kind-0 arm - the same order retail falls through. A scene entry / warp arrival marks the compare stale so the arrival tile fires on the first tick, matching retail's stale globals.
 
@@ -1856,6 +1880,15 @@ parks the player on tile (0, 0) for the ride (`A3 F8 00 00`) before the arrival
 `MoveTo`. Read through the structural fallback, the out-of-service arm dropped
 the player into the void corner of the map.
 
+A move the record takes back is not a landing either. A switch that shows its
+effect parks the player elsewhere for the camera and then copies a stand-in
+actor's position back into the player: `chitei2`'s Rapid Transport switches
+(P0[32..34]) store the player's spot in actor `0x39` (`CC 39 37`), move the
+player to (44, 47) to watch the car (`A3 F8 2C 2F`), and end with
+`CC F8 E3 39`, the [`4C E3` position copy](script-vm-menuctrl.md#4c-e3-position-copy-teleport)
+run in the player's context. Both decodes skip a player move that such a copy
+follows; read as a door, the switches dropped the player onto the car's track.
+
 ### The arrival bracket
 
 A lift ride lands the player on the partner lift's platform, and the riding
@@ -2098,7 +2131,7 @@ player actor. Riremito clears the same hold at its own fade spawn (`0x801EE168`)
 `2`, a `0x20`-frame ramp from black to white, hold `-1` - under the kind-`2` `B - F` blend a
 fade to black that holds until the destination loads. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
 0x1000`) and drops `+0x10 & 0x200000` (`0x801EE268..0x801EE294`). The warp seats the
-player at the stored tile with Y `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
+player at the stored tile with arrival facing `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
 resume (`World::man_load_resume_programs`) - the engine's warp stays on the loaded map, so
 that stands in for the scene load `FUN_8001FD44` stages, whose MAN init is where retail
 starts the closer.

@@ -124,6 +124,7 @@ mod tests {
         w.npcs.ambient.insert(
             slot,
             crate::world::FieldNpcAmbient {
+                defers: false,
                 walks: false,
                 variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, vec![0x01])],
                 live: None,

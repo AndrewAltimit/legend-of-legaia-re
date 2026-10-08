@@ -248,6 +248,28 @@ impl TitleSession {
         s
     }
 
+    /// [`Self::for_front_end`] opened on `row` - the row counter
+    /// `_DAT_8007B820` a host carries across titles in its
+    /// [`crate::mode::ModeSeat::title_row`]. Retail never resets the counter,
+    /// so a later title (a party wipe's, a backed-out Continue's) opens on
+    /// whichever row the last one held. A CONTINUE row with nothing to
+    /// continue folds to NEW GAME: the port greys that row out, and the
+    /// cursor must not open on a row its own step skips.
+    pub fn for_front_end_at(any_save_present: bool, row: u8) -> Self {
+        let mut s = Self::for_front_end(any_save_present);
+        let row = i32::from(row) % i32::from(s.rows.max(1));
+        s.menu.row_counter = if s.continue_enabled { row } else { 0 };
+        s
+    }
+
+    /// The row counter as it stands (`0` NEW GAME, `1` CONTINUE) - what a
+    /// host hands [`crate::mode::ModeSeat::set_title_row`] each frame.
+    pub fn row_counter(&self) -> u8 {
+        self.menu
+            .row_counter
+            .rem_euclid(i32::from(self.rows.max(1))) as u8
+    }
+
     /// Construct a session with `Continue` disabled (no save data).
     pub fn without_save_data() -> Self {
         let mut s = Self::new();
@@ -308,8 +330,20 @@ impl TitleSession {
                 let (_, held) = Self::pad_words(input);
                 let frozen = self.menu.countdown < ATTRACT_INPUT_FREEZE_BELOW;
                 if !frozen && (input.start || input.cross) {
-                    let cursor = if self.continue_enabled { 1 } else { 0 };
-                    self.phase = TitlePhase::MainMenu { cursor };
+                    // The cursor opens on NEW GAME whether or not a save
+                    // exists. Retail's row counter `_DAT_8007B820` is only
+                    // ever stepped by the title's own Up / Down arm; the one
+                    // other writer, init.pak's card scan (`0x801CF1DC` /
+                    // `0x801CF300`), raises it to CONTINUE only when its
+                    // match count `0x801F3978` is non-zero - and the scan
+                    // (`FUN_801CFF68`) compares each file against
+                    // "BISCUS-94254PRO-" (`0x801D098C`), a prefix no US save
+                    // (`BASCUS-94254PRO-`) carries. The `title_attract`
+                    // capture shows it: nine US saves in the directory table
+                    // at `0x801F39A4`, count `0`, row `0`.
+                    self.phase = TitlePhase::MainMenu {
+                        cursor: self.menu.row_counter.clamp(0, 1) as u8,
+                    };
                     events.push(TitleEvent::StartPressed);
                 }
                 if held != 0 {
@@ -560,16 +594,54 @@ mod tests {
         assert!(!without.continue_enabled && without.attract_enabled);
     }
 
+    /// The US build's title opens on NEW GAME even with saves on the card:
+    /// init.pak's scan matches "BISCUS-94254PRO-", which no US save carries,
+    /// so the row counter stays `0` (the `title_attract` capture: nine US
+    /// saves, count `0x801F3978 = 0`, row `0x8007B820 = 0`). This test used to
+    /// assert the cursor opened on CONTINUE.
+    /// Retail's row counter outlives the title: a title opened at the row
+    /// the last one held opens its menu there, and reports it back.
     #[test]
-    fn start_press_opens_menu_with_continue_enabled() {
+    fn a_later_title_opens_on_the_row_the_last_one_held() {
+        let mut first = TitleSession::for_front_end(true);
+        first.skip_fade_in();
+        first.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        first.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        assert_eq!(first.row_counter(), 1);
+        let mut again = TitleSession::for_front_end_at(true, first.row_counter());
+        again.skip_fade_in();
+        again.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert_eq!(again.phase(), TitlePhase::MainMenu { cursor: 1 });
+        // Nothing to continue: the greyed row is never the opening row.
+        let mut bare = TitleSession::for_front_end_at(false, 1);
+        bare.skip_fade_in();
+        bare.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert_eq!(bare.phase(), TitlePhase::MainMenu { cursor: 0 });
+    }
+
+    #[test]
+    fn start_press_opens_menu_on_new_game_even_with_saves() {
         let mut s = TitleSession::new();
         s.skip_fade_in();
         let events = s.tick(TitleInput {
             start: true,
             ..Default::default()
         });
+        assert!(s.continue_enabled);
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
             _ => panic!("expected MainMenu"),
         }
         assert!(events.contains(&TitleEvent::StartPressed));
@@ -618,7 +690,11 @@ mod tests {
             start: true,
             ..Default::default()
         });
-        // Cursor at 1 = Continue.
+        // The cursor opens on New Game; Down moves it to Continue.
+        s.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
         let events = s.tick(TitleInput {
             cross: true,
             ..Default::default()
@@ -737,8 +813,8 @@ mod tests {
     #[test]
     fn cursor_wraps_around() {
         // Two-row menu (NewGame / Continue). Start press lands cursor
-        // on Continue (1); Up goes to NewGame (0); Up again wraps back
-        // to Continue (1).
+        // on NewGame (0); Up wraps to Continue (1); Up again comes back
+        // to NewGame (0).
         let mut s = TitleSession::new();
         s.skip_fade_in();
         s.tick(TitleInput {
@@ -750,7 +826,7 @@ mod tests {
             ..Default::default()
         });
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
             _ => panic!(),
         }
         s.tick(TitleInput {
@@ -758,7 +834,7 @@ mod tests {
             ..Default::default()
         });
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
             _ => panic!(),
         }
     }
@@ -769,10 +845,6 @@ mod tests {
         s.skip_fade_in();
         s.tick(TitleInput {
             start: true,
-            ..Default::default()
-        });
-        s.tick(TitleInput {
-            up: true,
             ..Default::default()
         });
         s.tick(TitleInput {

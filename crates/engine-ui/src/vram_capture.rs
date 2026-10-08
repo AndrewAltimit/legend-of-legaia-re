@@ -159,6 +159,30 @@ pub fn blit_rgba_into_vram(
     words.len()
 }
 
+/// Where a drawn field frame lands for a script copy that reads the display
+/// framebuffer: the front display page from its first drawn row. Retail draws
+/// at offset `(0, 4)` into a `320 x 224` area, and the port's logical row `y`
+/// is retail's draw row `y`, so a frame's top `236` logical rows occupy VRAM
+/// rows `4..240`. Mirrors `legaia_engine_core::world::FRAMEBUFFER_LAND_RECT`.
+pub const DISPLAY_FRAME_RECT: VramRect = VramRect::new(0, 4, PSX_SCREEN_WIDTH, 236);
+
+/// Land a host's drawn frame (`rgba`, `width x height`, the full 4:3
+/// logical screen) in [`DISPLAY_FRAME_RECT`], opaque, so a queued
+/// framebuffer copy (field-VM `43 12`) reads what retail's GPU had drawn.
+/// The frame's bottom rows past the drawing area are left out. Returns the
+/// texels written.
+pub fn land_display_frame(rgba: &[u8], width: u32, height: u32, vram: &mut Vram) -> usize {
+    let rows = height * u32::from(DISPLAY_FRAME_RECT.h) / u32::from(PSX_SCREEN_HEIGHT);
+    blit_rgba_into_vram(
+        rgba,
+        width,
+        rows,
+        vram,
+        DISPLAY_FRAME_RECT,
+        CaptureOpts { set_mask_bit: true },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

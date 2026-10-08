@@ -23,6 +23,11 @@
  *     base64 of the raw save bytes - the .lgsf file, or the FULL card
  *     container exactly as imported (so a download rebuilds the original).
  *
+ *   legaia.card.v1.browser
+ *     base64 of the page's own formatted memory card (raw 128 KiB .mcr):
+ *     the card the play page mounts in port 1 when the player has none of
+ *     their own. Outside the session index, so it is never evicted.
+ *
  *   legaia.minigames.v1
  *     JSON object of per-game progress plus the pending-coins pool:
  *       { dance: { bestScore, plays, lastScore, updated },
@@ -44,6 +49,8 @@
  *   getSession(id)            -> { meta, bytes: Uint8Array } | null
  *   putSession(meta, bytes)   -> id | null (id = meta.id or `${kind}-${now}`)
  *   deleteSession(id)
+ *   getBrowserCard()          -> Uint8Array | null (the port-1 browser card)
+ *   putBrowserCard(bytes)     -> true | null
  *   getMinigames()            -> the legaia.minigames.v1 object
  *   putMinigame(game, patch)  -> shallow-merge `patch` into that game's
  *                                record + stamp `updated`
@@ -62,6 +69,7 @@
   var INDEX_KEY = 'legaia.saves.v1.index';
   var SLOT_PREFIX = 'legaia.saves.v1.slot.';
   var MINIGAMES_KEY = 'legaia.minigames.v1';
+  var BROWSER_CARD_KEY = 'legaia.card.v1.browser';
   var MAX_SESSIONS = 12;
 
   /* ---------------- storage plumbing ---------------- */
@@ -180,6 +188,31 @@
     removeRaw(SLOT_PREFIX + id);
     writeRaw(INDEX_KEY, JSON.stringify(idx));
     changed();
+  }
+
+  /* ---------------- the browser memory card ----------------
+   *
+   * One formatted card image that lives in this browser and sits in memory
+   * card port 1 of the play page whenever the player has not put a card of
+   * their own there - the twin of the native window's save directory. Kept
+   * apart from the session index so the 12-entry eviction never drops it. */
+
+  function getBrowserCard() {
+    var raw;
+    try { raw = window.localStorage.getItem(BROWSER_CARD_KEY); }
+    catch (e) { raw = null; }
+    if (!raw) return null;
+    try { return b64decode(raw); }
+    catch (e) {
+      console.warn('LegaiaSaves: the browser card is corrupt -', e);
+      return null;
+    }
+  }
+
+  function putBrowserCard(bytes) {
+    if (writeRaw(BROWSER_CARD_KEY, b64encode(bytes)) === null) return null;
+    changed();
+    return true;
   }
 
   /* ---------------- minigame progress ---------------- */
@@ -837,6 +870,8 @@
     getSession: getSession,
     putSession: putSession,
     deleteSession: deleteSession,
+    getBrowserCard: getBrowserCard,
+    putBrowserCard: putBrowserCard,
     patchSessionMeta: patchSessionMeta,
     getMinigames: getMinigames,
     putMinigame: putMinigame,

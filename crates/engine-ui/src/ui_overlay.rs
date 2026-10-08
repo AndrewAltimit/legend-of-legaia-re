@@ -720,11 +720,15 @@ pub struct BattleHudFrame<'a> {
     /// The target plaque's offset below its rest seat while its raise glide
     /// runs (`engine-core::battle_hud::battle_target_plaque_dy`).
     pub target_plaque_dy: i32,
+    /// The active-actor bar's offset below its rest seat while its raise
+    /// glide runs (`engine-core::battle_hud::battle_readout_bar_dy`):
+    /// positive from the seed's raise until it lands. `0` at rest.
+    pub bar_dy: i32,
     /// The **target-select** plaque (placement record `0x29`): the monster
     /// the open target cursor rests on, and its element badge, on the blue
     /// plate class at retail's seat - content box centred on `x = 0xE8`,
     /// pulled left to end by `0x130`, row `162`
-    /// (`legaia_engine_vm::battle_chrome::target_select_plaque_x`). `None`
+    /// (`crate::battle_chrome::target_select_plaque_x`). `None`
     /// unless a picker's cursor sits on the enemy row
     /// (`engine-core::battle_hud::battle_target_select_plaque`).
     pub target_select: Option<(&'a str, Option<u8>)>,
@@ -807,7 +811,7 @@ pub fn diag_hud_enabled() -> bool {
 }
 
 /// Battle-HUD stage geometry, mirrored as local literals from the
-/// packet-pinned `legaia_engine_vm::battle_chrome`; `engine-shell`'s HUD
+/// packet-pinned `crate::battle_chrome`; `engine-shell`'s HUD
 /// tests pin the two sets equal, which is the only thing that keeps a
 /// copy honest. (The roster panels' name-pen anchors are NOT mirrored -
 /// [`party_panel_stage_x`] reads the `engine-vm` kernels directly.)
@@ -959,9 +963,9 @@ pub fn party_panel_stage_x(count: usize, ordinal: usize) -> i32 {
     }
     // Seats FUN_801D84C0 writes no anchor for: seat + the +5 name inset.
     // `panel_seats` is never empty for a clamped size, so the index holds.
-    let seats = legaia_engine_vm::battle_chrome::panel_seats(size);
+    let seats = crate::battle_chrome::panel_seats(size);
     let i = ordinal.min(seats.len() - 1);
-    i32::from(seats[i]) + i32::from(legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET)
+    i32::from(seats[i]) + i32::from(crate::battle_chrome::PANEL_TEXT_INSET)
 }
 
 /// Build the battle-HUD draw lists ([`BattleHudDraws`]).
@@ -1512,22 +1516,44 @@ pub fn battle_hud_draws_for(
     // primitive in either readout, and neither reference frame shows one.
     if let Some((i, slot)) = bar_member.filter(|_| !bar_covered) {
         let (base, hp_tint, mp_tint) = tints(slot);
-        plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
-        stage_text(&mut text, font, slot.name, BAR_NAME.0, BAR_NAME.1, base);
-        label(&mut sprites, &mut text, 0, BAR_HP_LABEL.0, BAR_HP_LABEL.1);
+        // The raise glide ([`BattleHudFrame::bar_dy`]) moves the whole plate.
+        let dy = frame.bar_dy;
+        plate_run(
+            &mut text,
+            &mut sprites,
+            BAR_X,
+            BAR_Y + dy,
+            BAR_INTERIOR_W,
+            false,
+        );
+        stage_text(
+            &mut text,
+            font,
+            slot.name,
+            BAR_NAME.0,
+            BAR_NAME.1 + dy,
+            base,
+        );
+        label(
+            &mut sprites,
+            &mut text,
+            0,
+            BAR_HP_LABEL.0,
+            BAR_HP_LABEL.1 + dy,
+        );
         numerals(
             &mut sprites,
             &mut text,
             u32::from(slot.hp),
             BAR_HP_CUR_RIGHT,
-            BAR_DIGIT_Y,
+            BAR_DIGIT_Y + dy,
             hp_tint,
         );
         separator(
             &mut sprites,
             &mut text,
             BAR_HP_SEPARATOR.0,
-            BAR_HP_SEPARATOR.1,
+            BAR_HP_SEPARATOR.1 + dy,
             hp_tint,
         );
         numerals(
@@ -1535,24 +1561,30 @@ pub fn battle_hud_draws_for(
             &mut text,
             u32::from(slot.hp_max),
             BAR_HP_MAX_RIGHT,
-            BAR_DIGIT_Y,
+            BAR_DIGIT_Y + dy,
             hp_tint,
         );
         if slot.mp_max > 0 {
-            label(&mut sprites, &mut text, 1, BAR_MP_LABEL.0, BAR_MP_LABEL.1);
+            label(
+                &mut sprites,
+                &mut text,
+                1,
+                BAR_MP_LABEL.0,
+                BAR_MP_LABEL.1 + dy,
+            );
             numerals(
                 &mut sprites,
                 &mut text,
                 u32::from(slot.mp),
                 BAR_MP_CUR_RIGHT,
-                BAR_DIGIT_Y,
+                BAR_DIGIT_Y + dy,
                 mp_tint,
             );
             separator(
                 &mut sprites,
                 &mut text,
                 BAR_MP_SEPARATOR.0,
-                BAR_MP_SEPARATOR.1,
+                BAR_MP_SEPARATOR.1 + dy,
                 mp_tint,
             );
             numerals(
@@ -1560,13 +1592,13 @@ pub fn battle_hud_draws_for(
                 &mut text,
                 u32::from(slot.mp_max),
                 BAR_MP_MAX_RIGHT,
-                BAR_DIGIT_Y,
+                BAR_DIGIT_Y + dy,
                 mp_tint,
             );
         }
         popup_anchor[i] = (
             origin.0 + BAR_HP_LABEL.0 * scale,
-            origin.1 + (BAR_Y - 26) * scale,
+            origin.1 + (BAR_Y + dy - 26) * scale,
         );
     }
 
@@ -1739,7 +1771,7 @@ pub fn battle_hud_draws_for(
     // content-box record. The slide in from `x + 0x80` is not modelled - the
     // plaque draws at rest.
     if let Some((name, badge_index)) = frame.target_select.filter(|(n, _)| !n.is_empty()) {
-        use legaia_engine_vm::battle_chrome as chrome;
+        use crate::battle_chrome as chrome;
         let name_w = font.layout_ascii(name).advance_x as i32;
         let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
         let lead = if badge.is_some() {

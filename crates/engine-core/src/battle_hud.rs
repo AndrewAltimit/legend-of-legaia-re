@@ -27,7 +27,7 @@ use crate::ap_gauge::ApGauge;
 use legaia_engine_vm::battle_gauge_rearm::DamagePopupRing;
 pub use legaia_engine_vm::battle_gauge_rearm::POPUP_RING_SLOTS;
 pub use legaia_engine_vm::battle_value_readout::ComboStyle;
-use legaia_engine_vm::battle_value_readout::{COMBO_SLIDE_FRAMES, combo_slide};
+use legaia_engine_vm::battle_value_readout::{COMBO_SLIDE_FRAMES, COMBO_SLIDE_IN_X, combo_slide};
 use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
 
 /// Per-slot row update payload for [`BattleHud::sync_slot`].
@@ -365,8 +365,8 @@ pub struct BattleHud {
     /// 6-line scrolling log column.
     pub log_capacity: usize,
     /// The status CLUT recolour latch + party palette copies - pass 4 of
-    /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host and
-    /// the `battle_session` driver already call once per slot per frame) and
+    /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host
+    /// already calls once per slot per frame) and
     /// drained by the host's mid-battle VRAM pass through
     /// [`crate::battle_status_clut::StatusClutState::step`].
     pub status_clut: crate::battle_status_clut::StatusClutState,
@@ -395,15 +395,25 @@ pub struct ComboReadout {
     pub hits: u16,
     /// Running damage the value row shows.
     pub total: u32,
-    /// Frames since the cluster first appeared - drives the slide-in.
+    /// Frames since the latest landed hit re-opened the cluster - drives
+    /// the slide-in, which every hit starts over ([`BattleHud::push_popup`])
+    /// - or, once [`Self::closing`], since the close began.
     pub age: u16,
+    /// The `0x51` fade-down closed the cluster: it slides back out to its
+    /// off-screen seat over the same sixteen frames
+    /// ([`BattleHud::close_combo_on_fade_down`]).
+    pub closing: bool,
 }
 
 impl ComboReadout {
     /// Horizontal offset from the rest seats this frame
-    /// (`battle_value_readout::combo_slide`).
+    /// (`battle_value_readout::combo_slide`; the close runs it backwards).
     pub fn slide(&self) -> i32 {
-        combo_slide(self.age)
+        if self.closing {
+            COMBO_SLIDE_IN_X - combo_slide(self.age)
+        } else {
+            combo_slide(self.age)
+        }
     }
 
     /// Has the slide-in finished?
@@ -550,6 +560,18 @@ impl BattleHud {
         // The combo cluster counts every landed damage hit of the action in
         // flight: one more `HIT`, its amount into `TOTAL` / `DAMAGE`. Heals
         // and status tags carry no numeral on the cluster.
+        //
+        // Every landed hit also re-opens the cluster from its off-screen
+        // seat. The melee kernel's HP write raises `DAT_8007B64C = 0x78`
+        // beside the hit's damage in `DAT_8007BD14` (`FUN_801EC3E4`,
+        // `0x801EEA64..0x801EEA78`), and the readout pass the action SM's
+        // prologue calls every pass (`FUN_801E805C`, from `0x801E2A70`)
+        // answers a raised flag with `FUN_801D8DE8(0x50, 0)` and clears it
+        // (`0x801E808C..0x801E80B0`): mode `0` spawns placement record 80 at
+        // seat A and registers a fresh glide to seat B
+        // (`0x801D92E8..0x801D93D8`), so the slide starts over.
+        // `battle_melee_hit_spark` holds the third hit's numeral `15` with the
+        // cluster (`3 HIT`, `TOTAL 29`) twelve vsyncs into its slide.
         if !popup.is_heal
             && popup.status.is_none()
             && popup.amount > 0
@@ -560,10 +582,12 @@ impl BattleHud {
                 hits: 0,
                 total: 0,
                 age: 0,
+                closing: false,
             });
             c.style = style;
             c.hits = c.hits.saturating_add(1);
             c.total = c.total.saturating_add(u32::from(popup.amount));
+            c.age = 0;
         }
     }
 
@@ -580,6 +604,27 @@ impl BattleHud {
         }
         self.combo_style = style;
         self.combo_actor = owner;
+    }
+
+    /// Close the cluster in the action SM's `0x51` fade-down, as retail
+    /// does: the band's teardown (countdown under `0xC`, latched once per
+    /// action, `0x801E6158..0x801E6214`) hard-resets the element list
+    /// (`FUN_801D99BC` at `0x801E6170`) and, when the action landed damage
+    /// (`_DAT_8007BD14 != 0`), re-spawns record 80 with mode `1` -
+    /// `FUN_801D8DE8(0x50, 1)` at `0x801E6360` - which places it at seat B
+    /// and glides it to seat A (`0x801D935C..0x801D93D8`), off the right
+    /// edge. `torn_down` is the engine's twin of that latch
+    /// (`BattleActionCtx::done_ui_torn_down`); the continuation band `0x52`
+    /// lies past it, so the cluster is closed there whatever the latch reads.
+    /// `rim_elm_gimard_seru_capture_after` (`0x52`) shows no cluster.
+    pub fn close_combo_on_fade_down(&mut self, action_state: u8, torn_down: bool) {
+        use legaia_engine_vm::battle_action::ActionState as S;
+        let closed = (action_state == S::DoneFadeDown.as_byte() && torn_down)
+            || action_state == S::DoneMultiCast.as_byte();
+        if closed && let Some(c) = self.combo.as_mut().filter(|c| !c.closing) {
+            c.closing = true;
+            c.age = 0;
+        }
     }
 
     /// Append a battle log line. When the log exceeds [`Self::log_capacity`],
@@ -635,6 +680,13 @@ impl BattleHud {
         }
         if let Some(c) = &mut self.combo {
             c.age = c.age.saturating_add(1);
+        }
+        // A closed cluster is gone once its slide-out has run.
+        if self
+            .combo
+            .is_some_and(|c| c.closing && c.age >= COMBO_SLIDE_FRAMES)
+        {
+            self.combo = None;
         }
         // Re-prune in case the saturating_sub above dropped any to zero
         // (kept above zero before, zero now - render once more then drop
@@ -909,6 +961,10 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
         hud.clear_slot(slot);
     }
     hud.arm_combo(battle_combo_style(world), world.battle_ctx.active_actor);
+    hud.close_combo_on_fade_down(
+        world.battle_ctx.action_state,
+        world.battle_ctx.done_ui_torn_down != 0,
+    );
 }
 
 /// The Muscle Dome leg's rows for the same HUD model: the lead fighter at
@@ -1864,6 +1920,24 @@ pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
     plate_glide_dy(world.battle.target_plaque_glide.as_ref(), a, b)
 }
 
+/// Seat A / seat B rows of the active-actor bar (record 7: `y = 234` ->
+/// `192`, the glide slot a retail cast capture holds mid-raise).
+const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
+
+/// How far the active-actor bar sits below its rest seat this frame - the
+/// raise glide record 7 runs when the action seed (or the item pre-arm)
+/// opens it ([`crate::world::BattleState::readout_bar_glide`]). `0` outside
+/// the action phase, where the bar is the command ring's or a target step's.
+pub fn battle_readout_bar_dy(world: &crate::world::World) -> i32 {
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode != crate::world::SceneMode::Battle
+    {
+        return 0;
+    }
+    let (a, b) = READOUT_BAR_SEATS_Y;
+    plate_glide_dy(world.battle.readout_bar_glide.as_ref(), a, b)
+}
+
 /// Whether `FUN_801E6D84`'s target arm runs for this category: it returns
 /// early for Run (`li v0,0x5; beq` at `0x801E6DEC`) and, past the actor
 /// plaque, for categories `0` and `4` (`beq s0,zero` / `beq s0,v0` with
@@ -1952,7 +2026,7 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 ///
 /// Every port picker that can park on the enemy row is consulted: the command
 /// session (Attack), the arts list, the spell list and the arts-input bar's
-/// own cursor. Seat law: `legaia_engine_vm::battle_chrome::target_select_plaque_x`.
+/// own cursor. Seat law: `legaia_engine_ui::battle_chrome::target_select_plaque_x`.
 ///
 /// REF: FUN_801D5854 (`0x801D5B28..0x801D5BAC`)
 pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
@@ -3883,6 +3957,35 @@ mod tests {
         assert_eq!(c.age, 0);
         h.tick();
         assert_eq!(h.combo.unwrap().age, 1);
+        // The next landed hit re-opens the slide from the off-screen seat
+        // (`FUN_801E805C`'s `FUN_801D8DE8(0x50, 0)` on the melee kernel's
+        // flag), keeping the count.
+        for _ in 0..20 {
+            h.tick();
+        }
+        assert!(h.combo.unwrap().settled());
+        h.push_damage(3, 6);
+        let c = h.combo.unwrap();
+        assert_eq!((c.hits, c.total, c.age), (3, 35, 0));
+        assert!(!c.settled());
+        // The `0x51` teardown slides it back out over sixteen frames, then
+        // drops it; `0x52` lies past the teardown.
+        let mut closed = h.clone();
+        closed.close_combo_on_fade_down(0x51, false);
+        assert!(!closed.combo.unwrap().closing, "before the teardown latch");
+        closed.close_combo_on_fade_down(0x51, true);
+        assert_eq!(closed.combo.unwrap().slide(), 0);
+        for _ in 0..8 {
+            closed.tick();
+        }
+        assert_eq!(closed.combo.unwrap().slide(), 80);
+        for _ in 0..8 {
+            closed.tick();
+        }
+        assert!(closed.combo.is_none());
+        let mut past = h.clone();
+        past.close_combo_on_fade_down(0x52, false);
+        assert!(past.combo.unwrap().closing);
         // Same actor, same style: the cluster keeps counting.
         h.arm_combo(Some(ComboStyle::HitTotal), 0);
         assert!(h.combo.is_some());

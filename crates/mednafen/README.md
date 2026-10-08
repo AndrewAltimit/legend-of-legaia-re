@@ -43,7 +43,7 @@ search), `prim_dispatch` (per-prim renderer table decode), `diff`, `bisect`,
 
 ```text
 mednafen-state info SAVE              # section table + PSX register snapshot
-mednafen-state extract SAVE [--start ADDR --end ADDR --out PATH]
+mednafen-state extract SAVE [--start ADDR --end ADDR --out PATH]  # main RAM, or the 0x1F800000 scratchpad
 mednafen-state diff LEFT RIGHT [--start ADDR --end ADDR --json PATH]
 mednafen-state write-taxonomy LEFT RIGHT [--start ADDR --end ADDR --samples N]
 mednafen-state bisect --addr ADDR SAVE...

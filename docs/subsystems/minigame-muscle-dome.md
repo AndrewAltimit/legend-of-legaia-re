@@ -1409,8 +1409,11 @@ fills the string greedily in deal order rather than reloading the saved
 string ([the Auto arm](#the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it)),
 and Spirit commits an empty string. The Ra-Seru list itself stays a text
 stand-in: its window's pieces are not pinned. The standalone minigames page
-still drives the session's commit / cast calls from its own page-side
-screen sequence.
+drives the same flow: its keys reach `MuscleDomeSession::select_input`
+through `muscle_select`, and it draws whichever screen `muscle_menu_json`
+names. It used to run its own screen sequence over the session's low-level
+commit / end-selection calls, with no round prompt and Spirit fighting on the
+spot instead of raising `Begin | Reselect`.
 
 ### The command cluster is the battle cluster
 
@@ -2158,8 +2161,9 @@ each moment of the leg is in a battle:
 stage model, so the native window and the browser play page (both upload that
 one matrix) frame a leg exactly as they frame a fight. The standalone
 minigames page draws through the same surface (`muscle_surface_*`), naming the
-selection screen it has up with `MuscleDomeSurface::set_select_framing`
-because it drives its own command flow, and times its hit numerals off the
+selection screen the engine's flow has up with
+`MuscleDomeSurface::set_select_framing` (it has no world to read the screen
+off), and times its hit numerals off the
 surface's beat (`muscle_surface_beat_json`). The case-6 depth is
 `FUN_801F0348` over the seated monster's size class, the close-up height the
 character's `0x801F4D2C` row.

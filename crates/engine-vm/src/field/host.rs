@@ -566,13 +566,16 @@ pub trait FieldHost {
     /// (An earlier note here guessed an inventory / menu re-raster.) PC += 2.
     fn menu_refresh(&mut self) {}
 
-    /// Op 0x4C sub-3 sub-A (dialog-depth copy to player ctx).
+    /// Op `4C 3A`: the player takes the **arrival facing**.
     ///
-    /// The original writes `*(short *)(_DAT_8007C364 + 0x26) = _DAT_80073EFC`
-    /// (i.e. `player_ctx.field_26 = dialog_depth`). The player ctx is global
-    /// state and not threaded through the VM, so the host owns the write.
-    /// PC += 2.
-    fn copy_dialog_depth_to_player(&mut self) {}
+    /// The arm (`0x801E10DC..0x801E10F4`) writes
+    /// `*(short *)(_DAT_8007C364 + 0x26) = _DAT_80073EFC`: the player's
+    /// heading from the arrival-facing word a door's op `0x3F` sets through
+    /// the compass table at `0x80073F04` (`0x801DEBAC`), and which the card
+    /// load (`FUN_8003AEB0`, `0x8003B778`) and the new-game seed zero. Every
+    /// scene's entry script issues it once. The player is host state the VM
+    /// does not thread through, so the host owns the write. PC += 2.
+    fn apply_arrival_facing(&mut self) {}
 
     /// Op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) aimed at the player
     /// channel `0xF8`: retail's extended prologue resolves `0xF8` to the

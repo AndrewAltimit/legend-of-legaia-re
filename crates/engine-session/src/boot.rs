@@ -38,6 +38,19 @@ use legaia_engine_core::world::SceneMode;
 
 use crate::bgm::AudioBgmDirector;
 
+/// What one menu-button press did ([`BootSession::press_field_menu`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PauseMenuPress {
+    /// The pause menu opened. `scripted` = a script's op-`0x49` press, which
+    /// plays no confirm blip (retail's cue `0x20` is the pad controller's,
+    /// not the subsystem actor's).
+    Opened { scripted: bool },
+    /// The menu lock refused the press and queued the deny buzz.
+    Denied,
+    /// Nothing happened: no press, a menu already open, or a silent refusal.
+    None,
+}
+
 /// Options for [`BootSession::enter_field_live`] - how much of the live
 /// gameplay loop to arm when dropping into a field scene.
 #[derive(Debug, Clone, Default)]
@@ -249,6 +262,9 @@ pub struct BootSession<S: AudioSink> {
     /// Driver for the two-stage card flow (pill row -> block grid). Shared
     /// with the windowed host so the second stage is one implementation.
     save_flow: SaveScreenFlow,
+    /// The field's fade to black around the pause menu (`FUN_801ED308`'s
+    /// `_DAT_8007B440`) - see [`legaia_engine_core::pause_wipe`].
+    pause_wipe: legaia_engine_core::pause_wipe::PauseWipe,
     /// The save / load pick the last finished Save sub-session produced, if
     /// any. **Not** acted on here: the persistence backend is host-owned (a
     /// save directory, a card image), so `BootSession` runs the *flow* and
@@ -464,148 +480,61 @@ fn read_sfx_bank(scus: &[u8]) -> Option<(legaia_engine_audio::SfxBank, Vec<(u8, 
 /// can't stage a shout bank. Returns `None` when the disc / executable /
 /// tables don't resolve; the caller degrades to silent arts.
 ///
-/// Public so disc-gated tests can build the same bank the boot path stages.
+/// The per-file staging is [`crate::xa_banks::install_shout_file`], the call
+/// the browser page stages the same files through. Public so disc-gated tests
+/// can build the same bank the boot path stages.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShoutBank> {
-    use legaia_engine_audio::{ArtsShoutBank, ShoutClip};
     let scus = read_scus(&SceneSource::Disc(disc))?;
     let table = legaia_art::arts_voice::ArtsVoiceTable::parse_from_scus(&scus)?;
     let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
     let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
     let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
-    let mut bank = ArtsShoutBank::new();
-    for cslot in 0u8..3 {
-        let name = legaia_art::arts_voice::clip_file(cslot as usize)?;
-        // ISO paths look like `XA/XA2.XA;1` - match on the file name.
-        let rec = files.iter().find_map(|(path, rec)| {
-            let base = path.rsplit('/').next().unwrap_or(path);
-            let base = base.split(';').next().unwrap_or(base);
-            base.eq_ignore_ascii_case(name).then_some(rec)
-        })?;
+    let mut bank = legaia_engine_audio::ArtsShoutBank::new();
+    for (cslot, name) in crate::xa_banks::shout_files() {
+        let rec = find_disc_file(&files, name)?;
         let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
         let streams = legaia_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors).ok()?;
-        for s in &streams {
-            // The shout banks are 4-bit mono; skip anything else (a stereo or
-            // 8-bit stream here would be a mis-identified file).
-            if s.stereo || s.bits_per_sample != 4 {
-                continue;
-            }
-            let (pcm, _) = legaia_xa::decode(
-                &s.audio,
-                legaia_xa::DecodeOptions {
-                    channels: legaia_xa::Channels::Mono,
-                    sample_rate: s.sample_rate,
-                    bits: legaia_xa::BitsPerSample::Four,
-                },
-            )
-            .ok()?;
-            // Trim the trailing channel-padding silence so a clip's audible
-            // end matches the retail read-span cutoff closely enough for the
-            // back-to-back promotion queue.
-            let mut end = pcm.len();
-            while end > 0 && pcm[end - 1].unsigned_abs() < 8 {
-                end -= 1;
-            }
-            let mut pcm = pcm;
-            pcm.truncate(end);
-            if pcm.is_empty() {
-                continue;
-            }
-            bank.insert_clip(
-                cslot,
-                s.ch_no,
-                ShoutClip {
-                    pcm,
-                    sample_rate: s.sample_rate,
-                },
-            );
-        }
-        for (action, pool) in table.pools(cslot as usize) {
-            bank.set_pool(cslot, action, pool.to_vec());
-        }
+        crate::xa_banks::install_shout_file(&mut bank, cslot, &streams, Some(&table));
     }
     bank.has_clips().then_some(bank)
 }
 
-/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`.
-/// The animation cue tracks' party voice band (`0xC8..=0xFF` re-based
-/// `+0x38`, `FUN_800508DC` -> `FUN_8004FE5C`) lands on `(id - 0x100) >> 3`
-/// with the `1 / 3 / 5 -> 26 / 27 / 28` remap: Vahn's `0xC8..=0xD7` on
-/// slots `0` / `26`, Noa's `0xD8..=0xE7` on `2` / `27`, Gala's
-/// `0xE8..=0xF7` on `4` / `28` - Vahn's Spirit clip opens with `0xC8`,
-/// `XA1.XA` channel 0. `26` also carries the melee kernel's `0x10C` sting
-/// and `0x1D` = `XA30.XA` the per-character block grunt. Slot `i` is
-/// `XA<i+1>.XA` by the boot-built clip table's own construction
-/// (`docs/subsystems/audio.md`).
-pub const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[
-    (0, "XA1.XA"),
-    (2, "XA3.XA"),
-    (4, "XA5.XA"),
-    (26, "XA27.XA"),
-    (27, "XA28.XA"),
-    (28, "XA29.XA"),
-    (0x1D, "XA30.XA"),
-];
+/// The directory record of the ISO file named `name` (`XA/XA2.XA;1` matches
+/// `XA2.XA`).
+#[cfg(not(target_arch = "wasm32"))]
+fn find_disc_file<'a>(
+    files: &'a [(String, legaia_iso::iso9660::DirectoryRecord)],
+    name: &str,
+) -> Option<&'a legaia_iso::iso9660::DirectoryRecord> {
+    files
+        .iter()
+        .find_map(|(path, rec)| (crate::xa_banks::file_key(path) == name).then_some(rec))
+}
+
+pub use crate::xa_banks::BATTLE_XA_CLIP_SLOTS;
 
 /// Demux + decode the battle **one-shot clip** banks from a disc image into
 /// a generic `(clip_slot, channel)` bank: the files in
-/// [`BATTLE_XA_CLIP_SLOTS`]. Every 4-bit channel is decoded (mono or
-/// stereo, at its subheader rate); the file's channel count is recorded so
-/// the retail read span can be divided by the interleave. Same disc-only
-/// caveat as [`read_arts_shout_bank`]. `None` when nothing decodes.
+/// [`BATTLE_XA_CLIP_SLOTS`], staged through
+/// [`crate::xa_banks::install_clip_file`] (the browser page stages the same
+/// files through the same call). Same disc-only caveat as
+/// [`read_arts_shout_bank`]. `None` when nothing decodes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_battle_xa_clip_bank(disc: &Path) -> Option<legaia_engine_audio::XaClipBank> {
-    use legaia_engine_audio::{XaClip, XaClipBank};
     let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
     let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
     let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
-    let mut bank = XaClipBank::new();
+    let mut bank = legaia_engine_audio::XaClipBank::new();
     for &(slot, name) in BATTLE_XA_CLIP_SLOTS {
-        let Some(rec) = files.iter().find_map(|(path, rec)| {
-            let base = path.rsplit('/').next().unwrap_or(path);
-            let base = base.split(';').next().unwrap_or(base);
-            base.eq_ignore_ascii_case(name).then_some(rec)
-        }) else {
+        let Some(rec) = find_disc_file(&files, name) else {
             continue;
         };
         let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
         let Ok(streams) = legaia_xa::demux::demux_disc_range(&mut raw, rec.lba, sectors) else {
             continue;
         };
-        let widest = streams.iter().map(|s| s.ch_no).max().unwrap_or(0);
-        bank.set_channel_count(slot, widest.saturating_add(1));
-        for s in &streams {
-            if s.bits_per_sample != 4 {
-                continue;
-            }
-            let channels = if s.stereo {
-                legaia_xa::Channels::Stereo
-            } else {
-                legaia_xa::Channels::Mono
-            };
-            let Ok((pcm, _)) = legaia_xa::decode(
-                &s.audio,
-                legaia_xa::DecodeOptions {
-                    channels,
-                    sample_rate: s.sample_rate,
-                    bits: legaia_xa::BitsPerSample::Four,
-                },
-            ) else {
-                continue;
-            };
-            if pcm.is_empty() {
-                continue;
-            }
-            bank.insert(
-                slot,
-                s.ch_no,
-                XaClip {
-                    pcm,
-                    sample_rate: s.sample_rate,
-                    stereo: s.stereo,
-                },
-            );
-        }
+        crate::xa_banks::install_clip_file(&mut bank, slot, &streams);
     }
     bank.has_clips().then_some(bank)
 }
@@ -915,6 +844,7 @@ impl<S: AudioSink> BootSession<S> {
             save_rack: SaveRack::Blocks(Vec::new()),
             save_port_blocks: Vec::new(),
             save_flow: SaveScreenFlow::new(),
+            pause_wipe: Default::default(),
             last_save_commit: None,
             spell_level_notice: None,
             art_learned_notice: None,
@@ -1106,11 +1036,58 @@ impl<S: AudioSink> BootSession<S> {
         );
     }
 
+    /// One menu-button press, as every host answers it: the pause menu's whole
+    /// open rule in one place, so the native window, the browser page and a
+    /// headless [`Self::tick`] cannot answer the same press differently.
+    ///
+    /// - A script's own menu press (an op-`0x49` save point / ready check,
+    ///   [`World::scripted_menu_open_pending`](legaia_engine_core::world::World::scripted_menu_open_pending))
+    ///   opens the menu with no Start edge and past the engagement gate.
+    /// - A Start edge opens it when
+    ///   [`World::field_menu_open_allowed`](legaia_engine_core::world::World::field_menu_open_allowed)
+    ///   says so - the scene mode, the system / menu locks, the warp hold, the
+    ///   opening chain, a narration crawl or title card, a shop, and a dialogue
+    ///   engagement (retail's engaged-bit branch at `0x801D01F0` sits ahead of
+    ///   the accept, so Start mid-dialogue opens nothing and buzzes nothing).
+    /// - A Start edge the menu lock refuses queues the deny buzz (`0x23`);
+    ///   every other refusal is silent.
+    ///
+    /// No-op ([`PauseMenuPress::None`]) while a menu is already open: what
+    /// Start does inside the menu is the picker's own rule.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D0250`, the menu-open accept)
+    pub fn press_field_menu(&mut self, start_edge: bool) -> PauseMenuPress {
+        if self.field_menu.is_some() {
+            return PauseMenuPress::None;
+        }
+        let scripted = self.host.world.scripted_menu_open_pending();
+        if scripted || (start_edge && self.host.world.field_menu_open_allowed()) {
+            self.open_field_menu();
+            if self.field_menu.is_none() {
+                return PauseMenuPress::None;
+            }
+            if scripted {
+                self.host.world.note_scripted_menu_opened();
+            }
+            // The field darkens before the menu exists (`FUN_801ED308`
+            // phase 1): hosts draw the field under the wipe and route no
+            // input to the menu until `pause_wipe().menu_spawned()`.
+            self.pause_wipe.open();
+            return PauseMenuPress::Opened { scripted };
+        }
+        if start_edge && self.host.world.field_menu_press_denied() {
+            return PauseMenuPress::Denied;
+        }
+        PauseMenuPress::None
+    }
+
     /// Close the pause menu and restore the suspended scene mode (the mode
     /// the world ran when [`Self::open_field_menu`] fired). No-op when no
     /// menu is open.
     pub fn close_field_menu(&mut self) {
         if self.field_menu.take().is_some() {
+            // The field brightens back under the lifting wipe (phase 4).
+            self.pause_wipe.close();
             // The sub-session goes with it: a menu closed out from under an
             // open screen must not leave that screen holding the pad the next
             // time the menu opens.
@@ -1126,6 +1103,20 @@ impl<S: AudioSink> BootSession<S> {
             // resumes it once. Twin of `play_menu_close` on the browser host.
             self.host.world.release_menu_entry_context_park();
         }
+    }
+
+    /// The pause menu's field wipe: whether the menu has spawned yet and the
+    /// fade quad to draw over the field while it ramps.
+    pub fn pause_wipe(&self) -> &legaia_engine_core::pause_wipe::PauseWipe {
+        &self.pause_wipe
+    }
+
+    /// Advance the pause wipe one frame. [`Self::tick`] does this itself; a
+    /// host that runs the menu frames without ticking the session (both play
+    /// hosts) calls it on those frames until the menu has spawned.
+    pub fn step_pause_wipe(&mut self) {
+        let step = self.host.world.clock.frame_step;
+        self.pause_wipe.tick(step);
     }
 
     /// Whether the in-field pause menu is open (the engine equivalent of
@@ -1171,6 +1162,10 @@ impl<S: AudioSink> BootSession<S> {
     /// shipped hosts implemented the stack privately. Keeping it on the
     /// session is what lets an oracle and a host walk the same screens.
     fn tick_field_menu(&mut self) -> bool {
+        // No menu exists until the wipe spawns it; the pad goes nowhere.
+        if !self.pause_wipe.menu_spawned() {
+            return false;
+        }
         let pad = &self.host.world.input;
         // The edge word every menu surface in this subsystem reads. A held
         // mask is one event: `just_pressed` is `pad & !pad_prev`.
@@ -1222,6 +1217,11 @@ impl<S: AudioSink> BootSession<S> {
                 self.save_flow.install_blocks(port, blocks);
             }
             edge = self.save_flow.before_tick(s, pressed);
+            // A card Save's write: `BootSession` has no save backend, so the
+            // write is the latch below and always goes through.
+            if self.save_flow.save_request(s).is_some() {
+                self.save_flow.finish_save_request(s, true);
+            }
         }
         // No key table here: a headless driver has no bindings to rebind.
         let _ = tick_open_subsession(active, edge, None, &self.host.world);
@@ -1246,7 +1246,12 @@ impl<S: AudioSink> BootSession<S> {
             // The outcome names the card port, the grid names the block.
             // Persisting it is the host's: `BootSession` has no save
             // backend, so the pick is latched for the caller.
-            SubsessionHandoff::Save(s) => self.last_save_commit = self.save_flow.commit(&s),
+            SubsessionHandoff::Save(s) => {
+                self.last_save_commit = self
+                    .save_flow
+                    .commit(&s)
+                    .or_else(|| s.outcome().and(self.save_flow.written_save()))
+            }
             SubsessionHandoff::Options(state) => self.options_state = state,
         }
         if let Some(menu) = self.field_menu.as_mut() {
@@ -1457,6 +1462,7 @@ impl<S: AudioSink> BootSession<S> {
         // driver that ticks the session - every headless run - parked on it
         // forever. The native window still takes its own arm first (it also
         // skips its per-frame tail); both call the same kernel.
+        self.step_pause_wipe();
         let input = &self.host.world.input;
         let edge = input.pad() & !input.pad_prev();
         if self.step_name_entry_frame(edge) {
@@ -1496,23 +1502,11 @@ impl<S: AudioSink> BootSession<S> {
         // of its own (`World::scripted_menu_open_pending`): it opens the menu
         // with no Start edge and past the engagement gate the Start path
         // keeps, exactly once per arm.
-        let scripted_menu = !self.host_owns_pause_menu
-            && self.field_menu.is_none()
-            && self.host.world.scripted_menu_open_pending();
-        let menu_opened_this_tick = if scripted_menu
-            || (!self.host_owns_pause_menu
-                && self.field_menu.is_none()
-                && self.host.world.field_menu_open_allowed()
-                && self.host.world.input.just_pressed(PadButton::Start))
-        {
-            self.open_field_menu();
-            if scripted_menu && self.field_menu.is_some() {
-                self.host.world.note_scripted_menu_opened();
-            }
-            true
-        } else {
-            false
-        };
+        let menu_opened_this_tick = !self.host_owns_pause_menu
+            && matches!(
+                self.press_field_menu(self.host.world.input.just_pressed(PadButton::Start)),
+                PauseMenuPress::Opened { .. }
+            );
         if !self.host_owns_pause_menu && !menu_opened_this_tick && self.field_menu.is_some() {
             let close = self.tick_field_menu();
             if close {
@@ -1965,6 +1959,32 @@ mod tests {
     }
 
     /// The camera azimuth a host hands in is consumed by the next tick.
+    /// The press rule every host routes through: no press does nothing, a
+    /// Start edge opens exactly when the engine predicate allows it, a press
+    /// with the menu already up is not a second open, and the close restores
+    /// the suspended mode.
+    #[test]
+    fn a_menu_press_opens_once_and_only_where_allowed() {
+        let mut s = headless_session();
+        s.host.world.mode = SceneMode::Field;
+        assert_eq!(s.press_field_menu(false), PauseMenuPress::None);
+        assert!(!s.field_menu_is_open());
+        assert!(s.host.world.field_menu_open_allowed());
+        assert_eq!(
+            s.press_field_menu(true),
+            PauseMenuPress::Opened { scripted: false }
+        );
+        assert!(s.field_menu_is_open());
+        assert_eq!(s.host.world.mode, SceneMode::Menu);
+        assert_eq!(s.press_field_menu(true), PauseMenuPress::None);
+        s.close_field_menu();
+        assert_eq!(s.host.world.mode, SceneMode::Field);
+        // Off the field-run modes the press is refused silently.
+        s.host.world.mode = SceneMode::Battle;
+        assert_eq!(s.press_field_menu(true), PauseMenuPress::None);
+        assert!(!s.field_menu_is_open());
+    }
+
     #[test]
     fn the_azimuth_override_lasts_one_tick() {
         let mut s = headless_session();

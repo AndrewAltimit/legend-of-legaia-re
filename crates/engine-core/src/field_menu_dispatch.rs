@@ -1027,16 +1027,31 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             (live.int, growth.int),
             (live.agl, growth.agl),
         ];
-        let equip_slots = member.equipment();
-        let equip_views: Vec<EquipSlotView> = (0..equip_slots.slots.len())
-            .map(|s| EquipSlotView {
-                label: equip_slot_label(s as u8),
+        // The grid's seven rows read the record through retail's own offset
+        // tables (FUN_801D33D8 `0x801D3B4C..`): row 0 the per-character
+        // weapon byte (`DAT_8007B42C`), rows 1..6 `DAT_801E43E8[row]` -
+        // head, body, footwear, Goods x3. The record's `+0x196` order is
+        // `[body, head, weapon, weapon, footwear, goods x3]`, so reading it
+        // in place put body armour on the weapon row.
+        let engine_slots =
+            crate::equip_session::engine_equip_from_record(member.equipment().slots, i as u8);
+        let equip_views: Vec<EquipSlotView> = crate::equip_session::BROWSE_SLOT_ORDER
+            .iter()
+            .map(|&s| EquipSlotView {
+                label: equip_slot_label(s),
                 // Empty slots stay blank (retail draws only the slot
-                // pictogram); occupied slots show the raw id until the
-                // item-name table is wired through here.
-                item_name: match equip_slots.slots[s] {
+                // pictogram); an occupied slot prints the item's name out of
+                // the SCUS item table (`PTR_DAT_8007436C`), the raw id only
+                // when no table was staged.
+                item_name: match engine_slots[usize::from(s)] {
                     0 => String::new(),
-                    id => format!("#{id:02X}"),
+                    id => world
+                        .menu
+                        .text
+                        .as_ref()
+                        .and_then(|t| t.item_name(id))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("#{id:02X}")),
                 },
             })
             .collect();
@@ -1638,6 +1653,29 @@ mod tests {
             !w.party.inventory.contains_key(&0x77),
             "the whole stack is discarded"
         );
+    }
+
+    /// An equipped slot prints the item's name from the staged item table,
+    /// not its raw id; an empty slot stays blank.
+    #[test]
+    fn status_equipment_rows_print_item_names() {
+        let mut w = fresh_world();
+        let mut names = vec![None; 256];
+        names[0x43] = Some("Survival Knife".to_string());
+        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+            item_names: Some(legaia_asset::item_names::ItemNameTable::from_names(names)),
+            ..Default::default()
+        });
+        let mut eq = w.party.roster.members[0].equipment();
+        eq.slots.fill(0);
+        // Vahn's weapon byte is `2`; byte `1` is the head row.
+        eq.slots[2] = 0x43;
+        eq.slots[1] = 0x44;
+        w.party.roster.members[0].set_equipment(eq);
+        let snap = &status_snapshots(&w)[0];
+        assert_eq!(snap.equip[0].item_name, "Survival Knife");
+        assert_eq!(snap.equip[1].item_name, "#44", "no name staged");
+        assert_eq!(snap.equip[2].item_name, "");
     }
 
     #[test]

@@ -45,8 +45,8 @@
 //!   field-to-battle transition emitter both hosts arm. Here for the same
 //!   reason as `screen_prim`: this crate is the leaf both hosts link.
 //!
-//! Extracted from `legaia-engine-render`, which re-exports every item here at
-//! its old path so native code + tests compile unchanged. The GPU-resident
+//! Extracted from `legaia-engine-render`, which re-exports the items its
+//! native callers name at their old path through an explicit list. The GPU-resident
 //! batch wrappers ([`TextOverlay`]/`SpriteOverlay`/`UploadedSpriteAtlas`) stay
 //! in `legaia-engine-render` because they hold wgpu handles.
 //!
@@ -57,6 +57,7 @@ pub use legaia_tim;
 
 pub mod afterimage;
 pub mod arts_input;
+pub mod battle_chrome;
 pub mod battle_command_ui;
 pub mod battle_hud_chrome;
 pub mod battle_intro;
@@ -69,7 +70,9 @@ pub mod battle_trail;
 mod battle_tutorial_box;
 pub mod billboard;
 pub mod cast_beam;
+pub mod cast_theeder;
 mod dialog_reading_box;
+pub mod effect_billboard;
 pub mod field_party_hud;
 pub mod gte;
 mod incense_notice_box;

@@ -426,6 +426,15 @@ pub struct FieldNpcAmbient {
     /// prologue, cutscene timeline) still win, exactly as they outrank a
     /// patrol.
     pub walks: bool,
+    /// The binding's `+0x8A` bit 0: the stream **defers to the player**.
+    /// `FUN_80038158` opens by testing it (`0x80038188..0x80038194`), and
+    /// with it set the tick returns without executing anything while the
+    /// player carries the engaged bit `+0x10 & 0x80000` (a conversation, a
+    /// menu, a scripted beat), while the actor's own `+0x10 & 0x500` is up
+    /// (its script running, or a walk-kernel halt), or while it stands on the
+    /// off-map park (`0x8003819C..0x800381F4`). A zero byte keeps
+    /// choreographing through a cutscene.
+    pub defers: bool,
 }
 
 impl FieldNpcAmbient {

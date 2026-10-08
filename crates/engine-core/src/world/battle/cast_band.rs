@@ -619,6 +619,7 @@ impl World {
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
         self.casting.module_ring_angle = 0;
+        self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
         self.casting.summon_stager = Some(SummonStager {
@@ -1972,14 +1973,89 @@ impl World {
             .unwrap_or((0, 0))
     }
 
+    /// PROT 0904's beam root and arm-12 ray tip for sweep word `ctx_6d8`
+    /// (before the arm's ramp - the tip is built from the ramped word, as the
+    /// tick builds it), from the summon seat's live position and facing
+    /// (retail reads slot 7's `+0x34` / `+0x38` / `+0x46`).
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 12, `0x801F7AF4..0x801F7C80`)
+    pub(in crate::world) fn theeder_ray(
+        &self,
+        summon_slot: u8,
+        ctx_6d8: u16,
+    ) -> ([i16; 3], [i16; 3]) {
+        use vm::cast_seru_ticks_a as ta;
+        let g = self.theeder_geom(summon_slot);
+        let mouth = ta::theeder_mouth(g.x, g.z, g.facing);
+        let tip = ta::theeder_ray_tip(mouth, g.facing, ta::theeder_sweep_phase(ctx_6d8));
+        (mouth, tip)
+    }
+
+    /// PROT 0904's arm-4 seat placement
+    /// ([`vm::cast_seru_ticks_a::theeder_seat_placement`]) from the victim's
+    /// and the caster's live positions.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 4, `0x801F6EEC..0x801F6F8C`)
+    fn theeder_seat_for(&self, caster_slot: u8, victim_slot: u8) -> Option<(i16, i16, u16)> {
+        let pos = |s: u8| {
+            self.actors
+                .get(s as usize)
+                .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        };
+        Some(vm::cast_seru_ticks_a::theeder_seat_placement(
+            pos(victim_slot)?,
+            pos(caster_slot)?,
+        ))
+    }
+
+    fn pin_theeder_seat(&mut self, summon_slot: u8, (x, z, facing): (i16, i16, u16)) {
+        if let Some(a) = self.actors.get_mut(summon_slot as usize) {
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            a.battle.facing_angle = facing;
+        }
+    }
+
+    /// The summon seat's live `(x, z)` and facing, as PROT 0904 reads slot 7.
+    fn theeder_geom(&self, summon_slot: u8) -> vm::cast_seru_ticks_a::TheederGeom {
+        self.actors
+            .get(summon_slot as usize)
+            .map(|a| vm::cast_seru_ticks_a::TheederGeom {
+                x: a.move_state.world_x,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0x0FFF,
+            })
+            .unwrap_or_default()
+    }
+
+    /// PROT 0904's packets for this frame - what the Theeder module's last
+    /// tick drew (the arm-9 prongs, the arm-11 charge beam, the arm-11/12
+    /// sweeping beam and its trail, the arm-13 retract) - while its cast is
+    /// in the band. Both hosts project the points with their battle camera
+    /// and build the primitives with `legaia_engine_ui::cast_theeder`.
+    ///
+    /// REF: FUN_801F815C, FUN_801F83A4, FUN_801F8634, FUN_801F8B84
+    pub fn theeder_draw(&self) -> Option<vm::cast_seru_ticks_a::TheederPacket> {
+        if self.mode != SceneMode::Battle || self.casting.summon_stager.is_none() {
+            return None;
+        }
+        self.casting.module_theeder.packet
+    }
+
+    /// The trail ring [`Self::theeder_draw`]'s fan packets index
+    /// (`hist[0]` newest).
+    pub fn theeder_trail(&self) -> &[[i16; 3]] {
+        &self.casting.module_theeder.trail.hist
+    }
+
     /// Which of `seats` lie inside a `+-half_width` cone about `bearing`, as
-    /// seen from `centre` - the geometry PROT 0904's expanding-ring sweep
+    /// seen from `centre` - the geometry PROT 0904's swinging-ray sweep
     /// gates each hit on, and the one thing the module's arm 12 needs from its
     /// host.
     ///
     /// Retail's shape, read off `0x801F7CA0..0x801F7D14`: two calls to the
-    /// 12-bit atan2 `FUN_80019B28` against the **same** second point (the ring
-    /// centre) - one from the ring's rim point at angle `ctx+0x6D8`, one from
+    /// 12-bit atan2 `FUN_80019B28` against the **same** second point (the
+    /// beam root) - one from the ray's tip, one from
     /// the seat - each `+0x800` and masked to `0xFFF`, then
     /// `|ref - seat| - 0x30` compared **unsigned** against `0xFB1`. That
     /// comparison is the wrap: a difference below `0x30` underflows past
@@ -2136,6 +2212,28 @@ impl World {
         outcome
     }
 
+    /// The module's camera state with its `yaw_base` loaded from the battle
+    /// camera's live `ctx[+0x6DA]`. Retail has one word: the module's
+    /// `sh 0x200, 0x6DA(ctx)` and per-pass swing land in the counter the
+    /// action SM's prologue keeps drifting, and the Done band's case 6 reads
+    /// what they left (`shiny_refactor_gimard_levelup`).
+    fn module_cam_with_yaw_base(&self) -> vm::cast_module_camera::ModuleCamState {
+        let mut st = self.casting.module_cam;
+        if let Some(cam) = self.battle.camera.as_ref() {
+            st.yaw_base = cam.action_yaw_base();
+        }
+        st
+    }
+
+    /// Store the module's camera state back and its `yaw_base` into the
+    /// battle camera's `ctx[+0x6DA]` ([`Self::module_cam_with_yaw_base`]).
+    fn store_module_cam(&mut self, st: vm::cast_module_camera::ModuleCamState) {
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.set_action_yaw_base(st.yaw_base);
+        }
+        self.casting.module_cam = st;
+    }
+
     /// The caster and victim as the module camera arms read them: world
     /// position (`+0x34..+0x38`) and battle heading (`+0x46`).
     pub(in crate::world) fn module_cam_seats(
@@ -2227,6 +2325,7 @@ impl World {
             ctx_0d: 0,
             turn_cursor: self.battle_ctx.turn_cursor,
             ctx_27a: 0,
+            ctx_6d8: self.casting.module_ring_angle,
         }
     }
 
@@ -2404,9 +2503,9 @@ impl World {
                     .victim_slot
                     .get_or_insert(victim_slot);
                 let seats = self.module_cam_seats(caster_slot, latched);
-                let mut st = self.casting.module_cam;
+                let mut st = self.module_cam_with_yaw_base();
                 let d = direct(&mut st, ctx.phase, seats);
-                self.casting.module_cam = st;
+                self.store_module_cam(st);
                 d
             })
         };
@@ -2421,9 +2520,9 @@ impl World {
             body.unwrap_or(vm::cast_module_camera::SINGLE_BODY),
         ) {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
-            let mut st = self.casting.module_cam;
+            let mut st = self.module_cam_with_yaw_base();
             let arm = direct(&mut st, ctx.phase, seats);
-            self.casting.module_cam = st;
+            self.store_module_cam(st);
             if let Some(v) = arm.latch
                 && let Some(i) = self.caster_latch_index(caster_slot)
             {
@@ -3072,21 +3171,26 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
-                    let cone_seats: Vec<u8> = if entry == 904 {
-                        use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
-                        let step = u16::from(self.clock.frame_step.max(1)) << 3;
-                        self.casting.module_ring_angle =
-                            self.casting.module_ring_angle.wrapping_add(step);
-                        let centre = self.cast_seat_xz(seat_slot);
-                        self.seats_in_cone(
-                            centre,
-                            self.casting.module_ring_angle & 0x0FFF,
-                            THEEDER_CONE_HALF_WIDTH,
-                            ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
-                        )
-                    } else {
-                        Vec::new()
-                    };
+                    let cone_seats: Vec<u8> =
+                        if entry == 904 && ctx.phase == ticks_a::THEEDER_SWEEP_ARM {
+                            use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
+                            // The ray the sweep arm tests this tick: from the
+                            // beam root ahead of the summon seat to the tip the
+                            // word `ctx+0x6D8` (after its own ramp) swings about
+                            // the summon's facing.
+                            let (mouth, tip) = self.theeder_ray(seat_slot, ctx.ctx_6d8);
+                            let bearing = vm::battle_action::bearing_12bit_approx(
+                                mouth[2], mouth[0], tip[2], tip[0],
+                            );
+                            self.seats_in_cone(
+                                (mouth[0], mouth[2]),
+                                bearing,
+                                THEEDER_CONE_HALF_WIDTH,
+                                ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
+                            )
+                        } else {
+                            Vec::new()
+                        };
                     let nighto_outcome = if entry == 907 {
                         self.nighto_verdict(caster_slot, victim_slot, spell_id)
                     } else {
@@ -3121,9 +3225,29 @@ impl World {
                             // gets a zero roll and the arm's presentation half
                             // (render flag, reaction bits) runs.
                             let in_cone = cone_seats.clone();
-                            ticks_a::theeder_tick(&mut ctx, &mut seats, who, |seat| {
-                                in_cone.contains(&seat).then_some(0)
-                            })
+                            // Arm 4 seats the creature between the caster and
+                            // the victim, facing the victim (`0x801F6EEC`).
+                            // No later arm writes the seat's position, so it
+                            // stays pinned there for the rest of the cast.
+                            if ctx.phase == ticks_a::THEEDER_RISE_ARM {
+                                self.casting.module_theeder.seat =
+                                    self.theeder_seat_for(caster_slot, victim_slot);
+                            }
+                            if let Some(seat) = self.casting.module_theeder.seat {
+                                self.pin_theeder_seat(seat_slot, seat);
+                            }
+                            let geom = self.theeder_geom(seat_slot);
+                            let mut fx = self.casting.module_theeder;
+                            let run = ticks_a::theeder_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                geom,
+                                &mut fx,
+                                |seat| in_cone.contains(&seat).then_some(0),
+                            );
+                            self.casting.module_theeder = fx;
+                            run
                         }
                         905 => {
                             let restore = self.vera_restore(caster_slot, victim_slot, spell_id);
@@ -3218,6 +3342,7 @@ impl World {
                 // fold's.
                 e if ticks::direct_chain_body(e).is_some() => {
                     let chain = ticks::direct_chain_body(e).expect("guarded");
+                    let phase_before = ctx.phase;
                     let t = ticks::run_chain_body(
                         chain,
                         &mut ctx,
@@ -3227,6 +3352,41 @@ impl World {
                         0,
                     );
                     run.item_refund = t.refund;
+                    // PROT 0919 (Spoon) arm 7 also runs the party cure ladder
+                    // and its tier-4 AP doubling - the half of the arm the
+                    // fold does not own (its heal is the fold's). Once, on
+                    // the frame the arm lets the phase through.
+                    if e == 919
+                        && phase_before == vm::cast_seru_ticks_b::SPOON_HEAL_ARM
+                        && ctx.phase != phase_before
+                    {
+                        // The views carry this frame's chain writes; seat them
+                        // in the row before the sweep reads it.
+                        let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                            .map(|s| self.cast_actor_state(s))
+                            .collect();
+                        for (slot, view) in [
+                            (caster_slot, caster),
+                            (victim_slot, victim),
+                            (seat_slot, seat),
+                        ] {
+                            if let Some(s) = seats.get_mut(slot as usize) {
+                                *s = view;
+                            }
+                        }
+                        let cleanse = self.cure_selector(
+                            caster_slot,
+                            spell_id,
+                            vm::cast_seru_ticks_b::ORB_CLEANSE_MIN_LEVEL,
+                        );
+                        vm::cast_seru_ticks_b::spoon_cure_sweep(&mut seats, cleanse);
+                        for (slot, st) in seats.iter().enumerate() {
+                            self.write_cast_actor_state(slot as u8, st);
+                        }
+                        caster = seats.get(caster_slot as usize).copied().unwrap_or(caster);
+                        victim = seats.get(victim_slot as usize).copied().unwrap_or(victim);
+                        seat = seats.get(seat_slot as usize).copied().unwrap_or(seat);
+                    }
                     Some(t.step)
                 }
                 _ => None,
@@ -3282,6 +3442,7 @@ impl World {
             a.pass(&mut self.casting.module_cam.countdown);
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
+        self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;
         // The turn-steal arms bump `ctx[+0x1A]`; it is a context byte, so it
         // has to travel back out of the view.
@@ -3349,10 +3510,6 @@ impl World {
         use legaia_engine_vm::cast_seru_ticks_b as seru;
         use vm::cast_module_ticks::{AoeHit, SweepHit};
 
-        // The scratchpad frame-delta byte `0x1F80037D` every body in the band
-        // paces on. The engine ticks once per displayed frame, so it is `1`.
-        const FRAME_DELTA: u8 = 1;
-
         fn lift(hits: &[SweepHit]) -> Vec<AoeHit> {
             hits.iter()
                 .map(|h| AoeHit {
@@ -3373,10 +3530,19 @@ impl World {
             // runs `swordie_slash_step` with a neutral wrapper return: the
             // clamp, the hit counter and the per-slash reaction clip are
             // live, the HP outcome stays the fold's.
+            //
+            // Retail runs the body once a battle pass, which spans the frame
+            // step's vsyncs, and drains by `rate * speed` there; the engine
+            // runs it once a vsync, so its `rate` is `1` (passing the frame
+            // step ran both timers at twice retail's speed). `speed` is the
+            // scalar itself - the battle seating's normal rate `8` - not `1`:
+            // the thresholds scale with it, and arm 7 stores it as the
+            // summon's animation rate `+0x21D`, which at `1` played the
+            // strike at an eighth of normal speed.
             910 => {
                 let clock = seru::SwordieClock {
-                    rate: self.clock.frame_step.max(1),
-                    speed: FRAME_DELTA,
+                    rate: 1,
+                    speed: vm::battle_anim_rate::RATE_NORMAL,
                 };
                 let mut slashes = self.casting.module_swordie;
                 let (step, hits) = seru::swordie_tick(
@@ -4153,5 +4319,58 @@ mod capture_hold_tests {
             world.casting.capture_spell.is_none(),
             "and the module stops being re-entered"
         );
+    }
+}
+
+/// The live command flow's sweep encoding: a group-shaped cast reaches the SM
+/// as retail's group code (`8` party / `9` enemy row, absolute numbering),
+/// never a sentinel, and a self-target stays the caster's own slot - the
+/// value `FUN_801E295C`'s cast-begin split (`sltiu v0,t2,0x8` at
+/// `0x801E433C`) and its self-skip (`beq v0,t2` at `0x801E4350`) expect.
+#[cfg(test)]
+mod sweep_code_tests {
+    use super::*;
+    use crate::spells::{SpellDef, SpellTarget};
+    use vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
+
+    fn staged_target(caster: u8, target: SpellTarget, targets: Vec<u8>) -> u8 {
+        let mut world = World::default();
+        world.enter_battle(3, 2);
+        let def = SpellDef {
+            id: 0x81,
+            target,
+            ..SpellDef::default()
+        };
+        world.arm_player_cast(caster, &def, targets);
+        world.actors[caster as usize].battle.active_target
+    }
+
+    #[test]
+    fn a_party_casters_sweeps_carry_retail_group_codes() {
+        assert_eq!(
+            staged_target(0, SpellTarget::AllAllies, vec![0, 1, 2]),
+            TARGET_GROUP_PARTY
+        );
+        assert_eq!(
+            staged_target(0, SpellTarget::AllEnemies, vec![3, 4]),
+            TARGET_GROUP_ENEMIES
+        );
+    }
+
+    #[test]
+    fn a_monster_casters_sweeps_are_mirrored() {
+        assert_eq!(
+            staged_target(3, SpellTarget::AllAllies, vec![3, 4]),
+            TARGET_GROUP_ENEMIES
+        );
+        assert_eq!(
+            staged_target(3, SpellTarget::AllEnemies, vec![0, 1, 2]),
+            TARGET_GROUP_PARTY
+        );
+    }
+
+    #[test]
+    fn a_self_target_is_the_casters_own_slot() {
+        assert_eq!(staged_target(1, SpellTarget::SelfOnly, vec![1]), 1);
     }
 }

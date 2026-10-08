@@ -45,8 +45,12 @@ navigation logic depends on the GPU backend.
   diamond at `(228, 70)` and the `Begin | Run` pair at `(160, 92)`, the D-pad
   glyph they share with `arts_input`, and the `-` chip retail draws for a
   command that cannot be chosen. Both battle hosts seat their command menu
-  through it. Geometry mirrors `legaia_engine_vm::battle_chrome`, which
-  `engine-shell`'s HUD tests pin equal.
+  through it. Geometry mirrors `battle_chrome`, which `engine-shell`'s HUD
+  tests pin equal.
+- `battle_chrome` - the retail battle-screen chrome, packet-pinned off the
+  live ordering table: the actor-name plaque, the party status readout and
+  the command-chip cluster's sheet rects, palettes and screen seats. Pure
+  layout; no VM steps it.
 - `battle_hud_chrome` - the battle surfaces that are **widget-table records**
   rather than plate runs: the class-0 **message banner** (`banner_frame` /
   `message_banner_chrome_draws_for` / `message_banner_text_draws_for` - which
@@ -81,6 +85,11 @@ navigation logic depends on the GPU backend.
   `FUN_801DC1CC`), drawn while a `PrizeExchangeSession` owns the pad.
 - `other_game_hud` - the PROT 0977 arena overlay's HUD primitive layer: a
   table-driven textured-Gouraud-quad emitter plus the decimal readout on it.
+- `effect_billboard` - the one step a *world-space* effect billboard builder
+  gets wrong: retail's quad projector `FUN_800195A8` adds the half-extents
+  in view space, after the camera matrix, so the battle camera's 4x base
+  matrix scales the centre and not the size; `world_half_extents` divides it
+  back out. Both hosts' effect billboards build through it.
 - `afterimage` / `streak_pass` / `battle_trail` / `billboard` - the move-FX
   draw kernels: one jittered semi-transparent quad, the per-frame pass that
   turns a battle context's projection block into those quads, the swept
@@ -175,9 +184,9 @@ shared leaf:
 
 ## Composition
 
-`legaia-engine-render` re-exports every item here at its historical crate-root
-path (`pub use legaia_engine_ui::*`) so native shell code, the asset-viewer, and
-tests reference the builders unchanged. The GPU-resident batch wrappers
+`legaia-engine-render` re-exports the items its native callers use at their
+historical crate-root path, through an explicit list rather than a glob, so a
+new item here does not silently join that crate's API. The GPU-resident batch wrappers
 (`TextOverlay` / `SpriteOverlay` / `UploadedSpriteAtlas`) stay in
 `legaia-engine-render` because they hold wgpu handles.
 

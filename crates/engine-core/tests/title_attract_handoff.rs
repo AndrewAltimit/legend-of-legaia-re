@@ -156,12 +156,8 @@ fn a_cold_boot_session_reports_the_retail_sub_mode() {
 #[test]
 fn each_confirmed_row_moves_the_retail_sub_mode_where_retail_moves_it() {
     use legaia_engine_vm::title_overlay::TitleOverlaySubMode;
-    // Row 0 (NEW GAME) -> 0x16 LaunchFade.
+    // Row 0 (NEW GAME, where the cursor opens) -> 0x16 LaunchFade.
     let mut s = armed();
-    s.tick(TitleInput {
-        up: true,
-        ..Default::default()
-    });
     s.tick(TitleInput {
         cross: true,
         ..Default::default()
@@ -174,6 +170,10 @@ fn each_confirmed_row_moves_the_retail_sub_mode_where_retail_moves_it() {
 
     // Row 1 (CONTINUE) -> 0x18 ContinueFadeIn.
     let mut s = armed();
+    s.tick(TitleInput {
+        down: true,
+        ..Default::default()
+    });
     s.tick(TitleInput {
         cross: true,
         ..Default::default()

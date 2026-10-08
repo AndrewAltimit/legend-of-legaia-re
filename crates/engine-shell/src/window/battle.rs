@@ -828,8 +828,19 @@ impl PlayWindowApp {
         let Some(archive) = self.monster_archive_bytes() else {
             return;
         };
-        let Some(creature) = legaia_engine_core::summon::summon_creature_id(spell_id, &archive)
-        else {
+        // The cast's own body: the archive twin for 0x81..=0x95, the cast's
+        // `summon.dat` record (PROT 893) for the high block.
+        let summon_dat = self
+            .session
+            .host
+            .index
+            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
+            .ok();
+        let Some(asset) = legaia_engine_core::summon::summon_spawn_asset(
+            spell_id,
+            &archive,
+            summon_dat.as_ref().map(|b| b.as_slice()),
+        ) else {
             return;
         };
         let Some(mut vram) = self.battle_vram.clone() else {
@@ -838,10 +849,7 @@ impl PlayWindowApp {
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
-        let mesh = match legaia_asset::monster_archive::mesh(&archive, creature) {
-            Ok(Some(m)) => m,
-            _ => return,
-        };
+        let mesh = &asset.mesh;
         let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
             return;
         };
@@ -902,8 +910,8 @@ impl PlayWindowApp {
             a.move_state.world_y = 0;
             a.move_state.world_z = -350;
         }
-        if let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, creature)
-            && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
+        if let Some(idle) = asset.idle.as_ref()
+            && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(idle)
         {
             self.session
                 .host
@@ -912,10 +920,8 @@ impl PlayWindowApp {
         }
         // The creature's archive-order clip set, so the stager's staged ids
         // (the walk, clip 1) resolve through the same commit as a monster's.
-        if let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, creature)
-            && !anims.is_empty()
-        {
-            let clips: Vec<_> = anims.into_iter().map(Some).collect();
+        if !asset.clips.is_empty() {
+            let clips: Vec<_> = asset.clips.iter().cloned().map(Some).collect();
             self.session
                 .host
                 .world
@@ -927,8 +933,9 @@ impl PlayWindowApp {
         // choreography ends; a debug spawn keeps the placement above.
         self.session.host.world.seat_summon_actor(slot);
         log::info!(
-            "play-window: summon spell {spell_id:#04x} -> battle_data creature {creature} \
-             (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})"
+            "play-window: summon spell {spell_id:#04x} -> creature {:?} \
+             (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})",
+            asset.creature_id
         );
     }
 

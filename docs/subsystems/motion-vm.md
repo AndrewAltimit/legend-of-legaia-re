@@ -393,6 +393,14 @@ A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---
 - **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`), PARKS on `CutsceneTimeline::walk_wait`, and resumes past the yield when the leg arrives - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place. The player-anchor form (`C7 F8 …`) steps the player actor directly in the same park. Scripted legs keep stepping while a timeline is active.
 - **Cutscene-timeline cross-context turns** (`B8 <id> <dir|flags> <budget|dir>`, the targeted `0x38` yield - the field-VM CAM_CFG halt-acquire arm): same park shape for the rotate op. The timeline arms a `0x38` RotateToAngle leg on the NPC (`CutsceneTimeline::facing_wait`), steps it once per tick writing the raw yaw into `World::npcs.headings`, and resumes past the yield on the terminal compass snap - one parked tick per budget frame, the 1:1 retail duration. The simple path (`op1 & 0x7F == 0`) is an instant compass write, no park.
 
+- **Cutscene-timeline cross-context face-ats** (`CC <id> 85|8E|8F <lo> <hi> <bind>`, the field-VM halt-acquire on a placement): the acquire hands the target this VM's `0x4C` FaceTarget leg, which turns it toward the bind (`0xF8` = the player) over the `u16` budget and snaps onto the live bearing on its terminal frame. The record runs on (only a player target parks it); the timeline steps the leg once per tick (`CutsceneTimeline::npc_faces`, `World::step_npc_face_leg`) and holds the actor's next op until the snap. In the opening (`opdeene` `P2[18]`) the vignette actors land on retail's own bearings to within a unit.
+
+  Outside a timeline - the scene's entry script, a talk record - a `B8 <id> ..` or `CC <id> 85 ..` aimed at another placement turns that placement, not the context running it (`World::run_placement_facing_op`), its legs free-standing and stepped on the field tick (`FieldNpcState::face_legs` / `rotate_legs`); `rikuroa`'s entry script stands two chests this way. The own-context form `4C 85 <lo> <hi> <bind>` (five bytes, the target the executing actor) turns the placement whose spawn section runs it - `rikuroa` `P1[3]` faces Noa toward the placement she is seated beside.
+
+  In a talk record the talker turns the same way, and the record waits for the turn. Retail's arm raises the talker's own `0x400` and advances; the dispatcher's prologue (`0x801DE90C..0x801DE944`) then refuses every op of a context carrying `0x400` - text leads included - unless the scene word `*(_DAT_801C6EA4) + 8` is non-zero (it is `0` in a talk) or the caller's `+0x50` is `0xFB`, so the record holds at its PC until the leg's terminal frame clears the bit (`0x80038004`). The port carries that hold as `InlineDialogue::own_turn`. `rayman` `P1[6]` (Kina) turns this way (`4C 85 10 00 F8`, then `B3 13 0A`) before her "Follow me!" beat walks her to (31, 19) and clears global bit 16.
+
+  The finished beat arms `rayman`'s guide rail: the P2[4] / P2[5] / P2[6] walk-ons return a player who strays to (31, 20), and after three strays Kina gives up and raises `0x1EC..0x1EE`. The way on to `tunnelb` is Hari's permission chain: talks P1[44..46] raise `0x1FD..0x1FF`, the P2[18] walk-on then raises `0x200`, P2[19] raises `0x1FC`, and only then does the gate guard's P2[16] open the door. A P2[18] stepped on before the three talks runs and gains nothing; it takes a second visit.
+
   The player (`B8 F8 ..`) takes both paths on its own heading (`move_state.render_26`, `TimelineFacing::slot = None`); the story beats turn the hero this way well over a thousand times across the disc. Outside the timeline, a simple-path `0x38` reaches the actor through `FieldHost::face_compass`: the player for `0xF8`, the stepping placement channel, or the NPC whose talk record is running.
 
 The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
@@ -516,6 +524,19 @@ anything:
 So the byte reads "this stream defers to the player", not "this stream is
 switched on", and a binding that authors it zero keeps choreographing through
 a cutscene.
+
+The port carries the bit as `FieldNpcAmbient::defers` and makes the same three
+tests before the variant preamble. The engaged bit is read through the
+engine's script-context predicate; an ordinary conversation holds only the
+talker's own stream (its record running is retail's `+0x10 & 0x100`), not
+every deferring stream in the scene. That is narrower than retail, where a
+talk freezes them all: with the full rule, villagers frozen beside a talk
+stood in the full-game ladder's walk routes and kept re-opening their touch
+talks. `rikuroa` `P1[3]` is the
+case a player sees: Noa's stream (bound with the bit set) ramps her to the
+compass point `LUT[7]` and back, and without the gate it ran through her own
+pre-battle beat and turned her away from the creature her spawn prologue's
+`4C 85 00 00 16` had faced her toward.
 
 ### Walk-op speed encoding
 

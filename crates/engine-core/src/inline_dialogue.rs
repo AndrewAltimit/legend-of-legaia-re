@@ -118,6 +118,14 @@ pub struct InlineDialogue {
     /// halt window: the player and the talking actor both carry `0x400`, and
     /// a cross-context op aimed at the player parks until it closes.
     pub face_ramp: Option<TalkFaceRamp>,
+    /// The talker's own turn a no-target `4C 85|8E|8F` started, while it is
+    /// in flight: the placement slot whose face-at leg holds the talker's
+    /// `0x400`. Retail's dispatcher prologue (`0x801DE90C..0x801DE944`)
+    /// refuses every op of a context carrying `0x400` (the scene word
+    /// `*(_DAT_801C6EA4) + 8` is `0` in a talk and the talker is not `0xFB`),
+    /// so the record holds at its PC until the leg's terminal frame clears
+    /// the bit (`FUN_8003774C`, `0x80038004`).
+    pub own_turn: Option<u8>,
     /// This pass has spawned a record (an own-context op `0x44`). A raw
     /// `0x21` after that is the conversation's real end, not a prologue that
     /// failed to reach its box: the talk's effect was the spawn. `vozz`
@@ -126,6 +134,23 @@ pub struct InlineDialogue {
     /// scene's text and tail instead (`0x2C3` and the `map01` hand-off)
     /// without the `0x2AC` / `0x193` arm the next talk takes.
     pub spawned: bool,
+    /// The player leg a prop record's cross-context walk-to-tile
+    /// (`C7 F8 <tx> <tz> <mode>`) armed, while it is in flight. Only a
+    /// player target parks the calling record (`0x801DF034..0x801DF044`);
+    /// the run resumes past the op once the player lands.
+    pub player_walk: Option<PropPlayerWalk>,
+}
+
+/// A player walk-to-tile leg a prop run parks on: the decoded target, the
+/// per-frame step (`field_npc_walk_step_speed(0x80, mode & 7)`) and the
+/// frames spent, bounded like a cutscene walk.
+///
+/// REF: FUN_8003774C (case 0x47)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PropPlayerWalk {
+    pub target: (i16, i16),
+    pub speed: u16,
+    pub frames: u32,
 }
 
 /// The walk-kernel leg a talk's `CC F8 85|8E|8F <lo> <hi> <id>` halt-acquire
@@ -170,6 +195,38 @@ impl TalkFaceRamp {
         }
         Some(Self {
             program: [0x4C, op[2], op[3], op[4], op[5]],
+            accum: 0,
+        })
+    }
+
+    /// The leg a halt-acquire at `pc` hands a **non-player** target: the
+    /// cross-context `CC <id> 85|8E|8F <lo> <hi> <bind>` form with `<id>`
+    /// neither the player (`F8`) nor the system channel (`FB`). Returns the
+    /// target id with the leg.
+    pub fn from_npc_acquire(bytes: &[u8], pc: usize) -> Option<(u8, Self)> {
+        let op = bytes.get(pc..pc + 6)?;
+        if op[0] != 0xCC || matches!(op[1], 0xF8 | 0xFB) || !matches!(op[2], 0x85 | 0x8E | 0x8F) {
+            return None;
+        }
+        Some((
+            op[1],
+            Self {
+                program: [0x4C, op[2], op[3], op[4], op[5]],
+                accum: 0,
+            },
+        ))
+    }
+
+    /// The leg an **own-context** halt-acquire at `pc` hands the executing
+    /// actor: `4C 85|8E|8F <lo> <hi> <bind>`, five bytes with no target
+    /// byte, so the arm's resolved target is the context itself.
+    pub fn from_own_acquire(bytes: &[u8], pc: usize) -> Option<Self> {
+        let op = bytes.get(pc..pc + 5)?;
+        if op[0] != 0x4C || !matches!(op[1], 0x85 | 0x8E | 0x8F) {
+            return None;
+        }
+        Some(Self {
+            program: [0x4C, op[1], op[2], op[3], op[4]],
             accum: 0,
         })
     }
@@ -266,7 +323,9 @@ impl InlineDialogue {
             visited,
             parked_pc: None,
             face_ramp: None,
+            own_turn: None,
             spawned: false,
+            player_walk: None,
         }
     }
 
@@ -299,7 +358,9 @@ impl InlineDialogue {
             visited,
             parked_pc: None,
             face_ramp: None,
+            own_turn: None,
             spawned: false,
+            player_walk: None,
         }
     }
 

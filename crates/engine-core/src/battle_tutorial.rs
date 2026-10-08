@@ -487,9 +487,15 @@ pub enum CountdownTick {
 /// Live inputs the hook handlers read besides the flow state and lesson.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TutorialInputs {
-    /// `ctx[0x266]` - set once the target-select explainer has been shown, so
-    /// the follow-up box moves from the `0xB0` anchor to the `0xCC` one.
-    pub target_explainer_seen: bool,
+    /// `ctx[0x266]` - seat 0's per-fighter **Auto** flag, the byte the
+    /// command SM writes on the attack-mode prompt (`1` on the `Auto` chip
+    /// `0x801D17D0`, `0` on `Command` `0x801D1760`, `0` every frame the ring
+    /// is up `0x801D11A8`). The flow-state `90` hook reads it at
+    /// `0x801F6F48` / `0x801F6F78`: in the attack lesson it moves the
+    /// follow-up box from the `0xB0` anchor to the `0xCC` one, and in the
+    /// hyper-arts lesson an Auto attack is the wrong-lesson rewind - the
+    /// drill is only ever checked on a `Command` entry.
+    pub auto_attack: bool,
     /// `_DAT_801D46C8` - clears on the very first command prompt, so the
     /// lesson-0 turn-start shows the directional explainer once and the
     /// highlight explainer thereafter.
@@ -593,8 +599,8 @@ pub fn dispatch(
 
         // --- 90: target select (0x801F6EE4) ---
         (90, Attacks) => {
-            // ctx[0x266] picks the follow-up box's anchor.
-            let style = if inputs.target_explainer_seen { 3 } else { 5 };
+            // ctx[0x266] (the Auto flag) picks the follow-up box's anchor.
+            let style = if inputs.auto_attack { 3 } else { 5 };
             two(msg::SELECT_TARGET, 0, msg::TARGET_EXPLAIN, style)
         }
         (90, HyperArts) => {
@@ -602,9 +608,10 @@ pub fn dispatch(
             // player entered.
             let buf = if inputs.autofill_drill {
                 DRILL_AUTOFILL
-            } else if inputs.target_explainer_seen {
-                // Not auto-filled and the explainer already ran: retail takes
-                // the wrong-lesson rewind rather than re-checking.
+            } else if inputs.auto_attack {
+                // Not auto-filled and the attack was taken on `Auto`: retail
+                // takes the wrong-lesson rewind (`0x801F6F98`) - an Auto
+                // attack enters no arrows to check.
                 return TutorialEmission::rewind(msg::WRONG_HYPER_ARTS);
             } else {
                 inputs.command_buffer
@@ -764,14 +771,24 @@ impl BattleTutorial {
         }
     }
 
-    /// `FUN_801F7628`'s store into `ctx[+0x6B4]`: arm the hold countdown.
+    /// `FUN_801F7628`: arm the hold countdown.
+    ///
+    /// The routine (23 instructions, PROT 0967) seeds `ctx[+0x6B4]` with
+    /// `rate * 360` ([`COMPLETION_COUNTDOWN_VSYNCS`] once the rate cancels),
+    /// raises the hold `ctx[+0x6B0] = 1`, zeroes the pad masks
+    /// `_DAT_8007B874` / `_DAT_8007B938` / `_DAT_8007B850` and `ctx[+0x884]`,
+    /// and captures the cancel mask `_DAT_800846D4` into `ctx[+0x88C]`. The
+    /// hold, the cleared masks and the captured cancel are what
+    /// [`Self::tick_countdown`] reports as [`CountdownTick::Holding`] and
+    /// [`CountdownTick::Rewind`], so the countdown is the one stored value
+    /// this side keeps.
     ///
     /// Retail also calls it on every wrong-lesson rewind (`0x801F7184` and
     /// siblings), where the expiry injects a Cancel press. The engine's
     /// rewind reopens the command menu directly
     /// ([`TutorialEmission::rewind`]), so only the completion tail arms it.
     ///
-    /// REF: FUN_801F7628
+    /// PORT: FUN_801F7628
     pub fn arm_countdown(&mut self) {
         self.countdown = COMPLETION_COUNTDOWN_VSYNCS;
     }

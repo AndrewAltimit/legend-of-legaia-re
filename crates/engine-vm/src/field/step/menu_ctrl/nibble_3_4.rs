@@ -121,7 +121,7 @@ pub(super) fn op_4c_n3<H: FieldHost>(
             }
         }
         0xA => {
-            host.copy_dialog_depth_to_player();
+            host.apply_arrival_facing();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }

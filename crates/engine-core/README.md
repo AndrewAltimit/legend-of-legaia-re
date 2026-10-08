@@ -15,7 +15,7 @@ native window.
 - [Asset cache](#asset-cache)
 - [Frame timing](#frame-timing)
 - [Composite `World`](#composite-world)
-- [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_runner`, `battle_session`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
+- [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
 - [Scene resources + VRAM](#scene-resources--vram)
 - [Dialogue, save/load, and loot](#dialogue-saveload-and-loot)
 - [Minigame rules engines](#minigame-rules-engines)
@@ -196,6 +196,13 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
 
 ### Battle helpers
 
+The `World`-free battle kernels - `art_strike`, `ap_gauge`, `battle_stats`,
+`accessory_passives`, `seru_trade`, `battle_sideband`, `tactical_arts_editor`,
+`monster_ai`, `battle_steal`, the catalogs, encounters and level-up among
+them - live in [`legaia-engine-battle`](../engine-battle/README.md) and are
+re-exported here at the same paths; this crate keeps the `World` side that
+composes them.
+
 - `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
   (HP delta, status, scheduled SFX cues) the world drains into its
   battle event queue.
@@ -261,20 +268,6 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,
   returns death count.
-- `battle_runner` - `BattleRunner` sits between player input and the
-  action SM. `begin_round` / `commit_turn` / `end_round` bracket each
-  turn; `push_command` / `push_chained_art` gate input against
-  `ApGauge`; `commit_turn` resolves the queue through
-  `resolve_action_queue` (Miracle / Super expansion). Per-slot buffers
-  preserve state across `active_party_slot` switches.
-- `battle_session` - `BattleSession` composes the runner + round + HUD
-  into a single state machine. Owns the action SM during the `Resolve`
-  phase: on `commit_turn` it builds a per-slot `ResolveDriver` queue,
-  arms `world.battle_ctx`, calls `world.tick` once per `BattleSession::tick`,
-  applies from-scratch formula damage on `AttackChain → AttackRecovery`
-  transitions, and advances to the next attacker on `EndOfAction`. The
-  `Resolve → RoundOutro → Victory / Defeat` transition observes the
-  routed `BattleEnd` event. See `docs/subsystems/battle.md#battlesession-resolve-driver`.
 - `battle_input` - `BattleCommandSession`: the player-driven command
   picker for the live gameplay loop. A small state machine (command menu
   → target select → confirm) driven a frame at a time from `World::input`.
@@ -452,7 +445,14 @@ non-summon casts and specials, off the parsed `move_power` table.
 ## Minigame rules engines
 
 Each is a headless rules engine driven by disc-parsed tables, with the
-presentation left to the host:
+presentation left to the host. The ones that need no `World` - `dance`,
+`dance_tutorial`, `minigame_actor`, `minigame_fx`, `minigame_floor`,
+`baka_*`, `slot_machine`, `fishing*`, `other_game_overlay`, `tile_board`,
+`prize_exchange` and the World-free half of `muscle_dome` - live in
+[`legaia-engine-minigames`](../engine-minigames/README.md) and are
+re-exported here at their old paths; this crate keeps their `World` glue
+and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
+`fishing_scene`, `fishing_venue`, `muscle_dome*`):
 
 - `dance` - Noa's dance rhythm minigame, driven by the parsed step chart. It
   also owns the two `minigame_actor` pools the overlay's draw kernels read: the
@@ -481,7 +481,9 @@ presentation left to the host:
   course selection and Master-course length gating, per-leg scoring, the
   between-leg HP restore, and settlement into casino coins. A leg pays
   nothing; a contest pays. Driven by `World::report_muscle_leg` /
-  `World::settle_muscle_contest`.
+  `World::settle_muscle_contest`. The contest ladder, course tables, damage
+  model and hub envelopes are World-free and live in `engine-minigames`;
+  this module keeps the leg session and re-exports them.
 - `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
   the arena shell, the ground grid, the lead's assembled battle form and the
   ladder's monster, posed off the session's turn edge and framed by
@@ -562,8 +564,8 @@ presentation left to the host:
   retail windowing behind the `retail_static_window` option).
 - `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
   target-menu row dedup / labelling and the overlap-relaxation layout
-  (`FUN_801D9D3C`). `BattleSession::enemy_menu_rows` rebuilds the rows every
-  time a picker opens.
+  (`FUN_801D9D3C`), reached each battle frame through
+  `battle_hud::battle_intro_names` on both hosts.
 - `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
   context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
   fixed-template spawn (`FUN_801DE478`), the list-panel row layout
@@ -657,17 +659,13 @@ docs carry the retail provenance.
   `part_motion` (a move-VM part's motion block between steps),
   `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
   `camera_rel_glide`, `object_effect` (the `0x80083FF8` object-effect table).
-- **Battle** - `battle_anim` (per-actor clip playback), `battle_events`
-  (the action SM's event queue), `battle_arts` / `battle_magic` (the Arts and
-  Magic submenus), `battle_open` (the formation open banner),
-  `battle_party_form` (a member's assembled battle form, once for both
-  hosts), `battle_cam_inputs`, `battle_afterimage` (Super / Miracle Art
-  ghosts), `battle_body_blend`, `battle_effect_clut` / `battle_status_clut`
-  (effect palette stage, status recolour), `battle_sideband_textures`
-  (`readef.DAT` pages), `battle_steal` (death spoils), `battle_return_flags`
-  (MAIN INIT's back-from-battle story-flag arm), `sfx_cue` (cue id → ring /
-  XA clip), `magic_xp`, `retail_magic`, `seru_learning`, `seru_stats`,
-  `tactical_arts` (learn-on-use), `spell_party_broadcast` (`FUN_8003053C`).
+- **Battle** - `battle_arts` / `battle_magic` (the Arts and Magic
+  submenus), `battle_open` (the formation open banner), `battle_party_form`
+  (a member's assembled battle form, once for both hosts),
+  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages),
+  `sfx_cue` (cue id → ring / XA clip), `spell_party_broadcast`
+  (`FUN_8003053C`). The kernel modules re-exported from `engine-battle` are
+  mapped in [its README](../engine-battle/README.md).
 - **Field** - `field_events` (the field VM's event queue), `field_ground`
   (walk-ground heightfield as a render surface), `field_lit_mesh` (the
   light-source TMD rows' shading), `field_view_window` (the visible-tile
@@ -694,7 +692,7 @@ docs carry the retail provenance.
   screen's host half), `debug_char_editor`, `dev_menu_host`,
   `dialog_pacing` / `dialog_picker_slide` (typewriter reveal, picker slide),
   `title_screen_atlas`, `publisher_logos`, `game_over` (party wipe → title),
-  `prize_exchange` (casino sub-screen `0x20`).
+  `prize_exchange` (casino sub-screen `0x20`; rules in `engine-minigames`).
 - **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
   `minigame_floor`, `minigame_status` (the engine's affordance rows),
   `dance_cast_scene`, `dance_tutorial`, `fishing_scene`, `fishing_chrome`,

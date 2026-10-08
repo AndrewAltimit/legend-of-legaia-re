@@ -279,7 +279,7 @@ counter `DAT_801C8FE4`). Verified live: the Zeto mid-cast states hold
 | `0xA2..0xA4` Gi/Che/Lu Delilas | id − `0x29` = Blazing Slash / Megaton Press / Plasma Strike | every 3rd round |
 | `0xA6` Sim-Seru Gaza | Neo Star Slash `0xA6` | odd rounds, MP >= 200 |
 | `0xA8` Rogue | Element Change `0xAF`; then Rogue Wind/Thunder/Flame via `DAT_801C8FE4 − 0x50` | element-cycling counter |
-| `0xB3` Songi (Seru-Kai) | Genocidal Cannon `0xB3` | two-turn charge latched in record `+0x1C` |
+| `0xB3` Songi (Seru-Kai) | Genocidal Cannon `0xB3` | at or below half HP with MP >= 255, a turn the core picked a physical strike arms record `+0x1C` (half the time); armed, every turn is the cannon |
 | `0xB4` / `0xB5` / `0xB6` Cort forms | ESM `0xAD` / Mystic Circle `0xB7` / Mystic Shield `0xAC`; Ultra Charge `0xA5` → Final Crisis `0xB4`, Doomsday `0xB6`; the `0xA2..0xA5` → Dead End Crisis `0xA1` round ladder | round-scripted |
 | species bands (`0x43+`, `0x54+`, `0x59+`, `0x62+`, `0x6B+`, `0x99..0xA1`, ...) | Steal `0x51`, Power Up `0x52`, White Shield `0x60`, Rolling Flare `0x5A`, Power Charge `0x72`, Void Accessories `0x73`, Paralyzing Wave `0x75`, Death Game `0x76`, Thunder Storm `0x77`, Stone Circle `0xB9`, Chaos Breath `0x4E`, Jugger Power `0xBA`, Lapis Wave `0xB5`, ... | HP-fraction / cadence gates |
 

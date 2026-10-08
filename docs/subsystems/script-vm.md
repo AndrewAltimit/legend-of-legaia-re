@@ -268,6 +268,16 @@ plays the engagement as the touch-resumed interaction timeline
 `0x21` leaves the placement context's PC past it, as the shared retail context
 does.
 
+The system script reaches placed objects the same way. `rugi`'s `P1[0]`, once
+the wall is opened (`0x57B`), freezes the two gate leaves on the first frame
+of their clips with `CC 01 35` / `CC 02 35` (`+0x62 = (+0x62 & 0xFF7F) |
+0x20A`: hold, restart, clamp - the lowered pose) and parks partition-0 record
+6, the stone block the opening leaves behind, with `A3 06 7F 7F`. Both land on
+the objects' actors, whose anim tick and draw read them on the next frame; the
+engine routes a system-script `MOVE_TO` to any resolved channel and the
+clip-control writes (`AB` / `AC <id> <bit>`, `CC <id> 35` / `36`) to a resolved
+object's channel and its prop clip (`World::step_field_cross_context_actor_op`).
+
 A mid-talk glide on the talker itself (`37` / `41` / `47` with no target
 byte) parks the record (`+0x10 |= 0x400`) until the walk kernel's terminal
 frame clears the bit (`FUN_8003774C`). The engine's talk runner plays no walk
@@ -894,7 +904,7 @@ the live give-item is inlined in the dispatcher here.) NB the chest's announceme
 
 - Copies the `name_len`-byte destination scene NAME from operand+3 into a local buffer (null-terminated) and calls `func_0x8001FD44(name, idx)` - the **scene-change packet** (writes the name into the active scene-name buffers `0x8007050C` / `0x80084548`; sets the transition flag `_DAT_1F800394 |= 0x40`).
 - `idx` is the sign-extended `i16` at operand[0..2] (a story/entry id; distinct from the `0x3E` 7-id `map_id`).
-- Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, `+0x80` if the high bit is set - the far half of the tile) and the arrival facing into `_DAT_80073EFC` from `dir & 7` through the 8-entry i16 compass table at SCUS `0x80073F04` (`[0, 0x200, .. 0xE00]` - facing = `(dir & 7) * 0x200` in the 12-bit angle space). Engine: `World::seat_player_at_tile` + `World::face_player_sector` apply both on warp arrival.
+- Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, `+0x80` if the high bit is set - the far half of the tile) and the arrival facing into `_DAT_80073EFC` from `dir & 7` through the 8-entry i16 compass table at SCUS `0x80073F04` (`[0, 0x200, .. 0xE00]` - facing = `(dir & 7) * 0x200` in the 12-bit angle space), which the destination's entry script copies onto the player with `4C 3A` ([script-vm-menuctrl.md](script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms)). Engine: `World::seat_player_at_tile` + `World::face_player_sector` apply both on warp arrival, the heading a half-turn round in `render_26`.
 - PC += 7 + name_len.
 
 A scene's controller script lists every reachable destination as one of these ops - see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode - see [§ Field dialogue](#field-dialogue-has-no-opcode).)
@@ -1314,12 +1324,19 @@ Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
 `enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
 the host the one or two calls in emission order.
 
-Only `op43_sub12_calls` is wired. The host trait method that receives the
-calls has a no-op default body and no renderer implements it, so
-`build_packet` and `enqueue` are exercised by tests alone - wiring them
-needs a GP0-level host owning an ordering table and the back-buffer flag.
-No on-disc scene script uses sub-op `0x12`, so the arm never fires on
-retail data either way.
+The ten ending-vignette scenes (`edteien`, `edbylon`, `edbalden`,
+`edretoin`, `edkorout`, `edbubu`, ...) each issue
+`43 12 00 00 00 00 40 01 E0 00 00 02 00 00` just before the image panel
+`43 13` with the same payload: copy the frame the GPU has drawn (`(0, 0)`,
+`320 x 224`) to `(512, 0)`, which the panel then shows as the vignette's
+photo, shrinking it into a corner beside the credit names. On the console
+the framebuffer is VRAM; the port's frame lives in a GPU attachment, so the
+copy waits on a frame-grab handshake (`World::framebuffer_grab_pending` /
+`land_framebuffer`, `crate::world::FrameGrab`): a play host reads its drawn
+frame back into the display page (`legaia_engine_ui::vram_capture::land_display_frame`),
+and the next drain (`World::apply_vram_rect_copies`) runs the copy. Both play
+hosts take part; a host that cannot read back leaves the handshake off and
+the copy runs at once.
 
 ### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 

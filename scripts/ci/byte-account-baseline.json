@@ -4,7 +4,7 @@
     "data_field_streaming": 100.0,
     "field_map": 100.0,
     "lzs_container": 100.0,
-    "overlay_data_blob": 99.92,
+    "overlay_data_blob": 99.95,
     "pack": 100.0,
     "scene_asset_table": 99.99,
     "scene_tmd_stream": 100.0,
@@ -17,17 +17,17 @@
     "data_field_streaming": 0,
     "field_map": 0,
     "lzs_container": 0,
-    "overlay_data_blob": 7708,
+    "overlay_data_blob": 1759,
     "pack": 0,
     "scene_asset_table": 0,
     "scene_tmd_stream": 0,
     "scene_vab_stream": 0,
-    "summon_readef": 20,
+    "summon_readef": 0,
     "vab_multi_bank": 0
   },
   "disc": {
     "accounted_pct": 99.83,
     "structural_pct": 99.83,
-    "work_bytes": 8095
+    "work_bytes": 1923
   }
 }

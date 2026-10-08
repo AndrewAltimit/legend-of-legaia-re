@@ -1075,4 +1075,16 @@ mod tests {
         );
         assert_eq!(world.party.roster.members[2].hp_mp_sp().hp_max, 210);
     }
+
+    #[test]
+    fn the_boot_voice_volume_halves_to_one_hundred() {
+        // The word this reads is the voice-volume config `_DAT_80084580`,
+        // which the cold reset seeds at 200 - so a freshly booted game keys
+        // the arena cue at 100 per channel (`other_game_overlay::cue_volume`,
+        // the PROT 0977 arena cue). This is what settles the slot as a
+        // volume rather than a coordinate.
+        let boot = GAME_STATE_COLD_RESET.voice_volume;
+        assert_eq!(boot, 200);
+        assert_eq!(crate::other_game_overlay::cue_volume(boot as u32), 100);
+    }
 }

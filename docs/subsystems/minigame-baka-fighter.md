@@ -880,6 +880,38 @@ in `actor + 0x50`, drawn by the `FUN_801d67f0` hook) over the "YOU" / "WIN!" /
 "LOSE..." / "DRAW" / "ROUND" / "FIGHT!" / "PERFECT!!" / "GAME OVER" cells of
 the widget table.
 
+### The round-result banners
+
+The resolution SM's tail (`FUN_801d3468`, `0x801D3864..0x801D39F0`) raises
+them once per round, gated by the sub-state `DAT_801DBF84`, the first frame a
+fighter's HP (`record +0x08`) is down, and reads which off the two HPs and
+the untouched flag `DAT_801DBF24`. The cabinet raises that flag at the
+round's go (`0x801D04E0`), and both exchange arms that damage slot 0 clear
+it (`0x801D375C`, `0x801D37B8`). Every spawn goes through the screen-centre
+wrapper at `(0xA0, 0x78)` with the template `0x801DB9C4`. The two-word
+banners shift the second word right by `0x30`, in the delay slot of the next
+`jal`, and "YOU" left by the same.
+
+| Round | Widgets (x) | Announcer `FUN_8003D53C(0x20, ch, dur)` |
+|---|---|---|
+| both HPs down | DRAW `0x0A` (`0xA0`) | ch `4`, `0x35` |
+| player down | YOU `0x07` (`0x70`) + LOSE... `0x09` (`0xD0`) | ch `3`, `0x6D` |
+| foe down, player hit | YOU `0x07` (`0x70`) + WIN! `0x08` (`0xD0`) | ch `2`, `0x45` |
+| foe down, player untouched | PERFECT!! `0x11` (`0xA0`) | ch `5`, `0x39` |
+
+The perfect arm also increments `DAT_801DBF20`. **Confirmed** (disassembly).
+
+In the port they are `BakaChrome::raise_result`, raised by `BakaFight`'s
+`tick_result_banner` and drawn in the chrome frame every surface already
+draws: the native window and the browser play page through
+`hud_widget_quads`, the minigames page through `baka_chrome_json`. Retail's
+lifetime belongs to the spawn template, which the port does not run. The port
+holds the banners for the duel state's round-over hold (`0xB5` frames from the
+deciding exchange, the same frames the round itself stays decided), then
+lets the next round's banner, deferred meanwhile, take the screen. On the
+deciding round the banners stand until the cabinet reaches its tally.
+**Inferred** - no library capture holds a result screen.
+
 ### Impact, cue and afterimage
 
 Three small bodies sit under the exchange path, and all three have shapes
@@ -1303,11 +1335,16 @@ paying out banks it; a mid-run loss forfeits the whole pot, which the
 ["GAME OVER" state](#a-mid-run-defeat-really-does-forfeit-the-pot) zeroes
 `_DAT_80084440` to do, and the final rung pays out automatically through the
 all-clear chain. The
-pot/choice bookkeeping is `engine-core::baka_fighter::LadderRun`, reached
-through the `baka_run_*` WASM surface; the per-rung prizes are the roster
-records' gold column, so a full 14-rung clear pays the 460-coin total
-(disc-gated oracle `crates/web-viewer/tests/baka_presentation_wasm_api.rs`,
-`ladder_run_cash_out_over_real_prizes`).
+pot / choice bookkeeping is the cabinet's own, on every host: the per-frame
+kernel `BakaFight::frame` (engine-minigames) runs the front end, the duel's
+throw, the result tally, the sheet and the next rung off the packed pad
+words, and hands back what the host's winnings accumulator does (add the
+tally's drain, clear it on a forfeit, leave on the exit state). The world
+tick calls it for the native window and the play page, and the standalone
+minigames page calls it through `baka_frame`; the per-rung prizes are the
+roster records' gold column (disc-gated oracle
+`crates/web-viewer/tests/baka_presentation_wasm_api.rs`,
+`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
 
 The **duel facing** is the retail arrangement: the player stands on the LEFT
 of the arena and faces RIGHT toward the opponent (see
@@ -1754,10 +1791,18 @@ tick beats a real ladder opponent and banks the parsed prize). Host
 simplifications, documented in the module: exchange recovery is immediate
 (cooldowns pace re-entry).
 
-One host departure is worth naming: retail's duel state only *reads* the round
-timer `DAT_801DBF88` against `0xB5` - the fight resolution SM and the actor tick
-are what advance it - while the port's cabinet has no sibling driving it and so
-advances it itself. The threshold and everything it gates are retail's.
+Retail's duel state only *reads* the round timer `DAT_801DBF88` against
+`0xB5` (`0x801D0620`); the fight resolution SM advances it, by the frame step,
+only on the frames its round is decided (`0x801D3614..0x801D3668`): either
+fighter's finisher flag `+0x2C` - raised by `FUN_801D3B18` when a special lands
+its full chain (`0x801D3C2C`), which is how a KO ends a round - or both HPs at
+zero. So the round-over hold runs `0xB5` frames from the deciding exchange, and
+until the duel state sees it out and moves to the round setup (zeroing the
+timer, `0x801D063C`) the fighters, their HP and the result banners stay as the
+exchange left them. The port's cabinet advances the word itself on those frames
+(`CabinetInput::round_clock`), and `BakaFight` holds `RoundOver` until the
+cabinet has left the duel state, so all three surfaces show the decided round
+for the whole hold.
 
 The **cabinet shell** (`FUN_801cf388`) runs from-scratch as
 `engine-core::baka_cabinet::BakaCabinet`, and `BakaFight` owns one, stepping it

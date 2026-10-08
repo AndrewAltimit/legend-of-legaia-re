@@ -49,7 +49,7 @@ own finisher; blocking and the limb-height "Miss" are separate mechanics.
 ## Contents
 
 - [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [juggle window](#the-juggle-window---what-makes-a-monster-juggleable) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
-- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [Spirit gauge extension](#spirit-gauge-extension)
+- [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [Spirit gauge extension](#spirit-gauge-extension) · [AP gauge writers](#the-battle-ap-gauge---every-writer)
 - [Stats and the actor record](#stats-and-the-actor-record) - [applicator `FUN_800402F4`](#damage-application-primitive---fun_800402f4) · [stat block mapping](#actor-stat-block--monster-record-mapping) · [initiative](#initiative-key-seeding-fun_801da780) · [formation advantage](#formation-advantage-fun_80051d84) · [spell list](#spell-list-record-0x4c) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9](#selector-9---accuracy--evasion-roll) · [stat buffs](#stat-buff-selectors-17)
 - [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte) · [Seru-magic side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
 - [Rewards and costs](#rewards-and-costs) - [victory spoils](#victory-spoils-rewards) · [MP cost](#mp-cost--ability-bit-modifiers) · [RNG](#rng-primitive)
@@ -541,7 +541,8 @@ Its HP delta is built from live battle stats in three stages - all byte-traced
 from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls. In the
 pseudocode below `INT` is the actor's `+0x168` stat (for monsters that is
 record `+0x18`, the bestiary INT column; for the party caster it is the
-character's `+0x168` accuracy line) - **not** the AGL action gauge (`+0x0E`):
+character record's live INT `+0x11A`, which the battle loader copies in with no
+equipment fold) - **not** the AGL action gauge (`+0x0E`):
 
 ```c
 // Stage 1 - rolls (FUN_801dd0ac, summon branch attacker_slot == 7)
@@ -1000,10 +1001,40 @@ Engine: kernels `battle_formulas::summon_spell_xp_gain` /
 `engine-core::magic_xp::thresholds_from_scus` (decoded off the user's
 `SCUS_942.54`, disc-gated `magic_xp_disc`); live wiring
 `World::cast_spell_on_slots` → `World::accrue_summon_spell_xp` (XP persists in
-the record's `+0x8` bytes, so it round-trips through saves). The engine
-narrows "summon attacker" to the Seru-magic id block its summon path covers
-(`0x81..=0x8B`); the evolved-spell ids above that block accrue nothing until
-the summon coverage widens.
+the record's `+0x8` bytes, so it round-trips through saves). "Summon
+attacker" covers the base, evolved and high blocks (`0x81..=0x95`,
+`0x99..=0xA0`): the tail tests only for attacker slot 7 (`0x801DE440`) and
+finds the slot by the live spell id `actor[+0x1DF]`, and every damaging
+module strikes through `FUN_801DD0AC(0x12, 7, seat)` - the high block too
+(Juggernaut `0x801F7E0C`, Palma `0x801F8114`, Mule `0x801F7E4C`, Meta
+`0x801F7BA0`, Terra `0x801F7CCC`, Ozma `0x801F8E04`). Port:
+`summon::module_trains_spell_xp`.
+
+Two high-block modules strike nothing and credit the XP word in their own
+arm, behind the same special-battle gate:
+
+- **Horn** `0x9C` (PROT 0930) walks every party seat
+  (`0x801F786C..0x801F7B1C`), refills it to max HP and clears its status word
+  `+0x16E`, crediting `+3` for a seat that was missing HP (`0x801F79A0`) and
+  `+1` for a seat that carried a status (`0x801F7A14`). Port
+  `magic_xp::horn_seat_xp_gain`.
+- **Jedo** `0x9D` (PROT 0931) branches on the scripted-fight flag
+  `ctx[+0x287]` (`0x801F8344`). A scripted fight takes the striking arm, so
+  the tail credits per hit. Any other fight takes `0x801F8558`, which strikes
+  nothing: per monster seat `3..=6` with non-zero HP it bumps the caster's
+  magic-rank counter (record `+0x9C`), sets the seat's `+0x21C` to `0xC8`,
+  and credits `+3`. Port `magic_xp::JEDO_XP_PER_LIVING_MONSTER`; the
+  non-scripted arm's effect on the monsters is not ported (the engine still
+  folds the catalog's placeholder outcome).
+
+The three heal modules accrue in their own arm instead, per healed seat,
+into the same XP word (`+0x5D0 + slot * 4` off `0x80084140` is record
+`+0x8`), under the same special-battle gate: Vera `+0xC` when the seat's
+missing HP covers the full amount and `+0x4` when it clamps
+(`0x801F7CCC` / `0x801F7CA4`); Orb `+0x4` / `+0x2` (`0x801F7B50` /
+`0x801F7B2C`); Spoon `+0x4` / `+0x2` (`0x801F80D4` / `0x801F80B0`). A seat
+missing nothing earns nothing. Port: `magic_xp::module_heal_xp_gain`, banked
+with the damage path's gain.
 
 ### Spirit gauge extension
 
@@ -1024,6 +1055,51 @@ extended value, so the next turn's arts input opens on the longer bar. State
 `0x3E`'s item class 5 stages the same `min(base * 7 / 5 + 8, 0x120)` shape off
 the target. The `100` cap is the Spirit gauge's, not a second damage cap, and
 nothing here is written to HP.
+
+### The battle AP gauge - every writer
+
+The 0..100 AP gauge Super and Miracle Arts spend is the battle actor's
+`+0x170` halfword (the "Spirit gauge" above). A byte census of
+`sh rX,0x170(rY)` over PROT 0898 finds eighteen stores; the only other images
+that store it are the three light-row heal modules, PROT 0938 (Chaos Breath)
+and four SCUS battle-load / per-frame sites (among them the Maximum AP
+passive's pin at 100, `0x8004CECC`). Grouped by what they do:
+
+| Writer | Site | Effect |
+|---|---|---|
+| per-action accrual | `FUN_801E295C` state `0x50`, `0x801E5D60..0x801E5E8C` | `gauge -= +0x224` (the turn's accrued art cost), then `+0x224 = 8`, or `0x20` when the action category `+0x1DE` is `4` (Spirit); a party seat adds the AP Boost passives on record `+0xF8` (`0x200`: `acc / 4`, `0x100`: `acc / 10`); then `gauge += acc`, capped at 100 |
+| damage taken | `FUN_801DDB30` `0x801DE1C8..0x801DE2D8`, `FUN_801EC3E4` `0x801EDB80..0x801EDCC8` | the **defender** gains `max(1, damage * 100 / maxHP)` plus the same two passive arms, capped at 100 ([the two copies](#the-spirit-gauge-fill-is-duplicated)) |
+| arts builder | `FUN_801EED1C` `0x801EF490..0x801EF994` | a transient debit per chained art and its refund at the builder's tail - net zero; the real spend is the state-`0x50` subtraction ([arts-command-gauge.md](arts-command-gauge.md#where-the-charge-actually-lands)) |
+| level-9 heal | PROT 0905 `0x801F7F24..0x801F7F48`, PROT 0911 `0x801F7E10..0x801F7E3C`, PROT 0919 `0x801F8394..0x801F83C0` | cure tier `4` doubles each cured seat's gauge, capped at 100 |
+| clamps | `FUN_801DABA4` `0x801DAC04..0x801DAC1C`, `FUN_801E9FD4` `0x801EB960..0x801EB974` | the dead-slot sweep caps at 100; monster `0x8A`'s Chaos Breath pick cuts its own gauge to 50 |
+
+No store credits the actor that **dealt** the damage. The rest of the
+accrual's behaviour follows from the table. Every action ends with `+8`, but a
+Spirit action ends with `+32` **instead** of it, not `+32 + 8`, because both
+are the one accumulator byte. The `+8` lands after the action's own spend in
+the same block, so a 99-AP Miracle Art from a full gauge leaves
+`100 - 99 + 8 = 9`. And because the heal doubles whatever the gauge holds at
+that moment, a level-9 heal **after** the target's turn yields `(AP + 8) * 2`
+and one **before** it `AP * 2 + 8`: 17 AP becomes 50 or 42, 42 becomes 100 or
+92.
+
+These observations - the per-action `+8` applied at the end of the actor's own
+action, Spirit's `+32` in its place, a party member's AP rising when an
+enemy's kicks and punches land on them, the Miracle Art's 9-AP remainder, and
+the level-9 Vera / Orb / Spoon doubling with its ordering pairs - were first
+reported by the_rabidsquirel (community research, save-state testing on
+retail); the sites above are the disassembly behind them.
+
+Port: the accrual is `engine-vm::battle_action::done` (`done_cleanup`), the
+damage fill `battle_formulas::spirit_gauge_fill`, and the tier-4 doubling
+`cast_seru_ticks_a::cure_tier4_ap`, which the Vera and Orb ticks run and
+Spoon's arm-7 cure sweep (`cast_seru_ticks_b::spoon_cure_sweep`) runs beside
+its phase chain. The cure tier is the side-effect stager's latch, and retail
+stages it from inside each module rather than from the cast band: the
+`jal 0x801f3d3c` sits in every image `0903..=0923` except 0907 (Nighto) and
+0916 (Aluru), so the engine stages it for the base **and** evolved blocks
+minus those two (`summon::module_stages_side_effect`) - which is what lets
+Spoon (`0x91`, evolved) read its own tier.
 
 ## Stats and the actor record
 
@@ -1131,7 +1207,20 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 | `+0x18` | `+0x168/+0x16A` | **INT** | magical damage / magic defense (summon/arts kernel) + accuracy/evasion seed (selector 9); the bestiary INT column |
 | `+0x1A` | `+0x164/+0x166` | **SPD** | turn-order initiative seed |
 
-> **Stat names** match the game's own labels (the "Power Up" buff prints *"agility increased!"* and bumps `+0x0E`) and the fan bestiaries; the curated `enemies.toml` `agl` / `int` columns byte-match `+0x0E` / `+0x18` (see `gamedata/tests/enemy_stats_vs_disc`). Earlier drafts of this doc swapped two of them - what was labeled "SP/spirit" is **AGL** (`+0x0E`), and what was labeled "AGL" is **INT** (`+0x18`). The `+0x168` actor slot ("accuracy" below) is therefore the monster's INT; party members seed `+0x168` from their AGL-derived accuracy instead (an engine model). Per Meth962, INT "affects your magical damage and defense against other magical spells" - which the summon/arts kernel (`FUN_801dd0ac`) bears out: attacker INT is a damage term, defender INT a mitigation term.
+> **Stat names** match the game's own labels (the "Power Up" buff prints
+> *"agility increased!"* and bumps `+0x0E`) and the fan bestiaries; the curated
+> `enemies.toml` `agl` / `int` columns byte-match `+0x0E` / `+0x18` (see
+> `gamedata/tests/enemy_stats_vs_disc`). Earlier drafts of this doc swapped two
+> of them - what was labeled "SP/spirit" is **AGL** (`+0x0E`), and what was
+> labeled "AGL" is **INT** (`+0x18`). The `+0x168` actor slot ("accuracy" below)
+> is therefore the monster's INT, a full halfword (Songi's boosted 324 does not
+> fit a byte, and every reader loads it with `lhu`); a party member's is its INT
+> too - `FUN_80053CB8` loads record `+0x11A` into `+0x16A` (`0x80053F88`) and
+> copies it to `+0x168` (`0x800541CC`), and its equipment loop folds only the
+> UDF / LDF / SPD bytes. Per Meth962, INT "affects your magical damage and
+> defense against other magical spells" - which the summon/arts kernel
+> (`FUN_801dd0ac`) bears out: attacker INT is a damage term, defender INT a
+> mitigation term.
 
 **Battle-load stat boost.** The record halfwords above are *not* the values the fight uses. After the plain copy, `FUN_80054CB0` boosts four combat stats, picking one of two profiles by the battle-context flag `_DAT_8007BD24 + 0x287` (= `(*(u8*)0x8007BD60 >> 5) & 4`, bit 7 of a per-battle flags byte set by `FUN_800513F0`):
 
@@ -1266,20 +1355,18 @@ this roll and does not miss on it. The `+0x16C` the refund tests is the
 while the queued Item action is still owed a turn. Retail's "Miss" on a normal attack is the
 [limb-vs-height mismatch](#the-limb-vs-height-miss) in the melee kernel's head.
 
-**Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; the
-`battle_session` resolver still applies it per strike. `World::apply_basic_attack`
-**does not** - it used to, and the consequence was a fight running backwards.
+**Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; no live
+strike path applies it. `World::apply_basic_attack` **does not** - it used to, and the consequence was a fight running backwards.
 Each actor's `+0x168` value lives in the World-side `battle.accuracy` /
-`battle.evasion` arrays, and the two sides are seeded from different stats:
-party slots from each character's AGL-derived `acc`/`eva` (via
-`compute_battle_stats` in `seed_party_battle_stats`), monster slots from
-`MonsterDef::accuracy`/`evasion` (both = the monster's INT, record `+0x18`). A
-level-one party carries AGL around 100 where the opening bestiary carries INT
-around 12, so gating melee on `acc / (acc + eva)` gave the party an ~89% hit
-rate and the monsters ~11%. Regression:
-`apply_basic_attack_does_not_roll_accuracy`.
-
-For party members, both accuracy and evasion derive from the character's AGL with the same scaling, so the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied. (For monsters, `+0x168` is loaded directly from record `+0x18` = INT.) That the two sides read different record columns at all is an **engine model**, and it is why any surviving consumer of these arrays needs re-checking before it is trusted for balance.
+`battle.evasion` arrays, both seeded from INT: party slots from the
+character's INT less its equipment INT bytes (`seed_party_battle_stats`),
+monster slots from the boosted record `+0x18` (the battle seed in
+`field_loop`). An earlier seeding took the party side from AGL, which put
+Vahn's 190 where retail reads his 147 and gave every party summon and every
+monster special's defender roll the wrong stat; when that seeding was paired
+with a melee accuracy gate, a level-one party (AGL around 100) against the
+opening bestiary (INT around 12) hit ~89% of the time and the monsters ~11%.
+Regression: `apply_basic_attack_does_not_roll_accuracy`.
 
 #### Stat-buff selectors (1..7)
 
@@ -1697,7 +1784,9 @@ stager-free spells (Nighto, Aluru, the Ra-Seru band).
 
 Engine: both halves run in the live loop. The stager
 (`engine-vm::seru_side_effect::stage_side_effect`) fires once per player Seru cast at the
-engine's single cast fold seam, through `World::stage_seru_side_effect`; the
+engine's single cast fold seam, through `World::stage_seru_side_effect`, for
+exactly the ids whose module calls it - the base and evolved blocks minus
+Nighto and Aluru (`summon::module_stages_side_effect`); the
 finisher switch (`apply_hit`) runs per damaged target in the same fold,
 through `World::apply_seru_side_effect`. The banner pass is
 `engine-vm::move_no_effect_guard`, live from the SM's state `0x36`.
@@ -2112,6 +2201,13 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
   against other magical spells") is what the summon kernel bears out, and his
   [100% walkthrough](https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721)
   grounds the curated enemy tables in `legaia-gamedata`.
+- **the_rabidsquirel** - the battle AP accrual, first reported from
+  save-state testing on retail: the per-action `+8` at the end of the actor's
+  own action, Spirit's `+32` in its place, the AP a party member gains when
+  an enemy's hit lands on them, the 9 AP a Miracle Art leaves, and
+  the level-9 Vera / Orb / Spoon heal doubling the target's AP, with the
+  before / after-turn pairs that pin its order. Checked against the
+  disassembly under [the battle AP gauge](#the-battle-ap-gauge---every-writer).
 - The disassembly: `ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` /
   `overlay_battle_action_801ec3e4.txt` (the kernel), `overlay_0898_801e295c.txt`
   (the action state machine that writes the angle and distance words),

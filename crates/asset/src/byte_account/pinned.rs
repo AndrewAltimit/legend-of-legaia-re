@@ -55,6 +55,8 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     }
     if prot_index == 898 {
         claim_effect_proto_records(buf, sink);
+        claim_subdraw_records(buf, sink);
+        claim_unread_affinity_block(buf, sink);
         claim_battle_overlay_strings(buf, sink);
         claim_battle_jump_tables(buf, sink);
         claim_side_effect_banners(buf, sink);
@@ -62,12 +64,145 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     if prot_index == STR_OVERLAY_PROT_INDEX {
         claim_str_overlay_tables(buf, sink);
     }
+    if prot_index == WORLD_MAP_RENDER_PROT_INDEX {
+        claim_world_map_prim_dispatch(buf, sink);
+    }
+    if prot_index == MENU_OVERLAY {
+        claim_save_text_slots(buf, sink);
+    }
+    if prot_index == DEBUG_MENU_PROT_INDEX {
+        claim_value_monitor_name_tables(buf, sink);
+    }
     claim_consumer_pinned_tables(buf, sink, prot_index);
+    if prot_index == ARENA_PROT_INDEX {
+        claim_arena_course_ladder(buf, sink);
+    }
+    if prot_index == crate::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32 {
+        claim_fishing_species_names(buf, sink);
+    }
     if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
         claim_field_probe_tables(buf, sink);
     }
     if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
         claim_other3_roster(buf, sink);
+    }
+}
+
+/// PROT entry of the Muscle Dome arena's door / init overlay.
+const ARENA_PROT_INDEX: u32 = 977;
+/// The arena's course descriptor table: three `{ i32 round_count; u32
+/// first_round }` records (`legaia_engine_core::muscle_dome::COURSE_TABLE_VA`).
+const ARENA_COURSE_TABLE_VA: u32 = 0x801D_1A08;
+/// The per-`(course, round)` score table, sixteen `i32` cells per course
+/// (`legaia_engine_core::muscle_dome::SCORE_TABLE_VA`).
+const ARENA_SCORE_TABLE_VA: u32 = 0x801D_1860;
+/// The two `lui` sites that form [`ARENA_SCORE_TABLE_VA`]: the settlement's
+/// `DAT_801D1860 + course * 0x40 + (round - 1) * 4` read (`0x801D10E8`,
+/// `sll v1,v1,0x6` on the course) and its sibling at `0x801D1234`.
+const ARENA_SCORE_TABLE_SITES: [u32; 2] = [0x801D_10E8, 0x801D_1234];
+const ARENA_COURSES: usize = 3;
+const ARENA_MAX_ROUNDS: usize = 16;
+
+/// The arena's course ladder, read the way `FUN_801D1510` and the settlement
+/// read it: the score table (three rows of sixteen cells, the row stride the
+/// consumer's `sll 6` states), every course's run of `{ u32 label_va; u32
+/// monster_id }` round records reached through the descriptor table's
+/// `first_round` pointers, and the label each round names - the opponent-name
+/// pool at the head of the image, which is reached only through those
+/// records. The parser of record is
+/// `legaia_engine_core::muscle_dome::parse_course_ladder`; this mirrors its
+/// validation (three courses of `1..=16` rounds, non-zero byte monster ids)
+/// and claims nothing when any of it fails.
+pub(super) fn claim_arena_course_ladder(buf: &[u8], sink: &mut Sink) {
+    const SLOT_A: u32 = 0x801C_E818;
+    let at = |va: u32| va.checked_sub(SLOT_A).map(|o| o as usize);
+    let rd = |o: usize| legaia_bytes::u32_le(buf, o);
+    let score_ok = ARENA_SCORE_TABLE_SITES
+        .iter()
+        .all(|&site| at(site).and_then(|o| lui_pair_address(buf, o)) == Some(ARENA_SCORE_TABLE_VA));
+    let Some(table) = at(ARENA_COURSE_TABLE_VA) else {
+        return;
+    };
+    let mut runs = Vec::new();
+    for c in 0..ARENA_COURSES {
+        let (Some(count), Some(first)) = (rd(table + c * 8), rd(table + c * 8 + 4)) else {
+            return;
+        };
+        let count = count as usize;
+        let Some(base) = at(first) else {
+            sink.note("arena course ladder not claimed: a first_round pointer is below the image");
+            return;
+        };
+        if count == 0 || count > ARENA_MAX_ROUNDS || base + count * 8 > buf.len() {
+            sink.note("arena course ladder not claimed: a descriptor is out of range");
+            return;
+        }
+        for r in 0..count {
+            let id = rd(base + r * 8 + 4).unwrap_or(0);
+            if id == 0 || id > 0xFF {
+                sink.note("arena course ladder not claimed: a round's monster id is not a byte");
+                return;
+            }
+        }
+        runs.push((base, count));
+    }
+    if score_ok {
+        let start = at(ARENA_SCORE_TABLE_VA).unwrap_or(0);
+        sink.claim(
+            start,
+            start + ARENA_COURSES * ARENA_MAX_ROUNDS * 4,
+            OWNER_RECORD,
+            "arena score table, 3 courses x 16 i32 cells (FUN_801D1510 settlement)",
+        );
+    }
+    let mut labels = 0usize;
+    for (c, &(base, count)) in runs.iter().enumerate() {
+        sink.claim(
+            base,
+            base + count * 8,
+            OWNER_RECORD,
+            format!("arena course {c}: {count} round record(s) (label_va, monster_id)"),
+        );
+        for r in 0..count {
+            let Some(label) = rd(base + r * 8).and_then(at) else {
+                continue;
+            };
+            let Some(len) = buf
+                .get(label..)
+                .and_then(|t| t.iter().position(|&b| b == 0))
+            else {
+                continue;
+            };
+            sink.claim(label, label + len + 1, OWNER_STRING, "arena round label");
+            labels += 1;
+        }
+    }
+    sink.note(format!(
+        "arena course ladder: {} round record(s), {labels} label(s)",
+        runs.iter().map(|&(_, n)| n).sum::<usize>()
+    ));
+}
+
+/// The species names the fishing species table's `+0x00` pointers name - the
+/// banner string `FUN_801D4004` prints for a hooked fish. The table itself is
+/// a [`pinned_overlay_tables`] row; its pool is the head of the image, which
+/// nothing else reaches.
+pub(super) fn claim_fishing_species_names(buf: &[u8], sink: &mut Sink) {
+    use crate::fishing_species as fish;
+    let Some(species) = fish::parse(buf) else {
+        return;
+    };
+    for sp in &species {
+        let Some(name) = sp.name(buf) else {
+            continue;
+        };
+        let off = (sp.name_ptr_va - fish::FISHING_OVERLAY_BASE_VA) as usize;
+        sink.claim(
+            off,
+            off + name.len() + 1,
+            OWNER_STRING,
+            "fishing species name (fishing_species)",
+        );
     }
 }
 
@@ -86,6 +221,11 @@ pub(super) enum PinnedCount {
     /// a table whose field reads sit too far from the index arithmetic for
     /// that rule's straight-line scan.
     Layout { next: u32, site: u32 },
+    /// A counted loop whose index starts at the `li` at `first` and runs while
+    /// the `sltiu` / `slti` at `bound` holds: the count is the difference of
+    /// the two immediates. The index is subtracted back to zero before the
+    /// table is addressed, so neither immediate alone is the count.
+    Range { first: u32, bound: u32 },
 }
 
 /// One table whose base, stride and count are each read off a consumer
@@ -106,7 +246,7 @@ pub(super) struct ConsumerPinnedTable {
 /// Tables the generic array rules cannot size, each pinned by the
 /// instructions that consume it and re-checked against this image's own words
 /// before it is claimed.
-pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 3] = [
+pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 15] = [
     // DEBUG MODE's variable-monitor rows: the `FUN_8001C93C` row layout
     // (`+0x00` kind, `+0x04` y, `+0x08` value pointer, `+0x0E` label, `+0x24`
     // name table), walked inline by the menu loop at `0x801CEBC0`. The kind
@@ -173,6 +313,200 @@ pub(super) const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 3] = [
         },
         what: "contest hub sprite records",
     },
+    // The dance overlay's per-dancer motion scripts: `FUN_801D0640` forms the
+    // base at `0x801D0674`, indexes it `actor[+0x50] << 7` (one `0x80`-byte
+    // row per script) plus `actor[+0x9C] * 2`, and reads `(clip, frames)`
+    // halfword pairs until a negative clip rewinds the cursor. Nothing bounds
+    // `+0x50`; the next address the image forms, `0x801D46CC`
+    // (`0x801D2630`), closes four whole rows.
+    ConsumerPinnedTable {
+        prot: 980,
+        base_va: 0x801D_44CC,
+        stride: 0x80,
+        count: 4,
+        forms: &[(0x801D_0674, 0x801D_44CC)],
+        count_from: PinnedCount::Layout {
+            next: 0x801D_46CC,
+            site: 0x801D_2630,
+        },
+        what: "dance motion-script rows ((clip, frames) pairs, -1 rewinds)",
+    },
+    // The first of the two step-index lists `FUN_801CF470` picks between on
+    // `_DAT_801D514C` (`0x801CF5F8..0x801CF60C`): words read `lw` at
+    // `index * 4`, ending on a `-1`. The other list's base, `0x801D4488`, is
+    // the next address the image forms and closes eighteen whole words.
+    ConsumerPinnedTable {
+        prot: 980,
+        base_va: 0x801D_4440,
+        stride: 4,
+        count: 18,
+        forms: &[(0x801C_F5FC, 0x801D_4440)],
+        count_from: PinnedCount::Layout {
+            next: 0x801D_4488,
+            site: 0x801C_F608,
+        },
+        what: "dance step-index list A (u32, -1 terminated)",
+    },
+    // The Baka Fighter developer dump `FUN_801D553C` (retail's `ot5stat.txt`)
+    // walks its fighter-code labels with a pointer it keeps in a stack slot:
+    // the base is formed at `0x801D5588` (and again at `0x801D56DC`), stored
+    // at `sp+0x32C`, bumped `addiu v1,v1,0x10` per pass, and the pass count
+    // is `sltiu v0,s7,0x11` at `0x801D5754` - seventeen sixteen-byte labels.
+    // The pointer-bump rule cannot see a pointer that lives in memory.
+    ConsumerPinnedTable {
+        prot: 976,
+        base_va: 0x801D_B7A8,
+        stride: 0x10,
+        count: 17,
+        forms: &[(0x801D_5588, 0x801D_B7A8), (0x801D_56DC, 0x801D_B7A8)],
+        count_from: PinnedCount::Loop { site: 0x801D_5754 },
+        what: "Baka Fighter dev-dump fighter labels (FUN_801D553C)",
+    },
+    // `FUN_801D2A28`'s per-index score words, added into `_DAT_801DBED8`:
+    // the index is `_DAT_801DBEC8` clamped by `slti v0,a3,0x14` at
+    // `0x801D2A34` (and `li a3,0x13`), so twenty words from the base formed
+    // at `0x801D2A48`.
+    ConsumerPinnedTable {
+        prot: 976,
+        base_va: 0x801D_70C4,
+        stride: 4,
+        count: 20,
+        forms: &[(0x801D_2A48, 0x801D_70C4)],
+        count_from: PinnedCount::Loop { site: 0x801D_2A34 },
+        what: "Baka Fighter per-index score words (FUN_801D2A28)",
+    },
+    // The save menu's twelve-byte sprite cells: `FUN_801E3FF0` addresses
+    // `a0 * 12` (`sll v1,a0,1` / `addu` / `sll v1,v1,2`) off the base it forms
+    // at `0x801E4028` and reads `+6` / `+8` as the cell's size into a
+    // `0x2C` textured quad. The index is a caller immediate with no bound; the
+    // next formed address, the quad records at `0x801E50A8`, closes eight
+    // whole cells.
+    ConsumerPinnedTable {
+        prot: 899,
+        base_va: 0x801E_5048,
+        stride: 12,
+        count: 8,
+        forms: &[(0x801E_4028, 0x801E_5048), (0x801E_2298, 0x801E_5048)],
+        count_from: PinnedCount::Layout {
+            next: 0x801E_50A8,
+            site: 0x801E_2F1C,
+        },
+        what: "save-menu sprite cells (FUN_801E3FF0)",
+    },
+    // The save menu's twenty-byte quad records: `FUN_801E2EE4` addresses
+    // `(a3 & 0x3FF) * 20` off the base it forms at `0x801E2F1C` and reads
+    // `+0x0C`, `+0x0F` and `+0x13` into a `0x3C` gouraud-textured quad - the
+    // same record shape the contest hub's sprite table uses. The next formed
+    // address, the card read buffer at `0x801E5120` (`0x801DFAA0`), closes
+    // six whole records.
+    ConsumerPinnedTable {
+        prot: 899,
+        base_va: 0x801E_50A8,
+        stride: 0x14,
+        count: 6,
+        forms: &[(0x801E_2F1C, 0x801E_50A8)],
+        count_from: PinnedCount::Layout {
+            next: 0x801E_5120,
+            site: 0x801D_FAA0,
+        },
+        what: "save-menu quad records (FUN_801E2EE4)",
+    },
+    // The battle overlay's two per-command scalar tables, each five bytes,
+    // indexed by `(cmd - 0x0C) mod 5` that `FUN_801EC3E4` computes once and
+    // keeps at `sp+0x18`: `addiu a1,a1,-0xC`, the `0x66666667` reciprocal
+    // divide by five, and `a1 - 5 * q` (`0x801EC588..0x801EC5C0`). The
+    // defender-side scalar is read once (`0x801EC678`), the attacker-side
+    // one twice (`0x801ECE9C`, `0x801ED308`). Each is followed by three
+    // zero bytes of word alignment before the next table.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_64E4,
+        stride: 1,
+        count: 5,
+        forms: &[(0x801E_C678, 0x801F_64E4)],
+        count_from: PinnedCount::Domain {
+            what: "(queue command - 0x0C) mod 5, FUN_801EC3E4 0x801EC588..0x801EC5C0",
+        },
+        what: "defender-side per-command scalar (FUN_801EC3E4)",
+    },
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_64EC,
+        stride: 1,
+        count: 5,
+        forms: &[(0x801E_CE9C, 0x801F_64EC), (0x801E_D308, 0x801F_64EC)],
+        count_from: PinnedCount::Domain {
+            what: "(queue command - 0x0C) mod 5, FUN_801EC3E4 0x801EC588..0x801EC5C0",
+        },
+        what: "attacker-side per-command scalar (FUN_801EC3E4)",
+    },
+    // The Miracle Art trigger rows `FUN_801EED1C` copies into the action
+    // queue: base formed at `0x801EF4E8`, row `(char_id - 1) << 4`, sixteen
+    // bytes per row (`sltiu v0,v0,0x10` at `0x801EF520`). The next address
+    // the image forms is the Super Art `find` table at `0x801F6524`
+    // (`0x801EFA38`), which closes three whole rows - Vahn, Noa, Gala
+    // ([`art-data.md`](../../../docs/formats/art-data.md)).
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_64F4,
+        stride: 0x10,
+        count: 3,
+        forms: &[(0x801E_F4E8, 0x801F_64F4)],
+        count_from: PinnedCount::Layout {
+            next: 0x801F_6524,
+            site: 0x801E_FA38,
+        },
+        what: "Miracle Art trigger rows (FUN_801EED1C)",
+    },
+    // The Super Art `replace` strings `FUN_801EF9E4` writes over a matched
+    // queue tail: base formed at `0x801EFA58`, element `char * 0x50 +
+    // entry * 0x10` with `entry < 5` (`slti v0,a1,0x5` at `0x801EFBE0`), so
+    // five sixteen-byte strings per character. The next formed address, the
+    // opening-shot table at `0x801F66D8` (`0x801EA558`), closes fifteen.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_65E8,
+        stride: 0x10,
+        count: 15,
+        forms: &[(0x801E_FA58, 0x801F_65E8)],
+        count_from: PinnedCount::Layout {
+            next: 0x801F_66D8,
+            site: 0x801E_A558,
+        },
+        what: "Super Art replace strings, 3 characters x 5 (FUN_801EF9E4)",
+    },
+    // The monster cast pick's opening-shot bytes, `0x801F66D8 + id - 0x25`
+    // ([`crate::spell_anim_pairs::OPENING_SHOT_VA`]). The index is a spell id
+    // with no upper bound check; the next formed address is the status-guard
+    // mask table at `0x801F672C` (`0x801F07DC`), which closes eighty-four
+    // bytes - ids `0x25..0x79`. A higher id reads the guard masks.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: crate::spell_anim_pairs::OPENING_SHOT_VA,
+        stride: 1,
+        count: 0x54,
+        forms: &[(0x801E_A558, crate::spell_anim_pairs::OPENING_SHOT_VA)],
+        count_from: PinnedCount::Layout {
+            next: 0x801F_672C,
+            site: 0x801F_07DC,
+        },
+        what: "monster cast opening-shot bytes (spell_anim_pairs)",
+    },
+    // The four direction commands' status-guard masks, `lh` at
+    // `0x801F672C + (cmd - 0x0C) * 2` in `FUN_801F0450`'s command loop:
+    // `li s2,0xC` at `0x801F07BC`, `sltiu v0,v0,0x10` at `0x801F0A04`.
+    ConsumerPinnedTable {
+        prot: 898,
+        base_va: 0x801F_672C,
+        stride: 2,
+        count: 4,
+        forms: &[(0x801F_07DC, 0x801F_672C)],
+        count_from: PinnedCount::Range {
+            first: 0x801F_07BC,
+            bound: 0x801F_0A04,
+        },
+        what: "direction-command status-guard masks (FUN_801F0450)",
+    },
 ];
 
 /// The address the `lui` at file offset `at` forms with the first following
@@ -215,6 +549,18 @@ pub(super) fn claim_consumer_pinned_tables(buf: &[u8], sink: &mut Sink, prot_ind
                 matches!(w >> 26, 0x09..=0x0B) && (w & 0xFFFF) as usize == t.count
             }),
             PinnedCount::Domain { .. } => true,
+            PinnedCount::Range { first, bound } => {
+                let imm = |site: u32, ops: &[u32]| {
+                    legaia_bytes::u32_le(buf, at(site))
+                        .filter(|w| ops.contains(&(w >> 26)))
+                        .map(|w| (w & 0xFFFF) as usize)
+                };
+                // `li` is `addiu rt,zero,imm` / `ori rt,zero,imm`.
+                matches!(
+                    (imm(first, &[0x09, 0x0D]), imm(bound, &[0x0A, 0x0B])),
+                    (Some(a), Some(b)) if b > a && b - a == t.count
+                )
+            }
             PinnedCount::Layout { next, site } => {
                 lui_pair_address(buf, at(site)) == Some(next)
                     && next > t.base_va
@@ -232,6 +578,9 @@ pub(super) fn claim_consumer_pinned_tables(buf: &[u8], sink: &mut Sink, prot_ind
         let count_why = match t.count_from {
             PinnedCount::Loop { site } => format!("loop bound at {site:#010x}"),
             PinnedCount::Domain { what } => format!("index domain: {what}"),
+            PinnedCount::Range { first, bound } => {
+                format!("loop from {first:#010x} to the bound at {bound:#010x}")
+            }
             PinnedCount::Layout { next, .. } => {
                 format!("whole records to the next formed address {next:#010x}")
             }
@@ -663,6 +1012,239 @@ pub(super) fn claim_effect_proto_records(buf: &[u8], sink: &mut Sink) {
     ));
 }
 
+/// The battle overlay's **sub-draw record pool** - the step records the
+/// `0x801F4D34` pointer table names, as distinct from the table itself (the
+/// same shape as [`claim_effect_proto_records`]). Each record's extent is the
+/// consumer's own `3 + 2*count` read
+/// ([`crate::muscle_dome::subdraw_record_extents`]); the word padding between
+/// records stays residue.
+pub(super) fn claim_subdraw_records(buf: &[u8], sink: &mut Sink) {
+    let recs = crate::muscle_dome::subdraw_record_extents(buf);
+    for &(off, len) in &recs {
+        sink.claim(
+            off,
+            off + len,
+            OWNER_RECORD,
+            format!(
+                "battle HUD sub-draw step, {} element pair(s) (muscle_dome)",
+                (len - 3) / 2
+            ),
+        );
+    }
+    sink.note(format!(
+        "{} unique sub-draw record(s) behind the {}-entry 0x801F4D34 table \
+         (muscle_dome::subdraw_record_extents)",
+        recs.len(),
+        crate::muscle_dome::SUBDRAW_PTR_TABLE_LEN
+    ));
+}
+
+/// PROT entry of the DEBUG MODE overlay whose value-monitor rows
+/// [`CONSUMER_PINNED_TABLES`] carries.
+const DEBUG_MENU_PROT_INDEX: u32 = 971;
+
+/// Bytes per value-monitor name label: `FUN_8001C93C`'s kind-1 arm reads the
+/// row's `+0x24` table at `value << 4` (`sll a0,a0,0x4` at `0x8001C9F8`).
+const VALUE_MONITOR_LABEL_BYTES: usize = 0x10;
+
+/// The name tables the DEBUG MODE value-monitor rows point at. A kind-1 row
+/// draws `*(row + 0x24) + (value << 4)` as a label, so the table is reached
+/// through a data word rather than a formed address. Each distinct in-image
+/// table runs to the next one, or to the rows themselves for the last, and is
+/// claimed only when that span is whole sixteen-byte labels, each a printable
+/// NUL-terminated string inside its slot.
+pub(super) fn claim_value_monitor_name_tables(buf: &[u8], sink: &mut Sink) {
+    const BASE: u32 = 0x801C_E818;
+    let Some(rows) = CONSUMER_PINNED_TABLES
+        .iter()
+        .find(|t| t.prot == DEBUG_MENU_PROT_INDEX)
+    else {
+        return;
+    };
+    let rows_off = (rows.base_va - BASE) as usize;
+    let mut tables: Vec<usize> = (0..rows.count)
+        .filter_map(|k| {
+            let row = rows_off + k * rows.stride;
+            let kind = legaia_bytes::u16_le(buf, row)?;
+            let table = legaia_bytes::u32_le(buf, row + 0x24)?;
+            (kind == 1 && table > BASE && table < rows.base_va).then(|| (table - BASE) as usize)
+        })
+        .collect();
+    tables.sort_unstable();
+    tables.dedup();
+    let mut n = 0usize;
+    for (i, &start) in tables.iter().enumerate() {
+        let end = tables.get(i + 1).copied().unwrap_or(rows_off);
+        if (end - start) % VALUE_MONITOR_LABEL_BYTES != 0 {
+            continue;
+        }
+        let labels_ok = buf[start..end].chunks(VALUE_MONITOR_LABEL_BYTES).all(|l| {
+            let len = l.iter().position(|&b| b == 0).unwrap_or(l.len());
+            len > 0 && len < l.len() && l[..len].iter().all(|&b| (0x20..0x7F).contains(&b))
+        });
+        if !labels_ok {
+            continue;
+        }
+        sink.claim(
+            start,
+            end,
+            OWNER_STRING,
+            format!(
+                "value-monitor name table, {} x 0x10 labels (row +0x24, FUN_8001C93C kind 1)",
+                (end - start) / VALUE_MONITOR_LABEL_BYTES
+            ),
+        );
+        n += 1;
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} value-monitor name table(s) named by the rows' +0x24 words"
+        ));
+    }
+}
+
+/// First of the menu overlay's six `0x80`-byte save-screen text slots.
+const SAVE_TEXT_SLOTS_VA: u32 = 0x801E_ED24;
+
+/// Bytes per save-screen text slot.
+const SAVE_TEXT_SLOT_BYTES: usize = 0x80;
+
+/// Save-screen text slots: six, closed by the region filename prefix the
+/// image forms at `0x801EF024` (`0x801DE9A0`).
+const SAVE_TEXT_SLOTS: usize = 6;
+
+/// `(lui site, address formed)` pairs that reach into the slots: the
+/// play-time digits of slot 0 (`0x801EED29`, `FUN_801DD35C`) and the page
+/// digits of slot 3 (`0x801EEEA4`, `FUN_801DE234`), each poked in place.
+const SAVE_TEXT_SLOT_FORMS: [(u32, u32); 2] =
+    [(0x801D_D628, 0x801E_ED29), (0x801D_E8C4, 0x801E_EEA4)];
+
+/// The menu overlay's save-screen text slots: six `0x80`-byte buffers from
+/// [`SAVE_TEXT_SLOTS_VA`], each a NUL-terminated string at the slot start and
+/// zero fill to the slot end, the sixth closed exactly by the next string the
+/// image forms. Two slots are written in place by the code that forms them
+/// ([`SAVE_TEXT_SLOT_FORMS`]); the other four (`0x801EEDA4`, `0x801EEE24`,
+/// `0x801EEF24`, `0x801EEFA4`) are named by no instruction, word, `gp` or
+/// base-plus-displacement access in any image
+/// (`find-address-word-refs.py --prot`, `find-gp-relative-refs.py --prot`),
+/// so those are claimed as dead text and the slot stride is read off the
+/// layout, which the shape check pins slot by slot.
+pub(super) fn claim_save_text_slots(buf: &[u8], sink: &mut Sink) {
+    const MENU_BASE: u32 = 0x801C_E818;
+    let at = |va: u32| (va - MENU_BASE) as usize;
+    let start = at(SAVE_TEXT_SLOTS_VA);
+    let end = start + SAVE_TEXT_SLOTS * SAVE_TEXT_SLOT_BYTES;
+    let Some(slots) = buf.get(start..end) else {
+        return;
+    };
+    let forms_ok = SAVE_TEXT_SLOT_FORMS
+        .iter()
+        .all(|&(site, va)| lui_pair_address(buf, at(site)) == Some(va));
+    let shape_ok = slots.chunks(SAVE_TEXT_SLOT_BYTES).all(|slot| {
+        let n = slot.iter().position(|&b| b == 0).unwrap_or(slot.len());
+        n > 0
+            && n < slot.len()
+            && slot[..n].iter().all(|&b| (0x20..0x7F).contains(&b))
+            && slot[n..].iter().all(|&b| b == 0)
+    }) && buf.get(end).is_some_and(|&b| b != 0);
+    if !forms_ok || !shape_ok {
+        sink.note("save-screen text slots at 0x801EED24 not claimed: shape or form check failed");
+        return;
+    }
+    sink.claim(
+        start,
+        end,
+        OWNER_STRING,
+        "save-screen text slots, 6 x 0x80 (slots 0 and 3 written in place, 1/2/4/5 referenced by nothing)",
+    );
+}
+
+/// PROT entry of the world-map render overlay (slot B, base `0x801F69D8`).
+pub(super) const WORLD_MAP_RENDER_PROT_INDEX: u32 = 901;
+
+/// Slot-B link base the world-map render overlay loads at.
+const SLOT_B_BASE: u32 = 0x801F_69D8;
+
+/// The per-prim dispatch row SCUS's `FUN_80043390` switches to while the
+/// world-map overlay is resident: it forms `0x801F8968` itself (`lui
+/// s4,0x8020` / `addiu s4,s4,-0x7698` at `0x800435F4..F8`), indexes it by the
+/// prim group's `flags >> 1`, and adds no alpha offset on this branch, so one
+/// twenty-slot row is the whole table (`docs/subsystems/world-map.md`).
+const WORLD_MAP_PRIM_DISPATCH_VA: u32 = 0x801F_8968;
+
+/// Slots in one dispatch row.
+const PRIM_DISPATCH_SLOTS: usize = 20;
+
+/// The four lit low-mode dispatchers slots `8..12` share with the SCUS
+/// table at `0x8007657C`.
+const PRIM_DISPATCH_LOW_MODE: [u32; 4] = [0x8004_409C, 0x8004_423C, 0x8004_4434, 0x8004_45B0];
+
+/// Claim the world-map render overlay's per-prim dispatch row
+/// ([`WORLD_MAP_PRIM_DISPATCH_VA`]), after a shape check: slots `0..8` are
+/// zero (the index space below the lit rows, not padding), slots `8..12` are
+/// the SCUS low-mode quartet, and slots `12..20` - the eight untextured and
+/// textured high-mode emit leaves - each point into this image's own code.
+/// The consumer is the executable's, so the row cannot be read off a `lui`
+/// pair in this image the way [`CONSUMER_PINNED_TABLES`] rows are.
+pub(super) fn claim_world_map_prim_dispatch(buf: &[u8], sink: &mut Sink) {
+    let start = (WORLD_MAP_PRIM_DISPATCH_VA - SLOT_B_BASE) as usize;
+    let end = start + 4 * PRIM_DISPATCH_SLOTS;
+    let words: Option<Vec<u32>> = (start..end)
+        .step_by(4)
+        .map(|o| legaia_bytes::u32_le(buf, o))
+        .collect();
+    let Some(words) = words else {
+        return;
+    };
+    let own_top = SLOT_B_BASE + start as u32;
+    let ok = words[..8].iter().all(|&w| w == 0)
+        && words[8..12] == PRIM_DISPATCH_LOW_MODE
+        && words[12..]
+            .iter()
+            .all(|&w| (SLOT_B_BASE..own_top).contains(&w) && w % 4 == 0);
+    if !ok {
+        sink.note("no world-map prim dispatch row at 0x801F8968: shape check failed");
+        return;
+    }
+    sink.claim(
+        start,
+        end,
+        OWNER_TOC,
+        "per-prim dispatch row read by FUN_80043390 (slots 8..11 SCUS, 12..19 this image)",
+    );
+}
+
+/// The battle overlay's unread second affinity block
+/// ([`crate::element_affinity::UNREAD_AFFINITY_BLOCK_VA`]) - claimed as dead
+/// data under that name, the way [`claim_str_dead_vlc_table`] claims the STR
+/// overlay's unreferenced table, and only after a shape check: it must end
+/// exactly where the summon power-percent table begins and every byte must be
+/// a plausible percentage (`1..=200`).
+pub(super) fn claim_unread_affinity_block(buf: &[u8], sink: &mut Sink) {
+    use crate::element_affinity as elem;
+    let start = elem::UNREAD_AFFINITY_BLOCK_FILE_OFFSET;
+    let len = elem::ELEMENT_COUNT * elem::ELEMENT_COUNT;
+    if start + len != elem::SUMMON_POWER_PCT_FILE_OFFSET
+        || start != elem::AFFINITY_MATRIX_FILE_OFFSET + len
+    {
+        sink.note("the unread affinity block's constants no longer tile the gap");
+        return;
+    }
+    let Some(block) = buf.get(start..start + len) else {
+        return;
+    };
+    if !block.iter().all(|b| (1..=200).contains(b)) {
+        sink.note("no percentage block between the affinity matrix and the summon table");
+        return;
+    }
+    sink.claim(
+        start,
+        start + len,
+        OWNER_RECORD,
+        "unread second 8x8 affinity block, dead data (element_affinity)",
+    );
+}
+
 /// Data-segment tables an overlay image carries at an offset a parser in this
 /// workspace already reads, with the extent that parser's own `count * stride`.
 ///
@@ -988,6 +1570,13 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 fish::CADENCE_TEMPLATE_COUNT * fish::CADENCE_TEMPLATE_STRIDE,
                 OWNER_RECORD,
                 "fishing reel-cadence templates (fishing_species)",
+            ),
+            (
+                (crate::fishing_sprites::FISHING_SPRITE_TABLE_VA - SLOT_A) as usize,
+                crate::fishing_sprites::FISHING_SPRITE_COUNT
+                    * crate::fishing_sprites::FISHING_SPRITE_STRIDE,
+                OWNER_RECORD,
+                "fishing HUD sprite records (fishing_sprites)",
             ),
             (
                 (fex::EXCHANGE_TABLE_VA_PAGE0 - SLOT_A) as usize,

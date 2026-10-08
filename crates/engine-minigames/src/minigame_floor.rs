@@ -1,0 +1,1142 @@
+//! The slot-A minigame overlays' **scene-floor kernels**: the ground-height
+//! solver every floor actor is settled onto, the 16-entry height ramp the
+//! solver indexes, and the per-frame floor pass that spawns one tile actor per
+//! drawn grid cell.
+//!
+//! These are *not* dance- or fishing-specific. `FUN_801D6028` and
+//! `FUN_801D6BBC` are byte-identical in the fishing, slot-machine and
+//! debug-menu overlay images (only the `[overlay_*.bin]` header line of the
+//! dump differs), so they are shared library code in the overlay band above
+//! `0x801D0018`; `FUN_801D3A2C` is the dance overlay's private copy of the
+//! same floor pass, differing only in which overlay-local globals it writes.
+//!
+//! One caveat on that byte-identity, because it is the shape
+//! [`docs/tooling/dump-corpus-integrity.md`] warns about: a dump's file name is
+//! not evidence that the address is inside the named overlay. The statically
+//! extracted dance overlay is PROT 980, `0x8000` bytes at base `0x801CE818`, so
+//! it ends at `0x801D6818` - below `0x801D6BBC`. `overlay_dance_801d6bbc.txt`
+//! is therefore a RAM-derived program in which that address holds resident
+//! library code, not a dance-overlay copy. `0x801D6028` *is* inside the dance
+//! window, so that one can be a genuine second copy. The port reads the
+//! fishing image, whose `0xB000` window covers both addresses.
+//!
+//! ## The scene floor buffer
+//!
+//! All of them read one buffer, the per-scene block whose pointer lives at
+//! `_DAT_1F8003EC` (the scratchpad word the field subsystem installs at scene
+//! load). Three regions matter:
+//!
+//! | Offset | Shape | What it is |
+//! |---|---|---|
+//! | `+0x0000` | `0x20`-byte records, indexed by tile id | [`TileRecord`] - the per-tile placement + flags |
+//! | `+0x4000` | `u8`, row pitch `0x80` | [`FloorGrid::height_index`] (low nibble) + the wall nibble |
+//! | `+0x8000` | `u16`, row pitch `0x100` | [`FloorGrid::cell`] - tile id in bits `0..8`, flags above |
+//!
+//! The `+0x4000` byte is **two fields in one**. `FUN_801D6028` /
+//! `FUN_801D3A2C` / `FUN_801D2A10` take its **low** nibble as an index into
+//! the 16-entry height ramp; the field-locomotion collision probe
+//! (`FUN_801CFE4C`) takes its **high** nibble as the four sub-cell wall bits
+//! (`>> 4 & quadrant_mask`). Reading the byte whole - or masking the wrong
+//! nibble - conflates the terrain height with the walkability.
+//!
+//! ## The two grid resolutions
+//!
+//! A floor cell is 128 world units. An actor's `+0x14` / `+0x18` world XZ pair
+//! is first reduced to a **half-cell** index (`>> 6`, so 64-unit steps); the
+//! grid index is that halved again toward zero, and the half-cell's low bit
+//! selects which quadrant of the cell the actor stands in. The low seven bits
+//! of the raw coordinate are the sub-cell fraction the bilinear blend
+//! interpolates over, which is why the fraction runs `0 ..= 0x7F` while the
+//! coarse step is `>> 6`.
+//!
+//! See [`docs/subsystems/minigame-fishing.md`](../../../docs/subsystems/minigame-fishing.md)
+//! and [`docs/subsystems/minigame-dance.md`](../../../docs/subsystems/minigame-dance.md);
+//! dumps `overlay_fishing_801d6028.txt`, `overlay_dance_801d3a2c.txt`,
+//! `overlay_dance_801d2a10.txt`, `overlay_dance_801d6bbc.txt`.
+
+/// Byte offset of the height / wall nibble grid inside the scene floor buffer.
+pub const HEIGHT_GRID_OFF: usize = 0x4000;
+/// Row pitch, in bytes, of the height / wall nibble grid.
+pub const HEIGHT_GRID_PITCH: usize = 0x80;
+/// Byte offset of the `u16` cell grid inside the scene floor buffer.
+pub const CELL_GRID_OFF: usize = 0x8000;
+/// Row pitch, in bytes, of the `u16` cell grid.
+pub const CELL_GRID_PITCH: usize = 0x100;
+/// Bytes per tile record at the head of the scene floor buffer.
+pub const TILE_RECORD_STRIDE: usize = 0x20;
+/// Mask that extracts the tile id out of a cell word.
+pub const CELL_TILE_ID_MASK: u16 = 0x1FF;
+/// Cell bit that marks a cell as carrying a step-layer patch, switching the
+/// height solver from the bilinear blend to the layer lookup.
+pub const CELL_STEP_LAYER: u16 = 0x800;
+/// Cell bit that suppresses the neighbour cell a tile record points at.
+pub const CELL_NEIGHBOUR_BLOCK: u16 = 0x400;
+/// Cell bit whose *absence* raises the actor's `0x800000` flag.
+pub const CELL_ON_FLOOR: u16 = 0x1000;
+/// Actor flag word bit the height solver maintains (`actor + 0x10`).
+pub const ACTOR_FLAG_OFF_FLOOR: u32 = 0x0080_0000;
+/// Tile-record flag that admits the cell to the floor pass (`rec + 0x12`).
+pub const TILE_FLAG_DRAWN: u16 = 0x4;
+/// Tile-record flag that selects the alternate draw mode (`rec + 0x12`).
+pub const TILE_FLAG_ALT_MODE: u16 = 0x2;
+/// Tile-record flag that sets the spawned actor's `+0x74` bit `0x10000000`.
+pub const TILE_FLAG_ACTOR_74: u16 = 0x800;
+/// Tile-record flag that sets the spawned actor's `+0x10` bit `0x4`.
+pub const TILE_FLAG_ACTOR_10: u16 = 0x1000;
+/// Grid extent both floor passes bound their neighbour probe against.
+pub const GRID_EXTENT: i32 = 0x80;
+/// World units per floor cell.
+pub const CELL_WORLD_UNITS: i32 = 0x80;
+
+/// Height step per ramp entry (`FUN_801D2A10`: `0x1E0` down to `0` in
+/// sixteen `-0x20` steps).
+pub const HEIGHT_RAMP_STEP: i16 = 0x20;
+/// Entries in the height ramp - one per value the `+0x4000` low nibble takes.
+pub const HEIGHT_RAMP_LEN: usize = 16;
+
+// PORT: FUN_801d2a10 (the scratchpad height-ramp install, `0x1F80035C`)
+// Wired: the play window's fishing floor host builds this table at venue
+// entry and passes it to every [`ground_height`] solve (through
+// [`crate::fishing_chrome::float_actor_tick`]) - the host-side stand-in for
+// the scratchpad install.
+/// The 16-entry height ramp `FUN_801D2A10` writes into scratchpad before it
+/// walks the floor rect: `ramp[i] = i * 0x20`.
+///
+/// Retail builds it backwards (`0x1E0` at `0x1F80037A`, stepping `-0x20` and
+/// `-2` down to `0` at `0x1F80035C`), which is the *same* table
+/// `FUN_801D6028` / `FUN_801D3A2C` / `FUN_801D6BBC` later index by the height
+/// nibble - the ramp install and the height solve are two halves of one
+/// mechanism, not two tables that happen to share an address.
+pub fn height_ramp() -> [i16; HEIGHT_RAMP_LEN] {
+    let mut ramp = [0i16; HEIGHT_RAMP_LEN];
+    for (i, v) in ramp.iter_mut().enumerate() {
+        *v = i as i16 * HEIGHT_RAMP_STEP;
+    }
+    ramp
+}
+
+/// One `0x20`-byte tile record at the head of the scene floor buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TileRecord {
+    /// `+0x00` - world-x bias added to `cell_x * 0x80 + 0x40`.
+    pub off_x: u16,
+    /// `+0x02` - world-y bias added to the ramp height.
+    pub off_y: u16,
+    /// `+0x04` - world-z bias; the pass subtracts `off_z - 0x40`.
+    pub off_z: u16,
+    /// `+0x06` - signed neighbour-cell delta on x.
+    pub nbr_dx: i8,
+    /// `+0x07` - signed neighbour-cell delta on z.
+    pub nbr_dz: i8,
+    /// `+0x08` / `+0x0A` / `+0x0C` - the rotation trio copied into the
+    /// spawned actor's `+0x24` / `+0x26` / `+0x28`.
+    pub rot: [u16; 3],
+    /// `+0x12` - the flag halfword (`TILE_FLAG_*`).
+    pub flags: u16,
+    /// `+0x1E` - non-zero sets the spawned actor's `+0x74` bit `0x40000000`.
+    pub tag: u8,
+}
+
+/// A borrowed view over one scene floor buffer.
+///
+/// Every accessor is bounds-checked and returns a default rather than
+/// panicking: retail indexes the buffer with masked coordinates that cannot
+/// leave it, and a truncated buffer in the port must not abort a frame.
+#[derive(Debug, Clone, Copy)]
+pub struct FloorGrid<'a> {
+    buf: &'a [u8],
+}
+
+impl<'a> FloorGrid<'a> {
+    /// Wrap a scene floor buffer (`*_DAT_1F8003EC`).
+    pub fn new(buf: &'a [u8]) -> Self {
+        Self { buf }
+    }
+
+    /// The step-layer record for grid cell `(gx, gz)` in this buffer
+    /// ([`step_patch_lookup`]).
+    pub fn step_patch(&self, gx: i32, gz: i32) -> Option<StepPatch> {
+        step_patch_lookup(self.buf, gx, gz)
+    }
+
+    fn u16_at(&self, off: usize) -> u16 {
+        match self.buf.get(off..off + 2) {
+            Some(b) => u16::from_le_bytes([b[0], b[1]]),
+            None => 0,
+        }
+    }
+
+    /// The `u16` cell word at grid `(gx, gz)` (`+0x8000`, pitch `0x100`).
+    pub fn cell(&self, gx: i32, gz: i32) -> u16 {
+        if !(0..GRID_EXTENT).contains(&gx) || !(0..GRID_EXTENT).contains(&gz) {
+            return 0;
+        }
+        self.u16_at(CELL_GRID_OFF + gz as usize * CELL_GRID_PITCH + gx as usize * 2)
+    }
+
+    /// The tile id a cell word carries (bits `0..8`).
+    pub fn tile_id(&self, gx: i32, gz: i32) -> u16 {
+        self.cell(gx, gz) & CELL_TILE_ID_MASK
+    }
+
+    /// The raw `+0x4000` byte at grid `(gx, gz)` - height nibble in the low
+    /// four bits, wall nibble in the high four.
+    pub fn terrain_byte(&self, gx: i32, gz: i32) -> u8 {
+        if !(0..GRID_EXTENT).contains(&gx) || !(0..GRID_EXTENT).contains(&gz) {
+            return 0;
+        }
+        self.buf
+            .get(HEIGHT_GRID_OFF + gz as usize * HEIGHT_GRID_PITCH + gx as usize)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The height-ramp index of a cell - the **low** nibble of
+    /// [`terrain_byte`](Self::terrain_byte).
+    pub fn height_index(&self, gx: i32, gz: i32) -> usize {
+        (self.terrain_byte(gx, gz) & 0xF) as usize
+    }
+
+    /// The height-ramp index at a *flat* grid offset `gz * 0x80 + gx`, with no
+    /// per-axis clamp. The height solver reads its `+x` / `+z` corners as
+    /// `ptr[1]` / `ptr[0x80]` / `ptr[0x81]` off one pointer, so a cell on the
+    /// right edge takes its `+x` corner from the head of the next row. Keeping
+    /// that here rather than clamping is what makes the port's edge cells
+    /// agree with retail's.
+    fn height_index_flat(&self, gx: i32, gz: i32) -> usize {
+        let off = gz * HEIGHT_GRID_PITCH as i32 + gx;
+        if off < 0 {
+            return 0;
+        }
+        let b = self
+            .buf
+            .get(HEIGHT_GRID_OFF + off as usize)
+            .copied()
+            .unwrap_or(0);
+        (b & 0xF) as usize
+    }
+
+    /// The four sub-cell wall bits of a cell - the **high** nibble. The floor
+    /// kernels never read these; the field collision probe does.
+    pub fn wall_nibble(&self, gx: i32, gz: i32) -> u8 {
+        self.terrain_byte(gx, gz) >> 4
+    }
+
+    /// The `0x20`-byte tile record for a tile id.
+    pub fn tile(&self, id: u16) -> TileRecord {
+        let base = id as usize * TILE_RECORD_STRIDE;
+        let b = |o: usize| self.buf.get(base + o).copied().unwrap_or(0);
+        TileRecord {
+            off_x: self.u16_at(base),
+            off_y: self.u16_at(base + 2),
+            off_z: self.u16_at(base + 4),
+            nbr_dx: b(6) as i8,
+            nbr_dz: b(7) as i8,
+            rot: [
+                self.u16_at(base + 8),
+                self.u16_at(base + 0xA),
+                self.u16_at(base + 0xC),
+            ],
+            flags: self.u16_at(base + 0x12),
+            tag: b(0x1E),
+        }
+    }
+}
+
+/// A step-layer patch record, the four bytes `FUN_801D79E0` returns from the
+/// `+0x10000` / `+0x12000` layers when a cell carries [`CELL_STEP_LAYER`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StepPatch {
+    /// `+0x02` - a signed whole-step bias, scaled by `0x20`.
+    pub step: i8,
+    /// `+0x03` - four 2-bit sub-cell biases, scaled by `0x10`.
+    pub quadrants: u8,
+}
+
+/// The sub-table kind the step-layer lookup names (`li a0,0x2` at
+/// `0x801D6148`).
+pub const STEP_LAYER_KIND: usize = 2;
+
+/// Record stride of [`STEP_LAYER_KIND`]: the resident byte `DAT_8007B31A`
+/// (the per-kind stride table at `0x8007B318` reads `04 04 04 08 ..` in the
+/// library states; kind `3`'s `8` is
+/// [`legaia_engine_vm::field_regions::REGION_RECORD_STRIDE`]).
+pub const STEP_RECORD_STRIDE: usize = 4;
+
+/// Find the step-layer record for grid cell `(gx, gz)` in one layer block
+/// (the `.MAP` buffer from `+0x10000`, or from `+0x12000`).
+///
+/// The block opens with per-kind sub-table descriptors, `kind * 4` bytes in:
+/// an `i16` body offset at `+2` and an `i16` record count at `+4`. The scan is
+/// linear over `[cx, cz, step, quadrants]` records and returns the first
+/// whose first two bytes are `(gx, gz)`; `None` when none matches (retail
+/// returns null). The coordinates compare as bytes, so a negative or
+/// over-`0xFF` grid index never matches.
+// PORT: FUN_801d79e0
+pub fn step_patch_in_layer(layer: &[u8], gx: i32, gz: i32) -> Option<StepPatch> {
+    let hdr = STEP_LAYER_KIND * 4;
+    let i16_at = |o: usize| -> Option<i16> {
+        Some(i16::from_le_bytes([*layer.get(o)?, *layer.get(o + 1)?]))
+    };
+    let body = i16_at(hdr + 2)?;
+    let count = i16_at(hdr + 4)?;
+    if body < 0 || count <= 0 {
+        return None;
+    }
+    let (gx, gz) = (u8::try_from(gx).ok()?, u8::try_from(gz).ok()?);
+    (0..count as usize).find_map(|i| {
+        let r = layer
+            .get(body as usize + i * STEP_RECORD_STRIDE..)?
+            .get(..4)?;
+        (r[0] == gx && r[1] == gz).then_some(StepPatch {
+            step: r[2] as i8,
+            quadrants: r[3],
+        })
+    })
+}
+
+/// The step-layer lookup [`ground_height`] takes, over a floor buffer laid
+/// out as retail installs it behind `_DAT_1F8003EC`: the `+0x10000` layer
+/// first, then `+0x12000` (`0x801D6168` / `0x801D6198`). A buffer too short to
+/// reach a layer simply has no record there.
+pub fn step_patch_lookup(buf: &[u8], gx: i32, gz: i32) -> Option<StepPatch> {
+    [0x10000usize, 0x12000]
+        .into_iter()
+        .find_map(|base| step_patch_in_layer(buf.get(base..)?, gx, gz))
+}
+
+/// What [`ground_height`] resolves for one actor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GroundSample {
+    /// The solved height, in world units.
+    pub height: i32,
+    /// The actor's flag word after the solver's `0x800000` maintenance.
+    pub flags: u32,
+    /// The cell word the solve read.
+    pub cell: u16,
+}
+
+/// Solve the ground height under an actor and maintain its off-floor flag.
+///
+/// `world_x` / `world_z` are the actor's `+0x14` / `+0x18` halfwords, `flags`
+/// its `+0x10` word, `ramp` the 16-entry table [`height_ramp`] builds, and
+/// `step_layer` the `FUN_801D79E0` lookup for a cell carrying
+/// [`CELL_STEP_LAYER`] (the `+0x10000` layer first, `+0x12000` as fallback -
+/// retail tries them in that order and the port hands the caller the already
+/// resolved record).
+///
+/// Two solve paths, chosen by [`CELL_STEP_LAYER`]:
+///
+/// - **plain** - if all four corner nibbles of the cell are equal the height
+///   is that ramp entry exactly (retail returns early, skipping the blend);
+///   otherwise the four corners are bilinearly blended over the sub-cell
+///   fraction `world & 0x7F` in `0x80` units per axis and the `>> 14` is
+///   biased `+0x3FFF` when negative (round toward zero).
+/// - **step layer** - the four corners are averaged with a plain `>> 2` (no
+///   rounding bias at all, unlike the blend path) and the patch's whole-step
+///   and sub-cell biases are subtracted.
+///
+/// The flag maintenance runs first and is *not* skipped by either path: a
+/// negative flag word only ORs [`ACTOR_FLAG_OFF_FLOOR`] in, while a
+/// non-negative one clears it and re-raises it when the cell lacks
+/// [`CELL_ON_FLOOR`].
+// PORT: FUN_801d6028
+// Wired: the play window builds a [`FloorGrid`] over the venue scene's `.MAP`
+// extended footprint at fishing entry (the same bytes retail installs behind
+// `_DAT_1F8003EC`) and solves the wander actor's ground height through
+// [`crate::fishing_chrome::float_actor_tick`] each frame.
+pub fn ground_height(
+    grid: FloorGrid<'_>,
+    world_x: i16,
+    world_z: i16,
+    flags: u32,
+    ramp: &[i16],
+    step_layer: impl FnOnce(i32, i32) -> Option<StepPatch>,
+) -> GroundSample {
+    // Half-cell indices: `>> 6` on the sign-extended world coordinate.
+    let hx = (world_x >> 6) as i32;
+    let hz = (world_z >> 6) as i32;
+    // Grid indices: halve toward zero (retail's `srl 31; addu; sra 1`).
+    let gx = hx / 2;
+    let gz = hz / 2;
+    let cell = grid.cell(gx, gz);
+
+    let flags = if (flags as i32) < 0 {
+        flags | ACTOR_FLAG_OFF_FLOOR
+    } else {
+        // The `(cell & 0x1800) == 0x800` arm that follows in retail re-ORs the
+        // same bit it has just stored, so it changes nothing here.
+        let cleared = flags & !ACTOR_FLAG_OFF_FLOOR;
+        if cell & CELL_ON_FLOOR == 0 {
+            cleared | ACTOR_FLAG_OFF_FLOOR
+        } else {
+            cleared
+        }
+    };
+
+    let idx = |dx: i32, dz: i32| grid.height_index_flat(gx + dx, gz + dz);
+    let corner = |dx: i32, dz: i32| -> i32 { ramp.get(idx(dx, dz)).copied().unwrap_or(0) as i32 };
+    let n00 = corner(0, 0);
+    let n01 = corner(1, 0);
+    let n10 = corner(0, 1);
+    let n11 = corner(1, 1);
+
+    let height = if cell & CELL_STEP_LAYER != 0 {
+        let bias = match step_layer(gx, gz) {
+            Some(p) => {
+                let shift = (hx & 1) * 2 + (hz & 1) * 4;
+                let quad = ((p.quadrants >> shift) & 3) as i32;
+                -quad * 0x10 - p.step as i32 * 0x20
+            }
+            None => 0,
+        };
+        ((n00 + n01 + n10 + n11) >> 2) + bias
+    } else if idx(0, 0) == idx(1, 0) && idx(0, 0) == idx(0, 1) && idx(0, 0) == idx(1, 1) {
+        n00
+    } else {
+        let fx = (world_x as u16 & 0x7F) as i32;
+        let fz = (world_z as u16 & 0x7F) as i32;
+        let acc =
+            (n01 * fx + n00 * (0x80 - fx)) * (0x80 - fz) + n10 * (0x80 - fx) * fz + n11 * fx * fz;
+        if acc < 0 {
+            (acc + 0x3FFF) >> 14
+        } else {
+            acc >> 14
+        }
+    };
+
+    GroundSample {
+        height,
+        flags,
+        cell,
+    }
+}
+
+/// One tile actor the floor pass places, in the order retail stores its
+/// fields into the spawned record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloorTileSpawn {
+    /// The grid cell the spawn came from.
+    pub cell_x: i32,
+    pub cell_z: i32,
+    /// Tile id (`+0x60` on the spawned actor).
+    pub tile_id: u16,
+    /// World position handed to the spawn call.
+    pub pos: [i16; 3],
+    /// The draw-mode word staged next to the transform template
+    /// (`DAT_801D4310`): `5` for a [`TILE_FLAG_ALT_MODE`] tile, else `0`.
+    pub draw_mode: i16,
+    /// `true` when the tile record's `+0x1E` tag sets `+0x74` bit
+    /// `0x40000000`.
+    pub actor_74_tag: bool,
+    /// `true` when [`TILE_FLAG_ACTOR_74`] sets `+0x74` bit `0x10000000`.
+    pub actor_74_flag: bool,
+    /// `true` when [`TILE_FLAG_ACTOR_10`] sets `+0x10` bit `0x4`.
+    pub actor_10_flag: bool,
+    /// The tile record's rotation trio, copied into `+0x24` / `+0x26` /
+    /// `+0x28`.
+    pub rot: [u16; 3],
+}
+
+/// Walk the floor rect and resolve the tile actors it spawns.
+///
+/// `x0 .. x0 + width` by `z0 .. z0 + height` in grid cells. A cell is spawned
+/// only when its tile record carries [`TILE_FLAG_DRAWN`], its neighbour probe
+/// `(gx + nbr_dx, gz + nbr_dz)` lands inside the `0 .. 0x80` grid, and - when
+/// `neighbour_block` is set - that neighbour's cell word lacks
+/// [`CELL_NEIGHBOUR_BLOCK`].
+///
+/// The world position is `(gx * 0x80 + off_x + 0x40, ramp[height] + off_y,
+/// gz * 0x80 - (off_z - 0x40))`; note the **z** term is a subtraction, so a
+/// tile's `off_z` pushes it toward the camera, not away from it.
+// PORT: FUN_801d3a2c (the dance overlay's per-frame floor pass)
+// PORT: FUN_801d6bbc (the same pass in the shared overlay band; identical
+// bytes in the fishing and dance images, differing only in which overlay-local
+// globals it writes and in the `x0/z0/x1/z1` debug print it opens with)
+// WIRED, through [`MarkerFloor`]: the pool this pass's output was missing is
+// the per-cell step-marker actor list, and the browser minigames page's dance
+// venue draws it - `bake_dance_markers` in `crates/web-viewer` walks this
+// sweep over `other7`'s `.MAP`, keeps the cells [`marker_template`] classes as
+// markers, and the page flips each one's mesh per frame.
+//
+// The native play window is the host still owed a draw, and the reason is not
+// this pass: its dance minigame is HUD-only - it never builds the dance hall's
+// 3D venue at all - so there is no scene for a tile actor to stand in. That is
+// a whole-venue gap, not a tile-actor one; see
+// `docs/tooling/host-drift.md`. The non-marker cells (the plain floor
+// template) still have no consumer on either host: they carry no flipbook, so
+// they are the static hall geometry the env-pack bake already draws.
+pub fn floor_tile_spawns(
+    grid: FloorGrid<'_>,
+    ramp: &[i16],
+    x0: i32,
+    z0: i32,
+    width: i32,
+    height: i32,
+    neighbour_block: bool,
+) -> Vec<FloorTileSpawn> {
+    let mut out = Vec::new();
+    for gz in z0..z0 + height {
+        for gx in x0..x0 + width {
+            let tile_id = grid.tile_id(gx, gz);
+            let rec = grid.tile(tile_id);
+            if rec.flags & TILE_FLAG_DRAWN == 0 {
+                continue;
+            }
+            let nx = gx + rec.nbr_dx as i32;
+            let nz = gz + rec.nbr_dz as i32;
+            if !(0..GRID_EXTENT).contains(&nx) || !(0..GRID_EXTENT).contains(&nz) {
+                continue;
+            }
+            if neighbour_block && grid.cell(nx, nz) & CELL_NEIGHBOUR_BLOCK != 0 {
+                continue;
+            }
+            let h = ramp
+                .get(grid.height_index_flat(gx, gz))
+                .copied()
+                .unwrap_or(0) as i32;
+            out.push(FloorTileSpawn {
+                cell_x: gx,
+                cell_z: gz,
+                tile_id,
+                pos: [
+                    (gx * CELL_WORLD_UNITS + rec.off_x as i32 + 0x40) as i16,
+                    (h + rec.off_y as i32) as i16,
+                    (gz * CELL_WORLD_UNITS - (rec.off_z as i32 - 0x40)) as i16,
+                ],
+                draw_mode: if rec.flags & TILE_FLAG_ALT_MODE != 0 {
+                    5
+                } else {
+                    0
+                },
+                actor_74_tag: rec.tag != 0,
+                actor_74_flag: rec.flags & TILE_FLAG_ACTOR_74 != 0,
+                actor_10_flag: rec.flags & TILE_FLAG_ACTOR_10 != 0,
+                rot: rec.rot,
+            });
+        }
+    }
+    out
+}
+
+/// Which spawn template the dance floor's step-marker pass picks for a cell,
+/// and the sub-index it stamps into the spawned actor's `+0x50`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkerTemplate {
+    /// Clip indices `6 ..= 9`: the alternate template (`DAT_801D4314`), with
+    /// `clip - 6` stored into the actor's `+0x50`.
+    Marker { sub_index: u16 },
+    /// Any other non-zero clip index: the plain floor template
+    /// (`DAT_801D42FC`), `+0x50` untouched.
+    Plain,
+}
+
+/// Resolve the dance floor's step-marker template for one cell.
+///
+/// `marker` is `FUN_801D3EC0`'s per-cell record byte `+0x02` **plus one** -
+/// retail spells this as `s2 = rec[2] + 1` with `s2 = 0` standing for "no
+/// record here", so a record whose byte is `0xFF` and an absent record are
+/// distinguishable and clip index `0` never occurs. `None` means the cell
+/// draws no marker at all.
+///
+/// That record is not a marker-specific structure: the floor pass calls
+/// `FUN_801D3EC0(1, x, z)`, and `FUN_801D3F54(kind, x, z, block)` resolves it
+/// by scanning sub-table `kind` of the `.MAP` region block - offset `s16` at
+/// `+4k+2`, count `s16` at `+4k+4`, stride `_DAT_8007B318[kind]` - for the
+/// first record whose `rec[0]`/`rec[1]` match the cell, primary `+0x10000`
+/// first and `+0x12000` on a miss. At `kind == 1` that is exactly the
+/// [`legaia_engine_vm::field_regions::TileTrigger`] table, so the marker's clip index is
+/// [`TileTrigger::record`] `+ 1` of the record
+/// [`legaia_engine_vm::field_regions::lookup_tile_trigger`] already returns.
+///
+/// The `6 ..= 9` window is an unsigned `clip - 6 < 4` test, so it is exactly
+/// the four marker clips; everything else falls through to the plain template.
+///
+/// [`TileTrigger::record`]: legaia_engine_vm::field_regions::TileTrigger::record
+// PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
+// REF: FUN_801d3ec0, FUN_801d3f54 (the two-layer kind-N record lookup the clip
+// index comes out of)
+// WIRED: [`MarkerFloor::build`] calls this for every drawn cell of a venue's
+// floor rect, resolving the clip index through the same kind-1
+// primary-then-fallback tile scan `legaia_engine_vm::field_regions` ports, and the browser
+// minigames page draws the tiles it classes as markers. Measured on the real
+// venue: `other7` yields ten marker tiles, classes `[2, 2, 2, 4]`, and all ten
+// swap mesh inside 240 frames
+// (`crates/engine-core/tests/dance_marker_floor_disc.rs`).
+pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
+    match marker {
+        0 => None,
+        6..=9 => Some(MarkerTemplate::Marker {
+            sub_index: marker - 6,
+        }),
+        _ => Some(MarkerTemplate::Plain),
+    }
+}
+
+// ---------------------------------------------------------- marker-tile pool
+
+/// One step-marker tile actor on the dance floor: where it stands, and the
+/// flipbook state the tick advances.
+///
+/// The three fields the retail actor carries for this handler are exactly the
+/// three [`legaia_engine_vm::dance_marker::MarkerActor`] holds - `+0x50` the
+/// marker class (the script row), `+0x9C` the script cursor in halfwords,
+/// `+0x54` the ticks left on the current mesh - so the pool adds only the
+/// per-cell placement the floor pass already resolves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkerTile {
+    /// Grid cell this actor was spawned for.
+    pub cell: (i32, i32),
+    /// World position from the floor pass (`FloorTileSpawn::pos`).
+    pub pos: [i16; 3],
+    /// The tile record's rotation trio.
+    pub rot: [u16; 3],
+    /// The flipbook.
+    pub actor: legaia_engine_vm::dance_marker::MarkerActor,
+}
+
+/// The per-cell **step-marker actor pool** - the sink `floor_tile_spawns` and
+/// [`marker_template`] were both blocked on.
+///
+/// Retail's floor pass `FUN_801D2A10` walks the floor rect once per frame,
+/// allocates one actor per drawn cell out of the shared list, and gives a cell
+/// whose kind-1 record resolves to clip `6..=9` the **marker** template
+/// (`DAT_801D4314`) with `clip - 6` stamped into `+0x50`. Its per-frame handler
+/// `FUN_801D0640` then flips that actor's mesh through the class row of the
+/// script table at `0x801D44CC`.
+///
+/// The port builds the pool once (the floor rect does not change mid-song) and
+/// ticks it, which is the same observable: retail re-derives the same cell set
+/// every frame from the same immutable grid.
+#[derive(Debug, Clone, Default)]
+pub struct MarkerFloor {
+    tiles: Vec<MarkerTile>,
+    script: legaia_engine_vm::dance_marker::MarkerScript,
+}
+
+impl MarkerFloor {
+    /// Resolve every marker cell of the floor rect.
+    ///
+    /// `triggers_primary` / `triggers_fallback` are the `.MAP` trigger block's
+    /// kind-1 sub-tables ([`legaia_engine_vm::field_regions::parse_tile_triggers`] over
+    /// `+0x10000` then `+0x12000`) - the same two-layer scan
+    /// `FUN_801D3F54(1, x, z)` performs, which is where the marker's clip index
+    /// comes from ([`marker_template`]).
+    ///
+    /// Cells that draw no marker (no record, or a clip outside `6..=9`) are not
+    /// in the pool: they take the plain floor template, which has no flipbook.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build(
+        grid: FloorGrid<'_>,
+        ramp: &[i16],
+        x0: i32,
+        z0: i32,
+        width: i32,
+        height: i32,
+        neighbour_block: bool,
+        triggers_primary: &[legaia_engine_vm::field_regions::TileTrigger],
+        triggers_fallback: &[legaia_engine_vm::field_regions::TileTrigger],
+        script: legaia_engine_vm::dance_marker::MarkerScript,
+    ) -> Self {
+        let mut tiles = Vec::new();
+        for spawn in floor_tile_spawns(grid, ramp, x0, z0, width, height, neighbour_block) {
+            let (Ok(tx), Ok(tz)) = (u8::try_from(spawn.cell_x), u8::try_from(spawn.cell_z)) else {
+                continue;
+            };
+            // Retail spells the clip index `rec[2] + 1`, with `0` standing for
+            // "no record here" - so an absent record and a record whose byte is
+            // `0xFF` stay distinguishable.
+            let marker = legaia_engine_vm::field_regions::lookup_tile_trigger(
+                triggers_primary,
+                triggers_fallback,
+                tx,
+                tz,
+            )
+            .map_or(0, |t| u16::from(t.record) + 1);
+            let Some(MarkerTemplate::Marker { sub_index }) = marker_template(marker) else {
+                continue;
+            };
+            tiles.push(MarkerTile {
+                cell: (spawn.cell_x, spawn.cell_z),
+                pos: spawn.pos,
+                rot: spawn.rot,
+                actor: legaia_engine_vm::dance_marker::MarkerActor {
+                    class: sub_index,
+                    ..Default::default()
+                },
+            });
+        }
+        MarkerFloor { tiles, script }
+    }
+
+    /// Build a pool from explicit tiles (hosts with no `.MAP`, and tests).
+    pub fn from_tiles(
+        tiles: Vec<MarkerTile>,
+        script: legaia_engine_vm::dance_marker::MarkerScript,
+    ) -> Self {
+        MarkerFloor { tiles, script }
+    }
+
+    /// How many marker actors the floor spawned.
+    pub fn len(&self) -> usize {
+        self.tiles.len()
+    }
+
+    /// `true` when the floor has no marker cell at all.
+    pub fn is_empty(&self) -> bool {
+        self.tiles.is_empty()
+    }
+
+    /// The pool, for a host that wants the placements.
+    pub fn tiles(&self) -> &[MarkerTile] {
+        &self.tiles
+    }
+
+    /// Advance every marker actor one frame.
+    ///
+    /// `pack_bias` is retail's `_DAT_8007B6F8`
+    /// ([`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`]) - added to the
+    /// table value before it reaches the set-model primitive, so the staged
+    /// value is a **global pool** index. A host indexing the scene's own mesh
+    /// pack passes `0` and gets the unbiased index instead.
+    pub fn step(&mut self, frame_delta: u8, pack_bias: i16) {
+        for t in self.tiles.iter_mut() {
+            // The clip-selector gate is the host's (`FUN_800204F8`), and a
+            // marker tile carries no clip: pass the never-armed pair so the
+            // report stays false rather than inventing a cursor.
+            legaia_engine_vm::dance_marker::step_marker(
+                &mut t.actor,
+                &self.script,
+                frame_delta,
+                pack_bias,
+                0,
+                0,
+            );
+        }
+    }
+
+    /// The current draw list: one `(world position, rotation, mesh index)` per
+    /// marker actor that has staged a mesh. A tile that has not stepped yet
+    /// draws nothing, exactly as retail's actor draws nothing before its first
+    /// set-model call.
+    pub fn draws(&self) -> Vec<([i16; 3], [u16; 3], i16)> {
+        self.tiles
+            .iter()
+            .filter_map(|t| t.actor.mesh.map(|m| (t.pos, t.rot, m)))
+            .collect()
+    }
+}
+
+// ------------------------------------------------------- polar offset helper
+
+/// Entries in each of the two quadrature tables the polar helper indexes - the
+/// angle is masked to 12 bits, so a full turn is 4096 steps.
+pub const POLAR_TABLE_LEN: usize = 0x1000;
+/// Angle mask the helper applies (`a0 & 0xFFF`).
+pub const POLAR_ANGLE_MASK: u32 = 0x0FFF;
+/// Fixed-point shift the helper folds the product down by.
+pub const POLAR_SHIFT: u32 = 12;
+
+// REF: FUN_80026be0 (installs the two table pointers from SCUS rodata)
+// REF: FUN_801cf3bc, FUN_801d26cc, FUN_801d4004, FUN_801d4948 (its retail
+// callers), FUN_801d0fa8 (the reel renderer, which reads the same tables
+// inline and is NOT a caller)
+
+// Wired: [`crate::fishing_actors::LureActor::cast`] offsets the cast lure
+// from the angler's facing through this, over the pair [`polar_tables`]
+// materialises, and both fishing hosts reach that. The gap the previous note
+// named - the **lure point** - is what closed; its two companion rows
+// ([`crate::fishing_actors::walk_grid_overhead`] and
+// [`crate::fishing_actors::water_tile_class`]) closed with it, as that note
+// predicted they would.
+//
+// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
+// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+/// PORT: FUN_801d7bb8 - the hub overlays' **polar offset** helper.
+///
+/// One of the small shared routines in the band above `0x801D0018`: the dumps
+/// at this address under the fishing, slot-machine and debug-menu overlay
+/// images are byte-identical (only the `[overlay_*.bin]` header line differs),
+/// so it is library code, not any one minigame's. The fourth dump at this VA,
+/// under the field overlay (PROT 0897), reports `0 instructions` and carries
+/// only decompiler output - it is the empty-dump artifact, not a fourth copy.
+///
+/// `FUN_801D7BB8(angle, radius, &out_a, &out_b, scale)` reads the same
+/// 12-bit-masked angle out of **two** quadrature tables - whose pointers live
+/// at `_DAT_8007B81C` and `_DAT_8007B7F8` - and writes
+/// `table[angle] * radius * scale >> 12` through each pointer.
+///
+/// `table_a` (the first output) is the **sine** table and `table_b` the
+/// **cosine** one: `FUN_80026be0` points `_DAT_8007B81C` at `DAT_80070A2C` and
+/// `_DAT_8007B7F8` at `DAT_8007122C`, and those two addresses are `0x800`
+/// bytes apart - one quarter turn of a 4096-entry `i16` table - so the pair is
+/// one table read at two phases, not two tables. Its entries are
+/// `trunc(0x1000 * sin)`, truncating toward zero rather than rounding.
+///
+/// Both products are computed in full 32-bit width before the single shift,
+/// and the shift is a plain arithmetic `sra` - it rounds toward **minus
+/// infinity**, unlike the `bgez`-biased shifts elsewhere in these overlays.
+/// A caller feeding a 12.12 `scale` gets a 12.12 result back.
+///
+/// Every retail caller passes an actor's `+0x26` **facing** word as the angle
+/// and the frame delta (scratchpad `0x1F800393`) as the scale, so the pair it
+/// returns is a facing-relative world offset for this frame. The call sites
+/// are all in the fishing overlay:
+///
+/// | Caller | What it offsets |
+/// |---|---|
+/// | `FUN_801CF3BC` case `0xD` | camera translation `_DAT_80089118` / `_DAT_80089120`, radius `0x14` |
+/// | `FUN_801CF3BC` case `0x14` | the cast **lure** spawn, `actor.xz - polar(facing, 200)` |
+/// | `FUN_801D26CC` / `FUN_801D4004` / `FUN_801D4948` | that lure's per-frame run and the line/celebration actors |
+///
+/// The slot machine's reel cylinders are **not** among them: `FUN_801D0FA8`
+/// reads the same two table pointers inline and never calls this.
+///
+/// Returns `None` when either table is too short to hold the masked angle.
+pub fn polar_offset(
+    angle: u32,
+    radius: i32,
+    scale: i32,
+    table_a: &[i16],
+    table_b: &[i16],
+) -> Option<(i32, i32)> {
+    let i = (angle & POLAR_ANGLE_MASK) as usize;
+    let a = *table_a.get(i)? as i32;
+    let b = *table_b.get(i)? as i32;
+    let fold = |t: i32| (t.wrapping_mul(radius).wrapping_mul(scale)) >> POLAR_SHIFT;
+    Some((fold(a), fold(b)))
+}
+
+/// The quadrature pair [`polar_offset`] reads, materialised once.
+///
+/// Retail reaches the same two tables through `_DAT_8007B81C` /
+/// `_DAT_8007B7F8`, which `FUN_80026be0` points at the SCUS rodata at
+/// [`SIN_TABLE_VA`] / [`COS_TABLE_VA`]. No engine boot path extracts SCUS
+/// rodata, so the entries are recomputed analytically with the retail table's
+/// truncate-toward-zero rounding - the same stand-in
+/// `legaia_asset::minigame_slot_scene` uses, and the disc is its oracle
+/// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
+///
+/// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
+/// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+pub fn polar_tables() -> (&'static [i16], &'static [i16]) {
+    use std::sync::OnceLock;
+    static TABLES: OnceLock<(Vec<i16>, Vec<i16>)> = OnceLock::new();
+    let (s, c) = TABLES.get_or_init(|| {
+        let n = POLAR_ANGLE_MASK as usize + 1;
+        (
+            (0..n)
+                .map(|i| legaia_asset::minigame_slot_scene::sin_4096(i as i32) as i16)
+                .collect(),
+            (0..n)
+                .map(|i| legaia_asset::minigame_slot_scene::cos_4096(i as i32) as i16)
+                .collect(),
+        )
+    });
+    (s.as_slice(), c.as_slice())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A floor buffer big enough for one tile record, the height grid and the
+    /// cell grid.
+    fn buffer() -> Vec<u8> {
+        vec![0u8; CELL_GRID_OFF + GRID_EXTENT as usize * CELL_GRID_PITCH]
+    }
+
+    fn set_cell(buf: &mut [u8], gx: usize, gz: usize, v: u16) {
+        let off = CELL_GRID_OFF + gz * CELL_GRID_PITCH + gx * 2;
+        buf[off..off + 2].copy_from_slice(&v.to_le_bytes());
+    }
+
+    fn set_terrain(buf: &mut [u8], gx: usize, gz: usize, v: u8) {
+        buf[HEIGHT_GRID_OFF + gz * HEIGHT_GRID_PITCH + gx] = v;
+    }
+
+    #[test]
+    fn ramp_is_a_flat_32_unit_ladder() {
+        let r = height_ramp();
+        assert_eq!(r[0], 0);
+        assert_eq!(r[1], 0x20);
+        assert_eq!(r[15], 0x1E0);
+        assert_eq!(r.len(), HEIGHT_RAMP_LEN);
+    }
+
+    #[test]
+    fn terrain_byte_splits_into_height_and_wall_nibbles() {
+        let mut buf = buffer();
+        set_terrain(&mut buf, 3, 4, 0xA5);
+        let g = FloorGrid::new(&buf);
+        assert_eq!(g.height_index(3, 4), 5);
+        assert_eq!(g.wall_nibble(3, 4), 0xA);
+    }
+
+    #[test]
+    fn flat_cell_returns_the_ramp_entry_exactly() {
+        let mut buf = buffer();
+        // Cell (1, 1): flat height index 3 across all four corners.
+        for (gx, gz) in [(1, 1), (2, 1), (1, 2), (2, 2)] {
+            set_terrain(&mut buf, gx, gz, 3);
+        }
+        set_cell(&mut buf, 1, 1, CELL_ON_FLOOR);
+        let ramp = height_ramp();
+        // world x/z = 0x80..0xFF lands in half-cells 2/3 -> grid cell 1.
+        let s = ground_height(FloorGrid::new(&buf), 0xC0, 0xC0, 0, &ramp, |_, _| None);
+        assert_eq!(s.height, 3 * 0x20);
+        // `CELL_ON_FLOOR` present -> the off-floor bit stays clear.
+        assert_eq!(s.flags & ACTOR_FLAG_OFF_FLOOR, 0);
+    }
+
+    #[test]
+    fn missing_on_floor_bit_raises_the_actor_flag() {
+        let buf = buffer();
+        let ramp = height_ramp();
+        let s = ground_height(FloorGrid::new(&buf), 0, 0, 0, &ramp, |_, _| None);
+        assert_eq!(s.flags & ACTOR_FLAG_OFF_FLOOR, ACTOR_FLAG_OFF_FLOOR);
+    }
+
+    #[test]
+    fn a_negative_flag_word_only_ors_the_bit_in() {
+        let buf = buffer();
+        let ramp = height_ramp();
+        // A negative flag word skips the clear-then-maintain arm entirely, so
+        // every other bit survives.
+        let s = ground_height(FloorGrid::new(&buf), 0, 0, 0x8000_00FF, &ramp, |_, _| None);
+        assert_eq!(s.flags, 0x8080_00FF);
+    }
+
+    #[test]
+    fn uneven_corners_blend_over_the_sub_cell_fraction() {
+        let mut buf = buffer();
+        // Cell 0: corner (0,0) index 0, (1,0) index 4, rest 0.
+        set_terrain(&mut buf, 1, 0, 4);
+        set_cell(&mut buf, 0, 0, CELL_ON_FLOOR);
+        let ramp = height_ramp();
+        // Dead on the +x corner: fx = 0x7F, fz = 0 -> nearly the full 4*0x20.
+        let s = ground_height(FloorGrid::new(&buf), 0x7F, 0, 0, &ramp, |_, _| None);
+        assert_eq!(s.height, (4 * 0x20 * 0x7F * 0x80) >> 14);
+        // Dead on the origin corner: fx = 0 -> exactly the (0,0) entry.
+        let s0 = ground_height(FloorGrid::new(&buf), 0, 0, 0, &ramp, |_, _| None);
+        assert_eq!(s0.height, 0);
+    }
+
+    #[test]
+    fn step_layer_path_averages_without_a_rounding_bias() {
+        let mut buf = buffer();
+        set_terrain(&mut buf, 0, 0, 1);
+        set_terrain(&mut buf, 1, 0, 2);
+        set_cell(&mut buf, 0, 0, CELL_STEP_LAYER | CELL_ON_FLOOR);
+        let ramp = height_ramp();
+        // No patch: plain `(0x20 + 0x40 + 0 + 0) >> 2`.
+        let s = ground_height(FloorGrid::new(&buf), 0x10, 0x10, 0, &ramp, |_, _| None);
+        assert_eq!(s.height, (0x20 + 0x40) >> 2);
+        // With a patch: quadrant bits at the half-cell parity of (0, 0) are
+        // the low two bits, and the whole step scales by 0x20.
+        let s2 = ground_height(FloorGrid::new(&buf), 0x10, 0x10, 0, &ramp, |_, _| {
+            Some(StepPatch {
+                step: 1,
+                quadrants: 0b11,
+            })
+        });
+        assert_eq!(s2.height, ((0x20 + 0x40) >> 2) - 3 * 0x10 - 0x20);
+    }
+
+    #[test]
+    fn the_step_layer_lookup_scans_kind_two_records() {
+        // A `+0x10000` layer: kind-2 descriptor at +8 (body 0x20, count 2).
+        let mut buf = vec![0u8; 0x10000 + 0x40];
+        let l = 0x10000;
+        buf[l + 0xA..l + 0xC].copy_from_slice(&0x20i16.to_le_bytes());
+        buf[l + 0xC..l + 0xE].copy_from_slice(&2i16.to_le_bytes());
+        buf[l + 0x20..l + 0x24].copy_from_slice(&[5, 6, 1, 0]);
+        buf[l + 0x24..l + 0x28].copy_from_slice(&[7, 8, 4, 0b11]);
+        let g = FloorGrid::new(&buf);
+        assert_eq!(
+            g.step_patch(7, 8),
+            Some(StepPatch {
+                step: 4,
+                quadrants: 0b11
+            })
+        );
+        assert_eq!(g.step_patch(5, 6).map(|p| p.step), Some(1));
+        assert_eq!(g.step_patch(6, 5), None);
+        assert_eq!(g.step_patch(-1, 6), None, "a negative index never matches");
+        assert_eq!(FloorGrid::new(&buf[..0x100]).step_patch(5, 6), None);
+    }
+
+    #[test]
+    fn floor_pass_skips_undrawn_and_out_of_grid_tiles() {
+        let mut buf = buffer();
+        // Tile id 1: drawn, neighbour delta (0, 0).
+        let base = TILE_RECORD_STRIDE;
+        buf[base + 0x12..base + 0x14].copy_from_slice(&TILE_FLAG_DRAWN.to_le_bytes());
+        // Tile id 2: drawn, but its neighbour probe leaves the grid.
+        let base2 = 2 * TILE_RECORD_STRIDE;
+        buf[base2 + 0x12..base2 + 0x14].copy_from_slice(&TILE_FLAG_DRAWN.to_le_bytes());
+        buf[base2 + 6] = 0x80; // -128 on x
+        set_cell(&mut buf, 0, 0, 1);
+        set_cell(&mut buf, 1, 0, 2);
+        set_cell(&mut buf, 2, 0, 0); // tile 0 has no drawn flag
+        let ramp = height_ramp();
+        let spawns = floor_tile_spawns(FloorGrid::new(&buf), &ramp, 0, 0, 3, 1, true);
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].tile_id, 1);
+        assert_eq!(spawns[0].cell_x, 0);
+    }
+
+    #[test]
+    fn floor_pass_places_z_by_subtracting_the_record_bias() {
+        let mut buf = buffer();
+        let base = TILE_RECORD_STRIDE;
+        buf[base + 0x12..base + 0x14].copy_from_slice(&TILE_FLAG_DRAWN.to_le_bytes());
+        buf[base + 4..base + 6].copy_from_slice(&0x60u16.to_le_bytes()); // off_z
+        set_cell(&mut buf, 1, 2, 1);
+        let ramp = height_ramp();
+        let spawns = floor_tile_spawns(FloorGrid::new(&buf), &ramp, 1, 2, 1, 1, false);
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].pos[0], (CELL_WORLD_UNITS + 0x40) as i16);
+        assert_eq!(
+            spawns[0].pos[2],
+            (2 * CELL_WORLD_UNITS - (0x60 - 0x40)) as i16
+        );
+    }
+
+    #[test]
+    fn a_marker_pool_flips_each_tile_through_its_own_class_row() {
+        use legaia_engine_vm::dance_marker::{MarkerActor, MarkerScript};
+
+        // Two tiles on different class rows, so the test can tell a per-tile
+        // cursor from a shared one.
+        let script = MarkerScript::from_rows([
+            vec![(10, 2), (11, 2)],
+            vec![(20, 4)],
+            vec![(30, 3), (31, 3), (32, 3)],
+            vec![(40, 1)],
+        ]);
+        let tile = |class: u16, x: i16| MarkerTile {
+            cell: (x as i32, 0),
+            pos: [x, 0, 0],
+            rot: [0; 3],
+            actor: MarkerActor {
+                class,
+                ..Default::default()
+            },
+        };
+        let mut floor = MarkerFloor::from_tiles(vec![tile(0, 0), tile(2, 128)], script);
+        assert_eq!(floor.len(), 2);
+        assert!(
+            floor.draws().is_empty(),
+            "nothing staged before the first step"
+        );
+
+        let mut seen: [Vec<i16>; 2] = Default::default();
+        for _ in 0..24 {
+            floor.step(1, 0);
+            for (i, t) in floor.tiles().iter().enumerate() {
+                if let Some(m) = t.actor.mesh
+                    && seen[i].last() != Some(&m)
+                {
+                    seen[i].push(m);
+                }
+            }
+        }
+        assert_eq!(&seen[0][..3], &[10, 11, 10], "row 0 cycles its two meshes");
+        assert_eq!(&seen[1][..3], &[30, 31, 32], "row 2 cycles its three");
+        // Both tiles draw, at their own positions, with their own meshes.
+        let draws = floor.draws();
+        assert_eq!(draws.len(), 2);
+        assert_eq!(draws[0].0, [0, 0, 0]);
+        assert_eq!(draws[1].0, [128, 0, 0]);
+        assert_ne!(draws[0].2, draws[1].2);
+    }
+
+    #[test]
+    fn the_pack_bias_reaches_the_staged_index_through_the_pool() {
+        use legaia_engine_vm::dance_marker::{MarkerActor, MarkerScript};
+        let script = MarkerScript::from_rows([vec![(7, 4)], vec![], vec![], vec![]]);
+        let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let mut floor = MarkerFloor::from_tiles(
+            vec![MarkerTile {
+                cell: (0, 0),
+                pos: [0; 3],
+                rot: [0; 3],
+                actor: MarkerActor::default(),
+            }],
+            script,
+        );
+        floor.step(1, bias);
+        assert_eq!(floor.draws()[0].2, 7 + bias, "the global pool index");
+        // A host indexing the scene's own pack asks for the unbiased value.
+        let script = MarkerScript::from_rows([vec![(7, 4)], vec![], vec![], vec![]]);
+        let mut unbiased = MarkerFloor::from_tiles(
+            vec![MarkerTile {
+                cell: (0, 0),
+                pos: [0; 3],
+                rot: [0; 3],
+                actor: MarkerActor::default(),
+            }],
+            script,
+        );
+        unbiased.step(1, 0);
+        assert_eq!(unbiased.draws()[0].2, 7);
+    }
+
+    #[test]
+    fn marker_template_window_is_exactly_the_four_clips() {
+        assert_eq!(marker_template(0), None);
+        assert_eq!(marker_template(5), Some(MarkerTemplate::Plain));
+        assert_eq!(
+            marker_template(6),
+            Some(MarkerTemplate::Marker { sub_index: 0 })
+        );
+        assert_eq!(
+            marker_template(9),
+            Some(MarkerTemplate::Marker { sub_index: 3 })
+        );
+        assert_eq!(marker_template(10), Some(MarkerTemplate::Plain));
+    }
+
+    #[test]
+    fn polar_offset_masks_the_angle_to_one_turn() {
+        let mut a = vec![0i16; POLAR_TABLE_LEN];
+        let mut b = vec![0i16; POLAR_TABLE_LEN];
+        a[1] = 0x0100;
+        b[1] = -0x0100;
+        // 0x1000 is a full turn, so 0x1001 and 1 index the same slot.
+        assert_eq!(
+            polar_offset(1, 0x40, 0x1000, &a, &b),
+            polar_offset(0x1001, 0x40, 0x1000, &a, &b)
+        );
+        // (0x100 * 0x40 * 0x1000) >> 12 = 0x4000, and the sibling table's
+        // negative entry mirrors it.
+        assert_eq!(
+            polar_offset(1, 0x40, 0x1000, &a, &b),
+            Some((0x4000, -0x4000))
+        );
+        // Zero entries stay zero whatever the radius.
+        assert_eq!(polar_offset(2, 0x7FF, 0x1000, &a, &b), Some((0, 0)));
+    }
+
+    #[test]
+    fn polar_offset_shift_rounds_toward_minus_infinity() {
+        let mut a = vec![0i16; POLAR_TABLE_LEN];
+        let b = vec![0i16; POLAR_TABLE_LEN];
+        a[0] = -1;
+        // -1 * 1 * 1 = -1; a plain arithmetic `sra` by 12 gives -1, not 0.
+        // (a `bgez`-biased shift, which this routine does *not* use, would
+        // give 0).
+        assert_eq!(polar_offset(0, 1, 1, &a, &b).map(|p| p.0), Some(-1));
+        a[0] = 1;
+        assert_eq!(polar_offset(0, 1, 1, &a, &b).map(|p| p.0), Some(0));
+    }
+
+    #[test]
+    fn polar_offset_refuses_a_short_table() {
+        let a = vec![0i16; 4];
+        let b = vec![0i16; POLAR_TABLE_LEN];
+        assert!(polar_offset(2, 1, 1, &a, &b).is_some());
+        assert!(polar_offset(4, 1, 1, &a, &b).is_none());
+    }
+}

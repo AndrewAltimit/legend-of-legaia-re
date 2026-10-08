@@ -71,6 +71,10 @@ pub struct ScreenshotConfig {
     /// merchant's or innkeeper's conversation without walking to it. The
     /// browser twin is `LegaiaRuntime::debug_talk_to_placement`.
     pub talk_at: Option<(u64, u8)>,
+    /// `LEGAIA_CAPTURE_SHOP=<idx>@<tick>`: stage scene shop `idx` at `tick`
+    /// (`World::debug_arm_scene_shop`), the browser page's
+    /// `debug_arm_scene_shop` twin.
+    pub shop_at: Option<(u64, usize)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_parity::retail_compare_battle::PhaseGate`]) instead of
@@ -84,6 +88,17 @@ pub struct ScreenshotConfig {
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
     pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
+    /// glides had all landed, so the captured frame lands the engine's too
+    /// (`World::land_battle_hud_glides`). Set by the retail-compare image
+    /// channel.
+    pub seat_hud_glides_landed: bool,
+    /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
+    /// HUD widget glides still in flight, each at the elapsed its displayed
+    /// frame shows; the captured frame seats the engine's on them
+    /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
+    /// retail-compare image channel.
+    pub seat_hud_glides: Vec<legaia_parity::retail_compare_battle::HudGlideSeat>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
@@ -101,6 +116,15 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
+    /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
+    /// the capture frame - the vignette record that spawned it ran before
+    /// the record the seed resumes.
+    pub seat_panel: Option<legaia_engine_core::screen_fx::PanelWidget>,
+    /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
+    /// draw environment's `r0 / g0 / b0`), written over the engine's on the
+    /// capture frame - the system script's op-`4C 13` history.
+    pub seat_clear: Option<[u8; 3]>,
     /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
@@ -387,6 +411,10 @@ impl ScreenshotConfig {
                 let (slot, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
             }),
+            shop_at: std::env::var("LEGAIA_CAPTURE_SHOP").ok().and_then(|v| {
+                let (idx, tick) = v.trim().split_once('@')?;
+                Some((tick.trim().parse().ok()?, idx.trim().parse().ok()?))
+            }),
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
@@ -396,6 +424,10 @@ impl ScreenshotConfig {
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
+                .map(|v| legaia_parity::retail_compare_battle::HudGlideSeat::list_from_env(&v))
+                .unwrap_or_default(),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare_script::ScriptGate::from_env(&v)),
@@ -404,6 +436,13 @@ impl ScreenshotConfig {
                     .ok()
                     .map(|v| legaia_parity::retail_compare::fog_from_env(&v)),
             ),
+            seat_clear: std::env::var("LEGAIA_SEAT_CLEAR").ok().and_then(|v| {
+                let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
+                <[u8; 3]>::try_from(c).ok()
+            }),
+            seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
+                .ok()
+                .and_then(|v| legaia_parity::retail_compare::panel_from_env(&v)),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')
@@ -890,6 +929,10 @@ struct PlayWindowApp {
     /// placement draw takes (parallel to the two draw lists) and the light
     /// they were shaded under - a different live light rebuilds them.
     field_lit: FieldLitMeshes,
+    /// `LEGAIA_DIAG_DRAWS=<path>`: the per-draw census beside the uploaded
+    /// meshes, written as texture families every frame
+    /// (`legaia_engine_core::draw_census`). `None` with the variable unset.
+    draw_census: Option<DrawCensusDiag>,
     /// Live floor-height-ladder patch for the four field draw lists above: the
     /// per-draw ladder rungs plus the ladder currently folded into their Y, so
     /// a script that sets a rung oscillating (op `0x4C` nibble-9) moves the
@@ -1024,6 +1067,11 @@ struct PlayWindowApp {
     field_terrain_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
     /// The same, per `field_terrain_color_draws` entry.
     field_terrain_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    /// Per `field_terrain_draws` entry: a camera-facing cell's record flags
+    /// and rotation (`EnvDraw::view_skip`), re-placed every frame.
+    field_terrain_facing: Vec<Option<field_render::CameraFacing>>,
+    /// The same, per `field_terrain_color_draws` entry.
+    field_terrain_color_facing: Vec<Option<field_render::CameraFacing>>,
     /// `C`-key toggle: when `true`, the field render uses the wide debug
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
     /// (`camera_view::field_follow_view`). Defaults to the retail view.
@@ -2081,4 +2129,19 @@ mod battle_camera_tests {
             }
         }
     }
+}
+
+/// The meshes' census for `LEGAIA_DIAG_DRAWS`, aligned with the upload lists
+/// it shadows.
+#[derive(Default)]
+pub(super) struct DrawCensusDiag {
+    /// Parallel to `meshes` (shorter when a later append has no census).
+    meshes: Vec<Option<legaia_engine_core::draw_census::MeshCensus>>,
+    /// Parallel to `field_lit.meshes`.
+    lit: Vec<legaia_engine_core::draw_census::MeshCensus>,
+    /// The full walk-ground mesh and the visible-tile crop of it.
+    ground: Option<legaia_engine_core::draw_census::MeshCensus>,
+    ground_crop: Option<legaia_engine_core::draw_census::MeshCensus>,
+    /// The VDF morph rebuilds, keyed like `field_morph_live`.
+    morph: std::collections::HashMap<usize, legaia_engine_core::draw_census::MeshCensus>,
 }

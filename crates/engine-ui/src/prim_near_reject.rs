@@ -74,11 +74,56 @@ pub fn prim_near_rejected(view_depths: &[f32], ot_shift: u32) -> bool {
 /// sz_per_w, ot_shift, near_otz]`. `sz_per_w` converts the frame's clip `w`
 /// into GTE `SZ` units (`1.0` for the field and battle cameras, whose `w` is
 /// the eye-space depth). `None` is off.
-pub fn shader_params(cut: Option<(f32, u32)>) -> [f32; 4] {
+///
+/// `span_h` arms the GPU's polygon-size limit on top ([`gpu_span_rejected`]):
+/// the `enable` lane then carries the projection's `H` (any value above `1.5`
+/// reads as armed), which the span test needs for the GTE's divide.
+pub fn shader_params(cut: Option<(f32, u32)>, span_h: Option<f32>) -> [f32; 4] {
     match cut {
-        Some((sz_per_w, shift)) => [1.0, sz_per_w, shift as f32, NEAR_OTZ as f32],
+        Some((sz_per_w, shift)) => [
+            span_h.filter(|&h| h > 1.5).unwrap_or(1.0),
+            sz_per_w,
+            shift as f32,
+            NEAR_OTZ as f32,
+        ],
         None => [0.0; 4],
     }
+}
+
+/// The GPU's polygon-size limit: it skips a polygon whose screen corners lie
+/// more than `1023` pixels apart horizontally or `511` vertically
+/// ([`crate::prim_near_reject`]'s sibling cut, documented with the dance hall
+/// in `minigame-dance.md`). Retail's prim leaves hand it the GTE's `SXY`
+/// with no clip of their own, so a primitive with a corner just in front of
+/// or behind the eye - a battle body seated between the camera and the
+/// caster - projects across the screen and is not drawn, where a port that
+/// clips per pixel paints it as long shards over the frame.
+pub const GPU_MAX_SPAN: [f32; 2] = [1023.0, 511.0];
+
+/// One corner's GTE screen offset from the projection centre, from its clip
+/// coordinates: `RTPS` divides by `SZ` saturated to `0..` with its quotient
+/// saturated at `0x1FFFF` (`H / SZ` capped at `2`, so a corner at or behind
+/// the eye lands at twice its eye-space offset), and `SX` / `SY` saturate to
+/// `-0x400..=0x3FF` around the centre. `half` is the logical screen's half
+/// extent (`[160, 120]`); `sz_per_w` and `h` as in [`shader_params`].
+pub fn gte_screen_offset(clip: [f32; 4], sz_per_w: f32, h: f32, half: [f32; 2]) -> [f32; 2] {
+    let sz = (clip[3] * sz_per_w).max(0.0);
+    let d = sz.max(h * 0.5);
+    std::array::from_fn(|i| {
+        let off = clip[i] * half[i] * sz_per_w / d;
+        (off + half[i]).clamp(-1024.0, 1023.0) - half[i]
+    })
+}
+
+/// Whether the GPU skips a triangle with these clip-space corners
+/// ([`GPU_MAX_SPAN`], [`gte_screen_offset`]).
+pub fn gpu_span_rejected(clips: [[f32; 4]; 3], sz_per_w: f32, h: f32) -> bool {
+    let s = clips.map(|c| gte_screen_offset(c, sz_per_w, h, [160.0, 120.0]));
+    (0..2).any(|a| {
+        let lo = s.iter().map(|p| p[a]).fold(f32::MAX, f32::min);
+        let hi = s.iter().map(|p| p[a]).fold(f32::MIN, f32::max);
+        hi - lo > GPU_MAX_SPAN[a]
+    })
 }
 
 /// Per-vertex primitive-corner records for a triangle list.
@@ -158,6 +203,42 @@ pub fn prim_corner_refs(positions: &[[f32; 3]], indices: &[u32]) -> Vec<PrimRef>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A battle-frame clip corner at eye offset `(x, y)` and depth `z`
+    /// under `H = 256` on the 320 x 240 screen.
+    fn clip(x: f32, y: f32, z: f32) -> [f32; 4] {
+        [x * 256.0 / 160.0, y * 256.0 / 120.0, 0.0, z]
+    }
+
+    #[test]
+    fn the_gpu_skips_a_triangle_wider_than_its_span_limit() {
+        // A body-sized triangle in front of the eye is drawn.
+        assert!(!gpu_span_rejected(
+            [
+                clip(0.0, 0.0, 1000.0),
+                clip(300.0, 0.0, 1000.0),
+                clip(0.0, 300.0, 1000.0)
+            ],
+            1.0,
+            256.0
+        ));
+        // A leg running from mid-stage to just past the eye: the near corner
+        // lands at twice its eye offset, saturated, and the span passes 511
+        // rows - the GPU skips it.
+        assert!(gpu_span_rejected(
+            [
+                clip(0.0, 0.0, 1500.0),
+                clip(40.0, 0.0, 1500.0),
+                clip(0.0, -400.0, -50.0)
+            ],
+            1.0,
+            256.0
+        ));
+        // Off unless the enable lane carries `H`.
+        assert_eq!(shader_params(Some((1.0, 2)), None)[0], 1.0);
+        assert_eq!(shader_params(Some((1.0, 2)), Some(256.0))[0], 256.0);
+        assert_eq!(shader_params(None, Some(256.0)), [0.0; 4]);
+    }
 
     #[test]
     fn the_field_cut_drops_a_quad_whose_mean_depth_is_under_128() {

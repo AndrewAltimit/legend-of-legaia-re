@@ -331,10 +331,25 @@ adds the buffer base to each):
 +0x1D  u8   ELEMENT of the cast (0=earth 1=water 2=fire 3=wind
             4=thunder 5=light 6=dark 7=none)
 +0x4A  u8   part count
++0x4B  u8   link count (equals the largest link below on every record;
+            the installer never reads it)
 +0x4C  u32[part_count]  per-part offsets (each part gets *(p+0x88) = p+0x8C
        and indirection fixups at p+4 / p+8 through the table that follows
        the part offsets)
+       u32[links]  link targets: a non-zero p+4 / p+8 is a 1-based index
+       into this tail, rebased to record + table[part_count + link - 1]
 ```
+
+The link tail has no count the installer reads: `FUN_801F19EC` resolves each
+non-zero link word through `table[part_count + link - 1]`
+(`0x801F1B08..0x801F1B80`, repeated on the big-summon arm at
+`0x801F1C28..0x801F1CA0`) and stops at `part_count` entries of its own loop.
+So the tail is as long as the largest link any part entry names, and the
+`+0x4B` byte carries that number without being read. The bytes between the
+NUL of the ASCII attack name and the TMD are slack, but not zero: on many
+records they are the tail of a Shift-JIS katakana string the English name was
+written over. `ActorRecordSlot::linked_offset_count` sizes the tail and the
+byte accounting claims it.
 
 The `+0x1D` byte is the **element the damage pipeline attributes to the
 cast**: `FUN_801F19EC` installs the record pointer at `0x801C9358`
@@ -364,9 +379,14 @@ For the **base + evolved-Seru summons (`0x81..=0x95`)** this actor-record TMD is
 the summon reuses an ordinary enemy creature's mesh. Matching each group's
 actor-record TMD against the archive by longest-common-prefix recovers the full
 spell → creature map (e.g. Gimard `0x81`→ archive id 10; the otherwise
-capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The map lives
+capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The texture
+pool is byte-identical too, so an evolved cast seats its own evolved body
+(Gola Gola, not Gimard), colours included. The map lives
 in `legaia_asset::summon_creatures` and is byte-validated by the disc-gated
-`summon_creature_tmd_map_real`. The **big-summon block `0x9A..=0xA0`** instead
+`summon_creature_tmd_map_real`. Both play hosts seat the body through
+`engine-core::summon::summon_spawn_asset`: the archive twin where one exists,
+the cast's own record (`parse_cast`) otherwise, which covers the high block
+`0x99..=0xA0`. The **big-summon block `0x9A..=0xA0`** instead
 carries a **bespoke mesh** - its actor-record TMD byte-matches no archive
 record - so those seven summons are not reused enemy bodies, and the
 creature-id route resolves nothing for them. Their mesh is still the actor

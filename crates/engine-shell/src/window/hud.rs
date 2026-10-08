@@ -2058,6 +2058,7 @@ impl PlayWindowApp {
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 plaque_dy: bh::battle_action_plaque_dy(w_ref),
                 target_plaque_dy: bh::battle_target_plaque_dy(w_ref),
+                bar_dy: bh::battle_readout_bar_dy(w_ref),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
@@ -2536,7 +2537,7 @@ mod battle_hud_wiring_tests {
     /// HUD drawn at coordinates nothing pinned.
     #[test]
     fn engine_ui_seats_mirror_the_packet_pinned_battle_chrome() {
-        use legaia_engine_vm::battle_chrome as bc;
+        use legaia_engine_render::battle_chrome as bc;
         let font = legaia_font::synthetic_for_tests();
         let hud = hud_with_party_row(250, 300, 12, 30);
         // The two party surfaces are mutually exclusive, so each is measured
@@ -2608,8 +2609,8 @@ mod battle_hud_wiring_tests {
     /// pinned. This window is again the only crate that can see both sides.
     #[test]
     fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_render::battle_chrome as bc;
         use legaia_engine_render::battle_command_ui as bcu;
-        use legaia_engine_vm::battle_chrome as bc;
 
         let pairs = [
             (bcu::CLUSTER_COMMAND, bc::CLUSTER_COMMAND),
@@ -2793,7 +2794,7 @@ mod battle_hud_wiring_tests {
     /// - a drift here is a four-digit HP drawn off the end of its panel.
     #[test]
     fn engine_ui_numeral_edges_mirror_the_packet_pinned_battle_chrome() {
-        use legaia_engine_vm::battle_chrome as bc;
+        use legaia_engine_render::battle_chrome as bc;
         let font = legaia_font::synthetic_for_tests();
         // Widest values every field is laid out against.
         let hud = hud_with_party_row(9999, 9999, 999, 999);
@@ -2973,8 +2974,8 @@ mod battle_hud_wiring_tests {
         // panel): its packet-pinned seat plus the +5 name inset.
         assert_eq!(
             legaia_engine_render::party_panel_stage_x(3, 2),
-            i32::from(legaia_engine_vm::battle_chrome::panel_seats(3)[2])
-                + i32::from(legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET),
+            i32::from(legaia_engine_render::battle_chrome::panel_seats(3)[2])
+                + i32::from(legaia_engine_render::battle_chrome::PANEL_TEXT_INSET),
             "unwritten third seat is not seat + inset"
         );
     }

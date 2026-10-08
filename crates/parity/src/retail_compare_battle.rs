@@ -208,6 +208,14 @@ pub struct RetailBattle {
     /// saved game-state window, but the save lift does not carry options,
     /// so the seed stamps it (`World::toggles.battle_camera`).
     pub camera_option: u8,
+    /// No HUD widget glide is in flight: every tracked record
+    /// `ctx[+0x11B4 + slot * 0xC]` reads `total == 0`, which is what
+    /// `FUN_801D9BBC` leaves once a glide has snapped onto its target
+    /// (`0x801D9BE4` skips a record whose `total` byte is zero).
+    pub hud_glides_landed: bool,
+    /// The HUD widget glides in flight, each as the displayed frame shows
+    /// it ([`HudGlideSeat`]); empty when every record has landed.
+    pub hud_glides: Vec<HudGlideSeat>,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -686,6 +694,71 @@ impl RetailBattle {
         self.engine_ground()
     }
 
+    /// This capture with every combatant's ground pair moved back by what
+    /// the engine's replay of the action moved it
+    /// (`EngineBattle::ground_drift`), or `None` when nothing moved enough
+    /// to matter ([`UNDRIFT_MIN`]).
+    ///
+    /// A capture inside an action holds its combatants where the action had
+    /// **already** moved them - the knockback a strike landed, a target
+    /// shoved back by a hit - and the seed places them there before the
+    /// drive replays that same action from its start, so every push lands a
+    /// second time (`battle_gimard_tail_fire_a`: Vahn ends 129 units behind
+    /// his captured pair, and the framing that follows him loses Gimard off
+    /// the edge). No word in the capture holds the pre-action ground, but
+    /// the engine's own replay measures the push: seeding
+    /// `captured - drift` stands each combatant on retail's pair at the
+    /// phase.
+    ///
+    /// The acting seat is the exception. Its own drift is its approach,
+    /// which ends at its target from wherever it starts, and the direction
+    /// it walks in is the heading every framing case subtracts - so taking
+    /// the walk off its start turns the shot. An acting seat that walked
+    /// moves with its **target's** drift instead: the pair keeps the
+    /// geometry of the first run (`battle_melee_hit_spark`'s Vahn stays on
+    /// his side of the monster, at the same distance) and lands on retail's
+    /// ground. One that did not walk (a caster) stays put.
+    pub fn undrift(
+        &self,
+        drift: &[Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    ) -> Option<Self> {
+        // Past the end signal the sequencer poses the winners, and a win
+        // pose's own travel is not a push the capture holds twice.
+        if self.span_gate.is_end() {
+            return None;
+        }
+        let pc = usize::from(self.party_count);
+        let significant =
+            |d: Option<[i32; 2]>| d.filter(|[dx, dz]| dx.abs().max(dz.abs()) >= UNDRIFT_MIN);
+        let acting = usize::from(engine_seat(self.active_actor, self.party_count));
+        let target = (self.target_code < 8)
+            .then(|| usize::from(engine_seat(self.target_code, self.party_count)));
+        let measured = *drift;
+        let mut drift = measured;
+        if let Some(own) = drift.get_mut(acting) {
+            let target_drift = target
+                .filter(|&t| t != acting)
+                .and_then(|t| measured.get(t).copied().flatten());
+            *own = significant(*own).and_then(|_| significant(target_drift));
+        }
+        let mut out = self.clone();
+        let mut moved = false;
+        for (slot, d) in drift.iter().enumerate() {
+            let Some([dx, dz]) = significant(*d) else {
+                continue;
+            };
+            let pool = if slot < pc { slot } else { 3 + (slot - pc) };
+            let Some(Some([x, z])) = out.ground.get_mut(pool) else {
+                continue;
+            };
+            let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            *x = clamp(i32::from(*x) - dx);
+            *z = clamp(i32::from(*z) - dz);
+            moved = true;
+        }
+        moved.then_some(out)
+    }
+
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
     pub fn engine_defeat_lanes(
         &self,
@@ -949,6 +1022,84 @@ pub const PRE_SEED_STATES: [u8; 3] = [0x00, 0x0A, 0x0B];
 /// `ctx[+0x274]` - the next actor the initiative pick `FUN_801DABA4` chose.
 const NEXT_ACTOR: u32 = 0x274;
 
+/// The HUD's tracked widget glides `FUN_801D9BBC` walks: `ctx[+0x11B4]`,
+/// `0xC`-byte records `[total][elapsed] .. [target x, y][start x, y]`, one
+/// per handle slot `ctx[+0x1074]` (forty).
+const HUD_GLIDE_TABLE: u32 = 0x11B4;
+const HUD_GLIDE_STRIDE: u32 = 0xC;
+const HUD_GLIDE_SLOTS: u32 = 40;
+
+/// One HUD widget glide in flight, as a capture's **displayed** frame shows
+/// it: the record's target seat (`+0x04` / `+0x06`, which names the widget -
+/// the actor plaque lands on `(16, 12)`, the readout bar on `(16, 192)`, the
+/// combo cluster's anchor on `(168, 168)`) and its `elapsed` byte less the
+/// display lag ([`display_lag_vsyncs`]). `FUN_801D9BBC` adds the frame step
+/// to `elapsed` a battle pass, so the byte counts vsyncs, the unit the lag is
+/// in; a glide younger than the lag had not left its start on the displayed
+/// frame (`0`).
+///
+/// The image child seats the engine's glides on these
+/// (`LEGAIA_SEAT_HUD_GLIDES`): the replay reaches an action's phase on its
+/// own clock, which the plates' sixteen-vsync raise does not share
+/// (`nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the
+/// raise, six on screen, where the engine's had landed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HudGlideSeat {
+    pub target: [i16; 2],
+    pub elapsed: u8,
+    pub total: u8,
+}
+
+impl HudGlideSeat {
+    /// `x:y:elapsed:total`, comma-separated - the form
+    /// [`Self::list_from_env`] reads back.
+    pub fn to_env(seats: &[Self]) -> String {
+        seats
+            .iter()
+            .map(|g| format!("{}:{}:{}:{}", g.target[0], g.target[1], g.elapsed, g.total))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// The inverse of [`Self::to_env`]; malformed entries are dropped.
+    pub fn list_from_env(v: &str) -> Vec<Self> {
+        v.split(',')
+            .filter_map(|e| {
+                let mut it = e.trim().split(':').map(str::parse::<i32>);
+                let (Some(Ok(x)), Some(Ok(y)), Some(Ok(elapsed)), Some(Ok(total))) =
+                    (it.next(), it.next(), it.next(), it.next())
+                else {
+                    return None;
+                };
+                Some(Self {
+                    target: [x as i16, y as i16],
+                    elapsed: elapsed.clamp(0, 255) as u8,
+                    total: total.clamp(0, 255) as u8,
+                })
+            })
+            .collect()
+    }
+}
+
+/// Every in-flight record of the HUD glide table, lag-corrected
+/// ([`HudGlideSeat`]).
+fn hud_glide_seats(ram: &[u8], ctx: u32, lag: u16) -> Vec<HudGlideSeat> {
+    (0..HUD_GLIDE_SLOTS)
+        .filter_map(|s| {
+            let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
+            let total = game_anchors::u8_at(ram, r);
+            (total != 0).then(|| HudGlideSeat {
+                target: [
+                    game_anchors::i16_at(ram, r + 4),
+                    game_anchors::i16_at(ram, r + 6),
+                ],
+                elapsed: u16::from(game_anchors::u8_at(ram, r + 1)).saturating_sub(lag) as u8,
+                total,
+            })
+        })
+        .collect()
+}
+
 /// The tween table `FUN_801D829C` builds (`ctx[+0x118C]`, nine
 /// `{u16 step, u16 endpoint}` records: pitch / yaw / roll, the translation
 /// trio, the focus trio).
@@ -1066,6 +1217,10 @@ impl RetailBattle {
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
+            hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
+                game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
+            }),
+            hud_glides: hud_glide_seats(ram, ctx, display_lag_vsyncs(ram)),
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
@@ -1190,6 +1345,40 @@ pub struct EngineBattle {
     /// The track the engine plays during the fight.
     pub battle_bgm: Option<u16>,
     pub save: legaia_save::SaveFile,
+    /// Per engine slot, how far the replay moved a combatant the seed
+    /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
+    /// a driven action that reached its phase ([`RetailBattle::undrift`]).
+    pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+}
+
+/// The smallest replay drift, on either axis, [`RetailBattle::undrift`]
+/// takes back - under it the push is noise against the framings' own
+/// tolerance and a second run would only re-sample the same frame.
+pub const UNDRIFT_MIN: i32 = 16;
+
+/// How far a run left its placed combatants from the capture's own ground
+/// pairs at the phase, summed over the slots `seeded` placed (`seeded` is
+/// the capture the run was seeded from - `captured` itself, or its
+/// [`RetailBattle::undrift`]). `None` when the run measured no drift.
+pub fn ground_residual(
+    captured: &RetailBattle,
+    seeded: &RetailBattle,
+    run: &EngineBattle,
+) -> Option<i64> {
+    let want = captured.seeded_ground();
+    let from = seeded.seeded_ground();
+    let mut sum = None;
+    for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+        let (Some([wx, wz]), Some([fx, fz]), Some([dx, dz])) =
+            (want[slot], from[slot], run.ground_drift[slot])
+        else {
+            continue;
+        };
+        let ex = i64::from(fx) + i64::from(dx) - i64::from(wx);
+        let ez = i64::from(fz) + i64::from(dz) - i64::from(wz);
+        *sum.get_or_insert(0) += ex.abs() + ez.abs();
+    }
+    sum
 }
 
 /// The first registered formation row whose monster list equals `ids`.
@@ -1573,6 +1762,19 @@ pub fn run_engine_battle(
         }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
             for t in 0..INFLIGHT_TICKS {
+                if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
+                    let w = &session.host.world;
+                    eprintln!(
+                        "[cast] t={t} st=0x{:02X} act={} yb={:?} cam={:?}",
+                        w.battle_ctx.action_state,
+                        w.battle_ctx.active_actor,
+                        w.battle.camera.as_ref().map(|c| c.action_yaw_base()),
+                        w.battle
+                            .camera
+                            .as_ref()
+                            .map(|c| (c.phase(), w.battle_cam_pose())),
+                    );
+                }
                 if gate.met(&session.host.world) {
                     phase_tick = Some(t);
                     break;
@@ -1631,6 +1833,21 @@ pub fn run_engine_battle(
         cam.align_orbit_yaw(f32::from(retail.camera.yaw));
     }
     let world = &session.host.world;
+    // How far the drive moved each placed combatant: a capture of a running
+    // action stands its combatants where the action had already moved them,
+    // and the drive replays the action from there.
+    let mut ground_drift = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    if matches!(driven, Some(Some(_))) {
+        for (slot, d) in ground_drift.iter_mut().enumerate() {
+            let (Some([gx, gz]), Some(a)) = (ground[slot], world.actors.get(slot)) else {
+                continue;
+            };
+            *d = Some([
+                a.move_state.world_x as i32 - i32::from(gx),
+                a.move_state.world_z as i32 - i32::from(gz),
+            ]);
+        }
+    }
     let pose = world.battle_cam_pose();
     let camera = CameraObs {
         pitch: pose.pitch.round() as i16,
@@ -1668,6 +1885,7 @@ pub fn run_engine_battle(
         field_current,
         battle_bgm: snap.battle_bgm,
         save: snap.save,
+        ground_drift,
     })
 }
 
@@ -3186,7 +3404,7 @@ fn run_drive(
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
             eprintln!(
-                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} depth={} acc={:?} tint={:?}",
+                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} depth={} acc={:?} plaque_dy={} tint={:?}",
                 world.mode,
                 world.battle.flow,
                 world.battle.command.is_some(),
@@ -3199,6 +3417,7 @@ fn run_drive(
                     .camera
                     .as_ref()
                     .map(|c| (c.close_up_accum(), c.is_gliding())),
+                legaia_engine_core::battle_hud::battle_action_plaque_dy(world),
                 world
                     .actors
                     .iter()
@@ -3573,6 +3792,47 @@ mod tests {
         assert_eq!(frame_step(&ram), 1, "a non-adaptive mode steps one vsync");
         put32(&mut ram, FORCED_STEP, 2);
         assert_eq!(frame_step(&ram), 2, "a forced step skips the history");
+    }
+
+    /// The glide table's in-flight records come out with the display lag
+    /// taken off `elapsed` (`nivora_duel_mid_blazing_slash`'s plaque and bar
+    /// read ten of sixteen, six on screen at step 2), a landed record
+    /// (`total == 0`) is skipped, and the list survives its env form.
+    #[test]
+    fn hud_glides_come_out_lag_corrected_and_round_trip() {
+        let mut ram = vec![0u8; 0x20_0000];
+        let ctx = 0x800E_B654;
+        let rec = |slot: u32| ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        // slot 0: the readout bar, (16, 234) -> (16, 192), ten in.
+        ram[(rec(0) & 0x1F_FFFF) as usize] = 16;
+        ram[(rec(0) & 0x1F_FFFF) as usize + 1] = 10;
+        put16(&mut ram, rec(0) + 4, 16);
+        put16(&mut ram, rec(0) + 6, 192);
+        // slot 1: the actor plaque, three in - younger than the lag.
+        ram[(rec(1) & 0x1F_FFFF) as usize] = 16;
+        ram[(rec(1) & 0x1F_FFFF) as usize + 1] = 3;
+        put16(&mut ram, rec(1) + 4, 16);
+        put16(&mut ram, rec(1) + 6, 12);
+        let seats = hud_glide_seats(&ram, ctx, 4);
+        assert_eq!(
+            seats,
+            vec![
+                HudGlideSeat {
+                    target: [16, 192],
+                    elapsed: 6,
+                    total: 16
+                },
+                HudGlideSeat {
+                    target: [16, 12],
+                    elapsed: 0,
+                    total: 16
+                },
+            ]
+        );
+        assert_eq!(
+            HudGlideSeat::list_from_env(&HudGlideSeat::to_env(&seats)),
+            seats
+        );
     }
 
     #[test]

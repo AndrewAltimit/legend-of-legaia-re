@@ -25,7 +25,7 @@ const EFFECT_TEXEL_WORLD: f32 = 1.0;
 /// applied to the sprite centre and before the projection - so the
 /// half-extents must be divided back out here or every battle effect draws
 /// `BATTLE_WORLD_SCALE` too large. The rule and its disassembly citation live
-/// in `legaia_engine_vm::effect_billboard`, shared with the browser host.
+/// in `legaia_engine_render::effect_billboard`, shared with the browser host.
 fn effect_sprite_corners(
     sprite: &legaia_engine_core::world::EffectSprite,
     right: Vec3,
@@ -33,7 +33,8 @@ fn effect_sprite_corners(
     view_scale: f32,
 ) -> [Vec3; 4] {
     let c = Vec3::from(sprite.world_pos);
-    let (hw, hh) = legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, view_scale);
+    let (hw, hh) =
+        legaia_engine_render::effect_billboard::world_half_extents(sprite.size, view_scale);
     let rx = right * (hw * EFFECT_TEXEL_WORLD);
     let uy = up * (hh * EFFECT_TEXEL_WORLD);
     [c - rx + uy, c + rx + uy, c - rx - uy, c + rx - uy]

@@ -60,8 +60,9 @@
 //! sparring tutorial's lesson command in a tutorial). The
 //! seated tier talks to the NPCs whose records reach a flag the next anchor
 //! carries or a destination the route needs, and the pad tier plays the same
-//! beats by walking to them; neither tier buys or equips (the pad tier opens
-//! the pause menu only to heal or burn an Incense), so a story beat that waits on one reads as
+//! beats by walking to them; neither tier buys, and the pad tier opens the
+//! pause menu only to heal, burn an Incense, or - replaying a segment a boss
+//! wiped - equip the bag's guard against that boss's element, so a story beat that waits on a purchase reads as
 //! a stall at that beat. The route follows `0x3F` scene changes and FMV hand-offs; a
 //! transport an entry script spawns on arrival is a missing edge (see
 //! `docs/tooling/full-game-ladder.md`).
@@ -1018,8 +1019,10 @@ fn beat_progress_option(session: &BootSession) -> Option<usize> {
         return None;
     }
     let (count, targets, bc) = open_picker(session)?;
+    // The branch runs to its first `0x21`: "I'm ready" plays some eighty
+    // instructions of the jump down before its `44 63`.
     let spawns = |mut at: usize| {
-        for _ in 0..48 {
+        for _ in 0..512 {
             let Ok(i) = legaia_asset::field_disasm::decode(&bc, at) else {
                 return false;
             };
@@ -1319,7 +1322,15 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
             return Run::Parked(e);
         }
         if session.host.world.mode == SceneMode::Battle {
-            if let Some(r) = drain_battle(session) {
+            // A random encounter the region roll raised while a script ran
+            // (`jouinb` P2[6], the rapids, carries the party across rolling
+            // regions) is fled as it is on a travel leg; anything a script
+            // staged is fought.
+            let flee = RANDOM_ROLL.with(|r| r.replace(false));
+            FLEE_ENCOUNTERS.with(|f| f.set(flee));
+            let r = drain_battle(session);
+            FLEE_ENCOUNTERS.with(|f| f.set(false));
+            if let Some(r) = r {
                 return r;
             }
             continue;
@@ -1336,7 +1347,9 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
         session.host.world.set_pad(pad);
         let before = player_xz(session);
         let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
+        let roll_before = encounter_roll_state(session);
         let r = session.tick();
+        note_random_roll(session, roll_before);
         if let Some(site) = site {
             let after = player_xz(session);
             let now = park_site(session);
@@ -1372,6 +1385,39 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
         Run::Released
     } else {
         Run::Parked(format!("{} at {}", holder(session), park_site(session)))
+    }
+}
+
+thread_local! {
+    /// Set when the region roll (not a staged fight) raised the encounter
+    /// whose transition is under way; consumed when its battle starts.
+    static RANDOM_ROLL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// What [`note_random_roll`] compares across one tick: whether the encounter
+/// session sat idle, whether a scripted formation was armed, and the region
+/// step counter (`World::encounters.step_counter`, written only by the
+/// region arm of `World::on_field_step`).
+fn encounter_roll_state(session: &BootSession) -> (bool, bool, i32) {
+    use legaia_engine_core::encounter::EncounterPhase;
+    let e = &session.host.world.encounters;
+    (
+        e.session
+            .as_ref()
+            .is_none_or(|s| matches!(s.phase(), EncounterPhase::Idle)),
+        e.scripted_formation_pending,
+        e.step_counter,
+    )
+}
+
+/// Mark [`RANDOM_ROLL`] when this tick's step left the idle session for a
+/// transition through the region arm: no scripted formation was armed going
+/// in (the scripted arm fires first and returns), and the region arm moved
+/// the step counter.
+fn note_random_roll(session: &BootSession, (idle, pending, counter): (bool, bool, i32)) {
+    let (idle_now, _, counter_now) = encounter_roll_state(session);
+    if idle && !idle_now && !pending && counter_now != counter {
+        RANDOM_ROLL.with(|r| r.set(true));
     }
 }
 
@@ -1455,6 +1501,38 @@ thread_local! {
 
 /// Percent of max HP below which the fighter heals a member.
 const HEAL_BELOW_PCT: u32 = 45;
+/// [`HEAL_BELOW_PCT`] against a boss ([`boss_fight`]).
+const BOSS_HEAL_BELOW_PCT: u32 = 60;
+
+/// A fight that forbids running against a foe of eight times the party's
+/// largest HP or more (`dohaty`'s 17200 to a 1256-HP Gala).
+fn boss_fight(w: &legaia_engine_core::world::World) -> bool {
+    if !w.battle.no_escape {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let ours = (0..n)
+        .map(|i| u32::from(w.actors[i].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    (n..w.actors.len()).any(|i| {
+        let a = &w.actors[i].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 8
+    })
+}
+
+/// The heal threshold for this fight. Against a boss a member tops up below
+/// three fifths: its party-wide hit is unseen until it lands, and the
+/// `dohaty` fight's first one (832 / 913 / 671) dropped two members sitting
+/// at 54% and 53% of their HP, above the ordinary threshold.
+fn heal_below_pct(w: &legaia_engine_core::world::World) -> u32 {
+    if boss_fight(w) {
+        BOSS_HEAL_BELOW_PCT
+    } else {
+        HEAL_BELOW_PCT
+    }
+}
 
 thread_local! {
     /// The largest HP loss one member took between two of the party's
@@ -1603,6 +1681,57 @@ fn guard_before_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         .all(|(i, &h)| i == usize::from(actor) || h > aoe * 5 / 8)
 }
 
+/// Whether the coming round may bring Evil Seru Magic (`0xAD`), the
+/// party-wide flurry and burst of monster `0xB4` (the `chitei2` P2[13]
+/// fight): its pick arm (`FUN_801E9FD4`, ported as `monster_ai::decide`)
+/// rolls the cast one time in three, but only once its Mystic Shield is
+/// down (`_DAT_8007BD84` clear - the damage halve a player sees lift), on
+/// the odd values of the per-round battle-mode counter, and while it holds
+/// the 255 MP the cast spends. A lv30 party takes about 1900 a member from
+/// it unguarded - more than any member holds - and about half that in the
+/// Spirit stance, so a player who has watched the shield drop guards the
+/// alternate rounds the cast can come on and acts on the others.
+fn evil_magic_due(w: &legaia_engine_core::world::World) -> bool {
+    const EVIL_MAGIC_CASTER: u16 = 0xB4;
+    const EVIL_MAGIC_MP: u16 = 0xFF;
+    let ai = &w.battle.monster_ai_state;
+    if ai.flag_bd84 != 0 || ai.mode_flags & 1 == 0 {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (n..w.actors.len()).any(|i| {
+        let a = &w.actors[i];
+        a.battle.hp > 0
+            && a.battle_monster_id == Some(EVIL_MAGIC_CASTER)
+            && a.battle.mp >= EVIL_MAGIC_MP
+            && u32::from(a.battle.hp) <= u32::from(a.battle.max_hp) / 2
+    })
+}
+
+/// [`evil_magic_due`] for one member: it guards when the stance lets it
+/// live through the cast (about half of what it does unguarded), and is left
+/// to the heal arm when even the guarded hit would drop it.
+fn wants_evil_magic_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if !evil_magic_due(w) {
+        return false;
+    }
+    let Some(a) = w.actors.get(usize::from(actor)) else {
+        return false;
+    };
+    let hp = projected_hp(w)
+        .get(usize::from(actor))
+        .copied()
+        .unwrap_or(0);
+    hp > 0 && hp * 100 >= u32::from(a.battle.max_hp) * 55
+}
+
+/// Whether the foes' last round took half or more of the HP the party
+/// still holds: healing cannot keep pace with that, and fleeing can.
+fn losing_race(w: &legaia_engine_core::world::World) -> bool {
+    let last = ROUND_HISTORY.with(|h| h.borrow().last().copied().unwrap_or(0));
+    last > 0 && last * 2 >= party_hp_key(w)
+}
+
 /// Whether a living foe holds its ability latch - the wind-up of a charge
 /// body (Xain's Bull Charge) before the party-wide hit it sets up. See
 /// [`wants_guard`].
@@ -1641,18 +1770,23 @@ fn solo_duel(w: &legaia_engine_core::world::World) -> bool {
 /// guard for the foe's swings and halves its specials, so the rounds the foe
 /// spends against it cost little, and a Delilas special (Che's Megaton
 /// Press, Lu's Plasma Strike) lands on a guarded member far more often than
-/// not. Below three fifths of its HP the member holds the stance round after
+/// not. Below five eighths of its HP the member holds the stance round after
 /// round until the heal arm ahead of this one has topped it up.
 fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     if !solo_duel(w) {
         return false;
     }
     let a = &w.actors[usize::from(actor)].battle;
-    // Held round after round below three fifths, or while one of the foe's
+    // Held round after round below five eighths, or while one of the foe's
     // heaviest rounds so far (a Delilas special lands most of a member's HP
     // at once) would drop the member unguarded.
     let threat = BIGGEST_HIT.with(std::cell::Cell::get);
-    let low = u32::from(a.hp) * 5 < u32::from(a.max_hp) * 3 || u32::from(a.hp) <= threat;
+    // A Delilas round varies by its swing count: Che's took 716 one round
+    // and 903 two rounds later, so an Arts round waits while the member sits
+    // within three twentieths again of the worst unguarded round seen, and
+    // below five eighths of its HP (a 900-HP Gala at 62% swung into 903).
+    // Half again starved the fight: Gala guarded and healed to the cap.
+    let low = u32::from(a.hp) * 8 < u32::from(a.max_hp) * 5 || u32::from(a.hp) * 20 <= threat * 23;
     // The choice is latched per foe round: the fighter re-reads the menu on
     // every pad poll until the press lands, and a choice that flipped under
     // it would press something else.
@@ -1789,11 +1923,18 @@ fn wanted_item(
     let duel = solo_duel(w);
     let limit = |i: usize| {
         let max = u32::from(w.actors[i].battle.max_hp);
-        let pct = max * HEAL_BELOW_PCT / 100;
+        let pct = max * heal_below_pct(w) / 100;
         // A party-wide hit's per-member share swings by a tenth or more
         // between casts (Van Saryu's Earthquake: 550, then 609 on a 690-HP
         // Gala), so the margin over it is a quarter.
-        let hit = (threat + threat / 8).max(aoe + aoe / 4).min(max * 95 / 100);
+        // A single hit bigger than the member's whole HP is one no heal
+        // outlasts: holding the member near full against it only spends
+        // every turn on items (Songi's 3..6-strike combo drops a full
+        // 1956-HP Gala, and the hand healed round after round instead of
+        // attacking).
+        let single = threat + threat / 8;
+        let single = if threat >= max { 0 } else { single };
+        let hit = single.max(aoe + aoe / 4).min(max * 95 / 100);
         if duel {
             return pct.max(hit).max(max * 3 / 5);
         }
@@ -1951,6 +2092,193 @@ fn wanted_mp_item(
     .map(|(_, id)| (id, actor))
 }
 
+/// The Fury Boost worth using now, and on whom (the acting member itself):
+/// in a fight that forbids running against a foe of ten times the party's
+/// largest HP or more, a member whose Miracle Art string costs more than its
+/// command pool, but not more than the pool the boost buys. The item raises
+/// the actor's `+0x1F9` charge byte, and every round boundary after it
+/// restores the pool `+0x154` to `base * 7 / 5 + 8` (cap `0x120`) instead of
+/// the base (`FUN_801D88CC` loop A, `World::apply_fury_boost_item`), so one
+/// turn spent buys a Miracle Art every round after. Koru's timed fight
+/// (`0xB6`: 20000 HP, the all-party finisher on round counter `4`) is lost on
+/// spells and short Arts strings alone.
+fn wanted_fury_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+    actor: u8,
+) -> Option<(u8, u8)> {
+    use legaia_engine_core::items::ItemEffect;
+    if !w.battle.no_escape || solo_duel(w) {
+        return None;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let i = usize::from(actor);
+    if i >= n || w.battle.fury_boost.get(i).copied().flatten().is_some() {
+        return None;
+    }
+    let ours = (0..n)
+        .map(|k| u32::from(w.actors[k].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    if !(n..w.actors.len()).any(|k| {
+        let a = &w.actors[k].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 10
+    }) {
+        return None;
+    }
+    if !miracle_armed(w, actor) {
+        return None;
+    }
+    let roster = w.party_roster_slot(i);
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let miracle = legaia_art::MIRACLE_ARTS
+        .iter()
+        .find(|m| m.character == character)?;
+    // Every direction costs the same outside the weapon arm (`+0x74`), and the
+    // Miracle string is typed with whatever the arm costs: price it at the
+    // dearest press, as the entry will.
+    let press = w
+        .battle
+        .swing_costs
+        .get(roster)
+        .copied()
+        .unwrap_or([legaia_engine_core::arts_command_input::FAVORED_COST; 4])
+        .into_iter()
+        .max()
+        .unwrap_or(u16::MAX);
+    let cost = u32::from(press) * miracle.commands.len() as u32;
+    let base = u32::from(w.actors[i].battle.agl_base);
+    let boosted = (base * 7 / 5 + 8).min(0x120);
+    if cost <= base || cost > boosted {
+        return None;
+    }
+    let mut ids = ids;
+    ids.find(|&id| {
+        w.tables
+            .item_catalog
+            .get(id)
+            .is_some_and(|e| e.usable_in_battle && matches!(e.effect, ItemEffect::ActionGauge))
+    })
+    .map(|id| (id, actor))
+}
+
+/// The attack Elixir worth handing out now, and to whom: in the same fights
+/// as [`wanted_fury_item`], a member that will not type a Miracle Art itself
+/// gives one to a member that does (Fury-boosted or already paid for) and
+/// carries no Attack buff yet. The class-7 Elixir ramps the target's attack
+/// scalar `x6/5` for the rest of the battle, and a Miracle Art is one strike
+/// against Koru's defence, so the ramp buys more than the summon the giver
+/// gives up.
+fn wanted_power_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+    actor: u8,
+) -> Option<(u8, u8)> {
+    use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+    use legaia_engine_core::spells::BuffStat;
+    if !w.battle.no_escape || solo_duel(w) {
+        return None;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    if usize::from(actor) >= n || miracle_ready(w, actor) || miracle_armed_fury(w, actor) {
+        return None;
+    }
+    let ours = (0..n)
+        .map(|k| u32::from(w.actors[k].battle.max_hp))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    if !(n..w.actors.len()).any(|k| {
+        let a = &w.actors[k].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 10
+    }) {
+        return None;
+    }
+    let target = (0..n as u8).find(|&m| {
+        m != actor
+            && w.actors[usize::from(m)].battle.hp > 0
+            && (w
+                .battle
+                .fury_boost
+                .get(usize::from(m))
+                .copied()
+                .flatten()
+                .is_some()
+                || miracle_ready(w, m))
+            && !w
+                .battle
+                .buffs
+                .iter()
+                .any(|b| b.slot == m && b.stat == BuffStat::Attack)
+    })?;
+    let table = w.tables.item_effects.as_ref()?;
+    ids.filter(|&id| {
+        w.tables
+            .item_catalog
+            .get(id)
+            .is_some_and(|e| e.usable_in_battle)
+            && matches!(table.stat_effect(id),
+                Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Attack))
+    })
+    // The single-stat Elixir before the four-stat one.
+    .min_by_key(|&id| match table.stat_effect(id) {
+        Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
+        _ => usize::MAX,
+    })
+    .map(|id| (id, target))
+}
+
+/// Whether `actor` is (or is about to be) a Miracle typist through a Fury
+/// Boost: boosted already, or [`wanted_fury_item`] would buy one.
+fn miracle_armed_fury(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    w.battle
+        .fury_boost
+        .get(usize::from(actor))
+        .copied()
+        .flatten()
+        .is_some()
+        && miracle_armed(w, actor)
+        || wanted_fury_item(
+            w,
+            w.party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id),
+            actor,
+        )
+        .is_some()
+}
+
+/// Whether `actor` can type its Miracle Art this turn: the marker is armed
+/// and the live command pool (`+0x154`, what the entry seeds from) pays for
+/// the whole string at the dearest press.
+fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let i = usize::from(actor);
+    if i >= w.party.party_count.clamp(1, 3) as usize || !miracle_armed(w, actor) {
+        return false;
+    }
+    let roster = w.party_roster_slot(i);
+    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let Some(miracle) = legaia_art::MIRACLE_ARTS
+        .iter()
+        .find(|m| m.character == character)
+    else {
+        return false;
+    };
+    let press = w
+        .battle
+        .swing_costs
+        .get(roster)
+        .copied()
+        .unwrap_or([legaia_engine_core::arts_command_input::FAVORED_COST; 4])
+        .into_iter()
+        .max()
+        .unwrap_or(u16::MAX);
+    u32::from(press) * miracle.commands.len() as u32 <= u32::from(w.actors[i].battle.agl)
+}
+
 /// Whether `actor`'s Miracle marker is armed (a Ra-Seru equipped): the queue
 /// builder replaces a typed Miracle string with the Miracle row only then.
 fn miracle_armed(w: &legaia_engine_core::world::World, actor: u8) -> bool {
@@ -1974,11 +2302,44 @@ fn wanted_spell(
         .enumerate()
         .filter(|(_, r)| r.affordable)
         .filter_map(|(i, r)| match w.tables.spell_catalog.get(r.id)?.effect {
-            SpellEffect::Damage { base_power, .. } => Some((i, base_power)),
+            SpellEffect::Damage { base_power, .. } => {
+                Some((i, u32::from(base_power) * spell_affinity_pct(w, r.id)))
+            }
             _ => None,
         })
         .max_by_key(|&(_, p)| p)
         .map(|(i, _)| i)
+}
+
+/// The element-affinity percent a Seru-magic cast lands with on the first
+/// standing foe: `matrix[summon creature element][foe element]`
+/// (`FUN_801dd864`), the attacker element being the summoned creature's
+/// record `+0x1D`, not the caster's. `100` when either element is unknown.
+fn spell_affinity_pct(w: &legaia_engine_core::world::World, spell_id: u8) -> u32 {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let Some(aff) = w.tables.element_affinity.as_ref() else {
+        return 100;
+    };
+    let Some(atk) = w.tables.summon_creatures.get(&spell_id).map(|d| d.element) else {
+        return 100;
+    };
+    let Some(def) = w
+        .actors
+        .iter()
+        .skip(n)
+        .find(|a| a.battle.hp > 0)
+        .and_then(|a| {
+            a.battle_element.or_else(|| {
+                w.tables
+                    .monster_catalog
+                    .get(a.battle_monster_id?)
+                    .map(|d| d.element)
+            })
+        })
+    else {
+        return 100;
+    };
+    u32::from(aff.affinity_pct(atk, def).unwrap_or(100))
 }
 
 thread_local! {
@@ -2124,7 +2485,9 @@ fn direction_mask(b: u8) -> u16 {
 ///
 /// A sparring tutorial validates each commit against its lesson, so there
 /// the hand keeps to the lesson: the up arm (using the first item) for the
-/// Items lesson, the down arm for Spirit, and `Auto` for the attack lessons.
+/// Items lesson, the down arm for Spirit, `Auto` for the attack lesson and
+/// `Command` with the Somersault for the hyper-arts drill (an Auto attack is
+/// that lesson's wrong-lesson rewind).
 fn fight_pad(session: &BootSession) -> u16 {
     use legaia_engine_core::arts_command_input::ArtsInputPhase;
     use legaia_engine_core::battle_input::CommandPhase;
@@ -2157,9 +2520,13 @@ fn fight_pad(session: &BootSession) -> u16 {
             .command
             .as_ref()
             .map_or(w.battle_ctx.active_actor, |c| c.actor);
-        let want =
-            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed)).or_else(|| {
-                wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+        let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+            .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
+            .or_else(|| {
+                wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+            })
+            .or_else(|| {
+                wanted_power_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
             });
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
@@ -2209,7 +2576,17 @@ fn fight_pad(session: &BootSession) -> u16 {
     if let Some(arts) = w.battle.arts_input.as_ref() {
         return match &arts.phase {
             ArtsInputPhase::Entering => {
-                let plan = arts_plan(w, arts);
+                // The hyper-arts lesson's drill is `[High] [Low] [High]` -
+                // Vahn's Somersault, `Up Down Up` - checked at the entry's
+                // confirm.
+                let plan = if lesson == Some(TutorialLesson::HyperArts) {
+                    use legaia_art::queue::Command;
+                    [Command::Up, Command::Down, Command::Up]
+                        .map(Command::as_byte)
+                        .to_vec()
+                } else {
+                    arts_plan(w, arts)
+                };
                 if arts.buffer.len() < plan.len() && plan.starts_with(&arts.buffer) {
                     direction_mask(plan[arts.buffer.len()])
                 } else {
@@ -2231,7 +2608,10 @@ fn fight_pad(session: &BootSession) -> u16 {
             wanted_item(w, bag.into_iter()).is_some()
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
-        let magic = || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor));
+        // A Miracle Art the live pool pays for outdamages any summon the
+        // hand can cast (Koru: ~2000 against Aluru's ~1300).
+        let magic =
+            || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor)) && !miracle_ready(w, cmd.actor);
         let drink = || {
             let bag: Vec<u8> = w
                 .party
@@ -2241,6 +2621,18 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .map(|(id, _)| *id)
                 .collect();
             wanted_mp_item(w, bag.into_iter(), cmd.actor).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        let fury = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            (wanted_fury_item(w, bag.clone().into_iter(), cmd.actor).is_some()
+                || wanted_power_item(w, bag.into_iter(), cmd.actor).is_some())
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
         return match &cmd.phase {
@@ -2257,9 +2649,18 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && guard_before_heal(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
+            // Evil Seru Magic can come this round: the stance.
+            CommandPhase::Menu { .. }
+                if lesson.is_none() && wants_evil_magic_guard(w, cmd.actor) =>
+            {
+                PadButton::Down.mask()
+            }
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
             // Out of MP for its best spell in a boss fight: a drink.
             CommandPhase::Menu { .. } if lesson.is_none() && drink() => PadButton::Up.mask(),
+            // A boss too big for spells and short strings: the turn that buys
+            // a Miracle Art every round after.
+            CommandPhase::Menu { .. } if lesson.is_none() && fury() => PadButton::Up.mask(),
             // One party-wide hit from death with nothing to heal: the stance.
             CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
@@ -2273,7 +2674,11 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && magic() && !solo_duel(w) => {
                 PadButton::Right.mask()
             }
-            CommandPhase::AttackMode { .. } if lesson.is_none() => PadButton::Right.mask(),
+            CommandPhase::AttackMode { .. }
+                if lesson.is_none() || lesson == Some(TutorialLesson::HyperArts) =>
+            {
+                PadButton::Right.mask()
+            }
             // A random encounter on a pad travel leg is fled: the prompt's
             // Right takes Run. A lone member worn down by a string of fights
             // wipes on whichever one the RNG happens to deal - a finding
@@ -2281,9 +2686,16 @@ fn fight_pad(session: &BootSession) -> u16 {
             // (`no_escape`) is fought. A member low enough to want a heal
             // takes it first: monster swings play their own clips and roll
             // their own power bytes, so a failed run under a full enemy
-            // round can now take a worn member from half HP to zero.
+            // round can now take a worn member from half HP to zero. But a
+            // heal does not win a race the foes are winning: once the last
+            // round took half of what the party still holds, the turn spent
+            // healing is a turn under another such round, and the run is
+            // the better draw (`vozz`'s three-monster F4 after a caught Run:
+            // a Healing Leaf a round into ~250 a round, two members down).
             CommandPhase::RoundPrompt { .. }
-                if FLEE_ENCOUNTERS.with(std::cell::Cell::get) && !w.battle.no_escape && !heal() =>
+                if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
+                    && !w.battle.no_escape
+                    && (!heal() || losing_race(w)) =>
             {
                 PadButton::Right.mask()
             }
@@ -2446,6 +2858,21 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
     };
     let mut party_prev = party_hp(session);
     let mut prev = 0u16;
+    // The element of a boss (a fight that forbids running): its record's
+    // `+0x1D`, read while its seat is still filled.
+    let boss_element = {
+        let w = &session.host.world;
+        w.battle
+            .no_escape
+            .then(|| {
+                w.actors
+                    .iter()
+                    .filter_map(|a| a.battle_monster_id)
+                    .find_map(|id| w.tables.monster_catalog.get(id))
+                    .map(|d| d.element)
+            })
+            .flatten()
+    };
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
@@ -2536,11 +2963,21 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             }
             if trace_hits {
                 eprintln!(
-                    "    [round] t={t} history {:?} due {} aoe {} hp {:?}",
+                    "    [round] t={t} history {:?} due {} aoe {} hp {:?} mode {} foe mp {:?}",
                     ROUND_HISTORY.with(|h| h.borrow().clone()),
                     big_round_due(),
                     AOE_HIT.with(std::cell::Cell::get),
                     party_hp(session),
+                    session.host.world.battle.monster_ai_state.mode_flags,
+                    session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .skip(session.host.world.party.party_count.clamp(1, 3) as usize)
+                        .map(|a| a.battle.mp)
+                        .filter(|&m| m > 0)
+                        .collect::<Vec<_>>(),
                 );
                 last_cmd = Default::default();
             }
@@ -2592,6 +3029,16 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
         if w.game_over_hold || w.game_over {
             if trace {
                 eprintln!("    [battle] wiped after {t} ticks");
+            }
+            // A boss fight (no running) lost: what the next attempt prepares
+            // for is the foe's element. The wiped party's game-over screen
+            // re-enters this loop with the monsters gone; it does not erase
+            // what beat them.
+            if trace {
+                eprintln!("    [battle] lost to a boss of element {boss_element:?}");
+            }
+            if boss_element.is_some() {
+                LOST_TO_ELEMENT.with(|l| l.set(boss_element));
             }
             return Some(Run::Battle(format!(
                 "party wiped: {}",
@@ -2998,6 +3445,9 @@ const PAD_STALL_FRAMES: u32 = 300;
 /// Times one walk-time script may fire on a single pad walk without changing
 /// a flag before the walk gives up on that way.
 const WALK_SCRIPT_REFIRES: u32 = 24;
+/// Times one walk-time script may carry the walker to the same landing,
+/// leaving the same flags, before the walk gives up on that way.
+const WALK_SCRIPT_CYCLES: u32 = 3;
 /// Cross-axis distance (world units) the pad walk does not correct while it
 /// still has ground to cover on the other axis.
 const WALK_DEADBAND: i16 = 8;
@@ -3244,11 +3694,32 @@ fn ledge_hops(session: &BootSession) -> WarpMap {
             if w.p2_record_gates_pass(c1, c2)
                 && let Some(land) = flag_path_landing(w, body, *pc0)
             {
-                map.entry(*tile).or_insert(land);
+                map.entry(*tile).or_insert(open_landing(w, land));
             }
         }
         map
     })
+}
+
+/// `land`, or the nearest open lattice cell within a tile of it. A walk
+/// leg's target carries the half-tile bit (`0x80`), and the leg's own
+/// arrival stops short of it: `deroa`'s hub P2[11] walks its west leg to
+/// `0xB6` (x 7040) and the platform parks the player at x 6912, beside the
+/// pillar the encoded point sits in. A landing in a wall cell joins nothing.
+fn open_landing(w: &legaia_engine_core::world::World, land: Cell) -> Cell {
+    let open = |c: Cell| {
+        let (x, z) = cell_center(c);
+        !w.field_tile_is_wall(x, z)
+    };
+    if open(land) {
+        return land;
+    }
+    (1..=4)
+        .flat_map(|r| {
+            (-r..=r).flat_map(move |dx| (-r..=r).map(move |dz| (land.0 + dx, land.1 + dz)))
+        })
+        .find(|&c| open(c))
+        .unwrap_or(land)
 }
 
 /// Where a walk-on record whose only forks are story-flag tests walks the
@@ -3372,7 +3843,7 @@ const ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
     use legaia_engine_core::man_field_scripts::{WalkTouchEvent, resolve_walk_touch_arm};
     let w = &session.host.world;
-    if w.mode != SceneMode::Field || w.props.walk_touch.is_empty() {
+    if w.mode != SceneMode::Field {
         return Vec::new();
     }
     let parsed = w
@@ -3396,6 +3867,100 @@ fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
         }) = live
         {
             out.push((contact, cell_of(world_x, world_z)));
+        }
+    }
+    out.extend(prop_rides(session));
+    out
+}
+
+/// The loaded field scene's **rides** under the live flags: each solid
+/// touch-class prop whose bind record, resumed where it is parked and
+/// followed against the story flags as the touch runs it, walks the player
+/// with a walk-to-tile (`C7 F8 <tx> <tz> <mode>`) before its `21` - contact
+/// centre and the cell of the last leg's tile. `taiku` P0[6], the lift at
+/// (109, 78), walks the player aboard, rides and walks them off the far
+/// side, each touch the other way (`0x38B`).
+fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
+    use legaia_asset::field_disasm::{InsnInfo, decode};
+    let w = &session.host.world;
+    if w.mode != SceneMode::Field {
+        return Vec::new();
+    }
+    let tile =
+        |b: u8| -> i16 { i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 } };
+    let mut out = Vec::new();
+    for (&anchor, prop) in &w.props.bank.props {
+        // A walk-touch door's landing is its decoded teleport
+        // ([`object_doors`]); the engine plays no walk leg for it.
+        if w.props
+            .walk_touch_records
+            .values()
+            .any(|&r| r == prop.record)
+        {
+            continue;
+        }
+        let Some(c) = w
+            .props
+            .colliders
+            .iter()
+            .find(|c| c.anchor == Some(anchor) && c.solid && !c.interact && !c.moving_box)
+        else {
+            continue;
+        };
+        let body = &prop.record_body[..];
+        let mut pc = prop.parked_pc;
+        let mut seen = HashSet::new();
+        let mut last = None;
+        while seen.insert(pc) {
+            let Ok(insn) = decode(body, pc) else { break };
+            if insn.size == 0 || insn.opcode == 0x21 {
+                break;
+            }
+            // A record that leaves the scene or teleports the player after
+            // its walk-in is a door, not a ride: `retockin` P0[0] walks the
+            // player into the doorway and changes scene to `jagaroom`. Its
+            // way out is the scene graph's, not a walk edge.
+            if insn.opcode == 0x3F || (insn.opcode == 0x23 && insn.extended == Some(0xF8)) {
+                last = None;
+                break;
+            }
+            match insn.info {
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    target: Some(target),
+                    ..
+                } if w.system_flag_test(idx) => {
+                    pc = target;
+                    continue;
+                }
+                InsnInfo::JmpRel { target, .. } => {
+                    pc = target;
+                    continue;
+                }
+                _ => {}
+            }
+            if insn.opcode == 0x47
+                && insn.extended == Some(0xF8)
+                && let (Some(&x), Some(&z)) = (body.get(pc + 2), body.get(pc + 3))
+                && (x & 0x7F, z & 0x7F) != (0x7F, 0x7F)
+            {
+                last = Some(cell_of(tile(x), tile(z)));
+            }
+            pc += insn.size;
+        }
+        if let (Some(land), Ok(x), Ok(z)) =
+            (last, i16::try_from(c.center.0), i16::try_from(c.center.1))
+        {
+            if std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some() {
+                eprintln!(
+                    "      [plan] ride {} P0[{}] at {anchor:?} contact ({x},{z}) lands {land:?} from pc {}",
+                    scene_name(session),
+                    prop.record,
+                    prop.parked_pc
+                );
+            }
+            out.push(((x, z), land));
         }
     }
     out
@@ -3679,6 +4244,152 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// What a [`cross_over`] detour is for: a door toward another scene, or the
+/// band tiles of a walk-on beat in another walk component of the scene.
+#[derive(Debug, Clone)]
+enum CrossTarget {
+    /// A door of the loaded scene toward this scene.
+    Door(String),
+    /// Any of these tiles (a walk-on band).
+    Tiles(Vec<(i16, i16)>),
+}
+
+impl CrossTarget {
+    /// The tiles the lattice plans toward.
+    fn tiles(&self, session: &BootSession, graph: &DiscGraph) -> Vec<(i16, i16)> {
+        match self {
+            CrossTarget::Door(toward) => doors_to(session, graph, toward)
+                .map(|d| {
+                    d.iter()
+                        .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            CrossTarget::Tiles(t) => t.clone(),
+        }
+    }
+
+    /// Whether the pad walk can now reach the target from where it stands.
+    fn in_reach(&self, session: &BootSession, graph: &DiscGraph) -> bool {
+        match self {
+            CrossTarget::Door(toward) => door_in_reach(session, graph, toward),
+            CrossTarget::Tiles(t) => tiles_in_reach(session, t),
+        }
+    }
+}
+
+/// Can the pad walk reach one of `tiles` (or a tile beside it) from where
+/// the player stands?
+fn tiles_in_reach(session: &BootSession, tiles: &[(i16, i16)]) -> bool {
+    let avoid = hazards(session, "");
+    let (x, z) = player_xz(session);
+    let from = cell_of(x, z);
+    tiles.iter().any(|&g| {
+        plan_path(session, from, g, &avoid)
+            .and_then(|p| p.last().copied())
+            .is_some_and(|c| {
+                let t = tile_of(cell_center(c).0, cell_center(c).1);
+                (t.0 - g.0).abs() + (t.1 - g.1).abs() <= 1
+            })
+    })
+}
+
+/// Whether the milestone beat in partition-2 record `rec` should wait: its
+/// record sets one of the milestone's missing reach flags and clears a flag
+/// the live state holds, and another
+/// missing reach flag's band lies outside the player's walk component. The
+/// pad hand plays the far beat first, by a crossing, the way the story does:
+/// `chitei2` P2[11] (the `0x470` climax) clears the Rapid Transport switch
+/// flags `0x4EF` / `0x4F0` that route `deroa`'s platform hub to the room
+/// whose door re-enters by the junction band P2[3] (`0x3C8`).
+fn reach_beat_waits(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    rec: usize,
+) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let Some(target) = BEAT_TARGET.with(|t| t.borrow().clone()) else {
+        return false;
+    };
+    let missing: Vec<u16> = target
+        .reach_flags
+        .iter()
+        .copied()
+        .filter(|&f| !session.host.world.system_flag_test(f))
+        .collect();
+    if missing.len() < 2 {
+        return false;
+    }
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 2, rec) else {
+        return false;
+    };
+    let sets: Vec<u16> = LinearWalker::new(&man[start..start + len], pc0)
+        .map_while(Result::ok)
+        .filter_map(|i| match i.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } if missing.contains(&idx) => Some(idx),
+            _ => None,
+        })
+        .collect();
+    if sets.is_empty() {
+        return false;
+    }
+    // Only a beat that takes something away waits: one that clears a flag
+    // the live state holds (P2[11] clears the switch flags). A beat that only
+    // adds state is played where it is met - P2[3] waiting on P2[11] in turn
+    // would leave both unplayed.
+    let w = &session.host.world;
+    let takes = LinearWalker::new(&man[start..start + len], pc0)
+        .map_while(Result::ok)
+        .any(|i| {
+            matches!(i.info, InsnInfo::SystemFlag { kind: FlagKind::Clear, idx, .. } if w.system_flag_test(idx))
+        });
+    if !takes {
+        return false;
+    }
+    missing.iter().filter(|f| !sets.contains(f)).any(|&f| {
+        let bands = reach_flag_bands(session, &[f]);
+        !bands.is_empty() && !tiles_in_reach(session, &bands)
+    })
+}
+
+/// The band tiles of the live walk-on records of the loaded scene whose own
+/// body sets one of `flags` - the beats a milestone's missing reach flags
+/// wait on (`chitei2` P2[3], the junction's north-south band, sets `0x3C8`).
+fn reach_flag_bands(session: &BootSession, flags: &[u16]) -> Vec<(i16, i16)> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::{partition_record_span, partition2_record_gates};
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return Vec::new();
+    };
+    let w = &session.host.world;
+    let mut out = Vec::new();
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        let r = usize::from(t.record);
+        let pass = partition2_record_gates(&mf, &man, r)
+            .is_some_and(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2));
+        if !pass {
+            continue;
+        }
+        let Some((start, pc0, len)) = partition_record_span(&mf, &man, 2, r) else {
+            continue;
+        };
+        let body = &man[start..start + len];
+        let sets = LinearWalker::new(body, pc0).map_while(Result::ok).any(|i| {
+            matches!(i.info, InsnInfo::SystemFlag { kind: FlagKind::Set, idx, .. } if flags.contains(&idx))
+        });
+        if sets {
+            out.push((i16::from(t.tile_x), i16::from(t.tile_z)));
+        }
+    }
+    out
+}
+
 /// A detour through a **crossing scene**: `cur`'s door toward `goal` lies in
 /// another walk component of `cur` (`map01`'s north and south halves meet
 /// only through `suimon`). A player crosses by entering a scene `X` that
@@ -3691,7 +4402,29 @@ fn cross_over(
     graph: &DiscGraph,
     cur: &str,
     goal: &str,
-    toward: &str,
+    target: &CrossTarget,
+) -> Result<String, String> {
+    // The doors a band crossing refused stay refused only for the crossing:
+    // the segment's other hops still take them.
+    let mut refused_here: Vec<(String, (i16, i16))> = Vec::new();
+    let r = cross_over_inner(session, graph, cur, goal, target, &mut refused_here);
+    REFUSED_DOORS.with(|r| {
+        let mut r = r.borrow_mut();
+        for k in refused_here {
+            r.remove(&k);
+        }
+    });
+    r
+}
+
+/// [`cross_over`]'s body; `refused_here` collects the doors it refused.
+fn cross_over_inner(
+    session: &mut BootSession,
+    graph: &DiscGraph,
+    cur: &str,
+    goal: &str,
+    target: &CrossTarget,
+    refused_here: &mut Vec<(String, (i16, i16))>,
 ) -> Result<String, String> {
     let back = |x: &String| graph.edges.get(x).is_some_and(|e| e.contains(cur));
     let mut cands: Vec<String> = graph
@@ -3708,11 +4441,11 @@ fn cross_over(
     let all = cands.clone();
     let plan = |session: &BootSession, shut: &BTreeSet<String>| {
         let open: Vec<String> = all.iter().filter(|x| !shut.contains(*x)).cloned().collect();
-        let p = crossing_plan(session, graph, &open, toward);
+        let p = crossing_plan(session, graph, &open, &target.tiles(session, graph));
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             let (px, pz) = player_xz(session);
             eprintln!(
-                "    [cross] {cur} toward {toward} from {:?}: lattice plan {p:?} (shut {shut:?})",
+                "    [cross] {cur} toward {target:?} from {:?}: lattice plan {p:?} (shut {shut:?})",
                 dispatch_tile(px, pz)
             );
         }
@@ -3748,7 +4481,9 @@ fn cross_over(
         }
         let (fx, fz) = player_xz(session);
         let left_from = tile_of(fx, fz);
+        LAST_HOP_DOOR.with(|l| *l.borrow_mut() = None);
         let r = pad_hop(session, graph, &x);
+        let out_door = LAST_HOP_DOOR.with(|l| l.borrow().clone());
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             let (px, pz) = player_xz(session);
             eprintln!(
@@ -3855,10 +4590,10 @@ fn cross_over(
                     // reach, else the next crossing from here.
                     Ok(s) if s == cur => {
                         let (px, pz) = player_xz(session);
-                        if door_in_reach(session, graph, toward) {
+                        if target.in_reach(session, graph) {
                             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                                 eprintln!(
-                                    "    [cross] {cur}: {toward}'s door in reach from {:?}",
+                                    "    [cross] {cur}: {target:?} in reach from {:?}",
                                     dispatch_tile(px, pz)
                                 );
                             }
@@ -3875,6 +4610,26 @@ fn cross_over(
                         if back && again {
                             shut.insert(x.clone());
                         }
+                        // Back on the side it left: the door it went out by
+                        // leads to the part of `x` that only returns here
+                        // (`chitei2`'s P2[4] lands north of `deroa`'s
+                        // platform hub, P2[5] south of it, where the hub ride
+                        // starts). The next round trip leaves by another.
+                        let mut new_door = false;
+                        if back
+                            && matches!(target, CrossTarget::Tiles(_))
+                            && let Some((s0, d)) = out_door.clone()
+                            && s0 == cur
+                        {
+                            new_door = REFUSED_DOORS.with(|r| {
+                                r.borrow_mut()
+                                    .insert((s0.clone(), d), flags_of_world(session))
+                                    .is_none()
+                            });
+                            if new_door {
+                                refused_here.push((s0, d));
+                            }
+                        }
                         // The lattice names the next crossing from where the
                         // player landed. A crossing taken before is taken
                         // again with its beats played.
@@ -3884,7 +4639,9 @@ fn cross_over(
                                     Some(l) => want.insert(y.clone(), l),
                                     None => want.remove(&y),
                                 };
-                                let seen = visited.contains(&y);
+                                // A round trip by a door not taken before
+                                // is a first visit: its beats wait.
+                                let seen = visited.contains(&y) && !new_door;
                                 queue.retain(|(q, _)| *q != y);
                                 queue.push_front((y, seen));
                             }
@@ -3960,13 +4717,11 @@ fn crossing_plan(
     session: &BootSession,
     graph: &DiscGraph,
     cands: &[String],
-    toward: &str,
+    targets: &[(i16, i16)],
 ) -> FirstHop {
-    let targets: Vec<(i16, i16)> = doors_to(session, graph, toward)
-        .ok()?
-        .iter()
-        .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
-        .collect();
+    if targets.is_empty() {
+        return None;
+    }
     let xdoors: Vec<(String, Vec<(i16, i16)>)> = cands
         .iter()
         .filter_map(|x| {
@@ -4437,25 +5192,28 @@ fn plan_search(
     // A touch-class door whose bind record runs `31 00` opens itself on the
     // touch wherever it stands, over a teleport or not (`jiji` P0[0], the
     // door across the corridor to the `map02` mouth at (66, 96)).
+    // An interact-class one (`31 1E` in its spawn prologue) opens the same
+    // way on the action button instead of the touch: the follower, held
+    // against it, taps Cross (`chitei2` P0[2], the gate at (41, 122) in
+    // front of the kind-0 teleport at (41, 124) into the Jette pocket).
     let self_opening = self_opening_doors(session);
     let blockers = Blockers::build(w, |c| {
         !c.moving_box
-            && !c.interact
             && (c.anchor.is_some_and(|a| self_opening.contains(&a))
-                || warps.keys().any(|&(tx, tz)| {
-                    let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
-                    (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)
+                || !c.interact
+                    && (warps.keys().any(|&(tx, tz)| {
+                        let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
+                        (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)
                     // A leaf anchored on the tile in front of the teleport
                     // (`dolk`'s inn stair door: anchor (76, 121), box
                     // centre z 121.3 tiles, teleport tile (76, 122)).
                     || c.anchor.is_some_and(|(ax, az)| {
                         (i32::from(ax) - tx).abs() + (i32::from(az) - tz).abs() <= 1
                     })
-                })
-                || doors.iter().any(|&((x, z), _)| {
-                    (c.center.0 - i32::from(x)).abs() <= 128
-                        && (c.center.1 - i32::from(z)).abs() <= 128
-                }))
+                    }) || doors.iter().any(|&((x, z), _)| {
+                        (c.center.0 - i32::from(x)).abs() <= 128
+                            && (c.center.1 - i32::from(z)).abs() <= 128
+                    })))
     });
     let mut s = Search {
         parent: HashMap::from([(from, from)]),
@@ -4904,6 +5662,7 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     }
     .map(|(g, _)| *g)
     .expect("doors_to is non-empty");
+    LAST_HOP_DOOR.with(|l| *l.borrow_mut() = Some((scene_name(session), goal)));
     let dist = |a: (i16, i16)| i32::from((a.0 - goal.0).abs() + (a.1 - goal.1).abs());
     // A door the collision lattice cannot get near is a different finding
     // from a walk that stalls on the way: the scene is split into walk
@@ -5432,8 +6191,13 @@ fn pad_walk(
     }
     // A player low on HP heals before setting out, not after the next
     // encounter has already rolled - or, with nothing to heal with, burns an
-    // Incense so the next encounter never rolls.
-    pad_field_heal(session, 500);
+    // Incense so the next encounter never rolls. A travel leg's encounter
+    // can open on a back attack, which takes a round before the party acts
+    // (`vozz`'s F4: ~120 to each member, then a caught Run), and a three-
+    // monster group can catch Run two or three rounds running (`map01`'s F5
+    // took ~240 from Noa over three caught rounds), so the walk sets out
+    // above four fifths.
+    pad_field_heal(session, 800);
     pad_field_repel(session, 500);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
         let w = &session.host.world;
@@ -5547,6 +6311,9 @@ fn pad_walk(
     let mut tap_owed = false;
     // Walk-time script firings per park site, with the flags they left.
     let mut refires: HashMap<String, (u32, BTreeSet<u16>)> = HashMap::new();
+    // Landings of walk-time scripts that moved the walker, by site and the
+    // flags they left.
+    let mut landings: HashMap<(String, BTreeSet<u16>, Cell), u32> = HashMap::new();
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -5643,15 +6410,16 @@ fn pad_walk(
                     path = unwedge(session, cell);
                 }
                 // A route over a band that stages a fight walks into a boss:
-                // a party under two thirds is topped up first, as before a
-                // stager (`taiku` P2[27], the F9 boss on the way out, met
-                // at 56% after a fled encounter).
-                if !path.is_empty() && party_hp_permille(session) < 667 {
+                // a party not near full is topped up first, as before a
+                // stager (`taiku` P2[27], Zora's F9 fight on the way out:
+                // met at 56% after a fled encounter it wiped, and met at 75%
+                // it still wiped, where a full party wins it).
+                if !path.is_empty() && party_hp_permille(session) < 900 {
                     let fights = fight_band_tiles(session);
                     if path.iter().any(|&c| {
                         let (x, z) = cell_center(c);
                         fights.contains(&dispatch_tile(x, z))
-                    }) && pad_field_heal(session, 900) > 0
+                    }) && pad_field_heal(session, 1000) > 0
                     {
                         planned_from = None;
                         path.clear();
@@ -5824,6 +6592,22 @@ fn pad_walk(
                 }
                 other => return Err(format!("scripted sequence on the walk: {other:?}")),
             }
+            // A band whose record stages a fight (`3E FF row`) is a boss's:
+            // `taiku` P2[27], Zora's "I will fight you", ends its talk on
+            // the F9 fight. The battle opens after the walk that crossed the
+            // band has returned, so the pending latch this walk polls never
+            // shows it; the band's rows join the staged set the next walk
+            // reads, which fights it instead of fleeing a fight it cannot
+            // run from.
+            if let Some(rec) = fired_record
+                && let Some((mf, man, _)) = scene_man_and_triggers(session)
+            {
+                let here_name = scene_name(session);
+                for row in staged_formation_rows(&mf, &man, 2, usize::from(rec)) {
+                    STAGED_FIGHTS.with(|s| s.borrow_mut().insert((here_name.clone(), Some(row))));
+                    scripted_next = true;
+                }
+            }
             let (px, pz) = player_xz(session);
             if before != (flags_of_world(session), cell_of(px, pz)) {
                 planned_from = None;
@@ -5838,11 +6622,16 @@ fn pad_walk(
             // they were: a refusal's step back, not a band walked through
             // (`nilboa` P2[26] / P2[27] re-dress the boulder room in place).
             let turned_back = before.0 == flags_now && before.1 != cell_of(px, pz);
-            let n = refires.entry(site).or_insert((0, flags_now.clone()));
+            // Keyed on the record as well as the park site: `jouinc`'s
+            // camera bands P2[3..57], one every three tiles of the way to
+            // `jouind`, all park at `pc=0x000C op=0x50`, and walking past
+            // twenty-five of them read as one script firing 25 times.
+            let key = format!("{site} {rec_label}");
+            let n = refires.entry(key.clone()).or_insert((0, flags_now.clone()));
             if n.1 == flags_now {
                 n.0 += 1;
             } else {
-                *n = (1, flags_now);
+                *n = (1, flags_now.clone());
             }
             // On a split party, a band that fired twice on one walk and
             // changed nothing turned the walker back (`nilboa`'s tunnel
@@ -5866,6 +6655,25 @@ fn pad_walk(
                     here(session),
                     n.0
                 ));
+            }
+            // A script that carries the walker somewhere it has already
+            // carried it, leaving the same flags, is a loop rather than
+            // progress, even when the flags it toggles keep the count above
+            // from building: `chitei2`'s transport rides between (98, 102)
+            // and (94, 22), each ride flipping the car's flags, and the
+            // walk rode it back and forth for most of a segment's budget.
+            if before.1 != cell_of(px, pz) {
+                let c = landings
+                    .entry((key, flags_now.clone(), cell_of(px, pz)))
+                    .or_insert(0u32);
+                *c += 1;
+                if *c > WALK_SCRIPT_CYCLES {
+                    return Err(format!(
+                        "pad walk stalled at tile {:?}: a script on the walk carried it to the same spot {} times",
+                        here(session),
+                        *c
+                    ));
+                }
             }
         }
         let d = dist(here(session));
@@ -6073,6 +6881,21 @@ fn on_tile(session: &BootSession, tile: (i16, i16)) -> bool {
 
 /// Press `mask` for one frame and release on the next: every menu surface
 /// reads `just_pressed`, so a held mask is one event.
+/// Press Start and wait out the pause wipe: retail's field session raises
+/// the wipe level from black-free to full before it spawns the menu
+/// (`FUN_801ED308`), and the menu takes no input until then
+/// (`BootSession::pause_wipe`). A press sent into the wipe is lost, and the
+/// field heal then walked out of a menu it never drove.
+fn open_pause_menu(session: &mut BootSession) {
+    tap_pad(session, PadButton::Start.mask());
+    for _ in 0..120 {
+        if session.field_menu.is_none() || session.pause_wipe().menu_spawned() {
+            break;
+        }
+        let _ = session.tick();
+    }
+}
+
 fn tap_pad(session: &mut BootSession, mask: u16) {
     session.host.world.set_pad(mask);
     let _ = session.tick();
@@ -6146,7 +6969,7 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
     if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
         return 0;
     }
-    tap_pad(session, PadButton::Start.mask());
+    open_pause_menu(session);
     if session.field_menu.is_none() {
         return 0;
     }
@@ -6257,6 +7080,184 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
     used
 }
 
+thread_local! {
+    /// The element of the boss (a fight that forbids running) the last pad
+    /// battle was lost to, for the reload that prepares against it.
+    static LOST_TO_ELEMENT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
+}
+
+/// The accessory passive that halves one element's hits on its wearer: the
+/// elemental-guard band `0x1D + element` the damage finisher's resist ladder
+/// tests (`FUN_801DDB30`; Ebony Jewel, Dark Stone and Dark Talisman for
+/// Dark). Elements past 6 have no guard.
+fn guard_passive(element: u8) -> Option<u8> {
+    (element <= 6).then_some(0x1D + element)
+}
+
+/// The Goods slot a guard goes into: the third (engine slot 7), the way a
+/// player who keeps the first two for the passives the party fights with
+/// would swap. Against Songi the Defender Chain's evasion (on Vahn and Noa
+/// the second Goods slot) outweighs the third slot's Wonder Amulet and
+/// Spirit Talisman.
+const GUARD_SLOT: u8 = 7;
+
+/// The bag's guard Goods item for `element`: the most-held item carrying
+/// [`guard_passive`].
+fn guard_item_for(w: &legaia_engine_core::world::World, element: u8) -> Option<u8> {
+    let want = guard_passive(element)?;
+    w.party
+        .inventory
+        .iter()
+        .filter(|&(&id, &qty)| {
+            qty > 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+        })
+        .max_by_key(|&(&id, &qty)| (qty, std::cmp::Reverse(id)))
+        .map(|(&id, _)| id)
+}
+
+/// The present party members that wear no guard against `element`.
+fn unguarded_members(w: &legaia_engine_core::world::World, element: u8) -> Vec<u8> {
+    let Some(want) = guard_passive(element) else {
+        return Vec::new();
+    };
+    w.present_party_list()
+        .into_iter()
+        .filter(|&s| {
+            w.party.roster.members.get(usize::from(s)).is_some_and(|m| {
+                !m.equipment().slots[5..].iter().any(|&id| {
+                    id != 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+                })
+            })
+        })
+        .collect()
+}
+
+/// Equip the bag's guard against `element` on every present member that
+/// lacks one, with the pad, as a player does after losing to a boss of that
+/// element: Start, Equip, the member in the character picker, the third
+/// Goods row, the guard in the candidate list, Yes - then Circle back to
+/// the field. Each confirm commits through the menu's own applier
+/// (`FUN_801E5A08`'s port), so the bag gives up the item and takes back the
+/// one it replaced. Returns how many members it equipped.
+fn pad_equip_guard(session: &mut BootSession, element: u8) -> usize {
+    use legaia_engine_core::equip_session::{EquipState, browse_row_for_slot};
+    use legaia_engine_core::field_menu::{FieldMenuPhase, FieldMenuRow};
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    let Some(item) = guard_item_for(&session.host.world, element) else {
+        return 0;
+    };
+    if !walking(session)
+        || !released(session)
+        || unguarded_members(&session.host.world, element).is_empty()
+    {
+        return 0;
+    }
+    let before = unguarded_members(&session.host.world, element).len();
+    open_pause_menu(session);
+    if session.field_menu.is_none() {
+        return 0;
+    }
+    let equip_row = FieldMenuRow::Equip.index();
+    let list = session.host.world.present_party_list();
+    let pos = |s: u8| list.iter().position(|&x| x == s).unwrap_or(0);
+    let mut skipped: HashSet<u8> = HashSet::new();
+    for _ in 0..400 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let target = unguarded_members(&session.host.world, element)
+            .into_iter()
+            .find(|s| !skipped.contains(s));
+        let pad = match (session.field_menu_sub.as_ref(), target) {
+            (None, None) => PadButton::Circle.mask(),
+            (None, Some(_)) => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } if cursor < equip_row => PadButton::Down.mask(),
+                FieldMenuPhase::Browsing { cursor } if cursor > equip_row => PadButton::Up.mask(),
+                FieldMenuPhase::Browsing { .. } => PadButton::Cross.mask(),
+                _ => 0,
+            },
+            (
+                Some(FieldMenuSubsession::Equip {
+                    session: es,
+                    char_slot,
+                    picking,
+                }),
+                Some(t),
+            ) => {
+                if *picking {
+                    match pos(*char_slot).cmp(&pos(t)) {
+                        std::cmp::Ordering::Less => PadButton::Down.mask(),
+                        std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                        std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                    }
+                } else if *char_slot != t {
+                    PadButton::Circle.mask()
+                } else {
+                    match es.state() {
+                        EquipState::SlotPicker { cursor } => {
+                            match cursor.cmp(&browse_row_for_slot(GUARD_SLOT)) {
+                                std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                            }
+                        }
+                        EquipState::ItemPicker { slot, cursor } if slot == GUARD_SLOT => {
+                            let rows = es.items_for_slot(slot);
+                            match rows.iter().position(|r| r.id == item && !r.equipped) {
+                                Some(k) => match usize::from(cursor).cmp(&k) {
+                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                                },
+                                None => {
+                                    skipped.insert(t);
+                                    PadButton::Circle.mask()
+                                }
+                            }
+                        }
+                        EquipState::Confirm {
+                            item_id, cursor, ..
+                        } if item_id == item => {
+                            if cursor == 0 {
+                                PadButton::Cross.mask()
+                            } else {
+                                PadButton::Left.mask()
+                            }
+                        }
+                        EquipState::Done(_) => 0,
+                        _ => PadButton::Circle.mask(),
+                    }
+                }
+            }
+            (Some(_), _) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    let after = unguarded_members(&session.host.world, element).len();
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [equip] item 0x{item:02X} against element {element}: {} member(s) unguarded -> {after}; menu {}",
+            before,
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    before - after.min(before)
+}
+
 /// Burn an Incense with the pad, as a player does who is too hurt to survive
 /// the next encounter and has nothing to heal with: when the weakest member
 /// is still below `threshold` per-mille after [`pad_field_heal`], the scene
@@ -6286,7 +7287,7 @@ fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
     {
         return false;
     }
-    tap_pad(session, PadButton::Start.mask());
+    open_pause_menu(session);
     if session.field_menu.is_none() {
         return false;
     }
@@ -6382,6 +7383,11 @@ thread_local! {
     /// hop up; new flags re-open the band.
     static REFUSED_DOORS: std::cell::RefCell<RefusedDoors> =
         std::cell::RefCell::new(HashMap::new());
+    /// The scene and door band [`pad_hop`] last walked to: a crossing that
+    /// brought the player back to the side it left refuses that band, so the
+    /// next round trip leaves by another door into the same scene.
+    static LAST_HOP_DOOR: std::cell::RefCell<Option<(String, (i16, i16))>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 thread_local! {
@@ -6654,14 +7660,49 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     let mut walked: BTreeSet<u8> = BTreeSet::new();
     let mut touched: BTreeSet<u8> = BTreeSet::new();
     let mut examined: BTreeSet<(u8, u8)> = BTreeSet::new();
-    let overreach = overreaching_records(&mf, &man, 2);
+    let overreach = overreaching_records(session, &mf, &man, 2);
     // A stager's record is often a staged conversation (`tunnelc` P1[4],
     // Xain: `0x323`, `0x324`, `0x325`, then the fight), each contact
     // playing the next stage, so stagers are approached every round until
     // a contact gains nothing.
     let mut stager_spent: BTreeSet<usize> = BTreeSet::new();
+    // A walk-on beat that ran and gained nothing ran on a gate its own
+    // script tests and failed (`rayman` P2[18] wants `0x1FD..0x1FF`, which
+    // the talks of the same pass raise): it plays again once the flags it
+    // ran against have changed, as a player stepping back onto the band.
+    // Only a change to a system flag the record itself tests rearms it: a
+    // beat whose script reads none of the flags that moved would replay the
+    // same run, and replaying a seat-and-release beat walks the player off
+    // the route another beat set up.
+    let tested: BTreeMap<usize, BTreeSet<u16>> = {
+        use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+        let mut m: BTreeMap<usize, BTreeSet<u16>> = BTreeMap::new();
+        for site in walk_partition_gflag_sites(&mf, &man, 2) {
+            if site.clean && site.bank == FlagBank::System && site.kind == FlagKind::Test {
+                m.entry(site.record).or_default().insert(site.flag);
+            }
+        }
+        m
+    };
+    let mut idle: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
+    let mut rearmed: BTreeSet<u8> = BTreeSet::new();
     for _round in 0..BEAT_ROUNDS {
         let round_start = flags_of_world(session);
+        let stale: Vec<u8> = idle
+            .iter()
+            .filter(|(rec, f)| {
+                tested.get(&usize::from(**rec)).is_some_and(|t| {
+                    f.symmetric_difference(&round_start)
+                        .any(|flag| t.contains(flag))
+                })
+            })
+            .map(|(&rec, _)| rec)
+            .collect();
+        for rec in stale {
+            idle.remove(&rec);
+            walked.remove(&rec);
+            rearmed.insert(rec);
+        }
         for p in boss_stager_placements(&mf, &man) {
             if stager_spent.contains(&p.placement_index) {
                 continue;
@@ -6798,7 +7839,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 return Err(w);
             }
             pad_budget(session)?;
-            if RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec))) {
+            if !rearmed.contains(&rec)
+                && RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec)))
+            {
                 walked.insert(rec);
             }
             if doors.contains(&rec)
@@ -6806,11 +7849,35 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 || overreach.contains(&usize::from(rec))
                 || ran >= MAX_BEATS
             {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() && !walked.contains(&rec) {
+                    eprintln!(
+                        "    [beat-skip] {name} P2[{rec}] door {} overreach {}",
+                        doors.contains(&rec),
+                        overreach.contains(&usize::from(rec))
+                    );
+                }
+                continue;
+            }
+            if record_stages_fight(&mf, &man, 2, usize::from(rec))
+                && record_overreaches(&mf, &man, 2, usize::from(rec), true)
+            {
                 continue;
             }
             let pass = partition2_record_gates(&mf, &man, usize::from(rec))
                 .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
             if !pass {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [beat-skip] {name} P2[{rec}] gates {:?}",
+                        partition2_record_gates(&mf, &man, usize::from(rec))
+                    );
+                }
+                continue;
+            }
+            if pad_hand() && reach_beat_waits(session, &mf, &man, usize::from(rec)) {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [beat-skip] {name} P2[{rec}] waits on the other reach beats");
+                }
                 continue;
             }
             walked.insert(rec);
@@ -6891,6 +7958,10 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             // end of one tunnel, drops its member beside the P2[2] band).
             if matches!(&r, Run::Parked(e) if e.contains("no walkable path")) {
                 walked.remove(&rec);
+            }
+            rearmed.remove(&rec);
+            if matches!(r, Run::Released) && flags_of_world(session) == f0 {
+                idle.insert(rec, f0.clone());
             }
             trace_beat(session, &f0, || {
                 format!("{name} walk P2[{rec}] at {tile:?} -> {r:?}")
@@ -7150,7 +8221,7 @@ fn prop_beats(
     };
     let setters0 = wanted(0);
     let setters2 = wanted(2);
-    let over0 = overreaching_records(mf, man, 0);
+    let over0 = overreaching_records(session, mf, man, 0);
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let sets_wanted = |rec: usize| {
@@ -7232,11 +8303,12 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .collect();
     let (px, pz) = player_xz(session);
     eprintln!(
-        "    [beat] {} +{gained:?} (ends in {} {:?} at {:?} ({px},{pz}))",
+        "    [beat] {} +{gained:?} (ends in {} {:?} at {:?} ({px},{pz}); frame {})",
         what(),
         scene_name(session),
         session.host.world.mode,
-        tile_of(px, pz)
+        tile_of(px, pz),
+        session.frames
     );
 }
 
@@ -7268,6 +8340,7 @@ fn next_anchor_has(flag: u16) -> bool {
 /// left alone - a long cutscene sets and clears many a scratch flag the
 /// anchor never shows.
 fn overreaching_records(
+    session: &BootSession,
     mf: &legaia_asset::man_section::ManFile,
     man: &[u8],
     partition: usize,
@@ -7281,8 +8354,115 @@ fn overreaching_records(
         .flat_map(|(c1, _)| c1)
         .collect();
     let latching = |part: usize| -> BTreeSet<usize> {
-        walk_partition_gflag_sites(mf, man, part)
+        let sites = walk_partition_gflag_sites(mf, man, part);
+        // A latch the record lowers again itself is a hold for its own
+        // span, not a latch: `nilboa` P2[20] raises `0x00F` (the C1 gate of
+        // the stepping-stone hops P2[8] / P2[9]) for the jump onto the
+        // challenge ledge and clears it on landing, before it spawns the
+        // Delilas family's challenge P2[21].
+        // Only a record that carries the party along a chain of arcs (two
+        // or more op `0x43` arcs on the `0xF8` channel: `nilboa`'s stepping
+        // stones to the Koru ledge) is exempted. A stair band (`dohaty` P2[3..8]) holds `0x00F` the same
+        // way around its walk legs, and a single-arc ledge (`jouind`
+        // P2[0] / P2[6..9]) around one drop; both play nothing, and walking
+        // one strands the hand on the far side.
+        let base =
+            mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
+        let carries = |rec: usize| {
+            use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
+            use legaia_engine_core::man_field_scripts::partition_record_span;
+            partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
+                LinearWalker::new(&man[start..start + len], pc0)
+                    .flatten()
+                    .filter(|i| {
+                        i.extended == Some(0xF8)
+                            && matches!(
+                                i.info,
+                                InsnInfo::ActorCtrl {
+                                    kind: ActorCtrlKind::ArcJump { .. },
+                                    ..
+                                }
+                            )
+                    })
+                    .count()
+                    >= 2
+            })
+        };
+        let lowered: BTreeSet<(usize, u16)> = sites
+            .iter()
+            .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Clear)
+            .filter(|s| carries(s.record))
+            .map(|s| (s.record, s.flag))
+            .collect();
+        // A record that also raises a still-clear flag the next anchor
+        // carries is the beat retail played, and its latch sits on another
+        // branch: `concnow` P2[15], the third vision, raises `0x3EF` on the
+        // visit the story takes and jumps past the `0x3D2` arm a later
+        // visit plays.
+        let w = &session.host.world;
+        // A decode-coherent site counts even where its two bytes also read
+        // as text (`nilboa` P2[25]'s `55 6D`, "Um"): the record's dialogue
+        // is `0x1F`-framed, so the walk is past it.
+        let wanted_by = |part: usize| -> BTreeSet<usize> {
+            walk_partition_gflag_sites(mf, man, part)
+                .iter()
+                .filter(|s| {
+                    s.bank == FlagBank::System
+                        && s.kind == FlagKind::Set
+                        && s.clean
+                        && !s.debug_menu
+                        && !w.system_flag_test(s.flag)
+                        && NEXT_ANCHOR_FLAGS
+                            .with(|a| a.borrow().as_ref().is_some_and(|f| f.contains(&s.flag)))
+                })
+                .map(|s| s.record)
+                .collect()
+        };
+        let wanted_here = wanted_by(part);
+        let wanted2 = wanted_by(2);
+        // The chain counts: what the record spawns (three levels), and the
+        // sequel the entry script spawns on a flag one of them raises
+        // before a fight (`nilboa` P2[20] spawns the challenge P2[21],
+        // whose `0x47A` has P1[0] spawn P2[25], which raises the `0x56D`
+        // the next anchor carries).
+        let set_by = |part: usize, rec: usize| -> BTreeSet<u16> {
+            walk_partition_gflag_sites(mf, man, part)
+                .iter()
+                .filter(|s| {
+                    s.record == rec && s.bank == FlagBank::System && s.kind == FlagKind::Set
+                })
+                .map(|s| s.flag)
+                .collect()
+        };
+        let played: BTreeSet<usize> = sites
+            .iter()
+            .map(|s| s.record)
+            .collect::<BTreeSet<usize>>()
             .into_iter()
+            .filter(|&rec| {
+                if wanted_here.contains(&rec) {
+                    return true;
+                }
+                let spawned = spawned_p2(mf, man, part, rec, base, 3);
+                let mut chain: Vec<(usize, usize)> = vec![(part, rec)];
+                chain.extend(spawned.iter().map(|&r| (2, r)));
+                spawned.iter().any(|r| wanted2.contains(r))
+                    || chain.iter().any(|&(p, r)| {
+                        entry_spawns_on(mf, man, &set_by(p, r))
+                            .iter()
+                            .any(|q| wanted2.contains(q))
+                    })
+            })
+            .collect();
+        sites
+            .into_iter()
+            .filter(|s| !played.contains(&s.record))
+            .filter(|s| !lowered.contains(&(s.record, s.flag)))
+            // Nor is a flag the record hands to the scene it leaves for,
+            // whose entry script consumes it: `concnow` P2[18], the way into
+            // Conkram's past, raises `0x423` and changes scene to `conc2`,
+            // whose P1[0] tests and clears it.
+            .filter(|s| !handoff_cleared(session, mf, man, part, s.record).contains(&s.flag))
             .filter(|s| {
                 s.bank == FlagBank::System
                     && s.kind == FlagKind::Set
@@ -7291,6 +8471,14 @@ fn overreaching_records(
                     && !s.debug_menu
                     && latches.contains(&s.flag)
                     && !next_anchor_has(s.flag)
+            })
+            .inspect(|s| {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [latch] P{part}[{}] sets latch {:#05X}",
+                        s.record, s.flag
+                    );
+                }
             })
             .map(|s| s.record)
             .collect()
@@ -7317,6 +8505,72 @@ fn overreaching_records(
     out
 }
 
+thread_local! {
+    /// The system flags each scene's entry script (partition 1 record 0)
+    /// clears, by scene name.
+    static ENTRY_CLEARS: std::cell::RefCell<HashMap<String, BTreeSet<u16>>> =
+        Default::default();
+}
+
+/// The flags record `(part, rec)` raises for the scene it changes to: those
+/// the entry scripts of its `0x3F` destinations (other than this scene)
+/// clear.
+fn handoff_cleared(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> BTreeSet<u16> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
+    use legaia_engine_core::man_field_scripts::{
+        FlagBank, partition_record_span, walk_partition_gflag_sites,
+    };
+    let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
+        return BTreeSet::new();
+    };
+    let body = &man[start..start + len];
+    let here = scene_name(session);
+    let dests: BTreeSet<String> = LinearWalker::new(body, pc0)
+        .flatten()
+        .filter(|i| matches!(i.info, InsnInfo::SceneChange { .. }))
+        .filter_map(|i| scene_change_name(body, &i))
+        .map(|d| d.to_ascii_lowercase())
+        .filter(|d| *d != here)
+        .collect();
+    let index = &session.host.index;
+    dests
+        .iter()
+        .flat_map(|d| {
+            ENTRY_CLEARS.with(|c| {
+                c.borrow_mut()
+                    .entry(d.clone())
+                    .or_insert_with(|| {
+                        let Some(dman) = Scene::load(index, d)
+                            .ok()
+                            .and_then(|sc| sc.field_man_payload(index).ok().flatten())
+                        else {
+                            return BTreeSet::new();
+                        };
+                        let Ok(dmf) = legaia_asset::man_section::parse(&dman) else {
+                            return BTreeSet::new();
+                        };
+                        walk_partition_gflag_sites(&dmf, &dman, 1)
+                            .iter()
+                            .filter(|s| {
+                                s.record == 0
+                                    && s.bank == FlagBank::System
+                                    && s.kind == FlagKind::Clear
+                            })
+                            .map(|s| s.flag)
+                            .collect()
+                    })
+                    .clone()
+            })
+        })
+        .collect()
+}
+
 /// Did the retail run leave boss stager placement `p1_record` alone before
 /// the next milestone? Of the system flags its own record cleanly SETs and
 /// no record of the scene ever CLEARs - flags that, once set, would still
@@ -7329,6 +8583,23 @@ fn stager_overreaches(
     man: &[u8],
     p1_record: usize,
 ) -> bool {
+    record_overreaches(mf, man, 1, p1_record, false)
+}
+
+/// [`stager_overreaches`] for any record: of the system flags record
+/// `(partition, record)` cleanly SETs and no record of the scene ever
+/// CLEARs, the next anchor carries none. A walk-on band that stages a fight
+/// is held to it as a stager is: `deene` P2[18] raises `0x6B5` and installs
+/// formation 11 (a 64800 HP fight), and no anchor from `zora_castle` on
+/// carries `0x6B5` (cleared again by the entry script) or the `0x6B6` of
+/// P2[19], the sequel the entry script spawns on it after the fight.
+fn record_overreaches(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    partition: usize,
+    record: usize,
+    follow_fight: bool,
+) -> bool {
     use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let sites: Vec<_> = (0..3)
         .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
@@ -7339,11 +8610,25 @@ fn stager_overreaches(
         .filter(|s| s.kind == FlagKind::Clear)
         .map(|s| s.flag)
         .collect();
+    let mut records = vec![(partition, record)];
+    if follow_fight {
+        // The fight's sequel: the entry script's post-battle return spawns
+        // the record a pending flag of this one names.
+        let pending: BTreeSet<u16> = sites
+            .iter()
+            .filter(|s| s.partition == partition && s.record == record && s.kind == FlagKind::Set)
+            .map(|s| s.flag)
+            .collect();
+        records.extend(
+            entry_spawns_on(mf, man, &pending)
+                .into_iter()
+                .map(|r| (2, r)),
+        );
+    }
     let lasting: BTreeSet<u16> = sites
         .iter()
         .filter(|s| {
-            s.partition == 1
-                && s.record == p1_record
+            records.contains(&(s.partition, s.record))
                 && s.kind == FlagKind::Set
                 && s.flag != 0
                 && !cleared.contains(&s.flag)
@@ -7351,6 +8636,45 @@ fn stager_overreaches(
         .map(|s| s.flag)
         .collect();
     !lasting.is_empty() && !lasting.iter().any(|&f| next_anchor_has(f))
+}
+
+/// The partition-2 records the scene's entry script (partition 1 record 0)
+/// spawns right behind a test of one of `flags`: the post-battle hand-off a
+/// pending flag set before `3E FF` arms (`deene` P1[0]: `76 B5`, `66 B5`,
+/// `44 27`).
+fn entry_spawns_on(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    flags: &BTreeSet<u16>,
+) -> BTreeSet<usize> {
+    use legaia_asset::field_disasm::{FlagKind as Kind, InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let mut out = BTreeSet::new();
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 1, 0) else {
+        return out;
+    };
+    let base = mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
+    let n2 = mf.partitions.get(2).map_or(0, Vec::len);
+    let mut armed = 0usize;
+    for insn in LinearWalker::new(&man[start..start + len], pc0).flatten() {
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: Kind::Test,
+                idx,
+                ..
+            } => armed = if flags.contains(&idx) { 4 } else { 0 },
+            InsnInfo::SpawnRecord { global_index } if armed > 0 => {
+                if let Some(r) = usize::from(global_index).checked_sub(base)
+                    && r < n2
+                {
+                    out.insert(r);
+                }
+                armed = 0;
+            }
+            _ => armed = armed.saturating_sub(1),
+        }
+    }
+    out
 }
 
 /// Rounds of the talk + walk-on beat passes per scene visit.
@@ -7474,6 +8798,41 @@ fn record_stages_fight(
         || spawned_p2(mf, man, part, rec, n0 + n1, 3)
             .into_iter()
             .any(|r| fights(2, r))
+}
+
+/// The formation rows record `(part, rec)` installs (op `0x3E` with
+/// `op0 == 0xFF` or `< 100`), its own and those of the partition-2 records
+/// it spawns (three levels).
+fn staged_formation_rows(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> BTreeSet<u16> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let rows = |part: usize, rec: usize| -> Vec<u16> {
+        partition_record_span(mf, man, part, rec).map_or_else(Vec::new, |(start, pc0, len)| {
+            LinearWalker::new(&man[start..start + len], pc0)
+                .flatten()
+                .filter_map(|i| match i.info {
+                    InsnInfo::WarpOrInteract {
+                        op1,
+                        is_warp: false,
+                        ..
+                    } => Some(u16::from(op1)),
+                    _ => None,
+                })
+                .collect()
+        })
+    };
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let mut out: BTreeSet<u16> = rows(part, rec).into_iter().collect();
+    for r in spawned_p2(mf, man, part, rec, n0 + n1, 3) {
+        out.extend(rows(2, r));
+    }
+    out
 }
 
 /// Whether record `(part, rec)` runs the mode-24 minigame door-warp
@@ -7815,7 +9174,17 @@ fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
                 if !talked {
                     last = Run::Parked(format!("pad walk to talk P1[{slot}]: {e}"));
                 }
-                continue;
+                // A walk stopped by the counter in front of the NPC still
+                // leans in: the probe decides whether it reaches over
+                // (`concnow` P1[12] / P1[13], the gate guards at (90, 119),
+                // behind the wall row 118 their talk paints away).
+                let (px, pz) = player_xz(session);
+                let me = dispatch_tile(px, pz);
+                let near = (me.0 - i32::from(npc_tile.0)).abs() <= 2
+                    && (me.1 - i32::from(npc_tile.1)).abs() <= 2;
+                if attempt > 0 || !near {
+                    continue;
+                }
             }
         }
         let npc = move |s: &BootSession| s.host.world.npcs.positions.get(&slot).copied();
@@ -7824,6 +9193,14 @@ fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
             return Run::Entered(scene);
         }
         if !facing(session) {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "      [talk-face] P1[{slot}] player {:?} npc {:?} probe {:?}",
+                    player_xz(session),
+                    session.host.world.npcs.positions.get(&slot),
+                    session.host.world.field_interact_probe_slot()
+                );
+            }
             if !talked {
                 let w = &session.host.world;
                 last = Run::Parked(format!(
@@ -8009,7 +9386,12 @@ fn traverse(
             })
         };
         match hop {
-            Ok(entered) => trail.push(entered),
+            Ok(entered) => {
+                if pad && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [hop] {cur} -> {entered} (frame {})", session.frames);
+                }
+                trail.push(entered)
+            }
             Err(e)
                 if pad && e.contains("no walkable path") && {
                     let n = crossed.entry((cur.clone(), goal.clone())).or_insert(0);
@@ -8017,7 +9399,13 @@ fn traverse(
                     *n <= MAX_CROSS_OVERS
                 } =>
             {
-                match cross_over(session, graph, &cur, &goal, &next) {
+                match cross_over(
+                    session,
+                    graph,
+                    &cur,
+                    &goal,
+                    &CrossTarget::Door(next.clone()),
+                ) {
                     Ok(s) => {
                         // Only a detour that ended in a third scene earns
                         // another: one that came back to `cur` already
@@ -8049,7 +9437,10 @@ fn traverse(
                 }
                 if beaten.insert(cur.clone()) {
                     if !e.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                        eprintln!("    [hop] {e}; playing {cur}'s beats");
+                        eprintln!(
+                            "    [hop] {e}; playing {cur}'s beats (frame {})",
+                            session.frames
+                        );
                     }
                     let mut log = Vec::new();
                     // Only the milestone's own beats pass may stop short of
@@ -8082,6 +9473,48 @@ fn traverse(
                     }
                     trail.push(format!("[{cur}->{next} dead]"));
                     continue;
+                }
+                // The beat that sets a missing reach flag lies in another walk
+                // component of the scene: a round trip through a neighbouring
+                // scene that lands on its side (`chitei2`'s junction band
+                // P2[3] is reached by re-entering from `deroa` at (93, 108)),
+                // then the beats again.
+                if stuck_here && pad {
+                    let flags: Vec<u16> = target
+                        .reach_flags
+                        .iter()
+                        .copied()
+                        .filter(|&f| !session.host.world.system_flag_test(f))
+                        .collect();
+                    // The bands of the flags no reachable beat sets.
+                    let bands: Vec<(i16, i16)> = flags
+                        .iter()
+                        .map(|&f| reach_flag_bands(session, &[f]))
+                        .filter(|b| !tiles_in_reach(session, b))
+                        .flatten()
+                        .collect();
+                    let n = crossed
+                        .entry((cur.clone(), String::from("<band>")))
+                        .or_insert(0);
+                    *n += 1;
+                    if !bands.is_empty() && *n <= MAX_CROSS_OVERS {
+                        let t = CrossTarget::Tiles(bands);
+                        match cross_over(session, graph, &cur, "", &t) {
+                            Ok(s) => {
+                                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                    eprintln!("    [cross] {cur} to the reach band: landed in {s}");
+                                }
+                                trail.push(format!("{s}(band crossing)"));
+                                beaten.remove(&s);
+                                continue;
+                            }
+                            Err(why) => {
+                                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                    eprintln!("    [cross] {cur} to the reach band: {why}");
+                                }
+                            }
+                        }
+                    }
                 }
                 if stuck_here {
                     let missing: Vec<String> = target
@@ -8237,50 +9670,79 @@ fn run_segment(
     }
 
     // -- pad pass ---------------------------------------------------------------
+    // A party wiped by a boss whose element a Goods item in the bag guards
+    // is played again from the same seed with that guard equipped: the
+    // player's reload after a game over, preparing for the fight that ended
+    // the last attempt (see "A boss the anchor's party cannot outlast" in
+    // the ladder docs).
     if with_pad && rep.tier >= Tier::Progresses {
-        let padded = catch_unwind(AssertUnwindSafe(|| {
-            let mut session = open_session(&inp.extracted);
-            let opts = live_opts(true);
-            seed(&mut session, from, from_anchor, &opts)?;
-            PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
-            PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
-            // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
-            // Every random draw it meets comes off the world rand stream, so
-            // a re-seeded run is how a pad route is checked for depending on
-            // one stream's luck (see "A pad wipe that moves with an
-            // unrelated change" in the ladder docs).
-            if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
-                let s = s.trim();
-                s.strip_prefix("0x")
-                    .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
-            }) {
-                session.host.world.rng_state = s;
+        let mut prepare: Option<u8> = None;
+        loop {
+            LOST_TO_ELEMENT.with(|l| l.set(None));
+            let padded = catch_unwind(AssertUnwindSafe(|| {
+                let mut session = open_session(&inp.extracted);
+                let opts = live_opts(true);
+                seed(&mut session, from, from_anchor, &opts)?;
+                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+                // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
+                // Every random draw it meets comes off the world rand stream,
+                // so a re-seeded run is how a pad route is checked for
+                // depending on one stream's luck (see "A pad wipe that moves
+                // with an unrelated change" in the ladder docs).
+                if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
+                    let s = s.trim();
+                    s.strip_prefix("0x")
+                        .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
+                }) {
+                    session.host.world.rng_state = s;
+                }
+                if let Some(element) = prepare {
+                    let n = pad_equip_guard(&mut session, element);
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [pad] retry: equipped {n} element-{element} guard(s)");
+                    }
+                }
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [pad] seeded {} at {:?} (anchor seat {:?})",
+                        scene_name(&session),
+                        player_xz(&session),
+                        from_anchor.and_then(|a| a.seat)
+                    );
+                }
+                let start = session.frames;
+                let mut trail = vec![scene_name(&session)];
+                let r = traverse(&mut session, graph, to, true, &mut trail)
+                    .map_err(|e| format!("{e} [trail {}]", trail.join(">")));
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    let (n, cells) = PLAN_STATS.with(std::cell::Cell::take);
+                    eprintln!(
+                        "    [pad] {} frames, {n} plans over {cells} cells",
+                        session.frames - start
+                    );
+                }
+                r
+            }));
+            let retry =
+                prepare.is_none() && matches!(&padded, Ok(Err(e)) if e.contains("party wiped"));
+            match padded {
+                Ok(Ok(())) => {
+                    rep.tier = Tier::Pad;
+                    rep.stall = None;
+                }
+                Ok(Err(e)) => {
+                    rep.stall = Some(match prepare {
+                        Some(el) => format!("pad (retried with element-{el} guards): {e}"),
+                        None => format!("pad: {e}"),
+                    })
+                }
+                Err(p) => rep.stall = Some(format!("pad PANIC: {}", panic_text(&*p))),
             }
-            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                eprintln!(
-                    "    [pad] seeded {} at {:?} (anchor seat {:?})",
-                    scene_name(&session),
-                    player_xz(&session),
-                    from_anchor.and_then(|a| a.seat)
-                );
+            match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
+                Some(el) if retry => prepare = Some(el),
+                _ => break,
             }
-            let start = session.frames;
-            let mut trail = vec![scene_name(&session)];
-            let r = traverse(&mut session, graph, to, true, &mut trail)
-                .map_err(|e| format!("{e} [trail {}]", trail.join(">")));
-            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                let (n, cells) = PLAN_STATS.with(std::cell::Cell::take);
-                eprintln!(
-                    "    [pad] {} frames, {n} plans over {cells} cells",
-                    session.frames - start
-                );
-            }
-            r
-        }));
-        match padded {
-            Ok(Ok(())) => rep.tier = Tier::Pad,
-            Ok(Err(e)) => rep.stall = Some(format!("pad: {e}")),
-            Err(p) => rep.stall = Some(format!("pad PANIC: {}", panic_text(&*p))),
         }
     }
     rep

@@ -162,6 +162,7 @@ pub(crate) fn snapshot_for_save(
     SlotSnapshot {
         slot,
         present: true,
+        damaged: false,
         content: SlotContent::LegaiaSave,
         label: if leader.name.is_empty() {
             format!("Slot {}", slot + 1)
@@ -421,11 +422,27 @@ mod save_rack_tests {
                 legaia_engine_core::input::PadButton::Right.mask(),
             );
         }
+        // Cross raises "Do you wish to load?" (defaulting to No); Yes runs
+        // "Now Loading" / "Load successful." before the outcome lands.
         step(
             &mut session,
             &mut flow,
             legaia_engine_core::input::PadButton::Cross.mask(),
         );
+        assert_eq!(flow.commit(&session), None, "the load asks first");
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Left.mask(),
+        );
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Cross.mask(),
+        );
+        while !session.is_done() {
+            step(&mut session, &mut flow, 0);
+        }
         assert_eq!(
             flow.commit(&session),
             Some(SaveCommit {
@@ -611,6 +628,23 @@ mod mounted_card_tests {
         assert_eq!(rack.slots().len(), CARD_PORTS as usize);
         assert!(rack.slots()[1].present, "port 2 holds the mounted card");
         assert_eq!(rack.slots()[1].label, "player.mcr");
+    }
+
+    /// Down on the pill row reaches port 2 through the flow and the session
+    /// together, the way the window ticks them.
+    #[test]
+    fn down_on_the_pill_row_picks_the_mounted_card() {
+        use legaia_engine_core::save_screen::SaveScreenFlow;
+        use legaia_engine_core::save_select::{SaveSelectMode, SaveSelectSession, SelectInput};
+        let (dir, card) = mount("player.mcr", 3);
+        let rack = disk_save_rack_with_card(dir.path(), Some(&card));
+        let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &rack);
+        let mut flow = SaveScreenFlow::new();
+        for edge in [0x0040u16, 0] {
+            let edge = flow.before_tick(&mut session, edge);
+            session.tick(SelectInput::from_pad_edge(edge));
+        }
+        assert_eq!(session.current_slot(), 1);
     }
 
     /// The grid behind port 2 is the card's own fifteen blocks: grid cell `i`

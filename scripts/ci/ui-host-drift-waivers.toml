@@ -335,7 +335,7 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "self.session.field_menu_is_open()"
+arm = "PauseMenuPress::Opened { scripted } = press"
 reason = """
 The frame on which a Start edge opened the pause menu: the arm sets the
 boot-UI state and hands the next frame to the arm above, so it is that arm's

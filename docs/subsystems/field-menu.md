@@ -467,14 +467,17 @@ in the pre-movement header of the locomotion controller `FUN_801D01B0`, at
 every talk and the dialog SM's teardown clears - so a talking player's Start
 never reaches the accept. Nothing opens, and nothing buzzes.
 
-Both engine hosts refuse through the same predicate,
-`World::dialogue_owns_input` (either dialogue channel): `open_field_menu`
-and `play_menu_open` return without building a session, and each caller
-re-reads `field_menu_is_open` / `play_menu_is_open` rather than assuming the
-open took, so a refused Start does not leave the host routing input to a
-menu that is not there. The tier-3 host-drift row for pause-menu open names
-the predicate, so one host cannot keep the refusal while the other loses it
-(see [`host-drift.md`](../tooling/host-drift.md#tier-3---simulation-do-both-hosts-feed-the-same-kernel)).
+Every host refuses through one engine call. A menu-button press is
+`BootSession::press_field_menu` on the native window, the browser page and a
+headless `BootSession::tick` alike: the Start edge must pass
+`World::field_menu_open_allowed`, which holds `World::dialogue_owns_input`
+(either dialogue channel) among its gates, and the builder
+`BootSession::open_field_menu` refuses again on the engaged bit for any caller
+that reaches it without a press. A refused press opens nothing and buzzes
+nothing (only the menu lock buzzes), and the page's root picker is the
+session's own `field_menu`, so there is no second copy of the rule to drift.
+The tier-3 host-drift row for the pause-menu press names the kernel at every
+host's press site (see [`host-drift.md`](../tooling/host-drift.md#tier-3---simulation-do-both-hosts-feed-the-same-kernel)).
 
 The seven labels are **NUL-terminated C strings** in the menu overlay's
 leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at

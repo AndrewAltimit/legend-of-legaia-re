@@ -80,6 +80,14 @@ fn tap(s: &mut BootSession, b: PadButton) {
     let _ = s.tick();
     s.host.world.set_pad(0);
     let _ = s.tick();
+    // A Start that opened the menu: wait out the field's wipe until the menu
+    // exists (`BootSession::pause_wipe`).
+    for _ in 0..64 {
+        if s.pause_wipe().menu_spawned() {
+            break;
+        }
+        let _ = s.tick();
+    }
 }
 
 fn root_cursor(s: &BootSession) -> Option<u8> {

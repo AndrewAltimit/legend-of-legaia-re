@@ -869,6 +869,16 @@ impl LegaiaMinigames {
             "player": f.player_roster(),
             "opponent": f.opponent_roster(),
             "cells": cells,
+            // Whether this cabinet state's epilogue draws the duel HUD
+            // (not under the result screens or the NEXT GAME / PAY OUT
+            // sheet), and the sheet's pot numeral over the run's winnings
+            // accumulator - the placements both play hosts draw.
+            "draws_hud": legaia_engine_core::baka_cabinet::draws_hud(f.cabinet().state()),
+            "pot_digits": if f.cabinet().choice_sheet().is_some() {
+                legaia_engine_core::baka_cabinet::choice_pot_placements(self.baka_winnings)
+            } else {
+                Vec::new()
+            },
         })
         .to_string()
     }

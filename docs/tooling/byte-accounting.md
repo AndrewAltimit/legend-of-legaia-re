@@ -599,10 +599,18 @@ it.
 | `0897` | `0x23E50` up, about 1.2 KB in short runs | what the field overlay's data segment keeps once its window table (`0x801F2B98`, 27 records of `0x1C`), sound-test rows (`0x801F2E94`, 73 of ten bytes), `jalr` handler table (`0x801F33B4`, 52 words indexed by actor `+0x50`) and fifteen window programs are claimed ([below](#a-runtime-index-states-its-stride-and-a-consumer-its-count)) | short tables whose runtime index has neither a bound check nor a formed address after it that closes a whole element |
 | `0899` | `0x1EB28`, 3552 B | zero fill between the save-menu atlas's end and the save-slot icon sheet at `0x1F908` | not uninitialised data: no instruction in any image forms an address inside it (`find-gp-relative-refs.py --prot`, zero hits), so it is inter-asset slack, and it already classifies `zero_pad` |
 | `0899` | `0x163A7`, about 1 KB, claimed | the pause menu's window-script programs, handed to `FUN_801D6628` mostly from `switch` arms ([below](#the-window-programs-are-read-off-their-interpreters-calls)) | - |
-| `0899` | `0x2050C` band | what is left of the save-screen message slots once their formed strings are claimed - the NUL tails of the `0x80`-stride slots | the stride is measured off the slots, not off a consumer |
+| `0899` | `0x2050C`, 768 B, claimed | the save-screen text slots: six `0x80`-byte buffers from `0x801EED24`, each a string at the slot start and zero fill to its end, the sixth closed by the region filename prefix the image forms at `0x801EF024`. Slots 0 and 3 are written in place by the code that forms them (play-time digits, page digits); slots 1, 2, 4 and 5 - a load-failure, a wrong-game, a not-available and a not-used message - are named by nothing in any image, in any of the five address forms or through `gp` | - the stride is read off the layout and checked slot by slot (`claim_save_text_slots`) |
 | `0976` | `0xD44C`, 104 B, and short runs | the words from `0x801DBC64` to `0x801DBCCC`, above the three sixteen-byte records at `0x801DBC34` a pointer-bump loop sizes | no instruction the image carries forms an address in them. The run above, `0x801DBCCC`, is claimed: it is eleven `0x28`-byte rows handed to `FUN_8001C93C` in `$a1` with `li a0,0xB` at `0x801D51B8`, and that routine's loop fixes the row size ([above](#a-record-is-sized-by-the-call-that-receives-it)) |
 | `0954` | `0x237D`, claimed | a `0x28`-stride status-label table at `0x801F8D50`, sixteen labels | each element address is handed to the text drawer `FUN_80035F04` in its delay slot, which the runtime-index rule counts as an access; the next formed address, `0x801F8FD0`, closes sixteen whole elements |
-| `0977` | `0x3108`, 232 B | twenty-nine `[label pointer, u32]` pairs at `0x801D1920` naming the head label pool | no instruction in the image forms an address in the table, directly or `lui`/`addu`-indexed |
+| `0980` | `0x5C28` and `0x5CB4`, claimed | the dance overlay's first step-index list (eighteen `u32`, `-1` last; `FUN_801CF470` picks it or its sibling at `0x801D4488` on `_DAT_801D514C`) and four `0x80`-byte motion-script rows of `(clip, frames)` halfword pairs (`FUN_801D0640`, row `actor[+0x50] << 7`) | each runs to the next formed address in whole elements |
+| `0976` | `0xCF94` and `0x88AC`, claimed | the Baka Fighter developer dump's seventeen sixteen-byte fighter labels and `FUN_801D2A28`'s twenty per-index score words | the dump keeps its label pointer in a stack slot (`sp+0x32C`), which the pointer-bump rule cannot follow; its pass count is `sltiu v0,s7,0x11` at `0x801D5754`. The score index is clamped by `slti v0,a3,0x14` |
+| `0976` | `0x8D44`, 128 B; `0x891C` and `0xD44C`, short runs | eight sixteen-byte dev-menu value labels (`STAND`, `ATACK1`, ...) reached only through a word in a dev-menu row at `0x801DBD18`; `FUN_801D2A28`'s halfword score table at `0x801D711C`, indexed by a timer divided by 320 with an equality test, not a bound, on the cap | a word reference is not a consumer instruction, and the timer index has no stated ceiling |
+| `0972` | `0x2FA` and `0x9D78` up, claimed | the species names the species table's `+0x00` pointers name, and the twenty-nine HUD sprite records `legaia_asset::fishing_sprites` already decoded | the pool had no claim of its own: the species table and the sprite parser were both bound, their bytes were not |
+| `0977` | `0x3048` and `0x3108`, and the head label pool, claimed | the arena's course ladder: the score table at `0x801D1860` (three rows of sixteen `i32` cells, formed at `0x801D10E8` / `0x801D1234`), the twenty-nine `{ label_va, monster_id }` round records at `0x801D1920`, and the opponent names at the head of the image | no instruction forms an address in the round records because none needs to: the descriptor table at `0x801D1A08` holds a `first_round` pointer per course and `FUN_801D1510` walks from it. The names are reached only through those records ([a pointer table is not its pool](#a-pointer-table-is-not-its-pool)) |
+| `0901` | `0x1F90`, 80 B, claimed | the world-map render overlay's per-prim dispatch row at `0x801F8968`: eight zero slots, the four SCUS low-mode dispatchers, and the eight high-mode emit leaves this image carries | the consumer is the executable's `FUN_80043390` (`lui s4,0x8020` / `addiu s4,s4,-0x7698`), so no `lui` pair in the image forms it; the claim is shape-checked slot by slot instead ([`world-map.md`](../subsystems/world-map.md)) |
+| `0898` | `0x25EB0`, 1220 B, claimed | the battle HUD's sub-draw step records behind the `0x801F4D34` pointer table, `[count][anim][panel]` plus `count` `(record, mode)` pairs | - |
+| `0898` | `0x26C10`, 64 B, claimed as dead data | a second 8x8 percentage block between the element-affinity matrix and the summon power-percent table, with stronger values than the shipped matrix | nothing forms an address in it, and the matrix's `atk * 8 + def` index would reach it only for an element above `7`, which no character entry or record `+0x1D` byte on the disc holds (`element_affinity::UNREAD_AFFINITY_BLOCK_VA`). The PAL and Japanese battle overlays carry the same 64 bytes after the same matrix, and their matrix readers form only the matrix base too |
+| `0898` | `0x27CCC` up to `0x801F6734`, claimed | the two five-byte per-command scalars at `0x801F64E4` / `0x801F64EC` (`FUN_801EC3E4`), the Miracle Art trigger rows at `0x801F64F4` (`FUN_801EED1C`), the Super Art replace strings at `0x801F65E8` (`FUN_801EF9E4`), the monster casts' opening-shot bytes at `0x801F66D8` (`FUN_801E9FD4`) and the four status-guard masks at `0x801F672C` (`FUN_801F0450`) | - each is a [consumer-pinned row](#a-runtime-index-states-its-stride-and-a-consumer-its-count) whose extent comes from an index domain, a loop or the next formed address ([below](#the-battle-overlays-command-tables)) |
 | `0927` / `0912` / `0895` | claimed | spawn records | `0912`'s is formed in a saved register fifty-nine words above its call ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)); `0927`'s and `0895`'s chain exactly onto a pointer-credited record ([below](#a-record-chain-pinned-at-both-ends)) |
 | `0896` | `0x855B` up, about 470 B | the SJIS-bearing words at `0x801DD34B` and the short record runs at `0x801DD44D` / `0x801DD49D` | their consumers are the foreign build's routines, whose callee layouts are not the USA SCUS ones the record rules key on. The `a0`-formed pool from `0x801DD554` is claimed: it is twenty-eight window programs for the image's own interpreter `FUN_801D896C` ([below](#the-window-programs-are-read-off-their-interpreters-calls)) |
 | `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/asset/src/byte_account/pinned.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
@@ -668,6 +676,16 @@ table at two entries), and so does a Shift-JIS pair when the run holds no
 control byte past its first. PROT `0896` is a Japanese build whose labels are
 `[count][SJIS pairs][NUL]` records padded to a word; the menu overlay carries
 two SJIS glyph strings of its own.
+
+Nor is the first zero byte always the end. The dialog tokens that take an
+argument byte - the substitution tokens `0xC1..=0xC5` and `0xC7`, the `0xCE`
+escape and the `0xCF` colour change ([`dialog-font.md`](../formats/dialog-font.md)) -
+carry it whatever its value, and `0xC1 0x00` is the lead party member's name.
+Stopping at that byte cut every "*name* will equip" / "*name* can now use"
+message at its first token and left the rest as `ascii_text` residue in the
+menu overlay and in four slot-B cast modules; the walk now consumes a token and
+its argument as one unit before it tests for NUL, the way the text expander
+does.
 
 Two guards keep a coincidence out. A target already inside a claim is left to
 that claim, and a pair issued from the image's inherited tail is ignored,
@@ -816,20 +834,26 @@ globals sized by their load from 63 to 70.
 
 ### A record is sized by the call that receives it
 
-Four callees take a pointer to a record whose extent they fix:
+Five callees take a pointer to a record whose extent they fix:
 
 | Callee | Argument | Extent |
 |---|---|---|
 | `FUN_80021B04` (spawn) | `$a2` | `[i16 model_sel][u16 reserved][move-VM bytecode]`, to the program's `HALT`, armed idle loop, or never-retiring `WAIT` |
 | `FUN_80050ED4` (its pool wrapper) | `$a2` | the same |
 | `FUN_80020DE0` (actor allocator) | `$a0` | a 24-byte static actor template, fixed by the allocator's field copies ([`runtime-libs.md`](../reference/functions/runtime-libs.md#static-actor-templates)) |
+| `FUN_80024C88` (positioned actor spawn) | `$a1` | the same template - it moves `$a1` to `$a0` and calls the allocator, reading only the position halfwords of its own `$a0` |
 | `FUN_8001C93C` (value-monitor list drawer) | `$a1` | `$a0` rows of `0x28` bytes: the loop runs `$a0` times and every arm advances the row pointer by `0x28`; the count must be an `li` the caller loads, and the whole array must be data the image owns |
 
 `claim_spawn_records` claims, in every mapped image, the record at each value
 such a call is handed: the argument register is walked back from the call's
 delay slot to its last writer, which must be a formed `addiu` or a copy of a
 register that resolves the same way (`move a2,s3` - retail stages the pointer in
-a saved register), with no other call crossed. A `switch` whose arms each load
+a saved register), with no other call crossed while the walk still tracks a
+caller-saved register. Once it has followed a copy into `s0..s7` or `s8` a call
+in between does not end it, because the ABI preserves those across a call: the
+game-over overlay (`0902`) forms its letter spawn record in `s5` above a
+`jal 0x80024C88` and copies it to `$a2` inside the loop that spawns the nine
+letters. A `switch` whose arms each load
 `$a2` in the delay slot of a `j` to one shared `jal` is followed too: every `j`
 landing on the call, or a few words above it with nothing between writing the
 register, contributes its own delay-slot value. And an image-local routine that
@@ -920,7 +944,7 @@ them are [below](#a-table-its-consumers-pin).
 
 ### A table its consumers pin
 
-Three tables defeat both array rules for reasons the rules are right to refuse,
+Some tables defeat both array rules for reasons the rules are right to refuse,
 and each is pinned instead by the instructions that consume it, re-checked
 against the image's own words before the claim is made
 (`CONSUMER_PINNED_TABLES` in
@@ -934,14 +958,45 @@ claim.
 | `0971` | DEBUG MODE's variable-monitor rows | `0x801CF890`, `0x28`, 22 | the loop bumps three pointers that start at fields `+0x04`, `+0x08` and `+0x1E`, never at a row start; the row start is the `lh v1,-0x770(at)` kind read at `0x801CEC24`, and the bound is `sltiu v0,s0,0x16` at `0x801CECE0` |
 | `0972` | per-species motion records | `0x801D8534`, 8, 10 | the index is the hooked species id `0x801D91CC`, which no bound check guards; its domain is the ten-row species table, and the tenth record ends exactly on the unformed `HIT` string at `0x801D8584` |
 | `0977` | the contest hub's sprite records | `0x801D170C`, `0x14`, 17 | `FUN_801D050C` / `FUN_801D08EC` read most fields over a hundred words below the index `addu`, past the runtime-index rule's straight-line scan, so the fixed accesses at elements 1 and 4 looked like fields no indexed access reads; the next formed address, `0x801D1860`, closes seventeen whole records |
+| `0899` | the save menu's sprite cells | `0x801E5048`, 12, 8 | `FUN_801E3FF0` scales its index as `(a0 * 3) << 2` and the callers hand it immediates; the next formed address, `0x801E50A8`, closes eight cells |
+| `0899` | the save menu's quad records | `0x801E50A8`, `0x14`, 6 | `FUN_801E2EE4` indexes `(a3 & 0x3FF) * 20`, the contest hub's record shape; the next formed address, the card read buffer `0x801E5120`, closes six records |
 
 The `0971` rows are the layout `FUN_8001C93C` draws - `+0x00` kind, `+0x04`
 y, `+0x08` value pointer, `+0x0E` label, `+0x24` name table - walked inline
-rather than handed to that routine. The `0977` count is the runtime-index
+rather than handed to that routine. The name tables are reached through the
+rows themselves: a kind-1 row draws `*(row + 0x24) + (value << 4)`, so each
+distinct in-image `+0x24` word opens a table of sixteen-byte labels that runs
+to the next one, or to the rows for the last. Both are claimed that way, after
+a check that the span is whole labels, each a printable string inside its
+slot (`claim_value_monitor_name_tables`). The `0977` count is the runtime-index
 rule's own layout inference, not an instruction's immediate, and it agrees with
 the seventeen sprite descriptors the Muscle Dome hub's HUD port already parses
 there ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md));
 the `0971` count is the loop's, and the `0972` count is the species table's.
+
+#### The battle overlay's command tables
+
+The last non-slack run in `0898` was six small tables in a row, every one of
+them already read by a port or a parser and none of them bound. Their extents
+come from three different sources, which is why no single rule sized them:
+
+| Table | Base, stride, count | Where the count comes from |
+|---|---|---|
+| defender-side per-command scalar | `0x801F64E4`, 1, 5 | the index is `(cmd - 0x0C) mod 5`, which `FUN_801EC3E4` computes once with a reciprocal divide by five (`0x801EC588..0x801EC5C0`) and keeps at `sp+0x18`; three zero bytes of word alignment follow |
+| attacker-side per-command scalar | `0x801F64EC`, 1, 5 | the same `sp+0x18` index, read at `0x801ECE9C` and `0x801ED308` ([`art-data.md`](../formats/art-data.md)) |
+| Miracle Art trigger rows | `0x801F64F4`, `0x10`, 3 | row `(char_id - 1) << 4` in `FUN_801EED1C`; the next formed address, the Super Art `find` table at `0x801F6524`, closes three rows |
+| Super Art replace strings | `0x801F65E8`, `0x10`, 15 | `FUN_801EF9E4` addresses `char * 0x50 + entry * 0x10` with `entry < 5`; the next formed address, `0x801F66D8`, closes fifteen |
+| monster cast opening-shot bytes | `0x801F66D8`, 1, `0x54` | indexed `id - 0x25` with no bound; the next formed address, `0x801F672C`, closes the ids `0x25..0x79` |
+| status-guard masks | `0x801F672C`, 2, 4 | `FUN_801F0450`'s command loop runs `li s2,0xC` to `sltiu 0x10`, reading `lh` at `(cmd - 0x0C) * 2` |
+
+The last table needed a count form of its own (`PinnedCount::Range`): the loop
+index starts at `0x0C` and is subtracted back to zero before the table is
+addressed, so neither immediate alone is the count - their difference is.
+
+The opening-shot read has no upper bound, so a spell id of `0x79` or more
+would take its shot byte from the guard masks. The one arm that stages such
+ids, the boss-sibling mapping at `0x801EB814` ([`spell-table.md`](../formats/spell-table.md)),
+writes `actor[+0x1DF]` and jumps to `0x801EBDAC`, past the read.
 
 ### A pointer-bump loop states its array's length
 

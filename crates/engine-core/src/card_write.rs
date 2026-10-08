@@ -232,6 +232,34 @@ mod tests {
         }
     }
 
+    /// The slot portrait and title digits land inside the summed range, so a
+    /// written block must still pass the load's checksum verify with an icon
+    /// in hand - the path both hosts take whenever they hold the disc.
+    /// Writing the identity after the last restamp left every such save
+    /// "Damaged data." on the next load.
+    #[test]
+    fn a_written_block_passes_the_load_checksum_with_its_portrait() {
+        let mut card = blank_card();
+        let resume = SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        };
+        let icon = card::RetailBlockIcon {
+            clut: [0x5A; card::RETAIL_ICON_CLUT_BYTES],
+            pixels: [0xC3; card::RETAIL_ICON_FRAME_BYTES],
+        };
+        let view = card.view;
+        for _ in 0..2 {
+            let w = write_save_into_card(&mut card, 2, &a_save(), &resume, None).unwrap();
+            let sc = view.sc_block_mut(&mut card.bytes, 2).unwrap();
+            card::write_retail_block_identity(sc, w.save_slot, Some(&icon)).unwrap();
+            assert!(
+                card::sc_block_checksum_valid(view.sc_block(&card.bytes, 2).unwrap()),
+                "a block written with its identity must verify on load"
+            );
+        }
+    }
+
     /// An overwrite keeps the block's own number and claims nothing.
     #[test]
     fn an_overwrite_keeps_the_number_and_claims_nothing() {

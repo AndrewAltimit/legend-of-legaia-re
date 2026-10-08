@@ -244,7 +244,10 @@ impl FieldScenePack {
     /// `field_scene_npc_clip_states`). Empty while the scene is not live.
     pub fn actor_frame_state(&self) -> (Vec<f32>, Vec<i32>) {
         match self.live.as_ref() {
-            Some(l) => (self.actors.transforms(&l.host), self.actors.clip_states()),
+            Some(l) => (
+                self.actors.transforms(&l.host),
+                self.actors.clip_states(Some(&l.host)),
+            ),
             None => (Vec::new(), Vec::new()),
         }
     }
@@ -1203,14 +1206,14 @@ impl LegaiaViewer {
     }
 
     pub fn field_scene_npc_clip_states(&self) -> Vec<i32> {
-        self.npc_actors()
-            .map(|a| a.clip_states())
+        self.npc_ctx()
+            .map(|(a, h, _)| a.clip_states(Some(h)))
             .unwrap_or_default()
     }
 
     pub fn field_scene_npc_live_bones(&self, i: u32) -> Vec<i32> {
-        self.npc_actors()
-            .map(|a| a.live_bones(i))
+        self.npc_ctx()
+            .map(|(a, h, _)| a.live_bones(i, Some(h)))
             .unwrap_or_default()
     }
 

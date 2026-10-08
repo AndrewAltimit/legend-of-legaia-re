@@ -60,7 +60,16 @@ impl PlayWindowApp {
             || self.fishing_gpu.is_some()
             || self.dance_venue_gpu.is_some()
             || self.slot_gpu.is_some();
-        let frame = if self.boot_ui.is_active() || in_world_map || venue {
+        // A menu-overlay screen that owns the frame (a shop, the casino prize
+        // counter) draws no field: the 3D pass is skipped and the frame
+        // clears black, so the field's mist bank must not draw over the black
+        // either. It did, as a grey haze behind every shop window in a misty
+        // scene; the browser page's black backdrop sits over its GL canvas.
+        let frame = if self.boot_ui.is_active()
+            || self.menu_runtime.covers_field()
+            || in_world_map
+            || venue
+        {
             None
         } else {
             world.fog_volume_frame()
@@ -332,6 +341,27 @@ impl PlayWindowApp {
             // translation-only ANM path unchanged.
             let is_field_player =
                 player_slot == Some(ai as u8) && self.player_color_draw.map(|(_, s)| s) == Some(ai);
+            // A script's look rotation (`4C 45`, `World::actor_look`) turns
+            // one object of the field player - the head - on top of its
+            // keyframe; the browser page folds the same kernel in.
+            let looked;
+            let pose = match (player_slot == Some(ai as u8) && actor.battle_animation.is_none())
+                .then(|| {
+                    self.session
+                        .host
+                        .world
+                        .actor_look(legaia_engine_core::actor_look::LookKey::Player)
+                })
+                .flatten()
+            {
+                Some(look) => {
+                    let mut p = pose.clone();
+                    legaia_engine_core::actor_look::apply_look(&mut p.bone_outputs, look);
+                    looked = p;
+                    &looked
+                }
+                None => pose,
+            };
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs)
             } else {
@@ -439,8 +469,9 @@ impl PlayWindowApp {
             // the same call.
             if self.session.host.world.mode == SceneMode::Battle {
                 for s in &mut sprites {
-                    s.world_pos =
-                        legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos);
+                    s.world_pos = legaia_engine_render::effect_billboard::battle_billboard_centre(
+                        s.world_pos,
+                    );
                 }
             }
             if sprites.is_empty() {
@@ -862,6 +893,26 @@ impl PlayWindowApp {
             .cross_beam_draw()
             .map(legaia_engine_render::cast_beam::cross_beam_prims)
             .unwrap_or_default()
+    }
+
+    /// PROT 0904's (Theeder) beam packets this frame
+    /// ([`legaia_engine_core::world::World::theeder_draw`] through
+    /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
+    /// play page draws them with), projected with the battle camera at the
+    /// stage's 4:3 - the weapon trail's projection. Retail points are Y-down;
+    /// this host's battle space is Y-up, so Y is negated on the way in.
+    pub(super) fn theeder_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::battle_trail as bt;
+        let world = &self.session.host.world;
+        let Some(packet) = world.theeder_draw() else {
+            return Vec::new();
+        };
+        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
+        legaia_engine_render::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+            bt::project_stage_point(&mvp, [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])])
+        })
     }
 
     /// This frame's field fog sheets (`legaia_engine_core::fog_particles`):

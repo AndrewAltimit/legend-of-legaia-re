@@ -239,6 +239,37 @@ pub fn camera_relative_model_prefix(
     ])
 }
 
+/// The basis a **camera-facing terrain / decoration cell** draws with, put in
+/// front of the cell's own rotation: row-major `K = R^T * P` in the raw
+/// retail frame, `R` the full camera rotation the host's view applies and `P`
+/// the camera rotation with the flagged axes left out. `None` when the record
+/// flags carry no `0x380` bit (the cell draws under the full camera, as the
+/// host already composes it) or there is no retail camera pose.
+///
+/// The decoration pass `FUN_801F7088` tests the record's `+0x12 & 0x380`
+/// (`0x801F770C..0x801F7718`). Set, it loads the base matrix `0x8007BF10`
+/// (`FUN_8005B618`) and post-multiplies the camera's `RotMatrixX(pitch)`
+/// unless `0x80` is set, `RotMatrixY(yaw)` unless `0x100`, `RotMatrixZ(roll)`
+/// unless `0x200` (the angles `_DAT_8007B790..94`), then the record's own
+/// `+0x08 / +0x0A / +0x0C` rotations (`0x801F779C..0x801F77E4`), which the
+/// clear arm puts on the full camera matrix instead. Both arms carry the base
+/// scale, so unlike a move-VM part's `FUN_8001CF50` skip arm
+/// ([`camera_relative_part`]) there is no `6 / S_b` factor.
+///
+/// PORT: FUN_801F7088 (the `+0x12 & 0x380` arm, `0x801F770C..0x801F779C`)
+pub fn decoration_cell_basis(
+    record_flags: u16,
+    cam: Option<&PartCameraPose>,
+) -> Option<[[f32; 3]; 3]> {
+    let skip = record_flags & 0x0380;
+    if skip == 0 {
+        return None;
+    }
+    let cam = cam?;
+    let partial = camera_view_rotation(skip, cam.pitch, cam.yaw, cam.roll)?;
+    Some(mul3(&full_rotation_transpose(cam), &gte_to_f32(&partial)))
+}
+
 /// The model prefix both play hosts place a move-VM part with: the
 /// camera-relative prefix ([`camera_relative_model_prefix`]) for a
 /// `+0x52 & 0x780` node, else the plain translation `T(F p)`.
@@ -459,5 +490,43 @@ mod tests {
         let raw = camera_relative_part(locked, pos, &cam).unwrap();
         let m = camera_relative_model_prefix(locked, pos, Some(&cam), true).unwrap();
         assert_eq!([m[12], m[13], m[14]], [raw.pos[0], -raw.pos[1], raw.pos[2]]);
+    }
+
+    /// A decoration cell flagged on every axis faces the camera outright:
+    /// the full camera rotation times the basis is the identity. A cell with
+    /// no `0x380` bit, or no camera, takes no basis.
+    #[test]
+    fn a_fully_flagged_decoration_cell_faces_the_camera() {
+        let cam = field_cam();
+        assert!(decoration_cell_basis(0x0013, Some(&cam)).is_none());
+        assert!(decoration_cell_basis(0x0380, None).is_none());
+        let k = decoration_cell_basis(0x0393, Some(&cam)).expect("flagged");
+        let rk = mul3(&full(&cam), &k);
+        for (r, row) in rk.iter().enumerate() {
+            for (c, &v) in row.iter().enumerate() {
+                let want = if r == c { 1.0 } else { 0.0 };
+                assert!((v - want).abs() < EPS, "[{r}][{c}] = {v}");
+            }
+        }
+    }
+
+    /// Pitch alone left out (`0x80`, `rugi`'s candle glows) under a camera
+    /// with no yaw or roll: the basis undoes exactly the pitch, so the cell's
+    /// own vertical plane stays square to the view.
+    #[test]
+    fn a_pitch_flagged_decoration_cell_undoes_only_the_pitch() {
+        let cam = PartCameraPose {
+            yaw: 0.0,
+            roll: 0.0,
+            ..field_cam()
+        };
+        let k = decoration_cell_basis(0x0080, Some(&cam)).expect("flagged");
+        let rk = mul3(&full(&cam), &k);
+        for (r, row) in rk.iter().enumerate() {
+            for (c, &v) in row.iter().enumerate() {
+                let want = if r == c { 1.0 } else { 0.0 };
+                assert!((v - want).abs() < EPS, "[{r}][{c}] = {v}");
+            }
+        }
     }
 }

@@ -44,14 +44,14 @@ pub struct AudioState {
     /// (`gp+0x678`, [`crate::sfx_cue::route_sfx_cue`]'s `element_write`), so
     /// a host resolving a runtime ring id reads the category the firing actor
     /// chose. `None` outside battle or on a disc-free boot.
-    pub battle_sfx_bank: Option<Vec<u8>>,
+    pub(crate) battle_sfx_bank: Option<Vec<u8>>,
     /// CD-XA one-shot clip requests the **field** raised this tick - the
     /// field VM's op `0x36` bit-15-clear arm (`FUN_8003D53C(arg >> 3,
     /// arg & 7, sel)` at `0x801E0420`) and the scripted-scene programs' voice
     /// leg. Drained by both hosts' field SFX routing
     /// ([`crate::world::World::drain_field_xa_cues`]); see
     /// [`crate::world::World::push_field_xa_cue`].
-    pub field_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
+    pub(crate) field_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
     /// Every CD-XA one-shot the loaded scene's field scripts can start,
     /// listed at scene load so a host whose clip decode is asynchronous can
     /// have them resident before the op fires
@@ -61,13 +61,13 @@ pub struct AudioState {
     /// [`crate::world::World::queue_xa_prestage`]). Advisory, like
     /// [`Self::battle_xa_prestage`]: the op still raises its clip on
     /// [`Self::field_xa_cues`].
-    pub field_xa_prestage: Vec<crate::sfx_cue::XaVoiceClip>,
+    pub(crate) field_xa_prestage: Vec<crate::sfx_cue::XaVoiceClip>,
     /// Vsyncs the modelled drive stays busy after a field clip start - the
     /// field's reading of `_DAT_8007BC20 != 0`, which a one-shot holds at `2`
     /// until the callback ring's end-of-clip teardown. Same `dur`-vsyncs span
     /// as [`Self::battle_xa_busy_frames`]; counted down once per
     /// `World::tick`.
-    pub field_xa_busy_frames: u16,
+    pub(crate) field_xa_busy_frames: u16,
     /// The static `SCUS_942.54` XA cue duration table (`DAT_800788B8`) the
     /// voice legs read (`legaia_asset::xa_cue_table`); installed at boot,
     /// `None` on a disc-free build (a voice cue then requests no span and
@@ -92,7 +92,7 @@ pub struct AudioState {
     /// ordinary `FieldEvent::Bgm` start (sub-op 1), so the host's existing
     /// BGM director resolves the SEQ and cross-fades exactly like a field
     /// op-`0x35` start.
-    pub battle_bgm: Option<u16>,
+    pub(crate) battle_bgm: Option<u16>,
     /// `_DAT_8007B880` - the **battle sound set** the field script selects
     /// for the next fight: op-`0x35` sub-op `7` stores its operand, or `-1`
     /// for an operand byte of `0xFF` (`0x801E01DC..0x801E0208`); the scene
@@ -117,25 +117,25 @@ pub struct AudioState {
     /// ([`crate::world::World::swap_to_minigame_bgm`]), resumed by
     /// [`crate::world::World::restore_minigame_bgm`] on the mode-24 return
     /// warp. Managed by that pair; not meant to be set directly.
-    pub minigame_bgm_resume: Option<u16>,
+    pub(crate) minigame_bgm_resume: Option<u16>,
     /// `true` while a minigame's own track owns the director. Guards the
     /// restore so a minigame that started no track of its own (the slot
     /// machine, fishing - both inherit the host scene's BGM) does not
     /// re-emit the field track on exit.
-    pub minigame_bgm_active: bool,
+    pub(crate) minigame_bgm_active: bool,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
     /// serviced by the frame-begin driver. Advanced by [`crate::world::World::tick`] on the
     /// sim ticks that map to a retail vsync, by [`crate::world::FrameClock::frame_step`] - the
     /// same cadence-invariant clock every other retail duration uses.
     ///
     /// REF: FUN_800267FC, FUN_8001698C
-    pub sound_release: crate::sound_state::SoundReleaseTimer,
+    pub(crate) sound_release: crate::sound_state::SoundReleaseTimer,
     /// Set by [`crate::world::World::tick`] on the frame [`crate::world::AudioState::sound_release`] expires;
     /// hosts drain it with [`crate::world::World::take_pending_sound_release`] and stop the
     /// bound voice. Retail does the stop inline through libsnd
     /// (`FUN_8002657C` + `FUN_80064370`), which the engine replaces with its
     /// own voice pool - so the port surfaces the *event*, not the teardown.
-    pub pending_sound_release: bool,
+    pub(crate) pending_sound_release: bool,
     /// Retail's sound-flag bit 0 (`_DAT_8007B750`): a script-owned track
     /// start is pending its commit. Op-`0x35` sub-op `9` raises it
     /// (`0x801E0260`); the sub-op `0xA` commit and the scene loader
@@ -144,61 +144,61 @@ pub struct AudioState {
     /// release that expires inside the window releases that outgoing track.
     /// The port starts the incoming track at sub-op `9` already, so such an
     /// expiry has nothing of the port's to release ([`crate::world::World::tick`]).
-    pub start_pending_commit: bool,
+    pub(crate) start_pending_commit: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
     /// sub-`5` arms the release.
     ///
     /// REF: FUN_800267A8
-    pub sound_arm: Option<crate::scus_leaf_kernels::TimedSoundArm>,
+    pub(crate) sound_arm: Option<crate::scus_leaf_kernels::TimedSoundArm>,
     /// The per-slot SFX-cue delay table (`DAT_8007C338`) the field VM's op
     /// `0x36` sub-`4` writes.
     ///
     /// REF: FUN_80035BAC
-    pub sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays,
+    pub(crate) sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays,
     /// This frame's calls into the SFX cue ring's producer trio, in call
     /// order, for the host's audio scheduler to replay onto its own ring
     /// (`legaia_engine_audio::SfxScheduler`). Retail's producers write the
     /// ring directly; the engine's ring lives with the SPU on the host side of
     /// the crate boundary, so the calls cross it as data. Drained by
     /// [`crate::world::World::take_sfx_ring_ops`].
-    pub sfx_ring_ops: Vec<SfxRingOp>,
+    pub(crate) sfx_ring_ops: Vec<SfxRingOp>,
     /// The slot the SFX enqueue last parked (`gp+0x15A`) - the index
     /// [`crate::world::AudioState::sfx_cue_delays`] is written through.
-    pub sfx_parked_slot: i16,
+    pub(crate) sfx_parked_slot: i16,
     /// The enqueue's round-robin write cursor (`gp+0x158`), wrapping at
     /// [`crate::scus_leaf_kernels::SFX_CUE_SLOTS`].
-    pub sfx_cue_cursor: i16,
+    pub(crate) sfx_cue_cursor: i16,
     /// The side-band sound-bank request / acknowledge pair
     /// `_DAT_8007BABC` / `_DAT_8007BAA0`, which op `0x36`'s bit-15 subs
     /// `1` and `2` drive and whose settled state gates sub `0` and the
     /// whole bit-15-clear XA arm.
     ///
     /// REF: FUN_800243F0
-    pub sound_stream: crate::scus_leaf_kernels::SoundStreamRequest,
+    pub(crate) sound_stream: crate::scus_leaf_kernels::SoundStreamRequest,
     /// `_DAT_8007B868` - the dev/dual-mode gate. Retail boots it `0` and no
     /// static writer ever sets it non-zero, so the engine keeps it `0`; the
     /// field applies it as retail does (it *skips* op `0x36`'s whole
     /// bit-15-set arm and *bypasses* the bit-15-clear arm's stream barrier).
-    pub dual_mode_gate: i32,
+    pub(crate) dual_mode_gate: i32,
     /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
     /// chain can call it repeatedly and only the first has any effect.
     ///
     /// REF: FUN_8002689C
-    pub sound_detach: crate::sound_state::SoundDetachLatch,
+    pub(crate) sound_detach: crate::sound_state::SoundDetachLatch,
     /// Which bank the SPU region VAB slots `2` and `6` share holds, and the
     /// field-bank latch `0x8007BAFC` - see
     /// [`crate::world::World::sync_sfx_residency`].
-    pub residency: crate::world::SfxBankResidency,
+    pub(crate) residency: crate::world::SfxBankResidency,
     /// SPU voices a field-VM op asked the host to stop this tick (the
     /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
     /// [`crate::world::World::take_sfx_voice_stops`].
-    pub sfx_voice_stops: Vec<u8>,
+    pub(crate) sfx_voice_stops: Vec<u8>,
     /// SPU voices a minigame keyed directly this tick (`FUN_80065034` with
     /// no ring descriptor - the slot machine's reel motor), drained by
     /// [`crate::world::World::take_sfx_voice_keys`].
-    pub sfx_voice_keys: Vec<crate::other_game_overlay::VoiceAttrCue>,
+    pub(crate) sfx_voice_keys: Vec<crate::other_game_overlay::VoiceAttrCue>,
     /// The two audio-level words the live-state window (and so every save)
     /// carries: the configured level `_DAT_8008457C` - the reference the MAN
     /// loader resets the live level `_DAT_8007B910` to on every scene load

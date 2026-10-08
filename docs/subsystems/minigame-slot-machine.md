@@ -244,8 +244,9 @@ buttons while the reels spin up makes the next spin's reach and hot modes
 rarer - the mode-1 odds in the lowest net-take bracket go from `1/700` to
 `1/900..=1/999`. An earlier reading called the word a "richer-odds flag",
 which has the effect backwards and never named a writer. Port:
-`SlotMachine::latch_spin_up`, called by `World::tick_slot_machine` (native
-window and play page) and by the standalone page's `slot_press`. The port's
+`SlotMachine::latch_spin_up`, called by the per-frame kernel `SlotMachine::frame`, which
+every host runs (`World::tick_slot_machine` on the native window and the play
+page, `slot_step` on the standalone page). The port's
 tick leaves the spin-up one frame before retail's test runs on the expiring
 frame, so an edge on exactly that frame does not latch. **Confirmed**
 (disassembly).
@@ -524,7 +525,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 ## Engine port
 
-[`legaia_engine_core::slot_machine`](../../crates/engine-core/src/slot_machine.rs) is the from-scratch rules engine over this page. The **Confirmed** kernels are ported directly:
+[`legaia_engine_minigames::slot_machine`](../../crates/engine-minigames/src/slot_machine.rs) is the from-scratch rules engine over this page. The **Confirmed** kernels are ported directly:
 
 - the slot LCG (`SlotRng`, `x*5+1` + 16-bit fold; `FUN_801d30cc`);
 - **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel` / `build_strip`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);

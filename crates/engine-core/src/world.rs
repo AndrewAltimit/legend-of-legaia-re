@@ -104,7 +104,7 @@ mod types;
 mod world_map_state;
 mod world_toggles;
 
-pub use ambient_fx_state::{AmbientFxState, SeededVramRect};
+pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
 pub use audio_residency::{
     DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
     SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
@@ -124,7 +124,7 @@ pub use disc_tables::DiscTables;
 pub use encounter_state::EncounterState;
 pub use field_carrier_state::FieldCarrierState;
 pub use field_locomotion::FieldLocomotion;
-pub use field_npc_state::FieldNpcState;
+pub use field_npc_state::{FieldNpcState, SPAWN_HEADING};
 pub use field_prop_state::FieldPropState;
 pub use field_script_actor_state::{
     FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
@@ -134,7 +134,7 @@ pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
 pub use item_bag::{BagEntry, ItemBag};
 pub use menu_state::MenuState;
-pub use minigame_state::{FishingCaptionText, MinigameState};
+pub use minigame_state::{FishingCaptionText, MinigameState, pond_event_cues};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
 pub use party_state::PartyState;
 pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
@@ -220,6 +220,7 @@ mod scene_program;
 pub use scene_program::SceneProgramFrame;
 mod vm_hosts;
 mod vram_rect_fx;
+pub use vram_rect_fx::FRAMEBUFFER_LAND_RECT;
 pub use vram_rect_fx::OT_LEN_UNBOUNDED;
 mod worldmap;
 

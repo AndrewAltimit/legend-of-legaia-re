@@ -116,6 +116,15 @@ fn tap(session: &mut BootSession, mask: u16) {
     let _ = session.tick();
     session.host.world.set_pad(0);
     let _ = session.tick();
+    // A press that opened the menu: the field darkens for a few frames
+    // before the menu exists (`BootSession::pause_wipe`), and a player waits
+    // for it to appear before pressing on.
+    for _ in 0..64 {
+        if session.pause_wipe().menu_spawned() {
+            break;
+        }
+        let _ = session.tick();
+    }
 }
 
 fn tap_button(session: &mut BootSession, b: PadButton) {
@@ -193,6 +202,7 @@ fn port0_blocks() -> Vec<SlotSnapshot> {
     blocks[0] = SlotSnapshot {
         slot: 0,
         present: true,
+        damaged: false,
         content: SlotContent::LegaiaSave,
         label: "RIM ELM".to_string(),
         play_time_seconds: 1234,
@@ -536,8 +546,21 @@ fn pad_driven_menu_ladder() {
                     tap_button(&mut s, PadButton::Right);
                     tap_button(&mut s, PadButton::Left);
                     let cell_before = s.save_flow().grid_cursor();
+                    // Cross raises "Do you wish to load?" (defaulting to
+                    // No); Yes runs "Now Loading" / "Load successful."
+                    // before the commit lands; the read panel holds until
+                    // its progress bar fills (128 frames).
                     tap_button(&mut s, PadButton::Cross);
+                    let prompted = matches!(sub_select_phase(&s), Some(SelectPhase::ConfirmOverwrite { cursor, .. }) if cursor == 1);
+                    tap_button(&mut s, PadButton::Left); // No -> Yes
+                    tap_button(&mut s, PadButton::Cross);
+                    idle(&mut s, 300);
                     match s.last_save_commit {
+                        Some(c) if c.kind == SaveCommitKind::Load && !prompted => {
+                            stall = Some(
+                                "Load committed without the load confirm defaulting to No".into(),
+                            );
+                        }
                         Some(c) if c.kind == SaveCommitKind::Load => {
                             eprintln!(
                                 "[rung 8] committed load: port {} cell {} (grid was {cell_before})",
@@ -654,6 +677,9 @@ fn pad_driven_menu_ladder() {
                             let prompted = matches!(sub_select_phase(&w), Some(SelectPhase::ConfirmOverwrite { cursor, .. }) if cursor == 1);
                             tap_button(&mut w, PadButton::Left); // No -> Yes
                             tap_button(&mut w, PadButton::Cross);
+                            // "Saving to MEMORY CARD", then "Save
+                            // successful.", then the commit.
+                            idle(&mut w, 200);
                             match w.last_save_commit {
                                 Some(c) if c.kind == SaveCommitKind::Save && prompted => {
                                     eprintln!(

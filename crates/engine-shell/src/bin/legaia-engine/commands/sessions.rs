@@ -1,138 +1,8 @@
-//! Synthetic session-driver smoke commands (`battle`, `inventory`, `equip`, `title`, ...).
+//! Synthetic session-driver smoke commands (`inventory`, `equip`, `title`, ...).
 //!
 //! Mechanical split from `commands.rs` (behavior-preserving).
 
 use super::*;
-
-/// Drive a synthetic [`BattleSession`] end-to-end. Reports per-frame
-/// session events and the final phase. Intended as a smoke test for the
-/// orchestrator wiring; engines that want a full UI use `play-window`
-/// (which can host a `BattleSession` via the renderer's HUD draws).
-pub(crate) fn cmd_battle(
-    monsters: u8,
-    monster_hp: u16,
-    max_ticks: u64,
-    script: &str,
-) -> Result<()> {
-    use legaia_art::Character;
-    use legaia_engine_core::ap_gauge::ApGauge;
-    use legaia_engine_core::battle_session::{
-        BattlePhase, BattleSession, SessionInput, SessionSlotInfo,
-    };
-    use legaia_engine_core::battle_stats::StatRecord;
-    use legaia_engine_core::world::{Actor, World};
-
-    let mut session = BattleSession::new();
-    session.set_party([Character::Vahn, Character::Noa, Character::Gala]);
-    let names = ["Vahn", "Noa", "Gala"];
-    for (i, name) in names.iter().enumerate() {
-        session.set_slot_info(
-            i as u8,
-            SessionSlotInfo {
-                name: (*name).into(),
-                is_party: true,
-                record: Some(StatRecord {
-                    base_attack: 50,
-                    base_udf: 30,
-                    base_ldf: 25,
-                    base_accuracy: 80,
-                    base_evasion: 20,
-                    ..Default::default()
-                }),
-                mp_max: 30,
-            },
-        );
-    }
-    let monster_count = monsters.min(5);
-    for i in 0..monster_count {
-        session.set_slot_info(
-            3 + i,
-            SessionSlotInfo {
-                name: format!("Mon{i}"),
-                is_party: false,
-                record: Some(StatRecord {
-                    base_attack: 30,
-                    base_udf: 20,
-                    base_ldf: 15,
-                    base_accuracy: 70,
-                    base_evasion: 10,
-                    ..Default::default()
-                }),
-                mp_max: 0,
-            },
-        );
-    }
-    session.set_monster_count(monster_count);
-
-    let mut world = World::new();
-    while world.actors.len() < 8 {
-        world.actors.push(Actor::default());
-    }
-    for i in 0..3 {
-        world.actors[i].battle.hp = 100;
-        world.actors[i].battle.max_hp = 100;
-        world.actors[i].battle.mp = 30;
-        world.battle.ap_gauges[i] = ApGauge::with_base(8);
-    }
-    for i in 0..monster_count as usize {
-        world.actors[3 + i].battle.hp = monster_hp;
-        world.actors[3 + i].battle.max_hp = monster_hp;
-    }
-
-    session.begin_round(&mut world);
-    println!(
-        "battle: party=3 monsters={} phase={:?}",
-        monster_count,
-        session.phase()
-    );
-
-    let mut script_iter = script.chars();
-    let mut total_events = 0usize;
-    for tick in 0..max_ticks {
-        let mut input = SessionInput::default();
-        if let Some(c) = script_iter.next() {
-            apply_script_char(c, &mut input);
-        }
-        let events = session.tick(&mut world, input);
-        if !events.is_empty() {
-            total_events += events.len();
-            for ev in &events {
-                println!("[t{tick}] {ev:?}");
-            }
-        }
-        if session.is_done() {
-            println!("battle ended at tick {tick}: {:?}", session.phase());
-            break;
-        }
-        if matches!(session.phase(), BattlePhase::Idle) {
-            break;
-        }
-    }
-    println!(
-        "battle: total_events={} final_phase={:?} hud_active_slots={}",
-        total_events,
-        session.phase(),
-        session.hud.active_slots()
-    );
-    Ok(())
-}
-
-fn apply_script_char(c: char, input: &mut legaia_engine_core::battle_session::SessionInput) {
-    use legaia_engine_core::battle_session::SessionInput as SI;
-    let _: &SI = input;
-    match c {
-        'R' => input.right = true,
-        'L' => input.left = true,
-        'U' => input.up = true,
-        'D' => input.down = true,
-        'c' => input.cross = true,
-        'o' => input.circle = true,
-        't' => input.triangle = true,
-        's' => input.square = true,
-        'S' => input.start = true,
-        _ => {}
-    }
-}
 
 /// Drive a synthetic [`InventoryUseSession`] against a small world.
 /// Reports cursor moves + the final outcome.
@@ -378,6 +248,7 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
                 SlotSnapshot {
                     slot: i as u8,
                     present: true,
+                    damaged: false,
                     content: SlotContent::LegaiaSave,
                     label: format!("Slot {i}: Vahn  Lv 5"),
                     play_time_seconds: 1234,
@@ -428,6 +299,9 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
                 }
                 SelectEvent::LoadConfirmed { slot } => {
                     println!("  tick {i}: load confirmed on slot {slot}")
+                }
+                SelectEvent::CommitFailed { slot } => {
+                    println!("  tick {i}: write failed on slot {slot}")
                 }
                 SelectEvent::SlotPreviewCancelled { slot } => {
                     println!("  tick {i}: slot preview cancelled on slot {slot}")

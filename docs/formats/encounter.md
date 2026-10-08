@@ -292,7 +292,7 @@ talk-menu and its battle-trigger branch. It is the only on-map placement whose
 inline dialog runs that long (the village's other NPCs are one- or two-line),
 which is what distinguishes it from them; it sits adjacent to the town01 spawn.
 Mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL`
-in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs) and
+in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and
 locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
 
 The carrier is identified by its **dialog block**, not by an opcode-decoded
@@ -311,7 +311,7 @@ remaining open step.
 The from-scratch engine reaches this fight faithfully through the same indexed
 table: a cold boot loads town01's MAN formations (with the monster archive's real
 stats merged at scene entry), and `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)`
-(`= 4`, in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs))
+(`= 4`, in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs))
 installs the existing row as the forced next encounter - no re-encoded record, the
 scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()`
 remains for the equivalent hand-built `[count=1][0x4F]` window used by the
@@ -323,6 +323,13 @@ partition-1 placements and maps each interactable actor to a `FieldCarrierConfig
 - the pinned sparring partner (`is_rim_elm_sparring_carrier`, by tile + model)
 becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
 `Npc` keyed by its record index; decorative/warp placements carry no carrier.
+Tile and model alone do not make the carrier: the later Rim Elm variants
+(`town0b`, `town0c`, `town0d`) place Tetsu on the same tile with the same
+model, and their records are talk-only. The sparring carrier is installed only
+when the placement's own partition-1 record names row `4` in a scripted-battle
+op (`man_field_scripts::record_battle_entry_rows`) - the only way retail enters
+the fight - so talking to Tetsu in the mist-attack town stays a conversation
+(`crates/engine-shell/tests/town0b_battle_softlock.rs`).
 `World::install_field_carriers_from_man` installs that derived set and returns the
 sparring carrier's slot; `enter_field_scene` calls it on every field entry (the
 counterpart to the MAN encounter-table install), so the carriers are live from
@@ -584,11 +591,11 @@ flag, so a single reader serves both paths.
 #### Engine port (region-keyed roll)
 
 The roll above is ported from-scratch as
-[`region_encounter`](../../crates/engine-core/src/region_encounter.rs)
+[`region_encounter`](../../crates/engine-battle/src/region_encounter.rs)
 (`PORT: FUN_801D9E1C`). `RegionEncounterTable` preserves each region's
 tile-AABB + rate increment + formation slice (built from the MAN via
 `region_encounter_table_from_man`, the position-routed companion to the
-aggregated [`encounter_man::encounter_table_from_man`](../../crates/engine-core/src/encounter_man.rs)).
+aggregated [`encounter_man::encounter_table_from_man`](../../crates/engine-battle/src/encounter_man.rs)).
 The table also carries the condition partition as `RegionEncounterTable::groups`
 and a selected slice; `RegionEncounterTracker::select_group(flag_test)` re-runs
 the condition walk and both roll sites call it once per step from the live
@@ -607,7 +614,7 @@ installs it via `World::set_world_map_regions` (rolled per tile in
 `live_world_map_tick`). A **field** scene installs it at scene entry via
 `World::set_field_regions` (`SceneHost::enter_field_scene`), and
 `World::on_field_step` rolls the active region and feeds a trigger through the
-aggregated [`EncounterSession`](../../crates/engine-core/src/encounter.rs)'s
+aggregated [`EncounterSession`](../../crates/engine-battle/src/encounter.rs)'s
 transition / grace SM (`EncounterSession::trigger_with`) - so the field path now
 varies the rate + formation pick by region instead of using the single
 mean-rate table, while keeping the same transition bracketing. A field scene
@@ -1170,6 +1177,6 @@ rather than in a pack.
 ## Files referencing this format
 
 - [`crates/engine-vm`](../../crates/engine-vm/) - the field VM dispatcher port reads the operand and writes the actor pointer slot.
-- [`crates/engine-core::encounter`](../../crates/engine-core/) - the runtime engine's `EncounterRecord` parser exposes `monster_count` / `monster_ids` from a candidate byte slice.
+- [`crates/engine-battle::encounter`](../../crates/engine-core/) - the runtime engine's `EncounterRecord` parser exposes `monster_count` / `monster_ids` from a candidate byte slice.
 - [`subsystems/world-map.md`](../subsystems/world-map.md) - world-map controller integration.
 - [`subsystems/script-vm.md`](../subsystems/script-vm.md) - the dispatcher op-handler family that installs the pointer.

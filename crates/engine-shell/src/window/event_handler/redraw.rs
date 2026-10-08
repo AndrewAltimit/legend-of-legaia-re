@@ -144,6 +144,11 @@ impl PlayWindowApp {
             {
                 self.session.host.world.trigger_field_interact(0xFF, slot);
             }
+            if let Some((t, idx)) = self.screenshot.as_ref().and_then(|sc| sc.shop_at)
+                && t == self.tick_no
+            {
+                let _ = self.session.host.world.debug_arm_scene_shop(idx);
+            }
             if self.screenshot.is_some() {
                 let scripted_pad = self
                     .screenshot
@@ -296,53 +301,53 @@ impl PlayWindowApp {
             // so this asks the engine instead
             // ([`World::field_menu_open_allowed`]) and every host that opens
             // the menu asks the same question.
-            // A script's op-`0x49` save point / ready check presses the menu
-            // button itself (`World::scripted_menu_open_pending`): no Start
-            // edge, no engagement gate, and no confirm blip - retail's cue
-            // `0x20` belongs to the pad controller, not to the actor it spawns.
-            let scripted_menu = !self.menu_runtime.is_open()
-                && self.session.host.world.scripted_menu_open_pending();
-            if scripted_menu
-                || (!narration
-                    && pressed_edge & 0x0008 != 0
-                    && self.session.host.world.field_menu_open_allowed()
-                    && !self.menu_runtime.is_open())
+            // The press itself - a script's op-`0x49` save point / ready
+            // check, a Start edge, the deny buzz - is answered by the one
+            // engine rule every host asks (`BootSession::press_field_menu`),
+            // which already holds the narration / title-card refusal this
+            // arm used to spell out locally. A shop / prize overlay owns the
+            // pad, so no press reaches the menu while one is up.
+            //
+            // The open can be REFUSED - a dialogue engagement owns the player,
+            // as retail's engaged-bit branch does - and then the boot-UI arm
+            // is not taken, or the window would route input and draws to a
+            // menu that is not there while the scene tick stayed skipped.
+            // The menu spawns partway through the field's wipe to black
+            // (`BootSession::pause_wipe`): until then the field keeps drawing
+            // under the wipe and ticking (with the world in `Menu`, so the
+            // player stands still), and the boot-UI arm takes the frame from
+            // the tick the menu exists.
+            if !self.boot_ui.is_active()
+                && self.session.field_menu_is_open()
+                && self.session.pause_wipe().menu_spawned()
             {
-                // Start: open the BootSession-hosted pause menu (the
-                // retail CARD pair, game_mode 0x17 - the world holds
-                // SceneMode::Menu while it is open) and route the
-                // window's input + draws to it via the boot-UI arm.
-                //
-                // The open can be REFUSED - `open_field_menu` declines while
-                // a dialogue engagement owns the player, as retail's
-                // engaged-bit branch does. Only take the boot-UI arm when a
-                // session actually exists, or the window would route input
-                // and draws to a menu that is not there while the scene tick
-                // stayed skipped.
-                self.session.open_field_menu();
-                if self.session.field_menu_is_open() {
-                    if scripted_menu {
-                        self.session.host.world.note_scripted_menu_opened();
-                    } else {
-                        // The open blips as a confirm, as on the browser page;
-                        // a refused open blips nothing.
-                        self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
-                    }
-                    self.tick_menu_sfx();
-                    self.boot_ui = BootUiState::FieldMenu { sub: None };
-                    // The boot-UI state is set above, so the readout's
-                    // predicate already answers "suppressed" - step the
-                    // kernel on the opening frame rather than one frame
-                    // later, as every other short-circuit arm here does.
-                    self.tick_field_party_hud();
-                    self.prev_pad = self.pad;
-                    continue;
+                self.boot_ui = BootUiState::FieldMenu { sub: None };
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                continue;
+            }
+            let press = if self.menu_runtime.is_open() || self.session.field_menu_is_open() {
+                legaia_engine_session::PauseMenuPress::None
+            } else {
+                self.session.press_field_menu(pressed_edge & 0x0008 != 0)
+            };
+            if let legaia_engine_session::PauseMenuPress::Opened { scripted } = press {
+                // Start: the BootSession-hosted pause menu (the retail CARD
+                // pair, game_mode 0x17 - the world holds SceneMode::Menu
+                // while it is open), with the window's input + draws routed
+                // to it via the boot-UI arm. The open blips as a confirm, as
+                // on the browser page; a scripted press blips nothing -
+                // retail's cue `0x20` belongs to the pad controller, not to
+                // the actor it spawns.
+                if !scripted {
+                    self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
                 }
-            } else if !narration && pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
-                // A press the menu lock refuses buzzes (`0x23` on the SFX
-                // ring); every other refusal is silent. The browser page
-                // makes the same call through `play_menu_open`.
-                self.session.host.world.field_menu_press_denied();
+                self.tick_menu_sfx();
+                // The boot-UI arm waits for the wipe to spawn the menu
+                // (above); this frame the field holds still under it.
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                continue;
             }
             // Route this frame's pad into the engine before the
             // tick so World::tick's mode dispatch (world-map
@@ -561,13 +566,13 @@ impl PlayWindowApp {
                 shop_opened_this_tick = true;
                 self.menu_runtime.open_prize_exchange(exchange);
             }
-            // Production cast-band trigger: a player Seru-magic cast
-            // (spell id 0x81..=0x8b) requests a summon spawn. The
-            // faithful render is the namesake battle_data creature drawn
-            // through the enemy animation pipeline (the summon reuses
-            // that creature's mesh + per-object TRS animation), so spawn
-            // it as a battle creature rather than the move-VM scene-graph
-            // stand-in (`summon::summon_creature_id`).
+            // Production cast-band trigger: a player summon cast
+            // (spell id 0x81..=0xA0) requests a summon spawn. The
+            // faithful render is the cast's own body drawn through the
+            // enemy animation pipeline (the namesake battle_data creature
+            // for 0x81..=0x95, the cast's summon.dat record above that),
+            // so spawn it as a battle creature rather than the move-VM
+            // scene-graph stand-in (`summon::summon_spawn_asset`).
             if let Some((spell_id, _origin)) = self.session.host.world.take_pending_summon_spawn() {
                 self.spawn_summon_creature(spell_id);
             }
@@ -713,6 +718,49 @@ impl PlayWindowApp {
             };
             if due && let Some(fog) = sc.seat_fog.take() {
                 self.session.host.world.fog.install_snapshot(&fog);
+            }
+            // A capture taken mid-glide shows the shot as far along as
+            // retail's mover had come (its frame-skip history, which no
+            // replay reproduces): the gate carries the frames it had left on
+            // the displayed frame, and this frame's view lands exactly there.
+            if due
+                && let Some(left) = sc.script_gate.as_ref().and_then(|g| g.glide_left)
+                && left > 0
+            {
+                self.cutscene_glide.align_frames_left(left as u32);
+                self.session.camera.align_glide_frames_left(left);
+            }
+            if due && sc.seat_hud_glides_landed {
+                self.session.host.world.land_battle_hud_glides();
+            }
+            if due {
+                for g in &sc.seat_hud_glides {
+                    // The combo cluster's anchor (placement record 80) glides
+                    // in from `x = 328` onto `x = 168`
+                    // (`battle_melee_hit_spark`'s record reads `(168, 168)`);
+                    // the host owns its age.
+                    if g.target[0] == 168 && (160..=176).contains(&g.target[1]) {
+                        if let Some(c) = self.battle_hud.combo.as_mut() {
+                            c.age = u16::from(g.elapsed);
+                        }
+                    } else {
+                        self.session
+                            .host
+                            .world
+                            .seat_battle_hud_glide(g.target, g.elapsed);
+                    }
+                }
+            }
+            if due && let Some(rgb) = sc.seat_clear {
+                self.session.host.world.presentation.clear_rgb = rgb;
+                self.session.host.world.presentation.clear_ramp = None;
+            }
+            if due && let Some(p) = sc.seat_panel {
+                let world = &mut self.session.host.world;
+                let mut fx = std::mem::take(&mut world.presentation.fx);
+                fx.panel = Some(p);
+                world.presentation.fx_frame = fx.tick(0, |i| world.system_flag_test(i));
+                world.presentation.fx = fx;
             }
             if due {
                 for &(record, model) in &sc.seat_object_models {
@@ -1052,10 +1100,16 @@ impl PlayWindowApp {
                 SceneMode::Battle => self.battle_stage_mesh.is_some(),
                 _ => !self.field_debug_camera,
             } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
-            r.set_prim_near_reject(legaia_engine_core::camera_view::prim_near_cut(
-                self.session.host.world.mode,
-                retail_camera,
-            ));
+            r.set_prim_near_reject(
+                legaia_engine_core::camera_view::prim_near_cut(
+                    self.session.host.world.mode,
+                    retail_camera,
+                ),
+                legaia_engine_core::camera_view::prim_gpu_span_h(
+                    self.session.host.world.mode,
+                    retail_camera,
+                ),
+            );
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
             }
@@ -1385,6 +1439,17 @@ impl PlayWindowApp {
                     &vmesh.indices,
                 ) {
                     self.field_morph_live.insert(*mesh_idx, m);
+                    if let Some(d) = self.draw_census.as_mut() {
+                        d.morph.insert(
+                            *mesh_idx,
+                            legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                                &vmesh.positions,
+                                &vmesh.cba_tsb,
+                                &vmesh.colors,
+                                &vmesh.indices,
+                            ),
+                        );
+                    }
                 }
             }
             for (slot, halves) in npc_morph_rebuilds {
@@ -1472,8 +1537,25 @@ impl PlayWindowApp {
                     // the playhead, then advance by the sim ticks this redraw
                     // ran (0 on a pure-refresh frame, so a 144 Hz display holds
                     // each frame for the same wall-clock time a 60 Hz one does).
-                    let key = (*slot, player.pose_key());
-                    let pose = player.current_pose();
+                    // A script's look rotation (`4C 45`) turns one object -
+                    // the head - on top of the keyframe, so it is part of
+                    // the pose the cache keys: its angles ride the key's
+                    // high bits.
+                    let look =
+                        world.actor_look(legaia_engine_core::actor_look::LookKey::Npc(*slot));
+                    let look_bits = look.map_or(0usize, |l| {
+                        let a = l.angles.map(|v| v as u16 as usize);
+                        (1 << 63)
+                            | ((l.object as u16 as usize & 0xFF) << 52)
+                            | ((a[0] & 0xFFF) << 40)
+                            | ((a[1] & 0xFFF) << 28)
+                            | ((a[2] & 0xFFF) << 16)
+                    });
+                    let key = (*slot, player.pose_key() | look_bits);
+                    let mut pose = player.current_pose();
+                    if let Some(l) = look {
+                        legaia_engine_core::actor_look::apply_look(&mut pose.bone_outputs, l);
+                    }
                     if !world_driven {
                         player.advance(field_tail_ticks);
                     }
@@ -1775,9 +1857,49 @@ impl PlayWindowApp {
                     let &(colour, blend) = object_tints.get(&(*record?)?)?;
                     tint_draw_cue((colour, blend))
                 };
+                // A landmark is an actor: retail's case-5 draw reads its live
+                // position and mesh, so a script's `A3 <id>` seat and
+                // `CC <id> 50` model swap move and re-skin it (the credits
+                // walk re-skins Rim Elm, `map01` record 8). The kernels are the
+                // field branch's - `World::object_draw_displacements`,
+                // `World::object_live_models` on a record's first draw - and
+                // the browser page folds the same two tables into its
+                // overworld placements (`field_placement_moves` /
+                // `field_placement_models`).
+                let wm_moves = self.session.host.world.object_draw_displacements();
+                let wm_models = self.session.host.world.object_live_models().clone();
+                let wm_live = |records: &[Option<usize>], i: usize, model: &Mat4| {
+                    let record = records.get(i).copied().flatten();
+                    let moved = match record.and_then(|r| wm_moves.get(&r)) {
+                        Some(d) => {
+                            Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
+                                * *model
+                        }
+                        None => *model,
+                    };
+                    let first = record.is_some() && !records[..i].contains(&record);
+                    let swap = record
+                        .filter(|_| first)
+                        .and_then(|r| wm_models.get(&r))
+                        .and_then(|&id| usize::try_from(id).ok())
+                        .filter(|&id| id < 0xF0);
+                    (moved, swap)
+                };
                 for (i, (mesh_idx, model)) in self.world_map_terrain_draws.iter().enumerate() {
-                    if let Some(mesh) = self.meshes.get(*mesh_idx) {
-                        let mvp = cam * *model;
+                    let (model, swap) = if i < deco_start {
+                        wm_live(&self.world_map_terrain_records, i, model)
+                    } else {
+                        (*model, None)
+                    };
+                    let mesh_idx = match swap {
+                        Some(id) => match self.field_pack_meshes.get(id).copied().flatten() {
+                            Some(m) => m,
+                            None => continue,
+                        },
+                        None => *mesh_idx,
+                    };
+                    if let Some(mesh) = self.meshes.get(mesh_idx) {
+                        let mvp = cam * model;
                         draws.push(SceneDraw {
                             mesh,
                             mvp,
@@ -1794,8 +1916,20 @@ impl PlayWindowApp {
                 // field branch's pairing, which this branch lacked.
                 for (i, (mesh_idx, model)) in self.world_map_terrain_color_draws.iter().enumerate()
                 {
-                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
-                        let mvp = cam * *model;
+                    let (model, swap) = if i < color_deco_start {
+                        wm_live(&self.world_map_terrain_color_records, i, model)
+                    } else {
+                        (*model, None)
+                    };
+                    let mesh_idx = match swap {
+                        Some(id) => match self.field_pack_color_meshes.get(id).copied().flatten() {
+                            Some(m) => m,
+                            None => continue,
+                        },
+                        None => *mesh_idx,
+                    };
+                    if let Some(mesh) = self.color_meshes.get(mesh_idx) {
+                        let mvp = cam * model;
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp,
@@ -2017,6 +2151,30 @@ impl PlayWindowApp {
                             cue: None,
                         });
                     }
+                    // A camera-facing terrain / decoration cell (record
+                    // flags `+0x12 & 0x380` - `rugi`'s candle glows, the
+                    // `vell` forest trees) is rebuilt against this frame's
+                    // camera: retail's decoration pass `FUN_801F7088` drops
+                    // the flagged axes from the camera rotation before the
+                    // cell's own. Shared kernel
+                    // `gte::decoration_cell_basis`; the browser play page
+                    // takes the same basis through `field_terrain_facing`.
+                    let facing_cam = self.part_camera_pose(in_world_map, cutscene_cam);
+                    let facing_model = |model: &Mat4,
+                                        f: Option<&Option<super::field_render::CameraFacing>>|
+                     -> Mat4 {
+                        let Some(Some((skip, rot))) = f else {
+                            return *model;
+                        };
+                        let Some(k) = legaia_engine_render::gte::decoration_cell_basis(
+                            *skip,
+                            facing_cam.as_ref(),
+                        ) else {
+                            return *model;
+                        };
+                        let basis = Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&k).transpose());
+                        Mat4::from_translation(model.w_axis.truncate()) * basis * *rot
+                    };
                     // Then the terrain / decor tile layer (drawn under
                     // the buildings): the `CELL_VISIBLE` field-map tiles
                     // (stone plaza, paths, riverbank).
@@ -2045,7 +2203,8 @@ impl PlayWindowApp {
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp: cam
+                                        * facing_model(model, self.field_terrain_facing.get(di)),
                                     cue: None,
                                 });
                             }
@@ -2071,7 +2230,11 @@ impl PlayWindowApp {
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp: cam
+                                        * facing_model(
+                                            model,
+                                            self.field_terrain_color_facing.get(di),
+                                        ),
                                     cue: None,
                                 });
                             }
@@ -2094,6 +2257,18 @@ impl PlayWindowApp {
                     // `World::object_draw_displacements`; the browser play
                     // page folds the same table in (`field_placement_moves`).
                     let object_moves = self.session.host.world.object_draw_displacements();
+                    // A placed object a script parks at the hide box after
+                    // the scene built its draw lists (`rugi`'s entry script
+                    // runs `A3 06 7F 7F` on the stone block the opened wall
+                    // leaves behind) stops drawing that frame: retail's
+                    // case-5 draw reads the actor, which now stands off the
+                    // map. The build-time pass drops the records parked by
+                    // then; this is the same set, read per frame. Shared
+                    // kernel `World::hidden_object_records`; the browser play
+                    // page reads it through `field_placement_parked`.
+                    let object_parked = self.session.host.world.hidden_object_records();
+                    let parked =
+                        |record: Option<usize>| record.is_some_and(|r| object_parked.contains(&r));
                     let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
                         match record.and_then(|r| object_moves.get(&r)) {
                             Some(d) => {
@@ -2140,6 +2315,9 @@ impl PlayWindowApp {
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
                             let record = self.field_placement_records.get(di).copied().flatten();
+                            if parked(record) {
+                                continue;
+                            }
                             let model = &object_moved(model, record);
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
@@ -2208,6 +2386,9 @@ impl PlayWindowApp {
                         // mesh; the ones whose clip is running were re-posed
                         // above, so the door draws mid-swing.
                         for (mesh_idx, model, record) in &posed_prop_baked_v {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2234,6 +2415,9 @@ impl PlayWindowApp {
                             }
                         }
                         for (mesh, model, record) in &posed_prop_live_v {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2261,6 +2445,9 @@ impl PlayWindowApp {
                                 .get(di)
                                 .copied()
                                 .flatten();
+                            if parked(record) {
+                                continue;
+                            }
                             let model = &object_moved(model, record);
                             if !legaia_engine_core::field_env::placed_draw_live(
                                 self.field_placement_color_window_keys
@@ -2309,6 +2496,9 @@ impl PlayWindowApp {
                             }
                         }
                         for (mesh_idx, model, record) in &posed_prop_baked_c {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2327,6 +2517,9 @@ impl PlayWindowApp {
                             }
                         }
                         for (mesh, model, record) in &posed_prop_live_c {
+                            if parked(*record) {
+                                continue;
+                            }
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2916,7 +3109,23 @@ impl PlayWindowApp {
             // other surface that samples this atlas is up, so there is no
             // contention with the chrome appended after it.
             let mut save_chrome_draw_vec = field_hud_draws.sprites;
-            save_chrome_draw_vec.extend(self.save_select_chrome_sprite_draws(w, h));
+            // The save screen's subtractive darkening under its active panel
+            // (`SaveScreenDarken`): one `B - F` draw inside this overlay, so
+            // everything before it in the vec is darkened and the panel after
+            // it is not - the same split the browser play page makes.
+            let mut save_chrome_blend = Vec::new();
+            {
+                let base = save_chrome_draw_vec.len() as u32;
+                let (save_sprites, darken) = self.save_select_chrome_sprite_draws(w, h);
+                if let Some(i) = darken {
+                    save_chrome_blend.push(legaia_engine_render::OverlayBlendSpan {
+                        start: base + i as u32,
+                        count: 1,
+                        abr: 2,
+                    });
+                }
+                save_chrome_draw_vec.extend(save_sprites);
+            }
             // The post-battle report's two framed windows (level-up above,
             // spoils below). Same atlas, and mutually exclusive with the
             // boot/menu chrome.
@@ -2971,7 +3180,7 @@ impl PlayWindowApp {
             let save_chrome_overlay = self.save_menu.as_ref().map(|sm| TextOverlay {
                 atlas: &sm.atlas,
                 draws: &save_chrome_draw_vec,
-                blend: &[],
+                blend: &save_chrome_blend,
             });
             let muscle_hub_overlay = self.muscle_hub.as_ref().map(|m| TextOverlay {
                 atlas: &m.atlas,
@@ -3081,7 +3290,7 @@ impl PlayWindowApp {
             // centre, the corner adds follow it, and the matrix is reset to
             // identity before the projection), so the half-extents must not go
             // through the 4x a second time. See
-            // `legaia_engine_vm::effect_billboard`.
+            // `legaia_engine_render::effect_billboard`.
             let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
                 BATTLE_WORLD_SCALE
             } else {
@@ -3208,6 +3417,77 @@ impl PlayWindowApp {
             // the retail mechanism - the 3D scene darkens while the narration
             // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
+            // `LEGAIA_DIAG_DRAWS=<path>`: this frame's textured draws as
+            // texture families (`draw_census`), rewritten every frame so the
+            // file holds the captured one.
+            if let Some(d) = self.draw_census.as_ref()
+                && let Some(path) = std::env::var_os("LEGAIA_DIAG_DRAWS")
+            {
+                type Census = legaia_engine_core::draw_census::MeshCensus;
+                let mut by_ptr: std::collections::HashMap<
+                    *const legaia_engine_render::UploadedVramMesh,
+                    &Census,
+                > = std::collections::HashMap::new();
+                for (m, c) in self.meshes.iter().zip(&d.meshes) {
+                    if let Some(c) = c {
+                        by_ptr.insert(m as *const _, c);
+                    }
+                }
+                for (m, c) in self.field_lit.meshes.iter().zip(&d.lit) {
+                    by_ptr.insert(m as *const _, c);
+                }
+                for (idx, m) in &self.field_morph_live {
+                    if let Some(c) = d.morph.get(idx) {
+                        by_ptr.insert(m as *const _, c);
+                    }
+                }
+                if let (Some((_, Some(m))), Some(c)) = (&self.ground_crop, &d.ground_crop) {
+                    by_ptr.insert(m as *const _, c);
+                }
+                if let (Some(m), Some(c)) = (&self.ground_heightfield, &d.ground) {
+                    by_ptr.insert(m as *const _, c);
+                }
+                let census_draws = || {
+                    draws.iter().filter_map(|dr| {
+                        by_ptr
+                            .get(&(dr.mesh as *const _))
+                            .map(|c| (*c, dr.mvp.to_cols_array()))
+                    })
+                };
+                let rows =
+                    legaia_engine_core::draw_census::family_rows(census_draws(), 320.0, 240.0);
+                // `LEGAIA_DIAG_DRAW_TRIS=<clut hex>`: that family's triangles,
+                // one per line, at `<path>.tris`.
+                if let Some(cba) = std::env::var("LEGAIA_DIAG_DRAW_TRIS")
+                    .ok()
+                    .and_then(|s| u16::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+                {
+                    let mut tp = path.clone();
+                    tp.push(".tris");
+                    let _ = std::fs::write(
+                        tp,
+                        legaia_engine_core::draw_census::family_tris_jsonl(
+                            census_draws(),
+                            320.0,
+                            240.0,
+                            cba,
+                        ),
+                    );
+                }
+                // The CPU VRAM the field pass samples, beside it
+                // (`<path>.vram`, 1 MiB little-endian), so a family whose
+                // count and colour agree but whose pixels part can be read
+                // against the state's own VRAM.
+                if let Some(v) = self.cpu_vram_base.as_ref() {
+                    let mut vp = path.clone();
+                    vp.push(".vram");
+                    let _ = std::fs::write(vp, v.as_bytes());
+                }
+                let _ = std::fs::write(
+                    path,
+                    legaia_engine_core::draw_census::family_rows_jsonl(&rows),
+                );
+            }
             {
                 let mut tex = vec![None; draws.len()];
                 for (i, c) in clip_marks {
@@ -3261,6 +3541,25 @@ impl PlayWindowApp {
                 (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
                 _ => scene,
             };
+            // A field-VM `43 12` copy that reads the display framebuffer
+            // (the ending vignettes' photo grab into `(512, 0)`) waits for
+            // this frame: land it in the CPU VRAM's display page, and the
+            // next drain (`apply_world_clut_fx`) runs the copy. Shared
+            // handshake `World::framebuffer_grab_pending`; the browser page
+            // lands its own frame through `play_land_frame_grab`.
+            if self.session.host.world.framebuffer_grab_pending()
+                && let Some(base) = self.cpu_vram_base.as_mut()
+            {
+                match r.capture_scene_rgba(legaia_engine_render::RenderTarget::Scene(&scene)) {
+                    Ok(img) => {
+                        legaia_engine_render::vram_capture::land_display_frame(
+                            &img.rgba, img.width, img.height, base,
+                        );
+                        self.session.host.world.land_framebuffer();
+                    }
+                    Err(e) => log::error!("play-window: framebuffer grab: {e:#}"),
+                }
+            }
             // The intro's primitives composite *over* the scene in one frame.
             // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
             // mode which clears and draws nothing but quads, so it could never
@@ -3305,6 +3604,8 @@ impl PlayWindowApp {
             // draws under the HUD - the browser play page's GL pass sits
             // under its text canvas the same way.
             light_prims.extend(self.cross_beam_screen_prims());
+            // PROT 0904's (Theeder) beam: prongs, charge, sweep and trail.
+            light_prims.extend(self.theeder_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured, and split at
@@ -3326,6 +3627,17 @@ impl PlayWindowApp {
             // (`MenuRuntime::shop_fade_level`; the browser page draws the
             // same quad).
             if let Some(level) = self.menu_runtime.shop_fade_level() {
+                screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
+                    u32::from(level) * 0x01_01_01,
+                    2,
+                    0,
+                ));
+            }
+            // The pause menu's wipe: the field darkening before the menu
+            // spawns and brightening after it closes (`FUN_801ED308`'s
+            // `_DAT_8007B440` through the wipe emitter) - the same
+            // subtractive quad as the shop's opening fade.
+            if let Some(level) = self.session.pause_wipe().fade_level() {
                 screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
                     u32::from(level) * 0x01_01_01,
                     2,
@@ -3638,7 +3950,7 @@ impl PlayWindowApp {
         for s in sprites.iter().take(4) {
             // The same centre the billboard builder draws around.
             let c = if battle {
-                legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos)
+                legaia_engine_render::effect_billboard::battle_billboard_centre(s.world_pos)
             } else {
                 s.world_pos
             };
@@ -3956,29 +4268,10 @@ fn tick_menu_runtime_session(
     world: &mut legaia_engine_core::world::World,
     pressed_edge: u16,
 ) -> Option<u8> {
-    let mut cue = None;
-    if menu.is_open() {
-        // Edges, not the held word: the runtime filters no repeats, so a held
-        // key used to step the shop cursor / commit a screen every tick it
-        // stayed down. The browser page sends one edge per press through the
-        // same decode.
-        let input = legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
-        menu.tick(world, input);
-        // The shop's own blip (`MenuRuntime::take_ui_cue`); the browser
-        // page's `play_shop_input` keys the same one.
-        cue = menu.take_ui_cue();
-    }
-    // A field-VM-triggered shop the player has now closed: tell the world so
-    // the suspended op-0x49 resumes (Armed -> Done) and the field VM advances
-    // past the merchant op next tick.
-    if world.shops.shop_open && !menu.is_open() {
-        world.finish_field_shop();
-    }
-    // Safety net for the prize exchange (its own Exit already calls
-    // `finish_prize_exchange` through the runtime tick): if the menu closed by
-    // any other path, unpark the suspended counter script rather than wedge it.
-    if world.shops.prize_exchange_open && !menu.is_open() {
-        world.finish_prize_exchange();
-    }
-    cue
+    // The one per-tick step both hosts run (the browser page's
+    // `play_shop_input` calls it per sim tick too): edges, not the held word
+    // - the runtime filters no repeats, so a held key used to step the shop
+    // cursor / commit a screen every tick it stayed down - then the unpark of
+    // a closed shop / prize counter's suspended op-0x49.
+    menu.step_field_session(world, pressed_edge)
 }

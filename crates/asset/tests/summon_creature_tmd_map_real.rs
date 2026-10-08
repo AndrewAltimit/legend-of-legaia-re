@@ -114,6 +114,21 @@ fn summon_creatures_byte_match_their_archive_mesh() {
             c.creature_id,
         );
 
+        // ... and so is the texture pool the seat arm installs with it
+        // (`FUN_801F19EC` -> `FUN_80055468`): the archive twin is the whole
+        // body retail seats, colours included, evolved block too.
+        let cast = summon_readef::parse_cast(&summon, c.spell_id).expect("parse_cast");
+        let cast_pool = &cast.mesh.block[cast.mesh.texture_pool_offset..];
+        assert!(!cast_pool.is_empty() && mesh.texture_pool_offset != 0);
+        let archive_pool = &mesh.block[mesh.texture_pool_offset..];
+        assert!(
+            archive_pool.len() >= cast_pool.len() && archive_pool[..cast_pool.len()] == *cast_pool,
+            "0x{:02X} {}: summon.dat texture pool differs from archive id {}",
+            c.spell_id,
+            c.name,
+            c.creature_id,
+        );
+
         // The archive record carries the mapped name.
         let rec = monster_archive::record(&battle, c.creature_id)
             .ok()

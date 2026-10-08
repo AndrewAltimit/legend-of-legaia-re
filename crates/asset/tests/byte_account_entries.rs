@@ -933,6 +933,199 @@ fn the_str_overlay_data_segment_is_claimed_structurally() {
     );
 }
 
+/// The battle overlay's small consumer-pinned tables between the side-band
+/// filename strings and the guard masks: each row's cited `lui` sites and
+/// bound still read as stated, so every one is claimed, and the entry
+/// carries no residue but slack.
+#[test]
+fn the_battle_overlay_command_tables_are_consumer_pinned() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 898) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(898),
+        label: "0898".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    // The claim list keeps only the largest claims, so these rows are
+    // checked through the walker's refusal note instead: a row whose cited
+    // instruction no longer reads as stated says so and claims nothing.
+    let refused: Vec<_> = acc
+        .notes
+        .iter()
+        .filter(|n| n.contains("not claimed: a cited instruction"))
+        .collect();
+    assert!(refused.is_empty(), "refused rows: {refused:?}");
+    let work: usize = acc
+        .residue
+        .iter()
+        .filter(|r| {
+            !matches!(
+                r.shape,
+                ResidueShape::ZeroPad | ResidueShape::Alignment | ResidueShape::RepeatedFill
+            )
+        })
+        .map(|r| r.len)
+        .sum();
+    assert_eq!(work, 0, "0898 non-slack residue");
+}
+
+/// The game-over overlay hands its letter spawn record to `FUN_80021B04`
+/// through a saved register (`s5`, formed above a `jal` and copied to `$a2`
+/// inside the loop), and its handler template to `FUN_80024C88` in `$a1`.
+/// Both are claimed off those calls.
+#[test]
+fn the_gameover_records_are_claimed_off_their_calls() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 902) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(902),
+        label: "0902".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    const BASE: usize = 0x801C_E818;
+    let starts = |what: &str| -> Vec<usize> {
+        acc.claims
+            .iter()
+            .filter(|c| c.detail.starts_with(what))
+            .map(|c| c.start + BASE)
+            .collect()
+    };
+    assert!(
+        starts("spawn record").contains(&0x801C_ECBC),
+        "letter spawn record: {:?}",
+        starts("spawn record")
+    );
+    let templates = starts("actor template");
+    assert!(
+        templates.contains(&0x801C_ED20),
+        "FUN_80024C88 template: {templates:?}"
+    );
+}
+
+/// The world-map render overlay's per-prim dispatch row passes its shape
+/// check and is claimed, which leaves the image no residue but slack.
+#[test]
+fn the_world_map_prim_dispatch_row_is_claimed() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 901) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(901),
+        label: "0901".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    let row = acc
+        .claims
+        .iter()
+        .find(|c| c.detail.starts_with("per-prim dispatch row"))
+        .unwrap_or_else(|| panic!("dispatch row claimed; notes: {:?}", acc.notes));
+    assert_eq!((row.start, row.end - row.start), (0x1F90, 80));
+}
+
+/// The menu overlay's six save-screen text slots pass their slot-by-slot
+/// shape check and are claimed whole.
+#[test]
+fn the_save_screen_text_slots_are_claimed() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 899) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(899),
+        label: "0899".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    assert!(
+        !acc.notes
+            .iter()
+            .any(|n| n.starts_with("save-screen text slots")),
+        "slots refused: {:?}",
+        acc.notes
+    );
+    // 0x801EED24..0x801EF024 is no longer residue anywhere.
+    let (lo, hi) = (0x801E_ED24 - 0x801C_E818, 0x801E_F024 - 0x801C_E818);
+    assert!(
+        !acc.residue.iter().any(|r| r.start < hi && r.end > lo),
+        "residue inside the slots"
+    );
+}
+
+/// The DEBUG MODE overlay's value-monitor rows name their label tables in
+/// a data word (`+0x24`), and both tables are claimed through it.
+#[test]
+fn the_value_monitor_name_tables_are_claimed() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 971) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(971),
+        label: "0971".into(),
+        prot_dir: Some(dir.clone()),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    let tables: Vec<(usize, usize)> = acc
+        .claims
+        .iter()
+        .filter(|c| c.detail.starts_with("value-monitor name table"))
+        .map(|c| (c.start + 0x801C_E818, c.end - c.start))
+        .collect();
+    assert!(tables.contains(&(0x801C_F800, 0x70)), "{tables:x?}");
+    assert!(tables.contains(&(0x801C_F870, 0x20)), "{tables:x?}");
+}
+
 /// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
 /// and claiming it at the stride leaves the entry near whole.
 #[test]

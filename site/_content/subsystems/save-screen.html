@@ -168,6 +168,7 @@
         </tbody>
       </table>
       <p><strong>Bottom info panel <code>FUN_801E08D8</code>.</strong> Slides vertically from 394 to 138 once "Now checking" retracts; draws the slot's kingdom, play time and up to three party columns 96 px apart (portrait, name, LV, HP, MP; HP/MP go yellow at half and red at a quarter). The view mode per cell comes from <code>FUN_801E3F74</code>: readable save, foreign block, or free block. Its fourth arm, a &quot;Return&quot; caption for cell <code>0xF</code>, is dead code &mdash; the grid cursor is clamped to <code>col 0..4</code> / <code>row 0..2</code>, so the cell index tops out at 14 and nothing ever asks for 15. Slot data is read from <code>0x801EF1B8 + N &times; 0x100</code> (kingdom name <code>+0</code>, seconds <code>+0x24</code>, party count <code>+0x28</code>, names <code>+0x54 + i &times; 0xC</code>).</p>
+      <p><strong>Text slots, two live and four dead.</strong> Six <code>0x80</code>-byte text slots sit at <code>0x801EED24</code>. Slot 0 is the play-time line, its digits poked in place by <code>FUN_801DD35C</code>, and slot 3 a two-digit counter <code>FUN_801DE234</code> pokes the same way. The other four - a load-failure line, a wrong-game line, a not-available line and a not-used line - are named by nothing on the disc, in any address form, so they are dead text: the failure messages the screen really shows come from the overlay's message pool.</p>
     </div>
   </details>
 </section>

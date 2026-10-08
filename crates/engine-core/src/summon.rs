@@ -84,9 +84,7 @@
 //!   `FUN_801F7088` build is the **world-map top-view tile renderer** aliasing
 //!   the same `0x801Fxxxx` band, not the battle-summon code.)
 
-use legaia_asset::summon_overlay::{
-    RENDER_NODE_MODE_A, RENDER_NODE_MODE_B, SummonOverlay, SummonPart,
-};
+use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
 
 /// Per-frame opcode budget for one part's move-VM tick (defensive cap; retail
@@ -127,6 +125,23 @@ pub fn has_summon_body(spell_id: u8) -> bool {
     SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id)
 }
 
+/// Whether the cast module for a player Seru `spell_id` calls the Seru
+/// side-effect stager `FUN_801F3D3C` - the routine that stages the debuff
+/// percent, or a light-row cure tier, into `0x801F6960`.
+///
+/// Retail calls it from inside the module, not from the cast band: the
+/// `jal 0x801f3d3c` word `0x0C07CF4F` sits in every image `0903..=0923`
+/// except **0907** (Nighto, `0x85`) and **0916** (Aluru, `0x8E`), and in no
+/// image above (a byte scan of the entries at their slot-B base; Spoon's is
+/// `0x801F7028`). So the whole base and evolved blocks stage, minus those two -
+/// exactly the ids `FUN_801F3C34`'s "No effect." pass early-outs on
+/// (`0x85` / `0x8E` / `>= 0x96`).
+///
+/// REF: FUN_801F3D3C (its callers, by image)
+pub fn module_stages_side_effect(spell_id: u8) -> bool {
+    has_summon_body(spell_id) && spell_id != 0x85 && spell_id != 0x8E
+}
+
 /// Rare-Seru **flute** summon block (`0x96..=0x98`), the contiguous
 /// continuation of [`EVOLVED_SUMMON_IDS`] under the same arithmetic
 /// (`0x96 → 924`, `0x97 → 925`, `0x98 → 926`). SummonFlute items (item-effect
@@ -151,6 +166,28 @@ pub const FLUTE_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x96..=0x98;
 /// (mid-cast loader-B id + slot-B-resident stager; disc+library-gated
 /// `summon_binding_base_high`).
 pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
+
+/// Whether a party member's cast of `spell_id` trains the spell (credits the
+/// record's `+0x8` XP word and runs the `FUN_801E70BC` level check).
+///
+/// The finisher's XP tail (`FUN_801DDB30`, `0x801DE440`) keys on attacker
+/// slot 7 with no spell-id test, and every module of the base, evolved and
+/// high blocks strikes through `FUN_801DD0AC(0x12, 7, seat)` - the high block
+/// included (Juggernaut `0x801F7E0C`, Palma `0x801F8114`, Mule `0x801F7E4C`,
+/// Jedo's scripted arm `0x801F8438`, Meta `0x801F7BA0`, Terra `0x801F7CCC`,
+/// Ozma `0x801F8E04`, each with `li a1,0x7`). The two that strike nothing
+/// credit inline instead: Horn `0x9C` per party seat and Jedo `0x9D` per
+/// living monster outside a scripted fight
+/// ([`crate::magic_xp::horn_seat_xp_gain`],
+/// [`crate::magic_xp::JEDO_XP_PER_LIVING_MONSTER`]). `FUN_801E70BC`'s own
+/// tripled-threshold set names `0x99` / `0x9B` / `0xA0`. The flute ids
+/// `0x96..=0x98` are item casts the caster's spell list never carries, so
+/// they are left out.
+///
+/// REF: FUN_801DDB30 (`0x801DE440` slot-7 gate), FUN_801E70BC
+pub fn module_trains_spell_xp(spell_id: u8) -> bool {
+    has_summon_body(spell_id) || HIGH_SUMMON_IDS.contains(&spell_id)
+}
 
 /// The whole player-summon spell-id span, base through high block. Every id in
 /// it resolves through the same linear stager arithmetic - see
@@ -229,6 +266,65 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
             .ok()
             .flatten()
             .is_some_and(|r| r.name == name)
+    })
+}
+
+/// What a host seats as the summoned creature: the mesh (TMD + texture pool,
+/// monster-shaped so `MonsterMesh::battle_render_mesh` relocates it), the
+/// clip the seat idles on, and the record-order clip set the stager's staged
+/// ids resolve against.
+#[derive(Debug, Clone)]
+pub struct SummonSpawnAsset {
+    /// The archive creature id for a reused enemy body, `None` for a body
+    /// that comes out of the cast's own `summon.dat` group.
+    pub creature_id: Option<u16>,
+    pub mesh: legaia_asset::monster_archive::MonsterMesh,
+    pub idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
+    pub clips: Vec<legaia_asset::monster_archive::MonsterAnimation>,
+}
+
+/// Resolve the body a player summon `spell_id` seats as slot 7.
+///
+/// Retail's seat arm `FUN_801F19EC` installs the cast's **own** streamed
+/// `summon.dat` actor record (TMD + texture pool, through the monster mesh
+/// installer `FUN_80055468`) for every id. For the base and evolved blocks
+/// (`0x81..=0x95`) that record's TMD and texture pool are byte-identical to
+/// the mapped `battle_data` creature's (the disc-gated
+/// `summon_creature_tmd_map_real` oracle pins both), so the archive record -
+/// with its archive-order clips - is the same body. Every other cast id
+/// (the high block `0x99..=0xA0` and the flutes) has no archive twin and
+/// resolves from `summon_dat` (extraction PROT 893) through
+/// [`legaia_asset::summon_readef::parse_cast`], idling on the record's clip 0.
+/// `None` when neither source resolves.
+///
+/// REF: FUN_801F19EC, FUN_80055468
+pub fn summon_spawn_asset(
+    spell_id: u8,
+    battle_data_entry: &[u8],
+    summon_dat: Option<&[u8]>,
+) -> Option<SummonSpawnAsset> {
+    use legaia_asset::monster_archive as ma;
+    if let Some(creature) = summon_creature_id(spell_id, battle_data_entry)
+        && let Ok(Some(mesh)) = ma::mesh(battle_data_entry, creature)
+    {
+        return Some(SummonSpawnAsset {
+            creature_id: Some(creature),
+            mesh,
+            idle: ma::idle_animation(battle_data_entry, creature)
+                .ok()
+                .flatten(),
+            clips: ma::animations(battle_data_entry, creature)
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+        });
+    }
+    let cast = legaia_asset::summon_readef::parse_cast(summon_dat?, spell_id).ok()?;
+    Some(SummonSpawnAsset {
+        creature_id: None,
+        idle: cast.clips.first().cloned(),
+        mesh: cast.mesh,
+        clips: cast.clips,
     })
 }
 
@@ -373,7 +469,7 @@ fn is_mesh_sel(model_sel: i16) -> bool {
 /// "Part render-tail" for the full table.
 ///
 /// Only the two values the spawner `FUN_80021B04` seeds from a record's
-/// `model_sel` sentinel ([`RENDER_NODE_MODE_A`] `0x4000`, [`RENDER_NODE_MODE_B`]
+/// `model_sel` sentinel ([`legaia_asset::summon_overlay::RENDER_NODE_MODE_A`] `0x4000`, [`legaia_asset::summon_overlay::RENDER_NODE_MODE_B`]
 /// `0x4001`) are classified statically here - the rest of the `+0x5A` space is
 /// rebound at runtime by move-VM anim ops, which the engine abstracts
 /// away (it carries no `+0x5A` cell), so this is the faithful static surface.
@@ -398,11 +494,16 @@ impl RenderMode {
     /// default the engine models through its normal part transform.
     // PORT: FUN_80021B04 (the +0x5A seeding: 0x4000 -> 3, 0x4001 -> 5);
     // REF: FUN_80021DF4 (the per-mode draw/emit dispatch, host-delegated).
+    ///
+    /// The classification is the spawn's own: `SpawnSubmode::classify` (the
+    /// init-word test at `0x80021cc0`) is the one decoder, and the two
+    /// render-mode-node arms it names are the two values here.
     pub fn from_model_sel(model_sel: i16) -> Option<Self> {
-        match model_sel {
-            RENDER_NODE_MODE_A => Some(RenderMode::Particle),
-            RENDER_NODE_MODE_B => Some(RenderMode::SoundEmitter),
-            _ => None,
+        use legaia_engine_vm::move_vm::SpawnSubmode;
+        match SpawnSubmode::classify(model_sel as u16) {
+            SpawnSubmode::Keyframe => Some(RenderMode::Particle),
+            SpawnSubmode::Tween => Some(RenderMode::SoundEmitter),
+            SpawnSubmode::Negative | SpawnSubmode::Default => None,
         }
     }
 
@@ -1131,7 +1232,27 @@ fn apply_translation_update(state: &mut ActorState, origin: [i16; 3], frame_delt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
+    use legaia_asset::summon_overlay::{
+        RENDER_NODE_MODE_A, RENDER_NODE_MODE_B, SummonOverlay, SummonPart,
+    };
+
+    /// The images that call `FUN_801F3D3C`: `0903..=0923` minus 0907
+    /// (Nighto) and 0916 (Aluru) - base and evolved blocks alike, Spoon
+    /// included; nothing from the flute block up.
+    #[test]
+    fn side_effect_stager_callers_are_the_base_and_evolved_blocks() {
+        let stagers: Vec<u8> = (0..=u8::MAX)
+            .filter(|&id| module_stages_side_effect(id))
+            .collect();
+        let want: Vec<u8> = (0x81..=0x95)
+            .filter(|&id| id != 0x85 && id != 0x8E)
+            .collect();
+        assert_eq!(stagers, want);
+        assert!(
+            module_stages_side_effect(0x91),
+            "Spoon stages its cure tier"
+        );
+    }
 
     /// A synthetic overlay: one transform node + one mesh part with a tiny
     /// move-VM program (`0x00 ANIM_BANK_SET 1,2,3` then `0x08 HALT`) - the

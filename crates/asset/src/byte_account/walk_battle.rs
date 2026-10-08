@@ -216,6 +216,30 @@ pub(super) fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOpti
                     OWNER_TOC,
                     format!("{} part offsets", a.part_count),
                 );
+                // The link targets past the part slots (`FUN_801F19EC`'s
+                // `+0x04` / `+0x08` fixups): a big summon's entries live in
+                // the previous slot's part pool, everyone else's in-slot.
+                let big = crate::summon_readef::BIG_SUMMON_IDS
+                    .clone()
+                    .any(|id| crate::summon_creatures::actor_record_slot_index(id) == s.index);
+                let pool = if big {
+                    s.index
+                        .checked_sub(1)
+                        .and_then(|p| buf.get(p * SLOT_BYTES..(p + 1) * SLOT_BYTES))
+                        .and_then(|raw| raw.get(crate::summon_readef::RAW_SLOT_PART_POOL_OFFSET..))
+                } else {
+                    buf.get(base..base + SLOT_BYTES)
+                };
+                let linked = pool.map_or(0, |p| a.linked_offset_count(p));
+                if linked > 0 {
+                    let start = base + 0x4C + a.part_offsets.len() * 4;
+                    sink.claim(
+                        start,
+                        start + linked * 4,
+                        OWNER_TOC,
+                        format!("{linked} linked part offsets"),
+                    );
+                }
                 if let Some(n) = a.name.as_ref().map(|n| n.len()) {
                     sink.claim(
                         base + a.name_offset,

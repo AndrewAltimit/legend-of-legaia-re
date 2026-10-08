@@ -83,6 +83,7 @@ fn world_running(code: Vec<u8>) -> World {
     world.npcs.ambient.insert(
         1,
         FieldNpcAmbient {
+            defers: false,
             variants: vec![(man_motion::SELECTOR_DEFAULT, code)],
             live: None,
             vm,

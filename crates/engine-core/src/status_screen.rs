@@ -74,9 +74,8 @@ pub struct StatusSnapshot {
 pub const RETAIL_STAT_LABELS: [&str; 6] = ["ATK", "UDF", "LDF", "SPD", "INT", "AGL"];
 
 impl StatusSnapshot {
-    /// Convenience constructor for a freshly-rolled record. Engines that
-    /// have a [`crate::battle_session::SessionSlotInfo`] handy can `From`
-    /// from it; this is the empty-record fallback.
+    /// Convenience constructor for a freshly-rolled record - the
+    /// empty-record fallback.
     pub fn placeholder(slot: u8, name: impl Into<String>) -> Self {
         Self {
             slot,

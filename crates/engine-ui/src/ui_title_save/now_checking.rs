@@ -91,37 +91,323 @@ pub fn now_checking_text_draws_for(
     stage_scale: u32,
     slide_offset: (i32, i32),
 ) -> Vec<TextDraw> {
-    let scale = stage_scale.max(1);
-    let color = SAVE_SELECT_TITLE_COLOR;
-    let mut out = Vec::with_capacity(40);
+    card_banner_text_draws_for(
+        font,
+        ("Now checking.", "Do not remove MEMORY CARD"),
+        stage_origin,
+        stage_scale,
+        slide_offset,
+    )
+}
 
-    let emit_centered = |out: &mut Vec<TextDraw>, text: &str, top_y: i32| {
-        let layout = font.layout_ascii(text);
-        let left_x = DIALOG_TEXT_CENTER_X - (layout.advance_x as i32 / 2) + slide_offset.0;
-        let top_y = top_y + slide_offset.1;
-        for g in &layout.glyphs {
-            let sx = left_x + g.dst_x;
-            let sy = top_y + g.dst_y;
-            out.push(TextDraw {
-                dst: (
-                    stage_origin.0 + sx * scale as i32,
-                    stage_origin.1 + sy * scale as i32,
-                    g.width * scale,
-                    g.height * scale,
-                ),
-                src: (g.atlas_x, g.atlas_y, g.width, g.height),
-                color,
-            });
-        }
-    };
-
-    emit_centered(&mut out, "Now checking.", NOW_CHECKING_TEXT_LINE1_Y);
-    emit_centered(
+/// The two centred lines of a card-operation messagebox on the "Now
+/// checking" panel's rows (the card-read beat).
+pub fn card_banner_text_draws_for(
+    font: &legaia_font::Font,
+    lines: (&str, &str),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+    slide_offset: (i32, i32),
+) -> Vec<TextDraw> {
+    let mut out = Vec::with_capacity(48);
+    emit_centered_text(
         &mut out,
-        "Do not remove MEMORY CARD",
-        NOW_CHECKING_TEXT_LINE2_Y,
+        font,
+        lines.0,
+        DIALOG_TEXT_CENTER_X + slide_offset.0,
+        NOW_CHECKING_TEXT_LINE1_Y + slide_offset.1,
+        stage_origin,
+        stage_scale,
+    );
+    emit_centered_text(
+        &mut out,
+        font,
+        lines.1,
+        DIALOG_TEXT_CENTER_X + slide_offset.0,
+        NOW_CHECKING_TEXT_LINE2_Y + slide_offset.1,
+        stage_origin,
+        stage_scale,
     );
     out
+}
+
+/// `FUN_801E3EE0(text, center_x, y)`'s placement: the string centred on
+/// `center_x`, glyph tops at `top_y` (the caller passes retail's `y + 7`).
+fn emit_centered_text(
+    out: &mut Vec<TextDraw>,
+    font: &legaia_font::Font,
+    text: &str,
+    center_x: i32,
+    top_y: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    let scale = stage_scale.max(1);
+    let layout = font.layout_ascii(text);
+    let left_x = center_x - (layout.advance_x as i32 / 2);
+    for g in &layout.glyphs {
+        out.push(TextDraw {
+            dst: (
+                stage_origin.0 + (left_x + g.dst_x) * scale as i32,
+                stage_origin.1 + (top_y + g.dst_y) * scale as i32,
+                g.width * scale,
+                g.height * scale,
+            ),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color: SAVE_SELECT_TITLE_COLOR,
+        });
+    }
+}
+
+/// The save / load commit beat's messagebox, as a host hands it over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CardBannerView<'a> {
+    pub lines: (&'a str, &'a str),
+    /// A third result line. Non-empty only on the damaged-data box, which
+    /// draws all three lines in one taller box.
+    pub note: &'a str,
+    /// The write / read panel (`true`) or the result line.
+    pub work: bool,
+    /// The write panel's slide timer, `0..=0x1000`.
+    pub slide_t: u16,
+    /// The write panel's progress timer `_DAT_801F01D0`, `0..=0x1000`
+    /// (`+0x20` a frame): the fill's width and its green ramp.
+    pub progress_t: u16,
+}
+
+/// The block badge - record 3 (`No.`) and record 2 (the numeral cell
+/// `block`) of the save UI's sprite-record table, each a `0x2C` quad at
+/// neutral modulation. `pen` is the `No.` quad's top-left; the numeral sits
+/// `0x16` right of it (both call sites place the pair that way).
+fn block_badge_into(
+    out: &mut Vec<SpriteDraw>,
+    block: u8,
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    let neutral = (0x80, 0x80, 0x80);
+    out.push(save_ui_record_quad(
+        legaia_asset::title_pak::SAVE_MENU_ATLAS_NO_LABEL,
+        neutral,
+        pen,
+        stage_origin,
+        stage_scale,
+    ));
+    if let Some(cell) = legaia_asset::title_pak::save_menu_atlas_block_digit(u32::from(block)) {
+        out.push(save_ui_record_quad(
+            cell,
+            neutral,
+            (pen.0 + BLOCK_BADGE_DIGIT_DX, pen.1),
+            stage_origin,
+            stage_scale,
+        ));
+    }
+}
+
+/// The block badge as a draw list - `No.` at `pen`, the numeral for `block`
+/// (`0..15`) `0x16` right of it. Every save-UI badge (the info panel's title
+/// row, the confirm prompt, the write panel) is this pair.
+pub fn block_badge_draws_for(
+    block: u8,
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(2);
+    block_badge_into(&mut out, block, pen, stage_origin, stage_scale);
+    out
+}
+
+/// The numeral's x past the `No.` label's: `0x16` in both of
+/// `FUN_801E1C1C`'s badge pairs (mode 3 `s5 - 0x16` / `s5`, mode 4
+/// `x - 0x55` / `x - 0x3F`).
+const BLOCK_BADGE_DIGIT_DX: i32 = 0x16;
+/// The write panel's badge: `No.` at `(x - 0x55, 0x54)` (`0x801E2904`).
+const CARD_WORK_BADGE: (i32, i32) = (-0x55, 0x54);
+/// The progress tube (record 4) at `(x - 0x34, 0x90)` (`0x801E2BF4` /
+/// `0x801E2BC8`).
+const CARD_WORK_TUBE: (i32, i32) = (-0x34, 0x90);
+/// The progress fill `FUN_801E2DC4(x - 0x2C, 0x95)`: one `0x3C` quad
+/// `w = t * 0x58 >> 12` wide (the tube's 88-pixel interior at `t = 0x1000`)
+/// and `6` tall, every vertex `(0xBC, t * 0xFF >> 12, 0)`.
+const CARD_WORK_FILL: (i32, i32, i32, i32) = (-0x2C, 0x95, 0x58, 6);
+/// The fill's fixed red channel.
+const CARD_WORK_FILL_RED: u8 = 0xBC;
+
+/// The write panel's progress tube and fill at panel centre `x`.
+fn card_work_progress_into(
+    out: &mut Vec<SpriteDraw>,
+    x: i32,
+    progress_t: u16,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    use legaia_asset::title_pak::{SAVE_MENU_ATLAS_PROGRESS_TEXEL, SAVE_MENU_ATLAS_PROGRESS_TUBE};
+    let t = i32::from(progress_t.min(0x1000));
+    let (fx, fy, fw, fh) = CARD_WORK_FILL;
+    let w = (t * fw) >> 12;
+    if w > 0 {
+        let scale = stage_scale.max(1);
+        let (tx, ty, _, _) = SAVE_MENU_ATLAS_PROGRESS_TEXEL;
+        let green = ((t * 0xFF) >> 12) as f32 / 128.0;
+        // The fill is drawn first: retail links it into the same ordering
+        // table bucket after the tube, so the tube's opaque rim lands on it.
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + (x + fx) * scale as i32,
+                stage_origin.1 + fy * scale as i32,
+                w as u32 * scale,
+                fh as u32 * scale,
+            ),
+            src: (tx + 1, ty + 1, 2, 2),
+            color: [f32::from(CARD_WORK_FILL_RED) / 128.0, green, 0.0, 1.0],
+        });
+    }
+    out.push(save_ui_record_quad(
+        SAVE_MENU_ATLAS_PROGRESS_TUBE,
+        (0x80, 0x80, 0x80),
+        (x + CARD_WORK_TUBE.0, CARD_WORK_TUBE.1),
+        stage_origin,
+        stage_scale,
+    ));
+}
+
+/// The write / read panel: `FUN_801E1C1C` mode 4 (PROT 0899
+/// `0x801E28EC..`), slid on `_DAT_801F01CC` from x `576` to the stage centre
+/// at a fixed `y = 0x50`. Its box is `FUN_801E36C4(x, 0x50, 0x11C, 0x20)`
+/// (`0x801E2BAC..0x801E2BB8`); the message, copied behind a two-space lead,
+/// is centred at `x + 0x1A` on `y = 0x50` and "Do not remove MEMORY CARD" at
+/// `x` on `y = 0x60` (`0x801E2B88..0x801E2BA8`), each `+7` to the glyph top.
+pub const CARD_WORK_PANEL: (i32, i32, i32, i32) = (0x50, 0x11C, 0x20, 0x1A);
+/// The write panel's slide start x (`(576, 112) -> (160, 112)`).
+pub const CARD_WORK_SLIDE_START_X: i32 = 576;
+/// The result line: `FUN_801E3EE0(msg, 0xA0, 0x60)` and a box
+/// `FUN_801E36C4(0xA0, 0x60, 13 * ((len + 1) / 2), 0xD)` around it
+/// (`0x801DF934..0x801DF9B0`) - the width is the text drawer's own
+/// `(strlen + 1) / 2` return times 13.
+pub const CARD_RESULT_Y: i32 = 0x60;
+/// The damaged-data box's first line and box `y` (`0x801DF4FC` /
+/// `0x801DF530`).
+pub const CARD_DAMAGED_Y: i32 = 0x50;
+
+/// Sprites + text for [`CardBannerView`], at retail's geometry. `block` is
+/// the picked block (the grid cell): the write / read panel carries its
+/// `No.` badge, as `FUN_801E1C1C` mode 4 draws it.
+pub fn card_banner_draws_for(
+    font: &legaia_font::Font,
+    rects: Option<&SaveMenuAtlasRects>,
+    banner: &CardBannerView<'_>,
+    block: Option<u8>,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> (Vec<SpriteDraw>, Vec<TextDraw>) {
+    let mut sprites = Vec::new();
+    let mut texts = Vec::new();
+    if banner.work {
+        let (y, w, h, lead) = CARD_WORK_PANEL;
+        let x = CARD_WORK_SLIDE_START_X
+            + (NOW_CHECKING_SLIDE_TARGET_X - CARD_WORK_SLIDE_START_X) * i32::from(banner.slide_t)
+                / 0x1000;
+        if let Some(rects) = rects {
+            nine_slice_panel_into(
+                &mut sprites,
+                rects,
+                messagebox_rect(x, y, w, h),
+                stage_origin,
+                stage_scale,
+                false,
+            );
+            card_work_progress_into(
+                &mut sprites,
+                x,
+                banner.progress_t,
+                stage_origin,
+                stage_scale,
+            );
+            if let Some(block) = block {
+                block_badge_into(
+                    &mut sprites,
+                    block,
+                    (x + CARD_WORK_BADGE.0, CARD_WORK_BADGE.1),
+                    stage_origin,
+                    stage_scale,
+                );
+            }
+        }
+        emit_centered_text(
+            &mut texts,
+            font,
+            banner.lines.0,
+            x + lead,
+            y + 7,
+            stage_origin,
+            stage_scale,
+        );
+        emit_centered_text(
+            &mut texts,
+            font,
+            banner.lines.1,
+            x,
+            y + 0x10 + 7,
+            stage_origin,
+            stage_scale,
+        );
+    } else if !banner.note.is_empty() {
+        // The damaged-data box (sub-mode `0x13`, `0x801DF4EC..0x801DF548`):
+        // three lines centred on `0xA0` at `y = 0x50 / 0x60 / 0x70`, in
+        // `FUN_801E36C4(0xA0, 0x50, 13 * n, 0x30)` where `n` is the text
+        // drawer's `(strlen + 1) / 2` return for the **last** line.
+        let x = DIALOG_TEXT_CENTER_X;
+        let half = (banner.note.len() as i32 + 1) / 2;
+        if let Some(rects) = rects {
+            nine_slice_panel_into(
+                &mut sprites,
+                rects,
+                messagebox_rect(x, CARD_DAMAGED_Y, 13 * half, 0x30),
+                stage_origin,
+                stage_scale,
+                false,
+            );
+        }
+        for (i, line) in [banner.lines.0, banner.lines.1, banner.note]
+            .into_iter()
+            .enumerate()
+        {
+            emit_centered_text(
+                &mut texts,
+                font,
+                line,
+                x,
+                CARD_DAMAGED_Y + 0x10 * i as i32 + 7,
+                stage_origin,
+                stage_scale,
+            );
+        }
+    } else {
+        let x = DIALOG_TEXT_CENTER_X;
+        let half = (banner.lines.0.len() as i32 + 1) / 2;
+        if let Some(rects) = rects {
+            nine_slice_panel_into(
+                &mut sprites,
+                rects,
+                messagebox_rect(x, CARD_RESULT_Y, 13 * half, 0xD),
+                stage_origin,
+                stage_scale,
+                false,
+            );
+        }
+        emit_centered_text(
+            &mut texts,
+            font,
+            banner.lines.0,
+            x,
+            CARD_RESULT_Y + 7,
+            stage_origin,
+            stage_scale,
+        );
+    }
+    (sprites, texts)
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +506,36 @@ pub fn confirm_dialog_panel_draws_for(
     }
     out
 }
+
+/// The confirm prompt's block badge: `FUN_801E1C1C` mode 3 seats the
+/// numeral at `s5 = 0xA0 - 0x5A` - or `0xA0 - 0x3A` on the one arm that asks
+/// "Do you wish to save?", whose shorter line leaves the badge closer
+/// (`0x801E25B8` / `0x801E25BC`) - and `No.` `0x16` left of it, both at the
+/// slide `y + 4` (`0x801E262C..0x801E2630`). The prompt choice and the shift
+/// are one branch on retail, so the prompt text selects the shift here.
+pub fn confirm_dialog_badge_draws_for(
+    prompt: &str,
+    block: u8,
+    slide_y: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let numeral_x = CONFIRM_DIALOG_CENTER_X
+        + if prompt == CONFIRM_PROMPT_FREE_BLOCK {
+            -0x3A
+        } else {
+            -0x5A
+        };
+    block_badge_draws_for(
+        block,
+        (numeral_x - BLOCK_BADGE_DIGIT_DX, slide_y + 4),
+        stage_origin,
+        stage_scale,
+    )
+}
+
+/// The free-block question - the one confirm whose badge sits `0x20` right.
+pub const CONFIRM_PROMPT_FREE_BLOCK: &str = "Do you wish to save?";
 
 /// Build the [`TextDraw`]s for the confirm dialog: the `prompt` across the
 /// bar, then `Yes` and `No` **stacked** in the box below it. Retail centres
@@ -506,5 +822,58 @@ mod messagebox_geometry_tests {
                 px + pw
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod card_work_sprite_tests {
+    use super::*;
+    use legaia_asset::title_pak::{
+        SAVE_MENU_ATLAS_NO_LABEL, SAVE_MENU_ATLAS_PROGRESS_TUBE, save_menu_atlas_block_digit,
+    };
+
+    /// The parked write panel (`x = 0xA0`): `No.` at `(0x4B, 0x54)`, the
+    /// numeral `0x16` right of it, the tube at `(0x6C, 0x90)` and the fill
+    /// at `(0x74, 0x95)` - `t * 0x58 >> 12` wide, so 44 px at half time.
+    #[test]
+    fn the_parked_write_panel_places_retail_badge_tube_and_fill() {
+        let mut out = Vec::new();
+        card_work_progress_into(&mut out, 0xA0, 0x800, (0, 0), 1);
+        block_badge_into(&mut out, 4, (0xA0 - 0x55, 0x54), (0, 0), 1);
+        let fill = out[0];
+        assert_eq!(fill.dst, (0x74, 0x95, 44, 6));
+        assert!((fill.color[0] - 0xBC as f32 / 128.0).abs() < 1e-6);
+        assert!((fill.color[1] - (0x7F as f32 / 128.0)).abs() < 1e-6);
+        assert_eq!(fill.color[2], 0.0);
+        assert_eq!(out[1].src, SAVE_MENU_ATLAS_PROGRESS_TUBE);
+        assert_eq!((out[1].dst.0, out[1].dst.1), (0x6C, 0x90));
+        assert_eq!(out[2].src, SAVE_MENU_ATLAS_NO_LABEL);
+        assert_eq!((out[2].dst.0, out[2].dst.1), (0x4B, 0x54));
+        assert_eq!(out[3].src, save_menu_atlas_block_digit(4).unwrap());
+        assert_eq!((out[3].dst.0, out[3].dst.1), (0x61, 0x54));
+    }
+
+    /// No fill quad before the timer has moved; the full bar is the tube's
+    /// 88-pixel interior.
+    #[test]
+    fn the_fill_grows_from_nothing_to_the_tube_interior() {
+        let mut out = Vec::new();
+        card_work_progress_into(&mut out, 0xA0, 0, (0, 0), 1);
+        assert_eq!(out.len(), 1, "tube only");
+        out.clear();
+        card_work_progress_into(&mut out, 0xA0, 0x1000, (0, 0), 1);
+        assert_eq!(out[0].dst.2, 88);
+    }
+
+    /// The confirm's badge: numeral at `0xA0 - 0x5A`, or `0xA0 - 0x3A` on the
+    /// free-block "save?" question, `No.` `0x16` left, both at `y + 4`.
+    #[test]
+    fn the_confirm_badge_shifts_on_the_free_block_question() {
+        let y = CONFIRM_DIALOG_SLIDE_TARGET_Y;
+        let over = confirm_dialog_badge_draws_for("Do you wish to overwrite?", 2, y, (0, 0), 1);
+        assert_eq!((over[1].dst.0, over[1].dst.1), (0xA0 - 0x5A, y + 4));
+        assert_eq!(over[0].dst.0, 0xA0 - 0x5A - 0x16);
+        let free = confirm_dialog_badge_draws_for(CONFIRM_PROMPT_FREE_BLOCK, 2, y, (0, 0), 1);
+        assert_eq!(free[1].dst.0, 0xA0 - 0x3A);
     }
 }

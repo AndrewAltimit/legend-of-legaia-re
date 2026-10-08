@@ -85,6 +85,7 @@ mod tests {
         m.actor_flags |= vm::motion_pause::MOVING_CLASS;
         m.default_move = default_move;
         FieldNpcAmbient {
+            defers: false,
             walks: true,
             variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
             live: None,

@@ -686,6 +686,38 @@ pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntry
     out
 }
 
+/// Every formation-table row a scripted-battle op (`3E <op0> <row>` with
+/// `op0 < 100` or `op0 == 0xFF`; the `op0 >= 100` door-warp form is not an
+/// entry) in record `index` of `partition` names, in linear decode order.
+///
+/// This is the record's own battle-entry surface: retail enters a scripted
+/// fight only through this op, so a placement whose record carries none
+/// cannot start one, whatever it looks like.
+pub fn record_battle_entry_rows(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+    index: usize,
+) -> Vec<u8> {
+    let Some((script_start, pc0, body_len)) =
+        partition_record_span(man_file, man, partition, index)
+    else {
+        return Vec::new();
+    };
+    let body = &man[script_start..script_start + body_len];
+    LinearWalker::new(body, pc0)
+        .flatten()
+        .filter_map(|insn| match insn.info {
+            InsnInfo::WarpOrInteract {
+                op1,
+                is_warp: false,
+                ..
+            } => Some(op1),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The row operand of a scripted-battle `3E FF <row>` reached within
 /// [`BATTLE_ENTRY_ARM_WINDOW`] coherently decoded instructions from `pc`, or
 /// `None` when the run ends (a decode error, the body end) first.

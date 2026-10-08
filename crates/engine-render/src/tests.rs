@@ -1,8 +1,8 @@
 use super::*;
 use crate::renderer::letterbox_scale;
 use crate::shaders::*;
-// These UI helpers now live in `legaia-engine-ui` and are re-exported at the
-// crate root via `pub use legaia_engine_ui::*`.
+// These UI helpers live in `legaia-engine-ui` and are on the crate root's
+// explicit re-export list.
 use crate::{apply_alpha, hp_bar_color_index, mp_bar_color_index};
 use glam::Mat4;
 

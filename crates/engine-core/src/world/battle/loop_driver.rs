@@ -258,7 +258,7 @@ impl World {
             // `0x801D0B2C`) - the result windows' raise among them.
             // REF: FUN_801D9BBC
             if let Some(g) = self.battle.result_windows_glide.as_mut() {
-                g.step(self.clock.frame_step.max(1));
+                g.step(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
             }
             self.tick_battle_end_sequence();
             return None;
@@ -2271,9 +2271,11 @@ impl World {
 
     /// Keep the block roll's two approach terms in step with the action SM.
     /// State `0x14` seeds `ctx[+0x6D2]` from the facings it just set
-    /// (`0x801E3068..0x801E30C8`), and every tick state `0x19` spends
+    /// (`0x801E3068..0x801E30C8`), and every pass state `0x19` spends
     /// walking adds the frame step to `ctx[+0x6D4]` (`0x801E35DC..
-    /// 0x801E35EC`, the stall arm).
+    /// 0x801E35EC`, the stall arm) - one a vsync tick
+    /// ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]), so the term
+    /// counts the walk's vsyncs whatever the cadence.
     pub(in crate::world) fn track_block_approach_terms(
         &mut self,
         pre_state: u8,
@@ -2301,7 +2303,7 @@ impl World {
         } else if pre_state == ActionState::AttackShortStep.as_byte()
             && !matches!(out, StepOutcome::Transition { .. })
         {
-            let step = i16::from(self.clock.frame_step.max(1));
+            let step = i16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
             self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
         }
     }

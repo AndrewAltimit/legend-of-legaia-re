@@ -105,13 +105,8 @@ frame from the draw tick `FUN_800480D8`.
 pure data (the catalog's spawn records + animation frames), so `EffectHost`
 only supplies the RNG and the summon routing.
 
-The sibling module `effect_billboard` carries the one step a *world-space*
-billboard builder gets wrong. Retail's quad projector `FUN_800195A8` transforms
-the sprite centre through the camera matrix and only then adds the
-half-extents, in view space - so the battle camera's 4x base matrix scales the
-centre and must not scale the size. `world_half_extents` divides it back out;
-both hosts call it, since `engine-render` links wgpu and the browser play page
-cannot depend on it.
+The world-space billboard step that pairs with it (`effect_billboard`) is a
+pure draw kernel and lives in `engine-ui`.
 
 ## `move_vm` - `FUN_80023070`
 
@@ -429,9 +424,7 @@ The crate's remaining modules are leaf kernels; by family:
   / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
   the field-to-battle overlay's state machine and per-style kernels;
   `engine-ui::battle_intro` is its draw half.
-- **Battle presentation** - `battle_chrome` (name plaque, party readout and
-  the command-chip geometry `engine-ui::battle_command_ui` mirrors),
-  `battle_actor_draw` (`FUN_80048A08`'s per-object decisions),
+- **Battle presentation** - `battle_actor_draw` (`FUN_80048A08`'s per-object decisions),
   `battle_pose_blend`, `battle_anim_rate` (arts slow-motion),
   `battle_impact_fx`, `battle_trail` (the weapon trail's schedule),
   `battle_hp_bar` / `battle_gauge` (bar ramp, gauge colour),

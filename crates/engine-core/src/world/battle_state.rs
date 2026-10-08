@@ -72,7 +72,7 @@ pub struct BattleState {
     /// [`crate::world::BattleState::attack`] stays the un-equipped base and this array
     /// supplies the per-command half. Party slots only; monster slots stay
     /// zero.
-    pub equip_atk: [[u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS]; 8],
+    pub(crate) equip_atk: [[u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS]; 8],
     /// Per-slot magic attack scalar used by [`spells::cast_spell`] for the
     /// caster's `mag` column when resolving a player-driven battle Magic cast.
     /// Engines populate from the active character record; default zero (which
@@ -107,20 +107,20 @@ pub struct BattleState {
     /// record's MP, which no battle write moves.
     ///
     /// REF: FUN_80054CB0, FUN_801F3D3C
-    pub attack_base: [u16; 8],
+    pub(crate) attack_base: [u16; 8],
     /// UDF / LDF base halves (`+0x15E` / `+0x162`) - see
     /// [`crate::world::BattleState::attack_base`]. `None` on a slot with no
     /// split configured, exactly like
     /// [`crate::world::BattleState::defense_split`].
-    pub defense_base: [Option<(u16, u16)>; 8],
+    pub(crate) defense_base: [Option<(u16, u16)>; 8],
     /// SPD base half (`+0x166`) - see
     /// [`crate::world::BattleState::attack_base`].
-    pub speed_base: [u16; 8],
+    pub(crate) speed_base: [u16; 8],
     /// INT base half (`+0x16A`) - see
     /// [`crate::world::BattleState::attack_base`]. Its working half is
     /// [`crate::world::BattleState::accuracy`], which is the same retail
     /// halfword (`+0x168`).
-    pub accuracy_base: [u16; 8],
+    pub(crate) accuracy_base: [u16; 8],
     /// Per-slot SPD (turn-order initiative seed, retail actor `+0x164`).
     /// Party slots are seeded from each character record's live SPD in
     /// [`crate::world::World::load_party`]; monster slots from [`crate::monster_catalog::MonsterDef::speed`]
@@ -174,14 +174,14 @@ pub struct BattleState {
     /// bit-identical. Defaults to `1`.
     ///
     /// REF: FUN_801E9FD4
-    pub monster_strike_budget: u8,
+    pub(crate) monster_strike_budget: u8,
     /// The AGL-budget picks of the monster whose physical strike is being
     /// armed, as archive **entry indices** (the anim ids the attack band
     /// stages) - filled by [`crate::world::World::arm_monster_strike_budget`] alongside
     /// [`crate::world::BattleState::monster_strike_budget`] and moved into the monster's action
     /// stream by its arming. Empty when the catalog carries no aligned
     /// entry list.
-    pub monster_strike_entries: Vec<u8>,
+    pub(crate) monster_strike_entries: Vec<u8>,
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
     pub prev_action_cleared: bool,
@@ -197,7 +197,7 @@ pub struct BattleState {
     /// Set by the results frame once [`crate::world::World::apply_battle_loot`] has run for
     /// this battle, so the deferred [`crate::world::World::finish_battle`] does not credit
     /// the rewards a second time. Cleared by `finish_battle`.
-    pub loot_applied: bool,
+    pub(crate) loot_applied: bool,
     /// Presentation-only per-strike HP deltas surfaced for HUD damage
     /// popups. The gameplay-state HP mutation has *already* happened by
     /// the time an entry lands here (the live battle loop folds art-strike
@@ -250,7 +250,7 @@ pub struct BattleState {
     pub escape_timer_hud: Option<(i32, i32, i32, vm::escape_timer::TimerInk)>,
     /// The HUD actor that owns the countdown (`FUN_801D2EBC` is its handler):
     /// alive from the arming op until its expired readout's hold runs out.
-    pub escape_timer_actor: Option<vm::escape_timer::EscapeTimerHud>,
+    pub(crate) escape_timer_actor: Option<vm::escape_timer::EscapeTimerHud>,
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`crate::world::World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -278,14 +278,14 @@ pub struct BattleState {
     /// sum, and the damage roll adds `(term * ATK) >> 16` - up to `ATK / 32`
     /// (`0x801ECED8..0x801ECF18`). Zeroed by the first hit that lands or is
     /// blocked (`0x801EE3C4` / `0x801EC888`).
-    pub attack_ramp: i16,
+    pub(crate) attack_ramp: i16,
     /// `ctx[+0x6D4]` - the **approach** term added to the defender's sum:
     /// the frame step accumulated each tick the attacker spends walking in
     /// (state `0x19`, `0x801E35DC..0x801E35EC`). The damage roll adds
     /// `(DEF * term) >> 10` to the guard (`0x801ED1E0..0x801ED220`), so a
     /// long walk-in hardens the opening hit. Zeroed with
     /// [`Self::attack_ramp`].
-    pub guard_ramp: i16,
+    pub(crate) guard_ramp: i16,
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
     /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
@@ -300,7 +300,7 @@ pub struct BattleState {
     /// at battle load beside [`Self::monster_ai_state`].
     pub steal: crate::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
-    pub steal_caption: Option<crate::battle_steal::StealCaption>,
+    pub(crate) steal_caption: Option<crate::battle_steal::StealCaption>,
     /// The party art-name label (element `0x4C`, records 76 / 77) has been
     /// taken down: the commit that replaces a party member's art clip on
     /// dynamic slot `0x11` destroys widget `0x21`
@@ -308,7 +308,7 @@ pub struct BattleState {
     /// constant's commit opens it again (`0x8004BC34..0x8004BC40`).
     /// [`crate::battle_hud::battle_move_name`] answers `None` for a party
     /// attack while it is set.
-    pub move_label_closed: bool,
+    pub(crate) move_label_closed: bool,
     /// The field-to-battle transition entity, live only while the encounter
     /// session sits in [`crate::encounter::EncounterPhase::Transition`].
     /// `None` outside that window.
@@ -322,7 +322,7 @@ pub struct BattleState {
     /// and `SetAudioCue` (the battle-start sound, pushed onto
     /// [`crate::world::AudioState::battle_sfx_cues`]) - see `World::tick_battle_intro` in
     /// `world/encounters.rs`.
-    pub intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
+    pub(crate) intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
     /// Latched when the battle-intro spin performed retail's master mode
     /// hand-off (`_DAT_8007B83C = 0x14`) - see
     /// [`crate::world::World::battle_mode_word_held`]. Cleared when the transition ends.
@@ -424,7 +424,7 @@ pub struct BattleState {
     /// and back when they return
     /// ([`legaia_engine_vm::battle_commit_log::LogLaunch`]). `None` while the
     /// log rests; cleared by a commit (the next member's row lands fresh).
-    pub commit_log_launch: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    pub(crate) commit_log_launch: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The action plates' raise glides: the actor-name plaque (record `0x44`)
     /// and the target plaque (record `0x51`), each opened by the action
     /// seed's `FUN_801E6D84` with `FUN_801D8DE8(id, 0)` - spawned at seat A
@@ -432,15 +432,21 @@ pub struct BattleState {
     /// `ctx[+0x1C]` frames as every tracked widget. `None` until the first
     /// raise; a settled glide draws at rest
     /// ([`crate::battle_hud::battle_action_plaque_dy`]).
-    pub action_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    pub(crate) action_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
-    pub target_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    pub(crate) target_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The active-actor bar's raise glide (placement record 7, `(16, 234)`
+    /// -> `(16, 192)`), started where retail opens the record with mode `0`:
+    /// the action seed for a party target (`0x801E2F24..0x801E2F44`) and
+    /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
+    /// ([`crate::battle_hud::battle_readout_bar_dy`]).
+    pub(crate) readout_bar_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
     /// them to seat B over the same `0x10` frames as the action plates
     /// ([`crate::battle_hud::battle_result_windows_dy`]).
-    pub result_windows_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    pub(crate) result_windows_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's content word was cleared: the strike loop's
     /// counterattack swap zeroes record `0x51`'s string and width
     /// (`sw zero,0x7AC(s1)` / `sh zero,0x79E(s1)` at `0x801E36C8` /
@@ -470,7 +476,7 @@ pub struct BattleState {
     /// [`crate::world::World::battle_stage_id`].
     pub stage_id: u8,
     /// PROT 0968's own data words while it runs.
-    pub arrival: crate::battle_stage_module::ArrivalState,
+    pub(crate) arrival: crate::battle_stage_module::ArrivalState,
     /// The backdrop actors' object table has had slot 1 copied over slot 0 -
     /// the arrival's hand-back rebind
     /// ([`crate::battle_stage_module::StageEffect::RebindBackdrop`]). Both
@@ -484,7 +490,7 @@ pub struct BattleState {
     /// entry.
     pub vram_moves: Vec<crate::world::ScriptVramMove>,
     /// PROT 0969's own data words while it runs.
-    pub form_transition: crate::battle_stage_module::FormTransitionState,
+    pub(crate) form_transition: crate::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
     /// phase-scripted battle camera owns them. `World::battle_cam_pose`
     /// reads this first, so both hosts draw the module's camera.
@@ -503,7 +509,7 @@ pub struct BattleState {
     /// The player's **Auto** attack: the per-fighter flag, the round-start
     /// pool-arm queues and their disc inputs
     /// ([`crate::world::AutoComboState`]).
-    pub auto_combo: crate::world::AutoComboState,
+    pub(crate) auto_combo: crate::world::AutoComboState,
     /// The phase-scripted battle camera's state
     /// (`legaia_engine_vm::battle_cam_script::BattleCamera`), stepped by
     /// `World::tick_battle_camera` from `World::tick` for every host; `None`
@@ -541,18 +547,18 @@ pub struct BattleState {
     /// the magic band's `0x2A..=0x2D` arms) as the battle camera reads it;
     /// cleared after every camera step
     /// (`crate::battle_cam_inputs::spell_cam_inputs`).
-    pub spell_cam: Option<legaia_engine_vm::battle_cam_script::SpellCamInputs>,
+    pub(crate) spell_cam: Option<legaia_engine_vm::battle_cam_script::SpellCamInputs>,
     /// The next [`crate::world::World::enter_battle`] is the sparring fight and should arm
     /// [`crate::world::BattleState::tutorial`]. Set by
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
     /// per-formation battle-stage id.
-    pub tutorial_pending: bool,
+    pub(crate) tutorial_pending: bool,
     /// The field party composition the sparring fight set aside, restored
     /// when the battle returns to the field ([`crate::world::World::finish_battle`]).
     /// `Some` only between a Tetsu-spar entry that seated Vahn alone over a
     /// larger party and its teardown - see
     /// [`crate::world::World::sparring_fight_pending`].
-    pub solo_spar_restore: Option<Vec<u8>>,
+    pub(crate) solo_spar_restore: Option<Vec<u8>>,
     /// Active stat buffs / debuffs applied by battle Magic, one entry per
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
     /// scalar so expiry can undo it, plus the remaining turn count (decremented
@@ -562,7 +568,7 @@ pub struct BattleState {
     /// Set when an escape spell (`SpellEffect::Escape`) resolves. The live
     /// battle tick returns to the field on the next pass (no loot, no
     /// game-over). Cleared by `World::finish_battle`.
-    pub escaped: bool,
+    pub(crate) escaped: bool,
     /// The **scripted-fight flag** `ctx[+0x287]` for the battle in progress.
     ///
     /// Retail derives it once, at battle init: `FUN_800513F0` reads the
@@ -604,7 +610,7 @@ pub struct BattleState {
     /// counter still zero. The engine picks per-slot, so the latch lives here
     /// and [`crate::battle_round::BattleRound::boundary`] re-arms it each round
     /// (retail re-enters the picker per round from `FUN_801DABA4`).
-    pub monster_flee_attempted: bool,
+    pub(crate) monster_flee_attempted: bool,
     // The formation advantage (`ctx+0x290`) and its latched copy (`ctx+0x291`)
     // are **not** fields here. Retail has exactly one of each, both inside the
     // battle context the action SM owns, so the engine keeps them on
@@ -626,7 +632,7 @@ pub struct BattleState {
     /// [`crate::world::World::battle_spoils_banner`] while it is non-zero. Without this the
     /// XP / gold / drops in [`crate::world::BattleState::last_rewards`] were applied with no
     /// on-screen acknowledgement at all.
-    pub spoils_frames: u16,
+    pub(crate) spoils_frames: u16,
     /// Scene mode to return to when the current battle finishes. Captured at
     /// the transition into [`crate::world::SceneMode::Battle`]; `Self::finish_battle`
     /// restores it (an overworld encounter returns to [`crate::world::SceneMode::WorldMap`],
@@ -648,7 +654,7 @@ pub struct BattleState {
     /// decode `FUN_8004998C` runs for with a non-zero `+0x21F` selector
     /// emits one burning sprite per `0x10` of it
     /// ([`crate::world::World::emit_battle_burn_sprites`]).
-    pub burn_emit_accum: u16,
+    pub(crate) burn_emit_accum: u16,
     /// The battle ambient base as the last storing `FUN_80050120` pass left
     /// it, 8 bits a channel - what the ground grid's near colour
     /// `0x8007B7B0` (base `+ 0x404040`) and far colour `0x8007BB48`
@@ -658,13 +664,13 @@ pub struct BattleState {
     /// (`battle_ground_grid::ambient_store_skipped`). Advanced by
     /// `World::tick_battle_ambient`; hosts read it through
     /// `World::battle_ambient_base`.
-    pub ambient_stored: [u8; 3],
+    pub(crate) ambient_stored: [u8; 3],
     /// The backdrop pair's depth-cue weight `+0x78` (`ctx + 0x106C` /
     /// `+0x1070`, driven in lockstep), `0x1000` = full: ramped by
     /// `World::tick_battle_ambient` through
     /// `battle_ground_grid::backdrop_cue_step`; hosts read it through
     /// `World::battle_backdrop_cue`.
-    pub backdrop_cue: u16,
+    pub(crate) backdrop_cue: u16,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -757,6 +763,7 @@ impl BattleState {
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
+            readout_bar_glide: None,
             result_windows_glide: None,
             target_plate_cleared: false,
             counter_hud: None,

@@ -1,5 +1,5 @@
 // Udon behaviour for the casino slot-machine cabinet: a from-scratch port of
-// the engine's rules kernel (`crates/engine-core/src/slot_machine.rs`, itself
+// the engine's rules kernel (`crates/engine-minigames/src/slot_machine.rs`, itself
 // the confirmed-arithmetic port of the retail overlay PROT 0975 - see
 // docs/subsystems/minigame-slot-machine.md). The confirmed pieces carried
 // over verbatim:

@@ -113,6 +113,7 @@ impl World {
         self.field_settle_clip_tail();
         self.tick_field_system_channel_clip_reset();
         self.tick_player_scale_ramp();
+        self.npcs.looks.tick(self.move_vm.ramp_ratio.max(1));
         self.detect_field_actor_motion();
         self.tick_field_player_anim();
 

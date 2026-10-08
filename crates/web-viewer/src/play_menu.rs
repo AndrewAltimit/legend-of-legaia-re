@@ -12,15 +12,17 @@
 //! same pinned fallback the native window keeps.
 //!
 //! The **root command list is the shared retail picker**
-//! ([`FieldMenuSession`]), not a page-local cursor: [`Self::play_menu_open`]
-//! seeds it with the world's money + play time, samples the two row gates
-//! retail reads at every draw into a [`FieldMenuGate`] (the op-`0x49` entry
-//! context and the scene MAN's save-allow bit) and switches the world into
-//! [`SceneMode::Menu`], which is the same construction
-//! `BootSession::open_field_menu` performs for the native window. So the row
-//! ink and the confirm routing come from one `root_menu_confirm_route` call
-//! per row on both hosts, and a row cannot draw white here and buzz there -
-//! which it did, letting a player Save in a scene whose own data forbids it.
+//! ([`FieldMenuSession`]), not a page-local cursor - and it is the engine
+//! session's own (`BootSession::field_menu`), not a page copy:
+//! [`LegaiaRuntime::play_menu_open`] hands the press to
+//! `BootSession::press_field_menu`, the call the native window makes, which
+//! seeds the picker with the world's money + play time, samples the two row
+//! gates retail reads at every draw into a [`FieldMenuGate`](legaia_engine_core::field_menu::FieldMenuGate) (the op-`0x49`
+//! entry context and the scene MAN's save-allow bit) and switches the world
+//! into [`SceneMode::Menu`](legaia_engine_core::world::SceneMode::Menu). So the open rule, the row ink and the confirm
+//! routing are one engine answer on both hosts, and a row cannot draw white
+//! here and buzz there - which it did, letting a player Save in a scene whose
+//! own data forbids it.
 //!
 //! The page drives it exactly like the field: hand it edge-triggered pad words,
 //! then blit the two draw lists (sprites off the chrome atlas, texts off the
@@ -72,9 +74,7 @@
 use super::*;
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::equip_session::EquipSession;
-use legaia_engine_core::field_menu::{
-    FieldMenuGate, FieldMenuOutcome, FieldMenuRow, FieldMenuSession,
-};
+use legaia_engine_core::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession, status_snapshots,
 };
@@ -86,7 +86,6 @@ use legaia_engine_core::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlo
 use legaia_engine_core::save_select::{SaveRack, SaveSelectSession};
 use legaia_engine_core::spell_menu::{SpellMenuPhase, SpellMenuSession};
 use legaia_engine_core::status_screen::StatusScreenSession;
-use legaia_engine_core::world::SceneMode;
 use legaia_engine_ui::{
     self as ui, FieldMenuPartyView, FieldMenuRowView, SaveMenuAtlasRects, SlotGridCell,
     SlotInfoView, SpriteDraw, StatusPanelView, StatusSatelliteView, StatusStatRow, TextDraw,
@@ -195,20 +194,14 @@ impl PlayMenuAssets {
 /// Active pause-menu state: the shared root-list state machine plus the open
 /// sub-screen, if any.
 pub struct PlayMenu {
-    /// The retail root command picker, shared with the native `play-window`
-    /// ([`FieldMenuSession`]). The page used to hold a bare `u8` cursor and
-    /// route confirms itself, which meant the two gate inputs retail reads at
-    /// every draw - the op-`0x49` entry context and the scene's save-allow
-    /// bit - had no reader in the browser at all: every row drew white and
-    /// every row opened, so a player could Save in a scene whose MAN header
-    /// forbids it. The session owns the ink, the confirm routing and the
-    /// suspend/resume handshake; this module supplies only the sub-screens.
-    session: FieldMenuSession,
-    /// [`SceneMode`] the world ran when the menu opened, restored on close -
-    /// the browser twin of `BootSession::field_menu_resume`. The menu holds
-    /// the world in [`SceneMode::Menu`] while it is up, which is what
-    /// suspends field dispatch (retail `game_mode 0x17`).
-    resume_mode: SceneMode,
+    // The retail root command picker is not held here: it is the session's
+    // own `BootSession::field_menu`, opened and closed through
+    // `BootSession::press_field_menu` / `open_field_menu` /
+    // `close_field_menu` exactly as the native window opens and closes it.
+    // The page used to keep a private `FieldMenuSession` plus the resume
+    // mode and re-spell the open (gates, mode switch, seat) beside the
+    // session's copy - two answers to one press. This struct holds only what
+    // the page's sub-screen driver adds on top.
     sub: Option<PlaySub>,
     /// The save screen's shared driver: block-grid cursor + the card read
     /// behind it. Lives in `engine-core` so this page and the native window
@@ -250,10 +243,8 @@ enum PlaySub {
 }
 
 impl PlayMenu {
-    fn new(session: FieldMenuSession, resume_mode: SceneMode) -> Self {
+    fn new() -> Self {
         PlayMenu {
-            session,
-            resume_mode,
             pending_key: None,
             sub: None,
             save_flow: SaveScreenFlow::new(),
@@ -497,80 +488,84 @@ impl LegaiaRuntime {
     /// Open the retail pause menu. No-op with no disc loaded. The field is
     /// frozen by the page while [`Self::play_menu_is_open`] is true.
     ///
-    /// Byte-for-byte the construction `BootSession::open_field_menu` does:
-    /// a [`FieldMenuSession`] seeded with the world's money + play time, the
-    /// two row gates sampled into a [`FieldMenuGate`], and the world switched
-    /// into [`SceneMode::Menu`] so field dispatch suspends while the menu owns
-    /// the frame. Both gate inputs are scene-scoped and the menu suspends the
-    /// field, so sampling once at open is equivalent to retail's per-frame
-    /// re-read.
+    /// The session's own open (`BootSession::open_field_menu`, reached
+    /// through `BootSession::press_field_menu`): a [`FieldMenuSession`]
+    /// seeded with the world's money + play time, the two row gates sampled
+    /// into a [`FieldMenuGate`](legaia_engine_core::field_menu::FieldMenuGate), and the world switched into
+    /// [`SceneMode::Menu`](legaia_engine_core::world::SceneMode::Menu) so field dispatch suspends while the menu owns the
+    /// frame.
     pub fn play_menu_open(&mut self) {
-        if !self.ensure_menu_assets() {
-            return;
-        }
-        if self.play_menu.is_some() {
-            return;
-        }
-        // The whole menu-open precondition, asked of the engine rather than
-        // spelled out here: the engaged bit (a talking player's Start opens
-        // nothing) and the scene mode (the field *and* the overworld, since
-        // retail runs one locomotion controller across both). This is the
-        // same predicate `BootSession::tick` and the native window route
-        // through - three local copies of the mode test is how the overworld
-        // lost the pause menu.
+        // A menu-button press, answered by the engine's one rule
+        // (`BootSession::press_field_menu`): a script's op-`0x49` save point /
+        // ready check opens with no Start edge and past the engagement gate;
+        // a Start edge opens where `World::field_menu_open_allowed` says so
+        // (which refuses mid-dialogue, as retail's engaged-bit branch ahead of
+        // the accept does); a press the menu lock refuses queues the deny
+        // buzz. The native window asks the same call.
         // REF: FUN_801D01B0
-        //
-        // A script's op-`0x49` save point / ready check is a menu-button
-        // press of its own and skips that gate - the same rule
-        // `BootSession::tick` applies (`World::scripted_menu_open_pending`).
-        let scripted = self
-            .scene_host
-            .host()
-            .is_some_and(|h| h.world.scripted_menu_open_pending());
-        if !scripted
-            && self
-                .scene_host
-                .host()
-                .is_some_and(|h| !h.world.field_menu_open_allowed())
-        {
-            // A press the menu lock refuses buzzes (`0x23` on the SFX ring,
-            // which the page's scheduler drains); every other refusal is
-            // silent. The native window makes the same call.
-            if let Some(h) = self.scene_host.host_mut() {
-                h.world.field_menu_press_denied();
-            }
+        if !self.ensure_menu_assets() || self.play_menu.is_some() {
             return;
         }
-        let mut session = FieldMenuSession::new();
-        let resume_mode = match self.scene_host.host_mut() {
-            Some(host) => {
-                let world = &mut host.world;
-                session.money = world.party.money.max(0) as u32;
-                session.play_time_seconds = world.clock.play_time_seconds;
-                session.set_gate(FieldMenuGate {
-                    entry_context_kind: world.menu_entry_context_kind(),
-                    save_allowed: world.party.scene_save_allowed,
-                });
-                // Same entry decode the native window runs: a locked context
-                // opens on the notice panel, not on the root picker.
-                session.open_entry_screen();
-                if scripted {
-                    world.note_scripted_menu_opened();
-                }
-                let resume = world.mode;
-                world.mode = SceneMode::Menu;
-                resume
-            }
-            None => SceneMode::Field,
+        let Some(session) = self.scene_host.session_mut() else {
+            return;
         };
-        self.play_menu = Some(PlayMenu::new(session, resume_mode));
-        // Retail opens the menu by writing the mode word (`CARD INIT` stages
-        // the menu overlay and hands the word to `CARD MODE`), so the open
-        // goes through the seat here exactly as it does in
-        // `BootSession::open_field_menu` - which is what runs the mode-change
-        // edge, and with it the pad swallow that keeps the Start press that
-        // opened the menu from also being the menu's first input.
-        self.seat_open_card_menu();
+        if let legaia_engine_session::PauseMenuPress::Opened { .. } = session.press_field_menu(true)
+        {
+            self.play_menu = Some(PlayMenu::new());
+        }
+    }
+
+    /// Open the menu with no press at all - the boot title's Continue /
+    /// Options rows, which land on a pause-menu sub-screen rather than on a
+    /// Start press. Twin of the native window's `open_menu_row_from_title`,
+    /// which calls `BootSession::open_field_menu` directly for the same
+    /// reason.
+    fn open_play_menu_unpressed(&mut self) -> bool {
+        if !self.ensure_menu_assets() || self.play_menu.is_some() {
+            return false;
+        }
+        let Some(session) = self.scene_host.session_mut() else {
+            return false;
+        };
+        session.open_field_menu();
+        if !session.field_menu_is_open() {
+            return false;
+        }
+        self.play_menu = Some(PlayMenu::new());
+        true
+    }
+
+    /// Run a just-opened pause menu's wipe out until the menu exists - the
+    /// frames a player spends watching the field go dark. For drivers that
+    /// open the menu and then press into it straight away.
+    pub fn play_menu_settle(&mut self) {
+        for _ in 0..64 {
+            if self.play_menu.is_none() || self.pause_menu_spawned() {
+                return;
+            }
+            self.play_menu_input(0);
+        }
+    }
+
+    /// Whether the pause wipe has spawned the menu (always, outside a wipe).
+    pub(crate) fn pause_menu_spawned(&self) -> bool {
+        self.scene_host
+            .session()
+            .is_none_or(|s| s.pause_wipe().menu_spawned())
+    }
+
+    /// The open root picker: the session's `BootSession::field_menu`.
+    fn root_menu(&self) -> Option<&FieldMenuSession> {
+        self.scene_host
+            .session()
+            .and_then(|s| s.field_menu.as_ref())
+    }
+
+    /// The open root picker, mutably.
+    fn root_menu_mut(&mut self) -> Option<&mut FieldMenuSession> {
+        self.scene_host
+            .session_mut()
+            .and_then(|s| s.field_menu.as_mut())
     }
 
     /// Open the pause menu directly on one row's sub-screen, named the way
@@ -586,11 +581,10 @@ impl LegaiaRuntime {
         let Some(row) = FieldMenuRow::ALL.iter().copied().find(|r| r.label() == row) else {
             return false;
         };
-        self.play_menu_open();
-        let Some(menu) = self.play_menu.as_ref() else {
+        if !self.open_play_menu_unpressed() {
             return false;
-        };
-        if !menu.session.row_is_available(row) {
+        }
+        if !self.root_menu().is_some_and(|m| m.row_is_available(row)) {
             self.play_menu_close();
             return false;
         }
@@ -623,16 +617,12 @@ impl LegaiaRuntime {
     /// same test inside `title_screen_sprite_draws`; this is the page's half,
     /// kept here because `PlaySub` is private to this module.
     pub(crate) fn play_menu_save_select_over_title(&self) -> bool {
-        use legaia_engine_core::save_select::SelectPhase;
         let Some(menu) = self.play_menu.as_ref() else {
             return false;
         };
         match &menu.sub {
             Some(PlaySub::Session(sub)) => match sub.as_ref() {
-                FieldMenuSubsession::Save(s) => !matches!(
-                    s.phase(),
-                    SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
-                ),
+                FieldMenuSubsession::Save(s) => s.phase().shows_title_backdrop(),
                 _ => false,
             },
             _ => false,
@@ -647,23 +637,16 @@ impl LegaiaRuntime {
         // save-select backdrop; the menu closing is what ends it, whether the
         // player loaded a save or backed out to the title card.
         self.boot_title_backdrop = None;
-        let Some(menu) = self.play_menu.take() else {
+        if self.play_menu.take().is_none() {
             return;
-        };
-        if let Some(host) = self.scene_host.host_mut() {
-            host.world.mode = menu.resume_mode;
-            // A scripted menu press (a save point's `49 01`, a `49 0D` ready
-            // check) parks its op until the menu it opened closes; the close
-            // resumes it once. See `World::release_menu_entry_context_park`.
-            host.world.release_menu_entry_context_park();
         }
-        // The word follows the world back out of `CARD MODE` at the close,
-        // not at the next tick's reconcile - the same call
-        // `BootSession::close_field_menu` makes, so the two hosts hold the
-        // same word in the frames between the close and the next tick.
-        self.scene_host
-            .seat_mut()
-            .adopt_scene_mode(menu.resume_mode);
+        // The session's own close: the suspended scene mode restored, the
+        // word adopted on the seat at the close rather than at the next
+        // tick's reconcile, and a scripted press's parked op released - the
+        // call the native window makes.
+        if let Some(session) = self.scene_host.session_mut() {
+            session.close_field_menu();
+        }
     }
 
     /// Whether a Start edge would open the pause menu right now:
@@ -721,7 +704,7 @@ impl LegaiaRuntime {
     /// seeded at scene load from the MAN header bit retail copies into
     /// `_DAT_8007B6A8`). The page shows the Save-here hint from this, and the
     /// menu's own Save row inks and buzzes from the same value through
-    /// [`FieldMenuGate`].
+    /// [`FieldMenuGate`](legaia_engine_core::field_menu::FieldMenuGate).
     pub fn play_scene_save_allowed(&self) -> bool {
         self.scene_host
             .host()
@@ -840,6 +823,17 @@ impl LegaiaRuntime {
         if self.play_menu.is_none() {
             return;
         }
+        // The menu spawns partway through the field's wipe to black
+        // (`BootSession::pause_wipe`, retail `FUN_801ED308` phase 1): until
+        // then each tick only advances the wipe, the pad goes nowhere, and
+        // the page keeps drawing the field under the wipe's quad.
+        if !self.pause_menu_spawned() {
+            if let Some(session) = self.scene_host.session_mut() {
+                session.step_pause_wipe();
+            }
+            self.rebuild_screen_geom();
+            return;
+        }
         // A save-refusal notice owns the pad while it is up - the same
         // pre-empt the native window makes, so the edge that dismisses the
         // box does not also drive the menu behind it.
@@ -898,6 +892,7 @@ impl LegaiaRuntime {
             // borrow below: reading a port lifts fifteen SC blocks, which is
             // the one thing the kernel cannot do for itself.
             self.service_card_read();
+            self.service_card_save();
 
             let mut session_done = false;
             let mut edge = edge;
@@ -914,7 +909,7 @@ impl LegaiaRuntime {
                 // Step the grid cursor and gate an empty-block Load BEFORE
                 // the session ticks, so a confirm on the same edge commits
                 // the cell the player is looking at.
-                if let FieldMenuSubsession::Save(s) = session.as_ref() {
+                if let FieldMenuSubsession::Save(s) = session.as_mut() {
                     edge = m.save_flow.before_tick(s, edge);
                     save_edge = Some(edge);
                 }
@@ -995,10 +990,18 @@ impl LegaiaRuntime {
                     // `resume(true)` finishes the session and the menu
                     // closes on this same tick.
                     let close = if let Some(m) = self.play_menu.as_mut() {
-                        let _ = m.session.resume(m.from_title);
+                        let from_title = m.from_title;
+                        let close = from_title && m.pending_load_scene.is_none();
+                        if let Some(root) = self
+                            .scene_host
+                            .session_mut()
+                            .and_then(|s| s.field_menu.as_mut())
+                        {
+                            let _ = root.resume(from_title);
+                        }
                         // A parked Load label must outlive this tick: the
                         // page collects it and closes the menu itself.
-                        m.from_title && m.pending_load_scene.is_none()
+                        close
                     } else {
                         false
                     };
@@ -1014,10 +1017,12 @@ impl LegaiaRuntime {
         // cursor. `tick` inks and routes off the same `root_menu_confirm_route`
         // the row renderer draws from, so a row cannot draw white and then
         // open something the gate forbids.
-        let suspended_row = self
-            .play_menu
-            .as_mut()
-            .and_then(|m| field_menu_dispatch::tick_root_list(&mut m.session, edge));
+        let suspended_row = if self.play_menu.is_some() {
+            self.root_menu_mut()
+                .and_then(|m| field_menu_dispatch::tick_root_list(m, edge))
+        } else {
+            None
+        };
         if let Some(row) = suspended_row {
             // Load / Save browse the console's two memory-card ports, so the
             // rack is `CardPorts` - which is also what puts the session in
@@ -1055,7 +1060,7 @@ impl LegaiaRuntime {
         // Circle on the root list (or a sub-session that asked to close the
         // menu entirely) finishes the session; restore the suspended scene
         // mode and drop the menu, exactly as `close_field_menu` does.
-        let outcome = self.play_menu.as_ref().and_then(|m| m.session.outcome());
+        let outcome = self.root_menu().and_then(|m| m.outcome());
         if let Some(FieldMenuOutcome::Closed | FieldMenuOutcome::Confirmed(_)) = outcome {
             self.play_menu_close();
         }
@@ -1075,22 +1080,37 @@ impl LegaiaRuntime {
         else {
             return r#"{"open":false,"sprites":[],"texts":[]}"#.to_string();
         };
+        // Nothing to draw before the wipe spawns the menu: the field shows.
+        if !self.pause_menu_spawned() {
+            return r#"{"open":false,"sprites":[],"texts":[]}"#.to_string();
+        }
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
         let mut sprites: Vec<SpriteDraw> = Vec::new();
         let mut texts: Vec<TextDraw> = Vec::new();
+        // The save screen's subtractive darkening (`ui::SaveScreenDarken`):
+        // the sprite index of its `B - F` quad and the grey it subtracts.
+        let mut darken: Option<(usize, u8)> = None;
 
         // The kind-0x0D entry pair replaces the root list rather than
         // overlaying it: both sub-screens open with `05 00` (close every
         // window) before opening their own, so the command rows are not on
         // screen while either is up. Browser twin of the native window's
         // `context_locked_screen_draws`.
-        let context_screen = self.build_context_locked(assets, menu, &mut texts, origin, scale);
+        let context_screen = self.build_context_locked(assets, &mut texts, origin, scale);
         match &menu.sub {
             _ if context_screen => {}
             None => self.build_top_level(assets, menu, &mut sprites, &mut texts, origin, scale),
             Some(PlaySub::Session(sub)) => match sub.as_ref() {
                 FieldMenuSubsession::Save(s) => {
-                    self.build_save_select(assets, s, menu, &mut sprites, &mut texts, origin, scale)
+                    darken = self.build_save_select(
+                        assets,
+                        s,
+                        menu,
+                        &mut sprites,
+                        &mut texts,
+                        origin,
+                        scale,
+                    );
                 }
                 FieldMenuSubsession::Status(s) => {
                     self.build_status(assets, s, &mut sprites, &mut texts, origin, scale)
@@ -1147,6 +1167,10 @@ impl LegaiaRuntime {
             "open": true,
             "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
+            // The page's 2D canvas has no `B - F` composite: it blits the
+            // sprites before `at`, subtracts `level` from every channel of
+            // what is drawn, and blits the rest past the quad itself.
+            "darken": darken.map(|(at, level)| serde_json::json!({"at": at, "level": level})),
         })
         .to_string()
     }
@@ -1193,7 +1217,6 @@ impl LegaiaRuntime {
     fn build_context_locked(
         &self,
         assets: &PlayMenuAssets,
-        menu: &PlayMenu,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
@@ -1203,10 +1226,13 @@ impl LegaiaRuntime {
         };
         let ctx = assets.menu_ctx(origin, scale);
         let labels = &world.menu.context_labels;
-        let out = if menu.session.notice_is_up() {
+        let Some(root) = self.root_menu() else {
+            return false;
+        };
+        let out = if root.notice_is_up() {
             let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
             pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines })
-        } else if let Some(cursor_row) = menu.session.ready_confirm_cursor() {
+        } else if let Some(cursor_row) = root.ready_confirm_cursor() {
             pause_screen_draws(
                 &ctx,
                 PauseScreen::ContextReady {
@@ -1248,7 +1274,10 @@ impl LegaiaRuntime {
         let Some(world) = self.menu_world() else {
             return;
         };
-        let view = menu.session.view();
+        let Some(root) = self.root_menu() else {
+            return;
+        };
+        let view = root.view();
         let rows: Vec<FieldMenuRowView<'_>> = view
             .rows
             .iter()
@@ -1534,6 +1563,35 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Answer a card Save's commit beat: write the live session into the
+    /// block it asked for while "Saving to MEMORY CARD" is up, and report the
+    /// result so the beat's result line is the write's real outcome.
+    fn service_card_save(&mut self) {
+        let request = self.play_menu.as_ref().and_then(|m| match m.sub.as_ref() {
+            Some(PlaySub::Session(session)) => match session.as_ref() {
+                FieldMenuSubsession::Save(s) => m.save_flow.save_request(s),
+                _ => None,
+            },
+            _ => None,
+        });
+        let Some(request) = request else {
+            return;
+        };
+        let ok = match self.write_session_into_card(request.port as usize, request.cell + 1) {
+            Ok(()) => true,
+            Err(e) => {
+                crate::console_log(&format!("play menu: card save failed: {e}"));
+                false
+            }
+        };
+        if let Some(m) = self.play_menu.as_mut()
+            && let Some(PlaySub::Session(session)) = m.sub.as_mut()
+            && let FieldMenuSubsession::Save(s) = session.as_mut()
+        {
+            m.save_flow.finish_save_request(s, ok);
+        }
+    }
+
     /// Commit a finished Load / Save session against the memory-card rack.
     ///
     /// [`SaveScreenFlow::commit`] resolves the port off the session's outcome
@@ -1593,16 +1651,14 @@ impl LegaiaRuntime {
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
-    ) {
+    ) -> Option<(usize, u8)> {
         // The screen is the shared composition over the engine's overlay
         // sequence (`SaveScreenFlow::overlay_model` ->
         // `save_select_overlay_draws`), the native window's calls too. Its
         // text half draws with or without the chrome atlas: this page used
         // to return before every phase overlay when the atlas was absent,
         // leaving the title and nothing else.
-        let Some(m) = menu.save_flow.overlay_model(s) else {
-            return;
-        };
+        let m = menu.save_flow.overlay_model(s)?;
         let rows: Vec<ui::SaveSelectRow<'_>> = s
             .slots()
             .iter()
@@ -1650,6 +1706,13 @@ impl LegaiaRuntime {
             slide_t: m.slide_t,
             info_t: m.info_t,
             now_checking: m.now_checking,
+            banner: m.banner.map(|b| ui::CardBannerView {
+                lines: b.lines,
+                note: b.note,
+                work: b.work,
+                slide_t: b.slide_t,
+                progress_t: b.progress_t,
+            }),
             preview,
             confirm: m.confirm,
         };
@@ -1660,8 +1723,10 @@ impl LegaiaRuntime {
             origin,
             scale,
         );
+        let darken = out.darken.map(|d| (sprites.len() + d.sprite, d.level));
         sprites.extend(out.sprites);
         texts.extend(out.texts);
+        darken
     }
 
     /// Items sub-screen: the retail four-window layout (command 13 / list
@@ -2135,7 +2200,17 @@ mod blip_tests {
     #[test]
     fn a_press_the_refusal_box_swallows_does_not_blip() {
         let mut rt = LegaiaRuntime::new();
-        rt.play_menu = Some(PlayMenu::new(FieldMenuSession::new(), SceneMode::Field));
+        let host = legaia_engine_core::scene::SceneHost::from_prot_bytes(
+            crate::play_fmv::tests::synthetic_prot(),
+            None,
+        )
+        .expect("synthetic host");
+        rt.scene_host.install(host, None).expect("session");
+        rt.scene_host
+            .session_mut()
+            .expect("session")
+            .open_field_menu();
+        rt.play_menu = Some(PlayMenu::new());
         let down = PadButton::Down.mask();
         let cross = PadButton::Cross.mask();
         rt.play_menu_input(down);

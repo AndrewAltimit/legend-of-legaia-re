@@ -561,6 +561,18 @@ fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
 /// The one place control flow matters is the armed idle loop, which is a
 /// terminator precisely because its branch is unconditional.
 pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
+    move_program_visit(bytes, start, |_, _| {})
+}
+
+/// [`move_program_end`]'s walk, calling `visit(pc, op)` at every instruction
+/// boundary it steps over (the terminator included) - the static instruction
+/// stream a census reads operands off, with the same widths and the same
+/// stopping rules.
+pub fn move_program_visit(
+    bytes: &[u8],
+    start: usize,
+    mut visit: impl FnMut(usize, u16),
+) -> ProgramEnd {
     let mut pc = start;
     let mut loop_a = 0u16;
     let mut loop_b = 0u16;
@@ -576,6 +588,7 @@ pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
         if op > MOVE_OP_MAX {
             return stalled(pc, last_forever_wait);
         }
+        visit(pc, op);
         let arg = |i: usize| rd_u16(bytes, pc + i * 2).unwrap_or(0);
         match op {
             MOVE_OP_HALT => return ProgramEnd::Halt(align4(pc + 2)),

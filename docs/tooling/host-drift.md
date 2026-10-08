@@ -257,6 +257,7 @@ is reached at runtime.
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
 | walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
+| CD-XA staging | `symbols_all` on `xa_banks::install_shout_file` / `install_clip_file` across the native boot's two bank readers and the play page's `play_xa_install`. |
 | visible-tile crop | `symbols_all` on `field_view_window::field_view_cells` + `framing_is_retail` (whether a frame crops), `terrain_draw_visible` (the terrain list) and `field_ground::crop_indices` (the ground) across the native redraw / ground re-upload and the play page's crop exports. |
 
 The last three exist because each named a divergence the reachability tier
@@ -753,10 +754,23 @@ host's per-frame list has grown a member the other's has not.
 
 It also covers two of the three hosts, and for a structural reason rather than
 an oversight: the minigames page has no frame path to walk. It exports one
-tick per minigame (`dance_tick`, `baka_tick`, `slot_tick`, `fishing_pond_tick`,
+tick per minigame (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`,
 `muscle_tick_time_meter`), each called by its own page module, so there is no
 fall-through list for an arm to skip part of. A shared frame path is the thing
 this tier measures; that host does not have one.
+
+What it does share is the clock. The page's one animation loop asks the
+engine's `frame_step::SimStepper` (`LegaiaMinigames::drain_sim_steps`, the
+play page's `play_drain_sim_steps` and the native redraw's drain) how many
+60 Hz game frames each display frame runs. Fishing takes the count as its
+step budget (its frame function steps the pond in a loop and draws once); the
+other four run their frame function at most once, and not at all on a frame
+the stepper answers `0` - each of them draws inside it, so a catch-up frame
+would be an extra 3D or raster pass, and a slow machine plays them in slow
+motion rather than spiralling. The page used to step every game once per
+`requestAnimationFrame` - and fishing rounded its own wall-clock gap up to at
+least one frame - so on a 120 Hz display every minigame on the page ran at
+twice retail speed.
 
 Both halves are derived from the sources rather than declared, so a new arm or
 a new kernel joins the measurement by existing. The ratchet is the `skips`
@@ -839,6 +853,37 @@ side, or one half closed - the row goes stale and fails, which is what stops a
 content waiver from outliving the thing it described. A row is not a licence
 for the difference; it is a statement of **where the other host does the same
 work**, in the form the waiver rules above require.
+
+## Tier 14 - save routing: does every save go through the retail screen?
+
+`check_save_io_routes` / `SAVE_IO_ROUTES` / `PAGE_CARD_RACK_RULES` in the
+same file.
+
+Retail moves save bytes in one place, the card driver behind the save screen
+([`save-screen.md`](../subsystems/save-screen.md)). Each host owns the bytes
+behind that screen - the native save directory and `--card` image, the
+page's card rack - and one **commit applier** that turns the screen's
+`SaveCommit` into I/O (`apply_save_commit` / `apply_card_save_commit`
+natively, `apply_card_outcome` on the page), plus the write a Save's commit
+beat asks for (`write_save_commit` / `service_card_save`). The tier pins every shipped
+call of each rack primitive (`write_slot_save`, `read_slot_save`,
+`write_save_into_card`, `MountedCard::save_at`, the page's
+`write_session_into_card` / `load_session_from_card`) to its applier, so a
+hotkey or page button that saves or loads around the screen fails as `SAVE
+BYPASS`. A primitive with no shipped call at all fails too: a renamed applier
+must not leave the tier checking nothing.
+
+The page half is a text check on `site/_content/play.html`: port 1 starts
+with the browser card, the card is formatted by the engine
+(`formatted_memory_card`), and both the disc load and a trap recovery
+remount the rack. The native window's port 1 is its save directory
+whatever the player does; without those three the page's Save screen opened
+on two empty ports.
+
+Not covered: the page's save bar imports a `.lgsf` or a card block and
+resumes it directly. That is page chrome for getting a save into the browser
+at all - the native twin is `legaia-engine load` - and it moves no bytes
+into a card.
 
 ## What a screenshot pair adds to a green row, and what it does not
 
@@ -1368,7 +1413,15 @@ about these is contested.
 
 ### The frame loop rules are engine-side
 
-Both play hosts run one engine frame: `legaia_engine_session::BootSession::tick` - the mode seat's frame, the camera's half before the world tick, the world tick, the tick's BGM events, the camera's half after it, the SFX queue dropped on a door, the field SFX routing, and the mode word adopted. The browser page holds a `BootSession` over its own audio output and declares at install what it does itself (the pause menu, the field CD-XA lane, the per-tick queue drains).
+Both play hosts run one engine frame: `legaia_engine_session::BootSession::tick` - the mode seat's frame, the camera's half before the world tick, the world tick, the tick's BGM events, the camera's half after it, the SFX queue dropped on a door, the field SFX routing, and the mode word adopted. The browser page holds a `BootSession` over its own audio output and declares at install what it does itself (driving the pause menu's sub-screens, the field CD-XA lane, the per-tick queue drains).
+
+### One pause menu, one press rule, one shop step
+
+The pause menu's root picker is the session's own `BootSession::field_menu` on both hosts. A menu-button press goes through `BootSession::press_field_menu` - the scripted op-`0x49` press, the Start edge through `World::field_menu_open_allowed` (which holds the dialogue engagement, the narration crawl and title card, the locks and the shop), and the deny buzz - and the close through `BootSession::close_field_menu`.
+
+The page used to keep a private `FieldMenuSession` with its own resume mode and re-spell the open beside the session's (gate sample, mode switch, seat), so one press had two answers; a title Continue / Options row could be refused on the page and never natively, because the page ran it through the press predicate and the window through the bare builder. Both now open the title rows through `open_field_menu` directly. What the page keeps in `PlayMenu` is only its sub-screen driver (the open sub-session, the card flow, the parked Load label, the latched key name).
+
+A shop, the prize exchange and the inn prompt step through one per-tick kernel on both hosts, `MenuRuntime::step_field_session`: the tick on that tick's pad edges, the blip, and the unpark of the suspended op-`0x49` once the whole runtime has closed. The page stepped the shop once per display frame, so the tick-counted open fade and window slides ran at the monitor's rate (twice retail speed at 120 Hz); it now calls `play_shop_input` once per drained sim step, the frame's edges on the first. It also released the merchant op as soon as `shop_session` cleared, while the native window waited for the whole runtime - so on the page the field script could resume under a buy list's quantity or recipient screen.
 
 What remains host-side is each host's display loop (winit's redraw natively, `requestAnimationFrame` on the page) and the steps it runs around the session's tick. Four of the rules that turn display frames into ticks are kernels in `engine-core::frame_step`, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
@@ -2831,13 +2884,18 @@ select camera and line-up by eye and drew cursor arrows retail does not
 draw; and the page fired the duel's hit a second time by event name in JS
 while `baka_tick` already drained the same cue into its SPU.
 
-The standalone minigames page keeps its own run model,
-`baka_fighter::LadderRun` behind the `baka_run_*` surface: fixed serve order
-from `baka_ladder()`, a page-drawn choice sheet at fitted positions, no
-score-gated secret rungs. It draws the engine chrome with the sheet's own
-widget art (`baka_chrome_json`). That page has
-no `World` to tick the cabinet through (next section), which is the
-blocking capability for giving it the cabinet's ladder too.
+The standalone minigames page runs the same cabinet for the whole run.
+The cabinet's per-frame step is a `World`-free kernel, `BakaFight::frame`
+(engine-minigames), which the world tick calls for both play hosts and the
+page calls through `baka_frame`: front end, duel throw, result tally, the
+NEXT GAME / PAY OUT sheet (drawn from the cabinet's own cells), the next
+rung and the score-gated secret rungs. The page used to leave the cabinet
+after its select for a ladder of its own, `LadderRun` behind `baka_run_*`,
+with a second pot, an HTML choice menu and a free starting rung; that model
+is deleted, and the page keeps only the winnings accumulator the play hosts
+keep on the world. Both seed a cabinet with `BAKA_RNG_BASE` folded with a
+frame count (the world frame, the page's stepped-frame count), as slots
+rack on the overlay's literal `SLOT_RNG_SEED`.
 
 Still disclosed on the two field hosts: the in-duel pause menu (`0xBE` /
 `0xBF`) stays unreached: the port feeds the cabinet a zero pad inside the
@@ -2860,6 +2918,15 @@ answer is the reverse - fold the standalone games into the play page and
 retire the second host. Until then, a kernel that hangs off `World` reaches
 two hosts and not three, and that is what a `host_only` row on this page
 means.
+
+What the page does share is every `World`-free kernel under those ticks. The
+slot machine (`SlotMachine::frame`), the Baka cabinet (`BakaFight::frame`) and
+the dome's command flow (`MuscleDomeSession::select_input`) are one step on
+all three hosts. The dance floor's bodies are posed by the run's own clip
+driver (`DanceGame::advance_body_clips`, stepped every frame through
+`dance_body_clips_tick`, count-in included) through the engine's cast surface
+(`DanceCastSurface::frame`, `dance_scene_*`), not by a page-side animator
+that picked its own moves.
 
 ### Ringside still on the standalone dome page
 
@@ -4093,13 +4160,10 @@ banner and the cheats panel. Closed rows:
   decoded frames and reads the bit depth.
 - **A scene-script movie skips on the page only.** The page tests the skip
   button on every movie; the native window only on the title attract.
-- **Paced per display frame on the page.** The game-over panel and the
-  shop step once per display frame on the page and once per sim tick
-  natively, and the boot title catches up to thirty ticks a frame where the
-  shared stepper allows four.
-- **Two copies of the menu-open body.** `play_menu.rs` re-spells
-  `BootSession::open_field_menu` and re-checks the whole open predicate, so a
-  title Continue can be refused on the page and never natively.
+- **Paced per display frame on the page.** The game-over panel steps once
+  per display frame on the page and once per sim tick natively, and the boot
+  title catches up to thirty ticks a frame where the shared stepper allows
+  four.
 - **An overworld Load arms the top-view debug chord on the page only**
   (`enter_field_core`); the native in-game Load does not.
 - **The inn prompt freezes the field on the page.** The page freezes on

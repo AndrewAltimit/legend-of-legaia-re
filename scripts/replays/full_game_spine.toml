@@ -244,9 +244,17 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "zora_castle"
 scene = "taiku"
 reach = "scene"
-# The anchor gained son P1[0]'s 0x034 and son's beat flags; only son and the
-# map03 P2[9] cruise (gated on 0x501, set later in taiku) name taiku.
-via = ["son"]
+# The anchor gained nilboa P2[25]'s 0x56D and map03 P2[15]'s 0x378: the
+# Delilas family's challenge (P2[20] -> P2[21], whose 0x47A has the entry
+# script spawn P2[25]) hands off to map03, whose entry plays P2[15] on
+# 0x592, and 0x378 is the gate of map03 P1[0]'s wall clears at
+# (84..89, 70..74) that join the overworld's north half to the south. The
+# son portal (45, 84) is the landing of the boat ride map03 P2[13], which
+# map03 P1[0] spawns on deene P2[14]'s 0x575 (the anchor carries that
+# record's 0x37E); no walk reaches it. It also gained son P1[0]'s 0x034
+# and son's beat flags; only son and the map03 P2[9] cruise (gated on
+# 0x501, set later in taiku) name taiku.
+via = ["nilboa", "deene", "son"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-14" }
 
 [[milestone]]

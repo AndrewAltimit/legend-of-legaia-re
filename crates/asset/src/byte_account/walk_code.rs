@@ -232,8 +232,9 @@ pub(super) fn code_intervals(sink: &Sink) -> Vec<(usize, usize)> {
 /// or a copy (`addu`/`or` with `$zero`) of a register that resolves the same
 /// way - retail stages a record pointer in a saved register and hands it over
 /// with `move a2,s3`. A load, or an `addiu` off a register no `lui` reached,
-/// names nothing, and so does a call crossed on the way back: every argument
-/// register is caller-saved.
+/// names nothing, and so does a call crossed on the way back while the walk
+/// still tracks a caller-saved register - every argument register is one. A
+/// saved register (`s0..s7`, `s8`) keeps its value across the call.
 pub(super) fn reg_before(
     buf: &[u8],
     base: u32,
@@ -284,7 +285,14 @@ pub(super) fn reg_source(
         if w == 0x03E0_0008 && o + 4 < from {
             return None;
         }
-        if Some(o) != skip_call_at && matches!(Flow::of(w, o, base), Flow::Call) {
+        // A crossed call clobbers the caller-saved registers only. Once the
+        // walk has followed a copy into `s0..s7` / `s8` the value survives
+        // the call by the ABI - PROT 0902 stages its spawn record in `s5`
+        // above a `jal` and copies it to `$a2` inside the loop below.
+        if Some(o) != skip_call_at
+            && matches!(Flow::of(w, o, base), Flow::Call)
+            && !matches!(reg, 16..=23 | 30)
+        {
             return None;
         }
         if defines(w) == Some(reg) && Some(o) != skip_call_at {
@@ -402,15 +410,20 @@ pub(super) fn imm_before(
 /// * `FUN_80020DE0` (actor allocator) takes a static actor template in `$a0`:
 ///   24 bytes, `+0x00..+0x14`, fixed by the allocator's own field copies
 ///   (`docs/reference/functions/runtime-libs.md`, static actor templates).
+/// * `FUN_80024C88` (positioned actor spawn) takes the same template in `$a1`
+///   and hands it to the allocator unchanged (`move a0,a1` at `0x80024C94`,
+///   then `jal 0x80020DE0`); its own reads are the three position halfwords
+///   of `$a0`, a stack vector.
 /// * `FUN_8001C93C` (debug value-monitor list drawer) takes `$a0` rows of
 ///   `0x28` bytes at `$a1`: its loop runs `$a0` times and every arm advances
 ///   the row pointer by `addiu s0,s0,0x28`; a row is `[i16 kind][i16 x][i16
 ///   y][..][u32 value ptr @ +0x08][label @ +0x0E][u32 name table @ +0x24]`
 ///   (`see ghidra/scripts/funcs/8001c93c.txt`).
-pub(super) const ARG_RECORD_CALLEES: [(u32, u32, ArgExtent, &str); 4] = [
+pub(super) const ARG_RECORD_CALLEES: [(u32, u32, ArgExtent, &str); 5] = [
     (0x8002_1B04, 6, ArgExtent::MoveRecord, "spawn record"),
     (0x8005_0ED4, 6, ArgExtent::MoveRecord, "spawn record"),
     (0x8002_0DE0, 4, ArgExtent::Fixed(0x18), "actor template"),
+    (0x8002_4C88, 5, ArgExtent::Fixed(0x18), "actor template"),
     (
         0x8001_C93C,
         5,
@@ -1020,7 +1033,22 @@ pub(super) const FORMED_STRING_PRINTABLE_DEN: usize = 4;
 /// there are not one.
 pub(super) fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
     let tail = buf.get(off..)?;
-    let len = tail.iter().position(|&b| b == 0)?;
+    // A dialog token that takes an argument byte - the substitution tokens
+    // `0xC1..=0xC5` / `0xC7`, the `0xCE` escape and the `0xCF` colour change
+    // (`docs/formats/dialog-font.md`) - carries that byte whatever its value,
+    // and `0xC1 0x00` is the lead party member's name, not a terminator. The
+    // text walk consumes the pair before it tests for NUL, so this does too.
+    let mut len = 0usize;
+    loop {
+        match tail.get(len)? {
+            0 => break,
+            0xC1..=0xC5 | 0xC7 | 0xCE | 0xCF => {
+                tail.get(len + 1)?;
+                len += 2;
+            }
+            _ => len += 1,
+        }
+    }
     if len == 0 {
         return None;
     }
@@ -1041,7 +1069,7 @@ pub(super) fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
             && body
                 .get(i + 1)
                 .is_some_and(|&t| matches!(t, 0x40..=0x7E | 0x80..=0xFC));
-        if (body[i] == 0xCE && i + 1 < len) || sjis {
+        if (matches!(body[i], 0xC1..=0xC5 | 0xC7 | 0xCE | 0xCF) && i + 1 < len) || sjis {
             printable += 2;
             i += 2;
             continue;

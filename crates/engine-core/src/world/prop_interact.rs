@@ -104,6 +104,25 @@ impl World {
         }
     }
 
+    /// Write a placed object's clip-control word (`+0x62`) - a script's
+    /// `LFLAG_SET` / `LFLAG_CLR` or `4C 35` / `4C 36` landing on the object's
+    /// actor. The anim tick reads the word every frame (a restart request
+    /// snaps the cursor, hold freezes it), so the clip takes the bits at once
+    /// without a clip poke.
+    ///
+    /// REF: FUN_800204F8
+    pub(crate) fn set_object_prop_flags(&mut self, record: u16, flags: u16) {
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == usize::from(record))
+        {
+            p.anim.flags = flags;
+        }
+    }
+
     /// Advance the placed-prop layer one field tick: step the clips, step an
     /// in-flight prop record run, and start a run for a movement touch posted
     /// by this tick's locomotion.
@@ -285,6 +304,19 @@ impl World {
             return;
         }
 
+        // A player walk the record armed: the record stays parked on its
+        // `C7 F8` until the player lands, then resumes past the op.
+        // REF: FUN_801DE840 (0x801DF034..0x801DF044), FUN_8003774C (case 0x47)
+        if let Some(mut walk) = id.player_walk.take() {
+            walk.frames += 1;
+            let arrived = self.step_player_walk_leg(walk.target, walk.speed);
+            if !arrived && walk.frames < WALK_PARK_TIMEOUT {
+                id.player_walk = Some(walk);
+                self.dialog.inline = Some(id);
+                return;
+            }
+        }
+
         // No box: sync the prop's live state into the context (the per-frame
         // anim tick may have latched the clip's end since the last slice),
         // then run a VM slice.
@@ -292,6 +324,12 @@ impl World {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
+        let door_teleports = self.props.bank.props.get(&anchor).is_some_and(|p| {
+            self.props
+                .walk_touch_records
+                .values()
+                .any(|&r| r == p.record)
+        });
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
@@ -369,6 +407,44 @@ impl World {
                     }
                     let hint = host.world.player_clip_frames_hint();
                     player_ctx.local_flags = host.world.props.bank.player_clip(hint).flags;
+                }
+                // A walk-to-tile on the player (`C7 F8 <tx> <tz> <mode>`)
+                // hands the leg to the walk kernel and parks the record until
+                // the player lands - the lift at `taiku` P0[6] walks the
+                // player onto its platform, rides, and walks them off the
+                // far side (`C7 F8 6D 4E 32`, then `C7 F8 6D CF 32`) before
+                // its wall paint reopens the corridor. Stepping the op on a
+                // throwaway context left the player where the touch found
+                // them, on the near side of the lift.
+                // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
+                // A door bind whose record also teleports the player is a
+                // walk-touch door: the contact dispatch already applied its
+                // decoded `MoveTo` (`check_field_walk_touch`), so its walk-in
+                // leg is not replayed on top of the landing (`tower`'s floor
+                // doors walk the player into the doorway, glide, then `A3 F8`
+                // to the next floor).
+                if player_target
+                    && b == 0xC7
+                    && !door_teleports
+                    && let (Some(&b0), Some(&b1), Some(&b2)) = (
+                        id.bytecode.get(id.pc + 2),
+                        id.bytecode.get(id.pc + 3),
+                        id.bytecode.get(id.pc + 4),
+                    )
+                {
+                    id.pc += 5;
+                    if (b0 & 0x7F, b1 & 0x7F) != crate::man_field_scripts::PARKED_SENTINEL_TILE {
+                        let decode = |b: u8| -> i16 {
+                            i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                        };
+                        id.player_walk = Some(crate::inline_dialogue::PropPlayerWalk {
+                            target: (decode(b0), decode(b1)),
+                            speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
+                            frames: 0,
+                        });
+                        break;
+                    }
+                    continue;
                 }
                 let ctx = if player_target {
                     &mut player_ctx
@@ -482,6 +558,48 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Step the player one frame of a script walk-to-tile leg (op `0x47`
+    /// on the player, `C7 F8 <tx> <tz> <mode>`): toward `target` by at most
+    /// `speed` on each axis, facing the step, on the floor under every step.
+    /// Returns whether the player stands on the target (or there is no
+    /// player to walk). Shared by the cutscene timeline's player leg and a
+    /// prop run's.
+    ///
+    /// REF: FUN_8003774C (case 0x47)
+    pub(crate) fn step_player_walk_leg(&mut self, target: (i16, i16), speed: u16) -> bool {
+        let Some(p) = self.player_actor_slot else {
+            return true;
+        };
+        let Some(actor) = self.actors.get_mut(p as usize) else {
+            return true;
+        };
+        let ms = &mut actor.move_state;
+        let (dx, dz) = (
+            i32::from(target.0) - i32::from(ms.world_x),
+            i32::from(target.1) - i32::from(ms.world_z),
+        );
+        let step = i32::from(speed.max(1));
+        let sx = dx.clamp(-step, step);
+        let sz = dz.clamp(-step, step);
+        if sx != 0 || sz != 0 {
+            ms.world_x += sx as i16;
+            ms.world_z += sz as i16;
+            ms.render_26 = (((sx as f32).atan2(sz as f32) / std::f32::consts::TAU * 4096.0).round()
+                as i32
+                & 0x0FFF) as i16;
+        }
+        let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
+        let arrived = (nx, nz) == (i32::from(target.0), i32::from(target.1));
+        // The floor under every step, not just the landing tile: a leg that
+        // crosses a stair run (chitei2's escape beats) otherwise carries the
+        // start height through the steps and snaps at the end.
+        let y = self.sample_field_floor_height(nx, nz) as i16;
+        if let Some(a) = self.actors.get_mut(p as usize) {
+            a.move_state.world_y = y;
+        }
+        arrived
     }
 
     /// Set / clear the player's movement-disabled flag (`+0x10 & 0x80000`) -

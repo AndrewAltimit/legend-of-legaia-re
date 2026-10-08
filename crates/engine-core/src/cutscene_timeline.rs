@@ -344,6 +344,22 @@ pub struct CutsceneTimeline {
     /// cross-context op on that NPC waits for the ramp to snap.
     // REF: FUN_801DE840 (0x801DEE58..0x801DEF24), FUN_8003774C (case 0x38)
     pub npc_facings: Vec<TimelineFacing>,
+    /// Face-at legs this context armed on **NPC** placements
+    /// (`CC <id> 85|8E|8F <lo> <hi> <bind>` against a placement channel):
+    /// the same halt-acquire the player form takes
+    /// ([`Self::player_face`]), on another target. The acquire arm
+    /// (`0x801E2148..0x801E21DC`) stores the op's address into the target's
+    /// `+0x94` and raises its `0x400`, and advances the caller by five
+    /// (`li s7,5` at `0x801E21B8`); only a **player** target also halts the
+    /// caller (`0x801E21B4..0x801E21CC`). The target's actor tick then runs
+    /// the walk kernel's `0x4C` FaceTarget leg over the op's frame budget,
+    /// turning it toward the bind, and the terminal frame clears its
+    /// `0x400` (`0x80038004`). So the record runs on while the actor turns,
+    /// and its next cross-context op on that actor waits for the turn.
+    /// Cutscene records carry well over a thousand of these on NPCs and as
+    /// many again on the party placements (Noa / Gala turning to face Vahn).
+    // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
+    pub npc_faces: Vec<TimelineNpcFace>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
@@ -424,6 +440,17 @@ pub struct TimelineNpcGlide {
     pub frames: u32,
 }
 
+/// An NPC face-at leg (see [`CutsceneTimeline::npc_faces`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimelineNpcFace {
+    /// Placement slot of the turning NPC.
+    pub slot: u8,
+    /// The walk-kernel leg: `[0x4C, sub-mode, budget lo, budget hi, bind]`.
+    pub ramp: crate::inline_dialogue::TalkFaceRamp,
+    /// Ticks the leg has played, bounded by the walk park timeout.
+    pub frames: u32,
+}
+
 /// State of a parked cross-context rotate yield (see
 /// [`CutsceneTimeline::facing_wait`]): one motion-VM `0x38` RotateToAngle leg
 /// stepped once per timeline tick against the target's render heading.
@@ -479,6 +506,7 @@ impl CutsceneTimeline {
             .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
             .chain(self.npc_walks.iter().map(|&s| Some(s)))
             .chain(self.npc_facings.iter().map(|f| f.slot))
+            .chain(self.npc_faces.iter().map(|f| Some(f.slot)))
             .filter(move |_| live)
     }
 
@@ -520,6 +548,7 @@ impl CutsceneTimeline {
             npc_glides: Vec::new(),
             npc_walks: Vec::new(),
             npc_facings: Vec::new(),
+            npc_faces: Vec::new(),
             player_clip_ticks: 0,
             player_clip_wait: None,
             npc_clip_spin_frames: 0,

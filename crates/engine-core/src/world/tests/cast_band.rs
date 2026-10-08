@@ -511,6 +511,138 @@ fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
     );
 }
 
+/// A one-member roster whose record carries `spell_id` at magic level `level`
+/// (the cure ladder reads the record, not the actor).
+fn roster_with_spell(world: &mut World, spell_id: u8, level: u8) {
+    let mut member = legaia_save::CharacterRecord::parse(&[0u8; 0x414]).expect("blank record");
+    let mut list = member.spell_list();
+    list.count = 1;
+    list.ids[0] = spell_id;
+    list.levels[0] = level;
+    member.set_spell_list(list);
+    world.party.roster.members = vec![member];
+}
+
+/// Re-enter the module from arm 0 through `last`, each arm until it lets the
+/// phase through (the counted arms hold on the module's own countdown).
+fn drive_module_through(world: &mut World, spell_id: u8, last: u8) {
+    for arm in 0..=last {
+        if world.casting.module_phase > arm {
+            continue;
+        }
+        world.casting.module_phase = arm;
+        for _ in 0..2048 {
+            if world.run_cast_module_code(spell_id, arm).is_none() {
+                break;
+            }
+            if world.casting.module_phase != arm {
+                break;
+            }
+        }
+    }
+}
+
+/// A level-9 Vera (cure tier 4, the light row's top band) doubles the
+/// target's battle AP gauge `+0x170`, capped at 100 - PROT 0905
+/// `0x801F7F24..0x801F7F48`. First reported by the_rabidsquirel from retail
+/// save-state testing; a lower tier leaves AP alone.
+#[test]
+fn a_level_nine_vera_doubles_the_targets_ap() {
+    use legaia_engine_vm::cast_seru_ticks_a::VERA_RESTORE_ARM;
+    for (tier, before, after) in [(4u8, 17u16, 34u16), (4, 60, 100), (3, 17, 17)] {
+        let mut world = module_code_world();
+        world.casting.summon_actor_slot = Some(7);
+        world.battle_ctx.active_actor = 0;
+        world.actors[0].battle.spirit_gauge = before;
+        world.battle_ctx.follow_up_pending = tier;
+        roster_with_spell(&mut world, 0x83, 9);
+        drive_module_through(&mut world, 0x83, VERA_RESTORE_ARM);
+        assert_eq!(
+            world.actors[0].battle.spirit_gauge, after,
+            "tier {tier}, AP {before}"
+        );
+    }
+}
+
+/// A level-9 Orb doubles every living party seat's AP gauge the same way -
+/// PROT 0911 `0x801F7E10..0x801F7E3C`.
+#[test]
+fn a_level_nine_orb_doubles_the_party_ap() {
+    use legaia_engine_vm::cast_seru_ticks_b::ORB_ARM5_TARGET_PHASE;
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x89), Some(911));
+    world.casting.summon_actor_slot = Some(7);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.spirit_gauge = 26;
+    world.battle_ctx.follow_up_pending = 4;
+    roster_with_spell(&mut world, 0x89, 9);
+    drive_module_through(&mut world, 0x89, ORB_ARM5_TARGET_PHASE);
+    assert_eq!(world.actors[0].battle.spirit_gauge, 52);
+}
+
+/// A level-9 Spoon doubles the party's AP too - PROT 0919 arm 7
+/// (`0x801F8394..0x801F83C0`) - once, as the arm lets the phase through, and
+/// cures nothing below tier 4's selector beyond its mask.
+#[test]
+fn a_level_nine_spoon_doubles_the_party_ap_once() {
+    use legaia_engine_vm::cast_seru_ticks_b::SPOON_HEAL_ARM;
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x91), Some(919));
+    world.casting.summon_actor_slot = Some(7);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.spirit_gauge = 9;
+    world.actors[0].battle.field_flags = 0x0403;
+    world.battle_ctx.follow_up_pending = 4;
+    roster_with_spell(&mut world, 0x91, 9);
+    drive_module_through(&mut world, 0x91, SPOON_HEAL_ARM);
+    assert_ne!(world.casting.module_phase, SPOON_HEAL_ARM, "arm 7 ran");
+    assert_eq!(world.actors[0].battle.spirit_gauge, 18);
+    assert_eq!(world.actors[0].battle.field_flags, 0, "tier 4 mask 0xFB84");
+    // A later frame past the arm does not double again.
+    let phase = world.casting.module_phase;
+    let _ = world.run_cast_module_code(0x91, phase);
+    assert_eq!(world.actors[0].battle.spirit_gauge, 18);
+
+    // Below the level gate the ladder never runs.
+    let mut world = module_code_world();
+    world.casting.summon_actor_slot = Some(7);
+    world.actors[0].battle.spirit_gauge = 9;
+    world.battle_ctx.follow_up_pending = 4;
+    roster_with_spell(&mut world, 0x91, 2);
+    drive_module_through(&mut world, 0x91, SPOON_HEAL_ARM);
+    assert_eq!(world.actors[0].battle.spirit_gauge, 9);
+}
+
+/// The evolved block now folds like the base block: a Spoon cast restores
+/// PROT 0919's own `(level << 7) + 0x380` (not the catalog placeholder) and
+/// credits the module's `+4` XP for a seat whose missing HP covered it
+/// (`0x801F80D4`).
+#[test]
+fn a_spoon_cast_heals_its_module_amount_and_trains_the_spell() {
+    use crate::spells::{SpellDef, SpellEffect, SpellTarget};
+    let mut world = module_code_world();
+    world.actors[0].battle.hp = 1;
+    world.actors[0].battle.max_hp = 0x500;
+    roster_with_spell(&mut world, 0x91, 1);
+    let def = SpellDef {
+        id: 0x91,
+        name: "Spoon".into(),
+        mp_cost: 0,
+        target: SpellTarget::AllAllies,
+        effect: SpellEffect::HealAll { amount: 7 },
+        ..SpellDef::default()
+    };
+    assert!(world.cast_spell_on_slots_prepaid(0, &def, &[0]));
+    assert_eq!(
+        world.actors[0].battle.hp,
+        1 + 0x400,
+        "level 1: 0x80 + 0x380"
+    );
+    let rec = &world.party.roster.members[0];
+    let slot = crate::magic_xp::spell_slot(rec, 0x91).expect("learned");
+    assert_eq!(crate::magic_xp::spell_xp(rec, slot), 4);
+}
+
 // ---------------------------------------------------------------------------
 // PROT 0907 (Nighto): the kill / confuse fork, driven at the band
 // ---------------------------------------------------------------------------
@@ -701,6 +833,44 @@ fn the_ring_cone_wraps_at_both_ends() {
     // A ray between the seats takes nobody.
     let hit = world.seats_in_cone(centre, 0x0200, THEEDER_CONE_HALF_WIDTH, 3..7);
     assert!(hit.is_empty(), "the cone reached {hit:?} from a gap");
+}
+
+/// PROT 0904's ray swings `+-0x100` about the summon's facing, not a full
+/// circle (`0x801F7B90..0x801F7C80`): over one sweep it reaches a seat
+/// straight ahead and never one behind the summon or off to its side.
+#[test]
+fn the_theeder_ray_only_reaches_the_arc_ahead_of_the_summon() {
+    use legaia_engine_vm::cast_seru_ticks_a::THEEDER_CONE_HALF_WIDTH;
+    let mut world = module_code_world();
+    // Summon at the origin facing +Z (bearing 0).
+    world.actors[7].move_state.world_x = 0;
+    world.actors[7].move_state.world_z = 0;
+    world.actors[7].battle.facing_angle = 0;
+    let place = |w: &mut World, slot: usize, x: i16, z: i16| {
+        w.actors[slot].battle.seat = Some((x, z));
+    };
+    place(&mut world, 3, 0, 2000); // dead ahead
+    place(&mut world, 4, 0, -2000); // behind
+    place(&mut world, 5, 2000, 0); // a quarter turn off
+    let mut ever = std::collections::BTreeSet::new();
+    for c in (0u16..0x1000).step_by(8) {
+        let (mouth, tip) = world.theeder_ray(7, c);
+        let bearing = legaia_engine_vm::battle_action::bearing_12bit_approx(
+            mouth[2], mouth[0], tip[2], tip[0],
+        );
+        let d = bearing.wrapping_add(0x100) & 0xFFF;
+        assert!(
+            d <= 0x200,
+            "ray bearing {bearing:#x} left the +-0x100 swing"
+        );
+        ever.extend(world.seats_in_cone(
+            (mouth[0], mouth[2]),
+            bearing,
+            THEEDER_CONE_HALF_WIDTH,
+            3..6,
+        ));
+    }
+    assert_eq!(ever.into_iter().collect::<Vec<_>>(), vec![3]);
 }
 
 /// PROT 0910 (Swordie, spell `0x88`) lands its four slashes from the cast band
@@ -1425,5 +1595,115 @@ fn vera_runs_its_fades_beside_the_band_flash() {
     assert!(
         world.screen_fade_draws().len() >= 2,
         "drawn beside the band flash"
+    );
+}
+
+/// PROT 0910's wind-up (arm 7) drains `speed << 8` by `rate * speed` a
+/// battle pass, so it lasts 256 vsyncs whatever the cadence - 256 engine
+/// ticks, one vsync each, at any frame step - and its exit sets the summon's
+/// animation rate to the speed scalar, the battle's normal rate.
+#[test]
+fn the_swordie_wind_up_lasts_256_vsync_ticks_and_restores_the_normal_rate() {
+    let mut world = module_code_world();
+    world.clock.frame_step = 2;
+    world.casting.summon_actor_slot = Some(7);
+    world.actors[0].battle.active_target = 3;
+    world.casting.module_phase = 6;
+    world.run_cast_module_code(0x88, 0).expect("band entry");
+    assert_eq!(world.casting.module_phase, 7);
+    let mut ticks = 0;
+    while world.casting.module_phase == 7 {
+        world.run_cast_module_code(0x88, 0).expect("band entry");
+        ticks += 1;
+        assert!(ticks < 1000, "the wind-up never ended");
+    }
+    assert_eq!(
+        ticks, 257,
+        "2048 drained 8 a tick holds 256 ticks, the 257th advances"
+    );
+    assert_eq!(
+        world.actors[7].battle.anim_rate.get(),
+        legaia_engine_vm::battle_anim_rate::RATE_NORMAL
+    );
+}
+
+/// PROT 0904 (Theeder, `0x82`) paces its band: the stager holds `0x36` on the
+/// module, so the band stays up through arm 11's 64-tick ramp and arm 12's
+/// 64-tick sweep, and lets go only after the ray has turned a full circle.
+#[test]
+fn the_theeder_band_holds_through_its_ramp_and_sweep() {
+    use legaia_engine_vm::cast_seru_ticks_a::{THEEDER_RETARGET_ARM, THEEDER_SWEEP_ARM};
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    assert_eq!(world.cast_module_for(0x82), Some(904));
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 3;
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    world.arm_summon_stager(0, 0x82);
+    let (mut retarget_ticks, mut sweep_ticks) = (0, 0);
+    let mut done = false;
+    // Which packet kinds the module's draw side emitted, in first-seen order.
+    let mut kinds: Vec<&str> = Vec::new();
+    let mut seat_at: Option<(i16, i16)> = None;
+    for _ in 0..40_000 {
+        match world.casting.module_phase {
+            THEEDER_RETARGET_ARM => retarget_ticks += 1,
+            THEEDER_SWEEP_ARM => sweep_ticks += 1,
+            _ => {}
+        }
+        if !world.summon_stager_tick() {
+            done = true;
+            break;
+        }
+        use legaia_engine_vm::cast_seru_ticks_a::TheederPacket as P;
+        let kind = match world.theeder_draw() {
+            Some(P::Prongs { .. }) => Some("prongs"),
+            Some(P::Charge { .. }) => Some("charge"),
+            Some(P::Sweep { .. }) => Some("sweep"),
+            Some(P::Retract { .. }) => Some("retract"),
+            None => None,
+        };
+        if let Some(k) = kind
+            && !kinds.contains(&k)
+        {
+            kinds.push(k);
+        }
+        // Arm 4 seats the creature once; no later arm moves it.
+        if (5..=THEEDER_SWEEP_ARM).contains(&world.casting.module_phase)
+            && let Some(slot) = world.casting.summon_actor_slot
+        {
+            let a = &world.actors[slot as usize];
+            let at = (a.move_state.world_x, a.move_state.world_z);
+            assert_eq!(*seat_at.get_or_insert(at), at, "the Theeder seat moved");
+        }
+        if world.take_pending_summon_spawn().is_some() {
+            world.seat_summon_actor(7);
+        }
+        for a in world.actors.iter_mut() {
+            a.battle.current_anim = a.battle.queued_anim;
+        }
+    }
+    assert!(done, "the stager let go");
+    let want = legaia_engine_vm::cast_seru_ticks_a::theeder_seat_placement(
+        (
+            world.actors[3].move_state.world_x,
+            world.actors[3].move_state.world_z,
+        ),
+        (
+            world.actors[0].move_state.world_x,
+            world.actors[0].move_state.world_z,
+        ),
+    );
+    assert_eq!(seat_at, Some((want.0, want.1)), "arm 4's placement");
+    assert!(retarget_ticks >= 64, "arm 11 held {retarget_ticks} ticks");
+    assert!(sweep_ticks >= 64, "arm 12 held {sweep_ticks} ticks");
+    assert!(world.casting.module_phase > THEEDER_SWEEP_ARM);
+    assert_eq!(kinds, vec!["prongs", "charge", "sweep", "retract"]);
+    assert!(
+        world.theeder_draw().is_none(),
+        "nothing draws past the band"
     );
 }

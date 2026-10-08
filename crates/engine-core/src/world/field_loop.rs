@@ -466,7 +466,6 @@ impl World {
                 let bs = def.installed_stats(scripted);
                 let (agl, attack, udf, ldf, intel, speed) =
                     (bs[0], bs[1], bs[2], bs[3], bs[4], bs[5]);
-                let int_byte = intel.min(u8::MAX as u16);
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;
                 a.battle.max_hp = def.hp;
@@ -500,11 +499,18 @@ impl World {
                 if let Some(s) = self.battle.speed.get_mut(mslot) {
                     *s = speed;
                 }
+                // INT into the `+0x168` halfword, whole: `FUN_80054CB0`
+                // stores the boosted record `+0x18` with `sh`
+                // (`0x8005520C`, `0x8005530C`), and every reader
+                // (`FUN_801DD0AC`, both damage wrappers, selector 9 of
+                // `FUN_800402F4`) loads it with `lhu`. A byte clamp here
+                // understated every late boss's magic attack and magic
+                // defence - Songi's 324 read as 255.
                 if let Some(s) = self.battle.accuracy.get_mut(mslot) {
-                    *s = int_byte;
+                    *s = intel;
                 }
                 if let Some(s) = self.battle.evasion.get_mut(mslot) {
-                    *s = int_byte;
+                    *s = intel;
                 }
             }
         }
@@ -602,6 +608,8 @@ impl World {
         // Scene entry resets the ramp pool (`FUN_8003CDA8`): a ramp the last
         // scene left running must not resize the player on this one.
         self.locomotion.player_scale_ramps.reset_pool();
+        // Every side buffer is fresh on a scene entry (`+0x9A = -1`).
+        self.npcs.looks.clear();
         if self.move_vm.ramp_ratio == 0 {
             self.move_vm.ramp_ratio = 1;
         }
@@ -669,21 +677,41 @@ impl World {
         }
     }
 
-    /// Face the player along a warp-arrival compass sector - the op-`0x3F`
+    /// Arm the arrival facing from a warp's compass sector - the op-`0x3F`
     /// trailing `dir` byte. Retail resolves `dir & 7` through the 8-entry
     /// i16 table at SCUS `0x80073F04` (`[0, 0x200, 0x400, .. 0xE00]` - the
     /// eight 45-degree compass points of the 12-bit angle space) into the
-    /// arrival-facing global `_DAT_80073EFC`; the engine stores the same
-    /// angle on the player's heading (`move_state.render_26`, `0` = +Z).
+    /// arrival-facing global `_DAT_80073EFC` (`0x801DEBAC`), which the
+    /// destination's entry script hands the player (`4C 3A`).
     ///
     /// REF: FUN_801DE840 (case 0x3F facing write, table 0x80073F04)
-    pub fn face_player_sector(&mut self, dir: u8) {
-        let Some(slot) = self.player_actor_slot else {
-            return;
-        };
-        if let Some(actor) = self.actors.get_mut(slot as usize) {
-            actor.move_state.render_26 = i16::from(dir & 7) * 0x200;
+    pub fn arm_arrival_facing(&mut self, dir: u8) {
+        self.locomotion.arrival_facing = i16::from(dir & 7) * 0x200;
+    }
+
+    /// Op `4C 3A`: the player's heading `+0x26` takes the arrival facing.
+    /// The table values are retail headings (`0` = facing -Z), the engine's
+    /// `render_26` the same angle plus the half-turn (`0` = +Z), so index 0
+    /// is a hero facing the default camera rather than turned away from it.
+    ///
+    /// REF: FUN_801DE840 (`4C 3A`, 0x801E10DC..0x801E10F4)
+    pub fn apply_arrival_facing(&mut self) {
+        let heading = self.locomotion.arrival_facing.wrapping_add(0x800) & 0x0FFF;
+        if let Some(actor) = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get_mut(usize::from(slot)))
+        {
+            actor.move_state.render_26 = heading;
         }
+    }
+
+    /// Face the player along a warp-arrival compass sector: arm the arrival
+    /// facing ([`Self::arm_arrival_facing`]) and apply it at once
+    /// ([`Self::apply_arrival_facing`]), the pair the door's `0x3F` and the
+    /// destination's entry `4C 3A` perform.
+    pub fn face_player_sector(&mut self, dir: u8) {
+        self.arm_arrival_facing(dir);
+        self.apply_arrival_facing();
     }
 
     /// One field-VM step. Drives `field_ctx` + `field_pc` from the loaded
@@ -694,6 +722,19 @@ impl World {
         }
         if let Some(res) = self.step_field_cross_context_cflag() {
             return Some(res);
+        }
+        if let Some(res) = self.step_field_cross_context_actor_op() {
+            return Some(res);
+        }
+        // A facing op aimed at a placement (`B8 <id> ..`, `CC <id> 85 ..`)
+        // turns that placement, not the system context.
+        let pc = self.field_pc;
+        let bc = std::mem::take(&mut self.field_bytecode);
+        let routed = self.run_placement_facing_op(&bc, pc);
+        self.field_bytecode = bc;
+        if let Some(next_pc) = routed {
+            self.field_pc = next_pc;
+            return Some(FieldStepResult::Advance { next_pc });
         }
         let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
         let bc_ptr: *const Vec<u8> = &self.field_bytecode;
@@ -777,6 +818,89 @@ impl World {
             ch.ctx.flags &= !mask;
         }
         let next_pc = pc + 3;
+        self.field_pc = next_pc;
+        Some(FieldStepResult::Advance { next_pc })
+    }
+
+    /// A system-script op aimed at another actor's own words: `FUN_8003C83C`
+    /// resolves the extended target `<id>` through the actor list and the op
+    /// runs against **that** actor's context, not the system context's.
+    /// Two families route here:
+    ///
+    /// - `MOVE_TO` (`A3 <id> <x> <z>`), for any channel: the seat lands on the
+    ///   target's `+0x14` / `+0x18`. A placed object parked at the hide box
+    ///   `(0x7F, 0x7F)` stops drawing ([`Self::hidden_object_records`]), and a
+    ///   placement the op moves has its position surfaced at once, as the
+    ///   cutscene timeline's poke does.
+    /// - the clip-control writes on a **placed object** - `LFLAG_SET` /
+    ///   `LFLAG_CLR` (`AB` / `AC <id> <bit>`) and `4C 35` / `4C 36`
+    ///   (`CC <id> 35`, the hold + restart + clamp freeze): the bits land on
+    ///   the object's `+0x62`, which its anim tick reads every frame, so the
+    ///   prop's clip state takes them at once.
+    ///
+    /// `rugi`'s `P1[0]`, with the wall opened (`0x57B`), is the case for
+    /// both: it freezes the two gate leaves (`CC 01 35`, `CC 02 35`) on the
+    /// first frame of their clips - the lowered pose - and parks partition-0
+    /// record 6, the stone block the opening leaves behind, with
+    /// `A3 06 7F 7F`. Stepped on the system context, the leaves kept looping
+    /// their raise and the block stayed, a wall across the floor in front of
+    /// the save crystal.
+    ///
+    /// The player (`0xF8`) and the system context (`0xFB`) take the ordinary
+    /// step, as does an id no channel carries.
+    ///
+    /// REF: FUN_801DE840 (cases 0x23, 0x2B, 0x2C, 0x4C nibble 3), FUN_8003C83C
+    fn step_field_cross_context_actor_op(&mut self) -> Option<FieldStepResult> {
+        let pc = self.field_pc;
+        let op = *self.field_bytecode.get(pc)?;
+        let target = *self.field_bytecode.get(pc + 1)?;
+        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+            return None;
+        }
+        let clip_control = op == 0xAB
+            || op == 0xAC
+            || (op == 0xCC && matches!(self.field_bytecode.get(pc + 2), Some(&(0x35 | 0x36))));
+        if op != 0xA3 && !clip_control {
+            return None;
+        }
+        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let object = self.field_vm.channels[ci].object_bind;
+        if clip_control && !object {
+            return None;
+        }
+        let width = legaia_asset::field_disasm::decode(&self.field_bytecode, pc)
+            .ok()
+            .map(|i| i.size)
+            .filter(|&n| n > 0)?;
+        let mut channels = std::mem::take(&mut self.field_vm.channels);
+        let bc = std::mem::take(&mut self.field_bytecode);
+        self.field_vm.executing_channel = (!object).then_some(channels[ci].placement_index as u8);
+        self.field_vm.executing_object = object.then_some(channels[ci].ctx.script_id);
+        let res = {
+            let mut host = FieldHostImpl { world: self };
+            vm::field::step(&mut host, &mut channels[ci].ctx, &bc, pc)
+        };
+        self.field_vm.executing_channel = None;
+        self.field_vm.executing_object = None;
+        let c = &channels[ci];
+        if op == 0xA3
+            && !object
+            && let Ok(slot) = u8::try_from(c.placement_index)
+        {
+            self.npcs
+                .positions
+                .insert(slot, (c.ctx.world_x as i16, c.ctx.world_z as i16));
+            self.npcs.motions.remove(&slot);
+        }
+        if clip_control {
+            self.set_object_prop_flags(c.ctx.script_id, c.ctx.local_flags);
+        }
+        self.field_vm.channels = channels;
+        self.field_bytecode = bc;
+        let next_pc = match res {
+            FieldStepResult::Advance { next_pc } => next_pc,
+            _ => pc + width,
+        };
         self.field_pc = next_pc;
         Some(FieldStepResult::Advance { next_pc })
     }
@@ -1055,6 +1179,37 @@ mod cross_context_cflag_tests {
         assert_eq!(w.field_pc, 6);
     }
 
+    /// `rugi` `P1[0]`'s opened-wall arm: `CC 01 35` freezes the gate leaf on
+    /// its object's own `+0x62`, and `A3 06 7F 7F` parks partition-0 record 6
+    /// at the hide box - both on the target object, none on the system
+    /// context.
+    #[test]
+    fn system_script_seats_and_freezes_the_target_object() {
+        let mut w = World::default();
+        let mut leaf = channel(1, 1);
+        leaf.object_bind = true;
+        leaf.ctx.local_flags = crate::field_env::ANIM_SPAWN_FLAGS;
+        leaf.ctx.field_72 = 0x1000;
+        let mut block = channel(6, 6);
+        block.object_bind = true;
+        block.ctx.world_x = 11072;
+        block.ctx.world_z = 6208;
+        block.ctx.field_72 = 0x1000;
+        w.field_vm.channels = vec![leaf, block];
+        w.load_field_script_at(vec![0xCC, 0x01, 0x35, 0xA3, 0x06, 0x7F, 0x7F, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.field_pc, 3);
+        assert_eq!(w.field_vm.channels[0].ctx.local_flags, 0x021F);
+        assert_eq!(
+            w.field_ctx.local_flags, 0,
+            "the system context keeps its word"
+        );
+        w.step_field();
+        assert_eq!(w.field_pc, 7);
+        assert!(w.hidden_object_records().contains(&6));
+        assert!(!w.hidden_object_records().contains(&1));
+    }
+
     /// The player anchor and an unresolved id take the ordinary step.
     #[test]
     fn unresolved_targets_fall_through() {
@@ -1063,5 +1218,95 @@ mod cross_context_cflag_tests {
         w.load_field_script_at(vec![0xB1, 0x0D, 0x08, 0x21], 0);
         w.step_field();
         assert!(w.field_vm.pending_engagements.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod arrival_facing_tests {
+    use crate::world::World;
+
+    fn world_with_player() -> World {
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w
+    }
+
+    /// The entry script's `4C 3A` stands the player on the arrival facing.
+    /// A card load zeroes the word, and retail heading `0` faces the default
+    /// camera: the engine's `render_26` is that plus the half-turn. Read
+    /// straight, it turned every card-loaded hero's back to the camera
+    /// (`kor5_field_card_boot`: retail `+0x26 = 0`).
+    #[test]
+    fn op_4c_3a_applies_the_arrival_facing_a_half_turn_round() {
+        let mut w = world_with_player();
+        w.actors[0].move_state.render_26 = 0x123;
+        w.load_field_script_at(vec![0x4C, 0x3A, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.actors[0].move_state.render_26, 0x800);
+    }
+
+    /// A door's `dir` sector arms the word through the compass table; the
+    /// applied heading is the table's retail angle plus the half-turn.
+    #[test]
+    fn a_door_sector_faces_the_player_on_the_table_angle() {
+        let mut w = world_with_player();
+        w.face_player_sector(6);
+        assert_eq!(w.locomotion.arrival_facing, 0xC00);
+        assert_eq!(w.actors[0].move_state.render_26, 0x400);
+    }
+}
+
+#[cfg(test)]
+mod placement_facing_op_tests {
+    use crate::world::World;
+
+    fn world_with_channel() -> World {
+        let mut w = World::new();
+        w.field_vm.channels = vec![crate::field_channels::FieldChannel {
+            placement_index: 5,
+            ctx: legaia_engine_vm::field::FieldCtx {
+                script_id: 0x21,
+                ..Default::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(5, (1000, 1000));
+        w
+    }
+
+    /// `rikuroa`'s entry script stands a chest with `B8 21 84 00`: the
+    /// compass write lands on placement `0x21`, not on the system context
+    /// running it (retail `+0x26 = 0x800`, engine `0x000`).
+    #[test]
+    fn a_system_script_compass_write_turns_the_named_placement() {
+        let mut w = world_with_channel();
+        w.load_field_script_at(vec![0xB8, 0x21, 0x84, 0x00, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.npcs.headings.get(&5), Some(&0x000));
+        assert_eq!(w.field_pc, 4);
+    }
+
+    /// A budgeted turn on another placement runs as its own leg while the
+    /// script runs on, and snaps onto the compass entry.
+    #[test]
+    fn a_system_script_rotate_leg_plays_out_on_the_field_tick() {
+        let mut w = world_with_channel();
+        w.npcs.headings.insert(5, 0x800);
+        w.load_field_script_at(vec![0xB8, 0x21, 0x86, 0x08, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.field_pc, 4, "the caller runs on");
+        assert!(w.npcs.rotate_legs.contains_key(&5));
+        for _ in 0..8 {
+            w.tick_field_npc_motions();
+        }
+        assert!(w.npcs.rotate_legs.is_empty());
+        assert_eq!(w.npcs.headings.get(&5), Some(&0x400));
     }
 }

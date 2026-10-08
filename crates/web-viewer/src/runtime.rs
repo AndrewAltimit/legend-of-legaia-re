@@ -170,6 +170,9 @@ pub struct LegaiaRuntime {
     /// so the per-frame accessors must not re-tick) with the primitive count
     /// alongside for the page's early-out.
     pub(crate) battle_intro_geom: Option<(u32, legaia_engine_ui::screen_prim::OverlayGeometry)>,
+    /// The last tick's screen primitives before the shop fade, and the index
+    /// the fade goes in at ([`crate::play_battle`]'s `rebuild_screen_geom`).
+    pub(crate) screen_prims_base: (Vec<legaia_engine_ui::screen_prim::ScreenPrim>, usize),
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -397,6 +400,7 @@ impl LegaiaRuntime {
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             battle_intro_geom: None,
+            screen_prims_base: (Vec::new(), 0),
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
             passive_hud_icons: Vec::new(),
@@ -690,6 +694,9 @@ impl LegaiaRuntime {
         // wall footprint, solid NPC bodies, per-step terrain follow, and NPCs
         // walking their MAN-authored routes.
         host.world.toggles.use_vm_dialogue = true;
+        // The page lands its drawn frame for a framebuffer-reading `43 12`
+        // copy (`play_land_frame_grab`), as the native window does.
+        host.world.enable_frame_grab(true);
         host.world.locomotion.follow_terrain_height = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
@@ -1483,21 +1490,6 @@ impl LegaiaRuntime {
     ) -> Option<legaia_engine_core::mode::ModeInitPlan> {
         let (world, seat) = self.scene_host.world_seat_mut(&mut self.world);
         seat.enter(mode, world)
-    }
-
-    /// The pause menu's open juncture: retail opens the menu by writing the
-    /// mode word, not by calling the menu (`CARD INIT` stages the menu overlay
-    /// and hands the word to `CARD MODE` at `0x80025974`). Both stores of
-    /// `request_card_mode` land on the seat, then the INIT frame runs.
-    ///
-    /// Twin of `BootSession::open_field_menu`'s own pair of calls.
-    pub(crate) fn seat_open_card_menu(&mut self) {
-        self.scene_host.seat_mut().request_card_mode();
-        let plan = self.seat_enter(legaia_engine_core::mode::GameMode::CardInit);
-        debug_assert!(
-            plan.is_none(),
-            "CARD INIT stages no overlay-A request in the port's model"
-        );
     }
 
     /// Decode the live dialogue box (the field VM's inline-script runner) into

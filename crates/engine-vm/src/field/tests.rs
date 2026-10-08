@@ -68,7 +68,7 @@ struct TestHost {
     clone_actor_calls: Vec<(u8, u32, i16)>,
     // 0x4C sub-3 cleanups.
     menu_refresh_calls: u32,
-    depth_copy_calls: u32,
+    arrival_facing_calls: u32,
     subtile_refresh_calls: Vec<u8>,
     // 0x4C sub-3 sub-7 (player-coord copy).
     player_coords: Option<PlayerCoords>,
@@ -374,8 +374,8 @@ impl FieldHost for TestHost {
     fn menu_refresh(&mut self) {
         self.menu_refresh_calls += 1;
     }
-    fn copy_dialog_depth_to_player(&mut self) {
-        self.depth_copy_calls += 1;
+    fn apply_arrival_facing(&mut self) {
+        self.arrival_facing_calls += 1;
     }
     fn camera_zone_query_at_player(&mut self) {
         self.subtile_refresh_calls.push(0x8);

@@ -195,7 +195,7 @@ impl SceneHost {
             anchor_x: lead.x,
             anchor_z: lead.z,
             facing: lead.facing,
-            rod_mesh: crate::fishing_actors::RodMesh::from_scene(&scene),
+            rod_mesh: crate::fishing_actors::rod_mesh_from_scene(&scene),
         })
     }
 
@@ -205,9 +205,9 @@ impl SceneHost {
     /// overlay init's own `DAT_801d4114 = _DAT_800845A4`; `exit_slot_machine`
     /// performs the symmetric state-100 commit back.
     fn enter_slot_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        /// The literal LCG seed the slot overlay's init writes to
-        /// `DAT_801d3c80`.
-        const SLOT_RNG_SEED: u32 = 0x6C0A_2AF0;
+        // The literal LCG seed the slot overlay's init writes to
+        // `DAT_801d3c80`.
+        use crate::slot_machine::SLOT_RNG_SEED;
         let Some(payouts) = legaia_asset::slot_payout::parse(loaded) else {
             return false;
         };
@@ -249,7 +249,7 @@ impl SceneHost {
         };
         let frame = self.world.frame as u32;
         let opponent = crate::baka_fighter::first_rung_roster();
-        let seed = 0xBA4A_F19A ^ frame;
+        let seed = crate::baka_fighter::BAKA_RNG_BASE ^ frame;
         let Some(fight) =
             crate::baka_fighter::BakaFight::from_tables(&opponents, &actions, 0, opponent, seed)
         else {
@@ -387,7 +387,7 @@ impl SceneHost {
         if let Some(name) = opponent_name.filter(|n| !n.is_empty()) {
             session.set_opponent_name(name);
         }
-        let seed = 0x4D55_5343 ^ self.world.frame as u32;
+        let seed = crate::minigame_entry::DOME_SEED_SALT ^ self.world.frame as u32;
         if let Some(model) =
             DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)
         {

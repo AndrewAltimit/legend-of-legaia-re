@@ -39,6 +39,11 @@
 /// `agl` = `+0x168`, `stat_a`/`stat_b` = `+0x15c`/`+0x160` (defender-only
 /// defense terms), `status` = the `+0x16e` status bitfield, `guard` = the
 /// `+0x1de` guard byte.
+/// The `+0x1DE` guard-byte value of a defender in the **Spirit** stance. The
+/// scale stage `FUN_801dd864` doubles the defender roll on it
+/// (`lbu v1,0x1de(t1)` / `li v0,0x4` / `bne` at `0x801DD9E0..0x801DD9E8`).
+pub const GUARD_SPIRIT_STANCE: u8 = 4;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SummonRollActor {
     /// Current HP (`+0x14c`).
@@ -192,7 +197,7 @@ pub fn summon_predamage_lazy(
     attacker = apply_magic_power(attacker, magic_power_byte);
 
     // Stage 2b: FUN_801dd864 scales the defender roll (guard-double, then status).
-    if target.guard == 4 {
+    if target.guard == GUARD_SPIRIT_STANCE {
         defender = defender.saturating_mul(2);
     }
     defender = apply_status_weaken(defender, target.status);
