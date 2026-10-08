@@ -29,7 +29,7 @@ use crate::npc_catalog::{NpcCatalog, scene_anm_bundle};
 use crate::scene::{ProtIndex, Scene};
 use crate::scene_assembly::{
     AssembledScene, build_hybrid_env_mesh, build_hybrid_env_mesh_posed, draw_rot_y_radians,
-    draw_translation, is_sky_mesh,
+    draw_rotation_quat, draw_translation, is_sky_mesh,
 };
 use legaia_asset::character_gltf::{CharacterClip, build_character_glb_hybrid};
 use legaia_asset::player_anm::PlayerAnmBundle;
@@ -37,9 +37,11 @@ use legaia_asset::scene_gltf::{SceneInstance, SceneMesh};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
-/// Placement transforms of one animated prop: `(translation, rot_y radians)`
-/// per placed instance, translation already in the export frame.
-type PropInstances = Vec<([f32; 3], f32)>;
+/// Placement transforms of one animated prop: `(translation, rot_y radians,
+/// full rotation quaternion)` per placed instance, all in the export frame.
+/// The quaternion is [`draw_rotation_quat`] - the same one the world glb's
+/// frame-0 twin node carries; `rot_y` is its yaw-only legacy field.
+type PropInstances = Vec<([f32; 3], f32, [f32; 4])>;
 
 /// Field/duel clip playback rate baked into exported animation timelines -
 /// the observed retail field animator cadence (see the characters page's
@@ -195,6 +197,7 @@ pub fn export_world_glb(
             mesh: 0,
             translation: [0.0; 3],
             rot_y: 0.0,
+            rotation: None,
             scale: opts.scale,
         });
     }
@@ -268,6 +271,9 @@ pub fn export_world_glb(
                 mesh: mi,
                 translation: t,
                 rot_y: draw_rot_y_radians(d.rot_y),
+                // All three authored angles, not the yaw alone: the
+                // placement kernel the play hosts draw with.
+                rotation: Some(draw_rotation_quat(d)),
                 scale: opts.scale,
             });
         }
@@ -692,7 +698,8 @@ pub struct PropGlb {
     /// four-blade symmetry is what makes the loop seamless), so the keyframe
     /// test misreads retail's one always-running prop as a one-shot.
     pub cyclic: bool,
-    /// `(translation, rot_y radians)` per placed instance.
+    /// `(translation, rot_y radians, rotation quaternion)` per placed
+    /// instance.
     pub instances: PropInstances,
 }
 
@@ -782,7 +789,7 @@ pub fn export_animated_prop_glbs(
         // too - which lands on the authored retail yaw as a plain positive
         // rotation about +Y. Keeps builder-placed props aligned with their
         // baked frame-0 twins in any importer.
-        entry.push((t, -draw_rot_y_radians(d.rot_y)));
+        entry.push((t, -draw_rot_y_radians(d.rot_y), draw_rotation_quat(d)));
     }
     let mut out = Vec::new();
     for key in key_order {
@@ -1774,9 +1781,14 @@ pub fn world_manifest(
                 // on approach, even when no teleport/portal tags the
                 // instance as a door (interior doors, cupboards, drawers).
                 "cyclic": p.cyclic,
-                "instances": p.instances.iter().map(|(t, r)| json!({
+                "instances": p.instances.iter().map(|(t, r, q)| json!({
                     "position": t,
                     "rot_y_radians": r,
+                    // The placement's full rotation (all three authored
+                    // angles), the world glb twin node's own quaternion.
+                    // `rot_y_radians` is its yaw alone - exact only when
+                    // the record carries no pitch or roll.
+                    "rotation_xyzw": q,
                     // Standing on a doorway-teleport trigger says this
                     // placement's clip is a door record's swing - open it
                     // on approach, don't loop.
@@ -1795,7 +1807,7 @@ pub fn world_manifest(
         "conventions": {
             "units": "glTF meters = PSX world units * scale; one walk tile = 128 PSX units",
             "axes": "glTF +Y up; geometry keeps the site viewers' mirror-handedness",
-            "rotation": "rot_y_radians is about +Y, applied the way the world glb instances are",
+            "rotation": "rotation_xyzw is the instance's full glTF rotation, the world glb instance node's own; rot_y_radians is its yaw alone (exact only for records with no pitch or roll), about +Y",
             // NPC / prop glbs carry `scale` baked on their root node, so a
             // file dragged into a scene is already world-sized; a builder
             // placing instances applies only the handedness mirror (a

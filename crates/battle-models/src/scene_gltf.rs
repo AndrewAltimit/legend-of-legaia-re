@@ -112,6 +112,13 @@ pub struct SceneInstance {
     pub mesh: usize,
     pub translation: [f32; 3],
     pub rot_y: f32,
+    /// A full render-frame rotation quaternion `[x, y, z, w]`, emitted as
+    /// the node's `rotation` verbatim and taking precedence over
+    /// [`Self::rot_y`]. The world exporter fills it from the placement's
+    /// three authored angles (`legaia_engine_core::scene_assembly::draw_rotation_quat`),
+    /// so a pitched or rolled record is not stood upright; the page export
+    /// session, which only has the page's yaw param, leaves it `None`.
+    pub rotation: Option<[f32; 4]>,
     pub scale: f32,
 }
 
@@ -425,7 +432,9 @@ pub fn build_scene_glb_animated(
             "mesh": gm,
             "translation": inst.translation,
         });
-        if inst.rot_y != 0.0 {
+        if let Some(q) = inst.rotation {
+            node["rotation"] = json!(q);
+        } else if inst.rot_y != 0.0 {
             // `rot_y` is the page's `placementModelScaledY` param, and that
             // function's inline rotY block is the transpose of a standard
             // +Y rotation - negate to land on the same facing (see quat_y).
@@ -567,12 +576,14 @@ mod tests {
                 mesh: 0,
                 translation: [0.0; 3],
                 rot_y: 0.0,
+                rotation: None,
                 scale: 1.0,
             },
             SceneInstance {
                 mesh: 0,
                 translation: [128.0, 0.0, 0.0],
                 rot_y: 0.0,
+                rotation: None,
                 scale: 1.0,
             },
         ];
@@ -628,12 +639,14 @@ mod tests {
                 mesh: 0,
                 translation: [100.0, 0.0, 200.0],
                 rot_y: std::f32::consts::FRAC_PI_2,
+                rotation: None,
                 scale: 6.0,
             },
             SceneInstance {
                 mesh: 0,
                 translation: [300.0, 10.0, 400.0],
                 rot_y: 0.0,
+                rotation: None,
                 scale: 1.0,
             },
         ];
@@ -714,6 +727,7 @@ mod tests {
             mesh: 0,
             translation: [0.0; 3],
             rot_y: 0.0,
+            rotation: None,
             scale: 1.0,
         }];
         let glb = build_scene_glb("hybrid", &[m], &instances, &vram).unwrap();
@@ -768,6 +782,7 @@ mod tests {
             mesh: 0,
             translation: [0.0; 3],
             rot_y: 0.0,
+            rotation: None,
             scale: 1.0,
         }];
         let glb = build_scene_glb("abe", &[m], &instances, &vram).unwrap();
@@ -809,6 +824,7 @@ mod tests {
             mesh: 0,
             translation: [0.0; 3],
             rot_y: 0.0,
+            rotation: None,
             scale: 1.0,
         }];
         let glb = build_scene_glb("plain", &[quad_mesh(0, 0x0005)], &instances, &vram).unwrap();

@@ -1155,8 +1155,26 @@ namespace LegaiaWorld
                     go.transform.localScale =
                         new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
-                    float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
-                    go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
+                    // The full placement rotation when the manifest has it
+                    // (a pitched or rolled record stands upright under yaw
+                    // alone). Same glTF -> Unity conversion glTFast applies
+                    // to the world glb's twin node: X mirrored, so the
+                    // quaternion's y and z flip sign - YAW_SIGN carries that
+                    // sign the way it does for the yaw-only fallback.
+                    var rq = MiniJson.AsList(MiniJson.Get(inst, "rotation_xyzw"));
+                    if (rq != null && rq.Count == 4)
+                    {
+                        go.transform.localRotation = new Quaternion(
+                            (float)MiniJson.AsNum(rq[0]),
+                            YAW_SIGN * (float)MiniJson.AsNum(rq[1]),
+                            YAW_SIGN * (float)MiniJson.AsNum(rq[2]),
+                            (float)MiniJson.AsNum(rq[3]));
+                    }
+                    else
+                    {
+                        float yaw = MiniJson.GetNum(inst, "rot_y_radians") * Mathf.Rad2Deg;
+                        go.transform.localRotation = Quaternion.Euler(0, YAW_SIGN * yaw, 0);
+                    }
                     // A door-tagged instance (its bind record teleports the
                     // player, or it stands on a scene-exit band - a gate
                     // leaf) opens on approach and stays open, and so does

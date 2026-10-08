@@ -142,12 +142,14 @@ fn drake_kingdom_bundle_bakes_a_wellformed_glb() {
             mesh: mi,
             translation: [slot as f32 * 500.0, 0.0, 0.0],
             rot_y: 0.0,
+            rotation: None,
             scale: 1.0,
         });
         instances.push(SceneInstance {
             mesh: mi,
             translation: [slot as f32 * 500.0, -32.0, 800.0],
             rot_y: std::f32::consts::FRAC_PI_2,
+            rotation: None,
             scale: 6.0,
         });
     }
