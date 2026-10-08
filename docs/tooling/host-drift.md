@@ -698,8 +698,9 @@ an entry it arms. This one measures what a host **runs this frame**, and the
 difference is a failure class none of them can see.
 
 Both hosts drive the engine through one frame path - the native window's
-redraw tick loop, the browser runtime's `tick_frame` - and both paths
-short-circuit. The native loop `continue`s out of five arms; the browser
+per-tick body (`sim_tick`, run once per tick the redraw drains, with its
+step helpers spliced back in), the browser runtime's `tick_frame` - and both
+paths short-circuit. The native body `return`s out of five arms; the browser
 runtime `return`s out of three; the page's own `_frame` gates the whole call
 to `tick_frame` behind a fourth kind of arm in JavaScript. The **draw** does
 not short-circuit with them: the native draw passes run after the loop

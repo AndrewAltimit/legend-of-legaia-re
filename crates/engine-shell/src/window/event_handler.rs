@@ -12,6 +12,8 @@ mod keyboard;
 mod redraw;
 #[path = "event_handler/redraw_passes.rs"]
 mod redraw_passes;
+#[path = "event_handler/redraw_tick.rs"]
+mod redraw_tick;
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {

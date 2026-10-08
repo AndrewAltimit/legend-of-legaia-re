@@ -1567,6 +1567,64 @@ def signature_end(text: str, start: int) -> int:
     return -1
 
 
+# The native redraw is one frame split into named steps across several
+# files: `handle_redraw` (`NATIVE_REDRAW`) calls `run_frame_ticks` and the
+# render steps, the per-tick body `sim_tick` calls its own step helpers. Every
+# check that reads "what the native frame does" reads the whole frame, so a
+# step helper defined in one of these files is spliced back in at its call
+# site (recursively) - which reproduces the text the steps were split out of.
+# A helper in any other window file (`tick_field_party_hud`, the draw-pass
+# builders) stays a call: those are kernels in their own right.
+NATIVE_REDRAW_STEP_FILES = (
+    "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
+)
+# Splice depth guard: the step tree is shallow, so a deeper chain is a cycle.
+NATIVE_STEP_SPLICE_DEPTH = 8
+
+
+def native_step_bodies() -> dict[str, str]:
+    """Comment-stripped body of every fn the native redraw step files define."""
+    out: dict[str, str] = {}
+    for rel in NATIVE_REDRAW_STEP_FILES:
+        path = REPO / rel
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for m in re.finditer(r"\bfn\s+([a-z_][a-z_0-9]*)\s*[<(]", text):
+            brace = signature_end(text, m.start())
+            if brace < 0:
+                continue
+            out[m.group(1)] = strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace)))
+    return out
+
+
+def splice_native_steps(body: str, steps: dict[str, str] | None = None, depth: int = 0) -> str:
+    """`body` with each `self.<step>(..)` call replaced by the step's body."""
+    if steps is None:
+        steps = native_step_bodies()
+    if depth > NATIVE_STEP_SPLICE_DEPTH or not steps:
+        return body
+    call_re = re.compile(r"self\.(" + "|".join(map(re.escape, steps)) + r")\s*\(")
+    out: list[str] = []
+    pos = 0
+    for m in call_re.finditer(body):
+        if m.start() < pos:
+            continue
+        # The call's closing paren (arguments may nest).
+        i, par = m.end(), 1
+        while i < len(body) and par:
+            if body[i] == "(":
+                par += 1
+            elif body[i] == ")":
+                par -= 1
+            i += 1
+        out.append(body[pos : m.start()])
+        out.append(splice_native_steps(steps[m.group(1)], steps, depth + 1))
+        pos = i
+    out.append(body[pos:])
+    return "".join(out)
+
+
 def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
     """The source a [`SIM_PAIRS`] site names: one fn body, or the whole file.
 
@@ -1587,7 +1645,10 @@ def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
     brace = signature_end(text, m.start())
     if brace < 0:
         return None, f"`fn {fn_name}` in {rel} has no body"
-    return strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace))), ""
+    body = strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace)))
+    if rel == NATIVE_REDRAW or rel in NATIVE_REDRAW_STEP_FILES:
+        body = splice_native_steps(body)
+    return body, ""
 
 
 def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
@@ -2201,6 +2262,17 @@ SELFTEST_WORDS: list[tuple[str, str, str, bool]] = [
 
 def run_selftest() -> int:
     failures = 0
+    # The native step splice: a step's body replaces its call (arguments
+    # included), recursively, and a call to a non-step fn stays a call.
+    spliced = splice_native_steps(
+        "self.a(); let x = self.b(f(1), 2); self.k();",
+        {"a": " self.b(); ", "b": " self.c(); y "},
+    )
+    if spliced == "  self.c(); y ; ; let x =  self.c(); y ; self.k();":
+        print("  ok    native step splice: nested steps inline, kernels stay calls")
+    else:
+        print(f"  FAIL  native step splice: got {spliced!r}")
+        failures += 1
     for label, text, name, want in SELFTEST_WORDS:
         got = name in word_set(text)
         ref = re.search(rf"\b{re.escape(name)}\b", text) is not None
@@ -3563,8 +3635,8 @@ SELFTEST_CALL_FORM: list[tuple[str, str, str, bool]] = [
 # and the difference is a whole class of defect none of them can see.
 #
 # The shape. Both hosts drive the engine through one frame path - the native
-# window's redraw tick loop, the browser runtime's `tick_frame` - and both
-# paths short-circuit. The native loop `continue`s out of several arms (the
+# window's per-tick body `sim_tick`, the browser runtime's `tick_frame` - and
+# both paths short-circuit. The native body `return`s out of several arms (the
 # boot UI owns the frame, the name-entry overlay is modal, a prologue
 # hand-off swapped scenes, the narration crawl owns the pad, a Start edge
 # just opened the pause menu); the browser `return`s out of its own. The
@@ -3616,12 +3688,16 @@ SELFTEST_CALL_FORM: list[tuple[str, str, str, bool]] = [
 
 FRAME_PATHS: dict[str, dict] = {
     "native": {
-        "path": NATIVE_REDRAW,
+        "path": NATIVE_REDRAW_STEP_FILES[0],
         # The window's per-tick body. `handle_redraw` runs it up to four
-        # times per rendered frame (the catch-up drain) and then draws once,
-        # so every `continue` here returns to a frame that still draws.
-        "anchor": "for _ in 0..run_ticks",
-        "exit": "continue",
+        # times per rendered frame (the catch-up drain, `run_frame_ticks`)
+        # and then draws once, so every `return` here returns to a frame
+        # that still draws. Its step helpers are spliced back in
+        # (`splice_native_steps`), so the kernels they call read as the
+        # body's own.
+        "anchor": "fn sim_tick(&mut self) -> bool",
+        "exit": "return",
+        "splice": True,
     },
     "web": {
         "path": WEB_RUNTIME,
@@ -3696,6 +3772,8 @@ def frame_path_scan(host: str) -> tuple[list[tuple[str, int]], list[dict]]:
         text = strip_comments((REPO / spec["path"]).read_text(encoding="utf-8"))
     body_start, body_end = brace_block(text, text.index(spec["anchor"]))
     body = text[body_start:body_end]
+    if spec.get("splice"):
+        body = splice_native_steps(body)
     base_line = text.count("\n", 0, body_start) + 1
 
     # One pass: nesting depth, the stack of open-brace offsets, every call
