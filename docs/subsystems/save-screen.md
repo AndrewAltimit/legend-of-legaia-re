@@ -1126,6 +1126,12 @@ a lift that reads only the records, the flags page and the bag loses them:
   (`SceneHost::arm_resume_seat`, from both hosts' resume closures) and never
   for a fallback landing. A `(0, 0)` snapshot - a window no mode change has
   written - reads as no position and the entry takes the scene's own seat.
+  Nothing moves the party off the armed seat afterwards: the browser page's
+  free-roam seat heuristic (it relocates a picker entry whose spawn it judges
+  off the map) sits out a resume entry, as retail and the native window have
+  none. The `cross_host` test in `web-viewer/src/cards.rs` pins it over the
+  library cards, together with byte-identical blocks from both hosts' Save
+  and each host loading the other's block to the same world.
 - **The audio levels.** The configured level `0x8008457C` (SC `+0x43C`, cold
   reset `0xD7`) and the voice / SFX volume `0x80084580` (`+0x440`, cold reset
   `200`). The copy restores both; the next MAN load then rests the live level
