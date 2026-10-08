@@ -6598,6 +6598,27 @@ fn pad_walk(
             Some(&c) => cell_center(c),
             None => tile_center(goal),
         };
+        // A route that ran out short of the goal heads straight for it - but
+        // not through a band the plan kept clear: a walk-on that leaves the
+        // scene (`deene` P2[13] at (16..18, 23), the cutscene out to `map03`)
+        // fires on the step, and the goal behind it is the next visit's, as a
+        // player who walks into the cutscene finds.
+        if path.is_empty() && walking_mode == SceneMode::Field {
+            let t = dispatch_tile(wx, wz);
+            let (dx, dz) = (tx - wx, tz - wz);
+            let ahead = [
+                (t.0 + i32::from(dx.signum()), t.1),
+                (t.0, t.1 + i32::from(dz.signum())),
+            ];
+            if ahead
+                .iter()
+                .any(|a| *a != t && (avoid.contains(a) || doors.contains(a)))
+            {
+                return Err(format!(
+                    "no walkable path: the way to {goal:?} from {t:?} crosses a band that leaves the scene"
+                ));
+            }
+        }
         // A cross-axis offset of a few units is the walk's own overshoot,
         // not a step to take: chasing it flips the diagonal every frame, and
         // along a terrace edge the side-step toward the drop is a ledge hop
@@ -6708,6 +6729,7 @@ fn pad_walk(
             let site = format!("{} at {}", holder(session), park_site(session));
             let fired_record = timeline_p2_record(session);
             let rec_label = fired_record.map_or("-".to_string(), |r| format!("P2[{r}]"));
+            let fired_at = here(session);
             // A script that changes nothing - an examined prop with nothing
             // to say (`ropeway`'s `21 26 FE FF` bind, which the stalled
             // follower's action tap keeps opening) - leaves the route as it
@@ -6737,7 +6759,7 @@ fn pad_walk(
             };
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
-                    "    [walk-script] tile {:?}: {site} [{}] -> {r:?}; game_over {}",
+                    "    [walk-script] tile {fired_at:?} (after: {:?}): {site} [{}] -> {r:?}; game_over {}",
                     here(session),
                     rec_label,
                     session.host.world.game_over

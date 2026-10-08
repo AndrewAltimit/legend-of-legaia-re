@@ -533,6 +533,14 @@ not near full up first, as the pad walk does, and the seated pass reloads a
 boss wipe with a fresh hand up to `PAD_WIPE_ATTEMPTS` times, as the pad pass
 does: on one stream the race is won or lost by a few dozen HP.
 
+A pad walk whose route runs out short of its goal heads straight for the
+goal, except into a walk-on band that leaves the scene: the plan keeps those
+clear, and once a live one closes the only corridor the goal is behind it
+(`deene` P2[13] at (16..18, 23), the cutscene out to `map03`, live on some
+streams by the time the hand walks to P1[12]). The walk reports no path
+instead of stepping onto it, and the beat pass moves on - on those streams
+the talk lay behind the band and the walk left the town without it.
+
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
 (`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time
