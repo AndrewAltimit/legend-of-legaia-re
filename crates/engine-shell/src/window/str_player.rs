@@ -89,6 +89,7 @@ pub(crate) fn play_str_in(
         uploaded: None,
         frame_period: timing.frame_period(),
         clock: None,
+        movie_clock: legaia_engine_core::cutscene::MovieClock::new(),
         audio_out,
         pending_audio: audio,
     };
@@ -127,6 +128,9 @@ struct StrPlayerApp {
     /// When playback started; the wall-clock fallback frame index is
     /// `elapsed / frame_period` (used only when no audio track is playing).
     clock: Option<std::time::Instant>,
+    /// The shared pacing rule both play hosts run a movie on (audio cursor,
+    /// wall clock once the cursor stalls).
+    movie_clock: legaia_engine_core::cutscene::MovieClock,
     /// Live audio output, present only when an interleaved XA track decoded
     /// and the device opened. The video clock reads its cursor for A/V sync.
     /// Owned solely by the player (single-threaded), so no `Arc` is needed.
@@ -172,11 +176,9 @@ impl ApplicationHandler for StrPlayerApp {
                 let start = *self.clock.get_or_insert(now);
                 let wall = now.duration_since(start).as_secs_f64();
                 let audio_secs = self.audio_out.as_ref().and_then(|o| o.xa_cursor_secs());
-                let due = crate::cutscene_av::due_video_frame(
-                    audio_secs,
-                    wall,
-                    self.frame_period.as_secs_f64(),
-                );
+                let due =
+                    self.movie_clock
+                        .due_frame(audio_secs, wall, self.frame_period.as_secs_f64());
                 if due >= self.frames.len() {
                     if let Some(out) = self.audio_out.as_ref() {
                         out.stop_xa();

@@ -43,6 +43,7 @@
 #![deny(missing_docs)]
 
 pub mod st_ring;
+pub mod str_av;
 pub mod str_player;
 pub mod str_sector;
 pub mod strv2_decode;

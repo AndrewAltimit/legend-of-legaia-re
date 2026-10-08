@@ -28,7 +28,8 @@ The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
   field VM resolves through the BGM table, builds a sequencer, and feeds a
   cpal-backed audio output. Field-VM op `0x35` (BGM start) routes here.
 - [`cutscene_av`](src/cutscene_av.rs) - STR (MDEC video + interleaved XA
-  audio) windowed playback with the video clock driven off the audio cursor.
+  audio) windowed playback over the shared `legaia_mdec::str_av` demux (the
+  play page's too), paced by `engine-core::cutscene::MovieClock`.
 - [`replay`](src/replay.rs) - the `j-replay-v1` record/replay format
   (pad-transition capture + deterministic playback).
 - [`scenarios`](src/scenarios.rs) - the engine integration-scenario manifest

@@ -112,7 +112,7 @@ pub const DEFAULT_FMV_FPS: f64 = 15.0;
 /// 2048-byte-per-sector files this codebase works with, the on-disc sector
 /// ordering is preserved 1:1 (audio sectors included as skipped chunks), so
 /// the mean sectors-per-frame recovers the authored rate directly.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StrTiming {
     /// Total 2048-byte sectors in the stream (video + skipped audio/other).
     pub sector_count: usize,

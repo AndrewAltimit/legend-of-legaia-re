@@ -330,3 +330,60 @@ fn xa_channels_decode_to_expected_sample_counts() {
     assert!(channels > 0, "expected at least one decodable XA channel");
     eprintln!("[ok] {channels} XA channels decoded with no skipped groups");
 }
+
+/// Host parity on the opening movie: the native window's disc decode and the
+/// browser play page's install (`legaia_mdec::str_av::demux_str_av` over the
+/// raw sectors the page slices off its disc bytes) agree on the frame list,
+/// the frame rate and the soundtrack PCM, sample for sample. `MV1.STR` is
+/// `fmv_id 0`, the title attract.
+#[test]
+fn opening_fmv_decodes_identically_on_both_hosts() {
+    use legaia_engine_shell::cutscene_av::decode_str_av_from_disc;
+    use std::io::{Read, Seek, SeekFrom};
+
+    let Some(bin) = disc_bin() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let mut disc = RawDisc::open(&bin).expect("open disc");
+    let vol = iso9660::read_volume(&mut disc).expect("read volume");
+    let files = iso9660::walk_files(&mut disc, &vol.root).expect("walk files");
+    let (_, rec) = files
+        .into_iter()
+        .find(|(p, _)| p.to_ascii_uppercase().ends_with("MV1.STR"))
+        .expect("MV1.STR on disc");
+    let count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+
+    let native = decode_str_av_from_disc(&bin, rec.lba, count).expect("native decode");
+
+    let mut raw = vec![0u8; count as usize * 2352];
+    let mut f = std::fs::File::open(&bin).expect("open bin");
+    f.seek(SeekFrom::Start(rec.lba as u64 * 2352))
+        .expect("seek");
+    f.read_exact(&mut raw).expect("read MV1 sectors");
+    let page = legaia_mdec::str_av::demux_str_av(&raw);
+
+    assert_eq!(native.frames.len(), page.frames.len(), "frame count");
+    assert_eq!(native.timing, page.timing, "timing");
+    let (na, pa) = (
+        native.audio.as_ref().expect("native track"),
+        page.audio.as_ref().expect("page track"),
+    );
+    assert_eq!((na.sample_rate, na.stereo()), (pa.sample_rate, pa.stereo()));
+    assert!(na.pcm == pa.pcm, "soundtrack PCM differs between hosts");
+    // Spot-check that the native pre-decoded picture is the page's
+    // per-request decode of the same frame.
+    for i in [0usize, page.frames.len() / 2, page.frames.len() - 1] {
+        let p = page.frames[i].decode_rgba().expect("page decode");
+        assert!(
+            native.frames[i].rgba == p,
+            "frame {i} differs between hosts"
+        );
+    }
+    eprintln!(
+        "[ok] MV1.STR: {} frames @ {:.2} fps, XA {:.1}s on both hosts",
+        page.frames.len(),
+        page.timing.fps,
+        pa.duration_secs()
+    );
+}

@@ -79,11 +79,9 @@ use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
-use crate::audio::{
-    DecodedXa, StrVideo, decode_str_frame_rgba, decode_xa_in_memory, demux_str_video,
-};
 use crate::disc::FileEntry;
 use crate::runtime::LegaiaRuntime;
+use legaia_mdec::str_av::{StrAv, demux_str_av};
 
 /// Raw Mode-2 sector size the page slices the disc image by.
 pub const RAW_SECTOR_SIZE: usize = 2352;
@@ -129,8 +127,10 @@ pub(crate) struct WantedFmv {
 
 /// An installed movie: demuxed video (decoded per frame) + decoded audio.
 pub(crate) struct OpenFmv {
-    video: StrVideo,
-    audio: Option<DecodedXa>,
+    /// The shared demux ([`legaia_mdec::str_av`]) - the native window opens
+    /// its movies through the same kernel, so the frame list, the frame rate
+    /// and the soundtrack (dominant channel, at its own sample width) agree.
+    av: StrAv,
     /// The PCM is handed over exactly once - to the engine mixer
     /// (`play_fmv_audio_start`) or to the page (`play_fmv_audio_pcm_i16`);
     /// the descriptor (rate / channels) stays readable.
@@ -212,7 +212,7 @@ impl FmvState {
 
     /// Whether the open movie carries an XA track.
     fn open_has_audio(&self) -> bool {
-        self.open().is_some_and(|o| o.audio.is_some())
+        self.open().is_some_and(|o| o.av.audio.is_some())
     }
 
     /// The window still waiting for the page (`None` once installed / never
@@ -289,38 +289,33 @@ impl FmvState {
                 wanted.path, sector_count, wanted.sector_count
             ));
         }
-        let byte_size = sector_count * USER_DATA_SIZE;
-        let video = demux_str_video(sectors, 0, byte_size);
-        if video.frames.is_empty() {
+        let av = demux_str_av(sectors);
+        if av.frames.is_empty() {
             crate::console_log(&format!(
                 "fmv: {} demuxed no video frames; finishing the beat unplayed",
                 wanted.path
             ));
             return false;
         }
-        // The cutscene's single track is the dominant channel, as native.
-        let audio = decode_xa_in_memory(sectors, 0, byte_size)
-            .into_iter()
-            .max_by_key(|a| a.pcm.len());
+        let (width, height) = av.size();
         crate::console_log(&format!(
             "fmv: {} open - {} frames {}x{} @ {:.2} fps, audio: {}",
             wanted.path,
-            video.frames.len(),
-            video.width,
-            video.height,
-            video.fps,
-            audio
+            av.frames.len(),
+            width,
+            height,
+            av.timing.fps,
+            av.audio
                 .as_ref()
                 .map(|a| format!(
                     "{} Hz {}",
                     a.sample_rate,
-                    if a.stereo { "stereo" } else { "mono" }
+                    if a.stereo() { "stereo" } else { "mono" }
                 ))
                 .unwrap_or_else(|| "none".to_string())
         ));
         slot.open = Some(OpenFmv {
-            video,
-            audio,
+            av,
             audio_handed: false,
             clock: Default::default(),
         });
@@ -464,20 +459,15 @@ impl LegaiaRuntime {
         if open.audio_handed {
             return false;
         }
-        let Some(audio) = open.audio.as_ref() else {
+        let Some(audio) = open.av.audio.as_ref() else {
             return false;
         };
         #[cfg(target_arch = "wasm32")]
         if let Some(out) = self.audio_out.as_ref() {
-            let channels = if audio.stereo {
-                legaia_xa::Channels::Stereo
-            } else {
-                legaia_xa::Channels::Mono
-            };
             out.play_xa(
                 audio.pcm.clone(),
                 audio.sample_rate,
-                channels,
+                audio.channels,
                 false,
                 FMV_XA_GAIN_UNITY,
             );
@@ -657,7 +647,8 @@ impl LegaiaRuntime {
             return Vec::new();
         }
         open.audio_handed = true;
-        open.audio
+        open.av
+            .audio
             .as_ref()
             .map(|a| a.pcm.clone())
             .unwrap_or_default()
@@ -705,12 +696,7 @@ impl LegaiaRuntime {
         let Some(open) = self.fmv.slot.as_mut().and_then(|s| s.open.as_mut()) else {
             return 0;
         };
-        let fps = open.video.fps;
-        let period = if fps > 0.5 && fps.is_finite() {
-            1.0 / fps
-        } else {
-            1.0 / 15.0
-        };
+        let period = open.av.frame_period_secs();
         open.clock.due_frame(audio, wall_secs, period) as u32
     }
 
@@ -718,7 +704,7 @@ impl LegaiaRuntime {
     pub fn play_fmv_audio_rate(&self) -> u32 {
         self.fmv
             .open()
-            .and_then(|o| o.audio.as_ref())
+            .and_then(|o| o.av.audio.as_ref())
             .map_or(0, |a| a.sample_rate)
     }
 
@@ -726,8 +712,8 @@ impl LegaiaRuntime {
     pub fn play_fmv_audio_channels(&self) -> u32 {
         self.fmv
             .open()
-            .and_then(|o| o.audio.as_ref())
-            .map_or(0, |a| if a.stereo { 2 } else { 1 })
+            .and_then(|o| o.av.audio.as_ref())
+            .map_or(0, |a| if a.stereo() { 2 } else { 1 })
     }
 
     /// Decode video frame `index` to RGBA8 (`width * height * 4`). Empty
@@ -736,8 +722,8 @@ impl LegaiaRuntime {
     pub fn play_fmv_frame_rgba(&self, index: u32) -> Vec<u8> {
         self.fmv
             .open()
-            .and_then(|o| o.video.frames.get(index as usize))
-            .map(decode_str_frame_rgba)
+            .and_then(|o| o.av.frames.get(index as usize))
+            .and_then(|f| f.decode_rgba())
             .unwrap_or_default()
     }
 
@@ -745,18 +731,21 @@ impl LegaiaRuntime {
     pub fn play_fmv_size(&self) -> Vec<u32> {
         self.fmv
             .open()
-            .map(|o| vec![o.video.width, o.video.height])
+            .map(|o| {
+                let (w, h) = o.av.size();
+                vec![w, h]
+            })
             .unwrap_or_else(|| vec![0, 0])
     }
 
     /// Playback rate recovered from the sector stride (~15 fps); 0 when none.
     pub fn play_fmv_fps(&self) -> f64 {
-        self.fmv.open().map_or(0.0, |o| o.video.fps)
+        self.fmv.open().map_or(0.0, |o| o.av.timing.fps)
     }
 
     /// Number of video frames in the open movie; 0 when none.
     pub fn play_fmv_frame_count(&self) -> u32 {
-        self.fmv.open().map_or(0, |o| o.video.frames.len() as u32)
+        self.fmv.open().map_or(0, |o| o.av.frames.len() as u32)
     }
 
     /// The page reports playback over (last frame shown). The world is
@@ -791,6 +780,25 @@ impl LegaiaRuntime {
 pub(crate) mod tests {
     use super::*;
     use legaia_engine_core::scene::SceneHost;
+
+    /// A one-frame 320x224 movie at 15 fps standing in for an installed one.
+    fn test_av(audio: Option<legaia_mdec::str_av::StrAudio>) -> StrAv {
+        StrAv {
+            frames: vec![legaia_mdec::str_av::StrFrameBits {
+                width: 320,
+                height: 224,
+                frame_number: 1,
+                bitstream: Vec::new(),
+            }],
+            timing: legaia_mdec::str_sector::StrTiming {
+                sector_count: 10,
+                frame_count: 1,
+                sectors_per_frame: 10.0,
+                fps: 15.0,
+            },
+            audio,
+        }
+    }
 
     /// A disc-free PROT.DAT: header + a three-entry TOC over a handful of
     /// zeroed sectors. Enough for `SceneHost::from_prot_bytes`; no scene
@@ -871,23 +879,13 @@ pub(crate) mod tests {
             let slot = rt.fmv.slot.as_mut().unwrap();
             slot.wanted = None;
             slot.open = Some(OpenFmv {
-                video: StrVideo {
-                    width: 320,
-                    height: 224,
-                    fps: 15.0,
-                    frames: vec![crate::audio::StrVideoFrame {
-                        width: 320,
-                        height: 224,
-                        bitstream: Vec::new(),
-                    }],
-                },
-                audio: Some(DecodedXa {
+                av: test_av(Some(legaia_mdec::str_av::StrAudio {
                     file_no: 1,
                     ch_no: 0,
                     sample_rate: 37_800,
-                    stereo: true,
+                    channels: legaia_xa::Channels::Stereo,
                     pcm: vec![1, -1, 2, -2],
-                }),
+                })),
                 audio_handed: false,
                 clock: Default::default(),
             });
@@ -995,17 +993,7 @@ pub(crate) mod tests {
         {
             let slot = rt.fmv.slot.as_mut().unwrap();
             slot.open = Some(OpenFmv {
-                video: StrVideo {
-                    width: 320,
-                    height: 224,
-                    fps: 15.0,
-                    frames: vec![crate::audio::StrVideoFrame {
-                        width: 320,
-                        height: 224,
-                        bitstream: Vec::new(),
-                    }],
-                },
-                audio: None,
+                av: test_av(None),
                 audio_handed: false,
                 clock: Default::default(),
             });
