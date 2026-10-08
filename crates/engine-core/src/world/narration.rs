@@ -1727,6 +1727,10 @@ impl World {
                             if host.world.start_field_npc_motion(s, tx, tz) {
                                 if let Some(m) = host.world.npcs.motions.get_mut(&s) {
                                     m.state.speed = speed;
+                                    // The mode byte's high nibble picks the
+                                    // walk kernel's approach (`srl a1,a1,0x4`
+                                    // at `0x80037BEC`).
+                                    m.state.approach = b2 >> 4;
                                 }
                                 // The record runs on past an NPC walk (`li
                                 // s7,4` in the delay slot at `0x801DF030`);

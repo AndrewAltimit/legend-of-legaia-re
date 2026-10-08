@@ -238,6 +238,18 @@ an index in the heading LUT at `0x80073F04`, and writes the entry outright:
 |---|---|---|---|---|---|---|---|---|
 | direction | -Z | -X -Z | -X | -X +Z | +Z | +X +Z | +X | +X -Z |
 
+Which axes a step moves is the **approach mode**, the mode byte's high
+nibble (`srl a1,a1,0x4` at `0x80037BEC`), consulted while both axes are still
+open. Mode `0` closes the dominant axis alone, its step clamped to the
+difference, until the two deltas are equal, then cuts the diagonal
+(`0x80037C4C..0x80037C98`). Any other mode masks the open axes at the full
+step (`and a3,v1,a1` at `0x80037C48`): `3` walks the diagonal from the first
+frame and finishes on the longer axis alone, `1` closes X first, `2` Z first.
+The two laws face opposite ways at the end of an uneven leg: mode `3` lands
+facing along the longer axis, mode `0` on the diagonal. Cutscene walks carry
+`3` (`C7 <id> <tx> <tz> 33`) - `kor5` P2[5] returns its three cast members
+to tile column `18` that way, facing `-X`.
+
 Entry `i` is `i * 0x200` in the retail heading space (`0` = -Z), so a walking
 actor's facing is always one of eight compass points and **never an
 in-between angle** - there is no walk-turn interpolation anywhere in retail.
