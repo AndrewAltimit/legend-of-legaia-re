@@ -10,6 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+legaia-art.workspace = true
 legaia-asset.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-minigames.workspace = true

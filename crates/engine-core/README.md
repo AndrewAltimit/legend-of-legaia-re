@@ -240,7 +240,9 @@ composes them.
   (`0x8007655C`, `legaia_asset::item_effect`) by the disc-gated
   `item_effect_real` test.
 - `shop` / `shop_catalog` - shop session state (buy/sell cursor,
-  quantity, gold/inventory delta) plus the disc-sourced **gold-shop
+  quantity, gold/inventory delta; the kernels live in `legaia-engine-menus`,
+  and engine-core's `shop` adds the one `World`-reading entry,
+  `party_compare_members`) plus the disc-sourced **gold-shop
   stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
   (the sellable mask), and `shop_catalog::scene_shops` decodes a
   scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
@@ -520,7 +522,8 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   Logic only; row render stays an `engine-ui` seam. See
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#options-screen).
 - `pause_screens` - the retail Items / Magic pause-screen sessions + view
-  models (`PauseItemsSession` command/list/throw-out focus over the
+  models (kernels in `legaia-engine-menus`; engine-core's `pause_screens`
+  adds the `World`-reading `target_panel_view_model`) (`PauseItemsSession` command/list/throw-out focus over the
   item-use flow - incl. the Throw Out Yes/No confirm and the Arrange
   bag sort - `MenuTextTables` disc text: item + spell
   names/descriptions, accessory passive lines). Feeds the `engine-ui`
@@ -569,7 +572,9 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   crates below).
 - `field_menu` / `field_menu_dispatch` / `menu_runtime` and the `menu_*`
   family - pause-menu sessions, sub-session dispatch, and list / input /
-  validator leaves.
+  validator leaves. `field_menu_dispatch` and `menu_runtime` are the
+  `World` side; `field_menu` and the `menu_*` leaves are re-exported from
+  `legaia-engine-menus`.
 - `title` / `save_select` / `save_subscreen` / `card_flow` / `card_write` /
   `card_bu_io` - title state machine, save-slot select, and the memory-card
   I/O and write flow (all but `card_write` re-exported from

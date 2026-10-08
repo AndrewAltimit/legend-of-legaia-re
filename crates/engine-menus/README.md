@@ -7,10 +7,15 @@ choreography and tables, the title and boot screens, the card write flow and
 `bu` I/O layer, and the field dialog pager's presentation kernels. Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
-`legaia-engine-core` owns the composition - `MenuRuntime`, the pause screens,
-`World::use_item` and the dialog state - and re-exports
-every module here at its old path, so `legaia_engine_core::items` and
-`legaia_engine_menus::items` name the same module.
+`legaia-engine-core` owns the composition - `MenuRuntime`, the pause-menu
+dispatch, `World::use_item` and the dialog state - and re-exports every
+module here at its old path, so `legaia_engine_core::items` and
+`legaia_engine_menus::items` name the same module. Two are re-exported by
+glob from a thin engine-core module of the same name instead (`shop`,
+`pause_screens`): each screen here takes the slice of the world it reads
+(the roster, the equipment stat table, the item-effect table) as plain
+arguments (`party_compare_members_of`, `target_panel_view_model_of`), and
+the engine-core module adds the `World`-taking entry that passes them.
 
 ## What belongs here
 
@@ -36,6 +41,12 @@ link into a dependent crate.
   engine-core re-exports it as `world::ItemBag`) and `equip_session` (the
   pause-menu Equip screen's session, which borrows the bag rather than the
   world).
+- **Pause + shop screens** - `field_menu` (the pause root's session),
+  `pause_screens` (the Items / Magic / Equip screen sessions and view
+  models, the root route table, the kind-4 list kernel) and `shop` /
+  `shop_catalog` (the buy / sell / quantity / recipient sessions, the shop
+  window set and the disc gold-shop catalog); see
+  [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
 - **Spells** - `spell_menu` (the out-of-battle cast flow) and
   `spell_party_broadcast` (`FUN_8003053C`).
 - **Menu overlay** - `menu_widget` (the window-widget choreography:

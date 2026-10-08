@@ -690,7 +690,7 @@ impl MenuRuntime {
         // the page, Left / Right flip it. The menu VM's flat cursor would walk
         // straight off the page instead, and has no page flip at all.
         let mut input = input;
-        if let Some(rows) = list_state_before.and_then(crate::shop::shop_list_page_rows)
+        if let Some(rows) = list_state_before.and_then(shop_list_page_rows)
             && (input.up || input.down || input.left || input.right)
         {
             let n = match list_state_before {
@@ -1991,6 +1991,19 @@ pub fn load_world_from_path(world: &mut World, path: &Path) -> Result<()> {
     let party = Party::parse(&bytes).with_context(|| format!("parse {}", path.display()))?;
     world.load_party(party);
     Ok(())
+}
+
+/// Rows on one page of the shop list a menu state browses, or `None` for a
+/// state that is not a shop list. The kind-4 kernel's
+/// `(content_h - 4) / 0xE` over the two descriptor rects: window 40 (the buy
+/// list, `h = 104`) pages 7, window 38 (the sell list, `h = 158`) pages 11 -
+/// the page lengths the Retock capture shows.
+pub fn shop_list_page_rows(state: MenuState) -> Option<usize> {
+    match state {
+        MenuState::ShopBuy => Some(7),
+        MenuState::ShopSell => Some(11),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

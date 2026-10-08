@@ -1437,6 +1437,7 @@ name = "legaia-engine-menus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "legaia-art",
  "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-minigames",

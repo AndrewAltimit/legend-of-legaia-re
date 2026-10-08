@@ -1,6 +1,8 @@
 //! Menu, title and memory-card front-end kernels: the save / title / glyph
 //! atlases, the SCUS list-row model, the equipment and item catalogs, the
-//! inventory-use and spell-menu sessions, the menu overlay's widget
+//! item bag, the inventory-use, spell-menu and Equip sessions, the pause
+//! root, pause screens and shop screens, the save screen family, the menu
+//! overlay's widget
 //! choreography, category / arrange tables and open sequence, name entry,
 //! the title and publisher-logo phases, the card write flow and `bu` I/O,
 //! the debug character editor, key rebinding, game over, the inn, and the
@@ -32,6 +34,7 @@ pub mod dialog_picker_slide;
 pub mod dialog_window;
 pub mod equip_session;
 pub mod equipment;
+pub mod field_menu;
 pub mod game_over;
 pub mod inn;
 pub mod inventory_use;
@@ -47,11 +50,14 @@ pub mod menu_list_rows;
 pub mod menu_open_sequence;
 pub mod menu_widget;
 pub mod name_entry;
+pub mod pause_screens;
 pub mod publisher_logos;
 pub mod save_menu_atlas;
 pub mod save_screen;
 pub mod save_select;
 pub mod save_subscreen;
+pub mod shop;
+pub mod shop_catalog;
 pub mod spell_menu;
 pub mod spell_party_broadcast;
 pub mod status_screen;

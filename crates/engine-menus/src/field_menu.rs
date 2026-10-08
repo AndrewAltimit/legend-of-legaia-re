@@ -11,7 +11,7 @@
 //! - **Magic** → [`crate::spell_menu::SpellMenuSession`].
 //! - **Equip** → [`crate::equip_session::EquipSession`].
 //! - **Status** → [`crate::status_screen::StatusScreenSession`].
-//! - **Options** → [`crate::options::OptionsSession`].
+//! - **Options** → `legaia_engine_core::options::OptionsSession`.
 //! - **Load** → [`crate::save_select::SaveSelectSession`] in Load mode.
 //! - **Save** → [`crate::save_select::SaveSelectSession`] in Save mode.
 //!
@@ -25,7 +25,7 @@
 //! so a row cannot draw white and then buzz.
 //!
 //! The engine's Tactical Arts chain editor
-//! ([`crate::tactical_arts_editor::ChainEditor`]) is an engine extension
+//! (`legaia_engine_core::tactical_arts_editor::ChainEditor`) is an engine extension
 //! with no retail pause-menu row; it stays reachable through the
 //! dedicated arts session commands.
 //!
@@ -152,8 +152,8 @@ impl Default for FieldMenuRowMask {
 /// **Load**) and the per-scene save-allow byte `_DAT_8007B6A8` (which blocks
 /// **Save**). The port has no globals, so a host samples both at menu-open and
 /// hands them over - see `BootSession::open_field_menu`, which reads
-/// [`crate::world::World::menu_entry_context_kind`] and
-/// [`crate::world::PartyState::scene_save_allowed`].
+/// `legaia_engine_core::world::World::menu_entry_context_kind` and
+/// `legaia_engine_core::world::PartyState::scene_save_allowed`.
 ///
 /// Both the greying and the buzz come from one call to
 /// [`root_menu_confirm_route`] per row, which is what keeps them from
@@ -579,7 +579,7 @@ impl FieldMenuSession {
     ///
     /// The save entry lands as `Suspended { row: Save }`, which is the state a
     /// picker confirm leaves, so every host's
-    /// [`crate::field_menu_dispatch::tick_root_list`] builds the Save
+    /// `legaia_engine_core::field_menu_dispatch::tick_root_list` builds the Save
     /// sub-session on its next frame through the path it already has.
     /// [`Self::resume`] then ends the menu rather than showing the picker.
     ///
@@ -595,8 +595,8 @@ impl FieldMenuSession {
     /// same subsystem actor the menu button does, and for the `-1` rows the
     /// port does not route elsewhere (sub-ops `1` and `0x0D`) its handler is
     /// the state pick, which opens the pause-menu session. Hosts open the
-    /// menu on [`crate::world::World::scripted_menu_open_pending`] and call
-    /// [`crate::world::World::release_menu_entry_context_park`] on close,
+    /// menu on `legaia_engine_core::world::World::scripted_menu_open_pending` and call
+    /// `legaia_engine_core::world::World::release_menu_entry_context_park` on close,
     /// which resumes the parked op the way the dispatcher's retire arm does.
     pub fn open_entry_screen(&mut self) {
         match crate::pause_screens::menu_entry_subscreen(self.gate.entry_context_kind) {

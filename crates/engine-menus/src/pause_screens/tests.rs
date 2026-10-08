@@ -804,8 +804,7 @@ fn target_panel_model_from_target_select() {
 #[test]
 fn target_panel_view_model_fills_record_fields() {
     let mut s = items_session(&[(0x77, 3)]);
-    let mut world = crate::world::World::new();
-    assert!(target_panel_view_model(&s, &world).is_none());
+    assert!(target_panel_view_model_of(&s, None, &[]).is_none());
     s.input_pad_edge(edge(PadButton::Cross)); // -> list
     s.input_pad_edge(edge(PadButton::Cross)); // confirm -> target select
     assert_eq!(staged_use_item_id(&s), Some(0x77));
@@ -828,10 +827,10 @@ fn target_panel_view_model_fills_record_fields() {
     live.spd = 46;
     live.int = 47;
     rec.set_live_stats(live);
-    world.party.roster.members = vec![rec];
+    let members = vec![rec];
 
-    let m = target_panel_view_model(&s, &world).expect("target select stages the panel");
-    // No disc effect table on this world - the plain panel.
+    let m = target_panel_view_model_of(&s, None, &members).expect("target select stages the panel");
+    // No disc effect table - the plain panel.
     assert_eq!(m.mode, 0);
     assert_eq!(m.members.len(), 1);
     assert_eq!(m.members[0].base_hp_max, 111);
@@ -991,7 +990,7 @@ fn menu_stat_block_sums_five_equip_slots_not_eight() {
 fn the_main_window_compare_block_belongs_to_the_best_equipment_row() {
     use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     use crate::equip_session::{EquipInput, EquipSession};
-    let mut inv = crate::world::ItemBag::new();
+    let mut inv = crate::item_bag::ItemBag::new();
     inv.insert(1, 1);
     let mut session = EquipSession::new(
         StatRecord::default(),
@@ -1043,7 +1042,7 @@ fn compare_slot_row_is_the_retail_browse_row_not_the_engine_slot() {
     let record = legaia_save::CharacterRecord::zeroed();
     let names = vec!["Vahn".to_string()];
     for (engine_slot, want_row) in WANT {
-        let mut inv = crate::world::ItemBag::new();
+        let mut inv = crate::item_bag::ItemBag::new();
         // One owned candidate whose legacy `id >> 5` slot is this row,
         // so the picker has something to stage.
         let id = (engine_slot << 5) | 1;

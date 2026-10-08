@@ -1023,7 +1023,7 @@ two unrelated routines however identical their bodies are.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/pause_screens.rs:80032a44"
+key = "module-orphan:crates/engine-menus/src/pause_screens.rs:80032a44"
 reason = """
 Read the disassembly: 0x80032A80 is `lw v1,0x87c(gp)` - the list-mode global
 0x8007BB94 that this module's whole family keys on - and the rest of the body
