@@ -1078,7 +1078,7 @@ impl World {
     /// kernel's spend against the player actor. `true` while the leg still
     /// has units left (and the park timeout has not run out).
     // REF: FUN_8003774C (the 0x37 / 0x41 arm)
-    fn step_player_glide(
+    pub(super) fn step_player_glide(
         &mut self,
         glide: &mut crate::cutscene_timeline::TimelinePlayerGlide,
     ) -> bool {

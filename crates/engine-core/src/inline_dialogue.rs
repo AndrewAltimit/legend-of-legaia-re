@@ -139,6 +139,15 @@ pub struct InlineDialogue {
     /// player target parks the calling record (`0x801DF034..0x801DF044`);
     /// the run resumes past the op once the player lands.
     pub player_walk: Option<PropPlayerWalk>,
+    /// The player compass leg a prop record's cross-context `B7 F8 b0 b1` /
+    /// `C1 F8 b0 b1` armed, while it is in flight. The `0x37` / `0x41` arm
+    /// seats the op on the player and advances the record past it for every
+    /// target (`s7 = 3` at `0x801DEEFC`), so the run goes on; its next
+    /// cross-context op on the player waits until the leg lands. `tower`'s
+    /// floor doors glide the player into the doorway, move it to the far
+    /// door's doorway, and glide it back out - without the out leg the player
+    /// was left standing in a doorway the walls seal on every side.
+    pub player_glide: Option<crate::cutscene_timeline::TimelinePlayerGlide>,
 }
 
 /// A player walk-to-tile leg a prop run parks on: the decoded target, the
@@ -326,6 +335,7 @@ impl InlineDialogue {
             own_turn: None,
             spawned: false,
             player_walk: None,
+            player_glide: None,
         }
     }
 
@@ -361,6 +371,7 @@ impl InlineDialogue {
             own_turn: None,
             spawned: false,
             player_walk: None,
+            player_glide: None,
         }
     }
 

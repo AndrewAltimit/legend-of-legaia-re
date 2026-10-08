@@ -297,6 +297,7 @@ regression.
 | `opurud_field_save_zeroes_party_records` | `opurud+rt@PRO-00` lost records 1 and 2 on its save / load round trip | a field save keeps the records; actor mirrors fold back only in a battle |
 | `conc3_ambient_walker_seat_snapback` | a cutscene walk ran from the walker's off-stage wander box across the whole map | an ambient walker adopts the live seat a script's `0x23` writes; it had re-published its own stale coordinates on its next step |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
+| `tower_floor_door_glides_ignored` | `tower@PRO-10`: a floor door set the player down inside the far door's doorway, walled on every side | a touched object's record plays its cross-context compass walks on the player (`B7 F8` / `C1 F8`) as legs it runs on past, and the out leg carries the player clear |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script).

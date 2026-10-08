@@ -883,7 +883,11 @@ that waits for a player gesture pokes the clip and spins on its end latch
 (`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
 scene bank the spin lasts the clip's frames. Engine port:
 `CutsceneTimeline::player_glide` and `player_clip_wait`, on the modal
-timeline and on concurrent helpers alike (both hold the pad, as retail's
+timeline and on concurrent helpers alike, and `InlineDialogue::player_glide`
+for a touched object's record (`tower`'s floor doors glide the player into
+the doorway before the `A3 F8` jump and out of the far doorway after it,
+which the walls seal on every side; `balden`'s elevator cars walk the
+player out of the upper car with `C1 F8 00 43`) (both hold the pad, as retail's
 engaged bit does); the length accounting and the pad rule are in
 [`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go).
 

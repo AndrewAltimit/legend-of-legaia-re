@@ -767,6 +767,43 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
     if w.dialog.current.is_some() || w.dialog.inline.is_some() {
         out.push_str(" dialog");
     }
+    // Free roam: which of the locomotion controller's gates holds the pad,
+    // and which directions the wall / actor probes refuse - the first
+    // question for a `free-roam:immobile` park.
+    if matches!(w.mode, SceneMode::Field) && !w.dialogue_owns_input() {
+        let walls: String = (0..4)
+            .map(|d| {
+                let wall = w.field_dir_blocked(m.world_x, m.world_z, d);
+                let actor = w.field_actor_dir_blocked(m.world_x, m.world_z, d);
+                match (wall, actor) {
+                    (true, true) => 'B',
+                    (true, false) => 'W',
+                    (false, true) => 'A',
+                    (false, false) => '.',
+                }
+            })
+            .collect();
+        let _ = write!(
+            out,
+            " gates(lock80000 {} engaged {} battle {} warp {} scale {:#x}) dirs[Z-,X-,Z+,X+]={walls}",
+            m.flags & 0x0008_0000 != 0,
+            w.script_context_engages_player(),
+            w.field_scripts_held_for_battle(),
+            w.field_warp_in_flight(),
+            m.field_72,
+        );
+    }
+    // Whose talk record the inline runner is stepping, and where.
+    if let Some(d) = w.dialog.inline.as_ref() {
+        let _ = write!(
+            out,
+            "(npc {:?} prop {:?} pc {:#x}[{}])",
+            d.npc_slot,
+            d.prop_anchor,
+            d.pc,
+            bytes(&d.bytecode, d.pc)
+        );
+    }
     if w.mode == SceneMode::Battle {
         let _ = write!(
             out,
@@ -2279,6 +2316,8 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
             .iter()
             .map(|&(oi, _)| r.outcomes[oi].spec.scene.as_str())
             .collect();
+        // A JSON array: `{:?}` on a set prints `{..}`, which is not JSON.
+        let starts: Vec<&str> = starts.into_iter().collect();
         let _ = writeln!(
             json,
             "  {{\"signature\": {:?}, \"rank\": {}, \"hits\": {}, \"repro\": {:?}, \"start_scenes\": {:?}, \"first\": {{\"scene\": {:?}, \"seed\": {}, \"frame\": {}}}, \"mode\": {:?}, \"detail\": {:?}, \"replay\": {:?}}},",
