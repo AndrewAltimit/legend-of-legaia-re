@@ -1365,6 +1365,20 @@ five monster seats (`ctx[+1] < 5`). At the retail index a lone member's clones
 landed past the five-seat enemy row the target picker walks, and a fight
 against an untargetable clone never ended.
 
+The fixed base `3` is right in retail for every party size: the battle
+loader seats monster `k` at pool slot `3 + k` and leaves a small party's
+seats `1..2` empty (`FUN_800513F0`, `addiu s0,s2,0x3` at `0x8005185C`). The
+engine compacts the monster row to `party_count + k`, so an engine-side seat
+expression built on that base goes through `World::engine_slot_for_retail_pool`:
+Element Change's first-monster record, the Mystic Shield seat, Theeder's cone
+over the monster row and Steal's monster test do. What still assumes a party
+of three is the kernels' own walks over the seat arrays the engine hands them
+(row sweeps `3..7`, `target_code < 3` party tests, `3 + ctx[+1]` seat
+arithmetic): those arrays are engine-indexed, identical to retail's pool for
+a party of three and not for one or two. The complete fix is a retail-shaped
+seat array (and retail caster / victim / target indices) at the
+`run_cast_module_code` seam.
+
 #### PROT 0955 is a six-spell cell
 
 `0x801F92A4` is the one trampoline in the band that dispatches through a jump

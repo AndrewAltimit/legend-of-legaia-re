@@ -1,6 +1,27 @@
 use super::*;
 
 impl World {
+    /// The engine slot of retail battle-pool slot `retail` - the inverse of
+    /// [`World::retail_battle_pool_slot`].
+    ///
+    /// Retail's monster rows do not move with the party: the battle loader
+    /// seats party member `i` at pool slot `i` and monster `k` at `3 + k`
+    /// whatever the party size (`FUN_800513F0`, the monster loop's
+    /// `addiu s0,s2,0x3` at `0x8005185C`), so the modules' fixed seat base
+    /// `3` (`cast_module_ticks::FIRST_MONSTER_SEAT`) is right for every
+    /// party. The engine compacts the monster row to `party_count + k`, so
+    /// an engine-side seat expression built on that base goes through this
+    /// map. `None` for a party seat a small party leaves empty.
+    pub(in crate::world) fn engine_slot_for_retail_pool(&self, retail: u8) -> Option<u8> {
+        let pc = self.party.party_count.clamp(1, 3);
+        let fm = vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+        if retail < fm {
+            (retail < pc).then_some(retail)
+        } else {
+            Some(pc + (retail - fm))
+        }
+    }
+
     /// Lift one actor slot into the state view the slot-B kernels take.
     ///
     /// The engine carries every field these routines touch except two: the
@@ -150,10 +171,12 @@ impl World {
     /// the catalog; the shared catalog entry is never touched, so the next
     /// battle with the same monster starts on its disc element.
     pub(in crate::world) fn apply_cast_element_change(&mut self, element: u8) {
-        use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+        let first = self
+            .engine_slot_for_retail_pool(vm::cast_module_ticks::FIRST_MONSTER_SEAT)
+            .unwrap_or(vm::cast_module_ticks::FIRST_MONSTER_SEAT);
         if let Some(a) = self
             .actors
-            .get_mut(FIRST_MONSTER_SEAT as usize)
+            .get_mut(first as usize)
             .filter(|a| a.battle_monster_id.is_some())
         {
             a.battle_element = Some(element);
@@ -1142,13 +1165,16 @@ impl World {
                 // wear the VA `0x801F6A04` in three different images, which is
                 // why every arm below names its entry.
                 (940, Some(arms::GLARE_DIVIDE_BLIND_TICK)) => {
-                    use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
-                    let mut seat = self.cast_actor_state(FIRST_MONSTER_SEAT);
-                    let mut ext = self.cast_arm_ext_state(FIRST_MONSTER_SEAT);
+                    // The body works on retail's first monster seat.
+                    let first = self
+                        .engine_slot_for_retail_pool(vm::cast_module_ticks::FIRST_MONSTER_SEAT)
+                        .unwrap_or(vm::cast_module_ticks::FIRST_MONSTER_SEAT);
+                    let mut seat = self.cast_actor_state(first);
+                    let mut ext = self.cast_arm_ext_state(first);
                     let shield_arm = ctx.phase == arms::MYSTIC_SHIELD_ARM;
                     let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
-                    self.write_cast_actor_state(FIRST_MONSTER_SEAT, &seat);
-                    self.write_cast_arm_ext_state(FIRST_MONSTER_SEAT, &ext);
+                    self.write_cast_actor_state(first, &seat);
+                    self.write_cast_arm_ext_state(first, &ext);
                     if shield_arm {
                         // `_DAT_8007BD84 = FUN_80021B04(..)` - the shield's
                         // effect handle; the engine carries it as a flag.
@@ -1438,7 +1464,12 @@ impl World {
                                 (mouth[0], mouth[2]),
                                 bearing,
                                 THEEDER_CONE_HALF_WIDTH,
-                                ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
+                                // Retail's row `3..7`, in engine slots.
+                                self.engine_slot_for_retail_pool(ticks::FIRST_MONSTER_SEAT)
+                                    .unwrap_or(ticks::FIRST_MONSTER_SEAT)
+                                    ..self
+                                        .engine_slot_for_retail_pool(MONSTER_ROW_END)
+                                        .unwrap_or(MONSTER_ROW_END),
                             )
                         } else {
                             Vec::new()
@@ -2279,7 +2310,7 @@ impl World {
 
     /// PROT 0941's Steal resolution, both legs.
     ///
-    /// **Monster seat** (`victim_slot >= FIRST_MONSTER_SEAT`): the static
+    /// **Monster seat** (`victim_slot >= party_count`, the engine's row): the static
     /// `SCUS_942.54` steal table `0x80077828 + monster_id * 2`, fields
     /// `[chance, item]` - the same table the player-side steal reads, and NOT
     /// a field of the PROT 867 monster record (`docs/formats/steal-table.md`).
@@ -2316,8 +2347,9 @@ impl World {
         victim_slot: u8,
     ) -> Option<vm::cast_arm_ticks::StealOutcome> {
         use vm::cast_arm_ticks::StealOutcome;
-        use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
-        if victim_slot >= FIRST_MONSTER_SEAT {
+        // A monster seat is the engine's compacted row, not retail's fixed
+        // `>= 3` (see [`Self::engine_slot_for_retail_pool`]).
+        if victim_slot >= self.party.party_count.clamp(1, 3) {
             let entry = self
                 .actors
                 .get(victim_slot as usize)

@@ -1943,6 +1943,31 @@ mod divide_split_tests {
         }
     }
 
+    /// Retail's pool slot `3 + k` is the engine's `party_count + k`; an empty
+    /// small-party seat has no engine slot. Element Change lands on the first
+    /// monster whatever the party size.
+    #[test]
+    fn retail_pool_seats_map_onto_the_compacted_row() {
+        let mut world = World::default();
+        world.enter_battle(1, 2);
+        assert_eq!(world.engine_slot_for_retail_pool(0), Some(0));
+        assert_eq!(world.engine_slot_for_retail_pool(1), None);
+        assert_eq!(world.engine_slot_for_retail_pool(3), Some(1));
+        assert_eq!(world.engine_slot_for_retail_pool(4), Some(2));
+        world.actors[1].battle_monster_id = Some(7);
+        world.apply_cast_element_change(5);
+        assert_eq!(world.actors[1].battle_element, Some(5));
+        let mut world = World::default();
+        world.enter_battle(3, 2);
+        for r in 0..8 {
+            assert_eq!(
+                world.engine_slot_for_retail_pool(r),
+                Some(r),
+                "identity at 3"
+            );
+        }
+    }
+
     /// A lone party member's monster row starts at engine slot 1, so a
     /// Divide clone takes slot 2 - inside the five-seat row the target picker
     /// walks - and each later clone the next seat, up to retail's five.
