@@ -34,6 +34,7 @@ mod determinism_j2;
 mod dialog_font_metrics;
 mod dome_cast_band_ladder;
 mod field_actor_guard_skip;
+mod field_ambient_ring_cue;
 mod field_camera_zone_oracle;
 mod field_collision_discriminator;
 mod field_map_object_grid_live;

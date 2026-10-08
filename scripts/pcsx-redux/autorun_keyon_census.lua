@@ -122,6 +122,45 @@ probe.run({
                 end)
             end
         end)
+        -- Every cue pushed onto the SFX ring: `FUN_80035B50(id)` (the field
+        -- and battle producers' ring push) and `FUN_80035BD0(id)` (overwrite
+        -- the last slot). `mask` carries the cue id.
+        -- `FUN_80065034` is the direct cue key-on (owner 0x21) every cue path
+        -- ends in; its `ra` names the producer that skipped the ring.
+        probe.arm_breakpoint(0x80065034, "Exec", 4, "cue_keyon", function()
+            local r = PCSX.getRegisters()
+            if csv then
+                pcall(function()
+                    csv:row("%d,cuekey,%04X,%08X,a1=%X a2=%X a3=%X", vsync,
+                        bit.band(n32(r.GPR.n.a0), 0xFFFF), n32(r.GPR.n.ra),
+                        n32(r.GPR.n.a1), n32(r.GPR.n.a2), n32(r.GPR.n.a3))
+                end)
+            end
+        end)
+        -- Any store into the four ring ids `DAT_8007B6D8[4]`: names the
+        -- producers that write a slot without the push pair.
+        probe.arm_breakpoint(0x8007B6D8, "Write", 8, "ring_write", function()
+            local r = PCSX.getRegisters()
+            if csv then
+                pcall(function()
+                    csv:row("%d,ringw,%08X,%08X,ids=%04X/%04X/%04X/%04X", vsync,
+                        n32(r.pc), n32(r.GPR.n.ra),
+                        probe.read_u16(0x8007B6D8), probe.read_u16(0x8007B6DA),
+                        probe.read_u16(0x8007B6DC), probe.read_u16(0x8007B6DE))
+                end)
+            end
+        end)
+        for _, hook in ipairs({ { 0x80035B50, "cue" }, { 0x80035BD0, "cuerepl" } }) do
+            probe.arm_breakpoint(hook[1], "Exec", 4, hook[2], function()
+                local r = PCSX.getRegisters()
+                if csv then
+                    pcall(function()
+                        csv:row("%d,%s,%04X,%08X,", vsync, hook[2],
+                            bit.band(n32(r.GPR.n.a0), 0xFFFF), n32(r.GPR.n.ra))
+                    end)
+                end
+            end)
+        end
         -- Voice allocator verdict: at 0x80066C84 `s0` holds the winning
         -- voice, or the voice count `_DAT_801CE344` when every voice
         -- outranks the request and the note is DROPPED (FUN_80066B00).

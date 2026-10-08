@@ -169,6 +169,20 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             });
     }
 
+    /// Op `0x1D` - `sh op[1], DAT_8007B6DE`: a store straight into SFX ring
+    /// slot 3 with no cursor pair and no countdown (`0x80023680..0x8002368C`
+    /// in `FUN_80023070`). The drainer plays it on its next pass. This is how
+    /// the field's ambient effect scripts sound: `kor5`'s looping cue `0x204`
+    /// every 63 vsyncs, the lightning director's thunder `0x20B` - a
+    /// census of a `kor5` memory-card state sees the store at `0x80023688`
+    /// (`ra 0x80023AE8`) two vsyncs before each drained key-on.
+    fn global_write_1d(&mut self, value: u16) {
+        self.world
+            .audio
+            .sfx_ring_ops
+            .push(crate::world::SfxRingOp::WriteSlot(3, value as i16));
+    }
+
     /// Ext `0x17` / `0x18` / `0x1A` / `0x19`: the object-effect table
     /// (`0x80083FF8`) a raised `+0x42` draws under.
     fn ext_world_struct_init(&mut self, index: i16, values: [i16; 5]) {

@@ -136,13 +136,17 @@ port-side unbounded delay queue, not `FUN_80035B50`.
 ### The field's producers: op `0x36` and the motion VM's op `0x09`
 
 Two field scripts reach `FUN_80035B50`, and both pass the cue id straight from
-their bytecode:
+their bytecode; a third, the move VM running a scene's ambient effect parts,
+stores into slot 3 directly. A key-on census of a `kor5` state sees no ring
+push at all with no input, yet a three-voice cue every 63 vsyncs: the move-VM
+store at `0x80023688`, drained two vsyncs later.
 
 | Producer | Call site | Argument |
 |---|---|---|
 | field VM op `0x36`, `word0 = 0x8000` (sub `0`) | `jal 0x80035B50` at `0x801E0348` (PROT 0897) | `a0 = (s16)word1` |
 | field VM op `0x36`, `word0 = 0x8004` (sub `4`) | `jal 0x80035BAC` at `0x801E03D8` | `a0 = (s16)word1`, the countdown in vsyncs |
 | motion VM (`FUN_80038158`) op `0x09` `[09 lo hi]` | `jal 0x80035B50` at `0x80039178` | `a0 = (s16)(lo + (hi << 8))` |
+| move VM (`FUN_80023070`) op `0x1D` `[1D v1]`, an ambient effect script's part | `sh v0,-0x4922(at)` at `0x80023688` - a store into slot 3 (`DAT_8007B6DE`), no cursor pair, no countdown | `v1`, the cue id |
 
 Sub `0` runs only while the side-band request pair is settled
 (`_DAT_8007BABC == _DAT_8007BAA0`, `0x801E032C..0x801E0340`); otherwise the

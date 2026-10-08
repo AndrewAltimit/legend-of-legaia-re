@@ -291,7 +291,7 @@ carrying structure are called out below the table.
 | `0x1A` | 2 | loop-open B: `+0x8A = PC`, `+0x8E = v1` |
 | `0x1B` | 1/2 | loop-back B (mirror of `0x19` on `+0x8E`/`+0x8A`) |
 | `0x1C` | 2 | `+0xCA = v1 << 3` (beam length channel) |
-| `0x1D` | 2 | `DAT_8007B6DE = v1` (a global, not an actor field) |
+| `0x1D` | 2 | `DAT_8007B6DE = v1` - SFX ring slot 3's cue id, stored without the cursor pair or a countdown ([`sfx-table.md`](../formats/sfx-table.md#the-fields-producers-op-0x36-and-the-motion-vms-op-0x09)). How ambient effect scripts sound: `kor5`'s looping cue `0x204`, the lightning director's thunder `0x20B`. Port: `MoveVmHostImpl::global_write_1d` queues `SfxRingOp::WriteSlot(3, v1)`. |
 | `0x1E` | 8 | render-mode-4 VRAM-beam setup: `+0x5A = 4`, `+0xC4/+0xCC..+0xD6 = v1..v7` |
 | `0x1F` | 8 | morph install: `+0x9E \|= byte`, `+0xB0/+0xB2/+0xA8/+0xAA/+0xAC/+0xAE = v2..v7` |
 | `0x20` | 3 | **indirect call** `(*(gp+0x714))(actor, v1, v2)` - the **slot-B module hook**. In battle the SM installs the paged module's spawn stager from the 64-word entry table `PTR_801F6734[row]` (row = extraction - 903; `0x801E44C8` / `0x801E4630`) and the `jalr` at SCUS `0x80023764` calls it; in the fishing / Baka Fighter minigames the overlay installs its own per-frame sprite callback. Same `gp[+0x714]` slot (`0x8007BA2C`), different tenant. See [`cast-module.md`](cast-module.md#the-entry-tables-and-where-the-addresses-live). |
