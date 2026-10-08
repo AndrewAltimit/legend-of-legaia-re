@@ -1956,7 +1956,7 @@ row.
 
 ## The cast-module band, the largest cluster on this page and the one with no rows
 
-`crates/engine-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
+`crates/engine-battle-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
 submodules) is still the largest single-module
 cluster in the never-entered set, and it is still the only cluster of any size
 not cited anywhere else on this page - the file arrived whole and never went

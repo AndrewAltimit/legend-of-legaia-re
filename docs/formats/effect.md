@@ -217,7 +217,7 @@ panel's cell width.
 Because the sheet rides `etim.dat`, a host that has made the battle effect
 atlas resident already has the digits: no separate asset, no atlas bake. The
 per-hit numeral's geometry and its pop / rise envelope are pinned in
-[`engine-vm::battle_value_readout`](../../crates/engine-vm/src/battle_value_readout.rs),
+[`engine-vm::battle_value_readout`](../../crates/engine-battle-vm/src/battle_value_readout.rs),
 whose module header carries the display-list measurements.
 
 #### Effect texels in VRAM - pixel-verified

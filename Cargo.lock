@@ -1331,6 +1331,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-battle-vm"
+version = "0.1.0"
+dependencies = [
+ "legaia-art",
+ "legaia-asset",
+]
+
+[[package]]
 name = "legaia-engine-core"
 version = "0.1.0"
 dependencies = [
@@ -1496,6 +1504,7 @@ dependencies = [
  "legaia-anm",
  "legaia-art",
  "legaia-asset",
+ "legaia-engine-battle-vm",
  "legaia-lzs",
  "legaia-prot",
  "serde_json",

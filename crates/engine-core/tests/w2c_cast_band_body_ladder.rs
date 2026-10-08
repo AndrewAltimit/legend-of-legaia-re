@@ -28,15 +28,15 @@ use std::path::PathBuf;
 const MODULE_SOURCES: [(&str, &str); 3] = [
     (
         "cast_seru_ticks_a",
-        include_str!("../../engine-vm/src/cast_seru_ticks_a.rs"),
+        include_str!("../../engine-battle-vm/src/cast_seru_ticks_a.rs"),
     ),
     (
         "cast_seru_ticks_b",
-        include_str!("../../engine-vm/src/cast_seru_ticks_b.rs"),
+        include_str!("../../engine-battle-vm/src/cast_seru_ticks_b.rs"),
     ),
     (
         "cast_arm_ticks",
-        include_str!("../../engine-vm/src/cast_arm_ticks.rs"),
+        include_str!("../../engine-battle-vm/src/cast_arm_ticks.rs"),
     ),
 ];
 

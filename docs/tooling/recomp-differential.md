@@ -487,7 +487,7 @@ rendered and traced from the follow pose. The retail-faithful decode existed
 only in the shell's `cutscene_view`, which `sim-trace` does not go through.
 
 Both are closed: `Camera` now carries the ten globals, applies each masked
-slot per-axis, and runs [`camera_mover`](../../crates/engine-vm/src/camera_mover.rs)
+slot per-axis, and runs [`camera_mover`](../../crates/engine-battle-vm/src/camera_mover.rs)
 for `apply != 0` beats. Measured alignment-free over the opening chain, the
 angle channels reproduce retail exactly (`opstati` mid-window pitch/yaw
 `4066` / `3706` against retail's `65506` / `65146` masked to 12 bits) and

@@ -352,17 +352,17 @@ was written - find the symbol by name, not by line.
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs:1226` | FALSE INERT |
 | `8003c9ac` | `(module)` | `crates/engine-vm/src/motion_pause.rs:3` | WIRE (wired) |
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:120` | WIRE (wired) |
-| `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
-| `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | WIRE |
-| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
+| `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs:178` | WIRE |
+| `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs:160` | WIRE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-battle-vm/src/battle_camera.rs` | WIRE |
+| `801d9d30` | `apply_shake` | `crates/engine-battle-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-vm/src/title_prim.rs:407` | DISCLOSE |
 | `801e373c` | `init_card_state` | `crates/engine-vm/src/title_prim.rs:307` | DISCLOSE |
 | `801e373c` | `exec_card_init` | `crates/engine-vm/src/title_prim.rs:470` | DISCLOSE |
 | `801e3ee0` | `exec_centered_text` | `crates/engine-vm/src/title_prim.rs:437` | DISCLOSE |
-| `801f0348` | `camera_height_from_size_class` | `crates/engine-vm/src/battle_formulas/round.rs:481` | DELETE |
+| `801f0348` | `camera_height_from_size_class` | `crates/engine-battle-vm/src/battle_formulas/round.rs:481` | DELETE |
 
 The four battle-camera rows were unsettleable while that lane held the files;
 see [the battle-camera rows](#the-battle-camera-rows) for how they resolved.
@@ -644,8 +644,8 @@ anchor. Wrap to the file's comment width.
 ## The battle-camera rows
 
 These carried a `VERIFY` verdict while the battle-camera lane held
-`crates/engine-vm/src/battle_camera.rs` and
-`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All are
+`crates/engine-battle-vm/src/battle_camera.rs` and
+`crates/engine-battle-vm/src/battle_formulas/round.rs`. That lane has landed. All are
 still inert against the corrected audit - every caller is `#[cfg(test)]` in
 the same file or in `battle_formulas/tests.rs`, and the host-crate sweep returns
 zero, the same sweep that finds `battle_render_mesh`'s two real host call sites.

@@ -43,16 +43,16 @@ use std::path::PathBuf;
 /// The module sources (`cast_module_ticks.rs` and every file of its
 /// directory), scraped for their `// PORT:` addresses at compile time.
 const MODULE_SOURCES: &[&str] = &[
-    include_str!("../../engine-vm/src/cast_module_ticks.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/state.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/idioms.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/power.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/stagers.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/ticks.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/capture.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/arms.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/arms_0955.rs"),
-    include_str!("../../engine-vm/src/cast_module_ticks/tests.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/state.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/idioms.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/power.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/stagers.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/ticks.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/capture.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/arms.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/arms_0955.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/tests.rs"),
 ];
 
 /// How a row's body is reached.

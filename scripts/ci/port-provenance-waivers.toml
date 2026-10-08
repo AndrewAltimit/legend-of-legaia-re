@@ -310,7 +310,7 @@ actor-band command loop script-vm.md documents, forming the actor band
 # ---------------------------------------------------------------------------
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/battle_cast_dispatch.rs:801dba90"
+key = "module-orphan:crates/engine-battle-vm/src/battle_cast_dispatch.rs:801dba90"
 reason = """
 overlay_battle_action_801dba90.txt, 39 instructions, and the body is the module
 header's description instruction for instruction: ctx[+0x13] through
@@ -1131,7 +1131,7 @@ only at cut 48 and this member is what is left over there.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/battle_action/queue_applier.rs:801e91e8"
+key = "module-orphan:crates/engine-battle-vm/src/battle_action/queue_applier.rs:801e91e8"
 reason = """
 FUN_801E91E8 operates on the raw per-actor queue at actor[+0x1DF..+0x1F2] through
 the actor pointer, while its module siblings key on the resident trigger tables
@@ -1167,7 +1167,7 @@ cannot see the image, so it still fires.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_arm_ticks.rs:801f7298"
+key = "module-orphan:crates/engine-battle-vm/src/cast_arm_ticks.rs:801f7298"
 reason = """
 Reviewed against the disassembly. The signal corroborates a tag against its
 same-module siblings, and this module deliberately groups fourteen bodies from
@@ -1278,7 +1278,7 @@ dump of this address; the address has a based dump for the first time
 """
 
 [[waiver]]
-key = "non-entry:crates/engine-vm/src/cast_module_ticks.rs:801f69f8"
+key = "non-entry:crates/engine-battle-vm/src/cast_module_ticks.rs:801f69f8"
 reason = """
 VA-aliased, and the tag names the image it ports: the worklist_va_aliased row
 says three slot-B images hold distinct code at 0x801F69F8 (glare_divide 940,
@@ -1288,7 +1288,7 @@ records for the catalog's per-VA count.
 """
 
 [[waiver]]
-key = "non-entry:crates/engine-vm/src/cast_module_ticks.rs:801f7644"
+key = "non-entry:crates/engine-battle-vm/src/cast_module_ticks.rs:801f7644"
 reason = """
 VA-aliased: the worklist_shared_tail row is about world_map_render (0901),
 where 0x801F7644 is a shared tail exiting `j 0x80043580`; the tag is PROT 0949
@@ -1385,7 +1385,7 @@ range / root-motion siblings form - they read the pair it writes.
 """
 
 [[waiver]]
-key = "non-entry:crates/engine-vm/src/cast_module_camera/creature.rs:801f6a30"
+key = "non-entry:crates/engine-battle-vm/src/cast_module_camera/creature.rs:801f6a30"
 reason = """
 Correct tag; the tag names its image. The ignore-list row is about the bare
 VA (PROT 917 and 933 hold different code there). Disassembling PROT 0917 at
@@ -1396,7 +1396,7 @@ the image the tag cites (`PROT 0917`), which is the Barra camera routine
 """
 
 [[waiver]]
-key = "non-entry:crates/engine-vm/src/cast_module_camera/creature.rs:801f6a74"
+key = "non-entry:crates/engine-battle-vm/src/cast_module_camera/creature.rs:801f6a74"
 reason = """
 Correct tag; the tag names its image. The ignore-list row is about the bare
 VA (PROT 930 and 966 hold different code there). Disassembling PROT 0930 at

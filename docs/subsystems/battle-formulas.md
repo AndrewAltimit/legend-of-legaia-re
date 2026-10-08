@@ -6,7 +6,7 @@ them (turn order, fleeing, poison ticks, MP costs, the RNG). Everything here is
 traced from the game's own code - `FUN_801EC3E4` in the battle overlay (PROT
 `0898`) for a physical hit, `FUN_800402F4` in `SCUS_942.54` for the generic
 applicator - and mirrored in the from-scratch engine at
-`crates/engine-vm/src/battle_formulas.rs`.
+`crates/engine-battle-vm/src/battle_formulas.rs`.
 
 The page is written for two readers at once. A **player or modder** wants the
 formula in plain terms and a worked example: that is the [Summary](#summary),
@@ -2136,7 +2136,7 @@ A camera or dome session driven with no world behind it, such as a preview or th
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 
-The from-scratch Rust module `crates/engine-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch - that lives in `engine-vm::battle_action` next to the state machine.
+The from-scratch Rust module `crates/engine-battle-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch - that lives in `engine-vm::battle_action` next to the state machine.
 
 | Function | Provenance |
 |---|---|

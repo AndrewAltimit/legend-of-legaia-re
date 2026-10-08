@@ -50,4 +50,4 @@ directions, e.g. `Burning Flare  RDLDL`); defaults to `extracted/SCUS_942.54`.
 
 ## Cross-crate integration
 
-`crates/engine-vm/src/battle_action/` imports the matchers and applies them via the `BattleActionHost::art_record` callback during action-queue resolution. See [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md) for the resolution-order contract.
+`crates/engine-battle-vm/src/battle_action/` imports the matchers and applies them via the `BattleActionHost::art_record` callback during action-queue resolution. See [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md) for the resolution-order contract.
