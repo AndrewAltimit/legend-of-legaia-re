@@ -310,7 +310,7 @@ was written - find the symbol by name, not by line.
 | `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
 | `80021b04` | `from_model_sel` | `crates/engine-core/src/summon.rs:236` | FALSE INERT |
 | `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
-| `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick.rs:910` | WIRE |
+| `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs:270` | FALSE INERT |
 | `8003ebe4` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
@@ -472,7 +472,7 @@ records the analysis that shaped its wire - what the call site had to be and
 why the obvious placement was wrong. Where each one lives now:
 
 - `minigame_return_warp` - both halves of the two-part wire exist in
-  `crates/engine-core/src/world/frame_tick.rs`: the Baka tally drains into
+  `crates/engine-core/src/world/frame_tick/minigame_sessions.rs`: the Baka tally drains into
   `World::minigames.winnings` and the warp pair (`arm_minigame_warp` /
   `minigame_return_warp`) banks it into the casino coin bank on the
   `enter_baka_fighter` / `exit_baka_fighter` path.
@@ -515,7 +515,7 @@ into `World::party.money` instead, which is why the accumulator never fills.
 
 So this is a real `WIRE`, but a **two-part** one that no single lane can land: the Baka
 tally must be redirected from party money to a coin accumulator (in
-`world/frame_tick.rs`), *and* the warp call sites added. Either half alone is wrong - the
+`world/frame_tick/minigame_sessions.rs`), *and* the warp call sites added. Either half alone is wrong - the
 call sites alone credit zero, the redirect alone loses the prize.
 
 **`fmv_post_play_handoff`** (`801cea3c`). Nothing consumes `FmvHandoff`
@@ -561,7 +561,7 @@ arm-`0x82` callee.
 **`symbol_pad_bit`** (`801d4040`, in `crates/engine-minigames/src/dance/types.rs`).
 `DanceDir::pad_bit` in the same file has identical arms (`0x80` / `0x20` /
 `0x10`), cites the same `FUN_801d4040`, and is the copy the live path uses -
-`World`'s dance tick references it from `world/frame_tick.rs`. The free function
+`World`'s dance tick references it from `world/frame_tick/minigame_sessions.rs`. The free function
 adds only the "any other symbol scores 0" fallback for raw chart bytes, which
 the chart decoder never produces because it converts symbols to `DanceDir`
 first.

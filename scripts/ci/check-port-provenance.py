@@ -713,6 +713,12 @@ SPLIT_MODULES = frozenset({
     "crates/engine-core/src/world/vm_hosts",
     "crates/engine-core/src/world/narration",
     "crates/engine-core/src/world/field_movement",
+    "crates/engine-core/src/world/battle/cast_band",
+    "crates/engine-core/src/world/frame_tick",
+    "crates/engine-core/src/battle_hud",
+    "crates/engine-core/src/pause_screens",
+    "crates/engine-minigames/src/baka_fighter",
+    "crates/parity/src/retail_compare_battle",
 })
 
 

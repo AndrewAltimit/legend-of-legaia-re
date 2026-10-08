@@ -522,7 +522,8 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 NATIVE_BOOT = "crates/engine-session/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_select_helpers.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
-NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
+# The minigame session enter / exit / tick methods of the frame tick.
+NATIVE_MINIGAME_SESSIONS = "crates/engine-core/src/world/frame_tick/minigame_sessions.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/window/boot_cutscene.rs"
 NATIVE_REDRAW = "crates/engine-shell/src/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/window/field_render.rs"
@@ -1211,7 +1212,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "gate green. Naming the same resolvers is the property that matters, "
         "and it does not need the right set stated up front",
         "sites": {
-            "native": (NATIVE_FRAME_TICK, "tick_muscle_dome"),
+            "native": (NATIVE_MINIGAME_SESSIONS, "tick_muscle_dome"),
             "web": (WEB_MINIGAMES_MUSCLE, "muscle_resolve"),
         },
         "mode": "pattern_same",
