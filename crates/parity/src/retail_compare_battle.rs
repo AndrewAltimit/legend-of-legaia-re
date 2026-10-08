@@ -953,28 +953,31 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 
 impl RetailBattle {
-    /// The battle frame step a replay of this capture runs its last stretch
-    /// on, and the action-SM state it takes effect in: the step the
-    /// capture's own frame ran at, from the first tick the engine reaches
-    /// the capture's state (`World::seed_battle_frame_step`). `None` when
-    /// that step is the engine's default or the state is not one the seed
-    /// covers.
+    /// The battle frame step a replay of this capture runs its capture state
+    /// on, and that state: the step the capture's own frame ran at, applied
+    /// while the engine sits in the capture's action state
+    /// (`World::seed_battle_frame_step`). `None` when that step is the
+    /// engine's default, the capture is not a replayed cast, or the state is
+    /// not the summon close-up.
     ///
     /// Retail's step is the maximum of its last sixteen frame times
     /// ([`frame_step`]), so the ring a capture holds says what its newest
-    /// frames ran at and nothing about the frames before them. The seed
-    /// covers the summon band's close-up states `0x33` / `0x34`
-    /// ([`legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES`]): each
-    /// pass there re-arms `FUN_801DC0A0` case `0x12`'s three-frame tween,
-    /// which the walker lands in one step at step `3` and trails at step
-    /// `2`, and the states last a few frames, inside the ring's window.
-    /// Seeded into every action state alike, the step moved the battle
-    /// corpus's camera mean down (`.9699 -> .9653`, N=102): the strike and
-    /// module states' other per-frame paths are not generalised to another
-    /// step yet.
+    /// frames ran at - the capture state's - and nothing about the frames
+    /// before them. Two limits keep the seed where it measures better:
+    ///
+    /// * a replayed cast ([`SeedPlan::Cast`]) runs the captured action alone,
+    ///   where a pad drive plays every earlier round through the same states
+    ///   and a seeded step rewrites the history it reaches the capture by
+    ///   (`battle_vahn_tri_somersault_super` reached its round 380 ticks
+    ///   later, camera `.864` to `.663`);
+    /// * the summon close-up `0x33` / `0x34`
+    ///   ([`legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES`]) re-arms
+    ///   `FUN_801DC0A0` case `0x12`'s three-frame tween every pass, which the
+    ///   walker lands in one step at step `3` and trails at `2`. The module
+    ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
+    ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<(u8, u8)> {
-        let in_action = matches!(self.seed_plan(), SeedPlan::Action { .. } | SeedPlan::Cast);
-        (in_action
+        (matches!(self.seed_plan(), SeedPlan::Cast)
             && legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES.contains(&self.action_state)
             && self.frame_step != legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP)
             .then_some((self.frame_step, self.action_state))

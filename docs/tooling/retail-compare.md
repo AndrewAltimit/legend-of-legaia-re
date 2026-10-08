@@ -1877,13 +1877,15 @@ is checkable even where the pose is not. Two seeding limits follow.
   ([battle](../subsystems/battle.md#the-battle-frame-step-is-the-frames-own-cost)),
   and the step is their maximum - but only that window of it. A capture in
   `0x33` / `0x34` whose step is not the engine's `2` has the drive install
-  it from the first tick of its state (`RetailBattle::frame_step_seed`,
+  it while the engine sits in that state (`RetailBattle::frame_step_seed`,
   `LEGAIA_BATTLE_FRAME_STEP` for the image child): `theeder` `image` `.380`
-  to `.538`, `nighto` `.876` to `.984`. Seeded into every action state
-  alike, the step lowered the battle camera mean (`.9699` to `.9653`, the
-  strike loop's `battle_vahn_tri_somersault_super` and the module states
-  losing most): their other per-frame paths are still written for step
-  `2`, so the corpus keeps the rest as a seeding limit.
+  to `.538`, `nighto` `.876` to `.984`. The seed stays off pad drives, which
+  play every earlier round through the same states - seeded there,
+  `battle_vahn_tri_somersault_super`'s drive reached its round 380 ticks
+  later (camera `.864` to `.663`). With the camera's tweens kept in display
+  frames under any step, a replayed cast in the module states `0x35` /
+  `0x36` measured mixed (`gimard_burning_attack` `image` `+.022`, `camera`
+  `-.026`), so those stay at the default step too.
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`

@@ -1762,14 +1762,28 @@ one session show how mixed they are: `player_steal_skeleton_pre` to
 The engine ticks once a vsync, which keeps every per-vsync rate whatever
 the step; the step only places the frame boundaries. `BattleFrameClock`
 groups the ticks into frames - two vsyncs by default - for the root-motion
-carry and the camera (`BattleCamera::set_frame_step`, which the walker's
-increments and the entry sweep also scale by). Play keeps the default; a
-replay that knows retail's step installs it (`World::seed_battle_frame_step`,
-from the first tick of a given action state). The retail-compare drive
-does so for a capture in the summon close-up `0x33` / `0x34`, where each
-pass re-arms case `0x12`'s three-frame tween: at step `3` the walker lands
-it every pass, at `2` it trails
+carry and the camera (`BattleCamera::set_frame_step`). The camera keeps
+every tween's length in display frames whatever the step: a step fires
+every `step` vsyncs, the walker scales each increment by it, a tween armed
+over `a3` frames lands in `a3 / step` steps (`frames_to_steps`, the module
+and spell-cast shots; `steps_of` for the glides authored in default-step
+steps), and the idle orbit turns `2 * step` a step. Play keeps the
+default; a replay that knows retail's step installs it while the action SM
+sits in one state (`World::seed_battle_frame_step`). The retail-compare
+drive does so for a replayed cast caught in the summon close-up `0x33` /
+`0x34`, where each pass re-arms case `0x12`'s three-frame tween: at step
+`3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
+
+The cast modules keep their per-vsync passes. Run once a battle frame
+with every drain, drift and ramp scaled by the step - retail's own shape -
+they measured worse on the step-`3` captures than the per-vsync passes,
+which run the same rates: `nova_summon_mid_cast` `image` `.963` to `.717`
+(its flash fade spawned up to two vsyncs later), `gimard_burning_attack`
+`camera` `.965` to `.932`. The captures these modules reach are placed by
+the module's own arm and countdown
+([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)), so
+quantising the arms to frame boundaries moves only what spawns on them.
 
 ### The post-strike two-shot (`FUN_801D5854` cases 7 and 8)
 

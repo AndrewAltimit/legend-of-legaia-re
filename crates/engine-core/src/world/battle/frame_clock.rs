@@ -93,21 +93,28 @@ impl World {
         }
     }
 
-    /// Seed a replay's battle frame step: `step` vsyncs a frame from the
-    /// first tick the action SM sits in `state`, for the rest of that
-    /// battle ([`crate::world::FrameClock::battle_frame_step_seed`]).
+    /// Seed a replay's battle frame step: `step` vsyncs a frame on every tick
+    /// the action SM sits in `state`, the default everywhere else
+    /// ([`crate::world::FrameClock::battle_frame_step_seed`]).
     pub fn seed_battle_frame_step(&mut self, step: u8, state: u8) {
         self.clock.battle_frame_step_seed = Some((step.max(1), state));
     }
 
-    /// Install a seeded step once the action SM reaches its state. Called
-    /// after every action-SM step.
+    /// Install a seeded step while the action SM sits in its state, and the
+    /// default outside it. Called after every action-SM step.
     pub(in crate::world) fn apply_battle_frame_step_seed(&mut self) {
-        if let Some((step, state)) = self.clock.battle_frame_step_seed
-            && self.battle_ctx.action_state == state
-            && self.battle.frame_clock.step != step
-        {
-            self.set_battle_frame_step(step);
+        let Some((step, state)) = self.clock.battle_frame_step_seed else {
+            return;
+        };
+        // Scoped to the state: the ring a capture holds speaks for its own
+        // state's frames, not for the states around it.
+        let want = if self.battle_ctx.action_state == state {
+            step
+        } else {
+            DEFAULT_BATTLE_FRAME_STEP
+        };
+        if self.battle.frame_clock.step != want {
+            self.set_battle_frame_step(want);
         }
     }
 
@@ -127,6 +134,21 @@ mod tests {
         for t in 0..20u64 {
             assert_eq!(c.frame_of(t), t / 2);
         }
+    }
+
+    #[test]
+    fn a_seeded_step_holds_only_inside_its_state() {
+        let mut w = World::new();
+        w.seed_battle_frame_step(3, 0x33);
+        w.battle_ctx.action_state = 0x32;
+        w.apply_battle_frame_step_seed();
+        assert_eq!(w.battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+        w.battle_ctx.action_state = 0x33;
+        w.apply_battle_frame_step_seed();
+        assert_eq!(w.battle_frame_step(), 3);
+        w.battle_ctx.action_state = 0x34;
+        w.apply_battle_frame_step_seed();
+        assert_eq!(w.battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
     }
 
     #[test]

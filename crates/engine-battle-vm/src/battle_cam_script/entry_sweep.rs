@@ -135,7 +135,7 @@ impl BattleCamera {
                     &mut from,
                     self.menu_pose(),
                     menu_raw_z(self.formation),
-                    SWING_RETURN_STEPS,
+                    self.steps_of(SWING_RETURN_STEPS),
                     false,
                 );
                 self.pose = from;

@@ -34,13 +34,13 @@ impl BattleCamera {
     /// REF: FUN_801D829C
     pub fn arm_module_shot(&mut self, target: BattleCamPose, raw_tr_z: i32, frames: u32) {
         let mut from = self.pose;
-        let steps = (frames / 2).max(1);
+        let steps = self.frames_to_steps(frames);
         let mut g = Glide::linear(&mut from, target, raw_tr_z, steps, true);
         self.pose = from;
         if steps == 1 {
             // A one-frame tween is a cut: retail's walker lands it the frame
             // it is armed, before the next arm can rebuild from it. The
-            // camera's 2-frame cadence would otherwise let a following shot
+            // camera's step cadence would otherwise let a following shot
             // start from the pose the cut replaced.
             self.land(&g);
             g.steps_left = Some(0);
@@ -63,7 +63,8 @@ impl BattleCamera {
         };
         let target = action_framing(actor, f);
         let mut from = self.pose;
-        let g = Glide::linear(&mut from, target, f.raw_z(), ACTION_STEPS, true);
+        let steps = self.steps_of(ACTION_STEPS);
+        let g = Glide::linear(&mut from, target, f.raw_z(), steps, true);
         self.pose = from;
         self.module_glide = Some(g);
     }

@@ -2722,6 +2722,9 @@ fn a_frame_step_of_three_steps_every_third_frame_and_lands_a_three_frame_tween()
     assert_eq!(cam.frame_accum, 2, "two frames bank, no step yet");
     cam.advance_to(start + 3);
     assert_eq!(cam.frame_accum, 0, "the third frame fires the step");
+    // A glide authored in default-step steps keeps its display frames.
+    assert_eq!(cam.steps_of(ACTION_STEPS), 4, "12 frames in steps of 3");
+    assert_eq!(cam.frames_to_steps(0x30), 16);
 
     let pose = |yaw: f32| BattleCamPose {
         pitch: 0.0,
