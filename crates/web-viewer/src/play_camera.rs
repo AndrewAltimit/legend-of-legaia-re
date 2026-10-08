@@ -215,7 +215,11 @@ impl LegaiaRuntime {
             .map_or(SceneMode::Title, |h| h.world.mode);
         legaia_engine_ui::prim_near_reject::shader_params(
             camera_view::prim_near_cut(mode, retail_camera),
-            camera_view::prim_gpu_span_h(mode, retail_camera),
+            camera_view::prim_gpu_span_h(
+                mode,
+                retail_camera,
+                self.scene_host.camera().globals.0[9] as f32,
+            ),
         )
         .to_vec()
     }

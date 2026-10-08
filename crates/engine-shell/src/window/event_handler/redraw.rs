@@ -1127,6 +1127,7 @@ impl PlayWindowApp {
                 legaia_engine_core::camera_view::prim_gpu_span_h(
                     self.session.host.world.mode,
                     retail_camera,
+                    self.session.camera.globals.0[9] as f32,
                 ),
             );
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
