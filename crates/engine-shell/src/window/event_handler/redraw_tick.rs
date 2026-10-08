@@ -644,44 +644,18 @@ impl PlayWindowApp {
         if let Some((spell_id, _origin)) = self.session.host.world.take_pending_summon_spawn() {
             self.spawn_summon_creature(spell_id);
         }
-        // Production move-FX trigger: a non-summon spell cast or
-        // enemy special whose move-power record carries a spawnable
-        // effect list requests its `0x801f6324` scene-graph spawn at
-        // the target's battle position. Seat it through the same
-        // move-VM path the `H` debug key and field FX use.
-        if let Some((move_id, origin)) = self.session.host.world.take_pending_move_fx_spawn()
-            && self.session.host.world.spawn_move_fx(move_id, origin)
+        // Production move-FX trigger, spawn to sound: the shared
+        // `battle_fx::spawn_pending_move_fx` (the browser page's step
+        // calls it too) seats the requested scene graph and resolves the
+        // move's cue through the retail dispatch decode; a ring value
+        // rides the same per-frame SFX scheduler the art-strike cues do.
+        if let Some(ring_value) =
+            legaia_engine_session::battle_fx::spawn_pending_move_fx(&mut self.session.host.world)
         {
-            // Route the move's sound cue through the retail dispatch
-            // decode (`classify_cue` = FUN_8004FCC8) and PLAY it: a
-            // Ring cue's `ring_value` is the SfxBank descriptor id
-            // (docs/formats/sfx-table.md), enqueued into the same
-            // per-frame SFX scheduler the art-strike cues ride
-            // (`AudioBgmDirector::enqueue_sfx` -> `tick_sfx_frame`,
-            // which resolves the cue's own `+4` category bank).
-            // Voice cues (`id >= 0x100`) are streamed XA triggers
-            // with no engine lane yet - logged, not dropped silently.
-            if let Some(cue) = self.session.host.world.take_pending_move_fx_cue() {
-                match legaia_engine_audio::classify_cue(cue as u32) {
-                    legaia_engine_audio::CueDispatch::Ring { ring_value, .. } => {
-                        if let Some(bgm) = self.session.bgm.as_mut() {
-                            bgm.enqueue_sfx(ring_value, 0, 0, 0);
-                            log::debug!(
-                                "battle move-FX cue {cue:#04x} enqueued as SFX {ring_value:#04x}"
-                            );
-                        } else {
-                            log::debug!(
-                                "battle move-FX cue {cue:#04x} -> SFX {ring_value:#04x} (no audio)"
-                            );
-                        }
-                    }
-                    dispatch @ legaia_engine_audio::CueDispatch::Voice { .. } => {
-                        log::debug!(
-                            "battle move-FX cue {cue:#04x} -> {dispatch:?} (voice lane unmodeled)"
-                        );
-                    }
-                }
+            if let Some(bgm) = self.session.bgm.as_mut() {
+                bgm.enqueue_sfx(ring_value, 0, 0, 0);
             }
+            log::debug!("battle move-FX cue -> SFX {ring_value:#06x}");
         }
     }
 

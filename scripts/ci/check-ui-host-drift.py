@@ -553,6 +553,21 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "move-FX spawn to sound, native vs play page - each host "
+        "took the pending spawn, seated it, took the cue and classified it "
+        "itself, and the two had drifted on the classification's arms (the "
+        "native window logged a voice arm the page dropped; the cue is a "
+        "byte, so that arm cannot arise). Both run "
+        "`battle_fx::spawn_pending_move_fx` and enqueue the ring value it "
+        "returns",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/runtime.rs", "tick_world_effects"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["spawn_pending_move_fx"],
+    },
+    {
         "what": "dialog picker option labels, native vs play page - both "
         "printed `legaia_mes::PickerOption::label`, which carries no name "
         "escapes, so a choice naming a party member drew a blank where the "

@@ -2040,22 +2040,11 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
-        let world = &mut host.world;
-        let mut cue = None;
-        if let Some((move_id, origin)) = world.take_pending_move_fx_spawn()
-            && world.spawn_move_fx(move_id, origin)
-        {
-            cue = world.take_pending_move_fx_cue();
-        }
-        // The shared frame-tail kernel the native window's loop calls.
-        world.tick_effect_scene_graphs();
-        // The full ring value goes through: `enqueue_sfx` takes
-        // `impl Into<u16>`, and the `u8::try_from` this used to narrow
-        // through dropped cue id `0`, whose ring value is `0xFFFF`.
-        if let Some(cue) = cue
-            && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
-                legaia_engine_audio::classify_cue(cue as u32)
-        {
+        // Spawn to sound through the shared step the native window runs
+        // (`battle_fx::spawn_pending_move_fx`), then the frame-tail kernel.
+        let ring = legaia_engine_session::battle_fx::spawn_pending_move_fx(&mut host.world);
+        host.world.tick_effect_scene_graphs();
+        if let Some(ring_value) = ring {
             self.enqueue_sfx(ring_value, 0);
         }
     }
