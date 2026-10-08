@@ -278,10 +278,12 @@ legend-of-legaia-re/
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
 │   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, fishing, prize exchange, Muscle Dome ladder
+│   ├── engine-effects/           # World-free effect kernels: effect scripts, emitters, summon scene graph, screen FX
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + from-scratch SPU + SEQ sequencer
-│   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM
+│   ├── engine-vm/                # Actor / field / effect / move / motion VMs (re-exports the battle VM kernels)
+│   ├── engine-battle-vm/         # Battle action SM, battle formulas, battle camera script, cast-module ticks
 │   ├── engine-session/           # BootSession + BGM director both play hosts run (wasm32-clean)
 │   ├── engine-screens/           # Shop / prize-exchange / inn screens, composed once for both hosts
 │   ├── parity/                   # Retail parity oracles + retail comparison corpus (tool code)
