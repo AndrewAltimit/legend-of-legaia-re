@@ -659,8 +659,7 @@ docs carry the retail provenance.
   `part_motion` (a move-VM part's motion block between steps),
   `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
   `camera_rel_glide`, `object_effect` (the `0x80083FF8` object-effect table).
-- **Battle** - `battle_arts` / `battle_magic` (the Arts and Magic
-  submenus), `battle_open` (the formation open banner), `battle_party_form`
+- **Battle** - `battle_open` (the formation open banner), `battle_party_form`
   (a member's assembled battle form, once for both hosts),
   `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages),
   `sfx_cue` (cue id → ring / XA clip), `spell_party_broadcast`
