@@ -173,23 +173,27 @@ getting a whole track - a player, a note-level parity oracle, a corpus sweep
 Across the disc's SEQ-bearing PROT entries the corpus is almost entirely
 clean; `engine-audio/tests/real_seq_stream_integrity.rs` pins the count of
 non-clean streams so a parser change that starts truncating more tracks
-fails loudly. The one outlier is PROT entry 1045, and its cause is pinned:
-the stream is a **valid, complete track** that ends on its own `FF 2F 00`
-marker, but a few notes before that marker the parser drifts by exactly one
-byte inside a dense run of running-status note events (near stream offset
-~4900-4920, next to an anomalous non-round-BPM `FF 51` tempo). Latched one
-byte ahead of the true alignment, it reads the volume `Control Change` events
-of the closing fade (`B5 07 nn` / `B6 07 nn`) as 2-byte VLQ deltas plus
-running-status note data, walks straight through the real `FF 2F 00`, and
-halts on the first post-track byte it cannot size - a `0xF4`, eleven bytes
-*past* the true end-of-track. The `0xF4` is therefore **dead post-track
-tail**, not a real skippable libsnd event: there is nothing to resynchronise
-onto, and "skip 0xF4 and continue" would decode ~124 KB of trailing container
-bytes as bogus music. The parser is right to stop and report
-`SystemMessage(0xF4)`. `engine-audio/tests/real_seq_1045_truncation.rs`
-proves both halves - a clean `FF 2F 00` sits just before the `0xF4`, and
-correcting the one-byte drift makes the whole stream parse to a clean
-end-of-track - so the parser is left unchanged.
+fails loudly. Every stream is clean.
+
+### A meta is a running status
+
+The retail decoder `FUN_80063CEC` latches `0xFF` into the channel's
+running-status byte when it reads a meta (`sb v0,0x16(s3)` at `0x80063EE4`),
+and a data byte under that latch is dispatched as the next meta's **kind**
+(`0x80063F44` -> `0x80064014`). So `FF 51 t t t <delta> 51 t t t` is two
+tempo events, the second with no `FF`, and a channel event after a meta needs
+its own status byte.
+
+One track depends on it: PROT 1045 (sound test 57, the "sorrowful event"
+requiem) closes on a ritardando written that way - `FF 51 0E C4 3E` (62 BPM),
+then `51 0F 42 40` (60 BPM). A parser that keeps the previous *channel*
+status across a meta reads `51 0F 42` as a note, falls one byte out of phase,
+reads the closing volume fade (`B5 07 nn` / `B6 07 nn`) as long deltas and
+notes, walks through the real `FF 2F 00`, and halts on a `0xF4` eleven bytes
+past it - the track's last bars garbled and its loop never reached. That was
+once recorded as a one-byte desync in an otherwise valid stream.
+`engine-audio/tests/real_seq_meta_running_status.rs` pins the rule and the
+track.
 
 ## Tempo math
 

@@ -92,12 +92,14 @@ fn retail_seq_streams_decode_to_their_own_end_of_track() {
         eprintln!("[seq-integrity]   PROT {idx} terminated {t:?}");
     }
 
-    // The corpus is almost entirely clean. This is a regression pin, not an
-    // aspiration: if a parser change starts truncating more streams, that is
-    // music silently going missing and the test must fail.
+    // The corpus is entirely clean. This is a regression pin, not an
+    // aspiration: if a parser change starts truncating streams, that is music
+    // silently going missing and the test must fail. (PROT 1045 was the one
+    // outlier until the parser latched a meta as running status, as retail's
+    // decoder does - `real_seq_meta_running_status.rs`.)
     assert!(
-        unclean.len() <= 1,
-        "expected at most 1 non-clean SEQ stream, found {}: {:?}",
+        unclean.is_empty(),
+        "expected every SEQ stream clean, found {}: {:?}",
         unclean.len(),
         unclean
     );

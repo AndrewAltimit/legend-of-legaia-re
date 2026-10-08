@@ -8,8 +8,8 @@
 mod bgm_director_chain;
 mod credits_bank_spu_layout_disc;
 mod real_bgm_chain;
-mod real_seq_1045_truncation;
 mod real_seq_expressive_events;
+mod real_seq_meta_running_status;
 mod real_seq_program_change_coverage;
 mod real_seq_stream_integrity;
 mod real_vab_program_mapping;

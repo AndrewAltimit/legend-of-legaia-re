@@ -394,8 +394,15 @@ fn parse_events(stream: &[u8]) -> Result<(Vec<Event>, Termination)> {
             0xFF => {
                 // Meta event. Unlike Standard MIDI, PsyQ SEQ meta events have
                 // NO variable-length `length` field - each meta type carries
-                // a fixed number of payload bytes. Running status is preserved
-                // across meta events (real Legaia SEQ data relies on this).
+                // a fixed number of payload bytes.
+                //
+                // A meta **is** a running status: the retail decoder
+                // `FUN_80063CEC` latches `0xFF` into the channel's running-
+                // status byte (`sb v0,0x16(s3)` at `0x80063EE4`), and a later
+                // data byte under that latch is the next meta's kind
+                // (`0x80063F44`). So `FF 51 tt tt tt <delta> 51 tt tt tt` is
+                // two tempo events - the second with no `FF`.
+                running_status = Some(0xFF);
                 if pos >= stream.len() {
                     bail!("meta event truncated at +{}", pos);
                 }
