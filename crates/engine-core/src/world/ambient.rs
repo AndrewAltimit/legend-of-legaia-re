@@ -966,20 +966,7 @@ impl World {
             }
             let queued = std::mem::take(&mut self.ambient.fx[idx].scroll_fx);
             for fx in queued {
-                let (x, y, w, h) = fx.rect;
-                if w == 0 || h == 0 || w > 1024 || h > 512 {
-                    continue;
-                }
-                let src = read_rect(vram, x, y, w, h);
-                let out = vram_scroll::rotate_rect(
-                    &src,
-                    usize::from(w),
-                    usize::from(h),
-                    usize::from(fx.strip_w),
-                    usize::from(fx.strip_h),
-                );
-                if out != src {
-                    write_rect(vram, x, y, w, &out);
+                if apply_scroll_fx(vram, &fx) {
                     // A rotated rect invalidates any mode-3 capture keyed on
                     // exactly this rect (no retail scene pairs the two on one
                     // rect; this keeps the cache honest if one ever did).
@@ -1029,6 +1016,29 @@ fn pack_slot_of_model_sel(model_sel: i16) -> Option<usize> {
 }
 
 /// Read a `w x h` halfword rect out of the software VRAM.
+/// One fired mode-4 tick against `vram`: rotate the part's rect by its strip
+/// widths. `true` when any texel moved. Shared by the field ambient parts and
+/// the battle effect parts ([`World::apply_battle_vram_moves`]).
+pub(crate) fn apply_scroll_fx(vram: &mut legaia_tim::Vram, fx: &vram_scroll::VramScrollFx) -> bool {
+    let (x, y, w, h) = fx.rect;
+    if w == 0 || h == 0 || w > 1024 || h > 512 {
+        return false;
+    }
+    let src = read_rect(vram, x, y, w, h);
+    let out = vram_scroll::rotate_rect(
+        &src,
+        usize::from(w),
+        usize::from(h),
+        usize::from(fx.strip_w),
+        usize::from(fx.strip_h),
+    );
+    if out == src {
+        return false;
+    }
+    write_rect(vram, x, y, w, &out);
+    true
+}
+
 fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     let mut out = Vec::with_capacity(usize::from(w) * usize::from(h));
     for row in 0..h {

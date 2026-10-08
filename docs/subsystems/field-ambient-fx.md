@@ -352,6 +352,17 @@ and the render tail scrolls forever. Unlike the mode-3 write (recomputed each
 frame from a cached capture), the rotate is **destructive**: each fires on
 the VRAM the previous one left.
 
+The arm belongs to the part tick, not to the ambient tree, so a battle effect
+part runs it too. PROT 0903's fire tunnel (the Gimard summon's attack) seats
+one on `(0x1F8, 0x70, 0x08, 0x80)` - the flame band its inner layer samples
+on page `(448, 0)` through CLUT `(208, 476)` - stepping up one row per
+period; in `gimard_burning_attack` the part sits on the effect list with
+`+0xCE = 1` and the band is rotated against the summon-start copy. The
+engine runs the same integrator over every live part of the battle effect
+scenes (`World::queue_battle_part_scrolls`, after each scene's tick) and
+applies the fired rotations to the battle VRAM with the stage module's
+`MoveImage`s (`World::apply_battle_vram_moves`), which both hosts call.
+
 ### The master ambient record 0 - the per-scene SFX descriptor bank
 
 Town prescripts' record 0 is the fixed run of 8-byte rows
