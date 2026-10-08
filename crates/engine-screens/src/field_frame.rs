@@ -59,3 +59,27 @@ pub fn field_scene_lights(
     }));
     Some((nearest_lights(&all, focus), focus))
 }
+
+/// The frame's clear colour, through the shared
+/// `battle_stage_clear::scene_clear` selector, with the screen term decided
+/// here: a boot UI screen (`boot_ui`, the host's) or a menu-overlay screen
+/// with the field faded out (`MenuRuntime::covers_field`) clears retail
+/// black, a stage battle clears the stage's black, and every other frame
+/// clears to the field's own `r0 / g0 / b0` (`World::frame_clear_rgb`).
+///
+/// The play page used to pass no screen term at all, so a shop opened in a
+/// scene whose op `4C 13` sets a clear colour (`teien`'s sea blue) sat on
+/// that colour there and on black natively. Retail's shop runs with the
+/// field overlay swapped out and the frame black (`MenuRuntime::covers_field`).
+pub fn frame_clear_color(
+    world: &legaia_engine_core::world::World,
+    boot_ui: bool,
+    menu: &legaia_engine_core::menu_runtime::MenuRuntime,
+    stage_battle: bool,
+) -> [f32; 4] {
+    legaia_engine_ui::battle_stage_clear::scene_clear(
+        boot_ui || menu.covers_field(),
+        stage_battle,
+        world.frame_clear_rgb(),
+    )
+}

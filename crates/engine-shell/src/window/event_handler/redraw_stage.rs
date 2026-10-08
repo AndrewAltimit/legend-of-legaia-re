@@ -352,29 +352,18 @@ impl PlayWindowApp {
         // the scene's own pixels never take it - `retona_field_card_boot`
         // holds the word at 27 over a full-brightness frame. The fog
         // sheets take it through `World::fog_render_step`.
-        match self.session.host.world.scene_color_grade() {
-            // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
-            // mode - the retail mechanism's true altitude (the scene's
-            // uploaded CLUTs are rewritten to the gold law and the
-            // resident TMD colour words by the two `4C E6` HSV ops; the
-            // engine's shaders apply the identical laws per texel /
-            // packet colour, `prologue_sepia_word`). The view-depth cue
-            // ramp is inert in this mode (retail's prologue nodes hold
-            // `IR0 = 0`).
-            Some(g) => {
-                r.set_color_grade(g.gold, g.strength);
-                r.set_palette_grade([1.0; 3], true);
-            }
-            None => {
-                r.set_color_grade([1.0, 1.0, 1.0], 0.0);
-                r.set_palette_grade([1.0; 3], false);
-            }
-        }
-        // The grade's second half: the per-render-node DPCS far-colour
-        // pull (gold far colour + depth-graded IR0 in retail), staged as
-        // a view-depth IR0 ramp. Cleared every non-prologue frame, so
-        // interactive scenes render the identity (ramp-off) path.
-        match self.session.host.world.scene_depth_cue() {
+        // The grade's three arms come out of one engine mapping
+        // (`World::frame_grade`, which the browser play page serialises
+        // too): a prologue grade is the PALETTE-COLLAPSE mode - the retail
+        // mechanism's true altitude (the two `4C E6` HSV ops rewrite the
+        // scene's CLUTs and TMD colour words to the gold law, which the
+        // shaders apply per texel / packet colour) - plus the per-render-
+        // node DPCS far-colour pull staged as a view-depth IR0 ramp; every
+        // other frame stages the identity on all three.
+        let grade = self.session.host.world.frame_grade();
+        r.set_color_grade(grade.gold, grade.strength);
+        r.set_palette_grade([1.0; 3], grade.palette_collapse);
+        match grade.depth_cue {
             Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
             None => r.clear_depth_cue_ramp(),
         }

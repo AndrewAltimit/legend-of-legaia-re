@@ -553,6 +553,32 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "frame clear colour, native vs play page - both ran the "
+        "shared `scene_clear` selector, but the page passed a hardcoded "
+        "`false` for the screen term the native window built from its boot "
+        "UI and `MenuRuntime::covers_field`, so a shop in a scene with a "
+        "scripted clear colour sat on that colour on the page and on black "
+        "natively. Both ask `field_frame::frame_clear_color`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_battle_render.rs", "play_scene_clear_color"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["frame_clear_color"],
+    },
+    {
+        "what": "prologue colour grade staging, native vs play page - each "
+        "host mapped `World::scene_color_grade` / `scene_depth_cue` onto its "
+        "renderer's colour-grade, palette-grade and depth-cue arms itself. "
+        "Both take the one mapping `World::frame_grade`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_cutscene.rs", "play_cutscene_state_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["frame_grade"],
+    },
+    {
         "what": "enhanced lighting's scene-light selection, native vs play "
         "page - each host spelled out the gate (field mode, not the world "
         "map, no screen owning the frame), the focus and the prop-light "

@@ -204,6 +204,7 @@ pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 pub use items_arts::BATTLE_GOLD_CAP;
 mod narration;
+pub use narration::FrameGrade;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;

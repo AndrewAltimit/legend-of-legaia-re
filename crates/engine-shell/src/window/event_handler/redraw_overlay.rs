@@ -259,14 +259,13 @@ impl PlayWindowApp {
         // does). Passing it only for the boot UI and a
         // stage battle left every other frame on the renderer's own
         // fallback navy, a colour neither retail nor the page draws.
-        let boot_ui_clear =
-            (self.boot_ui.is_active() && !game_over_hold) || self.menu_runtime.covers_field();
         let stage_battle =
             self.session.host.world.mode == SceneMode::Battle && self.battle_stage_mesh.is_some();
-        Some(legaia_engine_render::battle_stage_clear::scene_clear(
-            boot_ui_clear,
+        Some(legaia_engine_screens::field_frame::frame_clear_color(
+            &self.session.host.world,
+            self.boot_ui.is_active() && !game_over_hold,
+            &self.menu_runtime,
             stage_battle,
-            self.session.host.world.frame_clear_rgb(),
         ))
     }
 

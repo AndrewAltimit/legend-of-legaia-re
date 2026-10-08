@@ -6,6 +6,21 @@
 use super::*;
 
 mod dialogue_drive;
+
+/// One frame's grade staging ([`World::frame_grade`]): what each play host
+/// hands its renderer's colour-grade, palette-grade and depth-cue setters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameGrade {
+    /// Colour-grade multiply tint (`set_color_grade`'s first argument).
+    pub gold: [f32; 3],
+    /// Colour-grade strength; `0.0` is the identity.
+    pub strength: f32,
+    /// The palette-collapse mode (`set_palette_grade(_, on)`; the multiply
+    /// is always the identity).
+    pub palette_collapse: bool,
+    /// The view-depth DPCS ramp, `None` to clear it.
+    pub depth_cue: Option<crate::fade::DepthCueRamp>,
+}
 mod field_channels;
 mod record_install;
 mod spawned_slice;
@@ -206,6 +221,33 @@ impl World {
     pub fn scene_depth_cue(&self) -> Option<crate::fade::DepthCueRamp> {
         self.scene_color_grade()
             .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
+    }
+
+    /// This frame's whole grade staging, the three renderer arms both play
+    /// hosts set every frame: the colour grade, the palette-collapse mode and
+    /// the depth-cue ramp.
+    ///
+    /// A prologue grade is staged as the palette-collapse mode - the retail
+    /// mechanism's true altitude: the two `4C E6` HSV ops rewrite the scene's
+    /// uploaded CLUTs and resident TMD colour words to the gold law, which the
+    /// shaders apply per texel / packet colour - with the depth-cue ramp
+    /// beside it; every other frame stages the identity on all three. The
+    /// native window and the play page each spelled this mapping out.
+    pub fn frame_grade(&self) -> FrameGrade {
+        match self.scene_color_grade() {
+            Some(g) => FrameGrade {
+                gold: g.gold,
+                strength: g.strength,
+                palette_collapse: true,
+                depth_cue: self.scene_depth_cue(),
+            },
+            None => FrameGrade {
+                gold: [1.0; 3],
+                strength: 0.0,
+                palette_collapse: false,
+                depth_cue: None,
+            },
+        }
     }
 
     /// The op `0x4C 0x12` global tint currently in force
