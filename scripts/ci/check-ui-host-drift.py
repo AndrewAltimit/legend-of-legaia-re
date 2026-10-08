@@ -553,6 +553,21 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "NPC posed-mesh cache key, native vs play page - a script's "
+        "look rotation (`4C 45`) turns the head on top of the keyframe, so it "
+        "is part of the pose each host memoises. The native window packed it "
+        "into the key's high bits; the page folded the same inputs with "
+        "overlapping XORs into its re-pose generation, under which two "
+        "different looks could share a value and the head would not re-pose. "
+        "Both key on `ActorLook::pose_key_bits`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/field_actors.rs", "clip_states"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["pose_key_bits"],
+    },
+    {
         "what": "field NPC draw transform, native vs play page - the hide "
         "(off-map box, zero render scale), the heading composition and the "
         "tilt were spelled out natively and again in field-actors.js over two "

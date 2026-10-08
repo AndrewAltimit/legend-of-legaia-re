@@ -199,7 +199,7 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
                 rt.play_npc_clip_states(),
                 "{scene} t{t}: actor clip states"
             );
-            moved_actors |= ac.chunks(2).any(|c| c[0] > 0);
+            moved_actors |= ac.chunks(4).any(|c| c[0] > 0);
             let (fv, fp) = (pack.placement_frames(), rt.field_placement_frames());
             assert_eq!(fv, fp, "{scene} t{t}: placed-prop pose keys");
             moved.2 |= fv.iter().any(|&k| k > 0);

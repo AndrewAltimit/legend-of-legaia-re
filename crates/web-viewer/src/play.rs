@@ -1656,7 +1656,8 @@ impl LegaiaRuntime {
     }
 
     /// Live clip-playback state of every catalogued NPC, `[pose, generation,
-    /// ...]` (`[-1, -1]` with no live clip player).
+    /// look_lo, look_hi, ...]` (`FieldActors::clip_states`; `[-1, -1, 0, 0]`
+    /// with no live clip player).
     pub fn play_npc_clip_states(&self) -> Vec<i32> {
         self.actors.clip_states(self.scene_host.host())
     }

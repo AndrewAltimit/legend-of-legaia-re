@@ -49,6 +49,28 @@ impl ActorLook {
     pub fn turns(&self) -> bool {
         self.object >= 0 && self.angles != [0; 3]
     }
+
+    /// The look's contribution to a posed-mesh cache key, `0` for no look.
+    ///
+    /// A look rotation turns one object on top of the clip's keyframe, so it
+    /// is part of the pose a host memoises: the key is the clip's
+    /// `pose_key()` (frame * 16 plus sub-frame, well under bit 16) OR'd with
+    /// these bits. The packing is collision-free - a present bit, the object
+    /// byte and the three 12-bit angles each in their own field - so a head
+    /// that turns on a held frame always changes the key. Both play hosts key
+    /// on it; the page once folded the same inputs with overlapping XORs,
+    /// under which two different looks could share a key and the head would
+    /// not re-pose.
+    pub fn pose_key_bits(look: Option<&Self>) -> u64 {
+        look.map_or(0, |l| {
+            let a = l.angles.map(|v| u64::from(v as u16) & 0xFFF);
+            (1 << 63)
+                | ((u64::from(l.object as u16) & 0xFF) << 52)
+                | (a[0] << 40)
+                | (a[1] << 28)
+                | (a[2] << 16)
+        })
+    }
 }
 
 /// Which actor a look belongs to.

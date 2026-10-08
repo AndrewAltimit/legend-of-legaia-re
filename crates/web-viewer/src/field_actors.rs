@@ -541,32 +541,38 @@ impl FieldActors {
         }
     }
 
-    /// `[pose, generation, ...]` per catalog entry (`[-1, -1]` with no live
-    /// clip): the pose key this render should show and the re-target count.
-    /// A script's look rotation (`4C 45`, [`look_of`]) is part of the pose,
-    /// so its angles fold into the generation: the page re-poses when a head
-    /// turns on a held frame.
+    /// `[pose, generation, look_lo, look_hi, ...]` per catalog entry
+    /// ([`Self::CLIP_STATE_STRIDE`]; `[-1, -1, 0, 0]` with no live clip): the
+    /// pose key this render should show, the re-target count, and a script's
+    /// look rotation (`4C 45`, [`look_of`]) as the two halves of
+    /// `ActorLook::pose_key_bits` - the packing the native window keys its
+    /// pose cache on. The page re-poses when any of the four moves, so a head
+    /// that turns on a held frame re-poses.
     pub fn clip_states(&self, host: Option<&SceneHost>) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
         };
-        let mut out = Vec::with_capacity(n.pack.entries.len() * 2);
+        let mut out = Vec::with_capacity(n.pack.entries.len() * Self::CLIP_STATE_STRIDE);
         for e in &n.pack.entries {
             let slot = e.placement.index as u8;
             match self.clips.get(&slot) {
                 Some(c) => {
-                    let look = look_of(host, slot).map_or(0, |l| {
-                        let a = l.angles.map(|v| i32::from(v as u16 & 0xFFF));
-                        (1 << 30) ^ (i32::from(l.object) << 24) ^ (a[0] << 12) ^ a[1] ^ (a[2] << 6)
-                    });
+                    let look = legaia_engine_core::actor_look::ActorLook::pose_key_bits(
+                        look_of(host, slot).as_ref(),
+                    );
                     out.push(c.player.pose_key() as i32);
-                    out.push(c.generation as i32 ^ look);
+                    out.push(c.generation as i32);
+                    out.push(look as u32 as i32);
+                    out.push((look >> 32) as u32 as i32);
                 }
-                None => out.extend([-1, -1]),
+                None => out.extend([-1, -1, 0, 0]),
             }
         }
         out
     }
+
+    /// Stride of [`Self::clip_states`].
+    pub const CLIP_STATE_STRIDE: usize = 4;
 
     /// Current pose of catalog entry `i`'s live clip, 6 `i32` per bone, read
     /// without advancing the playhead. Empty with no live clip.

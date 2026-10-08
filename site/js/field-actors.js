@@ -23,6 +23,8 @@
   const NPC_CLIP_FPS = 15;
   /* Floats per actor in a `draw_poses` export (FieldActors::DRAW_POSE_STRIDE). */
   const DRAW_POSE_STRIDE = 8;
+  /* Ints per actor in a `clip_states` export (FieldActors::CLIP_STATE_STRIDE). */
+  const CLIP_STATE_STRIDE = 4;
 
   /* Pose an object-local mesh into `out` from one frame of a clip: per bone,
    * `Rz . Ry . Rx . v + T`. A character TMD's vertices are relative to their
@@ -220,8 +222,12 @@
         }
       }
       let posed = false;
-      if (clipStates && n.i * 2 + 1 < clipStates.length) {
-        const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
+      const cs = n.i * CLIP_STATE_STRIDE;
+      if (clipStates && cs + CLIP_STATE_STRIDE <= clipStates.length) {
+        const f = clipStates[cs];
+        /* Re-target generation plus the look key's two halves
+         * (`ActorLook::pose_key_bits`): a head turning on a held frame. */
+        const gen = clipStates[cs + 1] + ':' + clipStates[cs + 2] + ':' + clipStates[cs + 3];
         if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
           const bones = a.live_bones(n.i);
           if (bones.length) {

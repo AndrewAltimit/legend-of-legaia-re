@@ -629,14 +629,10 @@ impl PlayWindowApp {
                 // the pose the cache keys: its angles ride the key's
                 // high bits.
                 let look = world.actor_look(legaia_engine_core::actor_look::LookKey::Npc(*slot));
-                let look_bits = look.map_or(0usize, |l| {
-                    let a = l.angles.map(|v| v as u16 as usize);
-                    (1 << 63)
-                        | ((l.object as u16 as usize & 0xFF) << 52)
-                        | ((a[0] & 0xFFF) << 40)
-                        | ((a[1] & 0xFFF) << 28)
-                        | ((a[2] & 0xFFF) << 16)
-                });
+                // The one packing both hosts key on (`ActorLook::pose_key_bits`).
+                let look_bits =
+                    legaia_engine_core::actor_look::ActorLook::pose_key_bits(look.as_ref())
+                        as usize;
                 let key = (*slot, player.pose_key() | look_bits);
                 let mut pose = player.current_pose();
                 if let Some(l) = look {
