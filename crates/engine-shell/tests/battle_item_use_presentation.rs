@@ -180,6 +180,16 @@ fn boot_into_battle() -> Option<BootSession> {
         w.actors[i].battle.max_hp = 60000;
         w.actors[i].battle.hp = 30000;
     }
+    // Battle entry seats the party's HP / MP from the character records
+    // (`FUN_80053CB8`), not the field actors, so the records carry it too.
+    for r in w.party.roster.members.iter_mut() {
+        let mut hms = r.hp_mp_sp();
+        if hms.hp_max > 0 {
+            hms.hp_max = 60000;
+            hms.hp_cur = 30000;
+            r.set_hp_mp_sp(hms);
+        }
+    }
     assert_eq!(
         session
             .host

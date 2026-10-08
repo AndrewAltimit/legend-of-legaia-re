@@ -591,8 +591,9 @@ fn equip_screen_draws_slot_rows_at_retail_offsets() {
 }
 
 /// Item-picker phase: candidates fill the id-23 list window at the 0xD
-/// list pitch and the stat-compare block lands at the traced main-window
-/// offsets (label +0xA0, current +0xC8, preview +0xF0 only on change).
+/// list pitch and the main window is closed; the browse step's stat-compare
+/// block lands at the traced main-window offsets (label +0xA0, current
+/// +0xC8, preview +0xF0 only on change).
 #[test]
 fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
     let font = legaia_font::synthetic_for_tests();
@@ -644,6 +645,27 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
             .any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly + 0x0d)
     );
     let (mx, my) = EQUIP_MAIN_PEN;
+    // The candidate step closes the main window (22): its open script leads
+    // with close-all, so no stat-compare row lands on it here...
+    assert!(
+        !draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0xa0 && d.dst.1 == my + 0x48)
+    );
+    // ...and the Best-Equipment block draws on the browse step instead.
+    let browse = equip_view(
+        &slots,
+        &candidates,
+        &stat_compare,
+        EquipDrawPhase::SlotPicker,
+    );
+    let draws = equip_screen_draws_for(
+        &font,
+        &browse,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
     // Stat labels at mx+0xA0 on rows my+0x48 / my+0x55.
     assert!(
         draws
