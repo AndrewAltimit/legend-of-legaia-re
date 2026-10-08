@@ -184,7 +184,9 @@ pub struct PanelWindow {
     pub style: u8,
     /// `obj[+0x20]` - the counter halfword the `op 6` arm zeroes.
     pub counter: i16,
-    /// Set by the `op 9` slide arm; a renderer eases toward `(x, y)`.
+    /// `obj[+0x20] == 1`: set by the `op 1` / `op 2` slide arms
+    /// (`FUN_800357FC`), cleared by the `op 9` / `op 10` snap arms
+    /// (`FUN_800358C0`); a renderer eases toward `(x, y)` while it holds.
     pub sliding: bool,
 }
 
@@ -345,7 +347,7 @@ impl PanelWindowHost {
                     let w = self.windows[i].get_or_insert_with(PanelWindow::default);
                     w.x = x;
                     w.y = y;
-                    w.sliding = false;
+                    w.sliding = true;
                 }
             }
             PanelEffect::SetStyleByte { panel, value } => {
@@ -368,20 +370,20 @@ impl PanelWindowHost {
                     w.counter = 0;
                 }
             }
-            PanelEffect::SlideTo { panel, x, y } => {
+            PanelEffect::SnapTo { panel, x, y } => {
                 if let Some(i) = Self::slot(panel) {
                     let w = self.windows[i].get_or_insert_with(PanelWindow::default);
                     w.x = x;
                     w.y = y;
-                    w.sliding = true;
+                    w.sliding = false;
                 }
             }
             PanelEffect::Respawn { panel } => {
-                // Retail retires and respawns, sliding the fresh object back to
-                // where the live one already was - so the observable result is
-                // the object's own position re-applied as a slide.
+                // Retail retires and respawns, snapping the fresh object back
+                // to where the live one already was - so the observable result
+                // is the object at rest at its own position.
                 if let Some(w) = Self::slot(panel).and_then(|i| self.windows[i].as_mut()) {
-                    w.sliding = true;
+                    w.sliding = false;
                 }
             }
             PanelEffect::PartyPanel { panel, geometry } => {

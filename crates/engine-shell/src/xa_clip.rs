@@ -24,7 +24,7 @@
 //! two XA consumers both read whole files up front - `play-str` demuxes the
 //! single track interleaved inside an `MV*.STR`, and the arts-shout bank
 //! pre-decodes `XA2`/`XA4`/`XA6.XA` into memory at boot (`read_arts_shout_bank`
-//! in `crate::boot`). Neither needs a slot, a filter channel or a sector
+//! in `legaia_engine_session::boot`). Neither needs a slot, a filter channel or a sector
 //! duration.
 //!
 //! **A producer for this cue-id space.** Every cue the world raises today

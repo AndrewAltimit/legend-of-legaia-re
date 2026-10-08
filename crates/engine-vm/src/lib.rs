@@ -352,36 +352,37 @@ pub trait Host {
     /// [`actor_exists`]: Host::actor_exists
     fn spawn(&mut self, actor_id: u8, default_position: Position);
 
-    /// Equivalent of `FUN_800357fc(actor_id, x, y)`. Despite this method's
-    /// name, retail **starts an animated move**: the tail at `0x80035874`
-    /// copies the window node's current `(+0xA, +0xC)` into the motion
-    /// sub-object's `+6` / `+8`, writes `(x, y)` to its `+0xA` / `+0xC`, and
-    /// sets node `+0x20 = 1`.
-    fn set_position(&mut self, actor_id: u8, position: Position);
+    /// Equivalent of `FUN_800357fc(actor_id, x, y)` - **start a slide**: the
+    /// tail at `0x80035874` copies the window node's current `(+0xA, +0xC)`
+    /// into the motion sub-object's source `+6` / `+8`, writes `(x, y)` to
+    /// its target `+0xA` / `+0xC`, and sets node `+0x20 = 1`. Ops `0x01` and
+    /// `0x02` call it. A window whose `+0x20` reads `-2` is left alone.
+    fn slide_to(&mut self, actor_id: u8, position: Position);
 
-    /// Equivalent of `FUN_800358c0(actor_id, x, y)`. Despite this method's
-    /// name, retail **snaps**: the tail at `0x80035938` writes `(x, y)` to
-    /// node `+0xA` / `+0xC` and to the sub-object's `+6` / `+8` / `+0xA` /
-    /// `+0xC`, and clears node `+0x20`. (The two names are swapped relative
-    /// to the bytes; the bytecode-side call sites are right.)
-    fn start_motion(&mut self, actor_id: u8, target: Position);
+    /// Equivalent of `FUN_800358c0(actor_id, x, y)` - **snap**: the tail at
+    /// `0x80035938` writes `(x, y)` to node `+0xA` / `+0xC` and to the
+    /// sub-object's source and target alike, and clears node `+0x20`. Ops
+    /// `0x09` and `0x0A` call it. (These two methods used to be named
+    /// `set_position` and `start_motion`, the reverse of the bytes, and both
+    /// engine hosts implemented the names rather than the helpers.)
+    fn snap_to(&mut self, actor_id: u8, target: Position);
 
     /// Equivalent of `FUN_80035978(actor_id)` - **begin the window's close
     /// animation** (node `+0x20 = -1`, `+0x1E` reset or reversed at
     /// `0x80035A2C`). Nothing is freed here; the node is torn down when the
     /// close completes.
-    fn delete_sprite(&mut self, actor_id: u8);
+    fn begin_close(&mut self, actor_id: u8);
 
     /// Equivalent of `FUN_80035a4c()` - begin the close animation on
     /// **every** window on the `gp+0x148` list (the `FUN_80035978` body
     /// applied per node).
-    fn global_update(&mut self);
+    fn close_all(&mut self);
 
     /// Equivalent of `FUN_800319a8(actor_id)` - **destroy the window
     /// immediately**: free the node's `+0x18` / `+0x24` / `+0x2C` buffers
     /// (`FUN_80017B94`), unlink it, and free the list head when the list
     /// empties (`gp+0x148 = 0`). Not an effect trigger.
-    fn actor_effect(&mut self, actor_id: u8);
+    fn destroy(&mut self, actor_id: u8);
 
     /// Opaque write to the actor's `field1d` byte (`SetField1d`).
     ///
@@ -394,9 +395,9 @@ pub trait Host {
     /// See note on [`Host::set_field_1d`].
     fn clear_field_20(&mut self, actor_id: u8);
 
-    /// Test the conditional that drives `SpawnDefault`'s post-snap clear.
+    /// Test the conditional that drives `SpawnDefault`'s post-slide arrival clear.
     ///
-    /// In the original, after `set_position` the runtime reads the actor's
+    /// In the original, after the slide (`FUN_800357FC`) the VM reads the window's
     /// `subobj` pointer at offset `+0x24`. If non-null and both
     /// `subobj[+6] == subobj[+0xA]` and `subobj[+8] == subobj[+0xC]`, it
     /// clears `field20`.
@@ -404,12 +405,13 @@ pub trait Host {
     /// Implementations return `true` to perform the clear, `false` to skip.
     fn snap_clear_condition(&self, actor_id: u8) -> bool;
 
-    /// Read the motion target used by `EffectMotion`.
+    /// The window's live position, read by `EffectMotion` (op `0x0A`) before
+    /// it destroys and re-creates the window.
     ///
-    /// In the original, this is `(subobj[+0xA], subobj[+0xC])` - the same
-    /// pair tested in [`Host::snap_clear_condition`]. Returning `None` skips
-    /// the effect+motion entirely (the original branched out via
-    /// `beq a2, zero, ...` on a null subobj pointer).
+    /// Retail reads the **node's** `(+0xA, +0xC)` (`lh s1,0xa(a2)` /
+    /// `lh s2,0xc(a2)` at `0x801D6800`), not the motion sub-object's target.
+    /// Returning `None` (no such window: the `beq a2,zero` after the lookup)
+    /// skips the whole op.
     fn motion_target(&self, actor_id: u8) -> Option<Position>;
 }
 
@@ -447,25 +449,26 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
 
     match insn.opcode {
         // 0x01 - SpawnDefault.
-        // Ensure actor exists, snap to its default position, then conditionally
-        // clear field20 based on subobj equality.
+        // Ensure the window exists, slide it home (`FUN_800357FC`), then
+        // clear field20 when the slide's source already equals its target.
         0x01 => {
             let default = host.default_position(actor_id);
             if !host.actor_exists(actor_id) {
                 host.spawn(actor_id, default);
             }
-            host.set_position(actor_id, default);
+            host.slide_to(actor_id, default);
             if host.snap_clear_condition(actor_id) {
                 host.clear_field_20(actor_id);
             }
         }
-        // 0x02 - SpawnAt: ensure actor exists, snap to packed operand_w.
+        // 0x02 - SpawnAt: ensure the window exists, slide it to the packed
+        // operand (`FUN_800357FC`).
         0x02 => {
             let default = host.default_position(actor_id);
             if !host.actor_exists(actor_id) {
                 host.spawn(actor_id, default);
             }
-            host.set_position(actor_id, packed);
+            host.slide_to(actor_id, packed);
         }
         // 0x03 - SetField1d: write low byte of operand_w to actor field1d.
         // Original: `*(char *)(iVar4 + 0x1d) = (char)*puVar6`, where puVar6
@@ -475,34 +478,34 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
             host.set_field_1d(actor_id, (insn.operand_w & 0xFF) as u8);
         }
         // 0x04 - DeleteSprite: unconditional delete (no exists check).
-        0x04 => host.delete_sprite(actor_id),
+        0x04 => host.begin_close(actor_id),
         // 0x05 - GlobalUpdate: tick global sprite system, ignore operands.
-        0x05 => host.global_update(),
+        0x05 => host.close_all(),
         // 0x06 - ClearField20: only act if actor exists.
         0x06 if host.actor_exists(actor_id) => host.clear_field_20(actor_id),
         // 0x07 - Nop. (Case 7 explicitly falls through to the default in the
         // original switch.)
         0x07 => {}
-        // 0x08 - Effect: unconditional actor effect.
-        0x08 => host.actor_effect(actor_id),
-        // 0x09 - MotionAt: ensure actor exists, motion to packed operand_w
-        // (or to default position if operand_w == 0).
+        // 0x08 - Effect: destroy the window immediately (`FUN_800319A8`).
+        0x08 => host.destroy(actor_id),
+        // 0x09 - MotionAt: ensure the window exists, snap it (`FUN_800358C0`)
+        // to the packed operand, or home when operand_w == 0.
         0x09 => {
             let default = host.default_position(actor_id);
             if !host.actor_exists(actor_id) {
                 host.spawn(actor_id, default);
             }
             let target = if insn.operand_w == 0 { default } else { packed };
-            host.start_motion(actor_id, target);
+            host.snap_to(actor_id, target);
         }
-        // 0x0A - EffectMotion: capture subobj-derived target, fire effect,
-        // respawn (overwrites position with default), then motion to target.
-        // No-op if the actor (or its subobj target) is missing.
+        // 0x0A - EffectMotion: read the live position, destroy the window,
+        // re-create it, then snap it back to where it was. No-op if the
+        // window is missing.
         0x0A => {
             if let Some(target) = host.motion_target(actor_id) {
-                host.actor_effect(actor_id);
+                host.destroy(actor_id);
                 host.spawn(actor_id, host.default_position(actor_id));
-                host.start_motion(actor_id, target);
+                host.snap_to(actor_id, target);
             }
         }
         // 0x0B..=0xFF - reserved / out-of-range; runtime falls through.
@@ -521,8 +524,8 @@ mod tests {
         Exists(u8),
         DefaultPos(u8),
         Spawn(u8, Position),
-        SetPos(u8, Position),
-        StartMotion(u8, Position),
+        SlideTo(u8, Position),
+        SnapTo(u8, Position),
         DeleteSprite(u8),
         GlobalUpdate,
         Effect(u8),
@@ -566,19 +569,19 @@ mod tests {
         fn spawn(&mut self, actor_id: u8, p: Position) {
             self.record(Event::Spawn(actor_id, p));
         }
-        fn set_position(&mut self, actor_id: u8, p: Position) {
-            self.record(Event::SetPos(actor_id, p));
+        fn slide_to(&mut self, actor_id: u8, p: Position) {
+            self.record(Event::SlideTo(actor_id, p));
         }
-        fn start_motion(&mut self, actor_id: u8, p: Position) {
-            self.record(Event::StartMotion(actor_id, p));
+        fn snap_to(&mut self, actor_id: u8, p: Position) {
+            self.record(Event::SnapTo(actor_id, p));
         }
-        fn delete_sprite(&mut self, actor_id: u8) {
+        fn begin_close(&mut self, actor_id: u8) {
             self.record(Event::DeleteSprite(actor_id));
         }
-        fn global_update(&mut self) {
+        fn close_all(&mut self) {
             self.record(Event::GlobalUpdate);
         }
-        fn actor_effect(&mut self, actor_id: u8) {
+        fn destroy(&mut self, actor_id: u8) {
             self.record(Event::Effect(actor_id));
         }
         fn set_field_1d(&mut self, actor_id: u8, value: u8) {
@@ -665,7 +668,7 @@ mod tests {
                 Event::DefaultPos(7),
                 Event::Exists(7),
                 Event::Spawn(7, Position::new(100, 50)),
-                Event::SetPos(7, Position::new(100, 50)),
+                Event::SlideTo(7, Position::new(100, 50)),
                 Event::SnapClearCondition(7),
                 // snap_clear didn't include 7 → no ClearField20
             ]
@@ -691,7 +694,7 @@ mod tests {
                 Event::DefaultPos(7),
                 Event::Exists(7),
                 // No Spawn event because actor exists.
-                Event::SetPos(7, Position::new(100, 50)),
+                Event::SlideTo(7, Position::new(100, 50)),
                 Event::SnapClearCondition(7),
                 Event::ClearField20(7),
             ]
@@ -717,7 +720,7 @@ mod tests {
                 Event::DefaultPos(3),
                 Event::Exists(3),
                 Event::Spawn(3, Position::new(0, 0)),
-                Event::SetPos(3, p),
+                Event::SlideTo(3, p),
             ]
         );
     }
@@ -795,7 +798,7 @@ mod tests {
             vec![
                 Event::DefaultPos(2),
                 Event::Exists(2),
-                Event::StartMotion(2, Position::new(80, 40)),
+                Event::SnapTo(2, Position::new(80, 40)),
             ]
         );
     }
@@ -818,7 +821,7 @@ mod tests {
             vec![
                 Event::DefaultPos(2),
                 Event::Exists(2),
-                Event::StartMotion(2, insn.packed_position()),
+                Event::SnapTo(2, insn.packed_position()),
             ]
         );
     }
@@ -855,7 +858,7 @@ mod tests {
                 Event::Effect(4),
                 Event::DefaultPos(4),
                 Event::Spawn(4, Position::new(10, 20)),
-                Event::StartMotion(4, Position::new(200, 100)),
+                Event::SnapTo(4, Position::new(200, 100)),
             ]
         );
     }
