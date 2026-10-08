@@ -1578,7 +1578,12 @@ reached. `ParticleBurst`'s tick is reached only through a template whose one
 materialising routine has no reference of any form on the disc, so it is filed
 under the ignore list's `unreferenced` rows and the port is removed
 ([world-map.md](../subsystems/world-map.md#the-sparkle-burst-has-no-spawner)).
-`ClutBlendFade` is the one left.
+`ClutBlendFade` closed by its spawner: field-VM `4C DB` installs it through
+`FUN_801E57F0` from descriptor `0x801F2930`, and `world::effects`' blend-fade
+arm (`ClutBlendFx`) drives the port on both hosts. The op has one carrier on
+the disc - `jouine`'s bundle MAN, four clean occurrences in the
+[field-op census](field-op-census.md) - so a ladder enters it only by playing
+that scene's records.
 
 #### The cursor-pose module is four leaves with no caller at all
 
