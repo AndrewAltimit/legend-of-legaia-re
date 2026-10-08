@@ -757,10 +757,9 @@ impl PlayWindowApp {
                         &world.tables.spell_catalog,
                         &world.tables.equipment_table,
                     );
-                    // The Options row grows its engine-only Key Config row
-                    // only where a host has a binding table to edit; the
-                    // browser play page arms the same row off its own stored
-                    // table.
+                    // The Options screen opens its engine-only Key Config screen
+                    // off Select only where a host has a binding table to edit;
+                    // the browser play page arms it off its own stored table.
                     built.arm_key_rebind(self.mapping.clone());
                     *sub = Some(built);
                 }

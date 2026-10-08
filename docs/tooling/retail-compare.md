@@ -1186,8 +1186,7 @@ the title picker, the card-boot save select) and a screen no root row routes
 to is script-entered (the casino prize exchange, `0x20`); both are kept with
 a `menu not seedable:` reason and counted as classified limits.
 
-What a like-for-like menu frame shows is the engine's. The options screen
-carries the port's extra Key Config row. The Status and Equip character lists are the present
+What a like-for-like menu frame shows is the engine's. The Status and Equip character lists are the present
 party (`DAT_80084594` over `0x80084598`,
 `field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
 every roster record - the New Game template seeds all four records, so a

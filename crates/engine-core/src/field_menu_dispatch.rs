@@ -153,7 +153,7 @@ impl FieldMenuSubsession {
         }
     }
 
-    /// Arm the Options sub-session's engine-only **Key Config** row against
+    /// Arm the Options sub-session's engine-only **Key Config** screen (Select) against
     /// the host's live keyboard binding table. No-op on every other variant.
     ///
     /// A post-construction hook rather than a [`Self::build`] argument: the
@@ -170,7 +170,7 @@ impl FieldMenuSubsession {
 
     /// The Options sub-session's live binding table once a rebind committed,
     /// paired with "it changed since you last asked". `None` on every other
-    /// variant, and on an Options session whose Key Config row was never
+    /// variant, and on an Options session whose Key Config screen was never
     /// armed.
     ///
     /// The host's persist cue: native writes `legaia-input.toml`, the page
@@ -648,7 +648,7 @@ pub fn tick_root_list(
 }
 
 /// Step an open sub-session one frame on a raw pad edge (and the host's
-/// latest key name, for the Options screen's Key Config row). Returns the
+/// latest key name, for the Options screen's Key Config screen). Returns the
 /// rebound binding table when a rebind committed this frame, for the host
 /// to adopt and persist.
 ///

@@ -2564,15 +2564,16 @@ impl LegaiaRuntime {
         self.battle_intro = Some(intro);
     }
 
-    /// Which VRAM animator the scene rebuild installed:
-    /// `0` none, `1` the slot-5 CLUT **walker**, `2` the legacy **ocean-head**
-    /// fallback, `3` both.
+    /// Which CLUT animator the scene rebuild installed: `0` none, `1` the
+    /// slot-5 / type-6 **walker**, `2` the legacy **ocean-head** fallback
+    /// (`ClutWalkAnim::Ocean`). The two are exclusive - the animator holds one
+    /// `ClutWalkAnim` - so there is no combined value.
     ///
     /// A diagnostic, and specifically a *negative* one: the ocean fallback is
     /// the arm for a kingdom bundle whose slot-5 walker table does not parse,
     /// and every retail kingdom ships one - so a ladder that enters a kingdom
     /// scene and reads `1` here is measuring that no shipped content reaches
-    /// `FieldSceneAnim::ocean_only` at all.
+    /// the ocean fallback at all.
     pub fn play_field_anim_kind(&self) -> u32 {
         self.field_vram_anim
             .as_ref()

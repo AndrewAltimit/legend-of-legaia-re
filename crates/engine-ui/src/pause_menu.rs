@@ -405,7 +405,7 @@ pub struct OptionsScreenView<'a> {
     pub popup: Option<OptionsPopupDraw<'a>>,
     /// Sum of the row advances above the cursor - where the hand sits.
     pub row_y_off: i32,
-    /// The engine-only key-rebind sub-screen, when the Key Config row opened
+    /// The engine-only key-rebind sub-screen, when the Key Config screen opened
     /// it. It *replaces* the settings rows inside the same window - one
     /// screen at a time, the way the value popup is the only thing drawn over
     /// them - so a host passes the row list and this, and the composition

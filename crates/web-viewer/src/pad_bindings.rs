@@ -30,7 +30,7 @@
 //! single-source-of-truth property that made the tables above deletable.
 //!
 //! "Starts at", because the table is now **editable**: the options screen's
-//! Key Config row ([`legaia_engine_core::key_rebind::KeyRebindSession`],
+//! Key Config screen ([`legaia_engine_core::key_rebind::KeyRebindSession`],
 //! reached through [`legaia_engine_core::options::OptionsSession`]) commits
 //! binds into it, and [`store_mapping`] round-trips the result through
 //! `localStorage` under [`BINDINGS_STORAGE_KEY`] - the browser twin of the

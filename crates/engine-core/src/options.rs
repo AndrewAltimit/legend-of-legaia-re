@@ -458,28 +458,13 @@ pub struct OptionsRowDef {
     pub advance: i32,
     /// The setting this row edits; `None` for the "Dual Shock" header.
     pub setting: Option<OptionsSetting>,
-    /// A row that opens a sub-screen instead of a value popup. `None` for
-    /// every retail row - this is the hook the engine-only
-    /// [`OPTIONS_KEY_CONFIG_ROW`] hangs off, and it is what makes that row
-    /// cursor-selectable without a config word behind it (the navigation
-    /// skips a row with neither a setting nor an action, which is how the
-    /// "Dual Shock" header stays unselectable).
-    pub action: Option<OptionsRowAction>,
-}
-
-/// What a row with no config word does when Cross lands on it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OptionsRowAction {
-    /// Open the key-rebind sub-screen
-    /// ([`crate::key_rebind::KeyRebindSession`]).
-    KeyConfig,
 }
 
 impl OptionsRowDef {
     /// Can the browse cursor land on this row? A retail value row can, the
-    /// "Dual Shock" header cannot, and an action row can.
+    /// "Dual Shock" header cannot.
     pub fn selectable(&self) -> bool {
-        self.setting.is_some() || self.action.is_some()
+        self.setting.is_some()
     }
 }
 
@@ -492,125 +477,76 @@ pub const OPTIONS_DISPLAY_ROWS: [OptionsRowDef; 10] = [
         teal: false,
         advance: 14,
         setting: Some(OptionsSetting::BattleCamera),
-        action: None,
     },
     OptionsRowDef {
         label: "Battle Select Attack",
         teal: false,
         advance: 14,
         setting: Some(OptionsSetting::SelectAttack),
-        action: None,
     },
     OptionsRowDef {
         label: "Battle Command",
         teal: false,
         advance: 20,
         setting: Some(OptionsSetting::BattleCommand),
-        action: None,
     },
     OptionsRowDef {
         label: "Field Move",
         teal: false,
         advance: 14,
         setting: Some(OptionsSetting::FieldMove),
-        action: None,
     },
     OptionsRowDef {
         label: "Field HP Display",
         teal: false,
         advance: 20,
         setting: Some(OptionsSetting::HpDisplay),
-        action: None,
     },
     OptionsRowDef {
         label: "Sound",
         teal: false,
         advance: 14,
         setting: Some(OptionsSetting::Sound),
-        action: None,
     },
     OptionsRowDef {
         label: "Dual Shock",
         teal: false,
         advance: 14,
         setting: None,
-        action: None,
     },
     OptionsRowDef {
         label: "  Battles",
         teal: true,
         advance: 14,
         setting: Some(OptionsSetting::VibrationBattles),
-        action: None,
     },
     OptionsRowDef {
         label: "  Events",
         teal: true,
         advance: 14,
         setting: Some(OptionsSetting::VibrationEvents),
-        action: None,
     },
     OptionsRowDef {
         label: "  Encounters",
         teal: true,
         advance: 14,
         setting: Some(OptionsSetting::VibrationEncounters),
-        action: None,
     },
 ];
 
-/// The engine-only **Key Config** row, appended below the retail ten.
-///
-/// Retail has no such row: its bindings are the pad, and there is nothing to
-/// edit. The port runs on keyboards, so the binding table
-/// ([`crate::input::Mapping`]) is a real setting - and until this row existed
-/// it had no menu route on either host, which is why
-/// [`crate::key_rebind::KeyRebindSession`] sat complete and unreached (the
-/// native binary edited `legaia-input.toml` out of band and the browser page
-/// could not rebind at all).
-///
-/// It carries no config word, so it is [`OptionsRowAction::KeyConfig`] rather
-/// than an [`OptionsSetting`]: Cross opens the sub-screen, and the value
-/// column reads `Edit` so the row does not look like the value-less "Dual
-/// Shock" group header directly above it.
-///
-/// A host that has no binding table to edit (a replay driver, an oracle)
-/// simply builds its [`OptionsSession`] with [`OptionsSession::new`] and never
-/// sees the row - which is what keeps the retail ten the default display set.
-pub const OPTIONS_KEY_CONFIG_ROW: OptionsRowDef = OptionsRowDef {
-    label: "Key Config",
-    teal: false,
-    advance: 14,
-    setting: None,
-    action: Some(OptionsRowAction::KeyConfig),
-};
-
-/// [`OPTIONS_DISPLAY_ROWS`] plus [`OPTIONS_KEY_CONFIG_ROW`] - what a host
-/// that armed the session with a binding table displays.
-pub const OPTIONS_DISPLAY_ROWS_WITH_KEY_CONFIG: [OptionsRowDef; 11] = {
-    let mut out = [OPTIONS_KEY_CONFIG_ROW; 11];
-    let mut i = 0;
-    while i < OPTIONS_DISPLAY_ROWS.len() {
-        out[i] = OPTIONS_DISPLAY_ROWS[i];
-        i += 1;
-    }
-    out
-};
-
-/// The display set for a session armed with (`true`) or without (`false`) a
-/// binding table. One accessor so a host cannot pick the wrong array.
-///
-/// The retail set is the row span sub-screen `0x17` hands the generic picker
+/// The display set: the row span sub-screen `0x17` hands the generic picker
 /// ([`OPTIONS_SUBSCREEN_ROW_SPAN`]), sliced out of the layout table - so the
 /// span, not the table's length, is what bounds the browse cursor.
-pub fn options_display_rows(key_config: bool) -> &'static [OptionsRowDef] {
+///
+/// It is the retail ten on every host. The engine-only key-rebind screen is
+/// not a row: a row grew the window past retail's frame (an extra 14-pixel
+/// line under "Dual Shock"), which the retail comparison corpus measures as
+/// a different screen. It opens off the Select edge instead
+/// ([`OptionsSession::tick_with_key`]), so the window stays retail's.
+pub fn options_display_rows() -> &'static [OptionsRowDef] {
     static RETAIL: [OptionsRowDef; 10] = OPTIONS_DISPLAY_ROWS;
-    if key_config {
-        &OPTIONS_DISPLAY_ROWS_WITH_KEY_CONFIG
-    } else {
-        let (start, end) = OPTIONS_SUBSCREEN_ROW_SPAN;
-        &RETAIL[usize::from(start)..=usize::from(end)]
-    }
+    let (start, end) = OPTIONS_SUBSCREEN_ROW_SPAN;
+    &RETAIL[usize::from(start)..=usize::from(end)]
 }
 
 /// The options screen's row span when it runs as menu sub-screen `0x17`:
@@ -694,6 +630,10 @@ pub struct OptionsInput {
     pub cross: bool,
     pub circle: bool,
     pub start: bool,
+    /// Select: opens the engine-only key-rebind screen on a session a host
+    /// armed with its binding table ([`OptionsSession::arm_key_rebind`]).
+    /// Retail's options picker reads no Select edge.
+    pub select: bool,
 }
 
 impl OptionsInput {
@@ -706,6 +646,7 @@ impl OptionsInput {
             cross: pressed & PadButton::Cross.mask() != 0,
             circle: pressed & PadButton::Circle.mask() != 0,
             start: pressed & PadButton::Start.mask() != 0,
+            select: pressed & PadButton::Select.mask() != 0,
         }
     }
 }
@@ -799,8 +740,8 @@ pub struct OptionsScreenModel {
 pub struct OptionsSession {
     state: OptionsState,
     phase: OptionsPhase,
-    /// The host's live keyboard binding table, when it armed the Key Config
-    /// row. `None` keeps the display set at the retail ten.
+    /// The host's live keyboard binding table, when it armed the key-rebind
+    /// screen. `None` leaves Select inert.
     mapping: Option<Mapping>,
     /// Live rebind sub-screen, present only in [`OptionsPhase::Rebinding`].
     rebind: Option<KeyRebindSession>,
@@ -822,9 +763,9 @@ impl OptionsSession {
         }
     }
 
-    /// Build the session with the Key Config row armed against `mapping`.
+    /// Build the session with the key-rebind screen armed against `mapping`.
     ///
-    /// The row is the *menu route* the key-rebind screen always lacked; the
+    /// Select is the *menu route* the key-rebind screen always lacked; the
     /// session owns the edit state so both hosts drive one state machine and
     /// neither can grow its own.
     pub fn with_key_rebind(initial: OptionsState, mapping: Mapping) -> Self {
@@ -834,22 +775,21 @@ impl OptionsSession {
         }
     }
 
-    /// Arm (or re-arm) the Key Config row on an already-built session - the
+    /// Arm (or re-arm) the key-rebind screen on an already-built session - the
     /// hook a host uses when the sub-session was constructed by the shared
     /// dispatcher. No-op-safe to call twice.
     pub fn arm_key_rebind(&mut self, mapping: Mapping) {
         self.mapping = Some(mapping);
     }
 
-    /// Is the Key Config row displayed?
+    /// Does Select open the key-rebind screen?
     pub fn key_config_armed(&self) -> bool {
         self.mapping.is_some()
     }
 
-    /// The display rows this session shows - the retail ten, plus
-    /// [`OPTIONS_KEY_CONFIG_ROW`] when armed.
+    /// The display rows this session shows - the retail ten.
     pub fn display_rows(&self) -> &'static [OptionsRowDef] {
-        options_display_rows(self.key_config_armed())
+        options_display_rows()
     }
 
     /// The live binding table, once armed. A host reads this back after
@@ -918,7 +858,7 @@ impl OptionsSession {
     /// Config sub-screen's `(button, key)` rows when it is open. A host only
     /// borrows this into the renderer's view types and places the popup.
     pub fn screen_model(&self) -> OptionsScreenModel {
-        let rows = self.state.rows_for(self.key_config_armed());
+        let rows = self.state.rows();
         let cursor = self.cursor();
         let row_y_off = rows.iter().take(cursor as usize).map(|r| r.advance).sum();
         let rebind = self.key_rebind().map(|k| KeyRebindModel {
@@ -956,7 +896,7 @@ impl OptionsSession {
     }
 
     /// [`Self::tick_with_key`] with no key event - what a host that has not
-    /// armed the Key Config row calls.
+    /// armed the key-rebind screen calls.
     pub fn tick(&mut self, input: OptionsInput) -> Vec<OptionsEvent> {
         self.tick_with_key(input, None)
     }
@@ -987,8 +927,7 @@ impl OptionsSession {
                     events.push(OptionsEvent::Closed);
                     return events;
                 }
-                if input.cross
-                    && rows[cursor as usize].action == Some(OptionsRowAction::KeyConfig)
+                if input.select
                     && let Some(mapping) = self.mapping.clone()
                 {
                     self.rebind = Some(KeyRebindSession::new(mapping));
@@ -1100,24 +1039,11 @@ pub struct OptionsRowView {
 impl OptionsState {
     /// The retail display rows with their live value strings.
     pub fn rows(&self) -> Vec<OptionsRowView> {
-        self.rows_for(false)
-    }
-
-    /// The display rows for a session with (`true`) or without (`false`) the
-    /// engine-only Key Config row - the one that opens the key-rebind
-    /// sub-screen. Its value column reads `Edit`: it has no config word, so
-    /// there is no retail value string to show, and an empty column would
-    /// make it read as a group header.
-    pub fn rows_for(&self, key_config: bool) -> Vec<OptionsRowView> {
-        options_display_rows(key_config)
+        options_display_rows()
             .iter()
             .map(|def| OptionsRowView {
                 label: def.label,
-                value: match (def.setting, def.action) {
-                    (Some(s), _) => Some(s.choices()[s.get(self) as usize]),
-                    (None, Some(OptionsRowAction::KeyConfig)) => Some("Edit"),
-                    (None, None) => None,
-                },
+                value: def.setting.map(|s| s.choices()[s.get(self) as usize]),
                 teal: def.teal,
                 advance: def.advance,
             })

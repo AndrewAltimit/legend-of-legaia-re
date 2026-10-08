@@ -1044,7 +1044,7 @@ impl LegaiaRuntime {
                     &world.tables.spell_catalog,
                     &world.tables.equipment_table,
                 );
-                // The Options row's engine-only Key Config row, armed off the
+                // The Options screen's engine-only Key Config screen (Select), armed off the
                 // page's live (persisted) binding table - the browser twin of
                 // the native window arming it off `legaia-input.toml`.
                 built.arm_key_rebind(crate::pad_bindings::live_mapping());

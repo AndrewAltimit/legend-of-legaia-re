@@ -1207,7 +1207,7 @@ void main() {
     _attachInput() {
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
-        /* Key Config (the pause menu's Options > Key Config row) needs the
+        /* Key Config (Select on the pause menu's Options screen) needs the
          * PHYSICAL key, not the pad bit it currently carries: the whole point
          * is binding a key that is not in the table yet, and the guard below
          * drops exactly those. `repeat` is skipped so holding the confirm key
