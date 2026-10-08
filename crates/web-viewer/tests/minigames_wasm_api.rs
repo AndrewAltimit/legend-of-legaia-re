@@ -439,7 +439,10 @@ fn a_win_counts_in_and_a_press_finishes_the_count() {
     let state = |mg: &LegaiaMinigames| -> serde_json::Value {
         serde_json::from_str(&mg.slot_state_json()).unwrap()
     };
-    for _ in 0..150 {
+    // A spin is ~35 presses (the spin-up alone is 30 frames), and a win of 3+
+    // takes a handful of spins under retail's landing window (`FUN_801d2440`
+    // searches 5..4+depth rows ahead), so the budget is spins, not presses.
+    for _ in 0..3000 {
         let what = page_press(&mut mg);
         if what == "broke" {
             break;
@@ -477,7 +480,10 @@ fn a_win_counts_in_and_a_press_finishes_the_count() {
             return;
         }
     }
-    panic!("150 presses never resolved a win: {}", mg.slot_state_json());
+    panic!(
+        "3000 presses never resolved a win: {}",
+        mg.slot_state_json()
+    );
 }
 
 /// An empty machine reports `"broke"` rather than spinning on credit - the host
