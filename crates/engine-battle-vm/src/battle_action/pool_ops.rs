@@ -4,7 +4,7 @@
 //! `FUN_801D388C`, the turn picker `FUN_801DABA4`, the round reset
 //! `FUN_801D88CC`, the pose setter `FUN_801D5854`. None is called by the action
 //! SM `FUN_801E295C` itself, and none is a state of it, so they port cleanly as
-//! pure functions. The per-routine caller is named in the `NOT WIRED` block.
+//! pure functions.
 //!
 //! REF: FUN_801DB8B4 (first-live-monster slot - the canonical port is
 //! `engine-core`'s `BattleRound::first_living_monster`, which is live; the
@@ -32,9 +32,8 @@
 //! slot index. That path also runs [`bearing_12bit`], over
 //! [`approx_arctan_lut`] rather than the SCUS table.
 //!
-//! The rest stay inert and each carries its own `NOT WIRED:` naming the
-//! prerequisite, read off the `jal` site in the battle-overlay dumps rather
-//! than from a doc.
+//! The other routines are on host paths too: each carries its own `PORT:`
+//! tag, and `port-catalog.py --live-audit` reports every one of them live.
 
 /// The `+0x8` actor flag-word bits `FUN_801DB9C4` keeps: it clears
 /// `0x83000000` (bit 31 and bits 25/24).

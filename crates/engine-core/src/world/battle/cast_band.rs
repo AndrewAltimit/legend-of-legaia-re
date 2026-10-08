@@ -62,8 +62,9 @@
 //! ([`legaia_asset::cast_effect_pool`], installed by the scene host) and stage
 //! through [`World::spawn_cast_module_fx`] at the same first tick, because the
 //! records are the shape the summon path already runs. What stays open is the
-//! module's *code* half - lift, camera, phase machine, damage shape - and that
-//! function's `NOT WIRED:` names the worklist rows it covers.
+//! module's *code* half - lift, camera, phase machine, damage shape - where a
+//! module's tick bodies are not ported
+//! (`docs/subsystems/cast-module.md`).
 //!
 //! Timing is the engine's: the retail durations are the stager's own phase
 //! machine and are not dumped, so the frame counts below are chosen to land

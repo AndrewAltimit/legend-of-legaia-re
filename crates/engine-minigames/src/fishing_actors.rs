@@ -22,7 +22,8 @@
 //! [`crate::fishing::BandCheck::tick`]. A module blanket is read
 //! unconditionally by every anchor in the file, so one wired item makes it
 //! assert something false about that item and it cannot be narrowed in place.
-//! Each genuinely inert item therefore carries its own `NOT WIRED:` line.
+//! Each item carries its own status instead: the one routine no host owes a
+//! port is tagged `REPLACED-BY:` where it is defined.
 //!
 //! `crate::fishing` models the minigame as *rules* (cast power, reel
 //! tug-of-war, catch scoring); the actor-side kernels drive the retail
