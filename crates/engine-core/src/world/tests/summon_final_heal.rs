@@ -273,6 +273,46 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
     );
 }
 
+/// A member downed and Final-Healed by one hit: the killing hit's readout
+/// ramp is still in flight on the sweep's tick, and the revive's assigning
+/// seed must not stack on top of it - the readout has to land on max HP, not
+/// above it (an absorbing pair the `0x51` gate parks on).
+#[test]
+fn final_heal_mid_drain_settles_on_max_hp() {
+    use legaia_save::Party;
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.party.roster = Party::zeroed(1);
+    world.actors[0].battle.max_hp = 2368;
+    world.actors[0].battle.hp = 744;
+    let rec = &mut world.party.roster.members[0];
+    let mut bits = rec.ability_bits();
+    bits[4] = 0x80;
+    rec.set_ability_bits(bits);
+    let mut eq = rec.equipment();
+    eq.slots[5] = 0xE7;
+    rec.set_equipment(eq);
+
+    // The killing hit lands: live HP to zero, the readout still at 744 with
+    // the whole drain owed.
+    world.apply_battle_hp_delta(0, 744);
+    assert_eq!(world.actors[0].battle.hp, 0);
+    world.apply_final_heal_revives();
+    for _ in 0..200 {
+        world.actors[0].battle.tick_hp_bar(0);
+    }
+    let a = &world.actors[0].battle;
+    assert_eq!(a.hp, 2368);
+    assert_eq!(a.hp_display, Some(2368), "the readout settles on live HP");
+    assert_eq!(a.hp_bar_pending, 0);
+}
+
 #[test]
 fn final_heal_keeps_bit_when_second_grail_is_equipped() {
     use legaia_save::Party;

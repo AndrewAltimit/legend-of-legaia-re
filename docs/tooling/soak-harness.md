@@ -302,6 +302,7 @@ regression.
 | `conc3_ambient_walker_seat_snapback` | a cutscene walk ran from the walker's off-stage wander box across the whole map | an ambient walker adopts the live seat a script's `0x23` writes; it had re-published its own stale coordinates on its next step |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 | `bubu2_bag_stack_past_99` | `bubu2@...:PRO-07`: a battle grant raised a held stack of 99 to 100 | every bag grant (drop, steal, refund, prize, shop, unequip) goes through the retail add, which caps a merged stack at 99 |
+| `jouina_final_heal_readout_overshoot` | `jouina@...:PRO-01`: a member downed and Final-Healed by one enemy hit parked the `0x51` bar-drain gate | the Final Heal sweep re-syncs the readout before its revive seed; the killing hit's undrained remainder had stacked above max HP |
 | `tower_floor_door_glides_ignored` | `tower@PRO-10`: a floor door set the player down inside the far door's doorway, walled on every side | a touched object's record plays its cross-context compass walks on the player (`B7 F8` / `C1 F8`) as legs it runs on past, and the out leg carries the player clear |
 
 The field-side fixes are described with their retail evidence in

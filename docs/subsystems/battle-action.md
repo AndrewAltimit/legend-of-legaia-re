@@ -1075,6 +1075,15 @@ which is the accumulating convention (`FUN_801EC3E4`). Regression:
 `battle_depth_replay`, which runs in the same fight as the rungs after it so a
 park costs rungs instead of being restarted around.
 
+`apply_final_heal_revives` runs earlier than retail's state `0x50`: the
+port also sweeps right after a tick's damage lands, on the killing hit's own
+tick, when that hit's ramp has not moved at all. Seeding the revive there
+discarded the whole drop and left the readout above max HP by the member's
+pre-hit HP (soak: `jouina`, a member downed and Final-Healed by one enemy
+hit). The sweep therefore re-syncs the readout to the live zero before it
+seeds, which is where the measured 90-vsync-or-more tail leaves retail's
+readout; the high-HP fast-tail crack above is not reproduced.
+
 #### The `(class, tier)` seed at state `0x3C`
 
 State `0x3C` is the only writer of `actor[+0x1E8]` / `+0x1E9`, and the branch it

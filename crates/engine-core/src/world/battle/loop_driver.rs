@@ -186,6 +186,18 @@ impl World {
             // cleared; liveness restored so the SM's scans see them alive.
             self.battle.status_effects.cure_all(slot as u8);
             let a = &mut self.actors[slot].battle;
+            // Retail sweeps in cleanup state `0x50`, after the killing
+            // action has played out and its hit's ramp has carried the
+            // readout down to the live zero. The port's post-damage sweep
+            // runs on the hit's own tick, with that ramp still in flight, and
+            // the revive's seed is an assignment that discards it - which
+            // left the readout above max HP by the undrained remainder, a
+            // `hp != hp_display` pair with a zero accumulator that parks the
+            // `0x51` gate for good (soak: `jouina`, a member downed and
+            // Final-Healed by one enemy hit). Settle the readout first, as
+            // the elapsed ramp would have.
+            // REF: FUN_801E6968, FUN_80047430
+            a.resync_hp_bar();
             let before = a.hp;
             a.hp = max_hp;
             a.liveness = 1;
