@@ -516,6 +516,13 @@ pub struct BattleActor {
     pub flag_word: u32,
     /// `+0x1DC` - per-actor flag bits. See [`ActorFlags`].
     pub flag_bits: ActorFlags,
+    /// The per-frame root-motion truncation carry
+    /// ([`crate::battle_action::motion::RootMotionCarry`]) - port state, not
+    /// a retail field.
+    pub root_carry: crate::battle_action::motion::RootMotionCarry,
+    /// The same carry for the strike loop's swing drift, which retail
+    /// truncates on its own (`0x801E386C..0x801E3994`).
+    pub drift_carry: crate::battle_action::motion::RootMotionCarry,
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
     /// mid-chain).
     pub active_target: u8,

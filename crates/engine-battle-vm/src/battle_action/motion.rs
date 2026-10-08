@@ -164,14 +164,67 @@ pub fn range_metric(inp: &RangeInputs, sin: i16, cos: i16) -> u16 {
 /// halfword, `frame_dt` the scratchpad frame-time byte `DAT_1F800393`,
 /// `scale` the actor's `+0x21D` byte (retail normal `4`).
 pub fn root_motion_step(sin: i16, cos: i16, speed: i16, frame_dt: u8, scale: u8) -> (i32, i32) {
-    let step = |trig: i16| -> i32 {
+    let (rx, rz) = root_motion_raw(sin, cos, speed, frame_dt, scale);
+    (rx >> 15, rz >> 15)
+}
+
+/// The un-shifted product [`root_motion_step`] shifts:
+/// `trig * speed * frame_dt * scale` per axis, in the same multiply order.
+pub fn root_motion_raw(sin: i16, cos: i16, speed: i16, frame_dt: u8, scale: u8) -> (i32, i32) {
+    let raw = |trig: i16| -> i32 {
         i32::from(trig)
             .wrapping_mul(i32::from(speed))
             .wrapping_mul(i32::from(frame_dt))
             .wrapping_mul(i32::from(scale))
-            >> 15
     };
-    (step(sin), step(cos))
+    (raw(sin), raw(cos))
+}
+
+/// Battle frames the engine's one-vsync ticks are grouped into for the
+/// root-motion truncation: retail's frame step `DAT_1F800393` at the battle
+/// tick's usual cadence, the step the battle camera already assumes.
+pub const ROOT_MOTION_FRAME_VSYNCS: u64 = 2;
+
+/// Spreads retail's **per-frame** root-motion truncation over the engine's
+/// per-vsync ticks.
+///
+/// Retail moves an actor `trig * speed * frame_dt * scale >> 15` once a
+/// battle frame (`sra` - a floor), so a heading's small axis keeps whatever
+/// a whole frame of it amounts to. The engine ticks once a vsync with
+/// `frame_dt = 1`; shifting each tick's product on its own floors that axis
+/// to nothing whenever it is under a unit a vsync, and Vahn's strikes at
+/// heading `142` lost their whole sideways drift. This sums the raw products
+/// over a frame of [`ROOT_MOTION_FRAME_VSYNCS`] ticks, moves each tick by
+/// what the running floor gained, and drops the remainder at the frame's
+/// end the way retail does - so every frame totals exactly retail's
+/// `floor(frame_raw >> 15)`, spread smoothly across its vsyncs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RootMotionCarry {
+    frame: u64,
+    acc: [i64; 2],
+    moved: [i32; 2],
+}
+
+impl RootMotionCarry {
+    /// One tick's displacement for the tick's raw product `raw`
+    /// ([`root_motion_raw`] at `frame_dt = 1`) on display frame `tick`.
+    pub fn step(&mut self, tick: u64, raw: (i32, i32)) -> (i32, i32) {
+        let frame = tick / ROOT_MOTION_FRAME_VSYNCS;
+        if frame != self.frame {
+            *self = Self {
+                frame,
+                ..Self::default()
+            };
+        }
+        let mut out = [0i32; 2];
+        for (k, r) in [raw.0, raw.1].into_iter().enumerate() {
+            self.acc[k] += i64::from(r);
+            let total = (self.acc[k] >> 15) as i32;
+            out[k] = total - self.moved[k];
+            self.moved[k] = total;
+        }
+        (out[0], out[1])
+    }
 }
 
 /// The anim tick's **end-of-clip displacement**: at the natural end the actor
@@ -213,6 +266,29 @@ pub fn arrival_shove_step(sin: i16, cos: i16) -> (i16, i16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_carry_totals_each_frame_to_retails_frame_step_floor() {
+        // Heading 142 at Vahn's strike drift: the small axis is under a unit
+        // a vsync, so a per-tick shift would never move it.
+        let (sin, cos) = trig12(142);
+        // The per-tick shift drops the whole small axis of a forward drift.
+        assert_eq!(root_motion_step(sin, cos, 3, 1, 8).0, 0);
+        for speed in [-3i16, 3, 7] {
+            let tick_raw = root_motion_raw(sin, cos, speed, 1, 8);
+            let (fx, fz) = root_motion_step(sin, cos, speed, 2, 8);
+            let mut carry = RootMotionCarry::default();
+            let mut total = (0, 0);
+            for t in 10..20u64 {
+                let (dx, dz) = carry.step(t, tick_raw);
+                total = (total.0 + dx, total.1 + dz);
+                if t % ROOT_MOTION_FRAME_VSYNCS == ROOT_MOTION_FRAME_VSYNCS - 1 {
+                    assert_eq!(total, (fx, fz), "speed {speed} frame ending {t}");
+                    total = (0, 0);
+                }
+            }
+        }
+    }
 
     #[test]
     fn sin12_matches_the_retail_table_anchors() {

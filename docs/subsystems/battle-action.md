@@ -1623,7 +1623,13 @@ Three of its properties, read from the SCUS disassembly
   gated on `+0x1DC & 8` clear and the range poll still failing. Gaza's Move
   entry has `+0xC = +20` and his speed scale `+0x21D = 8` - the measured
   ~19-20 units/vsync. The idle entry's `+0xC` is `0`, which is why a
-  clip death freezes him.
+  clip death freezes him. The shift floors once a battle frame, so a
+  heading's small axis keeps a frame's worth of it; the port ticks once a
+  vsync and spreads each frame's total over its ticks
+  (`motion::RootMotionCarry`, frames of two vsyncs - the strike loop's
+  swing drift `0x801E386C..0x801E3994` takes the same carry). A per-tick
+  shift had floored any axis under a unit a vsync to nothing: Vahn's
+  strikes at heading `142` drifted straight up the `z` axis.
 - **A looping clip has no loop counter - it loops by re-committing at every
   natural end.** When the cursor `node+0x68` passes the stream's frame
   count, the tick calls the commit, which re-installs the still-queued
