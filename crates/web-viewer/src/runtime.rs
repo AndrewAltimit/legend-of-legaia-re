@@ -1520,7 +1520,7 @@ impl LegaiaRuntime {
             .menu_active()
             .then(|| id.picker())
             .flatten()
-            .map(|p| p.options.iter().map(|o| ascii(&o.label)).collect())
+            .map(|_| id.picker_labels().iter().map(|l| ascii(l)).collect())
             .unwrap_or_default();
         serde_json::json!({
             "text": text,

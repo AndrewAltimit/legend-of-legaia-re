@@ -92,8 +92,8 @@ fn from_panel(
     }
     let (options, cursor) = if panel.menu_active() {
         match panel.picker() {
-            Some(p) => (
-                p.options.iter().map(|o| to_ascii(&o.label)).collect(),
+            Some(_) => (
+                panel.picker_labels().iter().map(|l| to_ascii(l)).collect(),
                 panel.picker_cursor(),
             ),
             None => (Vec::new(), 0),

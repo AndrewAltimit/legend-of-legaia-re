@@ -390,6 +390,15 @@ impl InlineDialogue {
         self.panel.as_ref().and_then(|p| p.picker())
     }
 
+    /// The open panel's option labels with names resolved
+    /// ([`OwnedDialogPanel::picker_labels`]).
+    pub fn picker_labels(&self) -> Vec<Vec<u8>> {
+        self.panel
+            .as_ref()
+            .map(|p| p.picker_labels())
+            .unwrap_or_default()
+    }
+
     /// The open menu has slid in and takes Up / Down and confirm
     /// ([`crate::dialog::OwnedDialogPanel::picker_takes_input`]).
     pub fn picker_takes_input(&self) -> bool {

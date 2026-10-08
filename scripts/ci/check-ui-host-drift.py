@@ -547,6 +547,20 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "dialog picker option labels, native vs play page - both "
+        "printed `legaia_mes::PickerOption::label`, which carries no name "
+        "escapes, so a choice naming a party member drew a blank where the "
+        "name belongs on either host. Both read "
+        "`OwnedDialogPanel::picker_labels`, resolved through the panel's "
+        "substitution table",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/hud.rs", "dialog_snapshot"),
+            "web": ("crates/web-viewer/src/play_dialog.rs", "from_panel"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["picker_labels"],
+    },
+    {
         "what": "movie pacing, native in-window FMV vs play page - the page "
         "re-implemented the audio-cursor rule in play-fmv.js with a stall "
         "fallback the native window lacked (a stalled cursor held frame 0 "
